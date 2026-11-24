@@ -8,7 +8,7 @@ import ai.okou.android.SettingsPickerRow
 import ai.okou.android.SettingsRadioOptions
 import ai.okou.android.SettingsSection
 import ai.okou.android.SettingsSheet
-import ai.okou.android.SettingsSheetDescription
+import ai.okou.android.SettingsSheetScroll
 import ai.okou.android.api.generated.UserPreferencesColorTheme
 import ai.okou.android.api.generated.UserPreferencesLocale
 import ai.okou.android.api.generated.UserPreferencesTheme
@@ -23,22 +23,36 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
@@ -48,6 +62,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.currentStateAsState
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.flow.collectLatest
 
 @Composable
 internal fun MemberPreferencesSettings(
@@ -132,65 +148,61 @@ internal fun MemberPreferencesSettings(
             HorizontalDivider()
             TimezonePicker(state?.timezone, model?.let { owner -> { owner.selectTimezone(it) } })
         }
-        if (model != null && state != null && state.pending?.cloudBrowser == null) {
-            PreferenceFeedback(state, model::retry)
+        if (model != null && state != null) {
+            TimezoneScheduleFeedback(state, model::retry)
         }
     }
 }
 
-private val commonTimezones =
-    listOf(
-        "Asia/Shanghai",
-        "Asia/Tokyo",
-        "Asia/Singapore",
-        "Europe/London",
-        "America/Los_Angeles",
-        "Etc/UTC",
-        "America/New_York",
-        "America/Chicago",
-        "America/Denver",
-        "America/Anchorage",
-        "Pacific/Honolulu",
-        "America/Toronto",
-        "America/Vancouver",
-        "America/Sao_Paulo",
-        "Europe/Berlin",
-        "Europe/Paris",
-        "Europe/Moscow",
-        "Asia/Dubai",
-        "Asia/Kolkata",
-        "Asia/Seoul",
-        "Australia/Sydney",
-        "Pacific/Auckland",
-    )
-
 @Composable
-internal fun TimezonePicker(current: String?, onSelect: ((String) -> Unit)?) {
+internal fun TimezonePicker(
+    current: String?,
+    onSelect: ((String) -> Unit)?,
+    visible: Boolean = true,
+    fallbackFocus: FocusRequester? = null,
+) {
     val title = stringResource(R.string.settings_timezone)
     SettingsPickerRow(
         title,
         value = current?.let { timezoneLabel(it) },
         leading = { SettingsIcon(R.drawable.ic_schedule) },
         enabled = current != null && onSelect != null,
+        visible = visible,
+        fallbackFocus = fallbackFocus,
     ) { dismiss ->
         if (current == null || onSelect == null) return@SettingsPickerRow
-        SettingsSheet(title, dismiss) {
-            SettingsSheetDescription(stringResource(R.string.settings_timezone_hint))
+        SettingsSheet(title, dismiss, scroll = SettingsSheetScroll.None) {
+            val locale = LocalConfiguration.current.locales[0]
+            val utcName = stringResource(R.string.settings_timezone_utc)
             val options =
-                if (current in commonTimezones) commonTimezones
-                else
-                    listOf(current) +
-                        commonTimezones.filterNot { current == "UTC" && it == "Etc/UTC" }
-            Column(Modifier.fillMaxWidth().selectableGroup()) {
-                options.forEach { zone ->
+                remember(current, locale, utcName) { timezoneOptions(current, locale, utcName) }
+            val initialZone = remember { current }
+            val list =
+                rememberLazyListState(
+                    initialFirstVisibleItemIndex = options.indexOfFirst { it.id == current },
+                )
+            val focus = remember { FocusRequester() }
+            val input = LocalInputModeManager.current
+            var positioned by remember { mutableStateOf(false) }
+            LaunchedEffect(positioned) {
+                if (positioned && input.inputMode == InputMode.Keyboard) focus.requestFocus()
+            }
+            LazyColumn(Modifier.fillMaxWidth().selectableGroup(), state = list) {
+                items(options, key = { it.id }) { zone ->
                     SettingsChoiceRow(
                         timezoneLabel(zone),
-                        selected = zone == current,
+                        selected = zone.id == current,
                         enabled = true,
                         onClick = {
                             dismiss()
-                            onSelect(zone)
+                            onSelect(zone.id)
                         },
+                        modifier =
+                            if (zone.id == initialZone)
+                                Modifier.focusRequester(focus).onGloballyPositioned {
+                                    positioned = true
+                                }
+                            else Modifier,
                     )
                 }
             }
@@ -199,20 +211,55 @@ internal fun TimezonePicker(current: String?, onSelect: ((String) -> Unit)?) {
 }
 
 @Composable
-internal fun PreferenceFeedback(state: MemberPreferencesState, retry: () -> Unit) {
-    if (state.recovering) return
-    val message =
-        when (state.status) {
-            PreferenceStatus.Ready,
-            PreferenceStatus.Saving,
-            PreferenceStatus.Refreshing -> return
-            PreferenceStatus.SaveFailed -> R.string.preference_save_failed
-            PreferenceStatus.RefreshFailed -> R.string.preference_refresh_failed
+internal fun MemberPreferenceSaveFeedback(
+    model: MemberPreferencesModel,
+    snackbar: SnackbarHostState,
+) {
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val timezone by rememberUpdatedState(stringResource(R.string.settings_timezone_save_rejected))
+    val rolledBack by
+        rememberUpdatedState(stringResource(R.string.settings_preferences_save_rolled_back))
+    val appearance by rememberUpdatedState(stringResource(R.string.settings_appearance_sync_failed))
+    val unconfirmed by
+        rememberUpdatedState(stringResource(R.string.settings_proactive_save_unconfirmed))
+    LaunchedEffect(model, snackbar, lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            model.notices.collectLatest { notice ->
+                val message =
+                    when (notice) {
+                        null -> return@collectLatest
+                        is PreferenceSaveNotice.Unconfirmed -> unconfirmed
+                        is PreferenceSaveNotice.Rejected ->
+                            buildList {
+                                    if (notice.rolledBack)
+                                        add(if (notice.timezoneOnly) timezone else rolledBack)
+                                    if (notice.keptAppearance) add(appearance)
+                                }
+                                .joinToString(" ")
+                    }
+                snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
+                model.dismissNotice(notice)
+            }
         }
+    }
+}
+
+@Composable
+internal fun TimezoneScheduleFeedback(
+    state: MemberPreferencesState,
+    retry: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (
+        state.status != PreferenceStatus.SaveFailed ||
+            state.recovering ||
+            !state.timezoneScheduleUpdatePending
+    )
+        return
     val colors = MaterialTheme.colorScheme
-    Column(Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite }) {
+    Column(modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite }) {
         Text(
-            stringResource(message),
+            stringResource(R.string.settings_timezone_schedule_update_failed),
             color = colors.error,
             style = MaterialTheme.typography.bodyMedium,
         )

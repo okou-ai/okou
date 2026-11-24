@@ -138,7 +138,7 @@ type ComposerSuggestionSignals = Pick<
 
 type ComposerTemplateEditorSignals = Pick<
   WorkflowComposerSignals,
-  "hasTemplateAttachment$" | "insertTemplate$" | "openTemplatePicker$"
+  "hasTemplateAttachment$" | "insertTemplate$"
 >;
 
 type ComposerModelUiSignals = ComposerUiSignalGroups["model"];
@@ -468,7 +468,6 @@ function composerTemplateSignals(
   return {
     hasTemplateAttachment$: composer.hasTemplateAttachment$,
     insertTemplate$: composer.insertTemplate$,
-    openTemplatePicker$: composer.openTemplatePicker$,
   };
 }
 
@@ -576,7 +575,6 @@ export function createComposerSignals(
   const ui = createComposerUiSignals();
   const workflowComposer = createWorkflowComposerSignals(
     draft,
-    ui.openTemplatePickerDialog$,
     {
       autoFocus: true,
       ...(options.forwardComposer
@@ -590,7 +588,6 @@ export function createComposerSignals(
     insertTemplate$: workflowComposer.insertTemplate$,
     insertPrompt$: workflowComposer.replacePromptText$,
     clearPrompt$: workflowComposer.clearUnchangedPrompt$,
-    openTemplatePicker$: workflowComposer.openTemplatePicker$,
     focusEditor$: workflowComposer.focus$,
     saveDraft$: options.draft.save$,
   });
@@ -662,7 +659,6 @@ export function createComposerSignals(
     template: {
       previewRecommendation$: createTemplateRecommendationPreviewCommand(
         ui.template,
-        workflowComposer.openTemplatePicker$,
       ),
       selectTemplateAndSave$: createComposerTemplateSelection(
         taskChips,

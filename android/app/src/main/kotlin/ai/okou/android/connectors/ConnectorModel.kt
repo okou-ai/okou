@@ -15,8 +15,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.HttpUrl
 
 internal const val CONNECTOR_ACCOUNT_NAME_LIMIT = 255
@@ -46,6 +48,9 @@ internal enum class ConnectorProblem {
     Network,
     BrowserUnavailable,
     AuthorizationIncomplete,
+    DeviceAuthorizationDenied,
+    DeviceCodeExpired,
+    DeviceAuthorizationFailed,
     AuthorizationUnconfirmed,
     VerificationPending,
     VerificationNetwork,
@@ -108,7 +113,7 @@ class ConnectorModel(
     private val service: ConnectorService,
     connectivity: Flow<Boolean>,
     private val authorized: () -> Boolean,
-    private val readClock: TimeSource = TimeSource.Monotonic,
+    private val clock: TimeSource = TimeSource.Monotonic,
     private val sessionFailure: (Exception) -> Unit,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(ConnectorUiState())
@@ -602,14 +607,18 @@ class ConnectorModel(
             when (val step = service.start(target, method, values)) {
                 is ConnectorAuthorization.Receipt -> finishAuthorization(target, step.connectionId)
                 else -> {
-                    authorizationDeadline =
-                        TimeSource.Monotonic.markNow() +
+                    val deadline =
+                        clock.markNow() +
                             when (step) {
                                 is ConnectorAuthorization.Device -> step.expiresIn
                                 is ConnectorAuthorization.External -> step.expiresIn
                                 else -> 15.minutes
                             }
+                    authorizationDeadline = deadline
                     updateAction { it.copy(authorization = step) }
+                    if (step is ConnectorAuthorization.Device) {
+                        trackDeviceAuthorization(target, step, deadline)
+                    }
                 }
             }
         }
@@ -618,13 +627,19 @@ class ConnectorModel(
     internal fun openBrowser(launch: (HttpUrl) -> Boolean) {
         val action = mutableState.value.action ?: return
         if (!open || !authorized() || action.busy) return
+        val step = action.authorization ?: return
         if (authorizationExpired()) {
-            updateAction {
-                it.copy(authorization = null, problem = ConnectorProblem.AuthorizationIncomplete)
+            // The device job may still be receiving the result of a poll sent before expiry.
+            if (step !is ConnectorAuthorization.Device) {
+                updateAction {
+                    it.copy(
+                        authorization = null,
+                        problem = ConnectorProblem.AuthorizationIncomplete,
+                    )
+                }
             }
             return
         }
-        val step = action.authorization
         val url =
             when (step) {
                 is ConnectorAuthorization.Browser -> step.url
@@ -637,21 +652,29 @@ class ConnectorModel(
             return
         }
         updateAction { it.copy(browserOpened = true, problem = null) }
-        if (step is ConnectorAuthorization.Device) {
-            beginDevicePolling(action.target, step)
-        }
     }
 
-    private fun beginDevicePolling(
+    private fun trackDeviceAuthorization(
         target: ConnectorAccountTarget,
         step: ConnectorAuthorization.Device,
+        deadline: TimeMark,
     ) {
-        if (deviceJob?.isActive == true) return
+        deviceJob?.cancel()
         deviceJob = viewModelScope.launch {
+            val opened =
+                withTimeoutOrNull(-deadline.elapsedNow()) {
+                    mutableState.first {
+                        it.action?.authorization == step && it.action.browserOpened
+                    }
+                }
+            if (opened == null) {
+                endDeviceAuthorization(step, ConnectorProblem.DeviceCodeExpired)
+                return@launch
+            }
             var interval = step.interval
-            while (!authorizationExpired()) {
-                delay(interval.coerceAtLeast(1.seconds))
-                if (authorizationExpired()) break
+            while (!deadline.hasPassedNow()) {
+                delay(minOf(interval.coerceAtLeast(1.seconds), -deadline.elapsedNow()))
+                if (deadline.hasPassedNow()) break
                 if (mutableState.value.offline) continue
                 try {
                     when (val result = service.pollDevice(target.slug, step)) {
@@ -663,21 +686,42 @@ class ConnectorModel(
                             }
                             return@launch
                         }
-                        ConnectorDeviceResult.Rejected -> break
+                        is ConnectorDeviceResult.Terminal -> {
+                            val problem =
+                                when (result) {
+                                    ConnectorDeviceResult.Terminal.Denied ->
+                                        ConnectorProblem.DeviceAuthorizationDenied
+                                    ConnectorDeviceResult.Terminal.Expired ->
+                                        ConnectorProblem.DeviceCodeExpired
+                                    ConnectorDeviceResult.Terminal.Failed ->
+                                        ConnectorProblem.DeviceAuthorizationFailed
+                                }
+                            endDeviceAuthorization(step, problem)
+                            return@launch
+                        }
                     }
                 } catch (error: Exception) {
                     if (error is CancellationException) throw error
                     reportSessionFailure(error)
-                    if (!error.hasUncertainResponse()) break
+                    if (!error.hasUncertainResponse()) {
+                        endDeviceAuthorization(step, ConnectorProblem.DeviceAuthorizationFailed)
+                        return@launch
+                    }
                     interval = maxOf(interval, 5.seconds)
                 }
             }
-            updateAction {
-                it.copy(
-                    authorization = null,
-                    problem = ConnectorProblem.AuthorizationIncomplete,
-                )
-            }
+            endDeviceAuthorization(step, ConnectorProblem.DeviceCodeExpired)
+        }
+    }
+
+    private fun endDeviceAuthorization(
+        step: ConnectorAuthorization.Device,
+        problem: ConnectorProblem,
+    ) {
+        if (mutableState.value.action?.authorization != step) return
+        authorizationDeadline = null
+        updateAction {
+            it.copy(authorization = null, browserOpened = false, problem = problem)
         }
     }
 
@@ -848,7 +892,7 @@ class ConnectorModel(
 
     private fun publishAccounts(slug: String, accounts: List<ConnectorSavedAccount>) {
         val confirmed =
-            ConnectorRead(accounts, expiresAt = readClock.markNow() + CONNECTOR_READ_LIFETIME)
+            ConnectorRead(accounts, expiresAt = clock.markNow() + CONNECTOR_READ_LIFETIME)
         val cached = recentServices[slug]
         if (cached != null) recentServices[slug] = cached.copy(accounts = confirmed)
         mutableState.update { state ->
@@ -1003,7 +1047,7 @@ class ConnectorModel(
             publish = {
                 publish(
                     if (it.isConfirmed)
-                        it.copy(expiresAt = readClock.markNow() + CONNECTOR_READ_LIFETIME)
+                        it.copy(expiresAt = clock.markNow() + CONNECTOR_READ_LIFETIME)
                     else it,
                 )
             },

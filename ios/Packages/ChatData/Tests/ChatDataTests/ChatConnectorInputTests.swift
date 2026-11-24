@@ -18,7 +18,11 @@ final class ChatConnectorInputTests: XCTestCase {
         XCTAssertEqual(request.httpMethod, "POST")
         let body = try JSONSerialization.jsonObject(with: chatRequestBody(request)) as? NSDictionary
         XCTAssertEqual(
-          body, ["account": ["intent": "add"], "authMethod": "oauth", "callbackTarget": "app"])
+          body,
+          [
+            "account": ["intent": "add"], "authMethod": "oauth", "callbackTarget": "app",
+            "nativeCallback": "ios-https"
+          ])
         return ChatHTTPResponse(
           body: """
             {"oauthAttemptId":"\(FixtureData.attemptID)","authorizationUrl":"https://provider.example.invalid/authorize"}
@@ -34,6 +38,7 @@ final class ChatConnectorInputTests: XCTestCase {
     let receipt = try await service.start(
       status: status, method: status.builtin?.authMethods.first, values: [:], options: [:])
     XCTAssertEqual(receipt.oauthAttemptId, FixtureData.attemptID)
+    XCTAssertNil(receipt.nativeCallbackUrl)
   }
 
   func testDeviceAuthorizationUsesOnlyDeclaredOptionsWithSelectionOverridingTheDefault()

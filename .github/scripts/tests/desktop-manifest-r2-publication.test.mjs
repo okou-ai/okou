@@ -88,8 +88,8 @@ async function fixture(t, options) {
   };
 }
 
-test("publication preserves R2 history and exports verified publication bytes", async (t) => {
-  const s3 = await fixture(t);
+test("publication verifies R2 history and bytes after a lost PUT response", async (t) => {
+  const s3 = await fixture(t, { mode: "lost-response" });
   await s3.publish();
   const published = s3.objects.get(currentKey);
   const manifest = JSON.parse(published);
@@ -106,6 +106,12 @@ test("publication preserves R2 history and exports verified publication bytes", 
   const snapshots = [...s3.objects].filter(([key]) => key !== currentKey);
   assert.equal(snapshots.length, 1);
   assert.deepEqual(snapshots[0][1], published);
+  assert.equal(
+    s3.requests.filter(
+      ({ method, key }) => method === "PUT" && key === currentKey,
+    ).length,
+    1,
+  );
   // A rerun reconciles the existing immutable receipt rather than replacing it.
   await s3.publish();
   assert.equal(s3.objects.size, 2);
@@ -138,22 +144,6 @@ test("a corrupted receipt prevents publication of the current manifest", async (
     s3.requests.every(
       ({ method, key }) => method !== "PUT" || key !== currentKey,
     ),
-  );
-});
-
-test("a lost PUT response is verified without replaying the write", async (t) => {
-  const s3 = await fixture(t, { mode: "lost-response" });
-  await s3.publish();
-  assert.equal(
-    JSON.parse(s3.objects.get(currentKey)).channels.stable.latest,
-    version,
-  );
-  assert.deepEqual(await readFile(s3.path), s3.objects.get(currentKey));
-  assert.equal(
-    s3.requests.filter(
-      ({ method, key }) => method === "PUT" && key === currentKey,
-    ).length,
-    1,
   );
 });
 

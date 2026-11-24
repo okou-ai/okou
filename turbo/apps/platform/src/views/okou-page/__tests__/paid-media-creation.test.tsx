@@ -5,7 +5,6 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { paidToolsContract } from "@okouai/api-contracts/contracts/paid-tools";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
@@ -16,13 +15,12 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import {
-  openTemplatePicker,
+  openTemplateRecommendations,
   createTemplateGalleryHelpers,
 } from "./chat-composer-template-gallery-test-helpers.ts";
 import {
   CLAUDE_SUBSCRIPTION_PROVIDER_ID,
   findComposerEditor,
-  tabByText,
 } from "./chat-composer-test-helpers.ts";
 import { buildRunModel } from "./chat-model-builders.ts";
 
@@ -162,21 +160,20 @@ test("A failed preference read blocks explicit creation but ordinary chat remain
   });
 });
 
-test("Gallery notices follow each paid branch for a member using default feature switches", async () => {
+test("Creation notices follow the selected recommendation type", async () => {
   mockTemplateChat();
   context.mocks.api(paidToolsContract.get, ({ respond }) => {
     return respond(200, { disabledTools: ["image-generation"] });
   });
   await setupPage({ context, path: `/` });
   await findComposerEditor();
-  const dialog = await openTemplatePicker(
-    userEvent.setup({ delay: null }),
-    "Image",
+  await openTemplateRecommendations("Image");
+  await screen.findByText("Image generation is off for you");
+  const shelf = await openTemplateRecommendations("Website");
+  await within(shelf).findByLabelText(
+    `Use template ${WEBSITE_TEMPLATE_ITEMS[0]?.title}`,
   );
-  await within(dialog).findByText("Image generation is off for you");
-  click(tabByText("Website"));
-  await within(dialog).findByLabelText(
-    `Select website template ${WEBSITE_TEMPLATE_ITEMS[0]?.title}`,
-  );
-  expect(within(dialog).queryByText(/is off for you/)).not.toBeInTheDocument();
+  expect(
+    screen.queryByText("Image generation is off for you"),
+  ).not.toBeInTheDocument();
 });

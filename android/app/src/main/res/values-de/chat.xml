@@ -12,7 +12,6 @@
     <string name="chat_undo_failed">Die Änderung konnte nicht rückgängig gemacht werden.</string>
     <string name="chat_undo_unconfirmed">Es konnte nicht bestätigt werden, dass die Änderung rückgängig gemacht wurde.</string>
     <string name="chat_feedback_dismiss">Schließen</string>
-    <string name="chat_list_offline">Offline</string>
     <string name="chat_list_first_load_failed">Vorübergehend nicht verfügbar</string>
     <string name="chat_list_load_when_online">Chats werden geladen, sobald du wieder online bist.</string>
     <string name="chat_list_title">Chats</string>
@@ -75,7 +74,6 @@
     <string name="chat_delete_rejected">Der Chat konnte nicht gelöscht werden.</string>
     <string name="chat_delete_title">Chat löschen?</string>
     <string name="chat_delete_description">Nachrichten und Entwürfe in „%1$s“ werden dauerhaft gelöscht. Laufende Aufgaben werden gestoppt und verknüpfte Automatisierungen pausiert.</string>
-    <string name="chat_delete_confirm">Löschen</string>
     <string name="chat_rename_project">Projekt umbenennen</string>
     <string name="chat_project_name">Projektname</string>
     <string name="chat_project_rename_unconfirmed">Der Projektname konnte nicht bestätigt werden.</string>
@@ -97,4 +95,12 @@
     <string name="chat_project_delete_unconfirmed">Das Löschen des Projekts konnte nicht bestätigt werden.</string>
     <string name="chat_row_action_rejected_named">„%1$s“ konnte nicht abgeschlossen werden.</string>
     <string name="chat_row_action_offline_named">„%1$s“ konnte nicht abgeschlossen werden. Prüfe deine Verbindung und versuche es erneut.</string>
+    <string name="chat_rename_save_failed">Speichern fehlgeschlagen. Deine Änderungen sind noch da.</string>
+    <string name="chat_rename_check_result">Ergebnis prüfen</string>
+    <string name="chat_rename_trim_hint">Leerzeichen am Anfang und Ende werden entfernt.</string>
+    <string name="chat_rename_required">Gib einen Namen ein.</string>
+    <string name="chat_rename_checking_result">Ergebnis wird geprüft…</string>
+    <string name="chat_rename_save_unconfirmed">Das Ergebnis der Speicherung ist noch nicht bestätigt.</string>
+    <string name="chat_title_saved">Chattitel gespeichert</string>
+    <string name="chat_project_name_saved">Projektname gespeichert</string>
 </resources>

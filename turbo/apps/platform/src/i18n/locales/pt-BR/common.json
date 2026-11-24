@@ -266,6 +266,11 @@
         "modelCatalogCacheValidationLatency": "Latência de validação do cache do catálogo de modelos",
         "modelCatalogPrefetchRole": "Função de pré-carregamento do catálogo de modelos",
         "modelCatalogUpstreamEncoding": "Codificação upstream do catálogo de modelos",
+        "openrouterAttempts": "OpenRouter Tentativas de provedor",
+        "openrouterAttemptsIncomplete": "OpenRouter Tentativas incompletas",
+        "openrouterGenerationId": "OpenRouter ID de geração",
+        "openrouterModel": "OpenRouter Modelo",
+        "openrouterProvider": "OpenRouter Provedor",
         "params": "Parâmetros",
         "permission": "Permissão",
         "permissionError": "Erro de permissão",
@@ -586,6 +591,22 @@
       "text": "Texto",
       "video": "Vídeo"
     },
+    "library": {
+      "allArtifacts": "Todos os artefatos",
+      "allTypes": "Todos os tipos",
+      "clearFilters": "Limpar filtros",
+      "clearSearch": "Limpar busca",
+      "created": "Criado",
+      "emptyDescription": "Tente outro nome ou tipo.",
+      "emptyTitle": "Nenhum artefato encontrado",
+      "loadMore": "Carregar mais",
+      "name": "Nome",
+      "retry": "Tentar novamente",
+      "search": "Buscar artefatos",
+      "sortAscending": "Ordenar em ordem crescente",
+      "sortDescending": "Ordenar em ordem decrescente",
+      "type": "Tipo"
+    },
     "metadata": {
       "generated": "Gerado em {{date}}",
       "updated": "Atualizado em {{date}}"
@@ -681,15 +702,9 @@
       "updated": "URL do site atualizada"
     },
     "templates": {
-      "activeHtmlPreview": "Visualização HTML ativa de {{title}}",
-      "all": "Todos",
       "avatar": "Avatar",
-      "categories": "Categorias de modelo",
-      "category": "Categoria de modelo",
       "fullPreview": "Visualização completa do site {{title}}",
       "htmlPreview": "Visualização HTML de {{title}}",
-      "illustration": "Ilustração",
-      "illustrationPreview": "Visualização da ilustração {{title}}",
       "importDeck": "Importe sua própria apresentação",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importDocument": "Importar seu próprio documento",
@@ -701,18 +716,10 @@
       "importImageHint": "Salvar como estilo",
       "multiAccent": "Várias cores de destaque",
       "nextSlide": "Visualizar próximo slide",
-      "noMatches": "Nenhum resultado",
-      "previewCurrentSlide": "Visualizar {{title}} no slide atual",
       "previewSlide": "Visualizar slide {{slideNumber}}",
-      "previewWebsite": "Visualizar o modelo de site {{title}}",
       "previousSlide": "Visualizar slide anterior",
-      "searchConnector": "Buscar modelos",
-      "searchConnectors": "Buscar modelos",
       "selectStyle": "Selecionar estilo {{style}}",
       "selectTemplate": "Selecionar modelo {{title}}",
-      "selectWebsite": "Selecionar modelo de site {{title}}",
-      "selectWorkflow": "Selecionar modelo de fluxo de trabalho {{title}}",
-      "showVariant": "Mostrar variação {{variantNumber}}",
       "singleAccent": "Uma cor de destaque",
       "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "Visualização dos slides de {{title}}",
@@ -740,15 +747,11 @@
         "terracottaClay": "Vaso de barro",
         "warmSand": "Jornal da manhã"
       },
-      "tryDifferentSearch": "Tente outra busca.",
-      "use": "Usar",
       "useThisTemplate": "Usar este modelo",
       "visibility": {
         "changeLabel": "Alterar a visibilidade do modelo"
       },
       "website": "Site",
-      "websitePreview": "Visualização do modelo de site {{title}}",
-      "workflow": "Fluxo de trabalho",
       "workflowCatalog": {
         "auto-inbox-label": {
           "description": "Crie um fluxo que roda quando um marcador do Gmail é aplicado e cuida da mensagem marcada.",
@@ -1942,8 +1945,6 @@
       "add": "Adicionar",
       "configureModel": "Configurar modelo",
       "create": {
-        "addStyle": "Adicionar estilo",
-        "addTemplate": "Adicionar modelo",
         "documentPlaceholder": "O que você gostaria de incluir no seu documento?",
         "imagePlaceholder": "Descreva a imagem que você quer criar…",
         "presentationPlaceholder": "Qual é o tema da sua apresentação?",
@@ -1991,11 +1992,9 @@
         "scheduleHint": "Executar em um agendamento",
         "share": "Compartilhar conversa",
         "shareHint": "Compartilhe um link para esta conversa",
-        "templates": "Modelos",
         "unpin": "Desafixar conversa"
       },
       "slashPanel": {
-        "browseAll": "Ver todos os modelos",
         "hint": "Escolha uma ação",
         "useTemplate": "Usar o modelo {{title}}"
       },
@@ -2678,7 +2677,6 @@
         "website": "Site",
         "workflow": "Fluxo de trabalho"
       },
-      "viewAll": "Ver tudo",
       "visualization": {
         "allCharts": "Todos os gráficos",
         "back": "Back to visualization options",
@@ -2860,8 +2858,6 @@
         "workflow": "Fluxo de trabalho"
       },
       "previewTemplate": "Visualizar template {{title}}",
-      "previewWebsite": "Visualizar template de site {{title}}",
-      "previewWorkflow": "Visualizar template de fluxo de trabalho {{title}}",
       "removeTemplate": "Remover template {{title}}",
       "removeWebsite": "Remover template de site {{title}}",
       "removeWorkflow": "Remover template de fluxo de trabalho {{title}}"
@@ -3016,6 +3012,8 @@
     "accountsInChat": "Escolha quais contas ficam ativadas neste chat.",
     "enableByDefault": "Ativar {{account}} por padrão",
     "manageAccounts": "Gerenciar contas",
+    "memberPolicyLoadFailed": "Não foi possível carregar o acesso às contas.",
+    "memberSettingsDescription": "Escolha quais contas do {{connector}} o Okou pode usar em seus chats.",
     "permissions": "Permissões",
     "permissionsDescription": "Estas regras se aplicam a este conector em todos os seus chats e contas.",
     "settingsDescription": "Escolha quais contas do {{connector}} o Okou pode usar nos seus chats. Você pode alterar o acesso em cada chat.",
@@ -3961,7 +3959,6 @@
         "overview": "Dados do fornecedor e do cliente"
       }
     },
-    "filter": "Categoria do documento",
     "formats": {
       "pdf": "PDF",
       "word": "Documento do Word"
@@ -3971,10 +3968,8 @@
     "nextPage": "Próxima página de exemplo",
     "openLarger": "Abrir prévia ampliada",
     "page": "Página {{page}}",
-    "preview": "Visualizar {{title}}",
     "previousPage": "Página de exemplo anterior",
-    "title": "Documento",
-    "useNamed": "Usar {{title}}"
+    "title": "Documento"
   },
   "featureGuide": {
     "close": "Fechar guia de novidades",
@@ -6633,11 +6628,8 @@
   "templates": {
     "actions": {
       "delete": "Excluir",
-      "menu": "Ações para {{title}}",
-      "preview": "Visualizar {{title}}",
       "rename": "Renomear modelo"
     },
-    "builtIn": "Integrados",
     "custom": "Personalizados",
     "delete": {
       "cancel": "Cancelar",
@@ -6652,11 +6644,6 @@
       "page": "Página {{number}}"
     },
     "loadFailed": "Não foi possível carregar os modelos.",
-    "rename": {
-      "action": "Renomear",
-      "cancel": "Cancelar",
-      "save": "Salvar"
-    },
     "renameFailed": "Não foi possível renomear o modelo.",
     "sharedBy": "Compartilhado por {{owner}}",
     "sharedByMember": "Compartilhado por um membro da organização",

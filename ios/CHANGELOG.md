@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.62.1](https://github.com/okou-ai/okou/compare/ios-v0.62.0...ios-v0.62.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* **ios:** avoid document cover flashes on preview open ([#50426](https://github.com/okou-ai/okou/issues/50426)) ([21678e5](https://github.com/okou-ai/okou/commit/21678e5b1400ed8d4f5770148b2e38cb6f5a44d9))
+
+## [0.62.0](https://github.com/okou-ai/okou/compare/ios-v0.61.1...ios-v0.62.0) (2026-11-24)
+
+
+### Features
+
+* **ios:** add connector management and align chat account controls ([#50371](https://github.com/okou-ai/okou/issues/50371)) ([b6afd7e](https://github.com/okou-ai/okou/commit/b6afd7e2be27cb0356358062dc7bb813200d18f9))
+* **ios:** support follow-up placeholders and cache workspace feature switches ([#50378](https://github.com/okou-ai/okou/issues/50378)) ([4e41392](https://github.com/okou-ai/okou/commit/4e41392755b97917cdaa67a070b7951d2a219921))
+
+
+### Bug Fixes
+
+* **ios:** align the sidebar loading row with chat titles ([#50410](https://github.com/okou-ai/okou/issues/50410)) ([2e85a3a](https://github.com/okou-ai/okou/commit/2e85a3acd10b9599ebada526124bb6471f4fbff7))
+
+## [0.61.1](https://github.com/okou-ai/okou/compare/ios-v0.61.0...ios-v0.61.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* **ios:** offer password sign-in from the email code screen ([#50382](https://github.com/okou-ai/okou/issues/50382)) ([7f77e6e](https://github.com/okou-ai/okou/commit/7f77e6e291605036e6a31afab9f3ef6aa4e5dbab))
+
+
+### Refactoring
+
+* **ios:** drive workspace returns with one pan recognizer ([#50355](https://github.com/okou-ai/okou/issues/50355)) ([aad511d](https://github.com/okou-ai/okou/commit/aad511d326a04d0b83628f801b5191c97b47dbe7))
+
+## [0.61.0](https://github.com/okou-ai/okou/compare/ios-v0.60.0...ios-v0.61.0) (2026-11-24)
+
+
+### Features
+
+* add recording chips to chat composers behind a switch ([#50334](https://github.com/okou-ai/okou/issues/50334)) ([7fa55b1](https://github.com/okou-ai/okou/commit/7fa55b15b8286465939af85fe2faeaa1d39a952e))
+
 ## [0.60.0](https://github.com/okou-ai/okou/compare/ios-v0.59.2...ios-v0.60.0) (2026-11-23)
 
 

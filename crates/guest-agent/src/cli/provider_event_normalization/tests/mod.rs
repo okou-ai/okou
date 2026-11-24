@@ -178,17 +178,18 @@ fn invalid_managed_envelopes_fail_closed_for_both_providers() {
 
 #[test]
 fn ordinary_commands_pass_through_and_one_invalid_claude_block_does_not_hide_siblings() {
-    for (framework, event) in [
-        (Framework::ClaudeCode, claude_bash_event("printf plain")),
+    for (framework, event, path) in [
+        (
+            Framework::ClaudeCode,
+            claude_bash_event("printf plain"),
+            "/message/content/0/input/command",
+        ),
         (
             Framework::Codex,
             codex_command_event("item.started", "printf plain", "in_progress"),
+            "/item/command",
         ),
     ] {
-        let path = match framework {
-            Framework::ClaudeCode => "/message/content/0/input/command",
-            Framework::Codex | Framework::Pi => "/item/command",
-        };
         assert_eq!(normalized_command(framework, event, path), "printf plain");
     }
 

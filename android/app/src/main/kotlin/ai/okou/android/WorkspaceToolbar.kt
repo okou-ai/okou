@@ -156,8 +156,8 @@ internal fun WorkspaceSearchField(
     val colors = MaterialTheme.colorScheme
     val outline =
         when (focused) {
-            true -> Modifier.border(2.dp, LocalActivityStatusColor.current, shape)
-            false -> Modifier.border(1.dp, colors.outline, shape)
+            true -> Modifier.border(2.dp, colors.onBackground, shape)
+            false -> Modifier.border(1.dp, colors.controlOutline, shape)
             null -> Modifier
         }
     Row(
@@ -221,6 +221,7 @@ internal fun WorkspaceListToolbar(
                 WorkspaceSearchField(
                     Modifier.fillMaxWidth()
                         .focusRequester(searchFocus)
+                        .focusProperties { canFocus = openSearch != null }
                         .onFocusChanged { onSearchFocusChanged(it.isFocused) }
                         .testTag("workspace_search_entry")
                         .semantics { if (openSearch != null) contentDescription = label },

@@ -362,6 +362,36 @@ impl ActiveRuns {
         proof.state().can_publish_exact().then_some(proof)
     }
 
+    /// Observe a local producer for ordinary resource reuse without native history.
+    pub fn unique_finalizing_reuse_source(
+        &self,
+        successor: RunId,
+        reuse_key: &str,
+        profile_name: &str,
+    ) -> Option<(RunId, ActiveRunReuseProof)> {
+        let entries = lock_entries(&self.entries);
+        let mut matches = entries.iter().filter(|(run_id, entry)| {
+            **run_id != successor
+                && entry.reuse_key.as_deref() == Some(reuse_key)
+                && entry.profile_name == profile_name
+                && matches!(
+                    *entry.reuse_state.borrow(),
+                    ActiveRunReuseState::Finalizing { .. }
+                )
+        });
+        let (run_id, entry) = matches.next()?;
+        if matches.next().is_some() {
+            return None;
+        }
+        Some((
+            *run_id,
+            ActiveRunReuseProof {
+                reuse_state: entry.reuse_state.subscribe(),
+                handoff: Arc::clone(&entry.handoff),
+            },
+        ))
+    }
+
     pub fn active_reuse_producers(&self) -> Vec<ActiveReuseProducer> {
         let entries = lock_entries(&self.entries);
         let mut producers: Vec<_> = entries

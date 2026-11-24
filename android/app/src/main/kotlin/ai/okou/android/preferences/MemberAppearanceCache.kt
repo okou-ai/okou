@@ -1,6 +1,5 @@
 package ai.okou.android.preferences
 
-import ai.okou.android.api.generated.UserPreferences
 import ai.okou.android.api.generated.UserPreferencesColorTheme
 import ai.okou.android.api.generated.UserPreferencesTheme
 import ai.okou.android.auth.WorkspaceIdentity
@@ -25,14 +24,7 @@ data class MemberAppearance(
     val colorTheme: UserPreferencesColorTheme,
 )
 
-internal val UserPreferences.appearance: MemberAppearance
-    get() =
-        MemberAppearance(
-            theme ?: UserPreferencesTheme.SYSTEM,
-            colorTheme ?: UserPreferencesColorTheme.DEFAULT,
-        )
-
-/** A disposable first-display cache. Only confirmed workspace appearance reaches disk. */
+/** Stores the last applied appearance for the next first display. */
 class MemberAppearanceCache(
     private val directory: () -> File,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,

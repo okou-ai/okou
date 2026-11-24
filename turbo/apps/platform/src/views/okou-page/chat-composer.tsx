@@ -1,7 +1,6 @@
 import { ChatConnectorAccountDialogs } from "./chat-connector-account-dialogs.tsx";
 import { ComposerPresentationFormatSetup } from "./composer-presentation-format-setup.tsx";
 import { findDocumentTemplateItem } from "@okouai/core/document-template-items";
-import { DocumentTemplatePickerPane } from "./document-template-picker-pane.tsx";
 
 import { ChatConnectorMenu } from "./chat-connector-menu.tsx";
 import {
@@ -48,31 +47,12 @@ import type {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { PublicConnectorCatalogDiscoveryResponse } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
-import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import type {
-  UserTemplateCatalogEntry,
-  UserTemplateKind,
-} from "@okouai/api-contracts/contracts/user-templates";
-import {
-  ILLUSTRATION_TEMPLATE_ITEMS,
-  type IllustrationTemplateItem,
-} from "@okouai/core/illustration-template-items";
+import type { UserTemplateKind } from "@okouai/api-contracts/contracts/user-templates";
 import {
   PRESENTATION_TEMPLATE_PICKER_ITEMS,
   type PresentationTemplateItem,
 } from "@okouai/core/presentation-template-items";
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
-import {
-  WEBSITE_TEMPLATE_ITEMS,
-  findWebsiteTemplateItem,
-  type WebsiteTemplateItem,
-} from "@okouai/core/website-template-items";
-import {
-  WORKFLOW_TEMPLATE_CATEGORIES,
-  WORKFLOW_TEMPLATE_ITEMS,
-  findWorkflowTemplateItem,
-  type WorkflowTemplateItem,
-} from "@okouai/core/workflow-template-items";
 import { ElapsedTime, getShortcutLabel, ScrollBar } from "@okouai/ui";
 import { Button } from "@okouai/ui/components/ui/button";
 import { Card, CardContent } from "@okouai/ui/components/ui/card";
@@ -82,27 +62,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@okouai/ui/components/ui/dialog";
-import { Input } from "@okouai/ui/components/ui/input";
 import {
   Popover,
   PopoverClose,
   PopoverContent,
   PopoverTrigger,
 } from "@okouai/ui/components/ui/popover";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@okouai/ui/components/ui/select";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@okouai/ui/components/ui/tabs";
 import {
   Tooltip,
   TooltipContent,
@@ -123,30 +89,21 @@ import {
   AlertTriangle,
   ArrowUp,
   Bolt,
-  Check,
   Download,
-  FileText,
   Globe,
   Image as ImageIcon,
-  LayoutTemplate,
   Loader2,
   Mic,
   Monitor,
   Paperclip,
   Plug,
   Plus,
-  Presentation,
-  Route,
-  Search,
   Square,
-  SwatchBook,
   Trash2,
   X,
-  type LucideIcon,
 } from "lucide-react";
 import type {
   KeyboardEvent as ReactKeyboardEvent,
-  MouseEvent as ReactMouseEvent,
   ReactNode,
   RefCallback,
 } from "react";
@@ -159,10 +116,7 @@ import {
 } from "../../lib/composer-voice-input-shortcut.ts";
 import { ensurePushSubscription$ } from "../../lib/push-notifications.ts";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
-import {
-  connectorCatalogStatus$,
-  withConnectorCompletion,
-} from "../../signals/external/connectors.ts";
+import { withConnectorCompletion } from "../../signals/external/connectors.ts";
 import { modelCatalog$ } from "../../signals/external/model-catalog.ts";
 import { availableRunModels$ } from "../../signals/external/run-models.ts";
 import {
@@ -181,8 +135,6 @@ import {
   selectedComputerUseHostId,
   visibleComputerUseHosts,
 } from "../../signals/okou-page/computer-use-hosts.ts";
-import { resolveTemplatePickerCategory } from "../../signals/okou-page/chat-composer.ts";
-import { resetCustomTemplatePicker$ } from "../../signals/okou-page/custom-template-library.ts";
 import { resolveDefaultModelSelection } from "../../signals/okou-page/model-default-selection.ts";
 import { preferredChatReasoningEffort } from "../../signals/okou-page/model-reasoning-effort.ts";
 import {
@@ -221,7 +173,6 @@ import {
   type ModelProviderSelection,
 } from "./components/model-provider-picker.tsx";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
-import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import { CustomConnectorConnectDialog } from "./components/settings/custom-connector-connect-dialog.tsx";
 
 import type { ConnectorConnectHandlers } from "./components/settings/launch-connector-connect.ts";
@@ -238,18 +189,12 @@ import {
   defaultPresentationTemplateThemeId,
   presentationTemplateColorSystemId,
   toDocumentGenerationTemplate,
-  toIllustrationGenerationTemplate,
   toPresentationGenerationTemplate,
-  toWebsiteGenerationTemplate,
 } from "./composer-template-catalog.ts";
 import { ConnectorDirectoryDialog } from "./connector-directory-dialog.tsx";
-import { TemplateSourceSection } from "./template-source-section.tsx";
-import { CustomTemplatePickerSection } from "./custom-template-picker-pane.tsx";
+import { CustomTemplatePreviewSlot } from "./custom-template-preview-slot.tsx";
 import { ImageAnnotationEditor } from "./image-annotation-editor.tsx";
-import {
-  ComposerPaidToolNotice,
-  TemplatePaidToolNotice,
-} from "./paid-tool-notice.tsx";
+import { ComposerPaidToolNotice } from "./paid-tool-notice.tsx";
 import { ComputerUseDownloadDialog } from "./computer-use-download-dialog.tsx";
 import {
   contrastRatio,
@@ -260,20 +205,6 @@ import {
   ThreadRemoteAccessDialog,
   ThreadRemoteAccessSection,
 } from "./remote-access-controls.tsx";
-import { TemplateEmptyPanel } from "./template-empty-panel.tsx";
-import { TemplateFilterPillRow } from "./template-filter-pill.tsx";
-import {
-  TEMPLATE_CARD_SHADOW,
-  TEMPLATE_TILE_CAPTION,
-  TEMPLATE_TILE_MEDIA,
-  TEMPLATE_TILE_NAME,
-  TEMPLATE_TILE_PREVIEW_FOCUS,
-  TEMPLATE_TILE_SCRIM,
-  TEMPLATE_TILE_SELECTED,
-  TEMPLATE_TILE_SELECTION_FRAME,
-  TEMPLATE_TILE_USE,
-  TEMPLATE_TILE_WRAPPER,
-} from "./template-tile.ts";
 import { SCROLL_FADE_Y_WHEN_OVERFLOWING } from "./scroll-fade.ts";
 import {
   TEMPLATE_DETAIL_BODY,
@@ -287,10 +218,6 @@ import {
 import { TiptapWorkflowComposer } from "./tiptap-workflow-composer.tsx";
 import { VoiceLevelWaveform } from "./voice-level-waveform.tsx";
 import { WebsiteTemplatePreviewDialogSlot } from "./website-template-preview-dialog.tsx";
-import {
-  localizedWorkflowTemplate,
-  localizedWorkflowTemplateCategory,
-} from "./workflow-template-copy.ts";
 
 const COMPOSER_CONTROL_FOCUS_CLASS =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
@@ -320,8 +247,8 @@ interface ComposerComputerUseHost {
   status: "online" | "offline";
 }
 
-interface ComposerTemplatePicker {
-  readonly onChange: (value: GenerationTemplateRequest | undefined) => void;
+interface ComposerTemplateSelection {
+  readonly onChange: (value: GenerationTemplateRequest) => void;
 }
 
 interface ComposerComputerUse {
@@ -344,10 +271,6 @@ interface ComposerSubmitBlocker {
 }
 
 const TEMPLATE_CARD_PREVIEW_SIZE = { width: 480, height: 270 } as const;
-const TEMPLATE_HIGH_RESOLUTION_PREVIEW_SIZE = {
-  width: 708,
-  height: 398,
-} as const;
 const TEMPLATE_DETAIL_THUMBNAIL_PREVIEW_SIZE = {
   width: 224,
   height: 126,
@@ -355,17 +278,6 @@ const TEMPLATE_DETAIL_THUMBNAIL_PREVIEW_SIZE = {
 const PRESENTATION_GALLERY_PREVIEW_BASE_URL =
   "https://static.okou.io/web/assets/presentation-gallery/2026-07-04";
 const PRESENTATION_GALLERY_SLIDE_COUNT = 15;
-const ILLUSTRATION_EAGER_IMAGE_COUNT = 24;
-const ILLUSTRATION_CARD_PREVIEW_SIZE = {
-  width: 1024,
-  quality: 72,
-} as const;
-const ILLUSTRATION_VARIANT_THUMB_SIZE = {
-  width: 96,
-  height: 96,
-  fit: "cover",
-  quality: 65,
-} as const;
 const SELECTED_TEMPLATE_CHIP_PREVIEW_SIZE = {
   width: 40,
   height: 40,
@@ -633,467 +545,6 @@ function PendingItemsStrip({ signals }: { signals: ComposerSignals }) {
 // Connector sub-components
 // ---------------------------------------------------------------------------
 
-function isSelectedPresentationTemplate(
-  item: PresentationTemplateItem,
-  value: GenerationTemplateRequest | undefined,
-): boolean {
-  return (
-    value?.type === "presentation" &&
-    value.selection.templateId === item.templateId
-  );
-}
-
-function selectedPresentationTemplateItem(
-  value: GenerationTemplateRequest | undefined,
-): PresentationTemplateItem | undefined {
-  if (value?.type !== "presentation") {
-    return undefined;
-  }
-  return PRESENTATION_TEMPLATE_PICKER_ITEMS.find((item) => {
-    return isSelectedPresentationTemplate(item, value);
-  });
-}
-
-function isSelectedIllustrationTemplate(
-  item: IllustrationTemplateItem,
-  value: GenerationTemplateRequest | undefined,
-): boolean {
-  return (
-    value?.type === "illustration" &&
-    value.selection.illustrationStyleId === item.illustrationStyleId
-  );
-}
-
-function selectedIllustrationTemplateItem(
-  value: GenerationTemplateRequest | undefined,
-): IllustrationTemplateItem | undefined {
-  if (value?.type !== "illustration") {
-    return undefined;
-  }
-  return ILLUSTRATION_TEMPLATE_ITEMS.find((item) => {
-    return isSelectedIllustrationTemplate(item, value);
-  });
-}
-
-function isSelectedWorkflowTemplate(
-  item: WorkflowTemplateItem,
-  value: GenerationTemplateRequest | undefined,
-): boolean {
-  return (
-    value?.type === "workflow" && value.selection.workflowTemplateId === item.id
-  );
-}
-
-function toWorkflowGenerationTemplate(
-  item: WorkflowTemplateItem,
-): GenerationTemplateRequest {
-  return {
-    type: "workflow",
-    selection: { workflowTemplateId: item.id },
-  };
-}
-
-function selectedWorkflowTemplateItem(
-  value: GenerationTemplateRequest | undefined,
-): WorkflowTemplateItem | undefined {
-  if (value?.type !== "workflow") {
-    return undefined;
-  }
-  return findWorkflowTemplateItem(value.selection.workflowTemplateId);
-}
-
-function workflowTemplateMatchesSearch(
-  item: WorkflowTemplateItem,
-  query: string,
-): boolean {
-  const normalizedQuery = query.trim().toLowerCase();
-  if (!normalizedQuery) {
-    return true;
-  }
-  // Both wordings are searchable: the reader types in their own language, and
-  // connector names stay English in every locale.
-  const copy = localizedWorkflowTemplate(item);
-  const searchable = [
-    item.title,
-    item.id,
-    item.description,
-    copy.title,
-    copy.description,
-    item.connectorSlugs.join(" "),
-  ].join(" ");
-  return searchable.toLowerCase().includes(normalizedQuery);
-}
-
-function isSelectedWebsiteTemplate(
-  item: WebsiteTemplateItem,
-  value: GenerationTemplateRequest | undefined,
-): boolean {
-  return (
-    value?.type === "website" &&
-    findWebsiteTemplateItem(value.selection.websiteTemplateId)?.id === item.id
-  );
-}
-
-function selectedWebsiteTemplateItem(
-  value: GenerationTemplateRequest | undefined,
-): WebsiteTemplateItem | undefined {
-  if (value?.type !== "website") {
-    return undefined;
-  }
-  return findWebsiteTemplateItem(value.selection.websiteTemplateId);
-}
-
-function websiteTemplateCardImageUrl(item: WebsiteTemplateItem): string {
-  return r2ImageTransformUrl(item.previewImageUrl, TEMPLATE_CARD_PREVIEW_SIZE);
-}
-
-function WebsiteTemplateCard({
-  item,
-  selected,
-  onSelect,
-  onPreview,
-}: {
-  item: WebsiteTemplateItem;
-  selected: boolean;
-  onSelect: (item: WebsiteTemplateItem) => void;
-  onPreview: (item: WebsiteTemplateItem) => void;
-}) {
-  const { t } = useTranslation();
-  const previewImageUrl = websiteTemplateCardImageUrl(item);
-  const preview = () => {
-    onPreview(item);
-  };
-
-  return (
-    // Keep the full-card preview below the independent Use action locally.
-    <div
-      className={cn(
-        TEMPLATE_TILE_WRAPPER,
-        "rounded-xl cursor-zoom-in ring-offset-1 ring-offset-card has-[>button:focus-visible]:ring-2 has-[>button:focus-visible]:ring-ring",
-      )}
-    >
-      <button
-        type="button"
-        aria-label={t(
-          ($) => {
-            return $.artifacts.templates.previewWebsite;
-          },
-          {
-            title: item.title,
-          },
-        )}
-        onClick={preview}
-        className="absolute inset-0 z-10 cursor-zoom-in focus-visible:outline-none"
-      />
-      <div
-        className={cn(
-          TEMPLATE_TILE_SELECTION_FRAME,
-          selected && TEMPLATE_TILE_SELECTED,
-        )}
-      >
-        <div className={cn(TEMPLATE_TILE_MEDIA, "aspect-[16/9]")}>
-          <img
-            alt={t(
-              ($) => {
-                return $.artifacts.templates.websitePreview;
-              },
-              {
-                title: item.title,
-              },
-            )}
-            src={previewImageUrl}
-            loading="eager"
-            decoding="async"
-            fetchPriority="high"
-            draggable={false}
-            className="pointer-events-none h-full w-full bg-background object-cover"
-          />
-          <div
-            className={cn(
-              TEMPLATE_TILE_SCRIM,
-              "group-has-[:focus-visible]/tile:opacity-100",
-            )}
-          />
-          {selected ? (
-            <span className="pointer-events-none absolute left-[7px] top-[7px] z-20 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
-              <Check size={14} />
-            </span>
-          ) : null}
-          <button
-            type="button"
-            aria-label={t(
-              ($) => {
-                return $.artifacts.templates.selectWebsite;
-              },
-              {
-                title: item.title,
-              },
-            )}
-            aria-pressed={selected}
-            onClick={() => {
-              onSelect(item);
-            }}
-            className={cn(
-              TEMPLATE_TILE_USE,
-              "[@media(hover:hover)]:group-has-[:focus-visible]/tile:opacity-100",
-            )}
-          >
-            {t(($) => {
-              return $.artifacts.templates.use;
-            })}
-          </button>
-        </div>
-      </div>
-      <div className={TEMPLATE_TILE_CAPTION}>
-        <p className={TEMPLATE_TILE_NAME}>{item.title}</p>
-      </div>
-    </div>
-  );
-}
-
-function WebsiteTemplateGrid({
-  items,
-  value,
-  onSelect,
-  onPreview,
-}: {
-  items: readonly WebsiteTemplateItem[];
-  value: GenerationTemplateRequest | undefined;
-  onSelect: (item: WebsiteTemplateItem) => void;
-  onPreview: (item: WebsiteTemplateItem) => void;
-}) {
-  return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {items.map((item) => {
-        return (
-          <WebsiteTemplateCard
-            key={item.id}
-            item={item}
-            selected={isSelectedWebsiteTemplate(item, value)}
-            onSelect={onSelect}
-            onPreview={onPreview}
-          />
-        );
-      })}
-    </div>
-  );
-}
-
-function WorkflowTemplateConnectorIcons({
-  connectorSlugs,
-  compact = false,
-  limit = compact ? 3 : 5,
-  withDivider = false,
-}: {
-  connectorSlugs: readonly ConnectorSlug[];
-  compact?: boolean;
-  limit?: number;
-  withDivider?: boolean;
-}) {
-  const catalogConnectors = useLastResolved(
-    connectorCatalogStatus$,
-  )?.connectors;
-  const visibleConnectors = connectorSlugs.flatMap((connectorSlug) => {
-    const connector = catalogConnectors?.find((candidate) => {
-      return candidate.slug === connectorSlug;
-    });
-    return connector ? [connector] : [];
-  });
-  if (visibleConnectors.length === 0) {
-    return null;
-  }
-
-  const displayedConnectors = visibleConnectors.slice(0, limit);
-  const remainingCount = visibleConnectors.length - displayedConnectors.length;
-  return (
-    <>
-      {withDivider ? (
-        <span className="h-3.5 w-px shrink-0 bg-divider/70" />
-      ) : null}
-      <span
-        className={cn(
-          "flex min-w-0 items-center",
-          compact ? "gap-1" : "gap-1.5",
-        )}
-      >
-        {displayedConnectors.map((connector) => {
-          return (
-            <span
-              key={connector.slug}
-              className={cn(
-                "flex shrink-0 items-center justify-center border border-border/60 bg-background",
-                compact ? "h-5 w-5 rounded" : "h-7 w-7 rounded-md",
-              )}
-            >
-              <ConnectorIcon icon={connector.icon} size={compact ? 12 : 14} />
-            </span>
-          );
-        })}
-        {remainingCount > 0 ? (
-          <span
-            className={cn(
-              "flex shrink-0 items-center justify-center rounded border border-border/60 bg-background text-[10px] font-medium text-muted-foreground",
-              compact ? "h-5 min-w-5 px-1" : "h-7 min-w-7 px-1.5",
-            )}
-          >
-            +{remainingCount}
-          </span>
-        ) : null}
-      </span>
-    </>
-  );
-}
-
-function WorkflowTemplateCard({
-  item,
-  selected,
-  onSelect,
-}: {
-  item: WorkflowTemplateItem;
-  selected: boolean;
-  onSelect: (item: WorkflowTemplateItem) => void;
-}) {
-  const { t } = useTranslation();
-  const copy = localizedWorkflowTemplate(item);
-  return (
-    <div
-      className={cn(
-        "group/tile flex flex-col rounded-xl border border-border bg-card p-4",
-        TEMPLATE_CARD_SHADOW,
-        selected && "border-primary",
-      )}
-    >
-      <p className="text-sm font-semibold text-foreground">{copy.title}</p>
-      <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-        {copy.description}
-      </p>
-      <div className="mt-auto flex items-center gap-2 pt-3.5">
-        <WorkflowTemplateConnectorIcons
-          connectorSlugs={item.connectorSlugs}
-          limit={4}
-        />
-        <button
-          type="button"
-          aria-label={t(
-            ($) => {
-              return $.artifacts.templates.selectWorkflow;
-            },
-            {
-              title: copy.title,
-            },
-          )}
-          aria-pressed={selected}
-          onClick={() => {
-            onSelect(item);
-          }}
-          className={cn(
-            "ml-auto h-8 shrink-0 rounded-md border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            selected
-              ? "border-primary/40 bg-primary/10 text-selected-foreground"
-              : "border-border bg-background text-foreground hover:bg-state-hover",
-          )}
-        >
-          {t(($) => {
-            return $.artifacts.templates.use;
-          })}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// Resolves the workflow template tab's data in one place: the persona pills
-// present in the catalog, the active pill (falling back to "all"), and the
-// items after both the pill and the search filter. Kept out of
-// TemplatePickerDialog so that component stays under its complexity budget.
-function resolveWorkflowCatalog({
-  categoryFilter,
-  search,
-}: {
-  categoryFilter: string;
-  search: string;
-}): ResolvedWorkflowTemplateCatalog {
-  const pills = WORKFLOW_TEMPLATE_CATEGORIES.filter((categoryName) => {
-    return WORKFLOW_TEMPLATE_ITEMS.some((item) => {
-      return item.category === categoryName;
-    });
-  });
-  const active = pills.includes(categoryFilter) ? categoryFilter : "all";
-  const items = WORKFLOW_TEMPLATE_ITEMS.filter((item) => {
-    const matchesCategory = active === "all" || item.category === active;
-    return matchesCategory && workflowTemplateMatchesSearch(item, search);
-  });
-  return { pills, active, items };
-}
-
-interface ResolvedWorkflowTemplateCatalog {
-  pills: readonly string[];
-  active: string;
-  items: readonly WorkflowTemplateItem[];
-}
-
-// Persona pill filter for the workflow template tab, styled like the in-app
-// Ideas & Use Cases gallery: an "All" pill plus one pill per persona. The pill
-// treatment itself belongs to the shared filter row.
-function WorkflowTemplatePillRow({
-  pills,
-  active,
-  onSelect,
-}: {
-  pills: readonly string[];
-  active: string;
-  onSelect: (category: string) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <TemplateFilterPillRow
-      className="px-6"
-      active={active}
-      pills={[
-        {
-          id: "all",
-          label: t(($) => {
-            return $.artifacts.templates.all;
-          }),
-        },
-        ...pills.map((pill) => {
-          return { id: pill, label: localizedWorkflowTemplateCategory(pill) };
-        }),
-      ]}
-      onSelect={onSelect}
-    />
-  );
-}
-
-// Renders the (already search + pill filtered) templates as a flat grid.
-// Categorization is handled by the persona pill row above, so there are no
-// per-persona section headers — items stay in catalog order (General first)
-// so related cards still cluster.
-function WorkflowTemplateGrid({
-  items,
-  value,
-  onSelect,
-}: {
-  items: readonly WorkflowTemplateItem[];
-  value: GenerationTemplateRequest | undefined;
-  onSelect: (item: WorkflowTemplateItem) => void;
-}) {
-  return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {items.map((item) => {
-        return (
-          <WorkflowTemplateCard
-            key={item.id}
-            item={item}
-            selected={isSelectedWorkflowTemplate(item, value)}
-            onSelect={onSelect}
-          />
-        );
-      })}
-    </div>
-  );
-}
-
 function presentationTemplateSlideCount(
   item: PresentationTemplateItem,
 ): number {
@@ -1110,28 +561,13 @@ function presentationTemplateThemedCardPreviewSource(
   return item.cardPreviewImagesByTheme[theme.id] ?? item.cardPreviewImage;
 }
 
-function presentationTemplateCardSlideImage(
+function presentationTemplateCoverImage(
   item: PresentationTemplateItem,
-  index: number,
   theme?: PresentationTemplateThemeOption,
   size: TemplatePreviewImageSize = TEMPLATE_CARD_PREVIEW_SIZE,
 ): string {
-  if (index === 0) {
-    return r2ImageTransformUrl(
-      presentationTemplateThemedCardPreviewSource(item, theme),
-      size,
-    );
-  }
-  return presentationTemplateGallerySlideImage(item, index, size);
-}
-
-function presentationTemplateGallerySlideImage(
-  item: PresentationTemplateItem,
-  index: number,
-  size: TemplatePreviewImageSize = TEMPLATE_CARD_PREVIEW_SIZE,
-): string {
   return r2ImageTransformUrl(
-    presentationTemplateGallerySlideUrl(item, index),
+    presentationTemplateThemedCardPreviewSource(item, theme),
     size,
   );
 }
@@ -1146,18 +582,6 @@ function presentationTemplateGallerySlideUrl(
   );
   const slideNumber = String(safeIndex + 1).padStart(3, "0");
   return `${PRESENTATION_GALLERY_PREVIEW_BASE_URL}/${item.slug}/slide-${slideNumber}.webp`;
-}
-
-function presentationTemplateHighResolutionSlideImage(
-  item: PresentationTemplateItem,
-  index: number,
-  theme: PresentationTemplateThemeOption,
-  size: TemplatePreviewImageSize = TEMPLATE_HIGH_RESOLUTION_PREVIEW_SIZE,
-): string {
-  if (index === 0) {
-    return presentationTemplateCardSlideImage(item, index, theme, size);
-  }
-  return presentationTemplateGallerySlideImage(item, index, size);
 }
 
 function presentationTemplateDetailSlideImageSource(
@@ -1633,16 +1057,6 @@ function presentationTemplateAccentSwatchColor(
   return { id: "accent", color: theme.colors[4] };
 }
 
-function presentationTemplateThemeAccentSwatches(
-  item: PresentationTemplateItem,
-  theme: PresentationTemplateThemeOption,
-): readonly { readonly color: string; readonly id: string }[] {
-  return [
-    { id: "background", color: theme.colors[0] },
-    presentationTemplateAccentSwatchColor(item, theme),
-  ];
-}
-
 function presentationTemplateThemeCss(
   theme: PresentationTemplateThemeOption,
 ): string {
@@ -1809,160 +1223,6 @@ function PresentationTemplateHtmlFrame({
   );
 }
 
-function PresentationTemplateTitleTooltip({
-  title,
-  children,
-}: {
-  title: string;
-  children: ReactNode;
-}) {
-  return (
-    <TooltipProvider delay={300}>
-      <Tooltip>
-        {children}
-        {/* The preview button already includes the full title in its name. */}
-        <TooltipContent side="bottom" className="break-words" aria-hidden>
-          {title}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
-}
-
-function TemplatePreview({
-  item,
-  onPreview,
-  signals,
-  theme,
-}: {
-  item: PresentationTemplateItem;
-  onPreview: (item: PresentationTemplateItem, slideIndex?: number) => void;
-  signals: ComposerSignals;
-  theme?: PresentationTemplateThemeOption;
-}) {
-  const { t } = useTranslation();
-  const previewId = useGet(signals.template.previewTemplateId$);
-  const selection = useGet(signals.template.previewTemplateSelection$);
-  const template = useLoadable(signals.template.previewTemplate$);
-  const html = useLoadable(signals.template.previewTemplateHtml$);
-  const selectPreview = useSet(signals.template.selectPreviewTemplate$);
-  const clearPreview = useSet(signals.template.clearPreviewTemplate$);
-  const restorePreviewTrigger = useSet(
-    signals.template.restoreTemplatePreviewTriggerRef$,
-  );
-  const active = previewId === item.slug;
-  const loadedTemplate =
-    template.state === "hasData" && template.data?.item.slug === item.slug
-      ? template.data
-      : null;
-  const slideCount =
-    loadedTemplate?.draft.slides.length ?? presentationTemplateSlideCount(item);
-  const slideIndex = active
-    ? Math.min(selection?.index ?? 0, slideCount - 1)
-    : 0;
-  const previewTheme =
-    theme ??
-    findPresentationTemplateTheme(defaultPresentationTemplateThemeId(item));
-  const selectSlide = (index: number) => {
-    selectPreview({
-      item,
-      index,
-      themeId: previewTheme.id,
-      themeCss: presentationTemplateThemeCss(previewTheme),
-    });
-  };
-  const handleMouseMove = (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (!active || loadedTemplate === null || slideCount < 2) {
-      return;
-    }
-    const rect = event.currentTarget.getBoundingClientRect();
-    if (rect.width <= 0) {
-      return;
-    }
-    const offsetX = Math.min(
-      rect.width - 1,
-      Math.max(0, event.clientX - rect.left),
-    );
-    const index = Math.min(
-      slideCount - 1,
-      Math.round((offsetX / rect.width) * (slideCount - 1)),
-    );
-    if (index !== slideIndex) {
-      selectSlide(index);
-    }
-  };
-  return (
-    <div
-      aria-busy={active && template.state === "loading"}
-      className="relative aspect-[16/9] shrink-0 overflow-hidden bg-muted"
-      onMouseEnter={() => {
-        selectSlide(0);
-      }}
-      onMouseMove={handleMouseMove}
-      onMouseLeave={clearPreview}
-    >
-      <ProgressiveTemplatePreviewImage
-        alt=""
-        className="pointer-events-none absolute inset-0 h-full w-full object-cover"
-        fetchPriority="high"
-        highResolutionUrl={presentationTemplateHighResolutionSlideImage(
-          item,
-          slideIndex,
-          previewTheme,
-          TEMPLATE_HIGH_RESOLUTION_PREVIEW_SIZE,
-        )}
-        lowResolutionUrl={presentationTemplateCardSlideImage(
-          item,
-          slideIndex,
-          previewTheme,
-        )}
-      />
-      <PresentationTemplateHtmlFrame
-        html={
-          active && slideIndex > 0 && html.state === "hasData"
-            ? html.data
-            : null
-        }
-        title={t(
-          ($) => {
-            return $.artifacts.templates.activeHtmlPreview;
-          },
-          {
-            title: item.title,
-          },
-        )}
-        dataTestId={`${item.title} card HTML preview`}
-      />
-      {active && template.state === "loading" ? (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-0.5 overflow-hidden bg-muted">
-          <div className="h-full w-1/3 animate-pulse bg-muted-foreground/40" />
-        </div>
-      ) : null}
-      <TooltipTrigger
-        render={
-          <button
-            ref={restorePreviewTrigger}
-            data-template-preview-id={`built-in:${item.slug}`}
-            type="button"
-            aria-label={t(
-              ($) => {
-                return $.artifacts.templates.previewCurrentSlide;
-              },
-              {
-                title: item.title,
-              },
-            )}
-            className="absolute inset-0 z-10 cursor-zoom-in bg-transparent focus-visible:outline-none"
-            onClick={() => {
-              onPreview(item, slideIndex);
-            }}
-          />
-        }
-      />
-    </div>
-  );
-}
-
 function templateDetailPreviewMatchesItem(
   preview: {
     readonly embedUrl: string;
@@ -1990,7 +1250,7 @@ function TemplatePreviewPage({
     signals.template.openedTemplateSlideDocuments$,
   );
   const setThemedFrameRef = useSet(signals.template.setOpenedTemplateFrameRef$);
-  const setCardThemeId = useSet(signals.template.setTemplateCardThemeId$);
+  const setTheme = useSet(signals.template.setPresentationTemplateTheme$);
   const selectDetailPreview = useSet(signals.template.selectOpenedTemplate$);
   const visibleDetailPreview = templateDetailPreviewMatchesItem(
     detailPreview,
@@ -2148,7 +1408,7 @@ function TemplatePreviewPage({
             },
           )}
           onClick={() => {
-            setCardThemeId(item.slug, selectedTheme.id);
+            setTheme(item.slug, selectedTheme.id);
             onSelect(item, presentationTemplateColorSystemId(selectedTheme.id));
           }}
         >
@@ -2403,716 +1663,6 @@ function TemplateDetailThemeList({
   );
 }
 
-function PptCard({
-  item,
-  selected,
-  onSelect,
-  onPreview,
-  signals,
-}: {
-  item: PresentationTemplateItem;
-  selected: boolean;
-  onSelect: (item: PresentationTemplateItem, colorSystemId?: string) => void;
-  onPreview: (item: PresentationTemplateItem, slideIndex?: number) => void;
-  signals: ComposerSignals;
-}) {
-  const { t } = useTranslation();
-  const themeIdBySlug = useGet(signals.template.templateCardThemeIdBySlug$);
-  const selectedTheme = findPresentationTemplateTheme(
-    themeIdBySlug[item.slug] ?? defaultPresentationTemplateThemeId(item),
-  );
-
-  return (
-    <PresentationTemplateTitleTooltip title={item.title}>
-      <div className={TEMPLATE_TILE_WRAPPER}>
-        <div
-          className={cn(
-            TEMPLATE_TILE_SELECTION_FRAME,
-            TEMPLATE_TILE_PREVIEW_FOCUS,
-            selected && TEMPLATE_TILE_SELECTED,
-          )}
-        >
-          <div className={TEMPLATE_TILE_MEDIA}>
-            <TemplatePreview
-              item={item}
-              onPreview={onPreview}
-              signals={signals}
-              theme={selectedTheme}
-            />
-            <div className={TEMPLATE_TILE_SCRIM} />
-            {selected ? (
-              <span className="pointer-events-none absolute left-[7px] top-[7px] z-20 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                <Check size={14} />
-              </span>
-            ) : null}
-            <button
-              type="button"
-              aria-label={t(
-                ($) => {
-                  return $.artifacts.templates.selectTemplate;
-                },
-                {
-                  title: item.title,
-                },
-              )}
-              aria-pressed={selected}
-              onClick={() => {
-                onSelect(
-                  item,
-                  presentationTemplateColorSystemId(selectedTheme.id),
-                );
-              }}
-              className={TEMPLATE_TILE_USE}
-            >
-              {t(($) => {
-                return $.artifacts.templates.use;
-              })}
-            </button>
-          </div>
-        </div>
-        <div className={TEMPLATE_TILE_CAPTION}>
-          <TooltipTrigger
-            render={
-              <p className={cn(TEMPLATE_TILE_NAME, "cursor-default")}>
-                {item.title}
-              </p>
-            }
-          />
-          <span className="ml-auto flex shrink-0 items-center gap-1">
-            {presentationTemplateThemeAccentSwatches(item, selectedTheme).map(
-              (swatch) => {
-                return (
-                  <span
-                    key={swatch.id}
-                    aria-hidden
-                    className="h-3 w-3 rounded-full ring-1 ring-inset ring-black/10"
-                    style={{ backgroundColor: swatch.color }}
-                  />
-                );
-              },
-            )}
-          </span>
-        </div>
-      </div>
-    </PresentationTemplateTitleTooltip>
-  );
-}
-
-function IllustrationTemplateHero({
-  item,
-  images,
-  activeIndex,
-  priority = false,
-  source,
-  onVariantChange,
-}: {
-  item: IllustrationTemplateItem;
-  images: readonly string[];
-  activeIndex: number;
-  priority?: boolean;
-  source: string;
-  onVariantChange: (slug: string, index: number) => void;
-}) {
-  const { t } = useTranslation();
-  const heroImage = illustrationHeroImageUrl(source);
-  const navigable = images.length > 1;
-  const variantAt = (direction: -1 | 1): number => {
-    return (activeIndex + direction + images.length) % images.length;
-  };
-
-  return (
-    <div
-      className="relative w-full overflow-hidden bg-muted"
-      style={{ aspectRatio: `${String(item.width)} / ${String(item.height)}` }}
-    >
-      <img
-        key={source}
-        src={heroImage}
-        alt={t(
-          ($) => {
-            return $.artifacts.templates.illustrationPreview;
-          },
-          {
-            title: item.title,
-          },
-        )}
-        className={cn(
-          "absolute inset-0 h-full w-full object-cover",
-          // Same affordance the detail preview uses for slide paging: the
-          // cursor points at the half that will be navigated to.
-          navigable &&
-            "data-[half=left]:cursor-w-resize data-[half=right]:cursor-e-resize",
-        )}
-        loading={priority ? "eager" : "lazy"}
-        decoding="async"
-        fetchPriority={priority ? "high" : "low"}
-        onMouseMove={
-          navigable
-            ? (event) => {
-                const rect = event.currentTarget.getBoundingClientRect();
-                event.currentTarget.dataset.half =
-                  event.clientX - rect.left < rect.width / 2 ? "left" : "right";
-              }
-            : undefined
-        }
-        onMouseLeave={
-          navigable
-            ? (event) => {
-                delete event.currentTarget.dataset.half;
-              }
-            : undefined
-        }
-        onClick={
-          navigable
-            ? (event) => {
-                // Navigate by clicking the image halves instead of overlay
-                // buttons, so the native context menu (copy image) stays usable.
-                const rect = event.currentTarget.getBoundingClientRect();
-                const direction =
-                  event.clientX - rect.left < rect.width / 2 ? -1 : 1;
-                onVariantChange(item.slug, variantAt(direction));
-              }
-            : undefined
-        }
-        onLoad={(event) => {
-          event.currentTarget.parentElement
-            ?.querySelector<HTMLElement>("[data-illustration-preview-error]")
-            ?.setAttribute("hidden", "");
-        }}
-        onError={(event) => {
-          event.currentTarget.parentElement
-            ?.querySelector<HTMLElement>("[data-illustration-preview-error]")
-            ?.removeAttribute("hidden");
-        }}
-      />
-      <div
-        data-illustration-preview-error=""
-        hidden
-        className="absolute inset-0 flex items-center justify-center bg-muted text-muted-foreground"
-      >
-        <LayoutTemplate size={28} />
-      </div>
-    </div>
-  );
-}
-
-function illustrationHeroImageUrl(source: string): string {
-  return r2ImageTransformUrl(source, ILLUSTRATION_CARD_PREVIEW_SIZE);
-}
-
-type IllustrationThumbnailScrollDirection = -1 | 1;
-
-const ILLUSTRATION_THUMBNAIL_REVEAL_COUNT = 2;
-const ILLUSTRATION_THUMBNAIL_EDGE_TOLERANCE_PX = 1;
-
-type IllustrationThumbnailScrollTarget = {
-  element: HTMLElement;
-  targetIsBoundary: boolean;
-};
-
-function illustrationThumbnailScrollTarget(
-  node: HTMLElement,
-  direction: IllustrationThumbnailScrollDirection,
-): IllustrationThumbnailScrollTarget {
-  let target = node;
-  for (let i = 0; i < ILLUSTRATION_THUMBNAIL_REVEAL_COUNT; i += 1) {
-    const sibling =
-      direction > 0 ? target.nextElementSibling : target.previousElementSibling;
-    if (!(sibling instanceof HTMLElement)) {
-      return {
-        element: target,
-        targetIsBoundary: true,
-      };
-    }
-    target = sibling;
-  }
-  const boundarySibling =
-    direction > 0 ? target.nextElementSibling : target.previousElementSibling;
-  return {
-    element: target,
-    targetIsBoundary: !(boundarySibling instanceof HTMLElement),
-  };
-}
-
-function maxIllustrationThumbnailScrollLeft(
-  thumbnailStrip: HTMLElement,
-): number {
-  return Math.max(0, thumbnailStrip.scrollWidth - thumbnailStrip.clientWidth);
-}
-
-function scrollIllustrationThumbnailIntoView(
-  node: HTMLButtonElement | null,
-  direction: IllustrationThumbnailScrollDirection,
-): void {
-  if (node === null) {
-    return;
-  }
-
-  const thumbnailStrip = node.closest<HTMLElement>(
-    "[data-illustration-variant-strip]",
-  );
-  if (thumbnailStrip === null) {
-    return;
-  }
-
-  const { element: target, targetIsBoundary } =
-    illustrationThumbnailScrollTarget(node, direction);
-
-  if (direction < 0) {
-    if (targetIsBoundary) {
-      if (thumbnailStrip.scrollLeft > 0) {
-        thumbnailStrip.scrollTo({
-          left: 0,
-        });
-      }
-      return;
-    }
-
-    const thumbnailStripRect = thumbnailStrip.getBoundingClientRect();
-    const targetRect = target.getBoundingClientRect();
-    const leftOverflow = thumbnailStripRect.left - targetRect.left;
-    if (leftOverflow > 0) {
-      thumbnailStrip.scrollTo({
-        left: Math.max(0, thumbnailStrip.scrollLeft - leftOverflow),
-      });
-    }
-    return;
-  }
-
-  if (targetIsBoundary) {
-    const maxScrollLeft = maxIllustrationThumbnailScrollLeft(thumbnailStrip);
-    if (thumbnailStrip.scrollLeft < maxScrollLeft) {
-      thumbnailStrip.scrollTo({
-        left: maxScrollLeft,
-      });
-    }
-    return;
-  }
-
-  const thumbnailStripRect = thumbnailStrip.getBoundingClientRect();
-  const targetRect = target.getBoundingClientRect();
-  const rightOverflow = targetRect.right - thumbnailStripRect.right;
-  if (rightOverflow > 0) {
-    thumbnailStrip.scrollTo({
-      left: Math.max(0, thumbnailStrip.scrollLeft + rightOverflow),
-    });
-  }
-}
-
-function activeIllustrationThumbnailScrollDirection(
-  node: HTMLButtonElement,
-): IllustrationThumbnailScrollDirection | null {
-  const thumbnailStrip = node.closest<HTMLElement>(
-    "[data-illustration-variant-strip]",
-  );
-  if (thumbnailStrip === null) {
-    return null;
-  }
-
-  const thumbnailStripRect = thumbnailStrip.getBoundingClientRect();
-  const thumbnailRect = node.getBoundingClientRect();
-  const maxScrollLeft = maxIllustrationThumbnailScrollLeft(thumbnailStrip);
-
-  if (
-    thumbnailRect.right >=
-      thumbnailStripRect.right - ILLUSTRATION_THUMBNAIL_EDGE_TOLERANCE_PX &&
-    (node.nextElementSibling instanceof HTMLElement ||
-      thumbnailStrip.scrollLeft < maxScrollLeft)
-  ) {
-    return 1;
-  }
-
-  if (
-    thumbnailRect.left <=
-      thumbnailStripRect.left + ILLUSTRATION_THUMBNAIL_EDGE_TOLERANCE_PX &&
-    (node.previousElementSibling instanceof HTMLElement ||
-      thumbnailStrip.scrollLeft > 0)
-  ) {
-    return -1;
-  }
-
-  return null;
-}
-
-function IllustrationTemplateCard({
-  item,
-  selected,
-  activeIndex,
-  priority = false,
-  onSelect,
-  onVariantChange,
-}: {
-  item: IllustrationTemplateItem;
-  selected: boolean;
-  activeIndex: number;
-  priority?: boolean;
-  onSelect: (item: IllustrationTemplateItem) => void;
-  onVariantChange: (slug: string, index: number) => void;
-}) {
-  const { t } = useTranslation();
-  const images = item.previewImages;
-  const safeIndex = Math.max(0, Math.min(activeIndex, images.length - 1));
-  const heroSource = images[safeIndex] ?? item.previewImage;
-  const hasMultipleVariants = images.length > 1;
-
-  return (
-    <div
-      className={cn(
-        "isolate mb-4 break-inside-avoid supports-[display:grid-lanes]:mb-0 supports-[display:grid-lanes]:break-inside-auto",
-        TEMPLATE_TILE_SELECTION_FRAME,
-        selected && TEMPLATE_TILE_SELECTED,
-      )}
-    >
-      <div
-        className={cn(
-          "group/tile overflow-hidden rounded-xl border border-border bg-card",
-          TEMPLATE_CARD_SHADOW,
-        )}
-      >
-        <IllustrationTemplateHero
-          item={item}
-          images={images}
-          activeIndex={safeIndex}
-          priority={priority}
-          source={heroSource}
-          onVariantChange={onVariantChange}
-        />
-        {hasMultipleVariants && (
-          <div
-            data-illustration-variant-strip=""
-            className="flex items-center gap-2 overflow-x-auto px-3 pt-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          >
-            {images.map((image, index) => {
-              const active = index === safeIndex;
-              const thumbnailImage = r2ImageTransformUrl(
-                image,
-                ILLUSTRATION_VARIANT_THUMB_SIZE,
-              );
-              return (
-                <button
-                  key={image}
-                  type="button"
-                  aria-label={t(
-                    ($) => {
-                      return $.artifacts.templates.showVariant;
-                    },
-                    {
-                      variantNumber: index + 1,
-                    },
-                  )}
-                  aria-pressed={active}
-                  className={cn(
-                    "relative h-12 w-12 shrink-0 overflow-hidden rounded-md border-(length:--border-width-emphasis) bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                    active ? "border-primary" : "border-border",
-                  )}
-                  onClick={(event) => {
-                    onVariantChange(item.slug, index);
-                    const scrollDirection = active
-                      ? activeIllustrationThumbnailScrollDirection(
-                          event.currentTarget,
-                        )
-                      : index > safeIndex
-                        ? 1
-                        : -1;
-                    if (scrollDirection !== null) {
-                      scrollIllustrationThumbnailIntoView(
-                        event.currentTarget,
-                        scrollDirection,
-                      );
-                    }
-                  }}
-                >
-                  <img
-                    src={thumbnailImage}
-                    alt=""
-                    className="h-full w-full object-cover"
-                    loading="lazy"
-                  />
-                </button>
-              );
-            })}
-          </div>
-        )}
-        <div className="flex items-center justify-between gap-3 px-3.5 py-3">
-          <p className="min-w-0 truncate text-sm font-semibold text-foreground">
-            {item.title}
-          </p>
-          <button
-            type="button"
-            aria-label={t(
-              ($) => {
-                return $.artifacts.templates.selectTemplate;
-              },
-              {
-                title: item.title,
-              },
-            )}
-            aria-pressed={selected}
-            onClick={() => {
-              onSelect(item);
-            }}
-            className={cn(
-              "h-8 shrink-0 rounded-md border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              selected
-                ? "border-primary/40 bg-primary/10 text-selected-foreground"
-                : "border-border bg-background text-foreground hover:bg-state-hover",
-            )}
-          >
-            {t(($) => {
-              return $.artifacts.templates.use;
-            })}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function TemplatePickerCategoryNav({
-  selectedCategory,
-  onChange,
-}: {
-  selectedCategory: string;
-  onChange: (value: string) => void;
-}) {
-  const { t } = useTranslation();
-  const categoryOptions: {
-    value: string;
-    label: string;
-    Icon: LucideIcon;
-  }[] = [
-    {
-      value: "slides",
-      label: t(($) => {
-        return $.artifacts.kinds.presentation;
-      }),
-      Icon: Presentation,
-    },
-    {
-      value: "document",
-      label: t(($) => {
-        return $.documentTemplates.title;
-      }),
-      Icon: FileText,
-    },
-    {
-      value: "website",
-      label: t(($) => {
-        return $.artifacts.templates.website;
-      }),
-      Icon: Globe,
-    },
-    {
-      value: "illustration",
-      label: t(($) => {
-        return $.artifacts.kinds.image;
-      }),
-      Icon: ImageIcon,
-    },
-    {
-      value: "workflow",
-      label: t(($) => {
-        return $.artifacts.templates.workflow;
-      }),
-      Icon: Route,
-    },
-  ];
-
-  const categoryItems = categoryOptions.map(({ value, label, Icon }) => {
-    return {
-      value,
-      label: (
-        <span className="flex items-center gap-2">
-          <Icon className="h-4 w-4" />
-          {label}
-        </span>
-      ),
-    };
-  });
-
-  return (
-    <>
-      <div className="shrink-0 border-b border-border bg-gray-50 px-4 pb-4 pr-14 pt-4 sm:hidden">
-        <Select
-          items={categoryItems}
-          value={selectedCategory}
-          onValueChange={(value, details) => {
-            if (
-              value === null ||
-              !categoryItems.some((item) => {
-                return item.value === value;
-              })
-            ) {
-              details.cancel();
-              return;
-            }
-            onChange(value);
-          }}
-        >
-          <SelectTrigger
-            data-template-picker-category-select=""
-            aria-label={t(($) => {
-              return $.artifacts.templates.category;
-            })}
-            className="h-9 w-full bg-card"
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {categoryItems.map(({ value, label }) => {
-              return (
-                <SelectItem key={value} value={value}>
-                  {label}
-                </SelectItem>
-              );
-            })}
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="hidden shrink-0 sm:flex">
-        <div className="flex w-56 shrink-0 flex-col border-r border-border bg-card">
-          <TemplatePickerHeader />
-          <TabsList
-            activateOnFocus
-            aria-label={t(($) => {
-              return $.artifacts.templates.categories;
-            })}
-            data-template-picker-sidebar=""
-            className="flex h-auto min-h-0 flex-1 flex-col items-stretch justify-start gap-0.5 overflow-y-auto rounded-none bg-transparent p-0 px-3 pb-3"
-          >
-            {categoryOptions.map(({ value, label, Icon }) => {
-              return (
-                <TabsTrigger
-                  key={value}
-                  value={value}
-                  className="group h-9 w-full justify-start gap-2.5 rounded-lg px-2.5 text-left font-normal leading-5 text-gray-800 data-active:bg-state-selected data-active:font-medium data-active:text-foreground data-active:!shadow-none focus-visible:ring-inset"
-                >
-                  <Icon
-                    className={cn(
-                      "h-4 w-4 shrink-0 transition-colors",
-                      value === selectedCategory
-                        ? "text-foreground"
-                        : "text-gray-700 group-hover:text-gray-800",
-                    )}
-                  />
-                  <span className="truncate">{label}</span>
-                </TabsTrigger>
-              );
-            })}
-          </TabsList>
-        </div>
-      </div>
-    </>
-  );
-}
-
-function TemplatePickerHeader() {
-  const { t } = useTranslation();
-  return (
-    <header className="flex h-[68px] shrink-0 items-center px-5">
-      <h2 className="text-lg font-semibold leading-6 tracking-tight text-foreground">
-        {t(($) => {
-          return $.artifacts.templates.template;
-        })}
-      </h2>
-    </header>
-  );
-}
-
-/**
- * Every category names itself above its grid, in the rail's own words, so no
- * tab opens onto a bare header band while its neighbours carry a title.
- */
-function TemplatePickerCategoryTitle({ category }: { category: string }) {
-  const { t } = useTranslation();
-  const titles: Record<string, string> = {
-    slides: t(($) => {
-      return $.artifacts.kinds.presentation;
-    }),
-    document: t(($) => {
-      return $.documentTemplates.title;
-    }),
-    website: t(($) => {
-      return $.artifacts.templates.website;
-    }),
-    illustration: t(($) => {
-      return $.artifacts.kinds.image;
-    }),
-    workflow: t(($) => {
-      return $.artifacts.templates.workflow;
-    }),
-  };
-  return (
-    <h2 className="mr-auto hidden text-base font-semibold sm:block">
-      {titles[category]}
-    </h2>
-  );
-}
-
-function TemplatePickerSearch({
-  search,
-  onSearchChange,
-}: {
-  search: string;
-  onSearchChange: (value: string) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div className="relative min-w-0 flex-1 sm:w-56 sm:flex-none">
-      <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          aria-label={t(($) => {
-            return $.artifacts.templates.searchConnectors;
-          })}
-          className="h-9 pl-9 text-sm"
-          value={search}
-          onChange={(event) => {
-            onSearchChange(event.target.value);
-          }}
-          placeholder={t(($) => {
-            return $.artifacts.templates.searchConnector;
-          })}
-        />
-      </div>
-    </div>
-  );
-}
-
-function IllustrationTemplateGrid({
-  items,
-  value,
-  variantIndexBySlug,
-  onSelect,
-  onVariantChange,
-}: {
-  items: readonly IllustrationTemplateItem[];
-  value: GenerationTemplateRequest | undefined;
-  variantIndexBySlug: Readonly<Record<string, number>>;
-  onSelect: (item: IllustrationTemplateItem) => void;
-  onVariantChange: (slug: string, index: number) => void;
-}) {
-  // Grid Lanes keeps native-aspect cards out of multi-column fragmentation in
-  // Safari 26.4+. Other browsers retain the existing multi-column layout.
-  return (
-    <div className="columns-[244px] gap-4 supports-[display:grid-lanes]:shrink-0 supports-[display:grid-lanes]:columns-auto supports-[display:grid-lanes]:grid-cols-[repeat(auto-fill,minmax(min(244px,100%),1fr))] supports-[display:grid-lanes]:[display:grid-lanes]">
-      {items.map((item, index) => {
-        return (
-          <IllustrationTemplateCard
-            key={item.illustrationStyleId}
-            item={item}
-            selected={isSelectedIllustrationTemplate(item, value)}
-            activeIndex={variantIndexBySlug[item.slug] ?? 0}
-            priority={index < ILLUSTRATION_EAGER_IMAGE_COUNT}
-            onSelect={onSelect}
-            onVariantChange={onVariantChange}
-          />
-        );
-      })}
-    </div>
-  );
-}
-
 /**
  * Hands the chosen file to the composer, which attaches it, sends it, and
  * navigates into the new thread. Importing is the ordinary chat path with the
@@ -3128,12 +1678,10 @@ export function TemplateImportCard({
   signals,
   onImported,
   kind = "presentation",
-  compact = false,
 }: {
   signals: ComposerSignals;
   onImported: () => void;
   kind?: UserTemplateKind;
-  compact?: boolean;
 }) {
   const { t } = useTranslation();
   const rootSignal = useGet(rootSignal$);
@@ -3193,72 +1741,23 @@ export function TemplateImportCard({
       }}
     />
   );
-  if (compact) {
-    // On a shelf the import tile is one template card among the covers: the
-    // same frame and one-line caption, so it never stands taller than its row.
-    // A second caption line made it 32px taller, and on the document shelf --
-    // where it shows under Custom only -- switching filters grew and shrank the
-    // shelf, which moved the whole centred page under the pointer. The
-    // accepted formats sit inside the frame, under the plus, so the member
-    // still sees what the tile takes before choosing a file. It has no picture
-    // to bring closer, so the plus also takes the ink under the pointer.
-    return (
-      <label
-        data-presentation-template-import={
-          kind === "presentation" ? "" : undefined
-        }
-        className={cn(
-          TEMPLATE_CARD,
-          "ring-offset-background has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-offset-2",
-        )}
-      >
-        <TemplateCardFace title={label} ratio={ratio} className="bg-muted/40">
-          <span className="flex flex-col items-center justify-center gap-1.5 px-2 text-muted-foreground transition-colors duration-150 group-hover/tile:text-foreground">
-            <Plus className="size-8" strokeWidth={1.5} aria-hidden />
-            <span className="max-w-full truncate text-xs">{hints[kind]}</span>
-          </span>
-        </TemplateCardFace>
-        {input}
-      </label>
-    );
-  }
   return (
     <label
       data-presentation-template-import={
         kind === "presentation" ? "" : undefined
       }
-      className={TEMPLATE_TILE_WRAPPER}
+      className={cn(
+        TEMPLATE_CARD,
+        "ring-offset-background has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-offset-2",
+      )}
     >
-      <span
-        className={cn(
-          TEMPLATE_TILE_MEDIA,
-          "block bg-muted/40 transition-colors duration-150 group-hover/tile:bg-muted/60 group-active/tile:bg-muted/80 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-inset has-[:focus-visible]:ring-ring",
-          ratio,
-        )}
-      >
-        <Plus
-          className="absolute left-1/2 top-1/2 size-10 -translate-x-1/2 -translate-y-1/2 text-muted-foreground transition-colors duration-150 group-hover/tile:text-foreground"
-          strokeWidth={1.5}
-          aria-hidden
-        />
-        {input}
-      </span>
-      <span
-        className={cn(TEMPLATE_TILE_CAPTION, "flex-col items-stretch gap-0.5")}
-      >
-        <span
-          className={cn(
-            TEMPLATE_TILE_NAME,
-            (kind === "illustration" || kind === "document") &&
-              "whitespace-normal",
-          )}
-        >
-          {label}
+      <TemplateCardFace title={label} ratio={ratio} className="bg-muted/40">
+        <span className="flex flex-col items-center justify-center gap-1.5 px-2 text-muted-foreground transition-colors duration-150 group-hover/tile:text-foreground">
+          <Plus className="size-8" strokeWidth={1.5} aria-hidden />
+          <span className="max-w-full truncate text-xs">{hints[kind]}</span>
         </span>
-        <span className="shrink-0 truncate text-xs text-muted-foreground">
-          {hints[kind]}
-        </span>
-      </span>
+      </TemplateCardFace>
+      {input}
     </label>
   );
 }
@@ -3289,7 +1788,7 @@ export function ComposerPresentationRecommendations({
   readonly signals: ComposerSignals;
 }) {
   const { t } = useTranslation();
-  const picker = useComposerTemplatePicker(signals);
+  const selection = useComposerTemplateSelection(signals);
   const custom = useCustomTemplateRecommendations(signals, "presentation");
   const builtIn = PRESENTATION_TEMPLATE_PICKER_ITEMS;
   const previewRecommendation = useSet(signals.template.previewRecommendation$);
@@ -3313,7 +1812,6 @@ export function ComposerPresentationRecommendations({
           <TemplateImportCard
             key="import"
             signals={signals}
-            compact
             onImported={() => {
               setMode(null);
             }}
@@ -3331,7 +1829,7 @@ export function ComposerPresentationRecommendations({
                   });
                 }}
                 onSelect={() => {
-                  picker.onChange({
+                  selection.onChange({
                     type: "custom",
                     selection: { userTemplateId: template.id },
                   });
@@ -3364,11 +1862,11 @@ export function ComposerPresentationRecommendations({
                   });
                 }}
                 onSelect={() => {
-                  picker.onChange(toPresentationGenerationTemplate(item));
+                  selection.onChange(toPresentationGenerationTemplate(item));
                 }}
               >
                 <img
-                  src={presentationTemplateCardSlideImage(item, 0)}
+                  src={presentationTemplateCoverImage(item)}
                   alt=""
                   loading="lazy"
                   className="absolute inset-0 h-full w-full object-cover"
@@ -3382,123 +1880,77 @@ export function ComposerPresentationRecommendations({
   );
 }
 
-function TemplatePickerDialogFrame({
+function BuiltInTemplatePreviewDialog({
   signals,
-  presentationItems,
-  gallery,
   onChange,
-  onClose,
-  onCloseComplete,
-  handleSelectPresentation,
 }: {
-  signals: ComposerSignals;
-  presentationItems: readonly PresentationTemplateItem[];
-  gallery: () => ReactNode;
-  onChange: (value: GenerationTemplateRequest | undefined) => void;
-  onClose: () => void;
-  onCloseComplete: () => void;
-  handleSelectPresentation: (
-    item: PresentationTemplateItem,
-    colorSystemId?: string,
-  ) => void;
+  readonly signals: ComposerSignals;
+  readonly onChange: (value: GenerationTemplateRequest) => void;
 }) {
   const { t } = useTranslation();
-  // Visibility stays below the gallery's built-in card construction.
-  const open = useGet(signals.template.templatePickerOpen$);
-  const initialFocus = useSet(signals.template.templatePickerInitialFocus$);
-  const finalFocus = useSet(signals.template.templatePickerFinalFocus$);
-  const setPopup = useSet(signals.template.setTemplatePickerPopup$);
+  const open = useGet(signals.template.templatePreviewOpen$);
+  const close = useSet(signals.template.closeTemplatePreview$);
+  const completeClose = useSet(signals.template.completeTemplatePreviewClose$);
+  const finalFocus = useSet(signals.template.templatePreviewFinalFocus$);
   const previewSlug = useGet(signals.template.openedTemplateId$);
-  const directPreview = useGet(signals.template.templatePickerDirectPreview$);
-  const previewItem =
-    presentationItems.find((item) => {
-      return item.slug === previewSlug;
-    }) ?? null;
+  const previewItem = PRESENTATION_TEMPLATE_PICKER_ITEMS.find((item) => {
+    return item.slug === previewSlug;
+  });
   const documentPreview = useGet(signals.template.documentPreview$);
-  const closeDocumentPreview = useSet(signals.template.closeDocumentPreview$);
-  const closeDetailPreview = useSet(signals.template.closeOpenedTemplate$);
-  const isPreviewing = Boolean(previewItem ?? documentPreview);
-  const dialogContentClassName = cn(
-    "gap-0 overflow-hidden p-0 focus:outline-none focus-visible:outline-none focus-visible:ring-0",
-    "flex flex-col",
-  );
   return (
     <Dialog
       open={open}
-      onOpenChange={(nextOpen) => {
-        if (!nextOpen) {
-          // A recommendation opened this detail directly, without a gallery
-          // underneath to return to. Keep its content through the exit motion.
-          if (directPreview) {
-            onClose();
-            return;
-          }
-          if (documentPreview !== undefined) {
-            closeDocumentPreview();
-            return;
-          }
-          if (previewItem !== null) {
-            closeDetailPreview();
-            return;
-          }
-          onClose();
+      onOpenChange={(next) => {
+        if (!next) {
+          close();
         }
       }}
-      onOpenChangeComplete={(nextOpen) => {
-        if (!nextOpen) {
-          onCloseComplete();
+      onOpenChangeComplete={(next) => {
+        if (!next) {
+          completeClose();
         }
       }}
     >
       <DialogContent
-        ref={setPopup}
-        initialFocus={initialFocus}
-        finalFocus={directPreview ? finalFocus : undefined}
+        finalFocus={finalFocus}
         closeLabel={t(($) => {
           return $.artifacts.actions.close;
         })}
         maxWidth="6xl"
         height={760}
-        contentClassName={dialogContentClassName}
-        // Website and Custom open a template in a dialog of their own rather
-        // than in this frame, at this frame's size. The gallery steps back
-        // while one is open, so the detail reads as the same surface the
-        // built-in decks open into, not as a panel over the grid.
-        hideWhenNestedOpen
+        contentClassName="flex flex-col gap-0 overflow-hidden p-0"
         aria-describedby={undefined}
       >
-        {!isPreviewing ? gallery() : null}
         {documentPreview ? (
           <DocumentTemplatePreviewPage
             signals={signals}
             item={documentPreview}
-            onBack={directPreview ? onClose : undefined}
+            onBack={close}
             onSelect={(item) => {
               onChange(toDocumentGenerationTemplate(item));
-              onClose();
             }}
           />
         ) : previewItem ? (
           <TemplatePreviewPage
             item={previewItem}
-            onSelect={handleSelectPresentation}
+            onSelect={(item, colorSystemId) => {
+              onChange(toPresentationGenerationTemplate(item, colorSystemId));
+            }}
             signals={signals}
           />
         ) : null}
-        <WebsiteTemplatePreviewDialogSlot
-          signals={signals}
-          onClose={directPreview ? onClose : undefined}
-        />
       </DialogContent>
     </Dialog>
   );
 }
 
 function usePresentationTemplatePreviewSelection(signals: ComposerSignals) {
-  const cardThemeIdBySlug = useGet(signals.template.templateCardThemeIdBySlug$);
+  const themeIdBySlug = useGet(
+    signals.template.presentationTemplateThemeIdBySlug$,
+  );
   return (item: PresentationTemplateItem, slideIndex = 0) => {
     const selectedTheme = findPresentationTemplateTheme(
-      cardThemeIdBySlug[item.slug] ?? defaultPresentationTemplateThemeId(item),
+      themeIdBySlug[item.slug] ?? defaultPresentationTemplateThemeId(item),
     );
     return {
       index: Math.max(0, Math.floor(slideIndex)),
@@ -3507,416 +1959,6 @@ function usePresentationTemplatePreviewSelection(signals: ComposerSignals) {
       themeId: selectedTheme.id,
     };
   };
-}
-
-function usePresentationTemplatePreview(signals: ComposerSignals) {
-  const selection = usePresentationTemplatePreviewSelection(signals);
-  const openDetailPreview = useSet(signals.template.openPresentationTemplate$);
-  return (item: PresentationTemplateItem, slideIndex = 0) => {
-    openDetailPreview(selection(item, slideIndex));
-  };
-}
-
-function TemplatePickerDialog({
-  value,
-  onChange,
-  onClose,
-  onCloseComplete,
-  presentationItems,
-  signals,
-}: {
-  value: GenerationTemplateRequest | undefined;
-  onChange: (value: GenerationTemplateRequest | undefined) => void;
-  onClose: () => void;
-  onCloseComplete: () => void;
-  presentationItems: readonly PresentationTemplateItem[];
-  signals: ComposerSignals;
-}) {
-  const { t } = useTranslation();
-  const selectedCategory = useGet(
-    signals.template.selectedTemplatePickerCategory$,
-  );
-  const setCategory = useSet(signals.template.setTemplatePickerCategory$);
-  const search = useGet(signals.template.templatePickerSearch$);
-  const setSearch = useSet(signals.template.setTemplatePickerSearch$);
-  const resetCustomTemplatePicker = useSet(resetCustomTemplatePicker$);
-  const restorePresentationGridScroll = useSet(
-    signals.template.restoreTemplatePickerPresentationScrollRef$,
-  );
-  const setPresentationGridScrollTop = useSet(
-    signals.template.setTemplatePickerPresentationScrollTop$,
-  );
-  const clearPresentationPreviews = useSet(
-    signals.template.clearPresentationTemplatePreviews$,
-  );
-  const handlePreview = usePresentationTemplatePreview(signals);
-  const directPreview = useGet(signals.template.templatePickerDirectPreview$);
-  const openWebsiteTemplatePreview = useSet(
-    signals.template.openWebsiteTemplatePreview$,
-  );
-  const illustrationVariantIndex = useGet(
-    signals.template.illustrationVariantIndex$,
-  );
-  const setIllustrationVariantIndex = useSet(
-    signals.template.setIllustrationVariantIndex$,
-  );
-  const closeDocumentPreview = useSet(signals.template.closeDocumentPreview$);
-  const completeWebsitePreviewClose = useSet(
-    signals.template.completeWebsiteTemplatePreviewClose$,
-  );
-  // A persona pill filters the grid, ideation-gallery style.
-  // resolveWorkflowCatalog() keeps that logic out of this component to stay
-  // under the complexity budget.
-  const workflowCategoryFilter = useGet(
-    signals.template.templatePickerWorkflowCategory$,
-  );
-  const setWorkflowCategoryFilter = useSet(
-    signals.template.setTemplatePickerWorkflowCategory$,
-  );
-  const workflowCatalog = resolveWorkflowCatalog({
-    categoryFilter: workflowCategoryFilter,
-    search,
-  });
-
-  const showTemplatePickerSearch = [
-    "workflow",
-    "slides",
-    "document",
-    "illustration",
-  ].includes(selectedCategory);
-
-  const closeTemplatePicker = () => {
-    onClose();
-  };
-
-  const completeTemplatePickerClose = () => {
-    clearPresentationPreviews();
-    closeDocumentPreview();
-    completeWebsitePreviewClose();
-    resetCustomTemplatePicker();
-    setPresentationGridScrollTop(0);
-    onCloseComplete();
-  };
-
-  const handleSelectPresentation = (
-    item: PresentationTemplateItem,
-    colorSystemId?: string,
-  ) => {
-    onChange(toPresentationGenerationTemplate(item, colorSystemId));
-    closeTemplatePicker();
-  };
-
-  const handleSelectCustom = (template: UserTemplateCatalogEntry) => {
-    // The row id alone. What this template produces lives on the row, so the
-    // selection does not restate it and cannot disagree with it.
-    onChange({
-      type: "custom",
-      selection: { userTemplateId: template.id },
-    });
-    closeTemplatePicker();
-  };
-
-  const handleSelectWorkflow = (item: WorkflowTemplateItem) => {
-    onChange(toWorkflowGenerationTemplate(item));
-    closeTemplatePicker();
-  };
-
-  const handleSelectWebsite = (item: WebsiteTemplateItem) => {
-    onChange(toWebsiteGenerationTemplate(item));
-    closeTemplatePicker();
-  };
-
-  const handlePreviewWebsite = (item: WebsiteTemplateItem) => {
-    openWebsiteTemplatePreview(item.id);
-  };
-
-  const handleSelectIllustration = (item: IllustrationTemplateItem) => {
-    onChange(toIllustrationGenerationTemplate(item));
-    closeTemplatePicker();
-  };
-
-  // The frame mounts these controls only while showing the gallery.
-  const handleCategoryChange = (nextCategory: string) => {
-    setCategory(nextCategory);
-    setSearch("");
-  };
-
-  const presentationCards = presentationItems
-    .filter((item) => {
-      return item.title.toLowerCase().includes(search.trim().toLowerCase());
-    })
-    .map((item) => {
-      return (
-        <PptCard
-          key={item.slug}
-          item={item}
-          selected={isSelectedPresentationTemplate(item, value)}
-          onSelect={handleSelectPresentation}
-          onPreview={handlePreview}
-          signals={signals}
-        />
-      );
-    });
-
-  return (
-    <TemplatePickerDialogFrame
-      signals={signals}
-      presentationItems={presentationItems}
-      onChange={onChange}
-      onClose={closeTemplatePicker}
-      onCloseComplete={completeTemplatePickerClose}
-      handleSelectPresentation={handleSelectPresentation}
-      gallery={() => {
-        return (
-          <div className="min-h-0 flex flex-1 flex-col">
-            <DialogHeader className="shrink-0 border-b border-border px-5 py-4 sm:hidden">
-              <DialogTitle>
-                {t(($) => {
-                  return $.artifacts.templates.template;
-                })}
-              </DialogTitle>
-            </DialogHeader>
-            <Tabs
-              value={selectedCategory}
-              onValueChange={(nextCategory) => {
-                if (typeof nextCategory === "string") {
-                  handleCategoryChange(nextCategory);
-                }
-              }}
-              orientation="vertical"
-              className="flex min-h-0 flex-1 flex-col sm:flex-row"
-            >
-              <TemplatePickerCategoryNav
-                selectedCategory={selectedCategory}
-                onChange={handleCategoryChange}
-              />
-              {/* Keep the existing single active content tree and its category
-                  unmounting runModel; signals retain search and scroll state. */}
-              <TabsContent
-                value={selectedCategory}
-                className="relative flex min-h-0 min-w-0 flex-1 flex-col focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-              >
-                <TemplatePaidToolNotice category={selectedCategory} />
-                <div
-                  className={cn(
-                    "relative h-[68px] shrink-0 items-center px-6 pr-14",
-                    showTemplatePickerSearch ? "flex" : "hidden sm:flex",
-                  )}
-                >
-                  <TemplatePickerCategoryTitle category={selectedCategory} />
-                  {showTemplatePickerSearch ? (
-                    <TemplatePickerSearch
-                      search={search}
-                      onSearchChange={setSearch}
-                    />
-                  ) : null}
-                </div>
-                <TemplatePickerCategoryContent
-                  signals={signals}
-                  selectedCategory={selectedCategory}
-                  search={search}
-                  pptCards={presentationCards}
-                  websiteItems={WEBSITE_TEMPLATE_ITEMS}
-                  illustrationItems={ILLUSTRATION_TEMPLATE_ITEMS.filter(
-                    (item) => {
-                      return item.title
-                        .toLowerCase()
-                        .includes(search.trim().toLowerCase());
-                    },
-                  )}
-                  workflowCatalog={workflowCatalog}
-                  value={value}
-                  illustrationVariantIndex={illustrationVariantIndex}
-                  onPresentationScroll={setPresentationGridScrollTop}
-                  onRestorePresentationScroll={restorePresentationGridScroll}
-                  onSelectDocument={(item) => {
-                    onChange(toDocumentGenerationTemplate(item));
-                    closeTemplatePicker();
-                  }}
-                  onSelectCustom={handleSelectCustom}
-                  onCustomPreviewClose={
-                    directPreview ? closeTemplatePicker : undefined
-                  }
-                  onImported={closeTemplatePicker}
-                  onSelectWebsite={handleSelectWebsite}
-                  onPreviewWebsite={handlePreviewWebsite}
-                  onSelectIllustration={handleSelectIllustration}
-                  onIllustrationVariantChange={setIllustrationVariantIndex}
-                  onWorkflowCategoryChange={setWorkflowCategoryFilter}
-                  onSelectWorkflow={handleSelectWorkflow}
-                />
-              </TabsContent>
-            </Tabs>
-          </div>
-        );
-      }}
-    />
-  );
-}
-
-function TemplatePickerCategoryContent({
-  signals,
-  selectedCategory,
-  search,
-  pptCards,
-  websiteItems,
-  illustrationItems,
-  workflowCatalog,
-  value,
-  illustrationVariantIndex,
-  onPresentationScroll,
-  onRestorePresentationScroll,
-  onSelectCustom,
-  onCustomPreviewClose,
-  onSelectDocument,
-  onImported,
-  onSelectWebsite,
-  onPreviewWebsite,
-  onSelectIllustration,
-  onIllustrationVariantChange,
-  onWorkflowCategoryChange,
-  onSelectWorkflow,
-}: {
-  signals: ComposerSignals;
-  selectedCategory: string;
-  search: string;
-  pptCards: ReactNode;
-  websiteItems: readonly WebsiteTemplateItem[];
-  illustrationItems: readonly IllustrationTemplateItem[];
-  workflowCatalog: ResolvedWorkflowTemplateCatalog;
-  value: GenerationTemplateRequest | undefined;
-  illustrationVariantIndex: Readonly<Record<string, number>>;
-  onPresentationScroll: (value: number) => void;
-  onRestorePresentationScroll: RefCallback<HTMLDivElement>;
-  onSelectCustom: (template: UserTemplateCatalogEntry) => void;
-  onCustomPreviewClose?: () => void;
-  onSelectDocument: (
-    item: import("@okouai/core/document-template-items").DocumentTemplateItem,
-  ) => void;
-  /** Both import entries leave the picker for the thread they send into. */
-  onImported: () => void;
-  onSelectWebsite: (item: WebsiteTemplateItem) => void;
-  onPreviewWebsite: (item: WebsiteTemplateItem) => void;
-  onSelectIllustration: (item: IllustrationTemplateItem) => void;
-  onIllustrationVariantChange: (slug: string, index: number) => void;
-  onWorkflowCategoryChange: (category: string) => void;
-  onSelectWorkflow: (item: WorkflowTemplateItem) => void;
-}) {
-  const customSection = (kind: UserTemplateKind) => {
-    return (
-      <CustomTemplatePickerSection
-        signals={signals}
-        kind={kind}
-        query={search}
-        onSelect={onSelectCustom}
-        onPreviewClose={onCustomPreviewClose}
-        importCard={
-          <TemplateImportCard
-            kind={kind}
-            signals={signals}
-            onImported={onImported}
-          />
-        }
-      />
-    );
-  };
-  if (selectedCategory === "document") {
-    return (
-      <DocumentTemplatePickerPane
-        signals={signals}
-        value={value}
-        onSelect={onSelectDocument}
-        customTemplates={customSection("document")}
-      />
-    );
-  }
-  if (selectedCategory === "slides") {
-    return (
-      <div
-        data-presentation-template-grid-scroll=""
-        ref={onRestorePresentationScroll}
-        className="relative flex min-h-0 flex-1 transform-gpu flex-col overflow-y-auto px-6 pb-6 pt-0.5"
-        onScroll={(event) => {
-          onPresentationScroll(event.currentTarget.scrollTop);
-        }}
-      >
-        {customSection("presentation")}
-        <TemplateSourceSection source="builtIn">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {pptCards}
-          </div>
-        </TemplateSourceSection>
-      </div>
-    );
-  }
-
-  if (selectedCategory === "website") {
-    return (
-      <div
-        data-website-template-grid-scroll=""
-        className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6 pt-0.5"
-      >
-        <WebsiteTemplateGrid
-          items={websiteItems}
-          value={value}
-          onSelect={onSelectWebsite}
-          onPreview={onPreviewWebsite}
-        />
-      </div>
-    );
-  }
-
-  if (selectedCategory === "illustration") {
-    return (
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6 pt-0.5">
-        {customSection("illustration")}
-        <TemplateSourceSection source="builtIn">
-          <IllustrationTemplateGrid
-            items={illustrationItems}
-            value={value}
-            variantIndexBySlug={illustrationVariantIndex}
-            onSelect={onSelectIllustration}
-            onVariantChange={onIllustrationVariantChange}
-          />
-        </TemplateSourceSection>
-      </div>
-    );
-  }
-
-  if (selectedCategory === "workflow") {
-    return (
-      <div className="flex min-h-0 flex-1 flex-col">
-        {workflowCatalog.pills.length > 1 && (
-          <WorkflowTemplatePillRow
-            pills={workflowCatalog.pills}
-            active={workflowCatalog.active}
-            onSelect={onWorkflowCategoryChange}
-          />
-        )}
-        <div className="relative flex min-h-0 flex-1 flex-col">
-          <div
-            data-workflow-template-grid-scroll=""
-            className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6 pt-4"
-          >
-            {workflowCatalog.items.length > 0 ? (
-              <WorkflowTemplateGrid
-                items={workflowCatalog.items}
-                value={value}
-                onSelect={onSelectWorkflow}
-              />
-            ) : (
-              <TemplateEmptyPanel />
-            )}
-          </div>
-          {/* Soften the hard clip where cards scroll up under the pill row,
-              mirroring the chat-to-composer top fade. */}
-          <div className="pointer-events-none absolute inset-x-0 top-0 h-6 bg-gradient-to-b from-card to-transparent" />
-        </div>
-      </div>
-    );
-  }
-
-  return null;
 }
 
 function selectedComposerTemplateAttachment(
@@ -3928,7 +1970,12 @@ function selectedComposerTemplateAttachment(
       ? { type: "document", title: item.title, category: "document" }
       : undefined;
   }
-  const presentationItem = selectedPresentationTemplateItem(value);
+  const presentationItem =
+    value?.type === "presentation"
+      ? PRESENTATION_TEMPLATE_PICKER_ITEMS.find((item) => {
+          return item.templateId === value.selection.templateId;
+        })
+      : undefined;
   if (presentationItem && value?.type === "presentation") {
     const selectedTheme = findPresentationTemplateTheme(
       value.selection.colorSystemId?.replace("color-system:", "") ??
@@ -3938,117 +1985,53 @@ function selectedComposerTemplateAttachment(
       type: "presentation",
       title: presentationItem.title,
       category: "slides",
-      previewImageUrl: presentationTemplateCardSlideImage(
+      previewImageUrl: presentationTemplateCoverImage(
         presentationItem,
-        0,
         selectedTheme,
         SELECTED_TEMPLATE_CHIP_PREVIEW_SIZE,
       ),
     };
   }
-  const illustrationItem = selectedIllustrationTemplateItem(value);
-  if (illustrationItem) {
-    return {
-      type: "illustration",
-      title: illustrationItem.title,
-      category: "illustration",
-      previewImageUrl: r2ImageTransformUrl(
-        illustrationItem.previewImage,
-        SELECTED_TEMPLATE_CHIP_PREVIEW_SIZE,
-      ),
-    };
-  }
-  const workflowItem = selectedWorkflowTemplateItem(value);
-  if (workflowItem) {
-    return {
-      type: "workflow",
-      title: localizedWorkflowTemplate(workflowItem).title,
-      category: "workflow",
-    };
-  }
-  const websiteItem = selectedWebsiteTemplateItem(value);
-  return websiteItem
-    ? { type: "website", title: websiteItem.title, category: "website" }
-    : undefined;
+  return undefined;
 }
 
-/**
- * Which templates the picker should land on, what to call the affordance that
- * opens it from the add menu.
- */
-function useTemplatePickerTrigger(signals: ComposerSignals) {
-  const { t } = useTranslation();
-  const category = useGet(signals.template.templatePickerCategory$);
-  const createMode = useGet(signals.create.mode$);
-  const openTemplatePicker = useSet(signals.template.openTemplatePicker$);
-  const templateMode = createMode === "image" ? "illustration" : createMode;
-  const label =
-    templateMode === "illustration"
-      ? t(($) => {
-          return $.chat.composer.create.addStyle;
-        })
-      : templateMode
-        ? t(($) => {
-            return $.chat.composer.create.addTemplate;
-          })
-        : t(($) => {
-            return $.artifacts.templates.template;
-          });
-  const selectedCategory = resolveTemplatePickerCategory(
-    templateMode === "presentation" ? "slides" : (templateMode ?? category),
-  );
-  const open = () => {
-    openTemplatePicker({ kind: "insert", category: selectedCategory });
-  };
-  return { label, open };
-}
-
-/** Shared dialog for the add menu, slash panel and inline template chips. */
-function TemplatePickerDialogSlot({
-  picker,
-  presentationItems,
+/** Only the selected detail mounts; it owns focus and its exit completion. */
+function ComposerTemplatePreviewSlot({
   signals,
 }: {
-  picker: ComposerTemplatePicker;
-  presentationItems: readonly PresentationTemplateItem[];
   signals: ComposerSignals;
 }) {
-  const mounted = useGet(signals.template.templatePickerMounted$);
-  const referenceValue = useGet(signals.template.templatePickerReferenceValue$);
-  const setOpen = useSet(signals.template.setTemplatePickerOpen$);
-  const completeClose = useSet(signals.template.completeTemplatePickerClose$);
-  const setReferenceValue = useSet(
-    signals.template.setTemplatePickerReferenceValue$,
-  );
+  const mounted = useGet(signals.template.templatePreviewMounted$);
+  const kind = useGet(signals.template.templatePreviewKind$);
+  const close = useSet(signals.template.closeTemplatePreview$);
+  const setFinalFocus = useSet(signals.template.setTemplatePreviewFinalFocus$);
+  const selection = useComposerTemplateSelection(signals);
+  const select = (value: GenerationTemplateRequest) => {
+    // The dialog restores focus after its exit animation, later than insertion.
+    setFinalFocus(signals.editor.editor.view.dom);
+    selection.onChange(value);
+    close();
+  };
   if (!mounted) {
     return null;
   }
-  return (
-    <TemplatePickerDialog
-      value={referenceValue ?? undefined}
-      onChange={picker.onChange}
-      onClose={() => {
-        setOpen(false);
-      }}
-      onCloseComplete={() => {
-        setReferenceValue(null);
-        completeClose();
-      }}
-      presentationItems={presentationItems}
-      signals={signals}
-    />
-  );
-}
-
-function ComposerTemplatePickerSlot({ signals }: { signals: ComposerSignals }) {
-  const picker = useComposerTemplatePicker(signals);
-  return (
-    <TemplatePickerDialogSlot
-      picker={picker}
-      presentationItems={PRESENTATION_TEMPLATE_PICKER_ITEMS}
-      signals={signals}
-    />
-  );
+  if (kind === "custom") {
+    return (
+      <CustomTemplatePreviewSlot
+        signals={signals}
+        onSelect={(template) => {
+          select({
+            type: "custom",
+            selection: { userTemplateId: template.id },
+          });
+        }}
+      />
+    );
+  }
+  if (kind === "website") {
+    return <WebsiteTemplatePreviewDialogSlot signals={signals} />;
+  }
+  return <BuiltInTemplatePreviewDialog signals={signals} onChange={select} />;
 }
 
 function ComputerUseConnectorMenuSection({
@@ -4643,7 +2626,6 @@ function useComposerAddMenuGroups(
 ): readonly ComposerAddMenuGroup[] {
   const { t } = useTranslation();
   const fileInput = useGet(signals.draft.composerFileInput$);
-  const template = useTemplatePickerTrigger(signals);
   const openSkillImportDialog = useSet(openSkillImportDialog$);
   const project = useComposerProjectMenuItem(signals);
   const capabilities = useComposerCapabilities(signals);
@@ -4670,12 +2652,6 @@ function useComposerAddMenuGroups(
         },
       },
       ...(project ? [project] : []),
-      {
-        id: "template",
-        Icon: SwatchBook,
-        label: template.label,
-        onSelect: template.open,
-      },
     ],
     [
       capabilityItem(capabilities[0]),
@@ -4810,16 +2786,13 @@ function useComposerDraftChange(signals: ComposerSignals): () => void {
   };
 }
 
-function useComposerTemplatePicker(
+function useComposerTemplateSelection(
   signals: ComposerSignals,
-): ComposerTemplatePicker {
+): ComposerTemplateSelection {
   const selectTemplateAndSave = useSet(signals.template.selectTemplateAndSave$);
   const pageSignal = useGet(pageSignal$);
   return {
     onChange(value) {
-      if (!value) {
-        return;
-      }
       // Chip presentation is pure; catalog resolution, insertion, task
       // selection and persistence are one page-owned business action.
       detach(
@@ -5844,7 +3817,7 @@ function ComposerIdleControls({
     <>
       <div className="flex min-w-0 items-center gap-1 text-muted-foreground composer-wide:gap-1.5">
         <ComposerAddMenuSlot signals={signals} />
-        <ComposerTemplatePickerSlot signals={signals} />
+        <ComposerTemplatePreviewSlot signals={signals} />
         <ComposerConnectorsSlot signals={signals} actions={connectorActions} />
         <ComposerProjectControl signals={signals} />
         <ComposerTaskControls signals={signals} />

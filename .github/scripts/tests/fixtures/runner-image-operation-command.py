@@ -58,9 +58,6 @@ def once():
 
 
 def ssh(arguments):
-    if MODE == "early-eof" and once():
-        record("requests", {"action": "unread"})
-        return 255
     request = json.load(sys.stdin)
     record("requests", {"action": request["action"], "phase": request.get("phase")})
     if MODE == "ssh-error":

@@ -80,7 +80,6 @@ const accountSourceColumns = Object.freeze({
   type: modelProviderAccounts.type,
   authMethod: modelProviderAccounts.authMethod,
   isActive: modelProviderAccounts.isActive,
-  disconnectedAt: modelProviderAccounts.disconnectedAt,
   needsReconnect: modelProviderAccounts.needsReconnect,
   externalAccountId: modelProviderAccounts.externalAccountId,
   // Older Claude accounts bind Runs by email/workspace instead of upstream ID.

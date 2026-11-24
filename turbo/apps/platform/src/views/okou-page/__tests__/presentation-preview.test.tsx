@@ -10,11 +10,8 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { clickComposerAddMenuItem } from "./chat-composer-add-menu-test-helpers.ts";
-import {
-  openSavedPresentationPicker,
-  savedPresentationDraft,
-} from "./presentation-draft-test-helpers.ts";
+import { openTemplateRecommendations } from "./chat-composer-template-gallery-test-helpers.ts";
+import { savedPresentationDraft } from "./presentation-draft-test-helpers.ts";
 
 const context = testContext();
 
@@ -74,20 +71,13 @@ function activePreviewFrame(): HTMLIFrameElement {
   return frame;
 }
 
-async function openPresentationDetail(
-  fromSavedDraft = false,
-): Promise<HTMLIFrameElement> {
-  if (fromSavedDraft) {
-    await openSavedPresentationPicker(TEMPLATE_NAME);
-  } else {
-    await clickComposerAddMenuItem("Template");
-  }
-  const preview = await screen.findByLabelText(
-    `Preview ${TEMPLATE_NAME} at current slide`,
+async function openPresentationDetail(): Promise<HTMLIFrameElement> {
+  const shelf = await openTemplateRecommendations("Presentation");
+  const preview = shelf.querySelector<HTMLElement>(
+    `[aria-label="Preview template ${TEMPLATE_NAME}"]`,
   );
-  const dialog = preview.closest('[role="dialog"]');
-  if (!(dialog instanceof HTMLElement)) {
-    throw new Error("Presentation gallery dialog not found");
+  if (!preview) {
+    throw new Error("Presentation recommendation Eye not found");
   }
   click(preview);
   await screen.findByTitle(PREVIEW_TITLE);
@@ -179,7 +169,7 @@ test("Selecting a slide preserves its authored layout", async () => {
     path: `/`,
   });
 
-  const initialFrame = await openPresentationDetail(true);
+  const initialFrame = await openPresentationDetail();
   const dialog = initialFrame.closest('[role="dialog"]');
   if (!(dialog instanceof HTMLElement)) {
     throw new Error("Presentation preview dialog not found");

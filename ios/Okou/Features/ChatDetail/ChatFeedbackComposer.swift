@@ -5,10 +5,13 @@ import SwiftUI
 /// Each quoted passage owns its native note editor. Text gaps keep the canonical order.
 struct ChatFeedbackComposer: View {
   let state: ComposerDraftStore
+  /// The composer's graph value for this render; editor callbacks read the owner directly.
+  let presentation: ComposerDraftPresentation
   let inputID: UUID
   @Binding var isFocused: Bool
   let acceptsImages: Bool
   var placeholder = String(localized: "Message Okou")
+  var followup: String?
   var showsTrailingParagraph = true
   var expanded = false
   var returnKeyPreference = ComposerReturnKeyPreference.newline
@@ -17,8 +20,8 @@ struct ChatFeedbackComposer: View {
   @State private var contentHeight: CGFloat = 24
 
   var body: some View {
-    let generation = state.editorGeneration
-    let blocks = state.editorBlocks
+    let generation = presentation.draft.generation
+    let blocks = presentation.editorBlocks
     let appendID = blocks.last(where: { $0.isFeedback || $0.hasParagraph })?.id ?? blocks.last?.id
     ScrollViewReader { scroll in
       ScrollView {
@@ -27,7 +30,7 @@ struct ChatFeedbackComposer: View {
             if block.isFeedback || !block.content.text.isEmpty
               || !block.content.contextLabels.isEmpty
               || (block.id == blocks.last?.id
-                && (showsTrailingParagraph || !state.document.hasFeedback))
+                && (showsTrailingParagraph || !presentation.draft.document.hasFeedback))
               || focusedBlock == block.id
             {
               VStack(alignment: .leading, spacing: OkouSpace.sm) {
@@ -88,8 +91,9 @@ struct ChatFeedbackComposer: View {
                   inputReady: { state.voice?.startRequestedInputIfReady() },
                   placeholder: block.isFeedback
                     ? String(localized: "Ask or comment on this quote") : placeholder,
+                  followup: block.isFeedback ? nil : followup,
                   identifier: block.isFeedback ? "feedback-note-\(block.id)" : "message-input",
-                  expanded: expanded || state.document.hasFeedback || isFocused,
+                  expanded: expanded || presentation.draft.document.hasFeedback || isFocused,
                   returnKeyPreference: returnKeyPreference,
                   submitFromKeyboard: submitFromKeyboard
                 )
@@ -105,7 +109,7 @@ struct ChatFeedbackComposer: View {
         }
       }
       .frame(height: min(contentHeight, 280))
-      .onChange(of: state.focusRequest) { _, id in
+      .onChange(of: presentation.draft.focusRequest) { _, id in
         guard let request = id else { return }
         let id = request.blockID
         focusedBlock = id
@@ -113,7 +117,7 @@ struct ChatFeedbackComposer: View {
         scroll.scrollTo(id, anchor: .bottom)
         state.consumeFocusRequest(request)
       }
-      .onChange(of: state.editorGeneration) { _, _ in
+      .onChange(of: presentation.draft.generation) { _, _ in
         focusedBlock = isFocused ? state.editorBlocks.last?.id : nil
       }
       .onAppear {

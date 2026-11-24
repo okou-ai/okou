@@ -253,6 +253,11 @@
         "modelCatalogCacheValidationLatency": "Latensi Validasi Cache Katalog Model",
         "modelCatalogPrefetchRole": "Peran Prefetch Katalog Model",
         "modelCatalogUpstreamEncoding": "Encoding Upstream Katalog Model",
+        "openrouterAttempts": "OpenRouter Percobaan penyedia",
+        "openrouterAttemptsIncomplete": "OpenRouter Percobaan tidak lengkap",
+        "openrouterGenerationId": "OpenRouter ID generasi",
+        "openrouterModel": "OpenRouter Model",
+        "openrouterProvider": "OpenRouter Penyedia",
         "params": "Parameter",
         "permission": "Izin",
         "permissionError": "Galat Izin",
@@ -569,6 +574,22 @@
       "text": "Teks",
       "video": "Video"
     },
+    "library": {
+      "allArtifacts": "Semua artefak",
+      "allTypes": "Semua jenis",
+      "clearFilters": "Hapus filter",
+      "clearSearch": "Hapus pencarian",
+      "created": "Dibuat",
+      "emptyDescription": "Coba nama atau jenis lain.",
+      "emptyTitle": "Tidak ada artefak ditemukan",
+      "loadMore": "Muat lebih banyak",
+      "name": "Nama",
+      "retry": "Coba lagi",
+      "search": "Cari artefak",
+      "sortAscending": "Urutkan menaik",
+      "sortDescending": "Urutkan menurun",
+      "type": "Jenis"
+    },
     "metadata": {
       "generated": "Dibuat {{date}}",
       "updated": "Diperbarui {{date}}"
@@ -664,15 +685,9 @@
       "updated": "URL situs diperbarui"
     },
     "templates": {
-      "activeHtmlPreview": "Pratinjau HTML aktif {{title}}",
-      "all": "Semua",
       "avatar": "Avatar",
-      "categories": "Kategori template",
-      "category": "Kategori template",
       "fullPreview": "pratinjau penuh website {{title}}",
       "htmlPreview": "pratinjau HTML {{title}}",
-      "illustration": "Ilustrasi",
-      "illustrationPreview": "pratinjau ilustrasi {{title}}",
       "importDeck": "Impor dek Anda sendiri",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importDocument": "Impor dokumen Anda sendiri",
@@ -683,18 +698,10 @@
       "importImageHint": "Simpan sebagai gaya",
       "multiAccent": "Multi-aksen",
       "nextSlide": "Pratinjau slide berikutnya",
-      "noMatches": "Tidak ada hasil",
-      "previewCurrentSlide": "Pratinjau {{title}} pada slide saat ini",
       "previewSlide": "Pratinjau slide {{slideNumber}}",
-      "previewWebsite": "Pratinjau template website {{title}}",
       "previousSlide": "Pratinjau slide sebelumnya",
-      "searchConnector": "Cari templat",
-      "searchConnectors": "Cari templat",
       "selectStyle": "Pilih gaya {{style}}",
       "selectTemplate": "Pilih template {{title}}",
-      "selectWebsite": "Pilih template website {{title}}",
-      "selectWorkflow": "Pilih template alur kerja {{title}}",
-      "showVariant": "Tampilkan varian {{variantNumber}}",
       "singleAccent": "Satu aksen",
       "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "pratinjau slide {{title}}",
@@ -722,15 +729,11 @@
         "terracottaClay": "Pot tanah liat",
         "warmSand": "Koran pagi"
       },
-      "tryDifferentSearch": "Coba pencarian lain.",
-      "use": "Gunakan",
       "useThisTemplate": "Gunakan template ini",
       "visibility": {
         "changeLabel": "Ubah visibilitas templat"
       },
       "website": "Website",
-      "websitePreview": "pratinjau template website {{title}}",
-      "workflow": "Alur kerja",
       "workflowCatalog": {
         "auto-inbox-label": {
           "description": "Buat alur kerja yang berjalan saat label Gmail dipasang dan menangani email berlabel itu.",
@@ -1906,8 +1909,6 @@
       "add": "Tambah",
       "configureModel": "Konfigurasikan model",
       "create": {
-        "addStyle": "Tambahkan gaya",
-        "addTemplate": "Tambahkan templat",
         "documentPlaceholder": "Apa yang ingin Anda sertakan dalam dokumen?",
         "imagePlaceholder": "Jelaskan gambar yang ingin Anda buat…",
         "presentationPlaceholder": "Apa topik presentasi Anda?",
@@ -1955,11 +1956,9 @@
         "scheduleHint": "Jalankan sesuai jadwal",
         "share": "Bagikan obrolan",
         "shareHint": "Bagikan tautan ke percakapan ini",
-        "templates": "Templat",
         "unpin": "Lepas sematan"
       },
       "slashPanel": {
-        "browseAll": "Jelajahi semua templat",
         "hint": "Pilih tindakan",
         "useTemplate": "Gunakan templat {{title}}"
       },
@@ -2613,7 +2612,6 @@
         "website": "Situs web",
         "workflow": "Alur kerja"
       },
-      "viewAll": "Lihat semua",
       "visualization": {
         "allCharts": "Semua bagan",
         "back": "Back to visualization options",
@@ -2795,8 +2793,6 @@
         "workflow": "Alur kerja"
       },
       "previewTemplate": "Pratinjau template {{title}}",
-      "previewWebsite": "Pratinjau template situs web {{title}}",
-      "previewWorkflow": "Pratinjau template alur kerja {{title}}",
       "removeTemplate": "Hapus template {{title}}",
       "removeWebsite": "Hapus template situs web {{title}}",
       "removeWorkflow": "Hapus template alur kerja {{title}}"
@@ -2947,6 +2943,8 @@
     "accountsInChat": "Pilih akun yang aktif dalam chat ini.",
     "enableByDefault": "Aktifkan {{account}} secara default",
     "manageAccounts": "Kelola akun",
+    "memberPolicyLoadFailed": "Akses akun tidak dapat dimuat.",
+    "memberSettingsDescription": "Pilih akun {{connector}} yang dapat digunakan Okou di semua chat Anda.",
     "permissions": "Izin",
     "permissionsDescription": "Aturan ini berlaku untuk konektor ini di semua chat dan akun Anda.",
     "settingsDescription": "Pilih akun {{connector}} yang dapat digunakan Okou di chat Anda. Anda dapat mengubah akses di setiap chat.",
@@ -3886,7 +3884,6 @@
         "overview": "Detail penyedia dan klien"
       }
     },
-    "filter": "Kategori dokumen",
     "formats": {
       "pdf": "PDF",
       "word": "Dokumen Word"
@@ -3896,10 +3893,8 @@
     "nextPage": "Halaman contoh berikutnya",
     "openLarger": "Buka pratinjau lebih besar",
     "page": "Halaman {{page}}",
-    "preview": "Pratinjau {{title}}",
     "previousPage": "Halaman contoh sebelumnya",
-    "title": "Dokumen",
-    "useNamed": "Gunakan {{title}}"
+    "title": "Dokumen"
   },
   "featureGuide": {
     "close": "Tutup panduan fitur",
@@ -6532,11 +6527,8 @@
   "templates": {
     "actions": {
       "delete": "Hapus",
-      "menu": "Tindakan untuk {{title}}",
-      "preview": "Pratinjau {{title}}",
       "rename": "Ganti nama templat"
     },
-    "builtIn": "Bawaan",
     "custom": "Kustom",
     "delete": {
       "cancel": "Batal",
@@ -6551,11 +6543,6 @@
       "page": "Halaman {{number}}"
     },
     "loadFailed": "Tidak dapat memuat templat.",
-    "rename": {
-      "action": "Ubah nama",
-      "cancel": "Batal",
-      "save": "Simpan"
-    },
     "renameFailed": "Tidak dapat mengganti nama templat.",
     "sharedBy": "Dibagikan oleh {{owner}}",
     "sharedByMember": "Dibagikan oleh anggota organisasi",

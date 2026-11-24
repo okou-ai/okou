@@ -13,6 +13,100 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1174.0](https://github.com/okou-ai/okou/compare/app-v0.1173.2...app-v0.1174.0) (2026-11-24)
+
+
+### Features
+
+* **runner:** log managed openrouter routing metadata ([#50392](https://github.com/okou-ai/okou/issues/50392)) ([637a49c](https://github.com/okou-ai/okou/commit/637a49cc6646031aa023c8a631863e88be17ee5d))
+
+
+### Refactoring
+
+* remove artifact name sorting ([#50428](https://github.com/okou-ai/okou/issues/50428)) ([b693ca5](https://github.com/okou-ai/okou/commit/b693ca5a66bab74587596b3971fdc5163f47f352))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.117.0
+    * @okouai/core bumped to 8.868.1
+    * @okouai/ui bumped to 1.22.4
+
+## [0.1173.2](https://github.com/okou-ai/okou/compare/app-v0.1173.1...app-v0.1173.2) (2026-11-24)
+
+
+### Bug Fixes
+
+* **platform:** refresh markdown quote sources after artifact publication ([#50391](https://github.com/okou-ai/okou/issues/50391)) ([c9ee37c](https://github.com/okou-ai/okou/commit/c9ee37cf08dbc498d2e70d1af79da47ecc1f5616))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.116.0
+    * @okouai/core bumped to 8.868.0
+    * @okouai/ui bumped to 1.22.3
+
+## [0.1173.1](https://github.com/okou-ai/okou/compare/app-v0.1173.0...app-v0.1173.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* **app:** remove standalone template picker ([#50365](https://github.com/okou-ai/okou/issues/50365)) ([6a20b9e](https://github.com/okou-ai/okou/commit/6a20b9e686f663c0f71403cf4d52c6d77820e7a6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.867.1
+    * @okouai/ui bumped to 1.22.2
+
+## [0.1173.0](https://github.com/okou-ai/okou/compare/app-v0.1172.0...app-v0.1173.0) (2026-11-24)
+
+
+### Features
+
+* **artifacts:** add a gated searchable artifact library list ([#50231](https://github.com/okou-ai/okou/issues/50231)) ([2bb0a85](https://github.com/okou-ai/okou/commit/2bb0a8587efb1fc8abc513dba5c50109406226ed))
+
+
+### Bug Fixes
+
+* **app:** dismiss zip entry preview on repeat selection ([#50350](https://github.com/okou-ai/okou/issues/50350)) ([24d6ba2](https://github.com/okou-ai/okou/commit/24d6ba23250dd2b62ff95ac99687bdf403ab75ab))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.115.0
+    * @okouai/core bumped to 8.867.0
+    * @okouai/ui bumped to 1.22.1
+
+## [0.1172.0](https://github.com/okou-ai/okou/compare/app-v0.1171.1...app-v0.1172.0) (2026-11-24)
+
+
+### Features
+
+* add recording chips to chat composers behind a switch ([#50334](https://github.com/okou-ai/okou/issues/50334)) ([7fa55b1](https://github.com/okou-ai/okou/commit/7fa55b15b8286465939af85fe2faeaa1d39a952e))
+
+
+### Bug Fixes
+
+* **platform:** remove the visible search result count row ([#50347](https://github.com/okou-ai/okou/issues/50347)) ([26bdcc2](https://github.com/okou-ai/okou/commit/26bdcc2844029158317bb8a7149bce3a744bb830))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.114.0
+    * @okouai/core bumped to 8.866.0
+    * @okouai/ui bumped to 1.22.0
+
 ## [0.1171.1](https://github.com/okou-ai/okou/compare/app-v0.1171.0...app-v0.1171.1) (2026-11-24)
 
 

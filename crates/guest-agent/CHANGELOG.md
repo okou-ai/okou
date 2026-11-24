@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.111.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.31...guest-agent-v0.111.0) (2026-11-24)
+
+
+### Features
+
+* **runner:** execute gemini 4 turns with antigravity cli ([#50389](https://github.com/okou-ai/okou/issues/50389)) ([17f9b83](https://github.com/okou-ai/okou/commit/17f9b831b49c876e71002ac641b338badf0bff40))
+
+## [0.110.31](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.30...guest-agent-v0.110.31) (2026-11-24)
+
+
+### Bug Fixes
+
+* **runner:** classify fable quota and pi output-policy failures ([#50383](https://github.com/okou-ai/okou/issues/50383)) ([93b2780](https://github.com/okou-ai/okou/commit/93b278038e138029d106e1bb760520e896f4b891))
+
 ## [0.110.30](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.29...guest-agent-v0.110.30) (2026-11-24)
 
 ## [0.110.29](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.28...guest-agent-v0.110.29) (2026-11-23)

@@ -34,22 +34,6 @@ export const THREAD_ID = "b1000000-0000-4000-a000-000000000101";
 export const CLAUDE_SUBSCRIPTION_PROVIDER_ID =
   "00000000-0000-4000-a000-000000000002";
 
-function queryTabByText(text: string): HTMLElement | null {
-  return (
-    queryAllByRoleFast("tab").find((candidate) => {
-      return candidate.textContent?.replace(/\s+/g, " ").trim() === text;
-    }) ?? null
-  );
-}
-
-export function tabByText(text: string): HTMLElement {
-  const tab = queryTabByText(text);
-  if (!tab) {
-    throw new Error(`${text} tab not found`);
-  }
-  return tab;
-}
-
 function billingStatus(
   tier: string,
   modelCapabilities?: {
@@ -139,16 +123,27 @@ export async function expectInlineTemplateInComposer(
 export async function selectTemplate(
   template: PresentationTemplateItem,
 ): Promise<void> {
-  await clickComposerAddMenuItem("Template");
-  await waitFor(() => {
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  await clickComposerAddMenuItem("Create");
+  const types = await screen.findByRole("radiogroup", { name: "Create" });
+  const presentation = queryAllByRoleFast("radio", types).find((candidate) => {
+    return candidate.textContent?.trim() === "Presentation";
   });
-
-  click(screen.getByLabelText(`Select template ${template.title}`));
-
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  if (!presentation) {
+    throw new Error("Expected Presentation creation type");
+  }
+  if (presentation.getAttribute("aria-checked") !== "true") {
+    click(presentation);
+  }
+  const shelf = await screen.findByRole("group", {
+    name: "Presentation templates",
   });
+  const cover = queryAllByRoleFast("button", shelf).find((candidate) => {
+    return candidate.textContent?.trim() === template.title;
+  });
+  if (!cover) {
+    throw new Error(`Expected presentation recommendation ${template.title}`);
+  }
+  click(cover);
   await expectInlineTemplateInComposer(template.title);
 }
 

@@ -42,6 +42,7 @@ struct ChatSettingsView: View {
   @Environment(\.composerPreferences) private var preferences
   @State private var signingOut = false
   @State private var confirmsSignOut = false
+  @State private var connectors: ComposerConnectorStore?
 
   private static let securityURL = URL(string: "https://www.okou.ai/en/security")!
   #if STAGING
@@ -136,6 +137,7 @@ struct ChatSettingsView: View {
           .okouSectionNote()
         }
         StoreProvider(store.settingsResources.store) {
+          SettingsConnectorsSection(workspace: store, open: openConnectors)
           SettingsModelsSection(models: store.modelStore)
         }
         Section {
@@ -215,12 +217,37 @@ struct ChatSettingsView: View {
       .navigationTitle("Settings")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar { OkouCloseToolbarItem { dismiss() } }
+      .navigationDestination(
+        isPresented: Binding(
+          get: { connectors != nil },
+          set: {
+            if !$0 {
+              connectors?.close()
+              connectors = nil
+            }
+          })
+      ) {
+        if let connectors { SettingsConnectorsView(store: connectors) }
+      }
       .onChange(of: scenePhase) { _, current in
         if current == .active {
           store.prepareSettings()
         }
       }
     }
+    .onDisappear {
+      connectors?.close()
+      connectors = nil
+    }
+  }
+
+  private func openConnectors() {
+    let models = store.modelStore
+    connectors = ComposerConnectorStore(
+      service: models.connectorAccess, authorizationService: models.connectorAuthorization,
+      webURL: store.webURL, includesRemote: false,
+      managementEnabled: { true },
+      didFail: { [weak models] in models?.report($0) })
   }
 
   private var profile: some View {
@@ -300,7 +327,7 @@ private struct SettingsModelsSection: View {
   }
 
   var body: some View {
-    if canLinkSubscriptions == true {
+    if (canLinkSubscriptions ?? models.lastKnownFeatureSwitches?.canLinkSubscriptions) == true {
       Section {
         NavigationLink {
           PersonalSubscriptionsView(store: models.subscriptions)

@@ -332,9 +332,10 @@ struct ConnectorAuthorizationSheet: View {
       }
       .background {
         ConnectorAuthenticationSessionView(
-          url: flow.usesSystemAuthenticationSession ? flow.browserURL : nil
-        ) { url, error in
-          store.authenticationFinished(flow: flow, url: url, error: error)
+          url: flow.usesSystemAuthenticationSession ? flow.browserURL : nil,
+          callbackURL: flow.session?.nativeCallbackUrl
+        ) { url, callbackURL, error in
+          store.authenticationFinished(flow: flow, url: url, callbackURL: callbackURL, error: error)
         }
         .frame(width: 0, height: 0)
         .accessibilityHidden(true)

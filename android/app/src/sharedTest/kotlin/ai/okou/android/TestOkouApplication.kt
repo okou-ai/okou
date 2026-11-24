@@ -96,6 +96,11 @@ open class TestOkouApplication : OkouApplication() {
     var chatService: ChatListService = TestChatService()
     var workflows: WorkflowService? = null
     var initialPreferences: UserPreferences? = null
+    internal var preferenceWrite:
+        (UpdatePreferencesRequest, () -> UserPreferences) -> UserPreferences =
+        { _, save ->
+            save()
+        }
     var workspaceRole = OrganizationRole.MEMBER
     var connectorService: ConnectorService? = null
     var searchService: ai.okou.android.chat.WorkspaceSearchService = EmptyWorkspaceSearchService
@@ -196,28 +201,29 @@ open class TestOkouApplication : OkouApplication() {
 
             override suspend fun updatePreferences(
                 update: UpdatePreferencesRequest,
-            ): UserPreferences {
-                val updated =
-                    stored()
-                        .copy(
-                            timezone = update.timezone ?: stored().timezone,
-                            colorTheme =
-                                update.colorTheme?.let {
-                                    UserPreferencesColorTheme.valueOf(it.name)
-                                } ?: stored().colorTheme,
-                            locale =
-                                update.locale?.let { UserPreferencesLocale.valueOf(it.name) }
-                                    ?: stored().locale,
-                            theme =
-                                update.theme?.let { UserPreferencesTheme.valueOf(it.name) }
-                                    ?: stored().theme,
-                            cloudBrowserEnabledByDefault =
-                                update.cloudBrowserEnabledByDefault
-                                    ?: stored().cloudBrowserEnabledByDefault,
-                        )
-                preferences[key] = updated
-                return updated
-            }
+            ): UserPreferences =
+                preferenceWrite(update) {
+                    val updated =
+                        stored()
+                            .copy(
+                                timezone = update.timezone ?: stored().timezone,
+                                colorTheme =
+                                    update.colorTheme?.let {
+                                        UserPreferencesColorTheme.valueOf(it.name)
+                                    } ?: stored().colorTheme,
+                                locale =
+                                    update.locale?.let { UserPreferencesLocale.valueOf(it.name) }
+                                        ?: stored().locale,
+                                theme =
+                                    update.theme?.let { UserPreferencesTheme.valueOf(it.name) }
+                                        ?: stored().theme,
+                                cloudBrowserEnabledByDefault =
+                                    update.cloudBrowserEnabledByDefault
+                                        ?: stored().cloudBrowserEnabledByDefault,
+                            )
+                    preferences[key] = updated
+                    updated
+                }
 
             override fun close() {
                 if (canonical.isInitialized()) canonical.value.close()

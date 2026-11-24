@@ -3,14 +3,21 @@ package ai.okou.android
 import ai.okou.android.chat.ChatListModel
 import ai.okou.android.chat.ChatListUiState
 import ai.okou.android.chat.ChatReadPhase
+import ai.okou.android.chat.ChatRenameEditor
 import ai.okou.android.chat.ChatRowAction
 import ai.okou.android.chat.ChatRowUndo
 import ai.okou.android.chat.ChatUndoPhase
 import ai.okou.android.chat.DeleteProjectDialog
 import ai.okou.android.chat.ProjectDeleteStatus
+import ai.okou.android.chat.ProjectNameLimit
+import ai.okou.android.chat.RenameListItemSheet
+import ai.okou.android.chat.RenameStatus
+import ai.okou.android.chat.WorkspaceRenameTarget
 import ai.okou.android.chat.canDeleteProject
+import ai.okou.android.chat.canRenameProject
 import ai.okou.android.chat.label
 import ai.okou.android.chat.recoversInBackground
+import ai.okou.android.chat.rowActions
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
@@ -38,6 +45,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.key
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,6 +61,7 @@ import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 private val feedbackActionGap = 4.dp
 private val feedbackTouchTarget = 48.dp
@@ -150,8 +159,35 @@ internal fun WorkspaceChatFeedback(
     showRowActionFailure: Boolean,
     confirmingProjectDelete: String?,
     dismissProjectDelete: () -> Unit,
+    renameEditor: ChatRenameEditor?,
+    dismissRename: (ChatRenameEditor) -> Unit,
 ) {
     val list = listState.value
+    val scope = rememberCoroutineScope()
+    if (renameEditor != null)
+        key(renameEditor) {
+            val chat = renameEditor.target as? WorkspaceRenameTarget.Chat
+            val message =
+                stringResource(
+                    if (chat == null) R.string.chat_project_name_saved
+                    else R.string.chat_title_saved,
+                )
+            val feedback = rememberUpdatedState(ChatFeedbackContent(message, null, false, false))
+            WorkspaceRenameForm(chats, list, renameEditor, { dismissRename(renameEditor) }) {
+                dismissRename(renameEditor)
+                if (snackbar.currentSnackbarData == null && list.rowUndo == null) {
+                    scope.launch {
+                        snackbar.showSnackbar(
+                            ChatFeedbackSnackbar(
+                                feedback,
+                                chat?.takeIf { it.fromConversation }?.id,
+                                SnackbarDuration.Short,
+                            ),
+                        )
+                    }
+                }
+            }
+        }
     val deleteFeedback = list.projectDeleteFeedback
     val deleteProject = list.projects.firstOrNull { it.id == confirmingProjectDelete }
     if (deleteProject != null && showChatList) {
@@ -240,6 +276,7 @@ internal fun WorkspaceChatFeedback(
             showChatList,
             visibleConversationId,
             showRowActionFailure,
+            (renameEditor?.target as? WorkspaceRenameTarget.Chat)?.id,
         )
     list.markAllReadResult
         ?.takeIf { undo == null }
@@ -272,6 +309,88 @@ internal fun WorkspaceChatFeedback(
 }
 
 @Composable
+private fun WorkspaceRenameForm(
+    chats: ChatListModel,
+    list: ChatListUiState,
+    editor: ChatRenameEditor,
+    dismiss: () -> Unit,
+    saved: () -> Unit,
+) {
+    val target = editor.target
+    val id = target.id
+    when (target) {
+        is WorkspaceRenameTarget.Chat -> {
+            val thread = list.confirmedThreads.firstOrNull { it.id == id && it.hidden != true }
+            if (thread == null) {
+                if (list.listPhase == ChatReadPhase.Ready) LaunchedEffect(Unit) { dismiss() }
+                return
+            }
+            val failure = list.failedRowAction?.takeIf { it.renameThreadId == id }
+            val status =
+                when {
+                    list.pendingRowActions[id] == ChatRowAction.Rename -> RenameStatus.Saving
+                    id in list.unconfirmedRenames ->
+                        if (list.listPhase == ChatReadPhase.Loading) RenameStatus.Checking
+                        else RenameStatus.Unconfirmed
+                    failure?.rejected == true -> RenameStatus.Rejected
+                    else -> RenameStatus.Editing
+                }
+            RenameListItemSheet(
+                editor = editor,
+                confirmedName = thread.title.orEmpty(),
+                titleRes = R.string.chat_rename,
+                labelRes = R.string.chat_title_field,
+                enabled =
+                    ChatRowAction.Rename in list.rowActions(thread) &&
+                        id !in list.pendingRowActions,
+                status = status,
+                check = { chats.checkChatRename(id) },
+                dismiss = {
+                    if (failure?.rejected == true) chats.dismissRowActionFailure(failure)
+                    dismiss()
+                },
+                saved = saved,
+                save = { chats.renameThread(id, it, target.fromConversation) },
+            )
+        }
+        is WorkspaceRenameTarget.Project -> {
+            val project = list.projects.firstOrNull { it.id == id }
+            if (project == null) {
+                if (list.projectsPhase == ChatReadPhase.Ready) LaunchedEffect(Unit) { dismiss() }
+                return
+            }
+            val rejection = list.projectRenameRejection?.takeIf { it.projectId == id }
+            val connectionFailed = id in list.projectList.connectionFailedRenames
+            val status =
+                when {
+                    list.renamingProjectId == id -> RenameStatus.Saving
+                    rejection != null || connectionFailed -> RenameStatus.Rejected
+                    id in list.unconfirmedProjectRenames ->
+                        if (list.projectsPhase == ChatReadPhase.Loading) RenameStatus.Checking
+                        else RenameStatus.Unconfirmed
+                    else -> RenameStatus.Editing
+                }
+            RenameListItemSheet(
+                editor = editor,
+                confirmedName = project.name,
+                titleRes = R.string.chat_rename_project,
+                labelRes = R.string.chat_project_name,
+                maxLength = ProjectNameLimit,
+                enabled = list.canRenameProject,
+                status = status,
+                check = { chats.checkProjectRename(id) },
+                dismiss = {
+                    rejection?.let(chats::dismissProjectRenameRejection)
+                    dismiss()
+                },
+                saved = saved,
+                save = { chats.renameProject(id, it) },
+            )
+        }
+    }
+}
+
+@Composable
 private fun ChatRowFailureFeedback(
     chats: ChatListModel,
     list: ChatListUiState,
@@ -279,8 +398,10 @@ private fun ChatRowFailureFeedback(
     showChatList: Boolean,
     visibleConversationId: String?,
     showRowActionFailure: Boolean,
+    renamingThreadId: String?,
 ) {
     val failure = list.failedRowAction ?: return
+    if (renamingThreadId != null && failure.renameThreadId == renamingThreadId) return
     val action = failure.action
     if (action == ChatRowAction.Delete && failure.rejected && !failure.deleteFromWorkflow) {
         val message = stringResource(R.string.chat_delete_rejected)

@@ -493,7 +493,8 @@ final class PermissionBatchTests: XCTestCase {
       createdAt: .now,
       updatedAt: .now, sortAt: .now, pinnedAt: nil, pinOrder: nil)
     let conversation = ConversationStore(
-      thread: thread, sync: sync, commands: commands, webURL: fixture.http.baseURL,
+      thread: thread, sync: sync, commands: commands, graph: makeTestWorkspaceGraph(),
+      webURL: fixture.http.baseURL,
       messageMarkdown: MessageMarkdownCache(baseURL: fixture.http.baseURL),
       isVisible: { true }, didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {})
     // Exercise the production permission scope without starting unrelated chat summary demand.

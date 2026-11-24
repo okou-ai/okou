@@ -12,7 +12,6 @@
     <string name="chat_undo_failed">बदलाव पूर्ववत नहीं किया जा सका।</string>
     <string name="chat_undo_unconfirmed">पुष्टि नहीं हो सकी कि बदलाव पूर्ववत हुआ।</string>
     <string name="chat_feedback_dismiss">बंद करें</string>
-    <string name="chat_list_offline">ऑफ़लाइन</string>
     <string name="chat_list_first_load_failed">फ़िलहाल लोड नहीं हो सका</string>
     <string name="chat_list_load_when_online">फिर से ऑनलाइन होने पर चैट लोड होंगी।</string>
     <string name="chat_list_title">चैट</string>
@@ -75,7 +74,6 @@
     <string name="chat_delete_rejected">चैट हटाई नहीं जा सकी।</string>
     <string name="chat_delete_title">चैट हटाएं?</string>
     <string name="chat_delete_description">“%1$s” के संदेश और ड्राफ़्ट हमेशा के लिए हट जाएँगे। चल रहे काम रुक जाएँगे और जुड़े ऑटोमेशन रोक दिए जाएँगे।</string>
-    <string name="chat_delete_confirm">हटाएँ</string>
     <string name="chat_rename_project">प्रोजेक्ट का नाम बदलें</string>
     <string name="chat_project_name">प्रोजेक्ट का नाम</string>
     <string name="chat_project_rename_unconfirmed">प्रोजेक्ट के नाम की पुष्टि नहीं हो सकी।</string>
@@ -97,4 +95,12 @@
     <string name="chat_project_delete_unconfirmed">प्रोजेक्ट हटाए जाने की पुष्टि नहीं हो सकी।</string>
     <string name="chat_row_action_rejected_named">“%1$s” पूरा नहीं किया जा सका।</string>
     <string name="chat_row_action_offline_named">“%1$s” पूरा नहीं किया जा सका। कनेक्शन जाँचें और फिर कोशिश करें।</string>
+    <string name="chat_rename_save_failed">सेव नहीं हो सका। आपके बदलाव सुरक्षित हैं।</string>
+    <string name="chat_rename_check_result">नतीजा देखें</string>
+    <string name="chat_rename_trim_hint">शुरू और आखिर के स्पेस हटा दिए जाते हैं।</string>
+    <string name="chat_rename_required">कोई नाम दर्ज करें।</string>
+    <string name="chat_rename_checking_result">नतीजे की जाँच हो रही है…</string>
+    <string name="chat_rename_save_unconfirmed">सेव करने के नतीजे की अब तक पुष्टि नहीं हुई है।</string>
+    <string name="chat_title_saved">चैट का शीर्षक सेव हो गया</string>
+    <string name="chat_project_name_saved">प्रोजेक्ट का नाम सेव हो गया</string>
 </resources>

@@ -1,5 +1,69 @@
 # Changelog
 
+## [8.868.1](https://github.com/okou-ai/okou/compare/core-v8.868.0...core-v8.868.1) (2026-11-24)
+
+
+### Refactoring
+
+* remove artifact name sorting ([#50428](https://github.com/okou-ai/okou/issues/50428)) ([b693ca5](https://github.com/okou-ai/okou/commit/b693ca5a66bab74587596b3971fdc5163f47f352))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.117.0
+
+## [8.868.0](https://github.com/okou-ai/okou/compare/core-v8.867.1...core-v8.868.0) (2026-11-24)
+
+
+### Features
+
+* **ios:** add connector management and align chat account controls ([#50371](https://github.com/okou-ai/okou/issues/50371)) ([b6afd7e](https://github.com/okou-ai/okou/commit/b6afd7e2be27cb0356358062dc7bb813200d18f9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.116.0
+
+## [8.867.1](https://github.com/okou-ai/okou/compare/core-v8.867.0...core-v8.867.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* **app:** remove standalone template picker ([#50365](https://github.com/okou-ai/okou/issues/50365)) ([6a20b9e](https://github.com/okou-ai/okou/commit/6a20b9e686f663c0f71403cf4d52c6d77820e7a6))
+
+## [8.867.0](https://github.com/okou-ai/okou/compare/core-v8.866.0...core-v8.867.0) (2026-11-24)
+
+
+### Features
+
+* **artifacts:** add a gated searchable artifact library list ([#50231](https://github.com/okou-ai/okou/issues/50231)) ([2bb0a85](https://github.com/okou-ai/okou/commit/2bb0a8587efb1fc8abc513dba5c50109406226ed))
+* scope composer voice recordings to the organization ([#50373](https://github.com/okou-ai/okou/issues/50373)) ([4e0340a](https://github.com/okou-ai/okou/commit/4e0340a5ffea0390e87b43e77fefdd217abc1cbd))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.115.0
+
+## [8.866.0](https://github.com/okou-ai/okou/compare/core-v8.865.1...core-v8.866.0) (2026-11-24)
+
+
+### Features
+
+* add recording chips to chat composers behind a switch ([#50334](https://github.com/okou-ai/okou/issues/50334)) ([7fa55b1](https://github.com/okou-ai/okou/commit/7fa55b15b8286465939af85fe2faeaa1d39a952e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.114.0
+
 ## [8.865.1](https://github.com/okou-ai/okou/compare/core-v8.865.0...core-v8.865.1) (2026-11-24)
 
 

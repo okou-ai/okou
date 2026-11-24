@@ -31,7 +31,18 @@ enum class PreferenceStatus {
     Saving,
     Refreshing,
     SaveFailed,
+    SaveUnconfirmed,
     RefreshFailed,
+}
+
+internal sealed interface PreferenceSaveNotice {
+    class Unconfirmed : PreferenceSaveNotice
+
+    class Rejected(
+        val timezoneOnly: Boolean,
+        val rolledBack: Boolean,
+        val keptAppearance: Boolean,
+    ) : PreferenceSaveNotice
 }
 
 data class PreferenceChange(
@@ -73,6 +84,13 @@ data class PreferenceChange(
         val timezone = timezoneToReconcile?.takeIf { it == confirmed.timezone } ?: return remaining
         return (remaining ?: PreferenceChange()).copy(timezoneToReconcile = timezone)
     }
+
+    internal fun includesAnyOf(sent: PreferenceChange): Boolean =
+        (sent.theme != null && sent.theme == theme) ||
+            (sent.colorTheme != null && sent.colorTheme == colorTheme) ||
+            (sent.locale != null && sent.locale == locale) ||
+            (sent.timezoneToWrite != null && sent.timezoneToWrite == timezoneToWrite) ||
+            (sent.cloudBrowser != null && sent.cloudBrowser == cloudBrowser)
 }
 
 private fun UserPreferences.asChoice() =
@@ -84,24 +102,49 @@ private fun UserPreferences.asChoice() =
         cloudBrowser = cloudBrowserEnabledByDefault,
     )
 
+private fun UserPreferences.withSavedFields(sent: PreferenceChange, response: UserPreferences) =
+    copy(
+        colorTheme = if (sent.colorTheme != null) response.colorTheme else colorTheme,
+        locale = if (sent.locale != null) response.locale else locale,
+        theme = if (sent.theme != null) response.theme else theme,
+        timezone = if (sent.timezoneToWrite != null) response.timezone else timezone,
+        cloudBrowserEnabledByDefault =
+            if (sent.cloudBrowser != null) response.cloudBrowserEnabledByDefault
+            else cloudBrowserEnabledByDefault,
+    )
+
 data class MemberPreferencesState(
     val confirmed: UserPreferences,
     val pending: PreferenceChange? = null,
     val status: PreferenceStatus = PreferenceStatus.Ready,
     val recovering: Boolean = false,
     internal val timezoneConfirmation: Long = 0,
+    internal val localTheme: UserPreferencesTheme? = null,
+    internal val localColorTheme: UserPreferencesColorTheme? = null,
 ) {
     val busy: Boolean
         get() = status == PreferenceStatus.Saving || status == PreferenceStatus.Refreshing
 
     val colorTheme: UserPreferencesColorTheme
-        get() = pending?.colorTheme ?: confirmed.colorTheme ?: UserPreferencesColorTheme.DEFAULT
+        get() =
+            pending?.colorTheme
+                ?: localColorTheme
+                ?: confirmed.colorTheme
+                ?: UserPreferencesColorTheme.DEFAULT
 
     val theme: UserPreferencesTheme
-        get() = pending?.theme ?: confirmed.theme ?: UserPreferencesTheme.SYSTEM
+        get() = pending?.theme ?: localTheme ?: confirmed.theme ?: UserPreferencesTheme.SYSTEM
+
+    internal val appearance: MemberAppearance
+        get() = MemberAppearance(theme, colorTheme)
 
     val timezone: String
         get() = pending?.timezone ?: checkNotNull(confirmed.timezone)
+
+    internal val timezoneScheduleUpdatePending: Boolean
+        get() =
+            pending?.timezone == null &&
+                pending?.timezoneToReconcile?.let { it == confirmed.timezone } == true
 
     val cloudBrowser: Boolean
         get() = pending?.cloudBrowser ?: confirmed.cloudBrowserEnabledByDefault
@@ -121,7 +164,7 @@ private fun MemberPreferencesState.afterTimezoneConflict(
     // The timezone endpoint returns this conflict after saving the fields and before finishing
     // Morning Brief reconciliation. Keep the schedule repair pending and acknowledge the values.
     val timezone = checkNotNull(sent.timezoneToWrite)
-    val remaining = pending?.after(sent) ?: PreferenceChange()
+    val remaining = pending?.after(sent)
     return copy(
         confirmed =
             confirmed.copy(
@@ -132,8 +175,12 @@ private fun MemberPreferencesState.afterTimezoneConflict(
                 cloudBrowserEnabledByDefault =
                     sent.cloudBrowser ?: confirmed.cloudBrowserEnabledByDefault,
             ),
-        pending = remaining.copy(timezoneToReconcile = timezone),
+        pending = (remaining ?: PreferenceChange()).copy(timezoneToReconcile = timezone),
+        status = if (remaining == null) PreferenceStatus.SaveFailed else PreferenceStatus.Ready,
+        recovering = false,
         timezoneConfirmation = timezoneConfirmation + 1,
+        localTheme = localTheme.takeUnless { sent.theme != null },
+        localColorTheme = localColorTheme.takeUnless { sent.colorTheme != null },
     )
 }
 
@@ -149,15 +196,18 @@ class MemberPreferencesModel(
     private val mutable =
         MutableStateFlow(MemberPreferencesState(initial, initialPending?.afterReadback(initial)))
     val uiState = mutable.asStateFlow()
+    private val saveNotice = MutableStateFlow<PreferenceSaveNotice?>(null)
+    internal val notices = saveNotice.asStateFlow()
     private var retired = false
     private var online = true
     private var request: Job? = null
     private var recovery: Job? = null
-    private var retryDelay = 5_000L
+    private var saveFailures = 0
     private var readFailures = 0
     private var readRequested = false
     private var settingsVisible = false
     private var needsWriteReadback = false
+    private var failedWrite: PreferenceChange? = null
 
     init {
         viewModelScope.launch {
@@ -168,7 +218,6 @@ class MemberPreferencesModel(
                     recovery?.cancel()
                     recovery = null
                 } else if (reconnected) {
-                    retryDelay = 5_000L
                     readFailures = 0
                     if (mutable.value.pending == null && settingsVisible) readRequested = true
                     if (
@@ -183,6 +232,10 @@ class MemberPreferencesModel(
     }
 
     private fun current() = !retired && authorized()
+
+    internal fun dismissNotice(notice: PreferenceSaveNotice) {
+        if (saveNotice.value === notice) saveNotice.value = null
+    }
 
     fun selectTheme(value: UserPreferencesTheme) {
         val state = mutable.value
@@ -202,6 +255,7 @@ class MemberPreferencesModel(
     }
 
     fun selectTimezone(value: String, missingOnServer: Boolean = false) {
+        if (!current()) return
         val state = mutable.value
         if (state.pending?.timezoneToWrite != value && (state.timezone != value || missingOnServer))
             select((state.pending ?: PreferenceChange()).copy(timezone = value))
@@ -216,6 +270,8 @@ class MemberPreferencesModel(
 
     private fun select(change: PreferenceChange) {
         if (!current()) return
+        saveNotice.value = null
+        if (saveFailures <= finiteReadRetryDelays.size) saveFailures = 0
         mutable.value = mutable.value.copy(pending = change, recovering = !online)
         readRequested = false
         clearRecovery()
@@ -223,8 +279,11 @@ class MemberPreferencesModel(
     }
 
     fun refresh() {
-        if (!current() || request != null || recovery != null || mutable.value.pending != null)
+        if (!current() || request != null || recovery != null) return
+        if (mutable.value.pending != null) {
+            if (mutable.value.status == PreferenceStatus.SaveUnconfirmed) synchronize()
             return
+        }
         readFailures = 0
         readRequested = true
         synchronize()
@@ -250,6 +309,13 @@ class MemberPreferencesModel(
         synchronize()
     }
 
+    internal fun pendingForWorkspaceRestore(): PreferenceChange? {
+        val pending = mutable.value.pending
+        val sent = failedWrite
+        if (saveFailures <= finiteReadRetryDelays.size || sent == null) return pending
+        return pending?.after(sent)
+    }
+
     private fun synchronize() {
         if (!current() || !online || request != null || recovery != null) return
         val change = mutable.value.pending
@@ -257,6 +323,8 @@ class MemberPreferencesModel(
         readRequested = false
         val saving = change != null
         val verifying = saving && needsWriteReadback
+        val finalReadback = verifying && saveFailures > finiteReadRetryDelays.size
+        val wasUnconfirmed = mutable.value.status == PreferenceStatus.SaveUnconfirmed
         val pendingForWrite = change?.let {
             if (verifying || it.timezoneToWrite == null) it
             else it.copy(timezoneToReconcile = it.timezoneToWrite)
@@ -264,14 +332,19 @@ class MemberPreferencesModel(
         mutable.value =
             mutable.value.copy(
                 pending = pendingForWrite,
-                status = if (saving) PreferenceStatus.Saving else PreferenceStatus.Refreshing,
+                status =
+                    when {
+                        wasUnconfirmed -> PreferenceStatus.SaveUnconfirmed
+                        saving -> PreferenceStatus.Saving
+                        else -> PreferenceStatus.Refreshing
+                    },
                 recovering = false,
             )
         val job =
             viewModelScope.launch(start = CoroutineStart.LAZY) {
-                var success = false
+                var continueSync = false
                 try {
-                    val confirmed =
+                    val response =
                         if (change == null || verifying) service.preferences()
                         else {
                             // A failed or unreadable reply can follow a committed write.
@@ -281,6 +354,10 @@ class MemberPreferencesModel(
                     currentCoroutineContext().ensureActive()
                     if (current()) {
                         val state = mutable.value
+                        val confirmed =
+                            if (change != null && !verifying)
+                                state.confirmed.withSavedFields(change, response)
+                            else response
                         val latest = state.pending
                         val pending =
                             when {
@@ -291,25 +368,54 @@ class MemberPreferencesModel(
                         needsWriteReadback = false
                         val timezoneSaved =
                             change?.timezoneToWrite?.let { it == confirmed.timezone } == true
-                        mutable.value =
-                            MemberPreferencesState(
-                                confirmed,
-                                pending,
+                        val updated =
+                            state.copy(
+                                confirmed = confirmed,
+                                pending = pending,
+                                status = PreferenceStatus.Ready,
+                                recovering = false,
                                 timezoneConfirmation =
                                     if (timezoneSaved) state.timezoneConfirmation + 1
                                     else state.timezoneConfirmation,
+                                localTheme =
+                                    state.localTheme.takeIf {
+                                        change != null &&
+                                            (change.theme == null ||
+                                                verifying && change.theme != confirmed.theme)
+                                    },
+                                localColorTheme =
+                                    state.localColorTheme.takeIf {
+                                        change != null &&
+                                            (change.colorTheme == null ||
+                                                verifying &&
+                                                    change.colorTheme != confirmed.colorTheme)
+                                    },
                             )
-                        retryDelay = 5_000L
+                        val failed = failedWrite
+                        val rejected = failed.takeIf { finalReadback }
+                        failedWrite = null
+                        if (
+                            !verifying ||
+                                finalReadback ||
+                                failed == null ||
+                                pending?.includesAnyOf(failed) != true
+                        )
+                            saveFailures = 0
                         readFailures = 0
-                        success = true
+                        if (finalReadback && saveNotice.value is PreferenceSaveNotice.Unconfirmed)
+                            saveNotice.value = null
+                        val settled =
+                            if (rejected == null) updated else finishRejected(updated, rejected)
+                        mutable.value = settled
+                        continueSync = settled.status == PreferenceStatus.Ready
                     }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
-                    fail(error, saving, sent = change.takeUnless { verifying })
+                    continueSync = fail(error, saving, sent = change.takeUnless { verifying })
                 } finally {
                     request = null
-                    if (success) synchronize()
+                    if (continueSync) synchronize()
                 }
             }
         request = job
@@ -319,29 +425,56 @@ class MemberPreferencesModel(
     private fun clearRecovery() {
         recovery?.cancel()
         recovery = null
-        retryDelay = 5_000L
         readFailures = 0
     }
 
-    private fun fail(error: Exception, saving: Boolean, sent: PreferenceChange?) {
-        if (!current()) return
+    private fun fail(error: Exception, saving: Boolean, sent: PreferenceChange?): Boolean {
+        if (!current()) return false
         // Authorization/update failures retire the parent workspace before another publication.
         onFailure(error)
-        if (!current()) return
+        if (!current()) return false
+        // The preferences endpoint rejects invalid input before committing any fields.
+        if (
+            error is ApiFailure.Http &&
+                error.status == 400 &&
+                error.code == "BAD_REQUEST" &&
+                sent?.timezone != null
+        ) {
+            val state = mutable.value
+            val restored = state.pending?.copy(timezoneToReconcile = sent.timezoneToReconcile)
+            val settled =
+                finishRejected(
+                    state.copy(pending = restored),
+                    PreferenceChange(timezone = sent.timezone),
+                )
+            mutable.value = settled
+            saveFailures = 0
+            failedWrite = null
+            needsWriteReadback = restored?.timezoneToReconcile != null
+            return settled.status == PreferenceStatus.Ready || needsWriteReadback
+        }
         val conflict = error is ApiFailure.Http && error.status == 409 && error.code == "CONFLICT"
-        val state =
-            if (conflict && sent?.timezoneToWrite != null) mutable.value.afterTimezoneConflict(sent)
-            else mutable.value
+        if (conflict && sent?.timezoneToWrite != null) {
+            saveFailures = 0
+            failedWrite = null
+            val state = mutable.value.afterTimezoneConflict(sent)
+            mutable.value = state
+            // New selections can proceed after readback. A schedule repair alone waits for Retry.
+            return state.status == PreferenceStatus.Ready
+        }
+        val state = mutable.value
         val pending = state.pending != null
         val recoverable =
             when (error) {
                 is ApiFailure.Network,
+                is ApiFailure.IncompatibleResponse,
                 is IOException -> true
                 is ApiFailure.Http ->
                     error.status == 408 || error.status == 429 || error.status in 500..599
                 else -> false
             }
-        if (!saving && !pending) {
+        if (!saving) {
+            if (pending) return true
             val wait = if (recoverable) finiteReadRetryDelays.getOrNull(readFailures++) else null
             val retry = wait != null
             mutable.value =
@@ -352,22 +485,69 @@ class MemberPreferencesModel(
                 )
             readRequested = retry
             if (wait != null && online) scheduleRecovery(wait)
-            return
+            return false
         }
-        mutable.value =
-            state.copy(
-                status =
-                    if (saving) PreferenceStatus.SaveFailed else PreferenceStatus.RefreshFailed,
-                recovering = recoverable,
-            )
-        if (pending && !saving || recoverable && (pending || settingsVisible)) {
-            readRequested = !pending
-            if (online) {
-                val wait = retryDelay
-                retryDelay = (retryDelay * 2).coerceAtMost(60_000L)
-                scheduleRecovery(wait)
-            }
+        if (
+            sent != null &&
+                error is ApiFailure.Http &&
+                error.status == 400 &&
+                error.code == "BAD_REQUEST"
+        ) {
+            saveFailures = 0
+            failedWrite = null
+            needsWriteReadback = false
+            val settled = finishRejected(state, sent)
+            mutable.value = settled
+            return settled.status == PreferenceStatus.Ready
         }
+        if (sent != null) failedWrite = sent
+        val wait = if (recoverable) finiteReadRetryDelays.getOrNull(saveFailures) else null
+        saveFailures = if (wait != null) saveFailures + 1 else finiteReadRetryDelays.size + 1
+        if (wait != null) {
+            mutable.value = state.copy(status = PreferenceStatus.SaveFailed, recovering = true)
+            if (online) scheduleRecovery(wait)
+            return false
+        }
+        if (sent != null && online) return true // Last write still needs authoritative readback.
+        if (state.status != PreferenceStatus.SaveUnconfirmed)
+            saveNotice.value = PreferenceSaveNotice.Unconfirmed()
+        mutable.value = state.copy(status = PreferenceStatus.SaveUnconfirmed, recovering = false)
+        return false
+    }
+
+    private fun finishRejected(
+        state: MemberPreferencesState,
+        sent: PreferenceChange,
+    ): MemberPreferencesState {
+        val latest = state.pending
+        val theme = sent.theme?.takeIf { it == latest?.theme }
+        val palette = sent.colorTheme?.takeIf { it == latest?.colorTheme }
+        val timezone = sent.timezone != null && sent.timezone == latest?.timezone
+        val other =
+            (sent.locale != null && sent.locale == latest?.locale) ||
+                (sent.cloudBrowser != null && sent.cloudBrowser == latest?.cloudBrowser)
+        val keptAppearance = theme != null || palette != null
+        if (timezone || other || keptAppearance)
+            saveNotice.value =
+                PreferenceSaveNotice.Rejected(
+                    timezone && !other,
+                    timezone || other,
+                    keptAppearance,
+                )
+        val remaining =
+            latest?.copy(timezoneToReconcile = null)?.after(sent.copy(timezoneToReconcile = null))
+        val repair = latest?.timezoneToReconcile?.takeIf { it == state.confirmed.timezone }
+        return state.copy(
+            pending =
+                if (repair == null) remaining
+                else (remaining ?: PreferenceChange()).copy(timezoneToReconcile = repair),
+            status =
+                if (repair != null && remaining == null) PreferenceStatus.SaveFailed
+                else PreferenceStatus.Ready,
+            recovering = false,
+            localTheme = theme ?: state.localTheme,
+            localColorTheme = palette ?: state.localColorTheme,
+        )
     }
 
     private fun scheduleRecovery(wait: Long) {

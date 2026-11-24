@@ -9,6 +9,7 @@ import {
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { strToU8, zipSync } from "fflate";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
@@ -207,7 +208,8 @@ test("Binary artifacts open a download-capable sidebar instead of downloading on
   expect(screen.queryByTestId("attachment-lightbox")).not.toBeInTheDocument();
 });
 
-test("A ZIP lists nested files and opens a selected entry in the existing preview", async () => {
+test("A ZIP lists nested files and lets a selected entry's preview be dismissed", async () => {
+  const user = userEvent.setup();
   const archive = zipSync({
     "docs/notes.txt": strToU8("Notes from inside the archive"),
     "docs/report.md": strToU8("# Inside the release report"),
@@ -240,16 +242,25 @@ test("A ZIP lists nested files and opens a selected entry in the existing previe
   await expect(
     within(preview).findByText("Notes from inside the archive"),
   ).resolves.toBeInTheDocument();
-  click(within(preview).getByText("docs/report.md"));
-  await expect(
-    within(preview).findByRole("heading", {
-      name: "Inside the release report",
-    }),
-  ).resolves.toBeInTheDocument();
+  const report = getButtonByName("docs/report.md", preview);
+  const reportHeading = { name: "Inside the release report" };
+  await user.click(report);
+  await within(preview).findByRole("heading", reportHeading);
   expect(
     within(preview).queryByText("Notes from inside the archive"),
   ).not.toBeInTheDocument();
   expect(getButtonByName("Download artifact", preview)).toBeInTheDocument();
+
+  await user.click(report);
+  expect(report).toHaveAttribute("aria-pressed", "false");
+  expect(report).toHaveFocus();
+  expect(within(preview).queryByRole("heading", reportHeading)).toBeNull();
+  expect(notes).toBeInTheDocument();
+
+  await user.keyboard("{Enter}");
+  await expect(
+    within(preview).findByRole("heading", reportHeading),
+  ).resolves.toBeInTheDocument();
 });
 
 test("A ZIP larger than 5 MiB keeps the download fallback without fetching the archive", async () => {

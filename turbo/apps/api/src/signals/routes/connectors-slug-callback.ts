@@ -1337,6 +1337,8 @@ const callbackBuiltinConnectorInner$ = command(
         const nativeResponse = connectorOAuthRedirectResponse(
           connectorNativeAppReturnUrl(nativeReturn),
         );
+        nativeResponse.headers.set("Cache-Control", "no-store");
+        nativeResponse.headers.set("Referrer-Policy", "no-referrer");
         clearConnectorOAuthCookies(nativeResponse);
         return nativeResponse;
       }

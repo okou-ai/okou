@@ -1,5 +1,55 @@
 # Changelog
 
+## [0.52.1](https://github.com/okou-ai/okou/compare/android-v0.52.0...android-v0.52.1) (2026-11-24)
+
+
+### Refactoring
+
+* remove artifact name sorting ([#50428](https://github.com/okou-ai/okou/issues/50428)) ([b693ca5](https://github.com/okou-ai/okou/commit/b693ca5a66bab74587596b3971fdc5163f47f352))
+
+## [0.52.0](https://github.com/okou-ai/okou/compare/android-v0.51.1...android-v0.52.0) (2026-11-24)
+
+
+### Features
+
+* **android:** show chat origins and automation workflows in chat resources ([#50381](https://github.com/okou-ai/okou/issues/50381)) ([1785657](https://github.com/okou-ai/okou/commit/17856573d60e67c60d6c870dcdc5f556c8ae5556))
+
+
+### Bug Fixes
+
+* **android:** show workflow editor save progress in place ([#50360](https://github.com/okou-ai/okou/issues/50360)) ([23fe8cc](https://github.com/okou-ai/okou/commit/23fe8ccfb1c372236bfd3237c4b55f06099be4b0))
+
+## [0.51.1](https://github.com/okou-ai/okou/compare/android-v0.51.0...android-v0.51.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* **android:** align failed-reply recovery feedback with design ([#50278](https://github.com/okou-ai/okou/issues/50278)) ([aba089d](https://github.com/okou-ai/okou/commit/aba089dae5167ce904fbc13ccb9dc858f5ee827b))
+* **android:** align update recovery and compact details ([#50309](https://github.com/okou-ai/okou/issues/50309)) ([34bcce9](https://github.com/okou-ai/okou/commit/34bcce92b6d0023509e6c4908704935834776590))
+* **android:** explain terminal connector device authorization results ([#50364](https://github.com/okou-ai/okou/issues/50364)) ([d1b812f](https://github.com/okou-ai/okou/commit/d1b812f636d36d67a8a29e7fc7b6a8b811a95c2b))
+* **android:** sort and expand settings time zones ([#50270](https://github.com/okou-ai/okou/issues/50270)) ([cca10d5](https://github.com/okou-ai/okou/commit/cca10d52d8117b084b2f4903cac9185c95758619))
+
+## [0.51.0](https://github.com/okou-ai/okou/compare/android-v0.50.1...android-v0.51.0) (2026-11-24)
+
+
+### Features
+
+* **artifacts:** add a gated searchable artifact library list ([#50231](https://github.com/okou-ai/okou/issues/50231)) ([2bb0a85](https://github.com/okou-ai/okou/commit/2bb0a8587efb1fc8abc513dba5c50109406226ed))
+
+
+### Bug Fixes
+
+* **android:** keep search progress below the filters ([#50362](https://github.com/okou-ai/okou/issues/50362)) ([d2a61ad](https://github.com/okou-ai/okou/commit/d2a61ad3b2f7d8a241ee089124639ce608e0ecd6))
+* **android:** retain chat list rename forms through save failures ([#50302](https://github.com/okou-ai/okou/issues/50302)) ([6958795](https://github.com/okou-ai/okou/commit/695879543d6a6b057a784ef392c32dc03a1af516))
+
+## [0.50.1](https://github.com/okou-ai/okou/compare/android-v0.50.0...android-v0.50.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* **android:** align chat stop and queue action feedback ([#50289](https://github.com/okou-ai/okou/issues/50289)) ([adc0cde](https://github.com/okou-ai/okou/commit/adc0cded8702f8988b1187645d85a90c8ef11d22))
+* **android:** preserve workflow action focus on return ([#50296](https://github.com/okou-ai/okou/issues/50296)) ([3a97bb5](https://github.com/okou-ai/okou/commit/3a97bb50e4b4249086ad36880c334de50f410f52))
+
 ## [0.50.0](https://github.com/okou-ai/okou/compare/android-v0.49.0...android-v0.50.0) (2026-11-23)
 
 

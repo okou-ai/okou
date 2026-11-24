@@ -266,6 +266,11 @@
         "modelCatalogCacheValidationLatency": "Latence de validation du cache du catalogue de modèles",
         "modelCatalogPrefetchRole": "Rôle de prélecture du catalogue de modèles",
         "modelCatalogUpstreamEncoding": "Encodage en amont du catalogue de modèles",
+        "openrouterAttempts": "OpenRouter Tentatives de fournisseur",
+        "openrouterAttemptsIncomplete": "OpenRouter Tentatives incomplètes",
+        "openrouterGenerationId": "OpenRouter ID de génération",
+        "openrouterModel": "OpenRouter Modèle",
+        "openrouterProvider": "OpenRouter Fournisseur",
         "params": "Paramètres",
         "permission": "Permission",
         "permissionError": "Erreur de permission",
@@ -586,6 +591,22 @@
       "text": "Texte",
       "video": "Vidéo"
     },
+    "library": {
+      "allArtifacts": "Tous les artéfacts",
+      "allTypes": "Tous les types",
+      "clearFilters": "Effacer les filtres",
+      "clearSearch": "Effacer la recherche",
+      "created": "Créé",
+      "emptyDescription": "Essayez un autre nom ou type.",
+      "emptyTitle": "Aucun artéfact trouvé",
+      "loadMore": "Charger plus",
+      "name": "Nom",
+      "retry": "Réessayer",
+      "search": "Rechercher des artéfacts",
+      "sortAscending": "Trier par ordre croissant",
+      "sortDescending": "Trier par ordre décroissant",
+      "type": "Type"
+    },
     "metadata": {
       "generated": "Généré le {{date}}",
       "updated": "Mis à jour le {{date}}"
@@ -681,15 +702,9 @@
       "updated": "URL du site mise à jour"
     },
     "templates": {
-      "activeHtmlPreview": "Aperçu HTML actif de {{title}}",
-      "all": "Tout",
       "avatar": "Avatar",
-      "categories": "Catégories de modèles",
-      "category": "Catégorie de modèle",
       "fullPreview": "Aperçu complet du site {{title}}",
       "htmlPreview": "Aperçu HTML de {{title}}",
-      "illustration": "Illustration",
-      "illustrationPreview": "Aperçu de l'illustration {{title}}",
       "importDeck": "Importer votre propre présentation",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importDocument": "Importer votre propre document",
@@ -701,18 +716,10 @@
       "importImageHint": "Enregistrer comme style",
       "multiAccent": "Multi-accents",
       "nextSlide": "Aperçu de la diapositive suivante",
-      "noMatches": "Aucun résultat",
-      "previewCurrentSlide": "Aperçu de {{title}} à la diapositive actuelle",
       "previewSlide": "Aperçu de la diapositive {{slideNumber}}",
-      "previewWebsite": "Aperçu du modèle de site Web {{title}}",
       "previousSlide": "Aperçu de la diapositive précédente",
-      "searchConnector": "Rechercher des modèles",
-      "searchConnectors": "Rechercher des modèles",
       "selectStyle": "Sélectionner le style {{style}}",
       "selectTemplate": "Sélectionner le modèle {{title}}",
-      "selectWebsite": "Sélectionner le modèle de site Web {{title}}",
-      "selectWorkflow": "Sélectionner le modèle de workflow {{title}}",
-      "showVariant": "Afficher la variante {{variantNumber}}",
       "singleAccent": "Accent unique",
       "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "Aperçu de la diapositive {{title}}",
@@ -740,15 +747,11 @@
         "terracottaClay": "Pot en argile",
         "warmSand": "Journal du matin"
       },
-      "tryDifferentSearch": "Essayez une recherche différente.",
-      "use": "Utiliser",
       "useThisTemplate": "Utilisez ce modèle",
       "visibility": {
         "changeLabel": "Modifier la visibilité du modèle"
       },
       "website": "Site web",
-      "websitePreview": "Aperçu du modèle de site web {{title}}",
-      "workflow": "Workflow",
       "workflowCatalog": {
         "auto-inbox-label": {
           "description": "Créez un workflow qui se déclenche dès qu'un libellé Gmail est appliqué et traite le message concerné.",
@@ -1942,8 +1945,6 @@
       "add": "Ajouter",
       "configureModel": "Configurer le modèle",
       "create": {
-        "addStyle": "Ajouter un style",
-        "addTemplate": "Ajouter un modèle",
         "documentPlaceholder": "Que souhaitez-vous inclure dans votre document ?",
         "imagePlaceholder": "Décrivez l’image à créer…",
         "presentationPlaceholder": "Quel est le sujet de votre présentation ?",
@@ -1991,11 +1992,9 @@
         "scheduleHint": "Exécuter selon un calendrier",
         "share": "Partager la discussion",
         "shareHint": "Partager un lien vers cette conversation",
-        "templates": "Modèles",
         "unpin": "Désépingler la discussion"
       },
       "slashPanel": {
-        "browseAll": "Parcourir tous les modèles",
         "hint": "Choisir une action",
         "useTemplate": "Utiliser le modèle {{title}}"
       },
@@ -2678,7 +2677,6 @@
         "website": "Site web",
         "workflow": "Workflow"
       },
-      "viewAll": "Tout voir",
       "visualization": {
         "allCharts": "Tous les graphiques",
         "back": "Back to visualization options",
@@ -2860,8 +2858,6 @@
         "workflow": "Workflow"
       },
       "previewTemplate": "Aperçu du modèle {{title}}",
-      "previewWebsite": "Aperçu du modèle de site web {{title}}",
-      "previewWorkflow": "Aperçu du modèle de workflow {{title}}",
       "removeTemplate": "Supprimer le modèle {{title}}",
       "removeWebsite": "Supprimer le modèle de site web {{title}}",
       "removeWorkflow": "Supprimer le modèle de workflow {{title}}"
@@ -3016,6 +3012,8 @@
     "accountsInChat": "Choisissez les comptes activés dans cette conversation.",
     "enableByDefault": "Activer {{account}} par défaut",
     "manageAccounts": "Gérer les comptes",
+    "memberPolicyLoadFailed": "Impossible de charger l’accès aux comptes.",
+    "memberSettingsDescription": "Choisissez les comptes {{connector}} qu’Okou peut utiliser dans vos conversations.",
     "permissions": "Autorisations",
     "permissionsDescription": "Ces règles s’appliquent à ce connecteur dans toutes vos discussions et tous vos comptes.",
     "settingsDescription": "Choisissez les comptes {{connector}} qu’Okou peut utiliser dans vos conversations. Vous pouvez modifier l’accès dans chaque conversation.",
@@ -3961,7 +3959,6 @@
         "overview": "Coordonnées du prestataire et du client"
       }
     },
-    "filter": "Catégorie de document",
     "formats": {
       "pdf": "PDF",
       "word": "Document Word"
@@ -3971,10 +3968,8 @@
     "nextPage": "Page d’exemple suivante",
     "openLarger": "Ouvrir l’aperçu agrandi",
     "page": "Page {{page}}",
-    "preview": "Aperçu de {{title}}",
     "previousPage": "Page d’exemple précédente",
-    "title": "Document",
-    "useNamed": "Utiliser {{title}}"
+    "title": "Document"
   },
   "featureGuide": {
     "close": "Fermer le guide des nouveautés",
@@ -6633,11 +6628,8 @@
   "templates": {
     "actions": {
       "delete": "Supprimer",
-      "menu": "Actions pour {{title}}",
-      "preview": "Aperçu de {{title}}",
       "rename": "Renommer le modèle"
     },
-    "builtIn": "Intégrés",
     "custom": "Personnalisés",
     "delete": {
       "cancel": "Annuler",
@@ -6652,11 +6644,6 @@
       "page": "Page {{number}}"
     },
     "loadFailed": "Impossible de charger les modèles.",
-    "rename": {
-      "action": "Renommer",
-      "cancel": "Annuler",
-      "save": "Enregistrer"
-    },
     "renameFailed": "Impossible de renommer le modèle.",
     "sharedBy": "Partagé par {{owner}}",
     "sharedByMember": "Partagé par un membre de l'organisation",

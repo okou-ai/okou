@@ -78,8 +78,8 @@ export const customTemplateCatalog$ = computed(
 
 /**
  * Read the catalog once, when a selection needs it. The composer resolves a
- * chosen template here instead of subscribing while it renders. The picker
- * and the presentation, document and image task shelves subscribe only while shown.
+ * chosen template here instead of subscribing while it renders. The task
+ * shelves subscribe only while shown.
  */
 export const loadCustomTemplateCatalog$ = command(
   async (
@@ -104,7 +104,7 @@ export const reloadCustomTemplates$ = command(({ get, set }) => {
  * composer that sent it there, so the member who imports a file has no
  * mutation of their own to refresh on: without this, the catalog they open is
  * the one that was read before their analysis started, and the template they
- * just made is missing until they close the picker and open it again.
+ * just made is missing until they reopen its recommendation shelf.
  *
  * The topic is the one the user template routes already publish for every
  * publish, repackage, update and delete — on the organization channel while
@@ -133,44 +133,6 @@ export const subscribeCustomTemplatesChanged$ = command(
     }
   },
 );
-
-/**
- * Title and source file name, matched case-insensitively on the already loaded
- * catalog. The file name is in scope because people remember what they called
- * the file long after they have renamed the template, and matching it also
- * makes the source format searchable within a template kind.
- */
-function matchesCustomTemplateQuery(
-  template: UserTemplateCatalogEntry,
-  query: string,
-): boolean {
-  const needle = query.trim().toLowerCase();
-  if (needle.length === 0) {
-    return true;
-  }
-  return (
-    template.title.toLowerCase().includes(needle) ||
-    template.sourceFilename.toLowerCase().includes(needle)
-  );
-}
-
-export const projectCustomTemplatePicker$ = computed((get) => {
-  const project = get(projectCustomTemplate$);
-  return (
-    templates: readonly UserTemplateCatalogEntry[],
-    kind: UserTemplateKind,
-    query: string,
-  ) => {
-    return templates.flatMap((template) => {
-      const projected = project(template);
-      return projected !== null &&
-        projected.kind === kind &&
-        matchesCustomTemplateQuery(projected, query)
-        ? [projected]
-        : [];
-    });
-  };
-});
 
 /**
  * The open template, with the kind that decides what looking at it shows.
@@ -285,52 +247,8 @@ export const updateCustomTemplate$ = command(
 );
 
 /**
- * A rename the member asked for from a card's menu. Image templates have no
- * detail page to rename in, so the menu asks here and the picker shows one
- * small dialog for it. The title is captured with the request, so the field
- * starts from the name the member saw.
- */
-interface CustomTemplateRenameRequest {
-  readonly id: string;
-  readonly title: string;
-}
-
-const internalPendingRename$ = state<CustomTemplateRenameRequest | null>(null);
-
-export const pendingCustomTemplateRename$ = computed((get) => {
-  return get(internalPendingRename$);
-});
-
-export const requestRenameCustomTemplate$ = command(
-  ({ set }, request: CustomTemplateRenameRequest) => {
-    set(internalPendingRename$, request);
-  },
-);
-
-export const cancelRenameCustomTemplate$ = command(({ set }) => {
-  set(internalPendingRename$, null);
-});
-
-/** Saves the name, then closes the dialog; a failure keeps it open. */
-export const renameCustomTemplate$ = command(
-  async (
-    { set },
-    args: { readonly templateId: string; readonly title: string },
-    signal: AbortSignal,
-  ) => {
-    await set(
-      updateCustomTemplate$,
-      { templateId: args.templateId, body: { title: args.title } },
-      signal,
-    );
-    signal.throwIfAborted();
-    set(internalPendingRename$, null);
-  },
-);
-
-/**
  * A removal waiting for the member to confirm it. Deleting is not undoable, so
- * every entry point asks here and the picker confirms once.
+ * every entry point asks here and the preview confirms once.
  *
  * The title is captured with the request rather than looked up when the
  * question is shown: the template can leave the catalog while it is being
@@ -386,47 +304,3 @@ export const deleteCustomTemplate$ = command(
     set(reloadCustomTemplates$);
   },
 );
-
-/**
- * Which example an image template's card is showing, by template id.
- *
- * Kept here rather than in the card so a catalog refresh, which re-renders
- * every card, does not snap a card back to its first example.
- */
-const internalActiveExamples$ = state<ReadonlyMap<string, number>>(new Map());
-
-export const customTemplateActiveExample$ = computed((get) => {
-  const active = get(internalActiveExamples$);
-  return (templateId: string): number => {
-    return active.get(templateId) ?? 0;
-  };
-});
-
-export const showCustomTemplateExample$ = command(
-  (
-    { get, set },
-    args: { readonly templateId: string; readonly index: number },
-  ) => {
-    set(
-      internalActiveExamples$,
-      new Map(get(internalActiveExamples$)).set(args.templateId, args.index),
-    );
-  },
-);
-
-/**
- * Closing the picker clears its detail view and any
- * removal still waiting to be confirmed, so a picker torn down mid-question
- * does not reopen on it.
- */
-const resetCustomTemplatePickerView$ = command(({ set }) => {
-  set(internalOpenTemplate$, null);
-  set(internalPendingDeletion$, null);
-  set(internalActiveExamples$, new Map());
-});
-
-/** Opening the picker always starts from a clean list and a fresh catalog. */
-export const resetCustomTemplatePicker$ = command(({ set }) => {
-  set(resetCustomTemplatePickerView$);
-  set(reloadCustomTemplates$);
-});

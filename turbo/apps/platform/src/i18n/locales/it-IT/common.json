@@ -266,6 +266,11 @@
         "modelCatalogCacheValidationLatency": "Latenza di convalida della cache del catalogo modelli",
         "modelCatalogPrefetchRole": "Ruolo di prelettura del catalogo modelli",
         "modelCatalogUpstreamEncoding": "Codifica upstream del catalogo modelli",
+        "openrouterAttempts": "OpenRouter Tentativi dei fornitori",
+        "openrouterAttemptsIncomplete": "OpenRouter Tentativi incompleti",
+        "openrouterGenerationId": "OpenRouter ID di generazione",
+        "openrouterModel": "OpenRouter Modello",
+        "openrouterProvider": "OpenRouter Fornitore",
         "params": "Parametri",
         "permission": "Autorizzazione",
         "permissionError": "Errore di autorizzazione",
@@ -586,6 +591,22 @@
       "text": "Testo",
       "video": "Video"
     },
+    "library": {
+      "allArtifacts": "Tutti gli artefatti",
+      "allTypes": "Tutti i tipi",
+      "clearFilters": "Cancella filtri",
+      "clearSearch": "Cancella ricerca",
+      "created": "Creato",
+      "emptyDescription": "Prova con un altro nome o tipo.",
+      "emptyTitle": "Nessun artefatto trovato",
+      "loadMore": "Carica di più",
+      "name": "Nome",
+      "retry": "Riprova",
+      "search": "Cerca artefatti",
+      "sortAscending": "Ordina in ordine crescente",
+      "sortDescending": "Ordina in ordine decrescente",
+      "type": "Tipo"
+    },
     "metadata": {
       "generated": "Generato {{date}}",
       "updated": "Aggiornato {{date}}"
@@ -681,15 +702,9 @@
       "updated": "URL del sito aggiornato"
     },
     "templates": {
-      "activeHtmlPreview": "{{title}} attivo HTML anteprima",
-      "all": "Tutto",
       "avatar": "Avatar",
-      "categories": "Categorie di modelli",
-      "category": "Categoria modello",
       "fullPreview": "{{title}} anteprima completa del sito web",
       "htmlPreview": "{{title}} HTML anteprima",
-      "illustration": "Illustrazione",
-      "illustrationPreview": "{{title}} anteprima dell'illustrazione",
       "importDeck": "Importa la tua presentazione",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importDocument": "Importa il tuo documento",
@@ -701,18 +716,10 @@
       "importImageHint": "Salva come stile",
       "multiAccent": "Multiaccento",
       "nextSlide": "Anteprima della diapositiva successiva",
-      "noMatches": "Nessuna corrispondenza",
-      "previewCurrentSlide": "Anteprima {{title}} nella diapositiva corrente",
       "previewSlide": "Diapositiva di anteprima {{slideNumber}}",
-      "previewWebsite": "Anteprima del modello di sito web {{title}}",
       "previousSlide": "Anteprima della diapositiva precedente",
-      "searchConnector": "Cerca modelli",
-      "searchConnectors": "Cerca modelli",
       "selectStyle": "Seleziona lo stile {{style}}",
       "selectTemplate": "Seleziona il modello {{title}}",
-      "selectWebsite": "Seleziona il modello di sito web {{title}}",
-      "selectWorkflow": "Seleziona il modello di flusso di lavoro {{title}}",
-      "showVariant": "Mostra variante {{variantNumber}}",
       "singleAccent": "Singolo accento",
       "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "{{title}} anteprima diapositiva",
@@ -740,15 +747,11 @@
         "terracottaClay": "Vaso di terracotta",
         "warmSand": "Giornale del mattino"
       },
-      "tryDifferentSearch": "Prova una ricerca diversa.",
-      "use": "Utilizzare",
       "useThisTemplate": "Usa questo modello",
       "visibility": {
         "changeLabel": "Modifica la visibilità del modello"
       },
       "website": "Sito web",
-      "websitePreview": "{{title}} anteprima del modello di sito web",
-      "workflow": "Flusso di lavoro",
       "workflowCatalog": {
         "auto-inbox-label": {
           "description": "Crea un flusso che parte quando applichi un'etichetta Gmail e gestisce il messaggio etichettato.",
@@ -1942,8 +1945,6 @@
       "add": "Aggiungi",
       "configureModel": "Configura modello",
       "create": {
-        "addStyle": "Aggiungi stile",
-        "addTemplate": "Aggiungi modello",
         "documentPlaceholder": "Cosa vorresti includere nel tuo documento?",
         "imagePlaceholder": "Descrivi l’immagine che vuoi creare…",
         "presentationPlaceholder": "Di cosa tratta la tua presentazione?",
@@ -1991,11 +1992,9 @@
         "scheduleHint": "Esegui secondo una pianificazione",
         "share": "Condividi chat",
         "shareHint": "Condividi un link a questa conversazione",
-        "templates": "Modelli",
         "unpin": "Sblocca chat"
       },
       "slashPanel": {
-        "browseAll": "Sfoglia tutti i modelli",
         "hint": "Scegli un'azione",
         "useTemplate": "Usa il modello {{title}}"
       },
@@ -2678,7 +2677,6 @@
         "website": "Sito web",
         "workflow": "Workflow"
       },
-      "viewAll": "Mostra tutto",
       "visualization": {
         "allCharts": "Tutti i grafici",
         "back": "Back to visualization options",
@@ -2860,8 +2858,6 @@
         "workflow": "Flusso di lavoro"
       },
       "previewTemplate": "Modello di anteprima {{title}}",
-      "previewWebsite": "Anteprima del modello di sito web {{title}}",
-      "previewWorkflow": "Anteprima del modello di flusso di lavoro {{title}}",
       "removeTemplate": "Rimuovi modello {{title}}",
       "removeWebsite": "Rimuovi modello di sito web {{title}}",
       "removeWorkflow": "Rimuovi modello di flusso di lavoro {{title}}"
@@ -3016,6 +3012,8 @@
     "accountsInChat": "Scegli quali account sono attivi in questa chat.",
     "enableByDefault": "Attiva {{account}} per impostazione predefinita",
     "manageAccounts": "Gestisci account",
+    "memberPolicyLoadFailed": "Impossibile caricare l’accesso agli account.",
+    "memberSettingsDescription": "Scegli quali account {{connector}} Okou può usare nelle tue chat.",
     "permissions": "Autorizzazioni",
     "permissionsDescription": "Queste regole si applicano a questo connettore in tutte le tue chat e account.",
     "settingsDescription": "Scegli quali account {{connector}} Okou può usare nelle tue chat. Puoi modificare l’accesso in ogni chat.",
@@ -3961,7 +3959,6 @@
         "overview": "Dati del fornitore e del cliente"
       }
     },
-    "filter": "Categoria del documento",
     "formats": {
       "pdf": "PDF",
       "word": "Documento Word"
@@ -3971,10 +3968,8 @@
     "nextPage": "Pagina di esempio successiva",
     "openLarger": "Apri anteprima ingrandita",
     "page": "Pagina {{page}}",
-    "preview": "Anteprima di {{title}}",
     "previousPage": "Pagina di esempio precedente",
-    "title": "Documento",
-    "useNamed": "Usa {{title}}"
+    "title": "Documento"
   },
   "featureGuide": {
     "close": "Chiudi la guida alle novità",
@@ -6633,11 +6628,8 @@
   "templates": {
     "actions": {
       "delete": "Elimina",
-      "menu": "Azioni per {{title}}",
-      "preview": "Anteprima di {{title}}",
       "rename": "Rinomina modello"
     },
-    "builtIn": "Integrati",
     "custom": "Personalizzati",
     "delete": {
       "cancel": "Annulla",
@@ -6652,11 +6644,6 @@
       "page": "Pagina {{number}}"
     },
     "loadFailed": "Impossibile caricare i modelli.",
-    "rename": {
-      "action": "Rinomina",
-      "cancel": "Annulla",
-      "save": "Salva"
-    },
     "renameFailed": "Impossibile rinominare il modello.",
     "sharedBy": "Condiviso da {{owner}}",
     "sharedByMember": "Condiviso da un membro dell'organizzazione",

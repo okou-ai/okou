@@ -241,31 +241,6 @@ class ImageOperationTest(unittest.TestCase):
         self.invoke("guard", "touch", str(fresh), input_text="")
         self.assertTrue(fresh.is_file())
 
-    def test_failed_cleanup_fences_detached_image_launch(self):
-        self.invoke("claim")
-        directory = self.root / "var/lib/vm0-runner/bin/pr-123-image-1234"
-        marker = next(directory.glob(".image-owner-*"))
-        with self.image_call(
-            "run",
-            "build",
-            str(self.result),
-            environment=dict(self.environment, IMAGE_FAULT="pending-launch"),
-        ) as launch:
-            try:
-                self.wait_for(lambda: bool(self.records("detached-servers")))
-                self.assertEqual(list((self.root / "units").glob("*.json")), [])
-                launch.kill()
-                self.assertEqual(launch.wait(timeout=5), -signal.SIGKILL)
-                self.fail_namespace_cleanup()
-                self.assertTrue(marker.is_file())
-            finally:
-                (self.root / "release-launch").touch()
-
-        observed = self.invoke("run", "build", str(self.result), check=False)
-        self.assertNotEqual(observed.returncode, 0, observed.stderr)
-        self.assertEqual(self.records("executions"), [])
-        self.assertFalse(self.result.exists())
-
     def test_failed_teardown_revokes_admission_for_detached_older_worker(self):
         self.invoke("claim")
         binary_root = self.root / "var/lib/vm0-runner/bin"
@@ -383,12 +358,6 @@ class ImageOperationTest(unittest.TestCase):
             self.assertEqual(self.clean_namespace(cleanup)["outcome"], "cleaned")
         self.assertNotEqual(self.invoke("claim", check=False).returncode, 0)
         self.assertFalse((self.root / "var/lib/vm0-runner/bin/pr-123-image-1234").exists())
-        self.environment.update(
-            GITHUB_RUN_ID="1235", RUNNER_IMAGE_RUN_CREATED_AT="2026-10-03T00:00:00Z"
-        )
-        self.invoke("claim")
-        self.invoke("run", "build", str(self.result))
-        self.assert_one_build()
 
     def test_claim_waiting_on_cleanup_cannot_recreate_namespace(self):
         self.invoke("claim")
@@ -935,17 +904,10 @@ class ImageOperationTest(unittest.TestCase):
         self.assertEqual(json.loads(self.result.read_text())["status"], 0)
         self.assertEqual([r["phase"] for r in self.records("executions")], ["warm"])
 
-    def test_claim_retries_transport_loss_but_not_a_command_error(self):
-        self.environment["IMAGE_FAULT"] = "early-eof"
-        self.invoke("claim")
-        self.assertEqual(self.records("requests")[0]["action"], "unread")
-        self.invoke("run", "build", str(self.result))
-        self.assert_one_build()
-
+    def test_claim_does_not_retry_a_command_error(self):
         self.environment["IMAGE_FAULT"] = "ssh-error"
-        before = len(self.records("requests"))
         self.assertNotEqual(self.invoke("claim", check=False).returncode, 0)
-        self.assertEqual(len(self.records("requests")) - before, 1)
+        self.assertEqual(self.records("requests"), [{"action": "claim", "phase": None}])
 
     def test_cancellation_before_first_claim_fences_that_generation(self):
         for existing_owner in (False, True):

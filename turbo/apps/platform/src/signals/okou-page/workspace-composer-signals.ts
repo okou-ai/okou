@@ -133,8 +133,9 @@ function createSubmitMessage(
       const initialRemoteAccessOverrides = get(pendingRemoteAccess.overrides$);
       const pendingConnectorAccess = get(connector.chatAccess.pending$);
       const hasPendingConnectorAccess =
-        pendingConnectorAccess.overrides.length > 0 ||
-        pendingConnectorAccess.selections.length > 0;
+        !features[FeatureSwitchKey.MemberConnectorAccountAccess] &&
+        (pendingConnectorAccess.overrides.length > 0 ||
+          pendingConnectorAccess.selections.length > 0);
       const sent = await set(
         send,
         {

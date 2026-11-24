@@ -7,7 +7,6 @@ import {
   BookOpenCheck,
   Building2,
   ChartNoAxesCombined,
-  ChevronRight,
   Handshake,
   Link2,
   Megaphone,
@@ -47,10 +46,7 @@ import {
 import { TRIGGER_EXAMPLES } from "../../signals/okou-page/composer-trigger-examples.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import {
-  ComposerTaskTemplates,
-  useTaskTemplateBrowse,
-} from "./composer-task-chips.tsx";
+import { ComposerTaskTemplates } from "./composer-task-chips.tsx";
 import { localizedWorkflowTemplate } from "./workflow-template-copy.ts";
 import { WorkflowTile } from "./composer-workflow-recommendations.tsx";
 import {
@@ -156,9 +152,8 @@ const CAPABILITY_TAB_INDICATOR = cn(
 
 /**
  * The types are the shared segment control's trackless variant: the tray's
- * tint is ground enough, and the open type takes the selected layer the
- * template picker marks its open category with, so one set of types is chosen
- * the same way in both places. The scroller keeps 4px above and below for a
+ * tint is ground enough, and the open type takes the shared selected layer.
+ * The scroller keeps 4px above and below for a
  * segment's focus ring, taken back with a negative margin so the row keeps the
  * 32px of its neighbours.
  */
@@ -255,45 +250,6 @@ function CapabilityTabs({
 }
 
 /**
- * The type a header's "View all" browses: Create's types open the template
- * picker on their catalog, Workflow's kinds open the workflow picker.
- */
-function CapabilityViewAll({
-  signals,
-  selected,
-}: {
-  readonly signals: ComposerSignals;
-  readonly selected: ComposerTask;
-}) {
-  const { t } = useTranslation();
-  const browseTemplates = useTaskTemplateBrowse(signals, selected);
-  const browseWorkflows = useSet(signals.taskChips.workflows.browse$);
-  const browse =
-    selected === "workflow"
-      ? () => {
-          browseWorkflows();
-        }
-      : browseTemplates;
-  if (!browse) {
-    return null;
-  }
-  return (
-    <Button
-      type="button"
-      variant="quiet"
-      size="sm"
-      className={cn("gap-0.5 pr-2 pl-2.5", RAIL_ITEM_ENTER)}
-      onClick={browse}
-    >
-      {t(($) => {
-        return $.chat.taskChips.viewAll;
-      })}
-      <ChevronRight aria-hidden />
-    </Button>
-  );
-}
-
-/**
  * A capability's choices, in a tray that slides up from behind the composer
  * they feed. Its foot runs under the composer's top edge, so the two read as
  * one surface opening upward. The tray is a very light tint of the ink rather
@@ -374,7 +330,6 @@ export function CapabilityTray({
                 layer over. */}
             <CapabilityTabs key={group} signals={signals} selected={selected} />
             <div className="flex shrink-0 items-center gap-1">
-              <CapabilityViewAll signals={signals} selected={selected} />
               {closeButton}
             </div>
           </div>

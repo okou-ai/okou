@@ -206,7 +206,6 @@
 //! user cancellation can subsequently override the final guest control
 //! diagnostic, but it does not mutate the public tool-result shape.
 
-use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -217,17 +216,16 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc};
 use tokio_util::sync::CancellationToken;
 
-use super::pi_session_output::{PiSessionOutputSender, SESSION_OUTPUT_DELTA_MAX_BYTES};
+use super::session_output::{AssistantTextStream, SessionOutputSender};
 use crate::active_input::{ActiveInputController, ActiveInputFrame, ActiveInputWriter};
 use crate::error::AgentError;
-use crate::masker::{SecretMasker, StreamingSecretMasker};
+use crate::masker::SecretMasker;
 use crate::upstream_error_text::project_model_error_text;
 
 const PI_RPC_ABORT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 const PI_RPC_RESPONSE_QUEUE_CAPACITY: usize = 2;
 const PI_RPC_RESPONSE_MAX_RETAINED_BYTES: usize =
     guest_contracts::stdout_framing::ORDINARY_CLI_STDOUT_MAX_LINE_BYTES;
-const MAX_STREAM_CONTENT_INDEX: usize = 1024;
 
 pub(super) struct PiRpcResponse {
     value: Value,
@@ -328,76 +326,6 @@ impl PiRpcStartupBoundary {
 
 fn boundary_error(code: &str, message: &str) -> AgentError {
     AgentError::Execution(format!("[{code}] {message}"))
-}
-
-struct PiAssistantStream<'a> {
-    event_id_prefix: String,
-    masker: &'a SecretMasker,
-    masking: BTreeMap<usize, StreamingSecretMasker<'a>>,
-    started_sources: HashSet<usize>,
-    closed_sources: HashSet<usize>,
-    output: PiSessionOutputSender,
-}
-
-impl<'a> PiAssistantStream<'a> {
-    fn new(output: PiSessionOutputSender, masker: &'a SecretMasker) -> Self {
-        Self {
-            event_id_prefix: format!("sandbox:{}", uuid::Uuid::new_v4()),
-            masker,
-            masking: BTreeMap::new(),
-            started_sources: HashSet::new(),
-            closed_sources: HashSet::new(),
-            output,
-        }
-    }
-
-    fn push(&mut self, source: usize, text: &str) {
-        if source > MAX_STREAM_CONTENT_INDEX || text.is_empty() {
-            return;
-        }
-        if self.closed_sources.contains(&source) {
-            return;
-        }
-        // Mask each source before trimming or transport chunk boundaries.
-        let masked = self
-            .masking
-            .entry(source)
-            .or_insert_with(|| self.masker.stream())
-            .push(text);
-        self.emit_masked(source, &masked);
-    }
-
-    fn emit_masked(&mut self, source: usize, text: &str) {
-        if self.closed_sources.contains(&source) {
-            return;
-        }
-        let text = if self.started_sources.contains(&source) {
-            text
-        } else {
-            text.trim_start()
-        };
-        let run_event_id = format!("{}:{source}", self.event_id_prefix);
-        let mut remaining = text;
-        while !remaining.is_empty() {
-            let end =
-                remaining.floor_char_boundary(remaining.len().min(SESSION_OUTPUT_DELTA_MAX_BYTES));
-            let delta = remaining[..end].to_string();
-            if !self.output.try_send(&run_event_id, delta) {
-                self.closed_sources.insert(source);
-                self.masking.remove(&source);
-                break;
-            }
-            self.started_sources.insert(source);
-            remaining = &remaining[end..];
-        }
-    }
-
-    fn finish(mut self) -> String {
-        for (source, masking) in std::mem::take(&mut self.masking) {
-            self.emit_masked(source, &masking.finish());
-        }
-        self.event_id_prefix
-    }
 }
 
 #[derive(Default)]
@@ -508,8 +436,8 @@ pub(super) struct PiRpcProjection<'a> {
     started_at: Instant,
     emitted_session_init: bool,
     assistant_terminal: Option<PiAssistantTerminal>,
-    session_output: Option<(PiSessionOutputSender, &'a SecretMasker)>,
-    assistant_stream: Option<PiAssistantStream<'a>>,
+    session_output: Option<(SessionOutputSender, &'a SecretMasker)>,
+    assistant_stream: Option<AssistantTextStream<'a>>,
     pending_retry: Option<PiRetryAttempt>,
     terminal_error: bool,
     active_input: Option<ActiveInputController>,
@@ -538,7 +466,7 @@ impl<'a> PiRpcProjection<'a> {
 
     pub(super) fn with_session_output(
         mut self,
-        output: PiSessionOutputSender,
+        output: SessionOutputSender,
         masker: &'a SecretMasker,
     ) -> Self {
         self.session_output = Some((output, masker));
@@ -662,7 +590,7 @@ impl<'a> PiRpcProjection<'a> {
         self.assistant_stream = self
             .session_output
             .as_ref()
-            .map(|(output, masker)| PiAssistantStream::new(output.clone(), masker));
+            .map(|(output, masker)| AssistantTextStream::new(output.clone(), masker));
     }
 
     fn project_message_update(&mut self, event: &Value) {
@@ -696,7 +624,10 @@ impl<'a> PiRpcProjection<'a> {
         };
         let projected = match message.get("role").and_then(Value::as_str) {
             Some("assistant") => {
-                let event_id_prefix = self.assistant_stream.take().map(PiAssistantStream::finish);
+                let event_id_prefix = self
+                    .assistant_stream
+                    .take()
+                    .map(AssistantTextStream::finish);
                 self.project_assistant_message(message, event_id_prefix.as_deref())?
             }
             Some("toolResult") => Some(self.project_tool_result_message(message)?),

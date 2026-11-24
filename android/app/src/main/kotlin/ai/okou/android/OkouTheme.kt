@@ -30,7 +30,7 @@ internal val LocalActivityStatusColor = staticCompositionLocalOf { Color(0xFFB57
 internal val LocalUndoActionColor = staticCompositionLocalOf { Color.Unspecified }
 internal val LocalOkouDarkMode = staticCompositionLocalOf { false }
 
-private fun activityStatusColor(palette: UserPreferencesColorTheme, dark: Boolean): Color =
+internal fun activityStatusColor(palette: UserPreferencesColorTheme, dark: Boolean): Color =
     when (palette) {
         UserPreferencesColorTheme.DEFAULT -> Color(if (dark) 0xFFFFA500 else 0xFFB5790C)
         UserPreferencesColorTheme.GOLDEN_HOUR -> Color(if (dark) 0xFFCC9655 else 0xFFBB731B)
@@ -112,6 +112,18 @@ internal data class PaletteColors(
     val selection: Color,
     val swatchCompanion: Color,
 )
+
+internal val ColorScheme.controlOutline: Color
+    get() {
+        val text = onSurface
+        val base = surface
+        fun mix(foreground: Float, background: Float) = foreground * 0.64f + background * 0.36f
+        return Color(
+            red = mix(text.red, base.red),
+            green = mix(text.green, base.green),
+            blue = mix(text.blue, base.blue),
+        )
+    }
 
 /** The wrapper is used only for color lookup; native controls keep the real Activity context. */
 internal fun resolvePalette(

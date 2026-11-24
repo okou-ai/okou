@@ -39,15 +39,29 @@ class DistributionProfileTests(unittest.TestCase):
         }
         if bundle == "ai.okou.ios":
             profile["Entitlements"]["com.apple.developer.applesignin"] = ["Default"]
+            profile["Entitlements"]["com.apple.developer.associated-domains"] = [
+                "applinks:app.okou.ai",
+                "webcredentials:app.okou.ai",
+            ]
         return profile
 
-    def invoke(self, profile, bundle="ai.okou.ios"):
+    def invoke(self, profile, bundle="ai.okou.ios", callback_host="app.okou.ai"):
         source = self.work / "profile.plist"
         output = self.work / (str(uuid.uuid4()) + ".plist")
         encoded = plistlib.dumps(profile)
         source.write_bytes(encoded)
+        command = [
+            "python3",
+            str(SCRIPT),
+            str(source),
+            str(output),
+            "--bundle-id",
+            bundle,
+        ]
+        if callback_host is not None:
+            command += ["--connector-callback-host", callback_host]
         result = subprocess.run(
-            ["python3", str(SCRIPT), str(source), str(output), "--bundle-id", bundle],
+            command,
             cwd=ROOT,
             capture_output=True,
             text=True,
@@ -77,6 +91,42 @@ class DistributionProfileTests(unittest.TestCase):
                 self.assertEqual(
                     entitlements.get("com.apple.developer.applesignin"), ["Default"]
                 )
+                self.assertEqual(
+                    entitlements["com.apple.developer.associated-domains"],
+                    ["applinks:app.okou.ai", "webcredentials:app.okou.ai"],
+                )
+
+    def test_rejects_an_app_profile_without_the_requested_associated_domains(self):
+        profile = self.profile()
+        del profile["Entitlements"]["com.apple.developer.associated-domains"]
+        result, output = self.invoke(profile)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "does not authorize requested com.apple.developer.associated-domains",
+            result.stderr,
+        )
+        self.assertFalse(output.exists())
+
+    def test_resolves_the_archived_host_with_an_apple_wildcard_profile(self):
+        profile = self.profile()
+        profile["Entitlements"]["com.apple.developer.associated-domains"] = ["*"]
+        result, output = self.invoke(profile, callback_host="staging-app.omby.ai")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            plistlib.loads(output.read_bytes())[
+                "com.apple.developer.associated-domains"
+            ],
+            ["applinks:staging-app.omby.ai", "webcredentials:staging-app.omby.ai"],
+        )
+
+    def test_rejects_a_missing_or_malformed_archived_callback_host(self):
+        for host in (None, "https://app.okou.ai", "$(UNRESOLVED)"):
+            result, output = self.invoke(self.profile(), callback_host=host)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(
+                "valid archived connector callback host is required", result.stderr
+            )
+            self.assertFalse(output.exists())
 
     def test_rejects_main_app_profile_without_sign_in_with_apple(self):
         profile = self.profile()

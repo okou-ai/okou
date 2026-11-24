@@ -1,10 +1,18 @@
 package ai.okou.android.auth
 
+import ai.okou.android.EntryBrand
+import ai.okou.android.EntryCompactHeight
+import ai.okou.android.EntryContentGutter
+import ai.okou.android.EntryContentWidth
 import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.OkouConfirmationDialog
 import ai.okou.android.R
 import ai.okou.android.SettingsGroup
+import ai.okou.android.WithButtonFocusOutline
 import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.entrySpacing
+import ai.okou.android.entryTitleStyle
+import ai.okou.android.entryTopPadding
 import ai.okou.android.updates.updateFocusOutline
 import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
@@ -13,6 +21,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -42,7 +51,12 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -52,10 +66,11 @@ import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
+
+private data class EntryRowFocus(val workspaceId: String, val pageGeneration: Long)
 
 @Composable
 internal fun SessionEntryScreen(
@@ -66,18 +81,24 @@ internal fun SessionEntryScreen(
     openWorkspaceSetup: () -> Unit,
 ) {
     val windowHeight = currentWindowSizeDp().height
-    val compact = windowHeight < 480
-    val groupSpacing = if (compact) 12.dp else 24.dp
+    val compact = windowHeight < EntryCompactHeight
+    val groupSpacing = entrySpacing(compact)
     if (state.stage == SessionStage.Restoring) {
         Box(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.Center) {
-            OkouAuthLogo()
+            EntryBrand(compact)
         }
         return
     }
     val choosing = state.stage == SessionStage.ChooseWorkspace
     val noWorkspace = choosing && state.memberships.isEmpty()
     val accessRemoved = state.stage == SessionStage.AccessRemoved
+    var activatedRow by remember { mutableStateOf<EntryRowFocus?>(null) }
+    val rowFocus = remember { FocusRequester() }
+    val windowFocused = LocalWindowInfo.current.isWindowFocused
     var confirmSignOut by remember(state.entryPageGeneration) { mutableStateOf(false) }
+    val signOutFocus = remember(state.entryPageGeneration) { FocusRequester() }
+    var signOutFocused by remember(state.entryPageGeneration) { mutableStateOf(false) }
+    var restoreSignOutFocus by remember(state.entryPageGeneration) { mutableStateOf(false) }
     val title =
         when (state.stage) {
             SessionStage.LoadingWorkspace -> R.string.auth_preparing_workspace
@@ -104,20 +125,38 @@ internal fun SessionEntryScreen(
         state.stage != SessionStage.LoadingWorkspace &&
             state.stage != SessionStage.SigningOut &&
             state.stage != SessionStage.UpdateRequired
+    val restoredRow = activatedRow?.takeIf { target ->
+        choosing &&
+            state.entryFailure == SessionEntryFailure.Selection &&
+            target.pageGeneration == state.entryPageGeneration &&
+            state.memberships.any { it.id == target.workspaceId }
+    }
+    LaunchedEffect(restoredRow, windowFocused) {
+        if (restoredRow != null && windowFocused) {
+            rowFocus.requestFocus()
+            activatedRow = null
+        }
+    }
+    LaunchedEffect(confirmSignOut, canSignOut, windowFocused) {
+        if (!confirmSignOut && canSignOut && windowFocused && restoreSignOutFocus) {
+            signOutFocus.requestFocus()
+            restoreSignOutFocus = false
+        }
+    }
     Box(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.TopCenter) {
         Column(
-            Modifier.padding(horizontal = if (compact) 16.dp else 24.dp)
-                .widthIn(max = 360.dp)
+            Modifier.padding(horizontal = EntryContentGutter)
+                .widthIn(max = EntryContentWidth)
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .padding(
-                    top = if (compact) 12.dp else (windowHeight * 0.08f).coerceIn(32f, 80f).dp,
-                    bottom = if (compact) 12.dp else 24.dp,
+                    top = entryTopPadding(windowHeight),
+                    bottom = groupSpacing,
                 ),
             verticalArrangement = Arrangement.spacedBy(groupSpacing),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            OkouAuthLogo()
+            EntryBrand(compact)
             SessionEntryHeading(
                 title,
                 detail,
@@ -141,7 +180,15 @@ internal fun SessionEntryScreen(
                                     bottomEnd = bottom,
                                     bottomStart = bottom,
                                 ),
-                            ) {
+                                modifier =
+                                    if (workspace.id == restoredRow?.workspaceId)
+                                        Modifier.focusRequester(rowFocus)
+                                    else Modifier,
+                            ) { focused ->
+                                activatedRow =
+                                    if (focused)
+                                        EntryRowFocus(workspace.id, state.entryPageGeneration)
+                                    else null
                                 chooseWorkspace(workspace.id)
                             }
                         }
@@ -176,7 +223,14 @@ internal fun SessionEntryScreen(
                             SessionTextAction(
                                 if (accessRemoved) R.string.auth_sign_in_again
                                 else R.string.auth_sign_out,
-                                { confirmSignOut = true },
+                                onClick = {
+                                    restoreSignOutFocus = signOutFocused
+                                    confirmSignOut = true
+                                },
+                                modifier =
+                                    Modifier.focusRequester(signOutFocus).onFocusChanged {
+                                        signOutFocused = it.isFocused
+                                    },
                             )
                         }
                     }
@@ -210,6 +264,7 @@ internal fun SessionEntryScreen(
             confirm = stringResource(R.string.auth_sign_out),
             onDismiss = { confirmSignOut = false },
             onConfirm = {
+                restoreSignOutFocus = false
                 confirmSignOut = false
                 signOut()
             },
@@ -223,12 +278,16 @@ internal fun SessionEntryScreen(
 private fun SessionWorkspaceRow(
     workspace: WorkspaceMembership,
     shape: Shape,
-    onClick: () -> Unit,
+    modifier: Modifier,
+    onClick: (focused: Boolean) -> Unit,
 ) {
+    var focused by remember { mutableStateOf(false) }
     Row(
-        Modifier.fillMaxWidth()
+        modifier
+            .fillMaxWidth()
+            .onFocusChanged { focused = it.isFocused }
             .updateFocusOutline(shape, LocalActivityStatusColor.current)
-            .clickable(role = Role.Button, onClick = onClick)
+            .clickable(role = Role.Button) { onClick(focused) }
             .heightIn(min = 64.dp)
             .padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -265,14 +324,14 @@ private fun SessionEntryHeading(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            if (waiting) Spacer(Modifier.size(20.dp))
             Text(
                 stringResource(title),
                 Modifier.weight(1f, fill = false).semantics {
                     heading()
                     liveRegion = LiveRegionMode.Polite
                 },
-                style = if (compact) typography.titleLarge else typography.headlineMedium,
-                fontWeight = FontWeight(650),
+                style = entryTitleStyle(compact),
                 textAlign = TextAlign.Center,
             )
             if (waiting) SessionEntryProgress()
@@ -290,20 +349,30 @@ private fun SessionEntryHeading(
 
 @Composable
 private fun SessionEntryProgress() {
-    var visible by remember { mutableStateOf(false) }
+    var animate by remember { mutableStateOf<Boolean?>(null) }
     LaunchedEffect(Unit) {
         delay(250)
         val motion = coroutineContext[MotionDurationScale]
-        motion?.scaleFactor
-        snapshotFlow { motion?.scaleFactor != 0f }.collect { visible = it }
+        snapshotFlow { motion?.scaleFactor != 0f }.collect { animate = it }
     }
     Box(Modifier.size(20.dp).clearAndSetSemantics {}) {
-        if (visible) {
-            CircularProgressIndicator(
-                modifier = Modifier.fillMaxSize(),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                strokeWidth = 2.dp,
-            )
+        val color = MaterialTheme.colorScheme.onSurfaceVariant
+        when (animate) {
+            true ->
+                CircularProgressIndicator(
+                    modifier = Modifier.fillMaxSize(),
+                    color = color,
+                    strokeWidth = 2.dp,
+                )
+            false ->
+                CircularProgressIndicator(
+                    progress = { 0.25f },
+                    modifier = Modifier.fillMaxSize(),
+                    color = color,
+                    trackColor = Color.Transparent,
+                    strokeWidth = 2.dp,
+                )
+            null -> Unit
         }
     }
 }
@@ -315,34 +384,37 @@ private fun SessionPrimaryAction(
     enabled: Boolean = true,
 ) {
     val colors = MaterialTheme.colorScheme
-    val shape = ButtonDefaults.shape
     val foreground = if (enabled) colors.onPrimary else colors.onSurfaceVariant
-    Button(
-        onClick = { if (enabled) onClick() },
-        modifier =
-            Modifier.fillMaxWidth()
-                .heightIn(min = 48.dp)
-                .updateFocusOutline(shape, foreground)
-                .sessionActionAvailability(enabled),
-        shape = shape,
-        colors =
-            ButtonDefaults.buttonColors(
-                containerColor = if (enabled) colors.primary else colors.surfaceVariant,
-                contentColor = foreground,
-            ),
-    ) {
-        Text(stringResource(label), textAlign = TextAlign.Center)
+    WithButtonFocusOutline(if (enabled) foreground else LocalActivityStatusColor.current) {
+        Button(
+            onClick = { if (enabled) onClick() },
+            modifier =
+                Modifier.fillMaxWidth().heightIn(min = 48.dp).sessionActionAvailability(enabled),
+            colors =
+                ButtonDefaults.buttonColors(
+                    containerColor = if (enabled) colors.primary else colors.surfaceVariant,
+                    contentColor = foreground,
+                ),
+        ) {
+            Text(stringResource(label), textAlign = TextAlign.Center)
+        }
     }
 }
 
 @Composable
-private fun SessionTextAction(@StringRes label: Int, onClick: () -> Unit, enabled: Boolean = true) {
+private fun SessionTextAction(
+    @StringRes label: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
     val colors = MaterialTheme.colorScheme
     val shape = ButtonDefaults.textShape
     TextButton(
         onClick = { if (enabled) onClick() },
         modifier =
-            Modifier.heightIn(min = 48.dp)
+            modifier
+                .heightIn(min = 48.dp)
                 .updateFocusOutline(shape, LocalActivityStatusColor.current)
                 .sessionActionAvailability(enabled),
         shape = shape,

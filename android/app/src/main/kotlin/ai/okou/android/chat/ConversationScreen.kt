@@ -1,5 +1,6 @@
 package ai.okou.android.chat
 
+import ai.okou.android.ContentReadProgress
 import ai.okou.android.R
 import ai.okou.android.WorkspaceFeedbackHost
 import ai.okou.android.currentWindowSizeDp
@@ -99,9 +100,7 @@ internal fun ConversationRoute(
     visible: Boolean = true,
     composer: ChatComposerModel? = null,
     historyAvailable: Boolean = true,
-    realtime: ChatUpdatesModel? = null,
     controls: ConversationRunControls? = null,
-    showComposerStatus: Boolean = false,
     stopPlacement: ConversationStopPlacement? = null,
     queueOpen: Boolean = false,
     dismissQueue: () -> Unit = {},
@@ -114,7 +113,7 @@ internal fun ConversationRoute(
     onLinkUnavailable: (() -> Unit)? = null,
     messageSequence: Long? = null,
     onSearchMessageResolved: (Long, Boolean) -> Unit = { _, _ -> },
-    recovery: @Composable (failureId: String) -> Unit = {},
+    recovery: @Composable (HistoryMessage) -> Unit = { AssistantFailureText(it.failureReason) },
 ) {
     // Deferred work must acknowledge this composition's confirmation, never a newer State.value.
     val state = model.uiState.collectAsStateWithLifecycle().value
@@ -125,36 +124,20 @@ internal fun ConversationRoute(
             derivedStateOf { input?.value?.messagesFor(threadId).orEmpty() }
         }
     val thread = state.thread?.takeIf { historyAvailable && it.id == threadId }
+    val missing = thread != null && state.phase == HistoryPhase.Missing
     val transcript = state.transcript.takeIf { thread != null }
     val presentation =
         controls?.presentation
             ?: remember(transcript, output, threadId, localMessages) {
                 conversationContent(transcript, output, threadId, localMessages, emptySet())
             }
-    val content = presentation.messages
-    val queue = presentation.queue
+    val content = presentation.messages.takeUnless { missing }.orEmpty()
+    val queue = presentation.queue.takeUnless { missing }.orEmpty()
     val hasContent = transcript != null || content.isNotEmpty() || queue.isNotEmpty()
-    val missing = thread != null && state.phase == HistoryPhase.Missing
     val firstReadFailed = !hasContent && thread != null && state.initialReadFailed
-    val waitingForHistory =
-        historyAvailable &&
-            !hasContent &&
-            !firstReadFailed &&
-            (thread == null || state.phase == HistoryPhase.Loading)
+    val waitingForHistory = historyAvailable && !hasContent && !firstReadFailed && !missing
     val showSkeleton =
         key(threadId) { rememberChatWaitIndicator(waitingForHistory, HistoryFeedbackDelayMillis) }
-    val realtimePhase = realtime?.phase?.collectAsStateWithLifecycle()?.value
-    val reconnect = realtime.takeIf { !list.offline && realtimePhase == RealtimePhase.Unavailable }
-    val showRealtimeConnecting =
-        key(threadId) {
-            rememberChatWaitIndicator(
-                realtimePhase == RealtimePhase.Connecting &&
-                    !waitingForHistory &&
-                    !firstReadFailed &&
-                    !list.offline,
-                delayMillis = HistoryFeedbackDelayMillis,
-            )
-        }
     val visit =
         rememberConversationReadVisit(
             model,
@@ -162,17 +145,8 @@ internal fun ConversationRoute(
             state.generation,
             visible && historyAvailable,
         )
-    val readState = visit?.readState?.collectAsStateWithLifecycle()?.value
-    val historyNotice =
-        when {
-            thread == null || list.offline || firstReadFailed -> null
-            state.phase == HistoryPhase.Failed -> R.string.history_failed
-            readState == HistoryReadState.Failed -> R.string.history_read_failed
-            state.cacheUnavailable && hasContent -> R.string.chat_cache_unavailable
-            else -> null
-        }
     val activeRun = controls?.currentRunId ?: transcript?.activeRunId
-    val execution = transcript?.execution?.takeUnless { list.offline || missing }
+    val execution = transcript?.execution
     val activity =
         when (execution) {
             HistoryExecution.Running -> R.string.conversation_processing
@@ -220,25 +194,6 @@ internal fun ConversationRoute(
                     controls?.storageFailed != true &&
                     queue.isEmpty() &&
                     content.none { it.preview?.pendingDelivery != null })
-    val feedback: @Composable (() -> Unit)? =
-        when {
-            reconnect != null && !firstReadFailed -> ({
-                    RealtimeNotice(reconnect, RealtimePhase.Unavailable)
-                })
-            historyNotice != null -> ({
-                    ChatContentLoadNotice(
-                        historyNotice,
-                        horizontalPadding = 0.dp,
-                        retry =
-                            if (historyNotice == R.string.chat_cache_unavailable) null
-                            else model::refresh,
-                    )
-                })
-            realtime != null && showRealtimeConnecting -> ({
-                    RealtimeNotice(realtime, RealtimePhase.Connecting)
-                })
-            else -> null
-        }
     val window = currentWindowSizeDp()
     val messageInset = if (window.width >= 600) 32.dp else 24.dp
     val linkTarget = linkPosition?.destination
@@ -313,7 +268,7 @@ internal fun ConversationRoute(
         // Compose anchors to the first row's key. If that key is a status row, defer row changes
         // until its message can be re-anchored without cancelling the reader's gesture.
         var presentedTimeline by remember { mutableStateOf(incomingTimeline) }
-        val timeline = if (holdTimeline) presentedTimeline else incomingTimeline
+        val timeline = if (holdTimeline && !missing) presentedTimeline else incomingTimeline
         SideEffect { presentedTimeline = timeline }
         val runningRows =
             if (activity == R.string.conversation_processing) setOf(TimelineActivity)
@@ -562,7 +517,7 @@ internal fun ConversationRoute(
         }
         val jump =
             when {
-                !readingReady || atEnd || !position.canScrollBackward -> null
+                missing || !readingReady || atEnd || !position.canScrollBackward -> null
                 newReply || (!hasSeenLatest && list.isUnread(threadId)) ->
                     R.string.conversation_new_reply
                 !pastJumpThreshold -> null
@@ -611,13 +566,11 @@ internal fun ConversationRoute(
                     // A stable last item anchors the viewport even when a stream grows or the IME
                     // resizes it.
                     item(key = TimelineEnd) {
-                        Column(
+                        Box(
                             Modifier.fillMaxWidth().onSizeChanged {
                                 recentSizes[TimelineEnd] = it.height
                             },
-                        ) {
-                            if (feedback != null) Box(Modifier.padding(top = 8.dp)) { feedback() }
-                        }
+                        )
                     }
                     itemsIndexed(timeline, key = { _, entry -> entry.key }) { index, entry ->
                         val trackSize =
@@ -636,7 +589,7 @@ internal fun ConversationRoute(
                                         entry.label,
                                         runningFrame = runningFrame,
                                         controls = controls,
-                                        stopPlacement = stopPlacement,
+                                        stopPlacement = stopPlacement.takeUnless { list.offline },
                                     )
                                 }
                             is ConversationMessage -> {
@@ -661,9 +614,8 @@ internal fun ConversationRoute(
                                         artifactActions = artifactActions,
                                         findHighlight = highlight,
                                         links = links,
+                                        failureContent = recovery,
                                     )
-                                    if (entry.message.status == "run.failed")
-                                        recovery(entry.message.id)
                                 }
                             }
                         }
@@ -671,19 +623,9 @@ internal fun ConversationRoute(
                     if (timeline.isEmpty()) {
                         item(key = TimelineInitial) {
                             when {
-                                missing -> Text(stringResource(R.string.history_missing))
+                                missing -> ContentReadFeedback(R.string.history_missing)
                                 waitingForHistory -> if (showSkeleton) ConversationSkeleton()
-                                list.offline && !hasContent ->
-                                    Text(stringResource(R.string.conversation_history_offline))
-                                firstReadFailed ->
-                                    ChatContentLoadNotice(
-                                        R.string.chat_list_first_load_failed,
-                                        horizontalPadding = 0.dp,
-                                        retry = reconnect?.let { it::retry } ?: model::refresh,
-                                        retryEnabled =
-                                            reconnect != null ||
-                                                state.phase != HistoryPhase.Loading,
-                                    )
+                                firstReadFailed -> ContentReadFeedback(R.string.history_failed)
                                 transcript != null && queue.isEmpty() ->
                                     Text(stringResource(R.string.history_empty))
                             }
@@ -739,19 +681,18 @@ internal fun ConversationRoute(
                 }
                 if (showHistoryProgress) {
                     Box(Modifier.fillMaxWidth().testTag("history_sync_progress")) {
-                        ChatReadProgress(R.string.history_syncing)
+                        ContentReadProgress(R.string.history_syncing)
                     }
                 }
             }
-            if (!missing) {
+            if (!missing && controls?.storageFailed == true) {
                 Column(contentWidth) {
-                    if (showComposerStatus && list.offline) ConversationOffline(short = false)
-                    if (controls?.storageFailed == true)
-                        ConversationControlStorageFailure(controls.model::retryLocal)
+                    ConversationControlStorageFailure(controls.model::retryLocal)
                 }
             }
         }
-        if (queueOpen) ConversationQueueModal(queue, controls, queueSnackbar, dismissQueue)
+        if (queueOpen && !missing)
+            ConversationQueueModal(queue, controls, queueSnackbar, dismissQueue)
     }
 }
 

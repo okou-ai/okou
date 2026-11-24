@@ -24,7 +24,7 @@ export type ChatConnectorExecutionOwner = {
   | { readonly kind: "chat"; readonly chatThreadId: string }
 );
 
-/** New Chat choices use live eligibility. Active Run account resolution keeps its current path until #50168. */
+/** Chat choices use live eligibility. Run callers can opt into the same rules. */
 export function chatConnectorExecutionReadPlan(
   owner: ChatConnectorExecutionOwner,
   connectorSlug?: string,

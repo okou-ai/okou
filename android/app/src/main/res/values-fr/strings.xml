@@ -4,11 +4,6 @@
     <string name="auth_check_failed">Impossible de vérifier l’accès.</string>
     <string name="auth_selection_failed">Impossible d’ouvrir cet espace de travail.</string>
     <string name="auth_sign_out_failed">Impossible de se déconnecter.</string>
-    <string name="composer_sync_loading">Chargement du brouillon enregistré…</string>
-    <string name="composer_sync_saving">Synchronisation du brouillon…</string>
-    <string name="composer_sync_failed">La synchronisation a échoué. Votre texte reste sur cet appareil.</string>
-    <string name="composer_sync_unsupported">Ce brouillon contient du contenu modifiable sur le Web. Votre texte reste sur cet appareil ; la synchronisation automatique est suspendue.</string>
-    <string name="composer_sync_retry">Réessayer la synchronisation</string>
     <string name="composer_restore_draft">Restaurer le brouillon conservé</string>
     <string name="controls_storage_failed">Impossible de conserver les commandes en attente.</string>
     <string name="controls_stop">Arrêter le travail en cours</string>
@@ -38,8 +33,6 @@
     <string name="auth_workspace">Espace de travail actuel</string>
     <string name="auth_switch_workspace">Changer d’espace de travail</string>
     <string name="auth_browser_unavailable">Installez un navigateur pour configurer votre espace de travail.</string>
-    <string name="preference_save_failed">Vos préférences n’ont pas pu être enregistrées. Vos choix restent actifs.</string>
-    <string name="preference_refresh_failed">Impossible d’actualiser les préférences. Réessayez.</string>
     <string name="preference_color_theme">Thème de couleur</string>
     <string name="preference_language">Langue</string>
     <string name="palette_default">Par défaut</string>
@@ -89,7 +82,6 @@
     <string name="composer_retry">Réessayer le même message</string>
     <string name="composer_not_observed">Le message est encore introuvable. Sa remise reste non confirmée.</string>
     <string name="composer_request_failed">La demande a échoué. Le brouillon et le message en attente sont conservés.</string>
-    <string name="composer_saving">Enregistrement du brouillon sur cet appareil…</string>
     <string name="updates_title">Mises à jour de l’application</string>
     <string name="updates_installed">Version actuelle : %1$s</string>
     <string name="updates_current">Vous utilisez la dernière version</string>
@@ -128,8 +120,6 @@
     <string name="updates_error_install">Android n’a pas pu installer la mise à jour.</string>
     <string name="updates_unavailable">Aucune mise à jour adaptée n’est encore disponible.</string>
     <string name="updates_android_unsupported">Cette mise à jour nécessite une version Android plus récente.</string>
-    <string name="realtime_connecting">Connexion aux mises à jour en direct…</string>
-    <string name="realtime_unavailable">Les mises à jour en direct sont indisponibles. Vous pouvez actualiser manuellement.</string>
     <string name="settings_account">Compte</string>
     <string name="settings_cancel">Annuler</string>
     <string name="settings_saving">Enregistrement…</string>
@@ -137,11 +127,12 @@
     <string name="settings_sign_out_body">Pour utiliser à nouveau Okou sur cet appareil, reconnectez-vous. Les brouillons restent associés à ce compte.</string>
     <string name="updates_waiting_to_check">Vérification en attente</string>
     <string name="updates_waiting_to_install">En attente d’installation</string>
+    <string name="updates_retry_download">Relancer le téléchargement</string>
+    <string name="updates_retry_check">Relancer la vérification</string>
     <string name="updates_waiting_to_download">Téléchargement en attente</string>
     <string name="instructions_placeholder">Que souhaitez-vous qu’Okou garde à l’esprit ?</string>
     <string name="instructions_save_when_online">Connectez-vous pour enregistrer les modifications.</string>
     <string name="settings_timezone">Fuseau horaire</string>
-    <string name="settings_timezone_hint">Fuseau horaire par défaut des nouvelles tâches planifiées.</string>
     <string name="settings_timezone_utc">Temps universel coordonné</string>
     <string name="settings_timezone_format">%1$s (UTC%2$s)</string>
 </resources>

@@ -207,7 +207,7 @@ class ComposerJournalRecoveryTest {
         )
         assertEquals(0, fixture.posts())
         fixture.api.draftReadStatus = 200
-        restored.retrySync(target)
+        restored.open(target)
         restored.uiState.first {
             it.sync(target) == ComposerSync.Saved && it.persistence == ComposerPersistence.Durable
         }

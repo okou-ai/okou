@@ -362,6 +362,7 @@ export {
 export {
   artifactCatalogContract,
   type ArtifactCatalogContract,
+  type ArtifactCatalogDirection,
   type ArtifactCatalogKind,
   type ArtifactDetail,
   type ArtifactSummary,

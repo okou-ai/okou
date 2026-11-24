@@ -1,5 +1,64 @@
 # Changelog
 
+## [10.36.29](https://github.com/okou-ai/okou/compare/cli-v10.36.28...cli-v10.36.29) (2026-11-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.117.0
+    * @okouai/core bumped to 8.868.1
+    * @okouai/pi-agent-runtime bumped to 1.52.59
+
+## [10.36.28](https://github.com/okou-ai/okou/compare/cli-v10.36.27...cli-v10.36.28) (2026-11-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.116.0
+    * @okouai/core bumped to 8.868.0
+    * @okouai/pi-agent-runtime bumped to 1.52.58
+
+## [10.36.27](https://github.com/okou-ai/okou/compare/cli-v10.36.26...cli-v10.36.27) (2026-11-24)
+
+
+### Bug Fixes
+
+* **app:** remove standalone template picker ([#50365](https://github.com/okou-ai/okou/issues/50365)) ([6a20b9e](https://github.com/okou-ai/okou/commit/6a20b9e686f663c0f71403cf4d52c6d77820e7a6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.867.1
+    * @okouai/pi-agent-runtime bumped to 1.52.57
+
+## [10.36.26](https://github.com/okou-ai/okou/compare/cli-v10.36.25...cli-v10.36.26) (2026-11-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.115.0
+    * @okouai/core bumped to 8.867.0
+    * @okouai/pi-agent-runtime bumped to 1.52.56
+
+## [10.36.25](https://github.com/okou-ai/okou/compare/cli-v10.36.24...cli-v10.36.25) (2026-11-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.114.0
+    * @okouai/core bumped to 8.866.0
+    * @okouai/pi-agent-runtime bumped to 1.52.55
+
 ## [10.36.24](https://github.com/okou-ai/okou/compare/cli-v10.36.23...cli-v10.36.24) (2026-11-24)
 
 

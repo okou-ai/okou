@@ -4,6 +4,7 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
+  IosConnectorManagement = "iosConnectorManagement",
   ComposerVoiceMessages = "composerVoiceMessages",
   ArtifactThreePointTiming = "_artifactThreePointTimingV2",
   PhoneUse = "_phoneUse",
@@ -29,6 +30,7 @@ export enum FeatureSwitchKey {
   TestOauthConnector = "_testOauthConnector",
   ZoomConnector = "zoomConnector",
   RealAgentInPreview = "_realAgentInPreview",
+  ArtifactLibrary = "artifactLibrary",
   ZipArtifactPreview = "zipArtifactPreview",
   LarkOfficialBot = "larkOfficialBot",
   FeishuIntegration = "_feishuIntegration",
@@ -36,6 +38,7 @@ export enum FeatureSwitchKey {
   WechatIntegration = "wechatIntegration",
   WhatsappIntegration = "whatsappIntegration",
   CodexExecution = "_codexExecution",
+  GeminiAntigravity = "_geminiAntigravity",
   CodexSubscriptionUltrafast = "codexSubscriptionUltrafast",
   PresentationConvert = "presentationConvert",
   GoogleSlidesConversion = "googleSlidesConversion",

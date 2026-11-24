@@ -9,7 +9,7 @@ import {
   queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
 import {
-  openTemplatePicker,
+  openTemplateRecommendations,
   createTemplateGalleryHelpers,
 } from "./chat-composer-template-gallery-test-helpers.ts";
 import {
@@ -21,11 +21,11 @@ const context = testContext();
 const { mockTemplateChat } = createTemplateGalleryHelpers(context);
 
 function control(
-  dialog: HTMLElement,
-  role: "tab" | "button" | "link" | "radio",
+  container: ParentNode,
+  role: "button" | "link",
   name: string,
 ): HTMLElement {
-  const result = queryAllByRoleFast(role, dialog).find((element) => {
+  const result = queryAllByRoleFast(role, container).find((element) => {
     return (
       element.getAttribute("aria-label") === name ||
       element.textContent?.trim() === name
@@ -37,94 +37,42 @@ function control(
   return result;
 }
 
-async function setup() {
+async function setup(draft = "Keep this draft") {
   const capture = mockTemplateChat();
   const user = userEvent.setup({ delay: null });
-  await setupPage({
-    context,
-    path: `/`,
-  });
-  return { user, capture };
+  await setupPage({ context, path: "/" });
+  const editor = await findComposerEditor();
+  await fill(editor, draft);
+  const shelf = await openTemplateRecommendations("Document");
+  return { user, capture, editor, shelf };
 }
 
-async function openDocumentTray() {
-  const cards = await screen.findByRole("group", {
-    name: "Explore Okou capabilities",
+async function preview(shelf: HTMLElement, title: string) {
+  await userEvent.click(control(shelf, "button", `Preview template ${title}`));
+  const heading = await screen.findByRole("heading", {
+    name: `Document / ${title}`,
   });
-  const create = within(cards).getByRole("region", { name: "Create" });
-  click(control(create, "button", "Presentation"));
-  const types = await screen.findByRole("radiogroup", { name: "Create" });
-  click(control(types, "radio", "Document"));
-  return await screen.findByRole("group", { name: "Document templates" });
-}
-
-test("Document category and scroll survive preview", async () => {
-  const { user, capture } = await setup();
-  await fill(await findComposerEditor(), "Prepare the invoice for my client.");
-  const dialog = await openTemplatePicker(user);
-  const tabs = queryAllByRoleFast("tab", dialog);
-  expect(
-    tabs.map((tab) => {
-      return tab.textContent;
-    }),
-  ).toStrictEqual(["Presentation", "Document", "Website", "Image", "Workflow"]);
-  click(control(dialog, "tab", "Document"));
-  expect(within(dialog).getAllByLabelText(/^Preview /u)).toHaveLength(47);
-  click(control(dialog, "button", "Invoice"));
-  expect(within(dialog).getAllByLabelText(/^Preview /u)).toHaveLength(7);
-  const grid = dialog.querySelector<HTMLElement>(
-    "[data-document-template-grid-scroll]",
-  );
-  if (!grid) {
-    throw new Error("Document grid not found");
+  const dialog = heading.closest<HTMLElement>('[role="dialog"]');
+  if (!dialog) {
+    throw new Error(`Expected document detail for ${title}`);
   }
-  grid.scrollTop = 120;
-  fireEvent.scroll(grid);
-  click(control(dialog, "button", "Preview Simple invoice"));
-  expect(screen.getAllByRole("dialog")).toHaveLength(1);
-  expect(
-    within(dialog).getByRole("heading", {
-      name: "Document / Simple invoice",
-      level: 2,
-    }),
-  ).toBeVisible();
-  await user.keyboard("{Escape}");
-  expect(control(dialog, "button", "Invoice")).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  expect(within(dialog).getAllByLabelText(/^Preview /u)).toHaveLength(7);
-  const restored = dialog.querySelector<HTMLElement>(
-    "[data-document-template-grid-scroll]",
-  );
-  expect(restored?.scrollTop).toBe(120);
-  expect(control(dialog, "button", "Preview Simple invoice")).toHaveFocus();
-  await expect(findComposerEditor()).resolves.toHaveTextContent(
-    "Prepare the invoice for my client.",
-  );
-  expect(capture.sentMessages).toHaveLength(0);
-});
+  return dialog;
+}
 
-test("Using a document template preserves the draft until the user sends it", async () => {
-  const { user, capture } = await setup();
-  await fill(await findComposerEditor(), "Explain this proposal to my client.");
-  const dialog = await openTemplatePicker(user);
-  click(control(dialog, "tab", "Document"));
-  click(control(dialog, "button", "Use Sidebar report"));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-  const preservedEditor = await findComposerEditor();
-  expect(preservedEditor).toHaveTextContent(
+test("Using a document recommendation preserves the draft until the user sends it", async () => {
+  const { user, capture, editor, shelf } = await setup(
     "Explain this proposal to my client.",
   );
-  expect(composerInlineTemplates()).toHaveLength(1);
-  expect(composerInlineTemplates()[0]).toHaveTextContent("Sidebar report");
+  click(control(shelf, "button", "Use template Sidebar report"));
+  await waitFor(() => {
+    expect(composerInlineTemplates()[0]).toHaveTextContent("Sidebar report");
+  });
+  expect(editor).toHaveTextContent("Explain this proposal to my client.");
   expect(
     control(document.body, "button", "Remove Document"),
   ).toBeInTheDocument();
   expect(capture.sentMessages).toHaveLength(0);
-  click(await findComposerEditor());
+  click(editor);
   await user.keyboard("{Enter}");
   await waitFor(() => {
     expect(capture.sentMessages).toHaveLength(1);
@@ -140,13 +88,10 @@ test("Using a document template preserves the draft until the user sends it", as
 });
 
 test("Meeting notes can be previewed and attached without sending the draft", async () => {
-  const { user, capture } = await setup();
-  const draft = "Summarize these meeting notes.";
-  await fill(await findComposerEditor(), draft);
-  const dialog = await openTemplatePicker(user);
-  click(control(dialog, "tab", "Document"));
-  click(control(dialog, "button", "Business records"));
-  click(control(dialog, "button", "Preview Meeting notes"));
+  const { capture, editor, shelf } = await setup(
+    "Summarize these meeting notes.",
+  );
+  const dialog = await preview(shelf, "Meeting notes");
   const pageUrl = within(dialog).getByAltText("Page 1").getAttribute("src");
   expect(pageUrl).toContain("/document-meeting-notes/page-01.png");
   expect(control(dialog, "link", "Open larger preview")).toHaveAttribute(
@@ -158,13 +103,12 @@ test("Meeting notes can be previewed and attached without sending the draft", as
   ).not.toBeInTheDocument();
   click(control(dialog, "button", "Use this template"));
   await waitFor(() => {
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(dialog).not.toBeInTheDocument();
+    expect(composerInlineTemplates()[0]).toHaveTextContent("Meeting notes");
   });
-  await expect(findComposerEditor()).resolves.toHaveTextContent(draft);
-  expect(composerInlineTemplates()[0]).toHaveTextContent("Meeting notes");
+  expect(editor).toHaveTextContent("Summarize these meeting notes.");
   expect(capture.sentMessages).toHaveLength(0);
-  click(await findComposerEditor());
-  await user.keyboard("{Enter}");
+  click(control(document.body, "button", "Send"));
   await waitFor(() => {
     expect(capture.sentMessages).toHaveLength(1);
   });
@@ -178,46 +122,21 @@ test("Meeting notes can be previewed and attached without sending the draft", as
   });
 });
 
-test("The Document tray opens its picker with the keyboard", async () => {
-  const { user, capture } = await setup();
-  const editor = await findComposerEditor();
-  await fill(editor, "Keep this draft");
-  await openDocumentTray();
-  control(screen.getByRole("tabpanel"), "button", "View all").focus();
-  await user.keyboard("{Enter}");
-  const dialog = await screen.findByRole("dialog");
-  expect(control(dialog, "tab", "Document")).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
-  expect(editor).toHaveTextContent("Keep this draft");
-  await user.keyboard("{Escape}");
-  expect(
-    control(document.body, "button", "Remove Document"),
-  ).toBeInTheDocument();
-  expect(capture.sentMessages).toHaveLength(0);
-});
-
 test("A Document tray cover attaches its template and keeps the draft", async () => {
-  const { capture } = await setup();
-  const editor = await findComposerEditor();
-  await fill(editor, "Keep this draft");
-  const shelf = await openDocumentTray();
+  const { capture, editor, shelf } = await setup();
   click(control(shelf, "button", "Use template Itemized invoice"));
+  await waitFor(() => {
+    expect(composerInlineTemplates()[0]).toHaveTextContent("Itemized invoice");
+  });
   expect(editor).toHaveTextContent("Keep this draft");
-  expect(composerInlineTemplates()[0]).toHaveTextContent("Itemized invoice");
   expect(
     control(document.body, "button", "Remove Document"),
   ).toBeInTheDocument();
-  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(capture.sentMessages).toHaveLength(0);
 });
 
 test("Document sends its creation intent and keeps its task chip in the new thread", async () => {
-  const { capture } = await setup();
-  const editor = await findComposerEditor();
-  await openDocumentTray();
-  await fill(editor, "Prepare a project brief.");
+  const { capture } = await setup("Prepare a project brief.");
   click(control(document.body, "button", "Send"));
   await waitFor(() => {
     expect(capture.sentMessages).toHaveLength(1);
@@ -234,23 +153,19 @@ test("Document sends its creation intent and keeps its task chip in the new thre
 });
 
 test("Document preview pages display unavailable images", async () => {
-  const { user } = await setup();
-  const dialog = await openTemplatePicker(user);
-  click(control(dialog, "tab", "Document"));
-  click(control(dialog, "button", "Preview Simple invoice"));
+  const { shelf } = await setup();
+  const dialog = await preview(shelf, "Simple invoice");
   fireEvent.error(within(dialog).getByAltText("Page 1"));
-  expect(within(dialog).getByText("Preview unavailable")).toBeVisible();
+  expect(within(dialog).getByText("Preview unavailable")).toBeInTheDocument();
 });
 
-test("Document preview pages navigate, reset on reopen, and can be selected from details", async () => {
-  const { user, capture } = await setup();
-  const dialog = await openTemplatePicker(user);
-  click(control(dialog, "tab", "Document"));
-  click(control(dialog, "button", "Preview Mutual NDA"));
+test("Document details navigate sample pages and reopen from the Eye at the first page", async () => {
+  const { user, capture, editor, shelf } = await setup();
+  const eye = control(shelf, "button", "Preview template Mutual NDA");
+  const dialog = await preview(shelf, "Mutual NDA");
   expect(control(dialog, "button", "Document")).toHaveFocus();
   expect(control(dialog, "button", "Previous sample page")).toBeDisabled();
-  const firstPage = within(dialog).getByAltText("Page 1");
-  const firstUrl = firstPage.getAttribute("src");
+  const firstUrl = within(dialog).getByAltText("Page 1").getAttribute("src");
   expect(control(dialog, "link", "Open larger preview")).toHaveAttribute(
     "href",
     firstUrl,
@@ -269,22 +184,21 @@ test("Document preview pages navigate, reset on reopen, and can be selected from
     firstUrl,
   );
   click(control(dialog, "button", "Next sample page"));
-  click(control(dialog, "button", "Document"));
-  click(control(dialog, "button", "Preview Mutual NDA"));
-  expect(within(dialog).getByAltText("Page 1")).toHaveAttribute(
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(dialog).not.toBeInTheDocument();
+    expect(eye).toHaveFocus();
+  });
+  const reopened = await preview(shelf, "Mutual NDA");
+  expect(within(reopened).getByAltText("Page 1")).toHaveAttribute(
     "src",
     firstUrl,
   );
-  click(control(dialog, "button", "Document"));
-  click(control(dialog, "button", "Preview Simple invoice"));
-  // A single sample page has nowhere to page to, so it shows no arrows.
-  expect(
-    within(dialog).queryByLabelText("Next sample page"),
-  ).not.toBeInTheDocument();
-  click(control(dialog, "button", "Use this template"));
+  click(control(reopened, "button", "Use this template"));
   await waitFor(() => {
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(reopened).not.toBeInTheDocument();
+    expect(composerInlineTemplates()[0]).toHaveTextContent("Mutual NDA");
   });
-  expect(composerInlineTemplates()[0]).toHaveTextContent("Simple invoice");
+  expect(editor).toHaveTextContent("Keep this draft");
   expect(capture.sentMessages).toHaveLength(0);
 });

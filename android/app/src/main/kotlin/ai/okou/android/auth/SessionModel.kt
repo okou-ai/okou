@@ -11,6 +11,7 @@ import ai.okou.android.chat.ChatCacheStore
 import ai.okou.android.chat.ChatComposerModel
 import ai.okou.android.chat.ChatListFilter
 import ai.okou.android.chat.ChatListModel
+import ai.okou.android.chat.ChatRenamePresentation
 import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.chat.HistoryPhase
 import ai.okou.android.chat.ProjectExpansionModel
@@ -26,7 +27,6 @@ import ai.okou.android.preferences.MemberAppearance
 import ai.okou.android.preferences.MemberAppearanceCache
 import ai.okou.android.preferences.MemberPreferencesModel
 import ai.okou.android.preferences.PreferenceChange
-import ai.okou.android.preferences.appearance
 import ai.okou.android.settings.DefaultModelStore
 import ai.okou.android.settings.WorkspaceSettingsCache
 import ai.okou.android.settings.WorkspaceSettingsModel
@@ -86,6 +86,7 @@ data class ReadyWorkspace(
     val workflows: WorkflowModel?,
     val connectors: ConnectorModel? = null,
     val search: WorkspaceSearchModel,
+    internal val renamePresentation: ChatRenamePresentation,
 )
 
 sealed interface OpeningWorkspace {
@@ -105,6 +106,7 @@ sealed interface OpeningWorkspace {
         val artifacts: ArtifactCatalogModel,
         val chatArtifacts: ArtifactCatalogModel,
         val search: WorkspaceSearchModel,
+        internal val renamePresentation: ChatRenamePresentation,
     ) : OpeningWorkspace
 }
 
@@ -200,7 +202,7 @@ class SessionModel(
             val filter = (ready?.chats ?: opened?.chats)?.uiState?.value?.filter
             if (filter != null) workspaceFilters[key] = filter
             if (ready != null) {
-                val intent = ready.preferences.uiState.value.pending
+                val intent = ready.preferences.pendingForWorkspaceRestore()
                 if (intent == null) pendingPreferences.remove(key)
                 else pendingPreferences[key] = intent
             }
@@ -227,8 +229,7 @@ class SessionModel(
     private fun enterRequiredUpdate() {
         val state = mutable.value
         val appearance =
-            state.ready?.preferences?.uiState?.value?.confirmed?.appearance
-                ?: state.cachedAppearance
+            state.ready?.preferences?.uiState?.value?.appearance ?: state.cachedAppearance
         requiredUpdate = true
         retire()
         mutable.value =
@@ -441,6 +442,8 @@ class SessionModel(
                         { current(ticket, snapshot) },
                         { workspaceFailure(ticket, snapshot, it) },
                         dispatcher,
+                        retryWhenActive = canRetryPreparation,
+                        online = { connected.value },
                     )
                 }
                 val composer = store.workspaceModel {
@@ -509,6 +512,7 @@ class SessionModel(
                                 { workspaceFailure(ticket, snapshot, it) },
                             )
                         },
+                        store.workspaceModel { ChatRenamePresentation() },
                     )
                 entrySelection = null
                 mutable.value =
@@ -758,13 +762,14 @@ class SessionModel(
                         workflows = workflows,
                         connectors = connectors,
                         search = opened.search,
+                        renamePresentation = opened.renamePresentation,
                     ),
                 working = false,
                 cachedAppearance = null,
                 opening = null,
             )
         preferences.uiState
-            .map { it.confirmed.appearance }
+            .map { it.appearance }
             .distinctUntilChanged()
             .collect { appearanceCache.save(opened.identity, it) }
     }

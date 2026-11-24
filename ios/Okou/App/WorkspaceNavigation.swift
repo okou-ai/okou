@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// UIKit owns the stack, interactive pop and transitions; each page keeps its own chrome.
+/// Both pages keep their own chrome and share one UIKit navigation stack.
 struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresentable {
   let sidebar: SidebarInteraction
   @ViewBuilder let list: () -> Sidebar
@@ -39,7 +39,7 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
   ) {
     navigation.applySelection = nil
     navigation.delegate = nil
-    coordinator.uninstallPopGestures()
+    navigation.popPan.isEnabled = false
     coordinator.sidebar.setTransitioning(false)
   }
 
@@ -51,9 +51,8 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
     let presentation: WorkspaceChatPresentation
     let chat: WorkspaceChatHostingController
     var requestedSidebarOpen: Bool
-    private weak var navigation: UINavigationController?
+    private weak var navigation: WorkspaceNavigationController?
     private var transitionTarget: Bool?
-    private var popGestures: [WorkspacePopGestureDelegate] = []
 
     init(sidebar: SidebarInteraction) {
       let presentation = WorkspaceChatPresentation()
@@ -67,25 +66,23 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
 
     func install(on navigation: WorkspaceNavigationController) {
       self.navigation = navigation
-      navigation.loadViewIfNeeded()
-      let direction = WorkspacePopDirectionRecognizer(target: nil, action: nil)
-      navigation.view.addGestureRecognizer(direction)
-      popGestures = [
-        navigation.interactivePopGestureRecognizer,
-        navigation.interactiveContentPopGestureRecognizer
-      ].compactMap { $0 }.map { gesture in
-        gesture.require(toFail: direction)
-        return WorkspacePopGestureDelegate(navigation: navigation, gestureRecognizer: gesture)
-      }
       navigation.delegate = self
       navigation.applySelection = { [weak self] in self?.applySelection() }
     }
 
-    func uninstallPopGestures() {
-      for popGesture in popGestures {
-        popGesture.uninstall()
-      }
-      popGestures.removeAll()
+    func navigationController(
+      _ navigationController: UINavigationController,
+      animationControllerFor operation: UINavigationController.Operation,
+      from fromVC: UIViewController, to toVC: UIViewController
+    ) -> (any UIViewControllerAnimatedTransitioning)? {
+      operation == .pop ? navigation?.popPan.transition : nil
+    }
+
+    func navigationController(
+      _ navigationController: UINavigationController,
+      interactionControllerFor animationController: any UIViewControllerAnimatedTransitioning
+    ) -> (any UIViewControllerInteractiveTransitioning)? {
+      animationController as? WorkspacePopTransition
     }
 
     private func applySelection() {
@@ -140,6 +137,14 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
 
 final class WorkspaceNavigationController: UINavigationController {
   var applySelection: (() -> Void)?
+  private(set) lazy var popPan = WorkspacePopPanGestureRecognizer(navigation: self)
+
+  override func viewDidLoad() {
+    super.viewDidLoad()
+    interactivePopGestureRecognizer?.isEnabled = false
+    interactiveContentPopGestureRecognizer?.isEnabled = false
+    view.addGestureRecognizer(popPan)
+  }
 
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()

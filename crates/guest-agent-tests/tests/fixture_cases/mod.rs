@@ -1,3 +1,4 @@
+mod antigravity_execution;
 mod command_output_timeout;
 mod file_readiness;
 mod fixture_observation;

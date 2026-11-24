@@ -12,7 +12,6 @@
     <string name="chat_undo_failed">Não foi possível desfazer a alteração.</string>
     <string name="chat_undo_unconfirmed">Não foi possível confirmar se a alteração foi desfeita.</string>
     <string name="chat_feedback_dismiss">Fechar</string>
-    <string name="chat_list_offline">Sem conexão</string>
     <string name="chat_list_first_load_failed">Temporariamente indisponível para carregar</string>
     <string name="chat_list_load_when_online">As conversas serão carregadas quando você voltar a ficar online.</string>
     <string name="chat_list_title">Conversas</string>
@@ -77,7 +76,6 @@
     <string name="chat_delete_rejected">Não foi possível excluir a conversa.</string>
     <string name="chat_delete_title">Excluir conversa?</string>
     <string name="chat_delete_description">As mensagens e os rascunhos de “%1$s” serão excluídos permanentemente. As tarefas em andamento serão interrompidas e as automações vinculadas serão pausadas.</string>
-    <string name="chat_delete_confirm">Excluir</string>
     <string name="chat_rename_project">Renomear projeto</string>
     <string name="chat_project_name">Nome do projeto</string>
     <string name="chat_project_rename_unconfirmed">Não foi possível confirmar o nome do projeto.</string>
@@ -99,4 +97,12 @@
     <string name="chat_project_delete_unconfirmed">Não foi possível confirmar a exclusão do projeto.</string>
     <string name="chat_row_action_rejected_named">Não foi possível concluir “%1$s”.</string>
     <string name="chat_row_action_offline_named">Não foi possível concluir “%1$s”. Verifique sua conexão e tente novamente.</string>
+    <string name="chat_rename_save_failed">Não foi possível salvar. Suas alterações foram mantidas.</string>
+    <string name="chat_rename_check_result">Verificar resultado</string>
+    <string name="chat_rename_trim_hint">Os espaços no início e no fim são removidos.</string>
+    <string name="chat_rename_required">Insira um nome.</string>
+    <string name="chat_rename_checking_result">Verificando o resultado…</string>
+    <string name="chat_rename_save_unconfirmed">O resultado do salvamento ainda não foi confirmado.</string>
+    <string name="chat_title_saved">Título da conversa salvo</string>
+    <string name="chat_project_name_saved">Nome do projeto salvo</string>
 </resources>

@@ -4,7 +4,8 @@ import {
 } from "@okouai/db/schema/member-memory";
 import { systemStoragePresignedUrlCache } from "@okouai/db/runtime/system-storage-presigned-url-cache";
 import { computed } from "ccstate";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { env } from "../../lib/env";
 import { db$ } from "../external/db";
 import type { MemberMemoryOwner } from "./member-memory";
@@ -18,20 +19,20 @@ export interface MemberMemoryHead {
   readonly versionId: string;
   readonly s3Key: string;
   readonly archiveSize: number;
-  readonly fileCount: number;
+  readonly isEmpty: boolean;
   readonly archiveCache: SelectedStoragePresignedUrlCacheRow | null;
 }
 
 export const memberMemoryHeadFields = Object.freeze({
   memory: {
     storageId: memberMemories.id,
-    headVersionId: memberMemories.headVersionId,
+    hasHead: isNotNull(memberMemories.headVersionId).mapWith(pgBooleanDecoder),
   },
   revision: {
     versionId: memoryVersions.id,
     s3Key: memoryVersions.objectPrefix,
     archiveSize: memoryVersions.archiveSize,
-    fileCount: memoryVersions.fileCount,
+    isEmpty: eq(memoryVersions.fileCount, 0).mapWith(pgBooleanDecoder),
   },
   archiveCache: {
     cacheKey: systemStoragePresignedUrlCache.cacheKey,
@@ -72,7 +73,7 @@ export function decodeMemberMemoryHead(
     | {
         readonly memory: {
           readonly storageId: string;
-          readonly headVersionId: string | null;
+          readonly hasHead: boolean;
         } | null;
         readonly revision: Omit<
           MemberMemoryHead,
@@ -82,7 +83,7 @@ export function decodeMemberMemoryHead(
       }
     | undefined,
 ): MemberMemoryHead | null {
-  if (!row?.memory || row.memory.headVersionId === null) {
+  if (!row?.memory || !row.memory.hasHead) {
     return null;
   }
   if (!row.revision) {

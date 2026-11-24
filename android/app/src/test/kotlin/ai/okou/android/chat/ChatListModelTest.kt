@@ -2273,7 +2273,7 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
     }
 
     @Test
-    fun confirmedSecondRenameSettlesEarlierUnconfirmedEdit() = runTest {
+    fun unconfirmedRenameRequiresReadbackBeforeAcceptingAnotherWrite() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
         val store = ViewModelStore()
@@ -2323,7 +2323,14 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
             assertEquals(ChatRowAction.Rename, model.uiState.value.failedRowAction?.action)
             model.dismissRowActionFailure(checkNotNull(model.uiState.value.failedRowAction))
 
-            model.renameThread(CHAT_PERSONAL, "Second edit")
+            assertFalse(model.renameThread(CHAT_PERSONAL, "Second edit"))
+            assertTrue(CHAT_PERSONAL in model.uiState.value.unconfirmedRenames)
+            model.checkChatRename(CHAT_PERSONAL)
+            advanceUntilIdle()
+            assertEquals("Personal chat", model.uiState.value.threads.single().title)
+            assertTrue(model.uiState.value.unconfirmedRenames.isEmpty())
+
+            assertTrue(model.renameThread(CHAT_PERSONAL, "Second edit"))
             advanceUntilIdle()
             assertEquals("Second edit", model.uiState.value.threads.single().title)
             assertNull(model.uiState.value.failedRowAction)
@@ -4834,7 +4841,7 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
                     title = "Seen after reconnect",
                 ),
             )
-            model.updates.retry()
+            realtime.invalidate()
             model.refresh()
             runCurrent()
             assertEquals(initialList + 1, listReads)

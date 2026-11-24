@@ -1,3 +1,4 @@
+import CCState
 import ChatData
 import ChatDomain
 import Foundation
@@ -91,6 +92,9 @@ final class ConversationStore {
       projection.replacePending(newValue)
       persistPending()
     }
+  }
+  var recommendedFollowups: ChatRecommendedFollowupSource? {
+    pending.isEmpty ? history?.recommendedFollowups : nil
   }
   var messages: [ChatMessage] { projection.messages }
   var visibleItems: [ConversationItem] { reading.visibleItems }
@@ -187,7 +191,7 @@ final class ConversationStore {
   private var closed = false
 
   init(
-    thread: ChatThread, sync: ChatSync, commands: ChatCommands,
+    thread: ChatThread, sync: ChatSync, commands: ChatCommands, graph: CCState.Store,
     webURL: URL, messageMarkdown: MessageMarkdownCache,
     isVisible: @escaping @MainActor () -> Bool,
     didMarkRead: @escaping @MainActor (Date?) -> Void,
@@ -228,7 +232,7 @@ final class ConversationStore {
     self.draftStorage = draftStorage
     draftTarget = .thread(thread.id)
     composer = ComposerDraftStore(
-      target: draftTarget, commands: commands,
+      target: draftTarget, commands: commands, graph: graph,
       repository: draftRepository, storage: draftStorage, didFail: didFail,
       didSave: didSaveDraft,
       syncSleep: readRetrySleep, lifecycleTasks: lifecycleTasks)

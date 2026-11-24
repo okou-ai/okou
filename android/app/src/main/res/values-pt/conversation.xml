@@ -15,7 +15,6 @@
     <string name="conversation_new_reply">Nova resposta</string>
     <string name="conversation_view_progress">Ver progresso</string>
     <string name="conversation_processing">Processando…</string>
-    <string name="conversation_history_offline">O histórico será carregado quando você estiver online.</string>
     <string name="conversation_offline_send">Conecte-se para enviar. Seu rascunho fica aqui.</string>
     <string name="conversation_work">Etapas do trabalho</string>
     <string name="conversation_reply_actions">Ações da resposta</string>

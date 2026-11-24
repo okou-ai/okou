@@ -12,7 +12,6 @@
     <string name="chat_undo_failed">元に戻せませんでした</string>
     <string name="chat_undo_unconfirmed">元に戻せたか確認できませんでした</string>
     <string name="chat_feedback_dismiss">閉じる</string>
-    <string name="chat_list_offline">オフライン</string>
     <string name="chat_list_first_load_failed">一時的に読み込めません</string>
     <string name="chat_list_load_when_online">オンラインに戻るとチャットが読み込まれます。</string>
     <string name="chat_list_title">チャット</string>
@@ -73,7 +72,6 @@
     <string name="chat_delete_rejected">チャットを削除できませんでした。</string>
     <string name="chat_delete_title">チャットを削除しますか?</string>
     <string name="chat_delete_description">「%1$s」のメッセージと下書きは完全に削除されます。実行中のタスクは停止し、関連する自動化は一時停止します。</string>
-    <string name="chat_delete_confirm">削除</string>
     <string name="chat_rename_project">プロジェクト名を変更</string>
     <string name="chat_project_name">プロジェクト名</string>
     <string name="chat_project_rename_unconfirmed">プロジェクト名を確認できませんでした。</string>
@@ -95,4 +93,12 @@
     <string name="chat_project_delete_unconfirmed">プロジェクトの削除を確認できませんでした。</string>
     <string name="chat_row_action_rejected_named">「%1$s」を完了できませんでした。</string>
     <string name="chat_row_action_offline_named">「%1$s」を完了できませんでした。接続を確認してから、もう一度お試しください。</string>
+    <string name="chat_rename_save_failed">保存できませんでした。変更内容は保持されています。</string>
+    <string name="chat_rename_check_result">結果を確認</string>
+    <string name="chat_rename_trim_hint">先頭と末尾の空白は自動で削除されます。</string>
+    <string name="chat_rename_required">名前を入力してください。</string>
+    <string name="chat_rename_checking_result">結果を確認しています…</string>
+    <string name="chat_rename_save_unconfirmed">保存結果はまだ確認できていません。</string>
+    <string name="chat_title_saved">チャット名を保存しました</string>
+    <string name="chat_project_name_saved">プロジェクト名を保存しました</string>
 </resources>

@@ -12,6 +12,7 @@
 
 import { FeatureSwitchKey } from "./feature-switch-key";
 import { STAFF_ORG_ID_HASHES, fnv1a } from "./identity-hash";
+import { isStaffOrg } from "./staff-org";
 
 export interface FeatureSwitch {
   readonly maintainer: string;
@@ -23,6 +24,8 @@ export interface FeatureSwitch {
   readonly enabledOrgIdHashes?: readonly string[];
   /** Keep opt-in overrides within the configured rollout audience. */
   readonly restrictOverridesToAudience?: boolean;
+  /** Allow staff to opt in without enabling the switch by default for staff. */
+  readonly staffOptInOnly?: boolean;
 }
 
 export interface FeatureSwitchMetadata {
@@ -46,12 +49,21 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.IosConnectorManagement]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "iOS connector management",
+    description:
+      "Manage connector accounts and permissions in native iOS Settings.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.ComposerVoiceMessages]: {
     maintainer: "ethan@okou.ai",
     displayName: "Voice recordings in the composer",
     description:
-      "Attach recordings to chat messages instead of dictating text.",
+      "Use recordings as chat attachments instead of dictation for everyone in this workspace.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ChatShareRefresh]: {
     maintainer: "ming@okou.ai",
@@ -189,11 +201,18 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.ArtifactLibrary]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Artifact library list",
+    description:
+      "Browse artifacts in a searchable list with type filters, creation-time sorting, and the existing sidebar previews.",
+    enabled: false,
+  },
   [FeatureSwitchKey.SlashActions]: {
     maintainer: "tongx@okou.ai",
     displayName: "Slash actions",
     description:
-      "Lead the composer's slash menu with chat actions, and open Workflows and Templates as second-level lists.",
+      "Lead the composer's slash menu with chat actions, and open Workflows and action settings as second-level lists.",
     enabled: false,
   },
   [FeatureSwitchKey.FollowupPlaceholder]: {
@@ -365,6 +384,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Test-only override to use Codex instead of Pi for supported ChatGPT subscription runs. Auto always stays on Pi.",
     enabled: false,
   },
+  [FeatureSwitchKey.GeminiAntigravity]: {
+    maintainer: "lancy@okou.ai",
+    displayName: "Gemini 4 with Antigravity",
+    description:
+      "Opt into Neon, Carbon, and Hydrogen with a personal Google AI subscription.",
+    enabled: false,
+    staffOptInOnly: true,
+  },
   [FeatureSwitchKey.CodexSubscriptionUltrafast]: {
     maintainer: "ethan@okou.ai",
     description: "Offer Ultrafast on supported personal Codex routes.",
@@ -437,6 +464,9 @@ export function isFeatureSwitchAvailable(
   ctx: FeatureSwitchContext,
 ): boolean {
   const feature = FEATURE_SWITCHES[key];
+  if (feature.staffOptInOnly) {
+    return isStaffOrg(ctx.orgId);
+  }
   return (
     !feature.restrictOverridesToAudience ||
     evaluateSwitch(feature, {

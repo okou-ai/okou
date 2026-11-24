@@ -8,6 +8,7 @@ import {
 import { featureSwitchesContract } from "@okouai/api-contracts/client/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { authenticatedSessionKey$, clerk$ } from "../auth";
+import { invalidateModelCatalog$ } from "./model-catalog.ts";
 import { apiClient$ } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";
 
@@ -88,6 +89,12 @@ export const featureSwitches$ = computed(async (get) => {
   return getAllFeatureStates({ ...identity, overrides: combined });
 });
 
+export const memberConnectorAccountAccess$ = computed(async (get) => {
+  return (await get(featureSwitches$))[
+    FeatureSwitchKey.MemberConnectorAccountAccess
+  ];
+});
+
 const reloadFeatureSwitch$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();
@@ -117,6 +124,9 @@ export const setFeatureSwitch$ = command(
       [200],
     );
     signal.throwIfAborted();
+    if (overrides[FeatureSwitchKey.GeminiAntigravity] !== undefined) {
+      set(invalidateModelCatalog$);
+    }
     await set(reloadFeatureSwitch$, signal);
   },
 );
@@ -129,6 +139,7 @@ export const resetFeatureSwitches$ = command(
     signal.throwIfAborted();
     await accept(client.delete({ fetchOptions: { signal } }), [200]);
     signal.throwIfAborted();
+    set(invalidateModelCatalog$);
     await set(reloadFeatureSwitch$, signal);
   },
 );

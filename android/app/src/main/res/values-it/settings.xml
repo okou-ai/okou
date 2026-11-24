@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="settings_preferences_save_rolled_back">Impossibile salvare le impostazioni. Sono stati ripristinati i valori precedenti.</string>
+    <string name="settings_appearance_sync_failed">Impossibile sincronizzare l’aspetto. È stato applicato su questo dispositivo.</string>
     <string name="settings_email_updates">Aggiornamenti via email</string>
     <string name="settings_email_scope">Ricevi riepiloghi, promemoria e aggiornamenti da tutti gli spazi di lavoro.</string>
     <string name="settings_email_receive">Ricevi email</string>
@@ -70,7 +72,7 @@
     <string name="settings_auto_model_detail">Okou sceglie un modello disponibile</string>
     <string name="settings_model_plan_restricted">Richiede un altro piano</string>
     <string name="settings_model_fast">Modalità rapida</string>
-    <string name="settings_model_fast_usage">Usa circa %1$s volte la quota</string>
+    <string name="settings_model_fast_usage">Se attiva, il consumo dell’abbonamento ChatGPT è %1$s volte quello della modalità standard</string>
     <string name="settings_model_load_when_online">I contenuti verranno caricati quando tornerai online.</string>
     <string name="settings_model_save_rolled_back">Impossibile salvare il modello predefinito. È stata ripristinata l’impostazione precedente.</string>
     <string name="settings_model_save_unconfirmed">Il salvataggio del modello predefinito non è ancora confermato.</string>
@@ -104,4 +106,6 @@
     <string name="settings_suggestions_enable_both">Attiva entrambe le opzioni</string>
     <string name="settings_suggestions_disable_both">Disattiva entrambe le opzioni</string>
     <string name="settings_suggestions_save_failed">Impossibile salvare i suggerimenti. È stata ripristinata l’impostazione precedente.</string>
+    <string name="settings_timezone_save_rejected">Impossibile salvare il fuso orario. È stato ripristinato quello precedente.</string>
+    <string name="settings_timezone_schedule_update_failed">Fuso orario salvato. Impossibile aggiornare l’orario del riepilogo del mattino.</string>
 </resources>

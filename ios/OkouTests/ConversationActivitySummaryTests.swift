@@ -504,6 +504,7 @@ private final class ActivityScenario: Sendable {
         id: Self.thread, title: "Activity summary", createdAt: .now,
         updatedAt: .now, sortAt: .now),
       sync: sync, commands: ChatCommands(client: fixture.client, sync: sync),
+      graph: makeTestWorkspaceGraph(),
       webURL: fixture.baseURL,
       messageMarkdown: MessageMarkdownCache(baseURL: fixture.baseURL), isVisible: visible,
       didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {},

@@ -27,6 +27,7 @@ function WebsiteTemplatePreviewDialog({
   signals: ComposerSignals;
 }) {
   const { t } = useTranslation();
+  const finalFocus = useSet(signals.template.templatePreviewFinalFocus$);
   const previewLoaded = useGet(signals.template.websiteTemplatePreviewLoaded$);
   const markPreviewLoaded = useSet(
     signals.template.markWebsiteTemplatePreviewLoaded$,
@@ -43,6 +44,7 @@ function WebsiteTemplatePreviewDialog({
       onOpenChangeComplete={onOpenChangeComplete}
     >
       <DialogContent
+        finalFocus={finalFocus}
         aria-describedby={undefined}
         closeLabel={t(($) => {
           return $.artifacts.actions.close;
@@ -97,17 +99,13 @@ function WebsiteTemplatePreviewDialog({
 
 export function WebsiteTemplatePreviewDialogSlot({
   signals,
-  onClose,
 }: {
   signals: ComposerSignals;
-  readonly onClose?: () => void;
 }) {
   const previewId = useGet(signals.template.websiteTemplatePreviewId$);
-  const open = useGet(signals.template.websiteTemplatePreviewOpen$);
-  const closePreview = useSet(signals.template.closeWebsiteTemplatePreview$);
-  const completeClose = useSet(
-    signals.template.completeWebsiteTemplatePreviewClose$,
-  );
+  const open = useGet(signals.template.templatePreviewOpen$);
+  const closePreview = useSet(signals.template.closeTemplatePreview$);
+  const completeClose = useSet(signals.template.completeTemplatePreviewClose$);
   const item =
     previewId === null ? null : (findWebsiteTemplateItem(previewId) ?? null);
 
@@ -123,7 +121,6 @@ export function WebsiteTemplatePreviewDialogSlot({
       onOpenChange={(nextOpen) => {
         if (!nextOpen) {
           closePreview();
-          onClose?.();
         }
       }}
       onOpenChangeComplete={(nextOpen) => {

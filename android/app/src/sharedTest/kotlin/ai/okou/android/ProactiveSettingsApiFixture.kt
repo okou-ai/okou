@@ -15,6 +15,7 @@ internal class ProactiveSettingsApiFixture(api: ChatListApiFixture) {
     @Volatile var morningEnabled = false
     @Volatile var morningNeedsTimezone = false
     @Volatile var suggestionsEnabled = false
+    @Volatile var suggestionsNeedsTimezone = false
     @Volatile var cardsEnabled = false
     @Volatile var readStatus = 200
     @Volatile var morningWriteStatus = 200
@@ -92,7 +93,8 @@ internal class ProactiveSettingsApiFixture(api: ChatListApiFixture) {
     private fun morning(code: Int): MockResponse =
         preference(code, morningEnabled, morningNeedsTimezone, scheduleError)
 
-    private fun suggestions(code: Int): MockResponse = preference(code, suggestionsEnabled)
+    private fun suggestions(code: Int): MockResponse =
+        preference(code, suggestionsEnabled, suggestionsNeedsTimezone)
 
     private fun preference(
         code: Int,

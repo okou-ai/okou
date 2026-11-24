@@ -41,6 +41,7 @@ pub enum Framework {
     ClaudeCode,
     Codex,
     Pi,
+    Antigravity,
 }
 
 impl Framework {
@@ -56,6 +57,7 @@ impl From<CliFramework> for Framework {
             CliFramework::ClaudeCode => Self::ClaudeCode,
             CliFramework::Codex => Self::Codex,
             CliFramework::Pi => Self::Pi,
+            CliFramework::Antigravity => Self::Antigravity,
         }
     }
 }
@@ -66,6 +68,7 @@ impl From<Framework> for CliFramework {
             Framework::ClaudeCode => Self::ClaudeCode,
             Framework::Codex => Self::Codex,
             Framework::Pi => Self::Pi,
+            Framework::Antigravity => Self::Antigravity,
         }
     }
 }
@@ -409,7 +412,8 @@ pub struct GuestConfig {
     pub cli_agent_type: String,
     /// Normalized CLI framework derived from `cli_agent_type`. `"claude-code"`
     /// and an empty value map to [`Framework::ClaudeCode`], `"codex"` maps to
-    /// [`Framework::Codex`], and `"pi"` maps to [`Framework::Pi`]. Unknown
+    /// [`Framework::Codex`], `"pi"` maps to [`Framework::Pi`], and `"antigravity"` selects
+    /// [`Framework::Antigravity`]. Unknown
     /// values emit a warning and also fall back to `ClaudeCode`.
     pub framework: Framework,
     /// User, model-provider, and connector environment loaded from the private
@@ -475,6 +479,9 @@ pub struct GuestConfig {
     /// Runner-installed launcher, independently of the child's `PATH`.
     #[cfg(debug_assertions)]
     pub test_pi_cli_path: Option<String>,
+    /// Run-scoped test peer. Production always starts the rootfs binary.
+    #[cfg(feature = "test-support")]
+    pub test_antigravity_cli_path: Option<String>,
     /// Stuck-tool timeout in seconds parsed from
     /// [`guest_contracts::env::CANONICAL_STUCK_TOOL_TIMEOUT_SECS_ENV`]. Empty
     /// or invalid input uses the 300-second compiled default; the CLI loop
@@ -601,6 +608,8 @@ impl GuestConfig {
             pi_session_id: payload.pi_session_id,
             #[cfg(debug_assertions)]
             test_pi_cli_path: raw.test_pi_cli_path,
+            #[cfg(feature = "test-support")]
+            test_antigravity_cli_path: None,
             stuck_tool_timeout_secs: u64_value_or(
                 guest_contracts::env::CANONICAL_STUCK_TOOL_TIMEOUT_SECS_ENV,
                 non_empty(&raw.stuck_tool_timeout_secs),

@@ -24,6 +24,10 @@ internal data class ConfirmedRelatedChats(
     val oldestConfirmation: Long?
         get() = listOfNotNull(created?.confirmedAt, communicating?.confirmedAt).minOrNull()
 
+    fun unavailable(id: String): Boolean =
+        created?.items?.any { it.threadId == id && !it.available } == true ||
+            communicating?.items?.any { it.threadId == id && !it.available } == true
+
     fun rows(): List<RelatedChatResource> {
         val grouped =
             (created?.items.orEmpty() + communicating?.items.orEmpty()).groupBy { it.threadId }
@@ -49,3 +53,18 @@ internal enum class RelatedChatReadFailure {
     Temporary,
     AccessLost,
 }
+
+@Serializable internal data class WorkflowResource(val id: String, val title: String)
+
+@Serializable
+internal data class ConfirmedWorkflowResources(
+    val items: List<WorkflowResource>,
+    val confirmedAt: Long,
+)
+
+internal data class WorkflowResourcesState(
+    val confirmed: ConfirmedWorkflowResources? = null,
+    val checking: Boolean = false,
+    val syncingStale: Boolean = false,
+    val failed: Boolean = false,
+)

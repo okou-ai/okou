@@ -119,4 +119,7 @@
     <string name="chat_connector_saving">Guardando la selección del conector…</string>
     <string name="chat_connector_save_failed">No se pudo guardar la selección del conector.</string>
     <string name="chat_connector_first_send_failed">No se pudo aplicar la selección de conectores. Revísala en las opciones del chat y reintenta enviar este mensaje.</string>
+    <string name="connector_device_denied">El proveedor rechazó la autorización.</string>
+    <string name="connector_device_expired">El código del dispositivo ha caducado. Inicia la autorización de nuevo.</string>
+    <string name="connector_device_failed">No se pudo completar la autorización del dispositivo.</string>
 </resources>

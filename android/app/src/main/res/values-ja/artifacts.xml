@@ -54,4 +54,10 @@
     <string name="chat_resources_related">関連するチャット</string>
     <string name="chat_resources_related_load_failed">現在、関連するチャットを読み込めません</string>
     <string name="chat_resources_related_access_lost">関連するチャットは利用できなくなりました</string>
+    <string name="chat_resources_origin">ソース</string>
+    <string name="chat_resources_workflows">ワークフローと自動化</string>
+    <string name="chat_resources_workflows_load_failed">関連するワークフローを一時的に読み込めません</string>
+    <string name="chat_resources_wechat">WeChat</string>
+    <string name="chat_resources_feishu">Feishu</string>
+    <string name="chat_resources_messages">メッセージ</string>
 </resources>

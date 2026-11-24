@@ -60,7 +60,6 @@ final class ForYouStore {
   var notice: Notice?
   private(set) var handled: [Handled] = []
   private(set) var direction: ForYouDirection?
-  private var artworkByID: [String: String] = [:]
 
   var current: ForYouCard? { cards.indices.contains(position) ? cards[position] : nil }
   var summary: Computed<Task<Bool, Error>> { resources.forYouSummary }
@@ -88,10 +87,6 @@ final class ForYouStore {
       let result = try await resources.loadForYou()
       try Task.checkCancellation()
       if let direction, !result.contains(where: { $0.id == direction.cardID }) { closeDirection() }
-      let illustrations = ["ForYouReader", "ForYouBridge", "ForYouWay"]
-      for card in result where artworkByID[card.id] == nil {
-        artworkByID[card.id] = illustrations[artworkByID.count % illustrations.count]
-      }
       cards = result
       position = previous.flatMap { id in result.firstIndex { $0.id == id } } ?? 0
       loaded = true
@@ -99,8 +94,6 @@ final class ForYouStore {
     } catch is CancellationError {
     } catch { self.error = error.localizedDescription }
   }
-
-  func illustration(for card: ForYouCard) -> String? { artworkByID[card.id] }
 
   /// The pager came to rest on a card.
   func show(_ id: String) {
@@ -289,10 +282,7 @@ final class ForYouStore {
   {
     if let selection = selections[card.id] {
       guard selection.optionID == optionID && selection.direction == direction
-      else {
-        throw ChatError.invalidContract(
-          String(localized: "Retry the previous action to confirm its result."))
-      }
+      else { throw ForYouUnconfirmedChoice() }
       return selection
     }
     let attempt = Selection(
@@ -370,6 +360,15 @@ final class ForYouStore {
     } catch is CancellationError {} catch {
       self.error = error.localizedDescription
     }
+  }
+}
+
+/// An earlier choice on a card has no confirmed result yet: only choosing it again can tell
+/// whether it went through, so nothing else on the card starts until then. The banner says just
+/// that, not that chat data is unreadable.
+private struct ForYouUnconfirmedChoice: LocalizedError {
+  var errorDescription: String? {
+    String(localized: "Retry the previous action to confirm its result.")
   }
 }
 
