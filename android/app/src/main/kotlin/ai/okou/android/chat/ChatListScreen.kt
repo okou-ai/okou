@@ -547,7 +547,7 @@ internal fun ChatListScreen(
                                     }
                                     ChatListTextAction(
                                         R.string.composer_new_project,
-                                        R.drawable.ic_add,
+                                        icon = R.drawable.ic_add,
                                         enabled = newChatEnabled,
                                     ) {
                                         newChat(project.id)
@@ -1270,9 +1270,9 @@ private fun ChatAction(label: Int, action: () -> Unit, enabled: Boolean = true) 
 @Composable
 internal fun ChatListTextAction(
     @StringRes label: Int,
+    modifier: Modifier = Modifier,
     @DrawableRes icon: Int? = null,
     enabled: Boolean = true,
-    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     TextButton(
