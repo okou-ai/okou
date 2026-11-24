@@ -607,6 +607,7 @@ internal fun SettingsChoiceRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     leading: @Composable () -> Unit = {},
+    trailing: @Composable () -> Unit = {},
 ) {
     val colors = MaterialTheme.colorScheme
     val foreground = if (selected) colors.onSecondaryContainer else colors.onSurface
@@ -637,6 +638,7 @@ internal fun SettingsChoiceRow(
             color = foreground,
             style = MaterialTheme.typography.bodyLarge,
         )
+        trailing()
         Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
             if (selected)
                 Icon(

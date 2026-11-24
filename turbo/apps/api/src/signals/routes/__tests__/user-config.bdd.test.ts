@@ -123,6 +123,19 @@ describe("AUTH-03 user model preference", () => {
       "gpt-6-luna": { effort: "low" },
     });
 
+    const imageUpdated = await cfg.updateImageModelPreference(admin, {
+      selectedImageModel: "gpt-image-2",
+    });
+    expect(imageUpdated).toMatchObject({
+      selectedModel: luna.selectedModel,
+      serviceTier: luna.serviceTier,
+      modelSettings: luna.modelSettings,
+      selectedImageModel: "gpt-image-2",
+    });
+    await expect(cfg.readModelPreference(admin)).resolves.toStrictEqual(
+      imageUpdated,
+    );
+
     const unsupported = await cfg.requestUpdateModelPreference(
       admin,
       {

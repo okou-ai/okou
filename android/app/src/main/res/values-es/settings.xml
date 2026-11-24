@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="settings_built_in_tools">Herramientas integradas</string>
+    <string name="settings_tool_scope">Las herramientas que usas en %1$s consumen créditos.</string>
+    <string name="settings_common_tools">Herramientas comunes</string>
+    <string name="settings_data_tools">Herramientas de datos</string>
+    <string name="settings_tool_web_search">Búsqueda web</string>
+    <string name="settings_tool_image_generation">Generación de imágenes</string>
+    <string name="settings_tool_image_model">Modelo de generación de imágenes</string>
+    <string name="settings_tools_unavailable">Herramientas temporalmente no disponibles.</string>
+    <string name="settings_tool_save_failed">No se pudo confirmar el cambio.</string>
+    <string name="settings_tool_image_save_failed">No se pudo guardar el modelo. Vuelve a seleccionarlo.</string>
     <string name="settings_preferences_save_rolled_back">No se pudieron guardar los ajustes. Se restauraron los valores anteriores.</string>
     <string name="settings_appearance_sync_failed">No se pudo sincronizar la apariencia. Se aplicó en este dispositivo.</string>
     <string name="settings_email_updates">Novedades por correo</string>

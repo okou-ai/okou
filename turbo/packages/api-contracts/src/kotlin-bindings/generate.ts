@@ -3,6 +3,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { isNoBody } from "../contracts/trpc-contract";
 import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "../contracts/chat-event-schema-version";
+import { DATA_ROUTER_PROTOCOL_VERSION } from "../contracts/data-router-tools";
+import {
+  DEFAULT_IMAGE_MODEL,
+  IMAGE_MODEL_CONFIGS,
+  IMAGE_MODEL_IDS,
+  PUBLIC_IMAGE_MODELS,
+} from "../contracts/image-models";
+import { IMAGE_MODEL_PRICE_TIER } from "../contracts/image-model-price-tiers";
 import {
   CLIENT_TYPE_ANDROID,
   CLIENT_TYPE_HEADER,
@@ -286,6 +294,40 @@ function outputFiles(testFixtures: boolean): ReadonlyMap<string, string> {
     [
       join(generatedKotlinRelativeDirectory, "KnownRunFailureReason.kt"),
       renderKotlinRunFailureReasons(),
+    ],
+    [
+      join(generatedKotlinRelativeDirectory, "BuiltInToolCatalog.kt"),
+      kotlinHeader() +
+        [
+          "",
+          "internal data class ImageToolOption(val id: String, val title: String, val price: String)",
+          "",
+          "internal const val dataRouterProtocolVersion = " +
+            quote(DATA_ROUTER_PROTOCOL_VERSION),
+          "internal const val defaultImageToolModel = " +
+            quote(DEFAULT_IMAGE_MODEL),
+          "",
+          "internal val imageToolOptions = listOf(",
+          ...[
+            ...PUBLIC_IMAGE_MODELS,
+            ...IMAGE_MODEL_IDS.filter(
+              (id) => !PUBLIC_IMAGE_MODELS.some((model) => model === id),
+            ),
+          ].map(
+            (id) =>
+              "    ImageToolOption(" +
+              [id, IMAGE_MODEL_CONFIGS[id].label, IMAGE_MODEL_PRICE_TIER[id]]
+                .map(quote)
+                .join(", ") +
+              "),",
+          ),
+          ")",
+          "",
+          "internal val publicImageToolOptions = imageToolOptions.take(" +
+            String(PUBLIC_IMAGE_MODELS.length) +
+            ")",
+          "",
+        ].join("\n"),
     ],
     ...(testFixtures ? renderKotlinTestFiles() : []),
   ]);

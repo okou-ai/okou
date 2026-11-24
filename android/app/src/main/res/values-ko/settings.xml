@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="settings_built_in_tools">기본 제공 도구</string>
+    <string name="settings_tool_scope">%1$s에서 도구를 사용하면 크레딧이 소모됩니다.</string>
+    <string name="settings_common_tools">일반 도구</string>
+    <string name="settings_data_tools">데이터 도구</string>
+    <string name="settings_tool_web_search">웹 검색</string>
+    <string name="settings_tool_image_generation">이미지 생성</string>
+    <string name="settings_tool_image_model">이미지 생성 모델</string>
+    <string name="settings_tools_unavailable">일시적으로 도구를 사용할 수 없습니다.</string>
+    <string name="settings_tool_save_failed">변경을 확인할 수 없습니다.</string>
+    <string name="settings_tool_image_save_failed">모델을 저장하지 못했습니다. 다시 선택해 주세요.</string>
     <string name="settings_preferences_save_rolled_back">설정을 저장하지 못해 이전 값으로 복원했어요.</string>
     <string name="settings_appearance_sync_failed">디자인 설정을 동기화하지 못해 이 기기에 적용했어요.</string>
     <string name="settings_email_updates">이메일 업데이트</string>

@@ -34,7 +34,11 @@ import { platformRealtimeTokenContract } from "../contracts/realtime";
 import { sessionOutputDeltaSchema } from "../validators/realtime";
 import { modelCatalogContract } from "../contracts/model-catalog";
 import { runModelsMainContract } from "../contracts/run-models";
-import { userModelPreferenceContract } from "../contracts/user-model-preference";
+import {
+  imageModelPreferenceSchema,
+  userModelPreferenceContract,
+} from "../contracts/user-model-preference";
+import { paidToolsContract } from "../contracts/paid-tools";
 import { featureSwitchesContract } from "../contracts/feature-switches";
 import { feedContract } from "../contracts/feed";
 import { morningBriefPreferenceContract } from "../contracts/morning-brief-preference";
@@ -424,6 +428,28 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     request: "UpdateDefaultModelPreference",
     response: "DefaultModelPreference",
     route: userModelPreferenceContract.update,
+  },
+  {
+    name: "imageModelPreference",
+    response: "ImageModelPreference",
+    route: userModelPreferenceContract.get,
+  },
+  {
+    name: "updateImageModelPreference",
+    request: "UpdateImageModelPreference",
+    response: "ImageModelPreference",
+    route: userModelPreferenceContract.updateImageModel,
+  },
+  {
+    name: "paidToolPreferences",
+    response: "PaidToolPreferences",
+    route: paidToolsContract.get,
+  },
+  {
+    name: "updatePaidTool",
+    request: "UpdatePaidTool",
+    response: "PaidToolUpdate",
+    route: paidToolsContract.update,
   },
   {
     name: "emailSubscription",
@@ -857,6 +883,34 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
     name: "UpdateDefaultModelPreference",
     schema: userModelPreferenceContract.update.body,
     direction: "input",
+  },
+  {
+    name: "ImageModelPreference",
+    schema: userModelPreferenceContract.get.responses[200],
+    readSchema: userModelPreferenceContract.get.responses[200].pick({
+      selectedImageModel: true,
+    }),
+    direction: "output",
+  },
+  {
+    name: "UpdateImageModelPreference",
+    schema: imageModelPreferenceSchema,
+    direction: "input",
+  },
+  {
+    name: "PaidToolPreferences",
+    schema: paidToolsContract.get.responses[200],
+    direction: "output",
+  },
+  {
+    name: "UpdatePaidTool",
+    schema: paidToolsContract.update.body,
+    direction: "input",
+  },
+  {
+    name: "PaidToolUpdate",
+    schema: paidToolsContract.update.responses[200],
+    direction: "output",
   },
   {
     name: "EmailSubscription",
