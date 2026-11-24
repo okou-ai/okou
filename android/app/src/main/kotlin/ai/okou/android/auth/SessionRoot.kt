@@ -4,7 +4,6 @@ import ai.okou.android.EntryBrand
 import ai.okou.android.EntryCompactHeight
 import ai.okou.android.EntryContentGutter
 import ai.okou.android.EntryContentWidth
-import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.OkouApp
 import ai.okou.android.OkouConfirmationDialog
 import ai.okou.android.R
@@ -217,7 +216,7 @@ private fun NativeAuthentication() {
                     muted = colors.surfaceVariant,
                     mutedForeground = colors.onSurfaceVariant,
                     border = colors.outline,
-                    ring = colors.primary,
+                    ring = colors.onSurface,
                     danger = colors.error,
                     secondaryButtonBackground = colors.surface,
                     secondaryButtonForeground = colors.onSurface,
@@ -586,7 +585,7 @@ private fun WorkspaceAvatar(
                 Modifier.focusRequester(destinationFocus)
                     .then(modifier)
                     .size(size)
-                    .updateFocusOutline(CircleShape, LocalActivityStatusColor.current)
+                    .updateFocusOutline(CircleShape, MaterialTheme.colorScheme.onSurface)
                     .semantics {
                         contentDescription = workspaceName?.let { "$label, $it" } ?: label
                     },

@@ -1584,7 +1584,7 @@ internal fun OkouApp(
                 if (settings == null)
                     HorizontalDivider(
                         Modifier.align(Alignment.BottomCenter),
-                        color = MaterialTheme.colorScheme.outline,
+                        color = MaterialTheme.colorScheme.outlineVariant,
                     )
             }
         }

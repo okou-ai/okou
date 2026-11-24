@@ -5,6 +5,7 @@ import ai.okou.android.R
 import ai.okou.android.WorkspaceFeedbackHost
 import ai.okou.android.WorkspaceFeedbackTimeout
 import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.updates.updateFocusOutline
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
@@ -789,6 +790,7 @@ private fun ConversationJump(labelId: Int, modifier: Modifier, onClick: () -> Un
         modifier =
             modifier
                 .heightIn(min = 48.dp)
+                .updateFocusOutline(CircleShape, colors.onSurface)
                 .semantics {
                     contentDescription = label
                     if (labelId == R.string.conversation_new_reply)

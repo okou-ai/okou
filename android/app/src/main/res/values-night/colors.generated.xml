@@ -34,7 +34,7 @@
         <item name="okou_palette_swatch_companion">@color/okou_swatch_companion</item>
     </style>
     <color name="okou_golden_hour_primary">#FFBB731B</color>
-    <color name="okou_golden_hour_primary_foreground">#FFFFFFFF</color>
+    <color name="okou_golden_hour_primary_foreground">#FF000000</color>
     <color name="okou_golden_hour_background">#FF252422</color>
     <color name="okou_golden_hour_foreground">#FFFAF5F3</color>
     <color name="okou_golden_hour_card">#FF2E2C2A</color>
@@ -98,7 +98,7 @@
         <item name="okou_palette_swatch_companion">@color/okou_citrus_spark_swatch_companion</item>
     </style>
     <color name="okou_berry_blush_primary">#FFD65179</color>
-    <color name="okou_berry_blush_primary_foreground">#FFFFFFFF</color>
+    <color name="okou_berry_blush_primary_foreground">#FF000000</color>
     <color name="okou_berry_blush_background">#FF252223</color>
     <color name="okou_berry_blush_foreground">#FFFAF5F3</color>
     <color name="okou_berry_blush_card">#FF2E2A2B</color>
@@ -162,7 +162,7 @@
         <item name="okou_palette_swatch_companion">@color/okou_cotton_sky_swatch_companion</item>
     </style>
     <color name="okou_blue_horizon_primary">#FF6A8EDC</color>
-    <color name="okou_blue_horizon_primary_foreground">#FFFFFFFF</color>
+    <color name="okou_blue_horizon_primary_foreground">#FF000000</color>
     <color name="okou_blue_horizon_background">#FF222325</color>
     <color name="okou_blue_horizon_foreground">#FFFAF5F3</color>
     <color name="okou_blue_horizon_card">#FF2A2B2E</color>

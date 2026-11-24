@@ -1,6 +1,5 @@
 package ai.okou.android.chat
 
-import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
 import ai.okou.android.WorkspaceSearchField
 import ai.okou.android.WorkspaceSearchToolbar
@@ -277,7 +276,7 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
     val keyboard = LocalSoftwareKeyboardController.current
     val inputFocus = remember { FocusRequester() }
     val resultFocus = remember { FocusRequester() }
-    val focusColor = LocalActivityStatusColor.current
+    val focusColor = colors.onSurface
     val keyboardMode = LocalInputModeManager.current.inputMode == InputMode.Keyboard
     val rowShape = RoundedCornerShape(8.dp)
     LaunchedEffect(visit) { visit.prepareIndex() }
