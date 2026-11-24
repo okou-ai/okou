@@ -4,7 +4,6 @@ import { joinAll, settle, settleIncludingAbort } from "../utils";
 import { getDiscordAppConfig, type DiscordAppConfig } from "./discord-config";
 import { clerk$, isClerkResourceNotFound } from "../external/clerk";
 import { db$ } from "../external/db";
-import { waitUntil } from "../context/wait-until";
 import {
   discordMembership,
   discordUserBindingReadPlan,
@@ -240,7 +239,7 @@ async function loadDiscordPromptAccess(
 }
 
 /** Computed memoization shares the in-flight read set within one launch only. */
-export function discordPromptAccess(
+export function createDiscordPromptAccess(
   input$: Computed<
     Promise<
       | (DiscordPromptAccessInput & {
@@ -253,17 +252,18 @@ export function discordPromptAccess(
   timing$?: Computed<ApiDispatchTimingCollector>,
 ) {
   const membership$ = discordMembership(identity$);
-  return computed(async (get) => {
+  const membershipLookup$ = computed((get) => {
+    const startedAt = timing$ ? performance.now() : undefined;
+    const config = getDiscordAppConfig();
+    const membership = config ? settleIncludingAbort(get(membership$)) : null;
+    return { startedAt, config, membership };
+  });
+  const access$ = computed(async (get) => {
     if (!(await get(identity$))) {
       return null;
     }
     const timing = timing$ ? get(timing$) : undefined;
-    const startedAt = timing ? performance.now() : undefined;
-    const config = getDiscordAppConfig();
-    const membership = config ? settleIncludingAbort(get(membership$)) : null;
-    if (membership) {
-      waitUntil(membership);
-    }
+    const { startedAt, config, membership } = get(membershipLookup$);
     const prepared = await (async () => {
       const input = await get(input$);
       if (!input) {
@@ -295,6 +295,7 @@ export function discordPromptAccess(
       ? await loadDiscordPromptAccess(prepared.input, prepared.current, timing)
       : null;
   });
+  return { access$, membershipLookup$ };
 }
 
 /** Each active-input delivery rechecks current membership and provider facts. */
