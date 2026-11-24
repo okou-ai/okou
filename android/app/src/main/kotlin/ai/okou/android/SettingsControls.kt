@@ -271,10 +271,10 @@ internal fun SettingsPickerRow(
     title: String,
     value: String?,
     leading: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
     enabled: Boolean = true,
     visible: Boolean = true,
     fallbackFocus: FocusRequester? = null,
-    modifier: Modifier = Modifier,
     sheet: @Composable (dismiss: () -> Unit) -> Unit,
 ) {
     SettingsTrigger(
