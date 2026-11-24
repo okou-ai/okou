@@ -8,6 +8,7 @@ import {
   type UsagePackMigrationStateResponse,
   billingDowngradeContract,
   billingRestoreContract,
+  billingCreditCheckoutContract,
   billingConcurrencyCheckoutContract,
   billingUsagePackCheckoutContract,
 } from "@okouai/api-contracts/contracts/billing";
@@ -915,4 +916,28 @@ test("org-billing-tab-028 Restoring a scheduled slot reduction leaves the ending
       "Your Team plan has been cancelled and will end on Jun 1, 2026.",
     ),
   ).toBeInTheDocument();
+});
+
+test("The free workspace can buy a one-time credit pack", async () => {
+  setBilling(context, () => {
+    return billing("limited-free-1");
+  });
+  const amount = context.mocks.deferred<number>();
+  context.mocks.api(
+    billingCreditCheckoutContract.create,
+    ({ body, respond }) => {
+      expect(body).not.toHaveProperty("autoRecharge");
+      amount.resolve(body.credits);
+      return respond(200, { url: checkout });
+    },
+  );
+  await openWorkspace(context);
+  await screen.findByRole("heading", { name: "Buy credits" });
+  expect(screen.queryByLabelText("Enable auto-recharge")).toBeNull();
+  expect(screen.queryByRole("heading", { name: "Concurrency" })).toBeNull();
+  click(await action("Quick buy $20.00"));
+  await expect(amount.promise).resolves.toBe(20000);
+  await waitFor(() => {
+    expect(window.location.href).toBe(checkout);
+  });
 });

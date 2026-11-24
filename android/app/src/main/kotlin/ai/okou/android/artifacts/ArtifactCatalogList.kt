@@ -192,14 +192,17 @@ internal fun ArtifactCatalogList(
                     }
                 }
             }
-            groups.forEach { (day, rows) ->
+            groups.entries.forEachIndexed { index, (day, rows) ->
                 if (day != ArtifactDay.Search) {
                     item(key = day.name) {
                         Text(
                             stringResource(day.label),
-                            Modifier.padding(start = 12.dp, top = 8.dp, bottom = 4.dp).semantics {
-                                heading()
-                            },
+                            Modifier.padding(
+                                    start = 12.dp,
+                                    top = if (index == 0) 8.dp else 16.dp,
+                                    bottom = 4.dp,
+                                )
+                                .semantics { heading() },
                             style = artifactSmallText(),
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -376,10 +379,10 @@ private fun ArtifactRow(
             .padding(horizontal = 12.dp, vertical = 8.dp)
             .testTag("artifact_row"),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalAlignment = Alignment.Top,
     ) {
         ArtifactThumbnail(item, offline, thumbnail)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
                 item.title,
                 style = MaterialTheme.typography.bodyLarge,

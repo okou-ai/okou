@@ -255,3 +255,20 @@ test("org-usage-tab-008 Alice's team ledger moves only data search into Connecto
     await user.unhover(bar);
   }
 });
+
+test.each(["pro", "limited-free-1"])(
+  "Finance can buy credits from the %s balance",
+  async (tier) => {
+    setBilling(context, () => {
+      return billing(tier);
+    });
+    await openWorkspace(context, "/?settings=usage");
+    click(await screen.findByTestId("credit-balance-buy-credits"));
+    await expect(
+      screen.findByRole("heading", { name: "Billing" }),
+    ).resolves.toBeVisible();
+    await expect(
+      screen.findByRole("heading", { name: "Buy credits" }),
+    ).resolves.toBeVisible();
+  },
+);

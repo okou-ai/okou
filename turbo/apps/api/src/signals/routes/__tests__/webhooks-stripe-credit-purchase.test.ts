@@ -35,6 +35,11 @@ test("grants a paid credit invoice once across distinct webhook events", async (
 
   const billing = createBillingMediaApi(context);
   const baseline = await billing.readBillingStatus(actor);
+  expect(baseline).toMatchObject({
+    tier: "limited-free-1",
+    canBuyCredits: true,
+    hasSubscription: false,
+  });
   const baselineGrantIds = new Set(
     baseline.creditGrants.map((grant) => {
       return grant.id;
@@ -71,6 +76,12 @@ test("grants a paid credit invoice once across distinct webhook events", async (
   expect(purchased.status).toBe(200);
 
   const afterPurchase = await billing.readBillingStatus(actor);
+  expect(afterPurchase).toMatchObject({
+    tier: "limited-free-1",
+    hasSubscription: false,
+    autoRechargeAllowed: false,
+    restrictedBuiltInModels: true,
+  });
   expect(afterPurchase.credits).toBe(baseline.credits + 100_000);
   expect(afterPurchase.creditGrants).toHaveLength(
     baseline.creditGrants.length + 1,

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   billingAutoRechargeContract,
   billingCreditCheckoutContract,
@@ -53,6 +54,9 @@ describe("credit checkout auto-recharge ownership", () => {
   beforeEach(() => {
     setTierPrices();
     mockEnv("SECRETS_ENCRYPTION_KEY", "a".repeat(64));
+    context.mocks.stripe.customers.create.mockResolvedValue({
+      id: `cus_credit_auto_recharge_${randomUUID()}`,
+    });
     context.mocks.stripe.customers.retrieve.mockResolvedValue({
       discount: null,
     });
@@ -83,15 +87,12 @@ describe("credit checkout auto-recharge ownership", () => {
     });
     const subsequent = await accept(
       client.create({ body: checkoutBody, headers }),
-      [400],
+      [200],
     );
-    expect(subsequent.body.error).toStrictEqual({
-      message: "Credit purchases are not available for this workspace",
-      code: "BAD_REQUEST",
-    });
+    expect(subsequent.body).toStrictEqual({ url: checkoutUrl });
     expect(
       context.mocks.stripe.checkout.sessions.create,
-    ).not.toHaveBeenCalled();
+    ).toHaveBeenCalledOnce();
   });
 
   it("keeps the default Plan usable after concurrent new-workspace checkout requests", async () => {
@@ -119,15 +120,12 @@ describe("credit checkout auto-recharge ownership", () => {
     });
     const subsequent = await accept(
       client.create({ body: checkoutBody, headers }),
-      [400],
+      [200],
     );
-    expect(subsequent.body.error).toStrictEqual({
-      message: "Credit purchases are not available for this workspace",
-      code: "BAD_REQUEST",
-    });
+    expect(subsequent.body).toStrictEqual({ url: checkoutUrl });
     expect(
       context.mocks.stripe.checkout.sessions.create,
-    ).not.toHaveBeenCalled();
+    ).toHaveBeenCalledOnce();
   });
 
   it("updates repeated enabled checkout config without replacing the existing Plan, then disables after hosted checkout", async () => {
@@ -287,7 +285,7 @@ describe("credit checkout auto-recharge ownership", () => {
     });
   });
 
-  it("rejects confirmation for a workspace without credit-purchase capability", async () => {
+  it("rejects an invalid credit-purchase preview for a Free workspace", async () => {
     const fixture = await createPublicBillingOrg();
     await fixture.run(async () => {
       const response = await accept(
@@ -298,7 +296,7 @@ describe("credit checkout auto-recharge ownership", () => {
         [400],
       );
       expect(response.body.error).toStrictEqual({
-        message: "Credit purchases are not available for this workspace",
+        message: "Credit purchase preview expired or is no longer valid",
         code: "BAD_REQUEST",
       });
       expect(context.mocks.stripe.invoices.create).not.toHaveBeenCalled();

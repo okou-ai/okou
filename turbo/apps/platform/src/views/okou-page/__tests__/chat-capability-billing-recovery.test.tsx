@@ -7,7 +7,6 @@ import { screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { accountModels } from "./chat-account-model-fixture.ts";
-import { getAction } from "./connector-integrations-test-helpers.ts";
 import {
   click,
   setupPage,
@@ -44,6 +43,7 @@ interface Workspace {
 function arrangeWorkspace(
   role: "admin" | "member",
   initial: Workspace,
+  overrides: { canBuyCredits?: boolean } = {},
 ): Workspace {
   const workspace = { ...initial };
   context.mocks.data.org({ id: "org_billing", name: "Sales Org", role });
@@ -53,6 +53,7 @@ function arrangeWorkspace(
       tier: workspace.tier,
       ...billingPlanCapabilities(workspace.tier),
       credits: workspace.credits,
+      ...overrides,
     });
   });
   return workspace;
@@ -121,19 +122,22 @@ async function upgradeToPro(): Promise<void> {
 
 test("Let a workspace admin recover from a free-plan billing limit", async () => {
   arrangeWorkspace("admin", { tier: "limited-free-1", credits: 0 });
-  const checkout = mockProCheckout();
   await openBlockedChat("insufficient_credits");
-
   await expect(
-    screen.findByText(/^Upgrade to Pro to keep chatting with /u),
-  ).resolves.toBeInTheDocument();
-  await upgradeToPro();
-
-  expect(checkout.tier).toBe("pro");
+    screen.findByText(/^Add credits to keep chatting with /u),
+  ).resolves.toBeVisible();
+  click(await findEnabledButton("Custom"));
+  await expect(
+    screen.findByRole("textbox", { name: "Custom dollar amount" }),
+  ).resolves.toBeVisible();
 });
 
-test("Let a limited-free workspace admin unlock a Pro-only capability", async () => {
-  arrangeWorkspace("admin", { tier: "limited-free-1", credits: 500 });
+test("A workspace whose billing service requires a plan upgrade can recover from a Pro-only rejection", async () => {
+  arrangeWorkspace(
+    "admin",
+    { tier: "limited-free-1", credits: 500 },
+    { canBuyCredits: false },
+  );
   const checkout = mockProCheckout();
   await openBlockedChat("pro_required");
 
@@ -215,7 +219,7 @@ test("A limited-free owner sees the specific recovery explanation for an exhaust
   arrangeWorkspace("admin", { tier: "limited-free-1", credits: 0 });
   await openBlockedChat("insufficient_credits");
   const explanation = await screen.findByText(
-    /^Upgrade to Pro to keep chatting with /u,
+    /^Add credits to keep chatting with /u,
   );
   expect(explanation).toBeVisible();
   expect(screen.queryByText("Upgrade to Pro to run")).not.toBeInTheDocument();
@@ -223,7 +227,7 @@ test("A limited-free owner sees the specific recovery explanation for an exhaust
     screen.queryByText("insufficient_credits", { exact: true }),
   ).toBeNull();
   await expect(
-    screen.findByText("Upgrade to Pro", { exact: true }),
+    screen.findByText("You're out of credits", { exact: true }),
   ).resolves.toBeVisible();
 });
 
@@ -232,7 +236,6 @@ test.each(["admin", "member"] as const)(
   async (role) => {
     arrangeWorkspace(role, { tier: "limited-free-1", credits: 0 });
     accountModels(context, ["gpt-5.6-sol", "gpt-5.6-luna"], "gpt-5.6-sol");
-    const checkout = mockProCheckout();
     const raw = "The provider rejected invoice authorization for the draft.";
     const { events } = blockedRun("insufficient_credits");
     installRunChat({
@@ -254,27 +257,20 @@ test.each(["admin", "member"] as const)(
     await screen.findByText(BLOCKED_PROMPT);
     const card = await screen.findByTestId("assistant-error-card-shell");
     const content = within(card);
-    expect(content.getByText("Upgrade to Pro to run Okou")).toBeVisible();
+    expect(content.getByText("You're out of credits")).toBeVisible();
     expect(content.queryByText("Upgrade to Pro to run")).toBeNull();
     expect(screen.queryByText(raw)).toBeNull();
     expect(content.queryByRole("combobox")).toBeNull();
     const explanation =
       role === "admin"
-        ? "Upgrade to Pro to keep chatting with Okou."
-        : "Ask a workspace admin to upgrade to Pro so you can keep chatting with Okou.";
+        ? "Add credits to keep chatting with Okou."
+        : "Ask a workspace admin to add credits so you can keep chatting with Okou.";
     await expect(content.findByText(explanation)).resolves.toBeVisible();
     const labels = queryAllByRoleFast("button", card).map((button) => {
       return button.textContent?.trim();
     });
-    expect(labels).toStrictEqual(role === "admin" ? ["Upgrade to Pro"] : []);
-    if (role === "member") {
-      return;
-    }
-    const upgrade = getAction("button", "Upgrade to Pro", card);
-    click(upgrade);
-    await expect(
-      screen.findByRole("dialog", { name: "Upgrade to Pro" }),
-    ).resolves.toBeVisible();
-    expect(checkout.tier).toBe("pro");
+    expect(labels).toStrictEqual(
+      role === "admin" ? ["$100", "$200", "$300", "Custom", "Buy"] : [],
+    );
   },
 );

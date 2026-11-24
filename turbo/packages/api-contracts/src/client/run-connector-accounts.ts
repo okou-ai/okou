@@ -40,4 +40,15 @@ export const runConnectorAccountsContract: ClientDescriptor<
       404: true,
     },
   },
+  approveMember: {
+    method: "POST",
+    path: "/api/chat-threads/:threadId/member-connector-account-approval",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      403: true,
+      404: true,
+    },
+  },
 };

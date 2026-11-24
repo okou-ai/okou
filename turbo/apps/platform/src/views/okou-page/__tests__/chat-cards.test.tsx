@@ -49,16 +49,24 @@ const github = "/connectors/github/authorize?threadId=" + RUN_THREAD_ID;
 const origin = "https://app.okou.ai";
 const ref = "https://handbook.example/references";
 const ticks = String.fromCharCode(96);
-async function open(text: string) {
+async function open(text: string, onPrompt?: (prompt: string) => void) {
   const runId = crypto.randomUUID();
-  createChatRunFixtures(context).installRunChat({
+  const events = [
+    assistantEvent({ id: "review-copy", runId, seqId: 1, text }),
+    completedEvent({ id: "review-done", runId, seqId: 2 }),
+  ];
+  const lifecycle = createChatRunFixtures(context).installRunChat({
     threadId: RUN_THREAD_ID,
-    chatEvents: [
-      assistantEvent({ id: "review-copy", runId, seqId: 1, text }),
-      completedEvent({ id: "review-done", runId, seqId: 2 }),
-    ],
+    chatEvents: events,
+    onSendRequest: ({ threadId, prompt }) => {
+      if (onPrompt) {
+        expect(threadId).toBe(RUN_THREAD_ID);
+        onPrompt(prompt);
+      }
+    },
   });
   await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
+  return lifecycle;
 }
 function follows(earlier: Element, later: Element) {
   expect(earlier.compareDocumentPosition(later)).toBe(
@@ -605,19 +613,32 @@ test("A standalone workspace bank review names the requested purpose and its rea
   ).not.toBeInTheDocument();
 });
 
-test.each(["conversation", "standalone"] as const)(
-  "A member confirms the GitHub account from the %s approval link",
-  async (entry) => {
+test.each([
+  ["conversation", "chat"],
+  ["standalone", "chat"],
+  ["conversation", "member"],
+  ["standalone", "member"],
+] as const)(
+  "A member confirms the GitHub account from the %s link with %s approval",
+  async (entry, scope) => {
     const account = {
       ...workAccount(),
       displayName: "Release team",
       connectionStatus: "connected" as const,
     };
     const callback = "Continue the release audit using the team account";
+    const member = scope === "member";
+    const requestId = crypto.randomUUID();
     const path = approvalPath(
-      "/connectors/accounts/" + account.id + "/select",
+      "/connectors/accounts/" +
+        account.id +
+        (member ? "/member-approval" : "/select"),
       callback,
-      { kind: "builtin", connectorSlug: "github" },
+      {
+        kind: "builtin",
+        connectorSlug: "github",
+        ...(member ? { requestId } : {}),
+      },
     );
     let selected: string | null = null;
     context.mocks.api(
@@ -649,7 +670,9 @@ test.each(["conversation", "standalone"] as const)(
       },
     );
     context.mocks.api(
-      runConnectorAccountsContract.approve,
+      member
+        ? runConnectorAccountsContract.approveMember
+        : runConnectorAccountsContract.approve,
       ({ params, body, respond }) => {
         expect(params.threadId).toBe(RUN_THREAD_ID);
         expect(body).toMatchObject({
@@ -660,11 +683,22 @@ test.each(["conversation", "standalone"] as const)(
         return respond(200, body);
       },
     );
+    const sent = context.mocks.deferred<string>();
+    let conversation: Awaited<ReturnType<typeof open>> | undefined;
     if (entry === "conversation") {
-      await open(origin + path);
+      conversation = await open(origin + path, (prompt) => {
+        sent.resolve(prompt);
+      });
     } else {
       mockAuthorizationCallbackThread(context, RUN_THREAD_ID);
       await setupPage({ context, host: "app.okou.ai", path });
+      context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+        expect(body.threadId).toBe(RUN_THREAD_ID);
+        if (typeof body.prompt === "string" && !sent.settled()) {
+          sent.resolve(body.prompt);
+        }
+        return respond(201, { threadId: RUN_THREAD_ID });
+      });
     }
     const card = await screen.findByTestId("connector-account-action-card");
     const chat = screen.queryByRole("region", { name: "Chat thread" });
@@ -677,26 +711,42 @@ test.each(["conversation", "standalone"] as const)(
       expect(card.querySelector(githubIcon)).toBeInTheDocument();
     });
     expect(selected).toBeNull();
-    const sent = context.mocks.deferred<string>();
-    context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-      expect(body.threadId).toBe(RUN_THREAD_ID);
-      if (typeof body.prompt === "string" && !sent.settled()) {
-        sent.resolve(body.prompt);
-      }
-      return respond(201, { threadId: RUN_THREAD_ID });
-    });
-    click(await findEnabledButton("Switch", card));
+
+    expect(
+      within(card).queryByText(
+        "Allow across your chats. Select this account here.",
+      ) !== null,
+    ).toBe(member);
+    click(await findEnabledButton(member ? "Allow for 1h" : "Switch", card));
     await expect(sent.promise).resolves.toBe(callback);
     await expect(
       within(card).findByText("Switched to Release team"),
     ).resolves.toBeVisible();
     expect(selected).toBe(account.id);
     expect(card.querySelector(githubIcon)).toBeInTheDocument();
+    if (member && conversation) {
+      selected = null;
+      const fresh = new URL(path, origin);
+      fresh.searchParams.set("requestId", crypto.randomUUID());
+      conversation.completeRun("Renew the release approval\n\n" + fresh.href);
+      await waitFor(() => {
+        const cards = screen.getAllByTestId("connector-account-action-card");
+        expect(cards).toHaveLength(2);
+        expect(
+          within(cards[1]!).getByRole("button", { name: "Allow for 1h" }),
+        ).toBeEnabled();
+      });
+    }
   },
 );
 
 test.each([
   ["banking", "/banking/access", { reason: "Review the renewal" }],
+  [
+    "member approval",
+    "/connectors/accounts/" + workId + "/member-approval",
+    { kind: "builtin", connectorSlug: "github", requestId: workId },
+  ],
   [
     "connector account",
     "/connectors/accounts/" + workId + "/select",

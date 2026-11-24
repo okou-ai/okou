@@ -14,7 +14,7 @@ import {
   type CustomConnectorRuntimeContext,
 } from "./connector-runtime-preparation.service";
 import { DEFAULT_FIREWALL_SECRET_PLACEHOLDER } from "./connector-server-firewall-catalog.service";
-import { buildPermissionManifest } from "./permission-manifest.service";
+import { buildConnectorPermissionManifest } from "./permission-manifest.service";
 import type { Environment } from "./run-environment";
 import type {
   BuiltinConnectorRuntimeContext,
@@ -56,11 +56,11 @@ export function createConnectorAdmissionSignals(
     if (isConnectorRuntimeError(input)) {
       return input;
     }
-    const permissions = await input.timing.measure(
+    const permissions = input.timing.measureSync(
       "api_dispatch_prepare_context_build_permission_manifest",
       "nested",
-      async () => {
-        return await buildPreparedPermissionManifest(input);
+      () => {
+        return buildPreparedPermissionManifest(input);
       },
     );
     const captured = connectorEnvironmentFromSnapshot(input, permissions);
@@ -87,7 +87,7 @@ export function createConnectorAdmissionSignals(
           return { catalog: catalog.serverFirewalls, grants };
         })()
       : null;
-    return { permissions, environment, networkPolicyInputs };
+    return { environment, networkPolicyInputs };
   });
 }
 
@@ -376,17 +376,16 @@ interface RunPreparedConnectorInputs {
   readonly timing: ApiDispatchTimingCollector;
 }
 
-async function buildPreparedPermissionManifest(args: {
+function buildPreparedPermissionManifest(args: {
   readonly connectorCatalogSelection: RunConnectorCatalogSelection;
   readonly vars: Record<string, string> | undefined;
   readonly permissionPolicies: FirewallPolicies | undefined;
   readonly storedConnectorMetadataContext: BuiltinConnectorRuntimeContext;
   readonly customConnectorContext: CustomConnectorRuntimeContext;
   readonly timing: ApiDispatchTimingCollector;
-}): Promise<PermissionManifest | undefined> {
-  return await buildPermissionManifest({
+}): PermissionManifest | undefined {
+  return buildConnectorPermissionManifest({
     connectorCatalogSelection: args.connectorCatalogSelection,
-    modelProvider: null,
     permissionPolicies: args.permissionPolicies,
     vars: args.vars,
     connectorVars: args.storedConnectorMetadataContext.vars,

@@ -127,6 +127,10 @@ describe("BILL-01: billing status and Stripe-backed actions through public API",
         url: "https://checkout.stripe.test/subscription",
       })
       .mockResolvedValueOnce({
+        id: `cs_credit_${stripeIdSuffix}`,
+        url: "https://checkout.stripe.test/credits",
+      })
+      .mockResolvedValueOnce({
         id: campaignSessionId,
         url: "https://checkout.stripe.test/campaign",
       });
@@ -163,18 +167,21 @@ describe("BILL-01: billing status and Stripe-backed actions through public API",
     );
     expectApiError(mismatch.body);
 
+    context.mocks.stripe.customers.retrieve.mockResolvedValue({
+      id: stripeCustomerId,
+      discount: null,
+    });
     const creditCheckout = await api.requestCreditCheckout(
       admin,
       {
         credits: 2000,
         ...checkoutUrls(),
       },
-      [400],
+      [200],
     );
-    expectApiError(creditCheckout.body);
-    expect(creditCheckout.body.error.message).toBe(
-      "Credit purchases are not available for this workspace",
-    );
+    expect(creditCheckout.body).toStrictEqual({
+      url: "https://checkout.stripe.test/credits",
+    });
 
     context.mocks.stripe.billingPortal.configurations.list.mockResolvedValue({
       data: [RESTRICTED_PORTAL_CONFIGURATION],

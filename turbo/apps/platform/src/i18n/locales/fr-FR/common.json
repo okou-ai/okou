@@ -1998,8 +1998,10 @@
     "connectorAccountSwitch": {
       "accountFallback": "Compte du connecteur",
       "actionFailed": "Impossible de changer de compte.",
+      "allowForHour": "Autoriser pendant 1 h",
       "customConnector": "Connecteur personnalisé",
       "loadFailed": "Impossible de charger ce compte de connecteur.",
+      "memberScope": "Autoriser dans toutes vos discussions. Sélectionner ce compte ici.",
       "reconnectRequired": "Reconnexion requise. Les exécutions ultérieures peuvent utiliser la solution de secours existante.",
       "selected": "Passé à {{account}}",
       "switch": "Changer",
