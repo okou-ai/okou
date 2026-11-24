@@ -247,12 +247,11 @@ for event in ['pull_request', 'merge_group', 'push']:
 android = workflow('android')
 android_gate = android['ci-gate-android']
 parallel_jobs = ['build', 'build-test', 'instrumentation', 'release-smoke']
-assert {'detect-release', 'detect', *parallel_jobs} <= set(android_gate['needs'])
+assert {'detect', *parallel_jobs} <= set(android_gate['needs'])
 for needed in ['true', 'false']:
     values = {
-        'needs.detect-release.result': 'success',
-        'needs.detect-release.outputs.skip': 'false',
         'needs.detect.result': 'success',
+        'needs.detect.outputs.skip': 'false',
         'needs.detect.outputs.needed': needed,
         **{f'needs.{job}.result': 'success' if needed == 'true' else 'skipped' for job in parallel_jobs},
     }
