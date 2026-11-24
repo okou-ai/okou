@@ -23,6 +23,7 @@ describe("FeatureSwitchKey", () => {
 
 describe("isFeatureEnabled", () => {
   it.each([
+    FeatureSwitchKey.MemberConnectorAccountAccess,
     FeatureSwitchKey.IosConnectorManagement,
     FeatureSwitchKey.ComposerVoiceMessages,
     FeatureSwitchKey.ZipArtifactPreview,

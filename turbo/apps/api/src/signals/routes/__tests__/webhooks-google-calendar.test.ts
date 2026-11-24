@@ -296,11 +296,11 @@ interface CalendarScenario {
   readonly workflowId: string;
 }
 
-async function setupFixture(): Promise<CalendarScenario> {
+async function setupFixture(orgId?: string): Promise<CalendarScenario> {
   const runnerGroup = await runsApi.configureRunnerGroup();
   runsApi.acceptStorageDownloads();
   runsApi.acceptTelemetryIngest();
-  const { actor } = await wf.setupWorkflowOrg();
+  const { actor } = await wf.setupWorkflowOrg({ orgId });
   await runsApi.ensurePersonalSubscriptionModel(actor);
   await runsApi.updateUserModelPreference(actor, "claude-fable-5-1");
   if (!actor.orgId) {
@@ -1471,7 +1471,12 @@ describe("POST /api/webhooks/google-calendar", () => {
     ]);
   });
 
-  it("moves the Calendar watch at account access expiry and keeps the saved Chat choice", async () => {
+  it.each([
+    { rollout: "staff default", orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
+    { rollout: "member override", orgId: undefined },
+  ])("moves the Calendar watch at account access expiry with $rollout", async ({
+    orgId,
+  }) => {
     const cronSecret = "calendar-expiry-cron-secret";
     mockEnv("CRON_SECRET", cronSecret);
     const app = await setupApp({
@@ -1486,7 +1491,7 @@ describe("POST /api/webhooks/google-calendar", () => {
     const calendar = configureAccountAwareGoogleCalendarApiMock({
       resourcePrefix: "calendar-expiry",
     });
-    const scenario = await setupFixture();
+    const scenario = await setupFixture(orgId);
     const { actor, workflowId } = scenario;
     mockGoogleCalendarConnectorOAuth({
       accessToken: firstToken,
@@ -1503,9 +1508,11 @@ describe("POST /api/webhooks/google-calendar", () => {
       email: "renewal-second@example.com",
       subject: "renewal-second",
     });
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.MemberConnectorAccountAccess]: true,
-    });
+    if (orgId === undefined) {
+      await updateFeatureSwitchesForUser(context, actor, {
+        [FeatureSwitchKey.MemberConnectorAccountAccess]: true,
+      });
+    }
 
     const created = await accept(
       automationsClient().create({
