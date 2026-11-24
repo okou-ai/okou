@@ -55,7 +55,7 @@ class FullscreenPanelPortal extends Component<
         restoreScrollAnchor(snapshot);
       }
     } finally {
-      if (snapshot && !snapshot.anchoringAlreadyDisabled) {
+      if (snapshot && snapshot.disabledNativeAnchoring) {
         snapshot.viewport.classList.remove("[overflow-anchor:none]");
       }
     }

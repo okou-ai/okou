@@ -1,22 +1,26 @@
-export interface ScrollAnchorOptions {
-  readonly viewportSelector: string;
+export type ScrollAnchorOptions = {
   readonly anchorSelector: string;
-}
+  readonly preserveNativeAnchoring?: boolean;
+} & (
+  | { readonly viewportSelector: string }
+  | { readonly viewport: HTMLElement | null }
+);
 
 export type ScrollAnchorSnapshot = {
   readonly viewport: HTMLElement;
   readonly anchor: HTMLElement;
   readonly offset: number;
-  readonly anchoringAlreadyDisabled: boolean;
+  readonly disabledNativeAnchoring: boolean;
 };
 
 export function captureScrollAnchor(
   container: ParentNode,
   options: ScrollAnchorOptions,
 ): ScrollAnchorSnapshot | null {
-  const viewport = container.querySelector<HTMLElement>(
-    options.viewportSelector,
-  );
+  const viewport =
+    "viewport" in options
+      ? options.viewport
+      : container.querySelector<HTMLElement>(options.viewportSelector);
   if (!viewport) {
     return null;
   }
@@ -38,17 +42,19 @@ export function captureScrollAnchor(
     ) {
       continue;
     }
-    const anchoringAlreadyDisabled = viewport.classList.contains(
-      "[overflow-anchor:none]",
-    );
-    // This must happen before React changes the fullscreen geometry. Otherwise
-    // browser anchoring may already have adjusted scrollTop for the new width.
-    viewport.classList.add("[overflow-anchor:none]");
+    // Fullscreen changes can reflow the anchor itself. Page inserts can let
+    // the browser compensate first and restore only the remaining delta.
+    const disabledNativeAnchoring =
+      !options.preserveNativeAnchoring &&
+      !viewport.classList.contains("[overflow-anchor:none]");
+    if (disabledNativeAnchoring) {
+      viewport.classList.add("[overflow-anchor:none]");
+    }
     return {
       viewport,
       anchor,
       offset: bounds.top - viewportBounds.top,
-      anchoringAlreadyDisabled,
+      disabledNativeAnchoring,
     };
   }
   return null;
@@ -63,6 +69,9 @@ export function restoreScrollAnchor(snapshot: ScrollAnchorSnapshot) {
   // If a clipped paragraph becomes shorter than its old clipped portion,
   // keep that paragraph in view instead of scrolling past it entirely.
   const targetOffset = bounds.height + offset > 0 ? offset : 0;
-  viewport.scrollTop +=
+  const delta =
     bounds.top - viewport.getBoundingClientRect().top - targetOffset;
+  if (Math.abs(delta) >= 1) {
+    viewport.scrollTop += delta;
+  }
 }

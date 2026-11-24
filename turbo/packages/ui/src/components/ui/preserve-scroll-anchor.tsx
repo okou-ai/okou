@@ -8,7 +8,7 @@ import {
 
 interface PreserveScrollAnchorProps {
   readonly children: ReactNode;
-  readonly layoutKey: boolean;
+  readonly layoutKey: boolean | string;
   readonly anchor?: ScrollAnchorOptions;
 }
 
@@ -38,7 +38,7 @@ export class PreserveScrollAnchor extends Component<
     try {
       restoreScrollAnchor(snapshot);
     } finally {
-      if (!snapshot.anchoringAlreadyDisabled) {
+      if (snapshot.disabledNativeAnchoring) {
         snapshot.viewport.classList.remove("[overflow-anchor:none]");
       }
     }

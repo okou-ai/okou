@@ -1,4 +1,3 @@
-import { TranscriptPageAnchor } from "./transcript-page-anchor.tsx";
 import type { ChatRunReference } from "@okouai/api-contracts/contracts/chat-run-reference";
 import {
   ChatShareHeaderControls,
@@ -130,6 +129,7 @@ import {
   useMediaQuery,
   buttonVariants,
   surfaceVariants,
+  PreserveScrollAnchor,
 } from "@okouai/ui";
 import { RUN_ERROR_GUIDANCE } from "@okouai/api-contracts/contracts/errors";
 import {
@@ -2830,10 +2830,13 @@ function ChatThreadRenderedEventGroups({
   return (
     <>
       {layout ? (
-        <TranscriptPageAnchor
-          viewport={viewport}
-          pages={layout.pages}
-          before={layout.before}
+        <PreserveScrollAnchor
+          layoutKey={`${layout.pages[0]!.key}:${layout.before}`}
+          anchor={{
+            viewport,
+            anchorSelector: "[data-chat-scroll-anchor-event-id]",
+            preserveNativeAnchoring: true,
+          }}
         >
           <div ref={bindPages}>
             <div
@@ -2863,7 +2866,7 @@ function ChatThreadRenderedEventGroups({
               style={{ height: layout.after }}
             />
           </div>
-        </TranscriptPageAnchor>
+        </PreserveScrollAnchor>
       ) : (
         rows.map(renderRow)
       )}
