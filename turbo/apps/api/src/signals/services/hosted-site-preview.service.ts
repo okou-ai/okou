@@ -101,7 +101,7 @@ const resolvePublishedSitePreview$ = command(
       }
     }
     const target =
-      policy.visibility === "public"
+      policy.visibility === "public" && row.site.userId !== args.userId
         ? {
             url: expected.href,
             expiresAt: null,

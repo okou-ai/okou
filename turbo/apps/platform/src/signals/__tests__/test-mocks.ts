@@ -1,3 +1,4 @@
+import { BILLING_FEEDBACK_SURVEYS } from "@okouai/core/billing-feedback";
 import type { AppRoute } from "@okouai/api-contracts/contracts/trpc-contract";
 import { HttpResponse } from "msw";
 import { posthog } from "posthog-js/dist/module.slim";
@@ -228,6 +229,17 @@ interface PostHogIdentification {
 }
 
 interface PostHogMock {
+  readonly refreshFeatureFlags: () => void;
+  readonly deferFeatureFlags: () => {
+    readonly subscribed: Promise<void>;
+    readonly resolve: () => void;
+  };
+  readonly setActiveSurveyIds: (ids: readonly string[]) => void;
+  readonly surveyQueries: boolean[];
+  readonly surveyDisplays: {
+    readonly id: string;
+    readonly options: Parameters<typeof posthog.displaySurvey>[1];
+  }[];
   readonly events: PostHogEvent[];
   readonly identifications: PostHogIdentification[];
   readonly initializations: PostHogInitialization[];
@@ -875,7 +887,18 @@ function mockClerk(
 }
 
 function mockPostHog(signal: AbortSignal): PostHogMock {
+  let featureFlagsReady = true;
+  const flagCallbacks = new Set<Parameters<typeof posthog.onFeatureFlags>[0]>();
+  let observedFlagSubscription: (() => void) | undefined;
+  let activeSurveyIds: readonly string[] = Object.values(
+    BILLING_FEEDBACK_SURVEYS,
+  );
+  const surveyQueries: boolean[] = [];
   const events: PostHogEvent[] = [];
+  const surveyDisplays: {
+    readonly id: string;
+    readonly options: Parameters<typeof posthog.displaySurvey>[1];
+  }[] = [];
   const identifications: PostHogIdentification[] = [];
   const initializations: PostHogInitialization[] = [];
   const capture = vi
@@ -899,7 +922,67 @@ function mockPostHog(signal: AbortSignal): PostHogMock {
     .spyOn(posthog, "unregister")
     .mockImplementation(() => {});
 
+  const setConfig = vi
+    .spyOn(posthog, "set_config")
+    .mockImplementation(() => {});
+  const onFeatureFlags = vi
+    .spyOn(posthog, "onFeatureFlags")
+    .mockImplementation((callback) => {
+      flagCallbacks.add(callback);
+      observedFlagSubscription?.();
+      if (featureFlagsReady) {
+        callback([], {}, { errorsLoading: false });
+      }
+      return () => {
+        flagCallbacks.delete(callback);
+      };
+    });
+  const surveysLoaded = vi
+    .spyOn(posthog, "onSurveysLoaded")
+    .mockImplementation((callback) => {
+      callback([], { isLoaded: true });
+      return () => {};
+    });
+  const matchingSurveys = vi
+    .spyOn(posthog, "getActiveMatchingSurveys")
+    .mockImplementation((callback, forceReload) => {
+      surveyQueries.push(forceReload ?? false);
+      callback(
+        activeSurveyIds.map((id) => {
+          return {
+            id,
+            name: id,
+            type: "api",
+            questions: [],
+            appearance: null,
+            conditions: null,
+            feature_flag_keys: null,
+            linked_flag_key: null,
+            targeting_flag_key: null,
+            internal_targeting_flag_key: null,
+            start_date: "2026-01-01T00:00:00Z",
+            end_date: null,
+            current_iteration: null,
+            current_iteration_start_date: null,
+          };
+        }),
+      );
+    });
+  const displaySurvey = vi
+    .spyOn(posthog, "displaySurvey")
+    .mockImplementation((id, options) => {
+      surveyDisplays.push({ id, options });
+    });
+  const cancelSurvey = vi
+    .spyOn(posthog, "cancelPendingSurvey")
+    .mockImplementation(() => {});
   restoreOnAbort(signal, () => {
+    onFeatureFlags.mockRestore();
+    setConfig.mockRestore();
+    surveysLoaded.mockRestore();
+    matchingSurveys.mockRestore();
+    displaySurvey.mockRestore();
+    cancelSurvey.mockRestore();
     capture.mockRestore();
     identify.mockRestore();
     init.mockRestore();
@@ -908,7 +991,35 @@ function mockPostHog(signal: AbortSignal): PostHogMock {
     unregister.mockRestore();
   });
 
-  return { events, identifications, initializations };
+  const refreshFeatureFlags = () => {
+    featureFlagsReady = true;
+    for (const callback of flagCallbacks) {
+      callback([], {}, { errorsLoading: false });
+    }
+  };
+
+  return {
+    refreshFeatureFlags,
+    events,
+    identifications,
+    initializations,
+    surveyDisplays,
+    surveyQueries,
+    deferFeatureFlags: () => {
+      featureFlagsReady = false;
+      const observed = createDeferredPromise<void>(signal);
+      observedFlagSubscription = () => {
+        observed.resolve();
+      };
+      return {
+        subscribed: observed.promise,
+        resolve: refreshFeatureFlags,
+      };
+    },
+    setActiveSurveyIds: (ids) => {
+      activeSurveyIds = ids;
+    },
+  };
 }
 
 function mockWindowOpen(openedWindow: Window | null): BrowserOpenMock {

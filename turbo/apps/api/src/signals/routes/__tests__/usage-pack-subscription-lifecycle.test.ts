@@ -537,7 +537,7 @@ async function checkoutUsagePackLifecycle(
   expect(context.mocks.stripe.checkout.sessions.create).toHaveBeenCalledWith(
     expect.objectContaining({
       customer: customerId,
-      metadata: { ...metadata, billingSurveyUserId: userId },
+      metadata: metadata,
       subscription_data: { metadata },
       line_items: [
         {

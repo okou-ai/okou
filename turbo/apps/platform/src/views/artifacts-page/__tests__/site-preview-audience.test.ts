@@ -14,22 +14,18 @@ async function preview(url: string) {
     return expect(document.querySelector("iframe")?.src).toBe(url);
   });
 }
-test("hosted-site-sharing-026 The sidebar preview follows audience changes and copies the permanent site address", async () => {
+test("hosted-site-sharing-026 The sidebar retains the private owner preview across audience changes and copies the permanent address", async () => {
   const { button, menu, clipboard } = await openSharing(context, {
     audience: "private",
   });
   await preview(temporary);
-  for (const [name, url] of [
-    [orgChoice, temporary],
-    [publicChoice, stable],
-    [privateChoice, temporary],
-  ] as const) {
+  for (const name of [orgChoice, publicChoice, privateChoice]) {
     const radio = await menu.findByRole("radio", { name });
     click(radio);
     await waitFor(() => {
       return expect(radio).toBeChecked();
     });
-    await preview(url);
+    await preview(temporary);
   }
   const copy = await button("Copy link");
   expect(copy).toBeEnabled();
@@ -37,31 +33,38 @@ test("hosted-site-sharing-026 The sidebar preview follows audience changes and c
   await button("Copied");
   expect(clipboard.writes).toStrictEqual([stable]);
 });
-test("hosted-site-sharing-027 Share and Copy remain usable throughout a held preview refresh", async () => {
-  const refreshing = context.mocks.deferred<void>(),
-    release = context.mocks.deferred<void>();
-  const { button, menu, trigger, dialog, clipboard } = await openSharing(
-    context,
-    {
-      audience: "private",
-      refreshPreview: () => {
-        refreshing.resolve();
-        return release.promise;
-      },
-    },
-  );
-  await preview(temporary);
-  click(await menu.findByRole("radio", { name: publicChoice }));
-  await refreshing.promise;
-  expect(trigger).toBeVisible();
-  expect(dialog).toBeVisible();
-  await expect(button("Copy link")).resolves.toBeEnabled();
-  release.resolve();
-  await preview(stable);
-  click(await button("Copy link"));
-  await button("Copied");
-  expect(clipboard.writes).toStrictEqual([stable]);
-});
+test.each(["private", "public"] as const)(
+  "hosted-site-sharing-027 An owner who opens a %s site can still share and copy after changing its audience",
+  async (initial) => {
+    const { button, menu, clipboard } = await openSharing(context, {
+      audience: initial,
+      preserveTemporaryPreview: true,
+    });
+    await preview(temporary);
+    const previous = await menu.findByRole("radio", {
+      name: initial === "public" ? publicChoice : privateChoice,
+    });
+    expect(previous).toBeChecked();
+    const changed = await menu.findByRole("radio", {
+      name: initial === "public" ? privateChoice : publicChoice,
+    });
+    click(changed);
+    await waitFor(() => {
+      return expect(changed).toBeChecked();
+    });
+    expect(queryFastControl("button", "Share artifact")).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    await preview(temporary);
+    const copy = await button("Copy link");
+    expect(copy).toBeEnabled();
+    click(copy);
+    await button("Copied");
+    expect(clipboard.writes).toStrictEqual([stable]);
+  },
+);
+
 test("Sharing stays unavailable until the private audience is known", async () => {
   const release = context.mocks.deferred<void>();
   const opening = openSharing(context, {

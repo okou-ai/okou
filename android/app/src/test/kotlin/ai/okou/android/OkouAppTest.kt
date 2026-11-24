@@ -211,7 +211,7 @@ class OkouAppTest {
                                 identity,
                                 WorkspaceTokenProvider { "test-token" },
                             ),
-                            app.runControlJournal,
+                            app.runControlOwners,
                             identity,
                             models.first.first.history,
                             { true },

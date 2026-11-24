@@ -1,3 +1,5 @@
+import { finishBillingUpgrade$ } from "../../billing-feedback-flow.ts";
+import { showPendingBillingFeedback$ } from "../../billing-feedback.ts";
 import type { UsagePackManagementResponse } from "@okouai/api-contracts/contracts/billing";
 import {
   observeWalletConnection$,
@@ -20,6 +22,11 @@ import { usagePackManagementAsync$ } from "../billing.ts";
 import { invalidateEmailSubscription$ } from "./email-subscription.ts";
 import { reloadConnectorCatalogRelease$ } from "./connector-catalog-release.ts";
 import { startPaidToolsCatalogDiscovery$ } from "./paid-tools-catalog.ts";
+import {
+  markSettingsDialogSessionReleased$,
+  markSettingsDialogSessionStarted$,
+  settingsDialogSessionActive$,
+} from "./settings-dialog-session.ts";
 import {
   managedUsagePackSelection,
   resetUsagePackPricing$,
@@ -95,17 +102,12 @@ const internalSettingsDialogSignal$ = state<AbortSignal | null>(null);
 const resetSettingsDialogSignal$ = resetSignal();
 const resetSettingsActionSignal$ = resetSignal();
 const internalSettingsActionSignal$ = state<AbortSignal | null>(null);
-const internalSettingsDialogSessionActive$ = state(false);
 
 // Actions stop at dismissal; the dialog session survives its closing animation.
 export { internalSettingsActionSignal$ as settingsActionSignal$ };
 
 export const settingsDialogOpen$ = computed((get) => {
   return get(internalSettingsDialogOpen$);
-});
-
-export const settingsDialogSessionActive$ = computed((get) => {
-  return get(internalSettingsDialogSessionActive$);
 });
 
 export { internalSettingsDialogSignal$ as settingsDialogSignal$ };
@@ -237,8 +239,9 @@ export const openSettingsUsagePackUpgrade$ = command(
 );
 
 const releaseSettingsDialogSession$ = command(({ set }) => {
+  set(finishBillingUpgrade$, false);
   set(internalSettingsDialogSignal$, null);
-  set(internalSettingsDialogSessionActive$, false);
+  set(markSettingsDialogSessionReleased$);
   set(clearPendingLogo$);
   set(resetDeleteConfirm$);
   set(resetUsagePackPricing$);
@@ -249,6 +252,7 @@ const releaseSettingsDialogSession$ = command(({ set }) => {
 });
 
 export const closeSettingsModal$ = command(({ get, set }) => {
+  set(finishBillingUpgrade$);
   set(resetSettingsActionSignal$);
   set(internalSettingsDialogOpen$, false);
 
@@ -264,14 +268,17 @@ export const closeSettingsModal$ = command(({ get, set }) => {
   }
 });
 
-export const completeSettingsModalClose$ = command(({ get, set }) => {
-  if (get(internalSettingsDialogOpen$)) {
-    return;
-  }
-  set(resetSettingsDialogSignal$);
-  set(releaseSettingsDialogSession$);
-  set(clearBillingScrollTarget$);
-});
+export const completeSettingsModalClose$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    if (get(internalSettingsDialogOpen$)) {
+      return;
+    }
+    set(resetSettingsDialogSignal$);
+    set(releaseSettingsDialogSession$);
+    set(clearBillingScrollTarget$);
+    await set(showPendingBillingFeedback$, signal);
+  },
+);
 
 /**
  * Dismiss the billing plans surface. A standalone upgrade flow was launched
@@ -308,7 +315,7 @@ export const setSettingsDialogOpen$ = command(
       set(internalSettingsActionSignal$, actionSignal);
       set(startPaidToolsCatalogDiscovery$, actionSignal);
     }
-    if (get(internalSettingsDialogSessionActive$)) {
+    if (get(settingsDialogSessionActive$)) {
       set(internalSettingsDialogOpen$, true);
       set(setSettingsActiveSection$, get(internalActiveSection$), pageSignal);
       return;
@@ -324,7 +331,7 @@ export const setSettingsDialogOpen$ = command(
     );
     set(internalSettingsDialogSignal$, modalSignal);
     set(observeWalletConnection$, modalSignal);
-    set(internalSettingsDialogSessionActive$, true);
+    set(markSettingsDialogSessionStarted$);
     // A plans sub-page that is already open when the session starts was opened
     // by an entry point outside Settings, so that flow owns the whole dialog.
     set(setBillingPlansStandalone$, get(billingSubPage$));

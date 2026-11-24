@@ -5,7 +5,6 @@
     <string name="auth_selection_failed">Ruang kerja ini tidak dapat dibuka.</string>
     <string name="auth_sign_out_failed">Tidak dapat keluar.</string>
     <string name="composer_restore_draft">Pulihkan draf tersimpan</string>
-    <string name="controls_storage_failed">Permintaan kontrol tertunda tidak dapat disimpan.</string>
     <string name="controls_stop">Hentikan pekerjaan berjalan</string>
     <string name="controls_stop_failed">Tugas tidak dapat dihentikan.</string>
     <string name="settings">Setelan</string>

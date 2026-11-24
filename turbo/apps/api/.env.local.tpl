@@ -305,3 +305,6 @@ APNS_TEAM_ID=
 APNS_SANDBOX_PRIVATE_KEY_BASE64=
 APNS_SANDBOX_KEY_ID=
 APNS_SANDBOX_TEAM_ID=
+
+# PostHog survey destination credential; keep reward offers disabled until configured.
+BILLING_FEEDBACK_WEBHOOK_SECRET=

@@ -76,3 +76,17 @@ test("user-timezone-initialization-003 Account preferences show the saved Pacifi
   ).resolves.toHaveTextContent("Pacific Time (PT)");
   expect(saved.calls).toStrictEqual(["read"]);
 });
+
+test("A failed preference read stops the member’s first visit to Workflows", async () => {
+  context.mocks.api(userPreferencesContract.get, ({ respond }) => {
+    return respond(500, {
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Workspace preferences are unavailable",
+      },
+    });
+  });
+  await expect(
+    setupPage({ context, path: "/workflows", host: "app.okou.ai" }),
+  ).rejects.toThrow("Workspace preferences are unavailable");
+});

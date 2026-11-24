@@ -311,14 +311,12 @@ Stop freezes the displayed run, and withdrawal or skip targets one original queu
 entry. The workspace control owner checks canonical control and target evidence
 after HTTP acceptance or an uncertain result. A recovered conversation sync can
 trigger a read-only outcome check for the original pending intent.
-All current controllers of the same origin/user/workspace attach to one shared
-command owner, including target deduplication, phases and journal mutations.
+Controllers of the same authorized workspace attach to one shared command owner,
+including target deduplication, in-memory pending intents and request phases.
 Retiring one controller cancels only its network requests. Peers retain unresolved
 commands and verify the original identity before allowing an explicit retry.
-Frozen pending controls live separately in private `noBackupFilesDir/chat-controls`
-format-1 journals scoped by API origin, user and workspace. Disk commitment precedes
-POST, and restored intent only reads back until an explicit same-request retry.
-This adds no confirmed-cache or composer-journal migration and stores no stream text.
+After the workspace owner or app process ends, task and queue states recover
+from confirmed conversation history.
 Cancellation metadata reuses the conversation history owner's independent detail
 request and typed phase. Control outcome reads never take over that request's
 loading/completion state or create a second metadata producer.

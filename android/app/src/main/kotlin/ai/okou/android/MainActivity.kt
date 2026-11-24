@@ -92,7 +92,7 @@ class MainActivity : AppCompatActivity() {
                     app.chatCache,
                     app.instructionsDrafts,
                     app.composerJournal,
-                    app.runControlJournal,
+                    app.runControlOwners,
                     app.memberAppearanceCache,
                     app.projectExpansionStore,
                     app.defaultModelStore,

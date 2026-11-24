@@ -1,19 +1,10 @@
 package ai.okou.android.chat
 
 import ai.okou.android.R
-import ai.okou.android.currentWindowSizeDp
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -22,19 +13,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -55,11 +42,7 @@ internal class ConversationRunControls(
         it.kind == RunControlKind.Interrupt && it.targetId == currentRunId
     }
     private val stopPending = stopIntent != null && phase(stopIntent) != RunControlPhase.Retryable
-    val storageFailed = state.persistence == RunControlPersistence.Failed
-
-    private val available = !offline && state.journal != null && !storageFailed
-
-    val canStop = currentRunId != null && available && !stopPending
+    val canStop = currentRunId != null && !offline && !stopPending
 
     fun stop() {
         if (!canStop) return
@@ -69,7 +52,7 @@ internal class ConversationRunControls(
 
     fun revoke(eventId: String, preview: ComposerMessagePreview?): (() -> Unit)? {
         if (
-            !available ||
+            offline ||
                 eventId in state.settledQueueInputs[threadId].orEmpty() ||
                 !confirmed.canWithdrawInput(threadId, eventId, preview)
         )
@@ -106,13 +89,12 @@ internal fun conversationRunControls(
             derivedStateOf { input?.value?.messagesFor(threadId).orEmpty() }
         }
     val confirmed = historyState.takeIf { it.thread?.id == threadId }
-    val pending = state.journal?.pending.orEmpty().filter { it.threadId == threadId }
+    val pending = state.pending.filter { it.threadId == threadId }
     val hiddenQueueInputs =
         state.settledQueueInputs[threadId].orEmpty() +
             pending
                 .filter {
                     it.kind == RunControlKind.Revoke &&
-                        it.id in state.optimistic &&
                         state.phases[it.id] != RunControlPhase.Retryable
                 }
                 .map { it.targetId }
@@ -221,30 +203,5 @@ internal fun ConversationStopButton(
                 .semantics { contentDescription = label },
     ) {
         Icon(painterResource(R.drawable.ic_stop), null, Modifier.size(20.dp))
-    }
-}
-
-@Composable
-internal fun ConversationControlStorageFailure(retry: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth()
-            .heightIn(min = 48.dp)
-            .padding(horizontal = composerHorizontalInset(currentWindowSizeDp())),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            stringResource(R.string.controls_storage_failed),
-            Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite },
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp, lineHeight = 20.sp),
-        )
-        TextButton(
-            onClick = retry,
-            modifier = Modifier.heightIn(min = 48.dp),
-            colors =
-                ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
-        ) {
-            Text(stringResource(R.string.retry))
-        }
     }
 }

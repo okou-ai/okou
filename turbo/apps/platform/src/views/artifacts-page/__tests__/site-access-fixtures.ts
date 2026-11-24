@@ -30,7 +30,7 @@ export async function openSharing(
     denyVisibility?: boolean;
     visibilityRead?: Promise<void>;
     beforeWrite?: (choice: HostedSiteVisibility) => Promise<void>;
-    refreshPreview?: () => Promise<void>;
+    preserveTemporaryPreview?: boolean;
   } = {},
 ) {
   const site = options.siteId ?? crypto.randomUUID();
@@ -60,13 +60,21 @@ export async function openSharing(
       isActive: true,
     });
   });
-  context.mocks.api(hostContract.sitePreview, async ({ respond }) => {
-    if (audience === "public") {
-      await options.refreshPreview?.();
+  const initialRevision = revision;
+  context.mocks.api(hostContract.sitePreview, ({ respond }) => {
+    if (options.preserveTemporaryPreview && revision !== initialRevision) {
+      return respond(500, {
+        error: {
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Preview unavailable after the visibility update",
+        },
+      });
     }
+    const privatePreview =
+      options.preserveTemporaryPreview || audience !== "public";
     return respond(200, {
-      url: audience === "public" ? stable : temporary,
-      expiresAt: audience === "public" ? null : "2099-01-01T00:00:00.000Z",
+      url: privatePreview ? temporary : stable,
+      expiresAt: privatePreview ? "2099-01-01T00:00:00.000Z" : null,
     });
   });
   context.mocks.api(hostContract.siteVisibility, async ({ respond }) => {
