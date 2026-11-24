@@ -405,18 +405,16 @@ test("An unavailable preference rejects submission instead of treating it as uns
   expect(capture.sentMessages).toHaveLength(0);
 });
 
-test.each(["feature off", "ineligible audience"] as const)(
-  "%s sends normally without presentation preference context",
-  async (condition) => {
+test.each([false, true])(
+  "A Lab tester sends with presentation format opt-in set to %s",
+  async (enabled) => {
     context.mocks.data.userPreferences({ presentationFormat: "pptx" });
     const capture = mockTemplateChat();
     await setupPage({
       context,
       path: "/",
-      ...(condition === "feature off" ? { auth: ownerAuth } : {}),
       featureSwitches: {
-        [FeatureSwitchKey.PresentationOutputFormat]:
-          condition === "ineligible audience",
+        [FeatureSwitchKey.PresentationOutputFormat]: enabled,
       },
     });
     const editor = await findComposerEditor();
@@ -426,9 +424,19 @@ test.each(["feature off", "ineligible audience"] as const)(
     await waitFor(() => {
       expect(capture.sentMessages).toHaveLength(1);
     });
-    expect(capture.sentMessages[0]?.parts).toContainEqual({
-      type: "additional_info",
-      text: expect.not.stringContaining("# Presentation Output Preference"),
-    });
+    const additionalInfo = capture.sentMessages[0]?.parts
+      .filter((part) => {
+        return part.type === "additional_info";
+      })
+      .map((part) => {
+        return part.text;
+      })
+      .join("\n");
+    expect(additionalInfo?.includes("# Presentation Output Preference")).toBe(
+      enabled,
+    );
+    expect(additionalInfo?.includes("- Output format: PPTX format")).toBe(
+      enabled,
+    );
   },
 );

@@ -130,24 +130,52 @@ test.each([
   ).toHaveAttribute("aria-checked", "true");
 });
 
-test("External peers cannot opt into presentation format in Lab", async () => {
+test("Any Lab tester can find presentation format in Beta, opt in, and reset it", async () => {
+  const user = userEvent.setup({ delay: null });
   const featureKey = FeatureSwitchKey.PresentationOutputFormat;
+  let switches: Record<string, boolean> = { [FeatureSwitchKey.Lab]: true };
+  context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
+    return respond(200, { switches, effectiveSwitches: switches });
+  });
+  context.mocks.api(featureSwitchesContract.update, ({ body, respond }) => {
+    switches = { ...switches, ...body.switches };
+    return respond(200, { switches, effectiveSwitches: switches });
+  });
+  context.mocks.api(featureSwitchesContract.delete, ({ respond }) => {
+    switches = { [FeatureSwitchKey.Lab]: true };
+    return respond(200, { deleted: true });
+  });
   await setupPage({
     context,
     path: "/_/lab",
-    featureSwitches: {
-      [FeatureSwitchKey.Lab]: true,
-      [featureKey]: true,
+    auth: {
+      user: {
+        id: "presentation-format-tester",
+        fullName: "bingjie",
+        email: "bingjie-tester@example.test",
+      },
     },
   });
 
   await screen.findByRole("heading", { name: "Lab" });
-  expect(screen.getByText(FeatureSwitchKey.Banking)).toBeInTheDocument();
+  await user.click(buttonNamed("bingjie"));
   expect(
-    screen.queryByText(
+    within(featureSwitchGroup("Beta")).getByText(
       getFeatureSwitchMetadata()[featureKey].displayName ?? featureKey,
     ),
-  ).not.toBeInTheDocument();
+  ).toBeInTheDocument();
+  const control = within(featureSwitchRow(featureKey)).getByRole("switch");
+  expect(control).toHaveAttribute("aria-checked", "false");
+
+  await user.click(control);
+  await waitFor(() => {
+    expect(control).toHaveAttribute("aria-checked", "true");
+  });
+
+  await user.click(buttonNamed("Reset all"));
+  await waitFor(() => {
+    expect(control).toHaveAttribute("aria-checked", "false");
+  });
 });
 
 test("Maintainer filters narrow the feature list", async () => {
