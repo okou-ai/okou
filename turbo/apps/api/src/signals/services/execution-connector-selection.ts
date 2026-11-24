@@ -31,11 +31,17 @@ export interface ExecutionConnectorSelection {
 }
 
 export function executionConnectorSelectionFromRows(
-  builtinRows: readonly { readonly connectorSlug: string }[],
+  accounts: readonly { readonly connectorSlug: string | null }[],
   customRows: readonly SelectedDefinitionRow[],
 ): ExecutionConnectorSelection {
-  const allowedConnectorSlugs = builtinRows
-    .flatMap(({ connectorSlug }) => {
+  const builtinSlugs = new Set<string>();
+  for (const { connectorSlug } of accounts) {
+    if (connectorSlug !== null) {
+      builtinSlugs.add(connectorSlug);
+    }
+  }
+  const allowedConnectorSlugs = [...builtinSlugs]
+    .flatMap((connectorSlug) => {
       const parsed = connectorSlugSchema.safeParse(connectorSlug);
       return parsed.success ? [parsed.data] : [];
     })
