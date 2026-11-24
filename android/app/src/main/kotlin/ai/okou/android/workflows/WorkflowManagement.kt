@@ -107,6 +107,8 @@ internal fun WorkflowRuleRow(
     val titleMinWidth = with(LocalDensity.current) { 16.sp.toDp() * 10 }
     val connector = rule.source.connector
     val canOpenConnection = connector != null && onViewConnection != null
+    val toggle = state.toggles[rule.id]
+    val pendingToggle = toggle?.takeUnless { it.phase == WorkflowTogglePhase.Failed }
     fun viewConnections() {
         if (connector != null) onViewConnection?.invoke(connector, rule.id)
     }
@@ -150,10 +152,14 @@ internal fun WorkflowRuleRow(
             ruleDescription(rule, connectionRequired)?.let { WorkflowSecondary(it, small = true) }
             if (nextRun != null) WorkflowSecondary(nextRun, small = true)
         }
-        when (state.issue?.takeIf { it.ruleId == rule.id }?.failure) {
-            WorkflowWriteFailure.Network -> WorkflowNotice(R.string.workflow_rule_network_failed)
-            WorkflowWriteFailure.Failed -> WorkflowNotice(R.string.workflow_rule_change_failed)
-            else -> Unit
+        val failure = state.issue?.takeIf { it.ruleId == rule.id }?.failure
+        when {
+            toggle?.phase == WorkflowTogglePhase.Unconfirmed ->
+                WorkflowNotice(R.string.workflow_rule_unconfirmed)
+            toggle?.phase == WorkflowTogglePhase.Failed || failure == WorkflowWriteFailure.Failed ->
+                WorkflowNotice(R.string.workflow_rule_change_failed)
+            failure == WorkflowWriteFailure.Network ->
+                WorkflowNotice(R.string.workflow_rule_network_failed)
         }
         if (rule.official == null) {
             val toggleFocus = remember { FocusRequester() }
@@ -161,10 +167,19 @@ internal fun WorkflowRuleRow(
             var connectionFocused by remember { mutableStateOf(false) }
             val showSeparateConnection = connectionRequired && rule.enabled
             val restoreToggleFocus = !showSeparateConnection && connectionFocused
-            val needsRecovery = connectionRequired && !rule.enabled
+            val needsRecovery = connectionRequired && !rule.enabled && pendingToggle == null
             val canToggle = rule.enabled || rule.canEnable(state.connections)
             val toggleEnabled =
-                actionsEnabled && (if (needsRecovery) canOpenConnection else canToggle)
+                actionsEnabled &&
+                    (pendingToggle != null ||
+                        !state.writing && (if (needsRecovery) canOpenConnection else canToggle))
+            val pendingStatus =
+                when (pendingToggle?.phase) {
+                    WorkflowTogglePhase.Submitting -> R.string.settings_saving
+                    WorkflowTogglePhase.Checking -> R.string.workflow_rule_checking
+                    WorkflowTogglePhase.Unconfirmed -> R.string.workflow_rule_unconfirmed
+                    else -> null
+                }
             LaunchedEffect(showSeparateConnection, restoreConnectionFocus, toggleEnabled) {
                 if (restoreConnectionFocus && actionsEnabled) {
                     val target =
@@ -185,20 +200,25 @@ internal fun WorkflowRuleRow(
                         Modifier.focusRequester(recoveryFocus).onFocusChanged {
                             connectionFocused = it.isFocused
                         },
-                        enabled = actionsEnabled && canOpenConnection,
+                        enabled = actionsEnabled && canOpenConnection && !state.writing,
                     )
                 WorkflowAction(
                     stringResource(
                         when {
+                            pendingToggle?.enabled == true -> R.string.workflow_enable
+                            pendingToggle?.enabled == false -> R.string.workflow_pause
                             rule.enabled -> R.string.workflow_pause
                             needsRecovery -> R.string.workflow_view_connection
                             else -> R.string.workflow_enable
                         },
                     ),
                     {
-                        if (needsRecovery) viewConnections() else if (!state.writing) onToggle(rule)
+                        if (needsRecovery) viewConnections()
+                        else if (!state.writing && pendingToggle == null) onToggle(rule)
                     },
                     enabled = toggleEnabled,
+                    pendingStatus = pendingStatus,
+                    showPendingProgress = pendingToggle?.phase != WorkflowTogglePhase.Unconfirmed,
                     modifier =
                         Modifier.focusRequester(toggleFocus)
                             .then(
@@ -209,7 +229,7 @@ internal fun WorkflowRuleRow(
                 if (editable != null)
                     WorkflowEditorAction(
                         R.string.workflow_edit,
-                        enabled = actionsEnabled && !state.writing,
+                        enabled = actionsEnabled && !state.writing && pendingToggle == null,
                         restoreFocus = restoreEditorFocus,
                         onFocusRestored = onEditorFocusRestored,
                     ) { focused ->
@@ -464,7 +484,7 @@ internal fun WorkflowEditor(
                     },
                     primary = true,
                     enabled = saveEnabled,
-                    saving = state.writing,
+                    pendingStatus = R.string.settings_saving.takeIf { state.writing },
                     modifier =
                         Modifier.focusRequester(saveFocus)
                             .onFocusChanged { saveFocused = it.isFocused }
@@ -475,11 +495,13 @@ internal fun WorkflowEditor(
     }
 }
 
-internal fun WorkflowReadFailure?.cachedReadFeedback(): Int? =
+internal fun WorkflowReadFailure?.cachedReadFeedback(
+    label: Int = R.string.workflow_refresh_failed,
+): Int? =
     when (this) {
         WorkflowReadFailure.Unavailable,
         WorkflowReadFailure.Network,
-        WorkflowReadFailure.RefreshFailed -> R.string.workflow_refresh_failed
+        WorkflowReadFailure.RefreshFailed -> label
         null -> null
     }
 

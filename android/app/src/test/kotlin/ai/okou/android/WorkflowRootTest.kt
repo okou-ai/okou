@@ -251,6 +251,43 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
     }
 
     @Test
+    fun cachedCatalogFailureAppearsInTheListAndKeepsScopeControlsUsable() {
+        app.gate.countDown()
+        compose.onNodeWithContentDescription("Workflows").performClick()
+        waitForTag("workflow_row_$WORKFLOW_RELEASE")
+        back()
+
+        val fixture = app.fixture
+        val response = fixture.chats.commandResponse
+        fixture.chats.commandResponse = { request ->
+            if (request.requestUrl?.encodedPath == "/api/workflows")
+                MockResponse().setResponseCode(400)
+            else response(request)
+        }
+        compose.onNodeWithContentDescription("Workflows").performClick()
+        val message = "Could not refresh the workflow directory. Showing loaded workflows."
+        waitFor(message)
+        val feedback = compose.onNodeWithText(message).assertIsDisplayed()
+        val feedbackBounds = feedback.getUnclippedBoundsInRoot()
+        val directory = compose.onNodeWithTag("workflow_directory").getUnclippedBoundsInRoot()
+        val row = compose.onNodeWithTag("workflow_row_$WORKFLOW_RELEASE").getUnclippedBoundsInRoot()
+        assertEquals(16.dp, feedbackBounds.left - directory.left)
+        assertEquals(12.dp, row.top - feedbackBounds.bottom)
+        val layouts = mutableListOf<TextLayoutResult>()
+        feedback.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        assertEquals(14.sp, layouts.single().layoutInput.style.fontSize)
+        assertEquals(20.sp, layouts.single().layoutInput.style.lineHeight)
+        val all = compose.onNodeWithTag("workflow_scope_All").getUnclippedBoundsInRoot()
+        val onlyMe = compose.onNodeWithTag("workflow_scope_Private").getUnclippedBoundsInRoot()
+        assertEquals(6.dp, onlyMe.left - all.right)
+        assertTrue(all.bottom - all.top >= 48.dp)
+        selectScope("Workspace shared")
+        compose.onNodeWithTag("workflow_row_$WORKFLOW_RELEASE").assertDoesNotExist()
+        compose.onNodeWithTag("workflow_row_$WORKFLOW_SHARED").assertIsDisplayed()
+        feedback.assertIsDisplayed()
+    }
+
+    @Test
     fun workflowDirectoryScopesRulesAndReturnsFromDraftWithoutSending() {
         assertFalse(app.fixture.requests.any { it.requestUrl?.encodedPath == "/api/workflows" })
         compose.onNodeWithContentDescription("Workflows").performClick()

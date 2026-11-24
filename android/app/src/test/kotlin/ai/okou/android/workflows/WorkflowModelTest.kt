@@ -6,6 +6,7 @@ import ai.okou.android.api.generated.CanonicalOptional
 import ai.okou.android.api.generated.CreateWorkflowAutomationRequest
 import ai.okou.android.api.generated.UpdateWorkflowAutomationRequest
 import ai.okou.android.api.generated.UpdateWorkflowRequest
+import ai.okou.android.api.generated.WorkflowAutomation
 import ai.okou.android.api.generated.WorkflowAutomationVariant1
 import ai.okou.android.api.generated.WorkflowAutomationVariant1Kind
 import ai.okou.android.api.generated.WorkflowAutomationVariant1ScheduleVariant1
@@ -129,6 +130,10 @@ internal abstract class WorkflowModelTestFixture {
         var detailRead: suspend (String) -> WorkflowDetail = { detail }
         var rulesRead: suspend () -> WorkspaceWorkflowAutomations = { emptyList() }
         var connectionsRead: suspend () -> Set<String> = { emptySet() }
+        var toggle: suspend (String, Boolean) -> WorkflowAutomation = { _, _ ->
+            error("Unexpected automation toggle")
+        }
+        val toggleRequests = mutableListOf<Pair<String, Boolean>>()
         var detailReads = 0
             private set
 
@@ -210,8 +215,13 @@ internal abstract class WorkflowModelTestFixture {
             request: UpdateWorkflowAutomationRequest,
         ) = error("Unexpected automation update")
 
-        override suspend fun setAutomationEnabled(id: String, enabled: Boolean) =
-            error("Unexpected automation toggle")
+        override suspend fun setAutomationEnabled(
+            id: String,
+            enabled: Boolean,
+        ): WorkflowAutomation {
+            toggleRequests += id to enabled
+            return toggle(id, enabled)
+        }
     }
 }
 
@@ -743,6 +753,114 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
         runCurrent()
         assertEquals(1, service.createAttempts)
     }
+}
+
+@OptIn(ExperimentalCoroutinesApi::class)
+internal class WorkflowToggleModelTest : WorkflowModelTestFixture() {
+    private fun TestScope.openRule(
+        service: Service,
+        model: WorkflowModel,
+    ): WorkflowAutomationVariant1 {
+        val rule = service.weeklyRule()
+        service.detail = service.detail.copy(automations = listOf(rule))
+        service.rulesRead = { listOf(WorkspaceWorkflowAutomationsItem(service.summary, rule)) }
+        model.visibilityChanged(true)
+        runCurrent()
+        model.select(service.summary.id, WorkflowTab.Automations)
+        runCurrent()
+        return rule
+    }
+
+    @Test
+    fun confirmedToggleRetainsTheRuleUntilItsReceiptWithoutAnExtraRead() = check { service, model ->
+        val active = openRule(service, model)
+        val receipt = CompletableDeferred<WorkflowAutomation>()
+        service.toggle = { _, _ -> receipt.await() }
+        val originalReads = service.detailReads
+
+        model.toggle(active)
+        runCurrent()
+        assertEquals(
+            WorkflowToggle(false, WorkflowTogglePhase.Submitting),
+            model.state.value.toggles[active.id],
+        )
+        assertEquals(listOf(active), model.state.value.detail?.automations)
+        model.toggle(active)
+        runCurrent()
+
+        val paused = active.copy(enabled = false, nextRunAt = null)
+        receipt.complete(paused)
+        runCurrent()
+        assertEquals(listOf(active.id to false), service.toggleRequests)
+        assertEquals(listOf(paused), model.state.value.detail?.automations)
+        assertEquals(originalReads, service.detailReads)
+        assertTrue(model.state.value.toggles.isEmpty())
+    }
+
+    @Test
+    fun lostToggleReceiptChecksTheSameRuleBeforePublishingSuccess() = check { service, model ->
+        val active = openRule(service, model)
+        val paused = active.copy(enabled = false, nextRunAt = null)
+        val readback = CompletableDeferred<WorkflowDetail>()
+        service.detailRead = { readback.await() }
+        service.toggle = { _, _ -> throw ApiFailure.Network(IOException("Lost response")) }
+
+        model.toggle(active)
+        runCurrent()
+        assertEquals(
+            WorkflowToggle(false, WorkflowTogglePhase.Checking),
+            model.state.value.toggles[active.id],
+        )
+        assertEquals(listOf(active), model.state.value.detail?.automations)
+        assertNull(model.state.value.issue)
+        model.toggle(active)
+        runCurrent()
+
+        readback.complete(service.detail.copy(automations = listOf(paused)))
+        runCurrent()
+        assertEquals(listOf(active.id to false), service.toggleRequests)
+        assertEquals(listOf(paused), model.state.value.detail?.automations)
+        assertTrue(model.state.value.toggles.isEmpty())
+        assertNull(model.state.value.issue)
+    }
+
+    @Test
+    fun unavailableReadbackKeepsTheActionUnconfirmedUntilAReadSettlesIt() =
+        check { service, model ->
+            val active = openRule(service, model)
+            service.toggle = { _, _ -> throw ApiFailure.Network(IOException("Lost response")) }
+            val originalReads = service.detailReads
+            service.detailRead = { throw ApiFailure.Network(IOException("Read unavailable")) }
+
+            model.connectivityChanged(true)
+            model.toggle(active)
+            advanceTimeBy(6_000)
+            runCurrent()
+            assertEquals(originalReads + 3, service.detailReads)
+            assertEquals(
+                WorkflowToggle(false, WorkflowTogglePhase.Unconfirmed),
+                model.state.value.toggles[active.id],
+            )
+            assertEquals(listOf(active), model.state.value.detail?.automations)
+            model.toggle(active)
+            runCurrent()
+            assertEquals(listOf(active.id to false), service.toggleRequests)
+
+            service.detailRead = { service.detail }
+            model.connectivityChanged(false)
+            runCurrent()
+            assertEquals(
+                WorkflowToggle(false, WorkflowTogglePhase.Failed),
+                model.state.value.toggles[active.id],
+            )
+            val paused = active.copy(enabled = false, nextRunAt = null)
+            service.toggle = { _, _ -> paused }
+            model.toggle(active)
+            runCurrent()
+            assertEquals(listOf(active.id to false, active.id to false), service.toggleRequests)
+            assertEquals(listOf(paused), model.state.value.detail?.automations)
+            assertTrue(model.state.value.toggles.isEmpty())
+        }
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
