@@ -127,6 +127,7 @@ def build_entry(
     if flow_metadata.firewall_base(flow.metadata):
         add_firewall_metadata(flow, entry)
     codex_model_catalog_cache.add_network_log_fields(flow, entry)
+    # [NETWORK_LOG_FIELDS] — managed OpenRouter route fields for the HTTP row.
     entry.update(openrouter_routing_log.take_fields(flow))
     return entry, url
 

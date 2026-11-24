@@ -455,6 +455,7 @@ const networkLogDetailFields = {
   latency_ms: detailField("latency", "latency_ms", formatLatency),
   request_size: detailField("requestSize", "request_size", formatSize),
   response_size: detailField("responseSize", "response_size", formatSize),
+  // The nested routing fields are displayed individually below.
   openrouter: null,
   browser_user_agent: detailField("browserUserAgent", "browser_user_agent"),
   model_catalog_cache_status: detailField(
@@ -636,6 +637,24 @@ function collectDetails(entry: NetworkLogEntry): [string, string][] {
         descriptor.value(entry),
         descriptor.format(entry),
       );
+    }
+  }
+  const routing = entry.openrouter;
+  if (routing) {
+    const fields: [NetworkDetailLabelKey, unknown][] = [
+      ["openrouterGenerationId", routing.generation_id],
+      ["openrouterModel", routing.model],
+      ["openrouterProvider", routing.provider],
+      [
+        "openrouterAttempts",
+        routing.attempts?.map(({ provider, model, status }) => {
+          return `${provider} (${model}, ${formatValue(status)})`;
+        }),
+      ],
+      ["openrouterAttemptsIncomplete", routing.attempts_incomplete],
+    ];
+    for (const [key, value] of fields) {
+      addField(out, localizeNetworkDetailLabel(key), value, formatValue(value));
     }
   }
   return out;
