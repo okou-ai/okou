@@ -3,7 +3,7 @@
     "frozen": "b0a10287edf4242383c28e39c6f7675053febb32",
     "beforeFirstWithdrawal": "5310dbb9ba6bd8b95507bc7293f6da3ed8aa004b",
     "beforeSecondWithdrawal": "a445586e0483bb7e2440e60200a8deed30aa3df9",
-    "main": "51c009401272ec7af574e6e6309b54aebed98eeb",
+    "main": "1f5da4856d184af3b838dfcfd1d48fcf2275536c",
     "opening": "c008af36dbb8ad20ac2cac6aa0e9752eaaaa8276"
   },
   "method": "Extracted the independently authored test callbacks from the TypeScript syntax tree. Searched whitespace-normalized bodies, with titles removed, through every JS/TS source blob in Platform, the exported browser client and prior in-repository replay evidence at each revision. Also compared five-line excerpts of at least 110 normalized characters. Existing helper and external fixture reuse is documented separately.",
@@ -472,10 +472,31 @@
       "id": "unread-through-at-001",
       "title": "Reading a newer completed run clears its unread state even while the sidebar has an older update",
       "path": "turbo/apps/platform/src/views/okou-page/__tests__/chat-send-read-status.test.tsx",
-      "sha256": "6129902c2c63bf89f7927aa7420e046f4fc1261ae259b9b19a0c65205dba2623",
+      "sha256": "6be5730b4fd3937ff2b7610274d27670e397c71809bc2f7bcb17b1b6318c1f7a",
       "matches": [],
-      "overlapCount": 0,
-      "longestSharedExcerpts": []
+      "overlapCount": 2,
+      "longestSharedExcerpts": [
+        {
+          "size": 160,
+          "normalizedExcerpt": "constparse=Response.prototype.json;vi.spyOn(Response.prototype,\"json\").mockImplementation(asyncfunction(this:Response,){constbody:unknown=awaitparse.call(this);",
+          "paths": [
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-fork.test.tsx"
+          ],
+          "revisions": [
+            "opening"
+          ]
+        },
+        {
+          "size": 160,
+          "normalizedExcerpt": "constparse=Response.prototype.json;vi.spyOn(Response.prototype,\"json\").mockImplementation(asyncfunction(this:Response,){constbody:unknown=awaitparse.call(this);",
+          "paths": [
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-send-read-status.test.tsx"
+          ],
+          "revisions": [
+            "opening"
+          ]
+        }
+      ]
     },
     {
       "id": "agent-suggestions-004",

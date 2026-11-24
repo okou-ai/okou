@@ -182,6 +182,26 @@ test("Reading a newer completed run clears its unread state even while the sideb
   ]);
   const first = context.mocks.deferred<void>();
   const caughtUp = context.mocks.deferred<void>();
+  const received = context.mocks.deferred<void>();
+  const parse = Response.prototype.json;
+  vi.spyOn(Response.prototype, "json").mockImplementation(async function (
+    this: Response,
+  ) {
+    const body: unknown = await parse.call(this);
+    if (
+      this.status === 200 &&
+      this.url &&
+      new URL(this.url).pathname === chatThreadsContract.indicators.path &&
+      !received.settled()
+    ) {
+      const result =
+        chatThreadsContract.indicators.responses[200].safeParse(body);
+      if (result.success && result.data.threads[witness.id] === "unread") {
+        received.resolve();
+      }
+    }
+    return body;
+  });
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     const unread = read === null || read < published;
     return respond(200, {
@@ -195,16 +215,20 @@ test("Reading a newer completed run clears its unread state even while the sideb
       },
     });
   });
-  context.mocks.api(chatThreadMarkReadContract.markRead, ({ respond }) => {
-    read = terminal;
-    if (!first.settled()) {
-      first.resolve();
-    }
-    if (read === finished && !caughtUp.settled()) {
-      caughtUp.resolve();
-    }
-    return respond(200, { lastReadAt: read });
-  });
+  context.mocks.api(
+    chatThreadMarkReadContract.markRead,
+    ({ params, respond }) => {
+      expect(params.id).toBe(RUN_THREAD_ID);
+      read = terminal;
+      if (!first.settled()) {
+        first.resolve();
+      }
+      if (read === finished && !caughtUp.settled()) {
+        caughtUp.resolve();
+      }
+      return respond(200, { lastReadAt: read });
+    },
+  );
   await setupPage({ context, path: RUN_PATH });
   await screen.findByText("Review the harbor", {
     selector: "[data-role=user] *",
@@ -216,6 +240,7 @@ test("Reading a newer completed run clears its unread state even while the sideb
   await caughtUp.promise;
   published = finished;
   changeChatIndicators();
+  await received.promise;
   await waitFor(() => {
     expect(threadLinkByTitle("Pilot dispatch")).toHaveAccessibleName(
       "Pilot dispatch Unread",

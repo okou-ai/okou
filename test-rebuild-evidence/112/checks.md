@@ -29,3 +29,7 @@ The final two-window attach control holds an actual provider HTTP response until
 For history paging, the eleven matching scroll, transcript and conversation-locator production source paths on main have no changes against the common base of main and the opening PR head. The main test loads “History question 3” and compares the same anchor’s top after pagination. [Main registration](https://github.com/okou-ai/okou/blob/51c0094012/turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx#L1776)
 
 The expired-hello registration releases the reply after its original socket has zero active connections, then types on the replacement. The visible-descriptor registration types on the replacement both before and after the old HTTP descriptor is delivered. The hidden descriptor remains a separate open case.
+
+The read-watermark regression receives two marks for the open Harbor thread. Its terminal advances beyond the older sidebar snapshot. After the second mark, the real indicators response parser receives a snapshot naming the separate Pilot witness as unread. The sidebar must then expose “Pilot dispatch Unread” and “Harbor review”. The test waits for that specific response before checking either accessible name. Production throttle and test timeouts keep their existing values.
+
+The final synchronization through main `1f5da4856d` includes staff member-connector access, Android CI, guest helper startup, runner storage and iOS changes. These five commits do not modify Platform source or executable App registrations.
