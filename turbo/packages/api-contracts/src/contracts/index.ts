@@ -1406,3 +1406,9 @@ export {
   integrationsEmailUploadContract,
   MAX_EMAIL_ATTACHMENT_SIZE_BYTES,
 } from "./integrations-email";
+
+export {
+  artifactSharingContract,
+  artifactSharingResourceSchema,
+  type ArtifactSharingTarget,
+} from "./artifact-sharing";

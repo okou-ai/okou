@@ -19,6 +19,8 @@ import { artifactReferencesContract as OriginalArtifactReferencesContract } from
 import { artifactReferencesContract } from "./artifact-references";
 import { artifactSharesContract as OriginalArtifactSharesContract } from "../contracts/artifact-shares";
 import { artifactSharesContract } from "./artifact-shares";
+import { artifactSharingContract as OriginalArtifactSharingContract } from "../contracts/artifact-sharing";
+import { artifactSharingContract } from "./artifact-sharing";
 import { atomSubscriptionGrantsContract as OriginalAtomSubscriptionGrantsContract } from "../contracts/atom-subscription-grants";
 import { atomSubscriptionGrantsContract } from "./atom-subscription-grants";
 import { authContract as OriginalAuthContract } from "../contracts/auth";
@@ -801,6 +803,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [artifactOgContract, OriginalArtifactOgContract],
   [artifactReferencesContract, OriginalArtifactReferencesContract],
   [artifactSharesContract, OriginalArtifactSharesContract],
+  [artifactSharingContract, OriginalArtifactSharingContract],
   [atomSubscriptionGrantsContract, OriginalAtomSubscriptionGrantsContract],
   [authContract, OriginalAuthContract],
   [bankingContract, OriginalBankingContract],
