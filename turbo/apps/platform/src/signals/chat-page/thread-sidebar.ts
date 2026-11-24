@@ -2,6 +2,7 @@ import type { ChatThreadWorkflowAutomation } from "@okouai/api-contracts/contrac
 import {
   attachmentPreviewSignalsFor,
   createAttachmentPreviewSignals,
+  shouldRefreshArtifactPreview,
   type AttachmentPreviewSignals,
 } from "../attachment-resource-url.ts";
 import {
@@ -126,14 +127,17 @@ export type ArtifactMetadataRef = {
 export type ArtifactRefInput = string | ArtifactFileRef | ArtifactMetadataRef;
 
 type AttachmentArtifactRef = ArtifactRef &
-  Pick<AttachmentPreviewSignals, "refresh$">;
+  Pick<AttachmentPreviewSignals, "refreshOnArtifactChange$" | "refreshOnOpen$">;
 
 function artifactRefFromUrl(url: string): AttachmentArtifactRef {
   const attachment = previewAttachmentFromUrl(url);
+  const kind = classifyChatAttachment(attachment);
   return {
     url,
-    ...createAttachmentPreviewSignals(url),
-    kind: classifyChatAttachment(attachment),
+    ...createAttachmentPreviewSignals(url, {
+      refreshOnArtifactChange: shouldRefreshArtifactPreview(kind),
+    }),
+    kind,
     filename: attachment.filename,
     contentType: attachment.contentType,
   };
@@ -179,15 +183,19 @@ function materializeArtifactRef(
     return withContentPreview(artifactRefFromUrl(input), previewContext);
   }
   if (!("file" in input)) {
+    const kind = classifyChatAttachment({
+      contentType: input.contentType,
+      filename: input.filename,
+      url: input.url,
+    });
     return withContentPreview(
       {
         url: input.url,
-        ...attachmentPreviewSignalsFor(input),
-        kind: classifyChatAttachment({
-          contentType: input.contentType,
-          filename: input.filename,
-          url: input.url,
+        ...attachmentPreviewSignalsFor({
+          ...input,
+          refreshOnArtifactChange: shouldRefreshArtifactPreview(kind),
         }),
+        kind,
         filename: input.filename,
         contentType: input.contentType,
         ...(input.text$ === undefined ? {} : { text$: input.text$ }),
@@ -470,25 +478,30 @@ export function createThreadSidebarSignals(
         type: "artifact",
         source: { kind: "catalog", artifactId, ownerSignal: sessionSignal },
       });
-      await set(
+      const preview = await set(
         artifactCatalog.ensureSelectedArtifactPreview$,
         artifactId,
         sessionSignal,
       );
       signal.throwIfAborted();
       sessionSignal.throwIfAborted();
+      if (preview) {
+        set(preview.refreshOnOpen$);
+      }
     },
   );
 
   const openAttachment$ = command(
     ({ set }, input: ArtifactRefInput, signal: AbortSignal): void => {
       const sessionSignal = set(startSession$, signal);
+      const ref = materializeArtifactRef(input, previewContext, sessionSignal);
+      set(ref.refreshOnOpen$);
       set(publishTarget$, {
         type: "artifact",
         source: {
           kind: "attachment",
           ownerSignal: sessionSignal,
-          ref: materializeArtifactRef(input, previewContext, sessionSignal),
+          ref,
         },
       });
     },

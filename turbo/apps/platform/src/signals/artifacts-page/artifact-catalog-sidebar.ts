@@ -63,13 +63,16 @@ export function createArtifactCatalogSidebarSignals(
           );
           return;
         }
-        await set(
+        const selectedPreview = await set(
           catalog.ensureSelectedArtifactPreview$,
           artifactId,
           openSignal,
         );
         signal.throwIfAborted();
         openSignal.throwIfAborted();
+        if (selectedPreview) {
+          set(selectedPreview.refreshOnOpen$);
+        }
         await set(refreshWorkspaceLayout$, openSignal);
       },
     ),

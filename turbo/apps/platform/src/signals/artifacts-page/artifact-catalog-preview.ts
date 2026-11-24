@@ -4,11 +4,7 @@ import type { ArtifactCatalogViewSignals } from "./create-artifact-catalog-signa
 import type { MermaidDiagramPreviewCommand } from "../mermaid-diagram.ts";
 import { createMarkdownPreviewTree } from "../markdown-preview-tree.ts";
 import { createZipArtifactPreviewScope } from "../zip-artifact-preview.ts";
-import {
-  fetchPreviewText,
-  isTextPreviewKind,
-  type TextPreviewContent,
-} from "../text-preview.ts";
+import { fetchPreviewText, type TextPreviewContent } from "../text-preview.ts";
 
 import { publicAttachmentUrl } from "../../views/okou-page/attachment-url.ts";
 import {
@@ -47,14 +43,6 @@ export function createCatalogArtifactPreviewSignals(
     return detail && "file" in detail ? detail.file.size : undefined;
   });
   const text$ = computed(async (get): Promise<TextPreviewContent> => {
-    const detail = await get(artifactCatalog.selectedArtifactDetail$);
-    if (!detail) {
-      throw new Error("Selected artifact is unavailable");
-    }
-    const preview = artifactDetailPreview(detail);
-    if (!isTextPreviewKind(preview.kind)) {
-      throw new Error("Selected artifact is not a text preview");
-    }
     const resourceUrl = await get(resourceUrl$);
     if (!resourceUrl) {
       throw new Error("Selected artifact preview is unavailable");

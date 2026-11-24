@@ -78,6 +78,60 @@ test("Text artifacts open and close in the catalog sidebar", async () => {
   ).resolves.toBeInTheDocument();
 });
 
+test("A reopened catalog preview loads its newly selected file identity", async () => {
+  let detail = fileDetail("launch-plan.txt", "text/plain");
+  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
+    return respond(200, { artifacts: [detail], nextCursor: null });
+  });
+  context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
+    return respond(200, detail);
+  });
+  context.mocks.http.get(detail.file.url, () => {
+    return HttpResponse.text("The original launch plan");
+  });
+  const revised = fileDetail("revised-launch-plan.txt", "text/plain");
+  context.mocks.http.get(revised.file.url, () => {
+    return HttpResponse.text("The revised launch plan");
+  });
+  await setupPage({ context, path: "/artifacts?tab=file" });
+  await waitFor(() => {
+    expect(context.mocks.ably.hasSubscription("artifact:changed")).toBeTruthy();
+  });
+  click(await findArtifactAction(detail.title));
+  const preview = await screen.findByTestId("artifact-sidebar");
+  await expect(
+    within(preview).findByText("The original launch plan"),
+  ).resolves.toBeInTheDocument();
+
+  detail = {
+    ...revised,
+    file: {
+      ...revised.file,
+      id: "f0000000-0000-4000-a000-000000000003",
+    },
+  };
+  await act(() => {
+    context.mocks.ably.trigger("artifact:changed", { artifactId: ARTIFACT_ID });
+  });
+  await waitFor(() => {
+    expect(
+      within(screen.getByTestId("artifact-sidebar")).getByText(
+        revised.file.filename,
+      ),
+    ).toBeInTheDocument();
+  });
+  click(
+    getButtonByName("Close artifact", screen.getByTestId("artifact-sidebar")),
+  );
+  await waitFor(() => {
+    expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
+  });
+  click(await findArtifactAction(detail.title));
+  await expect(
+    screen.findByText("The revised launch plan"),
+  ).resolves.toBeInTheDocument();
+});
+
 test("HEIC catalog previews convert extensionless image sources", async () => {
   const detail = fileDetail("iPhone.heic", "image/heic");
   const source = `https://${"a".repeat(32)}.r2.cloudflarestorage.com/private/opaque?X-Amz-Signature=signature`;
