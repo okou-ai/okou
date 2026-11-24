@@ -185,22 +185,6 @@ function accountAccessRequests(
         signal,
       );
     },
-    updatePolicy: (
-      client: ApiClientFactory,
-      connectionId: string,
-      policy: ConnectorAccountPolicyChoice,
-    ) => {
-      return accept(
-        client(chatConnectorAccessContract).updateAccountPolicy({
-          params: { connectionId },
-          body: { target, policy },
-          fetchOptions: { signal },
-        }),
-        [200],
-        signal,
-        { showErrorToast: false },
-      );
-    },
   };
 }
 
@@ -269,11 +253,18 @@ export function createConnectorAccountAccessSettingsSignals(
       signal: AbortSignal,
     ) => {
       signal.throwIfAborted();
-      const request = get(request$);
-      if (!request) {
-        return;
-      }
-      await request.updatePolicy(get(apiClient$), connectionId, policy);
+      // A committed policy must refresh the Chat's cached overview even if
+      // the account manager closes while the response is in flight.
+      await accept(
+        get(apiClient$)(chatConnectorAccessContract).updateAccountPolicy({
+          params: { connectionId },
+          body: { target, policy },
+          fetchOptions: { signal },
+        }),
+        [200],
+        signal,
+        { showErrorToast: false },
+      );
       signal.throwIfAborted();
       set(invalidateConnectorAccountProjection$, target);
     },

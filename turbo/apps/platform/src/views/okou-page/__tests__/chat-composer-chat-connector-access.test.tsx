@@ -928,6 +928,93 @@ test("Show member account eligibility in Composer and send the first message wit
   });
 });
 
+test("Refresh Composer eligibility when a member policy save finishes after closing the account manager", async () => {
+  const user = userEvent.setup({ delay: null });
+  const committed = context.mocks.deferred<void>();
+  const response = context.mocks.deferred<void>();
+  const { access } = installAccess();
+  let workPolicy = {
+    connectionId: work.id,
+    allowed: true,
+    enabled: true,
+    expiresAt: null,
+  };
+  context.mocks.api(
+    chatConnectorAccessContract.accountPolicies,
+    ({ respond }) => {
+      return respond(200, [
+        workPolicy,
+        {
+          connectionId: personal.id,
+          allowed: true,
+          enabled: true,
+          expiresAt: null,
+        },
+      ]);
+    },
+  );
+  context.mocks.api(
+    chatConnectorAccessContract.overview,
+    ({ query, respond }) => {
+      const chat = access(query.threadId ?? "draft");
+      const overview = chatConnectorOverviewFixture({
+        target,
+        label: "GitHub",
+        accounts: [work, personal],
+        access: {
+          ...chat,
+          accounts: chat.accounts.map((account) => {
+            return account.connectionId === work.id
+              ? { ...account, enabled: workPolicy.enabled }
+              : account;
+          }),
+          currentConnectionId: workPolicy.enabled ? work.id : personal.id,
+        },
+        hasPermissions: true,
+      });
+      return respond(200, [overview]);
+    },
+  );
+  context.mocks.api(
+    chatConnectorAccessContract.updateAccountPolicy,
+    async ({ params, body, respond }) => {
+      expect(params.connectionId).toBe(work.id);
+      expect(body.policy).toBe("deny");
+      workPolicy = { ...workPolicy, allowed: false, enabled: false };
+      committed.resolve();
+      await response.promise;
+      return respond(200, workPolicy);
+    },
+  );
+  await setupPage({
+    context,
+    path: `/chats/${SCOUT_THREAD_ID}`,
+    locale: "en-US",
+    featureSwitches: { [FeatureSwitchKey.MemberConnectorAccountAccess]: true },
+  });
+  await user.click(await openMenu());
+  await user.click(await findFastControl("button", "Manage accounts"));
+  const manager = await screen.findByRole("dialog", {
+    name: "Manage GitHub accounts",
+  });
+  await user.click(
+    await findFastControl("button", "Work access, Allow, Always", manager),
+  );
+  await user.click(within(await screen.findByRole("menu")).getByText("Deny"));
+  await committed.promise;
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Manage GitHub accounts" }),
+    ).toBeNull();
+  });
+  await user.click(await openMenu());
+  const accounts = within(await screen.findByRole("group", { name: "GitHub" }));
+  expect(accounts.getAllByText("Allow")).toHaveLength(2);
+  response.resolve();
+  await expect(accounts.findByText("Deny")).resolves.toBeInTheDocument();
+});
+
 test.each([false, true])(
   "Initialize new Chat access before first Run, including selection retry=%s",
   async (rejectSelection) => {
