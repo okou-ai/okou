@@ -22,8 +22,6 @@ final class WorkspaceChatActions {
   private(set) var chatLinkError: String?
   private(set) var threadFeedback: ChatThreadFeedback?
   private(set) var fork: ChatForkStore?
-  /// A fork whose sheet is still leaving the screen. It closes when the sheet has dismissed.
-  private var dismissedFork: ChatForkStore?
   private(set) var threadPreview: ChatThreadPreviewResources?
 
   init(
@@ -345,20 +343,14 @@ final class WorkspaceChatActions {
       didFail: { [weak self] in self?.handle($0) })
   }
 
-  /// Removes the fork's sheet. A swipe makes SwiftUI call this from inside its own dismissal
-  /// update, where ending native editing re-entered the sheet's layout and crashed the app,
-  /// so the fork closes in the sheet's `onDismiss` instead.
+  /// Removes the fork's sheet. A swipe makes SwiftUI clear the sheet's item, and run its
+  /// `onDismiss`, from inside its own interactive dismissal. Closing the fork ends native
+  /// editing, and a keyboard change there re-enters the sheet's layout and aborts on an
+  /// exclusivity violation, so the fork closes on the next main-actor turn.
   func dismissFork() {
     guard let fork, !fork.isSending else { return }
     self.fork = nil
-    dismissedFork?.close()
-    dismissedFork = fork
-  }
-
-  /// Closes the fork once its sheet has finished dismissing.
-  func finishForkDismissal() {
-    dismissedFork?.close()
-    dismissedFork = nil
+    lifecycleTasks.track(Task { @MainActor in fork.close() })
   }
 
   private func finishFork(_ thread: ChatThread) {
@@ -377,7 +369,6 @@ final class WorkspaceChatActions {
     cancelOpening()
     fork?.close()
     fork = nil
-    finishForkDismissal()
     threadPreview?.close()
     threadPreview = nil
     threadFeedback = nil
@@ -454,10 +445,6 @@ extension WorkspaceStore {
 
   func dismissFork() {
     navigationActions.dismissFork()
-  }
-
-  func finishForkDismissal() {
-    navigationActions.finishForkDismissal()
   }
 
 }

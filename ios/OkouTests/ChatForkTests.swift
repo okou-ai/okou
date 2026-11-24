@@ -117,8 +117,6 @@ final class ChatForkTests: XCTestCase {
     let selection = try fixture.selection(in: source)
     workspace.startFork(selection, from: source)
     workspace.dismissFork()
-    // The sheet's onDismiss closes the fork after the presentation has ended.
-    workspace.finishForkDismissal()
     XCTAssertTrue(fixture.writes.value.withLock { $0.creations.isEmpty && $0.messages.isEmpty })
     workspace.startFork(selection, from: source)
     let fork = try XCTUnwrap(workspace.fork)

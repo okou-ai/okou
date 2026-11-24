@@ -359,8 +359,7 @@ private struct WorkspaceRootView: View {
     }
     .background { OkouColor.background.ignoresSafeArea() }
     .sheet(
-      item: Binding(get: { store.fork }, set: { if $0 == nil { store.dismissFork() } }),
-      onDismiss: store.finishForkDismissal
+      item: Binding(get: { store.fork }, set: { if $0 == nil { store.dismissFork() } })
     ) { flow in
       ChatForkView(
         flow: flow, webURL: store.webURL, threads: store.list.threads,
