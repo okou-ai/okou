@@ -1,5 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="conversation_queue_count">Coda (%1$d)</string>
+    <string name="conversation_queue_empty">Nessun elemento in coda</string>
+    <string name="conversation_queue_message">Messaggio</string>
+    <plurals name="conversation_queue_attachments">
+        <item quantity="one">Messaggio · %d allegato</item>
+        <item quantity="many">Messaggio · %d allegati</item>
+        <item quantity="other">Messaggio · %d allegati</item>
+    </plurals>
+    <string name="conversation_run_queued">In attesa di avvio</string>
     <string name="conversation_welcome">Su cosa vuoi lavorare?</string>
     <string name="conversation_welcome_detail">Di’ a Okou cosa vuoi fare.</string>
     <string name="conversation_jump_latest">Vai all’ultimo messaggio</string>
@@ -16,13 +25,8 @@
     <string name="conversation_queue">Coda</string>
     <string name="conversation_queue_automation">Automazione del flusso di lavoro</string>
     <string name="conversation_skip_automation">Salta questa automazione</string>
-    <string name="conversation_withdrawing">Ritiro in corso…</string>
-    <string name="conversation_skipping">Operazione in corso…</string>
-    <string name="conversation_withdraw_unknown">Esito del ritiro da verificare</string>
-    <string name="conversation_skip_unknown">Esito del salto da verificare</string>
     <string name="conversation_withdraw_failed">Impossibile ritirare il messaggio</string>
     <string name="conversation_skip_failed">Impossibile saltare questa automazione</string>
-    <string name="conversation_stop">Interrompi</string>
     <string name="conversation_find">Cerca messaggi</string>
     <string name="conversation_find_turns">Sfoglia i turni</string>
     <string name="conversation_find_empty">Nessun messaggio da cercare</string>

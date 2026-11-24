@@ -352,6 +352,9 @@ internal fun SettingsModal(
     }
 }
 
+internal fun settingsPanelContentPadding(compactHeight: Boolean) =
+    PaddingValues(start = 16.dp, end = 16.dp, bottom = if (compactHeight) 12.dp else 22.dp)
+
 @Composable
 internal fun SettingsSheet(
     title: String,
@@ -369,12 +372,8 @@ internal fun SettingsSheet(
             modifier
                 .fillMaxWidth()
                 .heightIn(max = windowHeight * 0.80f)
-                .padding(
-                    start = 16.dp,
-                    end = 16.dp,
-                    top = if (centered) 16.dp else 0.dp,
-                    bottom = 16.dp,
-                )
+                .padding(settingsPanelContentPadding(compactHeight = windowHeight < 480.dp))
+                .padding(top = if (centered) 16.dp else 0.dp)
                 .verticalScroll(scroll),
         ) {
             Box(Modifier.fillMaxWidth()) {

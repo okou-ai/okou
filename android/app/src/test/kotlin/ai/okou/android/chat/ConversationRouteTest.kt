@@ -408,19 +408,18 @@ class ConversationRouteTest {
     }
 
     @Test
-    fun staleHistoryShowsProgressWhenAnAutomationHasNoVisibleMessages() {
+    fun staleHistoryShowsProgressWhenThereAreNoVisibleMessages() {
         val eventId = scrollEventId(1)
-        val automation =
+        val usage =
             historyEventWire(
                 id = eventId,
                 seq = 1,
                 thread = CHAT_IN_PROJECT,
-                type = "input.automation",
+                type = "usage.recorded",
                 payload = "null",
             )
         fixture.historyRows = { request ->
-            val rows =
-                if (request.requestUrl?.queryParameter("sinceSeqId") == "1") "" else automation
+            val rows = if (request.requestUrl?.queryParameter("sinceSeqId") == "1") "" else usage
             jsonResponse(
                 """{"rows":[$rows],"cursor":{"lastEventId":"$eventId","lastSeqId":1},"hasMore":false}""",
             )
@@ -500,7 +499,7 @@ class ConversationRouteTest {
 
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h320dp")
-    fun staleSyncLetsTheQueuedInputCardProvideFeedback() {
+    fun staleSyncLetsTheQueuedTaskStatusProvideFeedback() {
         val eventId = scrollEventId(40)
         val prompt = "Please check the launch notes"
         val queuedInput =
@@ -536,7 +535,7 @@ class ConversationRouteTest {
             compose.runOnIdle { model.history.uiState.value.phase != HistoryPhase.Loading }
         }
         assertEquals(HistoryPhase.Ready, model.history.uiState.value.phase)
-        val queuedLabel = compose.activity.getString(R.string.history_queued)
+        val queuedLabel = compose.activity.getString(R.string.conversation_run_queued)
         val status = compose.onNodeWithText(queuedLabel).assertIsDisplayed()
         val statusBounds = status.getUnclippedBoundsInRoot()
         val refreshRequested = CountDownLatch(1)
@@ -558,7 +557,6 @@ class ConversationRouteTest {
                 .onNode(hasContentDescription(compose.activity.getString(R.string.history_syncing)))
                 .assertDoesNotExist()
             assertEquals(statusBounds, status.assertIsDisplayed().getUnclippedBoundsInRoot())
-            compose.onNodeWithText(prompt).assertIsDisplayed()
         } finally {
             allowRefreshResponse.countDown()
         }
@@ -611,9 +609,18 @@ class ConversationRouteTest {
             )
         }
         val model = createListModel()
+        val queueOpen = mutableStateOf(false)
         compose.setContent {
             val list by model.uiState.collectAsStateWithLifecycle()
-            OkouTheme { ConversationRoute(model.history, CHAT_IN_PROJECT, list) }
+            OkouTheme {
+                ConversationRoute(
+                    model.history,
+                    CHAT_IN_PROJECT,
+                    list,
+                    queueOpen = queueOpen.value,
+                    dismissQueue = { queueOpen.value = false },
+                )
+            }
         }
         compose.waitUntil(10_000) {
             compose.runOnIdle { model.uiState.value.listPhase == ChatReadPhase.Ready }
@@ -621,19 +628,24 @@ class ConversationRouteTest {
         compose.runOnIdle {
             model.history.open(model.uiState.value.threads.single { it.id == CHAT_IN_PROJECT })
         }
-        compose.waitUntilExactlyOneExists(hasText("First waiting message"), 10_000)
-        val queue = compose.onNodeWithTag("conversation_queue").assertIsDisplayed()
-        val queueBounds = queue.getUnclippedBoundsInRoot()
-        assertTrue(queueBounds.bottom - queueBounds.top <= 76.dp)
+        compose.waitUntilExactlyOneExists(hasText("Keep reading this reply"), 10_000)
         val reply = compose.onNodeWithText("Keep reading this reply").assertIsDisplayed()
         val beforeScroll = reply.getUnclippedBoundsInRoot()
+        compose.runOnIdle { queueOpen.value = true }
+        compose.waitUntilExactlyOneExists(hasText("First waiting message"), 10_000)
+        val queue = compose.onNodeWithTag("conversation_queue").assertIsDisplayed()
         queue.performScrollToIndex(1)
         compose.onNodeWithText("Morning brief").assertIsDisplayed()
-        compose.onNodeWithText("Every day at 9:00 AM · Queued").assertIsDisplayed()
-        compose.onNode(hasContentDescription("Skip this automation")).assertIsDisplayed()
-        assertEquals(beforeScroll, reply.assertIsDisplayed().getUnclippedBoundsInRoot())
+        compose
+            .onNodeWithText(compose.activity.getString(R.string.conversation_queue_automation))
+            .assertIsDisplayed()
+        compose
+            .onNode(hasContentDescription("Skip this automation, Morning brief"))
+            .assertIsDisplayed()
         queue.performScrollToIndex(4)
         compose.onNodeWithText("Waiting message 44").assertIsDisplayed()
+        compose.runOnIdle { queueOpen.value = false }
+        assertEquals(beforeScroll, reply.assertIsDisplayed().getUnclippedBoundsInRoot())
     }
 
     @Test
