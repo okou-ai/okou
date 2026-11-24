@@ -234,6 +234,7 @@ function ownedChatThread(
 }
 
 export function chatThreadDraft(args: {
+  readonly legacyMemberDraft?: boolean;
   readonly orgId: string;
   readonly threadId: string;
   readonly userId: string;
@@ -257,7 +258,9 @@ export function chatThreadDraft(args: {
         and(
           eq(chatThreads.id, args.threadId),
           chatThreadOrganizationPredicate(args.orgId),
-          eq(chatThreads.userId, args.userId),
+          args.legacyMemberDraft
+            ? undefined
+            : eq(chatThreads.userId, args.userId),
         ),
       )
       .limit(1);
@@ -544,7 +547,6 @@ export function chatThreadDraftIds(args: {
       .where(
         and(
           eq(chatThreadDrafts.userId, args.userId),
-          eq(chatThreads.userId, args.userId),
           chatThreadOrganizationPredicate(args.orgId),
         ),
       );
@@ -1162,6 +1164,7 @@ export const updateChatThreadDraft$ = command(
   async (
     { set },
     args: {
+      readonly legacyMemberDraft?: boolean;
       readonly threadId: string;
       readonly userId: string;
       readonly orgId: string;
@@ -1175,6 +1178,7 @@ export const updateChatThreadDraft$ = command(
       persistChatThreadDraft$,
       {
         chatThreadId: args.threadId,
+        legacyMemberDraft: args.legacyMemberDraft,
         orgId: args.orgId,
         userId: args.userId,
         suggestionPreset: args.suggestionPreset,

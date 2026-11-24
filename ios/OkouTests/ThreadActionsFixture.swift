@@ -231,11 +231,10 @@ final class ThreadActionsFixture: Sendable {
         body:
           "{\"rows\":[\(rows)],\"cursor\":{\"lastEventId\":\"\(Self.messageID(2))\",\"lastSeqId\":2},\"hasMore\":false}"
       )
-    case "/api/chat-threads/\(Self.thread)/draft":
-      if state.value.withLock({ $0.parentStatus == 404 }) { return missingThread }
-      return ChatHTTPResponse(body: #"{"draftUserMessage":null,"draftAttachments":null}"#)
+    case "/api/chat-threads/\(Self.thread)/composer-draft":
+      return composerDraftResponse(request, state: state)
     case "/api/chat-threads/\(Self.thread)":
-      return parentResponse(request, state: state)
+      return parentResponse(state: state)
     case "/api/chat-threads/\(Self.thread)/connector-selections":
       return ChatHTTPResponse(body: "{\"selections\":[]}")
     case "/api/feature-switches":
@@ -273,14 +272,27 @@ final class ThreadActionsFixture: Sendable {
     }
   }
 
-  private static func parentResponse(_ request: URLRequest, state: StateBox) -> ChatHTTPResponse {
+  private static func composerDraftResponse(_ request: URLRequest, state: StateBox)
+    -> ChatHTTPResponse
+  {
     if request.httpMethod == "PATCH" {
       let missing = state.value.withLock { state in
         if state.failNext.removeValue(forKey: "draft-save") == 404 { state.parentStatus = 404 }
         return state.parentStatus == 404
       }
-      return missing ? missingThread : ChatHTTPResponse(status: 204, body: "")
+      return missing ? missingDraftParent : ChatHTTPResponse(status: 204, body: "")
     }
+    if state.value.withLock({ $0.parentStatus == 404 }) { return missingDraftParent }
+    return ChatHTTPResponse(body: #"{"draftUserMessage":null,"draftAttachments":null}"#)
+  }
+
+  private static var missingDraftParent: ChatHTTPResponse {
+    ChatHTTPResponse(
+      status: 404,
+      body: #"{"error":{"code":"CHAT_THREAD_NOT_FOUND","message":"Chat thread not found"}}"#)
+  }
+
+  private static func parentResponse(state: StateBox) -> ChatHTTPResponse {
     let status = state.value.withLock { $0.parentStatus }
     if status == 404 { return missingThread }
     if status != 200 {

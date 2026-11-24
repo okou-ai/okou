@@ -408,7 +408,7 @@ extension ChatSync {
   }
 
   public func cancellationRecoveryPending(threadID: String) async throws -> Bool {
-    let detail: ThreadDetail = try await withExistingChatThread(threadID) {
+    let detail: ThreadDetail = try await withExistingChatThread(threadID, at: .detail) {
       try await self.client.request("/api/chat-threads/\(threadID)")
     }
     return detail.cancellationRecoveryPending

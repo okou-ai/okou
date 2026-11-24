@@ -306,7 +306,8 @@ final class ChatModelCommandTests: XCTestCase {
           return ChatHTTPResponse(status: 503, body: "{\"error\":{\"message\":\"Uncertain send\"}}")
         }
         return ChatHTTPResponse(body: "{\"threadId\":\"\(ModelHTTPFixtures.threadID)\"}")
-      case "/api/chat-threads/\(ModelHTTPFixtures.threadID)/draft":
+      case "/api/chat-threads/\(ModelHTTPFixtures.threadID)/composer-draft":
+        if request.httpMethod == "PATCH" { return ChatHTTPResponse(status: 204, body: "") }
         return ChatHTTPResponse(body: "{}")
       case "/api/chat-threads/\(ModelHTTPFixtures.threadID)/connector-selections":
         return ChatHTTPResponse(body: "{\"selections\":[]}")
@@ -319,7 +320,6 @@ final class ChatModelCommandTests: XCTestCase {
         return ChatHTTPResponse(
           body: "{\"rows\":[],\"cursor\":{\"lastEventId\":null,\"lastSeqId\":0},\"hasMore\":false}")
       case "/api/chat-threads/\(ModelHTTPFixtures.threadID)":
-        if request.httpMethod == "PATCH" { return ChatHTTPResponse(status: 204, body: "") }
         return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
       case "/api/chat-threads/\(ModelHTTPFixtures.threadID)/metadata":
         let metadata =

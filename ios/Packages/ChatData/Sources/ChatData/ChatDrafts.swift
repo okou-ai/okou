@@ -76,8 +76,8 @@ public struct ChatDraftRepository: Sendable {
     case .unassigned: throw ChatError.composerUnavailable
     case .workspace: return try await client.request("/api/chat-drafts/composer")
     case .thread(let id):
-      return try await withExistingChatThread(id) {
-        try await client.request("/api/chat-threads/\(id)/draft")
+      return try await withExistingChatThread(id, at: .composerDraft) {
+        try await client.request("/api/chat-threads/\(id)/composer-draft")
       }
     }
   }
@@ -88,9 +88,10 @@ public struct ChatDraftRepository: Sendable {
       try await client.data(
         "/api/chat-drafts/composer", method: "PATCH", body: JSONEncoder().encode(draft))
     case .thread(let id):
-      _ = try await withExistingChatThread(id) {
+      _ = try await withExistingChatThread(id, at: .composerDraft) {
         try await client.data(
-          "/api/chat-threads/\(id)", method: "PATCH", body: JSONEncoder().encode(draft))
+          "/api/chat-threads/\(id)/composer-draft", method: "PATCH",
+          body: JSONEncoder().encode(draft))
       }
     }
   }

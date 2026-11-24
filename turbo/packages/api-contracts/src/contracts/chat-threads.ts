@@ -634,7 +634,6 @@ export const chatThreadByIdContract = c.router({
       204: c.noBody(),
       400: apiErrorSchema,
       401: apiErrorSchema,
-      404: apiErrorSchema,
     },
     summary: "Update chat thread draft message and attachments",
   },
@@ -670,9 +669,34 @@ export const chatThreadDraftContract = c.router({
       200: chatThreadDraftSchema,
       400: apiErrorSchema,
       401: apiErrorSchema,
-      404: apiErrorSchema,
     },
     summary: "Get chat thread draft content and attachments",
+  },
+  readComposer: {
+    method: "GET",
+    path: "/api/chat-threads/:id/composer-draft",
+    headers: authHeadersSchema,
+    pathParams: chatThreadIdPathParamsSchema,
+    responses: {
+      200: chatThreadDraftSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary:
+      "Read a private thread draft or report that the thread is unavailable",
+  },
+  saveComposer: {
+    method: "PATCH",
+    path: "/api/chat-threads/:id/composer-draft",
+    headers: authHeadersSchema,
+    pathParams: chatThreadIdPathParamsSchema,
+    body: chatThreadByIdContract.patch.body,
+    responses: {
+      ...chatThreadByIdContract.patch.responses,
+      404: apiErrorSchema,
+    },
+    summary: "Save or clear a draft on an accessible private thread",
   },
 });
 

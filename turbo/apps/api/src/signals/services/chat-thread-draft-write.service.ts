@@ -14,6 +14,7 @@ import { writeDb$ } from "../external/db";
 import { repairUserMessageText } from "./chat-user-message.service";
 
 interface ChatThreadDraftWrite {
+  readonly legacyMemberDraft?: boolean;
   readonly orgId: string;
   readonly chatThreadId: string;
   readonly userId: string;
@@ -32,7 +33,9 @@ export const persistChatThreadDraft$ = command(
     const db = set(writeDb$);
     const scopedThread = and(
       eq(chatThreads.id, draft.chatThreadId),
-      eq(chatThreads.userId, draft.userId),
+      draft.legacyMemberDraft
+        ? undefined
+        : eq(chatThreads.userId, draft.userId),
       chatThreadOrganizationPredicate(draft.orgId),
     );
     if (draft.draftUserMessage === null) {

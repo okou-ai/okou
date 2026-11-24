@@ -265,6 +265,31 @@ describe("thread drafts", () => {
     await expect(servedDraftText(fixture)).resolves.toBe("owned");
   });
 
+  it("preserves installed clients' member drafts and empty responses on the original routes", async () => {
+    const { actor, threadId } = await createDraftFixture();
+    const legacy = chat.legacyThreadDraft(actor, threadId);
+    const peer = chat.legacyThreadDraft(
+      bdd.user({ orgId: actor.orgId }),
+      threadId,
+    );
+    const empty = { draftUserMessage: null, draftAttachments: null };
+    await legacy.save(draftBody("owner draft"));
+    await expect(chat.readThreadDraft(actor, threadId)).resolves.toStrictEqual(
+      draftBody("owner draft"),
+    );
+    await peer.save(draftBody("peer draft"));
+    await expect(peer.read()).resolves.toStrictEqual(draftBody("peer draft"));
+    await expect(legacy.read()).resolves.toStrictEqual(
+      draftBody("owner draft"),
+    );
+    await chat.patchThread(actor, threadId, empty);
+    await expect(legacy.read()).resolves.toStrictEqual(empty);
+    await chat.deleteThread(actor, threadId);
+    await legacy.save(draftBody("late save"));
+    await expect(legacy.read()).resolves.toStrictEqual(empty);
+    await legacy.save(empty);
+  });
+
   it("removes the draft with the thread it belongs to", async () => {
     const fixture = await createDraftFixture();
     await chat.patchThread(
@@ -277,13 +302,19 @@ describe("thread drafts", () => {
     await chat.deleteThread(fixture.actor, fixture.threadId);
     await expect(
       chat.requestReadThreadDraft(fixture.actor, fixture.threadId, [404]),
-    ).resolves.toMatchObject({ body: { error: { code: "NOT_FOUND" } } });
-    await chat.patchThread(
-      fixture.actor,
-      fixture.threadId,
-      draftBody("late save"),
-      404,
-    );
+    ).resolves.toMatchObject({
+      body: { error: { code: "CHAT_THREAD_NOT_FOUND" } },
+    });
+    await expect(
+      chat.patchThread(
+        fixture.actor,
+        fixture.threadId,
+        draftBody("late save"),
+        404,
+      ),
+    ).resolves.toMatchObject({
+      body: { error: { code: "CHAT_THREAD_NOT_FOUND" } },
+    });
     await chat.patchThread(
       fixture.actor,
       fixture.threadId,

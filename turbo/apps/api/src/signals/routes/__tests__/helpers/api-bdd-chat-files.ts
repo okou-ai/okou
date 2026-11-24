@@ -404,7 +404,7 @@ export function createChatFilesBddApi(context: TestContext) {
     statuses: readonly Status[],
   ) {
     return await accept(
-      chatFilesApp(context)(chatThreadDraftContract).get({
+      chatFilesApp(context)(chatThreadDraftContract).readComposer({
         headers: authenticate(context, actor),
         params: { id: threadId },
       }),
@@ -812,6 +812,32 @@ export function createChatFilesBddApi(context: TestContext) {
       );
     },
 
+    legacyThreadDraft(actor: ApiTestUser, threadId: string) {
+      const params = { id: threadId };
+      return {
+        read: async () => {
+          return (
+            await accept(
+              chatFilesApp(context)(chatThreadDraftContract).get({
+                headers: authenticate(context, actor),
+                params,
+              }),
+              [200],
+            )
+          ).body;
+        },
+        save: async (body: ChatThreadDraft) => {
+          return await accept(
+            threadByIdClient().patch({
+              headers: authenticate(context, actor),
+              params,
+              body,
+            }),
+            [204],
+          );
+        },
+      };
+    },
     requestReadThreadDraft,
     async readThreadDraft(
       actor: ApiTestUser,
@@ -830,7 +856,7 @@ export function createChatFilesBddApi(context: TestContext) {
         readonly draftAttachments?: readonly PersistedAttachment[] | null;
       },
       expectedStatus: 204 | 404 = 204,
-    ): Promise<void> {
+    ) {
       const requestBody = {
         suggestionPreset: body.suggestionPreset,
         draftUserMessage: body.draftUserMessage,
@@ -843,8 +869,8 @@ export function createChatFilesBddApi(context: TestContext) {
             }),
       };
 
-      await accept(
-        threadByIdClient().patch({
+      return await accept(
+        chatFilesApp(context)(chatThreadDraftContract).saveComposer({
           headers: authenticate(context, actor),
           params: { id: threadId },
           body: chatThreadDraftSchema.parse(requestBody),

@@ -52,7 +52,7 @@ final class ChatDraftTests: XCTestCase {
   }
 
   func testOnlyCanonicalThreadDraftMissesRetireTheParent() async throws {
-    let code = Mutex("NOT_FOUND")
+    let code = Mutex("CHAT_THREAD_NOT_FOUND")
     let fixture = ChatHTTPFixture { _ in
       let current = code.withLock { $0 }
       return ChatHTTPResponse(
@@ -71,10 +71,10 @@ final class ChatDraftTests: XCTestCase {
       _ = try await repository.load(.workspace)
       XCTFail("The workspace draft request must fail independently")
     } catch let error as APIClientError { XCTAssertEqual(error.statusCode, 404) }
-    code.withLock { $0 = "OTHER_RESOURCE_NOT_FOUND" }
+    code.withLock { $0 = "NOT_FOUND" }
     do {
       _ = try await repository.load(.thread("chat"))
-      XCTFail("An unrelated 404 must remain a request error")
+      XCTFail("An older server missing the endpoint must leave the draft intact")
     } catch let error as APIClientError { XCTAssertEqual(error.statusCode, 404) }
   }
 
@@ -108,8 +108,9 @@ final class ChatDraftTests: XCTestCase {
       paths.withLock { $0 },
       [
         "GET /api/chat-drafts/composer", "PATCH /api/chat-drafts/composer",
-        "PATCH /api/chat-drafts/composer", "GET /api/chat-threads/thread/draft",
-        "PATCH /api/chat-threads/thread", "PATCH /api/chat-threads/thread"
+        "PATCH /api/chat-drafts/composer", "GET /api/chat-threads/thread/composer-draft",
+        "PATCH /api/chat-threads/thread/composer-draft",
+        "PATCH /api/chat-threads/thread/composer-draft"
       ])
     XCTAssertTrue(writes.withLock { $0.values.allSatisfy { $0 == ComposerDraft() } })
     let encoded =
