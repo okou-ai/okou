@@ -6,7 +6,10 @@ import { connectorAccountsContract } from "@okouai/api-contracts/contracts/conne
 import { runConnectorAccountsContract } from "@okouai/api-contracts/contracts/run-connector-accounts";
 
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
-import { builtinConnectorManualGrantContract } from "@okouai/api-contracts/contracts/connectors";
+import {
+  builtinConnectorManualGrantContract,
+  builtinConnectorOauthStartContract,
+} from "@okouai/api-contracts/contracts/connectors";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
 import { expect, test } from "vitest";
@@ -20,6 +23,7 @@ import {
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import { createChatEvent } from "../../../mocks/mock-helpers.ts";
+import { mockOAuthCompletions } from "./connector-page-test-helpers.ts";
 
 const context = testContext();
 const THREAD_ID = "b0000000-0000-4000-a000-000000000902";
@@ -918,19 +922,55 @@ test("An unnamed manual reconnect account uses its account label in the card and
   ).resolves.toBeInTheDocument();
 });
 
-test("An exact OAuth account opens the in-chat dialog with only its stored auth method", async () => {
-  mockExactReconnectAccount("reconnect-required", {
+test("An exact OAuth account reconnects in one click and continues only after success", async () => {
+  const complete = mockExactReconnectAccount("reconnect-required", {
     accountAuthMethod: "oauth",
   });
-  await setupChat(exactReconnectUrl().toString());
+  const completedAttempts = mockOAuthCompletions(context);
+  const oauthAttemptId = crypto.randomUUID();
+  const popup = context.mocks.browser.authWindow();
+  Object.defineProperty(popup, "location", {
+    value: { href: "about:blank" },
+  });
+  context.mocks.browser.open(popup);
+  const authorizationUrl =
+    "https://provider.example.test/reconnect-work-github";
+  let submittedAccount: unknown = null;
+  let continuationPrompt: string | null = null;
+  context.mocks.api(
+    builtinConnectorOauthStartContract.start,
+    ({ params, body, respond }) => {
+      expect(params.connectorSlug).toBe("github");
+      expect(body.authMethod).toBe("oauth");
+      submittedAccount = body.account;
+      return respond(200, {
+        authorizationUrl,
+        oauthAttemptId,
+        connectionId: EXACT_CONNECTION_ID,
+      });
+    },
+  );
+  await setupChat(exactReconnectUrl().toString(), (prompt) => {
+    continuationPrompt = prompt;
+  });
 
   const card = await screen.findByTestId("connector-action-card");
-  click(queryAllByRoleFast("button", card)[0]!);
-  const dialog = await screen.findByRole("dialog", {
-    name: "GitHub · Work GitHub",
+  click(buttonIn(card, "Reconnect"));
+  await waitFor(() => {
+    expect(popup.location.href).toBe(authorizationUrl);
+    expect(submittedAccount).toStrictEqual({
+      intent: "reconnect",
+      connectionId: EXACT_CONNECTION_ID,
+    });
   });
-  expect(within(dialog).queryByPlaceholderText("work-github-token")).toBeNull();
-  expect(buttonIn(dialog, "Reconnect")).toBeEnabled();
+  expect(continuationPrompt).toBeNull();
+
+  complete();
+  completedAttempts.set(oauthAttemptId, EXACT_CONNECTION_ID);
+  popup.close();
+  await waitFor(() => {
+    expect(continuationPrompt).toBe("Continue the account-specific task");
+  });
   expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
 });
 
