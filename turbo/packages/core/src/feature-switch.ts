@@ -11,7 +11,11 @@
  */
 
 import { FeatureSwitchKey } from "./feature-switch-key";
-import { STAFF_ORG_ID_HASHES, fnv1a } from "./identity-hash";
+import {
+  STAFF_ORG_ID_FINGERPRINTS,
+  STAFF_ORG_ID_HASHES,
+  fnv1a,
+} from "./identity-hash";
 import { isStaffOrg } from "./staff-org";
 
 export interface FeatureSwitch {
@@ -107,6 +111,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Member-wide connector account access",
     description: "Apply connector account eligibility across a member's chats.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.EmailIntegration]: {
     maintainer: "yuma@okou.ai",
@@ -455,6 +460,16 @@ function evaluateSwitch(fs: FeatureSwitch, hashes: ResolvedHashes): boolean {
   if (hashes.orgIdHash && fs.enabledOrgIdHashes?.includes(hashes.orgIdHash))
     return true;
   return false;
+}
+
+/** Digests for evaluating a switch's staff organization audience in PostgreSQL. */
+export function getStaffOrgRolloutDigests(key: FeatureSwitchKey): string[] {
+  const orgHashes = FEATURE_SWITCHES[key].enabledOrgIdHashes;
+  return STAFF_ORG_ID_FINGERPRINTS.filter(({ hash }) => {
+    return orgHashes?.includes(hash);
+  }).map(({ sha256 }) => {
+    return sha256;
+  });
 }
 
 /** Whether this identity may opt into or manage a switch in Lab. */

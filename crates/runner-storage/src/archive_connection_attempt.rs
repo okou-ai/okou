@@ -1,16 +1,25 @@
+use std::error::Error;
 use std::future::Future;
+use std::io;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
-use futures_util::future::{BoxFuture, FutureExt as _};
+use futures_util::future::{BoxFuture, FutureExt as _, TryFutureExt as _};
 use serde::Serialize;
 use tower_layer::Layer;
 use tower_service::Service;
 
 tokio::task_local! {
-    static CURRENT_OBSERVER: ConnectionAttemptObserver;
+    static CURRENT_ATTEMPT: ConnectionAttemptScope;
 }
+
+struct ConnectionAttemptScope {
+    observer: ConnectionAttemptObserver,
+    connect_timeout: Option<Duration>,
+}
+
+type ConnectorError = Box<dyn Error + Send + Sync>;
 
 /// Bounded connector lifecycle observed before one archive header phase ended.
 ///
@@ -45,11 +54,19 @@ struct ConnectionAttemptState {
 }
 
 impl ConnectionAttemptObserver {
-    pub(crate) async fn scope<F>(&self, future: F) -> F::Output
+    pub(crate) async fn scope<F>(&self, connect_timeout: Option<Duration>, future: F) -> F::Output
     where
         F: Future,
     {
-        CURRENT_OBSERVER.scope(self.clone(), future).await
+        CURRENT_ATTEMPT
+            .scope(
+                ConnectionAttemptScope {
+                    observer: self.clone(),
+                    connect_timeout,
+                },
+                future,
+            )
+            .await
     }
 
     pub(crate) fn freeze(&self) -> ArchiveConnectionAttempt {
@@ -191,24 +208,29 @@ where
     S: Service<Request>,
     S::Future: Send + 'static,
     S::Response: Send + 'static,
-    S::Error: Send + 'static,
+    S::Error: Into<ConnectorError> + Send + 'static,
 {
     type Response = S::Response;
-    type Error = S::Error;
+    type Error = ConnectorError;
     type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
 
     fn poll_ready(&mut self, context: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(context)
+        self.inner.poll_ready(context).map_err(Into::into)
     }
 
     fn call(&mut self, request: Request) -> Self::Future {
-        let guard = CURRENT_OBSERVER
-            .try_with(ConnectionAttemptObserver::start)
-            .ok()
-            .flatten();
-        let future = self.inner.call(request);
+        let (guard, connect_timeout) = CURRENT_ATTEMPT
+            .try_with(|scope| (scope.observer.start(), scope.connect_timeout))
+            .unwrap_or_default();
+        let future = self.inner.call(request).err_into();
         async move {
-            let result = future.await;
+            let result = if let Some(timeout) = connect_timeout {
+                tokio::time::timeout(timeout, future)
+                    .await
+                    .unwrap_or_else(|_| Err(io::Error::from(io::ErrorKind::TimedOut).into()))
+            } else {
+                future.await
+            };
             if let Some(guard) = guard {
                 guard.finish(if result.is_ok() {
                     ConnectionAttemptOutcome::Succeeded

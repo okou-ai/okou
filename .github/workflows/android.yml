@@ -22,42 +22,37 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # Detect release-please context across all event types (PR, push, merge queue).
-  detect-release:
+  detect:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
       pull-requests: read
     outputs:
-      skip: ${{ steps.check.outputs.skip }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          sparse-checkout: .github/actions/detect-release
-          persist-credentials: false
-      - uses: ./.github/actions/detect-release
-        id: check
-
-  detect:
-    needs: [detect-release]
-    if: needs.detect-release.outputs.skip != 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
+      skip: ${{ steps.release.outputs.skip }}
       needed: ${{ steps.changes.outputs.needed }}
       shallow-discovery: ${{ steps.changes.outputs.shallow-discovery }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 32
+          # The selector compares complete Git trees, so only its scripts need checkout.
+          sparse-checkout: |
+            .github/actions/detect-release
+            .github/scripts/checks
+            android/scripts
+          persist-credentials: false
+      - uses: ./.github/actions/detect-release
+        id: release
       - name: Verify change detection and scripts
+        if: steps.release.outputs.skip == 'false'
         run: |
           for script in android/scripts/*.sh; do bash -n "$script"; done
           shellcheck android/scripts/*.sh
           python3 android/scripts/ci-changed.test.py
       - name: Select Android checks
         id: changes
+        if: steps.release.outputs.skip == 'false'
         env:
           EVENT_NAME: ${{ github.event_name }}
           CHECKOUT_REF: ${{ github.ref }}
@@ -364,32 +359,23 @@ jobs:
           retention-days: 1
 
   ci-gate-android:
-    needs:
-      [
-        detect-release,
-        detect,
-        build,
-        build-test,
-        instrumentation,
-        release-smoke,
-      ]
+    needs: [detect, build, build-test, instrumentation, release-smoke]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Validate CI results
         env:
-          RELEASE_DETECT: ${{ needs.detect-release.result }}
-          IS_RELEASE: ${{ needs.detect-release.outputs.skip }}
           DETECT: ${{ needs.detect.result }}
+          IS_RELEASE: ${{ needs.detect.outputs.skip }}
           NEEDED: ${{ needs.detect.outputs.needed }}
           BUILD: ${{ needs.build.result }}
           JVM: ${{ needs.build-test.result }}
           INSTRUMENTATION: ${{ needs.instrumentation.result }}
           RELEASE_SMOKE: ${{ needs.release-smoke.result }}
         run: |
-          if [ "$RELEASE_DETECT" != success ]; then
-            echo "::error::Android release classification must succeed; got $RELEASE_DETECT"
+          if [ "$DETECT" != success ]; then
+            echo "::error::Android CI selection must succeed; got $DETECT"
             exit 1
           fi
           if [ "$IS_RELEASE" != true ] && [ "$IS_RELEASE" != false ]; then
@@ -399,10 +385,6 @@ jobs:
           if [ "$IS_RELEASE" = true ]; then
             echo 'Release-please: skipping Android validation; production builds its own APK.'
             exit 0
-          fi
-          if [ "$DETECT" != success ]; then
-            echo "::error::Android change detection must succeed; got $DETECT"
-            exit 1
           fi
           case "$NEEDED:$BUILD:$JVM:$INSTRUMENTATION:$RELEASE_SMOKE" in
             true:success:success:success:success)
