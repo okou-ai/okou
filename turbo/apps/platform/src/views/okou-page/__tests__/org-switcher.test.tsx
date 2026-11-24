@@ -225,11 +225,7 @@ test("Show the default texture and the workspace initial for workspaces that nev
     const logo = within(menu).getByRole("img", { name });
     expect(logo).not.toHaveAttribute("src");
     expect(logo).toBeEmptyDOMElement();
-    if (initial === null) {
-      expect(logo).not.toHaveAttribute("data-initial");
-    } else {
-      expect(logo).toHaveAttribute("data-initial", initial);
-    }
+    expect(logo.dataset.initial ?? null).toBe(initial);
   }
   expect(
     within(orgSwitcher).getByRole("img", { name: "workspace-3e46915f" }),

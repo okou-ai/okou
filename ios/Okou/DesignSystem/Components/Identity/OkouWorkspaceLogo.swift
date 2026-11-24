@@ -22,9 +22,10 @@ struct OkouWorkspaceLogo: View {
   }
 
   /// Each colourway's `letter` in core/src/workspace-logo.ts, in the same order: the ground's
-  /// own hue, solved to 4.5:1 against the texture. `sync-workspace-assets.py --check` keeps them equal.
+  /// own hue, solved to 4.5:1 against the texture. `sync-workspace-assets.py --check` keeps
+  /// them equal.
   nonisolated static let letterHexes: [UInt32] = [
-    0x6E485B, 0x480000, 0x395766, 0xD9ECFF, 0x675900, 0x6E2F00, 0x465900, 0xEAFFFE,
+    0x6E485B, 0x480000, 0x395766, 0xD9ECFF, 0x675900, 0x6E2F00, 0x465900, 0xEAFFFE
   ]
 
   nonisolated static func letterColor(for workspaceID: String) -> UIColor {
@@ -95,7 +96,7 @@ struct OkouWorkspaceLogo: View {
       .overlay {
         if let initial = Self.initial(for: name) {
           Text(verbatim: initial)
-            .font(.system(size: Self.initialPointSize(initial, tile: size), weight: .semibold))
+            .font(.okou(size: Self.initialPointSize(initial, tile: size), weight: .semibold))
             .foregroundStyle(Color(uiColor: Self.letterColor(for: workspaceID)))
             .accessibilityHidden(true)
         }
@@ -162,9 +163,9 @@ enum OkouWorkspaceMenuLogos {
       let text = NSAttributedString(
         string: initial,
         attributes: [
-          .font: UIFont.systemFont(
+          .font: OkouTypography.font(
             ofSize: OkouWorkspaceLogo.initialPointSize(initial, tile: side), weight: .semibold),
-          .foregroundColor: ink,
+          .foregroundColor: ink
         ])
       let glyph = text.size()
       text.draw(at: CGPoint(x: (side - glyph.width) / 2, y: (side - glyph.height) / 2))

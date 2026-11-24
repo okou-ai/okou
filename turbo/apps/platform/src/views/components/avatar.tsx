@@ -209,12 +209,14 @@ export function DefaultWorkspaceLogo({
       className={cn(
         // The initial is generated content, so it never joins the name in
         // the accessible label or in the text of the row it sits in.
-        "flex shrink-0 select-none items-center justify-center bg-[length:160%] bg-center font-semibold leading-none before:content-[attr(data-initial)] before:[text-box:trim-both_cap_alphabetic]",
+        "flex shrink-0 select-none items-center justify-center bg-[length:160%] bg-center font-semibold before:content-[attr(data-initial)] before:[text-box:trim-both_cap_alphabetic]",
         THUMBNAIL_SIZE[size],
         THUMBNAIL_RADIUS[size],
         initial !== null && isWideWorkspaceInitial(initial)
           ? WORKSPACE_INITIAL_WIDE_TEXT[size]
           : WORKSPACE_INITIAL_TEXT[size],
+        // After the font size, which tailwind-merge treats as also setting it.
+        "leading-none",
       )}
       style={{
         backgroundColor: colorway.ground,
