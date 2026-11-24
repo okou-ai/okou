@@ -4,6 +4,7 @@ import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.OkouConfirmationDialog
 import ai.okou.android.R
 import ai.okou.android.SettingsGroup
+import ai.okou.android.WithButtonFocusOutline
 import ai.okou.android.currentWindowSizeDp
 import ai.okou.android.updates.updateFocusOutline
 import androidx.annotation.StringRes
@@ -57,6 +58,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 
+internal const val SessionEntryCompactHeight = 480
+internal val SessionEntryContentWidth = 360.dp
+
+internal fun sessionEntryTopPadding(windowHeight: Int) =
+    if (windowHeight < SessionEntryCompactHeight) 12.dp
+    else (windowHeight * 0.08f).coerceIn(32f, 80f).dp
+
 @Composable
 internal fun SessionEntryScreen(
     state: SessionUiState,
@@ -66,11 +74,11 @@ internal fun SessionEntryScreen(
     openWorkspaceSetup: () -> Unit,
 ) {
     val windowHeight = currentWindowSizeDp().height
-    val compact = windowHeight < 480
+    val compact = windowHeight < SessionEntryCompactHeight
     val groupSpacing = if (compact) 12.dp else 24.dp
     if (state.stage == SessionStage.Restoring) {
         Box(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.Center) {
-            OkouAuthLogo()
+            OkouAuthLogo(compact)
         }
         return
     }
@@ -107,17 +115,17 @@ internal fun SessionEntryScreen(
     Box(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.TopCenter) {
         Column(
             Modifier.padding(horizontal = if (compact) 16.dp else 24.dp)
-                .widthIn(max = 360.dp)
+                .widthIn(max = SessionEntryContentWidth)
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .padding(
-                    top = if (compact) 12.dp else (windowHeight * 0.08f).coerceIn(32f, 80f).dp,
+                    top = sessionEntryTopPadding(windowHeight),
                     bottom = if (compact) 12.dp else 24.dp,
                 ),
             verticalArrangement = Arrangement.spacedBy(groupSpacing),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            OkouAuthLogo()
+            OkouAuthLogo(compact)
             SessionEntryHeading(
                 title,
                 detail,
@@ -315,23 +323,20 @@ private fun SessionPrimaryAction(
     enabled: Boolean = true,
 ) {
     val colors = MaterialTheme.colorScheme
-    val shape = ButtonDefaults.shape
     val foreground = if (enabled) colors.onPrimary else colors.onSurfaceVariant
-    Button(
-        onClick = { if (enabled) onClick() },
-        modifier =
-            Modifier.fillMaxWidth()
-                .heightIn(min = 48.dp)
-                .updateFocusOutline(shape, foreground)
-                .sessionActionAvailability(enabled),
-        shape = shape,
-        colors =
-            ButtonDefaults.buttonColors(
-                containerColor = if (enabled) colors.primary else colors.surfaceVariant,
-                contentColor = foreground,
-            ),
-    ) {
-        Text(stringResource(label), textAlign = TextAlign.Center)
+    WithButtonFocusOutline(if (enabled) foreground else LocalActivityStatusColor.current) {
+        Button(
+            onClick = { if (enabled) onClick() },
+            modifier =
+                Modifier.fillMaxWidth().heightIn(min = 48.dp).sessionActionAvailability(enabled),
+            colors =
+                ButtonDefaults.buttonColors(
+                    containerColor = if (enabled) colors.primary else colors.surfaceVariant,
+                    contentColor = foreground,
+                ),
+        ) {
+            Text(stringResource(label), textAlign = TextAlign.Center)
+        }
     }
 }
 
