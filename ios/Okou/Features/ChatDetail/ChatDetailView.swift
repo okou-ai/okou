@@ -226,7 +226,7 @@ struct ChatDetailView: View {
             mentionSource: mentionSource,
             workflowSource: conversation.workflowSource,
             sendTransition: scrolling.sendTransition,
-            placeholder: String(localized: "Message Okou")
+            recommendedFollowup: conversation.recommendedFollowups?.followups.first?.prompt
           )
         }
       }

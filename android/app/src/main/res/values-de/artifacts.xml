@@ -54,4 +54,10 @@
     <string name="chat_resources_related">Verknüpfte Chats</string>
     <string name="chat_resources_related_load_failed">Verknüpfte Chats können vorübergehend nicht geladen werden</string>
     <string name="chat_resources_related_access_lost">Verknüpfte Chats sind nicht mehr verfügbar</string>
+    <string name="chat_resources_origin">Quelle</string>
+    <string name="chat_resources_workflows">Workflows und Automatisierungen</string>
+    <string name="chat_resources_workflows_load_failed">Verknüpfte Workflows können vorübergehend nicht geladen werden</string>
+    <string name="chat_resources_wechat">WeChat</string>
+    <string name="chat_resources_feishu">Feishu</string>
+    <string name="chat_resources_messages">Nachrichten</string>
 </resources>

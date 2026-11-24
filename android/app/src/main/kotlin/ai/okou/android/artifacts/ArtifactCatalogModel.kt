@@ -14,6 +14,7 @@ import java.io.OutputStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -85,6 +86,7 @@ internal data class ArtifactCatalogState(
     val failedRead: ArtifactCatalogFailure? = null,
     val reading: ArtifactCatalogRead? = null,
     val relatedChats: RelatedChatResourcesState = RelatedChatResourcesState(),
+    val workflows: WorkflowResourcesState = WorkflowResourcesState(),
     val preview: ArtifactPreviewState? = null,
     val saveResult: Pair<String, ArtifactSaveResult>? = null,
 ) {
@@ -117,6 +119,9 @@ internal constructor(
     private var catalogJob: Job? = null
     private var catalogWrite: Job? = null
     private var relatedRead: Job? = null
+    private var workflowRead: Job? = null
+    private var workflowRefreshPending = false
+    private var workflowReferences: Pair<String, Set<String>>? = null
     private var previewJob: Job? = null
     private var missingThread: String? = null
 
@@ -138,6 +143,7 @@ internal constructor(
                         readCatalog(append = current.failedRead == ArtifactCatalogFailure.More)
                     }
                     if (relatedRead?.isActive != true) refreshRelatedChats()
+                    refreshWorkflows()
                     if (previewJob?.isActive != true) {
                         mutable.value.preview?.let { readPreview(it.id) }
                     }
@@ -154,6 +160,7 @@ internal constructor(
                 if (changes.resync || changes.list || threadId in changes.messageThreads) {
                     refreshRelatedChats()
                 }
+                if (changes.resync) refreshWorkflows()
             }
         }
         viewModelScope.launch {
@@ -178,6 +185,7 @@ internal constructor(
                 else {
                     readCatalog()
                     refreshRelatedChats()
+                    refreshWorkflows()
                 }
             }
             mutable.value.preview?.let { readPreview(it.id) }
@@ -185,8 +193,13 @@ internal constructor(
             catalogJob?.cancel()
             previewJob?.cancel()
             relatedRead?.cancel()
+            cancelWorkflowRefresh()
             mutable.update {
-                it.copy(reading = null, relatedChats = it.relatedChats.copy(syncingStale = false))
+                it.copy(
+                    reading = null,
+                    relatedChats = it.relatedChats.copy(syncingStale = false),
+                    workflows = it.workflows.copy(checking = false, syncingStale = false),
+                )
             }
         }
     }
@@ -195,6 +208,7 @@ internal constructor(
         if (next == mutable.value.query) return
         catalogJob?.cancel()
         relatedRead?.cancel()
+        cancelWorkflowRefresh()
         mutable.update {
             it.copy(
                 query = next,
@@ -202,10 +216,33 @@ internal constructor(
                 failedRead = null,
                 reading = null,
                 relatedChats = RelatedChatResourcesState(),
+                workflows = WorkflowResourcesState(),
             )
         }
         readCatalog(debounce = debounce)
         refreshRelatedChats()
+        refreshWorkflows()
+    }
+
+    internal fun relatedWorkflowIds(threadId: String, ids: Set<String>) {
+        val previous = workflowReferences
+        if (previous?.first == threadId && previous.second == ids) return
+        workflowReferences = threadId to ids
+        cancelWorkflowRefresh()
+        if (mutable.value.query.chatThreadId == threadId) {
+            mutable.update {
+                it.copy(
+                    workflows =
+                        WorkflowResourcesState(
+                            confirmed =
+                                it.workflows.confirmed.takeIf {
+                                    previous?.first == threadId && ids.isNotEmpty()
+                                },
+                        ),
+                )
+            }
+        }
+        refreshWorkflows()
     }
 
     internal fun loadNext() {
@@ -355,7 +392,7 @@ internal constructor(
                 }
             } catch (_: RelatedChatAccessLost) {
                 currentCoroutineContext().ensureActive()
-                cache?.let { lease -> storeCatalog { lease.deleteRelatedResources(threadId) } }
+                cache?.let { lease -> storeCatalog { lease.saveRelatedResources(threadId, null) } }
                 mutable.update {
                     it.copy(
                         relatedChats =
@@ -396,6 +433,84 @@ internal constructor(
             throw cancelled
         } catch (_: Exception) {
             Log.w("ArtifactCatalog", "Could not read related chat resources")
+            null
+        }
+
+    private fun refreshWorkflows() {
+        val (threadId, ids) = workflowReferences ?: return
+        val current = mutable.value
+        if (
+            !catalogVisible ||
+                ids.isEmpty() ||
+                threadId != current.query.chatThreadId ||
+                threadId == missingThread ||
+                current.failedRead == ArtifactCatalogFailure.ChatUnavailable
+        )
+            return
+        if (workflowRead?.isActive == true) {
+            workflowRefreshPending = true
+            return
+        }
+        workflowRead = viewModelScope.launch {
+            do {
+                workflowRefreshPending = false
+                readWorkflows(threadId, ids)
+            } while (workflowRefreshPending)
+        }
+    }
+
+    private fun cancelWorkflowRefresh() {
+        workflowRead?.cancel()
+        workflowRead = null
+        workflowRefreshPending = false
+    }
+
+    private suspend fun readWorkflows(threadId: String, ids: Set<String>) = coroutineScope {
+        val baseline = mutable.value.workflows.confirmed ?: restoreWorkflows(threadId)
+        currentCoroutineContext().ensureActive()
+        val state = WorkflowResourcesState(confirmed = baseline, checking = true)
+        mutable.update { it.copy(workflows = state) }
+        val progress =
+            baseline?.confirmedAt?.let { confirmedAt ->
+                launch {
+                    val remaining = ChatArtifactFreshMillis - (wallMillis() - confirmedAt)
+                    delay((remaining + 1).coerceAtLeast(0L))
+                    mutable.update { it.copy(workflows = state.copy(syncingStale = true)) }
+                }
+            }
+        val result =
+            try {
+                val items = retryArtifactOperation { service.relatedWorkflows(ids) }
+                WorkflowResourcesState(ConfirmedWorkflowResources(items, wallMillis()))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                val status = (error as? ApiFailure.Http)?.status
+                if (status == 401) sessionFailure(error) else handleSessionFailure(error)
+                if (status == 403)
+                    WorkflowResourcesState(ConfirmedWorkflowResources(emptyList(), wallMillis()))
+                else WorkflowResourcesState(confirmed = baseline, failed = true)
+            } finally {
+                progress?.cancelAndJoin()
+            }
+        currentCoroutineContext().ensureActive()
+        val confirmed = result.confirmed
+        if (confirmed != null && !result.failed) {
+            cache?.let { lease ->
+                storeCatalog { lease.saveWorkflowResources(threadId, confirmed) }
+            }
+        }
+        mutable.update { it.copy(workflows = result) }
+    }
+
+    private suspend fun restoreWorkflows(threadId: String): ConfirmedWorkflowResources? =
+        try {
+            catalogWrite?.join()
+            cache?.loadWorkflowResources(threadId)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            Log.w("ArtifactCatalog", "Could not read workflow resources")
             null
         }
 
@@ -533,11 +648,13 @@ internal constructor(
         if (mutable.value.query != query) return
         catalogJob?.cancel()
         relatedRead?.cancel()
+        cancelWorkflowRefresh()
         if (catalogVisible) previewJob?.cancel()
         mutable.update {
             it.copy(
                 catalog = null,
                 relatedChats = RelatedChatResourcesState(),
+                workflows = WorkflowResourcesState(),
                 preview =
                     if (catalogVisible)
                         it.preview?.let { preview ->
@@ -557,6 +674,7 @@ internal constructor(
     internal fun evictDeniedCatalogs() {
         catalogJob?.cancel()
         relatedRead?.cancel()
+        cancelWorkflowRefresh()
         previewJob?.cancel()
         catalogs.clear()
         previews.clear()
@@ -571,6 +689,7 @@ internal constructor(
             it.copy(
                 catalog = null,
                 relatedChats = RelatedChatResourcesState(),
+                workflows = WorkflowResourcesState(),
                 preview =
                     it.preview?.let { preview ->
                         ArtifactPreviewState(preview.id, null, problem = ArtifactProblem.Denied)

@@ -55,7 +55,9 @@ internal fun HistoryMessage.visibleInConversation() =
         else -> true
     }
 
-data class HistoryTranscript(
+@ConsistentCopyVisibility
+data class HistoryTranscript
+internal constructor(
     val messages: List<HistoryMessage>,
     val execution: HistoryExecution,
     val workSteps: Int,
@@ -65,6 +67,7 @@ data class HistoryTranscript(
     val terminatedRunIds: Set<String> = emptySet(),
     val pendingInputIds: Set<String> = emptySet(),
     val revocableInputIds: Set<String> = emptySet(),
+    internal val resources: ChatResourceReferences? = null,
 ) {
     internal fun searchMessage(sequence: Long): HistoryMessage? = messages.firstOrNull {
         it.sourceSeqId == sequence && it.visibleInConversation() && it.id !in pendingInputIds
@@ -254,6 +257,7 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
         controls.terminatedRunIds,
         pending,
         controls.revocableInputIds,
+        chatResourceReferences(checkpoint.rows),
     )
 }
 

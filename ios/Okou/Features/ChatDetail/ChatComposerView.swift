@@ -26,6 +26,7 @@ struct ChatComposerView: View {
   var sendTransition: ConversationSendTransition?
   var quotedSuggestionTitle: String?
   var placeholder: String?
+  var recommendedFollowup: String?
   var showsTrailingFeedbackInput = true
   var project: ChatProject?
   var removeProject: (() -> Void)?
@@ -99,7 +100,18 @@ struct ChatComposerView: View {
     !hasContent && !canStop && draftState?.voice != nil && (!expandsInput || voiceActive)
   }
   private var showsSecondaryActions: Bool { expandsInput && !voiceActive }
-  private var resolvedPlaceholder: String { placeholder ?? String(localized: "Message Okou") }
+  private var usesFollowupPlaceholder: Bool {
+    modelSelection?.models.usesFollowupPlaceholder == true
+  }
+  private var resolvedPlaceholder: String {
+    placeholder ?? (usesFollowupPlaceholder ? "" : String(localized: "Message Okou"))
+  }
+  private var visibleFollowup: String? {
+    guard usesFollowupPlaceholder, draft.isEmpty, !hasContent, !isBusy, !needsUpgrade,
+      draftState?.canSend == true
+    else { return nil }
+    return recommendedFollowup
+  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: OkouSpace.sm) {
@@ -191,35 +203,27 @@ struct ChatComposerView: View {
                 .padding(.horizontal, OkouSpace.sm).padding(.vertical, OkouSpace.xs)
                 .background(OkouColor.muted, in: RoundedRectangle(cornerRadius: OkouRadius.small))
             }
-            Group {
-              if let state = draftState {
-                ChatFeedbackComposer(
-                  state: state, inputID: inputID, isFocused: $isFocused,
-                  acceptsImages: !isBusy && !needsUpgrade, placeholder: resolvedPlaceholder,
-                  showsTrailingParagraph: showsTrailingFeedbackInput,
-                  expanded: showsEditingLayout,
-                  returnKeyPreference: returnKeyPreference,
-                  submitFromKeyboard: sendFromKeyboard
-                )
-                .id(inputID)
-                .transition(.identity)
-                .disabled(!state.document.isSupported)
-              } else {
-                ChatComposerTextInput(
-                  text: $draft, isFocused: $isFocused,
-                  acceptsImages: !isBusy && !needsUpgrade,
-                  isCurrent: { attachments.inputID == inputID },
-                  pasteImages: attachments.importPastedImages,
-                  placeholder: resolvedPlaceholder,
-                  expanded: showsEditingLayout,
-                  returnKeyPreference: returnKeyPreference,
-                  submitFromKeyboard: sendFromKeyboard
-                )
-                .id(inputID)
-                .transition(.identity)
+            let followup = visibleFollowup
+            HStack(spacing: OkouSpace.xs) {
+              textInput(id: inputID, followup: followup)
+                .accessibilityIdentifier("message-input")
+              if let followup, let state = draftState {
+                Button {
+                  state.editor.acceptFollowup(followup)
+                } label: {
+                  Text("OK")
+                    .font(.okou(.footnote).weight(.medium))
+                    .padding(.horizontal, OkouSpace.sm).padding(.vertical, OkouSpace.xs)
+                    .background(OkouColor.muted, in: Capsule())
+                    .frame(minWidth: actionSize, minHeight: actionSize)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Use this suggestion")
+                .accessibilityValue(Text(verbatim: followup))
+                .accessibilityIdentifier("accept-followup")
               }
             }
-            .accessibilityIdentifier("message-input")
           }
         } leading: {
           HStack(spacing: 0) {
@@ -228,6 +232,7 @@ struct ChatComposerView: View {
             } label: {
               OkouToolbarIcon("plus")
                 .frame(width: actionSize, height: actionSize)
+                .contentShape(Rectangle())
                 .overlay(alignment: .topTrailing) {
                   if connectorSelection?.uncertain == true {
                     OkouIcon("circle-alert", size: OkouIconSize.badge)
@@ -356,6 +361,37 @@ struct ChatComposerView: View {
       case .success(let urls): attachments.importFiles(urls)
       case .failure(let error): attachments.report(error)
       }
+    }
+  }
+
+  @ViewBuilder
+  private func textInput(id inputID: UUID, followup: String?) -> some View {
+    if let state = draftState {
+      ChatFeedbackComposer(
+        state: state, inputID: inputID, isFocused: $isFocused,
+        acceptsImages: !isBusy && !needsUpgrade, placeholder: resolvedPlaceholder,
+        followup: followup,
+        showsTrailingParagraph: showsTrailingFeedbackInput,
+        expanded: showsEditingLayout,
+        returnKeyPreference: returnKeyPreference,
+        submitFromKeyboard: sendFromKeyboard
+      )
+      .id(inputID)
+      .transition(.identity)
+      .disabled(!state.document.isSupported)
+    } else {
+      ChatComposerTextInput(
+        text: $draft, isFocused: $isFocused,
+        acceptsImages: !isBusy && !needsUpgrade,
+        isCurrent: { attachments.inputID == inputID },
+        pasteImages: attachments.importPastedImages,
+        placeholder: resolvedPlaceholder,
+        expanded: showsEditingLayout,
+        returnKeyPreference: returnKeyPreference,
+        submitFromKeyboard: sendFromKeyboard
+      )
+      .id(inputID)
+      .transition(.identity)
     }
   }
 

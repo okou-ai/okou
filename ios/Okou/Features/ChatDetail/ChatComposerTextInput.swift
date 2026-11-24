@@ -21,6 +21,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
   var focusRequested: (@MainActor () -> Void)?
   var inputReady: (@MainActor () -> Void)?
   var placeholder = String(localized: "Message Okou")
+  var followup: String?
   var identifier = "message-input"
   var expanded = false
   var returnKeyPreference = ComposerReturnKeyPreference.newline
@@ -101,8 +102,10 @@ struct ChatComposerTextInput: UIViewRepresentable {
       view.typingAttributes = view.composerTextAttributes
       view.isApplyingDocument = false
     }
-    view.placeholder.text = placeholder
-    view.accessibilityLabel = placeholder
+    view.followup = followup
+    view.placeholder.text = followup ?? placeholder
+    view.placeholder.numberOfLines = followup == nil ? 1 : 2
+    view.accessibilityLabel = placeholder.isEmpty ? String(localized: "Message Okou") : placeholder
     view.accessibilityIdentifier = identifier
     view.isEditable = isEnabled
     view.configureReturnKey(returnKeyPreference)
@@ -128,6 +131,11 @@ struct ChatComposerTextInput: UIViewRepresentable {
   {
     guard let width = proposal.width else { return nil }
     let line = uiView.textView.font?.lineHeight ?? 20
+    if followup != nil && uiView.textView.textStorage.length == 0 {
+      let hint = uiView.textView.placeholder.sizeThatFits(
+        CGSize(width: width, height: .greatestFiniteMagnitude))
+      return CGSize(width: width, height: max(expanded ? line * 2 : line, ceil(hint.height)))
+    }
     let height = uiView.textView.sizeThatFits(
       CGSize(width: width, height: .greatestFiniteMagnitude)
     ).height
@@ -271,6 +279,7 @@ final class ComposerTextView: UITextView {
   var acceptsImages = false
   var pasteImages: ([NSItemProvider]) -> Void = { _ in }
   let placeholder = UILabel()
+  var followup: String?
   var composerDocument = ChatDraftDocument()
   var usesStructuredDocument = false
   var isApplyingDocument = false
@@ -385,7 +394,28 @@ final class ComposerTextView: UITextView {
     delegate?.textViewDidChangeSelection?(self)
   }
 
+  private var canAcceptFollowup: Bool {
+    followup?.isEmpty == false && textStorage.length == 0 && isCurrent() && isEditable
+      && markedTextRange == nil && !isSettlingComposition
+  }
+
+  @discardableResult func acceptFollowup() -> Bool {
+    guard canAcceptFollowup, let followup, window != nil, becomeFirstResponder() else {
+      return false
+    }
+    setFocused(true)
+    super.insertText(followup)
+    if returnKeyPreference == .send { requestReturnKeyReload(restartInputSession: true) }
+    return true
+  }
+
   override var keyCommands: [UIKeyCommand]? {
+    if canAcceptFollowup {
+      let tab = UIKeyCommand(
+        input: "\t", modifierFlags: [], action: #selector(composerSuggestionKey(_:)))
+      tab.wantsPriorityOverSystemBehavior = true
+      return [tab] + (super.keyCommands ?? [])
+    }
     let workflowsActive = workflowSuggestions?.query != nil
     guard markedTextRange == nil, !isSettlingComposition,
       workflowsActive || mentionEditor?.mentionQuery != nil
@@ -415,6 +445,7 @@ final class ComposerTextView: UITextView {
 
   @objc private func composerSuggestionKey(_ command: UIKeyCommand) {
     guard let key = command.input else { return }
+    if key == "\t", acceptFollowup() { return }
     if workflowSuggestions?.query != nil {
       workflowSuggestions?.handleKey(key, in: self)
     } else {
@@ -423,6 +454,7 @@ final class ComposerTextView: UITextView {
   }
 
   override func insertText(_ text: String) {
+    if text == " ", acceptFollowup() { return }
     if text == "\n", markedTextRange == nil, !isSettlingComposition,
       mentionEditor?.handleMentionKey("\r", in: self) == true
     {
