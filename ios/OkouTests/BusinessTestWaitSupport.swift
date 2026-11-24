@@ -6,6 +6,9 @@ import XCTest
 
 @testable import Okou
 
+/// Subscribes a waiter's check to one graph value.
+private typealias GraphWatcher = @MainActor (@escaping @MainActor () -> Void) throws -> Subscription
+
 @MainActor
 extension XCTestCase {
   func waitForBusinessResult(
@@ -53,7 +56,7 @@ extension XCTestCase {
 
   /// Checks the predicate whenever any watched graph value or Observation-tracked value changes.
   private func waitForGraphResult(
-    watching watchers: [@MainActor (@escaping @MainActor () -> Void) throws -> Subscription],
+    watching watchers: [GraphWatcher],
     timeout: TimeInterval, file: StaticString, line: UInt, message: String,
     _ predicate: @escaping @MainActor () -> Bool
   ) async throws {
@@ -115,11 +118,11 @@ extension XCTestCase {
     let store = conversation.graph
     let transcript = conversation.transcript
     let draft = conversation.composer.presentation
+    let watchTranscript: GraphWatcher = { check in try store.watch(transcript) { check() } }
+    let watchDraft: GraphWatcher = { check in try store.watch(draft) { check() } }
     try await waitForGraphResult(
-      watching: [
-        { check in try store.watch(transcript) { check() } },
-        { check in try store.watch(draft) { check() } },
-      ], timeout: timeout, file: file, line: line, message: message(), predicate)
+      watching: [watchTranscript, watchDraft], timeout: timeout, file: file, line: line,
+      message: message(), predicate)
   }
 
   func waitForFileRemoval(
