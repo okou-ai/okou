@@ -231,7 +231,6 @@ import {
   literal,
   object,
   strictObject,
-  string,
   uuid,
   type infer as zInfer,
 } from "zod";
@@ -3618,11 +3617,8 @@ function threadDispatchInput(args: ThreadRunContext): DirectRunInput {
 const pendingLaunchRowSchema = discriminatedUnion("kind", [
   object({
     kind: literal("pending"),
-    runId: string(),
     createdAt: pgTimestampWithoutTimezoneToDateSchema,
     isFirstRun: boolean(),
-    boundThreadId: string().nullable(),
-    billingAttributionId: string().nullable(),
     marketingRewardEventId: uuid().nullable(),
   }),
   object({ kind: literal("claim-lost") }),
@@ -3636,12 +3632,6 @@ function pendingAtomicLaunchResult(
   }
   if (row.kind === "claim-lost") {
     return { kind: "queue-first-claim-lost" };
-  }
-  if (!row.boundThreadId) {
-    throw new ChatThreadBindingChanged();
-  }
-  if (row.billingAttributionId !== row.runId) {
-    throw new Error("New Run billing attribution conflicts with history");
   }
   return {
     kind: "pending",
@@ -3737,14 +3727,11 @@ function pendingAtomicLaunchPlan(
     SELECT CASE
       WHEN EXISTS (SELECT 1 FROM ${context.insertedRun}) THEN 'pending'
       ELSE 'claim-lost' END AS kind,
-      (SELECT ${attribution.runId} FROM ${attribution}) AS "billingAttributionId",
       (SELECT id FROM launch_workflow_source) AS "marketingRewardEventId",
-      (SELECT ${returnedCteColumn(context.insertedRun, "id")} FROM ${context.insertedRun}) AS "runId",
       (SELECT ${returnedCteColumn(context.insertedRun, "created_at")} FROM ${context.insertedRun})::text AS "createdAt",
       CASE WHEN EXISTS (SELECT 1 FROM ${context.insertedRun}) THEN
         ${notExists(earlierRunEvents)}
-      END AS "isFirstRun",
-      ${returnedCteId(context.updatedThread)} AS "boundThreadId"
+      END AS "isFirstRun"
     WHERE (SELECT ${count()} FROM launch_active) >= 0`;
 }
 
