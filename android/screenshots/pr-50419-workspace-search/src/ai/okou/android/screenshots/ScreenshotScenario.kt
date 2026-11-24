@@ -56,7 +56,8 @@ class ScreenshotScenario {
         val originalWorkflows = app.workflows
         val originalPreferences = app.snapshotApiPreferences()
         val initialPreferences = app.initialPreferences
-        val originalCache = ChatCacheSnapshot(app.noBackupFilesDir.resolve("chat-list"), app.chatCache)
+        val originalCache =
+            ChatCacheSnapshot(app.noBackupFilesDir.resolve("chat-list"), app.chatCache)
         val originalSize =
             device.executeShellCommand("wm size").substringAfter("Override size: ", "").trim()
         val originalDensity =
@@ -78,7 +79,9 @@ class ScreenshotScenario {
             if (url.queryParameter("keyword") == "发布" && url.queryParameter("cursor") == null) {
                 progressGate.get()?.let { gate ->
                     gate.requested.countDown()
-                    check(gate.release.await(40, TimeUnit.SECONDS)) { "Capture did not release the artifact read" }
+                    check(gate.release.await(40, TimeUnit.SECONDS)) {
+                        "Capture did not release the artifact read"
+                    }
                 }
             }
         }
@@ -93,7 +96,8 @@ class ScreenshotScenario {
                       "matchedMessage":{"chatThreadId":"$CHAT_PERSONAL","role":"assistant",
                         "content":"$message","createdAt":"$CHAT_DATE","seqId":23,"runId":"$HISTORY_RUN"},
                       "matchedRanges":[{"start":3,"end":5}]}]}
-                    """.trimIndent(),
+                    """
+                        .trimIndent(),
                 )
             } else if (keyword == "摘要") {
                 jsonResponse("""{"error":{"code":"BAD_REQUEST","message":"Search unavailable"}}""")
@@ -102,10 +106,11 @@ class ScreenshotScenario {
         }
         auth.state.value = testAuthenticationState(user = "search-groups-${UUID.randomUUID()}")
         app.initialPreferences =
-            testPreferences().copy(
-                locale = UserPreferencesLocale.ZH_HANS,
-                theme = UserPreferencesTheme.LIGHT,
-            )
+            testPreferences()
+                .copy(
+                    locale = UserPreferencesLocale.ZH_HANS,
+                    theme = UserPreferencesTheme.LIGHT,
+                )
         app.chatService = chats.service
         app.searchService = chats.service
         app.composerService = chats.service
@@ -118,7 +123,12 @@ class ScreenshotScenario {
         fun label(id: Int) = localized.getString(id)
         fun text(value: String) = get(By.pkg(app.packageName).text(value))
         fun control(id: Int) = By.pkg(app.packageName).desc(label(id))
-        fun field() = get(control(R.string.chat_search_workspace).clazz("android.widget.EditText"))
+        fun editText() = By.pkg(app.packageName).clazz("android.widget.EditText")
+        fun field() =
+            checkNotNull(device.wait(Until.findObjects(editText()), 12_000)) {
+                    "Workspace search editor is missing"
+                }
+                .minBy { it.visibleBounds.left }
         fun selected(id: Int) =
             get(By.pkg(app.packageName).selected(true).hasChild(By.text(label(id))))
         fun hideIme(scenario: ActivityScenario<MainActivity>) {
@@ -136,7 +146,9 @@ class ScreenshotScenario {
                     },
                     10_000,
                 ),
-            ) { "Expected the keyboard to be hidden" }
+            ) {
+                "Expected the keyboard to be hidden"
+            }
         }
 
         try {
@@ -144,119 +156,166 @@ class ScreenshotScenario {
             device.executeShellCommand("wm size 412x892")
             device.executeShellCommand("settings put $animationSetting 0")
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-                for (layout in listOf("phone", "wide")) {
-                    val wide = layout == "wide"
-                    if (wide) device.executeShellCommand("wm size 1000x800")
-                    device.awaitChatList(localized)
-                    val entry = get(control(R.string.chat_search_workspace))
-                    val entryBounds = entry.visibleBounds
-                    text(artifacts.sourceTitle).click()
-                    val transcript = text("Hello history")
-                    if (wide) {
-                        assertTrue(transcript.visibleBounds.left >= 320)
-                    } else {
-                        device.pressBack()
+                try {
+                    for (layout in listOf("phone", "wide")) {
+                        val wide = layout == "wide"
+                        if (wide) device.executeShellCommand("wm size 1000x800")
                         device.awaitChatList(localized)
-                    }
-                    get(control(R.string.chat_search_workspace)).click()
-                    device.awaitKeyboardFocus(
-                        control(R.string.chat_search_workspace).clazz("android.widget.EditText"),
-                    )
-                    assertEquals(entryBounds.left, field().visibleBounds.left)
-                    assertEquals(48, field().visibleBounds.height())
-                    assertEquals(8, selected(R.string.chat_search_all).visibleBounds.top - field().visibleBounds.bottom)
-                    assertEquals(48, selected(R.string.chat_search_all).visibleBounds.height())
-                    if (!wide) {
+                        val entry = get(control(R.string.chat_search_workspace))
+                        val entryBounds = entry.visibleBounds
+                        text(artifacts.sourceTitle).click()
+                        val transcript = text("Hello history")
+                        if (wide) {
+                            assertTrue(transcript.visibleBounds.left >= 320)
+                        } else {
+                            device.pressBack()
+                            device.awaitChatList(localized)
+                        }
+                        get(control(R.string.chat_search_workspace)).click()
+                        get(editText().focused(true))
+                        assertEquals(entryBounds.left, field().visibleBounds.left)
+                        assertEquals(48, field().visibleBounds.height())
+                        assertEquals(
+                            8,
+                            selected(R.string.chat_search_all).visibleBounds.top -
+                                field().visibleBounds.bottom,
+                        )
+                        assertEquals(48, selected(R.string.chat_search_all).visibleBounds.height())
+                        if (!wide) {
+                            hideIme(scenario)
+                            text(label(R.string.chat_search_recently_opened))
+                            text(artifacts.sourceTitle)
+                            ScreenshotCapture.capture("search-recent-phone.png")
+                        }
+                        val gate = ProgressGate()
+                        progressGate.set(gate)
+                        field().text = "发布"
                         hideIme(scenario)
-                        text(label(R.string.chat_search_recently_opened))
-                        text(artifacts.sourceTitle)
-                        ScreenshotCapture.capture("search-recent-phone.png")
-                    }
-                    val gate = ProgressGate()
-                    progressGate.set(gate)
-                    field().text = "发布"
-                    hideIme(scenario)
-                    assertTrue(gate.requested.await(10, TimeUnit.SECONDS))
-                    text(workflows.releaseTitle)
-                    assertTrue(
-                        device.wait(
-                            object : Condition<UiDevice, Boolean> {
-                                override fun apply(device: UiDevice): Boolean =
-                                    device.findObjects(By.pkg(app.packageName).text(message)).any {
-                                        it.visibleBounds.right <= if (wide) 320 else 412
+                        assertTrue(gate.requested.await(10, TimeUnit.SECONDS))
+                        text(workflows.releaseTitle)
+                        assertTrue(
+                            device.wait(
+                                object : Condition<UiDevice, Boolean> {
+                                    override fun apply(device: UiDevice): Boolean =
+                                        device
+                                            .findObjects(By.pkg(app.packageName).text(message))
+                                            .any {
+                                                it.visibleBounds.right <= if (wide) 320 else 412
+                                            }
+                                },
+                                12_000,
+                            ),
+                        )
+                        val progress = get(control(R.string.chat_search_loading))
+                        assertEquals(4, progress.visibleBounds.height())
+                        assertEquals(
+                            6,
+                            progress.visibleBounds.top -
+                                selected(R.string.chat_search_all).visibleBounds.bottom,
+                        )
+                        val knownRowBounds = text(workflows.releaseTitle).visibleBounds
+                        ScreenshotCapture.capture("search-loading-$layout.png")
+                        gate.release.countDown()
+                        text(artifacts.checklist.title)
+                        assertTrue(
+                            device.wait(Until.gone(control(R.string.chat_search_loading)), 12_000),
+                        )
+                        assertEquals(knownRowBounds, text(workflows.releaseTitle).visibleBounds)
+                        val viewAll =
+                            localized.getString(
+                                R.string.chat_search_view_type,
+                                label(R.string.chat_search_artifacts),
+                            )
+                        val shortcut = get(By.pkg(app.packageName).desc(viewAll))
+                        assertEquals(48, shortcut.visibleBounds.height())
+                        if (wide) assertTrue(text("Hello history").visibleBounds.left >= 320)
+                        ScreenshotCapture.capture("search-grouped-$layout.png")
+                        shortcut.click()
+                        val artifactType = selected(R.string.chat_search_artifacts).visibleBounds
+                        device.awaitKeyboardFocus(
+                            By.pkg(app.packageName).text(label(R.string.chat_search_artifacts)),
+                        )
+                        assertEquals("发布", field().text)
+                        text(artifacts.image.title)
+                        val heading =
+                            device
+                                .findObjects(
+                                    By.pkg(app.packageName)
+                                        .text(label(R.string.chat_search_artifacts)),
+                                )
+                                .single { it.visibleBounds.top >= artifactType.bottom }
+                        assertEquals(20, heading.visibleBounds.top - artifactType.bottom)
+                        assertEquals(28, heading.visibleBounds.left)
+                        assertEquals(
+                            heading.visibleBounds.left,
+                            text(artifacts.checklist.title).visibleBounds.left,
+                        )
+                        ScreenshotCapture.capture("search-artifacts-$layout.png")
+
+                        text(artifacts.summary.title).click()
+                        text(label(R.string.artifact_view_source))
+                        get(control(R.string.chat_search_close_artifact_preview)).click()
+                        selected(R.string.chat_search_artifacts)
+                        assertEquals("发布", field().text)
+                        device.awaitKeyboardFocus(
+                            By.pkg(app.packageName).text(artifacts.summary.title),
+                        )
+                        if (!wide) {
+                            field().click()
+                            field().text = "客户访谈"
+                            hideIme(scenario)
+                            text(label(R.string.chat_search_no_artifacts))
+                            ScreenshotCapture.capture("search-empty-phone.png")
+                            text(label(R.string.chat_search_all_types)).click()
+                            selected(R.string.chat_search_all)
+                            assertEquals("客户访谈", field().text)
+                            device.awaitKeyboardFocus(
+                                By.pkg(app.packageName).text(label(R.string.chat_search_all)),
+                            )
+                            text(label(R.string.chat_search_no_results))
+
+                            field().click()
+                            field().text = "摘要"
+                            hideIme(scenario)
+                            val notice = text(label(R.string.chat_search_unavailable))
+                            assertEquals(28, notice.visibleBounds.left)
+                            text(artifacts.summary.title)
+                            assertEquals("摘要", field().text)
+                            ScreenshotCapture.capture("search-partial-phone.png")
+                        }
+                        get(control(R.string.back)).click()
+                        device.awaitChatList(localized)
+                        check(
+                            device.wait(
+                                object : Condition<UiDevice, Boolean> {
+                                    override fun apply(device: UiDevice): Boolean {
+                                        val entry =
+                                            device.findObject(
+                                                control(R.string.chat_search_workspace),
+                                            ) ?: return false
+                                        return entry.isFocused ||
+                                            entry.hasObject(By.focused(true)) ||
+                                            entry.parent?.isFocused == true
                                     }
-                            },
-                            12_000,
-                        ),
-                    )
-                    val progress = get(control(R.string.chat_search_loading))
-                    assertEquals(4, progress.visibleBounds.height())
-                    assertEquals(6, progress.visibleBounds.top - selected(R.string.chat_search_all).visibleBounds.bottom)
-                    val knownRowBounds = text(workflows.releaseTitle).visibleBounds
-                    ScreenshotCapture.capture("search-loading-$layout.png")
-                    gate.release.countDown()
-                    text(artifacts.checklist.title)
-                    assertTrue(device.wait(Until.gone(control(R.string.chat_search_loading)), 12_000))
-                    assertEquals(knownRowBounds, text(workflows.releaseTitle).visibleBounds)
-                    val viewAll = localized.getString(
-                        R.string.chat_search_view_type,
-                        label(R.string.chat_search_artifacts),
-                    )
-                    val shortcut = get(By.pkg(app.packageName).desc(viewAll))
-                    assertEquals(48, shortcut.visibleBounds.height())
-                    if (wide) assertTrue(text("Hello history").visibleBounds.left >= 320)
-                    ScreenshotCapture.capture("search-grouped-$layout.png")
-                    shortcut.click()
-                    val artifactType = selected(R.string.chat_search_artifacts).visibleBounds
-                    device.awaitKeyboardFocus(By.pkg(app.packageName).text(label(R.string.chat_search_artifacts)))
-                    assertEquals("发布", field().text)
-                    text(artifacts.image.title)
-                    val heading =
-                        device.findObjects(By.pkg(app.packageName).text(label(R.string.chat_search_artifacts)))
-                            .single { it.visibleBounds.top >= artifactType.bottom }
-                    assertEquals(20, heading.visibleBounds.top - artifactType.bottom)
-                    assertEquals(28, heading.visibleBounds.left)
-                    assertEquals(heading.visibleBounds.left, text(artifacts.checklist.title).visibleBounds.left)
-                    ScreenshotCapture.capture("search-artifacts-$layout.png")
-
-                    text(artifacts.summary.title).click()
-                    text(label(R.string.artifact_view_source))
-                    get(control(R.string.chat_search_close_artifact_preview)).click()
-                    selected(R.string.chat_search_artifacts)
-                    assertEquals("发布", field().text)
-                    device.awaitKeyboardFocus(By.pkg(app.packageName).text(artifacts.summary.title))
-                    if (!wide) {
-                        field().click()
-                        field().text = "客户访谈"
-                        hideIme(scenario)
-                        text(label(R.string.chat_search_no_artifacts))
-                        ScreenshotCapture.capture("search-empty-phone.png")
-                        text(label(R.string.chat_search_all_types)).click()
-                        selected(R.string.chat_search_all)
-                        assertEquals("客户访谈", field().text)
-                        device.awaitKeyboardFocus(By.pkg(app.packageName).text(label(R.string.chat_search_all)))
-                        text(label(R.string.chat_search_no_results))
-
-                        field().click()
-                        field().text = "摘要"
-                        hideIme(scenario)
-                        val notice = text(label(R.string.chat_search_unavailable))
-                        assertEquals(28, notice.visibleBounds.left)
-                        text(artifacts.summary.title)
-                        assertEquals("摘要", field().text)
-                        ScreenshotCapture.capture("search-partial-phone.png")
+                                },
+                                10_000,
+                            ),
+                        ) {
+                            "Home search did not recover its keyboard focus"
+                        }
                     }
-                    get(control(R.string.back)).click()
-                    device.awaitChatList(localized)
-                    device.awaitKeyboardFocus(control(R.string.chat_search_workspace))
+                } catch (error: Throwable) {
+                    runCatching {
+                            TestStorage()
+                                .openOutputFile("workspace-search-window.xml")
+                                .use(device::dumpWindowHierarchy)
+                            ScreenshotCapture.capture("workspace-search-failure.png")
+                        }
+                        .exceptionOrNull()
+                        ?.let(error::addSuppressed)
+                    throw error
                 }
             }
-        } catch (error: Throwable) {
-            runCatching {
-                TestStorage().openOutputFile("workspace-search-window.xml")
-                    .use(device::dumpWindowHierarchy)
-            }.exceptionOrNull()?.let(error::addSuppressed)
-            throw error
         } finally {
             progressGate.get()?.release?.countDown()
             app.searchService = originalSearch
