@@ -541,10 +541,7 @@ export function ThreeColumnSearchDialog({
         <SpotlightSearchInput />
         {trimmedQuery && (
           <>
-            <span
-              role="status"
-              className="sr-only"
-            >
+            <span role="status" className="sr-only">
               {t(
                 ($) => {
                   return $.sidebar.resultCount;
