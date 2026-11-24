@@ -1,16 +1,20 @@
 //! Owned process sessions and pidfd-backed descendant cleanup.
 
+use std::future::Future;
 use std::io;
 use std::os::fd::OwnedFd;
+use std::process::ExitStatus;
 use std::time::Duration;
 
 use rustix::process::{Pid, PidfdFlags, Signal};
 use tokio::io::unix::AsyncFd;
 use tokio::process::{Child, Command};
+use tokio::time::Instant;
 
 const SESSION_SCAN_INTERVAL: Duration = Duration::from_millis(10);
 
-pub(super) struct CommandSession {
+/// The Linux session of a test command's unreaped leader.
+pub struct CommandSession {
     session_id: Pid,
 }
 
@@ -31,15 +35,20 @@ struct ProcessStat {
     starttime: u64,
 }
 
-enum ProcessStatRead {
-    Found(ProcessStat),
-    Missing,
+/// The process generation and liveness facts needed by session cleanup.
+pub enum SessionMemberState {
+    Live {
+        starttime: u64,
+    },
+    /// A terminal process or a process whose proc entry disappeared.
+    Gone,
     Unreadable(io::Error),
     Invalid,
 }
 
 impl CommandSession {
-    pub(super) fn configure(command: &mut Command) {
+    /// Start the command in a separate session.
+    pub fn configure(command: &mut Command) {
         // SAFETY: `setsid` is async-signal-safe and the closure performs no
         // work beyond that syscall and converting its errno on failure.
         unsafe {
@@ -47,7 +56,8 @@ impl CommandSession {
         }
     }
 
-    pub(super) fn from_child(child: &Child) -> io::Result<Self> {
+    /// Identify the session of a child spawned with [Self::configure].
+    pub fn from_child(child: &Child) -> io::Result<Self> {
         let child_pid = child.id().ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::NotFound,
@@ -69,6 +79,11 @@ impl CommandSession {
         Ok(Self { session_id })
     }
 
+    /// The leader PID and session ID are the same while the child is unreaped.
+    pub fn leader_pid(&self) -> Pid {
+        self.session_id
+    }
+
     pub(super) async fn wait_for_exit(&self) -> io::Result<()> {
         // The caller keeps Child owned and unpolled until session cleanup ends.
         // Readiness observes exit without reaping the leader and releasing its SID.
@@ -78,17 +93,59 @@ impl CommandSession {
         pidfd.readable().await.map(drop)
     }
 
-    pub(super) async fn kill_members(
+    /// Retire session members and reap the leader under one cleanup deadline.
+    ///
+    /// Pass the same unreaped child used to identify this session and call this
+    /// once. Its unreaped PID reserves the SID until the member sweep finishes.
+    pub async fn retire<F, Fut>(
         &self,
-        deadline: tokio::time::Instant,
+        child: &mut Child,
         cleanup_timeout: Duration,
-    ) -> Result<(), String> {
+        wait_context: &str,
+        read_member_state: F,
+    ) -> Result<ExitStatus, String>
+    where
+        F: Fn(Pid) -> Fut,
+        Fut: Future<Output = SessionMemberState>,
+    {
+        let kill_error = child.start_kill().err();
+        let deadline = Instant::now() + cleanup_timeout;
+        let session_error = self
+            .kill_members(deadline, cleanup_timeout, &read_member_state)
+            .await
+            .err();
+        let wait_result =
+            wait_for_child_until(child, deadline, cleanup_timeout, wait_context).await;
+
+        match (session_error, wait_result) {
+            (None, Ok(status)) => Ok(status),
+            (Some(session_error), Ok(status)) => Err(cleanup_error(
+                kill_error,
+                Some(session_error),
+                format!("killed child status: {status}"),
+            )),
+            (session_error, Err(wait_error)) => {
+                Err(cleanup_error(kill_error, session_error, wait_error))
+            }
+        }
+    }
+
+    async fn kill_members<F, Fut>(
+        &self,
+        deadline: Instant,
+        cleanup_timeout: Duration,
+        read_member_state: &F,
+    ) -> Result<(), String>
+    where
+        F: Fn(Pid) -> Fut,
+        Fut: Future<Output = SessionMemberState>,
+    {
         let mut first_error = None;
 
         loop {
             let scan = match tokio::time::timeout_at(
                 deadline,
-                scan_session_members(self.session_id),
+                scan_session_members(self.session_id, read_member_state),
             )
             .await
             {
@@ -127,7 +184,7 @@ impl CommandSession {
                 }
             }
 
-            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
                 let live_pids = scan
                     .live_pids
@@ -147,7 +204,52 @@ impl CommandSession {
     }
 }
 
-async fn scan_session_members(session_id: Pid) -> Result<SessionScan, String> {
+async fn wait_for_child_until(
+    child: &mut Child,
+    deadline: Instant,
+    cleanup_timeout: Duration,
+    wait_context: &str,
+) -> Result<ExitStatus, String> {
+    match child.try_wait() {
+        Ok(Some(status)) => return Ok(status),
+        Ok(None) => {}
+        Err(error) => return Err(format!("{wait_context} failed: {error}")),
+    }
+
+    match tokio::time::timeout_at(deadline, child.wait()).await {
+        Ok(Ok(status)) => Ok(status),
+        Ok(Err(error)) => Err(format!("{wait_context} failed: {error}")),
+        Err(_) => Err(format!(
+            "{wait_context} timed out after {}ms",
+            cleanup_timeout.as_millis()
+        )),
+    }
+}
+
+fn cleanup_error(
+    kill_error: Option<io::Error>,
+    session_error: Option<String>,
+    wait_result: String,
+) -> String {
+    let mut errors = Vec::new();
+    if let Some(kill_error) = kill_error {
+        errors.push(format!("start kill failed: {kill_error}"));
+    }
+    if let Some(session_error) = session_error {
+        errors.push(format!("session cleanup failed: {session_error}"));
+    }
+    errors.push(wait_result);
+    errors.join("; ")
+}
+
+async fn scan_session_members<F, Fut>(
+    session_id: Pid,
+    read_member_state: &F,
+) -> Result<SessionScan, String>
+where
+    F: Fn(Pid) -> Fut,
+    Fut: Future<Output = SessionMemberState>,
+{
     let mut entries = tokio::fs::read_dir("/proc")
         .await
         .map_err(|error| format!("read /proc for session {session_id}: {error}"))?;
@@ -173,10 +275,10 @@ async fn scan_session_members(session_id: Pid) -> Result<SessionScan, String> {
             continue;
         };
 
-        let before = match read_process_stat(pid).await {
-            ProcessStatRead::Found(stat) if process_stat_is_live(stat) => stat,
-            ProcessStatRead::Found(_) | ProcessStatRead::Missing => continue,
-            ProcessStatRead::Unreadable(error) => {
+        let starttime = match read_member_state(pid).await {
+            SessionMemberState::Live { starttime } => starttime,
+            SessionMemberState::Gone => continue,
+            SessionMemberState::Unreadable(error) => {
                 record_owned_stat_error(
                     pid,
                     session_id,
@@ -186,7 +288,7 @@ async fn scan_session_members(session_id: Pid) -> Result<SessionScan, String> {
                 );
                 continue;
             }
-            ProcessStatRead::Invalid => {
+            SessionMemberState::Invalid => {
                 record_owned_stat_error(
                     pid,
                     session_id,
@@ -215,11 +317,12 @@ async fn scan_session_members(session_id: Pid) -> Result<SessionScan, String> {
             }
         };
 
-        match read_process_stat(pid).await {
-            ProcessStatRead::Found(stat)
-                if process_stat_is_live(stat) && stat.starttime == before.starttime => {}
-            ProcessStatRead::Found(_) | ProcessStatRead::Missing => continue,
-            ProcessStatRead::Unreadable(error) => {
+        match read_member_state(pid).await {
+            SessionMemberState::Live {
+                starttime: observed,
+            } if observed == starttime => {}
+            SessionMemberState::Live { .. } | SessionMemberState::Gone => continue,
+            SessionMemberState::Unreadable(error) => {
                 record_owned_stat_error(
                     pid,
                     session_id,
@@ -229,7 +332,7 @@ async fn scan_session_members(session_id: Pid) -> Result<SessionScan, String> {
                 );
                 continue;
             }
-            ProcessStatRead::Invalid => {
+            SessionMemberState::Invalid => {
                 record_owned_stat_error(
                     pid,
                     session_id,
@@ -285,15 +388,18 @@ fn process_session_id(pid: Pid) -> Result<libc::pid_t, nix::errno::Errno> {
         .map(nix::unistd::Pid::as_raw)
 }
 
-async fn read_process_stat(pid: Pid) -> ProcessStatRead {
+pub(super) async fn read_member_state(pid: Pid) -> SessionMemberState {
     let path = format!("/proc/{pid}/stat");
     match tokio::fs::read(path).await {
         Ok(content) => match parse_process_stat(&content) {
-            Some(stat) => ProcessStatRead::Found(stat),
-            None => ProcessStatRead::Invalid,
+            Some(stat) if process_stat_is_live(stat) => SessionMemberState::Live {
+                starttime: stat.starttime,
+            },
+            Some(_) => SessionMemberState::Gone,
+            None => SessionMemberState::Invalid,
         },
-        Err(error) if error.kind() == io::ErrorKind::NotFound => ProcessStatRead::Missing,
-        Err(error) => ProcessStatRead::Unreadable(error),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => SessionMemberState::Gone,
+        Err(error) => SessionMemberState::Unreadable(error),
     }
 }
 
