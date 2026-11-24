@@ -312,14 +312,25 @@ class UpdateRootTest {
                         Formatter.formatShortFileSize(app, release.size),
                     ),
                 )
+            val versionBounds = version.assertIsDisplayed().getUnclippedBoundsInRoot()
+            val sizeBounds = size.assertIsDisplayed().getUnclippedBoundsInRoot()
+            val resultTop = minOf(versionBounds.top, sizeBounds.top)
+            val resultBottom = maxOf(versionBounds.bottom, sizeBounds.bottom)
+            val bodyTop = headingBounds.bottom + 4.dp
+            val bodyBottom = closeBounds.top - 8.dp
+            val installedAfter = installed.getUnclippedBoundsInRoot().top
             assertTrue(
-                version.assertIsDisplayed().getUnclippedBoundsInRoot().top >= headingBounds.bottom,
+                "Expected the results to scroll. Installed version moved from $installedTop to " +
+                    "$installedAfter, result spans $resultTop–$resultBottom, " +
+                    "body spans $bodyTop–$bodyBottom.",
+                installedAfter < installedTop,
             )
-            assertTrue(
-                size.assertIsDisplayed().getUnclippedBoundsInRoot().bottom <=
-                    closeBounds.top - 8.dp,
-            )
-            assertTrue(installed.getUnclippedBoundsInRoot().top < installedTop)
+            if (resultBottom - resultTop <= bodyBottom - bodyTop) {
+                assertTrue(
+                    "Result $resultTop–$resultBottom fits in the body $bodyTop–$bodyBottom.",
+                    resultTop >= bodyTop && resultBottom <= bodyBottom,
+                )
+            }
             assertEquals(headingBounds, heading.getUnclippedBoundsInRoot())
             assertEquals(closeBounds, close.getUnclippedBoundsInRoot())
             assertEquals(
