@@ -217,10 +217,14 @@ class NativeTextSendTest {
                     "Both accepted inputs should be queued"
                 }
                 .click()
-            text("Native follow-up")
-            assertTrue(device.pressBack())
             val queueHeading = By.pkg(app.packageName).text(queueTitle)
-            assertTrue(device.wait(Until.gone(queueHeading), 10_000))
+            assertTrue(
+                "Queue panel did not open",
+                device.wait(Until.hasObject(queueHeading), 10_000),
+            )
+            text("Native follow-up")
+            assertTrue("Could not inject Back", device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            assertTrue("Queue panel stayed open", device.wait(Until.gone(queueHeading), 10_000))
             assertEquals("", editor().text)
             assertEquals(1, fixture.created.size)
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))

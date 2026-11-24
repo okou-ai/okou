@@ -25,7 +25,11 @@ enum class ProjectDeleteStatus {
 
 @ConsistentCopyVisibility
 data class ProjectDeleteFeedback
-internal constructor(val projectId: String, val eventId: String, val status: ProjectDeleteStatus)
+internal constructor(val projectId: String, val eventId: String, val status: ProjectDeleteStatus) {
+    internal val rejected =
+        status == ProjectDeleteStatus.Rejected || status == ProjectDeleteStatus.ConnectionFailed
+    internal val feedbackOrder = nextChatFeedbackOrder()
+}
 
 data class ProjectListUiState(
     val rows: List<ConfirmedProject> = emptyList(),
@@ -37,7 +41,7 @@ data class ProjectListUiState(
     val unconfirmedRenames: Set<String> = emptySet(),
     internal val connectionFailedRenames: Set<String> = emptySet(),
     internal val renameRejection: ProjectRenameRejection? = null,
-    internal val deleteFeedback: ProjectDeleteFeedback? = null,
+    internal val deleteFeedback: List<ProjectDeleteFeedback> = emptyList(),
 ) {
     internal val canRename: Boolean
         get() = source != null && renamingId == null && deletingId == null
@@ -181,7 +185,11 @@ internal class ProjectListOwner(
         if (!current() || !state.canRename || confirmedRows().none { it.id == id }) return
         val previousAttempt = retryableProjectDeletes[id]
         val eventId = previousAttempt ?: newProjectOperationId(wallMillis())
-        state = state.copy(deletingId = id, deleteFeedback = null)
+        state =
+            state.copy(
+                deletingId = id,
+                deleteFeedback = state.deleteFeedback.filter { it.rejected && it.projectId != id },
+            )
         scope.launch {
             try {
                 val failure =
@@ -201,15 +209,7 @@ internal class ProjectListOwner(
                         failure.connectionFailed &&
                         previousAttempt == null
                 ) {
-                    state =
-                        state.copy(
-                            deleteFeedback =
-                                ProjectDeleteFeedback(
-                                    id,
-                                    eventId,
-                                    ProjectDeleteStatus.ConnectionFailed,
-                                ),
-                        )
+                    recordDeleteFeedback(id, eventId, ProjectDeleteStatus.ConnectionFailed)
                     return@launch
                 }
                 val rejected = failure?.rejectsProjectMutation() == true
@@ -231,23 +231,31 @@ internal class ProjectListOwner(
                 if (outcome == ProjectDeleteStatus.Unconfirmed)
                     retryableProjectDeletes[id] = eventId
                 else retryableProjectDeletes.remove(id)
-                state = state.copy(deleteFeedback = ProjectDeleteFeedback(id, eventId, outcome))
+                recordDeleteFeedback(id, eventId, outcome)
             } finally {
                 if (current()) state = state.copy(deletingId = null)
             }
         }
     }
 
+    private fun recordDeleteFeedback(id: String, eventId: String, status: ProjectDeleteStatus) {
+        state =
+            state.copy(
+                deleteFeedback = state.deleteFeedback + ProjectDeleteFeedback(id, eventId, status),
+            )
+    }
+
     fun retryProjectDelete(feedback: ProjectDeleteFeedback) {
         if (
-            state.deleteFeedback == feedback && feedback.status == ProjectDeleteStatus.Unconfirmed
+            feedback in state.deleteFeedback && feedback.status == ProjectDeleteStatus.Unconfirmed
         ) {
             deleteProject(feedback.projectId)
         }
     }
 
     fun dismissProjectDeleteFeedback(feedback: ProjectDeleteFeedback) {
-        if (current() && state.deleteFeedback == feedback) state = state.copy(deleteFeedback = null)
+        if (current() && feedback in state.deleteFeedback)
+            state = state.copy(deleteFeedback = state.deleteFeedback - feedback)
     }
 
     private fun hasProjectReceipt(
@@ -419,8 +427,11 @@ internal class ProjectListOwner(
                             source = ChatListSource.Network,
                             renameRejection = renameRejection,
                             deleteFeedback =
-                                snapshot.deleteFeedback?.let { feedback ->
-                                    if (selected.rows.none { it.id == feedback.projectId })
+                                snapshot.deleteFeedback.map { feedback ->
+                                    if (
+                                        feedback.status != ProjectDeleteStatus.Confirmed &&
+                                            selected.rows.none { it.id == feedback.projectId }
+                                    )
                                         feedback.copy(status = ProjectDeleteStatus.Confirmed)
                                     else feedback
                                 },
