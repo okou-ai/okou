@@ -455,6 +455,7 @@ const networkLogDetailFields = {
   latency_ms: detailField("latency", "latency_ms", formatLatency),
   request_size: detailField("requestSize", "request_size", formatSize),
   response_size: detailField("responseSize", "response_size", formatSize),
+  openrouter: null,
   browser_user_agent: detailField("browserUserAgent", "browser_user_agent"),
   model_catalog_cache_status: detailField(
     "modelCatalogCacheStatus",

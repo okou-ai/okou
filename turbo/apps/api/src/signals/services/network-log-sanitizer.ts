@@ -210,6 +210,7 @@ function sanitizeAxiomNetworkEvent(event: unknown): NetworkLogEntry | null {
     latency_ms: numberValue(event.latency_ms),
     request_size: numberValue(event.request_size),
     response_size: numberValue(event.response_size),
+    openrouter: undefined,
     browser_user_agent: booleanValue(event.browser_user_agent),
     model_catalog_cache_status: modelCatalogCacheStatusValue(
       event.model_catalog_cache_status,

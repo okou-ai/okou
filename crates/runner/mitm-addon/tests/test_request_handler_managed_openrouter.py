@@ -1,6 +1,9 @@
 """Public managed header auth, streamed policy and terminal ownership."""
 
 import asyncio
+import gzip
+import json
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -13,6 +16,7 @@ import managed_openrouter as managed
 import managed_upload
 import mitm_addon
 from tests.firewall_auth_helpers import firewall_auth_response
+from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.managed_openrouter_helpers import (
     PI_ATTRIBUTION_HEADERS,
     authorize_headers,
@@ -50,6 +54,7 @@ async def test_stream_auth_and_original_bytes_without_raw_body_retention(
         assert callable(flow.request.stream)
         assert "X-Okou-Connector-Intent" not in flow.request.headers
         assert flow.request.headers["Authorization"] == "Bearer managed-token"
+        assert flow.request.headers["X-OpenRouter-Metadata"] == "enabled"
         mark_connected_tls_upstream(
             flow,
             sni="openrouter.ai",
@@ -73,6 +78,67 @@ async def test_stream_auth_and_original_bytes_without_raw_body_retention(
         flow.response = http.Response.make(200, b"{}", {"Content-Type": "application/json"})
         mitm_addon.response(flow)
         assert managed_upload.get(flow) is None
+
+
+@pytest.mark.parametrize("dialect", ["openai-completions", "openai-responses"])
+@pytest.mark.parametrize("mode", ["json_error", "stream", "interrupted"])
+async def test_routing_metadata_in_network_log(
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, dialect, mode
+):
+    info = sandbox(tmp_path, dialect)
+    registry = _write_registry(tmp_path, sandbox_info=info)
+    flow = request(real_flow, dialect=dialect)
+    attempts = [{"provider": "First Host", "model": "author/model", "status": 429}]
+    available = []
+    if mode == "stream":
+        attempts.append({"provider": "Fallback Host", "model": "author/model", "status": 200})
+        available.append({"provider": "Fallback Host", "model": "author/model", "selected": True})
+    envelope = {
+        "openrouter_metadata": {
+            "attempts": attempts,
+            "endpoints": {"available": available},
+            "pipeline": [{"data": "private-canary"}],
+        }
+    }
+    if dialect == "openai-responses" and mode == "stream":
+        envelope["response"] = {"id": "gen-body", "model": "author/model"}
+        envelope["type"] = "response.completed"
+    payload_bytes = json.dumps(envelope).encode()
+    headers = {"X-Generation-Id": "gen-header"}
+    if mode == "json_error":
+        headers["Content-Type"] = "application/json"
+    else:
+        headers.update({"Content-Type": "text/event-stream", "Content-Encoding": "gzip"})
+        event = b"data: " + payload_bytes + b"\n\n"
+        if dialect == "openai-responses":
+            event = b"event: response.completed\n" + event
+        payload_bytes = gzip.compress(event if mode == "stream" else event[:40])
+    with mitm_ctx(registry_path=str(registry)), fake_firewall_headers():
+        await mitm_addon.request(flow)
+        assert flow.response is None
+        assert flow.request.headers["X-OpenRouter-Metadata"] == "enabled"
+        flow.response = http.Response.make(502 if mode == "json_error" else 200, b"", headers)
+        mitm_addon.responseheaders(flow)
+        for offset in range(0, len(payload_bytes), 17):
+            chunk = payload_bytes[offset : offset + 17]
+            assert flow.response.stream(chunk) == chunk
+            await mitm_addon.responseinspection(flow)
+        if mode == "interrupted":
+            flow.error = Error("connection closed")
+            terminal = mitm_addon.error(flow)
+        else:
+            terminal = mitm_addon.response(flow)
+        if terminal is not None:
+            await terminal
+
+    [entry] = read_jsonl_entries_after_flush(Path(info["networkLogPath"]))
+    assert "private-canary" not in json.dumps(entry)
+    expected = {"generation_id": "gen-header"}
+    if mode != "interrupted":
+        expected["attempts"] = attempts
+    if mode == "stream":
+        expected.update({"provider": "Fallback Host", "model": "author/model"})
+    assert entry["openrouter"] == expected
 
 
 @pytest.mark.parametrize("dialect", ["openai-completions", "openai-responses"])
