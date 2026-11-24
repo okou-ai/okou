@@ -405,8 +405,8 @@ private fun SessionPrimaryAction(
 private fun SessionTextAction(
     @StringRes label: Int,
     onClick: () -> Unit,
-    enabled: Boolean = true,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
     val colors = MaterialTheme.colorScheme
     val shape = ButtonDefaults.textShape
