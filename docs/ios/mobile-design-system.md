@@ -799,8 +799,8 @@ feature; the catalog shows each one.
   chat never shows beside the list. `WorkspaceNavigation` uses a native
   `UINavigationController`, with the sidebar at its root and the chat pushed above it.
   The navigation bar stays hidden: each page retains its custom header, footer,
-  typography, colors and controls. UIKit owns push/pop animations, interactive
-  return and Reduce Motion adaptation. Retain both page hosts across navigation
+  typography, colors and controls. Button navigation uses the system transition. A swipe
+  drives a UIKit percent-driven pop, with a crossfade under Reduce Motion. Retain both page hosts across navigation
   so drafts and scroll state survive. Forward the SwiftUI environment to both
   hosts, including appearance, scene phase and scoped link/system-entry actions.
   The sidebar host uses only container safe areas, so the chat's keyboard never
@@ -857,10 +857,9 @@ feature; the catalog shows each one.
 - **Native return gestures open the sidebar.** A right swipe in a chat opens the sidebar.
   The sidebar's back button and chat selection request native pushes to the chat;
   a swipe is never the only way back. Content that scrolls
-  sideways (a code block or a table) participates in UIKit's native gesture arbitration.
-  UIKit owns the interactive pop and its animation. Coordinate return gestures
-  with vertical scrolling through public delegate failure relationships;
-  preserve horizontal content arbitration.
+  sideways (a code block or a table) keeps its pan away from the leading edge.
+  A single workspace pan recognizes the return direction, gives vertical drags
+  to the transcript, and drives the navigation transition through release or cancellation.
   A page swipe never also taps the row under it. Dragging a chat row from left to right
   reveals Mark as read/unread; dragging it from right to left reveals Archive/Unarchive
   and, inside it, Delete. Swipe actions are icons only, as Messages draws them; their
