@@ -271,11 +271,12 @@ class ChatComposerRootTest {
     fun earlierRepliesExpandBelowTheSummaryWithoutMovingIt() {
         val app = compose.activity.application as ComposerRootApplication
         val earlier = "The website copy is checked."
+        val lastParagraph = "Record the final decisions in the release notes."
         val latest =
             "The release materials are ready.\n\n" +
                 "The website and email are confirmed. Two checks remain before launch.\n\n" +
                 "Please share the updated checklist with all channel owners.\n\n" +
-                "Record the final decisions in the release notes."
+                lastParagraph
         fun id(seq: Long) = "50624000-0000-4000-8000-${seq.toString().padStart(12, '0')}"
         fun reply(seq: Long, text: String) =
             historyEventWire(id(seq), seq, payload = """{"content":${JsonPrimitive(text)}}""")
@@ -304,20 +305,18 @@ class ChatComposerRootTest {
         compose.waitUntil("latest conversation is displayed", 5_000) {
             app.fixture.chats.readRequests.get() > 0
         }
+        // Wait for the independently laid out paragraph after Markdown rendering.
+        compose.waitUntilExactlyOneExists(hasText(lastParagraph), 5_000)
         val resting = summary.assertIsDisplayed().getUnclippedBoundsInRoot()
         summary.performClick()
-        compose.waitUntil("expanded summary retains its position", 5_000) {
-            compose.onAllNodesWithText(earlier).fetchSemanticsNodes().isNotEmpty() &&
-                summary.getUnclippedBoundsInRoot().top == resting.top
-        }
+        compose.waitUntilExactlyOneExists(hasText(earlier), 5_000)
         val expanded = summary.assertIsDisplayed().getUnclippedBoundsInRoot()
+        assertEquals(resting.top, expanded.top)
         val firstReply = compose.onNodeWithText(earlier).assertIsDisplayed()
         assertTrue(firstReply.getUnclippedBoundsInRoot().top >= expanded.bottom)
         summary.performClick()
-        compose.waitUntil("collapsed summary retains its position", 5_000) {
-            compose.onAllNodesWithText(earlier).fetchSemanticsNodes().isEmpty() &&
-                summary.getUnclippedBoundsInRoot().top == resting.top
-        }
+        compose.waitUntilDoesNotExist(hasText(earlier), 5_000)
+        assertEquals(resting.top, summary.getUnclippedBoundsInRoot().top)
     }
 
     @Test
