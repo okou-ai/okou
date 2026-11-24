@@ -27,7 +27,9 @@ def suite(tmp_path: Path) -> Path:
             'pytest.register_assert_rewrite("tests.pytest_sharding")\n'
             "from tests.pytest_sharding import COLLECTED_NODE_IDS\n"
             'pytest_plugins = ["tests.pytest_sharding"]\n'
-            "passed = []\nfailed = []\n"
+            "discovered = []\npassed = []\nfailed = []\n"
+            "def pytest_itemcollected(item):\n"
+            "    discovered.append(item.nodeid)\n"
             "def pytest_runtest_logreport(report):\n"
             "    if report.failed:\n"
             '        failed.append(f"{report.when}:{report.nodeid}")\n'
@@ -35,6 +37,7 @@ def suite(tmp_path: Path) -> Path:
             "        passed.append(report.nodeid)\n"
             "def pytest_sessionfinish(session, exitstatus):\n"
             '    Path("nodeids.json").write_text(json.dumps({\n'
+            '        "discovered": discovered,\n'
             '        "collected": session.config.stash.get(COLLECTED_NODE_IDS, ()),\n'
             '        "selected": [item.nodeid for item in session.items],\n'
             '        "passed": passed,\n'
@@ -119,24 +122,22 @@ def test_costly_cases_are_balanced_without_losing_order_or_coverage(suite: Path)
         "@pytest.mark.shard_cost(10)\ndef test_expensive0():\n    assert True\n"
         "@pytest.mark.shard_cost(10)\ndef test_expensive2():\n    assert True\n"
     )
-    full, all_nodes = _run_suite(suite)
     first, first_nodes = _run_suite(suite, ("--test-shard=1/2",))
     second, second_nodes = _run_suite(suite, ("--test-shard=2/2",), hash_seed="42")
     repeated, repeated_nodes = _run_suite(suite, ("--test-shard=1/2",), hash_seed="123")
-    for result in (full, first, second, repeated):
+    for result in (first, second, repeated):
         assert result.returncode == pytest.ExitCode.OK, result.stdout + result.stderr
-    assert all_nodes["selected"] == all_nodes["collected"]
-    assert first_nodes["collected"] == second_nodes["collected"] == all_nodes["collected"]
+    # Observe discovery before the sharding plugin has a chance to filter it.
+    discovered = first_nodes["discovered"]
+    assert second_nodes["discovered"] == discovered
+    assert first_nodes["collected"] == second_nodes["collected"] == discovered
     assert set(first_nodes["selected"]).isdisjoint(second_nodes["selected"])
-    assert Counter(first_nodes["selected"] + second_nodes["selected"]) == Counter(
-        all_nodes["selected"]
-    )
+    assert Counter(first_nodes["selected"] + second_nodes["selected"]) == Counter(discovered)
     assert repeated_nodes == first_nodes
     for report in (first_nodes, second_nodes):
         assert sum(node in report["selected"] for node in costly) == 1
-        assert report["selected"] == [
-            node for node in all_nodes["selected"] if node in report["selected"]
-        ]
+        assert report["selected"] == [node for node in discovered if node in report["selected"]]
+        assert report["passed"] == report["selected"]
 
 
 @pytest.mark.shard_cost(1)
@@ -250,7 +251,10 @@ def test_empty_shard_does_not_pass(suite: Path) -> None:
 
 @pytest.mark.shard_cost(1)
 def test_failing_shard_preserves_pytest_failure(suite: Path) -> None:
-    (suite / "tests/test_failure.py").write_text("def test_failure():\n    assert False\n")
+    # Keep a marked case in the unsharded run as well as both shard runs.
+    (suite / "tests/test_failure.py").write_text(
+        "import pytest\n@pytest.mark.shard_cost(10)\ndef test_failure():\n    assert False\n"
+    )
     failure = "tests/test_failure.py::test_failure"
     full, all_nodes = _run_suite(suite)
     first, first_nodes = _run_suite(suite, ("--test-shard=1/2",))
@@ -268,7 +272,7 @@ def test_failing_shard_preserves_pytest_failure(suite: Path) -> None:
 
     assert len(all_nodes["selected"]) == 16
     assert failure in all_nodes["selected"]
-    assert all_nodes["selected"] == all_nodes["collected"]
+    assert all_nodes["selected"] == all_nodes["collected"] == all_nodes["discovered"]
     assert first_nodes["collected"] == second_nodes["collected"] == all_nodes["collected"]
     assert first_nodes["selected"]
     assert second_nodes["selected"]
