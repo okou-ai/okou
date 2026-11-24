@@ -3997,6 +3997,11 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
             val listFeedback = hasAnyAncestor(hasTestTag("chat_list_feedback"))
             compose.onNode(hasText(failure) and listFeedback).assertIsDisplayed()
             compose.onNodeWithText("Research").assertIsDisplayed()
+
+            compose.onNodeWithTag("chat_$CHAT_PERSONAL").performClick()
+            compose.onNodeWithTag("chat_list").assertDoesNotExist()
+            compose.onNodeWithContentDescription("Back").performClick()
+            compose.onNodeWithText(failure).assertDoesNotExist()
         } finally {
             releaseDelete.countDown()
         }
