@@ -1,3 +1,4 @@
+import CCState
 import ChatData
 import ChatDomain
 import Foundation
@@ -19,11 +20,12 @@ final class PermissionActionRegistry {
   private var closed = false
 
   init(
-    commands: ChatCommands, sync: ChatSync, didFail: @escaping @MainActor (Error) -> Void,
+    commands: ChatCommands, sync: ChatSync, graph: CCState.Store,
+    didFail: @escaping @MainActor (Error) -> Void,
     didContinue: @escaping @MainActor () async -> Void
   ) {
     self.commands = commands
-    resources = PermissionCardResources(commands: commands, didFail: didFail)
+    resources = PermissionCardResources(commands: commands, graph: graph, didFail: didFail)
     self.sync = sync
     self.didFail = didFail
     self.didContinue = didContinue
