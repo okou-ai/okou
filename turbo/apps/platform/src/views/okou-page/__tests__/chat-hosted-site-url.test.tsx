@@ -395,6 +395,9 @@ test("custom domain verification stays manual and requires selection and Save be
   const menu = await openHostedSiteShare(preview);
   click(buttonNamed("Customize URL", menu));
   await within(menu).findByLabelText("Website URL");
+  expect(
+    await within(menu).findByRole("combobox", { name: "Domain" }),
+  ).toHaveTextContent(".okou.app");
   click(buttonNamed("Custom domain", menu));
   const input = await within(menu).findByPlaceholderText("www.example.com");
   fireEvent.change(input, { target: { value: "www.customer-example.net" } });
@@ -402,6 +405,9 @@ test("custom domain verification stays manual and requires selection and Save be
   expect(buttonNamed("Continue", menu)).toBeEnabled();
   click(buttonNamed("Continue", menu));
   await within(menu).findByText("No verification yet");
+  expect(
+    within(menu).getByRole("combobox", { name: "Your domains" }),
+  ).toHaveTextContent("www.customer-example.net");
   expect(verifies).toBe(0);
   click(buttonNamed("Verify", menu));
   await within(menu).findByText("Domain verified. Select it in Customize URL.");

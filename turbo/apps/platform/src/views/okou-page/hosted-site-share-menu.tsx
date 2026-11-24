@@ -344,7 +344,11 @@ function WebsiteDomainSelector({
         })}
         className={standalone ? "w-full" : "h-auto border-0 bg-transparent p-0"}
       >
-        <SelectValue />
+        <SelectValue>
+          {configuration.domains.find((domain) => {
+            return domain.id === selectedDomainId;
+          })?.hostname ?? `.${resolveEditableHostedSiteDomain()}`}
+        </SelectValue>
       </SelectTrigger>
       <SelectContent>
         <SelectItem value="platform">

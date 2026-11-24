@@ -66,7 +66,14 @@ function DomainPicker({
         disabled={busy}
       >
         <SelectTrigger autoFocus id={`${session.inputId}-domain`}>
-          <SelectValue />
+          <SelectValue>
+            {configuration.domains.find((domain) => {
+              return domain.id === id;
+            })?.hostname ??
+              t(($) => {
+                return $.artifacts.customDomain.addAnother;
+              })}
+          </SelectValue>
         </SelectTrigger>
         <SelectContent>
           {configuration.domains.map((item) => {
