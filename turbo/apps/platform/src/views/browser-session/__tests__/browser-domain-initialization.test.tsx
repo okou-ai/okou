@@ -2,6 +2,7 @@ import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
+import { findFastControl } from "../../okou-page/__tests__/chat-message-experience-test-helpers.ts";
 import { browserRecoveryClock } from "../../../__tests__/browser-recovery-clock.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
@@ -237,7 +238,9 @@ test("browser-domain-initialization-018 A terminal Page failure preserves the ma
     editors: new Map([["example-page", editor]]),
     onConnecting(_url, socket) {
       if (admissions.shift()) {
-        queueMicrotask(() => socket.open());
+        queueMicrotask(() => {
+          return socket.open();
+        });
       }
     },
   });
@@ -259,7 +262,7 @@ test("browser-domain-initialization-018 A terminal Page failure preserves the ma
   expect(input()).toBeDisabled();
   expect(editor.value).toBe("");
 
-  await userEvent.click(screen.getByRole("button", { name: "Reconnect" }));
+  await userEvent.click(await findFastControl("button", "Reconnect"));
   await expectStreamingAt("https://example.com");
   const field = input();
   field.focus();

@@ -621,15 +621,15 @@ test("chat-navigation-artifact-drive-017 the repaired Drive account receives bot
   grant.complete();
   await screen.findByText("Synced to Google Drive");
   const actions = await options(panel);
-  expect(
-    await findNamedMenuItem("Open in Google Docs", actions),
-  ).toHaveAttribute("href", docsUrl);
+  await expect(
+    findNamedMenuItem("Open in Google Docs", actions),
+  ).resolves.toHaveAttribute("href", docsUrl);
   click(await findNamedMenuItem("Upload to Google Drive", actions));
   await waitFor(() => {
     expect(files).toStrictEqual([documentResult.id, file.filename]);
   });
   const afterUpload = await options(panel);
-  expect(
-    await findNamedMenuItem("Open in Google Docs", afterUpload),
-  ).toHaveAttribute("href", docsUrl);
+  await expect(
+    findNamedMenuItem("Open in Google Docs", afterUpload),
+  ).resolves.toHaveAttribute("href", docsUrl);
 });

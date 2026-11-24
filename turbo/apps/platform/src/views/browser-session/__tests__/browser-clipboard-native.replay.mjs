@@ -1,5 +1,62 @@
 import assert from "node:assert/strict";
 
+function observeClipboard() {
+  const { Clipboard, document, MutationObserver } = globalThis;
+  const receipts = { gestures: [], writes: [], alerts: [] };
+  globalThis.copyReceipts = receipts;
+  globalThis.copyObservations = [];
+  document.addEventListener(
+    "copy",
+    (event) => {
+      receipts.gestures.push({
+        trusted: event.isTrusted,
+        focused: document.activeElement?.getAttribute("aria-label"),
+      });
+    },
+    true,
+  );
+  const write = Clipboard.prototype.write;
+  Clipboard.prototype.write = function (items) {
+    const receipt = {};
+    receipts.writes.push(receipt);
+    const result = write.call(this, items);
+    async function recordWrite() {
+      try {
+        await result;
+        receipt.write = "fulfilled";
+      } catch (error) {
+        receipt.writeError = error.name;
+      }
+    }
+    async function recordItem() {
+      try {
+        const blob = await items[0].getType("text/plain");
+        receipt.item = await blob.text();
+      } catch (error) {
+        receipt.itemError = error.name;
+      }
+    }
+    globalThis.copyObservations.push(
+      Promise.all([recordWrite(), recordItem()]),
+    );
+    return result;
+  };
+  new MutationObserver(() => {
+    for (const node of document.querySelectorAll(
+      '[role="alert"], [role="status"]',
+    )) {
+      const text = node.textContent?.trim();
+      if (text && !receipts.alerts.includes(text)) {
+        receipts.alerts.push(text);
+      }
+    }
+  }).observe(document, {
+    childList: true,
+    characterData: true,
+    subtree: true,
+  });
+}
+
 // browser-viewer-interaction-107. The relay withholds the acknowledgement after the remote
 // Chromium has inserted the text. The client still writes to its real clipboard.
 export async function verifyPendingCopy({
@@ -9,62 +66,11 @@ export async function verifyPendingCopy({
   holdNextTextAcknowledgement,
   observeReports,
 }) {
-  await page.addInitScript(() => {
-    const receipts = { gestures: [], writes: [], alerts: [] };
-    window.copyReceipts = receipts;
-    document.addEventListener(
-      "copy",
-      (event) => {
-        receipts.gestures.push({
-          trusted: event.isTrusted,
-          focused: document.activeElement?.getAttribute("aria-label"),
-        });
-      },
-      true,
-    );
-    const write = Clipboard.prototype.write;
-    Clipboard.prototype.write = function (items) {
-      const receipt = {};
-      receipts.writes.push(receipt);
-      const result = write.call(this, items);
-      result.then(
-        () => {
-          receipt.write = "fulfilled";
-        },
-        (error) => {
-          receipt.writeError = error.name;
-        },
-      );
-      items[0]
-        .getType("text/plain")
-        .then((blob) => blob.text())
-        .then(
-          (text) => {
-            receipt.item = text;
-          },
-          (error) => {
-            receipt.itemError = error.name;
-          },
-        );
-      return result;
-    };
-    new MutationObserver(() => {
-      for (const node of document.querySelectorAll(
-        '[role="alert"], [role="status"]',
-      )) {
-        const text = node.innerText?.trim();
-        if (text && !receipts.alerts.includes(text)) receipts.alerts.push(text);
-      }
-    }).observe(document, {
-      childList: true,
-      characterData: true,
-      subtree: true,
-    });
-  });
+  await page.addInitScript(observeClipboard);
   await page.goto(viewerUrl, { waitUntil: "domcontentloaded" });
   const input = page.getByLabel("Remote browser input", { exact: true });
   const canvas = page.getByRole("img", { name: "Live browser view" });
-  await canvas.waitFor({ timeout: 90000 });
+  await canvas.waitFor({ timeout: 90_000 });
   await page.getByLabel("Browser settings").click();
   const size = page.getByText("Window size", { exact: true });
   await size.hover();
@@ -78,7 +84,9 @@ export async function verifyPendingCopy({
     await editor.fill("");
     await editor.focus();
     await page.bringToFront();
-    await page.evaluate(() => navigator.clipboard.writeText("prior clipboard"));
+    await page.evaluate(() => {
+      return globalThis.navigator.clipboard.writeText("prior clipboard");
+    });
     await canvas.click();
     await input.focus();
     const acknowledgement = holdNextTextAcknowledgement();
@@ -87,37 +95,47 @@ export async function verifyPendingCopy({
     let pending;
     try {
       assert.equal(await editor.inputValue(), "ordered");
-      await editor.evaluate((node) => node.select());
+      await editor.evaluate((node) => {
+        return node.select();
+      });
       await input.focus();
       await page.keyboard.press("Control+c");
       await page.waitForFunction(
-        (index) => window.copyReceipts.writes.length > index,
+        (index) => {
+          return globalThis.copyReceipts.writes.length > index;
+        },
         observed.length,
         { timeout: 5000 },
       );
-      pending = await page.evaluate(() => ({
-        ...window.copyReceipts.writes.at(-1),
-      }));
+      pending = await page.evaluate(() => {
+        return {
+          ...globalThis.copyReceipts.writes.at(-1),
+        };
+      });
       assert.deepEqual(pending, {});
-      if (blur) await page.getByLabel("Address", { exact: true }).click();
+      if (blur) {
+        await page.getByLabel("Address", { exact: true }).click();
+      }
     } finally {
       release();
     }
-    await page.waitForFunction(() => {
-      const receipt = window.copyReceipts.writes.at(-1);
-      return (
-        (receipt.write || receipt.writeError) &&
-        (receipt.item || receipt.itemError)
-      );
+    await page.evaluate(() => {
+      return globalThis.copyObservations.at(-1);
     });
-    const clipboard = await page.evaluate(() => navigator.clipboard.readText());
+    const clipboard = await page.evaluate(() => {
+      return globalThis.navigator.clipboard.readText();
+    });
     await canvas.click();
     await input.focus();
     await page.keyboard.insertText("fresh");
-    await remotePage.waitForFunction(
-      () => document.querySelector("textarea").value === "orderedfresh",
-    );
-    const receipts = await page.evaluate(() => window.copyReceipts);
+    await remotePage.waitForFunction(() => {
+      return (
+        globalThis.document.querySelector("textarea").value === "orderedfresh"
+      );
+    });
+    const receipts = await page.evaluate(() => {
+      return globalThis.copyReceipts;
+    });
     const result = {
       blur,
       pending,
