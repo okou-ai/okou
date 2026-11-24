@@ -136,6 +136,55 @@ class EnrollmentTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "private"):
             personal_environment()
 
+    def test_fresh_worker_can_restore_only_native_file_with_separate_control_state(
+        self,
+    ):
+        root = Path(self.directory)
+        control = root / "control"
+        original = root / "first-home"
+        replacement = root / "new-home"
+        for directory in (control, original, replacement):
+            directory.mkdir(mode=0o700)
+        os.environ["OKOU_ANTIGRAVITY_BINDING_DIR"] = str(control)
+        os.environ["OKOU_ANTIGRAVITY_FILE_HOME"] = str(original)
+        with (
+            patch.object(sys, "argv", ["worker", "connect", str(self.binding)]),
+            patch.object(
+                worker,
+                "binding_status",
+                side_effect=[
+                    "pending",
+                    "connected",
+                    "connected",
+                    "connected",
+                ],
+            ),
+        ):
+            worker.main()
+            self.assertEqual(
+                (control / "binding").read_text().strip(), str(self.binding)
+            )
+            restored = replacement / native.NATIVE_LOGIN_FILE
+            restored.parent.mkdir(parents=True)
+            # Move only the synthetic native file. The replacement home has no
+            # OS session, cached workspaces, CLI settings, or worker state.
+            (original / native.NATIVE_LOGIN_FILE).rename(restored)
+            os.environ["OKOU_ANTIGRAVITY_FILE_HOME"] = str(replacement)
+            self.assertNotIn("OKOU_ANTIGRAVITY_BINDING_DIR", personal_environment())
+            worker.main()
+            self.assertFalse((replacement / ".local/state/okou").exists())
+        empty_control = root / "other-control"
+        empty_control.mkdir(mode=0o700)
+        os.environ["OKOU_ANTIGRAVITY_BINDING_DIR"] = str(empty_control)
+        with (
+            patch.object(sys, "argv", ["worker", "connect", str(self.binding)]),
+            patch.object(worker, "binding_status", return_value="connected"),
+            patch("sys.stderr", new_callable=io.StringIO),
+            self.assertRaises(SystemExit) as rejected,
+        ):
+            worker.main()
+        self.assertEqual(rejected.exception.code, 1)
+
     def test_file_profile_rejects_redirected_paths_before_login_or_a_session_bus(self):
         home = Path(self.directory) / "member"
         home.mkdir(mode=0o700)

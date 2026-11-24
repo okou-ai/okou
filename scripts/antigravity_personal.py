@@ -32,22 +32,27 @@ SESSION_ENV = (
 NATIVE_LOGIN_FILE = Path(".gemini/antigravity-cli/antigravity-oauth-token")
 
 
+def private_directory(value):
+    directory = Path(value)
+    if not directory.is_absolute() or directory.resolve() != directory:
+        raise ValueError("Configure a private absolute Antigravity directory.")
+    metadata = directory.lstat()
+    if (
+        not stat.S_ISDIR(metadata.st_mode)
+        or metadata.st_uid != os.geteuid()
+        or metadata.st_mode & 0o077
+    ):
+        raise ValueError("The Antigravity directory must be private to its owner.")
+    return directory
+
+
 def personal_environment():
     """Select the provisioned file profile or the existing native OS session."""
     profile = os.environ.get("OKOU_ANTIGRAVITY_FILE_HOME")
     if profile is None:
         env = {key: os.environ[key] for key in SESSION_ENV if key in os.environ}
     else:
-        home = Path(profile)
-        if not home.is_absolute() or home.resolve() != home:
-            raise ValueError("Configure a private absolute Antigravity file home.")
-        metadata = home.lstat()
-        if (
-            not stat.S_ISDIR(metadata.st_mode)
-            or metadata.st_uid != os.geteuid()
-            or metadata.st_mode & 0o077
-        ):
-            raise ValueError("The Antigravity file home must be private to its owner.")
+        home = private_directory(profile)
         # Only the trusted launcher chooses this mount. A clean headless session
         # keeps auth in agy's private home instead of another user's desktop bus.
         env = {

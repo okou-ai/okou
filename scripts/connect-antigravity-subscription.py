@@ -14,7 +14,12 @@ from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 from uuid import UUID
 
-from antigravity_personal import personal_environment, signed_in, verify_models
+from antigravity_personal import (
+    personal_environment,
+    private_directory,
+    signed_in,
+    verify_models,
+)
 
 AGY = "/usr/local/bin/agy"
 
@@ -202,16 +207,22 @@ def main():
     # its home, state directory or desktop bus in a job workspace.
     try:
         environment = personal_environment()
-        state = (
-            Path(environment.get("XDG_STATE_HOME") or Path.home() / ".local/state")
-            / "okou/antigravity"
-        )
-        state.mkdir(parents=True, exist_ok=True, mode=0o700)
+        control_dir = os.environ.get("OKOU_ANTIGRAVITY_BINDING_DIR")
+        if control_dir is None:
+            state = (
+                Path(environment.get("XDG_STATE_HOME") or Path.home() / ".local/state")
+                / "okou/antigravity"
+            )
+            state.mkdir(parents=True, exist_ok=True, mode=0o700)
+        else:
+            # The trusted control volume keeps only the binding ID and lock.
+            # A replacement instance can restore just agy's native login file.
+            state = private_directory(control_dir)
         with open(
             state / "binding",
             "a+",
             encoding="ascii",
-            opener=lambda p, f: os.open(p, f, 0o600),
+            opener=lambda p, f: os.open(p, f | os.O_NOFOLLOW, 0o600),
         ) as record:
             fcntl.flock(record, fcntl.LOCK_EX | fcntl.LOCK_NB)
             record.seek(0)
@@ -240,7 +251,7 @@ def main():
             elif action == "verify":
                 test_models(args.binding_id, record)
             else:
-                connect(args.binding_id, record)
+                connect(args.binding_id, record, AGY)
     except BlockingIOError:
         parser.exit(1, "Another sign-in is active on this worker.\n")
     except (subprocess.SubprocessError, OSError, EOFError):
