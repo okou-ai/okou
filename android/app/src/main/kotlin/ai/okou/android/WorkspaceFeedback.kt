@@ -5,6 +5,7 @@ import ai.okou.android.chat.ChatListUiState
 import ai.okou.android.chat.ChatReadPhase
 import ai.okou.android.chat.ChatRenameEditor
 import ai.okou.android.chat.ChatRowAction
+import ai.okou.android.chat.ChatRowActionFailure
 import ai.okou.android.chat.ChatRowUndo
 import ai.okou.android.chat.ChatUndoPhase
 import ai.okou.android.chat.DeleteProjectDialog
@@ -224,7 +225,38 @@ internal fun WorkspaceChatFeedback(
     LaunchedEffect(chats, hiddenConversationUndo) {
         hiddenConversationUndo?.let(chats::dismissRowUndo)
     }
-    if (undo != null)
+    val failure =
+        list.failedRowAction?.takeUnless {
+            it.renameThreadId != null &&
+                it.renameThreadId == (renameEditor?.target as? WorkspaceRenameTarget.Chat)?.id
+        }
+    val listDeleteRejection =
+        failure?.let {
+            it.action == ChatRowAction.Delete && it.rejected && !it.deleteFromWorkflow
+        } == true
+    val priorityRowFailure =
+        failure?.rejected == true &&
+            when {
+                listDeleteRejection -> showChatList && undo?.fromConversation == false
+                failure.conversationId == null -> showChatList && undo?.fromConversation == false
+                else ->
+                    failure.conversationId == visibleConversationId &&
+                        undo?.fromConversation == true
+            }
+    val priorityProjectDelete =
+        showChatList &&
+            undo?.fromConversation == false &&
+            deleteFeedback != null &&
+            deleteFeedback.projectId != deleteProject?.id &&
+            (deleteFeedback.status == ProjectDeleteStatus.Rejected ||
+                deleteFeedback.status == ProjectDeleteStatus.ConnectionFailed)
+    val batchResult = list.markAllReadResult
+    val priorityBatch =
+        showChatList &&
+            undo?.fromConversation == false &&
+            batchResult != null &&
+            batchResult.rejected > 0
+    if (undo != null && !priorityRowFailure && !priorityProjectDelete && !priorityBatch)
         ChatUndoFeedback(chats, undo, undo.threadId in list.pendingRowActions, snackbar)
     if (showRowFeedback && undo == null) {
         list.chatMoveNotice?.let { notice ->
@@ -236,6 +268,8 @@ internal fun WorkspaceChatFeedback(
                 chats.dismissChatMoveNotice(notice)
             }
         }
+    }
+    if (showRowFeedback && (undo == null || priorityProjectDelete)) {
         deleteFeedback
             ?.takeIf { showChatList && it.projectId != deleteProject?.id }
             ?.let { feedback ->
@@ -269,28 +303,34 @@ internal fun WorkspaceChatFeedback(
                 }
             }
     }
-    if (undo == null)
+    if (failure != null && (undo == null || priorityRowFailure))
         ChatRowFailureFeedback(
             chats,
             list,
+            failure,
             snackbar,
             showChatList,
             visibleConversationId,
             showRowActionFailure,
-            (renameEditor?.target as? WorkspaceRenameTarget.Chat)?.id,
         )
-    list.markAllReadResult
-        ?.takeIf { undo == null }
+    batchResult
+        ?.takeIf { undo == null || priorityBatch }
         ?.let { result ->
             val message =
                 when {
-                    result.connectionFailed ->
-                        stringResource(R.string.chat_action_connection_failed)
+                    result.rejected == result.requested ->
+                        stringResource(R.string.chat_mark_all_read_failed)
                     result.confirmed == result.requested ->
                         pluralStringResource(
                             R.plurals.chat_mark_all_read_success,
                             result.confirmed,
                             result.confirmed,
+                        )
+                    result.rejected > 0 && result.confirmed + result.rejected == result.requested ->
+                        stringResource(
+                            R.string.chat_mark_all_read_partial_failed,
+                            result.confirmed,
+                            result.rejected,
                         )
                     result.confirmed > 0 ->
                         pluralStringResource(
@@ -395,14 +435,12 @@ private fun WorkspaceRenameForm(
 private fun ChatRowFailureFeedback(
     chats: ChatListModel,
     list: ChatListUiState,
+    failure: ChatRowActionFailure,
     snackbar: SnackbarHostState,
     showChatList: Boolean,
     visibleConversationId: String?,
     showRowActionFailure: Boolean,
-    renamingThreadId: String?,
 ) {
-    val failure = list.failedRowAction ?: return
-    if (renamingThreadId != null && failure.renameThreadId == renamingThreadId) return
     val action = failure.action
     if (action == ChatRowAction.Delete && failure.rejected && !failure.deleteFromWorkflow) {
         val message = stringResource(R.string.chat_delete_rejected)
