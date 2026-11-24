@@ -7,9 +7,6 @@ import type {
   ExecutionContext,
   RunnerPreference,
 } from "@okouai/api-contracts/contracts/runners";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isStaffOrg } from "@okouai/core/staff-org";
 import { command, type Command } from "ccstate";
 import { delay } from "signal-timers";
 import type { output } from "zod";
@@ -31,7 +28,7 @@ import {
   type ExecutionBundleUrlsRead,
 } from "./direct-run-preparation.service";
 import type { ExecutionRuntimeResources } from "./execution-runtime-context";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
+import { isAntigravityEnabledForMember$ } from "./feature-switches.service";
 import {
   selectDirectRunOwner$,
   readDirectRunState$,
@@ -388,13 +385,7 @@ const enforceAntigravityMemberAccess$ = command(
     signal: AbortSignal,
   ): Promise<DirectRunDispatchResult | undefined> => {
     const { orgId, userId } = input.run;
-    if (
-      isStaffOrg(orgId) &&
-      isFeatureEnabled(
-        FeatureSwitchKey.GeminiAntigravity,
-        await set(loadUserFeatureSwitchContext$, orgId, userId, signal),
-      )
-    ) {
+    if (await set(isAntigravityEnabledForMember$, orgId, userId, signal)) {
       return;
     }
     const terminal = await set(

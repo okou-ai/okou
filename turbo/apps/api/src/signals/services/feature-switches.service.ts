@@ -2,8 +2,10 @@ import { computerUseCommands } from "@okouai/db/schema/computer-use-host";
 import { command, computed, type Computed } from "ccstate";
 import {
   getAllFeatureStates,
+  isFeatureEnabled,
   type FeatureSwitchContext,
 } from "@okouai/core/feature-switch";
+import { isStaffOrg } from "@okouai/core/staff-org";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { and, eq, inArray, sql } from "drizzle-orm";
 
@@ -66,6 +68,18 @@ export const loadUserFeatureSwitchContext$ = command(
       userId,
       overrides: userFeatureSwitchOverridesFromRows(rows, userId),
     };
+  },
+);
+
+export const isAntigravityEnabledForMember$ = command(
+  async ({ set }, orgId: string, userId: string, signal: AbortSignal) => {
+    return (
+      isStaffOrg(orgId) &&
+      isFeatureEnabled(
+        FeatureSwitchKey.GeminiAntigravity,
+        await set(loadUserFeatureSwitchContext$, orgId, userId, signal),
+      )
+    );
   },
 );
 

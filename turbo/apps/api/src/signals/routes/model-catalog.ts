@@ -15,17 +15,38 @@ import {
 import { command } from "ccstate";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
+import { setResHeader$ } from "../context/hono";
+import { isAntigravityEnabledForMember$ } from "../services/feature-switches.service";
 import type { RouteEntry } from "../route-entry";
 import {
+  isAntigravityModel,
   modelCatalog$,
   resolveCatalogModel,
 } from "../services/model-catalog.service";
 
-const getModelCatalogInner$ = command(async ({ get }, signal: AbortSignal) => {
-  get(organizationAuthContext$);
+const getModelCatalog$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const auth = get(organizationAuthContext$);
+  set(setResHeader$, "Cache-Control", "private, no-store");
   const catalog = await get(modelCatalog$);
   signal.throwIfAborted();
+  const includeAntigravity =
+    catalog.models.some((row) => {
+      return isAntigravityModel(row.model);
+    }) &&
+    (await set(
+      isAntigravityEnabledForMember$,
+      auth.orgId,
+      auth.userId,
+      signal,
+    ));
   const routes = catalog.routes.filter((route) => {
+    if (isAntigravityModel(route.model)) {
+      return (
+        includeAntigravity &&
+        route.subscriptionType === "antigravity" &&
+        catalog.byModel.get(route.model)?.replacedBy === null
+      );
+    }
     return (
       route.enabled &&
       (route.subscriptionType === "codex-oauth-token" ||
@@ -49,7 +70,10 @@ const getModelCatalogInner$ = command(async ({ get }, signal: AbortSignal) => {
         },
         ...catalog.models
           .filter((row) => {
-            return row.model !== AUTO_SELECTED_MODEL;
+            return (
+              row.model !== AUTO_SELECTED_MODEL &&
+              (includeAntigravity || !isAntigravityModel(row.model))
+            );
           })
           .map((row) => {
             const resolution = resolveCatalogModel(catalog, row.model);
@@ -119,7 +143,7 @@ export const modelCatalogRoutes: readonly RouteEntry[] = [
         missingOrganizationStatus: 401,
         acceptAnySandboxCapability: true,
       },
-      getModelCatalogInner$,
+      getModelCatalog$,
     ),
   },
 ];

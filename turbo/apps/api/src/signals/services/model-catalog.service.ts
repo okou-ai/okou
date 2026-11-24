@@ -15,6 +15,14 @@ import { db$ } from "../external/db";
 /** `usage_pricing.kind` of model token usage (the addon's `MODEL_USAGE_KIND`). */
 const MODEL_USAGE_PRICING_KIND = "model";
 
+export function isAntigravityModel(model: string): boolean {
+  return (
+    model === "gemini-4-neon" ||
+    model === "gemini-4-carbon" ||
+    model === "gemini-4-hydrogen"
+  );
+}
+
 type CatalogModel = Readonly<{
   model: string;
   displayName: string;
