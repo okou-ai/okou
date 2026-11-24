@@ -14,7 +14,6 @@ import {
   UNKNOWN_PERMISSION_GRANT,
   type FirewallBaseHostPolicy,
   type Firewall,
-  type FirewallPolicies,
   type FirewallPolicyValue,
 } from "@okouai/connectors/firewall-types";
 
@@ -734,34 +733,4 @@ export function selectConnectorServerFirewalls(args: {
         : Promise.resolve(null);
     },
   };
-}
-
-export async function expandConnectorServerFirewallPolicies(args: {
-  readonly catalog: ConnectorServerFirewallMetadataCatalog;
-  readonly stored: FirewallPolicies | null;
-  readonly connectorSlugs: readonly string[];
-}): Promise<FirewallPolicies | null> {
-  const indexes = await Promise.all(
-    args.connectorSlugs.map((connectorSlug) => {
-      return args.catalog.loadPermissionIndex(connectorSlug);
-    }),
-  );
-  let resolved: FirewallPolicies | null = null;
-  for (const index of indexes) {
-    if (!index) {
-      continue;
-    }
-    resolved ??= { ...args.stored };
-    const existing = resolved[index.connectorSlug];
-    resolved[index.connectorSlug] = {
-      policies: {
-        ...index.defaultPermissionPolicies,
-        ...existing?.policies,
-      },
-      ...(existing?.unknownPolicy !== undefined
-        ? { unknownPolicy: existing.unknownPolicy }
-        : { unknownPolicy: index.defaultPolicy.unknownPolicy }),
-    };
-  }
-  return resolved ?? args.stored;
 }
