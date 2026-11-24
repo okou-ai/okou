@@ -953,10 +953,13 @@ feature; the catalog shows each one.
   rather than stopping at its inset, with the scroll indicator along the card's side; above the
   actions it stops a gap short of them. When the actions would leave the heading less than a third of the card, as at the
   largest text sizes, heading and actions scroll together from the title.
-- **The deck pages round.** A sideways swipe carries the front card with the finger; it settles
-  back a little but never tilts, since paging throws nothing away, and the next card rises out
-  of the deck, solid within the first third of the swipe. Past the last card the deck carries on
-  to the first, and back from the first to the last, as the web's stack turns. The counter rolls
+- **The deck pages round, the same both ways.** A sideways swipe either way throws the top card
+  off that side with the finger; it settles back a little but never tilts, since paging throws
+  nothing away. The card it pages to, next or previous, rises straight out of the deck beneath
+  it, centred where the deck's first layer lies, solid within the first third of the swipe; no
+  card ever slides in from the side. Tapping a progress segment throws the top card off the same
+  way. Past the last card the deck carries on to the first, and back from the first to the last,
+  as the web's stack turns. The counter rolls
   and the lit progress segment follows the finger. A handled card sinks away while the next one
   rises into its place. Under Reduce Motion the cards page side by side and the cover holds still.
   Every card fills the room from just under the train's lower edge (the rails and sea may be

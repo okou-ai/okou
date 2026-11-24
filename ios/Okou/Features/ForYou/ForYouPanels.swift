@@ -172,6 +172,38 @@ struct ForYouLoadingCard: View {
   }
 }
 
+/// The layers of the deck under the card in front: solid cards on the scene, each a little
+/// narrower, lower and more shaded than the one above it.
+struct ForYouDeckLayers: View {
+  let count: Int
+  let ground: Color
+  /// How far each layer peeks below the one above it.
+  let drop: CGFloat
+  /// How much narrower each layer is than the one above it.
+  let inset: CGFloat
+  /// How much more each deeper layer is shaded.
+  let shade: Double
+
+  var body: some View {
+    ZStack(alignment: .bottom) {
+      ForEach(Array((1...count).reversed()), id: \.self) { layer in
+        RoundedRectangle(cornerRadius: OkouRadius.sheet, style: .continuous)
+          .fill(ground)
+          .overlay {
+            RoundedRectangle(cornerRadius: OkouRadius.sheet, style: .continuous)
+              .fill(OkouMediaColor.scrim.opacity(Double(layer) * shade))
+          }
+          .overlay {
+            RoundedRectangle(cornerRadius: OkouRadius.sheet, style: .continuous)
+              .strokeBorder(OkouColor.border, lineWidth: OkouSpace.hairline)
+          }
+          .scaleEffect(x: 1 - CGFloat(layer) * inset, y: 1, anchor: .bottom)
+          .offset(y: CGFloat(layer) * drop)
+      }
+    }
+  }
+}
+
 /// The deck as the pager lays it out. With more than one card, the last card waits again before
 /// the first and the first again after the last, so a swipe past either end carries on round the
 /// deck, as the web's stack turns. Coming to rest on either copy hands over to the card itself.
