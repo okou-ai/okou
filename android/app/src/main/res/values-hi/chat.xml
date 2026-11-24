@@ -114,4 +114,9 @@
     <string name="chat_rename_save_unconfirmed">सेव करने के नतीजे की अब तक पुष्टि नहीं हुई है।</string>
     <string name="chat_title_saved">चैट का शीर्षक सेव हो गया</string>
     <string name="chat_project_name_saved">प्रोजेक्ट का नाम सेव हो गया</string>
+    <string name="inline_image_loading">इमेज लोड हो रही है…</string>
+    <string name="inline_image_no_thumbnail">थंबनेल उपलब्ध नहीं है</string>
+    <string name="inline_image_unavailable">इमेज उपलब्ध नहीं है</string>
+    <string name="inline_image_view_original">मूल इमेज देखें</string>
+    <string name="inline_image_open_link">लिंक खोलें</string>
 </resources>

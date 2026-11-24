@@ -622,6 +622,22 @@ internal fun ConversationRoute(
                 onLinkFocusRestored,
             )
         }
+        val sourceFocus = artifactActions?.restoreKey ?: linkFocusKey
+        val imageReply = imageFocusReply(sourceFocus)
+        if (imageReply != null && readingReady) {
+            LaunchedEffect(sourceFocus, timeline) {
+                if (
+                    timeline.none { it is ConversationMessage && it.includes(imageReply) } &&
+                        timelineFocus.requestFocus()
+                ) {
+                    if (artifactActions?.restoreKey != null) artifactActions.restored()
+                    else onLinkFocusRestored()
+                }
+            }
+        }
+        val visibleArtifacts =
+            if (imageReply != null && !readingReady) artifactActions?.copy(restoreKey = null)
+            else artifactActions
         val contentWidth = Modifier.widthIn(max = ConversationContentMaxWidth)
         Column(modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
@@ -716,7 +732,7 @@ internal fun ConversationRoute(
                                 ) {
                                     ConversationMessageRow(
                                         entry,
-                                        artifactActions = artifactActions,
+                                        artifactActions = visibleArtifacts,
                                         findHighlight = highlight,
                                         links = links,
                                         beforeEarlierRepliesResize = {

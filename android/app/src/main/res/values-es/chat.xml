@@ -116,4 +116,9 @@
     <string name="chat_rename_save_unconfirmed">El resultado del guardado aún no se ha confirmado.</string>
     <string name="chat_title_saved">Título del chat guardado</string>
     <string name="chat_project_name_saved">Nombre del proyecto guardado</string>
+    <string name="inline_image_loading">Cargando imagen…</string>
+    <string name="inline_image_no_thumbnail">Miniatura no disponible</string>
+    <string name="inline_image_unavailable">Imagen no disponible</string>
+    <string name="inline_image_view_original">Ver original</string>
+    <string name="inline_image_open_link">Abrir enlace</string>
 </resources>

@@ -281,6 +281,9 @@ internal fun OkouApp(
         )
             WorkspaceTarget.List
         else requestedTarget
+    LaunchedEffect(chatArtifacts, target) {
+        (target as? WorkspaceTarget.Chat)?.let { chatArtifacts?.inlineImages?.revisit(it.id) }
+    }
     var findVisit by remember(chats, target) { mutableStateOf<ConversationFindVisit?>(null) }
     // Window configuration changes on resize. IME insets only change the space inside the panes.
     val window = currentWindowSizeDp()
@@ -1476,6 +1479,7 @@ internal fun OkouApp(
                                         rows,
                                         chatArtifacts != null,
                                         restoreFocus,
+                                        chatArtifacts?.inlineImages?.names(selected.id).orEmpty(),
                                     )
                             }
                         }
@@ -2004,6 +2008,8 @@ internal fun OkouApp(
                                                                         chatArtifactFocusKey = null,
                                                                     )
                                                             },
+                                                            images = chatArtifacts.inlineImages,
+                                                            threadId = target.id,
                                                         ),
                                                 findTarget = find?.target,
                                                 linkPosition = linkPosition,

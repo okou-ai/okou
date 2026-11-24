@@ -114,6 +114,11 @@ internal constructor(
     private val catalogs = LinkedHashMap<ArtifactQuery, ConfirmedArtifactCatalog>(8, 0.75f, true)
     private val previews = LinkedHashMap<String, ArtifactPreviewState>(3, 0.75f, true)
     private val thumbnails = LruCache<String, Bitmap>(40)
+    internal val inlineImages =
+        InlineArtifactImages(service, viewModelScope) { error ->
+            val failure = problem(error)
+            if (error is ApiFailure.Unauthenticated) ArtifactProblem.Denied else failure
+        }
     private var active = false
     private var catalogVisible = false
     private var catalogJob: Job? = null
@@ -152,6 +157,9 @@ internal constructor(
         }
         viewModelScope.launch {
             catalogChanges.collect { changes ->
+                if (changes.resync) inlineImages.invalidate()
+                else if (changes.artifactThreads.isNotEmpty())
+                    inlineImages.invalidate(changes.artifactThreads)
                 val threadId = mutable.value.query.chatThreadId ?: return@collect
                 if (catalogVisible && (changes.resync || threadId in changes.artifactThreads)) {
                     readCatalog()
@@ -166,7 +174,10 @@ internal constructor(
         viewModelScope.launch {
             unavailableChat.collect { threadId ->
                 missingThread = threadId
-                if (threadId != null) evictChatCatalog(threadId)
+                if (threadId != null) {
+                    inlineImages.invalidate(setOf(threadId))
+                    evictChatCatalog(threadId)
+                }
             }
         }
     }
@@ -679,6 +690,7 @@ internal constructor(
         catalogs.clear()
         previews.clear()
         thumbnails.evictAll()
+        inlineImages.invalidate()
         cache?.let {
             storeCatalog {
                 it.deleteArtifactCatalog()
