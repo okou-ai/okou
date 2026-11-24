@@ -63,6 +63,11 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
     @Volatile var failAccountReads = false
     @Volatile var denyAccountReads = false
     @Volatile var denyPermissionReads = false
+    @Volatile var devicePollStatus = "pending"
+    @Volatile var devicePollInterval = 5
+    @Volatile var deviceExpiresIn = 900
+    val devicePollRequests = AtomicInteger()
+    val deviceStartRequests = AtomicInteger()
     @Volatile var loseRenameReply = false
     @Volatile var deferRenameCommit = false
     @Volatile var renameReplyGate: CountDownLatch? = null
@@ -449,9 +454,21 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                 request.method == "POST" -> {
                 if (body(request)["authMethod"]?.jsonPrimitive?.content != "device-auth")
                     return rejected(400)
+                deviceStartRequests.incrementAndGet()
                 jsonResponse(
-                    """{"sessionId":"$CONNECTOR_OAUTH_ATTEMPT","sessionToken":"fixture-only","connectorSlug":"$CONNECTOR_DEVICE_EXAMPLE","status":"pending","userCode":"$CONNECTOR_EXAMPLE_DEVICE_CODE","verificationUri":"$CONNECTOR_AUTHORIZATION_URL","expiresIn":900,"interval":5}""",
+                    """{"sessionId":"$CONNECTOR_OAUTH_ATTEMPT","sessionToken":"fixture-only","connectorSlug":"$CONNECTOR_DEVICE_EXAMPLE","status":"pending","userCode":"$CONNECTOR_EXAMPLE_DEVICE_CODE","verificationUri":"$CONNECTOR_AUTHORIZATION_URL","expiresIn":$deviceExpiresIn,"interval":$devicePollInterval}""",
                 )
+            }
+            path ==
+                "/api/connectors/$CONNECTOR_DEVICE_EXAMPLE/oauth/device/sessions/$CONNECTOR_OAUTH_ATTEMPT/poll" &&
+                request.method == "POST" -> {
+                if (body(request)["sessionToken"]?.jsonPrimitive?.content != "fixture-only")
+                    return rejected(400)
+                devicePollRequests.incrementAndGet()
+                val status = devicePollStatus
+                if (status == "pending")
+                    jsonResponse("""{"status":"pending","interval":$devicePollInterval}""")
+                else jsonResponse("""{"status":"$status"}""")
             }
             path == "/api/connectors/$CONNECTOR_MANUAL_EXAMPLE/manual-grant" &&
                 request.method == "POST" -> {

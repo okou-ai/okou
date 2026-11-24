@@ -180,7 +180,11 @@ internal sealed interface ConnectorDeviceResult {
 
     data class Complete(val connectionId: String) : ConnectorDeviceResult
 
-    data object Rejected : ConnectorDeviceResult
+    enum class Terminal : ConnectorDeviceResult {
+        Denied,
+        Expired,
+        Failed,
+    }
 }
 
 class ConnectorService(private val api: ApiClient) {
@@ -746,9 +750,9 @@ class ConnectorService(private val api: ApiClient) {
         ) {
             is ConnectorDevicePollVariant1 -> ConnectorDeviceResult.Waiting(result.interval.seconds)
             is ConnectorDevicePollVariant2 -> ConnectorDeviceResult.Complete(result.connectionId)
-            is ConnectorDevicePollVariant3,
-            is ConnectorDevicePollVariant4,
-            is ConnectorDevicePollVariant5 -> ConnectorDeviceResult.Rejected
+            is ConnectorDevicePollVariant3 -> ConnectorDeviceResult.Terminal.Denied
+            is ConnectorDevicePollVariant4 -> ConnectorDeviceResult.Terminal.Expired
+            is ConnectorDevicePollVariant5 -> ConnectorDeviceResult.Terminal.Failed
         }
 
     internal suspend fun completeExternal(

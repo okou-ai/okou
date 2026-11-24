@@ -495,6 +495,101 @@ internal class ConnectorAccountModelTest : ConnectorModelTestFixture() {
     }
 
     @Test
+    fun deviceDenialEndsTheAttemptAndRequiresAnExplicitRestart() =
+        expectTerminalDeviceResult("denied", ConnectorProblem.DeviceAuthorizationDenied) {
+            fixture,
+            model ->
+            model.startAuthorization(null, "device-auth", emptyMap())
+            model.await {
+                it.action?.busy == false && it.action.authorization is ConnectorAuthorization.Device
+            }
+            assertEquals(2, fixture.deviceStartRequests.get())
+            assertEquals(1, fixture.devicePollRequests.get())
+        }
+
+    @Test
+    fun providerDeviceExpiryEndsTheAttemptWithAnExpiredCode() =
+        expectTerminalDeviceResult("expired", ConnectorProblem.DeviceCodeExpired) { _, _ -> }
+
+    @Test
+    fun providerDeviceFailureEndsTheAttemptWithFailure() =
+        expectTerminalDeviceResult("error", ConnectorProblem.DeviceAuthorizationFailed) { _, _ -> }
+
+    private fun expectTerminalDeviceResult(
+        status: String,
+        expected: ConnectorProblem,
+        afterResult: suspend (ConnectorApiFixture, ConnectorModel) -> Unit,
+    ) =
+        withModel(
+            CONNECTOR_DEVICE_EXAMPLE,
+            configure = {
+                it.devicePollStatus = status
+                it.devicePollInterval = 1
+            },
+            includeGrantExamples = true,
+        ) { fixture, model ->
+            model.startAuthorization(null, "device-auth", emptyMap())
+            model.await {
+                it.action?.busy == false && it.action.authorization is ConnectorAuthorization.Device
+            }
+            model.openBrowser { true }
+
+            val action = requireNotNull(model.await { it.action?.problem == expected }.action)
+            assertNull(action.authorization)
+            assertFalse(action.browserOpened)
+            assertEquals(1, fixture.deviceStartRequests.get())
+            assertEquals(1, fixture.devicePollRequests.get())
+            afterResult(fixture, model)
+        }
+
+    @Test
+    fun localDeviceDeadlineEndsWaitingBeforeTheNextPoll() =
+        withModel(
+            CONNECTOR_DEVICE_EXAMPLE,
+            configure = {
+                it.deviceExpiresIn = 2
+                it.devicePollInterval = 30
+            },
+            includeGrantExamples = true,
+        ) { fixture, model ->
+            model.startAuthorization(null, "device-auth", emptyMap())
+            model.await {
+                it.action?.busy == false && it.action.authorization is ConnectorAuthorization.Device
+            }
+            model.openBrowser { true }
+            assertTrue(model.uiState.value.action?.browserOpened == true)
+
+            val action =
+                requireNotNull(
+                    model.await { it.action?.problem == ConnectorProblem.DeviceCodeExpired }.action,
+                )
+            assertNull(action.authorization)
+            assertEquals(0, fixture.devicePollRequests.get())
+        }
+
+    @Test
+    fun unusedDeviceCodeExpiresWithoutOpeningOrPollingTheProvider() =
+        withModel(
+            CONNECTOR_DEVICE_EXAMPLE,
+            configure = { it.deviceExpiresIn = 2 },
+            includeGrantExamples = true,
+        ) { fixture, model ->
+            model.startAuthorization(null, "device-auth", emptyMap())
+            model.await {
+                it.action?.busy == false && it.action.authorization is ConnectorAuthorization.Device
+            }
+
+            val action =
+                requireNotNull(
+                    model.await { it.action?.problem == ConnectorProblem.DeviceCodeExpired }.action,
+                )
+            assertNull(action.authorization)
+            model.openBrowser { error("An expired device code cannot open its provider") }
+            assertEquals(ConnectorProblem.DeviceCodeExpired, model.uiState.value.action?.problem)
+            assertEquals(0, fixture.devicePollRequests.get())
+        }
+
+    @Test
     fun anUnsentRenameRemainsEditableAndReconnectDoesNotSendIt() {
         val online = MutableStateFlow(true)
         withModel(CONNECTOR_CALENDAR, connectivity = online) { fixture, model ->
