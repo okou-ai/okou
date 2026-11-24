@@ -464,7 +464,7 @@ private fun WorkflowDirectory(
                     else it.cachedReadFeedback()
                 }
                 ?: state.connectionReadFeedback()
-    keepWorkflowReadStart(query.position, readFeedback != null)
+    KeepWorkflowReadStart(query.position, readFeedback != null)
     val anchor = query.pendingAnchor
     LaunchedEffect(rows, anchor, catalog, readFeedback != null) {
         if (anchor != null && catalog != null) {
@@ -829,7 +829,7 @@ private fun WorkflowDetailPane(
         else position
     val editEnabled = !state.writing && !handoffPending
     val detailFeedback = state.detailFailure.cachedReadFeedback()
-    keepWorkflowReadStart(listState, detailFeedback != null)
+    KeepWorkflowReadStart(listState, detailFeedback != null)
     Column(
         Modifier.fillMaxSize().testTag("workflow_detail"),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -1370,7 +1370,7 @@ private fun WorkflowSkeleton(directory: Boolean) {
 private const val DIRECTORY_READ_FEEDBACK = "workflow_directory_read_feedback"
 
 @Composable
-private fun keepWorkflowReadStart(position: LazyListState, hasFeedback: Boolean) {
+private fun KeepWorkflowReadStart(position: LazyListState, hasFeedback: Boolean) {
     val previous = remember(position) { mutableStateOf(hasFeedback) }
     SideEffect {
         if (previous.value != hasFeedback) {
