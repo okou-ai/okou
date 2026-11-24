@@ -269,125 +269,9 @@ class NativeChatListTest {
     }
 
     @Test
-    fun pendingTransportAllowsSettingsAndLoadedProjectsSurviveActivityRecreation() {
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val app = instrumentation.targetContext.applicationContext as TestOkouApplication
-        val device = UiDevice.getInstance(instrumentation)
-        val auth = app.authentication as TestAuthentication
-        val previousAuth = auth.state.value
-        val previous = app.chatService
-        val savedPreferences = app.snapshotApiPreferences()
-        val savedCache = ChatCacheSnapshot(app.noBackupFilesDir.resolve("chat-list"), app.chatCache)
-        val fixture = ChatListApiFixture()
-        val rowEvents = fixture.rowEventTail()
-        fixture.commandResponse = { request ->
-            when (request.requestUrl?.encodedPath) {
-                "/api/chat-threads/$CHAT_PERSONAL/archive" -> {
-                    rowEvents.add(24L to request.rowEvent(24, CHAT_PERSONAL, "archived"))
-                    MockResponse().setResponseCode(204)
-                }
-                "/api/chat-threads/$CHAT_PERSONAL/unarchive" -> {
-                    rowEvents.add(25L to request.rowEvent(25, CHAT_PERSONAL, "unarchived"))
-                    MockResponse().setResponseCode(204)
-                }
-                else -> null
-            }
-        }
+    fun pendingListReadsStillAllowSettingsAndWorkspaceNavigation() {
         val gate = CountDownLatch(1)
-        fixture.beforeResponse = { gate.await() }
-        app.chatService = fixture.service
-        auth.state.value = testAuthenticationState(user = "project-list-${UUID.randomUUID()}")
-        val firstHistory = CountDownLatch(1)
-        val firstSnapshotResponse = fixture.historySnapshot
-        val firstRowsResponse = fixture.historyRows
-        val firstCatchUpResponse = fixture.historyCatchUp
-        fixture.historySnapshot = {
-            firstHistory.await()
-            firstSnapshotResponse()
-        }
-        fixture.historyRows = { request ->
-            firstHistory.await()
-            firstRowsResponse(request)
-        }
-        fixture.historyCatchUp = { request ->
-            firstHistory.await()
-            firstCatchUpResponse(request)
-        }
-        var scenario: ActivityScenario<MainActivity>? = null
-        var chatJob: Job? = null
-        val failures = mutableListOf<Throwable>()
-        val toolLabels =
-            listOf(
-                    R.string.workspace_workflows,
-                    R.string.workspace_connectors,
-                    R.string.workspace_artifacts,
-                )
-                .map(app::getString)
-        try {
-            scenario = ActivityScenario.launch(MainActivity::class.java)
-            fun text(value: String) =
-                checkNotNull(
-                    device.wait(Until.findObject(By.pkg(app.packageName).text(value)), 10_000),
-                )
-            fun tool(label: String) =
-                checkNotNull(
-                        device.wait(Until.findObject(By.pkg(app.packageName).desc(label)), 10_000),
-                    ) {
-                        "Missing workspace tool $label"
-                    }
-                    .also {
-                        val enabled = label == app.getString(R.string.workspace_artifacts)
-                        assertEquals("Workspace tool $label availability", enabled, it.isEnabled)
-                        assertEquals("Workspace tool $label click action", enabled, it.isClickable)
-                    }
-            fun click(selector: UiSelector) {
-                // Resolve at action time. The SDK return acknowledges accessibility events;
-                // verify Compose's actual application outcomes below instead.
-                device.findObject(selector.packageName(app.packageName)).click()
-            }
-            fun clickText(value: String) = click(UiSelector().text(value))
-            fun revealText(value: String, region: BySelector = chatListRegion(app)) {
-                val target = By.pkg(app.packageName).text(value).hasAncestor(region)
-                val scrollable = By.copy(region).scrollable(true)
-                var direction = Direction.UP
-                var reachedEnd = false
-                assertTrue(
-                    "Missing $value",
-                    device.wait(
-                        object : Condition<UiDevice, Boolean> {
-                            override fun apply(device: UiDevice): Boolean {
-                                if (device.hasObject(target)) return true
-                                if (reachedEnd) return false
-                                val container = device.findObject(scrollable) ?: return false
-                                try {
-                                    // A gesture can replace the list's accessibility node.
-                                    if (!container.scroll(direction, 0.8f)) {
-                                        if (direction == Direction.UP) direction = Direction.DOWN
-                                        else reachedEnd = true
-                                    }
-                                } catch (_: StaleObjectException) {
-                                    // Observe the current window again within the same wait.
-                                }
-                                return device.hasObject(target)
-                            }
-                        },
-                        10_000,
-                    ),
-                )
-            }
-            device.awaitChatList(app)
-            scenario.onActivity { activity ->
-                chatJob =
-                    checkNotNull(
-                            ViewModelProvider(activity)[SessionModel::class.java]
-                                .uiState
-                                .value
-                                .ready,
-                        )
-                        .chats
-                        .viewModelScope
-                        .coroutineContext[Job]
-            }
+        withChatListJourney("pending-list", listResponse = gate) {
             assertNotNull(
                 device.wait(
                     Until.findObject(By.desc(app.getString(R.string.chat_loading))),
@@ -409,6 +293,12 @@ class NativeChatListTest {
             takeScreenshot().writeToTestStorage("android-list-search")
             click(UiSelector().description(app.getString(R.string.back)))
             device.awaitChatList(app)
+        }
+    }
+
+    @Test
+    fun projectExpansionRestoresWithNativeProjectAndChatRowMenus() =
+        withChatListJourney("row-menus") {
             revealText("Research")
             assertTrue(device.wait(Until.gone(By.text("Project chat")), 10_000))
             text("Research").longClick()
@@ -424,7 +314,26 @@ class NativeChatListTest {
             takeScreenshot().writeToTestStorage("android-project-expanded")
             scenario.recreate()
             revealText("Project chat")
-            clickText("Project chat")
+            revealText("Personal chat")
+            clickText("Personal chat")
+            text("Hello history")
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            assertTrue(device.wait(Until.gone(By.text("Hello history")), 10_000))
+            revealText("Personal chat")
+            text("Personal chat").longClick()
+            val renameChat = app.getString(R.string.chat_rename)
+            text(renameChat)
+            text(app.getString(R.string.chat_archive))
+            takeScreenshot().writeToTestStorage("android-chat-row-menu")
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            assertTrue(device.wait(Until.gone(By.text(renameChat)), 10_000))
+        }
+
+    @Test
+    fun projectHistoryAndSettingsRestoreAfterActivityRecreation() {
+        val firstHistory = CountDownLatch(1)
+        withChatListJourney("history-settings", historyResponse = firstHistory) {
+            openProjectChat()
             assertNotNull(
                 device.wait(
                     Until.findObject(By.desc(app.getString(R.string.history_loading))),
@@ -444,33 +353,22 @@ class NativeChatListTest {
             assertNotNull(device.wait(Until.findObject(By.textContains("Native history")), 10_000))
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             assertTrue(device.wait(Until.gone(By.textContains("Native history")), 10_000))
-            revealText("Research")
-            clickText("Research")
-            assertTrue(device.wait(Until.gone(By.text("Project chat")), 10_000))
-            clickText("Research")
             revealText("Project chat")
-            clickText("Project chat")
+        }
+    }
+
+    @Test
+    fun warmProjectHistoryOpensWhileLiveRowsArePending() =
+        withChatListJourney("warm-history") {
+            openProjectChat()
             text("Native history reply")
             click(UiSelector().description(app.getString(R.string.back)))
             assertTrue(device.wait(Until.gone(By.textContains("Native history")), 10_000))
             text("Project chat")
-            clickText("Project chat")
-            text("Native history reply")
-
-            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
-            revealText("Personal chat")
-            clickText("Personal chat")
-            text("Hello history")
-            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
-            assertTrue(device.wait(Until.gone(By.text("Hello history")), 10_000))
-            revealText("Personal chat")
-            text("Personal chat").longClick()
-            val renameChat = app.getString(R.string.chat_rename)
-            text(renameChat)
-            text(app.getString(R.string.chat_archive))
-            takeScreenshot().writeToTestStorage("android-chat-row-menu")
-            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
-            assertTrue(device.wait(Until.gone(By.text(renameChat)), 10_000))
+            revealText("Research")
+            clickText("Research")
+            assertTrue(device.wait(Until.gone(By.text("Project chat")), 10_000))
+            clickText("Research")
             revealText("Project chat")
             val historyRows = fixture.historyRows
             val releaseHistory = CountDownLatch(1)
@@ -491,17 +389,14 @@ class NativeChatListTest {
                 releaseHistory.countDown()
                 fixture.historyRows = historyRows
             }
+        }
 
-            // Resize the actual emulator display around the open destination.
-            val size = device.executeShellCommand("wm size")
-            val density = device.executeShellCommand("wm density")
-            check(size.contains("Physical size:") && density.contains("Physical density:"))
-            val originalSize = Regex("Override size: (\\d+x\\d+)").find(size)?.groupValues?.get(1)
-            val originalDensity =
-                Regex("Override density: (\\d+)").find(density)?.groupValues?.get(1)
-            try {
-                device.executeShellCommand("wm size 1000x1000")
-                device.executeShellCommand("wm density 160")
+    @Test
+    fun wideLayoutShowsWorkspaceToolsBesideOpenHistory() =
+        withChatListJourney("wide-layout") {
+            openProjectChat()
+            text("Native history reply")
+            withDisplaySize("1000x1000") {
                 val listTitle = device.awaitChatList(app)
                 val conversation = text("Native history reply")
                 assertTrue(listTitle.visibleBounds.right < conversation.visibleBounds.left)
@@ -511,12 +406,34 @@ class NativeChatListTest {
                 val toolbarBack = By.pkg(app.packageName).desc(app.getString(R.string.back))
                 assertTrue(device.wait(Until.gone(toolbarBack), 10_000))
                 takeScreenshot().writeToTestStorage("android-list-home-two-pane")
+                click(UiSelector().description(app.getString(R.string.settings)))
+                text(app.getString(R.string.appearance))
+                assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+                device.awaitChatList(app)
+                text("Native history reply")
+            }
+            assertTrue(device.wait(Until.gone(chatListRegion(app)), 10_000))
+            text("Native history reply")
+            click(UiSelector().description(app.getString(R.string.back)))
+            revealText("Project chat")
+            revealText("Research")
+            clickText("Research")
+            assertTrue(device.wait(Until.gone(By.text("Project chat")), 10_000))
+        }
+
+    @Test
+    fun wideChatFilterSupportsNativeKeyboardFocusWithHistoryOpen() =
+        withChatListJourney("wide-filter") {
+            openProjectChat()
+            text("Native history reply")
+            withDisplaySize("1000x1000") {
+                device.awaitChatList(app)
                 val filter = app.getString(R.string.chat_filter)
                 val archived = app.getString(R.string.chat_archived)
                 val inbox = By.pkg(app.packageName).text(app.getString(R.string.chat_inbox))
                 click(UiSelector().description(filter))
                 text(app.getString(R.string.chat_inbox))
-                instrumentation.setInTouchMode(false)
+                InstrumentationRegistry.getInstrumentation().setInTouchMode(false)
                 // The popup can close without the accessibility event that pressBack() awaits.
                 assertTrue("Could not inject Back", device.pressKeyCode(KeyEvent.KEYCODE_BACK))
                 assertTrue(
@@ -554,23 +471,31 @@ class NativeChatListTest {
                 device.awaitKeyboardFocus(inbox)
                 assertTrue(device.pressDPadCenter())
                 revealText("Project chat")
-                click(UiSelector().description(app.getString(R.string.settings)))
-                text(app.getString(R.string.appearance))
-                assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
-                device.awaitChatList(app)
-                text("Native history reply")
-            } finally {
-                device.executeShellCommand("wm size ${originalSize ?: "reset"}")
-                device.executeShellCommand("wm density ${originalDensity ?: "reset"}")
             }
-            assertTrue(device.wait(Until.gone(chatListRegion(app)), 10_000))
-            text("Native history reply")
-            click(UiSelector().description(app.getString(R.string.back)))
-            revealText("Project chat")
-            revealText("Research")
-            clickText("Research")
-            assertTrue(device.wait(Until.gone(By.text("Project chat")), 10_000))
+        }
 
+    @Test
+    fun archiveUndoSurvivesLargeTextAndDisplayChanges() {
+        lateinit var rowEvents: MutableList<Pair<Long, String>>
+        withChatListJourney(
+            "archive-undo",
+            configure = { fixture ->
+                rowEvents = fixture.rowEventTail()
+                fixture.commandResponse = { request ->
+                    when (request.requestUrl?.encodedPath) {
+                        "/api/chat-threads/$CHAT_PERSONAL/archive" -> {
+                            rowEvents.add(24L to request.rowEvent(24, CHAT_PERSONAL, "archived"))
+                            MockResponse().setResponseCode(204)
+                        }
+                        "/api/chat-threads/$CHAT_PERSONAL/unarchive" -> {
+                            rowEvents.add(25L to request.rowEvent(25, CHAT_PERSONAL, "unarchived"))
+                            MockResponse().setResponseCode(204)
+                        }
+                        else -> null
+                    }
+                }
+            },
+        ) {
             revealText("Personal chat")
             // Held-drag geometry is covered by Compose tests. Android can resample injected
             // touch coordinates before delivering them to the app.
@@ -610,41 +535,99 @@ class NativeChatListTest {
                 device.wait(Until.gone(personalChat), 10_000),
             )
             takeScreenshot().writeToTestStorage("android-chat-list-undo")
-            val fontScale = device.executeShellCommand("settings get system font_scale").trim()
-            try {
-                device.executeShellCommand("wm size 320x800")
-                device.executeShellCommand("wm density 160")
-                device.executeShellCommand("settings put system font_scale 2.0")
-                device.awaitChatList(app)
-                awaitUndoLayout(stacked = true)
-                scenario.onActivity { activity ->
-                    assertTrue(activity.resources.configuration.fontScale >= 2f)
-                    assertTrue(activity.resources.configuration.screenWidthDp <= 320)
+            withDisplaySize("320x800") {
+                val fontScale = device.executeShellCommand("settings get system font_scale").trim()
+                try {
+                    device.executeShellCommand("settings put system font_scale 2.0")
+                    device.awaitChatList(app)
+                    awaitUndoLayout(stacked = true)
+                    scenario.onActivity { activity ->
+                        assertTrue(activity.resources.configuration.fontScale >= 2f)
+                        assertTrue(activity.resources.configuration.screenWidthDp <= 320)
+                    }
+                    takeScreenshot().writeToTestStorage("android-chat-list-undo-large-text")
+                    checkNotNull(device.findObject(undo)).click()
+                    assertTrue(device.wait(Until.gone(undo), 10_000))
+                    revealText("Personal chat")
+                    assertTrue(rowEvents.size == 2)
+                    toolLabels.forEach { tool(it) }
+                    takeScreenshot().writeToTestStorage("android-list-home-large-text")
+                } finally {
+                    if (fontScale.toFloatOrNull() == null)
+                        device.executeShellCommand("settings delete system font_scale")
+                    else device.executeShellCommand("settings put system font_scale $fontScale")
                 }
-                takeScreenshot().writeToTestStorage("android-chat-list-undo-large-text")
-                checkNotNull(device.findObject(undo)).click()
-                assertTrue(device.wait(Until.gone(undo), 10_000))
-                revealText("Personal chat")
-                assertTrue(rowEvents.size == 2)
-                toolLabels.forEach { tool(it) }
-                takeScreenshot().writeToTestStorage("android-list-home-large-text")
-            } finally {
-                if (fontScale.toFloatOrNull() == null)
-                    device.executeShellCommand("settings delete system font_scale")
-                else device.executeShellCommand("settings put system font_scale $fontScale")
-                device.executeShellCommand("wm size ${originalSize ?: "reset"}")
-                device.executeShellCommand("wm density ${originalDensity ?: "reset"}")
             }
+        }
+    }
+
+    private fun withChatListJourney(
+        name: String,
+        listResponse: CountDownLatch? = null,
+        historyResponse: CountDownLatch? = null,
+        configure: (ChatListApiFixture) -> Unit = {},
+        exercise: ChatListJourney.() -> Unit,
+    ) {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val app = instrumentation.targetContext.applicationContext as TestOkouApplication
+        val device = UiDevice.getInstance(instrumentation)
+        val auth = app.authentication as TestAuthentication
+        val previousAuth = auth.state.value
+        val previous = app.chatService
+        val savedPreferences = app.snapshotApiPreferences()
+        val savedCache = ChatCacheSnapshot(app.noBackupFilesDir.resolve("chat-list"), app.chatCache)
+        val fixture = ChatListApiFixture()
+        var scenario: ActivityScenario<MainActivity>? = null
+        var chatJob: Job? = null
+        val failures = mutableListOf<Throwable>()
+        try {
+            configure(fixture)
+            if (listResponse != null) fixture.beforeResponse = { listResponse.await() }
+            if (historyResponse != null) {
+                val historySnapshot = fixture.historySnapshot
+                val historyRows = fixture.historyRows
+                val historyCatchUp = fixture.historyCatchUp
+                fixture.historySnapshot = {
+                    historyResponse.await()
+                    historySnapshot()
+                }
+                fixture.historyRows = { request ->
+                    historyResponse.await()
+                    historyRows(request)
+                }
+                fixture.historyCatchUp = { request ->
+                    historyResponse.await()
+                    historyCatchUp(request)
+                }
+            }
+            app.chatService = fixture.service
+            auth.state.value = testAuthenticationState(user = "$name-${UUID.randomUUID()}")
+            val activity = ActivityScenario.launch(MainActivity::class.java)
+            scenario = activity
+            device.awaitChatList(app)
+            activity.onActivity { current ->
+                chatJob =
+                    checkNotNull(
+                            ViewModelProvider(current)[SessionModel::class.java]
+                                .uiState
+                                .value
+                                .ready,
+                        )
+                        .chats
+                        .viewModelScope
+                        .coroutineContext[Job]
+            }
+            ChatListJourney(app, device, fixture, activity).exercise()
         } catch (error: Throwable) {
             failures.add(error)
             try {
-                takeScreenshot().writeToTestStorage("native-chat-list-failure.png")
+                takeScreenshot().writeToTestStorage("native-chat-list-$name-failure")
             } catch (diagnostic: Throwable) {
                 error.addSuppressed(diagnostic)
             }
         } finally {
-            gate.countDown()
-            firstHistory.countDown()
+            listResponse?.countDown()
+            historyResponse?.countDown()
             for (cleanup in
                 listOf<() -> Unit>(
                     { scenario?.close() },
@@ -664,5 +647,106 @@ class NativeChatListTest {
             }
         }
         MultipleFailureException.assertEmpty(failures)
+    }
+
+    private class ChatListJourney(
+        val app: TestOkouApplication,
+        val device: UiDevice,
+        val fixture: ChatListApiFixture,
+        val scenario: ActivityScenario<MainActivity>,
+    ) {
+        val toolLabels =
+            listOf(
+                    R.string.workspace_workflows,
+                    R.string.workspace_connectors,
+                    R.string.workspace_artifacts,
+                )
+                .map(app::getString)
+
+        fun text(value: String) =
+            checkNotNull(
+                device.wait(Until.findObject(By.pkg(app.packageName).text(value)), 10_000),
+            )
+
+        fun tool(label: String) =
+            checkNotNull(
+                    device.wait(Until.findObject(By.pkg(app.packageName).desc(label)), 10_000),
+                ) {
+                    "Missing workspace tool $label"
+                }
+                .also {
+                    val enabled = label == app.getString(R.string.workspace_artifacts)
+                    assertEquals("Workspace tool $label availability", enabled, it.isEnabled)
+                    assertEquals("Workspace tool $label click action", enabled, it.isClickable)
+                }
+
+        fun click(selector: UiSelector) {
+            // Resolve at action time. The SDK return acknowledges accessibility events;
+            // verify Compose's actual application outcomes below instead.
+            device.findObject(selector.packageName(app.packageName)).click()
+        }
+
+        fun clickText(value: String) = click(UiSelector().text(value))
+
+        fun revealText(value: String, region: BySelector = chatListRegion(app)) {
+            val target = By.pkg(app.packageName).text(value).hasAncestor(region)
+            val scrollable = By.copy(region).scrollable(true)
+            var direction = Direction.UP
+            var reachedEnd = false
+            assertTrue(
+                "Missing $value",
+                device.wait(
+                    object : Condition<UiDevice, Boolean> {
+                        override fun apply(device: UiDevice): Boolean {
+                            if (device.hasObject(target)) return true
+                            if (reachedEnd) return false
+                            val container = device.findObject(scrollable) ?: return false
+                            try {
+                                // A gesture can replace the list's accessibility node.
+                                if (!container.scroll(direction, 0.8f)) {
+                                    if (direction == Direction.UP) direction = Direction.DOWN
+                                    else reachedEnd = true
+                                }
+                            } catch (_: StaleObjectException) {
+                                // Observe the current window again within the same wait.
+                            }
+                            return device.hasObject(target)
+                        }
+                    },
+                    10_000,
+                ),
+            )
+        }
+
+        fun openProjectChat() {
+            revealText("Research")
+            clickText("Research")
+            revealText("Project chat")
+            clickText("Project chat")
+        }
+
+        fun withDisplaySize(size: String, exercise: () -> Unit) {
+            val originalSize = device.executeShellCommand("wm size")
+            val originalDensity = device.executeShellCommand("wm density")
+            check(
+                originalSize.contains("Physical size:") &&
+                    originalDensity.contains("Physical density:"),
+            )
+            val sizeOverride =
+                Regex("Override size: (\\d+x\\d+)").find(originalSize)?.groupValues?.get(1)
+            val densityOverride =
+                Regex("Override density: (\\d+)").find(originalDensity)?.groupValues?.get(1)
+            try {
+                device.executeShellCommand("wm size $size")
+                device.executeShellCommand("wm density 160")
+                exercise()
+            } finally {
+                try {
+                    device.executeShellCommand("wm size ${sizeOverride ?: "reset"}")
+                } finally {
+                    device.executeShellCommand("wm density ${densityOverride ?: "reset"}")
+                }
+            }
+        }
     }
 }

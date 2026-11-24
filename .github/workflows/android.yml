@@ -407,4 +407,4 @@ jobs:
         run: |
           set -euo pipefail
           prefix="native-results/android-native-results-${GITHUB_SHA}-shard-"
-          python3 android/scripts/check-native-results.py "${prefix}0" 12 "${prefix}1" "${prefix}2"
+          python3 android/scripts/check-native-results.py "${prefix}0" 18 "${prefix}1" "${prefix}2"
