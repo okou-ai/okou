@@ -3279,12 +3279,12 @@ The next review covers 30 open files, 372 retained IDs and 116 priority clauses.
 
 ## Batch 99 whole-file review
 
-All 485 files passed first review. The shared inventory now has 49 open owners and 436 with no open frozen BDD. The review reconciles all 372 IDs in the assigned 30 files, including all 116 priority items. [Per-ID ledger](./test-rebuild-batch-99.tsv) · [Shared inventory](./test-rebuild-first-pass.tsv)
+All 485 files passed first review. The shared inventory now has 50 open owners and 435 with no open frozen BDD. The review reconciles all 372 IDs in the assigned 30 files, including all 116 priority items. [Per-ID ledger](./test-rebuild-batch-99.tsv) · [Shared inventory](./test-rebuild-first-pass.tsv)
 
 Browser-session-page-014 earns first acceptance. The original endpoint fits 900×600. The replacement WebSocket remains unopened while the connecting surface hides its live canvas and measures 720×480. The resulting window-size write reaches the replacement endpoint. The wrong-receiver control fails. The remaining lease and authorization cases keep their complete BDD.
 
-Chat-navigation-browser closes on the sourced revision to 011. #47223 explicitly preserves two member selections of the last tab. Re-selecting Page 12 after returning allows both width-motion orders to settle at 12 with that page selected. Without the second selection the original automatic-restoration clause remains unverified. Chrome’s native tab activation and the provider CDP active-target notification produce different selections. No historical original acceptance was restored.
+Chat-navigation-browser remains open on 011. The pre-freeze test performance change #47223 documents two selections of the last tab. Re-selecting Page 12 after returning allows both width-motion orders to settle at 12 with that page selected. Without the second selection the original automatic-restoration clause remains unverified. Chrome’s native tab activation and the provider CDP active-target notification produce different selections. A separate Router probe with different physical windows and destination URLs confirmed the same event distinction. The original BDD remains in the inventory. No historical original acceptance was restored.
 
 The first voice-draft Blob is decoded for Silero. The transcription service receives a separately encoded WAV. #50338 retires the voice-messages feature switch and leaves that codec path intact. The same-file MIME and samples condition remains open. The #50340 sync retains the independent project-list suite and covers both archive-switch states and the archived project row’s label.
 
-The next list covers 30 open files, all 412 retained IDs and 117 priority items. [Batch 100 list](https://app.okou.ai/artifacts/py3u5s5be9.md)
+The next list covers 30 open files, all 412 retained IDs and 117 priority items. [Batch 100 list](https://app.okou.ai/artifacts/w8ihug2wrw.md)
