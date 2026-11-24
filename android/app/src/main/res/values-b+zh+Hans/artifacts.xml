@@ -54,4 +54,10 @@
     <string name="chat_resources_related">关联聊天</string>
     <string name="chat_resources_related_load_failed">暂时无法加载关联聊天</string>
     <string name="chat_resources_related_access_lost">关联聊天已不可用</string>
+    <string name="chat_resources_origin">来源</string>
+    <string name="chat_resources_workflows">工作流与自动化</string>
+    <string name="chat_resources_workflows_load_failed">暂时无法加载关联工作流</string>
+    <string name="chat_resources_wechat">微信</string>
+    <string name="chat_resources_feishu">飞书</string>
+    <string name="chat_resources_messages">信息</string>
 </resources>

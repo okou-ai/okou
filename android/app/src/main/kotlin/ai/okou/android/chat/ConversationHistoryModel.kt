@@ -197,7 +197,7 @@ class ConversationHistoryModel(
         refreshDetail()
     }
 
-    private fun refreshHistory() {
+    internal fun refreshHistory() {
         val thread = mutable.value.thread ?: return
         if (retired || !authorized() || job?.isActive == true) return
         val ticket = generation

@@ -35,6 +35,7 @@ import ai.okou.android.chat.ConversationRoute
 import ai.okou.android.chat.ConversationStopButton
 import ai.okou.android.chat.ConversationStopPlacement
 import ai.okou.android.chat.ConversationToolbarActions
+import ai.okou.android.chat.ConversationUiState
 import ai.okou.android.chat.HistoryPhase
 import ai.okou.android.chat.NewConversationWelcome
 import ai.okou.android.chat.ProjectExpansionModel
@@ -127,6 +128,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Alignment
@@ -149,6 +151,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.currentStateAsState
@@ -210,6 +213,7 @@ internal fun OkouApp(
             (connectorsOpen || workflowConnectorVisit != null || chatConnectorVisit != null)
     var workflowOrigin by rememberWorkspaceNavigation()
     var workflowRoute by rememberWorkflowsRoute()
+    var workflowResourceReturn by rememberSaveable { mutableStateOf<String?>(null) }
     var workflowHistoryReturnRunId by
         remember(workflows, workflowRoute.id, workflowRoute.tab) { mutableStateOf<String?>(null) }
     val workflowQuery = rememberChatSearchState()
@@ -505,17 +509,22 @@ internal fun OkouApp(
         navigation = navigation.copy(target = target, settings = null, search = SearchRoute.Open)
     }
 
-    fun openWorkflows(id: String? = null) {
+    fun openWorkflows(
+        id: String? = null,
+        tab: WorkflowTab = WorkflowTab.Instructions,
+        resourceRow: String? = null,
+    ) {
         restoreWorkflowFocus = id == null && workflowEntryFocused
         searchWorkflowId = null
         if (artifactSource != null) closeArtifacts(restoreFocus = false)
         focus.clearFocus()
         keyboard?.hide()
         workflowOrigin = navigation
+        workflowResourceReturn = resourceRow
         workflowQuery.reset()
         workflowDraftError = null
         workflowHandoffFailed = false
-        changeWorkflowRoute(WorkflowsRoute(mode = WorkflowsMode.Directory, id = id))
+        changeWorkflowRoute(WorkflowsRoute(mode = WorkflowsMode.Directory, id = id, tab = tab))
     }
 
     fun closeWorkflows() {
@@ -524,6 +533,8 @@ internal fun OkouApp(
         workflowConnectionReturn = null
         workflowPageState.removeState("workflow")
         changeWorkflowRoute(WorkflowsRoute())
+        if (navigation.chatResourcesId != null) workflowResourceReturn?.let { linkFocusKey = it }
+        workflowResourceReturn = null
     }
 
     fun leaveWorkflowChat() {
@@ -1073,7 +1084,7 @@ internal fun OkouApp(
                     workflowDraftError?.takeIf { it.workflowId == workflowRoute.id }?.message,
                 feedback = { WorkspaceFeedbackHost(snackbar, Modifier.padding(vertical = 8.dp)) },
                 onClose = ::closeWorkflows,
-                fromSearch = workflowOrigin.search.isOpen,
+                directEntry = workflowOrigin.search.isOpen || workflowResourceReturn != null,
                 onCreate = { focused ->
                     workflowDraft(
                         "$creation\n\n",
@@ -1794,6 +1805,19 @@ internal fun OkouApp(
                                 return@detailPane
                             }
                             if (resourcesId != null && chatArtifacts != null) {
+                                val conversation by
+                                    chats.history.uiState.collectAsStateWithLifecycle()
+                                LifecycleStartEffect(chats.history, resourcesId) {
+                                    if (chats.history.uiState.value.thread?.id == resourcesId)
+                                        chats.history.refreshHistory()
+                                    onStopOrDispose {}
+                                }
+                                val availableChats =
+                                    remember(list.threads) {
+                                        list.threads
+                                            .filter { it.hidden != true }
+                                            .associate { it.id to it.title }
+                                    }
                                 resourcesPageState.SaveableStateProvider(
                                     "chat-resources:$resourcesId",
                                 ) {
@@ -1802,20 +1826,24 @@ internal fun OkouApp(
                                         resourcesId,
                                         listWidth != null,
                                         onClose = { closeResources(returnToActions = true) },
-                                        relatedFocusKey = linkFocusKey,
-                                        availableRelatedChats =
-                                            list.threads
-                                                .asSequence()
-                                                .filter { it.hidden != true }
-                                                .map { it.id }
-                                                .toSet(),
-                                        onRelatedFocusRestored = { linkFocusKey = null },
-                                        onRelatedChat = { id, key ->
+                                        history =
+                                            conversation.takeIf { it.thread?.id == resourcesId }
+                                                ?: ConversationUiState(),
+                                        resourceFocusKey = linkFocusKey,
+                                        availableRelatedChats = availableChats,
+                                        onResourceFocusRestored = { linkFocusKey = null },
+                                        onOpenLink = { link, key ->
                                             openMessageLink(
-                                                ConversationLink.Chat(id, null),
+                                                link,
                                                 ConversationLinkSource(key, null),
                                             )
                                         },
+                                        onOpenWorkflow =
+                                            if (workflows != null) {
+                                                { id, key ->
+                                                    openWorkflows(id, WorkflowTab.Automations, key)
+                                                }
+                                            } else null,
                                     )
                                 }
                                 return@detailPane

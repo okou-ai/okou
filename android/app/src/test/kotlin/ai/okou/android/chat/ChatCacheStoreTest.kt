@@ -15,7 +15,9 @@ import ai.okou.android.artifacts.ArtifactPage
 import ai.okou.android.artifacts.ConfirmedArtifactCatalog
 import ai.okou.android.artifacts.ConfirmedRelatedChatRead
 import ai.okou.android.artifacts.ConfirmedRelatedChats
+import ai.okou.android.artifacts.ConfirmedWorkflowResources
 import ai.okou.android.artifacts.RelatedChatResource
+import ai.okou.android.artifacts.WorkflowResource
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.chatEventWire
 import ai.okou.android.jsonResponse
@@ -169,6 +171,8 @@ class ChatCacheStoreTest {
                             4_000,
                         ),
                 )
+            val workflows =
+                ConfirmedWorkflowResources(listOf(WorkflowResource("workflow", "Release")), 5_000)
             val store = cache(root)
             store
                 .open(identity) { true }
@@ -178,6 +182,7 @@ class ChatCacheStoreTest {
                     lease.saveArtifactCatalog(CHAT_PERSONAL, all, appendedTo = prefix)
                     lease.saveArtifactCatalog(CHAT_PROJECT, empty, appendedTo = null)
                     lease.saveRelatedResources(CHAT_PERSONAL, relations)
+                    lease.saveWorkflowResources(CHAT_PERSONAL, workflows)
                 }
             store.close()
             val reopened = cache(root)
@@ -192,6 +197,7 @@ class ChatCacheStoreTest {
                     .use { lease ->
                         assertNull(lease.loadArtifactCatalog(CHAT_PERSONAL))
                         assertNull(lease.loadRelatedResources(CHAT_PERSONAL))
+                        assertNull(lease.loadWorkflowResources(CHAT_PERSONAL))
                     }
             }
             reopened
@@ -199,8 +205,14 @@ class ChatCacheStoreTest {
                 .use { lease ->
                     assertEquals(all, lease.loadArtifactCatalog(CHAT_PERSONAL))
                     assertEquals(relations, lease.loadRelatedResources(CHAT_PERSONAL))
+                    assertEquals(workflows, lease.loadWorkflowResources(CHAT_PERSONAL))
+                    assertNull(lease.loadWorkflowResources(CHAT_PROJECT))
+                    lease.saveRelatedResources(CHAT_PERSONAL, null)
+                    assertNull(lease.loadRelatedResources(CHAT_PERSONAL))
+                    assertEquals(workflows, lease.loadWorkflowResources(CHAT_PERSONAL))
                     lease.deleteRelatedResources(CHAT_PERSONAL)
                     assertNull(lease.loadRelatedResources(CHAT_PERSONAL))
+                    assertNull(lease.loadWorkflowResources(CHAT_PERSONAL))
                     assertEquals(empty, lease.loadArtifactCatalog(CHAT_PROJECT))
                     lease.deleteArtifactCatalog(CHAT_PERSONAL)
                     assertNull(lease.loadArtifactCatalog(CHAT_PERSONAL))
