@@ -76,6 +76,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
@@ -305,6 +307,7 @@ internal fun ConversationRoute(
             if (execution == HistoryExecution.Running) setOf(TimelineActivity) else emptySet()
         val runningFrame = rememberRunningWaveFrame(position, runningRows)
         val scope = rememberCoroutineScope()
+        var replyDisclosureScroll by remember { mutableStateOf<Job?>(null) }
         val controlSnackbar = remember { SnackbarHostState() }
         // The notice can move with the queue panel. Its lifetime belongs to the conversation.
         WorkspaceFeedbackTimeout(controlSnackbar)
@@ -682,6 +685,15 @@ internal fun ConversationRoute(
                                         artifactActions = artifactActions,
                                         findHighlight = highlight,
                                         links = links,
+                                        onToggleEarlierReplies = { toggle ->
+                                            replyDisclosureScroll?.cancel()
+                                            replyDisclosureScroll =
+                                                position.toggleReplyDisclosure(
+                                                    scope,
+                                                    entry.key,
+                                                    toggle,
+                                                )
+                                        },
                                         failureContent = recovery,
                                     )
                                 }
@@ -796,6 +808,28 @@ private val TimelineFixedKeys =
     setOf(TimelineEnd, TimelineInitial, TimelineActivity, ConversationCompletionKey)
 
 private data class ReadingPosition(val anchor: ConversationAnchor?)
+
+private fun LazyListState.toggleReplyDisclosure(
+    scope: CoroutineScope,
+    key: String,
+    toggle: () -> Unit,
+): Job? {
+    val beforeLayout = layoutInfo
+    val before = beforeLayout.visibleItemsInfo.firstOrNull { it.key == key }
+    val anchor = before?.let { it.size to it.offset + it.size }
+    toggle()
+    if (anchor == null) return null
+    val (size, topFromEnd) = anchor
+    return scope.launch {
+        val afterLayout = snapshotFlow { layoutInfo }.first { it !== beforeLayout }
+        val after = afterLayout.visibleItemsInfo.firstOrNull { it.key == key }
+        if (after != null && after.size != size) {
+            // Reverse layout normally keeps the bottom fixed when a reply grows.
+            val shift = after.offset + after.size - topFromEnd
+            if (shift != 0) scrollBy(shift.toFloat())
+        }
+    }
+}
 
 private fun LazyListItemInfo.readingAnchor(density: Density): ConversationAnchor =
     ConversationAnchor(key as String, with(density) { (-offset).toDp().value })

@@ -7,6 +7,12 @@ import android.icu.util.Measure
 import android.icu.util.MeasureUnit
 import android.text.format.DateFormat
 import androidx.annotation.DrawableRes
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -19,12 +25,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -34,9 +40,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
@@ -47,7 +58,9 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.constrainWidth
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.offset
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -65,7 +78,6 @@ internal fun ConversationReplySummary(
     expanded: Boolean,
     onToggle: () -> Unit,
 ) {
-    val colors = MaterialTheme.colorScheme
     val locale = LocalConfiguration.current.locales[0]
     val elapsed =
         if (summary.phase == ReplyPhase.Replying && summary.startedAtMillis != null) {
@@ -112,32 +124,33 @@ internal fun ConversationReplySummary(
     val phaseLabel = stringResource(phaseLabelId)
     val summaryTag = Modifier.testTag("conversation_reply_summary")
     if (steps > 0) {
-        val shape = RoundedCornerShape(12.dp)
         val disclosure =
             stringResource(
                 if (expanded) R.string.conversation_replies_expanded
                 else R.string.conversation_replies_collapsed,
             )
-        Surface(
+        ConversationTextAction(
             onClick = onToggle,
-            modifier =
-                summaryTag
-                    .heightIn(min = 48.dp)
-                    .updateFocusOutline(shape, colors.onSurface)
-                    .semantics { stateDescription = "$phaseLabel, $disclosure" },
-            shape = shape,
-            color = colors.surface,
-        ) {
-            ReplySummaryLabel(icon, label, summary.phase, expanded)
+            modifier = summaryTag.semantics { stateDescription = "$phaseLabel, $disclosure" },
+        ) { foreground ->
+            ReplySummaryLabel(icon, label, summary.phase, expanded, foreground)
         }
     } else {
         Box(
-            summaryTag.heightIn(min = 32.dp).semantics(mergeDescendants = true) {
+            summaryTag.heightIn(min = 32.dp).padding(vertical = 4.dp).semantics(
+                mergeDescendants = true,
+            ) {
                 stateDescription = phaseLabel
             },
             contentAlignment = Alignment.CenterStart,
         ) {
-            ReplySummaryLabel(icon, label, summary.phase, null)
+            ReplySummaryLabel(
+                icon,
+                label,
+                summary.phase,
+                null,
+                MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -148,10 +161,10 @@ private fun ReplySummaryLabel(
     label: String,
     phase: ReplyPhase,
     expanded: Boolean?,
+    foreground: Color,
 ) {
     val colors = MaterialTheme.colorScheme
     Row(
-        Modifier.padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -159,12 +172,12 @@ private fun ReplySummaryLabel(
             painterResource(icon),
             null,
             Modifier.size(16.dp),
-            tint = if (phase == ReplyPhase.Failed) colors.error else colors.onSurfaceVariant,
+            tint = if (phase == ReplyPhase.Failed) colors.error else foreground,
         )
         Text(
             label,
             Modifier.weight(1f, fill = false),
-            color = colors.onSurfaceVariant,
+            color = foreground,
             style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp),
         )
         if (expanded != null) {
@@ -174,7 +187,7 @@ private fun ReplySummaryLabel(
                 ),
                 null,
                 Modifier.size(16.dp),
-                tint = colors.onSurfaceVariant,
+                tint = foreground,
             )
         }
     }
@@ -260,10 +273,8 @@ internal fun ConversationCompletionRow(
 
 @Composable
 private fun ConversationFollowupRow(followup: ConversationFollowup, onClick: () -> Unit) {
-    val colors = MaterialTheme.colorScheme
     val textStyle = MaterialTheme.typography.bodyMedium
     val lineHeight = with(LocalDensity.current) { textStyle.lineHeight.toDp() }
-    val shape = RoundedCornerShape(12.dp)
     val icon =
         when (followup.kind) {
             ConversationFollowupKind.Talk -> R.drawable.ic_chat_bubble
@@ -271,35 +282,68 @@ private fun ConversationFollowupRow(followup: ConversationFollowup, onClick: () 
             ConversationFollowupKind.Workflow -> R.drawable.ic_account_tree
             ConversationFollowupKind.Email -> R.drawable.ic_mail
         }
-    Surface(
+    ConversationTextAction(
         onClick = onClick,
-        modifier =
-            Modifier.fillMaxWidth()
-                .heightIn(min = 48.dp)
-                .updateFocusOutline(shape, colors.onSurface)
-                .testTag("conversation_followup"),
-        color = colors.surface,
-        shape = shape,
-    ) {
-        Box(Modifier.padding(vertical = 8.dp), contentAlignment = Alignment.CenterStart) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Box(Modifier.height(lineHeight), contentAlignment = Alignment.Center) {
-                    Icon(
-                        painterResource(icon),
-                        null,
-                        Modifier.size(16.dp),
-                        tint = colors.onSurfaceVariant,
-                    )
-                }
-                Text(
-                    followup.prompt,
-                    color = colors.onSurfaceVariant,
-                    style = textStyle,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.fillMaxWidth().testTag("conversation_followup"),
+    ) { foreground ->
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.height(lineHeight), contentAlignment = Alignment.Center) {
+                Icon(
+                    painterResource(icon),
+                    null,
+                    Modifier.size(16.dp),
+                    tint = foreground,
                 )
             }
+            Text(
+                followup.prompt,
+                color = foreground,
+                style = textStyle,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
+    }
+}
+
+@Composable
+private fun ConversationTextAction(
+    onClick: () -> Unit,
+    modifier: Modifier,
+    content: @Composable (Color) -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    val interactions = remember { MutableInteractionSource() }
+    val pressed by interactions.collectIsPressedAsState()
+    val hovered by interactions.collectIsHoveredAsState()
+    val focused by interactions.collectIsFocusedAsState()
+    val keyboardFocused = focused && LocalInputModeManager.current.inputMode == InputMode.Keyboard
+    val active = pressed || hovered || keyboardFocused
+    val foreground = if (active) colors.onSecondaryContainer else colors.onSurfaceVariant
+    val background =
+        when {
+            pressed -> foreground.copy(alpha = 0.09f).compositeOver(colors.secondaryContainer)
+            active -> colors.secondaryContainer
+            else -> Color.Transparent
+        }
+    val shape = RoundedCornerShape(12.dp)
+    Box(
+        Modifier.layout { measurable, constraints ->
+                val outset = 8.dp.roundToPx()
+                val action = measurable.measure(constraints.offset(horizontal = outset))
+                layout(constraints.constrainWidth(action.width - outset), action.height) {
+                    action.placeRelative(-outset, 0)
+                }
+            }
+            .then(modifier)
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            .background(background, shape)
+            .updateFocusOutline(shape, colors.onSurface, keyboardOnly = true, outlineInset = 3.dp)
+            .clickable(interactionSource = interactions, indication = null, onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        content(foreground)
     }
 }
 
