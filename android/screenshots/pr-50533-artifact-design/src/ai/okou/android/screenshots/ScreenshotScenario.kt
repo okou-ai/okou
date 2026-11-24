@@ -101,30 +101,30 @@ class ScreenshotScenario {
     }
 
     private fun capturePhone(artifacts: ArtifactApiFixture) {
-        val avatar = node(By.textContains(artifacts.image.title).clickable(true))
+        val avatar = control(artifacts.image.title)
         val avatarPosition = avatar.visibleBounds
         ScreenshotCapture.capture("catalog-phone.png")
         avatar.click()
         node(By.text("此文件暂不支持预览"))
         ScreenshotCapture.capture("unavailable-phone.png")
         node(By.desc("返回成果列表")).click()
-        assertEquals(avatarPosition, node(By.textContains(artifacts.image.title).clickable(true)).visibleBounds)
-        node(By.text("视频").clickable(true)).click()
-        node(By.textContains(artifacts.video.title).clickable(true)).click()
-        val play = node(By.text("播放").clickable(true))
+        assertEquals(avatarPosition, control(artifacts.image.title).visibleBounds)
+        control("视频").click()
+        control(artifacts.video.title).click()
+        val play = control("播放")
         assertTrue(play.visibleBounds.height() >= 48)
         assertFalse(device.hasObject(By.desc("媒体播放").pkg(app.packageName)))
         ScreenshotCapture.capture("video-phone.png")
         device.pressBack()
-        node(By.textContains(artifacts.video.title).clickable(true))
-        val filter = node(By.text("视频").clickable(true))
+        control(artifacts.video.title)
+        val filter = control("视频")
         assertTrue(filter.isSelected || filter.isChecked)
 
         node(By.desc("返回工作区")).click()
         node(By.text(artifacts.sourceTitle)).click()
         node(By.desc("聊天操作").enabled(true)).click()
         node(By.text("对话资料")).click()
-        val resource = node(By.textContains(artifacts.summary.title).clickable(true))
+        val resource = control(artifacts.summary.title)
         val resourcePosition = resource.visibleBounds
         resource.click()
         node(By.text("成果预览"))
@@ -132,15 +132,15 @@ class ScreenshotScenario {
         node(By.textContains("帮助团队继续推进在手工作"))
         ScreenshotCapture.capture("chat-preview-phone.png")
         device.pressBack()
-        assertEquals(resourcePosition, node(By.textContains(artifacts.summary.title).clickable(true)).visibleBounds)
+        assertEquals(resourcePosition, control(artifacts.summary.title).visibleBounds)
     }
 
     private fun captureWide(artifacts: ArtifactApiFixture) {
-        val row = node(By.textContains(artifacts.summary.title).clickable(true))
+        val row = control(artifacts.summary.title)
         val rowPosition = row.visibleBounds
         row.click()
         node(By.textContains("仅供预览"))
-        val source = node(By.text("查看来源对话").clickable(true))
+        val source = control("查看来源对话")
         assertFalse(device.hasObject(By.text("保存文件").pkg(app.packageName)))
         assertTrue(rowPosition.right < source.visibleBounds.left)
         assertTrue(source.visibleBounds.height() >= 48)
@@ -148,9 +148,14 @@ class ScreenshotScenario {
         ScreenshotCapture.capture("preview-wide.png")
         source.click()
         node(By.desc("返回成果预览")).click()
-        node(By.text("查看来源对话").clickable(true))
-        assertEquals(rowPosition, node(By.textContains(artifacts.summary.title).clickable(true)).visibleBounds)
+        control("查看来源对话")
+        assertEquals(rowPosition, control(artifacts.summary.title).visibleBounds)
     }
+
+    private fun control(label: String) =
+        checkNotNull(generateSequence(node(By.text(label))) { it.parent }.firstOrNull { it.isClickable }) {
+            "Missing clickable ancestor for $label"
+        }
 
     private fun node(selector: BySelector) =
         checkNotNull(device.wait(Until.findObject(By.copy(selector).pkg(app.packageName)), 15_000)) {
