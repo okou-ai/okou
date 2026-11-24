@@ -1016,12 +1016,12 @@ describe("Email integration", () => {
       await accept(
         setupApp({ context, routes: chatConnectorAccessRoutes })(
           chatConnectorAccessContract,
-        ).updateAccountDefault({
+        ).updateAccountPolicy({
           headers: authHeaders(),
           params: { connectionId: disabled.id },
           body: {
             target: { kind: "builtin", connectorSlug: provider },
-            enabled: false,
+            policy: "deny",
           },
         }),
         [200],
