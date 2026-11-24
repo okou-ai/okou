@@ -34,7 +34,6 @@ struct ChatComposerView: View {
   var project: ChatProject?
   var removeProject: (() -> Void)?
 
-  @Environment(\.composerPreferences) private var preferences
   @State private var isFocused = false
   @State private var showsPhotos = false
   @State private var showsFiles = false
@@ -65,15 +64,11 @@ struct ChatComposerView: View {
     }
     return hasText || attachments.hasAttachments || draftState?.hasContent == true
   }
-  private var returnKeyPreference: ComposerReturnKeyPreference {
-    preferences?.returnKey ?? .newline
-  }
   private var canPerformPrimaryAction: Bool {
     (hasContent || showsStop) && attachments.isReady && !isBusy && !needsUpgrade
       && !voiceActive && draftState?.canSend != false
       && (showsStop || modelSelection?.canSend != false)
   }
-  private var canSendFromKeyboard: Bool { hasContent && canPerformPrimaryAction }
   private var showsEditingLayout: Bool {
     isFocused || draftState?.focusRequest != nil || presentation?.keepsComposerExpanded == true
   }
@@ -369,9 +364,7 @@ struct ChatComposerView: View {
         acceptsImages: !isBusy && !needsUpgrade, placeholder: resolvedPlaceholder,
         followup: followup,
         showsTrailingParagraph: showsTrailingFeedbackInput,
-        expanded: showsEditingLayout,
-        returnKeyPreference: returnKeyPreference,
-        submitFromKeyboard: sendFromKeyboard
+        expanded: showsEditingLayout
       )
       .id(inputID)
       .transition(.identity)
@@ -383,9 +376,7 @@ struct ChatComposerView: View {
         isCurrent: { attachments.inputID == inputID },
         pasteImages: attachments.importPastedImages,
         placeholder: resolvedPlaceholder,
-        expanded: showsEditingLayout,
-        returnKeyPreference: returnKeyPreference,
-        submitFromKeyboard: sendFromKeyboard
+        expanded: showsEditingLayout
       )
       .id(inputID)
       .transition(.identity)
@@ -462,12 +453,6 @@ struct ChatComposerView: View {
     .frame(width: actionSize, height: actionSize)
     .contentShape(Circle())
     .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: hasContent)
-  }
-
-  private func sendFromKeyboard() {
-    // An empty Send key must never become the active run's Stop action.
-    guard canSendFromKeyboard else { return }
-    performPrimaryAction()
   }
 
   private func performPrimaryAction() {

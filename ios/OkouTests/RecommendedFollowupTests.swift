@@ -79,7 +79,9 @@ final class RecommendedFollowupTests: XCTestCase {
     XCTAssertTrue(input.isFirstResponder)
     input.insertText(" ")
     input.insertText("please")
-    XCTAssertEqual(conversation.draft, prompt + " please")
+    input.insertText("\n")
+    input.insertText("Second line")
+    XCTAssertEqual(conversation.draft, prompt + " please\nSecond line")
 
     replaceInput("", in: input)
     input.insertText(" ")

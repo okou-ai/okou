@@ -1,4 +1,3 @@
-import ChatData
 import ChatDomain
 import SwiftUI
 import XCTest
@@ -7,269 +6,13 @@ import XCTest
 
 @MainActor
 final class ChatComposerReturnKeyTests: XCTestCase {
-  func testRecommendedFollowupSendsFromAnInitiallyUnfocusedEmptyComposer() async throws {
-    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let preferences = ComposerPreferences(storage: ComposerPreferencesStorage(directory: directory))
-    preferences.setReturnKey(.send)
+  func testReturnEditsTheMultilineDraftUntilItIsExplicitlySent() async throws {
     let fixture = AttachmentFlowFixture()
     let conversation = fixture.conversation()
     defer { conversation.close() }
     let source = ComposerMentionSource(threads: [])
     let host = UIHostingController(
-      rootView: MentionComposerHarness(conversation: conversation, source: source)
-        .environment(\.composerPreferences, preferences))
-    let window = try await mountMentionHost(host)
-    defer { unmount(window) }
-    let input = try XCTUnwrap(mentionInputs(in: host.view).first)
-    let prompt = "帮我提一个 issue 记录这个侧栏开关 bug"
-
-    conversation.composer.editor.selectOrAppendText(prompt)
-    try await waitForBusinessResult { conversation.draft == prompt && input.isFirstResponder }
-    // Selecting the same follow-up must keep one prompt and must not submit it.
-    conversation.composer.editor.selectOrAppendText(prompt)
-    XCTAssertEqual(conversation.draft, prompt)
-    XCTAssertTrue(fixture.state.value.withLock { $0.messages.isEmpty })
-    input.insertText("\n")
-    try await waitForBusinessResult(
-      message: recommendedFollowupSendStatus(
-        conversation, fixture: fixture, input: input, prompt: prompt)
-    ) {
-      conversation.pending.isEmpty && conversation.draft.isEmpty
-        && conversation.messages.contains { $0.text == prompt }
-    }
-    let sent = try fixture.state.value.withLock {
-      try $0.messages.map { try JSONDecoder().decode(AttachmentFlowFixture.Message.self, from: $0) }
-    }
-    XCTAssertEqual(sent.map { $0.userMessage.parts.compactMap(\.text).joined() }, [prompt])
-  }
-
-  private func recommendedFollowupSendStatus(
-    _ conversation: ConversationStore, fixture: AttachmentFlowFixture,
-    input: ComposerTextView, prompt: String
-  ) -> String {
-    let pending = conversation.pending.map { "\($0.id):retry=\($0.needsRetry)" }
-    let messages = conversation.messages.map { "\($0.id):matchesPrompt=\($0.text == prompt)" }
-    let persisted = conversation.history?.persistedEventIDs.sorted() ?? []
-    let delivery = fixture.state.value.withLock {
-      (writes: $0.messages.count, accepted: $0.accepted != nil)
-    }
-    return "Recommended followup send after waiter join: "
-      + "sending=\(conversation.isSending); loading=\(conversation.isLoading); "
-      + "pending=\(pending); draft=\(String(reflecting: conversation.draft)); "
-      + "messages=\(messages); persisted=\(persisted); "
-      + "writes=\(delivery.writes); accepted=\(delivery.accepted); "
-      + "error=\(String(describing: conversation.error)); "
-      + "syncError=\(String(describing: conversation.syncError)); "
-      + "returnKey=\(input.returnKeyPreference); editable=\(input.isEditable); submitted input: "
-      + mentionInputStatus(input)
-  }
-
-  func testQuotedNoteGatesItsSendKeyOnItsOwnTextWhileItIsTypedAndEmptied() async throws {
-    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let preferences = ComposerPreferences(storage: ComposerPreferencesStorage(directory: directory))
-    let fixture = AttachmentFlowFixture()
-    let conversation = fixture.conversation()
-    defer { conversation.close() }
-    let message = ChatMessage(
-      id: "assistant-event", role: .assistant, text: "Selected passage", createdAt: Date(),
-      isQueued: false, isError: false)
-    let selection = try XCTUnwrap(
-      ChatFeedbackSelection(
-        message: message, range: NSRange(location: 0, length: message.text.utf16.count)))
-    let quote = try XCTUnwrap(conversation.composer.addFeedback(selection))
-    let host = UIHostingController(
-      rootView: MentionComposerHarness(state: conversation.composer)
-        .environment(\.composerPreferences, preferences))
-    let window = try await mountMentionHost(host)
-    defer { unmount(window) }
-    let input = try XCTUnwrap(
-      mentionInputs(in: host.view).first {
-        $0.accessibilityIdentifier == "feedback-note-\(quote)"
-      })
-    try await focusMentionInput(input)
-    input.insertText("Ask about this passage")
-
-    // The quote is sendable without the note, yet only the note's own text gates its key,
-    // so typing and emptying the note stay in UIKit's native input session.
-    preferences.setReturnKey(.send)
-    try await eventually(message: mentionInputStatus(input)) { input.returnKeyType == .send }
-    XCTAssertTrue(input.enablesReturnKeyAutomatically)
-
-    input.selectedRange = NSRange(location: 0, length: input.text.utf16.count)
-    input.deleteBackward()
-    XCTAssertEqual(conversation.composer.editorBlocks.first { $0.id == quote }?.content.text, "")
-    // A later preference round trip observes the emptied note after it was reconciled.
-    preferences.setReturnKey(.newline)
-    try await eventually(message: mentionInputStatus(input)) { input.returnKeyType == .default }
-    preferences.setReturnKey(.send)
-    try await eventually(message: mentionInputStatus(input)) { input.returnKeyType == .send }
-    XCTAssertTrue(input.enablesReturnKeyAutomatically)
-    XCTAssertTrue(input.isFirstResponder)
-  }
-
-  func testReadyAttachmentLeavesTheEmptyEditorsSendKeyToItsOwnText() async throws {
-    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let preferences = ComposerPreferences(storage: ComposerPreferencesStorage(directory: directory))
-    let files = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
-    try FileManager.default.createDirectory(at: files, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: files) }
-    let file = files.appending(path: "notes.txt")
-    try Data("notes".utf8).write(to: file)
-    let fixture = AttachmentFlowFixture()
-    let conversation = fixture.conversation()
-    defer { conversation.close() }
-    let host = UIHostingController(
-      rootView: MentionComposerHarness(
-        conversation: conversation, source: ComposerMentionSource(threads: [])
-      )
-      .environment(\.composerPreferences, preferences))
-    let window = try await mountMentionHost(host)
-    defer { unmount(window) }
-    let input = try XCTUnwrap(mentionInputs(in: host.view).first)
-    try await focusMentionInput(input)
-    let attachments = conversation.attachmentDraft
-    attachments.importFiles([file])
-    try await waitForBusinessResult(
-      message: "Attachment items: \(attachments.items.count); "
-        + "error: \(String(describing: attachments.error)); " + mentionInputStatus(input)
-    ) { attachments.hasAttachments && attachments.isReady }
-    let ended = EndedEditingSessions()
-    let observer = NotificationCenter.default.addObserver(
-      forName: UITextView.textDidEndEditingNotification, object: input, queue: nil
-    ) { _ in MainActor.assumeIsolated { ended.count += 1 } }
-    defer { NotificationCenter.default.removeObserver(observer) }
-
-    // Send now configures the editor with a sendable attachment in the draft. The empty
-    // editor's key still follows only its own text, so no input session restart puts the
-    // keyboard away and brings it back; the toolbar's Send covers the attachment.
-    preferences.setReturnKey(.send)
-    try await eventually(message: mentionInputStatus(input)) { input.returnKeyType == .send }
-    XCTAssertTrue(input.enablesReturnKeyAutomatically, mentionInputStatus(input))
-    // The trait change queued its keyboard refresh on the main queue. Queue the test behind it.
-    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-      DispatchQueue.main.async { continuation.resume() }
-    }
-    XCTAssertEqual(ended.count, 0, mentionInputStatus(input))
-    XCTAssertTrue(input.isFirstResponder, mentionInputStatus(input))
-  }
-
-  func testReturnKeyRefreshLeavesTheKeyboardDownWhileASheetCoversTheEditor() async throws {
-    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let preferences = ComposerPreferences(storage: ComposerPreferencesStorage(directory: directory))
-    preferences.setReturnKey(.send)
-    let fixture = AttachmentFlowFixture()
-    let conversation = fixture.conversation()
-    defer { conversation.close() }
-    let host = UIHostingController(
-      rootView: MentionComposerHarness(state: conversation.composer)
-        .environment(\.composerPreferences, preferences))
-    let window = try await mountMentionHost(host)
-    defer { unmount(window) }
-    let input = try XCTUnwrap(mentionInputs(in: host.view).first)
-    try await focusMentionInput(input)
-    try await eventually(message: mentionInputStatus(input)) {
-      input.returnKeyType == .send && input.enablesReturnKeyAutomatically
-    }
-
-    // UIKit puts the keyboard away under a sheet and leaves the editor first responder.
-    host.present(UIViewController(), animated: false)
-    defer { host.dismiss(animated: false) }
-    XCTAssertTrue(input.isFirstResponder, mentionInputStatus(input))
-    let ended = EndedEditingSessions()
-    let observer = NotificationCenter.default.addObserver(
-      forName: UITextView.textDidEndEditingNotification, object: input, queue: nil
-    ) { _ in MainActor.assumeIsolated { ended.count += 1 } }
-    defer { NotificationCenter.default.removeObserver(observer) }
-
-    // An empty editor leaving Send asks for a new input session, which shows the keyboard.
-    preferences.setReturnKey(.newline)
-    try await eventually(message: mentionInputStatus(input)) { input.returnKeyType == .default }
-    // The trait change queued its keyboard refresh on the main queue. Queue the test behind it.
-    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-      DispatchQueue.main.async { continuation.resume() }
-    }
-    XCTAssertEqual(ended.count, 0, mentionInputStatus(input))
-    XCTAssertTrue(input.isFirstResponder, mentionInputStatus(input))
-  }
-
-  func testRepeatedKeyboardSendDoesNotStopTheExistingWorkAfterTheDraftClears() async throws {
-    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let preferences = ComposerPreferences(storage: ComposerPreferencesStorage(directory: directory))
-    preferences.setReturnKey(.send)
-    let fixture = ConversationHistoryFixture(count: 1)
-    let conversation = fixture.conversation()
-    defer { conversation.close() }
-    await conversation.refresh()
-    XCTAssertEqual(conversation.history?.canStop, true)
-    let (completions, completion) = AsyncStream<Void>.makeStream()
-    defer { completion.finish() }
-    let host = UIHostingController(
-      rootView: ChatDetailView(conversation: conversation, didSend: { completion.yield() })
-        .environment(\.composerPreferences, preferences))
-    let window = try await mountMentionHost(host)
-    defer { unmount(window) }
-    let input = try XCTUnwrap(mentionInputs(in: host.view).first)
-    try await focusMentionInput(input)
-    input.insertText("Keep the existing work running")
-
-    // Both key events arrive before the scheduled submission can clear the editor.
-    input.insertText("\n")
-    input.insertText("\n")
-    // Each key event queued its submission on the main queue. Queue the test behind both: by
-    // then the first has started the only send and the second has decided not to stop.
-    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-      DispatchQueue.main.async { continuation.resume() }
-    }
-    let submitted = repeatedSendStatus(conversation, fixture: fixture, input: input)
-    XCTAssertEqual(conversation.pending.count, 1, submitted)
-    XCTAssertFalse(conversation.isStopping, submitted)
-    // Await the send's own completion instead of observing it within a deadline. The first
-    // frame of the conversation builds a render pipeline here, which can take seconds on CI.
-    for await _ in completions { break }
-    let settled = repeatedSendStatus(conversation, fixture: fixture, input: input)
-    XCTAssertFalse(conversation.isSending, settled)
-    XCTAssertFalse(conversation.isStopping, settled)
-    XCTAssertTrue(conversation.pending.contains { $0.needsRetry }, settled)
-    let writes = try fixture.requests.sentMessages.withLock {
-      try $0.map { try JSONDecoder().decode([String: MessageJSON].self, from: $0) }
-    }
-    XCTAssertEqual(writes.map { $0["prompt"]?.string }, ["Keep the existing work running"])
-    XCTAssertEqual(conversation.history?.canStop, true)
-    XCTAssertNil(conversation.stopIssue)
-  }
-
-  private func repeatedSendStatus(
-    _ conversation: ConversationStore, fixture: ConversationHistoryFixture, input: ComposerTextView
-  ) -> String {
-    let pending = conversation.pending.map { "\($0.id):retry=\($0.needsRetry)" }
-    let requests = fixture.requests.values.withLock { $0 }
-    let writes = fixture.requests.sentMessages.withLock { $0.count }
-    return "Repeated keyboard send: "
-      + "sending=\(conversation.isSending); stopping=\(conversation.isStopping); "
-      + "pending=\(pending); writes=\(writes); requests=\(requests); "
-      + "draft=\(String(reflecting: conversation.draft)); "
-      + "error=\(String(describing: conversation.error)); "
-      + "canStop=\(String(describing: conversation.history?.canStop)); "
-      + "stopIssue=\(String(describing: conversation.stopIssue)); submitted input: "
-      + mentionInputStatus(input)
-  }
-
-  func testDefaultReturnEditsTheDraftAndSavedSendPreferenceDeliversTheSameMessage() async throws {
-    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let preferences = ComposerPreferences(storage: ComposerPreferencesStorage(directory: directory))
-    let fixture = AttachmentFlowFixture()
-    let conversation = fixture.conversation()
-    defer { conversation.close() }
-    let source = ComposerMentionSource(threads: [])
-    let host = UIHostingController(
-      rootView: MentionComposerHarness(conversation: conversation, source: source)
-        .environment(\.composerPreferences, preferences))
+      rootView: MentionComposerHarness(conversation: conversation, source: source))
     let window = try await mountMentionHost(host)
     defer { unmount(window) }
     let input = try XCTUnwrap(mentionInputs(in: host.view).first)
@@ -280,74 +23,18 @@ final class ChatComposerReturnKeyTests: XCTestCase {
     XCTAssertEqual(conversation.draft, "First\nSecond")
     XCTAssertTrue(fixture.state.value.withLock { $0.messages.isEmpty })
 
-    preferences.setReturnKey(.send)
-    try await eventually { input.returnKeyType == .send }
-    input.insertText("\n")
-    try await waitForBusinessResult {
-      conversation.pending.isEmpty && conversation.draft.isEmpty
-        && conversation.messages.contains { $0.text.contains("First\nSecond") }
-    }
+    await conversation.send()
     let sent = try fixture.state.value.withLock {
       try $0.messages.map { try JSONDecoder().decode(AttachmentFlowFixture.Message.self, from: $0) }
     }
     XCTAssertEqual(sent.map { $0.userMessage.parts.compactMap(\.text).joined() }, ["First\nSecond"])
   }
 
-  func testSendModeKeepsIMEConfirmationWithNativeEditingBeforeAnExplicitSend() async throws {
-    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let preferences = ComposerPreferences(storage: ComposerPreferencesStorage(directory: directory))
-    preferences.setReturnKey(.send)
-    let fixture = AttachmentFlowFixture()
-    let conversation = fixture.conversation()
-    defer { conversation.close() }
-    let source = ComposerMentionSource(threads: [])
-    let host = UIHostingController(
-      rootView: MentionComposerHarness(conversation: conversation, source: source)
-        .environment(\.composerPreferences, preferences))
-    let window = try await mountMentionHost(host)
-    defer { unmount(window) }
-    let input = try XCTUnwrap(mentionInputs(in: host.view).first)
-    try await focusMentionInput(input)
-    XCTAssertEqual(input.returnKeyType, .send)
-    let composedText = "确认发布"
-    input.setMarkedText(
-      composedText, selectedRange: NSRange(location: composedText.utf16.count, length: 0))
-    _ = try XCTUnwrap(input.markedTextRange, mentionInputStatus(input))
-    input.unmarkText()
-    input.insertText("\n")
-    XCTAssertEqual(conversation.draft, "\(composedText)\n")
-
-    // Unmarking queues settlement on the main queue. Queue the test's continuation
-    // behind it before exercising a separate Return to send.
-    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-      DispatchQueue.main.async { continuation.resume() }
-    }
-    try Task.checkCancellation()
-    XCTAssertTrue(fixture.state.value.withLock { $0.messages.isEmpty })
-
-    input.insertText("\n")
-    try await waitForBusinessResult(message: mentionInputStatus(input)) {
-      conversation.pending.isEmpty && conversation.draft.isEmpty
-        && conversation.messages.contains { $0.text == composedText }
-    }
-    let sent = try fixture.state.value.withLock {
-      try $0.messages.map { try JSONDecoder().decode(AttachmentFlowFixture.Message.self, from: $0) }
-    }
-    XCTAssertEqual(sent.map { $0.userMessage.parts.compactMap(\.text).joined() }, [composedText])
-  }
-
-  func testSendModeSelectsAChatReferenceAndMenuNewlinePreservesItsPartsAndUndo() async throws {
-    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let preferences = ComposerPreferences(storage: ComposerPreferencesStorage(directory: directory))
-    preferences.setReturnKey(.send)
+  func testReturnSelectsAChatReferenceAndNewlinesPreserveItsPartsAndUndo() async throws {
     let fixture = MentionNavigationFixture()
     let workspace = try await fixture.workspace()
     defer { workspace.close() }
-    let host = UIHostingController(
-      rootView: MentionComposerHarness(workspace: workspace)
-        .environment(\.composerPreferences, preferences))
+    let host = UIHostingController(rootView: MentionComposerHarness(workspace: workspace))
     let window = try await mountMentionHost(host)
     defer { unmount(window) }
     let input = try XCTUnwrap(mentionInputs(in: host.view).first)
@@ -367,7 +54,7 @@ final class ChatComposerReturnKeyTests: XCTestCase {
     let before = workspace.newComposer.document
     input.selectedRange = (input.text as NSString).range(of: "old")
     try await eventually { input.undoManager?.groupingLevel == 0 }
-    input.insertNewline()
+    input.insertText("\n")
     XCTAssertEqual(workspace.newChatDraft, "Before  🌷 \n after")
     XCTAssertEqual(
       workspace.newComposer.document.parts.filter { $0["type"]?.string != "text" },
@@ -392,10 +79,4 @@ final class ChatComposerReturnKeyTests: XCTestCase {
       + "ownsEditor=\(input.mentionEditor === workspace.newComposer.editor); "
       + "requests=\(paths); " + mentionState(input, in: host)
   }
-}
-
-/// The editing sessions UIKit reports ending for one editor, counted as they are posted.
-@MainActor
-private final class EndedEditingSessions {
-  var count = 0
 }
