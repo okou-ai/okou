@@ -747,7 +747,7 @@ private fun UpdateAction(
 ) {
     val transfer = state.transfer
     val colors = MaterialTheme.colorScheme
-    val shape = if (state.required) ButtonDefaults.shape else RoundedCornerShape(12.dp)
+    val progressShape = RoundedCornerShape(12.dp)
     val foreground = if (state.required) colors.onPrimary else colors.inverseOnSurface
     val background = if (state.required) colors.primary else colors.inverseSurface
     val contentPadding =
@@ -773,6 +773,7 @@ private fun UpdateAction(
             checking -> stringResource(R.string.updates_check_in_progress)
             else -> null
         }
+    val shape = if (state.required && progress == null) ButtonDefaults.shape else progressShape
     val enabled =
         progress == null && (state.canInstall || !state.offline && (!waiting || allowRetry))
     val showingProgress = progress != null
@@ -803,7 +804,7 @@ private fun UpdateAction(
         ) {
             Text(
                 progress,
-                modifier = Modifier.padding(contentPadding),
+                modifier = Modifier.padding(updateActionPadding),
                 color = if (checking) colors.onSurfaceVariant else colors.onBackground,
                 style = updateProgressStyle(),
                 textAlign = TextAlign.Center,
