@@ -274,11 +274,6 @@ ${formatPresentationTemplateListing(templates)}`;
             }),
             "## Use the Selected Template",
             `- Pull only the selected package once: \`okou resource pull <Package from the catalog> --dir ${resourceDir}\`.`,
-            ...(presentationOutputFormatEnabled
-              ? [
-                  "- If the selected package is unavailable, stop and report it; do not substitute another format or style.",
-                ]
-              : []),
             "- Read SKILL.md in the source directory printed by the pull command fully, then read the workflow instructions it references. Follow that package's authoring, worker startup, layout and verification workflow, using its listed default color system unless the request specifies another supported palette.",
             "- Use the source understanding above in the selected workflow; do not restart source preparation unnecessarily. Preserve the requested slide count and substantive content rather than copying the reference deck's sample story, wording, metrics, imagery or page count.",
             ...(outputFormat === "html"

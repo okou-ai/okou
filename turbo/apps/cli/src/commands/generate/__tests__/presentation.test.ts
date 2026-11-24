@@ -107,9 +107,6 @@ describe("okou generate presentation command", () => {
           expect(stdout).toContain(
             "Use the template version matching this format; template instructions do not override it",
           );
-          expect(stdout).toContain(
-            "If the selected package is unavailable, stop and report it",
-          );
           expect(stdout.split("Deliver one format")).toHaveLength(2);
           expect(stdout).toContain(
             format === "html"
@@ -130,6 +127,9 @@ describe("okou generate presentation command", () => {
           );
         }
         if (templateArgs.length > 0) {
+          expect(stdout).toContain(
+            "If the selected package is unavailable, stop and report it",
+          );
           expect(stdout).toContain(
             enabled
               ? "The replacement packet supersedes all remaining instructions here"
