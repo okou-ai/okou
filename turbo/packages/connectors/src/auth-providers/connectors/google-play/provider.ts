@@ -6,6 +6,8 @@ import {
 } from "../../oauth/google";
 import { oauthRefreshResultToProviderResult } from "../../oauth/types";
 
+const ANDROID_PUBLISHER_SCOPE = "https://www.googleapis.com/auth/androidpublisher";
+
 export const googlePlayProvider: AuthCodeConnectorAuthProvider<"google-play"> =
   {
     grant: {
@@ -30,6 +32,11 @@ export const googlePlayProvider: AuthCodeConnectorAuthProvider<"google-play"> =
           args.code,
           args.redirectUri,
         );
+        if (!result.scopes.includes(ANDROID_PUBLISHER_SCOPE)) {
+          throw new Error(
+            "Grant Google Play Developer API access to connect this account.",
+          );
+        }
         return {
           outputs: {
             accessToken: result.accessToken,
