@@ -928,18 +928,19 @@ feature; the catalog shows each one.
   written as a colour, so the cards, the deck and the dock stand on the same scene as the header.
   The picture never resizes as the cards change, so it keeps one size and one sharpness. At night the whole scene dims, so the light header and status bar
   read on it.
-- **Cards** are white `OkouSurfaceStyle` cards at sheet radius with 24 pt above the heading and
-  20 pt elsewhere. A direction is a raised button (card fill, hairline, `state-pressed` while
-  pressed); one that sends carries the composer's amber send mark, one that drafts a quiet arrow,
-  and the chosen one shows progress in its mark until the choice settles. The mark stands in its
-  own trailing column, centred on the whole button as a row's accessory is, so every direction
-  keeps its mark in the same place whatever its text; the label and description wrap before it
-  (at most two lines of description; the mark and VoiceOver's hint say what choosing it does),
-  and the row keeps 16 pt above the label and below the description. Directions stand 10 pt
-  apart. A card that ends in text, as a direction's context does, keeps
-  as much room below the text as above it. A card is a reading surface
-  ([Type roles](#type-roles)): a Title 3 title over Body for the reason and each direction's
-  label, with Subheadline for a direction's description and the source.
+- **Cards** stand on a ground a step back from white (`background-50`, a step darker than the
+  directions at night) at sheet radius, with a hairline and 24 pt above the heading and 20 pt
+  elsewhere, so the white directions on it show their outline. A direction is a white raised
+  button (hairline, `state-pressed` while pressed); one that sends carries the composer's amber
+  send mark, one that drafts a quiet arrow, and the chosen one shows progress in its mark until
+  the choice settles. The 24 pt mark sits on the button's top-right corner, 9 pt past its edges
+  in a 3 pt ring of the button's own white, so the label and description keep the button's whole
+  width and every direction keeps its mark in the same place (at most two lines of description;
+  the mark and VoiceOver's hint say what choosing it does). The row keeps 16 pt around its text,
+  and directions stand 16 pt apart so a mark clears the direction above. A card that ends in
+  text, as a direction's context does, keeps as much room below the text as above it. A card is
+  a reading surface ([Type roles](#type-roles)): a Title 3 title over Body for the reason and
+  each direction's label, with Subheadline for a direction's description and the source.
 - **Dense text scrolls in place.** A reason shows whole. When the heading runs past the card's
   room it scrolls above the directions, which stay at the card's bottom (`ForYouCardLayout`): it
   fades out at the edge where more lies with the cut line peeking under the fade, and its scroll

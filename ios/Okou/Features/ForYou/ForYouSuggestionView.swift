@@ -21,8 +21,9 @@ struct ForYouSuggestionView: View {
   /// The card is a reading surface: a Title 3 heading over Body text, with Subheadline for
   /// secondary lines (docs/ios/mobile-design-system.md#type-roles).
   private static let labelFont = Font.okou(.body).weight(.medium)
-  /// The room between directions: enough that each reads as its own button.
-  private static let directionGap = OkouSpace.ten
+  /// The room between directions: enough that each reads as its own button and the mark on a
+  /// direction's corner stays clear of the one above.
+  private static let directionGap = OkouSpace.lg
 
   private var source: (id: String, title: String)? {
     let target = suggestion.options.compactMap(\.threadId).first
@@ -86,9 +87,9 @@ struct ForYouSuggestionView: View {
 
   /// A direction says what choosing it does before it is chosen: one that sends carries the
   /// composer's amber send mark, one that only prepares a draft leads on to its chat (the
-  /// outcome is the mark's meaning and VoiceOver's hint). Its mark stands in its own column at
-  /// the trailing edge, centred on the whole button, as a row's accessory is, so every direction
-  /// keeps its mark in the same place whatever its text. Each is a raised button on the card, as the
+  /// outcome is the mark's meaning and VoiceOver's hint). Its mark sits on the button's top-right
+  /// corner, half outside its border, so the label and description keep the button's whole width
+  /// and every direction keeps its mark in the same place. Each is a raised button on the card, as the
   /// web draws its options, and the one being chosen turns its mark into progress until the
   /// choice settles.
   private func optionButton(_ option: ForYouOption) -> some View {
@@ -97,24 +98,24 @@ struct ForYouSuggestionView: View {
     return Button {
       choose(option)
     } label: {
-      HStack(spacing: OkouSpace.md) {
-        VStack(alignment: .leading, spacing: OkouSpace.six) {
-          Text(option.label).font(Self.labelFont)
-          // A long description keeps its first lines so a dense card leaves its heading room;
-          // VoiceOver reads all of it.
-          if !option.description.isEmpty {
-            Text(option.description).font(.okou(.subheadline))
-              .foregroundStyle(OkouColor.mutedForeground)
-              .lineLimit(Self.descriptionLines)
-          }
+      VStack(alignment: .leading, spacing: OkouSpace.six) {
+        Text(option.label).font(Self.labelFont)
+        // A long description keeps its first lines so a dense card leaves its heading room;
+        // VoiceOver reads all of it.
+        if !option.description.isEmpty {
+          Text(option.description).font(.okou(.subheadline))
+            .foregroundStyle(OkouColor.mutedForeground)
+            .lineLimit(Self.descriptionLines)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        ForYouOptionMark(sends: sends, isPending: isPending)
       }
+      .frame(maxWidth: .infinity, alignment: .leading)
       .multilineTextAlignment(.leading)
-      .padding(.leading, OkouSpace.lg).padding(.trailing, OkouSpace.md)
-      .padding(.vertical, OkouSpace.lg)
+      .padding(OkouSpace.lg)
       .frame(minHeight: OkouControl.minimumTarget)
+      .overlay(alignment: .topTrailing) {
+        ForYouOptionMark(sends: sends, isPending: isPending)
+          .offset(x: ForYouOptionMark.overhang, y: -ForYouOptionMark.overhang)
+      }
     }
     .buttonStyle(ForYouOptionButtonStyle(isPending: isPending))
     .accessibilityHint(
@@ -367,25 +368,39 @@ struct ForYouCardLayout<Heading: View, Actions: View>: View {
   }
 }
 
-/// The mark at a direction's trailing edge: the composer's amber send for one that sends now, a
-/// quiet arrow for one that opens a draft, and progress while the choice is under way.
+/// The mark on a direction's corner: the composer's amber send for one that sends now, a quiet
+/// arrow for one that opens a draft, and progress while the choice is under way. A ring of the
+/// card's colour cuts it out of the button's border, so it reads as sitting on the corner.
 private struct ForYouOptionMark: View {
   let sends: Bool
   let isPending: Bool
+  /// How far the mark reaches past the button's top and trailing edges.
+  static let overhang: CGFloat = 9
+  private static let size: CGFloat = OkouSpace.xxl
+  private static let ring: CGFloat = OkouSpace.three
 
   var body: some View {
     ZStack {
       if isPending {
-        ProgressView().controlSize(.small)
+        ProgressView().controlSize(.mini)
           .tint(sends ? OkouColor.primaryForeground : OkouColor.mutedForeground)
       } else {
-        OkouIcon(sends ? "arrow-up" : "arrow-right", size: OkouIconSize.inline)
+        OkouIcon(sends ? "arrow-up" : "arrow-right", size: OkouIconSize.badge)
       }
     }
     .transition(.opacity)
     .foregroundStyle(sends ? OkouColor.primaryForeground : OkouColor.foreground)
-    .frame(width: OkouControl.addControl, height: OkouControl.addControl)
-    .background(sends ? OkouColor.primary : OkouColor.stateHover, in: Circle())
+    .frame(width: Self.size, height: Self.size)
+    .background {
+      if sends {
+        Circle().fill(OkouColor.primary)
+      } else {
+        Circle().fill(OkouColor.card)
+          .overlay { Circle().strokeBorder(OkouColor.controlBorder, lineWidth: OkouSpace.hairline) }
+      }
+    }
+    .padding(Self.ring)
+    .background(OkouColor.card, in: Circle())
     .animation(OkouMotion.press, value: isPending)
     .accessibilityHidden(true)
   }

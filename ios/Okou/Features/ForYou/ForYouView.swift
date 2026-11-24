@@ -50,6 +50,10 @@ struct ForYouView: View {
   /// Each deeper layer of the deck is shaded by this much more, so the stack recedes while every
   /// layer stays a solid card on the scene.
   private static let layerShade: Double = 0.06
+  /// The big card's ground, a step back from white, so the white directions on it show their
+  /// outline and the mark on each corner reads as part of its button's shape. At night it is a
+  /// step darker than the directions, for the same reason.
+  static let ground = OkouColor.background50
   /// The card's padding above and below its content (`surface`).
   private static let cardPadding = ForYouCardInset.top + ForYouCardInset.bottom
   /// However low the ground lies, a card may always take this much of the page.
@@ -175,7 +179,7 @@ struct ForYouView: View {
       ZStack(alignment: .bottom) {
         ForEach(Array((1...layers).reversed()), id: \.self) { layer in
           RoundedRectangle(cornerRadius: OkouRadius.sheet, style: .continuous)
-            .fill(OkouColor.card)
+            .fill(Self.ground)
             .overlay {
               RoundedRectangle(cornerRadius: OkouRadius.sheet, style: .continuous)
                 .fill(OkouMediaColor.scrim.opacity(Double(layer) * Self.layerShade))
@@ -445,7 +449,13 @@ struct ForYouView: View {
       .padding(.top, ForYouCardInset.top)
       .padding(.bottom, asContext ? ForYouCardInset.textBottom : ForYouCardInset.bottom)
       .frame(maxWidth: .infinity, alignment: .leading)
-      .modifier(OkouSurfaceStyle(radius: OkouRadius.sheet))
+      .background {
+        RoundedRectangle(cornerRadius: OkouRadius.sheet, style: .continuous).fill(Self.ground)
+          .overlay {
+            RoundedRectangle(cornerRadius: OkouRadius.sheet, style: .continuous)
+              .strokeBorder(OkouColor.border, lineWidth: OkouSpace.hairline)
+          }
+      }
       .onGeometryChange(for: ForYouCardPlacement.self) { proxy in
         ForYouCardPlacement(proxy.frame(in: .global))
       } action: { placement in
