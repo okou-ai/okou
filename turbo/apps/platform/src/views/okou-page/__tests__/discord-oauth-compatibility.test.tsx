@@ -187,7 +187,7 @@ test("discord-oauth-compatibility-014 leaving a failed installation closes the o
   expect(tab.closed).toBeTruthy();
 });
 
-test("Losing the original Discord window after approval leaves the cleaned consent page interrupted", async () => {
+test("discord-oauth-compatibility-007 Losing the original Discord window after approval leaves the cleaned consent page interrupted", async () => {
   const origin = browserPeer(context);
   vi.stubGlobal("opener", origin);
   const finish = context.mocks.deferred<void>();

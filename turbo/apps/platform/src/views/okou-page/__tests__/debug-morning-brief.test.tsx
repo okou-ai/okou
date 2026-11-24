@@ -86,7 +86,7 @@ test("Enter runs the focused Morning Brief action and exposes its completed chat
   await expect(displayedRequest(issued)).resolves.toBeTruthy();
 });
 
-test("The keyboard-triggered brief stays busy until the requested conversation is ready", async () => {
+test("debug-morning-brief-005 The keyboard-triggered brief stays busy until the requested conversation is ready", async () => {
   const issued = context.mocks.deferred<void>(),
     finished = context.mocks.deferred<void>();
   const id = crypto.randomUUID();

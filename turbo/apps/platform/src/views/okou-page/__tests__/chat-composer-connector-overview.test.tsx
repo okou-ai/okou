@@ -88,7 +88,7 @@ test("chat-composer-connector-overview-008 opening account choices fetches detai
   ).resolves.toBeInTheDocument();
 });
 
-test("The same twenty connector choices remain available after closing the panel", async () => {
+test("chat-composer-connector-overview-001 The same twenty connector choices remain available after closing the panel", async () => {
   const entries = namedMenuAccounts(context, "Connected tool", 20);
   let catalogAvailable = true;
   context.mocks.api(chatConnectorAccessContract.overview, ({ respond }) => {

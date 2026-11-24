@@ -592,7 +592,7 @@ function numberedSuggestions(count: number): Suggestion[] {
     };
   });
 }
-test("A custom follow-up retains its editor on failure and reuses its identities until acceptance", async () => {
+test("agent-suggestions-021 A custom follow-up retains its editor on failure and reuses its identities until acceptance", async () => {
   const pool = mockPool();
   mockChatLifecycle(context);
   const attempts: {
@@ -640,6 +640,8 @@ test("A custom follow-up retains its editor on failure and reuses its identities
   click(button("Send", "button", editor));
   await retryRequested.promise;
   expect(composer(editor)).toHaveTextContent("Assess the budget risk first");
+  expect(attempts[0].threadId).toBeTruthy();
+  expect(attempts[0].clientEventId).toBeTruthy();
   expect(attempts[1]).toStrictEqual(attempts[0]);
   const [quote] = suggestionFeedbacks(
     attempts[1].userMessage ?? { version: 1, parts: [] },

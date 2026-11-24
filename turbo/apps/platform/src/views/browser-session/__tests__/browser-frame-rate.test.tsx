@@ -144,7 +144,7 @@ test("browser-frame-rate-003 Resizing a letterboxed image moves its FPS overlay 
   expect(overlay).toHaveAttribute("x", "0");
 });
 
-test("The browser settings radio reflects the 128-by-48 FPS overlay and regains focus on Escape", async () => {
+test("browser-frame-rate-001 The browser settings radio reflects the 128-by-48 FPS overlay and regains focus on Escape", async () => {
   const { openPage } = arrangeNativePage(context);
   await openPage();
   await expectStreamingAt(example.url);

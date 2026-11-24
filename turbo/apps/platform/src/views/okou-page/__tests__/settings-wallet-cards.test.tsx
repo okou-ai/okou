@@ -189,7 +189,7 @@ test.each([
 );
 
 test.each(["activity", "cards"] as const)(
-  "Returning to Link activity preserves each unchanged section while %s refreshes first",
+  "settings-wallet-cards-005 Returning to Link activity preserves each unchanged section while %s refreshes first",
   async (first) => {
     serveWallet(context, () => {
       return linkStatus("connected");

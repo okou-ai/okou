@@ -765,7 +765,7 @@ test("get-started-entry-010 the member phone quest offers the earned credits, sc
   ).resolves.toBeEnabled();
 });
 
-test("A connector chosen in the rewards picker reveals the authentication options from its detail response", async () => {
+test("get-started-entry-042 A connector chosen in the rewards picker reveals the authentication options from its detail response", async () => {
   const choice = publicStatusItem({
     connectorSlug: "github",
     label: "Choice connector",

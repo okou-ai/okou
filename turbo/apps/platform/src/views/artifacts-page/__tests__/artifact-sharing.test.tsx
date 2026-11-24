@@ -1,3 +1,5 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { artifactSharingContract } from "@okouai/api-contracts/contracts/artifact-sharing";
 import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import {
   artifactSharesContract,
@@ -33,7 +35,10 @@ function permissions(audience: "private" | "public"): ArtifactShareStatus {
   };
 }
 
-async function openOwnerMenu(audience: "private" | "public") {
+async function openOwnerMenu(
+  audience: "private" | "public",
+  invitations = false,
+) {
   const file = "https://media.example.test/coast.png";
   context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
     return respond(200, {
@@ -52,6 +57,7 @@ async function openOwnerMenu(audience: "private" | "public") {
     context,
     host,
     path,
+    featureSwitches: { [FeatureSwitchKey.HostedSiteEmailSharing]: invitations },
   });
   await expect(
     screen.findByRole("heading", { name: "Coast.png" }),
@@ -113,33 +119,44 @@ test("artifact-sharing-007 returns to the full artifact link after the visitor e
   });
 });
 
-test("The owner copies the canonical link while moving access into and out of public sharing", async () => {
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  const amendments: ArtifactShareStatus["audience"][] = [];
-  context.mocks.api(artifactSharesContract.update, ({ body, respond }) => {
-    amendments.push(body.audience);
-    return respond(200, {
-      ...permissions(body.audience === "public" ? "public" : "private"),
-      audience: body.audience,
+test.each([false, true])(
+  "artifact-sharing-002 The owner copies the canonical link across all audiences (invitations %s)",
+  async (invitations) => {
+    const clipboard = context.mocks.browser.clipboardWriteText();
+    const amendments: ArtifactShareStatus["audience"][] = [];
+    context.mocks.api(artifactSharesContract.update, ({ body, respond }) => {
+      amendments.push(body.audience);
+      return respond(200, {
+        ...permissions(body.audience === "public" ? "public" : "private"),
+        audience: body.audience,
+      });
     });
-  });
-  const menu = within(await openOwnerMenu("private"));
-  expect(screen.queryByRole("textbox")).toBeNull();
-  expect(screen.queryByText(/link copied/i)).toBeNull();
-  for (const [index, label] of [
-    "Anyone at Acme",
-    "Anyone with the link",
-    "Only me",
-  ].entries()) {
-    const option = menu.getByLabelText(label);
-    click(option);
+    context.mocks.api(artifactSharingContract.list, ({ respond }) =>
+      respond(200, { shares: [] }),
+    );
+    const menu = within(await openOwnerMenu("private", invitations));
     await waitFor(() => {
-      return expect(option).toHaveAttribute("aria-checked", "true");
+      const people = screen.queryByRole("combobox", {
+        name: "Share with people",
+      });
+      expect(people !== null).toBe(invitations);
     });
-    click(getButtonByName("Copy link"));
-    await waitFor(() => {
-      return expect(clipboard.writes[index]).toBe(ownerUrl);
-    });
-  }
-  expect(amendments).toStrictEqual(["organization", "public", "private"]);
-});
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.queryByText(/link copied/i)).toBeNull();
+    const labels = invitations
+      ? ["Workspace", "Anyone", "Invited people"]
+      : ["Anyone at Acme", "Anyone with the link", "Only me"];
+    for (const [index, label] of labels.entries()) {
+      const option = menu.getByLabelText(label);
+      click(option);
+      await waitFor(() => {
+        return expect(option).toHaveAttribute("aria-checked", "true");
+      });
+      click(getButtonByName("Copy link"));
+      await waitFor(() => {
+        return expect(clipboard.writes[index]).toBe(ownerUrl);
+      });
+    }
+    expect(amendments).toStrictEqual(["organization", "public", "private"]);
+  },
+);

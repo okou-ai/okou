@@ -465,9 +465,12 @@ test("onboarding-sources-first-flow-009 the invited member receives the delayed 
   expect(accessed.has("/api/connector-catalog/status")).toBeFalsy();
 });
 
-test.each(["owner", "invited member"] as const)(
-  "The %s starts the chosen task only after the ready-step completion is accepted",
-  async (role) => {
+test.each([
+  ["onboarding-sources-first-flow-012", "owner"],
+  ["onboarding-sources-first-flow-015", "invited member"],
+] as const)(
+  "%s The %s starts the chosen task only after the ready-step completion is accepted",
+  async (_case, role) => {
     const owner = role === "owner";
     newcomer(owner);
     mockSlack(context, {
@@ -568,3 +571,41 @@ test.each(["owner", "invited member"] as const)(
     }
   },
 );
+
+test("onboarding-sources-first-flow-021 The edited launch prompt reaches the new chat after the onboarding page accepts completion", async () => {
+  newcomer();
+  const completing = context.mocks.deferred<string>();
+  const allow = context.mocks.deferred<void>();
+  context.mocks.api(
+    onboardingCompleteContract.complete,
+    async ({ respond }) => {
+      completing.resolve(location.pathname);
+      await allow.promise;
+      context.mocks.data.onboardingStatus({
+        needsOnboarding: false,
+        onboardingComplete: true,
+      });
+      return respond(200, { needsOnboarding: false, onboardingComplete: true });
+    },
+  );
+  const first = receiveFirstChat(context);
+  const edited = "Draft the launch plan for the EU market";
+  await setupPage({
+    context,
+    path: "/onboarding?prompt=" + encodeURIComponent(task),
+  });
+  const input = await screen.findByLabelText("Onboarding prompt");
+  expect(input).toHaveValue("Draft the launch plan");
+  await fill(input, edited);
+  click(await findAction("button", "Next"));
+  try {
+    await expect(completing.promise).resolves.toBe("/onboarding");
+    expect(input).toHaveValue(edited);
+  } finally {
+    allow.resolve();
+  }
+  const chat = await first;
+  expect(chat.prompt).toBe(edited + "\n\n" + documentInstructions);
+  await expect(findSentPrompt(chat.prompt)).resolves.toBeVisible();
+  expect(location.pathname).toBe("/chats/" + chat.threadId);
+});

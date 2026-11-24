@@ -348,7 +348,7 @@ test("A completed private upload remains removable in the chat composer", async 
   );
 });
 
-test("The recording shows the storage finalization error after its parts have transferred", async () => {
+test("chat-continuity-uploads-011 The recording shows the storage finalization error after its parts have transferred", async () => {
   const upload = await multipartRecording(true);
   for (const transfer of upload.transfers) {
     transfer.release.resolve();

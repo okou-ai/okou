@@ -447,7 +447,7 @@ test.each([
   "owner change with delivery",
   "owner change without delivery",
 ] as const)(
-  "A reviewed desktop login belongs to its signing-in owner (%s)",
+  "vnc-settings-054 A reviewed desktop login belongs to its signing-in owner (%s)",
   async (mode) => {
     const { inventory, deliver } = await reviewedLogin();
     act(() => {

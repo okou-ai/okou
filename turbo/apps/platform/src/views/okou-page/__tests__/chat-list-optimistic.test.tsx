@@ -1,3 +1,9 @@
+import { accountModels } from "./chat-account-model-fixture.ts";
+import {
+  openModelPanel,
+  findModelOption,
+  closeModelPanel,
+} from "./chat-model-panel-test-helpers.ts";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import userEvent from "@testing-library/user-event";
 import {
@@ -194,3 +200,66 @@ test("The confirmed conversation restores the shipment draft supplied by the sam
     return expect(editor).toHaveTextContent(savedDraft);
   });
 });
+
+test.each([
+  ["chat-list-optimistic-001", false, "Start the local conversation."],
+  ["chat-list-optimistic-005", true, "Review the winter shipment"],
+] as const)(
+  "%s the pending conversation keeps the requested destination and model",
+  async (_case, changeModel, prompt) => {
+    const creation = context.mocks.deferred<{
+      id: string;
+      model: string | null | undefined;
+    }>();
+    const acknowledge = context.mocks.deferred<void>();
+    const initialModel = changeModel ? "gpt-5.6-luna" : "claude-sonnet-5";
+    createChatRunFixtures(context).installRunChat({
+      selectedModel: initialModel,
+    });
+    accountModels(context, ["gpt-5.6-luna", "claude-sonnet-5"], initialModel);
+    installChatListStream(context, { caseId: 475, snapshot: [] });
+    offerServerDraft();
+    context.mocks.api(chatThreadsContract.create, async ({ body, respond }) => {
+      const id = body.clientThreadId;
+      if (!id) {
+        throw new Error("Expected the new conversation's ID");
+      }
+      creation.resolve({ id, model: body.model });
+      await acknowledge.promise;
+      return respond(201, {
+        id,
+        selectedModel: body.model ?? null,
+        serviceTier: null,
+        createdAt: "2026-11-24T00:00:00Z",
+        title: null,
+      });
+    });
+    await setupPage({ context, path: "/" });
+    if (changeModel) {
+      const models = await openModelPanel("GPT 5.6 Luna");
+      click(await findModelOption("Claude Sonnet 5", models));
+      await composerModelTrigger("Claude Sonnet 5");
+      await closeModelPanel();
+    }
+    const editor = await screen.findByRole("textbox", { name: "Message" });
+    await fill(editor, prompt);
+    expect(editor).toHaveTextContent(prompt);
+    click(await findEnabledButton("Send"));
+    try {
+      const { id, model } = await creation.promise;
+      expect(model).toBe("claude-sonnet-5");
+      await expect(
+        composerModelTrigger("Claude Sonnet 5"),
+      ).resolves.toBeVisible();
+      await waitFor(() => {
+        expect(sidebarThreadTitles()).toStrictEqual(["New chat"]);
+        expect(sidebarThreadLinks()[0]).toHaveAttribute("href", "/chats/" + id);
+      });
+      expect(
+        screen.getByRole("textbox", { name: "Message" }),
+      ).not.toHaveTextContent(savedDraft);
+    } finally {
+      acknowledge.resolve();
+    }
+  },
+);

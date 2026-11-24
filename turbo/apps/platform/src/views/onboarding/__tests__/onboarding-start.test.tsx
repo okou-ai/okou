@@ -81,7 +81,7 @@ test("onboarding-start-004 an onboarded member reaches the composer without a Ma
   ).toBeFalsy();
 });
 
-test("The industry choice stays interactive while Marketing holds the authenticated start", async () => {
+test("onboarding-start-001 The industry choice stays interactive while Marketing holds the authenticated start", async () => {
   context.mocks.data.onboardingStatus({
     needsOnboarding: true,
     onboardingComplete: false,

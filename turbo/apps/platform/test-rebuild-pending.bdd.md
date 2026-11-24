@@ -490,18 +490,6 @@ Frozen owner: `turbo/apps/platform/src/signals/voice-io/__tests__/voice-draft-au
 
 **Unverified clauses.** Recorded exactly 60 seconds, navigated away after the fourth live WAV, and reopened the draft. The four live uploads ended at 15, 28, 41 and 54 seconds. Use recording was available without Resume. Its uploads covered 39–54 and 52–60 seconds. The continuous 73-second control has a different non-final 52–67 second window. A supported resume of a retained 60-second checkpoint must emit a non-final 58–73 second WAV. The initial fourth response raced navigation and was requested again on recovery. [Case review](../../../test-rebuild-evidence/104/README.md#voice-draft-audio-013).
 
-## `src/views/artifacts-page/__tests__/artifact-sharing.test.tsx`
-
-### artifact-sharing-002
-
-Frozen owner: `turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-sharing.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-sharing.bdd.md#artifact-sharing-002)
-
-- **Given** An owner opens sharing for a private artifact.
-- **When** The owner selects Organization, Public access, then Only me, copying the link after each change.
-- **Then** Each selected access level becomes checked, and the API receives the changes in that order: organization, public, private. Each copy writes the same canonical app link; there is no text box or copied-link notice before copying, and only one permission-status read occurs.
-
-**Unverified clauses.** 三档访问级别按次序变更，三次复制读到同一规范链接。权限详情决定勾选，重复读取同一版本不改变 UI，未取得唯一读取凭据。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-98.tsv).
-
 ## `src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx`
 
 ### browser-automatic-recovery-004
@@ -513,18 +501,6 @@ Frozen owner: `turbo/apps/platform/src/views/browser-session/__tests__/browser-a
 - **Then** The terminal descriptor error and one final protocol recovery report are preserved in order. Reconnect restores the viewer without adding reports.
 
 **Unverified clauses.** A held recovery image and a terminal assigned-window 409 reached Browser view unavailable. An HTTP response-body observer recorded the conflict before the external reporter received one final protocol recovery report. Manual reconnect restored Ledger input with that report list unchanged. The frozen body requires a separately reported Promise ApiError followed by a Browser report. [Batch 106 review](../../../test-rebuild-evidence/106/README.md#browser-automatic-recovery-004).
-
-## `src/views/browser-session/__tests__/browser-frame-rate.test.tsx`
-
-### browser-frame-rate-001
-
-Frozen owner: `turbo/apps/platform/src/views/browser-session/__tests__/browser-frame-rate.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-frame-rate.bdd.md#browser-frame-rate-001)
-
-- **Given** A remote browser viewer is open with FPS hidden.
-- **When** The user opens Browser settings and chooses FPS > On from the left-opening radio submenu, then chooses Off and reopens the submenu.
-- **Then** Off is initially selected, and On displays a 128-by-48 FPS overlay without sending browser requests. On and Off selections are reflected when the submenu is reopened; Off removes the overlay, and Escape returns focus to Browser settings.
-
-**Unverified clauses.** 原生浏览器输入仍未获远端确认时，FPS 本地设置可切换并重新打开。128×48、radio 选中、移除与 Escape 归焦均由页面验证，精确零远端请求没有业务回执。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
 
 ## `src/views/browser-session/__tests__/browser-response-deadlines.test.tsx`
 
@@ -716,28 +692,6 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestio
 
 **Unverified clauses.** After the member disconnected the last personal provider, the run-model API returned available built-in Auto and the first card sent successfully. A separately supplied empty model response produced the expected error and preserved both card positions. The real no-model precondition remains open. [Batch 103 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/103/README.md#agent-suggestions-015).
 
-### agent-suggestions-021
-
-Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.bdd.md#agent-suggestions-021)
-
-- **Given** A suggestion's custom-direction dialog contains a typed follow-up, and sending it initially fails.
-- **When** The user retries the send and the server accepts it.
-- **Then** The failure leaves the dialog and its text intact; the retry uses the same chat and event identities and includes the suggestion background and follow-up. Acceptance closes the dialog, removes the card, shows the sent confirmation and All caught up, and leaves the user on For you; no ordinary card-consumption request is recorded.
-
-**Unverified clauses.** The inline editor retained the card, background and note after a real conflict. The successful retry reused the chat ID and event ID. The authenticated event and custom feedback show acceptance. A rejected ordinary consume replay leaves the same feed receipt. Its absence remains unproved. [Batch 103 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/103/README.md#agent-suggestions-021).
-
-## `src/views/okou-page/__tests__/chat-attachment-annotation.test.tsx`
-
-### chat-attachment-annotation-018
-
-Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-annotation.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-annotation.bdd.md#chat-attachment-annotation-018)
-
-- **Given** A restored draft contains one annotation mark but no annotated copy.
-- **When** The chat loads and rebuilds the marked-up copy from the original image.
-- **Then** The composer shows one mark and sending becomes enabled; the original image is read once.
-
-**Unverified clauses.** 持久化单标记重新打开；未取得原图时禁止发送，读取完成后仍一标记且可发送。多次取得相同图像无法由显示结果区分。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-98.tsv).
-
 ## `src/views/okou-page/__tests__/chat-capability-voice-recording.test.tsx`
 
 ### chat-capability-voice-recording-004
@@ -760,30 +714,6 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-capability
 
 **Unverified clauses.** The separate 129-segment trial supplied its own microphone capture. It reached four transcription responses before the ordinary 5000 ms limit, before recovery and the expected 65 polish items. The prior full-size supplemental recovery remains historical evidence. A regular registration must exercise the 129-to-65 boundary and detect any retranscription or lost final singleton. [Case review](../../../test-rebuild-evidence/104/README.md#chat-capability-voice-recording-005).
 
-## `src/views/okou-page/__tests__/chat-composer-connector-overview.test.tsx`
-
-### chat-composer-connector-overview-001
-
-Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-overview.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-overview.bdd.md#chat-composer-connector-overview-001)
-
-- **Given** The user is in an existing Chat with the connector-account-access feature enabled and 20 connected connectors available.
-- **When** They open the Connectors panel, close it, and reopen it.
-- **Then** All 20 connectors appear both times. The overview is fetched once, no target refresh is fetched, and the legacy connector and thread endpoints are not read.
-
-**Unverified clauses.** 完整库存被扣住或不可用，关闭后重开仍呈现相同 20 项。可用列表证明缓存回退，不能据此区分重复全表读取、定向刷新和不可见旧路径读取。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
-
-## `src/views/okou-page/__tests__/chat-composer-connector-status.test.tsx`
-
-### chat-composer-connector-status-001
-
-Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-status.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-status.bdd.md#chat-composer-connector-status-001)
-
-- **Given** The connector directory contains a saved GitHub account and a saved Acme Search account, and both default accounts require reconnection.
-- **When** The user opens the connector directory, searches for GitHub, then switches to Custom connectors.
-- **Then** GitHub details and Acme Search remain available. No account values are requested, authorization is not updated, and no manual connection is started.
-
-**Unverified clauses.** GitHub 详情和 Acme Search 在两个目录可达，进入配置才见密钥输入。#49268 已删除冻结 helper 监测的 Agent 授权 PUT；另两项账户值读取和手工连接仍无充分的公开反证。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-98.tsv).
-
 ## `src/views/okou-page/__tests__/chat-continuity-uploads.test.tsx`
 
 ### chat-continuity-uploads-003
@@ -795,16 +725,6 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity
 - **Then** The file appears as a removable attachment, and upload completion is requested once for its upload ID.
 
 **Pending product decision and unverified clauses.** 相同 clientEventId 返回同一已准入 run；同一完成上传产生同一文件。验收是否以只产生一个业务产物为准？若需要证明只有一次传输，需要哪种对用户或业务可核验的回执？ The private upload appears and can be removed. On the real API, completing the same upload ID twice produces identical public receipts and the same single catalog entry. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-95.tsv).
-
-### chat-continuity-uploads-011
-
-Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-uploads.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-uploads.bdd.md#chat-continuity-uploads-011)
-
-- **Given** A multipart recording upload's storage transfer succeeds, but the completion request returns a 404 with the message Multipart upload not found.
-- **When** The user uploads the recording.
-- **Then** That finalization message is shown once; completion is requested once, and no generic upload-failure message appears.
-
-**Unverified clauses.** The multipart finalization message appears once without the generic error. Its frequency cannot establish the frequency of failed completion attempts. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-95.tsv).
 
 ## `src/views/okou-page/__tests__/chat-conversation-locator.test.tsx`
 
@@ -818,29 +738,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-conversati
 
 **Unverified clauses.** 96e318f041 恢复的 Vitest 30 轮注册在几何替身上覆盖顶边、落点、卸载。原生 Chromium 已证 24 个标记、点击第一问、落点、24/30 卸载，但稳定布局中首问锚点距视口顶边 60px。 #49915 撤回分页，#50032 恢复分页；#50327 是 staff scroll-room 开关，未提供修改精确顶边子句的依据。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv). 第103批用恰好八轮的对话在原生 Chromium 中点选首个标记。720px 与 960px 两种窗口下，首问均从未挂载变为可见且获得落点反馈。滚动稳定后锚点距滚动视口顶部 60px，问题文本距顶部 74px。点第四个标记产生不同的落点。精确顶边子句保留。 [Batch 103 measurements](../../../test-rebuild-evidence/103/locator.json).
 
-## `src/views/okou-page/__tests__/chat-list-cache.test.tsx`
-
-### chat-list-cache-004
-
-Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-list-cache.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/chat-list-cache.bdd.md#chat-list-cache-004)
-
-- **Given** A signed-out user opens the sign-in page.
-- **When** The page loads.
-- **Then** The sign-in page remains at /sign-in, and no private conversation snapshot, events, indicators, or agent-list requests are made.
-
-**Unverified clauses.** 两种登录状态过渡均保持 /sign-in 且私聊内容不可见。Agent-list 读曾退役，当前证据不能确定另外三类私有读取均未发生。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
-
 ## `src/views/okou-page/__tests__/chat-list-optimistic.test.tsx`
-
-### chat-list-optimistic-001
-
-Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-list-optimistic.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/chat-list-optimistic.bdd.md#chat-list-optimistic-001)
-
-- **Given** A user is composing a new conversation and the server has not confirmed its creation.
-- **When** They send “Start the local conversation.”
-- **Then** A single “New chat” appears in the sidebar with the requested thread ID before confirmation. No draft is requested.
-
-**Unverified clauses.** 提交冻结草稿后、创建确认前，唯一的 New chat 链接含客户端线程 ID。已确认对照能读出服务端草稿；未确认时无该文案并不能排除读取后丢弃。 #50334 changes the voice attachment upload and composer document. The optimistic QuickTime path still renders its resolved video URL independently of thread-artifacts. The 404 read and pending draft lookup retain their previous evidence. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
 
 ### chat-list-optimistic-002
 
@@ -850,17 +748,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-list-optim
 - **When** They send the message with the attachment.
 - **Then** A preview for recording.mov appears using the video URL with a start time of 0.001 seconds. The missing-thread artifact response produces no visible error toast, and creation remains unconfirmed.
 
-**Unverified clauses.** 未确认会话已显示 recording.mov 的真实文件 URL 与 #t=0.001，且无错误 toast。用独有错误文案监听该 404 的 Response.json，在创建保持待决的真实发送过程中，定向探针到期仍未取得对应读取回执。保留缺口和失败探针。 #50334 changes the voice attachment upload and composer document. The optimistic QuickTime path still renders its resolved video URL independently of thread-artifacts. The 404 read and pending draft lookup retain their previous evidence. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
-
-### chat-list-optimistic-005
-
-Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-list-optimistic.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/chat-list-optimistic.bdd.md#chat-list-optimistic-005)
-
-- **Given** A user is composing a new conversation with GPT 5.6 Luna selected, and server creation is pending.
-- **When** They change the model to Claude Sonnet 5 and send their first message.
-- **Then** The creation request uses Claude Sonnet 5, the composer still shows Claude Sonnet 5, no draft is requested, and creation remains unconfirmed.
-
-**Unverified clauses.** 未确认的创建可显示所选 Claude Sonnet 5，冻结要求的零次草稿请求缺少独立可见证据。 #50334 changes the voice attachment upload and composer document. The optimistic QuickTime path still renders its resolved video URL independently of thread-artifacts. The 404 read and pending draft lookup retain their previous evidence. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** With recording.mov attached, the actual send reached an unconfirmed creation and displayed the resolved QuickTime URL ending in #t=0.001 without an error toast. Neither dispatch nor ingress saw a thread-artifacts GET before creation release. An independent confirmed-document control reached that endpoint and received the configured 404. The pending movie page has no 404 to process in this operation. [Batch 109 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/109/README.md#chat-list-optimistic-002).
 
 ## `src/views/okou-page/__tests__/chat-navigation-browser.test.tsx`
 
@@ -1044,18 +932,6 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/connectors-acco
 
 **Unverified clauses.** 同一持久 Work 1 变更与 Work 2 分开。重开后 Work 2 new 在原处理完成后仍有焦点，追加文字保存，焦点回到 Work 2 new draft 的 Actions，Work 1 同时可查。旧 HTTP 信号已被关闭取消。#37939 引入原注册和生命周期规则，未明文废除旧响应到达条件。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
 
-## `src/views/okou-page/__tests__/debug-morning-brief.test.tsx`
-
-### debug-morning-brief-005
-
-Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/debug-morning-brief.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/debug-morning-brief.bdd.md#debug-morning-brief-005)
-
-- **Given** The user opens Debug and the Morning Brief action is enabled.
-- **When** The user focuses the action and presses Enter.
-- **Then** The brief completes, and exactly one request is submitted.
-
-**Unverified clauses.** 只用 Enter 启动简报，忙碌时没有完成文案，回执放行后可打开对应会话。生产 API 用请求 ID 查找已有的 durable receipt，返回同一会话结果不能证明恰好一次提交。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-99.tsv).
-
 ## `src/views/okou-page/__tests__/directed-connect-page.test.tsx`
 
 ### directed-connect-page-008
@@ -1067,30 +943,6 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/directed-connec
 - **Then** Stripe connects once, the originating chat receives the callback prompt, and no visible agent-authorization update is made. No connection dialog remains open.
 
 **Unverified clauses.** Stripe 带聊天返回参数进入现有授权页面。无凭证 Stripe 的前提、该分支成功回调及准确一次连接在当前公开目录均未取得证明。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-98.tsv).
-
-## `src/views/okou-page/__tests__/discord-oauth-compatibility.test.tsx`
-
-### discord-oauth-compatibility-007
-
-Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/discord-oauth-compatibility.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/discord-oauth-compatibility.bdd.md#discord-oauth-compatibility-007)
-
-- **Given** The Discord approval callback has a valid proof and an open opener.
-- **When** The callback page starts approval and the opener closes immediately afterward.
-- **Then** It reports that authorization was interrupted or refreshed, does not show an Open Discord link, submits exactly one approval request, and removes the proof from the URL.
-
-**Unverified clause.** Exactly one approval submission. Closing the opener after the API admitted the page’s approval produced the interrupted message, no Open Discord link and a proof-free URL. Replaying the identical payload at the relay produced an additional 400 under the same state digest with the same page outcome. [Batch 102 receipts](../../../test-rebuild-evidence/102/discord.json).
-
-## `src/views/okou-page/__tests__/get-started-entry.test.tsx`
-
-### get-started-entry-042
-
-Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.bdd.md#get-started-entry-042)
-
-- **Given** An admin opens the connector step for a connector with two browser authentication methods.
-- **When** They select that connector from the picker.
-- **Then** A connect dialog named “Choice connector” offers “Workspace OAuth,” and the connector's full catalog entry is read once upon selection.
-
-**Unverified clauses.** 从奖励步骤选中 Choice connector，扣住目录详情和放行后出现的两种 OAuth 选项可区分。重复详情读取可能显示完全相同的 Workspace OAuth，缺少单次读取回执。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-98.tsv).
 
 ## `src/views/okou-page/__tests__/integrations-discord.test.tsx`
 
@@ -1137,71 +989,3 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/settings-model-
 - **Then** The Models heading and the no-accounts-connected message appear, and Connect account remains enabled.
 
 **Unverified clauses.** Preference → Models with both reads held displayed Use more models and Loading accounts…, with neither the empty-account message nor Connect account. Releasing billing first did not restore those controls; releasing the subscription displayed the returned member, including when billing was still pending. #37519 documents the new heading and requests reuse of resolved data on refresh. A supported re-entry retaining confirmed account data through both outstanding reads, or a later product decision explicitly changing that behavior, is needed. [Batch 105](../../../test-rebuild-evidence/105/README.md#settings-model-loading-001).
-
-## `src/views/okou-page/__tests__/settings-wallet-cards.test.tsx`
-
-### settings-wallet-cards-005
-
-Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/settings-wallet-cards.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/settings-wallet-cards.bdd.md#settings-wallet-cards-005)
-
-- **Given** A connected member sees an Everyday card and a recent purchase in Link activity.
-- **When** They return to the tab and focus it, then the workspace wallet changes to a Business card and updated purchase.
-- **Then** Returning to the tab preserves the existing card and transaction without extra requests. During refresh the old data remains visible; after refresh, Business is marked default and replaces Everyday, and the updated purchase replaces the recent purchase.
-
-**Unverified clauses.** 回到 Tab 后检查原卡与原购买；两条对照分别先放行卡和交易。已交付的一栏更新，另一栏保留此前业务数据，全部放行后只有 Business 标为默认且交易已替换。相同回复的冗余读取仍无法由两栏页面区分。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
-
-## `src/views/okou-page/__tests__/vnc-settings.test.tsx`
-
-### vnc-settings-054
-
-Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md#vnc-settings-054)
-
-- **Given** I have reviewed a host-creation draft containing password old-pass, and token acquisition is pending when I save.
-- **When** The signed-in owner changes before the old owner's token resolves.
-- **Then** The draft closes, the secret is cleared, and no host creation request is sent.
-
-**Unverified clauses.** 旧身份令牌待决时切换成员，随后放行或继续扣住旧凭据。旧草稿关闭，新成员看不到密码。主机列表没有创建回执，不能排除被拒绝的旧身份写入。 The create command at vnc.ts:1712 validates the current editor and awaits the connection or credential API. A new owner can observe accepted writes; their host list cannot expose an old rejected attempt. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
-
-## `src/views/onboarding-sources-first/__tests__/onboarding-sources-first-flow.test.tsx`
-
-### onboarding-sources-first-flow-012
-
-Frozen owner: `turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-sources-first-flow.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-sources-first-flow.bdd.md#onboarding-sources-first-flow-012)
-
-- **Given** An owner opens the ready step with Gmail connected and a chat service available.
-- **When** They start their first task.
-- **Then** Onboarding completes exactly once from the ready step before the first request runs.
-
-**Unverified clauses.** Owner 在 ready 启动任务，扣住完成回执时编辑器保留，放行后同一提示词进入新会话。真实测试 API 与隔离 PostgreSQL 对相同 owner 连续提交两次，第一次与第二次公开回执、状态读取相同。无法据此断言只提交一次。 The complete route returns the service result and deletes the saved draft. Batch 98 compared two actual API completions; the identical result and readback cannot distinguish duplicate delivery. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
-
-### onboarding-sources-first-flow-015
-
-Frozen owner: `turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-sources-first-flow.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-sources-first-flow.bdd.md#onboarding-sources-first-flow-015)
-
-- **Given** An invited member needs their own onboarding, cannot add Slack, and has no connected Gmail source.
-- **When** They choose Marketing & content, skip sources, choose to start with Okou, pass Slack with Not now, edit the ready-step request to “Draft my meeting agenda,” and start the task.
-- **Then** The ready step initially shows the asserted competitor-research preset. The first request runs with the edited text, completion is sent once from the ready step, and the member leaves onboarding for chat.
-
-**Unverified clauses.** 成员逐步跳过来源、Slack，改写竞品预设为 Draft my meeting agenda 后进入实际聊天。真实 API 对 org:member 的两次相同完成提交产生同一回执及状态。发送顺序和编辑内容有证，精确提交次数没有可区分回执。 The complete route returns the service result and deletes the saved draft. Batch 98 compared two actual API completions; the identical result and readback cannot distinguish duplicate delivery. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
-
-### onboarding-sources-first-flow-021
-
-Frozen owner: `turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-sources-first-flow.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-sources-first-flow.bdd.md#onboarding-sources-first-flow-021)
-
-- **Given** A new user who needs onboarding opens with the prompt “Draft the launch plan.”
-- **When** They edit it to “Draft the launch plan for the EU market” and choose Next.
-- **Then** Onboarding completes once from the onboarding page before the first chat request runs, and the request uses the edited text with the document and artifact-link instructions appended.
-
-**Unverified clauses.** The edited EU launch prompt stayed at onboarding until the completion response was released, then reached chat with the document instructions. The frozen single-completion clause cannot be credited under the request-count rule. The complete route returns the service result and deletes the saved draft. Batch 98 compared two actual API completions; the identical result and readback cannot distinguish duplicate delivery. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
-
-## `src/views/onboarding/__tests__/onboarding-start.test.tsx`
-
-### onboarding-start-001
-
-Frozen owner: `turbo/apps/platform/src/views/onboarding/__tests__/onboarding-start.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/onboarding/__tests__/onboarding-start.bdd.md#onboarding-start-001)
-
-- **Given** A signed-in user needs onboarding.
-- **When** The user opens the onboarding page while Marketing records the event request but delays its response.
-- **Then** The industry question appears without waiting for the response. One authenticated POST is sent to https://www.okou.ai/api/events with the onboarding-start tag and a UUID event ID; one started telemetry record for the user and organization exists before the POST, with no status code, and the request remains un-aborted.
-
-**Unverified clauses.** 行业问题在营销响应待决时可选；外部边界收到 onboarding-start、已认证 POST 及 UUID，入站已有相应 started 遥测且没有状态码。相同身份的重复营销调用能否区分仍缺来源，不以调用计数做断言。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).

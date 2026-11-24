@@ -314,7 +314,7 @@ test("chat-attachment-annotation-021 undo reverses the drag after confirming the
   expect(mark.style.left).toBe("8%");
 });
 
-test("A restored mark unlocks the draft after the reference image becomes available", async () => {
+test("chat-attachment-annotation-018 A restored mark unlocks the draft after the reference image becomes available", async () => {
   imageDraft({
     annotations: boxAnnotation([
       { id: "freight-box", ordinal: 1, note: "Inspect the seal" },

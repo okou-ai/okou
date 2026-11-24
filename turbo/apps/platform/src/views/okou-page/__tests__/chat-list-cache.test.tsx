@@ -256,7 +256,7 @@ test("Leaving the member session keeps its saved conversation out of the signed-
   expect(screen.queryByText("Private financing draft")).not.toBeInTheDocument();
 });
 
-test("A cold signed-out visit stays on sign-in when the chat service has private history", async () => {
+test("chat-list-cache-004 A cold signed-out visit stays on sign-in when the chat service has private history", async () => {
   const privateThread = chatListThread(94, "Annual capital review");
   installChatListStream(context, { caseId: 94, snapshot: [privateThread] });
   await setupPage({ context, path: "/sign-in", auth: null });

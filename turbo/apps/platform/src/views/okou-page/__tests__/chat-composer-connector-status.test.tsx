@@ -146,7 +146,7 @@ test("chat-composer-connector-status-005 Waiting for account inventory withholds
   await expect(acme()).resolves.toHaveTextContent("No accounts");
 });
 
-test("Accounts requiring reconnection remain discoverable in both directory tabs", async () => {
+test("chat-composer-connector-status-001 Accounts requiring reconnection remain discoverable in both directory tabs", async () => {
   directoryData(true, true);
   const catalog = await directory();
   const search = within(catalog).getByRole("textbox");
