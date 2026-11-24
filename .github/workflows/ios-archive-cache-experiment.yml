@@ -1,5 +1,5 @@
-name: iOS queue timing experiment
-run-name: Queue timing ${{ inputs.label }} / ${{ inputs.mode }}
+name: iOS cross-commit queue experiment
+run-name: Queue replay ${{ inputs.label }} / ${{ inputs.mode }}
 'on':
   workflow_dispatch:
     inputs:
@@ -11,8 +11,13 @@ run-name: Queue timing ${{ inputs.label }} / ${{ inputs.mode }}
         - warm
         required: true
       label:
-        description: Timing pair
-        type: string
+        description: Original merge-group commit
+        type: choice
+        options:
+        - 2626212898b263a87f7c7cfcbeae8b32ab60d2d2
+        - accb5df191d2eae42ebbadd7b392e23883744ebf
+        - c89d182c718112f2681510b448d273c037fcacdf
+        - f603701d0fe40198ed1063fe7624449934a81ac3
         required: true
   workflow_call:
     inputs:
@@ -30,6 +35,7 @@ env:
   GIT_CONFIG_COUNT: '1'
   GIT_CONFIG_KEY_0: http.version
   GIT_CONFIG_VALUE_0: HTTP/1.1
+  IOS_QUEUE_SOURCE: ${{ inputs.label }}
 jobs:
   detect:
     runs-on: ubuntu-latest
@@ -39,22 +45,47 @@ jobs:
       needed: ${{ steps.changes.outputs.needed }}
       scripts-needed: ${{ steps.changes.outputs.scripts-needed }}
       release: ${{ steps.changes.outputs.release }}
+      base: ${{ steps.select.outputs.base }}
+      early-release-only: ${{ steps.layout.outputs.release_only }}
+      parallel-tests: ${{ steps.layout.outputs.release_only == 'false' }}
     steps:
+    - name: Select recorded merge-group base
+      id: select
+      shell: bash
+      run: |
+        set -euo pipefail
+        case "$IOS_QUEUE_SOURCE" in
+          2626212898b263a87f7c7cfcbeae8b32ab60d2d2) base=e939477354a7b8df087557431089566bf9b1a682; scripts=false ;;
+          accb5df191d2eae42ebbadd7b392e23883744ebf) base=dc8a902b0c14fe21497527ffc84dcf8ec6c13a0d; scripts=false ;;
+          c89d182c718112f2681510b448d273c037fcacdf) base=8ae37c855d5009e9d00381ef60bda145ac765db1; scripts=true ;;
+          f603701d0fe40198ed1063fe7624449934a81ac3) base=78e55f28678e7678a334232493b852764f45c197; scripts=true ;;
+          *) echo "Unrecognized queue commit" >&2; exit 1 ;;
+        esac
+        printf 'base=%s\nscripts=%s\n' "$base" "$scripts" >> "$GITHUB_OUTPUT"
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         fetch-depth: 32
         sparse-checkout: |
           /ios/scripts/ci-changed.sh
           /.github/scripts/checks/changed-base-ref.sh
+          /ios/scripts/archive-promotion.py
         sparse-checkout-cone-mode: 'false'
+        ref: ${{ inputs.label }}
+    - name: Verify original merge-group checkout
+      shell: bash
+      run: |
+        set -euo pipefail
+        actual=$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD)
+        test "$actual" = "$IOS_QUEUE_SOURCE"
+        echo "Verified merge-group checkout $actual"
     - name: Detect iOS changes
       id: changes
       env:
-        EVENT_NAME: ${{ github.event_name }}
+        EVENT_NAME: merge_group
         HEAD_REF: ${{ github.head_ref }}
         CHECKOUT_REF: ${{ github.ref }}
         PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        MERGE_GROUP_BASE_SHA: ${{ steps.select.outputs.base }}
         PUSH_BEFORE_SHA: ${{ github.event.before }}
       run: |
         echo "attempt=$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
@@ -66,6 +97,24 @@ jobs:
           release=true
         fi
         echo "release=$release" >> "$GITHUB_OUTPUT"
+    - name: Validate the original native job selection
+      env:
+        EXPECTED_SCRIPTS: ${{ steps.select.outputs.scripts }}
+        NATIVE: ${{ steps.changes.outputs.needed }}
+        SCRIPTS: ${{ steps.changes.outputs.scripts-needed }}
+      run: |
+        test "$NATIVE" = true
+        test "$SCRIPTS" = "$EXPECTED_SCRIPTS"
+    - name: Classify the merge group before parallel preparation
+      id: layout
+      if: inputs.mode == 'warm'
+      env:
+        MERGE_GROUP_BASE_SHA: ${{ steps.select.outputs.base }}
+      run: |
+        set -euo pipefail
+        release_only=$(python3 ios/scripts/archive-promotion.py release-only --base "$MERGE_GROUP_BASE_SHA")
+        test "$release_only" = false
+        echo "release_only=$release_only" >> "$GITHUB_OUTPUT"
   script-checks:
     needs: detect
     if: needs.detect.outputs.scripts-needed == 'true'
@@ -73,6 +122,15 @@ jobs:
     timeout-minutes: 5
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ inputs.label }}
+    - name: Verify original merge-group checkout
+      shell: bash
+      run: |
+        set -euo pipefail
+        actual=$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD)
+        test "$actual" = "$IOS_QUEUE_SOURCE"
+        echo "Verified merge-group checkout $actual"
     - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
       with:
         node-version: 22.23.4
@@ -114,6 +172,14 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: 'false'
+        ref: ${{ inputs.label }}
+    - name: Verify original merge-group checkout
+      shell: bash
+      run: |
+        set -euo pipefail
+        actual=$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD)
+        test "$actual" = "$IOS_QUEUE_SOURCE"
+        echo "Verified merge-group checkout $actual"
     - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
       id: tool-cache
       with:
@@ -144,12 +210,21 @@ jobs:
     runs-on: xcode-27
     timeout-minutes: 15
     env:
-      IOS_PARALLEL_PR_TESTS: ${{ inputs.mode == 'warm' && needs.detect.outputs.attempt == github.run_attempt && 'true' || 'false' }}
+      IOS_PARALLEL_PR_TESTS: ${{ needs.detect.outputs.parallel-tests == 'true' && needs.detect.outputs.attempt == github.run_attempt && 'true' || 'false' }}
       DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
       IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       id: checkout
+      with:
+        ref: ${{ inputs.label }}
+    - name: Verify original merge-group checkout
+      shell: bash
+      run: |
+        set -euo pipefail
+        actual=$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD)
+        test "$actual" = "$IOS_QUEUE_SOURCE"
+        echo "Verified merge-group checkout $actual"
     - name: Restore native build caches for the parallel build
       id: producer-cache
       if: env.IOS_PARALLEL_PR_TESTS == 'true'
@@ -160,7 +235,7 @@ jobs:
       env:
         GH_TOKEN: ${{ github.token }}
         PR_HEAD_SHA: ${{ github.sha }}
-      run: python3 ios/scripts/wait-ci-test-artifact.py sources
+      run: GITHUB_SHA="$IOS_QUEUE_SOURCE" python3 ios/scripts/wait-ci-test-artifact.py sources
     - name: Receive locked sources for the parallel build
       if: env.IOS_PARALLEL_PR_TESTS == 'true'
       uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
@@ -177,12 +252,12 @@ jobs:
         # Xcode's system Git helper reads the locked mirrors prepared by ci-test.sh.
         git config --global --add include.path "$RUNNER_TEMP/okou-ios-ci/package-sources.gitconfig"
         bash ios/scripts/ci-test.sh build
-        bash ios/scripts/transfer-ci-test-products.sh pack
+        GITHUB_SHA="$IOS_QUEUE_SOURCE" bash ios/scripts/transfer-ci-test-products.sh pack
     - name: Transfer the built App and its test specification
       if: env.IOS_PARALLEL_PR_TESTS == 'true'
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
-        name: ios-ci-products-${{ github.sha }}-${{ github.run_attempt }}
+        name: ios-ci-products-${{ inputs.label }}-${{ github.run_attempt }}
         path: ${{ runner.temp }}/ios-native-products/
         compression-level: 0
         if-no-files-found: error
@@ -197,7 +272,7 @@ jobs:
     - name: Transfer package test inputs
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
-        name: ios-package-tests-${{ github.sha }}-${{ github.run_attempt }}
+        name: ios-package-tests-${{ inputs.label }}-${{ github.run_attempt }}
         path: ${{ runner.temp }}/package-inputs.json
         if-no-files-found: error
         retention-days: 7
@@ -212,6 +287,15 @@ jobs:
     timeout-minutes: 5
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ inputs.label }}
+    - name: Verify original merge-group checkout
+      shell: bash
+      run: |
+        set -euo pipefail
+        actual=$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD)
+        test "$actual" = "$IOS_QUEUE_SOURCE"
+        echo "Verified merge-group checkout $actual"
     - name: Fetch locked package revisions
       id: sources
       run: |
@@ -221,7 +305,7 @@ jobs:
     - name: Transfer locked source repositories
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
-        name: ios-package-sources-${{ github.sha }}
+        name: ios-package-sources-${{ inputs.label }}
         overwrite: 'true'
         path: ${{ steps.sources.outputs.path }}
         compression-level: 0
@@ -235,7 +319,7 @@ jobs:
     runs-on: xcode-27
     timeout-minutes: 30
     env:
-      IOS_PARALLEL_PR_TESTS: ${{ inputs.mode == 'warm' && needs.detect.outputs.attempt == github.run_attempt && 'true' || 'false' }}
+      IOS_PARALLEL_PR_TESTS: ${{ needs.detect.outputs.parallel-tests == 'true' && needs.detect.outputs.attempt == github.run_attempt && 'true' || 'false' }}
       DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
       IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
       IOS_BUILD_CACHE_ENABLED: 'true'
@@ -244,6 +328,14 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         fetch-depth: 32
+        ref: ${{ inputs.label }}
+    - name: Verify original merge-group checkout
+      shell: bash
+      run: |
+        set -euo pipefail
+        actual=$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD)
+        test "$actual" = "$IOS_QUEUE_SOURCE"
+        echo "Verified merge-group checkout $actual"
     - name: Configure archive workspace
       run: |
         echo "IOS_ARCHIVE_DIR=$RUNNER_TEMP/okou-ios-promotion" >> "$GITHUB_ENV"
@@ -256,17 +348,19 @@ jobs:
     - name: Classify the whole merge group
       id: release-only
       env:
-        MERGE_GROUP_BASE_SHA: 7b1d40ea54326a99bf2140381261f8e8cb301939
+        MERGE_GROUP_BASE_SHA: ${{ needs.detect.outputs.base }}
       run: |
         release_only=$(python3 ios/scripts/archive-promotion.py release-only --base "$MERGE_GROUP_BASE_SHA")
         echo "release_only=$release_only" >> "$GITHUB_OUTPUT"
+      if: inputs.mode == 'baseline'
     - name: Resolve exact-input test evidence
       id: evidence
       env:
-        MERGE_GROUP_BASE_SHA: 7b1d40ea54326a99bf2140381261f8e8cb301939
+        MERGE_GROUP_BASE_SHA: ${{ needs.detect.outputs.base }}
         GH_TOKEN: ${{ github.token }}
+        RELEASE_ONLY: ${{ steps.release-only.outputs.release_only || needs.detect.outputs.early-release-only }}
       run: |-
-        test "${{ steps.release-only.outputs.release_only }}" = false
+        test "$RELEASE_ONLY" = false
         GITHUB_EVENT_NAME=merge_group python3 ios/scripts/archive-promotion.py resolve-tests "$IOS_ARCHIVE_DIR"
     - name: Restore native build caches
       id: build-cache
@@ -278,7 +372,7 @@ jobs:
       if: env.IOS_PARALLEL_PR_TESTS != 'true' && (steps.evidence.outputs.run_tests == 'true')
       uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
       with:
-        name: ios-package-sources-${{ github.sha }}
+        name: ios-package-sources-${{ inputs.label }}
         path: ${{ env.IOS_PACKAGE_SOURCES_DIR }}
     - name: Configure locked package sources
       if: env.IOS_PARALLEL_PR_TESTS != 'true' && (steps.evidence.outputs.run_tests == 'true')
@@ -298,18 +392,18 @@ jobs:
       env:
         GH_TOKEN: ${{ github.token }}
         PR_HEAD_SHA: ${{ github.sha }}
-      run: bash ios/scripts/prepare-parallel-simulator.sh
+      run: GITHUB_SHA="$IOS_QUEUE_SOURCE" bash ios/scripts/prepare-parallel-simulator.sh
     - name: Build app and run isolated simulator tests
       if: steps.evidence.outputs.run_tests == 'true'
       env:
         IOS_PRODUCT_TOOLCHAIN: ${{ env.IOS_ARCHIVE_DIR }}/toolchain.json
       run: |
         if [[ "$IOS_PARALLEL_PR_TESTS" == true ]]; then
-          bash ios/scripts/transfer-ci-test-products.sh unpack
+          GITHUB_SHA="$IOS_QUEUE_SOURCE" bash ios/scripts/transfer-ci-test-products.sh unpack
           echo "iOS starting test-without-building"
           bash ios/scripts/ci-test.sh run
         else
-          bash ios/scripts/run-ci-tests.sh
+          GITHUB_SHA="$IOS_QUEUE_SOURCE" bash ios/scripts/run-ci-tests.sh
         fi
     - name: Record simulator inputs and test decision
       run: |
@@ -318,7 +412,7 @@ jobs:
     - name: Transfer simulator inputs and evidence
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
-        name: ios-tests-${{ github.sha }}-${{ github.run_attempt }}
+        name: ios-tests-${{ inputs.label }}-${{ github.run_attempt }}
         path: |
           ${{ env.IOS_ARCHIVE_DIR }}/test-inputs.json
           ${{ env.IOS_ARCHIVE_DIR }}/test-evidence.json
@@ -346,6 +440,15 @@ jobs:
       IOS_ARCHIVE_CACHE_ENABLED: 'true'
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ inputs.label }}
+    - name: Verify original merge-group checkout
+      shell: bash
+      run: |
+        set -euo pipefail
+        actual=$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD)
+        test "$actual" = "$IOS_QUEUE_SOURCE"
+        echo "Verified merge-group checkout $actual"
     - name: Configure archive workspace
       run: echo "IOS_ARCHIVE_DIR=$RUNNER_TEMP/okou-ios-promotion" >> "$GITHUB_ENV"
     - name: Restore Release archive caches
@@ -364,7 +467,7 @@ jobs:
     - name: Transfer unsigned archive and inputs
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
-        name: ios-promotion-${{ github.sha }}-${{ github.run_attempt }}
+        name: ios-promotion-${{ inputs.label }}-${{ github.run_attempt }}
         path: |
           ${{ env.IOS_ARCHIVE_DIR }}/archive.tar.gz
           ${{ env.IOS_ARCHIVE_DIR }}/archive-sha256.txt
@@ -388,27 +491,33 @@ jobs:
     - test-packages
     - build-test
     - build-archive
-    if: >-
-      !cancelled() && needs.detect.result == 'success' && needs.script-checks.result == 'success' &&
-      needs.swiftlint.result == 'success' && needs.test-packages.result == 'success' &&
-      needs.build-test.result == 'success' && needs.build-archive.result == 'success'
+    if: '!cancelled() && needs.detect.result == ''success'' && ((needs.detect.outputs.scripts-needed == ''true'' && needs.script-checks.result == ''success'') || (needs.detect.outputs.scripts-needed == ''false'' && needs.script-checks.result
+      == ''skipped'')) && needs.swiftlint.result == ''success'' && needs.test-packages.result == ''success'' && needs.build-test.result == ''success'' && needs.build-archive.result == ''success'''
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         fetch-depth: 32
+        ref: ${{ inputs.label }}
+    - name: Verify original merge-group checkout
+      shell: bash
+      run: |
+        set -euo pipefail
+        actual=$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD)
+        test "$actual" = "$IOS_QUEUE_SOURCE"
+        echo "Verified merge-group checkout $actual"
     - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
       with:
-        name: ios-promotion-${{ github.sha }}-${{ github.run_attempt }}
+        name: ios-promotion-${{ inputs.label }}-${{ github.run_attempt }}
         path: ${{ runner.temp }}/okou-ios-promotion
     - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
       with:
-        name: ios-tests-${{ github.sha }}-${{ github.run_attempt }}
+        name: ios-tests-${{ inputs.label }}-${{ github.run_attempt }}
         path: ${{ runner.temp }}/okou-ios-promotion
     - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
       with:
-        name: ios-package-tests-${{ github.sha }}-${{ github.run_attempt }}
+        name: ios-package-tests-${{ inputs.label }}-${{ github.run_attempt }}
         path: ${{ runner.temp }}/okou-ios-promotion
     - name: Verify archive, app and package receipts
       env:
@@ -422,6 +531,7 @@ jobs:
         python3 ios/scripts/archive-promotion.py inputs --toolchain "$WORK/toolchain.json" --output "$WORK/recomputed.json"
         cmp "$WORK/recomputed.json" "$WORK/inputs.json"
         (cd "$WORK" && printf '%s  archive.tar.gz\n' "$(<archive-sha256.txt)" | sha256sum -c -)
+        echo "Verified archive and native receipts for $IOS_QUEUE_SOURCE"
   ci-gate-ios:
     if: always()
     needs:
@@ -439,4 +549,9 @@ jobs:
     - name: Require complete tests and a verified device archive
       env:
         RESULTS: ${{ toJSON(needs) }}
-      run: 'jq -e ''all(.[]; .result == "success")'' <<< "$RESULTS" '
+      run: |
+        set -euo pipefail
+        jq -e '
+          (.["script-checks"].result == (if .detect.outputs["scripts-needed"] == "true" then "success" else "skipped" end))
+          and (del(.["script-checks"]) | all(.[]; .result == "success"))
+        ' <<< "$RESULTS"
