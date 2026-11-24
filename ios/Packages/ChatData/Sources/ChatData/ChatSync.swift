@@ -9,6 +9,7 @@ public actor ChatSync {
     public let deletedThreadIDs: Set<String>
     public let removedThreadIDs: Set<String>
     public let removalsToAcknowledge: Set<String>
+    public let isPersisted: Bool
     public let cursor: ChatCacheCursor
   }
 
@@ -64,9 +65,13 @@ public actor ChatSync {
     await cachedThreadList()?.threads
   }
 
-  /// A committed list at or below `sequence` needs no new presentation projection.
-  public func cachedThreadList(newerThan sequence: Int? = nil) async -> ThreadList? {
-    guard let cached = await readCachedThreadList(newerThan: sequence) else { return nil }
+  /// A reader of a committed cursor only needs a different head, even when a reset lowered its sequence.
+  public func cachedThreadList(
+    newerThan sequence: Int? = nil, excluding cursor: ChatCacheCursor? = nil
+  ) async -> ThreadList? {
+    guard let cached = await readCachedThreadList(newerThan: sequence, excluding: cursor) else {
+      return nil
+    }
     let unavailable = await unavailableThreads()
     return cached.list(unavailable: unavailable, persisted: true)
   }
@@ -136,7 +141,7 @@ extension ChatSync {
     state = try await catchUpThreadEvents(state)
     // A snapshot rebase can compact events observed during this catch-up.
     var eventIDs = Set(state.events.map(\.id))
-    var deletedIDs = state.deletedThreadIDs
+    var deletedIDs = (cached?.deletedThreadIDs ?? []).union(state.deletedThreadIDs)
     if !state.replaced && state.events.count > threadEventRebaseThreshold {
       let rebased: ThreadListState?
       do {
@@ -162,6 +167,7 @@ extension ChatSync {
       if let durable = await readCachedThreadList(newerThan: persisted ? state.cursor.seqID : nil) {
         state = durable
         if !persisted { deletedIDs.removeAll() }
+        persisted = true
         eventIDs.formUnion(durable.events.map(\.id))
         deletedIDs.formUnion(durable.deletedThreadIDs)
       } else if !persisted, requirePersistence {

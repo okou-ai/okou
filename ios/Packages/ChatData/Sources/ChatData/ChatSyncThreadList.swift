@@ -36,7 +36,7 @@ extension ChatSync {
         deletedThreadIDs: (deleted ?? deletedThreadIDs).subtracting(currentIDs).union(unavailable),
         removedThreadIDs: previouslyListed.subtracting(currentIDs),
         removalsToAcknowledge: persisted ? unavailable.subtracting(currentIDs) : [],
-        cursor: cursor)
+        isPersisted: persisted, cursor: cursor)
     }
   }
 
@@ -67,7 +67,9 @@ extension ChatSync {
     let chatThreads: [ThreadProjection]
   }
 
-  func readCachedThreadList(newerThan sequence: Int? = nil) async -> ThreadListState? {
+  func readCachedThreadList(
+    newerThan sequence: Int? = nil, excluding previous: ChatCacheCursor? = nil
+  ) async -> ThreadListState? {
     guard let cache else { return nil }
     do {
       guard let stored = try await cache.loadThreadList() else { return nil }
@@ -76,6 +78,7 @@ extension ChatSync {
         ?? stored.snapshotCursor
       // Consult shared storage on every read so NSE commits remain visible, but
       // avoid decoding and replaying a list the caller has already applied.
+      if cursor == previous { return nil }
       if let sequence, cursor.seqID <= sequence { return nil }
       let decoder = APIClient.decoder()
       let snapshot = try decoder.decode(

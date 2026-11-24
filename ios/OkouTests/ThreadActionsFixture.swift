@@ -235,19 +235,7 @@ final class ThreadActionsFixture: Sendable {
       if state.value.withLock({ $0.parentStatus == 404 }) { return missingThread }
       return ChatHTTPResponse(body: #"{"draftUserMessage":null,"draftAttachments":null}"#)
     case "/api/chat-threads/\(Self.thread)":
-      if request.httpMethod == "PATCH" {
-        let missing = state.value.withLock { state in
-          if state.failNext.removeValue(forKey: "draft-save") == 404 { state.parentStatus = 404 }
-          return state.parentStatus == 404
-        }
-        return missing ? missingThread : ChatHTTPResponse(status: 204, body: "")
-      }
-      let status = state.value.withLock { $0.parentStatus }
-      if status == 404 { return missingThread }
-      if status != 200 {
-        return ChatHTTPResponse(status: status, body: #"{"error":{"message":"Unavailable"}}"#)
-      }
-      return ChatHTTPResponse(body: "{\"lastReadAt\":null,\"cancellationRecoveryPending\":false}")
+      return parentResponse(request, state: state)
     case "/api/chat-threads/\(Self.thread)/connector-selections":
       return ChatHTTPResponse(body: "{\"selections\":[]}")
     case "/api/feature-switches":
@@ -283,6 +271,22 @@ final class ThreadActionsFixture: Sendable {
         body: "{\"threads\":\(indicator),\"unreadAt\":\(unreadAt)}")
     default: throw URLError(.unsupportedURL)
     }
+  }
+
+  private static func parentResponse(_ request: URLRequest, state: StateBox) -> ChatHTTPResponse {
+    if request.httpMethod == "PATCH" {
+      let missing = state.value.withLock { state in
+        if state.failNext.removeValue(forKey: "draft-save") == 404 { state.parentStatus = 404 }
+        return state.parentStatus == 404
+      }
+      return missing ? missingThread : ChatHTTPResponse(status: 204, body: "")
+    }
+    let status = state.value.withLock { $0.parentStatus }
+    if status == 404 { return missingThread }
+    if status != 200 {
+      return ChatHTTPResponse(status: status, body: #"{"error":{"message":"Unavailable"}}"#)
+    }
+    return ChatHTTPResponse(body: "{\"lastReadAt\":null,\"cancellationRecoveryPending\":false}")
   }
 
   private static var missingThread: ChatHTTPResponse {

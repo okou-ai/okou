@@ -65,6 +65,8 @@ final class ThreadListStore {
   private var indicatorsAgain = false
   private var refreshGeneration = UUID()
   private var appliedCursor: ChatCacheCursor?
+  private var appliedCursorIsDurable = false
+  private var removedByCachedSnapshot = Set<String>()
   // A failed local cleanup stays hidden and is retried when the confirmed deletion is replayed.
   private var cleanedUnavailableThreads: [String: Bool] = [:]
   private let didDelete: @MainActor (String) -> Bool
@@ -132,15 +134,15 @@ final class ThreadListStore {
     let revision = creationRevision
     let cursor = appliedCursor
     var restoredThreads = false
-    if let cached = await sync.cachedThreadList(newerThan: cursor?.seqID), !closed,
+    let lowerBound = appliedCursorIsDurable ? nil : cursor?.seqID
+    if let cached = await sync.cachedThreadList(newerThan: lowerBound, excluding: cursor), !closed,
       !Task.isCancelled,
       revision == creationRevision, appliedCursor == cursor
     {
       let restored = ThreadListReadProjection.restoring(cached.threads, preserving: threads)
-      appliedCursor = cached.cursor
-      for id in cached.deletedThreadIDs { retireThread(id) }
-      projectThreads(restored)
-      await acknowledgeCleanup(cached)
+      removedByCachedSnapshot.formUnion(
+        Set(threads.map(\.id)).subtracting(cached.threads.map(\.id)))
+      await applyList(cached, threads: restored)
       restoredThreads = true
     }
     // Read changes need not advance the thread-list event cursor. Re-read the
@@ -188,8 +190,10 @@ final class ThreadListStore {
             }
             var result = response.threads
             // Compaction can remove a row without retaining its deletion event.
-            let absent = response.removedThreadIDs.union(threads.map(\.id))
-              .subtracting(result.map(\.id)).subtracting(response.deletedThreadIDs)
+            let absent = response.removedThreadIDs.union(removedByCachedSnapshot).union(
+              threads.map(\.id)
+            )
+            .subtracting(result.map(\.id)).subtracting(response.deletedThreadIDs)
             let confirmed = await confirmAbsences(absent)
             let cachedUnread = await sync.cachedIndicators()
             try Task.checkCancellation()
@@ -222,10 +226,8 @@ final class ThreadListStore {
               appliedIndicatorsRevision = cachedUnread.revision
               unreadThreadIDs = Set(cachedUnread.unreadAt.keys)
             }
-            appliedCursor = response.cursor
-            for id in response.deletedThreadIDs.union(confirmed) { retireThread(id) }
-            projectThreads(result)
-            await acknowledgeCleanup(response)
+            removedByCachedSnapshot.removeAll()
+            await applyList(response, threads: result, confirming: confirmed)
           } catch {
             try Task.checkCancellation()
             try signal.checkCancellation()
@@ -447,16 +449,6 @@ final class ThreadListStore {
     await actions.movePinned(id, beside: targetID, placement: placement, projectID: projectID)
   }
 
-  private func projectThreads(_ snapshot: [ChatThread]) {
-    publishThreads(actions.projected(snapshot))
-  }
-
-  private func publishThreads(_ result: [ChatThread]) {
-    hasLoadedThreads = true
-    threads = result.filter { cleanedUnavailableThreads[$0.id] == nil }
-    didRefresh(threads)
-  }
-
   @discardableResult
   func setProject(
     _ id: String, projectID: String?, onFailure: (@MainActor (String) -> Void)? = nil,
@@ -568,6 +560,27 @@ final class ThreadListStore {
 }
 
 extension ThreadListStore {
+  private func projectThreads(_ snapshot: [ChatThread]) {
+    publishThreads(actions.projected(snapshot))
+  }
+
+  private func publishThreads(_ result: [ChatThread]) {
+    hasLoadedThreads = true
+    threads = result.filter { cleanedUnavailableThreads[$0.id] == nil }
+    didRefresh(threads)
+  }
+
+  private func applyList(
+    _ response: ChatSync.ThreadList, threads: [ChatThread],
+    confirming additionalDeletes: Set<String> = []
+  ) async {
+    appliedCursor = response.cursor
+    appliedCursorIsDurable = response.isPersisted
+    for id in response.deletedThreadIDs.union(additionalDeletes) { retireThread(id) }
+    projectThreads(threads)
+    await acknowledgeCleanup(response)
+  }
+
   @discardableResult
   private func retireThread(_ id: String) -> Bool {
     guard !closed, cleanedUnavailableThreads[id] != true else { return false }

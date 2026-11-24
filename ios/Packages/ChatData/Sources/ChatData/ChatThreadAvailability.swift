@@ -1,12 +1,16 @@
 import Foundation
 
+extension APIClientError {
+  public var isResourceNotFound: Bool { statusCode == 404 && serverCode == "NOT_FOUND" }
+}
+
 /// Only use for authenticated routes whose NOT_FOUND identifies the parent chat itself.
 func withExistingChatThread<Value: Sendable>(
   _ id: String, _ operation: @Sendable () async throws -> Value
 ) async throws -> Value {
   do {
     return try await operation()
-  } catch APIClientError.http(404, _, "NOT_FOUND", _) {
+  } catch let error as APIClientError where error.isResourceNotFound {
     throw UnavailableChatThread(id: id)
   }
 }

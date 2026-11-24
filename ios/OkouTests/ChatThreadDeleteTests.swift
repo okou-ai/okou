@@ -148,7 +148,9 @@ final class ChatThreadDeleteTests: XCTestCase {
       $0.events = []
       $0.failNext["events"] = 410
     }
-    _ = await store.list.refresh()
+    let prefetch = ChatSync(client: fixture.http.client, cache: directory.cache(scope: scope))
+    try await prefetch.prefetchThreadList()
+    await store.list.restoreCached()
     XCTAssertEqual(store.list.threads.first?.title, "Planning a useful week")
     XCTAssertEqual(store.selectedThreadID, id)
     XCTAssertEqual(chat.composer.text, "Keep on a cursor expiry")
