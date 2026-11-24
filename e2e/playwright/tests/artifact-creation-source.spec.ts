@@ -436,7 +436,7 @@ test("resolve authenticated artifact sources through publication, navigation and
     await (await requireLink(await menu(websiteId), originalHref)).click();
     await expect(page).toHaveURL(new URL(originalHref, appUrl).href);
     await expect(
-      page.locator('[data-role="user"] [data-chat-selection-source]').first(),
+      page.locator(`[data-role="user"][id="run-${first.runId}"]`),
     ).toContainText("deterministic fixture publisher");
 
     await page.goto(new URL("/artifacts", appUrl).href);
