@@ -1,3 +1,4 @@
+import CCState
 import ChatData
 import ChatDomain
 import Foundation
@@ -9,14 +10,19 @@ import UIKit
 final class MessageAttachmentStore {
   private(set) var preview: MessageAttachmentPreviewResource?
   private let commands: ChatCommands
+  /// The workspace session's Store, which keeps the reads' graph values.
+  @ObservationIgnored private let graph: CCState.Store
   private let didFail: @MainActor (Error) -> Void
   private(set) var reads: MessageAttachmentResources
   private var closed = false
 
-  init(commands: ChatCommands, didFail: @escaping @MainActor (Error) -> Void) {
+  init(
+    commands: ChatCommands, graph: CCState.Store, didFail: @escaping @MainActor (Error) -> Void
+  ) {
     self.commands = commands
+    self.graph = graph
     self.didFail = didFail
-    reads = MessageAttachmentResources(commands: commands, didFail: didFail)
+    reads = MessageAttachmentResources(commands: commands, graph: graph, didFail: didFail)
   }
 
   func cachedThumbnail(_ attachment: ChatMessageAttachment) -> UIImage? {
@@ -29,7 +35,7 @@ final class MessageAttachmentStore {
     preview?.close()
     preview = MessageAttachmentPreviewResource(
       attachment: attachment, thumbnail: cachedThumbnail(attachment),
-      commands: commands, didFail: didFail)
+      commands: commands, graph: graph, didFail: didFail)
   }
 
   func dismiss() {
@@ -40,7 +46,9 @@ final class MessageAttachmentStore {
   func deactivate() {
     dismiss()
     reads.close()
-    if !closed { reads = MessageAttachmentResources(commands: commands, didFail: didFail) }
+    if !closed {
+      reads = MessageAttachmentResources(commands: commands, graph: graph, didFail: didFail)
+    }
   }
 
   func close() {
