@@ -22,10 +22,18 @@ public struct VoiceInputQuota: Decodable, Sendable {
 public struct VoiceInputClient: Sendable {
   private let client: APIClient
 
-  public init(client: APIClient) { self.client = client }
+  private let featureSwitches: @Sendable () async throws -> SidebarFeatureSwitches
+
+  public init(
+    client: APIClient,
+    featureSwitches: (@Sendable () async throws -> SidebarFeatureSwitches)? = nil
+  ) {
+    self.client = client
+    self.featureSwitches = featureSwitches ?? ChatModelService(client: client).featureSwitches
+  }
 
   public func recordAsMessage() async throws -> Bool {
-    let features = try await ChatModelService(client: client).featureSwitches().effectiveSwitches
+    let features = try await featureSwitches().effectiveSwitches
     return features["composerVoiceMessages"] == true
   }
 

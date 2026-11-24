@@ -16,8 +16,8 @@ public actor ChatCommands {
   private var writingReadState = false
   private var readStateWaiters: [CheckedContinuation<Void, Never>] = []
 
-  public init(client: APIClient, sync: ChatSync) {
-    voiceInput = VoiceInputClient(client: client)
+  public init(client: APIClient, sync: ChatSync, voiceInput: VoiceInputClient? = nil) {
+    self.voiceInput = voiceInput ?? VoiceInputClient(client: client)
     artifacts = ChatArtifacts(client: client)
     permissions = ChatPermissions(client: client)
     batchPermissions = ChatBatchPermissions(client: client)
