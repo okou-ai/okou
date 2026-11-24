@@ -234,37 +234,49 @@ function ownedChatThread(
 }
 
 export function chatThreadDraft(args: {
+  readonly legacyMemberDraft?: boolean;
   readonly orgId: string;
   readonly threadId: string;
   readonly userId: string;
-}): Computed<Promise<ChatThreadDraft>> {
-  return computed(async (get): Promise<ChatThreadDraft> => {
+}): Computed<Promise<ChatThreadDraft | null>> {
+  return computed(async (get): Promise<ChatThreadDraft | null> => {
     const db = get(db$);
     const [draft] = await db
       .select({
         draftUserMessage: chatThreadDrafts.draftUserMessage,
         draftAttachments: chatThreadDrafts.draftAttachments,
       })
-      .from(chatThreadDrafts)
-      .innerJoin(chatThreads, eq(chatThreads.id, chatThreadDrafts.chatThreadId))
-      .where(
+      .from(chatThreads)
+      .leftJoin(
+        chatThreadDrafts,
         and(
-          eq(chatThreadDrafts.chatThreadId, args.threadId),
-          chatThreadOrganizationPredicate(args.orgId),
+          eq(chatThreadDrafts.chatThreadId, chatThreads.id),
           eq(chatThreadDrafts.userId, args.userId),
         ),
       )
+      .where(
+        and(
+          eq(chatThreads.id, args.threadId),
+          chatThreadOrganizationPredicate(args.orgId),
+          args.legacyMemberDraft
+            ? undefined
+            : eq(chatThreads.userId, args.userId),
+        ),
+      )
       .limit(1);
-    const marker = draft?.draftUserMessage.parts.find((part) => {
+    if (!draft) {
+      return null;
+    }
+    const marker = draft.draftUserMessage?.parts.find((part) => {
       return part.type === "suggestion_preset";
     });
     return {
       ...(marker ? { suggestionPreset: marker.preset } : {}),
-      draftUserMessage: readStoredDraftMessage(draft?.draftUserMessage),
+      draftUserMessage: readStoredDraftMessage(draft.draftUserMessage),
       draftAttachments: persistedAttachmentSchema
         .array()
         .nullable()
-        .parse(draft?.draftAttachments ?? null),
+        .parse(draft.draftAttachments),
     };
   });
 }
@@ -1152,6 +1164,7 @@ export const updateChatThreadDraft$ = command(
   async (
     { set },
     args: {
+      readonly legacyMemberDraft?: boolean;
       readonly threadId: string;
       readonly userId: string;
       readonly orgId: string;
@@ -1160,11 +1173,12 @@ export const updateChatThreadDraft$ = command(
       readonly draftAttachments: readonly PersistedAttachment[] | null;
     },
     signal: AbortSignal,
-  ): Promise<void> => {
-    await set(
+  ): Promise<boolean> => {
+    const saved = await set(
       persistChatThreadDraft$,
       {
         chatThreadId: args.threadId,
+        legacyMemberDraft: args.legacyMemberDraft,
         orgId: args.orgId,
         userId: args.userId,
         suggestionPreset: args.suggestionPreset,
@@ -1176,5 +1190,6 @@ export const updateChatThreadDraft$ = command(
       signal,
     );
     signal.throwIfAborted();
+    return saved;
   },
 );

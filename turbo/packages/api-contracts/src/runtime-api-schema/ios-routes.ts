@@ -258,6 +258,14 @@ export const iosClientContracts: readonly {
   },
   { id: "ios.chatThreadDraftContract.get", route: chatThreadDraftContract.get },
   {
+    id: "ios.chatThreadDraftContract.readComposer",
+    route: chatThreadDraftContract.readComposer,
+  },
+  {
+    id: "ios.chatThreadDraftContract.saveComposer",
+    route: chatThreadDraftContract.saveComposer,
+  },
+  {
     id: "ios.chatThreadEventsContract.catchUp",
     route: chatThreadEventsContract.catchUp,
   },

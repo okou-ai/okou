@@ -12,6 +12,69 @@ extension ChatSync {
     var cursor: ChatCacheCursor
     var replaced: Bool
     var cursorFromServerSnapshot: Bool
+    var recoveredExpiredCursor = false
+
+    var threads: [ChatThread] {
+      ChatThreadReplay.sidebarOrder(
+        ChatThreadReplay.replay(snapshot: snapshot.map(\.thread), events: events.map(\.change)))
+    }
+
+    var deletedThreadIDs: Set<String> {
+      Set(events.lazy.filter { $0.kind == .deleted }.map(\.chatThreadId))
+    }
+
+    func list(
+      previouslyListed: Set<String> = [], observedEvents: Set<String>? = nil,
+      deleted: Set<String>? = nil,
+      unavailable: Set<String>, persisted: Bool
+    ) -> ThreadList {
+      let current = threads
+      let currentIDs = Set(current.map(\.id))
+      return ThreadList(
+        threads: current.filter { !unavailable.contains($0.id) },
+        eventIDs: observedEvents ?? Set(events.map(\.id)),
+        deletedThreadIDs: (deleted ?? deletedThreadIDs).subtracting(currentIDs).union(unavailable),
+        removedThreadIDs: previouslyListed.subtracting(currentIDs),
+        removalsToAcknowledge: persisted ? unavailable.subtracting(currentIDs) : [],
+        isPersisted: persisted, cursor: cursor)
+    }
+  }
+
+  func threadAbsences(confirmed: Bool) async -> Set<String> {
+    do { return try await cache?.absentThreadIDs(confirmed: confirmed) ?? [] } catch {
+      Logger(subsystem: "ai.okou.ios", category: "ChatCache")
+        .error(
+          "event=chat.cache.unavailable.read.failed error=\(error.localizedDescription, privacy: .private)"
+        )
+      return []
+    }
+  }
+
+  public func pendingThreadAbsences() async -> Set<String> {
+    await threadAbsences(confirmed: false)
+  }
+
+  public func resolveThreadAbsences(dismissing: Set<String>, unavailable: Set<String>) async {
+    guard !dismissing.isEmpty || !unavailable.isEmpty else { return }
+    do {
+      try await cache?.resolveThreadAbsences(dismissing: dismissing, unavailable: unavailable)
+    } catch {
+      Logger(subsystem: "ai.okou.ios", category: "ChatCache")
+        .error(
+          "event=chat.cache.absence.resolve.failed error=\(error.localizedDescription, privacy: .private)"
+        )
+    }
+  }
+
+  /// Release a missing-parent marker after the app discarded the draft and the durable list no longer has the row.
+  public func acknowledgeRemovedThreads(_ ids: Set<String>) async {
+    guard !ids.isEmpty else { return }
+    do { try await cache?.forgetUnavailableThreads(ids) } catch {
+      Logger(subsystem: "ai.okou.ios", category: "ChatCache")
+        .error(
+          "event=chat.cache.unavailable.ack.failed error=\(error.localizedDescription, privacy: .private)"
+        )
+    }
   }
 
   private struct CachedThreadSnapshot: Decodable {
@@ -20,7 +83,9 @@ extension ChatSync {
     let chatThreads: [ThreadProjection]
   }
 
-  func readCachedThreadList(newerThan sequence: Int? = nil) async -> ThreadListState? {
+  func readCachedThreadList(
+    newerThan sequence: Int? = nil, excluding previous: ChatCacheCursor? = nil
+  ) async -> ThreadListState? {
     guard let cache else { return nil }
     do {
       guard let stored = try await cache.loadThreadList() else { return nil }
@@ -29,6 +94,7 @@ extension ChatSync {
         ?? stored.snapshotCursor
       // Consult shared storage on every read so NSE commits remain visible, but
       // avoid decoding and replaying a list the caller has already applied.
+      if cursor == previous { return nil }
       if let sequence, cursor.seqID <= sequence { return nil }
       let decoder = APIClient.decoder()
       let snapshot = try decoder.decode(
@@ -107,6 +173,7 @@ extension ChatSync {
             "Chat list cursor expired immediately after its snapshot.")
         }
         state = try await fetchThreadSnapshot()
+        state.recoveredExpiredCursor = true
       }
     }
   }
@@ -136,24 +203,22 @@ extension ChatSync {
     }
   }
 
-  func persistThreadList(_ state: ThreadListState) async -> Bool {
+  /// A competing app/extension write wins even if a reset made its cursor smaller.
+  func persistThreadList(
+    _ state: ThreadListState, startingAt baseline: ChatCacheCursor, previouslyListed: Set<String>,
+    deletions: Set<String>
+  )
+    async throws -> Bool
+  {
     guard let cache else { return false }
-    guard state.replaced || !state.newEvents.isEmpty else { return true }
-    do {
-      if state.replaced {
-        try await cache.replaceThreadList(
-          snapshot: state.snapshotData, cursor: state.snapshotCursor, events: state.newEvents)
-      } else {
-        try await cache.appendThreadEvents(state.newEvents)
-      }
-      return true
-    } catch {
-      Logger(subsystem: "ai.okou.ios", category: "ChatCache")
-        .error(
-          "event=chat.cache.list.save.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
-        )
-      return false
+    if state.replaced {
+      let listed = Set(state.threads.map(\.id))
+      return try await cache.replaceThreadList(
+        snapshot: state.snapshotData, cursor: state.snapshotCursor, events: state.newEvents,
+        startingAt: baseline, afterExpiry: state.recoveredExpiredCursor,
+        compactedDeletes: deletions.subtracting(state.deletedThreadIDs).subtracting(listed),
+        unverifiedAbsences: previouslyListed.subtracting(listed).subtracting(deletions))
     }
+    return try await cache.appendThreadEvents(state.newEvents, startingAt: baseline)
   }
-
 }
