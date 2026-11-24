@@ -140,7 +140,7 @@ describe("member-owned Antigravity login", () => {
     expect(first).toHaveProperty("loginOrigin", terminal.loginOrigin);
     expect(first).not.toHaveProperty("loginHost");
     asMachine(a);
-    expect((await accept(confirm(first.bindingId), [200])).body).toEqual({
+    expect((await accept(confirm(first.bindingId), [200])).body).toStrictEqual({
       status: "connected",
       bindingId: first.bindingId,
       loginOrigin: terminal.loginOrigin,
