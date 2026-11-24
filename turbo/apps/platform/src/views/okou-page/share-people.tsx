@@ -1,21 +1,28 @@
-import { useGet, useLastResolved, useLoadable } from "ccstate-react";
+import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { Loader2, X } from "lucide-react";
+import { Loader2, UserRound, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { HostedSiteShareAccount } from "@okouai/api-contracts/contracts/hosted-site-sharing";
 import {
   Button,
-  Command,
+  Combobox,
+  ComboboxContent,
+  ComboboxInputGroup,
   CommandInput,
   CommandItem,
   CommandList,
   Skeleton,
 } from "@okouai/ui";
-import type { HostedSiteShareSession } from "../../signals/hosted-site-sharing.ts";
+import type { State } from "ccstate";
+import type { createSharePeopleSignals } from "../../signals/share-people.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 
 interface PeopleProps {
-  readonly session: HostedSiteShareSession;
+  readonly session: {
+    readonly signal$: State<AbortSignal | null>;
+    readonly people: ReturnType<typeof createSharePeopleSignals>;
+    readonly peopleInputId: string;
+  };
   readonly busy: boolean;
   readonly failed: boolean;
   readonly onShare: (email: string) => void;
@@ -27,18 +34,16 @@ function AccountSuggestions({
   loading,
   failed,
   busy,
-  onChoose,
 }: {
   readonly accounts: readonly HostedSiteShareAccount[] | undefined;
   readonly loading: boolean;
   readonly failed: boolean;
   readonly busy: boolean;
-  readonly onChoose: (email: string) => void;
 }) {
   const { t } = useTranslation();
   return (
     <CommandList
-      className="mt-1 max-h-40"
+      className="max-h-48"
       aria-label={t(($) => {
         return $.artifacts.people.accounts;
       })}
@@ -67,10 +72,10 @@ function AccountSuggestions({
               value={account.email}
               disabled={busy}
               className="px-2 py-2"
-              onClick={() => {
-                onChoose(account.email);
-              }}
             >
+              <span className="mr-2 flex size-8 shrink-0 items-center justify-center rounded-full bg-nested-fill text-muted-foreground">
+                <UserRound size={16} />
+              </span>
               <span className="min-w-0 flex-1">
                 {account.name && (
                   <span className="block truncate text-sm">{account.name}</span>
@@ -98,6 +103,8 @@ function AccountSearch({
   busy,
 }: Pick<PeopleProps, "session" | "busy">) {
   const { t } = useTranslation();
+  const open = useGet(session.people.searchOpen$);
+  const setOpen = useSet(session.people.setSearchOpen$);
   const input = useGet(session.people.input$);
   const valid = useGet(session.people.validEmail$);
   const [accounts, change] = useLoadableSet(session.people.change$);
@@ -110,21 +117,32 @@ function AccountSearch({
   };
   return (
     <>
-      <Command value={input} filter={null} onValueChange={choose}>
+      <Combobox
+        value={input}
+        filter={null}
+        open={open && input.trim().length >= 2 && !busy}
+        onOpenChange={setOpen}
+        openOnInputClick
+        onValueChange={(value) => {
+          choose(value);
+        }}
+      >
         <div className="flex items-center gap-2">
-          <CommandInput
-            wrapperClassName="min-w-0 flex-1"
-            id={session.peopleInputId}
-            aria-label={t(($) => {
-              return $.artifacts.people.label;
-            })}
-            placeholder={t(($) => {
-              return $.artifacts.people.placeholder;
-            })}
-            maxLength={254}
-            disabled={busy}
-            autoComplete="off"
-          />
+          <ComboboxInputGroup className="min-w-0 flex-1">
+            <CommandInput
+              wrapperClassName="min-w-0 flex-1"
+              id={session.peopleInputId}
+              aria-label={t(($) => {
+                return $.artifacts.people.label;
+              })}
+              placeholder={t(($) => {
+                return $.artifacts.people.placeholder;
+              })}
+              maxLength={254}
+              disabled={busy}
+              autoComplete="off"
+            />
+          </ComboboxInputGroup>
           <Button
             type="submit"
             size="sm"
@@ -137,16 +155,15 @@ function AccountSearch({
             })}
           </Button>
         </div>
-        {input.trim().length >= 2 && (
+        <ComboboxContent>
           <AccountSuggestions
             accounts={accounts.state === "hasData" ? accounts.data : undefined}
             loading={accounts.state === "loading"}
             failed={accounts.state === "hasError"}
             busy={busy}
-            onChoose={choose}
           />
-        )}
-      </Command>
+        </ComboboxContent>
+      </Combobox>
       <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
         {t(($) => {
           return $.artifacts.people.hint;
@@ -217,7 +234,7 @@ function PeopleList({
   );
 }
 
-export function HostedSitePeople({
+export function SharePeople({
   session,
   busy,
   failed,
