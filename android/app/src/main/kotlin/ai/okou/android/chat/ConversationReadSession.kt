@@ -73,25 +73,23 @@ internal constructor(
         )
             return
         attempted = confirmation
-        // Capture the earlier write before a later list action can wait on this acknowledgement.
+        // Join a write that was already pending when this display was confirmed.
         val preceding = precedingReadWrite()
         // Register ownership before even an immediately completing service can run its finalizer.
         val next =
             scope.launch(start = CoroutineStart.LAZY) {
                 try {
                     preceding?.join()
-                    requireCurrent()
-                    if (!automaticRead || confirmation != currentConfirmation()) return@launch
-                    mutable.value = HistoryReadState.Pending
                     val marked =
-                        ChatWriteRetries().run { retrying ->
+                        ChatWriteRetries().run {
                             requireCurrent()
                             if (
                                 confirmation != currentConfirmation() ||
                                     !automaticRead ||
-                                    retrying && precedingReadWrite()?.isActive == true
+                                    precedingReadWrite()?.isActive == true
                             )
                                 return@run false
+                            mutable.value = HistoryReadState.Pending
                             val submission = CompletableDeferred<Unit>()
                             pendingAutomaticRead = submission
                             try {

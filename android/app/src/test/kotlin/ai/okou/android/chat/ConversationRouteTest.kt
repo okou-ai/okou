@@ -865,6 +865,39 @@ class ConversationRouteTest {
         }
     }
 
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h320dp")
+    fun confirmedAccessLossRemainsVisibleUntilAnAuthorizedHistoryRead() {
+        val model = openScrollHistory(AtomicInteger(12))
+        val originalRows = fixture.historyRows
+        val missing = hasText(compose.activity.getString(R.string.history_missing))
+        val lastMessage = hasText("Prompt number 12")
+        fixture.historyRows = { MockResponse().setResponseCode(403) }
+        compose.runOnIdle { model.history.invalidate(CHAT_IN_PROJECT) }
+        compose.waitUntilExactlyOneExists(missing, 5_000)
+
+        val recheckRequested = CountDownLatch(1)
+        val completeRecheck = CountDownLatch(1)
+        fixture.historyRows = { request ->
+            recheckRequested.countDown()
+            completeRecheck.await()
+            originalRows(request)
+        }
+        try {
+            compose.runOnIdle { model.history.invalidate(CHAT_IN_PROJECT) }
+            compose.waitUntil("the history recheck has reached the server", 5_000) {
+                compose.runOnIdle { recheckRequested.count == 0L }
+            }
+            compose.onNode(missing).assertIsDisplayed()
+            compose.onNode(lastMessage).assertDoesNotExist()
+        } finally {
+            completeRecheck.countDown()
+        }
+
+        compose.waitUntilExactlyOneExists(lastMessage, 5_000)
+        compose.onNode(missing).assertDoesNotExist()
+    }
+
     private fun scrollEventId(sequence: Int) =
         "aaaaaaaa-aaaa-4aaa-8aaa-${sequence.toString().padStart(12, '0')}"
 

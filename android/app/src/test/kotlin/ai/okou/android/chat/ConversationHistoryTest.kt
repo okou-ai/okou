@@ -697,6 +697,7 @@ internal class ConversationHistoryTest : ConversationHistoryTestFixture() {
             assertNull(model.uiState.first { it.phase == HistoryPhase.Missing }.transcript)
             model.open(thread("fifth"))
             model.open(thread())
+            assertEquals(HistoryPhase.Missing, model.uiState.value.phase)
             assertNull(model.uiState.value.transcript)
         } finally {
             model.close()
@@ -1181,6 +1182,35 @@ internal class ConversationHistoryReadStateTest : ConversationHistoryTestFixture
             runCurrent()
             assertEquals(2, service.markCount)
             assertNull(visit.pendingAutomaticRead)
+            assertEquals(HistoryReadState.Idle, visit.readState.value)
+        } finally {
+            explicit.complete(Unit)
+            visit.close()
+        }
+    }
+
+    @Test
+    fun automaticReadYieldsToAnExplicitWriteRegisteredBeforeItsFirstSubmission() = runTest {
+        val expected = HistoryConfirmation(1, 1, HistoryCursor(HISTORY_LAST_EVENT, 37))
+        val service = Service()
+        val explicit = CompletableDeferred<Unit>()
+        var preceding: Job? = null
+        val visit =
+            ConversationReadSession(
+                CHAT_PERSONAL,
+                service,
+                backgroundScope,
+                { true },
+                { expected },
+                {},
+                {},
+                { preceding },
+            )
+        try {
+            visit.confirmDisplayed(expected)
+            preceding = explicit
+            runCurrent()
+            assertEquals(0, service.markCount)
             assertEquals(HistoryReadState.Idle, visit.readState.value)
         } finally {
             explicit.complete(Unit)
