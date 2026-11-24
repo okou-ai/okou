@@ -931,11 +931,12 @@ feature; the catalog shows each one.
 - **Cards** are white `OkouSurfaceStyle` cards at sheet radius with 24 pt above the heading and
   20 pt elsewhere. A direction is a raised button (card fill, hairline, `state-pressed` while
   pressed); one that sends carries the composer's amber send mark, one that drafts a quiet arrow,
-  and the chosen one shows progress in its mark until the choice settles. The mark sits beside
-  the direction's label, centred on its first line without making the row taller, so its
-  description takes the full width (at most two lines; the mark and VoiceOver's hint say what
-  choosing it does) and the row keeps 16 pt above the label and below the description.
-  Directions stand 10 pt apart. A card that ends in text, as a direction's context does, keeps
+  and the chosen one shows progress in its mark until the choice settles. The mark stands in its
+  own trailing column, centred on the whole button as a row's accessory is, so every direction
+  keeps its mark in the same place whatever its text; the label and description wrap before it
+  (at most two lines of description; the mark and VoiceOver's hint say what choosing it does),
+  and the row keeps 16 pt above the label and below the description. Directions stand 10 pt
+  apart. A card that ends in text, as a direction's context does, keeps
   as much room below the text as above it. A card is a reading surface
   ([Type roles](#type-roles)): a Title 3 title over Body for the reason and each direction's
   label, with Subheadline for a direction's description and the source.

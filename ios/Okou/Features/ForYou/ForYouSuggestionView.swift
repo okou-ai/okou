@@ -86,8 +86,9 @@ struct ForYouSuggestionView: View {
 
   /// A direction says what choosing it does before it is chosen: one that sends carries the
   /// composer's amber send mark, one that only prepares a draft leads on to its chat (the
-  /// outcome is the mark's meaning and VoiceOver's hint). Its mark sits beside the label, so
-  /// the description takes the button's full width. Each is a raised button on the card, as the
+  /// outcome is the mark's meaning and VoiceOver's hint). Its mark stands in its own column at
+  /// the trailing edge, centred on the whole button, as a row's accessory is, so every direction
+  /// keeps its mark in the same place whatever its text. Each is a raised button on the card, as the
   /// web draws its options, and the one being chosen turns its mark into progress until the
   /// choice settles.
   private func optionButton(_ option: ForYouOption) -> some View {
@@ -96,25 +97,19 @@ struct ForYouSuggestionView: View {
     return Button {
       choose(option)
     } label: {
-      VStack(alignment: .leading, spacing: OkouSpace.six) {
-        HStack(alignment: .firstTextBaseline, spacing: OkouSpace.md) {
+      HStack(spacing: OkouSpace.md) {
+        VStack(alignment: .leading, spacing: OkouSpace.six) {
           Text(option.label).font(Self.labelFont)
-            .frame(maxWidth: .infinity, alignment: .leading)
-          // The mark centres on the label's first line without making the row taller, so the
-          // row keeps the same room above the label as below the description, and the mark
-          // sits about as far from the row's top as from its side.
-          OkouLineIcon(font: Self.labelFont, width: OkouControl.addControl) {
-            ForYouOptionMark(sends: sends, isPending: isPending)
+          // A long description keeps its first lines so a dense card leaves its heading room;
+          // VoiceOver reads all of it.
+          if !option.description.isEmpty {
+            Text(option.description).font(.okou(.subheadline))
+              .foregroundStyle(OkouColor.mutedForeground)
+              .lineLimit(Self.descriptionLines)
           }
         }
-        // A long description keeps its first lines so a dense card leaves its heading room;
-        // VoiceOver reads all of it.
-        if !option.description.isEmpty {
-          Text(option.description).font(.okou(.subheadline))
-            .foregroundStyle(OkouColor.mutedForeground)
-            .lineLimit(Self.descriptionLines)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        ForYouOptionMark(sends: sends, isPending: isPending)
       }
       .multilineTextAlignment(.leading)
       .padding(.leading, OkouSpace.lg).padding(.trailing, OkouSpace.md)
