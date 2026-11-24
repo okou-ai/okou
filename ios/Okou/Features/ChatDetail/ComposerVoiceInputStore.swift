@@ -247,7 +247,8 @@ final class ComposerVoiceInputStore {
   }
 
   private func insertUploadedRecording(
-    _ fileID: String, session: VoiceDraftSession, id: UUID, composer: ComposerDraftStore, owner: UUID
+    _ fileID: String, session: VoiceDraftSession, id: UUID, composer: ComposerDraftStore,
+    owner: UUID
   ) async throws {
     guard generation == owner, composer.canEditVoice else { return }
     composer.appendVoiceClip(fileID, recordingID: id)
