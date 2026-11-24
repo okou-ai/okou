@@ -14,7 +14,6 @@
     <string name="conversation_new_reply">New reply</string>
     <string name="conversation_view_progress">View progress</string>
     <string name="conversation_processing">Working…</string>
-    <string name="conversation_history_offline">Conversation history will load when you’re online.</string>
     <string name="conversation_offline_send">Go online to send. Your draft stays here.</string>
     <string name="conversation_work">Work in progress</string>
     <string name="conversation_reply_actions">Reply actions</string>

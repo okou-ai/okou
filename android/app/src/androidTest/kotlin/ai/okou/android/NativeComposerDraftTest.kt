@@ -46,9 +46,13 @@ class NativeComposerDraftTest {
         val journal = ComposerJournalStore(app, directory)
         val fixture = ComposerApiFixture()
         val held = CountDownLatch(1)
+        val requested = CountDownLatch(1)
         val path = "/api/chat-drafts/composer"
         fixture.drafts[path] = plainDraftDocument("Saved on Web")
-        fixture.beforeDraftRead = { held.await() }
+        fixture.beforeDraftRead = {
+            requested.countDown()
+            held.await()
+        }
         app.chatService = fixture.service
         app.composerService = fixture.service
         app.journalStore = journal
@@ -86,14 +90,7 @@ class NativeComposerDraftTest {
                         .text(app.getString(R.string.composer_new)),
                 )
                 .click()
-            checkNotNull(
-                device.wait(
-                    Until.findObject(
-                        By.pkg(app.packageName).text(app.getString(R.string.composer_sync_loading)),
-                    ),
-                    10_000,
-                ),
-            )
+            await { requested.count == 0L }
             scenario.onActivity {
                 val ready =
                     checkNotNull(
@@ -103,9 +100,11 @@ class NativeComposerDraftTest {
                 listJob = ready.chats.viewModelScope.coroutineContext[Job]
             }
             editor().text = "Native edit while Web draft is loading"
+            val heldEditor = editor().visibleBounds
             held.countDown()
             await { fixture.drafts[path]?.plainText() == "Native edit while Web draft is loading" }
             assertEquals("Native edit while Web draft is loading", editor().text)
+            assertEquals(heldEditor, editor().visibleBounds)
             scenario.recreate()
             assertEquals("Native edit while Web draft is loading", editor().text)
             fixture.drafts[path] = plainDraftDocument("Updated on Web")

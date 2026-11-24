@@ -213,8 +213,6 @@ class NativeRealtimeTest {
                 shown == visible
             }
             device.awaitChatList(app)
-            val connecting = app.getString(R.string.realtime_connecting)
-            assertFalse(device.hasObject(label(connecting)))
             scenario.onActivity {
                 val ready =
                     checkNotNull(
@@ -229,14 +227,10 @@ class NativeRealtimeTest {
             condition { chats?.uiState?.value?.threads?.any { it.id == CHAT_PERSONAL } == true }
             reveal("Personal chat")
             text("Personal chat").click()
-            step = "Show realtime status in the open conversation"
-            text(connecting)
-            assertNotNull(
-                device.wait(
-                    Until.findObject(By.pkg(app.packageName).textContains("Native history")),
-                    10_000,
-                ),
-            )
+            step = "Load conversation history while realtime is connecting"
+            val reply = By.pkg(app.packageName).textContains("Native history")
+            assertNotNull(device.wait(Until.findObject(reply), 10_000))
+            assertFalse(device.hasObject(label(app.getString(R.string.retry))))
             val editor =
                 checkNotNull(
                     device.wait(
@@ -251,9 +245,14 @@ class NativeRealtimeTest {
             ime(true)
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             ime(false)
+            val replyBounds = checkNotNull(device.findObject(reply)).visibleBounds
             external.snapshot.value =
                 external.snapshot.value.copy(phase = RealtimePhase.Unavailable)
-            text(app.getString(R.string.realtime_unavailable))
+            condition("Disconnect keeps the conversation visible without a retry action") {
+                chats?.updates?.phase?.value == RealtimePhase.Unavailable &&
+                    device.findObject(reply)?.visibleBounds == replyBounds &&
+                    !device.hasObject(label(app.getString(R.string.retry)))
+            }
 
             val sequence = AtomicLong(41)
             val title = AtomicReference("Changed on another client")
@@ -572,10 +571,8 @@ class NativeRealtimeTest {
                     state.persistence == ComposerPersistence.Durable &&
                     state.sync(target) == ComposerSync.Saved
             }
-            condition("Composer saving indicators leave the native layout") {
-                !device.hasObject(label(app.getString(R.string.composer_saving))) &&
-                    !device.hasObject(label(app.getString(R.string.composer_sync_saving))) &&
-                    !device.hasObject(label(app.getString(R.string.composer_unconfirmed)))
+            condition("Send confirmation leaves the native layout") {
+                !device.hasObject(label(app.getString(R.string.composer_unconfirmed)))
             }
             clickStop()
             condition("Single interrupt reaches transport while the response is held") {

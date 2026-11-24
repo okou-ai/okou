@@ -2,9 +2,8 @@
 <resources>
     <string name="history_syncing">Nachrichten werden synchronisiert…</string>
     <string name="history_loading">Unterhaltung wird geladen…</string>
-    <string name="history_failed">Die Unterhaltung konnte nicht aktualisiert werden. Bitte erneut versuchen.</string>
+    <string name="history_failed">Diese Unterhaltung konnte nicht geladen werden.</string>
     <string name="history_missing">Diese Unterhaltung wurde gelöscht oder ist nicht verfügbar.</string>
-    <string name="history_read_failed">Lesestatus konnte nicht bestätigt werden. Zum Wiederholen aktualisieren.</string>
     <string name="history_empty">Noch keine Nachrichten.</string>
     <string name="history_queued">In Warteschlange</string>
     <string name="history_rejected">Nicht gesendet</string>

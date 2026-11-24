@@ -4,11 +4,6 @@
     <string name="auth_check_failed">Não foi possível verificar o acesso.</string>
     <string name="auth_selection_failed">Não foi possível abrir este espaço de trabalho.</string>
     <string name="auth_sign_out_failed">Não foi possível sair.</string>
-    <string name="composer_sync_loading">Carregando rascunho salvo…</string>
-    <string name="composer_sync_saving">Sincronizando rascunho…</string>
-    <string name="composer_sync_failed">Falha ao sincronizar o rascunho. Seu texto permanece neste dispositivo.</string>
-    <string name="composer_sync_unsupported">Este rascunho contém conteúdo que pode ser editado na Web. Seu texto permanece neste dispositivo; a sincronização automática está pausada.</string>
-    <string name="composer_sync_retry">Tentar sincronizar novamente</string>
     <string name="composer_restore_draft">Restaurar rascunho preservado</string>
     <string name="controls_storage_failed">Não foi possível salvar os controles pendentes.</string>
     <string name="controls_stop">Parar o trabalho em andamento</string>
@@ -89,7 +84,6 @@
     <string name="composer_retry">Reenviar a mesma mensagem</string>
     <string name="composer_not_observed">A mensagem ainda não está visível. A entrega continua sem confirmação.</string>
     <string name="composer_request_failed">A solicitação falhou. O rascunho e a mensagem pendente foram preservados.</string>
-    <string name="composer_saving">Salvando rascunho neste dispositivo…</string>
     <string name="updates_title">Atualizações do aplicativo</string>
     <string name="updates_installed">Versão atual: %1$s</string>
     <string name="updates_current">Você está na versão mais recente</string>
@@ -128,8 +122,6 @@
     <string name="updates_error_install">O Android não conseguiu instalar a atualização.</string>
     <string name="updates_unavailable">Ainda não há uma atualização adequada.</string>
     <string name="updates_android_unsupported">Esta atualização precisa de uma versão mais recente do Android.</string>
-    <string name="realtime_connecting">Conectando às atualizações em tempo real…</string>
-    <string name="realtime_unavailable">As atualizações em tempo real estão indisponíveis. Você ainda pode atualizar manualmente.</string>
     <string name="settings_account">Conta</string>
     <string name="settings_cancel">Cancelar</string>
     <string name="settings_saving">Salvando…</string>

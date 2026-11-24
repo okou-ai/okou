@@ -358,12 +358,6 @@ internal class ChatComposerOwner(
         serverTarget(draftKey)?.let { synchronize(connection, it) }
     }
 
-    fun retrySync(connection: Connection, target: ComposerTarget) {
-        serverTarget(mutable.value.draftKey(target))?.let {
-            synchronize(connection, it, refresh = true)
-        }
-    }
-
     private fun serverTarget(key: String): ServerDraftTarget? =
         when {
             key.startsWith("thread:") -> ServerDraftTarget(key.removePrefix("thread:"))
@@ -409,7 +403,12 @@ internal class ChatComposerOwner(
                         syncStatus(target.key, ComposerSync.Loading)
                         val list = connection.chatList
                         val indexVersion = list?.draftIndexRequestVersion
-                        val remote = connection.service.composerDraft(target).plainText()
+                        val remote =
+                            ChatDependencyRetry()
+                                .read(online = ::current) {
+                                    connection.service.composerDraft(target)
+                                }
+                                .plainText()
                         currentCoroutineContext().ensureActive()
                         if (!current()) return@launch
                         if (remote == null) {
@@ -459,7 +458,18 @@ internal class ChatComposerOwner(
                         if (mutable.value.journal?.drafts?.get(target.key) != draft) continue
                         if (!saved.durable || saved.journal.drafts[target.key] != draft)
                             throw IOException("Draft is not durable")
-                        connection.service.saveComposerDraft(target, draft.text)
+                        val submitted =
+                            ChatWriteRetries().run {
+                                currentCoroutineContext().ensureActive()
+                                if (
+                                    !current() ||
+                                        mutable.value.journal?.drafts?.get(target.key) != draft
+                                )
+                                    return@run false
+                                connection.service.saveComposerDraft(target, draft.text)
+                                true
+                            }
+                        if (!submitted) continue
                         currentCoroutineContext().ensureActive()
                         if (!current()) return@launch
                         target.threadId?.let {
