@@ -190,6 +190,9 @@ describe("GET /api/indicators", () => {
       { prompt: "Another member's queue" },
       [201],
     );
+    if (waiting.status !== 201) {
+      throw new Error("Expected the waiting chat to be accepted");
+    }
     const waitingThread = waiting.body.threadId;
     const legacy = { threads: { [running.threadId]: "active" }, unreadAt: {} };
     const headers = { authorization };
