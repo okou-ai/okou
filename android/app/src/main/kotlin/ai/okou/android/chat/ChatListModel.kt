@@ -442,6 +442,7 @@ class ChatListModel(
     private var indicatorsRetry: ChatDependencyRetry? = null
     private val indicatorReadReceipts = mutableMapOf<String, ChatTimestamp>()
     private val readConfirmations = mutableMapOf<String, ReadConfirmation>()
+    private var batchReadIntents: Map<String, ChatReadIntent>? = null
     private val writes = Mutex()
 
     private class DraftIndexRead {
@@ -692,6 +693,7 @@ class ChatListModel(
             ChatReadIntent(ChatRowAction.MarkRead, time)
         }
 
+        batchReadIntents = intents
         val write = CompletableDeferred<Unit>()
         intents.keys.forEach { readWrites[it] = write }
         mutable.value =
@@ -766,6 +768,7 @@ class ChatListModel(
                         confirmations.count { it.rejected },
                     )
             } finally {
+                batchReadIntents = null
                 if (current()) {
                     val state = mutable.value
                     mutable.value =
@@ -2128,7 +2131,13 @@ class ChatListModel(
                                 } == true)
                     confirmation.confirmedByReadback =
                         confirmed && !confirmation.receiptCoversIntent
-                    if (confirmation.reportFailure && !confirmed) continue
+                    // An intervening refresh must leave ambiguous writes for the batch's readback.
+                    if (
+                        !confirmed &&
+                            (confirmation.reportFailure ||
+                                batchReadIntents?.get(id) === confirmation.intent)
+                    )
+                        continue
                     if (failures.isNotEmpty())
                         failures = failures.filterNot { it.readIntent === confirmation.intent }
                     val projectedIntent = confirmation.projectedIntent

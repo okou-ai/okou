@@ -19,6 +19,7 @@ import ai.okou.android.chat.WorkspaceRenameTarget
 import ai.okou.android.chat.canDeleteProject
 import ai.okou.android.chat.canRenameProject
 import ai.okou.android.chat.label
+import ai.okou.android.chat.nextChatFeedbackOrder
 import ai.okou.android.chat.recoversInBackground
 import ai.okou.android.chat.rowActions
 import ai.okou.android.updates.updateFocusOutline
@@ -155,6 +156,10 @@ private fun ChatUndoFeedback(
     }
 }
 
+internal class ConversationNavigationError(val threadId: String, val message: String) {
+    val feedbackOrder = nextChatFeedbackOrder()
+}
+
 @Composable
 internal fun WorkspaceChatFeedback(
     chats: ChatListModel,
@@ -163,6 +168,8 @@ internal fun WorkspaceChatFeedback(
     conversationSnackbar: SnackbarHostState,
     showChatList: Boolean,
     visibleConversationId: String?,
+    navigationError: ConversationNavigationError?,
+    dismissNavigationError: (ConversationNavigationError) -> Unit,
     showWorkflowFeedback: Boolean,
     confirmingProjectDelete: String?,
     dismissProjectDelete: () -> Unit,
@@ -234,10 +241,24 @@ internal fun WorkspaceChatFeedback(
     }
     val conversationError = conversationFailures.firstOrNull { it.rejected }
     val conversationNotice = conversationFailures.firstOrNull()
+    val firstConversationError =
+        minOf(
+            conversationError?.feedbackOrder ?: Long.MAX_VALUE,
+            navigationError?.feedbackOrder ?: Long.MAX_VALUE,
+            conversationUndo?.failureOrder ?: Long.MAX_VALUE,
+        )
     when {
-        conversationError != null &&
-            (conversationUndo?.failureOrder ?: Long.MAX_VALUE) > conversationError.feedbackOrder ->
+        conversationError != null && conversationError.feedbackOrder == firstConversationError ->
             ChatRowFailureFeedback(chats, list, conversationError, conversationSnackbar)
+        navigationError != null && navigationError.feedbackOrder == firstConversationError ->
+            LaunchedEffect(conversationSnackbar, navigationError) {
+                conversationSnackbar.currentSnackbarData?.dismiss()
+                conversationSnackbar.showSnackbar(
+                    navigationError.message,
+                    duration = SnackbarDuration.Indefinite,
+                )
+                dismissNavigationError(navigationError)
+            }
         conversationUndo != null ->
             ChatUndoFeedback(
                 chats,
