@@ -571,6 +571,42 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
 
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun projectKeepsItsTitleBoundsAndKeyboardFocusWhenItsStatusRefreshes() {
+        InstrumentationRegistry.getInstrumentation().setInTouchMode(false)
+        compose.activityRule.scenario.recreate()
+        val app = compose.activity.application as ChatListApplication
+        val name = "Research notes and interview summaries for the next product planning review"
+        app.fixture.projects = {
+            jsonResponse(
+                """{"projects":[{"id":"$CHAT_PROJECT","name":"$name","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE"}],"latestEventId":null,"latestSeqId":0}""",
+            )
+        }
+        val running = AtomicBoolean(false)
+        app.fixture.indicators = {
+            if (running.get())
+                jsonResponse("""{"threads":{"$CHAT_IN_PROJECT":"active"},"unreadAt":{}}""")
+            else jsonResponse("""{"threads":{},"unreadAt":{}}""")
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        val project = compose.onNodeWithText(name)
+        val title = compose.onNodeWithText(name, useUnmergedTree = true)
+        project.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+        val before = title.getUnclippedBoundsInRoot()
+        val header = project.getUnclippedBoundsInRoot()
+        assertEquals(52f, (header.bottom - header.top).value, 1f)
+
+        running.set(true)
+        (app.realtimeService as TestRealtimeService).invalidate(ChatChanges(indicators = true))
+        val active = SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Active 1")
+        compose.waitUntilExactlyOneExists(hasText(name) and active, 10_000)
+        project.assertIsFocused()
+        assertEquals(before, title.getUnclippedBoundsInRoot())
+        assertEquals(header, project.getUnclippedBoundsInRoot())
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
     fun projectToggleReflowsFollowingRowsWhileKeepingItsKeyboardFocus() {
         InstrumentationRegistry.getInstrumentation().setInTouchMode(false)
         compose.activityRule.scenario.recreate()
