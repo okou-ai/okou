@@ -240,9 +240,9 @@ data class ChatListUiState(
         get() = projectList.renameRejection
 
     // Both the confirmed and displayed memberships must have caught up to the Project deletion.
-    internal val projectDeleteFeedback: ProjectDeleteFeedback?
+    internal val projectDeleteFeedback: List<ProjectDeleteFeedback>
         get() =
-            projectList.deleteFeedback?.takeUnless { feedback ->
+            projectList.deleteFeedback.filterNot { feedback ->
                 feedback.status == ProjectDeleteStatus.Confirmed &&
                     (source != ChatListSource.Network ||
                         confirmedThreads.any { it.projectId == feedback.projectId } ||
@@ -1159,12 +1159,13 @@ class ChatListModel(
                         state.rowActionFailures.filterNot { it.renameThreadId == threadId }
                     else state.rowActionFailures,
                 projectList =
-                    if (
-                        movingProject &&
-                            state.projectList.deleteFeedback?.status !=
-                                ProjectDeleteStatus.Unconfirmed
-                    )
-                        state.projectList.copy(deleteFeedback = null)
+                    if (movingProject)
+                        state.projectList.copy(
+                            deleteFeedback =
+                                state.projectList.deleteFeedback.filterNot {
+                                    it.status == ProjectDeleteStatus.Confirmed
+                                },
+                        )
                     else state.projectList,
                 readIntents =
                     if (intent == null || undoRequest != null) state.readIntents
