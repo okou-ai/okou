@@ -14,47 +14,7 @@ Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/message-port.te
 - **When** Events arrive on another user's channel, under another event name, and then under the requested name on the correct channel.
 - **Then** Only the matching event is forwarded, and a chat-event read still returns its existing row.
 
-**Unverified clauses.** Published newFeature:changed to another user, a different name to the right user and the frozen name to the right user. Question number 16 remained readable on the mounted Chat. No Router consumer acquired the arbitrary frozen topic, so a matching forward could not be distinguished. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#message-port-011).
-
-### message-port-014
-
-Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/shared-database/__tests__/message-port.bdd.md#message-port-014)
-
-- **Given** Two registered tabs subscribe to the same user-channel topic.
-- **When** The topic emits an event, the connection suspends and reconnects, then the first tab disconnects and another event arrives.
-- **Then** Both tabs receive the first event; a plain resume causes no resync, while reconnect causes one resync per tab. After the first tab disconnects, only the second receives the next event, and the shared subscription ends after the second disconnects.
-
-**Unverified clauses.** Two mounted shelves showed Harbor exhibit on the first user publication. Plain resume yielded no catalog read; the gap yielded one per window. After A closed only B read the empty catalog. Keeping B open allowed a third publication to reach B. Closing B instead terminated its identified provider connection at the independent loopback server. The server received no topic-specific unsubscribe in that arm. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#message-port-014).
-
-### message-port-020
-
-Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/shared-database/__tests__/message-port.bdd.md#message-port-020)
-
-- **Given** Two registered tabs share an indicator read; the first tab's token is delayed and the second tab can provide a token immediately.
-- **When** The second tab requests the indicators while the first token request is still pending.
-- **Then** The read completes without waiting for the first tab and uses the second tab's bearer token. Both tabs receive token requests.
-
-**Unverified clauses.** Observe a fresh B-owned indicator request and its result before releasing A while both tabs remain registered. A later publication after closure is a separate control. [Batch 110 observations](../../../test-rebuild-evidence/110/README.md#message-port-020).
-
-### message-port-023
-
-Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/shared-database/__tests__/message-port.bdd.md#message-port-023)
-
-- **Given** Two registered tabs share an indicator read, and one token provider rejects while the other is pending.
-- **When** The second token provider also rejects.
-- **Then** The shared read rejects with AggregateError after every tab's token provider fails.
-
-**Unverified clauses.** Find a consumer that preserves the originating shared indicators read and returns its specific aggregate after both credential providers reject. The detached error from a separate snapshot is insufficient. [Batch 111 observations](../../../test-rebuild-evidence/111/README.md#message-port-023).
-
-### message-port-027
-
-Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/shared-database/__tests__/message-port.bdd.md#message-port-027)
-
-- **Given** Two tabs are registered.
-- **When** The first tab disconnects and the second performs a cache-only read.
-- **Then** The first tab's port closes, while the second tab's read succeeds with an empty result and its port remains open.
-
-**Unverified clauses.** B’s successful empty read and continued use are established. A browser tab close does not expose an acknowledgement that the worker peer’s individual port closed; look for a documented per-port close receipt. [Batch 110 observations](../../../test-rebuild-evidence/110/README.md#message-port-027).
+**Unverified clauses.** Need a supported caller subscribing to newFeature:changed. Wrong user, wrong name, correct delivery and retention of the existing chat row must be tested together. [Batch 112 observations](../../../test-rebuild-evidence/112/README.md#message-port-011).
 
 ### message-port-030
 
@@ -66,16 +26,6 @@ Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/message-port.te
 
 **Unverified clauses.** An independently registered client entry that can issue cache-only before registration, or a final upstream change replacing that requirement, is needed. [Batch 111 observations](../../../test-rebuild-evidence/111/README.md#message-port-030).
 
-### message-port-033
-
-Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/shared-database/__tests__/message-port.bdd.md#message-port-033)
-
-- **Given** A registered tab has unread indicators and chat-message notification subscriptions, with one chat row initially available.
-- **When** Indicator-change and read-cursor events arrive, then two chat-message notifications arrive two seconds apart as another row becomes available.
-- **Then** The indicator and read-cursor events cause three indicator reloads and no catch-up requests. Each chat-message notification triggers one catch-up, and the cached rows advance from one row to two.
-
-**Unverified clauses.** With one original row, each credential-scoped indicator or cursor publication produced an indicator HTTP read and no catch-up. Two message publications separated by a two-second wait each caused one catch-up from cursor 1, returning zero then one new row. The original question and the new tidal-change row were both readable offline. Two HTTP reads cannot identify the three caller invalidations in the original Then. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#message-port-033).
-
 ### message-port-036
 
 Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/shared-database/__tests__/message-port.bdd.md#message-port-036)
@@ -84,7 +34,7 @@ Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/message-port.te
 - **When** The first user subscriber is released, then the remaining user subscriber is released and later reacquired.
 - **Then** After the first release, notifications reach the second user subscriber, organization subscriber, and different-topic subscriber, but not the released subscriber. Releasing the second removes only that user-topic subscription; the organization and different-topic subscriptions remain. A reacquired subscriber receives a later notification.
 
-**Unverified clauses.** The provider recorded both user and organization subscriptions to presentationTemplatesChanged from the same worker connection. After closing A, B displayed the card. Navigating B to a chat and back reopened its shelf and delivered another publication. The two-window layout does not identify two independent callbacks plus both other subscriptions on one port. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#message-port-036).
+**Unverified clauses.** Need separate production release controls for the two user subscribers on the same port, with the organization and other topic remaining live through release and reacquisition. [Batch 112 observations](../../../test-rebuild-evidence/112/README.md#message-port-036).
 
 ### message-port-037
 
@@ -94,17 +44,7 @@ Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/message-port.te
 - **When** The subscriber is cancelled and a new subscriber with the same ID starts attaching before the old attach completes; then both attaches complete.
 - **Then** The cancelled subscription rejects with an AbortError. Only the new subscriber receives a subsequent notification, and the worker sends one successful subscription reply for the reused ID without an error reply.
 
-**Unverified clauses.** Closed A while the organization attach was held. B opened before release, and the replacement delivered Harbor exhibit. The provider recorded one held attach returning 200. The real subscription API assigns a fresh UUID per acquisition. Two attach results for a reused ID and the original AbortError were not witnessed. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#message-port-037).
-
-### message-port-038
-
-Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/shared-database/__tests__/message-port.bdd.md#message-port-038)
-
-- **Given** Two ports subscribe to the same realtime topic while its shared attach is pending.
-- **When** The attach fails, then one port reacquires the subscription.
-- **Then** Both subscriptions reject with the attach failure, and the failed topic is no longer subscribed. After reacquisition, a notification reaches the new subscriber.
-
-**Unverified clauses.** Two open shelves shared an outstanding organization attach and its 503. B then left for a chat and used browser back on the same document to reopen its shelf while A stayed open. The provider recorded an unsubscribe and zero handlers for the later publication; the card was already in the catalog. A separate fresh-port control delivered to one handler and showed a newly published Harbor exhibit. The two original caller rejection receipts remain missing. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#message-port-038).
+**Unverified clauses.** Need a supported caller that can cancel and reuse its original ID before the attach finishes, with the original rejection and exactly one successful subscription reply observable. [Batch 112 observations](../../../test-rebuild-evidence/112/README.md#message-port-037).
 
 ### message-port-039
 
@@ -114,7 +54,7 @@ Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/message-port.te
 - **When** The first worker Store is reset and a notification is sent to the topic.
 - **Then** The first worker's signal is aborted and its port closes with no remaining listeners, while the second worker remains active and its subscriber receives the notification. The second worker can still complete a cached chat-data query with an empty result.
 
-**Unverified clauses.** Two independent Chromium storage contexts created separate worker/provider identities. After A closed, B received the user-topic publication and showed Harbor exhibit. B could open Side survey with the service offline. Its rendered title does not establish an empty cached-query response; port IDs and listener disposal did not surface. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#message-port-039).
+**Unverified clauses.** Need a supported worker reset observable outside the destroyed domain, the same subscriber ID in both domains, proof that the first lost its listeners and the survivor’s own cache-only result. [Batch 112 observations](../../../test-rebuild-evidence/112/README.md#message-port-039).
 
 ## `src/shared-database/__tests__/platform-direct-bridge.test.ts`
 
@@ -176,16 +116,6 @@ Frozen owner: `turbo/apps/platform/src/signals/__tests__/api-client-bootstrap.te
 
 ## `src/signals/__tests__/clerk-user.test.ts`
 
-### clerk-user-003
-
-Frozen owner: `turbo/apps/platform/src/signals/__tests__/clerk-user.test.ts` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/signals/__tests__/clerk-user.bdd.md#clerk-user-003)
-
-- **Given** The Clerk user value is null, and the session then enters a transition.
-- **When** A reader waits for the user while transitioning, then the session signs in as user-a and the transition ends.
-- **Then** The read stays pending during the transition and resolves to user-a rather than reporting sign-out.
-
-**Unverified clauses.** Find a supported waiting consumer that uses the resolved user's ID on that same read and distinguishes user-a from another signed-in member. [Batch 111 observations](../../../test-rebuild-evidence/111/README.md#clerk-user-003).
-
 ### clerk-user-006
 
 Frozen owner: `turbo/apps/platform/src/signals/__tests__/clerk-user.test.ts` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/signals/__tests__/clerk-user.bdd.md#clerk-user-006)
@@ -194,7 +124,7 @@ Frozen owner: `turbo/apps/platform/src/signals/__tests__/clerk-user.test.ts` · 
 - **When** A reader requests the user value synchronously before owner initialization finishes.
 - **Then** The read is a promise the owner can resolve and eventually resolves to user-a.
 
-**Unverified clauses.** Locate a public reader demonstrably invoked before user-owner initialization finishes and verify that its particular returned promise resolves to user-a. [Batch 111 observations](../../../test-rebuild-evidence/111/README.md#clerk-user-006).
+**Unverified clauses.** Need a public reader whose invocation can be observed before the owner completes and whose own pending result resolves to A. A later user-scoped notification alone cannot discriminate that timing. [Batch 112 observations](../../../test-rebuild-evidence/112/README.md#clerk-user-006).
 
 ### clerk-user-007
 
@@ -204,7 +134,7 @@ Frozen owner: `turbo/apps/platform/src/signals/__tests__/clerk-user.test.ts` · 
 - **When** The owner is replaced, then Clerk emits while the session is transitioning.
 - **Then** The last published user value remains available as the same settled promise resolving to user-a; the new event is not observed.
 
-**Unverified clauses.** Need an already-issued observation surviving owner replacement that can distinguish the same settled old promise and continued user-a value from a successor re-read. [Batch 111 observations](../../../test-rebuild-evidence/111/README.md#clerk-user-007).
+**Unverified clauses.** Need an already-issued public observation preserving the old settled promise itself and its A value through replacement and the transition. The aborted onboarding operation cannot witness that identity. [Batch 112 observations](../../../test-rebuild-evidence/112/README.md#clerk-user-007).
 
 ## `src/signals/__tests__/realtime.test.ts`
 
@@ -216,7 +146,7 @@ Frozen owner: `turbo/apps/platform/src/signals/__tests__/realtime.test.ts` · [O
 - **When** The app subscribes to a user-scoped connector-permission update and the worker receives a matching event.
 - **Then** The subscription is registered with the worker, the app handles the event once and completes the wait, and no app-side Ably authentication token is requested. The subscription is removed after completion.
 
-**Unverified clauses.** The permission review changed to Already denied after the first Slack grant notification. The next notification restored Confirm. Both deliveries reached the same user topic on the worker. This review is a persistent listener; the first update did not complete and remove a one-shot wait. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#realtime-002).
+**Unverified clauses.** Need a supported one-shot user-scoped connector-permission subscriber. Observe its first matching event, completion, worker-only authentication and release at the independent provider. [Batch 112 observations](../../../test-rebuild-evidence/112/README.md#realtime-002).
 
 ### realtime-005
 
@@ -247,16 +177,6 @@ Frozen owner: `turbo/apps/platform/src/signals/__tests__/realtime.test.ts` · [O
 - **Then** The callback receives that error, and the channel subscription is removed.
 
 **Unverified clauses.** Use a supported subscriber supplying an observable error callback on the suspended transport. Correlate that exact terminal error with release of its topic. [Batch 111 observations](../../../test-rebuild-evidence/111/README.md#realtime-010).
-
-### realtime-011
-
-Frozen owner: `turbo/apps/platform/src/signals/__tests__/realtime.test.ts` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/signals/__tests__/realtime.bdd.md#realtime-011)
-
-- **Given** A signed-in user creates a payload subscription with `runOnSubscribe` omitted.
-- **When** The subscription receives a payload, then the transport disconnects and reconnects.
-- **Then** Initialization runs once on subscription and once after reconnection; the payload is handled, and the continuity gap triggers recovery.
-
-**Unverified clauses.** The mounted Chat showed Delivered survey 17 after a real payload. Resumed and discontinuous reconnects were sent separately; both retained the rendered event. Neither establishes two initializations of the particular subscriber whose runOnSubscribe option is omitted. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#realtime-011).
 
 ### realtime-020
 
@@ -310,7 +230,7 @@ Frozen owner: `turbo/apps/platform/src/signals/browser/__tests__/client.test.ts`
 - **When** The operation is cancelled, a later Browser.getVersion request is made, and the attachment response arrives late.
 - **Then** The attachment request rejects with AbortError, the connection remains usable, and the late attachment is detached using the original parent session.
 
-**Unverified clauses.** Moved Bay out of the assigned window during its held page attachment. Connection 1 consumed the late result and sent Target.detachFromTarget for bay-session. Estuary remained interactive. The outgoing attach had no parent sessionId; no version request or original AbortError receipt was observed. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#client-003).
+**Unverified clauses.** Need an independently cancellable native child with its originating parent kept alive, an observable AbortError, a successful version call on that exact connection and the late detach addressed to the same parent. [Batch 112 observations](../../../test-rebuild-evidence/112/README.md#client-003).
 
 ### client-004
 
@@ -320,17 +240,7 @@ Frozen owner: `turbo/apps/platform/src/signals/browser/__tests__/client.test.ts`
 - **When** Startup is cancelled and the attachment response arrives late.
 - **Then** Startup rejects with AbortError, the late native attachment is detached, and the connection remains usable for Browser.getVersion.
 
-**Unverified clauses.** Left the Router while Target.attachToBrowserTarget was pending. The original peer saw zero active connections, no consumption of its late native-browser-1 response and no subsequent detach/version on that connection. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#client-004).
-
-### client-006
-
-Frozen owner: `turbo/apps/platform/src/signals/browser/__tests__/client.test.ts` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/signals/browser/__tests__/client.bdd.md#client-006)
-
-- **Given** Two CDP clients are open on different connections and listen for native events.
-- **When** Two events arrive on the first connection, including one with a session ID shared by both clients, and another event arrives after the first client closes.
-- **Then** Only the first client receives the two events received while it was open; the second client receives none, and the closed client receives no later event.
-
-**Unverified clauses.** Two real Router viewers streamed different Chromium windows. Two same-document navigations changed only the first address. Closing that viewer, changing the original remote page again, and navigating the survivor left the second viewer at its own new fragment. Chrome allocated different session IDs on the two connections. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#client-006).
+**Unverified clauses.** Need a supported bridge-start cancellation independent of connection closure, followed by the original AbortError, late native detach and successful Browser.getVersion on the same peer. [Batch 112 observations](../../../test-rebuild-evidence/112/README.md#client-004).
 
 ### client-007
 
@@ -340,7 +250,7 @@ Frozen owner: `turbo/apps/platform/src/signals/browser/__tests__/client.test.ts`
 - **When** The second session's reply arrives before the first session's reply.
 - **Then** Each request resolves with its own frame ID: second-frame for the second destination and first-frame for the first.
 
-**Unverified clauses.** Real Chromium accepted two Page.navigate requests on one socket to different sessions and local destinations. The second succeeded before the first and each frame ID matched its independent Page.getFrameTree. The production Router arm selected Bay while Estuary was pending; it displayed A page is still opening, sent only the first request and left Bay unchanged. The Chromium control cannot establish two App caller resolutions. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#client-007).
+**Unverified clauses.** Need a supported API that exposes two different sessions on one client and returns each successful frame ID to its original caller, or a Router entry with the same observable results. [Batch 112 observations](../../../test-rebuild-evidence/112/README.md#client-007).
 
 ### client-008
 
@@ -350,7 +260,7 @@ Frozen owner: `turbo/apps/platform/src/signals/browser/__tests__/client.test.ts`
 - **When** That request is cancelled, the connection is used for Browser.getVersion, and the late attachment response arrives.
 - **Then** The attachment request rejects with AbortError; the late session is detached, and Browser.getVersion succeeds both before and after the late response.
 
-**Unverified clauses.** Left the viewer while its original page attachment was held. The connection closed; its late estuary-session reply was not consumed. No detach or version request remained on this peer. A version on a replacement peer would not establish continuity. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#client-008).
+**Unverified clauses.** Need child-only page attach cancellation on a retained original connection, both successful version results around the late response, and independently observed cleanup of that returned session. [Batch 112 observations](../../../test-rebuild-evidence/112/README.md#client-008).
 
 ## `src/signals/chat-page/__tests__/unread-through-at.test.ts`
 

@@ -215,7 +215,11 @@ test("Any Lab tester can find presentation format in Beta, opt in, and reset it"
     expect(control).toHaveAttribute("aria-checked", "true");
   });
 
-  click(getButtonByName("Reset all"));
+  const reset = getButtonByName("Reset all");
+  await waitFor(() => {
+    return expect(reset).toBeEnabled();
+  });
+  click(reset);
   await waitFor(() => {
     expect(control).toHaveAttribute("aria-checked", "false");
   });

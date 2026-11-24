@@ -1,0 +1,205 @@
+{
+  "revisions": {
+    "frozen": "b0a10287edf4242383c28e39c6f7675053febb32",
+    "beforeFirstWithdrawal": "5310dbb9ba6bd8b95507bc7293f6da3ed8aa004b",
+    "beforeSecondWithdrawal": "a445586e0483bb7e2440e60200a8deed30aa3df9",
+    "main": "b9e07650780189961151469653e8e56329836a5a",
+    "opening": "c008af36dbb8ad20ac2cac6aa0e9752eaaaa8276"
+  },
+  "method": "Extracted the independently authored test callbacks from the TypeScript syntax tree. Searched whitespace-normalized bodies, with titles removed, through every JS/TS source blob in Platform, the exported browser client and prior in-repository replay evidence at each revision. Also compared five-line excerpts of at least 110 normalized characters. Existing helper and external fixture reuse is documented separately.",
+  "sourceFiles": {
+    "frozen": 1862,
+    "beforeFirstWithdrawal": 1864,
+    "beforeSecondWithdrawal": 1582,
+    "main": 1848,
+    "opening": 1937
+  },
+  "uniqueBlobs": 4007,
+  "originalOwners": {
+    "turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts": {
+      "frozen": "580baa671bd48a8f041a34939aef93c99f34e71f",
+      "beforeFirstWithdrawal": "c3536fc66bd8c19ee1d9ef3b1130c4632cdb6305",
+      "beforeSecondWithdrawal": null,
+      "main": "99cec3ba4d7d73bbf39d3ef516222c69f62eea59",
+      "opening": null
+    },
+    "turbo/apps/platform/src/signals/__tests__/realtime.test.ts": {
+      "frozen": "0fca14af8e3a6c283bf9db6304bd5b6876eb41e8",
+      "beforeFirstWithdrawal": "6c05edf7299d0ea3aebe6804578c981a98c34538",
+      "beforeSecondWithdrawal": null,
+      "main": "7267d0c0bde6b38e3a944d41ea762432ae8a4f5c",
+      "opening": null
+    },
+    "turbo/apps/platform/src/signals/browser/__tests__/client.test.ts": {
+      "frozen": "1cecdc68ed57e74adeb0965c96d2e641112972f2",
+      "beforeFirstWithdrawal": "36bb707358b5f92642c411726e6441b2c075c82a",
+      "beforeSecondWithdrawal": null,
+      "main": "1cecdc68ed57e74adeb0965c96d2e641112972f2",
+      "opening": "a0228e20a0b1b206e8f3bcbaa91836d894bccdbf"
+    },
+    "turbo/apps/platform/src/signals/__tests__/clerk-user.test.ts": {
+      "frozen": "e13b6caf84d8fb4e93c3e73b703a341da8ff17f7",
+      "beforeFirstWithdrawal": "31070421dc606f121c7f25efbbe4f204a029965e",
+      "beforeSecondWithdrawal": null,
+      "main": "e13b6caf84d8fb4e93c3e73b703a341da8ff17f7",
+      "opening": null
+    }
+  },
+  "directHelpers": {
+    "turbo/apps/platform/src/__tests__/mock-auth.ts": {
+      "frozen": "66e10fdecd7c0d2fbf119649f9fa60a69748496d",
+      "beforeFirstWithdrawal": "66e10fdecd7c0d2fbf119649f9fa60a69748496d",
+      "beforeSecondWithdrawal": "66e10fdecd7c0d2fbf119649f9fa60a69748496d",
+      "main": "66e10fdecd7c0d2fbf119649f9fa60a69748496d",
+      "opening": "66e10fdecd7c0d2fbf119649f9fa60a69748496d"
+    },
+    "turbo/apps/platform/src/__tests__/page-helper.ts": {
+      "frozen": "503ff86cdec111e7acb5c2a163170f667dcb8cd7",
+      "beforeFirstWithdrawal": "503ff86cdec111e7acb5c2a163170f667dcb8cd7",
+      "beforeSecondWithdrawal": "503ff86cdec111e7acb5c2a163170f667dcb8cd7",
+      "main": "503ff86cdec111e7acb5c2a163170f667dcb8cd7",
+      "opening": "1a7f0b68f4728337d72def72d1d03d93542cd629"
+    },
+    "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+      "frozen": "728b18a9075783660512557fe91e447847f0a770",
+      "beforeFirstWithdrawal": "728b18a9075783660512557fe91e447847f0a770",
+      "beforeSecondWithdrawal": "728b18a9075783660512557fe91e447847f0a770",
+      "main": "728b18a9075783660512557fe91e447847f0a770",
+      "opening": "728b18a9075783660512557fe91e447847f0a770"
+    },
+    "turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-test-helpers.ts": {
+      "frozen": "4c6e43692ac4c82ccc353cf31c58eb39c6772ad0",
+      "beforeFirstWithdrawal": "4c6e43692ac4c82ccc353cf31c58eb39c6772ad0",
+      "beforeSecondWithdrawal": "4c6e43692ac4c82ccc353cf31c58eb39c6772ad0",
+      "main": "a09b5734f146df049ea0368e0cb7a62e41768307",
+      "opening": "a09b5734f146df049ea0368e0cb7a62e41768307"
+    },
+    "turbo/apps/platform/src/views/okou-page/__tests__/chat-event-test-helpers.ts": {
+      "frozen": "a323697c65855e511fdad6a914abe529f5fe99eb",
+      "beforeFirstWithdrawal": "a323697c65855e511fdad6a914abe529f5fe99eb",
+      "beforeSecondWithdrawal": "a323697c65855e511fdad6a914abe529f5fe99eb",
+      "main": "a323697c65855e511fdad6a914abe529f5fe99eb",
+      "opening": "a323697c65855e511fdad6a914abe529f5fe99eb"
+    },
+    "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": {
+      "frozen": "775ed1605a2dacd60f658d5966ca769c7f43c038",
+      "beforeFirstWithdrawal": "775ed1605a2dacd60f658d5966ca769c7f43c038",
+      "beforeSecondWithdrawal": "662032ee97395f0fa7c78b57e8605c374e88fc66",
+      "main": "495bb81978eb0f6a5746ee0a10f5cbb5b6443410",
+      "opening": "dde91fed1d2929cf1fe66f36c86da5e05c95c1f7"
+    },
+    "turbo/apps/platform/src/views/okou-page/__tests__/connector-integrations-test-helpers.ts": {
+      "frozen": "119575913209773f37788d3d914c85fa1763a2e2",
+      "beforeFirstWithdrawal": "35ab06ae0ceb10b35f1524c1481aeef561959d2e",
+      "beforeSecondWithdrawal": "35ab06ae0ceb10b35f1524c1481aeef561959d2e",
+      "main": "6d092561cb8ba0190b91ed2051119024ac5b8c64",
+      "opening": "6d092561cb8ba0190b91ed2051119024ac5b8c64"
+    },
+    "turbo/apps/platform/src/views/okou-page/__tests__/sidebar-test-helpers.tsx": {
+      "frozen": "c410cff13a3342827508d24d9d0b57ad54d66e5a",
+      "beforeFirstWithdrawal": "004884f6c41142b5c4375c4e772f89975f584b5a",
+      "beforeSecondWithdrawal": "004884f6c41142b5c4375c4e772f89975f584b5a",
+      "main": "25bdb5b7515f95484878a2cce2fbcff6d3a7b80e",
+      "opening": "a1b18d95e1f6315b835bd0049da2be1be9c0cb56"
+    },
+    "turbo/apps/platform/src/views/okou-page/__tests__/wallet-settings-test-helpers.ts": {
+      "frozen": null,
+      "beforeFirstWithdrawal": null,
+      "beforeSecondWithdrawal": null,
+      "main": null,
+      "opening": "f24951be04e567282964add613a45c25186b8c17"
+    }
+  },
+  "cases": [
+    {
+      "id": "realtime-011",
+      "title": "realtime-011 Link settings refresh on subscription, handle the member event, and recover missed changes",
+      "path": "turbo/apps/platform/src/views/okou-page/__tests__/settings-wallet.test.tsx",
+      "sha256": "a77c69fa10da1085b748b7b8d995a7e1f970127a50df42599660d3f95d0dd5ed",
+      "matches": [],
+      "overlapCount": 0,
+      "longestSharedExcerpts": []
+    },
+    {
+      "id": "clerk-user-003",
+      "title": "clerk-user-003 An invitation waiting through sign-in belongs to the first settled member",
+      "path": "turbo/apps/platform/src/views/okou-page/__tests__/workspace-invitations.test.tsx",
+      "sha256": "a5f81730577a56b12e7960da26c9d5516284c50d5a68a152b32a30c2f98e7505",
+      "matches": [],
+      "overlapCount": 0,
+      "longestSharedExcerpts": []
+    },
+    {
+      "id": "message-port-033",
+      "title": "message-port-033 Unread and read-cursor updates leave the transcript alone until its next message arrives",
+      "path": "turbo/apps/platform/src/views/okou-page/__tests__/updating-chat-indicators-at-home.test.ts",
+      "sha256": "939843b73a1fa363863aad7aa4671718808999bf10ec299e5d89a1118fb7091f",
+      "matches": [],
+      "overlapCount": 0,
+      "longestSharedExcerpts": []
+    },
+    {
+      "id": "message-port-023",
+      "title": "message-port-023 The same pending indicators read returns the named aggregate to both callers",
+      "path": "test-rebuild-evidence/112/registered-ports.native.test.mjs",
+      "sha256": "23eba099beac9bea13578b20499d68906b855021947ba7983d999ec0dd416098",
+      "matches": [],
+      "overlapCount": 0,
+      "longestSharedExcerpts": []
+    },
+    {
+      "id": "message-port-020",
+      "title": "message-port-020 The second window issues its read and supplies the successful credential while the first waits",
+      "path": "test-rebuild-evidence/112/registered-ports.native.test.mjs",
+      "sha256": "1cebf91f35761195329ea05374aa62888d250df8a92bb5c0e4fe88db39c822b6",
+      "matches": [],
+      "overlapCount": 0,
+      "longestSharedExcerpts": []
+    },
+    {
+      "id": "message-port-027",
+      "title": "message-port-027 A released account port closes and the surviving registered window receives its empty offline query",
+      "path": "test-rebuild-evidence/112/registered-ports.native.test.mjs",
+      "sha256": "d7f007ebdac895fc7875e74e76fb242dd7a8990711ca5aa8812aa49942ba603c",
+      "matches": [],
+      "overlapCount": 0,
+      "longestSharedExcerpts": []
+    },
+    {
+      "id": "message-port-014",
+      "title": "message-port-014 Each original subscriber receives its own resync and the last release ends the shared topic",
+      "path": "test-rebuild-evidence/112/registered-ports.native.test.mjs",
+      "sha256": "3e6f44ffccc84a459fdf712087b1bec61d7021998957afb434055fa89de409d6",
+      "matches": [],
+      "overlapCount": 0,
+      "longestSharedExcerpts": []
+    },
+    {
+      "id": "message-port-033",
+      "title": "message-port-033 The registered tab reloads indicators three times before two messages advance its offline history",
+      "path": "test-rebuild-evidence/112/registered-ports.native.test.mjs",
+      "sha256": "9758f76fe622f6b8a77c7397a5502ab22487d1f25b6447127bd0882409cb5cac",
+      "matches": [],
+      "overlapCount": 0,
+      "longestSharedExcerpts": []
+    },
+    {
+      "id": "message-port-038",
+      "title": "message-port-038 Both waiting ports receive the attach failure and the reacquired subscription delivers to its new owner",
+      "path": "test-rebuild-evidence/112/registered-ports.native.test.mjs",
+      "sha256": "aa7d7a8ab82940d045f486f4e97ebd2c817eb1daf4c1d319776b6da246a9bdd5",
+      "matches": [],
+      "overlapCount": 0,
+      "longestSharedExcerpts": []
+    },
+    {
+      "id": "client-006",
+      "title": "client-006 Equal page session IDs on separate connections deliver only the originating viewer's native events",
+      "path": "test-rebuild-evidence/112/registered-ports.native.test.mjs",
+      "sha256": "9b77240447edc770609e21a620cb7d2d669583ea5ae828c1fdf5030643a35147",
+      "matches": [],
+      "overlapCount": 0,
+      "longestSharedExcerpts": []
+    }
+  ]
+}

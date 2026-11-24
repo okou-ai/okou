@@ -168,3 +168,36 @@ test("settings-wallet-012 forbidden activity displays an error while the wallet 
   expect(within(history).queryByText("No Link transactions yet")).toBeNull();
   expect(within(region).getByText("Connected")).toBeInTheDocument();
 });
+
+test("realtime-011 Link settings refresh on subscription, handle the member event, and recover missed changes", async () => {
+  const source = context.mocks.ably;
+  const channel = "user:test-user-123";
+  const topic = "wallet:changed";
+  const subscription = source.deferSubscribeOnChannel(channel, topic);
+  let status = linkStatus("not-connected");
+  serveWallet(context, () => {
+    return status;
+  });
+  await setupPage({
+    context,
+    path: "/?settings=wallet",
+    sharedWorkerTestTransport: "message-port",
+  });
+  const region = await screen.findByRole("region", { name: "Link" });
+  await findAction("button", "Connect", region);
+  await subscription.started;
+
+  status = linkStatus("scope-mismatch");
+  subscription.attach();
+  await within(region).findByText("Update permissions");
+  status = linkStatus("connected");
+  source.triggerOnChannel(channel, topic, { orgId: "org_default" });
+  await within(region).findByText("Connected");
+
+  source.triggerSharedWorkerConnectionState("suspended");
+  status = linkStatus("reconnect-required");
+  source.triggerSharedWorkerConnectionState("connected");
+  await expect(
+    within(region).findByText("Reconnect required"),
+  ).resolves.toBeInTheDocument();
+});
