@@ -26,7 +26,8 @@ fn extract(dir: &TempDir, bytes: &[u8]) -> (Result<(), DownloadError>, Duration)
 #[test]
 fn extracts_across_recycled_blocks_with_tar_metadata() {
     let dir = tempfile::tempdir().unwrap();
-    let content = b"bounded archive extraction\n".repeat(8000);
+    let line = b"bounded archive extraction\n";
+    let content = line.repeat((3 * BLOCK_BYTES).div_ceil(line.len()));
     let archive = gzip_archive("package/notes.txt", &content);
 
     let (result, _) = extract(&dir, &archive);
@@ -57,7 +58,7 @@ fn settles_the_inflater_after_an_early_write_error() {
     let dir = tempfile::tempdir().unwrap();
     let blocker = dir.path().join("blocked");
     fs::write(&blocker, b"existing file").unwrap();
-    let content = b"archive data\n".repeat(30_000);
+    let content = vec![b'x'; 3 * BLOCK_BYTES];
     let archive = gzip_archive("blocked/notes.txt", &content);
 
     let (result, _) = extract(&dir, &archive);

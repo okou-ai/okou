@@ -4,9 +4,9 @@ use crate::error::DownloadError;
 use crate::source::{
     HttpBodyReadFailure, LocalArchive, LocalArchiveAttemptMetrics, measure_local_body,
 };
-use flate2::read::GzDecoder;
+use flate2::bufread::GzDecoder;
 use std::fs::File;
-use std::io::{self, Read};
+use std::io::{self, BufReader, Read};
 use std::os::unix::fs::FileExt;
 use std::path::Path;
 use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
@@ -15,7 +15,9 @@ use std::time::Duration;
 
 const STAGED_ARTIFACT_BYTES: std::ops::Range<u64> = 1024 * 1024..4 * 1024 * 1024;
 const MIN_EXPANDED_BYTES: u32 = 8 * 1024 * 1024;
-const BLOCK_BYTES: usize = 64 * 1024;
+// Fewer input refills and decoded block handoffs during extraction.
+const COMPRESSED_BUFFER_BYTES: usize = 128 * 1024;
+const BLOCK_BYTES: usize = 256 * 1024;
 const BLOCK_COUNT: usize = 2;
 
 type DecodedBlock = (Vec<u8>, usize);
@@ -131,7 +133,10 @@ fn inflate(
     recycle: Receiver<Vec<u8>>,
 ) -> Duration {
     let metrics = LocalArchiveAttemptMetrics::default();
-    let mut decoder = GzDecoder::new(measure_local_body(file, &metrics));
+    let mut decoder = GzDecoder::new(BufReader::with_capacity(
+        COMPRESSED_BUFFER_BYTES,
+        measure_local_body(file, &metrics),
+    ));
     let buffers: [_; BLOCK_COUNT] = std::array::from_fn(|_| vec![0; BLOCK_BYTES]);
     for mut buffer in buffers.into_iter().chain(recycle) {
         let read = loop {
