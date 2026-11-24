@@ -26,6 +26,7 @@ import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import java.util.UUID
 import kotlinx.serialization.json.JsonPrimitive
+import okhttp3.mockwebserver.MockResponse
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -138,6 +139,7 @@ class ScreenshotScenario {
                 row(5, "run.completed", "null"),
                 row(6, "output.followups", content(followups)),
             )
+            api.historyCatchUp = { MockResponse().setResponseCode(503) }
             api.historyRows = { request ->
                 val since = request.requestUrl?.queryParameter("sinceSeqId")?.toInt() ?: 0
                 jsonResponse(
@@ -156,6 +158,9 @@ class ScreenshotScenario {
                     device.awaitChatList(app)
                     checkNotNull(device.wait(Until.findObject(By.pkg(app.packageName).text("Personal chat")), 12_000)).click()
                     val summarySelector = By.pkg(app.packageName).textContains("2 steps")
+                    check(device.wait(object : Condition<UiDevice, Boolean> {
+                        override fun apply(device: UiDevice) = api.readRequests.get() > 0
+                    }, 12_000)) { "Fixture history never reached its initial reading position" }
                     val summary = action(summarySelector)
                     val followup = action(By.pkg(app.packageName).text(suggestion))
                     check(summary.height() >= 48 && followup.height() == 48)
@@ -174,6 +179,10 @@ class ScreenshotScenario {
                         }
                     }, 12_000)) { "Earlier replies did not stay below the summary" }
                     ScreenshotCapture.capture("06-summary-expanded.png")
+                    checkNotNull(device.wait(Until.findObject(By.pkg(app.packageName).desc(app.getString(R.string.chat_actions))), 12_000)).click()
+                    check(device.wait(Until.hasObject(By.pkg(app.packageName).text(app.getString(R.string.conversation_find))), 12_000))
+                    check(!device.hasObject(By.pkg(app.packageName).text(app.getString(R.string.settings))))
+                    ScreenshotCapture.capture("07-chat-overflow.png")
                 }
             } finally {
                 try {
