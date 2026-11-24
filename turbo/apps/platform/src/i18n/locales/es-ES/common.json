@@ -1957,6 +1957,14 @@
       "message": "Mensaje",
       "modelForThisChat": "Modelo para este chat",
       "placeholder": "Pídeme que automatice flujos de trabajo, gestione tareas...",
+      "presentationFormatSetup": {
+        "description": "Guardaremos este valor predeterminado y generaremos tu presentación. Si tu solicitud especifica un formato, tendrá prioridad.",
+        "htmlDescription": "Ideal para compartir en el navegador",
+        "pptxDescription": "Diapositivas editables en PowerPoint",
+        "saveAndGenerate": "Guardar y generar",
+        "settingsHint": "Puedes cambiarlo en Configuración → Preferencias → Chat.",
+        "title": "Elige un formato de presentación predeterminado"
+      },
       "selectedModelUnavailable": "El modelo seleccionado no está disponible. Configúralo antes de enviar.",
       "selectedModelUnavailableToast": "El modelo seleccionado no está disponible",
       "selectModel": "Seleccionar modelo",
@@ -6049,6 +6057,13 @@
           "title": "Modelo predeterminado"
         },
         "description": "Elige los valores predeterminados para los chats nuevos y cómo se envían los mensajes.",
+        "presentationFormat": {
+          "description": "Elige el formato predeterminado para nuevas presentaciones",
+          "saveFailed": "No se pudo guardar el formato predeterminado. Inténtalo de nuevo.",
+          "title": "Formato de presentación predeterminado",
+          "unavailable": "No disponible",
+          "unset": "Sin establecer"
+        },
         "sectionTitle": "Chat"
       },
       "debug": {

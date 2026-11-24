@@ -1927,6 +1927,14 @@
       "message": "Nachricht",
       "modelForThisChat": "Modell für diesen Chat",
       "placeholder": "Bitten Sie mich, Workflows zu automatisieren und Aufgaben zu verwalten...",
+      "presentationFormatSetup": {
+        "description": "Wir speichern diesen Standard und erstellen dann deine Präsentation. Ein ausdrücklich angefordertes Format hat weiterhin Vorrang.",
+        "htmlDescription": "Ideal zum Teilen im Browser",
+        "pptxDescription": "In PowerPoint bearbeitbare Folien",
+        "saveAndGenerate": "Speichern und erstellen",
+        "settingsHint": "Jederzeit unter Einstellungen → Präferenzen → Chat ändern.",
+        "title": "Standardformat für Präsentationen wählen"
+      },
       "selectedModelUnavailable": "Das ausgewählte Modell ist nicht verfügbar. Konfigurieren Sie es vor dem Senden.",
       "selectedModelUnavailableToast": "Das ausgewählte Modell ist nicht verfügbar",
       "selectModel": "Modell auswählen",
@@ -5979,6 +5987,13 @@
           "title": "Standardmodell"
         },
         "description": "Lege Standardeinstellungen für neue Chats und die Art des Nachrichtenversands fest.",
+        "presentationFormat": {
+          "description": "Wähle den Standard für neue Präsentationen",
+          "saveFailed": "Das Standardformat konnte nicht gespeichert werden. Versuche es erneut.",
+          "title": "Standardformat für Präsentationen",
+          "unavailable": "Nicht verfügbar",
+          "unset": "Nicht festgelegt"
+        },
         "sectionTitle": "Chat"
       },
       "debug": {

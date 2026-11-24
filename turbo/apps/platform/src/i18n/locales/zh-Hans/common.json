@@ -1921,6 +1921,14 @@
       "message": "消息",
       "modelForThisChat": "本次对话使用的模型",
       "placeholder": "让我自动化工作流、管理任务…",
+      "presentationFormatSetup": {
+        "description": "保存默认格式后，将生成你的演示文稿。本次需求中的明确格式要求仍优先。",
+        "htmlDescription": "适合在浏览器中分享",
+        "pptxDescription": "可在 PowerPoint 中编辑",
+        "saveAndGenerate": "保存并生成",
+        "settingsHint": "随时可在「设置 → 偏好设置 → 聊天」中修改。",
+        "title": "选择默认演示文稿格式"
+      },
       "selectedModelUnavailable": "所选模型当前不可用。配置好之后再发送。",
       "selectedModelUnavailableToast": "所选模型当前不可用",
       "selectModel": "选择模型",
@@ -5955,6 +5963,13 @@
           "title": "默认模型"
         },
         "description": "设置新聊天的默认项和消息发送方式。",
+        "presentationFormat": {
+          "description": "选择新演示文稿的默认格式",
+          "saveFailed": "无法保存默认格式，请重试。",
+          "title": "默认演示文稿格式",
+          "unavailable": "暂不可用",
+          "unset": "未设置"
+        },
         "sectionTitle": "聊天"
       },
       "debug": {
