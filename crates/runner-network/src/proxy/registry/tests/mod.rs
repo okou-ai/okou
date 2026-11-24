@@ -1460,6 +1460,8 @@ async fn near_limit_registry_preserves_fail_closed_capacity() {
         .register_sandbox("10.200.0.2", &near_limit)
         .await
         .unwrap();
+    // Release the fixture input before taking the independent full-size snapshot.
+    drop(padding);
     let before_patch = tokio::fs::read(harness.registry_path()).await.unwrap();
     assert_eq!(before_patch.len() + total_fail_closed_growth, max_bytes);
 

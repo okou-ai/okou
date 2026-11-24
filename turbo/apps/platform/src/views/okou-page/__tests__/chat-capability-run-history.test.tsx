@@ -8,12 +8,13 @@ import {
   completedEvent,
   createChatRunFixtures,
   getWorkHistoryToggle,
+  publishRunUpdate,
   RUN_PATH,
 } from "./chat-run-test-fixtures.ts";
 
 const context = testContext();
 
-test("chat-capability-run-history-001 expands evidence for one completed workflow while the current run keeps thinking", async () => {
+async function openWorkflowHistory() {
   const history: MockChatEventInput[] = [];
   const workflows = [
     {
@@ -78,11 +79,16 @@ test("chat-capability-run-history-001 expands evidence for one completed workflo
     activeRunIds: [active],
   });
   await setupPage({ context, path: RUN_PATH });
-  await screen.findByText("Thinking...");
-  const [policy, launch] = workflows;
-  const policyTurn = screen
-    .getByText(policy.result)
-    .closest<HTMLElement>('[data-role="assistant"]')!;
+  return { history, workflows, active };
+}
+
+test("chat-capability-run-history-001 expands evidence for one completed workflow while the current run keeps thinking", async () => {
+  const {
+    workflows: [policy, launch],
+  } = await openWorkflowHistory();
+  const policyTurn = (
+    await screen.findByText(policy.result)
+  ).closest<HTMLElement>('[data-role="assistant"]')!;
   const launchTurn = screen
     .getByText(launch.result)
     .closest<HTMLElement>('[data-role="assistant"]')!;
@@ -94,5 +100,33 @@ test("chat-capability-run-history-001 expands evidence for one completed workflo
     within(policyTurn).findByText(policy.evidence),
   ).resolves.toBeVisible();
   expect(screen.queryByText(launch.evidence)).toBeNull();
-  expect(screen.getByText("Thinking...")).toBeVisible();
+  await expect(screen.findByText("Thinking...")).resolves.toBeVisible();
+});
+
+test("a live workflow publishes its result in a separate reply from the completed launch digest", async () => {
+  const {
+    history,
+    workflows: [, launch],
+    active,
+  } = await openWorkflowHistory();
+  await expect(screen.findByText("Thinking...")).resolves.toBeVisible();
+  const earlier = screen
+    .getByText(launch.result)
+    .closest<HTMLElement>('[data-role="assistant"]')!;
+  history.push(
+    assistantEvent({
+      id: active + "-result",
+      seqId: 10,
+      runId: active,
+      text: "Current digest is ready.",
+    }),
+  );
+  publishRunUpdate();
+
+  const current = await screen.findByText("Current digest is ready.");
+  expect(current).toBeVisible();
+  expect(within(earlier).getByText(launch.result)).toBeVisible();
+  const currentTurn = current.closest<HTMLElement>('[data-role="assistant"]');
+  expect(currentTurn).toBeTruthy();
+  expect(currentTurn).not.toBe(earlier);
 });

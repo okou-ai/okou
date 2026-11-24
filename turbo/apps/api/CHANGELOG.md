@@ -10,6 +10,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.113.0](https://github.com/okou-ai/okou/compare/api-v2.112.1...api-v2.113.0) (2026-11-24)
+
+
+### Features
+
+* add recording chips to chat composers behind a switch ([#50334](https://github.com/okou-ai/okou/issues/50334)) ([7fa55b1](https://github.com/okou-ai/okou/commit/7fa55b15b8286465939af85fe2faeaa1d39a952e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.114.0
+    * @okouai/core bumped to 8.866.0
+    * @okouai/db bumped to 2.63.2
+    * @okouai/pi-agent-runtime bumped to 1.52.55
+
 ## [2.112.1](https://github.com/okou-ai/okou/compare/api-v2.112.0...api-v2.112.1) (2026-11-24)
 
 

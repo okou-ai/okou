@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.866.0](https://github.com/okou-ai/okou/compare/core-v8.865.1...core-v8.866.0) (2026-11-24)
+
+
+### Features
+
+* add recording chips to chat composers behind a switch ([#50334](https://github.com/okou-ai/okou/issues/50334)) ([7fa55b1](https://github.com/okou-ai/okou/commit/7fa55b15b8286465939af85fe2faeaa1d39a952e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.114.0
+
 ## [8.865.1](https://github.com/okou-ai/okou/compare/core-v8.865.0...core-v8.865.1) (2026-11-24)
 
 

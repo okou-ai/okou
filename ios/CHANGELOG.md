@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.61.0](https://github.com/okou-ai/okou/compare/ios-v0.60.0...ios-v0.61.0) (2026-11-24)
+
+
+### Features
+
+* add recording chips to chat composers behind a switch ([#50334](https://github.com/okou-ai/okou/issues/50334)) ([7fa55b1](https://github.com/okou-ai/okou/commit/7fa55b15b8286465939af85fe2faeaa1d39a952e))
+
 ## [0.60.0](https://github.com/okou-ai/okou/compare/ios-v0.59.2...ios-v0.60.0) (2026-11-23)
 
 
