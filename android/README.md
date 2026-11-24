@@ -417,8 +417,9 @@ are in `android-instrumentation-api35-<revision>-shard-<index>` artifacts, with 
 attempt suffix on reruns.
 
 CI also runs three `build-test` shards on separate runners with two test JVMs
-each. Shard 0 runs the format, policy, and lint checks and builds the Debug APK.
-Each shard retains its XML in `android-jvm-results-<revision>-shard-<index>`.
+each. Each shard retains its XML in `android-jvm-results-<revision>-shard-<index>`.
+The parallel `build-check` job runs the format, policy, and lint checks and builds
+the Debug APK.
 The local commands above run the full suites by default. See
 [test runtime and CI sharding](../docs/android/android-testing.md#test-runtime-and-ci-sharding)
 for case budgets and class boundaries.
@@ -494,8 +495,8 @@ commits skip Android validation after release-context detection succeeds. The
 production release job independently builds, signs and verifies its exact-target
 APK; it does not consume validation artifacts. Ordinary change selection includes
 Android sources/docs, CI inputs, Web semantic colors, and shared font/color-evaluator
-assets. Three jobs run the Debug JVM suite. Shard 0 also runs lint and uploads
-the Debug APK for seven days. Separate Linux/KVM jobs run the three Debug device
+assets. Three jobs run the Debug JVM suite. The parallel `build-check` job runs
+lint and uploads the Debug APK. Separate Linux/KVM jobs run the three Debug device
 shards and the Release smoke tests. The Release job uploads the unsigned APK and
 compressed R8 map for seven days.
 The final `ci-gate-android` check always reports an aggregate result. For

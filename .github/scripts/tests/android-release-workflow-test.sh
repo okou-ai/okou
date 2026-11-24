@@ -89,7 +89,7 @@ screenshots = json.loads(subprocess.check_output(
 
 # A path or pin mismatch changes the Actions cache version even when the key matches.
 restores = []
-for consumer in (android['build-test'], android['instrumentation'], android['release-smoke'], screenshots, job):
+for consumer in (android['build-test'], android['build-check'], android['instrumentation'], android['release-smoke'], screenshots, job):
     setup, = (step for step in consumer['steps'] if step.get('uses', '').startswith('gradle/actions/setup-gradle@'))
     assert setup['with']['cache-provider'] == 'external'
     restore, = (step for step in consumer['steps'] if step.get('uses', '').startswith('actions/cache/restore@'))
@@ -110,16 +110,32 @@ gate = android['ci-gate-android']['steps'][0]['run']
 assert android['detect-release']['permissions']['pull-requests'] == 'read'
 assert android['detect']['needs'] == ['detect-release']
 assert android['detect']['outputs']['shallow-discovery'] == '${{ steps.changes.outputs.shallow-discovery }}'
-build_steps = android['build-test']['steps']
+test_steps = android['build-test']['steps']
+build_steps = android['build-check']['steps']
 shallow = next(step for step in build_steps if step.get('name') == 'Verify dependency discovery with shallow history')
 history = next(step for step in build_steps if step.get('name') == 'Fetch complete history for versioned builds')
-assert shallow['if'] == "matrix.shard == 0 && needs.detect.outputs.shallow-discovery == 'true'"
+assert shallow['if'] == "needs.detect.outputs.shallow-discovery == 'true'"
 assert 'if' not in history
 assert build_steps.index(shallow) < build_steps.index(history)
+assert not any(step.get('name') == shallow['name'] for step in test_steps)
+jvm = next(step for step in test_steps if step.get('name') == 'Run Debug JVM test shard')
+assert './gradlew :app:testDebugUnitTest' in jvm['run']
+assert '-Pokou.debugUnitTestForks=2' in jvm['run']
+assert 'scripts/check.sh' not in jvm['run']
+quality = next(step for step in build_steps if step.get('name') == 'Run Debug checks and assemble the APK')
+assert quality['run'] == 'bash android/scripts/check.sh --skip-jvm-tests'
+def debug_apks(steps):
+    return [step['with'] for step in steps
+            if step.get('with', {}).get('name', '').startswith('okou-android-debug-')]
+assert not debug_apks(test_steps)
+apk, = debug_apks(build_steps)
+assert apk['path'] == 'android/app/build/outputs/apk/debug/app-debug.apk'
 assert 'detect-release' in android['ci-gate-android']['needs']
+assert 'build-check' in android['ci-gate-android']['needs']
 assert android['ci-gate-android']['if'] == 'always()'
-for native in ['build-test', 'instrumentation', 'release-smoke']:
-    assert android[native]['needs'] == 'detect'
+for selected in ['build-test', 'build-check', 'instrumentation', 'release-smoke']:
+    assert android[selected]['needs'] == 'detect'
+    assert android[selected]['if'] == "needs.detect.outputs.needed == 'true'"
 for sharded in ['build-test', 'instrumentation']:
     assert android[sharded]['strategy'] == {'fail-fast': False, 'matrix': {'shard': [0, 1, 2]}}
 native_results, = (
@@ -184,17 +200,22 @@ print(os.environ['QUEUED_BRANCH'])
     assert failed.returncode != 0, failed.stderr
 
     gate_env = dict(RELEASE_DETECT='success', IS_RELEASE='false', DETECT='success',
-                    NEEDED='true', BUILD='success', INSTRUMENTATION='success', RELEASE_SMOKE='success')
+                    NEEDED='true', BUILD='success', BUILD_CHECK='success',
+                    INSTRUMENTATION='success', RELEASE_SMOKE='success')
     for values, passed in [
         ({}, True),
-        ({'IS_RELEASE': 'true', 'DETECT': 'skipped', 'NEEDED': '', 'BUILD': 'skipped', 'INSTRUMENTATION': 'skipped', 'RELEASE_SMOKE': 'skipped'}, True),
-        ({'NEEDED': 'false', 'BUILD': 'skipped', 'INSTRUMENTATION': 'skipped', 'RELEASE_SMOKE': 'skipped'}, True),
+        ({'IS_RELEASE': 'true', 'DETECT': 'skipped', 'NEEDED': '', 'BUILD': 'skipped', 'BUILD_CHECK': 'skipped', 'INSTRUMENTATION': 'skipped', 'RELEASE_SMOKE': 'skipped'}, True),
+        ({'NEEDED': 'false', 'BUILD': 'skipped', 'BUILD_CHECK': 'skipped', 'INSTRUMENTATION': 'skipped', 'RELEASE_SMOKE': 'skipped'}, True),
         ({'RELEASE_DETECT': 'failure', 'IS_RELEASE': 'true'}, False),
         ({'RELEASE_DETECT': 'cancelled'}, False),
         ({'IS_RELEASE': ''}, False),
         ({'IS_RELEASE': 'unknown'}, False),
         ({'DETECT': 'failure'}, False),
         ({'BUILD': 'failure'}, False),
+        ({'BUILD_CHECK': 'failure'}, False),
+        ({'BUILD_CHECK': 'cancelled'}, False),
+        ({'BUILD_CHECK': 'skipped'}, False),
+        ({'NEEDED': 'false', 'BUILD': 'skipped', 'INSTRUMENTATION': 'skipped', 'RELEASE_SMOKE': 'skipped'}, False),
         ({'INSTRUMENTATION': 'cancelled'}, False),
         ({'INSTRUMENTATION': 'skipped'}, False),
         ({'RELEASE_SMOKE': 'failure'}, False),
