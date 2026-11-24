@@ -736,6 +736,7 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
     }
 
     @Test
+    @Config(qualifiers = "en-rUS-w900dp-h800dp")
     fun heldHistoryWarmingFailureKeepsFirstDisplayAndSelectedConversationUsable() {
         val app = compose.activity.application as ChatListApplication
         val entered = CountDownLatch(1)
@@ -771,8 +772,7 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
                 .onNodeWithTag("conversation")
                 .performScrollToNode(hasText("Native history", substring = true))
             compose.onNodeWithText("Native history", substring = true).assertExists()
-            compose.onNodeWithContentDescription("Chat actions").performClick()
-            compose.onNodeWithText("Settings").assertIsDisplayed().performClick()
+            compose.onNodeWithContentDescription("Settings").assertIsDisplayed().performClick()
             compose.onNodeWithText("Display mode").assertExists()
             release.countDown()
             compose.waitUntil(10_000) {
@@ -792,6 +792,7 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
     }
 
     @Test
+    @Config(qualifiers = "en-rUS-w900dp-h800dp")
     fun selectedConversationKeepsNavigationUsableAndOnlyVisibleConfirmedContentMarksRead() {
         val app = compose.activity.application as ChatListApplication
         val fixture = app.fixture
@@ -837,8 +838,7 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
             val loadingLabel = app.getString(R.string.history_loading)
             compose.mainClock.advanceTimeBy(160)
             compose.waitUntilExactlyOneExists(hasContentDescription(loadingLabel), 5_000)
-            compose.onNodeWithContentDescription("Chat actions").performClick()
-            compose.onNodeWithText("Settings").assertIsDisplayed().performClick()
+            compose.onNodeWithContentDescription("Settings").assertIsDisplayed().performClick()
             compose.onNodeWithText("Display mode").assertExists()
             gate.countDown()
             val chats = compose.runOnIdle {
@@ -907,14 +907,14 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
             )
             assertEquals(messageBounds, message.getUnclippedBoundsInRoot())
             assertEquals(inputBounds, input.getUnclippedBoundsInRoot())
-            compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
-            compose.onNodeWithTag("conversation").assertDoesNotExist()
+            compose.onNodeWithTag("conversation").assertExists()
             compose.onNodeWithTag("chat_list").assertExists()
-            compose.onNodeWithText("Project chat").assertExists()
+            val projectChat = compose.onNodeWithTag("chat_$CHAT_IN_PROJECT")
+            projectChat.assertExists()
             setResearchExpanded(false)
-            compose.onNodeWithText("Project chat").assertDoesNotExist()
+            projectChat.assertDoesNotExist()
             setResearchExpanded(true)
-            compose.onNodeWithText("Project chat").assertExists()
+            projectChat.assertExists()
         } finally {
             gate.countDown()
             refreshGate.countDown()

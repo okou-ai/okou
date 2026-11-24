@@ -533,7 +533,7 @@ class OkouAppTest {
             windowSize.value = IntSize((400 * density).toInt(), (heightDp * density).toInt())
         }
         val draft = (1..20).joinToString("\n") { "Draft line $it" }
-        val selection = TextRange(12)
+        val selection = TextRange(12, 24)
         fun assertDraftAndSelection() {
             val semantics = input.fetchSemanticsNode().config
             assertEquals(draft, semantics[SemanticsProperties.EditableText].text)
@@ -541,20 +541,28 @@ class OkouAppTest {
         }
 
         input.performTextReplacement(draft)
+        input.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
         input.performTextInputSelection(selection)
         input.assertHeightIsEqualTo(160.dp)
 
         resize(479)
-        input.assertHeightIsEqualTo(48.dp)
+        input.assertHeightIsEqualTo(48.dp).assertIsFocused()
+        val compactLayouts = mutableListOf<TextLayoutResult>()
+        input.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(compactLayouts) }
+        val compactLayout = compactLayouts.single()
+        assertEquals(1, compactLayout.lineCount)
+        assertEquals(draft.length, compactLayout.getLineEnd(0))
         compose
             .onNodeWithContentDescription("Send")
             .assertIsDisplayed()
             .assertWidthIsEqualTo(48.dp)
             .assertHeightIsEqualTo(48.dp)
-        assertDraftAndSelection()
+        val compactSemantics = input.fetchSemanticsNode().config
+        assertEquals(draft, compactSemantics[SemanticsProperties.InputText].text)
+        assertEquals(selection, compactSemantics[SemanticsProperties.TextSelectionRange])
 
         resize(480)
-        input.assertHeightIsEqualTo(144.dp)
+        input.assertHeightIsEqualTo(144.dp).assertIsFocused()
         assertDraftAndSelection()
 
         resize(520)
@@ -575,6 +583,11 @@ class OkouAppTest {
 
         val scaledLineHeight = with(Density(density, fontScale = 2f)) { 26.sp.toDp() }
         input.assertHeightIsEqualTo(scaledLineHeight + 16.dp)
+        val layouts = mutableListOf<TextLayoutResult>()
+        input.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        val layout = layouts.single()
+        assertEquals(1, layout.lineCount)
+        assertEquals("First line Second line".length, layout.getLineEnd(0))
         compose.onNodeWithContentDescription("Send").assertIsDisplayed()
     }
 

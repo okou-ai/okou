@@ -672,10 +672,10 @@ class SessionModel(
             realtime = owner,
             initialFilter =
                 workspaceFilters[identity.userId to identity.workspaceId] ?: ChatListFilter.Inbox,
-            networkEnabled = {
+            remoteAccessVerified = {
                 verification == null || (verification.isCompleted && !verification.isCancelled)
             },
-            awaitNetwork = { verification?.await() },
+            awaitAccessVerification = { verification?.await() },
         )
     }
 

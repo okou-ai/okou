@@ -378,8 +378,8 @@ class ChatListModel(
     private val monotonicMillis: () -> Long = { System.nanoTime() / 1_000_000 },
     private val wallMillis: () -> Long = System::currentTimeMillis,
     initialFilter: ChatListFilter = ChatListFilter.Inbox,
-    private val networkEnabled: () -> Boolean = { true },
-    awaitNetwork: suspend () -> Unit = {},
+    private val remoteAccessVerified: () -> Boolean = { true },
+    awaitAccessVerification: suspend () -> Unit = {},
 ) : ViewModel() {
     private val mutable = MutableStateFlow(ChatListUiState(filter = initialFilter))
     val uiState = mutable.asStateFlow()
@@ -399,7 +399,7 @@ class ChatListModel(
             dispatcher,
             precedingReadWrite = { readWrites[it] },
             wallMillis = wallMillis,
-            awaitNetwork = awaitNetwork,
+            awaitAccessVerification = awaitAccessVerification,
         )
     private val sync = ChatListSync(service, dispatcher)
     private var confirmed: CachedChats? = null
@@ -1547,7 +1547,7 @@ class ChatListModel(
     }
 
     fun refresh() {
-        if (!current() || !networkEnabled()) return
+        if (!current() || !remoteAccessVerified()) return
         // Activity resume refreshes this owner even while workspace preferences are loading.
         expireCachedUnread()
         restoreCache()
@@ -1926,7 +1926,7 @@ class ChatListModel(
     }
 
     fun refreshIndicators() {
-        if (networkEnabled()) {
+        if (remoteAccessVerified()) {
             readIndicators(verifyPendingRead = { readConfirmations[it]?.reportFailure == true })
         }
     }

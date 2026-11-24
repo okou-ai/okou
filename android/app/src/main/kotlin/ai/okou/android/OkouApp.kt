@@ -1453,17 +1453,7 @@ internal fun OkouApp(
                                 navigation = navigation.copy(chatResourcesId = id)
                             }
                         },
-                openSettings =
-                    if (!workspaceReady || listWidth != null) null
-                    else {
-                        { restore ->
-                            restoreSettingsFocus = restore
-                            focus.clearFocus()
-                            keyboard?.hide()
-                            navigation = navigation.copy(settings = SettingsDestination.Overview)
-                        }
-                    },
-                settingsFocus = if (listWidth == null) settingsFocus else resourcesFocus,
+                actionsFocus = resourcesFocus,
                 onFind =
                     actionableThread?.let { selected ->
                         { restoreFocus ->
@@ -1491,13 +1481,9 @@ internal fun OkouApp(
                     },
             )
             LaunchedEffect(Unit) {
-                if (listWidth == null && restoreSettingsFocus) {
-                    restoreSettingsFocus = false
-                    settingsFocus.requestFocus()
-                }
                 if (restoreConversationActionsFocus && actionableThread != null) {
                     restoreConversationActionsFocus = false
-                    (if (listWidth == null) settingsFocus else resourcesFocus).requestFocus()
+                    resourcesFocus.requestFocus()
                 }
             }
         }
@@ -1982,7 +1968,7 @@ internal fun OkouApp(
                                                 target.id,
                                                 listState.value,
                                                 Modifier.weight(1f),
-                                                networkEnabled = chats != null,
+                                                remoteAccessVerified = chats != null,
                                                 composer = composer,
                                                 historyAvailable = !awaitingCreatedChat,
                                                 controls = runActions,
@@ -2082,9 +2068,7 @@ internal fun OkouApp(
                                                         Modifier.padding(bottom = feedbackGap)
                                                             .testTag("conversation_feedback"),
                                                         restorePaneFocus = {
-                                                            (if (listWidth == null) settingsFocus
-                                                                else resourcesFocus)
-                                                                .requestFocus()
+                                                            resourcesFocus.requestFocus()
                                                         },
                                                     )
                                                 if (hasComposer) {
