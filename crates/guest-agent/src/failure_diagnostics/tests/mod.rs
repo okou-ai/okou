@@ -44,6 +44,7 @@ fn new_provider_classification_does_not_match_unowned_output() {
     ] {
         for message in [
             "Provider finish_reason: content_filter",
+            r#"{"error":{"code":403,"message":"Output data may contain inappropriate content."}}"#,
             "Downloaded image content cannot exceed 30MB",
             r#"413: {"message":"Downloaded image content cannot exceed 30MB","code":413,"metadata":{"provider_name":null}}"#,
             "Codex error: An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists. Please include the request ID req_synthetic in your message.",
@@ -2311,20 +2312,40 @@ fn cli_failure_reason_classifies_claude_five_hour_limit_results() {
 }
 
 #[test]
-fn cli_failure_reason_keeps_unowned_five_hour_limit_text_unclassified() {
-    let message = "You've hit your 5-hour limit · resets 1:50am (Asia/Shanghai)";
+fn cli_failure_reason_keeps_unowned_claude_limit_text_unclassified() {
+    let five_hour_limit = "You've hit your 5-hour limit · resets 1:50am (Asia/Shanghai)";
+    let fable_limit = "You've hit your Fable limit · resets 6am (Asia/Shanghai). Switch to another model to continue.";
     for (framework, source, message) in [
         (
             AgentFramework::ClaudeCode,
             FailureDetailSource::Stderr,
-            message,
+            five_hour_limit,
         ),
         (
             AgentFramework::Codex,
             FailureDetailSource::CodexJsonl,
-            message,
+            five_hour_limit,
         ),
-        (AgentFramework::Pi, FailureDetailSource::PiResult, message),
+        (
+            AgentFramework::Pi,
+            FailureDetailSource::PiResult,
+            five_hour_limit,
+        ),
+        (
+            AgentFramework::ClaudeCode,
+            FailureDetailSource::Stderr,
+            fable_limit,
+        ),
+        (
+            AgentFramework::Codex,
+            FailureDetailSource::CodexJsonl,
+            fable_limit,
+        ),
+        (
+            AgentFramework::Pi,
+            FailureDetailSource::PiResult,
+            fable_limit,
+        ),
         (
             AgentFramework::ClaudeCode,
             FailureDetailSource::ClaudeResult,
@@ -2334,6 +2355,11 @@ fn cli_failure_reason_keeps_unowned_five_hour_limit_text_unclassified() {
             AgentFramework::ClaudeCode,
             FailureDetailSource::ClaudeResult,
             "You've hit your 5-hour limit while loading a local file.",
+        ),
+        (
+            AgentFramework::ClaudeCode,
+            FailureDetailSource::ClaudeResult,
+            "You've hit your Fable limit while loading a local file.",
         ),
     ] {
         assert_eq!(
