@@ -25,7 +25,9 @@ enum class ProjectDeleteStatus {
 
 @ConsistentCopyVisibility
 data class ProjectDeleteFeedback
-internal constructor(val projectId: String, val eventId: String, val status: ProjectDeleteStatus)
+internal constructor(val projectId: String, val eventId: String, val status: ProjectDeleteStatus) {
+    internal val feedbackOrder = nextChatFeedbackOrder()
+}
 
 data class ProjectListUiState(
     val rows: List<ConfirmedProject> = emptyList(),

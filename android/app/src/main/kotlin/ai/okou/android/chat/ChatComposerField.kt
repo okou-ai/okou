@@ -71,6 +71,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
+internal val ChatComposerTopInset = 4.dp
+
 @Composable
 internal fun ChatComposerField(
     model: ChatComposerModel,
