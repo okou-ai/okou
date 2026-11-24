@@ -142,58 +142,62 @@ private fun ImageModelPicker(state: BuiltInToolsState, model: BuiltInToolsSettin
     val title = stringResource(R.string.settings_tool_image_model)
     val selectedModel = state.displayedImage
     val selected = imageToolOptions.firstOrNull { it.id == selectedModel }
+    val imageEnabled = state.enabled(imageGenerationTool) == true
     val enabled =
         selectedModel != null &&
-            state.enabled(imageGenerationTool) == true &&
+            imageEnabled &&
             imageGenerationTool !in state.savingTools &&
             !state.savingImage
-    SettingsPickerRow(
-        title,
-        value = selected?.title ?: selectedModel,
-        leading = { SettingsIcon(R.drawable.ic_memory) },
-        enabled = enabled,
-        modifier = if (enabled) Modifier else Modifier.alpha(0.38f),
-    ) { dismiss ->
-        val options =
-            if (selected != null && selected !in publicImageToolOptions)
-                publicImageToolOptions + selected
-            else publicImageToolOptions
-        val index = options.indexOf(selected).coerceAtLeast(0)
-        SettingsSheet(title, dismiss, scroll = SettingsSheetScroll.None) {
-            val initialId = remember { selected?.id }
-            val focus = remember { FocusRequester() }
-            val input = LocalInputModeManager.current
-            var positioned by remember { mutableStateOf(false) }
-            LaunchedEffect(positioned) {
-                if (positioned && input.inputMode == InputMode.Keyboard) focus.requestFocus()
-            }
-            LazyColumn(
-                Modifier.fillMaxWidth().selectableGroup(),
-                state = rememberLazyListState(index),
-            ) {
-                items(options, key = { it.id }) { option ->
-                    SettingsChoiceRow(
-                        option.title,
-                        selected = option.id == selected?.id,
-                        enabled = true,
-                        onClick = {
-                            dismiss()
-                            model.chooseImage(option.id)
-                        },
-                        modifier =
-                            if (option.id == initialId)
-                                Modifier.focusRequester(focus).onGloballyPositioned {
-                                    positioned = true
-                                }
-                            else Modifier,
-                        trailing = { foreground ->
-                            Text(
-                                option.price,
-                                color = foreground,
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                        },
-                    )
+    // Turning off the tool ends the picker. The next enable starts from the row.
+    key(imageEnabled) {
+        SettingsPickerRow(
+            title,
+            value = selected?.title ?: selectedModel,
+            leading = { SettingsIcon(R.drawable.ic_memory) },
+            enabled = enabled,
+            modifier = if (enabled) Modifier else Modifier.alpha(0.38f),
+        ) { dismiss ->
+            val options =
+                if (selected != null && selected !in publicImageToolOptions)
+                    publicImageToolOptions + selected
+                else publicImageToolOptions
+            val index = options.indexOf(selected).coerceAtLeast(0)
+            SettingsSheet(title, dismiss, scroll = SettingsSheetScroll.None) {
+                val initialId = remember { options[index].id }
+                val focus = remember { FocusRequester() }
+                val input = LocalInputModeManager.current
+                var positioned by remember { mutableStateOf(false) }
+                LaunchedEffect(positioned) {
+                    if (positioned && input.inputMode == InputMode.Keyboard) focus.requestFocus()
+                }
+                LazyColumn(
+                    Modifier.fillMaxWidth().selectableGroup(),
+                    state = rememberLazyListState(index),
+                ) {
+                    items(options, key = { it.id }) { option ->
+                        SettingsChoiceRow(
+                            option.title,
+                            selected = option.id == selected?.id,
+                            enabled = true,
+                            onClick = {
+                                dismiss()
+                                model.chooseImage(option.id)
+                            },
+                            modifier =
+                                if (option.id == initialId)
+                                    Modifier.focusRequester(focus).onGloballyPositioned {
+                                        positioned = true
+                                    }
+                                else Modifier,
+                            trailing = { foreground ->
+                                Text(
+                                    option.price,
+                                    color = foreground,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -214,7 +218,7 @@ private fun ImageModelPicker(state: BuiltInToolsState, model: BuiltInToolsSettin
             style = MaterialTheme.typography.bodyMedium,
         )
     }
-    if (state.imageUnavailable && state.enabled(imageGenerationTool) == true)
+    if (state.imageUnavailable && imageEnabled)
         ToolStatus(stringResource(R.string.settings_tools_unavailable))
 }
 
