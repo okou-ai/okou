@@ -256,9 +256,11 @@ class ChatComposerRootTest {
 
         val finalBounds = transcript.assertIsDisplayed().getUnclippedBoundsInRoot()
         assertEquals(initialBounds.bottom - initialBounds.top, finalBounds.bottom - finalBounds.top)
+        val editor = input.fetchSemanticsNode().config
+        assertEquals(draft, editor[SemanticsProperties.InputText].text)
         assertEquals(
-            draft,
-            input.fetchSemanticsNode().config[SemanticsProperties.EditableText].text,
+            "First line Second line Third line Final line",
+            editor[SemanticsProperties.EditableText].text,
         )
         compose.onNodeWithContentDescription("Send").assertIsDisplayed().assertIsEnabled()
     }

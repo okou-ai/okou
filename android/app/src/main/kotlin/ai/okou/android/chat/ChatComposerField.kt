@@ -62,8 +62,12 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -72,6 +76,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
+// Keep original line breaks in the journal and preserve native selection offsets.
+private val CompactDraftDisplay = VisualTransformation { text ->
+    val line = text.text.replace('\n', ' ').replace('\r', ' ')
+    TransformedText(if (line == text.text) text else AnnotatedString(line), OffsetMapping.Identity)
+}
 
 @Composable
 internal fun ChatComposerField(
@@ -207,7 +217,9 @@ internal fun ChatComposerField(
                     enabled = state.journal != null,
                     textStyle = textStyle,
                     cursorBrush = SolidColor(colors.onSurface),
-                    maxLines = if (shortWindow) 1 else Int.MAX_VALUE,
+                    singleLine = shortWindow,
+                    visualTransformation =
+                        if (shortWindow) CompactDraftDisplay else VisualTransformation.None,
                     decorationBox = { editor ->
                         Box(
                             Modifier.fillMaxWidth()
