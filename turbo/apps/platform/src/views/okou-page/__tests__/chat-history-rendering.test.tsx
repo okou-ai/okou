@@ -1,4 +1,3 @@
-// @vitest-environment-options {"url":"https://app.okou.ai/","settings":{"disableIframePageLoading":true,"disableCSSFileLoading":true,"handleDisabledFileLoadingAsSuccess":true}}
 import { expect, test } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import { setupPage, click } from "../../../__tests__/page-helper.ts";
@@ -16,7 +15,15 @@ import {
   formattedObservations,
   reportUrl,
 } from "./run-output-history-fixtures.ts";
+import { completedMarkdownReply } from "./markdown-page-test-helpers.ts";
+import {
+  createChatRunFixtures,
+  promptEvent,
+  RUN_PATH,
+} from "./chat-run-test-fixtures.ts";
+
 const context = testContext();
+
 test("chat-run-history-preview-002 six outputs retain the active result and thinking indicator through a history toggle", async () => {
   const steps = Array.from({ length: 6 }, (_, i) => {
     return "Step " + (i + 1);
@@ -48,6 +55,7 @@ test("chat-run-history-preview-002 six outputs retain the active result and thin
   await expect(findAction("button", "Copy message")).resolves.toBeVisible();
   expect(document.querySelector("[data-thinking-indicator]")).toBeVisible();
 });
+
 test("chat-run-history-preview-003 completed history renders its formatted finding, chart and PDF beside the final answer", async () => {
   serveTidalChart(context);
   const chatEvents = surveyOutputs([
@@ -85,4 +93,41 @@ test("chat-run-history-preview-003 completed history renders its formatted findi
       reportUrl + "#navpanes=0",
     );
   });
+});
+
+test("chat-message-history-002 the artifacts panel explains that this completed conversation has no artifacts", async () => {
+  await setupPage({
+    context,
+    path: completedMarkdownReply(context, "No files were requested."),
+  });
+  await screen.findByText("No files were requested.");
+  click(await findAction("button", "Artifacts and chats"));
+  const title = await screen.findByRole("heading", {
+    name: "Artifacts and chats",
+  });
+  expect(title).toBeVisible();
+  await expect(screen.findByText("No artifacts yet")).resolves.toBeVisible();
+});
+
+test("chat-message-history-001 reopening the claimed prompt presents one active turn", async () => {
+  const text = "Compare the revised packing lists";
+  const runId = crypto.randomUUID();
+  const queued = promptEvent({ id: crypto.randomUUID(), seqId: 1, text });
+  createChatRunFixtures(context).installRunChat({
+    activeRunIds: [runId],
+    chatEvents: [
+      queued,
+      {
+        ...promptEvent({ id: crypto.randomUUID(), seqId: 2, text, runId }),
+        revokesEventId: queued.id,
+      },
+    ],
+  });
+
+  await setupPage({ context, path: RUN_PATH });
+  await expect(screen.findByText("Thinking...")).resolves.toBeInTheDocument();
+  await expect(findAction("button", "Stop")).resolves.toBeEnabled();
+  expect(screen.getByText(text)).toBeInTheDocument();
+  expect(screen.queryByLabelText("Queued message")).not.toBeInTheDocument();
+  expect(screen.queryByText("Waiting in")).not.toBeInTheDocument();
 });
