@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.18](https://github.com/okou-ai/okou/compare/runner-host-v0.12.17...runner-host-v0.12.18) (2026-11-24)
+
+
+### Refactoring
+
+* **runner:** share bounded inotify readiness handling ([#50579](https://github.com/okou-ai/okou/issues/50579)) ([1920abe](https://github.com/okou-ai/okou/commit/1920abef18cfd8340f86c5294de511cb139320f6))
+
 ## [0.12.17](https://github.com/okou-ai/okou/compare/runner-host-v0.12.16...runner-host-v0.12.17) (2026-11-24)
 
 ## [0.12.16](https://github.com/okou-ai/okou/compare/runner-host-v0.12.15...runner-host-v0.12.16) (2026-11-24)
