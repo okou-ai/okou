@@ -230,7 +230,7 @@ private fun EarlierReplyArtifacts(entry: ConversationMessage, actions: ChatArtif
     if (cards.isNotEmpty()) {
         Column(
             Modifier.padding(top = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(MessageArtifactCardSpacing),
         ) {
             for (card in cards) {
                 key(card.link) {
