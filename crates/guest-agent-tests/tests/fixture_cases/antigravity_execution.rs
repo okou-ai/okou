@@ -214,7 +214,7 @@ async fn antigravity_turn_delivery_failure_and_cancellation()
                     let pid = fs::read_to_string(dir.join("ready"))?;
                     assert!(!Path::new("/proc").join(pid.trim()).exists());
                 }
-                _ => unreachable!(),
+                _ => return Err(format!("Unknown Antigravity fixture scenario: {mode}").into()),
             }
         }
         let log = fs::read_to_string(runtime.paths.agent_log_file())?;
