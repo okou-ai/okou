@@ -106,7 +106,9 @@ test("chat-codex-execution-003 returning from Lab restores the saved Ultra effor
   click(await findFastControl("button", "Test User"));
   click(await screen.findByText("Lab", { selector: '[role="menuitem"] *' }));
   const control = await screen.findByRole("switch", {
-    name: /^Codex execution/i,
+    name: (name) => {
+      return name.startsWith(FeatureSwitchKey.CodexExecution);
+    },
   });
   expect(control).not.toBeChecked();
   click(control);

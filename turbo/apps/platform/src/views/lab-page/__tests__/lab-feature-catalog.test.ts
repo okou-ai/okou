@@ -78,9 +78,9 @@ test("lab-page-002 Each staff-visible feature has exactly one switch under its r
       });
     })
     .map((key) => {
-      return [catalog[key].rolloutStage, catalog[key].displayName ?? key].join(
-        "/",
-      );
+      const { rolloutStage, displayName } = catalog[key];
+      const label = rolloutStage === "internal" ? key : (displayName ?? key);
+      return [rolloutStage, label].join("/");
     })
     .sort();
   const actual = screen
