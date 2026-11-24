@@ -1,4 +1,8 @@
-import { workspaceLogoColorway } from "@okouai/core/workspace-logo";
+import {
+  isWideWorkspaceInitial,
+  workspaceInitial,
+  workspaceLogoColorway,
+} from "@okouai/core/workspace-logo";
 import { cn } from "@okouai/ui";
 
 /**
@@ -39,6 +43,26 @@ const THUMBNAIL_INITIAL_TEXT = {
   "md+": "text-[13px]",
   lg: "text-sm",
   xl: "text-base",
+} as const;
+
+// A workspace initial is half the tile, larger than a person's: on the texture
+// it is the mark itself, not a stand-in for a missing photo. CJK glyphs fill
+// their em box where Latin capitals fill about 70% of it, so they take 0.88 of
+// that size to carry the same weight.
+const WORKSPACE_INITIAL_TEXT = {
+  sm: "text-[12px]",
+  md: "text-[16px]",
+  "md+": "text-[18px]",
+  lg: "text-[20px]",
+  xl: "text-[24px]",
+} as const;
+
+const WORKSPACE_INITIAL_WIDE_TEXT = {
+  sm: "text-[10.5px]",
+  md: "text-[14px]",
+  "md+": "text-[16px]",
+  lg: "text-[17.5px]",
+  xl: "text-[21px]",
 } as const;
 
 type ThumbnailSize = keyof typeof THUMBNAIL_SIZE;
@@ -159,9 +183,11 @@ export function WorkspaceLogo({
 }
 
 /**
- * A tonal brand texture in a colourway chosen by the workspace id. It carries
- * no hairline — the opaque texture already gives the square its edge, the way
- * it does behind the chat home's agent avatar.
+ * A tonal brand texture in a colourway chosen by the workspace id, carrying
+ * the initial of its name in the texture's own hue. Generated names and names
+ * without a letter show the texture alone. It carries no hairline — the opaque
+ * texture already gives the square its edge, the way it does behind the chat
+ * home's agent avatar.
  */
 export function DefaultWorkspaceLogo({
   id,
@@ -173,19 +199,27 @@ export function DefaultWorkspaceLogo({
   size?: ThumbnailSize;
 }) {
   const colorway = workspaceLogoColorway(id);
+  const initial = workspaceInitial(name);
 
   return (
     <span
       role="img"
       aria-label={name}
+      data-initial={initial ?? undefined}
       className={cn(
-        "block shrink-0 bg-[length:160%] bg-center",
+        // The initial is generated content, so it never joins the name in
+        // the accessible label or in the text of the row it sits in.
+        "flex shrink-0 select-none items-center justify-center bg-[length:160%] bg-center font-semibold leading-none before:content-[attr(data-initial)] before:[text-box:trim-both_cap_alphabetic]",
         THUMBNAIL_SIZE[size],
         THUMBNAIL_RADIUS[size],
+        initial !== null && isWideWorkspaceInitial(initial)
+          ? WORKSPACE_INITIAL_WIDE_TEXT[size]
+          : WORKSPACE_INITIAL_TEXT[size],
       )}
       style={{
         backgroundColor: colorway.ground,
         backgroundImage: `url(${colorway.textureUrl})`,
+        color: colorway.letter,
       }}
     />
   );

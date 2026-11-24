@@ -185,7 +185,8 @@
                     Text(verbatim: workspace.name)
                   } icon: {
                     OkouWorkspaceMenuLogos.image(
-                      workspaceID: workspace.id, hasImage: false, cachedImage: nil)
+                      workspaceID: workspace.id, name: workspace.name, hasImage: false,
+                      cachedImage: nil)
                   }
                   .tag(workspace.id)
                 }

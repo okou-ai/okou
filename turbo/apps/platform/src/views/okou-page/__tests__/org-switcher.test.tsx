@@ -149,7 +149,7 @@ test("Join an invited workspace from the workspace switcher", async () => {
   });
 });
 
-test("Show only the default texture for workspaces that never uploaded a logo", async () => {
+test("Show the default texture and the workspace initial for workspaces that never uploaded a logo", async () => {
   // Clerk fills `imageUrl` with a generated placeholder for every organization,
   // so only `hasImage` says whether a logo was uploaded.
   const clerkPlaceholder = "https://img.clerk.test/default-organization.png";
@@ -217,10 +217,19 @@ test("Show only the default texture for workspaces that never uploaded a logo", 
   await waitFor(() => {
     expect(within(menu).getByText("Invited Org")).toBeInTheDocument();
   });
-  for (const name of ["workspace-3e46915f", "Design Org", "Invited Org"]) {
+  for (const [name, initial] of [
+    ["workspace-3e46915f", null],
+    ["Design Org", "D"],
+    ["Invited Org", "I"],
+  ] as const) {
     const logo = within(menu).getByRole("img", { name });
     expect(logo).not.toHaveAttribute("src");
     expect(logo).toBeEmptyDOMElement();
+    if (initial === null) {
+      expect(logo).not.toHaveAttribute("data-initial");
+    } else {
+      expect(logo).toHaveAttribute("data-initial", initial);
+    }
   }
   expect(
     within(orgSwitcher).getByRole("img", { name: "workspace-3e46915f" }),

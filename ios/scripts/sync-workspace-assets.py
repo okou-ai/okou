@@ -14,6 +14,11 @@ SYSTEM = ROOT / "ios/Okou/DesignSystem/Components/Identity"
 ASSETS = ROOT / "ios/Okou/Resources/Assets.xcassets"
 SOURCES = ["turbo/packages/core/src/workspace-logo.ts", "turbo/packages/core/src/agent-avatar-texture.ts"]
 MANIFEST = SYSTEM / "workspace-assets.json"
+LOGO_VIEW = SYSTEM / "OkouWorkspaceLogo.swift"
+
+def swift_letters():
+    table = re.search(r"letterHexes: \[UInt32\] = \[(.*?)\]", LOGO_VIEW.read_text(), re.DOTALL)[1]
+    return ["#" + value.upper() for value in re.findall(r"0x([0-9A-Fa-f]{6})", table)]
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -27,12 +32,16 @@ def main():
         for item in data["assets"]:
             svg = (ASSETS / (item["name"] + ".imageset") / "logo.svg").read_bytes()
             assert hashlib.sha256(svg).hexdigest() == item["sha256"], item["name"]
-        print(f"Verified {len(data['assets'])} Workspace brand logos.")
+        letters = [item["letter"] for item in data["assets"]]
+        assert swift_letters() == letters, "OkouWorkspaceLogo.letterHexes differs from workspace-logo.ts letters"
+        print(f"Verified {len(data['assets'])} Workspace brand logos and initial colors.")
         return
     dark = re.search(r'TONAL_DARK_GROUND_BASE =\s*"([^"]+)"', texts[0])[1]
     light = re.search(r'AVATAR_TEXTURE_BASE =\s*"([^"]+)"', texts[1])[1]
     matches = re.findall(r'^    textureUrl: (.*),$', texts[0], re.MULTILINE)
     assert len(matches) == 8, "Review changed Web colorway schema"
+    letters = re.findall(r'^    letter: "(#[0-9A-F]{6})",$', texts[0], re.MULTILINE)
+    assert len(letters) == 8, "Review changed Web colorway letters"
 
     def bundle(entry):
         index, expression = entry
@@ -49,10 +58,11 @@ def main():
         directory.mkdir(exist_ok=True)
         (directory / "logo.svg").write_text(svg)
         (directory / "Contents.json").write_text(json.dumps({"images": [{"filename": "logo.svg", "idiom": "universal"}], "info": {"author": "xcode", "version": 1}, "properties": {"preserves-vector-representation": True}}, indent=2) + "\n")
-        return {"name": name, "url": url, "sha256": hashlib.sha256(svg.encode()).hexdigest()}
+        return {"name": name, "url": url, "sha256": hashlib.sha256(svg.encode()).hexdigest(), "letter": letters[index]}
     with ThreadPoolExecutor(max_workers=4) as pool:
         assets = list(pool.map(bundle, enumerate(matches)))
     MANIFEST.write_text(json.dumps({"sources": hashes, "assets": assets}, indent=2) + "\n")
+    assert swift_letters() == letters, "Update OkouWorkspaceLogo.letterHexes to the workspace-logo.ts letters"
     print(f"Bundled {len(assets)} Web Workspace logos.")
 
 if __name__ == "__main__":
