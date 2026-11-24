@@ -76,6 +76,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.abs
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.JsonPrimitive
 import okhttp3.mockwebserver.MockResponse
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -1171,6 +1172,68 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
         } finally {
             instrumentation.resetInTouchMode()
         }
+    }
+
+    @Test
+    fun adjacentArtifactCardsUseEightDpThroughMarkdownListsAndEarlierReplies() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        fixture.installInlineHistory()
+        val note = "Additional material for the handoff."
+        val handoff = "Release handoff notes"
+        val latest =
+            app.fixture.historyReply +
+                "\n\n- [${fixture.checklist.title}](/artifacts/checklist1.md)" +
+                "\n- [${fixture.image.title}](/artifacts/thumbnail1.png)" +
+                "\n- $note\n- [$handoff](/artifacts/part000001.md)"
+        val earlier =
+            "[${fixture.site.title}](https://fixture.okou.app/)" +
+                "\n\n[${fixture.slides.title}](/artifacts/launchdeck.pptx)"
+        app.fixture.setHistoryEvents(
+            CHAT_PERSONAL,
+            listOf(
+                historyEventWire(
+                    "input",
+                    17,
+                    type = "input.prompt",
+                    payload =
+                        """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Review the release files"}]}}""",
+                ),
+                historyEventWire(
+                    "earlier-output",
+                    19,
+                    payload = """{"content":${JsonPrimitive(earlier)}}""",
+                ),
+                historyEventWire(
+                    "output",
+                    23,
+                    payload = """{"content":${JsonPrimitive(latest)}}""",
+                ),
+                historyEventWire(type = "run.completed", payload = "null"),
+            ),
+        )
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithText(fixture.sourceTitle).performClick()
+        awaitText(fixture.slides.title)
+
+        val labels =
+            listOf(
+                fixture.summary.title,
+                fixture.checklist.title,
+                fixture.image.title,
+                note,
+                handoff,
+                fixture.site.title,
+                fixture.slides.title,
+            )
+        val bounds = labels.map { label ->
+            compose.onNodeWithText(label).getUnclippedBoundsInRoot()
+        }
+        assertEquals(
+            listOf(8.dp, 8.dp, 12.dp, 12.dp, 8.dp, 8.dp),
+            bounds.zipWithNext { above, below -> below.top - above.bottom },
+        )
     }
 
     @Test

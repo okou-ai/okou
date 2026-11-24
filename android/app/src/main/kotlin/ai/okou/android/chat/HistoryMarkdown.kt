@@ -90,7 +90,7 @@ internal data class ChatArtifactActions(
 )
 
 internal val MessageArtifactCardSpacing = 8.dp
-private val HistoryMarkdownBlockSpacing = 12.dp
+internal val HistoryMarkdownBlockSpacing = 12.dp
 
 /** UI-owned parsing stays off Main; no HTML execution, image downloads or automatic link opens. */
 @Composable
@@ -161,28 +161,14 @@ private fun HistoryMarkdownBlocks(
     links: ConversationLinkActions? = null,
     compactReply: Boolean = false,
 ) {
+    val showCards = artifacts != null && !compactReply
     Column(modifier) {
-        var previousEndsWithCard = false
         for ((index, block) in blocks.withIndex()) {
-            val cardText =
-                (block as? HistoryMarkdownBlock.Paragraph)?.text?.takeIf {
-                    artifacts != null && !compactReply
-                }
-            val cards =
-                if (cardText == null) emptyList()
-                else
-                    remember(cardText) {
-                        cardText.getStringAnnotations("artifact", 0, cardText.length)
-                    }
-            val startsWithCard =
-                cardText != null &&
-                    cards.firstOrNull()?.let { cardText.text.take(it.start).isBlank() } == true
+            val previousEndsWithCard =
+                showCards && blocks.getOrNull(index - 1)?.endsWithCard == true
             val spacing =
-                if (previousEndsWithCard && startsWithCard) MessageArtifactCardSpacing
+                if (previousEndsWithCard && block.startsWithCard) MessageArtifactCardSpacing
                 else HistoryMarkdownBlockSpacing
-            previousEndsWithCard =
-                cardText != null &&
-                    cards.lastOrNull()?.let { cardText.text.drop(it.end).isBlank() } == true
             val selected = highlight.takeIf { index == hit }
             val blockModifier =
                 (if (index == 0) Modifier else Modifier.padding(top = spacing))
@@ -201,9 +187,23 @@ private fun HistoryMarkdownBlocks(
                         links,
                     )
                 is HistoryMarkdownBlock.ListItems ->
-                    Column(blockModifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Column(blockModifier) {
                         for ((itemIndex, item) in block.items.withIndex()) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            val afterCard =
+                                showCards &&
+                                    block.items.getOrNull(itemIndex - 1)?.endsWithCard == true
+                            val beforeCard = showCards && item.startsWithCard
+                            val itemSpacing =
+                                when {
+                                    afterCard && beforeCard -> MessageArtifactCardSpacing
+                                    afterCard || beforeCard -> HistoryMarkdownBlockSpacing
+                                    else -> 6.dp
+                                }
+                            Row(
+                                if (itemIndex == 0) Modifier
+                                else Modifier.padding(top = itemSpacing),
+                                horizontalArrangement = Arrangement.spacedBy(7.dp),
+                            ) {
                                 Text(
                                     item.marker,
                                     Modifier.widthIn(min = 16.dp),
@@ -241,7 +241,7 @@ private fun HistoryMarkdownBlocks(
                                 )
                             else -> contentStyle
                         }
-                    if (artifacts == null || cards.isEmpty()) {
+                    if (artifacts == null || compactReply || block.cards.isEmpty()) {
                         ConversationLinkText(
                             block.text,
                             blockStyle,
@@ -252,7 +252,7 @@ private fun HistoryMarkdownBlocks(
                     } else {
                         Column(blockModifier) {
                             var start = 0
-                            for (card in cards) {
+                            for (card in block.cards) {
                                 val before = block.text.subSequence(start, card.start)
                                 if (before.isNotBlank()) {
                                     if (start > 0)
@@ -370,11 +370,31 @@ internal fun MessageArtifactCard(
 }
 
 private sealed interface HistoryMarkdownBlock {
-    data class Paragraph(val text: AnnotatedString, val heading: Int) : HistoryMarkdownBlock
+    val startsWithCard: Boolean
+        get() = false
+
+    val endsWithCard: Boolean
+        get() = false
+
+    data class Paragraph(val text: AnnotatedString, val heading: Int) : HistoryMarkdownBlock {
+        val cards = text.getStringAnnotations("artifact", 0, text.length)
+        override val startsWithCard =
+            cards.firstOrNull()?.let { card ->
+                val firstContent = text.text.indexOfFirst { !it.isWhitespace() }
+                firstContent < 0 || firstContent >= card.start
+            } == true
+        override val endsWithCard =
+            cards.lastOrNull()?.let { card ->
+                text.text.indexOfLast { !it.isWhitespace() } < card.end
+            } == true
+    }
 
     data class Table(val rows: List<List<HistoryMarkdownCell>>) : HistoryMarkdownBlock
 
-    data class ListItems(val items: List<HistoryMarkdownListItem>) : HistoryMarkdownBlock
+    data class ListItems(val items: List<HistoryMarkdownListItem>) : HistoryMarkdownBlock {
+        override val startsWithCard = items.firstOrNull()?.startsWithCard == true
+        override val endsWithCard = items.lastOrNull()?.endsWithCard == true
+    }
 }
 
 private data class HistoryMarkdownCell(val text: AnnotatedString, val alignment: TextAlign)
@@ -382,7 +402,10 @@ private data class HistoryMarkdownCell(val text: AnnotatedString, val alignment:
 private data class HistoryMarkdownListItem(
     val marker: String,
     val blocks: List<HistoryMarkdownBlock>,
-)
+) {
+    val startsWithCard = blocks.firstOrNull()?.startsWithCard == true
+    val endsWithCard = blocks.lastOrNull()?.endsWithCard == true
+}
 
 private fun HistoryMarkdownBlock.findText(): String =
     when (this) {
@@ -458,28 +481,46 @@ private fun Node.children(): Sequence<Node> = generateSequence(firstChild) { it.
 
 internal data class ReplyArtifact(val link: String, val title: String)
 
+internal data class ReplyArtifactGroup(
+    val cards: List<ReplyArtifact> = emptyList(),
+    val followsCard: Boolean = false,
+)
+
 /** Keep earlier results available when their reply text is collapsed. */
 internal fun earlierReplyArtifacts(earlier: List<HistoryMessage>): List<ReplyArtifact> =
-    earlier.asSequence().flatMap { replyArtifacts(it.blocks) }.distinctBy { it.link }.toList()
+    earlier
+        .asSequence()
+        .flatMap { it.blocks }
+        .flatMap { it.artifactMarkdownBlocks() }
+        .flatMap { it.artifacts() }
+        .distinctBy { it.link }
+        .toList()
 
-internal fun List<ReplyArtifact>.excludingArtifacts(
+internal fun List<ReplyArtifact>.afterLatestReply(
     blocks: List<HistoryBlock>,
-): List<ReplyArtifact> {
-    val links = replyArtifacts(blocks).map { it.link }.toSet()
-    return filterNot { it.link in links }
+    interactiveLinks: Boolean,
+): ReplyArtifactGroup {
+    val latestLinks = mutableSetOf<String>()
+    var endsWithCard = false
+    for (block in blocks) {
+        val markdown = block.artifactMarkdownBlocks(interactiveLinks)
+        markdown.asSequence().flatMap { it.artifacts() }.mapTo(latestLinks) { it.link }
+        endsWithCard = markdown.lastOrNull()?.endsWithCard == true
+    }
+    return ReplyArtifactGroup(filterNot { it.link in latestLinks }, endsWithCard)
 }
 
-private fun replyArtifacts(blocks: List<HistoryBlock>): Sequence<ReplyArtifact> =
-    blocks
-        .asSequence()
-        .filter { it.kind == HistoryBlockKind.Text && ('[' in it.text || '<' in it.text) }
-        .flatMap { historyMarkdownBlocks(it.text, artifactCards = true, interactiveLinks = false) }
-        .flatMap { it.artifacts() }
+private fun HistoryBlock.artifactMarkdownBlocks(
+    interactiveLinks: Boolean = false,
+): List<HistoryMarkdownBlock> =
+    if (kind == HistoryBlockKind.Text && ('[' in text || '<' in text))
+        historyMarkdownBlocks(text, artifactCards = true, interactiveLinks = interactiveLinks)
+    else emptyList()
 
 private fun HistoryMarkdownBlock.artifacts(): Sequence<ReplyArtifact> =
     when (this) {
         is HistoryMarkdownBlock.Paragraph ->
-            text.getStringAnnotations("artifact", 0, text.length).asSequence().map {
+            cards.asSequence().map {
                 ReplyArtifact(it.item, text.text.substring(it.start, it.end))
             }
         is HistoryMarkdownBlock.ListItems ->

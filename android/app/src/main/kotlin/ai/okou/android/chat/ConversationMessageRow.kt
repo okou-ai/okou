@@ -189,7 +189,7 @@ internal fun ConversationMessageRow(
                     links = links,
                 )
                 if (entry.earlier.isNotEmpty() && artifactActions != null) {
-                    EarlierReplyArtifacts(entry, artifactActions)
+                    EarlierReplyArtifacts(entry, artifactActions, interactiveLinks = links != null)
                 }
             }
         else ->
@@ -206,7 +206,11 @@ internal fun ConversationMessageRow(
 }
 
 @Composable
-private fun EarlierReplyArtifacts(entry: ConversationMessage, actions: ChatArtifactActions) {
+private fun EarlierReplyArtifacts(
+    entry: ConversationMessage,
+    actions: ChatArtifactActions,
+    interactiveLinks: Boolean,
+) {
     // Reuse the earlier replies' parsed results across chunks of the latest reply.
     val candidates =
         key(entry.earlier) {
@@ -216,23 +220,25 @@ private fun EarlierReplyArtifacts(entry: ConversationMessage, actions: ChatArtif
                 }
             }
             .value
-    // Keep the previous cards laid out while fresh text is being parsed.
-    val cards by
-        produceState(emptyList<ReplyArtifact>(), candidates, entry.message.blocks) {
+    // Keep the previous group laid out while fresh text is being parsed.
+    val group by
+        produceState(ReplyArtifactGroup(), candidates, entry.message.blocks, interactiveLinks) {
             val earlier = candidates ?: return@produceState
             value =
-                if (earlier.isEmpty()) earlier
+                if (earlier.isEmpty()) ReplyArtifactGroup()
                 else
                     withContext(Dispatchers.Default) {
-                        earlier.excludingArtifacts(entry.message.blocks)
+                        earlier.afterLatestReply(entry.message.blocks, interactiveLinks)
                     }
         }
-    if (cards.isNotEmpty()) {
+    if (group.cards.isNotEmpty()) {
+        val spacing =
+            if (group.followsCard) MessageArtifactCardSpacing else HistoryMarkdownBlockSpacing
         Column(
-            Modifier.padding(top = 12.dp),
+            Modifier.padding(top = spacing),
             verticalArrangement = Arrangement.spacedBy(MessageArtifactCardSpacing),
         ) {
-            for (card in cards) {
+            for (card in group.cards) {
                 key(card.link) {
                     MessageArtifactCard(card.title, card.link, entry.key, actions)
                 }
