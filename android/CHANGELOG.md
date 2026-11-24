@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.55.4](https://github.com/okou-ai/okou/compare/android-v0.55.3...android-v0.55.4) (2026-11-24)
+
+
+### Bug Fixes
+
+* **android:** align chat composer and conversation interactions ([#50624](https://github.com/okou-ai/okou/issues/50624)) ([5094420](https://github.com/okou-ai/okou/commit/509442037de291e3732c4ac6614d3a798504d090))
+
 ## [0.55.3](https://github.com/okou-ai/okou/compare/android-v0.55.2...android-v0.55.3) (2026-11-24)
 
 

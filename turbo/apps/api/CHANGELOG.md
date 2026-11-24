@@ -10,6 +10,24 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.123.0](https://github.com/okou-ai/okou/compare/api-v2.122.0...api-v2.123.0) (2026-11-24)
+
+
+### Features
+
+* **connectors:** enable app store connect signing and google play oauth ([#50644](https://github.com/okou-ai/okou/issues/50644)) ([81d115b](https://github.com/okou-ai/okou/commit/81d115b8e1d4d25ff40bfee210859bbd12547927))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.125.0
+    * @okouai/connectors bumped to 3.24.0
+    * @okouai/core bumped to 8.874.0
+    * @okouai/db bumped to 2.67.2
+    * @okouai/pi-agent-runtime bumped to 1.52.68
+
 ## [2.122.0](https://github.com/okou-ai/okou/compare/api-v2.121.0...api-v2.122.0) (2026-11-24)
 
 

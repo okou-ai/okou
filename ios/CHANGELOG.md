@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.65.3](https://github.com/okou-ai/okou/compare/ios-v0.65.2...ios-v0.65.3) (2026-11-24)
+
+
+### Refactoring
+
+* **ios:** keep the activity phrase selection in the session graph ([#50646](https://github.com/okou-ai/okou/issues/50646)) ([1961638](https://github.com/okou-ai/okou/commit/1961638b7019cad78ea503e57304250cb3e2db0f))
+* **ios:** keep the mail draft card state in the session graph ([#50625](https://github.com/okou-ai/okou/issues/50625)) ([e19e656](https://github.com/okou-ai/okou/commit/e19e656af29b540697e9ae5b6277d8418bb78458))
+
 ## [0.65.2](https://github.com/okou-ai/okou/compare/ios-v0.65.1...ios-v0.65.2) (2026-11-24)
 
 
