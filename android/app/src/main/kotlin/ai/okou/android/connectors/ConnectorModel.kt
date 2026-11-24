@@ -88,6 +88,7 @@ internal data class ConnectorUiState(
     val connected: ConnectorRead<Map<String, ConnectedService>> = ConnectorRead(),
     val matches: ConnectorMatches? = null,
     val slug: String? = null,
+    val selectedPreview: ConnectorEntry? = null,
     val detail: ConnectorRead<ConnectorServiceDetail> = ConnectorRead(),
     val accounts: ConnectorRead<List<ConnectorSavedAccount>> = ConnectorRead(),
     val cachedAccounts: ConnectorRead<List<ConnectorSavedAccount>>? = null,
@@ -258,6 +259,7 @@ class ConnectorModel(
                     mutableState.update { state ->
                         state.copy(
                             browse = read.retaining(state.browse),
+                            selectedPreview = state.selectedPreview.takeUnless { unavailable },
                             matches =
                                 if (unavailable) state.matches?.copy(entries = read)
                                 else state.matches,
@@ -332,15 +334,24 @@ class ConnectorModel(
                     val previous = state.matches?.takeIf { it.filter == selected }
                     state.copy(
                         matches = ConnectorMatches(selected, read.retaining(previous?.entries)),
+                        selectedPreview =
+                            state.selectedPreview.takeUnless {
+                                read.failure == ConnectorReadFailure.Unavailable
+                            },
                     )
                 }
             }
         }
     }
 
-    internal fun select(slug: String?) {
+    internal fun select(slug: String?, preview: ConnectorEntry? = null) {
         val previous = mutableState.value
-        if (previous.slug == slug) return
+        if (previous.slug == slug) {
+            if (preview != null && previous.detail.failure != ConnectorReadFailure.Unavailable) {
+                mutableState.update { it.copy(selectedPreview = preview) }
+            }
+            return
+        }
         previous.slug?.let { previousSlug ->
             val snapshot =
                 ServiceReadSnapshot(
@@ -362,10 +373,13 @@ class ConnectorModel(
         impactJob = null
         val cached = slug?.let(recentServices::get)
         val accounts = cached?.accounts?.forEntry()
+        val detail = cached?.detail?.forEntry() ?: ConnectorRead()
         mutableState.update {
             it.copy(
                 slug = slug,
-                detail = cached?.detail?.forEntry() ?: ConnectorRead(),
+                selectedPreview =
+                    preview.takeUnless { detail.failure == ConnectorReadFailure.Unavailable },
+                detail = detail,
                 accounts =
                     ConnectorRead(failure = accounts?.failure, expiresAt = accounts?.expiresAt),
                 cachedAccounts = accounts?.takeIf { it.data != null },
@@ -389,6 +403,7 @@ class ConnectorModel(
                     mutableState.update { state ->
                         state.copy(
                             detail = read.retaining(state.detail),
+                            selectedPreview = state.selectedPreview.takeUnless { unavailable },
                             permissions =
                                 if (unavailable)
                                     ConnectorRead(

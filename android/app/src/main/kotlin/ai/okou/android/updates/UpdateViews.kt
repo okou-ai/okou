@@ -517,6 +517,8 @@ private fun RequiredUpdateScreen(
                     title =
                         stringResource(
                             when {
+                                requiresNewerAndroid && shortTitle ->
+                                    R.string.updates_required_incompatible_short
                                 requiresNewerAndroid -> R.string.updates_required_incompatible
                                 shortTitle -> R.string.updates_required_short
                                 else -> R.string.updates_required

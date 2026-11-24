@@ -8,6 +8,7 @@ import ai.okou.android.ConnectorApiFixture
 import ai.okou.android.OkouTheme
 import ai.okou.android.TestOkouApplication
 import androidx.activity.ComponentActivity
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.SemanticsActions
@@ -22,6 +23,7 @@ import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.hasAnyAncestor
@@ -30,6 +32,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.isOff
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -113,10 +116,90 @@ class ConnectorAccountFlowTest {
                 compose.onNodeWithText("Clear search").performClick()
                 search.assertIsFocused()
                 connected.assertIsSelected()
-                compose.onNodeWithTag("connector-$CONNECTOR_CALENDAR").assertIsDisplayed()
+                category.performClick()
+                compose.onNodeWithText("Meetings and scheduling").performClick()
+                search.performTextReplacement("calendar")
+                val calendar = compose.onNodeWithTag("connector-$CONNECTOR_CALENDAR")
+                compose.waitUntilAtLeastOneExists(
+                    hasTestTag("connector-$CONNECTOR_CALENDAR"),
+                    10_000,
+                )
+                calendar.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+                calendar.performKeyInput { pressKey(Key.Enter) }
+                awaitText("Permission update required")
+                compose.onNodeWithContentDescription("Back").performClick()
+                calendar.assertIsDisplayed().assertIsFocused()
+                search.assertTextContains("calendar")
+                category.assert(
+                    SemanticsMatcher.expectValue(
+                        SemanticsProperties.StateDescription,
+                        "Meetings and scheduling",
+                    ),
+                )
             }
         } finally {
             instrumentation.resetInTouchMode()
+        }
+    }
+
+    @Test
+    fun wideDirectoryChangesKeepTheSelectedPreviewUntilTheDetailResponds() = withKeyboard {
+        val restoration = StateRestorationTester(compose)
+        withDirectory(initiallyOnline = false, listWidth = 180, restoration = restoration) {
+            fixture,
+            connectivity ->
+            fixture.omittedFromDefaultBrowse = setOf("gmail")
+            compose.runOnIdle { connectivity.value = true }
+            awaitText("Google Calendar")
+
+            val search = compose.onNodeWithTag("connector-search")
+            search.performTextReplacement("gmail")
+            val gmailRow = hasTestTag("connector-gmail")
+            compose.waitUntilAtLeastOneExists(gmailRow, 10_000)
+            val gmailDetail =
+                compose.onNode(hasText("Gmail") and hasAnyAncestor(hasTestTag("connector-detail")))
+            val releaseDetail = CountDownLatch(1)
+            fixture.denyCatalogDetail = true
+            fixture.detailReplyGate = releaseDetail
+            try {
+                val gmail = compose.onNode(gmailRow)
+                gmail.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+                gmail.performKeyInput { pressKey(Key.Enter) }
+                gmail.assertIsSelected().assertIsFocused()
+                gmailDetail.assertIsDisplayed()
+
+                search.performTextReplacement("calendar")
+                compose.waitUntilAtLeastOneExists(
+                    hasTestTag("connector-$CONNECTOR_CALENDAR"),
+                    10_000,
+                )
+                compose.onNode(gmailRow).assertDoesNotExist()
+                gmailDetail.assertIsDisplayed()
+
+                compose.onNodeWithText("Connected").performClick()
+                compose.onNodeWithContentDescription("Filter by service category").performClick()
+                compose.onNodeWithText("Meetings and scheduling").performClick()
+                compose.waitUntilAtLeastOneExists(
+                    hasTestTag("connector-$CONNECTOR_CALENDAR"),
+                    10_000,
+                )
+                search.assertTextContains("calendar")
+                gmailDetail.assertIsDisplayed()
+
+                restoration.emulateSavedInstanceStateRestore()
+                search.assertTextContains("calendar")
+                gmailDetail.assertIsDisplayed()
+            } finally {
+                releaseDetail.countDown()
+            }
+
+            awaitText("Could not load connectors.")
+            gmailDetail.assertDoesNotExist()
+
+            fixture.denyCatalogDetail = false
+            compose.onNodeWithTag("connector-$CONNECTOR_CALENDAR").performClick()
+            awaitText("Permission update required")
+            gmailDetail.assertDoesNotExist()
         }
     }
 
@@ -330,26 +413,51 @@ class ConnectorAccountFlowTest {
     }
 
     @Test
-    fun reauthorizationShowsTheSelectedAccountWhileMethodsLoad() = withDirectory { fixture, _ ->
-        awaitText("Google Calendar")
-        val release = CountDownLatch(1)
-        fixture.detailReplyGate = release
+    fun reauthorizationKeepsTheSelectedAccountFromLoadingThroughReturn() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
         try {
-            compose.onNodeWithTag("connector-$CONNECTOR_CALENDAR").performClick()
-            awaitText("Permission update required")
-            compose.onNodeWithText("协作日历").performClick()
-            compose.onNodeWithText("Update permissions").performClick()
-            compose.onNodeWithText("Update permissions · Google Calendar").assertIsDisplayed()
-            compose
-                .onNode(hasText("协作日历") and hasAnyAncestor(hasTestTag("connector-sheet")))
-                .assertIsDisplayed()
-            compose.onNodeWithText("Cancel").assertIsEnabled()
-            compose.onNodeWithText("Continue to provider").assertDoesNotExist()
+            compose.activityRule.scenario.recreate()
+            withDirectory { fixture, _ ->
+                awaitText("Google Calendar")
+                val release = CountDownLatch(1)
+                fixture.detailReplyGate = release
+                val onSheet = hasAnyAncestor(hasTestTag("connector-sheet"))
+                val updatePermissions = compose.onNode(hasText("Update permissions") and onSheet)
+                try {
+                    compose.onNodeWithTag("connector-$CONNECTOR_CALENDAR").performClick()
+                    awaitText("Permission update required")
+                    compose
+                        .onNodeWithTag("connector-account-$CONNECTOR_CALENDAR_SECONDARY")
+                        .performClick()
+                    updatePermissions.performClick()
+                    compose
+                        .onNodeWithText("Update permissions · Google Calendar")
+                        .assertIsDisplayed()
+                    compose.onNode(hasText("协作日历") and onSheet).assertIsDisplayed()
+                    compose.onNodeWithText("Cancel").assertIsEnabled()
+                    compose.onNodeWithText("Continue to provider").assertDoesNotExist()
+                } finally {
+                    release.countDown()
+                }
+
+                awaitText("Continue to provider")
+                compose.onNodeWithText("Cancel").performClick()
+                updatePermissions.assertIsEnabled().assertIsFocused()
+                updatePermissions.performClick()
+                compose.onNodeWithText("Continue to provider").performClick()
+                awaitText("Check authorization")
+                fixture.reauthorizeCalendar()
+                compose.onNodeWithText("Check authorization").performClick()
+                awaitText("Enable by default")
+                compose.onNode(hasText("协作日历") and onSheet).assertIsDisplayed()
+                compose.onNode(hasText("team@example.com") and onSheet).assertIsDisplayed()
+                compose.onNodeWithText("Enable by default").assertIsFocused().assert(isOff())
+                compose.onNodeWithText("Permission update required").assertDoesNotExist()
+            }
         } finally {
-            release.countDown()
+            instrumentation.resetInTouchMode()
         }
-        awaitText("Continue to provider")
-        compose.onNodeWithText("Continue to provider").assertIsEnabled()
     }
 
     @Test
@@ -542,6 +650,8 @@ class ConnectorAccountFlowTest {
 
     private fun withDirectory(
         initiallyOnline: Boolean = true,
+        listWidth: Int? = null,
+        restoration: StateRestorationTester? = null,
         exercise: (ConnectorApiFixture, MutableStateFlow<Boolean>) -> Unit,
     ) {
         ConnectorApiFixture().use { fixture ->
@@ -564,11 +674,26 @@ class ConnectorAccountFlowTest {
                             },
                         )[ConnectorModel::class]
                 }
-                compose.setContent { OkouTheme(false) { ConnectorsPage(model, null) {} } }
+                val content: @Composable () -> Unit = {
+                    OkouTheme(false) { ConnectorsPage(model, listWidth) {} }
+                }
+                if (restoration == null) compose.setContent(content)
+                else restoration.setContent(content)
                 exercise(fixture, connectivity)
             } finally {
                 compose.runOnIdle { store.clear() }
             }
+        }
+    }
+
+    private fun withKeyboard(exercise: () -> Unit) {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            compose.activityRule.scenario.recreate()
+            exercise()
+        } finally {
+            instrumentation.resetInTouchMode()
         }
     }
 

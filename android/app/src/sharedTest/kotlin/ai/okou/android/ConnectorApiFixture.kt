@@ -261,6 +261,14 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
         }
     }
 
+    fun reauthorizeCalendar() {
+        synchronized(accounts) {
+            val id = CONNECTOR_CALENDAR_SECONDARY
+            accounts[id] = accounts.getValue(id).copy(scopeMismatch = false)
+            oauthCompletion = id
+        }
+    }
+
     fun removeAccount(id: String) {
         synchronized(accounts) { accounts.remove(id) }
     }
@@ -495,15 +503,19 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                     return rejected(404)
                 jsonResponse("""{"connectionId":"$id"}""")
             }
-            path == "/api/connectors/gmail/oauth/start" && request.method == "POST" -> {
+            request.method == "POST" &&
+                (path == "/api/connectors/gmail/oauth/start" ||
+                    path == "/api/connectors/$CONNECTOR_CALENDAR/oauth/start") -> {
                 val requestBody = body(request)
+                val account = requestBody["account"]?.jsonObject ?: return rejected(400)
+                val reconnect = path == "/api/connectors/$CONNECTOR_CALENDAR/oauth/start"
+                val intent = if (reconnect) "reconnect" else "add"
                 if (
                     requestBody["authMethod"]?.jsonPrimitive?.contentOrNull != "oauth" ||
-                        requestBody["account"]
-                            ?.jsonObject
-                            ?.get("intent")
-                            ?.jsonPrimitive
-                            ?.contentOrNull != "add"
+                        account["intent"]?.jsonPrimitive?.contentOrNull != intent ||
+                        reconnect &&
+                            account["connectionId"]?.jsonPrimitive?.contentOrNull !=
+                                CONNECTOR_CALENDAR_SECONDARY
                 )
                     return rejected(400)
                 jsonResponse(
