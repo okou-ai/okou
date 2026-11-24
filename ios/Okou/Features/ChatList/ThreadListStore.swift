@@ -578,7 +578,7 @@ extension ThreadListStore {
     appliedCursorIsDurable = response.isPersisted
     for id in response.deletedThreadIDs.union(additionalDeletes) { retireThread(id) }
     projectThreads(threads)
-    await acknowledgeCleanup(response)
+    await acknowledgeCleanup(response, confirming: additionalDeletes)
   }
 
   @discardableResult
@@ -589,8 +589,25 @@ extension ThreadListStore {
     return first
   }
 
-  private func acknowledgeCleanup(_ list: ChatSync.ThreadList) async {
-    let cleaned = list.removalsToAcknowledge.filter { cleanedUnavailableThreads[$0] == true }
+  func awaitsParentCheck(_ id: String) -> Bool {
+    removedByCachedSnapshot.contains(id)
+  }
+
+  private func acknowledgeCleanup(_ list: ChatSync.ThreadList, confirming confirmed: Set<String>)
+    async
+  {
+    guard list.isPersisted, !cleanedUnavailableThreads.isEmpty else { return }
+    let listed = Set(list.threads.map(\.id))
+    // A parent probe may have written a tombstone after this snapshot was read.
+    let newlyAbsent = confirmed.subtracting(listed).subtracting(list.deletedThreadIDs)
+    let cleaned = list.removalsToAcknowledge.union(newlyAbsent).filter {
+      cleanedUnavailableThreads[$0] == true
+    }
+    // Keep guards only for rows or delete events still present in the shared projection.
+    let referenced = list.deletedThreadIDs.union(listed).subtracting(cleaned)
+    cleanedUnavailableThreads = cleanedUnavailableThreads.filter {
+      !$0.value || referenced.contains($0.key)
+    }
     await sync.acknowledgeRemovedThreads(cleaned)
   }
 

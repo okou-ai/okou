@@ -188,6 +188,56 @@ final class ChatThreadDeleteTests: XCTestCase {
     XCTAssertTrue(pending.isEmpty)
   }
 
+  func testOpenDetailSurvivesAnUnverifiedSnapshotOmissionAndShowsTheConfirmedLoss() async throws {
+    let fixture = ThreadActionsFixture()
+    let directory = CacheTestDirectory(owner: self)
+    let scope = ChatCacheScope(
+      apiBaseURL: fixture.http.baseURL, userID: "owner", workspaceID: "workspace")
+    let storage = ChatDraftStorage(scope: scope, directory: directory.url)
+    let store = WorkspaceStore(
+      client: fixture.http.client, webURL: fixture.http.baseURL,
+      cache: directory.cache(scope: scope), draftStorage: storage)
+    defer { store.close() }
+    let id = ThreadActionsFixture.thread
+    fixture.remote(kind: "renamed", extra: #","title":"Before reset""#)
+    _ = await store.list.refresh()
+    store.selectChat(id)
+    let chat = try XCTUnwrap(store.selectedConversation)
+    chat.composer.text = "Keep while verifying"
+    fixture.state.value.withLock {
+      $0.events = []
+      $0.failNext["events"] = 410
+      $0.snapshotIncludesThread = false
+      $0.parentStatus = 503
+    }
+    let prefetch = ChatSync(client: fixture.http.client, cache: directory.cache(scope: scope))
+    try await prefetch.prefetchThreadList()
+    await store.list.restoreCached()
+    XCTAssertEqual(store.selectedThreadID, id)
+    _ = await store.list.refresh()
+    XCTAssertEqual(store.selectedConversation?.composer.text, "Keep while verifying")
+    XCTAssertNil(store.threadFeedback)
+
+    fixture.state.value.withLock { $0.parentStatus = 404 }
+    _ = await store.list.refresh()
+    XCTAssertNil(store.selectedThreadID)
+    XCTAssertEqual(
+      store.threadFeedback?.message, String(localized: "This chat is no longer available."))
+    XCTAssertFalse(storage.hasThreadDraft(id))
+
+    // A restored server snapshot may contain the same ID. Its discarded draft stays gone.
+    fixture.state.value.withLock {
+      $0.snapshotIncludesThread = true
+      $0.parentStatus = 200
+      $0.failNext["events"] = 410
+    }
+    _ = await store.list.refresh()
+    XCTAssertEqual(store.list.threads.first?.id, id)
+    store.selectChat(id)
+    XCTAssertEqual(store.selectedThreadID, id)
+    XCTAssertFalse(try XCTUnwrap(store.selectedConversation).composer.hasContent)
+  }
+
   func testDeleteRemovesTheChatAtOnceAndLeavesItsOpenDetail() async throws {
     let fixture = ThreadActionsFixture()
     let store = fixture.workspace()

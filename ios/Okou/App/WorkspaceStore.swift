@@ -509,10 +509,13 @@ final class WorkspaceStore {
     notificationReadState = state
     if changed { notificationReadStateChanged() }
     for thread in threads { conversations[thread.id]?.thread = thread }
+    // A shared snapshot can omit an open chat before its parent check finishes.
     if let selectedThreadID {
       if threads.contains(where: { $0.id == selectedThreadID }) {
         selectedConversation = conversation(for: selectedThreadID)
-      } else {
+      } else if !list.awaitsParentCheck(selectedThreadID)
+        && !unverifiedDraftThreads.contains(selectedThreadID)
+      {
         self.selectedThreadID = nil
       }
     }
