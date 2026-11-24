@@ -68,11 +68,14 @@
       let segments = path.split(separator: "/").map(String.init)
       var status = 200
       let body: String
+      // Paths are recognised by comparison: this fixture answers requests, it never sends one.
+      let isItems = path == "/api/feed/items"
+      let isSummary = path == "/api/feed/summary"
       switch (request.httpMethod ?? "GET", path) {
-      case ("GET", "/api/feed/items") where Self.isFailing:
+      case ("GET", _) where isItems && Self.isFailing:
         status = 503
         body = "{\"error\":\"For you is unavailable in this preview.\"}"
-      case ("GET", "/api/feed/items"):
+      case ("GET", _) where isItems:
         // Only the first load waits, so a pull to refresh still answers at once.
         if Self.isSlow,
           Self.settled.withLock({ $0.updateValue($0[host] ?? [], forKey: host) == nil })
@@ -82,7 +85,7 @@
         let gone = Self.settled.withLock { $0[host] ?? [] }
         let items = Self.cards.filter { !gone.contains($0.id) }.map(\.json)
         body = "{\"items\":[\(items.joined(separator: ","))]}"
-      case ("GET", "/api/feed/summary"):
+      case ("GET", _) where isSummary:
         body = "{\"hasUnread\":false}"
       case ("POST", _) where path.hasSuffix("/suggestion/feedback"):
         let undoing = Self.isUndo(request)
