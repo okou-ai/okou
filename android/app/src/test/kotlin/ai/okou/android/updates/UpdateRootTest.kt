@@ -18,6 +18,7 @@ import android.os.Build
 import android.os.LocaleList
 import android.provider.Settings
 import android.text.format.Formatter
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.SemanticsActions
@@ -28,6 +29,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
@@ -344,15 +346,13 @@ class UpdateRootTest {
 
     @Test
     @Config(qualifiers = "w240dp-h200dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun requiredUpdateActionIsReachableInACompactWindow() {
-        app.fixture.heldCheck!!.complete(Unit)
         app.updates.requireUpdate(RequiredUpdate("99.0.0"))
-        compose.waitUntil(10_000) { app.updates.state.value.canDownload }
-        val update = compose.onNodeWithText("Download update")
-        compose.onNodeWithText("Update required").assertIsDisplayed()
-        val bounds = update.assertIsDisplayed().getUnclippedBoundsInRoot()
-        update.performClick()
-        compose.waitUntil(10_000) { app.updates.state.value.transfer is UpdateTransfer.Downloading }
+        compose.waitUntil(10_000) {
+            val state = app.updates.state.value
+            state.required && state.check == UpdateCheck.Checking
+        }
         val progress =
             compose.onNode(
                 SemanticsMatcher.expectValue(
@@ -360,7 +360,23 @@ class UpdateRootTest {
                     ProgressBarRangeInfo.Indeterminate,
                 ),
             )
+        fun progressFillsCorner(): Boolean {
+            val pixels = progress.assertIsDisplayed().captureToImage().toPixelMap()
+            // A point inside the download indicator's 12dp corner and outside the pill.
+            val (x, y) = with(compose.density) { 8.dp.roundToPx() to 3.dp.roundToPx() }
+            return pixels[x, y] == pixels[pixels.width / 2, y]
+        }
+        assertFalse("Checking uses the full-screen entry pill", progressFillsCorner())
+
+        checkNotNull(app.fixture.heldCheck).complete(Unit)
+        compose.waitUntil(10_000) { app.updates.state.value.canDownload }
+        val update = compose.onNodeWithText("Download update")
+        compose.onNodeWithText("Update required").assertIsDisplayed()
+        val bounds = update.assertIsDisplayed().getUnclippedBoundsInRoot()
+        update.performClick()
+        compose.waitUntil(10_000) { app.updates.state.value.transfer is UpdateTransfer.Downloading }
         assertEquals(bounds, progress.assertIsDisplayed().getUnclippedBoundsInRoot())
+        assertTrue("Preparing the download uses the download indicator", progressFillsCorner())
         compose.onNodeWithText("Preparing…").assertHasNoClickAction()
     }
 
