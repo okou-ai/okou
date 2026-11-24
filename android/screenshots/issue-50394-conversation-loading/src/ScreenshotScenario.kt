@@ -19,6 +19,7 @@ import ai.okou.android.chat.RealtimeSnapshot
 import ai.okou.android.chat.plainDraftDocument
 import ai.okou.android.chatListRegion
 import ai.okou.android.testAuthenticationState
+import android.graphics.Rect
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ActivityScenario
@@ -159,13 +160,12 @@ class ScreenshotScenario {
                     check(checkNotNull(device.findObject(editor)).visibleBounds == editorBounds) {
                         "Composer moved when refresh feedback appeared"
                     }
-                    check(
-                        checkNotNull(device.findObject(progress)).visibleBounds.width() ==
-                            device.displayWidth,
-                    )
+                    val progressBounds = checkNotNull(device.findObject(progress)).visibleBounds
+                    check(progressBounds.width() == device.displayWidth)
                     device.executeShellCommand("settings put global animator_duration_scale 0")
                     try {
-                        awaitStaticSegment(progress)
+                        awaitStaticSegment(progressBounds)
+                        check(device.hasObject(progress))
                         ScreenshotCapture.capture("06-reduced-motion-progress.png")
                     } finally {
                         device.executeShellCommand("settings put global animator_duration_scale 1")
@@ -284,9 +284,8 @@ class ScreenshotScenario {
             }
         }
 
-    private fun awaitStaticSegment(progress: BySelector) =
+    private fun awaitStaticSegment(bar: Rect) =
         awaitState("the fixed 30% progress segment with animation disabled") {
-            val bar = device.findObject(progress)?.visibleBounds ?: return@awaitState false
             val image = instrumentation.uiAutomation.takeScreenshot() ?: return@awaitState false
             try {
                 val active = 0xFFB5790C.toInt()
