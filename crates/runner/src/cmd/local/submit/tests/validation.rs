@@ -1,7 +1,7 @@
 use std::process::ExitCode;
 
 use super::super::{MAX_LOCAL_SUBMIT_TIMEOUT_SECS, SubmitArgs, SubmitPlan, run_submit_with_home};
-use super::support::{run_submit_and_write_success, submit_args_for_test};
+use super::support::{ObservedJob, run_submit_and_write_success, submit_args_for_test};
 use crate::error::RunnerError;
 use runner_host::paths::HomePaths;
 use runner_provider::local_queue;
@@ -141,7 +141,8 @@ async fn maximum_timeout_is_accepted() {
     args.group = group.into();
     args.timeout = MAX_LOCAL_SUBMIT_TIMEOUT_SECS;
 
-    let (code, request) = run_submit_and_write_success(args, home).await.unwrap();
+    let (code, ObservedJob { request, .. }) =
+        run_submit_and_write_success(args, home).await.unwrap();
 
     assert_eq!(code, ExitCode::SUCCESS);
     assert_eq!(request.prompt, "hello");
@@ -180,15 +181,21 @@ async fn serialized_job_at_size_limit_is_accepted() {
     let mut args = submit_args_for_test();
     args.prompt = "x".repeat(prompt_len);
 
-    let (exit_code, request) =
+    let (exit_code, job) =
         run_submit_and_write_success(args, HomePaths::with_root(root.to_path_buf()))
             .await
             .unwrap();
 
     assert_eq!(exit_code, ExitCode::SUCCESS);
     assert_eq!(
-        cli_test_support::json_fixture::serialized_len(&request).unwrap(),
-        local_queue::LOCAL_JOB_MAX_BYTES
+        job.source_bytes,
+        local_queue::LOCAL_JOB_MAX_BYTES,
+        "published job byte length"
+    );
+    assert_eq!(job.request.prompt.len(), prompt_len);
+    assert!(
+        job.request.prompt.bytes().all(|byte| byte == b'x'),
+        "published job prompt content changed"
     );
 }
 

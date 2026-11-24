@@ -13,7 +13,7 @@ final class ForYouDirection {
     self.cardID = cardID
     models = ChatModelSelectionStore(models: workspace.modelStore, threadID: threadID)
     composer = ComposerDraftStore(
-      target: .unassigned, commands: commands,
+      target: .unassigned, commands: commands, graph: workspace.graph,
       didFail: { [weak workspace] in workspace?.reportWorkspaceFailure($0) })
     if let block = composer.editorBlocks.first { composer.requestEditorFocus(block.id) }
   }
@@ -31,17 +31,16 @@ struct ForYouDirectionComposer: View {
   let workspace: WorkspaceStore
 
   var body: some View {
-    @Bindable var composer = direction.composer
+    let composer = direction.composer
     VStack(alignment: .leading, spacing: OkouSpace.xs) {
       ForEach(suggestion.customOption.draft.draftAttachments ?? [], id: \.id) { file in
         Label(file.filename, okouSymbol: "paperclip")
           .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
       }
       ChatComposerView(
-        draft: $composer.text,
         isBusy: workspace.forYou.busy, showsProgress: workspace.forYou.busy,
         canStop: false, needsUpgrade: workspace.needsUpgrade, error: nil,
-        attachmentURL: workspace.webURL, attachments: composer.attachments, draftState: composer,
+        attachmentURL: workspace.webURL, draftState: composer,
         submit: { await workspace.forYou.sendDirection(card, from: direction) }, refresh: nil,
         modelSelection: direction.models, connectorSelection: direction.models.connectors,
         mentionSource: ComposerMentionSource(threads: workspace.list.threads),

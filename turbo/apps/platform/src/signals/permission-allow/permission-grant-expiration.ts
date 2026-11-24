@@ -27,6 +27,7 @@ export function parseUserPermissionGrantExpiresIn(
 export function permissionGrantExpiryText(
   expiresAt: string | null,
   nowMs = now(),
+  style: "full" | "compact" = "full",
 ): string | null {
   if (!expiresAt) {
     return null;
@@ -43,6 +44,14 @@ export function permissionGrantExpiryText(
   }
   // Round before choosing a unit so tiny clock differences keep the same label.
   const hourCount = Math.round(remainingMs / HOUR_MS);
+  if (style === "compact" && hourCount >= 1) {
+    const useDays = hourCount > 24;
+    return new Intl.NumberFormat(i18n.resolvedLanguage, {
+      style: "unit",
+      unit: useDays ? "day" : "hour",
+      unitDisplay: "narrow",
+    }).format(useDays ? Math.round(remainingMs / DAY_MS) : hourCount);
+  }
   if (hourCount > 24) {
     return i18n.t(
       ($) => {
@@ -53,7 +62,9 @@ export function permissionGrantExpiryText(
   }
   if (hourCount < 1) {
     return i18n.t(($) => {
-      return $.authorization.permission.expiration.lessThanHour;
+      return style === "compact"
+        ? $.authorization.permission.expiration.lessThanHourShort
+        : $.authorization.permission.expiration.lessThanHour;
     });
   }
   return i18n.t(

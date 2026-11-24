@@ -1,7 +1,6 @@
 package ai.okou.android.chat
 
 import ai.okou.android.BuildConfig
-import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
 import android.content.ActivityNotFoundException
 import android.content.Context
@@ -144,7 +143,7 @@ internal fun ConversationLinkText(
         return
     }
     val colors = MaterialTheme.colorScheme
-    val focusColor = LocalActivityStatusColor.current
+    val focusColor = colors.onSurface
     val focusFill = focusColor.copy(alpha = 0.16f)
     val focus = remember { FocusRequester() }
     val latestActions = rememberUpdatedState(actions)

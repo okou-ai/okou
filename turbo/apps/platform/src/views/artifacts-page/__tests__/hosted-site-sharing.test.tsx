@@ -910,10 +910,7 @@ test("owners change website visibility in the preview", async () => {
     await waitFor(() => {
       expect(
         screen.getByTestId("artifact-sidebar").querySelector("iframe"),
-      ).toHaveAttribute(
-        "src",
-        name === "Anyone with the link" ? site.url : temporary,
-      );
+      ).toHaveAttribute("src", temporary);
     });
     expect(getButtonByName("Copy link", menu)).toBeEnabled();
   }
@@ -924,15 +921,13 @@ test("owners change website visibility in the preview", async () => {
   });
 });
 
-test.each([{ refreshFails: false }, { refreshFails: true }])(
-  "grouped Share stays available during a permission preview refresh (failure: $refreshFails)",
-  async ({ refreshFails }) => {
-    const requested = createDeferredPromise<void>(context.signal);
-    const response = createDeferredPromise<void>(context.signal);
+test.each(["private", "public"] as const)(
+  "changing visibility preserves the owner preview opened with %s access",
+  async (initial) => {
     const clipboard = context.mocks.browser.clipboardWriteText();
     let status: SiteVisibilityStatus = {
       siteId,
-      visibility: "private",
+      visibility: initial,
       revision: null,
     };
     const temporary = `https://pv-${"c".repeat(48)}.okou.app/`;
@@ -950,19 +945,14 @@ test.each([{ refreshFails: false }, { refreshFails: true }])(
         return respond(200, status);
       },
     );
-    context.mocks.api(hostContract.sitePreview, async ({ respond }) => {
+    context.mocks.api(hostContract.sitePreview, ({ respond }) => {
       if (status.revision !== null) {
-        requested.resolve();
-        await response.promise;
-        if (refreshFails) {
-          return respond(500, {
-            error: {
-              code: "INTERNAL_SERVER_ERROR",
-              message: "Website preview unavailable",
-            },
-          });
-        }
-        return respond(200, { url: site.url, expiresAt: null });
+        return respond(500, {
+          error: {
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Website preview unavailable",
+          },
+        });
       }
       return respond(200, {
         url: temporary,
@@ -972,33 +962,22 @@ test.each([{ refreshFails: false }, { refreshFails: true }])(
     await openSite();
     const label = "Share artifact";
     await openShare(label);
-    await expectPermission("Only me");
+    await expectPermission(
+      initial === "public" ? "Anyone with the link" : "Only me",
+    );
     const preview = screen.getByTestId("artifact-sidebar");
     await waitFor(() => {
       expect(preview.querySelector("iframe")).toHaveAttribute("src", temporary);
     });
     const menu = screen.getByRole("dialog", { name: label });
-    click(permission("Anyone with the link"));
-    await requested.promise;
-    try {
-      await expectPermission("Anyone with the link");
-      expect(getButtonByName(label)).toBeVisible();
-      expect(getButtonByName(label)).toHaveAttribute("aria-expanded", "true");
-      expect(getButtonByName("Copy link", menu)).toBeEnabled();
-      expect(menu).toBeVisible();
-    } finally {
-      response.resolve();
-    }
-    await waitFor(() => {
-      const result = refreshFails
-        ? screen.getByText("This website is temporarily unavailable")
-            .textContent
-        : preview.querySelector("iframe")?.getAttribute("src");
-      expect(result).toBe(
-        refreshFails ? "This website is temporarily unavailable" : site.url,
-      );
-    });
+    const next = initial === "public" ? "Only me" : "Anyone with the link";
+    click(permission(next));
+    await expectPermission(next);
+    expect(preview.querySelector("iframe")).toHaveAttribute("src", temporary);
     expect(getButtonByName(label)).toBeVisible();
+    expect(getButtonByName(label)).toHaveAttribute("aria-expanded", "true");
+    expect(getButtonByName("Copy link", menu)).toBeEnabled();
+    expect(menu).toBeVisible();
     click(getButtonByName("Copy link", menu));
     await waitFor(() => {
       expect(clipboard.writes).toStrictEqual([site.url]);

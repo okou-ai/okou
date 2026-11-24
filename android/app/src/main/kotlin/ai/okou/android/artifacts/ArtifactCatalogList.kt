@@ -261,7 +261,7 @@ internal fun ArtifactToolbar(
             overflow = TextOverflow.Ellipsis,
         )
     }
-    HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 }
 
 @Composable

@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.63.0](https://github.com/okou-ai/okou/compare/ios-v0.62.2...ios-v0.63.0) (2026-11-24)
+
+
+### Features
+
+* **native:** manage member-wide connector account access ([#50496](https://github.com/okou-ai/okou/issues/50496)) ([eda9b10](https://github.com/okou-ai/okou/commit/eda9b103a4531c6c23058180f5150e11a3a986e9))
+
+
+### Bug Fixes
+
+* **ios:** use the native multiline return key in chat ([#50487](https://github.com/okou-ai/okou/issues/50487)) ([4a913f2](https://github.com/okou-ai/okou/commit/4a913f2959d900ff4ef2491ce2bebbf48accd0b8))
+
+## [0.62.2](https://github.com/okou-ai/okou/compare/ios-v0.62.1...ios-v0.62.2) (2026-11-24)
+
+
+### Refactoring
+
+* **ios:** keep the composer's state in the workspace graph ([#50406](https://github.com/okou-ai/okou/issues/50406)) ([accb5df](https://github.com/okou-ai/okou/commit/accb5df191d2eae42ebbadd7b392e23883744ebf))
+
 ## [0.62.1](https://github.com/okou-ai/okou/compare/ios-v0.62.0...ios-v0.62.1) (2026-11-24)
 
 

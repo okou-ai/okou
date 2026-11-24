@@ -124,7 +124,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "bingjie@okou.ai",
     displayName: "Presentation output format",
     description:
-      "Choose HTML or PPTX for presentations and remember the preference on this device.",
+      "Choose HTML or PPTX for presentations and remember your default in this workspace.",
     enabled: false,
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
@@ -287,14 +287,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Reserve artifact downloads, Customize URL, and hiding the website banner for paid plans; free-plan workspaces see an upgrade prompt instead.",
     enabled: true,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.BillingSurvey]: {
-    maintainer: "ming@okou.ai",
-    displayName: "Billing one-question surveys",
-    description:
-      "Ask one single-choice question where members are closest to paying: under the upgrade action when credits run out (with a one-time credit thank-you), and after leaving a Stripe Checkout without paying.",
-    enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {

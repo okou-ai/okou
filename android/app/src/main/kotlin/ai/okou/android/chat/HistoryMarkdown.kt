@@ -277,7 +277,7 @@ private fun MessageArtifactCard(
             Modifier.focusRequester(focus).onGloballyPositioned {
                 if (focus.requestFocus()) restoreFocus()
             }
-    Surface(shape = shape, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)) {
+    Surface(shape = shape, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
         Row(
             Modifier.fillMaxWidth()
                 .focusProperties { canFocus = true }
@@ -440,11 +440,11 @@ private fun HistoryMarkdownTable(
             shape = RoundedCornerShape(12.dp),
             color = if (highlighted) colors.secondaryContainer else colors.background,
             contentColor = if (highlighted) colors.onSecondaryContainer else colors.onSurface,
-            border = BorderStroke(1.dp, colors.outline),
+            border = BorderStroke(1.dp, colors.outlineVariant),
         ) {
             Column(Modifier.horizontalScroll(rememberScrollState()).width(cellWidth * columns)) {
                 for ((index, row) in rows.withIndex()) {
-                    if (index != 0) HorizontalDivider(color = colors.outline)
+                    if (index != 0) HorizontalDivider(color = colors.outlineVariant)
                     Row(
                         if (index == 0 && !highlighted) Modifier.background(colors.surfaceVariant)
                         else Modifier,

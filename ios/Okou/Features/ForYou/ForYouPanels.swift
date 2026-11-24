@@ -150,7 +150,8 @@ struct ForYouCaughtUp: View {
 struct ForYouLoadingCard: View {
   private static let chip: CGFloat = 140
   private static let titleEnd: CGFloat = 180
-  private static let option: CGFloat = 76
+  /// A direction's height: a Body label over two Subheadline lines.
+  private static let option: CGFloat = 100
 
   var body: some View {
     VStack(alignment: .leading, spacing: OkouSpace.xl) {
@@ -158,7 +159,7 @@ struct ForYouLoadingCard: View {
         OkouSkeletonBlock(width: Self.chip, height: OkouControl.inlineActionHeight)
         OkouSkeletonBlock(height: OkouSpace.xxl)
         OkouSkeletonBlock(width: Self.titleEnd, height: OkouSpace.xxl)
-        OkouSkeletonBlock(height: OkouSpace.lg).padding(.top, OkouSpace.xs)
+        OkouSkeletonBlock(height: OkouSpace.xl).padding(.top, OkouSpace.xs)
       }
       VStack(spacing: OkouSpace.ten) {
         ForEach(0..<2, id: \.self) { _ in

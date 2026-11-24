@@ -156,7 +156,7 @@ internal fun WorkspaceSearchField(
     val colors = MaterialTheme.colorScheme
     val outline =
         when (focused) {
-            true -> Modifier.border(2.dp, LocalActivityStatusColor.current, shape)
+            true -> Modifier.border(2.dp, colors.onBackground, shape)
             false -> Modifier.border(1.dp, colors.outline, shape)
             null -> Modifier
         }
@@ -221,6 +221,7 @@ internal fun WorkspaceListToolbar(
                 WorkspaceSearchField(
                     Modifier.fillMaxWidth()
                         .focusRequester(searchFocus)
+                        .focusProperties { canFocus = openSearch != null }
                         .onFocusChanged { onSearchFocusChanged(it.isFocused) }
                         .testTag("workspace_search_entry")
                         .semantics { if (openSearch != null) contentDescription = label },
@@ -291,7 +292,7 @@ internal fun WorkspaceToolEntries(
             )
         }
     }
-    HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 }
 
 @Composable
@@ -306,7 +307,7 @@ private fun WorkspaceToolEntry(
     val color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (onClick == null) 0.4f else 1f)
     val interaction =
         if (onClick != null) {
-            Modifier.updateFocusOutline(ChatListRowShape, LocalActivityStatusColor.current)
+            Modifier.updateFocusOutline(ChatListRowShape, MaterialTheme.colorScheme.onSurface)
                 .clickable(role = Role.Button, onClick = onClick)
                 .clearAndSetSemantics { contentDescription = title }
         } else {
@@ -566,7 +567,7 @@ internal fun WorkspaceMenu(
             shape = RoundedCornerShape(16.dp),
             color = colors.surface,
             shadowElevation = 6.dp,
-            border = BorderStroke(1.dp, colors.outline),
+            border = BorderStroke(1.dp, colors.outlineVariant),
         ) {
             key(filter) { WorkspaceMenuItems(items, filter, close, back, separatorBefore) }
         }
@@ -694,7 +695,7 @@ private fun WorkspaceMenuRow(item: WorkspaceMenuItem, modifier: Modifier, focuse
             .fillMaxWidth()
             .heightIn(min = 48.dp)
             .clip(shape)
-            .then(if (focused) Modifier.border(2.dp, colors.onSurfaceVariant, shape) else Modifier)
+            .then(if (focused) Modifier.border(2.dp, colors.onSurface, shape) else Modifier)
             .then(gesture)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),

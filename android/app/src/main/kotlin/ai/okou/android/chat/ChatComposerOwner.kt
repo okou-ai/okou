@@ -1083,6 +1083,9 @@ internal class ChatComposerOwner(
     private suspend fun applyNewChatConnectors(op: Operation, pending: PendingText) {
         if (!pending.awaitingConnectorSetup) return
         val connectors = op.connection.connectors ?: throw ApiFailure.IncompatibleResponse()
+        val memberAccess = connectors.memberAccessEnabled()
+        requireCurrent(op)
+        if (memberAccess) return
         for (choice in pending.connectorOverrides) {
             connectors.setChatOverride(pending.threadId, choice, canReadBack = { current(op) })
             requireCurrent(op)

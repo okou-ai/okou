@@ -31,8 +31,6 @@ struct ForYouView: View {
   /// Whether the pager has been put on the card in front since it appeared. Until then it rests
   /// on its first page, the copy of the last card, and what it reports is not the reader's.
   @State private var pagerPlaced = false
-  /// Each card's own content height, whatever height the deck gives it.
-  @State private var naturalHeights: [String: CGFloat] = [:]
   /// The train's lower edge on screen; a card never rises above it.
   @State private var horizon: CGFloat = 0
   private var store: ForYouStore { workspace.forYou }
@@ -373,13 +371,8 @@ struct ForYouView: View {
     let depth = !reduceMotion
     return ScrollView {
       surface(placementOf: page.id, asContext: store.direction?.cardID == page.card.id) {
-        cardView(
-          page.card, height: cardHeight(for: page.card.id),
-          // Only the card itself reports, not its copy at an end of the loop.
-          report: ForYouLoop.cardID(page.id) == page.id
-            ? { noteNatural(page.card.id, $0) } : nil
-        )
-        .disabled(store.busy)
+        cardView(page.card, height: cardHeight(for: page.card.id))
+          .disabled(store.busy)
       }
       .padding(.top, OkouSpace.xxl)
       .padding(.bottom, deckFoot(asContext: store.direction?.cardID == page.card.id))
@@ -488,34 +481,24 @@ struct ForYouView: View {
     asContext ? OkouSpace.sm : Self.layerDrop * CGFloat(Self.layerCount) + OkouSpace.sm
   }
 
-  /// Every card in the deck is as tall as its tallest, within the room, so the deck keeps one
-  /// shape as it pages; a card longer than the room scrolls its heading while its actions stay at
-  /// the bottom. The card a direction is written for keeps only its heading, as tall as it is
-  /// within the room above the input.
+  /// Every card fills the room from just under the train down to the deck's place above the
+  /// dock, on every phone, so the page keeps one composition and the deck one shape as it pages.
+  /// A card longer than the room scrolls its heading while its actions stay at the bottom. The
+  /// card a direction is written for keeps only its heading, as tall as it is within the room
+  /// above the input.
   private func cardHeight(for cardID: String) -> CGFloat? {
-    guard naturalHeights[cardID] != nil else { return nil }
-    if store.direction?.cardID == cardID { return cardRoom(asContext: true) }
-    let tallest = store.cards.compactMap { naturalHeights[$0.id] }.max() ?? 0
-    return cardRoom(asContext: false).map { min(tallest, $0) } ?? tallest
-  }
-
-  private func noteNatural(_ cardID: String, _ height: CGFloat) {
-    if abs((naturalHeights[cardID] ?? 0) - height) > OkouSpace.hairline {
-      naturalHeights[cardID] = height
-    }
+    cardRoom(asContext: store.direction?.cardID == cardID)
   }
 
   private func noteHorizon(_ line: CGFloat) {
     if abs(horizon - line) > OkouSpace.hairline { horizon = line }
   }
 
-  @ViewBuilder private func cardView(
-    _ card: ForYouCard, height: CGFloat?, report: ((CGFloat) -> Void)?
-  ) -> some View {
+  @ViewBuilder private func cardView(_ card: ForYouCard, height: CGFloat?) -> some View {
     switch card.content {
     case .suggestion(let suggestion):
       ForYouSuggestionView(
-        suggestion: suggestion, height: height, report: report,
+        suggestion: suggestion, height: height,
         pendingOptionID: pendingOptionID, isContext: store.direction?.cardID == card.id,
         openSource: { id in run { if await store.open(id) { showChat() } } },
         choose: { option in
@@ -528,7 +511,7 @@ struct ForYouView: View {
         })
     case .automation(let event):
       ForYouAutomationView(
-        event: event, height: height, report: report,
+        event: event, height: height,
         enable: { run { await store.resolve(card, event: event, enable: true) } },
         dismiss: { run { await store.resolve(card, event: event, enable: false) } })
     case .unsupported: EmptyView()

@@ -195,7 +195,6 @@ export type UsagePackCheckoutAllocation =
 
 export interface CreateUsagePackCheckoutSessionArgs {
   readonly orgId: string;
-  readonly userId: string;
   readonly tier: SubscriptionCheckoutTier;
   readonly planPriceId: string;
   readonly allocations: readonly UsagePackCheckoutAllocation[];
@@ -864,7 +863,7 @@ const createUsagePackCheckoutForSnapshot$ = command(
         allow_promotion_codes: true,
         success_url: args.purchase.successUrl,
         cancel_url: args.purchase.cancelUrl,
-        metadata: { ...metadata, billingSurveyUserId: args.purchase.userId },
+        metadata,
         subscription_data: { metadata },
       },
       {

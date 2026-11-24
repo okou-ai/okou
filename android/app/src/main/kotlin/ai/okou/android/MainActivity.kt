@@ -92,7 +92,7 @@ class MainActivity : AppCompatActivity() {
                     app.chatCache,
                     app.instructionsDrafts,
                     app.composerJournal,
-                    app.runControlJournal,
+                    app.runControlOwners,
                     app.memberAppearanceCache,
                     app.projectExpansionStore,
                     app.defaultModelStore,
@@ -297,7 +297,7 @@ class MainActivity : AppCompatActivity() {
                                         Modifier.heightIn(min = 48.dp)
                                             .updateFocusOutline(
                                                 ButtonDefaults.shape,
-                                                LocalActivityStatusColor.current,
+                                                MaterialTheme.colorScheme.onSurface,
                                             ),
                                     colors =
                                         ButtonDefaults.textButtonColors(

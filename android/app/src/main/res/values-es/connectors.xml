@@ -122,4 +122,17 @@
     <string name="connector_device_denied">El proveedor rechazó la autorización.</string>
     <string name="connector_device_expired">El código del dispositivo ha caducado. Inicia la autorización de nuevo.</string>
     <string name="connector_device_failed">No se pudo completar la autorización del dispositivo.</string>
+    <string name="connector_access_scope">Se aplica a todos tus chats.</string>
+    <string name="connector_access_label">Acceso para %1$s, %2$s</string>
+    <string name="connector_access_allow">Permitir</string>
+    <string name="connector_access_deny">Denegar</string>
+    <string name="connector_access_always">Siempre</string>
+    <string name="connector_access_expired">Caducado</string>
+    <string name="connector_access_under_hour">&lt;1 h</string>
+    <string name="connector_access_hours">%d h</string>
+    <string name="connector_access_days">%d d</string>
+    <string name="connector_access_allow_always">Permitir siempre</string>
+    <string name="connector_access_allow_hour">Permitir durante 1 h</string>
+    <string name="connector_access_allow_day">Permitir durante 24 h</string>
+    <string name="connector_access_allow_week">Permitir durante 7 días</string>
 </resources>

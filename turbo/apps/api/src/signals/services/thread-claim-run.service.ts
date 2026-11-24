@@ -83,10 +83,16 @@ import {
 
 import { getOfficialTelegramBotConfig } from "../external/telegram-official";
 import { joinAll, safeSync, settle, tapError } from "../utils";
-import type { DirectRunDispatchResult } from "./direct-run-dispatch.service";
+import {
+  prepareDirectRunInputs$,
+  type DirectRunDispatchResult,
+  type DirectRunInputsRead,
+} from "./direct-run-dispatch.service";
 import {
   createExecutionBundleCache,
   type AdmittedRunLaunch,
+  type DirectRunInput,
+  type ExecutionBundleUrlsRead,
 } from "./direct-run-preparation.service";
 import type { ExecutionRuntimeResources } from "./execution-runtime-context";
 import { prepareExecutionNetworkPolicy$ } from "./run-execution-publication.service";
@@ -111,6 +117,7 @@ import {
   type PreparedChatEventRow,
 } from "./chat-event-append.service";
 import { recordThreadRunActivationMarkers } from "./chat-first-assistant-event-metric.service";
+import { isAntigravityEnabled } from "./feature-switches.service";
 import {
   queuedThreadInputCondition,
   type QueuedUserMessage,
@@ -727,23 +734,6 @@ function claimCommitInput(input: RunPlan): ThreadRunContext["input"] {
   };
 }
 
-/**
- * Generation writes a title only over NULL title and renamed_at, and a rename
- * sets both, so a titled or renamed claim snapshot never needs another read.
- */
-function threadTitled(
-  thread:
-    | { readonly title: string | null; readonly renamedAt: Date | null }
-    | null
-    | undefined,
-) {
-  return (
-    thread !== null &&
-    thread !== undefined &&
-    (thread.title !== null || thread.renamedAt !== null)
-  );
-}
-
 function claimLaunchRecord(
   record: ClaimLaunchRecord,
   integrationContext: string | undefined,
@@ -807,10 +797,12 @@ export interface ThreadClaimRunObjects {
     {
       readonly pending: Promise<PendingClaimRun | null>;
       readonly resources: ExecutionRuntimeResources;
+      readonly early: DirectRunInputsRead | undefined;
     },
     [
       context: ThreadRunContext,
       resources: RunResourcePreparation,
+      bundleUrls: ExecutionBundleUrlsRead,
       signal: AbortSignal,
     ]
   >;
@@ -1292,7 +1284,7 @@ export function createThreadClaimRunObjects(
             triggerSource,
             discordDelivery: delivery.discordDelivery,
             wechatDelivery: delivery.wechatDelivery,
-            titled: threadTitled((await get(pickedEvent$))?.thread),
+            titled: (await get(pickedEvent$))?.thread.titled ?? false,
           },
         },
       };
@@ -1706,6 +1698,7 @@ export function createThreadClaimRunObjects(
         await Promise.allSettled([
           get(automationModel$),
           get(connectorAdmission$),
+          get(promptResources.suggestionsPrompt$),
         ]);
       }
       return;
@@ -2487,10 +2480,12 @@ export function createThreadClaimRunObjects(
         claim,
         context,
         timing,
+        dispatchInput,
       }: {
         readonly claim: ThreadClaim;
         readonly context: ThreadRunContext;
         readonly timing: ClaimRunTiming;
+        readonly dispatchInput: DirectRunInput;
       },
       signal: AbortSignal,
     ): Promise<PendingClaimRun | null> => {
@@ -2516,6 +2511,7 @@ export function createThreadClaimRunObjects(
       const preparedCommit: PreparedThreadLaunchCommit = {
         ...commit,
         persistence: context.persistence,
+        dispatchInput,
         admissionTiming,
         poolCapture,
       };
@@ -2776,6 +2772,7 @@ export function createThreadClaimRunObjects(
       { get, set },
       context: ThreadRunContext,
       { memoryArchive, networkPolicyInputs }: RunResourcePreparation,
+      bundleUrls: ExecutionBundleUrlsRead,
       signal: AbortSignal,
     ) => {
       const memory = (async () => {
@@ -2792,11 +2789,12 @@ export function createThreadClaimRunObjects(
         signal.throwIfAborted();
         return executionMemoryMount(mount, archive);
       })();
+      const dispatchInput = threadDispatchInput(context);
       const pending = (async () => {
         const committed = await settle(
           set(
             createRun$,
-            { claim, context, timing: get(claimRunTiming$) },
+            { claim, context, timing: get(claimRunTiming$), dispatchInput },
             signal,
           ),
           signal,
@@ -2805,7 +2803,18 @@ export function createThreadClaimRunObjects(
           ? committed.value
           : await set(failRunAdmission$, committed.error, signal);
       })();
-      return { pending, resources: { memory, networkPolicyInputs } };
+      const resources = { memory, networkPolicyInputs };
+      const early =
+        requestInput?.id === context.head.id
+          ? set(
+              prepareDirectRunInputs$,
+              dispatchInput,
+              null,
+              { bundleUrls, resources },
+              signal,
+            )
+          : undefined;
+      return { pending, resources, early };
     },
   );
   return {
@@ -2839,6 +2848,7 @@ interface PersistedAtomicLaunchRows {
 }
 
 interface PreparedRunnerLaunch {
+  readonly antigravityEnabled: boolean;
   readonly runnerGroup: string;
   readonly profile: string;
   readonly reuseKey: string;
@@ -3079,6 +3089,7 @@ interface PreparedAtomicLaunchPersistence {
 }
 
 interface PreparedThreadLaunchCommit extends ThreadLaunchCommitInput {
+  readonly dispatchInput: DirectRunInput;
   readonly persistence: PreparedAtomicLaunchPersistence;
   readonly admissionTiming: AdmissionAttemptTiming;
   readonly poolCapture: PgPoolAcquisitionCapture;
@@ -3353,6 +3364,7 @@ function prepareRunnerLaunch(input: {
   };
   return {
     runnerGroup: preparedRunnerGroup(),
+    antigravityEnabled: isAntigravityEnabled(args.featureSwitchContext),
     profile: args.profile,
     reuseKey: runnerReuseKey(args.chatThreadId),
     facts,
@@ -3554,20 +3566,20 @@ async function pendingLaunchCommitResult(
   return {
     kind: "pending",
     marketingRewardEventId: persisted.marketingRewardEventId,
-    admittedLaunch: admittedRunLaunch(args, persisted),
+    admittedLaunch: {
+      ...args.dispatchInput,
+      run: { ...args.dispatchInput.run, isFirstRun: persisted.isFirstRun },
+      createdAt: persisted.createdAt,
+    },
     publicationReturnedAt,
   };
 }
 
-function admittedRunLaunch(
-  args: PreparedThreadLaunchCommit,
-  persisted: PersistedAtomicLaunchRows,
-): AdmittedRunLaunch {
+function threadDispatchInput(args: ThreadRunContext): DirectRunInput {
   const { rowsArgs: rows, metadata } = args.persistence.rows;
   return {
     run: {
       id: args.identity.runId,
-      isFirstRun: persisted.isFirstRun,
       userId: rows.userId,
       orgId: rows.orgId,
       chatThreadId: rows.chatThreadId,
@@ -3588,9 +3600,9 @@ function admittedRunLaunch(
     runnerGroup: args.launch.runnerGroup,
     profile: args.launch.profile,
     reuseKey: args.launch.reuseKey,
-    createdAt: persisted.createdAt,
+    antigravityEnabled: args.launch.antigravityEnabled,
     predecessorRunId:
-      args.createArgs.threadContinuation.expected.frameworkSessionRunId,
+      args.input.args.threadContinuation.expected.frameworkSessionRunId,
   };
 }
 

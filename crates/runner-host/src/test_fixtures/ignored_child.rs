@@ -1,12 +1,14 @@
 use std::ffi::OsStr;
 use std::future::{Future, poll_fn};
 use std::io;
-#[cfg(target_os = "linux")]
-use std::os::fd::OwnedFd;
 use std::path::Path;
-use std::process::Stdio;
+use std::process::{ExitStatus, Stdio};
 use std::time::Duration;
 
+#[cfg(target_os = "linux")]
+use cli_test_support::process_session::{CommandSession, SessionMemberState};
+#[cfg(target_os = "linux")]
+use rustix::process::Pid;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio_util::sync::CancellationToken;
 
@@ -16,8 +18,6 @@ use crate::process::{ProcessStatRead, process_stat_is_live, read_process_stat_ch
 const CHILD_OUTPUT_TIMEOUT: Duration = Duration::from_secs(5);
 const CHILD_KILL_WAIT_TIMEOUT: Duration = Duration::from_secs(5);
 const CHILD_READINESS_TIMEOUT: Duration = Duration::from_secs(5);
-#[cfg(target_os = "linux")]
-const CHILD_SESSION_SCAN_INTERVAL: Duration = Duration::from_millis(10);
 const CHILD_OUTPUT_HEAD_BYTES: usize = 8 * 1024;
 const CHILD_OUTPUT_TAIL_BYTES: usize = 8 * 1024;
 const CHILD_OUTPUT_READ_CHUNK_BYTES: usize = 8 * 1024;
@@ -39,34 +39,13 @@ pub struct IgnoredChildOutput {
 
 struct IgnoredChildSession {
     #[cfg(target_os = "linux")]
-    session_id: libc::pid_t,
-}
-
-#[cfg(target_os = "linux")]
-struct SessionMember {
-    pid: libc::pid_t,
-    pidfd: OwnedFd,
-}
-
-#[cfg(target_os = "linux")]
-struct SessionScan {
-    live_pids: Vec<libc::pid_t>,
-    members: Vec<SessionMember>,
-    error: Option<String>,
+    session: CommandSession,
 }
 
 impl IgnoredChildSession {
     fn configure_command(command: &mut tokio::process::Command) {
         #[cfg(target_os = "linux")]
-        // SAFETY: `setsid` is async-signal-safe and the closure performs no
-        // work beyond that syscall and converting its errno on failure.
-        unsafe {
-            command.pre_exec(|| {
-                nix::unistd::setsid()
-                    .map(drop)
-                    .map_err(std::io::Error::from)
-            });
-        }
+        CommandSession::configure(command);
         #[cfg(not(target_os = "linux"))]
         let _ = command;
     }
@@ -74,10 +53,9 @@ impl IgnoredChildSession {
     fn from_child(child: &tokio::process::Child) -> Self {
         #[cfg(target_os = "linux")]
         {
-            let child_pid = child.id().expect("ignored child PID must be available");
-            let session_id =
-                libc::pid_t::try_from(child_pid).expect("ignored child PID must fit in pid_t");
-            Self { session_id }
+            let session =
+                CommandSession::from_child(child).expect("identify ignored child session");
+            Self { session }
         }
         #[cfg(not(target_os = "linux"))]
         {
@@ -95,12 +73,13 @@ impl IgnoredChildSession {
             // Keep Child owned and unpolled: reaping the session leader before
             // output collection/cleanup would allow its numeric SID to be reused.
             let _ = child;
+            let pid = nix::unistd::Pid::from_raw(self.session.leader_pid().as_raw_pid());
             // Subscribe before querying so an exit between the query and recv
             // cannot be lost. Coalesced/unrelated signals only trigger a recheck.
             let mut exits = signal(SignalKind::child())?;
             loop {
                 match waitid(
-                    Id::Pid(nix::unistd::Pid::from_raw(self.session_id)),
+                    Id::Pid(pid),
                     WaitPidFlag::WEXITED | WaitPidFlag::WNOWAIT | WaitPidFlag::WNOHANG,
                 ) {
                     Ok(WaitStatus::Exited(..) | WaitStatus::Signaled(..)) => return Ok(()),
@@ -123,241 +102,45 @@ impl IgnoredChildSession {
         }
     }
 
-    async fn kill_members(&self, deadline: tokio::time::Instant) -> Result<(), String> {
-        #[cfg(target_os = "linux")]
-        {
-            kill_session_members(self.session_id, deadline).await
-        }
-        #[cfg(not(target_os = "linux"))]
-        {
-            let _ = deadline;
-            Ok(())
-        }
-    }
-}
-
-#[cfg(target_os = "linux")]
-async fn kill_session_members(
-    session_id: libc::pid_t,
-    deadline: tokio::time::Instant,
-) -> Result<(), String> {
-    let mut first_error = None;
-
-    loop {
-        let scan = match tokio::time::timeout_at(deadline, scan_session_members(session_id)).await {
-            Ok(Ok(scan)) => scan,
-            Ok(Err(error)) => {
-                return Err(match first_error {
-                    Some(first_error) => format!("{first_error}; {error}"),
-                    None => error,
-                });
-            }
-            Err(_) => {
-                let timeout = format!(
-                    "session {session_id} scan timed out after {}ms",
-                    CHILD_KILL_WAIT_TIMEOUT.as_millis()
-                );
-                return Err(match first_error {
-                    Some(first_error) => format!("{first_error}; {timeout}"),
-                    None => timeout,
-                });
-            }
-        };
-        if first_error.is_none() {
-            first_error = scan.error;
-        }
-        if scan.live_pids.is_empty() {
-            return match first_error {
-                Some(error) => Err(error),
-                None => Ok(()),
-            };
-        }
-
-        for member in scan.members {
-            if let Err(error) = signal_pidfd(&member.pidfd, rustix::process::Signal::KILL)
-                && error.raw_os_error() != Some(libc::ESRCH)
-                && first_error.is_none()
-            {
-                first_error = Some(format!(
-                    "pidfd signal failed for session {session_id} member {}: {error}",
-                    member.pid
-                ));
-            }
-        }
-
-        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-        if remaining.is_zero() {
-            let live_pids = scan
-                .live_pids
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(",");
-            let timeout = format!(
-                "session {session_id} remained live after {}ms (pids: {live_pids})",
-                CHILD_KILL_WAIT_TIMEOUT.as_millis()
-            );
-            return Err(match first_error {
-                Some(error) => format!("{error}; {timeout}"),
-                None => timeout,
-            });
-        }
-        tokio::time::sleep(remaining.min(CHILD_SESSION_SCAN_INTERVAL)).await;
-    }
-}
-
-#[cfg(target_os = "linux")]
-async fn scan_session_members(session_id: libc::pid_t) -> Result<SessionScan, String> {
-    let mut entries = tokio::fs::read_dir("/proc")
-        .await
-        .map_err(|error| format!("read /proc for session {session_id}: {error}"))?;
-    let mut live_pids = Vec::new();
-    let mut members = Vec::new();
-    let mut first_error = None;
-
-    loop {
-        let entry = entries
-            .next_entry()
+    #[cfg(target_os = "linux")]
+    async fn retire(&self, child: &mut tokio::process::Child) -> Result<ExitStatus, String> {
+        self.session
+            .retire(child, CHILD_KILL_WAIT_TIMEOUT, "wait", read_member_state)
             .await
-            .map_err(|error| format!("iterate /proc for session {session_id}: {error}"))?;
-        let Some(entry) = entry else {
-            break;
-        };
-        let Some(pid_text) = entry.file_name().to_str().map(str::to_owned) else {
-            continue;
-        };
-        let Ok(pid) = pid_text.parse::<u32>() else {
-            continue;
-        };
-        let Ok(raw_pid) = libc::pid_t::try_from(pid) else {
-            continue;
-        };
-
-        let before = match read_process_stat_checked(pid).await {
-            ProcessStatRead::Found(stat) if process_stat_is_live(&stat) => stat,
-            ProcessStatRead::Found(_) | ProcessStatRead::Missing => continue,
-            ProcessStatRead::Unreadable(error) => {
-                record_owned_stat_error(
-                    raw_pid,
-                    session_id,
-                    format!("read /proc/{pid}/stat: {error}"),
-                    &mut live_pids,
-                    &mut first_error,
-                );
-                continue;
-            }
-            ProcessStatRead::Invalid => {
-                record_owned_stat_error(
-                    raw_pid,
-                    session_id,
-                    format!("parse /proc/{pid}/stat"),
-                    &mut live_pids,
-                    &mut first_error,
-                );
-                continue;
-            }
-        };
-        if process_session_id(raw_pid) != Ok(session_id) {
-            continue;
-        }
-
-        let pidfd = match open_pidfd(raw_pid) {
-            Ok(Some(pidfd)) => pidfd,
-            Ok(None) => continue,
-            Err(error) => {
-                live_pids.push(raw_pid);
-                if first_error.is_none() {
-                    first_error = Some(format!(
-                        "pidfd_open failed for session {session_id} member {raw_pid}: {error}"
-                    ));
-                }
-                continue;
-            }
-        };
-
-        match read_process_stat_checked(pid).await {
-            ProcessStatRead::Found(stat)
-                if process_stat_is_live(&stat) && stat.starttime == before.starttime => {}
-            ProcessStatRead::Found(_) | ProcessStatRead::Missing => continue,
-            ProcessStatRead::Unreadable(error) => {
-                record_owned_stat_error(
-                    raw_pid,
-                    session_id,
-                    format!("re-read /proc/{pid}/stat: {error}"),
-                    &mut live_pids,
-                    &mut first_error,
-                );
-                continue;
-            }
-            ProcessStatRead::Invalid => {
-                record_owned_stat_error(
-                    raw_pid,
-                    session_id,
-                    format!("re-parse /proc/{pid}/stat"),
-                    &mut live_pids,
-                    &mut first_error,
-                );
-                continue;
-            }
-        }
-        if process_session_id(raw_pid) != Ok(session_id) {
-            continue;
-        }
-
-        live_pids.push(raw_pid);
-        members.push(SessionMember {
-            pid: raw_pid,
-            pidfd,
-        });
     }
 
-    Ok(SessionScan {
-        live_pids,
-        members,
-        error: first_error,
-    })
-}
-
-#[cfg(target_os = "linux")]
-fn record_owned_stat_error(
-    pid: libc::pid_t,
-    session_id: libc::pid_t,
-    error: String,
-    live_pids: &mut Vec<libc::pid_t>,
-    first_error: &mut Option<String>,
-) {
-    if process_session_id(pid) != Ok(session_id) {
-        return;
-    }
-    live_pids.push(pid);
-    if first_error.is_none() {
-        *first_error = Some(format!(
-            "session {session_id} member {pid} process state unavailable: {error}"
-        ));
+    #[cfg(not(target_os = "linux"))]
+    async fn retire(&self, child: &mut tokio::process::Child) -> Result<ExitStatus, String> {
+        let kill_error = child.start_kill().err();
+        let deadline = tokio::time::Instant::now() + CHILD_KILL_WAIT_TIMEOUT;
+        let wait_result = match child.try_wait() {
+            Ok(Some(status)) => Ok(status),
+            Ok(None) => match tokio::time::timeout_at(deadline, child.wait()).await {
+                Ok(result) => result.map_err(|error| format!("wait failed: {error}")),
+                Err(_) => Err(format!(
+                    "wait timed out after {}ms",
+                    CHILD_KILL_WAIT_TIMEOUT.as_millis()
+                )),
+            },
+            Err(error) => Err(format!("wait failed: {error}")),
+        };
+        wait_result.map_err(|error| match kill_error {
+            Some(kill_error) => format!("start kill failed: {kill_error}; {error}"),
+            None => error,
+        })
     }
 }
 
 #[cfg(target_os = "linux")]
-fn process_session_id(pid: libc::pid_t) -> Result<libc::pid_t, nix::errno::Errno> {
-    nix::unistd::getsid(Some(nix::unistd::Pid::from_raw(pid))).map(nix::unistd::Pid::as_raw)
-}
-
-#[cfg(target_os = "linux")]
-fn open_pidfd(pid: libc::pid_t) -> io::Result<Option<OwnedFd>> {
-    let pid = Some(pid)
-        .filter(|pid| *pid > 0)
-        .and_then(rustix::process::Pid::from_raw)
-        .ok_or_else(|| io::Error::from_raw_os_error(libc::EINVAL))?;
-    match rustix::process::pidfd_open(pid, rustix::process::PidfdFlags::empty()) {
-        Ok(pidfd) => Ok(Some(pidfd)),
-        Err(error) if error == rustix::io::Errno::SRCH => Ok(None),
-        Err(error) => Err(error.into()),
+async fn read_member_state(pid: Pid) -> SessionMemberState {
+    match read_process_stat_checked(pid.as_raw_pid().cast_unsigned()).await {
+        ProcessStatRead::Found(stat) if process_stat_is_live(&stat) => SessionMemberState::Live {
+            starttime: stat.starttime,
+        },
+        ProcessStatRead::Found(_) | ProcessStatRead::Missing => SessionMemberState::Gone,
+        ProcessStatRead::Unreadable(error) => SessionMemberState::Unreadable(error),
+        ProcessStatRead::Invalid => SessionMemberState::Invalid,
     }
-}
-
-#[cfg(target_os = "linux")]
-fn signal_pidfd(pidfd: &OwnedFd, signal: rustix::process::Signal) -> io::Result<()> {
-    rustix::process::pidfd_send_signal(pidfd, signal).map_err(io::Error::from)
 }
 
 pub async fn run_ignored_child_test(
@@ -465,7 +248,7 @@ async fn run_ignored_child_test_with_readiness(
     let mut cleanup = if failures.is_empty() {
         None
     } else {
-        Some(kill_ignored_child(&mut child, &child_session).await)
+        Some(child_session.retire(&mut child).await)
     };
     let output_result = {
         let mut output =
@@ -493,7 +276,7 @@ async fn run_ignored_child_test_with_readiness(
                 CHILD_OUTPUT_TIMEOUT.as_millis()
             ));
             if cleanup.is_none() {
-                cleanup = Some(kill_ignored_child(&mut child, &child_session).await);
+                cleanup = Some(child_session.retire(&mut child).await);
             }
             // Return partial buffers even if cleanup could not close every pipe.
             // Both readers observe cancellation before their next read.
@@ -527,7 +310,7 @@ async fn run_ignored_child_test_with_readiness(
         }
     };
     if !failures.is_empty() && cleanup.is_none() {
-        cleanup = Some(kill_ignored_child(&mut child, &child_session).await);
+        cleanup = Some(child_session.retire(&mut child).await);
     }
     let status = match cleanup {
         Some(Ok(status)) => {
@@ -538,7 +321,7 @@ async fn run_ignored_child_test_with_readiness(
         None => {
             // Normal EOF can leave quiet descendants alive. Finalize the session
             // before reaping its leader, while the saved SID is still owned.
-            kill_ignored_child(&mut child, &child_session).await
+            child_session.retire(&mut child).await
         }
     };
     let status = status.unwrap_or_else(|error| {
@@ -569,64 +352,6 @@ async fn run_ignored_child_test_with_readiness(
         stderr,
         truncated,
     }
-}
-
-async fn kill_ignored_child(
-    child: &mut tokio::process::Child,
-    child_session: &IgnoredChildSession,
-) -> Result<std::process::ExitStatus, String> {
-    let kill_error = child.start_kill().err();
-    let deadline = tokio::time::Instant::now() + CHILD_KILL_WAIT_TIMEOUT;
-    let session_error = child_session.kill_members(deadline).await.err();
-    let wait_result = wait_for_child_until(child, deadline).await;
-
-    match (session_error, wait_result) {
-        (None, Ok(status)) => Ok(status),
-        (Some(session_error), Ok(status)) => Err(cleanup_error(
-            kill_error,
-            Some(session_error),
-            format!("killed child status: {status}"),
-        )),
-        (session_error, Err(wait_error)) => {
-            Err(cleanup_error(kill_error, session_error, wait_error))
-        }
-    }
-}
-
-async fn wait_for_child_until(
-    child: &mut tokio::process::Child,
-    deadline: tokio::time::Instant,
-) -> Result<std::process::ExitStatus, String> {
-    match child.try_wait() {
-        Ok(Some(status)) => return Ok(status),
-        Ok(None) => {}
-        Err(error) => return Err(format!("wait failed: {error}")),
-    }
-
-    match tokio::time::timeout_at(deadline, child.wait()).await {
-        Ok(Ok(status)) => Ok(status),
-        Ok(Err(error)) => Err(format!("wait failed: {error}")),
-        Err(_) => Err(format!(
-            "wait timed out after {}ms",
-            CHILD_KILL_WAIT_TIMEOUT.as_millis()
-        )),
-    }
-}
-
-fn cleanup_error(
-    kill_error: Option<io::Error>,
-    session_error: Option<String>,
-    wait_result: String,
-) -> String {
-    let mut errors = Vec::new();
-    if let Some(kill_error) = kill_error {
-        errors.push(format!("start kill failed: {kill_error}"));
-    }
-    if let Some(session_error) = session_error {
-        errors.push(format!("session cleanup failed: {session_error}"));
-    }
-    errors.push(wait_result);
-    errors.join("; ")
 }
 
 async fn wait_for_child_readiness(path: &Path) -> Result<(), String> {

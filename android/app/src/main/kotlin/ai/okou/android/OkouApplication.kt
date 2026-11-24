@@ -10,7 +10,7 @@ import ai.okou.android.auth.initialLocale
 import ai.okou.android.chat.ChatCacheStore
 import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.chat.ProjectExpansionStore
-import ai.okou.android.chat.RunControlJournalStore
+import ai.okou.android.chat.RunControlOwners
 import ai.okou.android.chat.SearchRecentChatsStore
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import ai.okou.android.preferences.MemberAppearanceCache
@@ -92,7 +92,7 @@ open class OkouApplication : Application() {
         }
     }
     open val composerJournal by lazy { ComposerJournalStore(this) }
-    open val runControlJournal by lazy { RunControlJournalStore(this) }
+    val runControlOwners by lazy { RunControlOwners() }
     val authentication by lazy { createAuthentication() }
 
     open fun createAuthentication(): Authentication = ClerkAuthentication(this)

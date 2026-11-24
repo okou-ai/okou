@@ -8,6 +8,7 @@ import { createServer } from "node:https";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 import { gunzipSync, gzipSync } from "node:zlib";
 import {
   createSecureContext,
@@ -17,6 +18,17 @@ import {
 import "../src/__tests__/global-setup-env.ts";
 import { createRunnerDispatchTransport } from "../src/runner-dispatch-transport.node.ts";
 import { awaitWithSignal } from "../src/signals/utils.ts";
+
+const dispatcherKeys = [
+  Symbol.for("undici.globalDispatcher.1"),
+  Symbol.for("undici.globalDispatcher.2"),
+];
+void globalThis.Request;
+const nativeDispatchers = dispatcherKeys.map((key) => {
+  return globalThis[key];
+});
+const { createRunnerDispatchPool } =
+  await import("../src/runner-dispatch-pool.node.ts");
 
 async function createPeerCredentials() {
   const directory = await mkdtemp(join(tmpdir(), "runner-transport-tls-"));
@@ -57,12 +69,12 @@ setDefaultCACertificates([
 ]);
 const dispatchBody = JSON.stringify({ prompt: "Summarize the café menu" });
 
-async function withPeer(signal, run) {
+async function withPeer(signal, run, pool, reply) {
   const handshake = Promise.withResolvers();
   const secure = Promise.withResolvers();
   const firstClosed = Promise.withResolvers();
   const context = createSecureContext({ key, cert });
-  const transport = createRunnerDispatchTransport({ observe() {} });
+  const transport = createRunnerDispatchTransport({ ...pool, observe() {} });
   const sockets = new Set();
   const ports = [];
   const bodyPorts = [];
@@ -80,6 +92,7 @@ async function withPeer(signal, run) {
     {
       key,
       cert,
+      ...(pool && { keepAliveTimeout: 35_000 }),
       SNICallback(_servername, callback) {
         handshake.resolve();
         if (released) {
@@ -91,6 +104,10 @@ async function withPeer(signal, run) {
     },
     (request, response) => {
       requestPaths.push(request.url);
+      if (pool) {
+        // Omit the timeout hint so the client uses its configured idle limit.
+        response.setHeader("keep-alive", "max=1000");
+      }
       const chunks = [];
       request.on("data", (chunk) => {
         chunks.push(chunk);
@@ -103,7 +120,14 @@ async function withPeer(signal, run) {
             : bytes.toString("utf8");
         bodyPorts.push(request.socket.remotePort ?? 0);
         bodies.push(body);
-        response.end(JSON.stringify({ disposition: "accepted" }));
+        const accept = () => {
+          response.end(JSON.stringify({ disposition: "accepted" }));
+        };
+        if (reply) {
+          reply(accept);
+        } else {
+          accept();
+        }
       });
     },
   );
@@ -175,7 +199,7 @@ function reserve(transport, runId, url, signal, encoding = "identity") {
     url,
     (body, connectionSignal) => {
       return {
-        response: globalThis.fetch(url, {
+        response: transport.request(url, {
           method: "POST",
           headers: {
             "content-type": "application/json",
@@ -198,7 +222,7 @@ async function send(transport, url) {
   const reserved = transport.take(url, dispatchBody, 1, signal);
   try {
     const response = await (reserved?.response ??
-      globalThis.fetch(url, {
+      transport.request(url, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: dispatchBody,
@@ -209,6 +233,18 @@ async function send(transport, url) {
     reserved?.clearDeadline();
   }
 }
+
+test("preserves the process-wide Fetch dispatcher", async () => {
+  const pool = createRunnerDispatchPool();
+  try {
+    for (const [index, key] of dispatcherKeys.entries()) {
+      assert.equal(globalThis[key], nativeDispatchers[index]);
+    }
+  } finally {
+    await pool.destroy();
+  }
+});
+
 test(
   "releases gzip bytes on its reserved HTTPS request",
   { timeout: 5000 },
@@ -283,6 +319,75 @@ test(
       assert.equal(peer.ports.length, 1);
       assert.deepEqual(peer.bodyPorts, [peer.ports[0], peer.ports[0]]);
     });
+  },
+);
+
+test(
+  "shares the socket across reserved and direct POSTs after an idle gap",
+  { timeout: 12_000 },
+  async (t) => {
+    const pool = createRunnerDispatchPool();
+    try {
+      await withPeer(
+        t.signal,
+        async (peer) => {
+          const { transport, origin } = peer;
+          reserve(transport, "retained", origin, t.signal);
+          await peer.firstHandshake;
+          assert.deepEqual(peer.requestPaths, []);
+          peer.releaseHandshake();
+          await send(transport, origin);
+          await delay(5500, undefined, { signal: t.signal });
+          await send(transport, origin + "/next");
+          assert.deepEqual(peer.requestPaths, ["/", "/next"]);
+          assert.deepEqual(peer.bodies, [dispatchBody, dispatchBody]);
+          assert.equal(peer.ports.length, 1);
+          assert.deepEqual(peer.bodyPorts, [peer.ports[0], peer.ports[0]]);
+          assert.equal(transport.poolStats(origin).connected, 1);
+        },
+        pool,
+      );
+    } finally {
+      await pool.destroy();
+    }
+  },
+);
+
+test(
+  "opens another socket while every existing socket is busy",
+  { timeout: 5000 },
+  async (t) => {
+    const pool = createRunnerDispatchPool();
+    const replies = [];
+    const received = Promise.withResolvers();
+    try {
+      await withPeer(
+        t.signal,
+        async ({ transport, origin, bodyPorts, releaseHandshake }) => {
+          releaseHandshake();
+          const sends = Promise.all(
+            Array.from({ length: 5 }, (_, i) => {
+              return send(transport, origin + "/" + i);
+            }),
+          );
+          await Promise.race([received.promise, sends]);
+          assert.equal(new Set(bodyPorts).size, 5);
+          for (const reply of replies) {
+            reply();
+          }
+          await sends;
+        },
+        pool,
+        (reply) => {
+          replies.push(reply);
+          if (replies.length === 5) {
+            received.resolve();
+          }
+        },
+      );
+    } finally {
+      await pool.destroy();
+    }
   },
 );
 

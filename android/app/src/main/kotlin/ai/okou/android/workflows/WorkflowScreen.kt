@@ -234,7 +234,7 @@ internal fun WorkflowScreen(
                 onRowRestored = { restoreRow = null },
             )
         }
-        if (wide) VerticalDivider(color = MaterialTheme.colorScheme.outline)
+        if (wide) VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         if (wide || route.id != null) {
             Column(Modifier.weight(1f).fillMaxHeight()) {
                 val detail = state.detail?.takeIf { it.id == route.id }
@@ -475,7 +475,7 @@ private fun WorkflowDirectory(
                     actionFocus.modifier
                         .semantics { if (keepCreateFocus) disabled() }
                         .heightIn(min = 48.dp)
-                        .updateFocusOutline(shape, LocalActivityStatusColor.current)
+                        .updateFocusOutline(shape, MaterialTheme.colorScheme.onBackground)
                         .testTag("workflow_create"),
                 shape = shape,
                 colors =
@@ -1084,7 +1084,7 @@ private fun WorkflowTabs(current: WorkflowTab, pick: (WorkflowTab) -> Unit) {
                     modifier =
                         Modifier.heightIn(min = 48.dp)
                             .focusRequester(tabFocus[index])
-                            .updateFocusOutline(RoundedCornerShape(8.dp), accent)
+                            .updateFocusOutline(RoundedCornerShape(8.dp), colors.onBackground)
                             .onPreviewKeyEvent { event ->
                                 val next =
                                     when (event.key) {
@@ -1245,7 +1245,7 @@ internal fun WorkflowAction(
             shape = shape,
             colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.onBackground),
             border =
-                if (keyboardFocused) BorderStroke(2.dp, LocalActivityStatusColor.current)
+                if (keyboardFocused) BorderStroke(2.dp, colors.onBackground)
                 else BorderStroke(1.dp, colors.outline),
             contentPadding = padding,
         ) {
@@ -1260,7 +1260,7 @@ internal fun WorkflowAction(
 }
 
 @Composable
-internal fun WorkflowDivider() = HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+internal fun WorkflowDivider() = HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
 @Composable
 internal fun WorkflowSecondary(text: String, small: Boolean = false) {
@@ -1332,7 +1332,7 @@ private fun WorkflowReadFeedback(label: Int?) {
             .heightIn(min = 48.dp)
             .shadow(2.dp, shape)
             .background(MaterialTheme.colorScheme.surface, shape)
-            .border(1.dp, MaterialTheme.colorScheme.outline, shape)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
             .padding(12.dp)
             .semantics { liveRegion = LiveRegionMode.Polite },
         color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -1,3 +1,4 @@
+import CCStateSwiftUI
 import ChatData
 import ChatDomain
 import PhotosUI
@@ -5,16 +6,15 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
+/// The draft, its uploads and its voice input are read from the composer's CCState graph.
 struct ChatComposerView: View {
-  @Binding var draft: String
   let isBusy: Bool
   let showsProgress: Bool
   let canStop: Bool
   let needsUpgrade: Bool
   let error: String?
   let attachmentURL: URL
-  let attachments: AttachmentDraftStore
-  var draftState: ComposerDraftStore?
+  let draftState: ComposerDraftStore
   let submit: @MainActor () async -> Void
   let refresh: (@MainActor () async -> Void)?
 
@@ -34,7 +34,45 @@ struct ChatComposerView: View {
   var project: ChatProject?
   var removeProject: (() -> Void)?
 
-  @Environment(\.composerPreferences) private var preferences
+  /// The workspace root provides the session Store that keeps the composer's graph.
+  var body: some View { ChatComposerContent(configuration: self) }
+}
+
+private struct ChatComposerContent: View {
+  let configuration: ChatComposerView
+  @ResolvedValue private var draftPresentation: ComposerDraftPresentation?
+
+  init(configuration: ChatComposerView) {
+    self.configuration = configuration
+    _draftPresentation = ResolvedValue(configuration.draftState.presentation)
+  }
+
+  private var isBusy: Bool { configuration.isBusy }
+  private var showsProgress: Bool { configuration.showsProgress }
+  private var canStop: Bool { configuration.canStop }
+  private var needsUpgrade: Bool { configuration.needsUpgrade }
+  private var error: String? { configuration.error }
+  private var attachmentURL: URL { configuration.attachmentURL }
+  private var draftState: ComposerDraftStore { configuration.draftState }
+  private var attachments: AttachmentDraftStore { configuration.draftState.attachments }
+  private var submit: @MainActor () async -> Void { configuration.submit }
+  private var refresh: (@MainActor () async -> Void)? { configuration.refresh }
+  private var modelSelection: ChatModelSelectionStore? { configuration.modelSelection }
+  private var connectorSelection: ComposerConnectorStore? { configuration.connectorSelection }
+  private var mentionSource: ComposerMentionSource? { configuration.mentionSource }
+  private var workflowSource: ComposerWorkflowSource? { configuration.workflowSource }
+  private var sendTransition: ConversationSendTransition? { configuration.sendTransition }
+  private var writesDirection: Bool { configuration.writesDirection }
+  private var placeholder: String? { configuration.placeholder }
+  private var recommendedFollowup: String? { configuration.recommendedFollowup }
+  private var showsTrailingFeedbackInput: Bool { configuration.showsTrailingFeedbackInput }
+  private var project: ChatProject? { configuration.project }
+  private var removeProject: (() -> Void)? { configuration.removeProject }
+  /// This render's graph value. The synchronous read only covers a missing first resolution.
+  private var current: ComposerDraftPresentation {
+    draftPresentation ?? draftState.currentPresentation
+  }
+
   @State private var isFocused = false
   @State private var showsPhotos = false
   @State private var showsFiles = false
@@ -55,27 +93,26 @@ struct ChatComposerView: View {
   @Environment(\.workspaceChatPresentation) private var presentation
   private let actionSize = OkouControl.minimumTarget
 
-  private var hasText: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+  private var hasText: Bool {
+    !current.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  }
   private var hasContent: Bool {
     if writesDirection {
       return hasText
-        || draftState?.document.parts.contains {
+        || current.draft.document.parts.contains {
           $0["type"]?.string != "text" && ComposerAttributedDocument.isInline($0)
-        } == true
+        }
     }
-    return hasText || attachments.hasAttachments || draftState?.hasContent == true
-  }
-  private var returnKeyPreference: ComposerReturnKeyPreference {
-    preferences?.returnKey ?? .newline
+    return hasText || current.attachments.hasAttachments || current.hasContent
   }
   private var canPerformPrimaryAction: Bool {
-    (hasContent || showsStop) && attachments.isReady && !isBusy && !needsUpgrade
-      && !voiceActive && draftState?.canSend != false
+    (hasContent || showsStop) && current.attachments.isReady && !isBusy && !needsUpgrade
+      && !voiceActive && current.canSend
       && (showsStop || modelSelection?.canSend != false)
   }
-  private var canSendFromKeyboard: Bool { hasContent && canPerformPrimaryAction }
   private var showsEditingLayout: Bool {
-    isFocused || draftState?.focusRequest != nil || presentation?.keepsComposerExpanded == true
+    isFocused || current.draft.focusRequest != nil
+      || presentation?.keepsComposerExpanded == true
   }
   private var focusAnimation: Animation? {
     guard !reduceMotion, presentation?.isTransitioning != true,
@@ -88,19 +125,17 @@ struct ChatComposerView: View {
   /// keeps it open while the keyboard is down under the sheet.
   private var expandsInput: Bool {
     writesDirection || showsEditingLayout || hasText
-      || draftState?.document.hasFeedback == true
-      || draftState?.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-      || voiceActive || showsModels
+      || current.draft.document.hasFeedback || voiceActive || showsModels
   }
   private var showsStop: Bool { canStop && !hasContent }
   private var voiceActive: Bool {
-    guard let voice = draftState?.voice else { return false }
-    return voice.phase == .recording || voice.phase == .processing || voice.phase == .saved
+    guard let phase = current.voicePhase else { return false }
+    return phase == .recording || phase == .processing || phase == .saved
   }
   /// Expanded text entry reserves send before typing; only compact or voice-only input lets
   /// the mic take its place, so the toolbar does not reflow on the first or last character.
   private var replacesSendWithMic: Bool {
-    !hasContent && !canStop && draftState?.voice != nil && (!expandsInput || voiceActive)
+    !hasContent && !canStop && draftState.voice != nil && (!expandsInput || voiceActive)
   }
   private var showsSecondaryActions: Bool { expandsInput && !voiceActive }
   private var usesFollowupPlaceholder: Bool {
@@ -110,8 +145,8 @@ struct ChatComposerView: View {
     placeholder ?? (usesFollowupPlaceholder ? "" : String(localized: "Message Okou"))
   }
   private var visibleFollowup: String? {
-    guard usesFollowupPlaceholder, draft.isEmpty, !hasContent, !isBusy, !needsUpgrade,
-      draftState?.canSend == true
+    guard usesFollowupPlaceholder, current.text.isEmpty, !hasContent, !isBusy, !needsUpgrade,
+      current.canSend
     else { return nil }
     return recommendedFollowup
   }
@@ -124,61 +159,62 @@ struct ChatComposerView: View {
             .accessibilityLabel("Project: \(project.name)")
             .disabled(isBusy || needsUpgrade)
         }
-        if let voice = draftState?.voice, voice.error != nil || voiceActive {
+        if let voice = draftState.voice, current.voiceHasError || voiceActive {
           ComposerVoiceInputTray(voice: voice)
             .transition(reduceMotion ? .identity : .move(edge: .bottom).combined(with: .opacity))
         }
         // Every notice above the composer is the same quiet banner (OkouBanner): one footnote
         // sentence, its actions as text buttons, a ✕ where the reader can dismiss it.
-        if let state = draftState {
-          if !state.document.isSupported {
-            OkouBanner(
-              Text("This draft contains content this app cannot edit. Open it on the web."),
-              icon: "file-warning", tone: .problem
-            ) {
-              Link("Open on web", destination: attachmentURL)
-            }
+        if !current.draft.document.isSupported {
+          OkouBanner(
+            Text("This draft contains content this app cannot edit. Open it on the web."),
+            icon: "file-warning", tone: .problem
+          ) {
+            Link("Open on web", destination: attachmentURL)
           }
-          let contextLabels = ChatDraftDocument(
-            parts: state.document.parts.filter { !ComposerAttributedDocument.isInline($0) }
-          ).contextLabels
-          if !contextLabels.isEmpty {
-            Text(contextLabels.joined(separator: " · "))
-              .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground).lineLimit(3)
-              .padding(.horizontal, OkouSpace.md)
-              .accessibilityLabel("Saved context: " + contextLabels.joined(separator: ", "))
-          }
-          if let draftError = state.error,
-            state.document.isSupported || state.hasLocalFailure || state.conflictingRemote != nil
-          {
-            OkouBanner(Text(draftError), icon: "circle-alert", tone: .problem) {
-              if state.conflictingRemote != nil {
-                Button("Keep this draft") { state.keepLocal() }
-                Button("Use other device's draft") { state.useRemote() }
-              } else if state.hasLocalFailure {
-                Button("Copy draft text") { UIPasteboard.general.string = state.text }
-                  .disabled(state.text.isEmpty)
-                Button("Save on this device") { state.retryLocalSave() }
-                  .disabled(!state.canRetryLocalSave)
-              } else {
-                Button("Retry draft sync") { Task { await state.synchronize() } }
-              }
+        }
+        let contextLabels = ChatDraftDocument(
+          parts: current.draft.document.parts.filter { !ComposerAttributedDocument.isInline($0) }
+        ).contextLabels
+        if !contextLabels.isEmpty {
+          Text(contextLabels.joined(separator: " · "))
+            .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground).lineLimit(3)
+            .padding(.horizontal, OkouSpace.md)
+            .accessibilityLabel("Saved context: " + contextLabels.joined(separator: ", "))
+        }
+        if let draftError = current.error,
+          current.draft.document.isSupported || current.hasLocalFailure
+            || current.status.conflictingRemote != nil
+        {
+          OkouBanner(Text(draftError), icon: "circle-alert", tone: .problem) {
+            if current.status.conflictingRemote != nil {
+              Button("Keep this draft") { draftState.keepLocal() }
+              Button("Use other device's draft") { draftState.useRemote() }
+            } else if current.hasLocalFailure {
+              Button("Copy draft text") { UIPasteboard.general.string = draftState.text }
+                .disabled(current.text.isEmpty)
+              Button("Save on this device") { draftState.retryLocalSave() }
+                .disabled(!current.canRetryLocalSave)
+            } else {
+              Button("Retry draft sync") { Task { await draftState.synchronize() } }
             }
           }
         }
-        if let state = draftState, let warning = state.syncWarning {
+        if let warning = current.status.syncWarning {
           OkouBanner(Text(warning), icon: "refresh-cw") {
-            Button("Sync draft") { Task { await state.synchronize() } }
+            Button("Sync draft") { Task { await draftState.synchronize() } }
           }
         }
-        if !attachments.items.isEmpty {
-          ChatAttachmentChips(draft: attachments, isDisabled: isBusy || needsUpgrade)
+        if !current.attachments.items.isEmpty {
+          ChatAttachmentChips(
+            draft: attachments, items: current.attachments.items,
+            isDisabled: isBusy || needsUpgrade)
         }
-        if attachments.importingCount > 0 {
+        if current.attachments.importingCount > 0 {
           OkouLoadingRow("Preparing attachments…")
             .padding(.horizontal, OkouSpace.md)
         }
-        if let importError = attachments.error {
+        if let importError = current.attachments.error {
           OkouBanner(
             Text(importError), icon: "circle-alert", tone: .problem,
             dismiss: { attachments.error = nil })
@@ -194,7 +230,7 @@ struct ChatComposerView: View {
       }
       .chatFeedbackContentAnchor()
 
-      let inputID = attachments.inputID
+      let inputID = current.attachments.inputID
       VStack(alignment: .trailing, spacing: 0) {
         // Retired native editors must leave immediately. Fading a first responder
         // through a draft reset can restart keyboard avoidance during the send flight.
@@ -204,9 +240,9 @@ struct ChatComposerView: View {
             HStack(spacing: OkouSpace.xs) {
               textInput(id: inputID, followup: followup)
                 .accessibilityIdentifier("message-input")
-              if let followup, let state = draftState {
+              if let followup {
                 Button {
-                  state.editor.acceptFollowup(followup)
+                  draftState.editor.acceptFollowup(followup)
                 } label: {
                   Text("OK")
                     .font(.okou(.footnote).weight(.medium))
@@ -250,7 +286,7 @@ struct ChatComposerView: View {
         }
         .chatFeedbackContentAnchor()
         .anchorPreference(key: ComposerSuggestionPresentation.self, value: .bounds) { bounds in
-          guard let editor = draftState?.editor else { return nil }
+          let editor = draftState.editor
           let content: ComposerSuggestionPresentation.Content
           if editor.workflows.query != nil {
             content = .workflows(editor.workflows)
@@ -306,16 +342,16 @@ struct ChatComposerView: View {
       await modelSelection?.open()
     }
     .onChange(of: mentionSource, initial: true) { _, source in
-      draftState?.editor.mentionSource = source
+      draftState.editor.mentionSource = source
     }
     .onChange(
       of: workflowSource?.id, initial: true
     ) { _, _ in
-      draftState?.editor.workflows.configure(source: workflowSource)
+      draftState.editor.workflows.configure(source: workflowSource)
     }
-    .onChange(of: draftState.map(ObjectIdentifier.init), initial: true) { _, _ in
+    .onChange(of: ObjectIdentifier(draftState), initial: true) { _, _ in
       mountedVoice?.suspend()
-      mountedVoice = draftState?.voice
+      mountedVoice = draftState.voice
     }
     .onChange(of: scenePhase) { _, phase in
       if phase == .background { mountedVoice?.suspend() }
@@ -331,7 +367,7 @@ struct ChatComposerView: View {
       showsFiles = false
     }
     .onDisappear {
-      draftState?.editor.workflows.dismiss()
+      draftState.editor.workflows.dismiss()
       mountedVoice?.suspend()
     }
     .fullScreenCover(isPresented: $showsCamera) {
@@ -361,35 +397,18 @@ struct ChatComposerView: View {
     }
   }
 
-  @ViewBuilder
   private func textInput(id inputID: UUID, followup: String?) -> some View {
-    if let state = draftState {
-      ChatFeedbackComposer(
-        state: state, inputID: inputID, isFocused: $isFocused,
-        acceptsImages: !isBusy && !needsUpgrade, placeholder: resolvedPlaceholder,
-        followup: followup,
-        showsTrailingParagraph: showsTrailingFeedbackInput,
-        expanded: showsEditingLayout,
-        returnKeyPreference: returnKeyPreference,
-        submitFromKeyboard: sendFromKeyboard
-      )
-      .id(inputID)
-      .transition(.identity)
-      .disabled(!state.document.isSupported)
-    } else {
-      ChatComposerTextInput(
-        text: $draft, isFocused: $isFocused,
-        acceptsImages: !isBusy && !needsUpgrade,
-        isCurrent: { attachments.inputID == inputID },
-        pasteImages: attachments.importPastedImages,
-        placeholder: resolvedPlaceholder,
-        expanded: showsEditingLayout,
-        returnKeyPreference: returnKeyPreference,
-        submitFromKeyboard: sendFromKeyboard
-      )
-      .id(inputID)
-      .transition(.identity)
-    }
+    ChatFeedbackComposer(
+      state: draftState, presentation: current, inputID: inputID,
+      isFocused: $isFocused,
+      acceptsImages: !isBusy && !needsUpgrade, placeholder: resolvedPlaceholder,
+      followup: followup,
+      showsTrailingParagraph: showsTrailingFeedbackInput,
+      expanded: showsEditingLayout
+    )
+    .id(inputID)
+    .transition(.identity)
+    .disabled(!current.draft.document.isSupported)
   }
 
   private var trailingActions: some View {
@@ -404,7 +423,7 @@ struct ChatComposerView: View {
         }
         .frame(width: actionSize, height: actionSize)
       }
-      if let voice = draftState?.voice {
+      if let voice = draftState.voice {
         ZStack {
           if showsSecondaryActions {
             voiceInput(voice)
@@ -415,7 +434,7 @@ struct ChatComposerView: View {
       }
       // Keep the row width stable while the compact mic fades into the primary action.
       ZStack {
-        if replacesSendWithMic, let voice = draftState?.voice {
+        if replacesSendWithMic, let voice = draftState.voice {
           voiceInput(voice)
             .transition(.opacity)
         } else {
@@ -429,7 +448,7 @@ struct ChatComposerView: View {
 
   private func voiceInput(_ voice: ComposerVoiceInputStore) -> some View {
     ComposerVoiceInputButton(voice: voice)
-      .disabled(isBusy || needsUpgrade || voiceActive || draftState?.canEditVoice != true)
+      .disabled(isBusy || needsUpgrade || voiceActive || !current.canEditVoice)
   }
 
   private var primaryAction: some View {
@@ -464,12 +483,6 @@ struct ChatComposerView: View {
     .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: hasContent)
   }
 
-  private func sendFromKeyboard() {
-    // An empty Send key must never become the active run's Stop action.
-    guard canSendFromKeyboard else { return }
-    performPrimaryAction()
-  }
-
   private func performPrimaryAction() {
     guard canPerformPrimaryAction else { return }
     let requiresContent = !showsStop
@@ -484,7 +497,8 @@ struct ChatComposerView: View {
 
   /// "Clear draft" in Add to chat, only while there is something to clear.
   private var clearDraftAction: (() -> Void)? {
-    guard let state = draftState, state.hasContent || state.error != nil else { return nil }
+    guard current.hasContent || current.error != nil else { return nil }
+    let state = draftState
     return { state.clear() }
   }
 

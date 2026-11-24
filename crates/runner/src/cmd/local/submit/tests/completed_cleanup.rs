@@ -2,7 +2,7 @@ use std::process::ExitCode;
 
 use super::super::{SubmitArgs, run_submit_with_home};
 use super::support::{
-    TEST_SUBMIT_RENDEZVOUS_TIMEOUT, run_submit_and_write_result, submit_args_for_test,
+    ObservedJob, TEST_SUBMIT_RENDEZVOUS_TIMEOUT, run_submit_and_write_result, submit_args_for_test,
     submit_queue_entry, wait_for_job_and_write_result, write_queue_job_file,
 };
 use runner_host::paths::HomePaths;
@@ -16,7 +16,7 @@ async fn submit_returns_failure_for_nonzero_job_response() {
     let group = "test/group";
     let group_dir = home.groups_dir().join(group);
 
-    let (code, request) = run_submit_and_write_result(
+    let (code, ObservedJob { request, .. }) = run_submit_and_write_result(
         SubmitArgs {
             group: group.into(),
             prompt: "hello".into(),
@@ -53,20 +53,21 @@ async fn submit_rejects_mismatched_result_identity_before_cleanup() {
     let group_dir = home.groups_dir().join(&args.group);
     let actual_run_id = RunId::new_v4();
 
-    let (result, request) = tokio::time::timeout(TEST_SUBMIT_RENDEZVOUS_TIMEOUT, async {
-        tokio::join!(
-            run_submit_with_home(args, home),
-            wait_for_job_and_write_result(
-                group_dir.clone(),
-                crate::profile::DEFAULT_PROFILE.to_owned(),
-                0,
-                None,
-                Some(actual_run_id),
-            ),
-        )
-    })
-    .await
-    .expect("local submit mismatch rendezvous should not time out");
+    let (result, ObservedJob { request, .. }) =
+        tokio::time::timeout(TEST_SUBMIT_RENDEZVOUS_TIMEOUT, async {
+            tokio::join!(
+                run_submit_with_home(args, home),
+                wait_for_job_and_write_result(
+                    group_dir.clone(),
+                    crate::profile::DEFAULT_PROFILE.to_owned(),
+                    0,
+                    None,
+                    Some(actual_run_id),
+                ),
+            )
+        })
+        .await
+        .expect("local submit mismatch rendezvous should not time out");
     let error = result.expect_err("mismatched result identity should fail local submit");
     let queue = submit_queue_entry(&group_dir, request.job_id);
 

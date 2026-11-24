@@ -31,10 +31,14 @@ import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalRippleConfiguration
+import androidx.compose.material3.LocalRippleThemeConfiguration
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.ProvideTextStyle
+import androidx.compose.material3.RippleConfiguration
+import androidx.compose.material3.RippleThemeConfiguration
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -43,6 +47,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -212,9 +217,13 @@ internal fun SettingsSwitchRow(
         if (checked == null) {
             Modifier.semantics(mergeDescendants = true) { disabled() }
         } else {
-            Modifier.toggleable(checked, enabled = onCheckedChange != null, role = Role.Switch) {
-                onCheckedChange?.invoke(it)
-            }
+            Modifier.updateFocusOutline(
+                    RoundedCornerShape(12.dp),
+                    MaterialTheme.colorScheme.onSurface,
+                )
+                .toggleable(checked, enabled = onCheckedChange != null, role = Role.Switch) {
+                    onCheckedChange?.invoke(it)
+                }
         }
     Row(
         modifier
@@ -258,7 +267,6 @@ internal fun OkouSwitch(checked: Boolean, enabled: Boolean) {
                     colors.onSurface
                         .copy(alpha = if (dark) 0.16f else 0.12f)
                         .compositeOver(colors.surface),
-                outline = colors.onSurface.copy(alpha = 0.64f).compositeOver(colors.surface),
             )
         }
     MaterialTheme(colorScheme = switchColors) {
@@ -452,6 +460,33 @@ internal fun SettingsSheetDescription(text: String) {
     )
 }
 
+private val buttonFocusOutlineTheme =
+    RippleThemeConfiguration(
+        focus =
+            RippleThemeConfiguration.Focus.InsetRing(
+                outerStrokeInset = 1.dp,
+                outerStrokeWidth = 2.dp,
+                innerStrokeInset = 0.dp,
+                innerStrokeWidth = 0.dp,
+            ),
+    )
+
+@Composable
+internal fun WithButtonFocusOutline(color: Color, content: @Composable () -> Unit) {
+    CompositionLocalProvider(
+        LocalRippleThemeConfiguration provides buttonFocusOutlineTheme,
+        LocalRippleConfiguration provides
+            RippleConfiguration(
+                focus =
+                    RippleConfiguration.Focus.InsetRing(
+                        outerStrokeColor = color,
+                        innerStrokeColor = Color.Transparent,
+                    ),
+            ),
+        content = content,
+    )
+}
+
 @Composable
 internal fun OkouConfirmationDialog(
     title: String,
@@ -509,38 +544,40 @@ internal fun OkouConfirmationDialog(
                         ) {
                             ProvideTextStyle(bodyStyle, content)
                         }
-                        FlowRow(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            val buttonPadding =
-                                if (compact) PaddingValues(horizontal = 8.dp, vertical = 8.dp)
-                                else ButtonDefaults.TextButtonContentPadding
-                            TextButton(
-                                onClick = onDismiss,
-                                modifier = Modifier.heightIn(min = 48.dp),
-                                enabled = dismissEnabled,
-                                contentPadding = buttonPadding,
-                                colors =
-                                    ButtonDefaults.textButtonColors(
-                                        contentColor = colors.onSurface,
-                                    ),
+                        WithButtonFocusOutline(LocalActivityStatusColor.current) {
+                            FlowRow(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
-                                Text(stringResource(R.string.settings_cancel))
-                            }
-                            TextButton(
-                                onClick = onConfirm,
-                                modifier = Modifier.heightIn(min = 48.dp),
-                                enabled = confirmEnabled,
-                                contentPadding = buttonPadding,
-                                colors =
-                                    ButtonDefaults.textButtonColors(
-                                        contentColor =
-                                            if (destructive) colors.error else colors.onSurface,
-                                    ),
-                            ) {
-                                Text(confirm)
+                                val buttonPadding =
+                                    if (compact) PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+                                    else ButtonDefaults.TextButtonContentPadding
+                                TextButton(
+                                    onClick = onDismiss,
+                                    modifier = Modifier.heightIn(min = 48.dp),
+                                    enabled = dismissEnabled,
+                                    contentPadding = buttonPadding,
+                                    colors =
+                                        ButtonDefaults.textButtonColors(
+                                            contentColor = colors.onSurface,
+                                        ),
+                                ) {
+                                    Text(stringResource(R.string.settings_cancel))
+                                }
+                                TextButton(
+                                    onClick = onConfirm,
+                                    modifier = Modifier.heightIn(min = 48.dp),
+                                    enabled = confirmEnabled,
+                                    contentPadding = buttonPadding,
+                                    colors =
+                                        ButtonDefaults.textButtonColors(
+                                            contentColor =
+                                                if (destructive) colors.error else colors.onSurface,
+                                        ),
+                                ) {
+                                    Text(confirm)
+                                }
                             }
                         }
                     },
@@ -616,7 +653,7 @@ internal fun SettingsChoiceRow(
             .fillMaxWidth()
             .heightIn(min = 56.dp)
             .clip(shape)
-            .updateFocusOutline(shape, LocalActivityStatusColor.current)
+            .updateFocusOutline(shape, foreground)
             .then(if (selected) Modifier.background(colors.secondaryContainer) else Modifier)
             .selectable(
                 selected,

@@ -1838,7 +1838,6 @@ describe("usage pack allocation management", () => {
             customer: customerId,
             metadata: {
               ...managedUsagePackMetadata(managedFixture),
-              billingSurveyUserId: fixture.userId,
             },
             subscription_data: {
               metadata: managedUsagePackMetadata(managedFixture),

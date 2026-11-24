@@ -669,7 +669,7 @@ const bootstrapVariablesDecoder = zodDriverValueDecoder(
     object({
       name: string(),
       value: string(),
-      userId: string(),
+      isOrg: boolean(),
     }),
   ),
 );
@@ -842,7 +842,6 @@ function createAgentEnvironment(
     const materialize = connectorContextDuration(materializeStartedAt);
     return {
       ...snapshot,
-      builtin: first.builtin,
       custom: first.custom,
       permissions: first.permissions,
       threadSources: first.threadSources,
@@ -897,7 +896,7 @@ function bootstrapVariableSnapshot(
       .select({
         values: sql`jsonb_agg(jsonb_build_object(
         'name', ${rows.name}, 'value', ${rows.value},
-        'userId', ${rows.userId}
+        'isOrg', ${eq(rows.userId, ORG_SENTINEL_USER_ID)}
       ))`
           .mapWith(nullableDriverValueDecoder(bootstrapVariablesDecoder))
           .as("user_variable_values"),

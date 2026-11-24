@@ -5,7 +5,6 @@
     <string name="auth_selection_failed">Arbeitsbereich konnte nicht geöffnet werden.</string>
     <string name="auth_sign_out_failed">Abmeldung fehlgeschlagen.</string>
     <string name="composer_restore_draft">Behaltenen Entwurf wiederherstellen</string>
-    <string name="controls_storage_failed">Ausstehende Steuerbefehle können nicht gespeichert werden.</string>
     <string name="controls_stop">Laufende Arbeit stoppen</string>
     <string name="controls_stop_failed">Die Aufgabe konnte nicht gestoppt werden.</string>
     <string name="settings">Einstellungen</string>

@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.250.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.250.1...runner-rs-v0.250.2) (2026-11-24)
+
+
+### Refactoring
+
+* **runner:** share native terminal witness clock ordering ([#50509](https://github.com/okou-ai/okou/issues/50509)) ([6c0c294](https://github.com/okou-ai/okou/commit/6c0c29408ce2c6a00f85db51c9bf304dcd2536ad))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.250.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.250.0...runner-rs-v0.250.1) (2026-11-24)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.250.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.123...runner-rs-v0.250.0) (2026-11-24)
 
 

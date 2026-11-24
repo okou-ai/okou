@@ -18,7 +18,7 @@ import ai.okou.android.chat.ChatComposerService
 import ai.okou.android.chat.ChatListService
 import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.chat.ProjectExpansionStore
-import ai.okou.android.chat.RunControlJournalStore
+import ai.okou.android.chat.RunControlOwners
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import ai.okou.android.preferences.MemberAppearance
 import ai.okou.android.preferences.MemberAppearanceCache
@@ -147,12 +147,7 @@ abstract class SessionModelTestFixture {
                 temporary.newFolder(),
                 dispatcher,
             )
-        val controls =
-            RunControlJournalStore(
-                ApplicationProvider.getApplicationContext(),
-                temporary.newFolder(),
-                dispatcher,
-            )
+        val controls = RunControlOwners()
         val appearanceDirectory = temporary.newFolder()
         val appearance = MemberAppearanceCache({ appearanceDirectory }, dispatcher)
         val expansionFile = temporary.newFolder().resolve("project-expansion.preferences_pb")
@@ -201,7 +196,6 @@ abstract class SessionModelTestFixture {
             cache.close()
             drafts.close()
             journal.close()
-            controls.close()
             runCurrent()
             Dispatchers.resetMain()
         }

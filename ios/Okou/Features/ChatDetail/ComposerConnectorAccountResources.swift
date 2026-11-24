@@ -10,6 +10,7 @@ final class ComposerConnectorAccountResources {
     case access(String, Bool?)
     case defaultAccount(String)
     case defaultEnabled(String, Bool)
+    case policy(String, ChatConnectorAccountPolicyChoice)
     case rename(String, String?)
     case disconnect(String)
   }
@@ -19,6 +20,12 @@ final class ComposerConnectorAccountResources {
     let nextCursor: String?
     let access: ChatConnectorAccess
     let defaults: [ChatConnectorAccountDefault]
+    let policies: [ChatConnectorAccountPolicy]?
+  }
+
+  private enum Controls: Sendable {
+    case legacy([ChatConnectorAccountDefault])
+    case member([ChatConnectorAccountPolicy])
   }
 
   /// Pagination accumulation is canonical returned data, not a second request phase.
@@ -57,7 +64,7 @@ final class ComposerConnectorAccountResources {
   @ObservationIgnored private var catalogTask: Task<ChatCatalogConnector, Error>?
   @ObservationIgnored private var impactTask: Task<ChatConnectorDeletionImpact?, Error>?
   @ObservationIgnored private var firstTask: Task<ChatConnectorAccounts, Error>?
-  @ObservationIgnored private var detailsTask: Task<[ChatConnectorAccountDefault], Error>?
+  @ObservationIgnored private var detailsTask: Task<Controls, Error>?
   @ObservationIgnored private var moreTask: Task<Void, Error>?
 
   init(
@@ -153,20 +160,27 @@ final class ComposerConnectorAccountResources {
 
   @ObservationIgnored private lazy var details = makeDetails()
 
-  private func makeDetails() -> Computed<Task<[ChatConnectorAccountDefault], Error>> {
+  private func makeDetails() -> Computed<Task<Controls, Error>> {
     Computed { [weak self] get, options in
       guard let self, !isClosed, try get(lifetime) else { throw CancellationError() }
       _ = try get(revision)
+      _ = try get(contextRevision)
       let signal = options.signal
       let target = connector.target
-      let task: Task<[ChatConnectorAccountDefault], Error> =
+      let memberAccess = composer?.usesMemberAccess == true
+      let task: Task<Controls, Error> =
         Task { @MainActor [weak self, service] in
           do {
             try Task.checkCancellation()
-            let defaults = try await service.accountDefaults(target: target)
+            let controls: Controls
+            if memberAccess {
+              controls = .member(try await service.accountPolicies(target: target))
+            } else {
+              controls = .legacy(try await service.accountDefaults(target: target))
+            }
             try Task.checkCancellation()
             try signal.checkCancellation()
-            return defaults
+            return controls
           } catch {
             if let self, !isClosed, !Task.isCancelled, !signal.isCancelled { didFail(error) }
             throw error
@@ -189,12 +203,13 @@ final class ComposerConnectorAccountResources {
       let search = try get(keyword)
       let tail = try get(tail)
       let first = try get(first)
-      let details = managesDefaults ? try get(details) : nil
+      let memberAccess = composer.usesMemberAccess
+      let details = managesDefaults || memberAccess ? try get(details) : nil
       let current = composer.connectors.first(where: { $0.target == connector.target })
       guard managesDefaults || current != nil else {
         throw APIClientError.http(status: 404, message: "Connector unavailable.")
       }
-      let (result, defaults) = try await (first.value, details?.value)
+      let (result, controls) = try await (first.value, details?.value)
       try Task.checkCancellation()
       try options.signal.checkCancellation()
       var accounts = result.connections + (tail?.accounts ?? [])
@@ -209,12 +224,27 @@ final class ComposerConnectorAccountResources {
       if let current {
         access = current.access
       } else {
-        access = try await service.connectorAccess(target: connector.target, threadID: nil)
+        access = try await service.connectorAccess(
+          target: connector.target, threadID: nil, memberAccess: memberAccess)
         try Task.checkCancellation()
         try options.signal.checkCancellation()
       }
+      let defaults: [ChatConnectorAccountDefault]
+      let policies: [ChatConnectorAccountPolicy]?
+      switch controls {
+      case .member(let value):
+        policies = value
+        defaults = []
+      case .legacy(let value):
+        policies = nil
+        defaults = value
+      case nil:
+        policies = nil
+        defaults = []
+      }
       return Page(
-        accounts: accounts, nextCursor: cursor, access: access, defaults: defaults ?? [])
+        accounts: accounts, nextCursor: cursor, access: access, defaults: defaults,
+        policies: policies)
     }
   }
 

@@ -2,6 +2,7 @@ import "./instrument";
 import { env } from "./lib/env";
 import { normalizeBuildCommitSha } from "./lib/build-info";
 import { singleton } from "./lib/singleton";
+import { createRunnerDispatchPool } from "./runner-dispatch-pool.node";
 import { createRunnerDispatchTransport } from "./runner-dispatch-transport.node";
 import { withRunnerDispatchTransport } from "./signals/external/runner-dispatch-transport";
 import { recordSandboxOperation } from "./signals/external/sandbox-op-log";
@@ -30,6 +31,7 @@ const app = (() => {
 
 const runnerDispatchTransport = singleton(() => {
   return createRunnerDispatchTransport({
+    ...createRunnerDispatchPool(),
     observe(runId, outcome, durationMs) {
       safeSync(() => {
         recordSandboxOperation({

@@ -101,6 +101,7 @@ function serviceEnvSchema() {
     GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL:
       email().optional(),
     CRON_SECRET: string().min(1),
+    BILLING_FEEDBACK_WEBHOOK_SECRET: string().min(32).optional(),
     MARKETING_REWARDS_SETTLEMENT_SECRET: string().min(32).optional(),
     MARKETING_REWARDS_PROJECTION_SECRET: string().min(32).optional(),
     MARKETING_REWARDS_CAMPAIGN_SECRET: string().min(32).optional(),

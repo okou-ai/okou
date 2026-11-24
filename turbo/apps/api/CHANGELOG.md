@@ -10,6 +10,46 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.117.1](https://github.com/okou-ai/okou/compare/api-v2.117.0...api-v2.117.1) (2026-11-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.119.0
+    * @okouai/core bumped to 8.869.1
+    * @okouai/db bumped to 2.64.1
+    * @okouai/pi-agent-runtime bumped to 1.52.61
+
+## [2.117.0](https://github.com/okou-ai/okou/compare/api-v2.116.0...api-v2.117.0) (2026-11-24)
+
+
+### Features
+
+* migrate billing feedback to posthog surveys ([#50412](https://github.com/okou-ai/okou/issues/50412)) ([b3c517c](https://github.com/okou-ai/okou/commit/b3c517cd416a26bda272000095c0aa1deafc332e))
+* use saved presentation format for generation ([#50260](https://github.com/okou-ai/okou/issues/50260)) ([ad98aaa](https://github.com/okou-ai/okou/commit/ad98aaa608c934f8eac3325ab079b3ee8fc50dd1))
+
+
+### Refactoring
+
+* **api:** remove staff cutover queue readers ([#49991](https://github.com/okou-ai/okou/issues/49991)) ([3dafb67](https://github.com/okou-ai/okou/commit/3dafb6732b554774fe4673642fc943b3874e1207)) [#46783](https://github.com/okou-ai/okou/issues/46783)
+
+
+### Performance Improvements
+
+* **api:** overlap runner preparation with pending run commit ([#50459](https://github.com/okou-ai/okou/issues/50459)) ([c04f4bf](https://github.com/okou-ai/okou/commit/c04f4bf68d67381de52923c013d8e0cb500d6068))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.118.0
+    * @okouai/core bumped to 8.869.0
+    * @okouai/db bumped to 2.64.0
+    * @okouai/pi-agent-runtime bumped to 1.52.60
+
 ## [2.116.0](https://github.com/okou-ai/okou/compare/api-v2.115.0...api-v2.116.0) (2026-11-24)
 
 

@@ -1,7 +1,7 @@
 use std::process::ExitCode;
 
 use super::super::{SubmitArgs, run_submit_with_home};
-use super::support::{run_submit_and_write_success, submit_args_for_test};
+use super::support::{ObservedJob, run_submit_and_write_success, submit_args_for_test};
 use runner_host::paths::HomePaths;
 
 #[tokio::test]
@@ -10,7 +10,7 @@ async fn submit_defaults_profile_and_writes_default_partition() {
     let home = HomePaths::with_root(dir.path().to_path_buf());
     let group = "test/group";
 
-    let (code, request) = run_submit_and_write_success(
+    let (code, ObservedJob { request, .. }) = run_submit_and_write_success(
         SubmitArgs {
             group: group.into(),
             prompt: "hello".into(),
@@ -45,7 +45,7 @@ async fn submit_writes_non_default_profile_partition() {
     let group = "test/group";
     let profile = "vm0/large";
 
-    let (code, request) = run_submit_and_write_success(
+    let (code, ObservedJob { request, .. }) = run_submit_and_write_success(
         SubmitArgs {
             group: group.into(),
             prompt: "hello".into(),
@@ -74,7 +74,7 @@ async fn submit_serializes_feature_flags_and_identity_fields() {
     let home = HomePaths::with_root(dir.path().to_path_buf());
     let group = "test/group";
 
-    let (code, request) = run_submit_and_write_success(
+    let (code, ObservedJob { request, .. }) = run_submit_and_write_success(
         SubmitArgs {
             group: group.into(),
             prompt: "hello".into(),
@@ -112,7 +112,7 @@ async fn submit_keeps_session_only_job_without_reuse_key() {
     let home = HomePaths::with_root(dir.path().to_path_buf());
     let group = "test/group";
 
-    let (code, request) = run_submit_and_write_success(
+    let (code, ObservedJob { request, .. }) = run_submit_and_write_success(
         SubmitArgs {
             group: group.into(),
             prompt: "hello".into(),
@@ -158,7 +158,8 @@ async fn submit_serializes_env_and_secret_env() {
         "CUSTOM_SECRET=ordinary-user-secret".into(),
     ];
 
-    let (code, request) = run_submit_and_write_success(args, home).await.unwrap();
+    let (code, ObservedJob { request, .. }) =
+        run_submit_and_write_success(args, home).await.unwrap();
     let environment = request.environment.as_ref().unwrap();
     let secret_environment = request.secret_environment.as_ref().unwrap();
 

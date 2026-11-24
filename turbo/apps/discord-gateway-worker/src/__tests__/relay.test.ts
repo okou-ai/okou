@@ -349,7 +349,7 @@ describe("Discord Gateway relay", () => {
       });
   }, 15_000);
 
-  it("keeps GUILD_DELETE unavailable unchanged and uses a stable lifecycle identity", async () => {
+  it("keeps GUILD_DELETE unavailable unchanged and uses a stable lifecycle identity", async (test) => {
     const relay = await createRelay();
     const gateway = await relay.start();
     gateway.hello();
@@ -370,11 +370,7 @@ describe("Discord Gateway relay", () => {
       eventId: "GUILD_DELETE:lifecycle-session:2",
       payload: { id: GUILD_ID, unavailable: true },
     });
-    await expect
-      .poll(() => {
-        return relay.health();
-      })
-      .toMatchObject({ running: true, pending: 0 });
+    await relay.waitForHealth(test, { running: true, pending: 0 });
   });
 
   it("waits for a refreshed Identify budget before opening a socket", async () => {

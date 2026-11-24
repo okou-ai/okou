@@ -335,7 +335,7 @@ final class WorkspaceChatActions {
     else { return }
     fork = ChatForkStore(
       selection: selection, sourceRunID: runID, projectID: conversation.thread.projectId,
-      commands: commands, models: workspace.modelStore,
+      commands: commands, graph: workspace.graph, models: workspace.modelStore,
       workflowSource: workspace.composerWorkflows,
       lifecycleTasks: lifecycleTasks,
       didCreate: { [weak self] thread in self?.workspace?.list.insertCreated(thread) },

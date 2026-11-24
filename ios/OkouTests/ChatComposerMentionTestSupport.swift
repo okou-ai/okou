@@ -1,3 +1,4 @@
+import CCStateSwiftUI
 import ChatData
 import ChatDataTestSupport
 import ChatDomain
@@ -144,18 +145,20 @@ struct MentionComposerHarness: View {
     }
     .safeAreaBar(edge: .bottom, spacing: 0) {
       let composer = workspace?.newComposer ?? state
-      ChatComposerView(
-        draft: Binding(get: { composer.text }, set: { composer.text = $0 }),
-        isBusy: false, showsProgress: false, canStop: false, needsUpgrade: false, error: nil,
-        attachmentURL: URL(string: "https://example.invalid")!, attachments: composer.attachments,
-        draftState: composer,
-        submit: {
-          if let workspace { await workspace.sendNewChat() } else { await conversation?.send() }
-        }, refresh: nil, mentionSource: source ?? workspace?.mentionTestSource
-      )
-      .transaction {
-        $0.animation = nil
-        $0.disablesAnimations = true
+      // Production provides the session Store at the workspace root.
+      StoreProvider(composer.store) {
+        ChatComposerView(
+          isBusy: false, showsProgress: false, canStop: false, needsUpgrade: false, error: nil,
+          attachmentURL: URL(string: "https://example.invalid")!,
+          draftState: composer,
+          submit: {
+            if let workspace { await workspace.sendNewChat() } else { await conversation?.send() }
+          }, refresh: nil, mentionSource: source ?? workspace?.mentionTestSource
+        )
+        .transaction {
+          $0.animation = nil
+          $0.disablesAnimations = true
+        }
       }
     }
     .composerSuggestionOverlay()

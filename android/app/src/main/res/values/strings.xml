@@ -5,7 +5,6 @@
     <string name="auth_selection_failed">Couldn’t open this workspace.</string>
     <string name="auth_sign_out_failed">Couldn’t sign out.</string>
     <string name="composer_restore_draft">Restore retained draft</string>
-    <string name="controls_storage_failed">Pending control storage is unavailable.</string>
     <string name="controls_stop">Stop task</string>
     <string name="controls_stop_failed">Could not stop the task.</string>
     <string name="app_name" translatable="false">Okou</string>

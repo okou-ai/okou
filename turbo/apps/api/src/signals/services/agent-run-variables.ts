@@ -1,9 +1,7 @@
-import { ORG_SENTINEL_USER_ID } from "./feature-switch-scope";
-
 interface AgentRunVariable {
   readonly name: string;
   readonly value: string;
-  readonly userId: string;
+  readonly isOrg: boolean;
 }
 
 export function buildAgentRunVariables(args: {
@@ -15,7 +13,7 @@ export function buildAgentRunVariables(args: {
     if (row.name.startsWith("ZERO_")) {
       continue;
     }
-    if (row.userId === ORG_SENTINEL_USER_ID) {
+    if (row.isOrg) {
       orgVars[row.name] = row.value;
     } else {
       userVars[row.name] = row.value;

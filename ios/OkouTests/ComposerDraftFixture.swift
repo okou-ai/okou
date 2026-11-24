@@ -86,6 +86,7 @@ final class DraftServer: Sendable {
     ComposerDraftStore(
       target: target,
       commands: ChatCommands(client: http.client, sync: ChatSync(client: http.client)),
+      graph: makeTestWorkspaceGraph(),
       repository: ChatDraftRepository(client: http.client), storage: storage, didFail: { _ in },
       syncSleep: { _ in })
   }
