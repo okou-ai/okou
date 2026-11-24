@@ -12,7 +12,7 @@ struct ChatForkView: View {
   let needsUpgrade: Bool
   let dismiss: () -> Void
   /// The attempt and model settings, read from the session graph.
-  @LoadableValue private var presentation: Loadable<ChatForkStore.Presentation>
+  @LoadableValue private var forkState: Loadable<ChatForkStore.Presentation>
   @State private var confirmsDiscard = false
   @State private var contentHeight: CGFloat = 0
   @State private var navigationInset: CGFloat = 0
@@ -32,14 +32,14 @@ struct ChatForkView: View {
     self.project = project
     self.needsUpgrade = needsUpgrade
     self.dismiss = dismiss
-    _presentation = LoadableValue(flow.presentation)
+    _forkState = LoadableValue(flow.presentation)
   }
 
   private var attempt: ChatForkStore.Attempt {
-    presentation.data?.attempt ?? ChatForkStore.Attempt()
+    forkState.data?.attempt ?? ChatForkStore.Attempt()
   }
   private var modelSelection: ChatModelSelectionStore {
-    presentation.data?.modelSelection ?? flow.modelSelection
+    forkState.data?.modelSelection ?? flow.modelSelection
   }
 
   private var fittedHeight: CGFloat {
