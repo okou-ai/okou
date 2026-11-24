@@ -125,15 +125,16 @@ local edits immediately, including any unsent reorder steps. A rejected chat
 deletion restores the row and shows one Snackbar in the chat list. Deleting a
 linked chat from a workflow run returns feedback to the run history.
 Canonical event IDs settle submitted changes, including events observed before
-a snapshot rebase. Chat list reads retry while the foreground needs the list,
-after 3, 3, 6, 12, 24, and then every 48 seconds. Server `Retry-After` can extend
-the wait. Unread and activity indicators use the same retry schedule while the
-foreground needs the list.
-Recoverable request failures follow this schedule. A first read with no
-available list shows the skeleton after 250 ms. Failures keep the available list or skeleton
-in place. With a confirmed list, the progress bar appears during an active
-read once the last confirmation is more than ten minutes old, or immediately
-after three consecutive read failures. It stays visible through retry gaps
+a snapshot rebase. While the foreground needs the list, recoverable failures in
+the list snapshot, event catch-up, and unread and activity indicators retry
+after 3, 3, 6, 12, 24, and then every 48 seconds. The list and indicator reads
+keep separate backoffs across filter changes. Leaving the list scope cancels
+its reads and backoffs. Server `Retry-After` deadlines still apply.
+A first read with no available list shows the skeleton after 250 ms. Failures
+keep the available list or skeleton in place. With a confirmed list, the
+progress bar appears during an active read once the last confirmation is more
+than ten minutes old, or immediately after three consecutive read failures.
+It stays visible through retry gaps
 until success or a terminal failure. If a write stays unconfirmed, Refresh
 chats reads back the list and clears the unresolved projection once that
 read succeeds.

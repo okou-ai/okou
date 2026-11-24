@@ -47,6 +47,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -4691,8 +4692,9 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
     }
 
     @Test
-    fun listRetryKeepsTheServerDeadlineAfterHidingAndReturning() = runTest {
+    fun listAndIndicatorReadsKeepTheirServerDeadlinesAfterHidingAndReturning() = runTest {
         var attempts = 0
+        var indicatorAttempts = 0
         var indicatorsAvailable = false
         val service =
             object : Service() {
@@ -4706,7 +4708,9 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
                 }
 
                 override suspend fun indicators(): Indicators {
-                    if (!indicatorsAvailable) throw ApiFailure.Http(503, null, null, null)
+                    indicatorAttempts++
+                    if (!indicatorsAvailable)
+                        throw ApiFailure.Http(429, null, null, retryAfterSeconds = 21)
                     return super.indicators()
                 }
             }
@@ -4714,6 +4718,7 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
             model.refresh()
             runCurrent()
             assertEquals(1, attempts)
+            assertEquals(1, indicatorAttempts)
             assertEquals(ChatListReadFailure.Retrying, model.uiState.value.listReadFailure)
             assertEquals(ChatReadPhase.Loading, model.uiState.value.indicatorsPhase)
 
@@ -4722,6 +4727,7 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
             advanceTimeBy(15_000)
             runCurrent()
             assertEquals(1, attempts)
+            assertEquals(1, indicatorAttempts)
             assertEquals(ChatReadPhase.Failed, model.uiState.value.indicatorsPhase)
 
             model.listVisibilityChanged(true)
@@ -4730,15 +4736,18 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
             advanceTimeBy(4_999)
             runCurrent()
             assertEquals(1, attempts)
+            assertEquals(1, indicatorAttempts)
 
             indicatorsAvailable = true
             advanceTimeBy(1)
             runCurrent()
             assertEquals(2, attempts)
+            assertEquals(1, indicatorAttempts)
             assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
             assertEquals(ChatReadPhase.Loading, model.uiState.value.indicatorsPhase)
             advanceTimeBy(1_000)
             runCurrent()
+            assertEquals(2, indicatorAttempts)
             assertEquals(ChatReadPhase.Ready, model.uiState.value.indicatorsPhase)
         }
     }
@@ -4877,52 +4886,104 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
         withCatchUpModel(service) { model ->
             model.selectFilter(ChatListFilter.Unread)
             runCurrent()
-            advanceTimeBy(6_000)
-            runCurrent()
-            assertEquals(3, attempts)
+            assertEquals(1, attempts)
             assertEquals(ChatReadPhase.Loading, model.uiState.value.indicatorsPhase)
             model.listVisibilityChanged(false)
             advanceTimeBy(60_000)
             runCurrent()
-            assertEquals(3, attempts)
+            assertEquals(1, attempts)
             assertEquals(ChatReadPhase.Failed, model.uiState.value.indicatorsPhase)
             assertFalse(model.uiState.value.indicatorsNonRetryableFailure)
         }
     }
 
     @Test
-    fun rowWriteVerificationDoesNotWaitForBackgroundIndicatorRetry() = runTest {
-        val unread = mapOf(CHAT_PERSONAL to CHAT_DATE)
-        var attempts = 0
+    fun closingTheListCancelsHeldReadsAndReopeningRefreshesBothResources() = runTest {
+        val listStarted = CompletableDeferred<Unit>()
+        val indicatorsStarted = CompletableDeferred<Unit>()
+        val listCancelled = CompletableDeferred<Unit>()
+        val indicatorsCancelled = CompletableDeferred<Unit>()
         val service =
-            object : Service() {
-                override suspend fun indicators(): Indicators =
-                    when (++attempts) {
-                        1 -> Indicators(emptyMap(), unread)
-                        2 -> throw ApiFailure.Http(503, null, null, null)
-                        else -> Indicators(emptyMap(), emptyMap())
+            Service().apply {
+                listRead = {
+                    listStarted.complete(Unit)
+                    try {
+                        awaitCancellation()
+                    } finally {
+                        listCancelled.complete(Unit)
                     }
-
-                override suspend fun markRead(threadId: String) = ReadState(CHAT_DATE)
+                }
+                statusRead = {
+                    indicatorsStarted.complete(Unit)
+                    try {
+                        awaitCancellation()
+                    } finally {
+                        indicatorsCancelled.complete(Unit)
+                    }
+                }
             }
         withCatchUpModel(service) { model ->
             model.refresh()
+            listStarted.await()
+            indicatorsStarted.await()
+            model.listVisibilityChanged(false)
+            runCurrent()
+            assertTrue(listCancelled.isCompleted)
+            assertTrue(indicatorsCancelled.isCompleted)
+
+            service.listRead = { page() }
+            service.statusRead = { Indicators(emptyMap(), mapOf(CHAT_PERSONAL to CHAT_DATE)) }
+            model.listVisibilityChanged(true)
+            runCurrent()
+            assertEquals(CHAT_PERSONAL, model.uiState.value.threads.single().id)
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.indicatorsPhase)
+        }
+    }
+
+    @Test
+    fun rowWriteVerificationDoesNotWaitForBackgroundIndicatorRetry() = runTest {
+        val unread = mapOf(CHAT_PERSONAL to CHAT_DATE)
+        val realtime = TestRealtimeService()
+        var attempts = 0
+        var unavailable = false
+        var markedRead = false
+        val service =
+            object : Service() {
+                override suspend fun indicators(): Indicators {
+                    attempts++
+                    if (unavailable && !markedRead) throw ApiFailure.Http(503, null, null, null)
+                    return Indicators(emptyMap(), if (markedRead) emptyMap() else unread)
+                }
+
+                override suspend fun markRead(threadId: String): ReadState {
+                    markedRead = true
+                    return ReadState(CHAT_DATE)
+                }
+            }
+        withCatchUpModel(service, realtime) { model ->
+            model.refresh()
+            model.updates.foreground(true)
             runCurrent()
             assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
-            model.refreshIndicators()
+            val initialAttempts = attempts
+            unavailable = true
+            realtime.invalidate(ChatChanges(readCursor = true))
             runCurrent()
-            assertEquals(2, attempts)
+            assertEquals(initialAttempts + 1, attempts)
             assertEquals(ChatReadPhase.Loading, model.uiState.value.indicatorsPhase)
 
             assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkRead))
             runCurrent()
-            assertEquals(3, attempts)
+            assertEquals(initialAttempts + 3, attempts)
             assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+            assertTrue(model.uiState.value.pendingRowActions.isEmpty())
             assertNull(model.uiState.value.failedRowAction)
             assertEquals(ChatReadPhase.Ready, model.uiState.value.indicatorsPhase)
             advanceTimeBy(6_000)
             runCurrent()
-            assertEquals(3, attempts)
+            assertEquals(initialAttempts + 3, attempts)
         }
     }
 

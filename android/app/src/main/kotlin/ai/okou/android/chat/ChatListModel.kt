@@ -11,6 +11,7 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -431,6 +432,8 @@ class ChatListModel(
     private var cacheRead = false
     private var restoreJob: Job? = null
     private var indicatorsJob: Job? = null
+    private var indicatorsServerRetryAt: Long? = null
+    private var indicatorReadbacks = 0
     private var draftIndexRead: DraftIndexRead? = null
     internal var draftIndexRequestVersion = 0L
         private set
@@ -452,6 +455,8 @@ class ChatListModel(
         val discardOnSuccess = mutableSetOf<String>()
         val confirmations = mutableListOf<ListConfirmation>()
     }
+
+    private class ListReadScopeClosed : CancellationException("Foreground list closed")
 
     private class ListConfirmation(
         val needsRead: () -> Boolean,
@@ -490,9 +495,14 @@ class ChatListModel(
     private var completedActivityReconciliation: Any? = null
     private var listRetry: Job? = null
     private var listRetryAt: Long? = null
+    private var listServerRetryAt: Long? = null
     private var listFailures = 0
     private var listIsVisible = true
     private var listInForeground = true
+    private val needsForegroundList: Boolean
+        get() = listIsVisible && listInForeground
+
+    private var foregroundListRequest: Job? = null
     private var listRebaseJob: Job? = null
     private var readyListRebase: PreparedListRebase? = null
     private val listReadRequests = Channel<Unit>(Channel.CONFLATED)
@@ -538,8 +548,9 @@ class ChatListModel(
             history.output,
             foregroundChanged = { foreground ->
                 warming.foreground(foreground)
+                val needed = needsForegroundList
                 listInForeground = foreground
-                updateListRetryVisibility()
+                updateListReadScope(needed)
             },
         ) { changes ->
             if (current()) {
@@ -1559,25 +1570,63 @@ class ChatListModel(
 
     internal fun listVisibilityChanged(visible: Boolean) {
         val reopening = visible && !listIsVisible
+        val needed = needsForegroundList
         listIsVisible = visible
-        updateListRetryVisibility()
+        updateListReadScope(needed)
         if (reopening) {
             val state = mutable.value
             if (state.projectsPhase == ChatReadPhase.Failed) refreshMetadata()
-            if (state.indicatorsPhase == ChatReadPhase.Failed) refreshIndicators()
             refreshDraftIndex()
         }
     }
 
-    private fun updateListRetryVisibility() {
-        if (!current()) return
-        if (!listIsVisible || !listInForeground) {
-            listRetry?.cancel()
-            listRetry = null
+    private fun updateListReadScope(wasNeeded: Boolean) {
+        if (!current() || wasNeeded == needsForegroundList) return
+        if (needsForegroundList) {
+            val state = mutable.value
+            if (listRetryAt != null) scheduleListRetry()
+            else if (
+                remoteAccessVerified() &&
+                    (state.listPhase == ChatReadPhase.Idle ||
+                        state.listReadFailure == ChatListReadFailure.Retrying)
+            )
+                refreshList()
+            if (state.indicatorsPhase == ChatReadPhase.Failed && remoteAccessVerified()) {
+                requestIndicators(immediate = true, verifyReadCursors = true)
+            }
             return
         }
+        val interruptedRead = foregroundListRequest?.isActive == true
+        foregroundListRequest?.cancel(ListReadScopeClosed())
+        listRebaseJob?.cancel()
+        readyListRebase = null
+        // A server deadline applies even if this foreground visit ends early.
+        val serverDeadline = listServerRetryAt?.takeIf { it > monotonicMillis() }
+        resetListReadFailures()
+        listServerRetryAt = serverDeadline
+        listRetryAt = serverDeadline
+        val state = mutable.value
+        val stopIndicators = indicatorsRetry != null && indicatorsJob?.isActive == true
+        val restartIndicators = stopIndicators || indicatorsInvalidated
+        if (stopIndicators) indicatorsJob?.cancel()
+        indicatorsInvalidated = false
+        immediateIndicators = false
+        readCursorChanged = false
+        mutable.value =
+            state.copy(
+                listPhase = if (interruptedRead) ChatReadPhase.Failed else state.listPhase,
+                listReadFailure =
+                    if (interruptedRead) ChatListReadFailure.Retrying else state.listReadFailure,
+                listRetryProgressVisible = false,
+                indicatorsPhase =
+                    if (restartIndicators) ChatReadPhase.Failed else state.indicatorsPhase,
+                indicatorsRetryProgressVisible = false,
+            )
+    }
+
+    private fun scheduleListRetry() {
+        if (!needsForegroundList || listRetry != null) return
         val retryAt = listRetryAt ?: return
-        if (listRetry != null) return
         val remaining = retryAt - monotonicMillis()
         if (remaining <= 0) {
             listRetryAt = null
@@ -1697,7 +1746,9 @@ class ChatListModel(
             listRebaseJob?.cancel()
             readyListRebase = null
             try {
-                readList(batch)
+                val followsListScope =
+                    needsForegroundList && !hasWriteReadback && !batch.userRequested
+                readList(batch, followsListScope)
                 unconfirmed.forEach { it.done.complete(Unit) }
             } finally {
                 unconfirmed.forEach { it.done.cancel() }
@@ -1725,9 +1776,10 @@ class ChatListModel(
         }
     }
 
-    private suspend fun readList(batch: ListReadBatch) {
+    private suspend fun readList(batch: ListReadBatch, followsListScope: Boolean) {
         restoreJob?.join()
         requireCurrent()
+        if (followsListScope && !needsForegroundList) return
         // Keep the exact IDs selected by an explicit refresh until a read succeeds.
         rowDiscardsAfterRead.addAll(batch.discardOnSuccess)
         mutable.value = mutable.value.copy(listPhase = ChatReadPhase.Loading)
@@ -1737,14 +1789,35 @@ class ChatListModel(
             val reconciliation = completedActivityReconciliation
             val finishedActivity =
                 if (reconciliation != null) projection.completedOutgoingAttempts() else emptyMap()
-            val result = sync.synchronize(confirmed?.checkpoint)
+            val result =
+                if (followsListScope) {
+                    coroutineScope {
+                        // Scope changes cancel transport without interrupting cache publication.
+                        val request =
+                            async(start = CoroutineStart.UNDISPATCHED) {
+                                sync.synchronize(confirmed?.checkpoint)
+                            }
+                        foregroundListRequest = request
+                        try {
+                            request.await()
+                        } finally {
+                            foregroundListRequest = null
+                        }
+                    }
+                } else sync.synchronize(confirmed?.checkpoint)
             publishList(result, rowDiscardsAfterRead, finishedActivity = finishedActivity)
             rowDiscardsAfterRead.clear()
             if (completedActivityReconciliation === reconciliation)
                 completedActivityReconciliation = null
-            if (result.shouldRebase && confirmed?.checkpoint === result.checkpoint) {
+            if (
+                result.shouldRebase &&
+                    confirmed?.checkpoint === result.checkpoint &&
+                    needsForegroundList
+            ) {
                 startListRebase(result.checkpoint)
             }
+        } catch (_: ListReadScopeClosed) {
+            currentCoroutineContext().ensureActive()
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
@@ -1780,20 +1853,31 @@ class ChatListModel(
         listRetry?.cancel()
         listRetry = null
         listRetryAt = null
+        listServerRetryAt = null
         listFailures = 0
     }
 
     private fun recordListReadFailure(retryAfter: Long) {
         val now = monotonicMillis()
+        if (retryAfter > 0L) {
+            val deadline = retryDeadline(now, retryAfter)
+            listServerRetryAt = maxOf(deadline, listServerRetryAt ?: deadline)
+        }
+        if (!needsForegroundList) {
+            listRetryAt = listServerRetryAt?.takeIf { it > now }
+            return
+        }
         listFailures = (listFailures + 1).coerceAtMost(chatReadRetryDelays.size)
         val delay = maxOf(chatReadRetryDelays[listFailures - 1], retryAfter)
-        val maxDelay = Long.MAX_VALUE - now.coerceAtLeast(0L)
-        val nextRetry = now + minOf(delay, maxDelay)
+        val nextRetry = retryDeadline(now, delay)
         listRetryAt = maxOf(nextRetry, listRetryAt ?: nextRetry)
         listRetry?.cancel()
         listRetry = null
-        updateListRetryVisibility()
+        scheduleListRetry()
     }
+
+    private fun retryDeadline(now: Long, delay: Long): Long =
+        now + minOf(delay, Long.MAX_VALUE - now.coerceAtLeast(0L))
 
     private fun startListRebase(checkpoint: ChatCheckpoint) {
         listRebaseJob = viewModelScope.launch {
@@ -1919,16 +2003,23 @@ class ChatListModel(
 
     private suspend fun readIndicatorsAfterWrite(verifyPendingRead: ((String) -> Boolean)? = null) {
         // A read already in flight may have started before the write.
-        awaitIndicatorRead(beforeWriteReadback = true)
-        requireCurrent()
-        readIndicators(verifyPendingRead, afterWrite = true)
-        indicatorsJob?.join()
+        indicatorReadbacks++
+        try {
+            awaitIndicatorRead(beforeWriteReadback = true)
+            requireCurrent()
+            readIndicators(verifyPendingRead, afterWrite = true)
+            indicatorsJob?.join()
+        } finally {
+            indicatorReadbacks--
+            if (indicatorReadbacks == 0 && indicatorsInvalidated)
+                indicatorInvalidations.trySend(Unit)
+        }
     }
 
     fun refreshIndicators() {
-        if (remoteAccessVerified()) {
-            readIndicators(verifyPendingRead = { readConfirmations[it]?.reportFailure == true })
-        }
+        if (!remoteAccessVerified()) return
+        if (indicatorReadbacks != 0) requestIndicators(immediate = true, verifyReadCursors = true)
+        else readIndicators(verifyPendingRead = { readConfirmations[it]?.reportFailure == true })
     }
 
     private fun refreshDraftIndex() {
@@ -1973,13 +2064,17 @@ class ChatListModel(
         }
     }
 
-    private fun continueIndicatorRead(): Boolean = listIsVisible && listInForeground
-
     private fun readIndicators(
         verifyPendingRead: ((String) -> Boolean)? = null,
         afterWrite: Boolean = false,
     ) {
-        if (!current() || indicatorsJob?.isActive == true) return
+        // Give a write's bounded verification priority over a superseded background read.
+        if (
+            !current() ||
+                indicatorsJob?.isCompleted == false ||
+                !afterWrite && indicatorReadbacks != 0
+        )
+            return
         val retry = if (afterWrite) null else ChatDependencyRetry()
         indicatorsRetry = retry
         mutable.value =
@@ -1991,6 +2086,9 @@ class ChatListModel(
             var verifyInvalidatedCursors = false
             try {
                 suspend fun fetch(): Pair<Map<String, ReadConfirmation>, Indicators> {
+                    val remaining = indicatorsServerRetryAt?.minus(monotonicMillis()) ?: 0L
+                    if (remaining > 0L) delay(remaining)
+                    requireCurrent()
                     if (!afterWrite) {
                         // A retry also covers invalidations received before this request.
                         verifyInvalidatedCursors = verifyInvalidatedCursors || readCursorChanged
@@ -2002,12 +2100,23 @@ class ChatListModel(
                     indicatorReadReceipts.clear()
                     // Responses can only settle writes that finished before this request.
                     val eligible = readConfirmations.toMap()
-                    return eligible to service.indicators()
+                    try {
+                        val result = service.indicators()
+                        indicatorsServerRetryAt = null
+                        return eligible to result
+                    } catch (error: ApiFailure.Http) {
+                        dependencyRetryAfterMillis(error)
+                            ?.takeIf { it > 0 }
+                            ?.let { wait ->
+                                indicatorsServerRetryAt = retryDeadline(monotonicMillis(), wait)
+                            }
+                        throw error
+                    }
                 }
                 val (eligible, result) =
                     retry?.read(
                         isCurrent = ::current,
-                        continuous = ::continueIndicatorRead,
+                        continuous = { needsForegroundList },
                         onRetry = { failures ->
                             val state = mutable.value
                             if (
@@ -2132,7 +2241,7 @@ class ChatListModel(
                 throw cancelled
             } catch (error: Exception) {
                 val retryable = dependencyRetryAfterMillis(error) != null
-                val resumeIndicators = afterWrite && retryable && continueIndicatorRead()
+                val resumeIndicators = afterWrite && retryable && needsForegroundList
                 fail(error) {
                     it.copy(
                         indicatorsPhase = ChatReadPhase.Failed,
