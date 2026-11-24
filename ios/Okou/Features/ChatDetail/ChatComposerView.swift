@@ -234,29 +234,26 @@ private struct ChatComposerContent: View {
       VStack(alignment: .trailing, spacing: 0) {
         // Retired native editors must leave immediately. Fading a first responder
         // through a draft reset can restart keyboard avoidance during the send flight.
+        let followup = visibleFollowup
         OkouComposerSurface(isExpanded: expandsInput) {
-          VStack(alignment: .leading, spacing: OkouSpace.sm) {
-            let followup = visibleFollowup
-            HStack(spacing: OkouSpace.xs) {
-              textInput(id: inputID, followup: followup)
-                .accessibilityIdentifier("message-input")
-              if let followup {
-                Button {
-                  draftState.editor.acceptFollowup(followup)
-                } label: {
-                  Text("OK")
-                    .font(.okou(.footnote).weight(.medium))
-                    .padding(.horizontal, OkouSpace.sm).padding(.vertical, OkouSpace.xs)
-                    .background(OkouColor.muted, in: Capsule())
-                    .frame(minWidth: actionSize, minHeight: actionSize)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Use this suggestion")
-                .accessibilityValue(Text(verbatim: followup))
-                .accessibilityIdentifier("accept-followup")
-              }
+          textInput(id: inputID, followup: followup)
+            .accessibilityIdentifier("message-input")
+        } inlineAction: {
+          if let followup {
+            Button {
+              draftState.editor.acceptFollowup(followup)
+            } label: {
+              Text("OK")
+                .font(.okou(.footnote).weight(.medium))
+                .padding(.horizontal, OkouSpace.sm).padding(.vertical, OkouSpace.xs)
+                .background(OkouColor.muted, in: Capsule())
+                .frame(minWidth: actionSize, minHeight: actionSize)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Use this suggestion")
+            .accessibilityValue(Text(verbatim: followup))
+            .accessibilityIdentifier("accept-followup")
           }
         } leading: {
           HStack(spacing: 0) {
