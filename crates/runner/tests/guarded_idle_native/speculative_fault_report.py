@@ -94,10 +94,10 @@ def validate(directory):
         identity = report.witness_identity(terminal[1])
         if report.witness_identity_changed(events, identity):
             raise ValueError("speculative fault changed original physical owner")
-        ordered = [terminal[1], *events[:3], terminal[2], terminal[3], *events[3:6],
-                   terminal[4], *events[6:], terminal[5]]
-        report.validate_witness_clock_order(
-            ordered, "speculative fault phase clocks lost ordering")
+        report.validate_terminal_witness_clock_order(
+            terminal, events, tail_start_index=3, tail_end_index=6,
+            message="speculative fault phase clocks lost ordering",
+        )
         initial, waiting, lost = [event["evidence"] for event in events[:3]]
         mode = "panic" if case.startswith("SpeculativePanic-") else "drop"
         baseline = status_evidence.validate_initial_status_receipt(

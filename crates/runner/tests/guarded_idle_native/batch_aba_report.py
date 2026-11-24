@@ -46,10 +46,10 @@ def validate(directory, *, cases=None, policy_key="native_batch_aba_policy_json"
         identity = report.witness_identity(terminal[1])
         if report.witness_identity_changed(events, identity):
             raise ValueError("batch ABA changed its original physical owner")
-        ordered = [terminal[1], *events[:5], terminal[2], terminal[3], events[5], terminal[4],
-                   events[6], events[7], terminal[5]]
-        report.validate_witness_clock_order(
-            ordered, "old refusal and new physical recovery ordering changed")
+        report.validate_terminal_witness_clock_order(
+            terminal, events, tail_start_index=5, tail_end_index=6,
+            message="old refusal and new physical recovery ordering changed",
+        )
         blocked, pool, admission, waiting, refused, tail, complete, joined = [e["evidence"] for e in events]
         path = blocked.get("status_path")
         status_evidence.claim_status_path(path, paths, "batch ABA private status path changed")

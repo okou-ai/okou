@@ -73,7 +73,6 @@ private struct ChatComposerContent: View {
     draftPresentation ?? draftState.currentPresentation
   }
 
-  @Environment(\.composerPreferences) private var preferences
   @State private var isFocused = false
   @State private var showsPhotos = false
   @State private var showsFiles = false
@@ -106,15 +105,11 @@ private struct ChatComposerContent: View {
     }
     return hasText || current.attachments.hasAttachments || current.hasContent
   }
-  private var returnKeyPreference: ComposerReturnKeyPreference {
-    preferences?.returnKey ?? .newline
-  }
   private var canPerformPrimaryAction: Bool {
     (hasContent || showsStop) && current.attachments.isReady && !isBusy && !needsUpgrade
       && !voiceActive && current.canSend
       && (showsStop || modelSelection?.canSend != false)
   }
-  private var canSendFromKeyboard: Bool { hasContent && canPerformPrimaryAction }
   private var showsEditingLayout: Bool {
     isFocused || current.draft.focusRequest != nil
       || presentation?.keepsComposerExpanded == true
@@ -409,9 +404,7 @@ private struct ChatComposerContent: View {
       acceptsImages: !isBusy && !needsUpgrade, placeholder: resolvedPlaceholder,
       followup: followup,
       showsTrailingParagraph: showsTrailingFeedbackInput,
-      expanded: showsEditingLayout,
-      returnKeyPreference: returnKeyPreference,
-      submitFromKeyboard: sendFromKeyboard
+      expanded: showsEditingLayout
     )
     .id(inputID)
     .transition(.identity)
@@ -488,12 +481,6 @@ private struct ChatComposerContent: View {
     .frame(width: actionSize, height: actionSize)
     .contentShape(Circle())
     .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: hasContent)
-  }
-
-  private func sendFromKeyboard() {
-    // An empty Send key must never become the active run's Stop action.
-    guard canSendFromKeyboard else { return }
-    performPrimaryAction()
   }
 
   private func performPrimaryAction() {
