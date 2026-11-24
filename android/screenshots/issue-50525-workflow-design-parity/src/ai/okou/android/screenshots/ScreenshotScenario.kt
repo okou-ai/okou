@@ -176,7 +176,8 @@ class ScreenshotScenario {
                     disablePath -> {
                         toggleEntered.countDown()
                         assertTrue(releaseToggle.await(20, TimeUnit.SECONDS))
-                        val applied = response(request)
+                        val applied =
+                            checkNotNull(response(request)) { "Missing fixture toggle response" }
                         toggleApplied.set(true)
                         applied.setSocketPolicy(SocketPolicy.DISCONNECT_DURING_RESPONSE_BODY)
                     }
