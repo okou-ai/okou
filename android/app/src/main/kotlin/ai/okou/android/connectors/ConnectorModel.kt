@@ -3,6 +3,7 @@ package ai.okou.android.connectors
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.ConnectorAccountPolicyRequestPolicy
 import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItemGrantKind
+import ai.okou.android.normalizedRenameName
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import java.util.Locale
@@ -484,9 +485,14 @@ class ConnectorModel(
     }
 
     internal fun rename(id: String, name: String) {
-        val label = name.trim()
-        val target = currentAccount(id) ?: return
+        val label = normalizedRenameName(name)
         if (label.isEmpty() || label.length > CONNECTOR_ACCOUNT_NAME_LIMIT) return
+        val state = mutableState.value
+        val slug = state.slug ?: return
+        val account = state.accounts.data.orEmpty().firstOrNull { it.id == id } ?: return
+        val confirmedName = account.displayName ?: account.identity
+        if (confirmedName != null && label == normalizedRenameName(confirmedName)) return
+        val target = ConnectorAccountTarget(slug, id)
         change(
             PendingChange(target, ConnectorResult.Renamed) { account ->
                 account?.displayName == label

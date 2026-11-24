@@ -3,8 +3,11 @@ package ai.okou.android.chat
 import ai.okou.android.OkouFormActions
 import ai.okou.android.OkouFormLayout
 import ai.okou.android.R
+import ai.okou.android.RenameFieldError
 import ai.okou.android.SettingsSheet
+import ai.okou.android.normalizedRenameName
 import ai.okou.android.okouFormInputStyle
+import ai.okou.android.renameForm
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -63,13 +66,18 @@ internal fun RenameListItemSheet(
     val baseline = editor.baseline
     val input = editor.input
     val submitted = editor.submitted
-    val name = input.text.toString().trim()
     val checking = status == RenameStatus.Checking
     val unconfirmed = checking || status == RenameStatus.Unconfirmed
     val readOnly = unconfirmed || status == RenameStatus.Saving
+    val form = renameForm(input.text, baseline, confirmedName, enabled && !readOnly, maxLength)
+    val name = form.name
     val confirmed = submitted != null && submitted == confirmedName && !readOnly
     LaunchedEffect(confirmed, submitted) {
-        if (confirmed && editor.submitted == submitted && input.text.toString().trim() == submitted)
+        if (
+            confirmed &&
+                editor.submitted == submitted &&
+                normalizedRenameName(input.text) == submitted
+        )
             saved()
     }
 
@@ -77,18 +85,11 @@ internal fun RenameListItemSheet(
         if (maxLength == null) stringResource(R.string.chat_rename_trim_hint)
         else stringResource(R.string.connector_rename_hint, maxLength)
     val validation =
-        when {
-            name.isEmpty() && name != baseline -> stringResource(R.string.chat_rename_required)
-            maxLength != null && name.length > maxLength -> hint
-            else -> null
+        when (form.error) {
+            RenameFieldError.Required -> stringResource(R.string.chat_rename_required)
+            RenameFieldError.TooLong -> hint
+            null -> null
         }
-    val canSave =
-        enabled &&
-            !readOnly &&
-            name.isNotEmpty() &&
-            validation == null &&
-            name != baseline &&
-            name != confirmedName.trim()
     val saveFailed = !readOnly && submitted == name && !confirmed
     val notice =
         when {
@@ -118,7 +119,7 @@ internal fun RenameListItemSheet(
                 confirm = {
                     if (unconfirmed) check() else if (save(name)) editor.submitted = name
                 },
-                confirmEnabled = if (unconfirmed) !checking else canSave,
+                confirmEnabled = if (unconfirmed) !checking else form.canSave,
             )
         },
     ) {
