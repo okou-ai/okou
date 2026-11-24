@@ -85,7 +85,9 @@ struct ConversationRowProjection {
           showsAvatar: !continues, topSpacing: continues ? 8 : 24, pendingRetry: nil,
           isSending: false))
     }
-    if let source = history.recommendedFollowups, conversation.pending.isEmpty {
+    if conversation.modelSelection?.models.usesFollowupPlaceholder != true,
+      let source = conversation.recommendedFollowups
+    {
       result.append(.followups(source, finishedAt: history.latestRunFinishAt))
     }
     let showsActivityAvatar =

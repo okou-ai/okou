@@ -92,6 +92,9 @@ final class ConversationStore {
       persistPending()
     }
   }
+  var recommendedFollowups: ChatRecommendedFollowupSource? {
+    pending.isEmpty ? history?.recommendedFollowups : nil
+  }
   var messages: [ChatMessage] { projection.messages }
   var visibleItems: [ConversationItem] { reading.visibleItems }
 

@@ -300,7 +300,7 @@ private struct SettingsModelsSection: View {
   }
 
   var body: some View {
-    if canLinkSubscriptions == true {
+    if (canLinkSubscriptions ?? models.lastKnownFeatureSwitches?.canLinkSubscriptions) == true {
       Section {
         NavigationLink {
           PersonalSubscriptionsView(store: models.subscriptions)

@@ -5,8 +5,11 @@ import ai.okou.android.artifacts.ArtifactKind
 import ai.okou.android.artifacts.ArtifactPage
 import ai.okou.android.artifacts.ArtifactSaveResult
 import ai.okou.android.artifacts.ConfirmedArtifactCatalog
+import ai.okou.android.artifacts.ConfirmedWorkflowResources
+import ai.okou.android.artifacts.WorkflowResource
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.chat.ChatChanges
+import ai.okou.android.chat.ConversationHistorySync
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
@@ -180,6 +183,13 @@ internal abstract class ArtifactCatalogRootTestFixture {
         compose.onNodeWithText(title).performClick()
         awaitText("Save file")
         compose.onNodeWithText("Save file").assertIsEnabled()
+    }
+}
+
+class ArtifactWorkflowResourcesApplication : ChatListApplication() {
+    override fun onCreate() {
+        super.onCreate()
+        workflows = fixture.service
     }
 }
 
@@ -434,6 +444,181 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
         }
         awaitText("Related chats are no longer available")
         compose.onNodeWithText("Handoff conversation").assertDoesNotExist()
+    }
+
+    @Test
+    @Config(
+        qualifiers = "en-rUS-w400dp-h560dp",
+        application = ArtifactWorkflowResourcesApplication::class,
+    )
+    fun workflowResourcesRefreshCachedAuthorityAndRestoreTheActivatedRow() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        val firstRead = CountDownLatch(1)
+        try {
+            compose.activityRule.scenario.recreate()
+            val artifacts = ArtifactApiFixture(app.fixture)
+            artifacts.install()
+            val workflows = WorkflowApiFixture(chats = app.fixture)
+            workflows.releaseTitle = "Weekly release workflow"
+            val requestCount = AtomicInteger()
+            val workflowVisible = AtomicBoolean(true)
+            val respond = app.fixture.commandResponse
+            app.fixture.commandResponse = { request ->
+                if (request.requestUrl?.encodedPath == "/api/workflows") {
+                    if (requestCount.incrementAndGet() == 1) firstRead.await()
+                    if (workflowVisible.get()) respond(request) else jsonResponse("[]")
+                } else respond(request)
+            }
+            installAutomationHistory()
+            app.responseGate.countDown()
+            awaitText(artifacts.sourceTitle)
+            seedAutomationResources("Cached workflow title")
+            assertEquals(0, requestCount.get())
+            openChatResources(artifacts.sourceTitle)
+            compose.waitUntil(10_000) {
+                compose
+                    .onAllNodes(hasContentDescription("Syncing chat resources"))
+                    .fetchSemanticsNodes()
+                    .isNotEmpty() && requestCount.get() == 1
+            }
+            awaitText(artifacts.slides.title)
+            val list = compose.onNodeWithTag("chat_resources_list")
+            list.performScrollToNode(hasText("Cached workflow title"))
+            compose.onNodeWithText("Cached workflow title").assertIsDisplayed()
+            compose.onNodeWithContentDescription("Syncing chat resources").assertIsDisplayed()
+            firstRead.countDown()
+            awaitText(workflows.releaseTitle)
+            compose.onNodeWithText("Historical workflow title").assertDoesNotExist()
+            list.performScrollToNode(hasText(workflows.releaseTitle))
+            val row = compose.onNodeWithText(workflows.releaseTitle)
+            row.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
+            val bounds = row.assertIsFocused().getUnclippedBoundsInRoot()
+            row.performClick()
+            awaitText(workflows.ruleTitle)
+            compose.onNodeWithTag("workflow_tab_automations").assertIsSelected()
+            compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+            awaitText(workflows.releaseTitle)
+            assertEquals(bounds, row.assertIsFocused().getUnclippedBoundsInRoot())
+
+            workflowVisible.set(false)
+            (app.realtimeService as TestRealtimeService).invalidate()
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithText(workflows.releaseTitle).fetchSemanticsNodes().isEmpty()
+            }
+            list.performScrollToNode(hasText("Slack"))
+            compose.onNodeWithText("Slack").assertIsDisplayed()
+            compose.onNodeWithText("Workflows and automations").assertDoesNotExist()
+        } finally {
+            firstRead.countDown()
+            instrumentation.resetInTouchMode()
+        }
+    }
+
+    @Test
+    @Config(application = ArtifactWorkflowResourcesApplication::class)
+    fun workflowResourcesRecheckAfterResyncDuringAnOlderRead() {
+        val artifacts = ArtifactApiFixture(app.fixture)
+        artifacts.install()
+        val workflows = WorkflowApiFixture(chats = app.fixture)
+        workflows.releaseTitle = "Weekly release workflow"
+        val workflowVisible = AtomicBoolean(true)
+        val workflowReads = AtomicInteger()
+        val releaseFirstRead = CountDownLatch(1)
+        val respond = app.fixture.commandResponse
+        app.fixture.commandResponse = { request ->
+            if (request.requestUrl?.encodedPath == "/api/workflows") {
+                val response =
+                    if (workflowVisible.get()) respond(request)
+                    else
+                        jsonResponse(
+                                """{"error":{"code":"FORBIDDEN","message":"Workflows unavailable"}}""",
+                            )
+                            .setResponseCode(403)
+                if (workflowReads.incrementAndGet() == 1) releaseFirstRead.await()
+                response
+            } else respond(request)
+        }
+        installAutomationHistory()
+        app.responseGate.countDown()
+        awaitText(artifacts.sourceTitle)
+        seedAutomationResources(workflows.releaseTitle)
+        try {
+            openChatResources(artifacts.sourceTitle)
+            compose.waitUntil(10_000) {
+                compose
+                    .onAllNodes(hasContentDescription("Syncing chat resources"))
+                    .fetchSemanticsNodes()
+                    .isNotEmpty() && workflowReads.get() == 1
+            }
+            awaitText(artifacts.summary.title)
+            compose
+                .onNodeWithTag("chat_resources_list")
+                .performScrollToNode(hasText(workflows.releaseTitle))
+            compose.onNodeWithText(workflows.releaseTitle).assertIsDisplayed()
+
+            val artifactReads = artifacts.catalogScopes.size
+            workflowVisible.set(false)
+            (app.realtimeService as TestRealtimeService).invalidate()
+            compose.waitUntil(10_000) {
+                compose
+                    .onAllNodes(hasTestTag("chat_resources_list"))
+                    .fetchSemanticsNodes()
+                    .isNotEmpty() && artifacts.catalogScopes.size > artifactReads
+            }
+            assertEquals(1, workflowReads.get())
+            releaseFirstRead.countDown()
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithText(workflows.releaseTitle).fetchSemanticsNodes().isEmpty()
+            }
+            assertEquals(2, workflowReads.get())
+            compose.onNodeWithText("Slack").assertIsDisplayed()
+        } finally {
+            releaseFirstRead.countDown()
+        }
+    }
+
+    private fun seedAutomationResources(workflowTitle: String) {
+        runBlocking {
+            val store = ready.chats.cache
+            val checkpoint =
+                ConversationHistorySync(app.fixture.service).synchronize(CHAT_PERSONAL, null)
+            val now = System.currentTimeMillis()
+            store.saveHistory(checkpoint, now)
+            store.saveWorkflowResources(
+                CHAT_PERSONAL,
+                ConfirmedWorkflowResources(
+                    listOf(WorkflowResource(WORKFLOW_RELEASE, workflowTitle)),
+                    now - 11 * 60_000,
+                ),
+            )
+        }
+    }
+
+    private fun installAutomationHistory() {
+        val before = app.fixture.historyRows
+        app.fixture.historyCatchUp = { jsonResponse("""{"events":{},"notFoundThreads":[]}""") }
+        app.fixture.historyRows = { request ->
+            val url = checkNotNull(request.requestUrl)
+            if (url.pathSegments[2] != CHAT_PERSONAL) before(request)
+            else {
+                val launch =
+                    historyEventWire(
+                        id = HISTORY_RUN,
+                        seq = 1,
+                        type = "input.automation",
+                        payload =
+                            """{"userMessage":{"version":1,"parts":[{"type":"automation","workflowId":"$WORKFLOW_RELEASE","workflowName":"Historical workflow title"},{"type":"source","kind":"slack"}]}}""",
+                    )
+                val rows =
+                    if ((url.queryParameter("sinceSeqId")?.toLong() ?: 0L) == 0L)
+                        "$launch,${historyEventWire(type = "run.completed", payload = "null")}"
+                    else ""
+                jsonResponse(
+                    """{"rows":[$rows],"cursor":{"lastEventId":"$HISTORY_LAST_EVENT","lastSeqId":37},"hasMore":false}""",
+                )
+            }
+        }
     }
 
     private fun openChatResources(chat: String) {

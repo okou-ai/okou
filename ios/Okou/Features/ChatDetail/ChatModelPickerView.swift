@@ -35,7 +35,7 @@ private struct ChatModelPickerButtonContent: View {
 
   // Keep the existing confirmed display when a refresh fails; the Task still exposes its error.
   private var configuration: ChatModelConfiguration? {
-    resolvedConfiguration ?? models.configuration
+    models.configuration ?? resolvedConfiguration
   }
   private var modelError: String? {
     $resolvedConfiguration.error.map(ChatRequestFailure.message(for:))
@@ -141,7 +141,7 @@ private struct ChatModelPickerContent: View {
 
   // Keep the existing confirmed display when a refresh fails; the Task still exposes its error.
   private var configuration: ChatModelConfiguration? {
-    resolvedConfiguration ?? models.configuration
+    models.configuration ?? resolvedConfiguration
   }
   private var modelError: String? {
     $resolvedConfiguration.error.map(ChatRequestFailure.message(for:))

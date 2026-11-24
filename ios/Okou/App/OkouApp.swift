@@ -380,7 +380,6 @@ private struct WorkspaceRootView: View {
       connectorSelection: store.newModelSelection.connectors,
       mentionSource: ComposerMentionSource(threads: store.list.threads),
       workflowSource: store.composerWorkflows,
-      placeholder: String(localized: "Message Okou"),
       project: store.newChatProject,
       removeProject: store.removeNewChatProject
     )
