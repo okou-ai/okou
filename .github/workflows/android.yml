@@ -79,12 +79,15 @@ jobs:
       SHARD_INDEX: ${{ matrix.shard }}
       SHARD_COUNT: ${{ strategy.job-total }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+      - &android-checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - &android-java
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           distribution: temurin
           java-version: "21"
-      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+      - &android-gradle
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
         with:
           cache-provider: external
       - &restore-android-gradle-dependencies
@@ -98,34 +101,24 @@ jobs:
             ~/.gradle/caches/modules-2/files-2.1
             ~/.gradle/caches/modules-2/metadata-*
           key: android-instrumentation-gradle-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('android/**/*.gradle', 'android/**/*.gradle.kts', 'android/**/gradle.properties', 'android/gradle/**/*.toml', 'android/gradle/wrapper/gradle-wrapper.properties') }}
-      - name: Verify dependency discovery with shallow history
-        if: matrix.shard == 0 && needs.detect.outputs.shallow-discovery == 'true'
-        run: |
-          test "$(git rev-parse --is-shallow-repository)" = true
-          android/gradlew -p android :app:dependencies --configuration debugCompileClasspath --no-daemon
-      - name: Fetch complete history for versioned builds
+      - &android-complete-history
+        name: Fetch complete history for versioned builds
         # versionCode counts the ancestors of this checkout.
         run: >-
           git -c protocol.version=2 fetch --no-tags --no-recurse-submodules
           --unshallow --filter=tree:0 origin "$GITHUB_SHA"
-      - name: Install Android SDK
+      - &android-sdk
+        name: Install Android SDK
         run: bash android/scripts/setup-sdk.sh --accept-licenses
       - name: Run Debug JVM test shard
         working-directory: android
         shell: bash
         run: |
           set -euo pipefail
-          args=(
-            -Pokou.debugUnitTestForks=2
-            "-Pokou.debugUnitTestShardIndex=$SHARD_INDEX"
+          ./gradlew :app:testDebugUnitTest --no-daemon \
+            -Pokou.debugUnitTestForks=2 \
+            "-Pokou.debugUnitTestShardIndex=$SHARD_INDEX" \
             "-Pokou.debugUnitTestShardCount=$SHARD_COUNT"
-          )
-          # Run the shared checks and build the APK once.
-          if [ "$SHARD_INDEX" = 0 ]; then
-            bash scripts/check.sh "${args[@]}"
-          else
-            ./gradlew :app:testDebugUnitTest --no-daemon "${args[@]}"
-          fi
       - name: Check JVM test class size
         run: python3 android/scripts/check-jvm-test-counts.py android/app/build/test-results/testDebugUnitTest
       - name: Retain JVM shard reports
@@ -137,8 +130,28 @@ jobs:
           if-no-files-found: error
           overwrite: true
           retention-days: 1
+
+  build:
+    needs: detect
+    if: needs.detect.outputs.needed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - *android-checkout
+      - *android-java
+      - *android-gradle
+      - *restore-android-gradle-dependencies
+      - name: Verify dependency discovery with shallow history
+        if: needs.detect.outputs.shallow-discovery == 'true'
+        run: |
+          test "$(git rev-parse --is-shallow-repository)" = true
+          android/gradlew -p android :app:dependencies --configuration debugCompileClasspath --no-daemon
+      - *android-complete-history
+      - *android-sdk
+      - name: Run source checks, lint, and build the Debug APK
+        working-directory: android
+        run: bash scripts/check.sh --exclude-task :app:testDebugUnitTest
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: matrix.shard == 0
         with:
           name: okou-android-debug-${{ github.sha }}
           path: android/app/build/outputs/apk/debug/app-debug.apk
@@ -351,7 +364,15 @@ jobs:
           retention-days: 1
 
   ci-gate-android:
-    needs: [detect-release, detect, build-test, instrumentation, release-smoke]
+    needs:
+      [
+        detect-release,
+        detect,
+        build,
+        build-test,
+        instrumentation,
+        release-smoke,
+      ]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -362,7 +383,8 @@ jobs:
           IS_RELEASE: ${{ needs.detect-release.outputs.skip }}
           DETECT: ${{ needs.detect.result }}
           NEEDED: ${{ needs.detect.outputs.needed }}
-          BUILD: ${{ needs.build-test.result }}
+          BUILD: ${{ needs.build.result }}
+          JVM: ${{ needs.build-test.result }}
           INSTRUMENTATION: ${{ needs.instrumentation.result }}
           RELEASE_SMOKE: ${{ needs.release-smoke.result }}
         run: |
@@ -382,15 +404,15 @@ jobs:
             echo "::error::Android change detection must succeed; got $DETECT"
             exit 1
           fi
-          case "$NEEDED:$BUILD:$INSTRUMENTATION:$RELEASE_SMOKE" in
-            true:success:success:success)
+          case "$NEEDED:$BUILD:$JVM:$INSTRUMENTATION:$RELEASE_SMOKE" in
+            true:success:success:success:success)
               echo 'All Android jobs succeeded.'
               ;;
-            false:skipped:skipped:skipped)
+            false:skipped:skipped:skipped:skipped)
               echo 'Android checks were not needed for these changes.'
               ;;
             *)
-              echo "::error::Unexpected Android CI results: needed=$NEEDED, build=$BUILD, instrumentation=$INSTRUMENTATION, release-smoke=$RELEASE_SMOKE"
+              echo "::error::Unexpected Android CI results: needed=$NEEDED, build=$BUILD, build-test=$JVM, instrumentation=$INSTRUMENTATION, release-smoke=$RELEASE_SMOKE"
               exit 1
               ;;
           esac
