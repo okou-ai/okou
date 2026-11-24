@@ -1,3 +1,4 @@
+import { TranscriptPageAnchor } from "./transcript-page-anchor.tsx";
 import type { ChatRunReference } from "@okouai/api-contracts/contracts/chat-run-reference";
 import {
   ChatShareHeaderControls,
@@ -2818,6 +2819,7 @@ function ChatThreadRenderedEventGroups({
 }) {
   const rows = useGet(thread.visibleRows$);
   const layout = useGet(thread.transcriptPages.layout$);
+  const viewport = useGet(thread.scrollContainer$);
   const bindPages = useSet(thread.transcriptPages.containerOnRef$);
   const bindPage = useSet(thread.transcriptPages.pageOnRef$);
   const renderRow = (row: ChatThreadRowSignals) => {
@@ -2828,34 +2830,40 @@ function ChatThreadRenderedEventGroups({
   return (
     <>
       {layout ? (
-        <div ref={bindPages}>
-          <div
-            aria-hidden
-            data-transcript-spacer="before"
-            style={{ height: layout.before }}
-          />
-          {layout.pages.map((page, i) => {
-            return (
-              <div
-                key={page.key}
-                ref={bindPage}
-                data-transcript-page={page.key}
-                className={cn(
-                  "flex flex-col",
-                  CHAT_THREAD_MESSAGE_ROW_GAP_CLASS,
-                  (i < layout.pages.length - 1 || layout.after > 0) && "pb-6",
-                )}
-              >
-                {layout.rows[i]!.map(renderRow)}
-              </div>
-            );
-          })}
-          <div
-            aria-hidden
-            data-transcript-spacer="after"
-            style={{ height: layout.after }}
-          />
-        </div>
+        <TranscriptPageAnchor
+          viewport={viewport}
+          pages={layout.pages}
+          before={layout.before}
+        >
+          <div ref={bindPages}>
+            <div
+              aria-hidden
+              data-transcript-spacer="before"
+              style={{ height: layout.before }}
+            />
+            {layout.pages.map((page, i) => {
+              return (
+                <div
+                  key={page.key}
+                  ref={bindPage}
+                  data-transcript-page={page.key}
+                  className={cn(
+                    "flex flex-col",
+                    CHAT_THREAD_MESSAGE_ROW_GAP_CLASS,
+                    (i < layout.pages.length - 1 || layout.after > 0) && "pb-6",
+                  )}
+                >
+                  {layout.rows[i]!.map(renderRow)}
+                </div>
+              );
+            })}
+            <div
+              aria-hidden
+              data-transcript-spacer="after"
+              style={{ height: layout.after }}
+            />
+          </div>
+        </TranscriptPageAnchor>
       ) : (
         rows.map(renderRow)
       )}
@@ -3427,6 +3435,7 @@ function ChatThreadEventsPane({ thread }: { thread: ChatPanelSignals }) {
         ref={scrollContainerOnRef}
         data-slot="scroll-area-viewport"
         data-scroll-container
+        data-scroll-area-omit-overflow-vars=""
         tabIndex={-1}
         onScroll={handleScroll}
         className={cn(
