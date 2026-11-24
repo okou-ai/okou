@@ -25,23 +25,6 @@ async fn decoded_storage_batches_bound_allocations_and_release_completed_inputs(
     eprintln!("{}", output.stderr);
 }
 
-#[derive(Default)]
-struct ByteCounter(usize);
-
-impl std::io::Write for ByteCounter {
-    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        self.0 = self
-            .0
-            .checked_add(bytes.len())
-            .ok_or_else(|| std::io::Error::other("serialized manifest length overflow"))?;
-        Ok(bytes.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
 fn expected_manifest_with_each_mount_starting_a_batch(manifest: &Manifest) -> serde_json::Value {
     let mut value = serde_json::to_value(manifest).unwrap();
     for mount in value["storageMounts"].as_array_mut().unwrap() {
@@ -103,10 +86,17 @@ async fn decoded_storage_batch_memory_child() {
     let (mut manifest, files) = fixture.prepare(&sandbox).await;
     pad_versions_for_split(&mut manifest);
     let expected = expected_manifest_with_each_mount_starting_a_batch(&manifest);
-    let mut source_bytes = ByteCounter::default();
-    serde_json::to_writer(&mut source_bytes, &manifest).unwrap();
-    let source_bytes = source_bytes.0;
-    assert!(source_bytes > 8 * 1024 * 1024);
+    let version_id_bytes: usize = expected["storageMounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|mount| mount["versionId"].as_str().unwrap().len())
+        .sum();
+    // JSON escaping may add bytes, so these strings alone bound the manifest size from below.
+    assert!(
+        version_id_bytes > 8 * 1024 * 1024,
+        "fixture storage version IDs occupy {version_id_bytes} bytes, expected more than 8 MiB"
+    );
     assert_eq!(files.len(), 256);
     let context = minimal_context();
     let mut telemetry = test_telemetry(&fixture.config, &context);
@@ -121,7 +111,7 @@ async fn decoded_storage_batch_memory_child() {
     let calls = sandbox.take_storage_manifest_calls();
     assert_complete_delivery(&calls, &expected, b"content");
     drop(calls);
-    eprintln!("aggregate: source bytes={source_bytes}, largest allocation={largest}");
+    eprintln!("aggregate: version ID bytes={version_id_bytes}, largest allocation={largest}");
     // Individual requests only, not RSS or an aggregate final-batch bound.
     assert!(
         largest <= 1024 * 1024,

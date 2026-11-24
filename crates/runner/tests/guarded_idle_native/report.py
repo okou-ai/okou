@@ -170,6 +170,17 @@ def collect_witnesses(log_path, groups, *, case_matches, invalid_message):
             cases[event["case"]].append(event)
 
 
+def collect_case_witnesses(log_path, prefix, cases, *, invalid_message):
+    """Collect one witness prefix into buckets for every expected case."""
+    witnesses = {case: [] for case in cases}
+    collect_witnesses(
+        log_path, {prefix: witnesses},
+        case_matches=lambda value: value in cases,
+        invalid_message=invalid_message,
+    )
+    return witnesses
+
+
 def validate_phase_clock(value, begin, end, message):
     """Return a positive monotonic timestamp strictly inside its phase bounds."""
     if not positive_integer(value) or not begin < value < end:

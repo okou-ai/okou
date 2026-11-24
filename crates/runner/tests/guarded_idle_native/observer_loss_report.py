@@ -19,10 +19,8 @@ def validate(directory):
     directory = pathlib.Path(directory)
     result, collector, terminals = report._validate_cases(directory, CASES, report.PHASES)
     policy = supplied_policy(collector, result, "native_observer_loss_policy_json")
-    witnesses = {case: [] for case in CASES}
-    report.collect_witnesses(
-        directory / 'stdout.log', {PREFIX: witnesses},
-        case_matches=lambda value: value in CASES,
+    witnesses = report.collect_case_witnesses(
+        directory / 'stdout.log', PREFIX, CASES,
         invalid_message="invalid observer-loss witness",
     )
     runners = set()
