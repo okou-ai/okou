@@ -15,7 +15,7 @@ import cleanup_report as cleanup
 import report
 import report_test
 import status_failure_report_test as failure_test
-from progress_report_fixture import foreground_heartbeat, joined_observer
+from progress_report_fixture import foreground_heartbeat, joined_observer, memory_read_receipt
 
 
 class BatchAbaReportTests(unittest.TestCase):
@@ -61,9 +61,9 @@ class BatchAbaReportTests(unittest.TestCase):
                 {"pool_released_ns":at(13),"heartbeat":foreground_heartbeat(runner, 1, at(14), at(15), (2, 4096)),
                     "receiver_polled_pending":True,"source_read_blocked":True,"accounting":queued,"allocated":[2,4096,1]},
                 {"source_resumed_ns":at(18),"status_wait_polled_ns":at(23),"status_waits_before":0,
-                    "status_waits_after":1,"accounting":zero,"samples":[{"started_ns":at(begin),
-                        "finished_ns":at(end),"read_start_offset_ns":at(begin),"available_bytes":32*1024**3,
-                        "age_ns":2,"read_duration_ns":1} for begin,end in ((19,20),(21,22))],
+                    "status_waits_after":1,"accounting":zero,"samples":[
+                        memory_read_receipt(at(begin), at(end), at(begin))
+                        for begin, end in ((19, 20), (21, 22))],
                     "heartbeat":foreground_heartbeat(runner, 2, at(24), at(25), (2, 4096)),
                     "receiver_polled_pending":True,"original_full_lease_active":True,
                     "original_exit_polled_pending":True,"allocated":[2,4096,1]},

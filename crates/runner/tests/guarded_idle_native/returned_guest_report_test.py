@@ -15,7 +15,7 @@ import report
 import report_test
 import returned_guest_report as returned
 import snapshot_report as startup
-from progress_report_fixture import foreground_heartbeat, joined_observer
+from progress_report_fixture import foreground_heartbeat, joined_observer, memory_read_receipt
 
 
 class ReturnedGuestTests(unittest.TestCase):
@@ -70,9 +70,9 @@ class ReturnedGuestTests(unittest.TestCase):
                 {"policy": self.policy, "inputs_sha256": hashlib.sha256(raw.encode()).hexdigest(),
                  "snapshot_sha256": self.artifacts["snapshot_files"]["memory.bin"], "snapshot_bytes": startup.BYTES,
                  "stage": stage, "allocated": [2,4096,1], "checkpoint_models_stalled_io": False},
-                {"actual": actual, "samples": [{"started_ns": clock(ms), "finished_ns": clock(ms)+3,
-                    "read_start_offset_ns": ms*1_000_000, "available_bytes": 32*1024**3, "age_ns": 2, "read_duration_ns": 1}
-                    for ms in (200,400)], "available_bytes": 32*1024**3,
+                {"actual": actual, "samples": [
+                    memory_read_receipt(clock(ms), clock(ms) + 3, ms * 1_000_000)
+                    for ms in (200, 400)], "available_bytes": 32*1024**3,
                  "allocated": [4,8192,2], "accounting": held, "release_byte_withheld": True},
                 {"cancelled_ns": clock(510), "first_dropped_ns": clock(520), "second_pending_ns": clock(530),
                  "foreground_acquired_ns": clock(540), "first_pending": True, "first_dropped": True, "second_pending": True,
