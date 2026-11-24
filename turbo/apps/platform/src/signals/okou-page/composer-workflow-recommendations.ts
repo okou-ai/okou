@@ -1,4 +1,4 @@
-import { command, computed, type Command, type Computed } from "ccstate";
+import { computed, type Command } from "ccstate";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { WorkflowTemplateItem } from "@okouai/core/workflow-template-items";
 import { connectorCatalogItemBySlug } from "../external/connectors.ts";
@@ -9,7 +9,6 @@ export interface WorkflowRecommendationActions {
   readonly insertTemplate$: WorkflowComposerSignals["insertTemplate$"];
   readonly insertPrompt$: WorkflowComposerSignals["replacePromptText$"];
   readonly clearPrompt$: WorkflowComposerSignals["clearUnchangedPrompt$"];
-  readonly openTemplatePicker$: WorkflowComposerSignals["openTemplatePicker$"];
   readonly focusEditor$: WorkflowComposerSignals["focus$"];
   readonly saveDraft$: Command<Promise<void>, [AbortSignal]>;
 }
@@ -209,16 +208,3 @@ export const workflowRecommendationConnectors$ = computed(async (get) => {
     }),
   );
 });
-
-export function createWorkflowRecommendationSignals(
-  visible$: Computed<boolean>,
-  actions: WorkflowRecommendationActions,
-) {
-  const browse$ = command(({ get, set }) => {
-    if (!get(visible$)) {
-      return;
-    }
-    set(actions.openTemplatePicker$, { kind: "insert", category: "workflow" });
-  });
-  return { browse$ };
-}

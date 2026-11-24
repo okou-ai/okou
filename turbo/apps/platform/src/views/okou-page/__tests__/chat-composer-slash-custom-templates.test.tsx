@@ -9,7 +9,6 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
 import { screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
   click,
@@ -77,34 +76,24 @@ async function openSlashCategory(category: string, path = `/`) {
     featureSwitches: { [FeatureSwitchKey.SlashActions]: true },
   });
   const editor = await findComposerEditor();
-  await fill(editor, "Keep my brief /");
+  await fill(editor, "Keep my brief /create");
   const menu = await screen.findByTestId("slash-workflow-menu");
-  const entry = await waitFor(() => {
-    const templates = queryAllByRoleFast("button", menu).find((candidate) => {
-      return candidate.textContent
-        ?.replace(/\s+/gu, " ")
-        .trim()
-        .startsWith("Templates ");
-    });
-    if (!templates) {
-      throw new Error("Expected the Templates overview entry");
-    }
-    return templates;
+  const create = await waitFor(() => {
+    return button("Create", menu);
   });
-  await userEvent.setup({ delay: null }).hover(entry);
-  const pane = await within(menu).findByRole("region", { name: "Templates" });
-  const type = queryAllByRoleFast("button", pane).find((candidate) => {
-    return candidate.textContent
-      ?.replace(/\s+/gu, " ")
-      .trim()
-      .startsWith(`${category} `);
+  click(create);
+  const types = await screen.findByRole("radiogroup", { name: "Create" });
+  const type = queryAllByRoleFast("radio", types).find((candidate) => {
+    return candidate.textContent?.trim() === category;
   });
   if (!type) {
-    throw new Error(`Expected template type ${category}`);
+    throw new Error(`Expected creation type ${category}`);
   }
-  click(type);
-  await waitFor(() => {
-    expect(type).toHaveAttribute("aria-pressed", "true");
+  if (type.getAttribute("aria-checked") !== "true") {
+    click(type);
+  }
+  const pane = await screen.findByRole("group", {
+    name: category === "Image" ? "Image styles" : `${category} templates`,
   });
   return { editor, pane };
 }
@@ -117,7 +106,7 @@ const CATEGORIES = [
     path: `/chats/${THREAD_ID}`,
   },
   {
-    category: "Illustration",
+    category: "Image",
     kind: "illustration",
     builtInTitle: ILLUSTRATION_TEMPLATE_ITEMS[0]!.title,
     path: `/`,
@@ -131,7 +120,7 @@ const CATEGORIES = [
 ] as const;
 
 test.each(CATEGORIES)(
-  "The Templates overview's $category type offers accessible custom templates and sends their references",
+  "Slash Create offers custom $category recommendations and sends their references",
   async ({ category, kind, builtInTitle, path }) => {
     const capture = mockTemplateChat();
     const own = template(kind);
@@ -159,7 +148,10 @@ test.each(CATEGORIES)(
     expect(
       within(pane).queryByText(template(otherKind).title),
     ).not.toBeInTheDocument();
-    const cover = button(`Use template ${own.title}`, pane);
+    const cover = button(
+      kind === "presentation" ? own.title : `Use template ${own.title}`,
+      pane,
+    );
     expect(cover.querySelector("img")?.getAttribute("src") ?? null).toBe(
       kind === "illustration" ? own.previewAssets[0]!.url : own.coverUrl,
     );
@@ -180,7 +172,7 @@ test.each(CATEGORIES)(
   },
 );
 
-test("The open Templates overview refreshes published and removed custom templates", async () => {
+test("Slash Create recommendations refresh published and removed custom templates", async () => {
   mockTemplateChat();
   let catalog = [template("presentation")];
   context.mocks.api(userTemplatesContract.list, ({ respond }) => {
@@ -198,7 +190,7 @@ test("The open Templates overview refreshes published and removed custom templat
   ).not.toBeInTheDocument();
 });
 
-test("A failed custom catalog keeps built-in templates available in the overview", async () => {
+test("A failed custom catalog keeps built-in recommendations and import available after slash Create", async () => {
   mockTemplateChat();
   context.mocks.api(userTemplatesContract.list, ({ respond }) => {
     return respond(500, {
@@ -206,8 +198,6 @@ test("A failed custom catalog keeps built-in templates available in the overview
     });
   });
   const { pane } = await openSlashCategory("Presentation");
-  await within(pane).findByText("Couldn't load templates.");
-  expect(
-    within(pane).getByText(PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!.title),
-  ).toBeInTheDocument();
+  await within(pane).findByText(PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!.title);
+  expect(within(pane).getByLabelText("Import your own deck")).toBeEnabled();
 });

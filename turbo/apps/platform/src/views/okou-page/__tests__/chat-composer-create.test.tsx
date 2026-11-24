@@ -9,7 +9,6 @@ import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import { screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
   click,
@@ -17,7 +16,7 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { openTemplatePicker } from "./chat-composer-template-gallery-test-helpers.ts";
+import { openTemplateRecommendations } from "./chat-composer-template-gallery-test-helpers.ts";
 import { clickComposerAddMenuItem } from "./chat-composer-add-menu-test-helpers.ts";
 import {
   CLAUDE_SUBSCRIPTION_PROVIDER_ID,
@@ -104,10 +103,11 @@ async function enterCreateMode(
   });
 }
 
-async function openCreationCatalog(task: "Presentation" | "Image") {
+async function openCreationRecommendations(task: "Presentation" | "Image") {
   await enterCreateMode(task);
-  click(button("View all", screen.getByRole("tabpanel")));
-  return await screen.findByRole("dialog");
+  return await screen.findByRole("group", {
+    name: task === "Image" ? "Image styles" : "Presentation templates",
+  });
 }
 
 test("Persisted additional info stays out of the message and copied text", async () => {
@@ -225,8 +225,6 @@ const createTemplateScenarios = [
   {
     mode: "image",
     task: "Image",
-    selectLabel: "Select template",
-    previewLabel: "Preview template",
     templates: ILLUSTRATION_TEMPLATE_ITEMS.map((template) => {
       return {
         ...template,
@@ -240,8 +238,6 @@ const createTemplateScenarios = [
   {
     mode: "presentation",
     task: "Presentation",
-    selectLabel: "Select template",
-    previewLabel: "Preview template",
     templates: PRESENTATION_TEMPLATE_PICKER_ITEMS.map((template) => {
       return {
         ...template,
@@ -259,7 +255,7 @@ const createTemplateScenarios = [
 
 test.each(createTemplateScenarios)(
   "$task adds a template without replacing the existing text",
-  async ({ mode, task, selectLabel, templates }) => {
+  async ({ mode, task, templates }) => {
     setupModels();
     mockChatLifecycle(context);
     const editor = await setupComposer();
@@ -268,13 +264,15 @@ test.each(createTemplateScenarios)(
       throw new Error(`Expected a ${mode} template`);
     }
     await fill(editor, "Our launch");
-    const dialog = await openCreationCatalog(task);
+    const shelf = await openCreationRecommendations(task);
     click(
-      await within(dialog).findByLabelText(`${selectLabel} ${first.title}`),
+      button(
+        task === "Image" ? `Use template ${first.title}` : first.title,
+        shelf,
+      ),
     );
     await waitFor(() => {
       expect(composerInlineTemplates()).toHaveLength(1);
-      expect(screen.queryByRole("dialog")).toBeNull();
     });
     expect(composerInlineTemplates()[0]).toHaveTextContent(first.title);
     expect(queryComposerModelTrigger("Claude Fable 5.1")).toBeInTheDocument();
@@ -283,10 +281,10 @@ test.each(createTemplateScenarios)(
   },
 );
 
-async function setupEditedDraftTemplate(
+async function setupRestoredDraftTemplates(
   scenario: (typeof createTemplateScenarios)[number],
 ) {
-  const { mode, task, selectLabel, previewLabel, templates } = scenario;
+  const { mode, task, templates } = scenario;
   setupModels();
   const submissions: UserMessageDocument[] = [];
   mockChatLifecycle(context, {
@@ -296,9 +294,9 @@ async function setupEditedDraftTemplate(
       }
     },
   });
-  const [first, second, replacement] = templates;
-  if (!first || !second || !replacement) {
-    throw new Error(`Expected three ${mode} templates`);
+  const [first, second] = templates;
+  if (!first || !second) {
+    throw new Error(`Expected two ${mode} templates`);
   }
   context.mocks.api(composerDraftContract.get, ({ respond }) => {
     return respond(200, {
@@ -327,30 +325,17 @@ async function setupEditedDraftTemplate(
     expect(composerInlineTemplates()).toHaveLength(2);
   });
   await enterCreateMode(task);
-  const firstChip = composerInlineTemplates()[0];
-  if (!firstChip) {
-    throw new Error("Expected the first inline template");
-  }
-  click(button(`${previewLabel} ${first.title}`, firstChip));
-  const dialog = await screen.findByRole("dialog");
-  click(
-    await within(dialog).findByLabelText(`${selectLabel} ${replacement.title}`),
-  );
-  await waitFor(() => {
-    const chips = composerInlineTemplates();
-    expect(chips).toHaveLength(2);
-    expect(chips[0]).toHaveTextContent(replacement.title);
-    expect(chips[1]).toHaveTextContent(second.title);
-  });
+  expect(composerInlineTemplates()[0]).toHaveTextContent(first.title);
+  expect(composerInlineTemplates()[1]).toHaveTextContent(second.title);
   expect(editor).toHaveTextContent("Our launch");
   expect(editor).toHaveTextContent("for the cover.");
   expect(taskChip(task)).toBeInTheDocument();
-  return { mode, replacement, second, submissions };
+  return { mode, first, second, submissions };
 }
 
-test("Create image sends every edited draft template reference", async () => {
-  const { mode, replacement, second, submissions } =
-    await setupEditedDraftTemplate(createTemplateScenarios[0]);
+test("Create image sends every restored draft template reference", async () => {
+  const { mode, first, second, submissions } =
+    await setupRestoredDraftTemplates(createTemplateScenarios[0]);
   click(button("Send"));
   await waitFor(() => {
     expect(submissions).toHaveLength(1);
@@ -366,7 +351,7 @@ test("Create image sends every edited draft template reference", async () => {
     parts?.flatMap((part) => {
       return part.type === "template" ? [part.titleSnapshot] : [];
     }),
-  ).toStrictEqual([replacement.title, second.title]);
+  ).toStrictEqual([first.title, second.title]);
   expect(JSON.stringify(parts)).toContain("Our launch");
   expect(JSON.stringify(parts)).toContain("for the cover.");
 });
@@ -414,27 +399,16 @@ test("Presentation adds another template when the draft already has one", async 
   const { first, second } = await setupSavedPresentationDraft();
   await enterCreateMode("Presentation");
   expect(composerInlineTemplates()).toHaveLength(1);
-  await clickComposerAddMenuItem("Add template");
-  await screen.findByRole("dialog");
-  click(await screen.findByLabelText(`Select template ${second.title}`));
+  const shelf = await screen.findByRole("group", {
+    name: "Presentation templates",
+  });
+  click(button(second.title, shelf));
   await waitFor(() => {
     const chips = composerInlineTemplates();
     expect(chips).toHaveLength(2);
     expect(chips[0]).toHaveTextContent(first.title);
     expect(chips[1]).toHaveTextContent(second.title);
   });
-});
-
-test("Image mode opens its style picker from the Add menu", async () => {
-  setupModels();
-  await setupComposer();
-  await enterCreateMode("Image");
-  await clickComposerAddMenuItem("Add style");
-  const dialog = await screen.findByRole("dialog");
-  const tab = queryAllByRoleFast("tab", dialog).find((item) => {
-    return item.textContent?.trim() === "Image";
-  });
-  expect(tab).toHaveAttribute("aria-selected", "true");
 });
 
 async function setupCreateModeWithTemplate() {
@@ -550,10 +524,8 @@ test("A template with no cover keeps the template glyph on its chip", async () =
   if (!template) {
     throw new Error("Expected a website template");
   }
-  await openTemplatePicker(userEvent.setup({ delay: null }), "Website");
-  click(
-    await screen.findByLabelText(`Select website template ${template.title}`),
-  );
+  const shelf = await openTemplateRecommendations("Website");
+  click(button(`Use template ${template.title}`, shelf));
   await waitFor(() => {
     expect(composerInlineTemplates()).toHaveLength(1);
   });

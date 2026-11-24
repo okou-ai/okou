@@ -2443,7 +2443,6 @@ test("The composer's + menu starts a new chat in a Project and keeps the message
   expect(menuLabels(menu)).toStrictEqual([
     "Attach",
     "Project",
-    "Template",
     "Find people",
     "Research",
     "Create",

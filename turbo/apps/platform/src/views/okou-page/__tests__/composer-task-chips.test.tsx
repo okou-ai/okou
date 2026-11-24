@@ -16,7 +16,6 @@ import {
 import {
   composerInlineTemplates,
   findComposerEditor,
-  tabByText,
   composerModelTrigger,
 } from "./chat-composer-test-helpers.ts";
 import { createTemplateGalleryHelpers } from "./chat-composer-template-gallery-test-helpers.ts";
@@ -292,16 +291,27 @@ test.each([
     const editor = await setupChips();
     await fill(editor, "Keep my launch brief");
     await selectCreation(entry);
-    click(button("View all", screen.getByRole("tabpanel")));
-    const dialog = await screen.findByRole("dialog");
-    click(tabByText(category));
+    const types = screen.getByRole("radiogroup", { name: "Create" });
+    const choice = queryAllByRoleFast("radio", types).find((candidate) => {
+      return candidate.textContent?.trim() === category;
+    });
+    if (!choice) {
+      throw new Error(`Expected creation type ${category}`);
+    }
+    click(choice);
+    const shelf = await screen.findByRole("group", {
+      name: task === "Image" ? "Image styles" : `${task} templates`,
+    });
     click(
-      await within(dialog).findByLabelText(
-        `Select ${type === "website" ? "website " : ""}template ${template.title}`,
+      button(
+        type === "presentation"
+          ? template.title
+          : `Use template ${template.title}`,
+        shelf,
       ),
     );
     await waitFor(() => {
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(composerInlineTemplates()).toHaveLength(1);
     });
     expect(selectedTask(editor, task)).toBeInTheDocument();
     expect(editor).toHaveTextContent("Keep my launch brief");
@@ -370,21 +380,6 @@ test("A presentation suggestion inserts a canonical template and preserves the p
   });
 });
 
-test("Browsing the catalog opens the existing library in the matching category", async () => {
-  mockTemplateChat();
-  const editor = await setupChips();
-  await fill(editor, "Keep my draft");
-  await selectCreation("Presentation");
-  click(button("View all", screen.getByRole("tabpanel")));
-  const dialog = await screen.findByRole("dialog");
-  expect(tabByText("Presentation")).toHaveAttribute("aria-selected", "true");
-  click(button("Close", dialog));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  expect(editor).toHaveTextContent("Keep my draft");
-});
-
 test.each([
   { task: "Website", shelf: "Website templates" },
   { task: "Image", shelf: "Image styles" },
@@ -396,9 +391,6 @@ test.each([
     await fill(editor, "Keep my draft");
     await selectCreation(task);
     const covers = await screen.findByRole("group", { name: shelf });
-    expect(
-      button("View all", screen.getByRole("tabpanel")),
-    ).toBeInTheDocument();
     expect(coverButtons(covers).length).toBeGreaterThan(5);
     click(coverButtons(covers)[0]!);
     await waitFor(() => {
@@ -496,24 +488,6 @@ test("Workflow covers draw their marks without waiting for the full connector ca
   await waitFor(() => {
     expect(morning?.querySelectorAll("img")).toHaveLength(3);
   });
-});
-
-test("View all opens the Workflow template picker and preserves the draft", async () => {
-  const capture = mockTemplateChat();
-  const editor = await selectWorkflow();
-  await fill(editor, "Keep my draft");
-  click(button("View all", screen.getByRole("tabpanel")));
-  const dialog = await screen.findByRole("dialog");
-  expect(tabByText("Workflow")).toHaveAttribute("aria-selected", "true");
-  expect(
-    button("Select workflow template Morning brief", dialog),
-  ).toBeInTheDocument();
-  click(button("Close", dialog));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  expect(editor.textContent).toBe("Keep my draft");
-  expect(capture.sentMessages).toHaveLength(0);
 });
 
 test("Choosing a workflow prepares an editable request until the user sends", async () => {

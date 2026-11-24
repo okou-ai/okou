@@ -681,15 +681,9 @@
       "updated": "網站網址已更新"
     },
     "templates": {
-      "activeHtmlPreview": "{{title}} 當前 HTML 預覽",
-      "all": "全部",
       "avatar": "虛擬形象",
-      "categories": "模板分類",
-      "category": "模板分類",
       "fullPreview": "{{title}} 網站完整預覽",
       "htmlPreview": "{{title}} HTML 預覽",
-      "illustration": "插畫",
-      "illustrationPreview": "{{title}} 插畫預覽",
       "importDeck": "匯入你自己的簡報",
       "importDeckHint": "（.pptx、.ppt、.pdf）",
       "importDocument": "匯入你自己的文件",
@@ -700,18 +694,10 @@
       "importImageHint": "儲存為可重用風格",
       "multiAccent": "多口音",
       "nextSlide": "預覽下一頁",
-      "noMatches": "沒有匹配結果",
-      "previewCurrentSlide": "從當前頁預覽 {{title}}",
       "previewSlide": "預覽第 {{slideNumber}} 頁",
-      "previewWebsite": "預覽網站模板 {{title}}",
       "previousSlide": "預覽上一頁",
-      "searchConnector": "搜尋模板",
-      "searchConnectors": "搜尋模板",
       "selectStyle": "選擇風格 {{style}}",
       "selectTemplate": "選擇模板 {{title}}",
-      "selectWebsite": "選擇網站模板 {{title}}",
-      "selectWorkflow": "選擇工作流模板 {{title}}",
-      "showVariant": "顯示變體 {{variantNumber}}",
       "singleAccent": "單一口音",
       "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "{{title}} 投影片預覽",
@@ -739,15 +725,11 @@
         "terracottaClay": "陶罐",
         "warmSand": "晨報"
       },
-      "tryDifferentSearch": "換個關鍵詞試試。",
-      "use": "使用",
       "useThisTemplate": "使用這個模板",
       "visibility": {
         "changeLabel": "修改模板可見範圍"
       },
       "website": "網站",
-      "websitePreview": "{{title}} 網站模板預覽",
-      "workflow": "工作流",
       "workflowCatalog": {
         "auto-inbox-label": {
           "description": "建立一個工作流：當郵件被打上指定的 Gmail 標籤時自動執行，並處理這封郵件。",
@@ -1923,8 +1905,6 @@
       "add": "新增",
       "configureModel": "配置模型",
       "create": {
-        "addStyle": "新增風格",
-        "addTemplate": "新增模板",
         "documentPlaceholder": "你希望文件包含哪些內容？",
         "imagePlaceholder": "描述你想生成的圖片…",
         "presentationPlaceholder": "你的簡報要講什麼？",
@@ -1964,11 +1944,9 @@
         "scheduleHint": "按排程自動執行",
         "share": "分享對話",
         "shareHint": "分享這段對話的連結",
-        "templates": "範本",
         "unpin": "取消置頂"
       },
       "slashPanel": {
-        "browseAll": "瀏覽全部模板",
         "hint": "選擇一項操作",
         "useTemplate": "使用模板 {{title}}"
       },
@@ -2627,7 +2605,6 @@
         "website": "網站",
         "workflow": "工作流"
       },
-      "viewAll": "檢視全部",
       "visualization": {
         "allCharts": "全部圖表",
         "back": "返回視覺化選項",
@@ -2809,8 +2786,6 @@
         "workflow": "工作流"
       },
       "previewTemplate": "預覽模板 {{title}}",
-      "previewWebsite": "預覽網站模板 {{title}}",
-      "previewWorkflow": "預覽工作流模板 {{title}}",
       "removeTemplate": "移除模板 {{title}}",
       "removeWebsite": "移除網站模板 {{title}}",
       "removeWorkflow": "移除工作流模板 {{title}}"
@@ -3900,7 +3875,6 @@
         "overview": "供應方與客戶資訊"
       }
     },
-    "filter": "文件分類",
     "formats": {
       "pdf": "PDF",
       "word": "Word 文件"
@@ -3910,10 +3884,8 @@
     "nextPage": "下一頁樣張",
     "openLarger": "查看大圖",
     "page": "第 {{page}} 頁",
-    "preview": "預覽 {{title}}",
     "previousPage": "上一頁樣張",
-    "title": "文件",
-    "useNamed": "使用 {{title}}"
+    "title": "文件"
   },
   "featureGuide": {
     "close": "關閉新功能指南",
@@ -6539,11 +6511,8 @@
   "templates": {
     "actions": {
       "delete": "刪除",
-      "menu": "針對{{title}}的操作",
-      "preview": "預覽{{title}}",
       "rename": "重新命名模板"
     },
-    "builtIn": "內建",
     "custom": "自定義",
     "delete": {
       "cancel": "取消",
@@ -6558,11 +6527,6 @@
       "page": "第 {{number}} 頁"
     },
     "loadFailed": "無法載入模板。",
-    "rename": {
-      "action": "重新命名",
-      "cancel": "取消",
-      "save": "儲存"
-    },
     "renameFailed": "無法重新命名該模板。",
     "sharedBy": "由{{owner}}分享",
     "sharedByMember": "由組織內的成員分享",

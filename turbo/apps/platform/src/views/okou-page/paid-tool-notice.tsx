@@ -77,43 +77,6 @@ function usePaidToolNoticeRow(
   };
 }
 
-function PaidToolNoticeContent({
-  tools,
-}: {
-  readonly tools: readonly AvailablePaidToolId[];
-}) {
-  const row = usePaidToolNoticeRow(tools);
-  if (!row || row.kind === "pending") {
-    return null;
-  }
-  return (
-    <div
-      role="status"
-      className="flex flex-wrap items-center gap-2 px-4 py-2 text-sm text-muted-foreground"
-    >
-      <span>{row.message}</span>
-      {row.action && (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={row.action.run}
-        >
-          {row.action.label}
-        </Button>
-      )}
-    </div>
-  );
-}
-
-function PaidToolNotice({
-  tools,
-}: {
-  readonly tools: readonly AvailablePaidToolId[];
-}) {
-  return tools.length > 0 ? <PaidToolNoticeContent tools={tools} /> : null;
-}
-
 function ComposerPaidToolNoticeContent({
   tools,
   fallback,
@@ -187,17 +150,4 @@ export function ComposerPaidToolNotice({
   ) : (
     fallback
   );
-}
-
-const CATEGORY_TOOLS: Readonly<Record<string, readonly AvailablePaidToolId[]>> =
-  {
-    illustration: ["image-generation"],
-  };
-
-export function TemplatePaidToolNotice({
-  category,
-}: {
-  readonly category: string;
-}) {
-  return <PaidToolNotice tools={CATEGORY_TOOLS[category] ?? []} />;
 }

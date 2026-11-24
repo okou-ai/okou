@@ -1,6 +1,6 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { HttpResponse } from "msw";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
   uploadsContract,
@@ -81,34 +81,6 @@ function slashButton(name: string): HTMLElement {
     throw new Error(`Expected slash workflow button ${name}`);
   }
   return button;
-}
-
-function templateTab(name: string): HTMLElement {
-  const tab = queryAllByRoleFast("tab").find((candidate) => {
-    return candidate.textContent?.trim() === name;
-  });
-  if (!tab) {
-    throw new Error(`Expected template tab ${name}`);
-  }
-  return tab;
-}
-
-async function openTemplateCategory(category: string): Promise<HTMLElement> {
-  await clickComposerAddMenuItem("Template");
-  const dialog = await waitFor(() => {
-    const element = document.querySelector<HTMLElement>('[role="dialog"]');
-    if (!element) {
-      throw new Error("Expected the template picker dialog");
-    }
-    expect(element).toBeVisible();
-    return element;
-  });
-  const tab = templateTab(category);
-  click(tab);
-  await waitFor(() => {
-    expect(tab).toHaveAttribute("aria-selected", "true");
-  });
-  return dialog;
 }
 
 function structuredTemplateReferences(): HTMLElement[] {
@@ -410,12 +382,12 @@ test("Send a template while the current run is active", async () => {
   expect((await findComposerEditor()).textContent).toBe("");
 });
 
-test("Use the workflow template picker to send a workflow template", async () => {
+test("Use an Advanced workflow recommendation to send a workflow template", async () => {
   const template = WORKFLOW_TEMPLATE_ITEMS.find((item) => {
-    return item.id === "workflow-template:github-pr-summarizer";
+    return item.id === "workflow-template:morning-brief";
   });
   if (!template) {
-    throw new Error("Expected the GitHub PR summarizer workflow template");
+    throw new Error("Expected the Morning brief workflow template");
   }
   let sentTemplateTitle: string | undefined;
   mockChatLifecycle(context, {
@@ -435,15 +407,17 @@ test("Use the workflow template picker to send a workflow template", async () =>
 
   const user = userEvent.setup({ delay: null });
   const editor = await findComposerEditor();
-  const dialog = await openTemplateCategory("Workflow");
-  const search = within(dialog).getByLabelText("Search templates");
-  expect(search).toBeVisible();
-  await fill(search, template.title);
-  click(
-    await within(dialog).findByLabelText(
-      `Select workflow template ${template.title}`,
-    ),
-  );
+  await clickComposerAddMenuItem("Workflow");
+  const kinds = await screen.findByRole("radiogroup", { name: "Workflow" });
+  const advanced = queryAllByRoleFast("radio", kinds).find((candidate) => {
+    return candidate.textContent?.trim() === "Advanced";
+  });
+  if (!advanced) {
+    throw new Error("Expected Advanced workflow kind");
+  }
+  click(advanced);
+  await screen.findByRole("region", { name: "Advanced workflows" });
+  click(namedButton("Start your day with a clear plan"));
 
   await expectInlineTemplateInComposer(template.title);
   await user.click(editor);
@@ -457,44 +431,6 @@ test("Use the workflow template picker to send a workflow template", async () =>
       }),
     ).toBeTruthy();
   });
-});
-
-test("Workflow category filters narrow templates and preserve the search", async () => {
-  mockThread();
-  installWorkflows(() => {
-    return [];
-  });
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
-  await findComposerEditor();
-
-  const dialog = await openTemplateCategory("Workflow");
-  const everyone = namedButton("Everyone");
-  const engineering = namedButton("Engineering");
-  const inboxTemplateLabel = "Select workflow template Auto-inbox label";
-  const engineeringTemplateLabel =
-    "Select workflow template GitHub PR summarizer";
-  await within(dialog).findByLabelText(inboxTemplateLabel);
-  expect(
-    within(dialog).getByLabelText(engineeringTemplateLabel),
-  ).toBeInTheDocument();
-
-  click(everyone);
-
-  expect(everyone).toHaveAttribute("aria-pressed", "true");
-  expect(within(dialog).getByLabelText(inboxTemplateLabel)).toBeInTheDocument();
-  expect(
-    within(dialog).queryByLabelText(engineeringTemplateLabel),
-  ).not.toBeInTheDocument();
-
-  const search = within(dialog).getByLabelText("Search templates");
-  await fill(search, "merged pull requests");
-  click(engineering);
-
-  expect(search).toHaveValue("merged pull requests");
-  await within(dialog).findByLabelText(engineeringTemplateLabel);
-  expect(
-    within(dialog).queryByLabelText(inboxTemplateLabel),
-  ).not.toBeInTheDocument();
 });
 
 test("Wait for a template attachment before sending", async () => {
