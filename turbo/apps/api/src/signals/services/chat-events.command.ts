@@ -2503,6 +2503,41 @@ function forgedMcpSource(body: NormalSendBody): boolean {
   });
 }
 
+const startNormalSendRevocation$ = command(
+  (
+    { set },
+    args: {
+      readonly body: NormalSendBody;
+      readonly existingThread: Promise<ExistingSendThreadRow | null>;
+      readonly enqueueTiming?: ChatEnqueueTimingCollector;
+    },
+    signal: AbortSignal,
+  ) => {
+    return settleIncludingAbort(async () => {
+      const existing = await args.existingThread;
+      signal.throwIfAborted();
+      if (!existing) {
+        return undefined;
+      }
+      return await measureChatEnqueue(
+        args.enqueueTiming,
+        "followup_validation",
+        () => {
+          return set(
+            validateNormalRevocationTarget$,
+            {
+              threadId: existing.id,
+              revokesEventId: args.body.revokesEventId,
+              clientEventId: args.body.clientEventId,
+            },
+            signal,
+          );
+        },
+      );
+    });
+  },
+);
+
 interface NormalSendBootstrap {
   readonly context: AgentRunContextSignals;
   readonly existingThread$: Computed<Promise<ExistingSendThreadRow | null>>;
@@ -2510,6 +2545,9 @@ interface NormalSendBootstrap {
   readonly chatRunSource: NormalSendChatRunSourceRead;
   readonly attachmentRecords?: IncomingAttachmentRecords;
   readonly host?: Parameters<typeof readCapturedComputerAccess>[0];
+  readonly revocation?: ReturnType<
+    (typeof startNormalSendRevocation$)["write"]
+  >;
 }
 
 const startNormalSendReads$ = command(
@@ -2519,6 +2557,7 @@ const startNormalSendReads$ = command(
       readonly auth: OrganizationAuthContext;
       readonly body: NormalSendBody;
       readonly requireVisibleThread?: boolean;
+      readonly enqueueTiming?: ChatEnqueueTimingCollector;
     },
     signal: AbortSignal,
   ): NormalSendBootstrap => {
@@ -2610,7 +2649,29 @@ const startNormalSendReads$ = command(
     if (host) {
       waitUntil(host);
     }
-    return { ...graph, inputId, chatRunSource, attachmentRecords, host };
+    const revocation =
+      body.threadId && body.revokesEventId
+        ? set(
+            startNormalSendRevocation$,
+            {
+              body,
+              existingThread: get(graph.existingThread$),
+              enqueueTiming: args.enqueueTiming,
+            },
+            signal,
+          )
+        : undefined;
+    if (revocation) {
+      waitUntil(revocation);
+    }
+    return {
+      ...graph,
+      inputId,
+      chatRunSource,
+      attachmentRecords,
+      host,
+      revocation,
+    };
   },
 );
 
@@ -2621,6 +2682,7 @@ export const startNormalSendBootstrap$ = command(
       readonly auth: OrganizationAuthContext;
       readonly body: SendBody;
       readonly requireVisibleThread?: boolean;
+      readonly enqueueTiming?: ChatEnqueueTimingCollector;
     },
     signal: AbortSignal,
   ) => {
@@ -2648,6 +2710,7 @@ const prepareNormalSendContext$ = command(
       chatRunSource,
       attachmentRecords,
       host,
+      revocation,
     } = request.bootstrap ?? set(startNormalSendReads$, request, signal);
     const existingRead =
       request.body.threadId === undefined ? undefined : get(existingThread$);
@@ -2660,29 +2723,6 @@ const prepareNormalSendContext$ = command(
       return notFound("Chat thread not found");
     }
     set(preloadAgentRunContext$, context, signal);
-    const revocation =
-      existing && args.body.revokesEventId
-        ? settleIncludingAbort(() => {
-            return measureChatEnqueue(
-              args.enqueueTiming,
-              "followup_validation",
-              () => {
-                return set(
-                  validateNormalRevocationTarget$,
-                  {
-                    threadId: existing.id,
-                    revokesEventId: args.body.revokesEventId,
-                    clientEventId: args.body.clientEventId,
-                  },
-                  signal,
-                );
-              },
-            );
-          })
-        : undefined;
-    if (revocation) {
-      waitUntil(revocation);
-    }
     const prepared = await set(
       authorizeNormalSend$,
       { ...args, existing: existing ?? undefined, chatRunSource },

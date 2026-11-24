@@ -316,24 +316,34 @@ describe("CHAT-02: prior rounds and thread titles", () => {
       authorization: `Bearer ${(await api.executionInput(third.runId)).sandboxToken}`,
     });
 
-    const recommendedFollowupQueueEventId = randomUUID();
     const recommendedFollowupRequest = {
       threadId: first.threadId,
       prompt: "use the recommended follow-up",
       revokesEventId: recommender.id,
-      clientEventId: recommendedFollowupQueueEventId,
+      clientEventId: randomUUID(),
     };
-    const normalFollowup = await chat.requestSendEvent(
-      actor,
-      recommendedFollowupRequest,
-      [201],
-    );
+    const competingFollowupRequest = {
+      ...recommendedFollowupRequest,
+      clientEventId: randomUUID(),
+    };
+    const [firstAttempt, secondAttempt] = await Promise.all([
+      chat.requestSendEvent(actor, recommendedFollowupRequest, [201, 409]),
+      chat.requestSendEvent(actor, competingFollowupRequest, [201, 409]),
+    ]);
+    expect([firstAttempt.status, secondAttempt.status].sort()).toStrictEqual([
+      201, 409,
+    ]);
+    const [normalFollowup, acceptedRequest] =
+      firstAttempt.status === 201
+        ? [firstAttempt, recommendedFollowupRequest]
+        : [secondAttempt, competingFollowupRequest];
+    const recommendedFollowupQueueEventId = acceptedRequest.clientEventId;
     if (normalFollowup.status !== 201) {
       throw new Error("Expected recommended follow-up send to succeed");
     }
     const retriedFollowup = await chat.requestSendEvent(
       actor,
-      recommendedFollowupRequest,
+      acceptedRequest,
       [201],
     );
     expect(retriedFollowup.body).toStrictEqual(normalFollowup.body);

@@ -10,6 +10,28 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.114.1](https://github.com/okou-ai/okou/compare/api-v2.114.0...api-v2.114.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* **app:** remove standalone template picker ([#50365](https://github.com/okou-ai/okou/issues/50365)) ([6a20b9e](https://github.com/okou-ai/okou/commit/6a20b9e686f663c0f71403cf4d52c6d77820e7a6))
+
+
+### Performance Improvements
+
+* **api:** narrow queue head and memory projections ([#50372](https://github.com/okou-ai/okou/issues/50372)) ([abd2454](https://github.com/okou-ai/okou/commit/abd24544982dc355b67bac959f1f640af7d47523))
+* **api:** prefetch chat follow-ups and batch template sources ([#50375](https://github.com/okou-ai/okou/issues/50375)) ([e91f433](https://github.com/okou-ai/okou/commit/e91f433d6b14dfc6acbb04469b6cf47a93e10556))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.867.1
+    * @okouai/db bumped to 2.63.4
+    * @okouai/pi-agent-runtime bumped to 1.52.57
+
 ## [2.114.0](https://github.com/okou-ai/okou/compare/api-v2.113.0...api-v2.114.0) (2026-11-24)
 
 
