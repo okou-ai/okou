@@ -100,7 +100,6 @@ function buildPreparationTables(
         id: chatEvents.id,
         chatThreadId: chatEvents.chatThreadId,
         createdAt: chatEvents.createdAt,
-        seqId: chatEvents.seqId,
         eventType: chatEvents.eventType,
         contextType: chatEvents.contextType,
         contextId: chatEvents.contextId,
@@ -414,11 +413,20 @@ export function createChatRunPreparationSnapshot(
         archiveCache: row.archiveCache,
       },
     };
-    const { thread, head: picked, hasCompletedPredecessorHistory } = row;
-    if (!thread || !picked) {
+    const {
+      thread: joinedThread,
+      head: picked,
+      hasCompletedPredecessorHistory,
+    } = row;
+    if (!joinedThread || !picked) {
       return { ...snapshot, pickedEvent: null };
     }
     // Only this request's actual FIFO head may use its canonical input facts.
+    const thread = {
+      ...joinedThread,
+      id: picked.chatThreadId,
+      userId: bootstrap.userId,
+    };
     const owned = requestInput?.id === picked.id ? requestInput : undefined;
     const pickedEvent: PickedThreadInputEvent = {
       ...picked,
