@@ -747,11 +747,12 @@ private fun UpdateAction(
 ) {
     val transfer = state.transfer
     val colors = MaterialTheme.colorScheme
-    val progressShape = RoundedCornerShape(12.dp)
+    val useEntryActionStyle = state.required && transfer !is UpdateTransfer.Downloading
+    val shape = if (useEntryActionStyle) ButtonDefaults.shape else RoundedCornerShape(12.dp)
     val foreground = if (state.required) colors.onPrimary else colors.inverseOnSurface
     val background = if (state.required) colors.primary else colors.inverseSurface
     val contentPadding =
-        if (state.required) PaddingValues(16.dp, updateActionVerticalPadding)
+        if (useEntryActionStyle) PaddingValues(16.dp, updateActionVerticalPadding)
         else updateActionPadding
     val focus = rememberInstallControlFocus(inProgress = installProgress != null)
     val waitingForCheck =
@@ -773,7 +774,6 @@ private fun UpdateAction(
             checking -> stringResource(R.string.updates_check_in_progress)
             else -> null
         }
-    val shape = if (state.required && progress == null) ButtonDefaults.shape else progressShape
     val enabled =
         progress == null && (state.canInstall || !state.offline && (!waiting || allowRetry))
     val showingProgress = progress != null
@@ -804,7 +804,7 @@ private fun UpdateAction(
         ) {
             Text(
                 progress,
-                modifier = Modifier.padding(updateActionPadding),
+                modifier = Modifier.padding(contentPadding),
                 color = if (checking) colors.onSurfaceVariant else colors.onBackground,
                 style = updateProgressStyle(),
                 textAlign = TextAlign.Center,
