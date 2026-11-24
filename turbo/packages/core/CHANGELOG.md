@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.868.0](https://github.com/okou-ai/okou/compare/core-v8.867.1...core-v8.868.0) (2026-11-24)
+
+
+### Features
+
+* **ios:** add connector management and align chat account controls ([#50371](https://github.com/okou-ai/okou/issues/50371)) ([b6afd7e](https://github.com/okou-ai/okou/commit/b6afd7e2be27cb0356358062dc7bb813200d18f9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.116.0
+
 ## [8.867.1](https://github.com/okou-ai/okou/compare/core-v8.867.0...core-v8.867.1) (2026-11-24)
 
 

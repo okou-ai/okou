@@ -1,6 +1,7 @@
 package ai.okou.android.chat
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
@@ -39,6 +40,9 @@ internal constructor(
     private var attempted: HistoryConfirmation? = null
     private var lastMarked: HistoryCursor? = null
     private var request: Job? = null
+    // Explicit unread waits for a submission already in flight. A retry delay must leave it free.
+    internal var pendingAutomaticRead: Job? = null
+        private set
 
     private fun current() = !closed && authorizedSelection()
 
@@ -52,9 +56,6 @@ internal constructor(
         displayed = confirmation
         markDisplayedRead()
     }
-
-    internal val pendingAutomaticRead: Job?
-        get() = request
 
     internal fun stopAutomaticRead() {
         automaticRead = false
@@ -72,18 +73,38 @@ internal constructor(
         )
             return
         attempted = confirmation
-        // Capture the earlier write before a later list action can wait on this acknowledgement.
+        // Join a write that was already pending when this display was confirmed.
         val preceding = precedingReadWrite()
         // Register ownership before even an immediately completing service can run its finalizer.
         val next =
             scope.launch(start = CoroutineStart.LAZY) {
                 try {
                     preceding?.join()
+                    val marked =
+                        ChatWriteRetries().run {
+                            requireCurrent()
+                            if (
+                                confirmation != currentConfirmation() ||
+                                    !automaticRead ||
+                                    precedingReadWrite()?.isActive == true
+                            )
+                                return@run false
+                            mutable.value = HistoryReadState.Pending
+                            val submission = CompletableDeferred<Unit>()
+                            pendingAutomaticRead = submission
+                            try {
+                                service.markRead(threadId)
+                            } finally {
+                                pendingAutomaticRead = null
+                                submission.complete(Unit)
+                            }
+                            true
+                        }
                     requireCurrent()
-                    if (!automaticRead || confirmation != currentConfirmation()) return@launch
-                    mutable.value = HistoryReadState.Pending
-                    service.markRead(threadId)
-                    requireCurrent()
+                    if (!marked) {
+                        mutable.value = HistoryReadState.Idle
+                        return@launch
+                    }
                     lastMarked = confirmation.cursor
                     mutable.value = HistoryReadState.Confirmed
                     onRead()
@@ -97,7 +118,7 @@ internal constructor(
                     if (current() && request === currentCoroutineContext()[Job]) {
                         request = null
                         // A newer displayed revision waits behind the request. An identical failed
-                        // attempt cannot hot-loop; an explicit refresh supplies a new confirmation.
+                        // attempt cannot hot-loop. A new history confirmation can try again.
                         markDisplayedRead()
                     }
                 }

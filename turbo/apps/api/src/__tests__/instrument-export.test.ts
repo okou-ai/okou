@@ -274,7 +274,7 @@ describe("API telemetry exports", () => {
     otelContext.disable();
   });
 
-  it("exports ordinary API telemetry but excludes Telegram credentials with the configured real SDKs", async () => {
+  it("exports ordinary API telemetry while excluding sensitive provider URLs", async () => {
     const Sentry =
       await vi.importActual<typeof import("@sentry/node")>("@sentry/node");
     const otel =
@@ -469,6 +469,39 @@ describe("API telemetry exports", () => {
       message: "Ordinary request metadata positive control",
       request: { url: `${origin}/health` },
     });
+    const gmailDraftId = "synthetic-private-gmail-draft-id";
+    const gmailDraftBase =
+      "https://gmail.googleapis.com/gmail/v1/users/me/drafts";
+    const gmailDraftUrl = `${gmailDraftBase}/Draft%20${gmailDraftId}`;
+    const gmailSendUrl = `${gmailDraftBase}/send`;
+    server.use(
+      http.get(gmailDraftUrl, () => {
+        return new HttpResponse(null, { status: 400 });
+      }),
+      http.post(gmailSendUrl, () => {
+        return HttpResponse.json({});
+      }),
+    );
+    await trace
+      .getTracer("dependency-upgrade")
+      .startActiveSpan("gmail-calls", async (span) => {
+        const read = await fetch(`${gmailDraftUrl}?format=full`, {
+          signal: context.signal,
+        });
+        expect(read.status).toBe(400);
+        const send = await fetch(gmailSendUrl, {
+          method: "POST",
+          signal: context.signal,
+        });
+        expect(send.status).toBe(200);
+        Sentry.addBreadcrumb({
+          category: "http",
+          data: { url: gmailDraftUrl },
+        });
+        Sentry.addBreadcrumb({ category: "http", data: { url: gmailSendUrl } });
+        Sentry.captureException(new Error("Gmail request failure"));
+        span.end();
+      });
     trace
       .getTracer("dependency-upgrade")
       .startActiveSpan("api-regression", (span) => {
@@ -598,6 +631,11 @@ describe("API telemetry exports", () => {
       "fetch POST https://api.axiom.co/v1/datasets/_apl",
     );
     expect(exportedTraces).not.toContain("/ingest");
+    expect(exportedTraces).toContain(`fetch POST ${gmailSendUrl}`);
+    expect(errors.join("\n")).toContain(gmailSendUrl);
+    expect(errors.join("\n")).toContain("Gmail request failure");
+    expect(exportedTraces).not.toContain(gmailDraftId);
+    expect(errors.join("\n")).not.toContain(gmailDraftId);
     for (const secret of [proof, identity, botToken]) {
       expect(exportedTraces).not.toContain(secret);
       expect(errors.join("\n")).not.toContain(secret);

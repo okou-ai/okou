@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.62.0](https://github.com/okou-ai/okou/compare/ios-v0.61.1...ios-v0.62.0) (2026-11-24)
+
+
+### Features
+
+* **ios:** add connector management and align chat account controls ([#50371](https://github.com/okou-ai/okou/issues/50371)) ([b6afd7e](https://github.com/okou-ai/okou/commit/b6afd7e2be27cb0356358062dc7bb813200d18f9))
+* **ios:** support follow-up placeholders and cache workspace feature switches ([#50378](https://github.com/okou-ai/okou/issues/50378)) ([4e41392](https://github.com/okou-ai/okou/commit/4e41392755b97917cdaa67a070b7951d2a219921))
+
+
+### Bug Fixes
+
+* **ios:** align the sidebar loading row with chat titles ([#50410](https://github.com/okou-ai/okou/issues/50410)) ([2e85a3a](https://github.com/okou-ai/okou/commit/2e85a3acd10b9599ebada526124bb6471f4fbff7))
+
 ## [0.61.1](https://github.com/okou-ai/okou/compare/ios-v0.61.0...ios-v0.61.1) (2026-11-24)
 
 

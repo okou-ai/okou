@@ -2,7 +2,6 @@ package ai.okou.android.chat
 
 import ai.okou.android.R
 import ai.okou.android.currentWindowSizeDp
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -34,7 +33,6 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -223,33 +221,6 @@ internal fun ConversationStopButton(
                 .semantics { contentDescription = label },
     ) {
         Icon(painterResource(R.drawable.ic_stop), null, Modifier.size(20.dp))
-    }
-}
-
-@Composable
-internal fun ConversationOffline(short: Boolean) {
-    val container = if (short) Modifier else Modifier.fillMaxWidth().heightIn(min = 48.dp)
-    val color = MaterialTheme.colorScheme.onSurfaceVariant
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        modifier =
-            container.padding(
-                horizontal = if (short) 4.dp else composerHorizontalInset(currentWindowSizeDp()),
-            ),
-    ) {
-        Icon(painterResource(R.drawable.ic_wifi_off), null, Modifier.size(16.dp), tint = color)
-        Text(
-            stringResource(R.string.chat_list_offline),
-            color = color,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            style =
-                MaterialTheme.typography.bodySmall.copy(
-                    fontSize = if (short) 12.sp else 13.sp,
-                    lineHeight = if (short) 16.sp else 20.sp,
-                ),
-        )
     }
 }
 

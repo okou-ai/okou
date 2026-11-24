@@ -2455,12 +2455,10 @@ function preparedNormalSendEvent(
  * Direct send, shared by the web, the CLI, and MCP: authorize the agent and
  * thread, validate a follow-up revocation, record attachment references, then
  * enqueue the input (creating a new thread's minimal row in the same
- * transaction) and schedule its pick without waiting for it. A retried client
- * event id conflicts on the input's insert and is accepted again without
- * enqueueing anything. The model is captured at enqueue. Credit admission,
- * the autonomy budget, templates, session, and context are resolved by the
- * pick; a rejection appears in the thread as `input.rejected`. A direct
- * message's sidebar touch runs after the pick.
+ * transaction) and schedule its pick without waiting for it. The model is
+ * captured at enqueue. The pick resolves credit admission, the autonomy
+ * budget, templates, session, and context and publishes rejections as
+ * `input.rejected`. The direct message's sidebar touch runs after the pick.
  */
 function settledNormalSendResponse(
   body: NormalSendBody,
@@ -2477,6 +2475,44 @@ function settledNormalSendResponse(
   }
   return acceptedSendResponse(threadId, createdAt, false);
 }
+function followupRevokerResponse(
+  threadId: string,
+  clientEventId: string | undefined,
+  revoker: { readonly id: string; readonly createdAt: Date },
+) {
+  // PostgreSQL returns UUIDs in lowercase.
+  return revoker.id === clientEventId?.toLowerCase()
+    ? acceptedSendResponse(threadId, revoker.createdAt, true)
+    : conflict("Recommended follow-up has already been used");
+}
+const resolveFollowupPublicationConflict$ = command(
+  async (
+    { get },
+    params: {
+      readonly threadId: string;
+      readonly revokesEventId: string;
+      readonly clientEventId: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    // The insert may have waited for a concurrent winner. Read the committed
+    // revoker in a fresh statement after the conflict has settled.
+    const [revoker] = await get(db$)
+      .select({ id: chatEvents.id, createdAt: chatEvents.createdAt })
+      .from(chatEvents)
+      .where(
+        and(
+          eq(chatEvents.chatThreadId, params.threadId),
+          eq(chatEvents.revokesEventId, params.revokesEventId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return revoker
+      ? followupRevokerResponse(params.threadId, params.clientEventId, revoker)
+      : duplicateClientEventIdResponse();
+  },
+);
 const prepareNormalSendModels$ = command(
   async ({ get }, context: AgentRunContextSignals, signal: AbortSignal) => {
     const [orgModels, memberModels, memberMetadata] = await Promise.all([
@@ -3029,20 +3065,15 @@ export const sendNormalEvent$ = command(
       args.body.revokesEventId &&
       args.body.clientEventId !== undefined
     ) {
-      const prior = clientEventIdResolutionResponse(
-        await set(
-          resolveClientEventId$,
-          {
-            clientEventId: args.body.clientEventId,
-            orgId: args.orgId,
-            threadId: thread.threadId,
-            userId: args.userId,
-          },
-          signal,
-        ),
-        thread.threadId,
+      return await set(
+        resolveFollowupPublicationConflict$,
+        {
+          clientEventId: args.body.clientEventId,
+          threadId: thread.threadId,
+          revokesEventId: args.body.revokesEventId,
+        },
+        signal,
       );
-      return prior ?? conflict("Recommended follow-up has already been used");
     }
     if (accepted) {
       args.onAcceptedDocument?.(publication.input.event.userMessage);
@@ -3288,14 +3319,11 @@ const validateNormalRevocationTarget$ = command(
       return badRequestMessage("Recommended follow-up is no longer available");
     }
     if (target.existingRevoker) {
-      // Postgres returns the uuid lowercase; the request may use any case.
-      return target.existingRevoker.id === params.clientEventId?.toLowerCase()
-        ? acceptedSendResponse(
-            params.threadId,
-            target.existingRevoker.createdAt,
-            true,
-          )
-        : conflict("Recommended follow-up has already been used");
+      return followupRevokerResponse(
+        params.threadId,
+        params.clientEventId,
+        target.existingRevoker,
+      );
     }
     // The publication's unique revokes index still guards single use.
     return {

@@ -27,6 +27,7 @@ describe("fixed Auto catalog authority", () => {
   it("exposes canonical Auto without a provider chooser", async () => {
     authenticate();
     const response = await accept(catalog().get({ headers }), [200]);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
     expect(response.body.systemDefaultModel).toBe("auto");
     expect(response.body.models[0]).toMatchObject({
       model: "auto",

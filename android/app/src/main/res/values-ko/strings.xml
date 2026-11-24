@@ -4,11 +4,6 @@
     <string name="auth_check_failed">워크스페이스 접근 권한을 확인하지 못했습니다.</string>
     <string name="auth_selection_failed">이 워크스페이스를 열지 못했습니다.</string>
     <string name="auth_sign_out_failed">로그아웃하지 못했습니다.</string>
-    <string name="composer_sync_loading">저장된 초안 불러오는 중…</string>
-    <string name="composer_sync_saving">초안 동기화 중…</string>
-    <string name="composer_sync_failed">초안을 동기화하지 못했습니다. 입력 내용은 이 기기에 보관됩니다.</string>
-    <string name="composer_sync_unsupported">이 초안에는 Web에서 편집할 수 있는 콘텐츠가 있습니다. 입력 내용은 이 기기에 보관되며 자동 동기화는 일시 중지됩니다.</string>
-    <string name="composer_sync_retry">초안 동기화 다시 시도</string>
     <string name="composer_restore_draft">보관된 초안 복원</string>
     <string name="controls_storage_failed">대기 중인 제어 요청을 저장할 수 없습니다.</string>
     <string name="controls_stop">실행 중인 작업 중지</string>
@@ -89,7 +84,6 @@
     <string name="composer_retry">같은 메시지 다시 보내기</string>
     <string name="composer_not_observed">아직 메시지를 확인할 수 없어 전송 결과는 미확인 상태입니다.</string>
     <string name="composer_request_failed">요청에 실패했습니다. 초안과 확인 대기 메시지는 보관됩니다.</string>
-    <string name="composer_saving">이 기기에 초안 저장 중…</string>
     <string name="updates_title">앱 업데이트</string>
     <string name="updates_installed">현재 버전: %1$s</string>
     <string name="updates_current">최신 버전입니다</string>
@@ -128,8 +122,6 @@
     <string name="updates_error_install">Android에서 업데이트를 설치하지 못했어요.</string>
     <string name="updates_unavailable">적합한 업데이트가 아직 없습니다.</string>
     <string name="updates_android_unsupported">이 업데이트에는 최신 Android 시스템이 필요합니다.</string>
-    <string name="realtime_connecting">실시간 업데이트에 연결 중…</string>
-    <string name="realtime_unavailable">실시간 업데이트를 사용할 수 없습니다. 수동으로 새로고침할 수 있습니다.</string>
     <string name="settings_account">계정</string>
     <string name="settings_cancel">취소</string>
     <string name="settings_saving">저장 중…</string>

@@ -1,5 +1,6 @@
 package ai.okou.android.chat
 
+import ai.okou.android.ContentReadProgress
 import ai.okou.android.R
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
@@ -16,7 +17,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -30,7 +30,6 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -126,7 +125,7 @@ internal fun ChatListViewport(
                 .measure(loose)
         val progress =
             if (syncing) {
-                subcompose(ListLayer.Sync) { ChatReadProgress(R.string.chat_syncing) }
+                subcompose(ListLayer.Sync) { ContentReadProgress(R.string.chat_syncing) }
                     .single()
                     .measure(loose.copy(maxWidth = rows.width))
             } else null
@@ -138,17 +137,6 @@ internal fun ChatListViewport(
             feedbackLayer.placeRelative((bounds.maxWidth - feedbackLayer.width) / 2, feedbackTop)
         }
     }
-}
-
-@Composable
-internal fun ChatReadProgress(@StringRes label: Int) {
-    val description = stringResource(label)
-    val colors = MaterialTheme.colorScheme
-    LinearProgressIndicator(
-        Modifier.fillMaxWidth().height(4.dp).semantics { contentDescription = description },
-        color = colors.primary,
-        trackColor = colors.primary.copy(alpha = 0.18f).compositeOver(colors.background),
-    )
 }
 
 @Composable

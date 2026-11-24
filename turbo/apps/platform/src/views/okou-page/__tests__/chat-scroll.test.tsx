@@ -482,3 +482,49 @@ test("chat-scroll-007 restores the reader at offset 275 after a reply arrives be
     expect(messageOffset(anchor, pane)).toBe(y);
   });
 });
+
+test("Avatar loading preserves a wheel movement before scroll delivery", async () => {
+  const pane = await transcript();
+  const reading = pane.scrollTop - 320;
+  fireEvent.wheel(pane, { deltaY: -320 });
+  pane.scrollTop = reading;
+  fireEvent.scroll(pane);
+  const avatar = requiredElement("svg[data-okou-avatar] image", pane);
+  fireEvent.wheel(pane, { deltaY: 60 });
+  pane.scrollTop = reading + 60;
+  fireEvent.load(avatar);
+  expect(pane.scrollTop).toBe(reading + 60);
+});
+
+test("A browser without overflow anchoring keeps its reading offset when the preceding page mounts", async () => {
+  const css = CSS;
+  vi.stubGlobal("CSS", css);
+  const supported = css.supports.bind(css);
+  vi.spyOn(css, "supports").mockImplementation((property, value?: string) => {
+    if (property === "overflow-anchor") {
+      return false;
+    }
+    return value === undefined
+      ? supported(property)
+      : supported(property, value);
+  });
+  const pane = await openPagedHistory(pagedTurns(26));
+  await within(pane).findByText("Locator answer 26");
+  await expectTail(pane);
+  const selector = "[data-chat-scroll-anchor-event-id]";
+  const first = requiredElement(selector, pane);
+  const delta =
+    first.getBoundingClientRect().top - pane.getBoundingClientRect().top + 30;
+  fireEvent.scroll(pane);
+  fireEvent.wheel(pane, { deltaY: delta });
+  pane.scrollTop += delta;
+  fireEvent.scroll(pane);
+  fireEvent(pane, new Event("scrollend"));
+  await waitFor(() => {
+    expect(pane.querySelector(selector)).not.toBe(first);
+    expect(first).toBeInTheDocument();
+    expect(
+      first.getBoundingClientRect().top - pane.getBoundingClientRect().top,
+    ).toBe(-30);
+  });
+});

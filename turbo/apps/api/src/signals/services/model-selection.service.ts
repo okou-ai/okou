@@ -16,6 +16,7 @@ import { command } from "ccstate";
 import { and, eq, isNull } from "drizzle-orm";
 import { badRequestMessage } from "../../lib/error";
 import { db$ } from "../external/db";
+import { isAntigravityEnabledForMember$ } from "./feature-switches.service";
 import { memberModelRouteContextFromAccounts } from "./effective-model-route.service";
 import type { ExecutionMemberMetadata } from "./execution-member-metadata.service";
 import {
@@ -28,6 +29,7 @@ import type {
 } from "./model-bootstrap.service";
 import {
   catalogDisplayName,
+  isAntigravityModel,
   loadModelCatalog$,
   resolveCatalogModel,
   resolveCatalogRunModel,
@@ -236,21 +238,43 @@ export const resolveModelSelectionPin$ = command(
     signal: AbortSignal,
   ): Promise<ModelFirstPin | ReturnType<typeof badRequestMessage>> => {
     // New intents canonicalize; queued snapshots below retain their captured ID.
+    const requestedModel = params.modelSelection.selectedModel;
     if (
-      params.modelSelection.selectedModel === AUTO_SELECTED_MODEL ||
-      (params.purpose === "capture" &&
-        isAutoSelectedModel(params.modelSelection.selectedModel))
+      requestedModel === AUTO_SELECTED_MODEL ||
+      (params.purpose === "capture" && isAutoSelectedModel(requestedModel))
     ) {
       return autoSelectionPin();
     }
     const facts = await set(modelRoutingFacts$, params, signal);
     const selectedModel = resolveRunSelectionModel(
       facts.catalog,
-      params.modelSelection.selectedModel,
+      requestedModel,
     );
     const personal = facts.subscriptions.find((entry) => {
       return entry.model === selectedModel;
     });
+    if (
+      isAntigravityModel(requestedModel) &&
+      facts.catalog.byModel.has(requestedModel)
+    ) {
+      if (
+        !(await set(
+          isAntigravityEnabledForMember$,
+          params.orgId,
+          params.userId,
+          signal,
+        ))
+      ) {
+        return badRequestMessage(
+          "Select Auto or a model from your connected personal subscription",
+        );
+      }
+      if (!personal) {
+        return badRequestMessage(
+          "This model requires a connected personal Google AI subscription.",
+        );
+      }
+    }
     if (personal) {
       if (
         params.modelSelection.modelProviderId !==
@@ -267,10 +291,7 @@ export const resolveModelSelectionPin$ = command(
     // classification is not permission to execute that route, so the pick rejects it.
     const unavailable =
       params.purpose === "capture"
-        ? unavailablePersonalPin(
-            facts.catalog,
-            params.modelSelection.selectedModel,
-          )
+        ? unavailablePersonalPin(facts.catalog, requestedModel)
         : null;
     return (
       unavailable ??

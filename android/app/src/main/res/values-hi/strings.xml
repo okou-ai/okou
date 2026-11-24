@@ -4,11 +4,6 @@
     <string name="auth_check_failed">कार्यक्षेत्र का ऐक्सेस नहीं जाँचा जा सका।</string>
     <string name="auth_selection_failed">यह कार्यक्षेत्र नहीं खोला जा सका।</string>
     <string name="auth_sign_out_failed">साइन आउट नहीं हो सका।</string>
-    <string name="composer_sync_loading">सहेजा गया ड्राफ़्ट लोड हो रहा है…</string>
-    <string name="composer_sync_saving">ड्राफ़्ट सिंक हो रहा है…</string>
-    <string name="composer_sync_failed">ड्राफ़्ट सिंक नहीं हुआ। आपका लिखा पाठ इस डिवाइस पर सुरक्षित है।</string>
-    <string name="composer_sync_unsupported">इस ड्राफ़्ट को Web पर संपादित करना जारी रखें। आपका लिखा पाठ इस डिवाइस पर सुरक्षित है; अपने आप सिंक होना रुका हुआ है।</string>
-    <string name="composer_sync_retry">ड्राफ़्ट सिंक फिर आज़माएँ</string>
     <string name="composer_restore_draft">सुरक्षित ड्राफ़्ट वापस लाएँ</string>
     <string name="controls_storage_failed">लंबित नियंत्रण अनुरोध सहेजे नहीं जा सकते।</string>
     <string name="controls_stop">चल रहा काम रोकें</string>
@@ -89,7 +84,6 @@
     <string name="composer_retry">यही संदेश फिर भेजें</string>
     <string name="composer_not_observed">संदेश अभी दिखाई नहीं दे रहा है। डिलीवरी की पुष्टि नहीं हुई है।</string>
     <string name="composer_request_failed">अनुरोध विफल हुआ। ड्राफ़्ट और लंबित संदेश सुरक्षित हैं।</string>
-    <string name="composer_saving">इस डिवाइस पर ड्राफ़्ट सहेजा जा रहा है…</string>
     <string name="updates_title">ऐप अपडेट</string>
     <string name="updates_installed">मौजूदा वर्शन: %1$s</string>
     <string name="updates_current">आप नवीनतम संस्करण पर हैं</string>
@@ -128,8 +122,6 @@
     <string name="updates_error_install">Android अपडेट इंस्टॉल नहीं कर सका।</string>
     <string name="updates_unavailable">उपयुक्त अपडेट अभी उपलब्ध नहीं है।</string>
     <string name="updates_android_unsupported">इस अपडेट के लिए नया Android सिस्टम संस्करण चाहिए।</string>
-    <string name="realtime_connecting">लाइव अपडेट से कनेक्ट हो रहा है…</string>
-    <string name="realtime_unavailable">लाइव अपडेट उपलब्ध नहीं हैं। आप मैन्युअल रूप से रीफ़्रेश कर सकते हैं।</string>
     <string name="settings_account">खाता</string>
     <string name="settings_cancel">रद्द करें</string>
     <string name="settings_saving">सेव हो रहा है…</string>
