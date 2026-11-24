@@ -863,3 +863,173 @@ test("browser-response-deadlines-035 The current connection mode recovers the or
   await old.release();
   await sendText(cdp, "after both native proofs");
 });
+
+test("browser-response-deadlines-009 Only the replacement accepts input after the first descriptor times out", async () => {
+  const advance = browserRecoveryClock(context.signal);
+  const {
+    openPage,
+    cdp,
+    viewer: previous,
+  } = arrangeNativePage(context, { targets: [original, replacement] });
+  const first = context.mocks.deferred<void>();
+  const late = context.mocks.deferred<void>();
+  const next = {
+    ...previous.browser,
+    window: {
+      ...previous.browser.window!,
+      primaryWindowId: replacement.windowId,
+    },
+  };
+  let retired = false,
+    read = false;
+  const parse = Response.prototype.json;
+  vi.spyOn(Response.prototype, "json").mockImplementation(async function (
+    this: Response,
+  ) {
+    const value: unknown = await parse.call(this);
+    if (
+      isRecord(value) &&
+      isRecord(value.browser) &&
+      value.browser.name === "Held first catalog"
+    ) {
+      read = true;
+    }
+    return value;
+  });
+  context.mocks.api(browserContract.get, async ({ respond, request }) => {
+    if (!first.settled()) {
+      first.resolve();
+      await late.promise;
+      retired = request.signal.aborted;
+      const stale = { ...previous.browser, name: "Held first catalog" };
+      return respond(200, {
+        browser: stale,
+        viewer: { ...previous, browser: stale },
+      });
+    }
+    return respond(200, {
+      browser: next,
+      viewer: { ...previous, browser: next },
+    });
+  });
+  await openPage();
+  await first.promise;
+  advance(60_001);
+  context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
+    return respond(200, { browser: next });
+  });
+  context.mocks.ably.trigger("browserSessionChanged", {
+    threadId: next.threadId,
+  });
+  advance(4000);
+  await expectStreamingAt(replacement.url);
+  late.resolve();
+  await sendText(cdp, "after first catalog", replacement.targetId);
+  expect(cdp.connections()).toBe(1);
+  expect(
+    screen.queryByLabelText(original.title, { selector: '[role="tab"]' }),
+  ).toBeNull();
+  expect({ retired, read }).toStrictEqual({ retired: false, read: true });
+});
+
+test("browser-response-deadlines-011 Three image setup phases share the deadline before a single recovery descriptor", async () => {
+  const advance = browserRecoveryClock(context.signal);
+  const recoveryEndpoint = "wss://peer.example.test/after-image-deadline";
+  const {
+    cdp,
+    openPage,
+    viewer: descriptor,
+  } = arrangeNativePage(context, {
+    targets: [original],
+    endpointAliases: [recoveryEndpoint],
+  });
+  const initial = context.mocks.deferred<void>();
+  const recovery = context.mocks.deferred<void>();
+  let expired = false;
+  let outsideBudget = false;
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    if (!initial.settled()) {
+      initial.resolve();
+      return respond(200, { browser: descriptor.browser, viewer: descriptor });
+    }
+    if (!expired || recovery.settled()) {
+      outsideBudget = true;
+      return respond(503, {
+        error: {
+          code: "SERVICE_UNAVAILABLE",
+          message: "Recovery descriptor already allocated or requested early",
+        },
+      });
+    }
+    recovery.resolve();
+    return respond(200, {
+      browser: descriptor.browser,
+      viewer: { ...descriptor, cdpUrl: recoveryEndpoint },
+    });
+  });
+  await openPage();
+  await expectStreamingAt(original.url);
+  await initial.promise;
+  const attach = cdp.holdNext("Target.attachToTarget", "okou-worker");
+  const hello = cdp.holdNextNative("hello");
+  const proof = cdp.holdNextNative("getWindow");
+  click(screen.getByLabelText("Browser settings"));
+  click(await screen.findByText("Connection mode"));
+  click(await screen.findByText("Separate image connection"));
+  await attach.received;
+  advance(21_000);
+  await attach.release();
+  await hello.received;
+  advance(21_000);
+  await hello.release();
+  await proof.received;
+  advance(17_999);
+  expect(remoteInput()).toBeDisabled();
+  expect(recovery.settled()).toBeFalsy();
+  expired = true;
+  advance(1001);
+  await screen.findByText("Reconnecting…");
+  advance(4000);
+  await recovery.promise;
+  await expectStreamingAt(original.url);
+  await proof.release();
+  await sendText(cdp, "after the shared budget");
+  expect(cdp.requestsAt(recoveryEndpoint)).toContainEqual(
+    expect.objectContaining({
+      method: "Input.insertText",
+      params: expect.objectContaining({ text: "after the shared budget" }),
+    }),
+  );
+  expect(outsideBudget).toBeFalsy();
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+test("browser-response-deadlines-043 A late window read cannot displace the recovered original tab", async () => {
+  const advance = browserRecoveryClock(context.signal);
+  const { cdp, openPage } = viewer();
+  await openPage();
+  await expectStreamingAt(original.url);
+  const before = cdp.connections(),
+    proof = cdp.holdNextNative("getWindow");
+  act(() => {
+    return cdp.nativeEvent("tab-attached", original);
+  });
+  await proof.received;
+  advance(31_000);
+  await screen.findByText("Reconnecting…");
+  expect(remoteInput()).toBeDisabled();
+  expect(
+    screen.getByLabelText("New tab", {
+      selector: "button[data-browser-new-tab]",
+    }),
+  ).toBeDisabled();
+  advance(4000);
+  await expectStreamingAt(original.url);
+  let read = false;
+  await proof.release(() => {
+    read = true;
+  });
+  await sendText(cdp, "late window inventory");
+  expect(cdp.connections()).toBe(before);
+  expect(read).toBeTruthy();
+});

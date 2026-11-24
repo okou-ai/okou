@@ -97,3 +97,40 @@ export async function verifySuspendedAutomationSubscription({
     1,
   );
 }
+
+// Keep the connector menu and the automation panel mounted across both
+// publications. The queued event makes thread detail visible in the composer.
+export async function verifyThreadInvalidations({
+  page,
+  stageChanges,
+  publishDetail,
+  publishAutomation,
+}) {
+  const oldPreference = page
+    .getByText("Cedar account", { exact: true })
+    .first();
+  const newPreference = page
+    .getByText("Maple account", { exact: true })
+    .first();
+  const oldSchedule = page.getByText("Cedar schedule", { exact: true });
+  const newSchedule = page.getByText("Maple schedule", { exact: true });
+  const recovery = page.getByText(
+    "Finalizing the cancelled run before queued work continues.",
+    { exact: true },
+  );
+  await oldPreference.waitFor();
+  await oldSchedule.waitFor();
+  await stageChanges();
+  assert.equal(await oldPreference.isVisible(), true);
+  assert.equal(await oldSchedule.isVisible(), true);
+  assert.equal(await recovery.isVisible(), false);
+  await publishDetail();
+  await newPreference.waitFor();
+  await recovery.waitFor();
+  assert.equal(await oldSchedule.isVisible(), true);
+  assert.equal(await newSchedule.isVisible(), false);
+  await publishAutomation();
+  await newSchedule.waitFor();
+  assert.equal(await oldSchedule.isVisible(), false);
+  assert.equal(await newPreference.isVisible(), true);
+}

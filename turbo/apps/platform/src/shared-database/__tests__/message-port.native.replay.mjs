@@ -99,3 +99,33 @@ export async function verifyOrganizationTemplateDelivery({
     await card.waitFor({ state: "visible" });
   }
 }
+
+export async function verifyThreadIndicatorCache({
+  page,
+  seedUnread,
+  stageUnpublishedTurn,
+  clearIndicators,
+  publishMessage,
+  goOffline,
+  openPrimary,
+}) {
+  const unread = page
+    .getByRole("link", { name: /Side survey.*Unread/s })
+    .first();
+  await seedUnread();
+  await unread.waitFor();
+  await stageUnpublishedTurn();
+  await clearIndicators();
+  await unread.waitFor({ state: "hidden" });
+  if (publishMessage) {
+    await publishMessage();
+  }
+  await goOffline();
+  await openPrimary();
+  await page.getByText("Question number 16", { exact: true }).waitFor();
+  const newTurn = page.getByText("Delivered survey 17", { exact: true });
+  if (publishMessage) {
+    await newTurn.waitFor();
+  }
+  assert.equal(await newTurn.count(), publishMessage ? 1 : 0);
+}

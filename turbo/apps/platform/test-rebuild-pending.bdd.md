@@ -24,7 +24,7 @@ Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/message-port.te
 - **When** The topic emits an event, the connection suspends and reconnects, then the first tab disconnects and another event arrives.
 - **Then** Both tabs receive the first event; a plain resume causes no resync, while reconnect causes one resync per tab. After the first tab disconnects, only the second receives the next event, and the shared subscription ends after the second disconnects.
 
-**Unverified clauses.** Two independent Chromium Routers showed turn 17, then the surviving window showed turn 18 after the first closed. The provider identified the user and credential channels separately. In the separate billing-topic trial the account menu showed 0 credits after the balance fixture supplied 10,000, so that menu could not count refreshes. This chat publication does not establish the per-tab resynchronization count or final removal of a shared user-topic subscription. Use a visible value on the same user topic in both tabs, identify both refreshes on a continuity gap, and obtain the final unsubscribe at the provider. [Batch 105](../../../test-rebuild-evidence/105/README.md#message-port-014).
+**Unverified clauses.** Two already-open Chromium template shelves subscribed to the same user topic. Both windows displayed the new card before the resume control began. That resume produced no page catalog read. The continuity gap produced one read in A and one in B. Only B read the second, empty catalog after A closed and B lost the card. The provider did not record the final topic unsubscribe after B closed. Obtain an independent final topic-removal receipt after B disconnects, while retaining this per-window continuity control. [Batch 107 review](../../../test-rebuild-evidence/107/README.md#message-port-014).
 
 ### message-port-017
 
@@ -86,16 +86,6 @@ Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/message-port.te
 
 **Unverified clauses.** The first real browser messages include register-tab before queries. Issuing a pre-registration read would require sending a private bridge message on behalf of a tab. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
 
-### message-port-032
-
-Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/shared-database/__tests__/message-port.bdd.md#message-port-032)
-
-- **Given** A registered tab has unread indicators for an agent and a thread, with an indicator-change subscription active.
-- **When** An indicator-change event arrives after the indicators become empty.
-- **Then** A later indicator read returns empty agents, threads, and unread timestamps; the event does not warm chat messages.
-
-**Unverified clauses.** The current indicator schema carries threads and unreadAt. It no longer carries the frozen agent indicators. The page cannot establish the complete two-kind initial and empty final result. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
-
 ### message-port-033
 
 Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/shared-database/__tests__/message-port.bdd.md#message-port-033)
@@ -134,7 +124,7 @@ Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/message-port.te
 - **When** The attach fails, then one port reacquires the subscription.
 - **Then** Both subscriptions reject with the attach failure, and the failed topic is no longer subscribed. After reacquisition, a notification reaches the new subscriber.
 
-**Unverified clauses.** Two Routers opened while the organization provider attach was withheld. The provider returned 503. A new registration later received live chat turn 17. That later turn uses a different topic; neither of the two original subscription rejection results was exposed by the page. Require both failed subscribers to surface the same failed attach, then reacquire that exact topic and observe its notification. [Batch 105](../../../test-rebuild-evidence/105/README.md#message-port-038).
+**Unverified clauses.** Two independent already-open shelves shared an outstanding organization attach. The local receiver released it with 503. After closing both windows, a newly registered window reacquired presentationTemplatesChanged on the same organization channel. Publishing on that topic delivered to one handler and put Harbor exhibit on the new shelf. Neither of the two original callers surfaced its rejected attach result. Observe both original subscription rejections and identify removal of the failed topic before reacquiring it. [Batch 107 review](../../../test-rebuild-evidence/107/README.md#message-port-038).
 
 ### message-port-039
 
@@ -318,7 +308,7 @@ Frozen owner: `turbo/apps/platform/src/signals/__tests__/realtime.test.ts` · [O
 - **When** Realtime setup and the pending subscription attempt to connect.
 - **Then** Both reject with an Ably connection failure, no live subscription remains, and a later subscription request also rejects with an Ably connection failure.
 
-**Unverified clauses.** A terminal worker failure can be injected through local Ably. The two initial callers and a later independent subscription rejecting the same failure were not publicly observable. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** Two independent Chromium Routers used the local identity service. The provider invoked the production auth callback, the realtime-token HTTP receiver returned 500, and the provider received its failure. Loading another window did not surface distinct setup, pending subscription and later subscription rejections with that failure. Identify each caller at a supported consumer of the failed token exchange, including a later subscription after terminal failure. [Batch 107 review](../../../test-rebuild-evidence/107/README.md#realtime-005).
 
 ### realtime-006
 
@@ -328,7 +318,7 @@ Frozen owner: `turbo/apps/platform/src/signals/__tests__/realtime.test.ts` · [O
 - **When** The user cancels that subscriber while attachment is pending.
 - **Then** The wait rejects with the subscriber’s cancellation reason, and its channel subscription is removed.
 
-**Unverified clauses.** The route can be closed during attach. The typed cancellation reason returned to its one-shot waiting promise is not observable by the user. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** With an organization attach held at the HTTP boundary, the presentation shelf opened and the provider received the suspended transition. Chromium confirmed closing the subscriber window before the attach gate was released. The gate then returned 503. Neither the waiting subscriber’s cancellation reason nor its topic removal was acknowledged independently. Keep the provider observer alive beyond the cancellation and identify the subscriber-specific rejection and removal before releasing attach. [Batch 107 review](../../../test-rebuild-evidence/107/README.md#realtime-006).
 
 ### realtime-010
 
@@ -338,7 +328,7 @@ Frozen owner: `turbo/apps/platform/src/signals/__tests__/realtime.test.ts` · [O
 - **When** The channel later reports a terminal “connection failed” error.
 - **Then** The callback receives that error, and the channel subscription is removed.
 
-**Unverified clauses.** A terminal loss was delivered to the active local provider. No public component exposes the original subscriber error callback and removal of that exact subscription together. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** The external attach was outstanding while the shelf was open. The provider delivered a terminal failed-channel transition with the connection-failed reason, followed by a failed connection and the attach failure. There was no observable acknowledgement from the background subscriber’s error callback or removal of its exact subscription. Use a background subscriber whose failure callback changes a visible value and whose subscription removal can be identified at the same provider. [Batch 107 review](../../../test-rebuild-evidence/107/README.md#realtime-010).
 
 ### realtime-011
 
@@ -348,17 +338,7 @@ Frozen owner: `turbo/apps/platform/src/signals/__tests__/realtime.test.ts` · [O
 - **When** The subscription receives a payload, then the transport disconnects and reconnects.
 - **Then** Initialization runs once on subscription and once after reconnection; the payload is handled, and the continuity gap triggers recovery.
 
-**Unverified clauses.** The native trace includes payload, gap and reconnect. The startup-vs-reconnect initializations with runOnSubscribe omitted and their independent application completion are not observable for the same payload consumer. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
-
-### realtime-019
-
-Frozen owner: `turbo/apps/platform/src/signals/__tests__/realtime.test.ts` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/signals/__tests__/realtime.bdd.md#realtime-019)
-
-- **Given** A signed-in user is subscribed to realtime notifications for a chat thread, including thread detail and automation invalidations.
-- **When** A thread-detail notification arrives, followed by an automation notification for that thread.
-- **Then** The first notification invalidates thread detail and connector preference resources. The second also invalidates automations.
-
-**Unverified clauses.** With Automations open, the first thread-detail notification was followed by a thread detail GET. The next automation notification was followed by an automations GET. Opening the connector selector independently caused a preference overview GET. In the connector-selector control the provider delivered both notifications but the addressed detail event yielded no observed second overview read. [Batch 106 review](../../../test-rebuild-evidence/106/README.md#realtime-019).
+**Unverified clauses.** A genuine payload publication was followed by Delivered survey 17 on the open thread. The external provider then recorded both a resumed connection and a discontinuous reconnect. These receipts do not identify two completed initializations of that particular payload subscriber with runOnSubscribe omitted. Use a mounted payload consumer with a unique visible value produced only by its initialization on both sides of the continuity gap. [Batch 107 review](../../../test-rebuild-evidence/107/README.md#realtime-011).
 
 ### realtime-020
 
@@ -368,7 +348,7 @@ Frozen owner: `turbo/apps/platform/src/signals/__tests__/realtime.test.ts` · [O
 - **When** Subscription initialization throws an error.
 - **Then** The subscription request rejects with the initialization error, but the chat-thread automations live subscription remains active.
 
-**Unverified clauses.** The thread detail receiver returned HTTP 500 during startup. The live thread still opened, and a later automation publication produced an independent HTTP 200 read and changed No automations yet to Harbor schedule. The Router did not expose an initialization promise rejected with the original exception. [Batch 106 review](../../../test-rebuild-evidence/106/README.md#realtime-020).
+**Unverified clauses.** The startup thread detail returned HTTP 500. The same open panel still changed Cedar schedule to Maple schedule after the later automation notification. The external HTTP failure has no identified receipt from the original subscription caller. Observe the caller of the subscription initialization receiving its original error while the same open automation panel subsequently changes. [Batch 107 review](../../../test-rebuild-evidence/107/README.md#realtime-020).
 
 ## `src/signals/__tests__/shared-database-browser.test.ts`
 
@@ -566,27 +546,7 @@ Frozen owner: `turbo/apps/platform/src/views/browser-session/__tests__/browser-r
 - **When** Startup exceeds 30 seconds, then the viewer resumes and the old native setup is released.
 - **Then** The failed startup connection is retired, a new startup becomes usable, and input works on the original page using two total connections.
 
-**Unverified clauses.** 旧握手迟交或持续扣住时，原标签皆可通过替换连接重新输入。旧 socket 关闭并不能证明它处理了迟到消息，两个业务接收端也不能排除同结果的附加连接。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
-
-### browser-response-deadlines-009
-
-Frozen owner: `turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-009)
-
-- **Given** The initial browser descriptor request is held while the viewer is connecting.
-- **When** It exceeds one minute, the binding changes, recovery completes, and the old descriptor response arrives late.
-- **Then** The replacement page becomes usable and accepts input in its own session using one connection; the old page tab is absent.
-
-**Unverified clauses.** Both delivered and withheld descriptor controls left the replacement address and typing identical. Service ingress or serialization does not identify consumption by the page. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
-
-### browser-response-deadlines-011
-
-Frozen owner: `turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-011)
-
-- **Given** The viewer is ready in shared connection mode with one descriptor fetched.
-- **When** The user switches to a separate image connection and the successive attachment, hello, and window proof phases take 21, 21, and 19 seconds.
-- **Then** The shared startup budget expires and recovery makes the viewer usable; the descriptor is not refreshed before timeout and is fetched once for recovery, with no alert.
-
-**Unverified clauses.** Transport phases and expiry were observable, but the remaining exact-one descriptor fetch was distinguished only by counting requests, which the testing guide excludes. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** Startup hello was pending when the document became hidden. The first transport retired after 30,001 ms. After revealing the viewer, the original page session received fresh text on the replacement with exactly two connections. Releasing the old hello did not read its message data on the retired socket. Obtain distinguishable late delivery to the original startup peer, or a final decision about the retired peer. [Batch 107 review](../../../test-rebuild-evidence/107/README.md#browser-response-deadlines-007).
 
 ### browser-response-deadlines-022
 
@@ -596,7 +556,7 @@ Frozen owner: `turbo/apps/platform/src/views/browser-session/__tests__/browser-r
 - **When** The user navigates to the next chat before releasing the old paint, then waits over one minute and releases it.
 - **Then** The replacement page becomes usable and accepts input in its own session; the old recovery does not retire it.
 
-**Unverified clauses.** The replacement chat receives new input equally when the old recovery delivery is withheld. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** After visible disconnect, recovery had requested its first image. Navigating to a different chat produced a distinct endpoint and page session. After 61 seconds the old image was released with a unique frame number. The new peer received the text, but no frame acknowledgement identified that old image. Obtain an independent acknowledgement for the identified old frame after visible navigation, or source its final disposal. [Batch 107 review](../../../test-rebuild-evidence/107/README.md#browser-response-deadlines-022).
 
 ### browser-response-deadlines-023
 
@@ -606,7 +566,7 @@ Frozen owner: `turbo/apps/platform/src/views/browser-session/__tests__/browser-r
 - **When** The page is hidden, then the user navigates to the next chat while paused and makes it visible before releasing the old paint.
 - **Then** The replacement page becomes usable and accepts input in its own session after the old paint is released; the old recovery does not retire it.
 
-**Unverified clauses.** Releasing or withholding the old paint after changing chats while hidden leaves the same replacement input outcome. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** Recovery was painting when the document became hidden. The history transition occurred while hidden, then the document became visible before releasing the unique old frame. The replacement peer accepted input. The old capture had no matching frame acknowledgement. Observe late frame handling across the hidden chat transition while independently verifying the selected replacement session. [Batch 107 review](../../../test-rebuild-evidence/107/README.md#browser-response-deadlines-023).
 
 ### browser-response-deadlines-039
 
@@ -616,17 +576,7 @@ Frozen owner: `turbo/apps/platform/src/views/browser-session/__tests__/browser-r
 - **When** Its deadline expires, the user reconnects, and the late hello reply arrives.
 - **Then** The browser view is unavailable and input is disabled until the user explicitly reconnects. The late reply is not replayed; a subsequent new-tab action creates one tab in the original window.
 
-**Unverified clauses.** The unavailable screen, explicit Reconnect and new tab all work with the old native hello withheld. None proves handling of that hello. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
-
-### browser-response-deadlines-043
-
-Frozen owner: `turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-043)
-
-- **Given** The browser is ready on a shared connection, and a native window read is pending after a tab attaches.
-- **When** The read times out and automatic recovery runs without replacing the browser binding; the late reply then arrives.
-- **Then** Input and new-tab controls are disabled during reconnecting. Recovery returns to the original address without changing the connection count, and fresh input works after the late reply.
-
-**Unverified clauses.** The original address and fresh input still pass when the old native scope reply is withheld. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** After 31 seconds without hello the unavailable screen disabled input. Explicit Reconnect restored the original page. After attempting delivery of the old reply, New tab created exactly one blank target in the original window, and it received the typed text. The original socket did not read the late hello. Distinguish actual delivery of the stale hello from sending to a closed socket while reproducing the same single-tab result. [Batch 107 review](../../../test-rebuild-evidence/107/README.md#browser-response-deadlines-039).
 
 ### browser-response-deadlines-053
 
@@ -636,7 +586,7 @@ Frozen owner: `turbo/apps/platform/src/views/browser-session/__tests__/browser-r
 - **When** The user navigates to another chat before the read deadline, waits past the deadline, and then the old reply arrives.
 - **Then** The next chat shows the replacement address and accepts fresh input on its page. No error is reported.
 
-**Unverified clauses.** Switching chats shows the replacement address and delivers text with the old proof still withheld. The missing acknowledgement remains with this ID. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** The user switched chats while the original native window read was outstanding. The replacement address was usable on a different endpoint through the old deadline. Text reached the new page with no recorded report. The original peer did not read the late response body. Observe consumption or final sourced cancellation of that exact outstanding old read after the chat transition. [Batch 107 review](../../../test-rebuild-evidence/107/README.md#browser-response-deadlines-053).
 
 ## `src/views/browser-session/__tests__/browser-session-page.test.tsx`
 
@@ -733,36 +683,6 @@ Frozen owner: `turbo/apps/platform/src/views/browser-session/__tests__/browser-v
 - **Then** The input becomes enabled, and the user can enter a URL and navigate to it.
 
 **Unverified clauses.** The split viewer recovers Other and navigates after its control detach. Running the same test without delivering the held image attachment still enables input and navigates. These outcomes do not establish consumption of the obsolete image attachment. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
-
-### browser-viewer-interaction-148
-
-Frozen owner: `turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#browser-viewer-interaction-148)
-
-- **Given** The selected scoped tab's membership lookup is pending, and another scoped tab and a foreign tab exist.
-- **When** The selected target is destroyed before the membership lookup fails.
-- **Then** The surviving scoped tab is automatically selected and usable; the destroyed and foreign tabs are excluded. Navigating updates only the survivor to http://survivor.example/ready.
-
-**Unverified clauses.** After destruction of the selected target the surviving scoped tab alone accepts navigation, and the foreign tab is excluded. Keeping the failed membership response entirely outstanding produces the same results as delivery. There is no completion signal for the old failure. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
-
-### browser-viewer-interaction-155
-
-Frozen owner: `turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#browser-viewer-interaction-155)
-
-- **Given** The selected tab's membership lookup failed and a target-loss confirmation is pending; another tab is available.
-- **When** The user selects the other tab, then the pending confirmation succeeds; the original target may or may not have been destroyed before the selection.
-- **Then** The newer tab remains selected with input enabled and its address unchanged. The original tab is absent after its destruction is reported.
-
-**Unverified clauses.** After original destruction and selection of Other, delivering the successful confirmation and withholding it both leave Other selected, enabled and unchanged. The disappearance is established by the earlier destruction event. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
-
-### browser-viewer-interaction-158
-
-Frozen owner: `turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#browser-viewer-interaction-158)
-
-- **Given** The selected tab's membership lookup failed and a target-loss confirmation is pending; another tab is available.
-- **When** The user selects the other tab, then the pending confirmation fails; the original target is destroyed only afterward.
-- **Then** The newer tab remains selected with input enabled and its address unchanged. The original tab disappears when its later destruction is reported.
-
-**Unverified clauses.** While a failed target-loss confirmation was outstanding for the still-existing original page, clicking Other did not commit it as the selected tab before reply delivery. The probe failed at aria-selected, so destruction-before-selection from 155 was not substituted. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
 
 ### browser-viewer-interaction-160
 

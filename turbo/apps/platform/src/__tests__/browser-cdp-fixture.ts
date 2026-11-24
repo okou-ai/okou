@@ -1065,9 +1065,9 @@ export function mockBrowserCdp(
         get received() {
           return response.promise.then((reply) => reply.message);
         },
-        async release() {
+        async release(onRead?: () => void) {
           const reply = await response.promise;
-          reply.peer.receive(reply.message);
+          reply.peer.receive(reply.message, onRead);
         },
       };
     },
@@ -1109,12 +1109,16 @@ export function mockBrowserCdp(
         async releaseFailure(
           message = "Target no longer exists",
           code = -32_000,
+          onRead?: () => void,
         ) {
           const reply = await response.promise;
           const { id } = object({ id: number() }).parse(
             JSON.parse(reply.message),
           );
-          reply.peer.receive(JSON.stringify({ id, error: { code, message } }));
+          reply.peer.receive(
+            JSON.stringify({ id, error: { code, message } }),
+            onRead,
+          );
         },
       };
     },

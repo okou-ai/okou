@@ -2018,3 +2018,104 @@ test("browser-viewer-interaction-133 Closing a pending selection preserves the e
   await sendTo(remote, "final", "final choice");
   await navigateFromEditor(remote, "final", "follow.example/path");
 });
+
+function removeScopedPage(remote: Remote, id: string) {
+  const index = remote.targets.findIndex((t) => {
+    return t.targetId === id;
+  });
+  expect(index).toBeGreaterThanOrEqual(0);
+  const [target] = remote.targets.splice(index, 1);
+  remote.event("Target.targetDestroyed", { targetId: id });
+  remote.nativeEvent("tab-removed", target);
+}
+test("browser-viewer-interaction-148 Destruction during membership admits only the surviving scoped tab", async () => {
+  const survivor = { ...sibling, windowId: 0 };
+  const foreign = {
+    targetId: "foreign",
+    title: "Foreign",
+    url: "https://foreign.example/",
+    windowId: 29,
+  };
+  const peer = await openWindow(0, [primary, survivor, foreign]);
+  const membership = peer.holdNextMembership(primary.targetId);
+  peer.nativeEvent("tab-attached", primary);
+  await membership.received;
+  removeScopedPage(peer, primary.targetId);
+  let read = false;
+  await membership.releaseFailure("Missing selected page", -32_000, () => {
+    read = true;
+  });
+  await expectStreamingAt(survivor.url);
+  selected(survivor.title);
+  expect(
+    screen.queryByLabelText("Foreign", { selector: '[role="tab"]' }),
+  ).toBeNull();
+  expect(
+    screen.queryByLabelText(primary.title, { selector: '[role="tab"]' }),
+  ).toBeNull();
+  await navigateFromEditor(peer, survivor.targetId, "survivor.example/ready");
+  expect(
+    peer.targets.find((t) => {
+      return t.targetId === foreign.targetId;
+    })?.url,
+  ).toBe(foreign.url);
+  expect(read).toBeTruthy();
+});
+
+test.each([
+  ["155", "destroy first"],
+  ["155", "confirm first"],
+  ["158", "fail first"],
+] as const)(
+  "browser-viewer-interaction-%s preserves the newer selection with %s",
+  async (_id, order) => {
+    const peer = await localPair();
+    const membership = peer.holdNextMembership(primary.targetId);
+    peer.nativeEvent("tab-removed", undefined, {
+      tabId: 1,
+      windowId: primary.windowId,
+    });
+    await membership.received;
+    if (order === "fail first") {
+      peer.failNext("Target.getTargets", "Inventory temporarily unavailable");
+    }
+    const confirmation = peer.holdNext("Target.getTargets");
+    await membership.releaseFailure("No target with given id found");
+    const healthyReply = {
+      result: {
+        targetInfos: expect.arrayContaining([
+          expect.objectContaining({ targetId: sibling.targetId }),
+        ]),
+      },
+    };
+    const expectedReceipt =
+      order === "fail first"
+        ? { error: { message: "Inventory temporarily unavailable" } }
+        : healthyReply;
+    const response: unknown = JSON.parse(await confirmation.received);
+    expect(response).toMatchObject(expectedReceipt);
+    if (order === "destroy first") {
+      removeScopedPage(peer, primary.targetId);
+    }
+    await userEvent.click(tab("Other"));
+    await waitFor(() => {
+      return selected("Other");
+    });
+    const consumed = context.mocks.deferred<void>();
+    await confirmation.release(undefined, () => {
+      if (!consumed.settled()) {
+        consumed.resolve();
+      }
+    });
+    await consumed.promise;
+    if (order !== "destroy first") {
+      removeScopedPage(peer, primary.targetId);
+    }
+    await expectStreamingAt(other);
+    selected("Other");
+    expect(
+      screen.queryByLabelText(primary.title, { selector: '[role="tab"]' }),
+    ).toBeNull();
+    await sendTo(peer, sibling.targetId, "after confirmation");
+  },
+);
