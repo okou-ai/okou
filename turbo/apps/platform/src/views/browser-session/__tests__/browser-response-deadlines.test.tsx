@@ -1,9 +1,10 @@
-import { screen, waitFor, fireEvent } from "@testing-library/react";
+import { act, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
-import { click } from "../../../__tests__/page-helper.ts";
+import { click, fill } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { mockNow } from "../../../lib/time.ts";
 import { isRecord } from "../../../signals/utils.ts";
 import { browserRecoveryClock } from "../../../__tests__/browser-recovery-clock.ts";
 import {
@@ -279,8 +280,7 @@ test("browser-response-deadlines-054 Retiring the target with a pending attachme
   expect(errors.reports).toStrictEqual([]);
 });
 
-test("browser-response-deadlines-004 The original tab accepts input after setup completes with the browser canvas outside the viewport", async () => {
-  const clock = browserRecoveryClock(context.signal);
+function observeCanvas() {
   const observations = new Map<Element, (visible: boolean) => void>();
   const show = (visible: boolean) => {
     const canvas = document.querySelector("canvas");
@@ -333,6 +333,12 @@ test("browser-response-deadlines-004 The original tab accepts input after setup 
       }
     },
   );
+  return show;
+}
+
+test("browser-response-deadlines-004 The original tab accepts input after setup completes with the browser canvas outside the viewport", async () => {
+  const clock = browserRecoveryClock(context.signal);
+  const show = observeCanvas();
   const { cdp, openPage } = viewer();
   const setup = cdp.holdNext("Page.enable");
   await openPage();
@@ -496,3 +502,244 @@ test.each(["deliver", "withhold"] as const)(
     }
   },
 );
+
+async function acknowledgeCapture(
+  capture: ReturnType<ReturnType<typeof viewer>["cdp"]["holdNext"]>,
+) {
+  const received = context.mocks.deferred<void>();
+  await capture.release(undefined, () => {
+    if (!received.settled()) {
+      received.resolve();
+    }
+  });
+  await act(async () => {
+    await received.promise;
+  });
+}
+
+test("browser-response-deadlines-024 A wall-clock rollback cannot revive an expired recovery capture", async () => {
+  const advance = browserRecoveryClock(context.signal);
+  let wall = Date.UTC(2026, 8, 5);
+  mockNow(() => {
+    return wall;
+  }, context.signal);
+  const { cdp, openPage } = viewer();
+  await openPage();
+  await expectStreamingAt(original.url);
+  const capture = cdp.holdNext("Page.startScreencast");
+  const picture = cdp.holdTargetFrames(original.targetId);
+  cdp.disconnect({ code: 1006 });
+  await screen.findByText("Reconnecting…");
+  advance(4000);
+  await capture.received;
+  await picture.received;
+  await acknowledgeCapture(capture);
+  const stopped = cdp.holdNext("Page.stopScreencast");
+  wall -= 3_600_000;
+  advance(30_001);
+  await stopped.received;
+  expect(remoteInput()).toBeDisabled();
+  await screen.findByText("Reconnecting…");
+  picture.release();
+  const next = cdp.holdTargetFrames(original.targetId);
+  await stopped.release();
+  expect(remoteInput()).toBeDisabled();
+  advance(4000);
+  await next.received;
+  expect(remoteInput()).toBeDisabled();
+  next.release();
+  await expectStreamingAt(original.url);
+  await sendText(cdp, "arrival after rollback");
+});
+
+test("browser-response-deadlines-029 A slow capture acknowledgement starts its own image budget on the selected page", async () => {
+  const advance = browserRecoveryClock(context.signal);
+  const sibling = { ...replacement, windowId: original.windowId };
+  const { cdp, openPage } = arrangeNativePage(context, {
+    targets: [original, sibling],
+  });
+  await openPage();
+  await expectStreamingAt(original.url);
+  const paint = cdp.holdTargetFrames(sibling.targetId);
+  const capture = cdp.holdNext("Page.startScreencast");
+  click(screen.getByLabelText(sibling.title, { selector: '[role="tab"]' }));
+  await paint.received;
+  await capture.received;
+  advance(20_000);
+  await acknowledgeCapture(capture);
+  const stop = cdp.holdNext("Page.stopScreencast");
+  advance(29_999);
+  expect(screen.queryByText("Reconnecting…")).toBeNull();
+  advance(2);
+  await stop.received;
+  await screen.findByText("Reconnecting…");
+  expect(cdp.connections()).toBe(1);
+  paint.release();
+  await stop.release();
+  advance(4000);
+  await expectStreamingAt(sibling.url);
+  await sendText(cdp, "observed on replacement", sibling.targetId);
+});
+
+test("browser-response-deadlines-026 A sibling receives keyboard input after two expired first images", async () => {
+  const advance = browserRecoveryClock(context.signal);
+  const sibling = { ...replacement, windowId: original.windowId };
+  const { cdp, openPage } = arrangeNativePage(context, {
+    targets: [original, sibling],
+  });
+  await openPage();
+  await expectStreamingAt(original.url);
+  await sendText(cdp, "before selecting sibling");
+  const tab = screen.getByLabelText(original.title, {
+    selector: '[role="tab"]',
+  });
+  let paint = cdp.holdTargetFrames(sibling.targetId);
+  let capture = cdp.holdNext("Page.startScreencast");
+  click(screen.getByLabelText(sibling.title, { selector: '[role="tab"]' }));
+  for (const attempt of [1, 2]) {
+    await paint.received;
+    await capture.received;
+    await acknowledgeCapture(capture);
+    const stop = cdp.holdNext("Page.stopScreencast");
+    advance(30_001);
+    await stop.received;
+    await screen.findByText("Reconnecting…");
+    expect(tab).not.toHaveAttribute("aria-disabled", "true");
+    expect(remoteInput()).toBeDisabled();
+    paint.release();
+    await stop.release();
+    if (attempt === 1) {
+      paint = cdp.holdTargetFrames(sibling.targetId);
+      capture = cdp.holdNext("Page.startScreencast");
+    }
+    advance(4000);
+  }
+  await expectStreamingAt(sibling.url);
+  await sendText(cdp, "the sibling receives this", sibling.targetId);
+});
+
+test("browser-response-deadlines-031 Releasing the expired capture and its stop cannot interrupt the other tab", async () => {
+  const advance = browserRecoveryClock(context.signal);
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const sibling = { ...replacement, windowId: original.windowId };
+  const { cdp, openPage } = arrangeNativePage(context, {
+    targets: [original, sibling],
+  });
+  await openPage();
+  await expectStreamingAt(original.url);
+  visibility.changeTo("hidden");
+  await screen.findByText("Viewing paused");
+  const paint = cdp.holdTargetFrames(original.targetId);
+  const capture = cdp.holdNext("Page.startScreencast");
+  visibility.changeTo("visible");
+  await paint.received;
+  await capture.received;
+  await acknowledgeCapture(capture);
+  const stop = cdp.holdNext("Page.stopScreencast");
+  advance(30_001);
+  await stop.received;
+  click(screen.getByLabelText(sibling.title, { selector: '[role="tab"]' }));
+  await expectStreamingAt(sibling.url);
+  await stop.release();
+  paint.release();
+  await sendText(cdp, "input after stale cleanup", sibling.targetId);
+  expect(screen.getByLabelText("Address")).toHaveValue(sibling.url);
+});
+
+test("browser-response-deadlines-034 A paused mode switch yields to the assigned replacement window", async () => {
+  const viewport = observeCanvas();
+  const {
+    cdp,
+    openPage,
+    viewer: descriptor,
+  } = arrangeNativePage(context, { targets: [original, replacement] });
+  await openPage();
+  await expectStreamingAt(original.url);
+  const pending = cdp.holdNextNative("hello");
+  async function modes() {
+    click(screen.getByLabelText("Browser settings"));
+    click(await screen.findByText("Connection mode"));
+    return (await screen.findByText("Shared connection")).closest<HTMLElement>(
+      '[role="menuitemradio"]',
+    )!;
+  }
+  await modes();
+  click(await screen.findByText("Separate image connection"));
+  await pending.received;
+  viewport(false);
+  await screen.findByText("Viewing paused");
+  await expect(modes()).resolves.toHaveAttribute("aria-disabled", "true");
+  await userEvent.keyboard("{Escape}{Escape}");
+  const browser = {
+    ...descriptor.browser,
+    window: {
+      ...descriptor.browser.window!,
+      primaryWindowId: replacement.windowId,
+    },
+  };
+  const requested = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
+    return respond(200, { browser });
+  });
+  context.mocks.api(browserContract.get, async ({ respond }) => {
+    if (!requested.settled()) {
+      requested.resolve();
+    }
+    await release.promise;
+    return respond(200, { browser, viewer: { ...descriptor, browser } });
+  });
+  context.mocks.ably.trigger("browserSessionChanged", {
+    threadId: browser.threadId,
+  });
+  await requested.promise;
+  expect(remoteInput()).toBeDisabled();
+  release.resolve();
+  const option = await modes();
+  await waitFor(() => {
+    return expect(option).not.toHaveAttribute("aria-disabled", "true");
+  });
+  await userEvent.keyboard("{Escape}{Escape}");
+  viewport(true);
+  await expectStreamingAt(replacement.url);
+  await pending.release();
+  await sendText(cdp, "belongs to the new window", replacement.targetId);
+  expect(cdp.inputForTarget(original.targetId)).not.toContainEqual(
+    expect.objectContaining({ params: { text: "belongs to the new window" } }),
+  );
+});
+
+test("browser-response-deadlines-051 A completed navigation stays at its destination after its acknowledgement expires", async () => {
+  const advance = browserRecoveryClock(context.signal);
+  const { cdp, openPage } = viewer();
+  await openPage();
+  await expectStreamingAt(original.url);
+  const response = cdp.holdNext("Page.navigate");
+  const address = screen.getByRole("textbox", { name: "Address" });
+  const destination = "https://harbor.example.test/arrival";
+  await fill(address, destination);
+  await userEvent.keyboard("{Enter}");
+  await response.received;
+  await waitFor(() => {
+    return expect(
+      cdp.targets.find((target) => {
+        return target.targetId === original.targetId;
+      })?.url,
+    ).toBe(destination);
+  });
+  advance(30_001);
+  await screen.findByText("Reconnecting…");
+  advance(4000);
+  await expectStreamingAt(destination);
+  await sendText(cdp, "arrived while the reply was withheld");
+  await response.release();
+  await sendText(cdp, "same document after the late reply");
+  const deliveries = cdp.requests.filter((request) => {
+    return request.method === "Page.navigate";
+  });
+  expect(
+    deliveries.map((request) => {
+      return request.params;
+    }),
+  ).toStrictEqual([{ url: destination }]);
+});

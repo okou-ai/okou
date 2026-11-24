@@ -194,9 +194,20 @@ test.each([
 test.each(["clipboard", "file picker"] as const)(
   "The Image composer imports a reusable WEBP after receiving a PDF through the %s",
   async (source) => {
-    const image = new File(["test image"], "coastal-palette.webp", {
-      type: "image/webp",
-    });
+    const image = new File(
+      [
+        Uint8Array.from(
+          atob("UklGRhwAAABXRUJQVlA4TA8AAAAvD8ADAAcQ0f/+ByKi/wEA"),
+          (c) => {
+            return c.charCodeAt(0);
+          },
+        ),
+      ],
+      "coastal-palette.webp",
+      {
+        type: "image/webp",
+      },
+    );
     const fileId = crypto.randomUUID();
     const submission = captureTemplateSubmission(context);
     await setupPage({ context, path: "/" });
@@ -244,6 +255,10 @@ test.each(["clipboard", "file picker"] as const)(
     const filenames = parts.flatMap((part) => {
       return part.type === "file" ? [part.filenameSnapshot] : [];
     });
+    const attachedPdf = parts.filter((part) => {
+      return part.type === "file" && part.fileId === pdfId;
+    });
+    expect(attachedPdf).toHaveLength(source === "clipboard" ? 1 : 0);
     expect(filenames.sort()).toStrictEqual(
       source === "clipboard" ? [image.name, pdf.name].sort() : [image.name],
     );
