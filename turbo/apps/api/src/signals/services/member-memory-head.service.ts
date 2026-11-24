@@ -4,7 +4,7 @@ import {
 } from "@okouai/db/schema/member-memory";
 import { systemStoragePresignedUrlCache } from "@okouai/db/runtime/system-storage-presigned-url-cache";
 import { computed } from "ccstate";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { env } from "../../lib/env";
 import { db$ } from "../external/db";
@@ -26,9 +26,7 @@ export interface MemberMemoryHead {
 export const memberMemoryHeadFields = Object.freeze({
   memory: {
     storageId: memberMemories.id,
-    hasHead: sql`${memberMemories.headVersionId} IS NOT NULL`.mapWith(
-      pgBooleanDecoder,
-    ),
+    hasHead: isNotNull(memberMemories.headVersionId).mapWith(pgBooleanDecoder),
   },
   revision: {
     versionId: memoryVersions.id,
