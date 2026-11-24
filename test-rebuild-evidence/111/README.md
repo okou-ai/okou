@@ -14,7 +14,7 @@ Covered by the unread-history Router suite and the held/delivered Chromium contr
 
 ## message-port-023
 
-Registered A and B against one native SharedWorker. Both requested chat-thread-indicators. The independent identity receiver recorded A failing, B remaining pending, then B failing after release. The healthy continuity-gap/publication control subsequently updated the unread shelf in B. The window observer did not receive an AggregateError attributable to this pair of indicator requests.
+Registered A and B against one native SharedWorker. Both requested chat-thread-indicators. The independent identity receiver recorded A failing, B remaining pending, then B failing after release. The healthy continuity-gap/publication control subsequently updated the unread shelf in B. The window observer did not receive an AggregateError attributable to this pair of indicator requests. The upstream credential change reuses the preferred provider before falling back to other windows. Its provider selection does not expose the result of a particular pending indicator read. [#39765](https://github.com/okou-ai/okou/commit/944979a1412592028ce9e91a5a5ac334660904a2)
 
 Find a consumer that preserves the originating shared indicators read and returns its specific aggregate after both credential providers reject. The detached error from a separate snapshot is insufficient.
 
@@ -22,7 +22,7 @@ Find a consumer that preserves the originating shared indicators read and return
 
 ## message-port-030
 
-Passive capture at both native window ports observed register-tab before the first chat-thread-event query. The production bridge awaits registerTab before making the client available. Inspecting the server's registration guard and the client's own guard found no supported user action issuing a pre-registration cache-only read.
+Passive capture at both native window ports observed register-tab before the first chat-thread-event query. The production bridge awaits registerTab before making the client available. Inspecting the server's registration guard and the client's own guard found no supported user action issuing a pre-registration cache-only read. The production Clerk ownership change introduced an awaited registerTab before publication of the bridge. The server still retains its registration guard. [#31037](https://github.com/okou-ai/okou/commit/6ba1dbeb842c60a8b5c8f014bcfc7a624b2a7817)
 
 An independently registered client entry that can issue cache-only before registration, or a final upstream change replacing that requirement, is needed.
 
@@ -156,7 +156,7 @@ Covered through the shared command and both independent Stores.
 
 ## client-001
 
-Kept Browser.getVersion pending on an otherwise open CDP connection with an empty target list. Advanced the monotonic clock beyond 31 seconds, then used New tab while withholding the created-target event. The subsequent Target.getTargets returned empty on the same transport; later delivery of the created target started the stream. The actual frame-window reader consumes optional read-only probe failures.
+Kept Browser.getVersion pending on an otherwise open CDP connection with an empty target list. Advanced the monotonic clock beyond 31 seconds, then used New tab while withholding the created-target event. The subsequent Target.getTargets returned empty on the same transport; later delivery of the created target started the stream. The actual frame-window reader consumes optional read-only probe failures. The upstream response-deadline change introduced monotonic deadlines on the connection. The later read-only policy and version-sampling consumer explain where the optional version result is handled. [#44801](https://github.com/okou-ai/okou/commit/47f22ca434f6cbf2069ab919286d6050033f5a42)
 
 The original version-probe rejection must itself be independently observed as a read-only protocol failure. The successful later read only establishes continued availability.
 

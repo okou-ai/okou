@@ -47,7 +47,7 @@ test("command-scheduling-002 Held work observes cancellation before its old resu
     return text;
   });
   const caller = createStore();
-  const scheduled = debounceCommand(work, 20);
+  const scheduled = debounceCommand(work$, 20);
   const first = caller.set(scheduled, "old", context.signal);
   await started.promise;
   const replacement = caller.set(scheduled, "new", context.signal);
@@ -102,7 +102,7 @@ test("command-scheduling-004 Both waiting issuers receive the final label when t
       return label.repeat(copies);
     },
   );
-  const scheduled = throttleCommand(source, 1000);
+  const scheduled = throttleCommand(source$, 1000);
   const caller = createStore();
   mockNow(8000, context.signal);
   const leading = caller.set(scheduled, "first", 1, context.signal);
