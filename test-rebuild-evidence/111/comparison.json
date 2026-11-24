@@ -3,7 +3,7 @@
     "frozen": "b0a10287edf4242383c28e39c6f7675053febb32",
     "beforeFirstWithdrawal": "5310dbb9ba6bd8b95507bc7293f6da3ed8aa004b",
     "beforeSecondWithdrawal": "a445586e0483bb7e2440e60200a8deed30aa3df9",
-    "main": "9035254d926817b7e74cf3a83a5023999456ec78",
+    "main": "40612fc8e5b64953367f02b51a71531f352f7560",
     "opening": "10e42998a931e337c08a02e313bec67f7019523d"
   },
   "cases": {
@@ -334,5 +334,30 @@
     "The documented scheduling factories expose invocation results, cooperative abort and per-Store ownership. New caller commands record delivered labels, keep independent job receipts and hold an actual running job. No scheduling implementation was changed. The browser replay independently exercised production intervals.",
     "The former CDP owner used a client object directly. Real Browser Router actions here distinguish the empty inventory returned on a surviving transport from the optional version-probe receipt; the latter remains open. The CDP fixture can withhold only the target-created event.",
     "The independent realtime and token-provider receivers record provider and business delivery. They cannot observe the three distinct setup/subscription results, the cancelled reason, or a detached caller callback. These return-contract clauses remain open."
-  ]
+  ],
+  "domainSync": {
+    "upstream": "a8984599f91d9596a3721b0c6d8fa67274c9f985",
+    "merge": "da63fe65124f09c5a3e284e6e496f6c53d290dec",
+    "suites": {
+      "turbo/apps/platform/src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx": {
+        "ancestor": "8077a528bbb5194c319ed11225aa05e7a3c2b112",
+        "rebuilt": "393e2c0944f1fd60c39b4e3191794599a0ef36e1",
+        "incoming": "a94bcb271526c6e9c3812e1cd7be7b02ba7d1e9a",
+        "resolution": "570620c0ecd931e1dd499bb891d836e95925e5cd"
+      },
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-hosted-site-url.test.tsx": {
+        "ancestor": "c359ee38a86d96a6e4b43da53081518a1b145752",
+        "rebuilt": "8542507d98e1f964d13f0aba794eec926d088246",
+        "incoming": "754b1b68a4def12c9c47386dc9c952344ad56310",
+        "resolution": "f2c9dc09d3b20109c50c65eebe84eaf68798e640"
+      },
+      "turbo/apps/platform/src/views/hosted-site-authorization/__tests__/hosted-site-authorization.test.tsx": {
+        "ancestor": "7e53eb9a4c88673d37058141fa33d1cffbb95492",
+        "rebuilt": "d23a7669cd03d8c6a0b9c8eb8c0487e942065e32",
+        "incoming": "a90e26da186c388bbc0b6f48a1f64f7ff1384f90",
+        "resolution": "b7e6e857d1621b6ef15c3037481c06fadf19e177"
+      }
+    },
+    "result": "Kept the rebuilt access, authorization and sharing entries. Added the upstream active and removed custom hostname, exact callback and denial, manual verification and selection, pending-domain removal, and subscription-gated management scenarios to the same owning suites."
+  }
 }

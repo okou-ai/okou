@@ -82,7 +82,7 @@ The initiating subscribe caller must expose its initialization rejection. The de
 
 ## clerk-user-003
 
-From signed-out Sign in entered a Clerk session transition and used browser history to open a protected hosted-site grant. The actual Clerk loaded accessor was read and the grant remained pending. After sign-in the receiver obtained the user-a session's token, returned its synthetic denial and the Router reached the denied access page. The wrapper checks the awaited user's presence; token acquisition is separate.
+From signed-out Sign in entered a Clerk session transition and used browser history to open a protected hosted-site grant. The actual Clerk loaded accessor was read and the grant remained pending. After sign-in the receiver obtained the user-a session's token, returned its synthetic denial and the Router reached the denied access page. The wrapper checks the awaited user's presence; token acquisition is separate. The custom-domain change extends recovery destination handling. The authenticated authorization request still sends the origin, state and challenge, and the grant continues to obtain its token separately. [#50462](https://github.com/okou-ai/okou/pull/50462)
 
 Find a supported waiting consumer that uses the resolved user's ID on that same read and distinguishes user-a from another signed-in member.
 
