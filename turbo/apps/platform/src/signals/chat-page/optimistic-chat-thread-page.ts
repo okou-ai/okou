@@ -83,7 +83,6 @@ export const newChatThreadDisabled$ = computed(() => {
 });
 
 interface SendNewThreadMessageRequest {
-  readonly assertOwner?: () => void;
   /** A prepared title skips automatic title generation. */
   title?: string;
   /** The Project the new thread starts in. */
@@ -750,23 +749,6 @@ function requiresThreadBeforeSend(
   );
 }
 
-function newThreadRequestClient(
-  baseClient: ApiClientFactory,
-  assertOwner: (() => void) | undefined,
-): ApiClientFactory {
-  assertOwner?.();
-  return (contract, options) => {
-    return baseClient(contract, {
-      ...options,
-      getTokenGuard: assertOwner
-        ? () => {
-            return assertOwner;
-          }
-        : options?.getTokenGuard,
-    });
-  };
-}
-
 const sendNewThreadMessage$ = command(
   async (
     { get, set },
@@ -820,10 +802,7 @@ const sendNewThreadMessage$ = command(
         },
         signal,
       );
-    const createClient = newThreadRequestClient(
-      get(apiClient$),
-      request.assertOwner,
-    );
+    const createClient = get(apiClient$);
     L.debug("sendNewThreadMessage$ POST chat-threads start", { threadId });
     const creation = newThreadRecordOptions({
       createClient,

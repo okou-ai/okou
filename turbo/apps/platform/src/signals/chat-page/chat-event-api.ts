@@ -12,16 +12,9 @@ export async function sendChatEvent(
   body: ChatEventSendBody,
   signal: AbortSignal,
   direction?: SuggestionDirection,
-  assertOwner?: () => void,
 ): Promise<void> {
   await accept(
-    createClient(chatEventsContract, {
-      getTokenGuard: assertOwner
-        ? () => {
-            return assertOwner;
-          }
-        : undefined,
-    }).send({
+    createClient(chatEventsContract).send({
       body,
       fetchOptions: { signal },
     }),

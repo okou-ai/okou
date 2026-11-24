@@ -181,16 +181,8 @@ export const syncThemePreferences$ = command(
       return;
     }
 
-    const owner = get(authenticatedSessionKey$);
-    const [result] = await Promise.allSettled([get(userPreferences$)]);
+    const preferences = await get(userPreferences$);
     signal.throwIfAborted();
-    if (get(authenticatedSessionKey$) !== owner) {
-      return;
-    }
-    if (result.status === "rejected") {
-      throw result.reason;
-    }
-    const preferences = result.value;
     if (clerk.organization?.id !== workspaceId || clerk.user?.id !== user.id) {
       return;
     }

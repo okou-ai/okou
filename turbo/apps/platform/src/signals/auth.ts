@@ -344,19 +344,6 @@ export const clerk$ = computed(async (get) => {
   return runtime.clerk;
 });
 
-export const authenticatedSessionGuard$ = computed(async (get) => {
-  const owner = get(authenticatedSessionKey$);
-  const clerk = await get(clerk$);
-  return () => {
-    if (!owner || authenticatedSessionKey(clerk) !== owner) {
-      throw new DOMException(
-        "Authenticated session owner changed",
-        "AbortError",
-      );
-    }
-  };
-});
-
 const internalClerkUser$ = state<Promise<UserResource | null>>(
   NEVER_RESOLVED_PROMISE,
 );

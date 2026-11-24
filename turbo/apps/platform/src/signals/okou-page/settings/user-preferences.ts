@@ -7,20 +7,17 @@ import type {
   UserPreferencesResponse,
 } from "@okouai/api-contracts/contracts/user-preferences";
 import { apiClient$, type ApiClientFactory } from "../../api-client.ts";
-import { authenticatedSessionKey$ } from "../../auth.ts";
 import { resolveInitialLocaleFallbackFromBrowser } from "../../../i18n/locale-fallback.ts";
 import { isSupportedLocale } from "../../../i18n/resources.ts";
 import { accept } from "../../../lib/accept.ts";
 
 interface ConfirmedPreferences {
   readonly client: ApiClientFactory;
-  readonly owner: string | null;
   readonly fields: Partial<InitializedUserPreferencesResponse>;
 }
 
 interface PendingPreferenceSaves {
   readonly client: ApiClientFactory;
-  readonly owner: string | null;
   readonly writes: readonly ReadonlySet<string>[];
   readonly reconcile: boolean;
 }
@@ -48,23 +45,9 @@ function initialLocale() {
 const initialUserPreferences$ = computed(
   async (get): Promise<InitializedUserPreferencesResponse> => {
     get(preferenceReadRevision$);
-    const owner = get(authenticatedSessionKey$);
     const createClient = get(apiClient$);
-    const checkOwner = () => {
-      if (
-        get(apiClient$) !== createClient ||
-        get(authenticatedSessionKey$) !== owner
-      ) {
-        throw new DOMException("Preference owner changed", "AbortError");
-      }
-    };
-    const client = createClient(userPreferencesContract, {
-      getTokenGuard: () => {
-        return checkOwner;
-      },
-    });
+    const client = createClient(userPreferencesContract);
     const result = await accept(client.get(), [200, 409]);
-    checkOwner();
     // Initialization is idempotent: it fills missing timezone and locale and
     // creates the member's memory, which run creation requires.
     if (result.status === 200 && result.body.memoryInitialized) {
@@ -91,7 +74,6 @@ const initialUserPreferences$ = computed(
       }),
       [200],
     );
-    checkOwner();
     if (
       initialized.body.timezone === null ||
       !isValidTimeZone(initialized.body.timezone) ||
@@ -109,10 +91,9 @@ const initialUserPreferences$ = computed(
 
 export const userPreferences$ = computed(async (get) => {
   const client = get(apiClient$);
-  const owner = get(authenticatedSessionKey$);
   const confirmed = get(confirmedPreferences$);
   const initial = await get(initialUserPreferences$);
-  return confirmed?.client === client && confirmed.owner === owner
+  return confirmed?.client === client
     ? { ...initial, ...confirmed.fields }
     : initial;
 });
@@ -161,33 +142,16 @@ export const updateUserPreference$ = command(
   ) => {
     signal.throwIfAborted();
     const createClient = get(apiClient$);
-    const owner = get(authenticatedSessionKey$);
-    const checkOwner = () => {
-      if (
-        get(apiClient$) !== createClient ||
-        get(authenticatedSessionKey$) !== owner
-      ) {
-        throw new DOMException("Preference owner changed", "AbortError");
-      }
-    };
-    const client = createClient(userPreferencesContract, {
-      getTokenGuard: () => {
-        return checkOwner;
-      },
-    });
+    const client = createClient(userPreferencesContract);
     const fields = Object.entries(update).flatMap(([key, value]) => {
       return value === undefined ? [] : [key];
     });
     const write = new Set(fields);
     const pending = get(pendingPreferenceSaves$);
-    const scoped =
-      pending?.client === createClient && pending.owner === owner
-        ? pending
-        : null;
+    const scoped = pending?.client === createClient ? pending : null;
     const writes = scoped?.writes ?? [];
     set(pendingPreferenceSaves$, {
       client: createClient,
-      owner,
       writes: [...writes, write],
       reconcile:
         Boolean(scoped?.reconcile) ||
@@ -207,22 +171,20 @@ export const updateUserPreference$ = command(
         [200],
       );
       signal.throwIfAborted();
-      checkOwner();
-      const previous = get(confirmedPreferences$);
-      set(confirmedPreferences$, {
-        client: createClient,
-        owner,
-        fields: {
-          ...(previous?.client === createClient && previous.owner === owner
-            ? previous.fields
-            : {}),
-          ...confirmedFields(update, saved.body),
-        },
-      });
+      if (get(apiClient$) === createClient) {
+        const previous = get(confirmedPreferences$);
+        set(confirmedPreferences$, {
+          client: createClient,
+          fields: {
+            ...(previous?.client === createClient ? previous.fields : {}),
+            ...confirmedFields(update, saved.body),
+          },
+        });
+      }
     })();
     await save.finally(() => {
       const current = get(pendingPreferenceSaves$);
-      if (current?.client === createClient && current.owner === owner) {
+      if (current?.client === createClient) {
         const remaining = current.writes.filter((entry) => {
           return entry !== write;
         });
@@ -232,11 +194,7 @@ export const updateUserPreference$ = command(
           set(pendingPreferenceSaves$, null);
           // Competing writes to one field may finish in a different order than
           // they commit. Reconcile once, after the last response.
-          if (
-            current.reconcile &&
-            get(apiClient$) === createClient &&
-            get(authenticatedSessionKey$) === owner
-          ) {
+          if (current.reconcile && get(apiClient$) === createClient) {
             set(confirmedPreferences$, null);
             set(preferenceReadRevision$, (version) => {
               return version + 1;

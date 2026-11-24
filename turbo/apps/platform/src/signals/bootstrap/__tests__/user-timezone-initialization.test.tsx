@@ -92,7 +92,7 @@ function setBrowserTimezone(timezone: string): void {
   });
 }
 
-test("A current account's preference read failure still fails startup", async () => {
+test("A preference read failure still fails startup", async () => {
   context.mocks.api(userPreferencesContract.get, ({ respond }) => {
     return respond(500, {
       error: {

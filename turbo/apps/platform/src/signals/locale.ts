@@ -11,7 +11,7 @@ import {
 } from "../i18n/index.ts";
 import { resolveInitialLocaleFallbackFromBrowser } from "../i18n/locale-fallback.ts";
 import { DEFAULT_LOCALE, type SupportedLocale } from "../i18n/resources.ts";
-import { authenticatedSessionKey$, clerk$ } from "./auth.ts";
+import { clerk$ } from "./auth.ts";
 import {
   updateUserPreference$,
   userPreferences$,
@@ -75,16 +75,8 @@ export const syncLocalePreference$ = command(
       return;
     }
 
-    const owner = get(authenticatedSessionKey$);
-    const [result] = await Promise.allSettled([get(userPreferences$)]);
+    const preferences = await get(userPreferences$);
     signal.throwIfAborted();
-    if (get(authenticatedSessionKey$) !== owner) {
-      return;
-    }
-    if (result.status === "rejected") {
-      throw result.reason;
-    }
-    const preferences = result.value;
     const supportedLocales = preferences.supportedLocales;
     const locale = supportedLocales.includes(preferences.locale)
       ? preferences.locale
