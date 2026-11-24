@@ -743,3 +743,123 @@ test("browser-response-deadlines-051 A completed navigation stays at its destina
     }),
   ).toStrictEqual([{ url: destination }]);
 });
+
+test("browser-response-deadlines-018 A consumed server failure precedes the replacement window's second disconnect", async () => {
+  const advance = browserRecoveryClock(context.signal);
+  const {
+    cdp,
+    openPage,
+    viewer: initial,
+  } = arrangeNativePage(context, { targets: [original, replacement] });
+  await openPage();
+  await expectStreamingAt(original.url);
+  const consumed = context.mocks.deferred<void>();
+  const originalJson = Response.prototype.json;
+  vi.spyOn(Response.prototype, "json").mockImplementation(async function (
+    this: Response,
+  ) {
+    const body: unknown = await originalJson.call(this);
+    if (
+      isRecord(body) &&
+      isRecord(body.error) &&
+      body.error.message === "First descriptor unavailable" &&
+      !consumed.settled()
+    ) {
+      consumed.resolve();
+    }
+    return body;
+  });
+  let failed = false;
+  let replacementAllowed = false;
+  const changed = {
+    ...initial.browser,
+    window: {
+      ...initial.browser.window!,
+      primaryWindowId: replacement.windowId,
+    },
+  };
+  context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
+    return respond(200, {
+      browser: replacementAllowed ? changed : initial.browser,
+    });
+  });
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    if (!failed) {
+      failed = true;
+      return respond(500, {
+        error: {
+          code: "INTERNAL_SERVER_ERROR",
+          message: "First descriptor unavailable",
+        },
+      });
+    }
+    return respond(200, {
+      browser: changed,
+      viewer: { ...initial, browser: changed },
+    });
+  });
+  cdp.disconnect({ code: 1006 });
+  await screen.findByText("Reconnecting…");
+  advance(1000);
+  await consumed.promise;
+  await screen.findByText("First descriptor unavailable");
+  replacementAllowed = true;
+  context.mocks.ably.trigger("browserSessionChanged", {
+    threadId: changed.threadId,
+  });
+  advance(4000);
+  await expectStreamingAt(replacement.url);
+  const next = cdp.holdNextNative("hello");
+  cdp.disconnect({ code: 1006 });
+  await screen.findByText("Reconnecting…");
+  advance(1000);
+  await next.received;
+  expect(
+    screen.queryByText(/browser action could not be completed/i),
+  ).toBeNull();
+  await next.release();
+  await expectStreamingAt(replacement.url);
+  expect(
+    screen.getByLabelText("New tab", {
+      selector: "button[data-browser-new-tab]",
+    }),
+  ).toBeEnabled();
+  await sendText(
+    cdp,
+    "replacement after second interruption",
+    replacement.targetId,
+  );
+});
+
+test("browser-response-deadlines-035 The current connection mode recovers the original target through two native proof failures", async () => {
+  const advance = browserRecoveryClock(context.signal);
+  const { cdp, openPage } = viewer();
+  await openPage();
+  await expectStreamingAt(original.url);
+  cdp.failNext(
+    "Runtime.evaluate",
+    "Temporary inventory read unavailable",
+    -32_001,
+  );
+  cdp.nativeEvent("tab-attached", original);
+  await screen.findByText("Reconnecting…");
+  const old = cdp.holdNextNative("getWindow");
+  advance(4000);
+  await old.received;
+  click(screen.getByLabelText("Browser settings"));
+  click(await screen.findByText("Connection mode"));
+  click(await screen.findByText("Separate image connection"));
+  await expectStreamingAt(original.url);
+  cdp.failNext(
+    "Runtime.evaluate",
+    "Current native inventory interrupted",
+    -32_001,
+  );
+  cdp.nativeEvent("tab-attached", original);
+  await screen.findByText("Reconnecting…");
+  expect(remoteInput()).toBeDisabled();
+  advance(4000);
+  await expectStreamingAt(original.url);
+  await old.release();
+  await sendText(cdp, "after both native proofs");
+});

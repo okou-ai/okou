@@ -73,3 +73,29 @@ export async function verifyOfflineRows({ page, target, boundary }) {
     firstVisit: true,
   };
 }
+
+// Open both shelves before publishing. A later Router mount is a control for
+// the external catalog and cannot establish delivery to an existing member.
+export async function verifyOrganizationTemplateDelivery({
+  shelves,
+  stagePublication,
+  announce,
+  wrongOrganization,
+  organization,
+}) {
+  const cards = shelves.map((shelf) => {
+    return shelf.getByRole("button", { name: /Harbor exhibit/ }).first();
+  });
+  await stagePublication();
+  for (const card of cards) {
+    assert.equal(await card.isVisible(), false);
+  }
+  await announce(wrongOrganization);
+  for (const card of cards) {
+    assert.equal(await card.isVisible(), false);
+  }
+  await announce(organization);
+  for (const card of cards) {
+    await card.waitFor({ state: "visible" });
+  }
+}

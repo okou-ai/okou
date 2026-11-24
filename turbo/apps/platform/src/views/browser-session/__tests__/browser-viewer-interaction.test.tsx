@@ -1955,3 +1955,66 @@ test("browser-viewer-interaction-045 the original tab receives its key release b
   expect(remote.targets).toStrictEqual([primary, sibling]);
   await sendTo(remote, primary.targetId, "restored");
 });
+
+test("browser-viewer-interaction-006 A rejected address survives native detach and attach in the selected window", async () => {
+  const remote = await editingRemote("///invalid");
+  fireEvent.submit(field().form!);
+  await screen.findByRole("alert");
+  const target = remote.targets[0]!;
+  expect(target.url).toBe(home);
+  const originalSession = remote.pageSession(target.targetId);
+  const membership = remote.holdNextMembership(target.targetId);
+  remote.nativeEvent("tab-detached", target, { oldWindowId: target.windowId });
+  remote.event("Target.detachedFromTarget", { sessionId: originalSession });
+  remote.nativeEvent("tab-attached", target);
+  await membership.received;
+  expect(input()).toBeDisabled();
+  await membership.release();
+  await waitFor(() => {
+    return expect(input()).toBeEnabled();
+  });
+  expect(remote.pageSession(target.targetId)).not.toBe(originalSession);
+  expect(field()).toHaveFocus();
+  expect(field()).toHaveValue("///invalid");
+  expect(target.url).toBe(home);
+  await replaceDraft("https://correct.example/");
+  fireEvent.submit(field().form!);
+  await expectStreamingAt("https://correct.example/");
+});
+
+test("browser-viewer-interaction-133 Closing a pending selection preserves the explicitly chosen final page through a late native read", async () => {
+  const finalPage = {
+    targetId: "final",
+    title: "Last",
+    url: "https://last.example/",
+    windowId: 0,
+  };
+  const remote = await openWindow(0, [
+    primary,
+    { ...sibling, windowId: 0 },
+    finalPage,
+  ]);
+  const membership = remote.holdNextMembership("notes");
+  await userEvent.click(tab("Other"));
+  await membership.received;
+  expect(input()).toBeDisabled();
+  const proof = remote.holdNextNative("getWindow");
+  await membership.releaseFailure();
+  await proof.received;
+  const index = remote.targets.findIndex((target) => {
+    return target.targetId === "notes";
+  });
+  const [removed] = remote.targets.splice(index, 1);
+  remote.event("Target.targetDestroyed", { targetId: removed!.targetId });
+  remote.nativeEvent("tab-removed", removed);
+  await waitFor(() => {
+    return expect(tab("Last")).not.toHaveAttribute("aria-disabled", "true");
+  });
+  await userEvent.click(tab("Last"));
+  await expectStreamingAt(finalPage.url);
+  await proof.release();
+  selected("Last");
+  expect(newTabButton()).toBeEnabled();
+  await sendTo(remote, "final", "final choice");
+  await navigateFromEditor(remote, "final", "follow.example/path");
+});

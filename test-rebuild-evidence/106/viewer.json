@@ -1,0 +1,112 @@
+{
+  "transport": "Production Router with isolated descriptor HTTP service, telemetry and native/CDP peer. Chromium window experiments are recorded separately in native.json.",
+  "browser-response-deadlines-006": [
+    {
+      "late": "withheld",
+      "pausedAfterMinute": true,
+      "warningWhileHidden": false,
+      "deliveredToPage": false,
+      "reached": false,
+      "address": "",
+      "disabled": true
+    },
+    {
+      "late": "delivered",
+      "pausedAfterMinute": true,
+      "warningWhileHidden": false,
+      "deliveredToPage": true,
+      "reached": true,
+      "address": "https://replacement.example.test",
+      "disabled": false
+    }
+  ],
+  "browser-viewer-interaction-102": {
+    "withReleaseOutstanding": [
+      "CDP key-up received",
+      "Viewer hidden and then visible",
+      "New capture did not reach its receiver before release"
+    ],
+    "afterRelease": [
+      "Replacement capture received",
+      "Replacement frame acknowledged"
+    ],
+    "explicitKeySequence": [
+      "rawKeyDown",
+      "keyUp",
+      "keyUp"
+    ]
+  },
+  "browser-automatic-recovery-004": {
+    "status": 409,
+    "reportsAtResponseBodyRead": 0,
+    "finalReports": [
+      {
+        "event": "recovery-stopped",
+        "httpCode": "CONFLICT",
+        "viewerKind": "protocol",
+        "outcome": "terminal"
+      }
+    ],
+    "afterManualInput": 1
+  },
+  "browser-automatic-recovery-008": {
+    "retryStartsMs": [
+      20000,
+      50000,
+      179000
+    ],
+    "failedFrameDeliveriesMs": [
+      0,
+      40000,
+      65000
+    ],
+    "previousBudgetMs": 179999,
+    "exhaustionMs": 180000,
+    "idleSamplesMs": [
+      181000,
+      182000,
+      183000,
+      184000
+    ],
+    "receiver": "replacement endpoint session for Ledger"
+  },
+  "browser-automatic-recovery-022": {
+    "selection": "Other",
+    "firstCreate": "pending native receipt",
+    "afterReceipt": "Other received second input",
+    "laterAction": "a distinct local blank received the third input",
+    "reports": 0
+  },
+  "browser-automatic-recovery-075": {
+    "mode": "Shared connection",
+    "controlLossMs": 140000,
+    "earlyPaintMs": 145000,
+    "exhaustedControlMs": 180001
+  },
+  "browser-response-deadlines-018": {
+    "firstDescriptor": 500,
+    "distinctVisibleServerError": "First descriptor unavailable",
+    "laterNativeHello": "withheld then released",
+    "laterWindow": "replacement, New tab enabled, text received in its own session"
+  },
+  "browser-response-deadlines-035": {
+    "firstFault": "temporary native inventory error",
+    "held": "follow-up native getWindow",
+    "change": "separate image connection",
+    "secondFault": "current native inventory interrupted",
+    "final": "original remote page received text after release"
+  },
+  "browser-viewer-interaction-006": {
+    "draft": "///invalid",
+    "validation": "visible alert",
+    "detach": "native detach and Target.detachedFromTarget for the original CDP session",
+    "reattach": "confirmed different session after the held membership reply",
+    "result": "same invalid draft focused at https://example.com before the corrected navigation"
+  },
+  "browser-viewer-interaction-133": {
+    "pending": "Other admission failed, follow-up native getWindow remained held",
+    "retired": "Other removed by peer",
+    "selectedBeforeRelease": "Last ready",
+    "afterRelease": "Last selected, enabled controls, text and new navigation delivered"
+  }
+}
