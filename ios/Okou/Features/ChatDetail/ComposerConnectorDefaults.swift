@@ -58,10 +58,8 @@ struct ComposerConnectorDefaults: View {
         }
         if let policies = page.policies {
           if let policy = policies.first(where: { $0.connectionId == account.id }) {
-            ConnectorAccountPolicyMenu(account: account, policy: policy) { choice in
-              Task { await resources.apply(.policy(account.id, choice)) }
-            }
-            .disabled(busy)
+            ConnectorAccountPolicyMenu(account: account, policy: policy, resources: resources)
+              .disabled(busy)
           }
         } else if let choice = page.defaults.first(where: { $0.connectionId == account.id }) {
           Toggle(

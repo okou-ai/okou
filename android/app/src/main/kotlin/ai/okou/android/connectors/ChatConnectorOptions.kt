@@ -21,7 +21,11 @@ internal data class ChatConnectorAccount(
 internal data class ChatConnectorGroup(
     val entry: ConnectorEntry,
     val accounts: List<ChatConnectorAccount>,
-    val memberAccess: Boolean = false,
+)
+
+internal data class ChatConnectorAccounts(
+    val groups: List<ChatConnectorGroup>,
+    val memberAccess: Boolean,
 )
 
 internal enum class ChatConnectorSavePhase {
@@ -41,7 +45,7 @@ internal data class ChatConnectorSave(
 
 internal data class ChatConnectorOptionsState(
     val target: String? = null,
-    val read: ConnectorRead<List<ChatConnectorGroup>> = ConnectorRead(),
+    val read: ConnectorRead<ChatConnectorAccounts> = ConnectorRead(),
     val save: ChatConnectorSave? = null,
 )
 
@@ -83,7 +87,7 @@ internal class ChatConnectorOptions(
     fun save(target: ComposerTarget, changes: List<ChatConnectorOverride>) {
         val threadId = target.threadId ?: return
         if (!current(target) || changes.isEmpty() || mutable.value.save?.saving == true) return
-        if (mutable.value.read.data.orEmpty().any { it.memberAccess }) return
+        if (mutable.value.read.data?.memberAccess != false) return
         readRevision++
         mutable.value =
             mutable.value.copy(
@@ -124,9 +128,10 @@ internal class ChatConnectorOptions(
                     }
                 if (!current(target)) return@launch
                 val snapshot = mutable.value
+                val readback = snapshot.read.data ?: return@launch
                 val byId = accounts.associateBy { it.connectionId }
                 val groups =
-                    snapshot.read.data.orEmpty().mapNotNull { group ->
+                    readback.groups.mapNotNull { group ->
                         if (group.entry.slug != choice.slug) return@mapNotNull group
                         val updated =
                             group.accounts.mapNotNull row@{ row ->
@@ -141,7 +146,10 @@ internal class ChatConnectorOptions(
                             }
                         group.copy(accounts = updated).takeIf { updated.isNotEmpty() }
                     }
-                mutable.value = snapshot.copy(read = snapshot.read.copy(data = groups))
+                mutable.value =
+                    snapshot.copy(
+                        read = snapshot.read.copy(data = readback.copy(groups = groups)),
+                    )
             }
             if (current(target)) mutable.value = mutable.value.copy(save = null)
         }
@@ -154,8 +162,10 @@ internal class ChatConnectorOptions(
         policy: ConnectorAccountPolicyRequestPolicy,
     ) {
         if (!current(target) || mutable.value.save?.saving == true) return
-        val group = mutable.value.read.data?.find { it.entry.slug == slug } ?: return
-        if (!group.memberAccess || group.accounts.none { it.account.id == connectionId }) return
+        val accounts = mutable.value.read.data ?: return
+        if (!accounts.memberAccess) return
+        val group = accounts.groups.find { it.entry.slug == slug } ?: return
+        if (group.accounts.none { it.account.id == connectionId }) return
         readRevision++
         val saving = ChatConnectorSave(connectionId, ChatConnectorSavePhase.Saving)
         mutable.value = mutable.value.copy(save = saving)
@@ -177,8 +187,9 @@ internal class ChatConnectorOptions(
                 }
             if (!current(target)) return@launch
             val snapshot = mutable.value
+            val readback = snapshot.read.data ?: return@launch
             val groups =
-                snapshot.read.data.orEmpty().map { entry ->
+                readback.groups.map { entry ->
                     if (entry.entry.slug != slug) return@map entry
                     entry.copy(
                         accounts =
@@ -189,7 +200,11 @@ internal class ChatConnectorOptions(
                             },
                     )
                 }
-            mutable.value = snapshot.copy(read = snapshot.read.copy(data = groups), save = null)
+            mutable.value =
+                snapshot.copy(
+                    read = snapshot.read.copy(data = readback.copy(groups = groups)),
+                    save = null,
+                )
         }
     }
 

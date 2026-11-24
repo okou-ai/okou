@@ -15,8 +15,9 @@ extension ChatComposerAccess {
   }
 
   /// Inspect every saved account, including accounts disabled by default.
-  public func managedConnectors(memberAccess: Bool = false) async throws -> [ChatComposerConnector]
-  {
+  public func managedConnectors(
+    memberAccess: Bool = false
+  ) async throws -> [ChatComposerConnector] {
     struct Inspection: Decodable, Sendable {
       let kind: String
       let connectionId: String

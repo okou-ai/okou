@@ -36,8 +36,9 @@ class ConnectorServiceTest {
 
             val accounts = service.accounts(CONNECTOR_CALENDAR)
             assertEquals(saved, accounts.first { it.id == CONNECTOR_CALENDAR_SECONDARY }.policy)
-            val group = service.chatAccounts(null).single { it.entry.slug == CONNECTOR_CALENDAR }
-            assertTrue(group.memberAccess)
+            val chatAccounts = service.chatAccounts(null)
+            val group = chatAccounts.groups.single { it.entry.slug == CONNECTOR_CALENDAR }
+            assertTrue(chatAccounts.memberAccess)
             assertEquals(
                 saved,
                 group.accounts

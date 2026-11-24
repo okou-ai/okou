@@ -108,7 +108,7 @@ extension ChatComposerAccess {
       return value
     }
     if memberAccess {
-      return try await memberAccessOverview(target: target)
+      return try await memberOverview(target: target)
     }
     let defaults = try await accountDefaults(target: target)
     return ChatConnectorAccess(
@@ -123,8 +123,7 @@ extension ChatComposerAccess {
       overrides: options.initialConnectorAccessOverrides, selections: options.connectorSelections)
   }
 
-  private func memberAccessOverview(target: ChatConnectorTarget) async throws -> ChatConnectorAccess
-  {
+  private func memberOverview(target: ChatConnectorTarget) async throws -> ChatConnectorAccess {
     struct Entry: Decodable, Sendable {
       let target: ChatConnectorTarget
       let accounts: [ChatConnectorAccess.Account]

@@ -142,7 +142,7 @@ internal fun ChatConnectorOptionsButton(
     val showingAccounts = page == ComposerOptionsPage.Connectors
     val state = options.state.collectAsStateWithLifecycle().value.takeIf { it.target == target.key }
     val reading = state?.read
-    val groups = reading?.data
+    val groups = reading?.data?.groups
     val save = state?.save
     val saving = save?.saving == true
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -230,7 +230,7 @@ internal fun ChatConnectorOptionsButton(
                 }
             } else {
                 val newChat = target.threadId == null
-                val memberAccess = groups.any { it.memberAccess }
+                val memberAccess = reading.data?.memberAccess == true
                 val draftChoices =
                     composerState.connectorOverrides(target).associateBy { it.connectionId }
                 val canEdit =
@@ -278,7 +278,7 @@ internal fun ChatConnectorOptionsButton(
                                     enabled,
                                     canEdit,
                                     canManage = !saving,
-                                    memberAccess = group.memberAccess,
+                                    memberAccess = memberAccess,
                                     modifier =
                                         if (id == focusAccount)
                                             Modifier.focusRequester(accountFocus)

@@ -101,7 +101,6 @@ import ai.okou.android.api.generated.connectorAccount
 import ai.okou.android.api.generated.connectorAccountDefaults
 import ai.okou.android.api.generated.connectorAccountImpact
 import ai.okou.android.api.generated.connectorAccountPolicies
-import ai.okou.android.api.generated.connectorAccountPolicyUpdate
 import ai.okou.android.api.generated.connectorAccounts
 import ai.okou.android.api.generated.connectorOauthCompletion
 import kotlin.time.Duration
@@ -242,45 +241,47 @@ class ConnectorService(private val api: ApiClient) {
             }
             .toMap()
 
-    internal suspend fun chatAccounts(threadId: String?): List<ChatConnectorGroup> {
+    internal suspend fun chatAccounts(threadId: String?): ChatConnectorAccounts {
         val memberAccess = memberAccessEnabled()
         val overview = api.read { connectorOverview(it, threadId) }
         val builtIns = overview.filter {
             it.target is ConnectorOverviewItemTargetVariant1 && it.accounts.isNotEmpty()
         }
         // The overview has the current allowance, while the account list reports scope mismatch.
-        return builtIns.chunked(4).flatMap { entries ->
-            coroutineScope {
-                entries
-                    .map { entry ->
-                        async {
-                            val slug =
-                                (entry.target as ConnectorOverviewItemTargetVariant1).connectorSlug
-                            val byId = entry.accounts.associateBy { it.connectionId }
-                            val accounts =
-                                if (memberAccess) {
-                                    accounts(slug, emptyMap(), accountPolicies(slug))
-                                } else {
-                                    accounts(slug, byId.mapValues { it.value.defaultEnabled })
-                                }
-                            ChatConnectorGroup(
-                                entry.directoryEntry(slug),
-                                accounts.mapNotNull { account ->
-                                    byId[account.id]?.let {
-                                        ChatConnectorAccount(
-                                            account,
-                                            it.overrideEnabled.takeUnless { memberAccess },
-                                        )
+        val groups =
+            builtIns.chunked(4).flatMap { entries ->
+                coroutineScope {
+                    entries
+                        .map { entry ->
+                            async {
+                                val slug =
+                                    (entry.target as ConnectorOverviewItemTargetVariant1)
+                                        .connectorSlug
+                                val byId = entry.accounts.associateBy { it.connectionId }
+                                val accounts =
+                                    if (memberAccess) {
+                                        accounts(slug, emptyMap(), accountPolicies(slug))
+                                    } else {
+                                        accounts(slug, byId.mapValues { it.value.defaultEnabled })
                                     }
-                                },
-                                memberAccess = memberAccess,
-                            )
+                                ChatConnectorGroup(
+                                    entry.directoryEntry(slug),
+                                    accounts.mapNotNull { account ->
+                                        byId[account.id]?.let {
+                                            ChatConnectorAccount(
+                                                account,
+                                                it.overrideEnabled.takeUnless { memberAccess },
+                                            )
+                                        }
+                                    },
+                                )
+                            }
                         }
-                    }
-                    .awaitAll()
-                    .filter { it.accounts.isNotEmpty() }
+                        .awaitAll()
+                        .filter { it.accounts.isNotEmpty() }
+                }
             }
-        }
+        return ChatConnectorAccounts(groups, memberAccess)
     }
 
     private suspend fun chatAccess(

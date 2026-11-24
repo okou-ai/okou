@@ -78,10 +78,8 @@ struct ComposerChatConnectorAccounts: View {
       Spacer(minLength: 0)
       if let policies = page.policies {
         if let policy = policies.first(where: { $0.connectionId == account.id }) {
-          ConnectorAccountPolicyMenu(account: account, policy: policy) { choice in
-            Task { await resources.apply(.policy(account.id, choice)) }
-          }
-          .disabled(busy)
+          ConnectorAccountPolicyMenu(account: account, policy: policy, resources: resources)
+            .disabled(busy)
         }
       } else {
         Toggle(
@@ -98,9 +96,13 @@ struct ComposerChatConnectorAccounts: View {
 struct ConnectorAccountPolicyMenu: View {
   let account: ChatConnectorAccount
   let policy: ChatConnectorAccountPolicy
-  let update: (ChatConnectorAccountPolicyChoice) -> Void
+  let resources: ComposerConnectorAccountResources
 
   private var status: LocalizedStringKey { policy.enabled ? "Allow" : "Deny" }
+
+  private func update(_ choice: ChatConnectorAccountPolicyChoice) {
+    Task { await resources.apply(.policy(account.id, choice)) }
+  }
 
   private var duration: LocalizedStringKey? {
     guard let expiresAt = policy.expiresAt else { return policy.enabled ? "Always" : nil }

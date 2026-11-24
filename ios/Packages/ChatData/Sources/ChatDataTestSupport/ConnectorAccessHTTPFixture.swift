@@ -383,22 +383,10 @@ public final class ConnectorAccessHTTPFixture: Sendable {
       guard queriedTarget == target(state) else { return error(403, "Wrong connector") }
       return ChatHTTPResponse(body: defaults(state))
     }
-    if path == "/api/chat-connector-overview/target" {
-      guard state.memberAccess, queriedTarget == target(state) else {
-        return error(403, "Policy unavailable")
-      }
-      return try memberOverview(state)
-    }
-    if path == "/api/connector-account-access/policies" {
-      guard state.memberAccess, queriedTarget == target(state) else {
-        return error(403, "Policy unavailable")
-      }
-      return ChatHTTPResponse(body: try json(state.accountIDs.map { policy($0, state: state) }))
-    }
-    if method == "PUT", parts.count == 4, parts[1] == "connector-account-access",
-      parts[3] == "policy"
+    if let response = try policyResponse(
+      request, parts: parts, queriedTarget: queriedTarget, state: &state)
     {
-      return try updatePolicy(request, id: parts[2], state: &state)
+      return response
     }
     if parts.count == 4, parts[1] == "connector-account-access", parts[3] == "default-enabled" {
       return try setEnabledResponse(request, parts: parts, state: &state)
@@ -435,5 +423,27 @@ public final class ConnectorAccessHTTPFixture: Sendable {
     }
     if let response = ModelHTTPFixtures.response(path) { return response }
     throw URLError(.unsupportedURL)
+  }
+
+  private static func policyResponse(
+    _ request: URLRequest, parts: [String], queriedTarget: Target, state: inout State
+  ) throws -> ChatHTTPResponse? {
+    switch request.url?.path {
+    case "/api/chat-connector-overview/target":
+      guard state.memberAccess, queriedTarget == target(state) else {
+        return error(403, "Policy unavailable")
+      }
+      return try memberOverview(state)
+    case "/api/connector-account-access/policies":
+      guard state.memberAccess, queriedTarget == target(state) else {
+        return error(403, "Policy unavailable")
+      }
+      return ChatHTTPResponse(body: try json(state.accountIDs.map { policy($0, state: state) }))
+    default:
+      guard request.httpMethod == "PUT", parts.count == 4, parts[1] == "connector-account-access",
+        parts[3] == "policy"
+      else { return nil }
+      return try updatePolicy(request, id: parts[2], state: &state)
+    }
   }
 }
