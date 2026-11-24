@@ -16,6 +16,7 @@ import managed_openrouter as managed
 import managed_upload
 import mitm_addon
 from tests.firewall_auth_helpers import firewall_auth_response
+from tests.flow_helpers import response_stream
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.managed_openrouter_helpers import (
     PI_ATTRIBUTION_HEADERS,
@@ -93,7 +94,7 @@ async def test_routing_metadata_in_network_log(
     if mode == "stream":
         attempts.append({"provider": "Fallback Host", "model": "author/model", "status": 200})
         available.append({"provider": "Fallback Host", "model": "author/model", "selected": True})
-    envelope = {
+    envelope: dict[str, object] = {
         "openrouter_metadata": {
             "attempts": attempts,
             "endpoints": {"available": available},
@@ -119,9 +120,10 @@ async def test_routing_metadata_in_network_log(
         assert flow.request.headers["X-OpenRouter-Metadata"] == "enabled"
         flow.response = http.Response.make(502 if mode == "json_error" else 200, b"", headers)
         mitm_addon.responseheaders(flow)
+        stream = response_stream(flow)
         for offset in range(0, len(payload_bytes), 17):
             chunk = payload_bytes[offset : offset + 17]
-            assert flow.response.stream(chunk) == chunk
+            assert stream(chunk) == chunk
             await mitm_addon.responseinspection(flow)
         if mode == "interrupted":
             flow.error = Error("connection closed")
@@ -133,7 +135,7 @@ async def test_routing_metadata_in_network_log(
 
     [entry] = read_jsonl_entries_after_flush(Path(info["networkLogPath"]))
     assert "private-canary" not in json.dumps(entry)
-    expected = {"generation_id": "gen-header"}
+    expected: dict[str, object] = {"generation_id": "gen-header"}
     if mode != "interrupted":
         expected["attempts"] = attempts
     if mode == "stream":

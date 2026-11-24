@@ -81,7 +81,7 @@ class RoutingObservation:
             "error",
         )
 
-    def on_event_start(self, _event_name: str | None) -> None:
+    def on_event_start(self, event_name: str | None) -> None:
         self.on_event_discard(None)
 
     def on_data(self, chunk: bytes) -> None:
@@ -99,11 +99,11 @@ class RoutingObservation:
     def accepts_more_input(self) -> bool:
         return not self._oversize
 
-    def on_event_end(self, _event_name: str | None) -> None:
+    def on_event_end(self, event_name: str | None) -> None:
         self.finish_document()
         self.on_event_discard(None)
 
-    def on_event_discard(self, _event_name: str | None) -> None:
+    def on_event_discard(self, event_name: str | None) -> None:
         self._document.clear()
         self._oversize = False
 
