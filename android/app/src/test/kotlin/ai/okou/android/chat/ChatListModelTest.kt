@@ -1401,6 +1401,66 @@ internal class ChatListUnreadModelTest : ChatListModelTestFixture() {
     }
 
     @Test
+    fun bulkReadRetainsAmbiguousWriteThroughAnInterveningRefresh() = runTest {
+        val otherWrite = CompletableDeferred<ReadState>()
+        val lookedUp = mutableListOf<String>()
+        val source =
+            object : Service() {
+                    override suspend fun markRead(threadId: String): ReadState {
+                        if (threadId == CHAT_PERSONAL)
+                            throw ApiFailure.Network(IOException("response lost"))
+                        return otherWrite.await()
+                    }
+
+                    override suspend fun threadDetail(threadId: String): ThreadDetail {
+                        lookedUp.add(threadId)
+                        return ThreadDetail(CHAT_DATE, false)
+                    }
+                }
+                .apply {
+                    statusRead = {
+                        Indicators(
+                            mapOf(
+                                CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD,
+                                CHAT_IN_PROJECT to IndicatorsThreadsValue.UNREAD,
+                            ),
+                            mapOf(CHAT_PERSONAL to CHAT_DATE, CHAT_IN_PROJECT to CHAT_DATE),
+                        )
+                    }
+                    listRead = {
+                        page(
+                            listOf(
+                                chatEventWire(),
+                                chatEventWire(
+                                    id = "77777777-7777-4777-8777-777777777777",
+                                    seq = 18,
+                                    thread = CHAT_IN_PROJECT,
+                                ),
+                            ),
+                        )
+                    }
+                }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            model.markAllRead()
+            runCurrent()
+
+            model.refreshIndicators()
+            runCurrent()
+            assertTrue(model.uiState.value.markingAllRead)
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+            assertTrue(lookedUp.isEmpty())
+
+            source.statusRead = { Indicators(emptyMap(), emptyMap()) }
+            otherWrite.complete(ReadState(CHAT_DATE))
+            advanceUntilIdle()
+            assertEquals(listOf(CHAT_PERSONAL), lookedUp)
+            assertEquals(ChatMarkAllReadResult(2, 2), model.uiState.value.markAllReadResult)
+        }
+    }
+
+    @Test
     fun bulkReadDistinguishesFailedConnectionFromMissingReadbackEvidence() = runTest {
         for (connectionFailed in listOf(false, true)) {
             val source =
