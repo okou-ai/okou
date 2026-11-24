@@ -10,6 +10,7 @@ import { isStaffOrg } from "@okouai/core/staff-org";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
+import { publishPersonalModelProvidersChangedSafely } from "../external/realtime";
 import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import {
@@ -108,6 +109,12 @@ const updateFeatureSwitchesInner$ = command(
       signal,
     );
 
+    if (
+      isStaffOrg(auth.orgId) &&
+      bodyResult.data.switches[FeatureSwitchKey.GeminiAntigravity] !== undefined
+    ) {
+      await publishPersonalModelProvidersChangedSafely(auth.userId);
+    }
     return {
       status: 200 as const,
       body: featureSwitchResponseBody({
@@ -127,6 +134,9 @@ const deleteFeatureSwitchesInner$ = command(
       { orgId: auth.orgId, userId: auth.userId },
       signal,
     );
+    if (isStaffOrg(auth.orgId)) {
+      await publishPersonalModelProvidersChangedSafely(auth.userId);
+    }
     return { status: 200 as const, body: { deleted: true as const } };
   },
 );
