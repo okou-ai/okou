@@ -39,6 +39,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -147,6 +148,9 @@ private class EntrySelection(
             current.workspaceId == workspaceId
 }
 
+private fun NativeSession?.sameSignIn(other: NativeSession?): Boolean =
+    this?.sessionId == other?.sessionId && this?.userId == other?.userId
+
 /** One owner for authorization, pending work and the currently permitted workspace resource. */
 class SessionModel(
     private val authentication: Authentication,
@@ -217,8 +221,6 @@ class SessionModel(
         entrySelection = null
         workspaceSwitchJob?.cancel()
         workspaceSwitchJob = null
-        signOutJob?.cancel()
-        signOutJob = null
         operation?.cancel()
         operation = null
         membershipLoad?.cancel()
@@ -235,11 +237,24 @@ class SessionModel(
         }
     }
 
+    private fun cancelSignOut() {
+        signOutJob?.cancel()
+        signOutJob = null
+    }
+
+    private fun publishSessionState(state: SessionUiState) {
+        // A workspace can retire while its Clerk sign-out is still pending.
+        val signingOut = signOutJob != null
+        mutable.value =
+            if (state.signingOut == signingOut) state else state.copy(signingOut = signingOut)
+    }
+
     private fun enterRequiredUpdate() {
         val state = mutable.value
         val appearance =
             state.ready?.preferences?.uiState?.value?.appearance ?: state.cachedAppearance
         requiredUpdate = true
+        cancelSignOut()
         retire()
         mutable.value =
             SessionUiState(generation, SessionStage.UpdateRequired, cachedAppearance = appearance)
@@ -265,14 +280,16 @@ class SessionModel(
             mutable.value.takeIf {
                 it.checkingWorkspace && observed?.session == snapshot.session
             }
+        if (signOutJob != null && !session.sameSignIn(observed?.session)) cancelSignOut()
         observed = snapshot
         retire()
         when {
-            snapshot.failed -> mutable.value = SessionUiState(generation, SessionStage.Unavailable)
-            !snapshot.initialized -> mutable.value = SessionUiState(generation)
-            session == null -> mutable.value = SessionUiState(generation, SessionStage.SignIn)
+            snapshot.failed ->
+                publishSessionState(SessionUiState(generation, SessionStage.Unavailable))
+            !snapshot.initialized -> publishSessionState(SessionUiState(generation))
+            session == null -> publishSessionState(SessionUiState(generation, SessionStage.SignIn))
             !snapshot.complete && !session.choosingWorkspace ->
-                mutable.value = SessionUiState(generation, SessionStage.SignIn)
+                publishSessionState(SessionUiState(generation, SessionStage.SignIn))
             else ->
                 prepare(
                     snapshot,
@@ -294,7 +311,7 @@ class SessionModel(
             session.workspaceId
                 ?.takeIf { snapshot.complete && session.active }
                 ?.let { WorkspaceIdentity(apiOrigin, session.userId, session.sessionId, it) }
-        mutable.value =
+        publishSessionState(
             checkingFrom?.copy(checkingWorkspace = true)
                 ?: SessionUiState(
                     ticket,
@@ -306,7 +323,8 @@ class SessionModel(
                             ?.let {
                                 OpeningWorkspace.CheckingAccess(it)
                             },
-                )
+                ),
+        )
         operation = viewModelScope.launch {
             val observedIdentity = initialIdentity?.let { identity ->
                 snapshot.membershipAccess
@@ -366,7 +384,7 @@ class SessionModel(
                         mutable.value.entryFailure?.takeIf {
                             memberships.isEmpty() && it == SessionEntryFailure.Browser
                         }
-                    mutable.value =
+                    publishSessionState(
                         SessionUiState(
                             generation,
                             SessionStage.ChooseWorkspace,
@@ -374,7 +392,8 @@ class SessionModel(
                             entryFailure =
                                 selection?.let { SessionEntryFailure.Selection } ?: browserFailure,
                             entryPageGeneration = checkingFrom?.entryPageGeneration ?: generation,
-                        )
+                        ),
+                    )
                     return@launch
                 }
                 val identity = initialIdentity.withAccess(role, refreshedAccess)
@@ -549,11 +568,12 @@ class SessionModel(
                         error !is ApiFailure.UpdateRequired
                 ) {
                     retire()
-                    mutable.value =
+                    publishSessionState(
                         checkingFrom.copy(
                             generation = generation,
                             entryFailure = SessionEntryFailure.Check,
-                        )
+                        ),
+                    )
                 } else if (
                     current(ticket, snapshot) && !workspaceFailure(ticket, snapshot, error)
                 ) {
@@ -564,14 +584,15 @@ class SessionModel(
                     }
                     val state = mutable.value
                     retire()
-                    mutable.value =
+                    publishSessionState(
                         SessionUiState(
                             generation,
                             SessionStage.Unavailable,
                             cachedAppearance = state.cachedAppearance,
                             opening = initialIdentity?.let { OpeningWorkspace.CheckingAccess(it) },
                             entryReadFailed = initialIdentity == null,
-                        )
+                        ),
+                    )
                 }
             } finally {
                 appearanceRead?.cancel()
@@ -658,8 +679,9 @@ class SessionModel(
             membershipsComplete = true
             if (memberships.none { it.id == session.workspaceId }) {
                 retire()
-                mutable.value =
-                    SessionUiState(generation, SessionStage.ChooseWorkspace, memberships)
+                publishSessionState(
+                    SessionUiState(generation, SessionStage.ChooseWorkspace, memberships),
+                )
             } else {
                 mutable.value = mutable.value.copy(memberships = memberships)
             }
@@ -868,7 +890,7 @@ class SessionModel(
                 else -> return false
             }
         retire()
-        mutable.value = SessionUiState(generation, stage)
+        publishSessionState(SessionUiState(generation, stage))
         return true
     }
 
@@ -994,56 +1016,67 @@ class SessionModel(
 
     private fun restoreEntryPicker(picker: SessionUiState) {
         retire()
-        mutable.value =
+        publishSessionState(
             picker.copy(
                 generation = generation,
                 checkingWorkspace = false,
                 entryFailure = SessionEntryFailure.Selection,
-            )
+            ),
+        )
     }
 
     fun signOut(expectedGeneration: Long) {
         if (!acceptsAction(expectedGeneration)) return
         val previous = mutable.value
         if (previous.signingOut || previous.workspaceSwitch?.failed == false) return
+        val session = observed?.session
         // Keep the authorized workspace available for a failed request. Entry checks can be
         // retired before the request because they have no workspace presentation to restore.
         if (previous.ready == null && previous.opening !is OpeningWorkspace.Authorized) retire()
-        val ticket = generation
-        mutable.value =
-            previous.copy(
-                generation = ticket,
-                signingOut = true,
-                checkingWorkspace = false,
-                entryFailure = null,
-            )
-        signOutJob = viewModelScope.launch {
-            if (!acceptsAction(ticket)) return@launch
-            try {
-                authentication.signOut()
-                currentCoroutineContext().ensureActive()
-                // The SDK's state projection may still be publishing the confirmed sign-out.
-                if (generation == ticket) {
-                    val snapshot = authentication.state.value
-                    reconcile(snapshot, force = snapshot.session == null)
+        val request =
+            viewModelScope.launch(start = CoroutineStart.LAZY) {
+                val before = authentication.state.value
+                if (!session.sameSignIn(before.session)) {
+                    reconcile(before)
+                    return@launch
                 }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                currentCoroutineContext().ensureActive()
-                if (acceptsAction(ticket)) {
-                    mutable.value =
-                        mutable.value.copy(
-                            signingOut = false,
-                            entryReadFailed = false,
-                            entryFailure = SessionEntryFailure.SignOut,
-                        )
+                try {
+                    authentication.signOut()
+                    currentCoroutineContext().ensureActive()
+                    // A signed-in request stays pending until Clerk publishes a session change.
+                    if (session == null) {
+                        signOutJob = null
+                        reconcile(authentication.state.value, force = true)
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    currentCoroutineContext().ensureActive()
+                    reconcile(authentication.state.value)
+                    if (signOutJob == currentCoroutineContext()[Job]) {
+                        signOutJob = null
+                        mutable.value =
+                            mutable.value.copy(
+                                signingOut = false,
+                                entryReadFailed = false,
+                                entryFailure = SessionEntryFailure.SignOut,
+                            )
+                    }
                 }
             }
-        }
+        signOutJob = request
+        publishSessionState(
+            previous.copy(
+                generation = generation,
+                checkingWorkspace = false,
+                entryFailure = null,
+            ),
+        )
+        request.start()
     }
 
     override fun onCleared() {
+        cancelSignOut()
         retire()
     }
 }

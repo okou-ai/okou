@@ -207,16 +207,17 @@ internal fun SessionRoot(
                         feedbackInOverlay = feedbackInOverlay,
                     )
                 }
-                if (state.signingOut) {
-                    SessionEntryScreen(state, retry, chooseWorkspace, signOut, openWorkspaceSetup)
-                } else {
+                if (!state.signingOut) {
                     presentation.SaveableStateProvider("workspace", workspaceContent)
                 }
             }
-        } else if (state.stage == SessionStage.SignIn && !state.signingOut) {
-            NativeAuthentication()
-        } else {
-            SessionEntryScreen(state, retry, chooseWorkspace, signOut, openWorkspaceSetup)
+        }
+        if (state.signingOut || identity == null) {
+            if (state.stage == SessionStage.SignIn && !state.signingOut) {
+                NativeAuthentication()
+            } else {
+                SessionEntryScreen(state, retry, chooseWorkspace, signOut, openWorkspaceSetup)
+            }
         }
     }
 }
