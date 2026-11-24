@@ -77,7 +77,8 @@ final class WorkspaceSynchronization {
   private(set) var refreshGeneration = UUID()
   private(set) var refreshSuspended = false
   private var startupHistoryWarmingRequested = false
-  private(set) var isForeground = false
+  private(set) var scenePhase = ScenePhase.inactive
+  var isForeground: Bool { scenePhase == .active }
   private var startupGeneration = UUID()
 
   func start(userID: String, workspaceID: String) async {
@@ -141,11 +142,12 @@ final class WorkspaceSynchronization {
   func setPhase(_ phase: ScenePhase) {
     guard let workspace else { return }
     guard !closed else { return }
+    let wasForeground = isForeground
+    scenePhase = phase
     let active = phase == .active
     // Background suspension survives the intermediate inactive phase on the way back.
     let resuming = refreshSuspended
-    guard isForeground != active || (phase == .background && !refreshSuspended) else { return }
-    isForeground = active
+    guard wasForeground != active || (phase == .background && !refreshSuspended) else { return }
     realtime?.setForeground(active)
     if phase == .background {
       modelBootstrap?.beginRecovery()
@@ -168,9 +170,10 @@ final class WorkspaceSynchronization {
         projectBootstrap?.resumeContinuously()
       }
     }
-    workspace.newComposer.setForeground(active)
-    for conversation in conversations.values { conversation.composer.setForeground(active) }
-    selectedConversation?.reconcileVisibility()
+    workspace.newComposer.setScenePhase(phase)
+    for conversation in conversations.values { conversation.composer.setScenePhase(phase) }
+    // The scene transition already handled voice for every composer that lost focus.
+    selectedConversation?.reconcileVisibility(suspendHiddenVoice: active)
     if active && resuming {
       (selectedConversation?.composer ?? workspace.newComposer).requestSync()
     }

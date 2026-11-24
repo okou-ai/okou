@@ -30,6 +30,7 @@ import ai.okou.android.api.generated.RenameProjectRequest
 import ai.okou.android.api.generated.RenameThreadRequest
 import ai.okou.android.api.generated.ReorderPinnedThreadRequest
 import ai.okou.android.api.generated.ResolveArtifactReferenceQuery
+import ai.okou.android.api.generated.RunActivityRequest
 import ai.okou.android.api.generated.SaveThreadDraft
 import ai.okou.android.api.generated.SaveWorkspaceDraft
 import ai.okou.android.api.generated.SendRequest
@@ -321,6 +322,10 @@ class ApiClient(
     }
 
     suspend fun threadDetail(threadId: String) = read { threadDetail(it, threadId) }
+
+    internal suspend fun summarizeRunActivity(threadId: String, runId: String) = read {
+        summarizeRunActivity(it, threadId, RunActivityRequest(runId))
+    }
 
     internal suspend fun relatedCreatedChats(threadId: String) = read {
         relatedCreatedChats(it, threadId)

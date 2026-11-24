@@ -1,3 +1,4 @@
+import { createSharePeopleSignals } from "./share-people.ts";
 import { command, computed, state } from "ccstate";
 import { artifactReferencesContract } from "@okouai/api-contracts/client/artifact-references";
 import { parseArtifactReference } from "@okouai/api-contracts/validators/artifact-references";
@@ -171,10 +172,18 @@ function createArtifactShareSession(source: ShareSource) {
   const signal$ = state<AbortSignal | null>(null);
   const { details$, change$: persist$ } = createAudienceSignals(source);
   const open$ = state(false);
+  const peopleTarget$ = computed(async (get) => {
+    const details = await get(details$);
+    return details?.status && details.target.kind === "file"
+      ? { kind: "file" as const, id: details.target.id }
+      : null;
+  });
+  const people = createSharePeopleSignals(peopleTarget$, open$);
   const resetOpenSignal$ = resetSignal();
   const linkCopy = createShareLinkCopy();
   const close$ = command(({ set }) => {
     set(open$, false);
+    set(people.setSearchOpen$, false);
     set(resetOpenSignal$);
     set(linkCopy.clear$);
   });
@@ -213,6 +222,8 @@ function createArtifactShareSession(source: ShareSource) {
     show$,
     copy$,
     copiedUrl$: linkCopy.copiedUrl$,
+    people,
+    peopleInputId: `artifact-people-${crypto.randomUUID()}`,
     change$,
   };
 }

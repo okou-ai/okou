@@ -1,5 +1,5 @@
 {
-  "id": "bc8994bf-8fdb-4480-a939-9ca23b0acec8",
+  "id": "e5b39b13-67d7-451d-b3b7-6c5bb85a0e44",
   "prevId": "0cbb5b27-d4be-453e-8449-574844bc2e01",
   "version": "7",
   "dialect": "postgresql",
@@ -1931,72 +1931,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.antigravity_member_profiles": {
-      "name": "antigravity_member_profiles",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "machine_id": {
-          "name": "machine_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "confirmed_at": {
-          "name": "confirmed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "antigravity_member_profiles_machine_id_unique": {
-          "name": "antigravity_member_profiles_machine_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "machine_id"
-          ]
-        },
-        "antigravity_member_profiles_org_id_user_id_unique": {
-          "name": "antigravity_member_profiles_org_id_user_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "org_id",
-            "user_id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.archived_task_runs": {
       "name": "archived_task_runs",
       "schema": "",
@@ -2084,6 +2018,74 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.artifact_file_shares": {
+      "name": "artifact_file_shares",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "file_id": {
+          "name": "file_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "artifact_file_shares_file_id_run_uploaded_files_id_fk": {
+          "name": "artifact_file_shares_file_id_run_uploaded_files_id_fk",
+          "tableFrom": "artifact_file_shares",
+          "tableTo": "run_uploaded_files",
+          "columnsFrom": [
+            "file_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "artifact_file_shares_file_email": {
+          "name": "artifact_file_shares_file_email",
+          "nullsNotDistinct": false,
+          "columns": [
+            "file_id",
+            "email"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false

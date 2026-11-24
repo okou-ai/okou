@@ -1962,8 +1962,10 @@
     "connectorAccountSwitch": {
       "accountFallback": "连接器账户",
       "actionFailed": "账户切换失败。",
+      "allowForHour": "允许 1 小时",
       "customConnector": "自定义连接器",
       "loadFailed": "无法加载这个连接器账户。",
+      "memberScope": "允许在你的所有聊天中使用，并在此聊天中选择此账号。",
       "reconnectRequired": "需要重新连接。之后的运行可能会继续使用现有的备用账户。",
       "selected": "已切换到 {{account}}",
       "switch": "切换",

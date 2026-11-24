@@ -1,11 +1,11 @@
 import { command, computed, type Computed } from "ccstate";
 import { now } from "../../lib/time";
-import { joinAll, settle } from "../utils";
+import { joinAll, settle, settleIncludingAbort } from "../utils";
 import { getDiscordAppConfig, type DiscordAppConfig } from "./discord-config";
 import { clerk$, isClerkResourceNotFound } from "../external/clerk";
 import { db$ } from "../external/db";
 import {
-  createDiscordUserBinding,
+  discordMembership,
   discordUserBindingReadPlan,
   discordBindingFromMemberships,
   type DiscordVerifiedBinding,
@@ -74,21 +74,6 @@ function discordBindingAccessResult(
     botToken: config.botToken,
     applicationId: config.applicationId,
   };
-}
-
-function createDiscordBindingAccess(
-  identity$: Computed<Promise<DiscordBindingIdentity | null>>,
-): Computed<Promise<DiscordBindingAccess | null>> {
-  const binding$ = createDiscordUserBinding(identity$);
-  return computed(async (get): Promise<DiscordBindingAccess | null> => {
-    const identity = await get(identity$);
-    if (!identity) {
-      return null;
-    }
-    const config = getDiscordAppConfig();
-    const binding = config ? await get(binding$) : null;
-    return discordBindingAccessResult(identity, config, binding);
-  });
 }
 
 export const requireDiscordBinding$ = command(
@@ -254,20 +239,48 @@ async function loadDiscordPromptAccess(
 }
 
 /** Computed memoization shares the in-flight read set within one launch only. */
-export function discordPromptAccess(
-  input$: Computed<Promise<DiscordPromptAccessInput | null>>,
+export function createDiscordPromptAccess(
+  input$: Computed<
+    Promise<
+      | (DiscordPromptAccessInput & {
+          readonly binding: Omit<DiscordVerifiedBinding, "orgName"> | null;
+        })
+      | null
+    >
+  >,
+  identity$: Computed<Promise<DiscordBindingIdentity | null>>,
   timing$?: Computed<ApiDispatchTimingCollector>,
 ) {
-  const binding$ = createDiscordBindingAccess(input$);
-  return computed(async (get) => {
-    const input = await get(input$);
-    if (!input) {
+  const membership$ = discordMembership(identity$);
+  const membershipLookup$ = computed((get) => {
+    const startedAt = timing$ ? performance.now() : undefined;
+    const config = getDiscordAppConfig();
+    const membership = config ? settleIncludingAbort(get(membership$)) : null;
+    return { startedAt, config, membership };
+  });
+  const access$ = computed(async (get) => {
+    if (!(await get(identity$))) {
       return null;
     }
     const timing = timing$ ? get(timing$) : undefined;
-    const startedAt = timing ? performance.now() : undefined;
-    const current = await (async () => {
-      return await get(binding$);
+    const { startedAt, config, membership } = get(membershipLookup$);
+    const prepared = await (async () => {
+      const input = await get(input$);
+      if (!input) {
+        return null;
+      }
+      const result = input.binding ? await membership : null;
+      if (result && !result.ok) {
+        throw result.error;
+      }
+      const binding =
+        input.binding && result?.value
+          ? { ...input.binding, orgName: result.value.organization.name }
+          : null;
+      return {
+        input,
+        current: discordBindingAccessResult(input, config, binding),
+      };
     })().finally(() => {
       if (startedAt !== undefined) {
         timing?.recordDuration(
@@ -278,10 +291,11 @@ export function discordPromptAccess(
         );
       }
     });
-    return current
-      ? await loadDiscordPromptAccess(input, current, timing)
+    return prepared
+      ? await loadDiscordPromptAccess(prepared.input, prepared.current, timing)
       : null;
   });
+  return { access$, membershipLookup$ };
 }
 
 /** Each active-input delivery rechecks current membership and provider facts. */

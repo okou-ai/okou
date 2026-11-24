@@ -228,9 +228,7 @@ class SavedUiStateTest {
             }
         }
         compose.onNodeWithText("Release notes").assertIsDisplayed()
-        compose
-            .onNodeWithText("Some results couldn’t load. Showing saved chats only.")
-            .assertIsDisplayed()
+        compose.onNodeWithText("Some results couldn’t load").assertIsDisplayed()
         val retry = compose.onNodeWithText(compose.activity.getString(R.string.retry))
         retry.assertDoesNotExist()
         compose.onNodeWithTag("search_type_Messages").performClick()

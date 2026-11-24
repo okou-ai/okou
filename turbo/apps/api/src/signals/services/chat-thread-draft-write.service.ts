@@ -7,13 +7,14 @@ import type {
   ChatThreadDraftUserMessage,
 } from "@okouai/db/jsonb-contracts/chat-thread";
 import { chatThreadDrafts } from "@okouai/db/schema/chat-thread-draft";
-import { and, eq, exists, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { command } from "ccstate";
 import { writeDb$ } from "../external/db";
 import { repairUserMessageText } from "./chat-user-message.service";
 
 interface ChatThreadDraftWrite {
+  readonly legacyMemberDraft?: boolean;
   readonly orgId: string;
   readonly chatThreadId: string;
   readonly userId: string;
@@ -27,30 +28,46 @@ export const persistChatThreadDraft$ = command(
     { set },
     draft: ChatThreadDraftWrite,
     signal: AbortSignal,
-  ): Promise<void> => {
+  ): Promise<boolean> => {
     signal.throwIfAborted();
     const db = set(writeDb$);
     const scopedThread = and(
       eq(chatThreads.id, draft.chatThreadId),
+      draft.legacyMemberDraft
+        ? undefined
+        : eq(chatThreads.userId, draft.userId),
       chatThreadOrganizationPredicate(draft.orgId),
     );
     if (draft.draftUserMessage === null) {
-      await db
-        .delete(chatThreadDrafts)
-        .where(
-          and(
-            eq(chatThreadDrafts.chatThreadId, draft.chatThreadId),
-            eq(chatThreadDrafts.userId, draft.userId),
-            exists(
-              db
-                .select({ id: chatThreads.id })
-                .from(chatThreads)
-                .where(scopedThread),
-            ),
-          ),
+      // Clearing an already empty draft succeeds as long as the parent exists.
+      const parent = db
+        .$with("draft_parent")
+        .as(
+          db
+            .select({ id: chatThreads.id })
+            .from(chatThreads)
+            .where(scopedThread),
         );
+      const cleared = db.$with("cleared_draft").as(
+        db
+          .delete(chatThreadDrafts)
+          .where(
+            and(
+              eq(chatThreadDrafts.userId, draft.userId),
+              inArray(
+                chatThreadDrafts.chatThreadId,
+                db.select({ id: parent.id }).from(parent),
+              ),
+            ),
+          )
+          .returning({ id: chatThreadDrafts.chatThreadId }),
+      );
+      const rows = await db
+        .with(parent, cleared)
+        .select({ id: parent.id })
+        .from(parent);
       signal.throwIfAborted();
-      return;
+      return rows.length > 0;
     }
     const document = repairUserMessageText(draft.draftUserMessage);
     const draftUserMessage: ChatThreadDraftUserMessage = draft.suggestionPreset
@@ -62,7 +79,7 @@ export const persistChatThreadDraft$ = command(
           ],
         }
       : document;
-    await db
+    const rows = await db
       .insert(chatThreadDrafts)
       .select(
         db
@@ -96,8 +113,10 @@ export const persistChatThreadDraft$ = command(
           draftAttachments: draft.draftAttachments,
           updatedAt: sql`now()`,
         },
-      });
+      })
+      .returning({ id: chatThreadDrafts.chatThreadId });
     signal.throwIfAborted();
+    return rows.length > 0;
   },
 );
 

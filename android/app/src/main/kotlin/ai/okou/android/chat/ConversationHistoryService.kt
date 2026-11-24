@@ -20,4 +20,6 @@ interface ConversationHistoryService {
     suspend fun threadDetail(threadId: String): ThreadDetail
 
     suspend fun markRead(threadId: String): ReadState
+
+    suspend fun summarizeRunActivity(threadId: String, runId: String): String? = null
 }

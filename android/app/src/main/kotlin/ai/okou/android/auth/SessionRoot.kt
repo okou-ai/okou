@@ -24,6 +24,7 @@ import ai.okou.android.entryTopPadding
 import ai.okou.android.instructions.PersonalInstructionsSettings
 import ai.okou.android.preferences.MemberPreferenceSaveFeedback
 import ai.okou.android.preferences.MemberPreferencesSettings
+import ai.okou.android.settings.BuiltInToolsPage
 import ai.okou.android.settings.DefaultModelFeedback
 import ai.okou.android.settings.DefaultModelSetting
 import ai.okou.android.settings.EmailSubscriptionSetting
@@ -54,6 +55,7 @@ import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -62,6 +64,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -100,6 +103,12 @@ internal fun SessionRoot(
     updateToolbarAction: UpdateToolbarAction? = null,
 ) {
     var switchTarget by rememberWorkspaceSwitchTarget()
+    val workspaceSwitch = state.workspaceSwitch
+    LaunchedEffect(workspaceSwitch) {
+        if (workspaceSwitch?.failed == true && switchTarget == workspaceSwitch.target) {
+            switchTarget = null
+        }
+    }
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         val ready = state.ready
         val opened = state.opening as? OpeningWorkspace.Authorized
@@ -278,6 +287,8 @@ private fun WorkspaceSettingsContent(
 ) {
     val ready = state.ready
     if (ready != null) {
+        val tools = ready.settings.builtInTools
+        DisposableEffect(tools) { onDispose { tools?.leaveSettings() } }
         WorkspaceSettingsFeedback(ready.settings, snackbar, destination, feedbackInOverlay)
         MemberPreferenceSaveFeedback(ready.preferences, snackbar)
     }
@@ -305,6 +316,11 @@ private fun WorkspaceSettingsContent(
             else WorkspaceSettingsDataPage(destination, ready.organization.name, ready.settings)
         }
         SettingsDestination.Account -> AccountSettings(account, signOut)
+        SettingsDestination.BuiltInTools -> {
+            val tools = ready?.settings?.builtInTools
+            if (ready != null && tools != null) BuiltInToolsPage(ready.organization.name, tools)
+            else WorkspaceSettingsPreparation(state, retry)
+        }
         SettingsDestination.ProactiveServices -> {
             val proactive = ready?.settings?.proactive
             if (ready != null && proactive != null) {
@@ -363,6 +379,15 @@ private fun WorkspaceSettingsContent(
                             supportingText = stringResource(R.string.settings_cloud_browser_detail),
                             onCheckedChange = preferenceModel?.let { it::setCloudBrowser },
                         )
+                        if (ready?.settings?.builtInTools != null) {
+                            HorizontalDivider()
+                            SettingsRow(
+                                stringResource(R.string.settings_built_in_tools),
+                                leading = { SettingsIcon(R.drawable.ic_build) },
+                                modifier = focusFor(SettingsDestination.BuiltInTools),
+                                onClick = { openPage(SettingsDestination.BuiltInTools) },
+                            )
+                        }
                     }
                 },
                 myOkou = {
@@ -468,7 +493,13 @@ private fun WorkspaceSettings(
         SettingsTrigger(
             enabled = enabled,
             content = { dismiss ->
-                WorkspaceChooser(workspaceId, state.memberships, chooseWorkspace, dismiss)
+                WorkspaceChooser(
+                    workspaceId,
+                    state.memberships,
+                    state.workspaceSwitch,
+                    chooseWorkspace,
+                    dismiss,
+                )
             },
         ) { modifier, open ->
             SettingsRow(
@@ -575,7 +606,13 @@ private fun WorkspaceAvatar(
     SettingsTrigger(
         enabled = enabled,
         content = { dismiss ->
-            WorkspaceChooser(workspaceId, state.memberships, chooseWorkspace, dismiss)
+            WorkspaceChooser(
+                workspaceId,
+                state.memberships,
+                state.workspaceSwitch,
+                chooseWorkspace,
+                dismiss,
+            )
         },
     ) { modifier, open ->
         IconButton(
@@ -629,10 +666,31 @@ private val workspaceLogos =
 private fun WorkspaceChooser(
     currentId: String,
     memberships: List<WorkspaceMembership>,
+    workspaceSwitch: WorkspaceSwitch?,
     chooseWorkspace: (String) -> Unit,
     dismiss: () -> Unit,
 ) {
-    SettingsSheet(stringResource(R.string.auth_switch_workspace), dismiss) {
+    var attemptedTarget by rememberWorkspaceSwitchTarget()
+    val pending = workspaceSwitch?.failed == false
+    val pendingDescription = stringResource(R.string.auth_switch_workspace_pending)
+    SettingsSheet(
+        stringResource(R.string.auth_switch_workspace),
+        dismiss,
+        actions =
+            if (workspaceSwitch?.failed == true && workspaceSwitch.target == attemptedTarget) {
+                {
+                    Text(
+                        stringResource(R.string.auth_switch_workspace_failed),
+                        Modifier.padding(horizontal = 12.dp).semantics {
+                            liveRegion = LiveRegionMode.Polite
+                        },
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            } else null,
+        dismissible = !pending,
+    ) {
         val selected = remember { BringIntoViewRequester() }
         Column(Modifier.fillMaxWidth().selectableGroup()) {
             memberships.forEach { workspace ->
@@ -640,13 +698,28 @@ private fun WorkspaceChooser(
                 SettingsChoiceRow(
                     workspace.name,
                     selected = current,
-                    enabled = true,
+                    enabled = !pending,
                     onClick = {
-                        dismiss()
-                        if (!current) chooseWorkspace(workspace.id)
+                        if (current) dismiss()
+                        else {
+                            attemptedTarget = workspace.id
+                            chooseWorkspace(workspace.id)
+                        }
                     },
                     modifier = if (current) Modifier.bringIntoViewRequester(selected) else Modifier,
                     leading = { WorkspaceLogo(workspace.id, Modifier.size(28.dp)) },
+                    trailing = { foreground ->
+                        if (pending && workspaceSwitch.target == workspace.id) {
+                            CircularProgressIndicator(
+                                Modifier.size(20.dp).semantics {
+                                    contentDescription = pendingDescription
+                                    liveRegion = LiveRegionMode.Polite
+                                },
+                                color = foreground,
+                                strokeWidth = 2.dp,
+                            )
+                        }
+                    },
                 )
             }
         }

@@ -693,7 +693,8 @@
     "src/signals/external/lark-official.ts",
     "src/lib/lark-official-app.ts",
     "src/signals/services/lark-official-skill.ts",
-    "src/lib/hosted-site-invitation-template.json"
+    "src/lib/hosted-site-invitation-template.json",
+    "src/lib/artifact-invitation-template.json"
   ],
   "references": [
     {

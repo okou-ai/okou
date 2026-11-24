@@ -182,6 +182,8 @@ internal sealed interface ConnectorAuthorization {
         val interval: Duration,
     ) : ConnectorAuthorization
 
+    data class DeviceVerification(val attempt: Device) : ConnectorAuthorization
+
     data class External(
         val url: HttpUrl,
         val sessionId: String,

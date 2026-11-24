@@ -1968,8 +1968,10 @@
     "connectorAccountSwitch": {
       "accountFallback": "कनेक्टर खाता",
       "actionFailed": "खाता स्विच नहीं किया जा सका।",
+      "allowForHour": "1 घंटे के लिए अनुमति दें",
       "customConnector": "कस्टम कनेक्टर",
       "loadFailed": "यह कनेक्टर खाता लोड नहीं हो सका।",
+      "memberScope": "अपनी सभी चैट में अनुमति दें। यहाँ यह खाता चुनें।",
       "reconnectRequired": "फिर से कनेक्ट करना आवश्यक है। बाद के रन मौजूदा फ़ॉलबैक का उपयोग कर सकते हैं।",
       "selected": "{{account}} पर स्विच किया गया",
       "switch": "स्विच करें",

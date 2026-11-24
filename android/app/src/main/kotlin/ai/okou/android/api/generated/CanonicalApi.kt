@@ -338,6 +338,24 @@ internal interface CanonicalApi {
         @Body body: UpdateDefaultModelPreference,
     ): Response<DefaultModelPreference>
 
+    @PATCH("/api/user-model-preference")
+    suspend fun `updateImageModelPreference`(
+        @Header("Authorization") token: String,
+        @Body body: UpdateImageModelPreference,
+    ): Response<DefaultModelPreference>
+
+    @GET("/api/paid-tools")
+    suspend fun `paidToolPreferences`(
+        @Header("Authorization") token: String,
+    ): Response<PaidToolPreferences>
+
+    @PATCH("/api/paid-tools/{toolId}")
+    suspend fun `updatePaidTool`(
+        @Header("Authorization") token: String,
+        @Path("toolId") `pathToolId`: String,
+        @Body body: UpdatePaidTool,
+    ): Response<PaidToolUpdate>
+
     @GET("/api/preferences/email-subscription")
     suspend fun `emailSubscription`(
         @Header("Authorization") token: String,
@@ -419,6 +437,13 @@ internal interface CanonicalApi {
         @Header("Authorization") token: String,
         @Body body: SendRequest,
     ): Response<AcceptedInput>
+
+    @POST("/api/chat-threads/{id}/activity-summary")
+    suspend fun `summarizeRunActivity`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+        @Body body: RunActivityRequest,
+    ): Response<RunActivitySummary>
 
     @GET("/api/chat-threads/{threadId}/inputs/{eventId}/status")
     suspend fun `inputStatus`(

@@ -31,6 +31,8 @@
     <string name="auth_signing_out">Disconnessione…</string>
     <string name="auth_workspace">Spazio di lavoro attuale</string>
     <string name="auth_switch_workspace">Cambia spazio di lavoro</string>
+    <string name="auth_switch_workspace_pending">Cambio dello spazio di lavoro</string>
+    <string name="auth_switch_workspace_failed">Impossibile passare a questo spazio di lavoro.</string>
     <string name="auth_browser_unavailable">Installa un browser per configurare lo spazio di lavoro.</string>
     <string name="preference_color_theme">Tema colore</string>
     <string name="preference_language">Lingua</string>

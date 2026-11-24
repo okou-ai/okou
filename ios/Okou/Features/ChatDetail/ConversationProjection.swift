@@ -1,11 +1,13 @@
 import CCState
 import ChatDomain
 import Foundation
-import Observation
 
 /// Confirmed conversation inputs and their projections share one resident owner.
 /// Delivery, persistence and native window actions remain in ConversationStore.
-@MainActor @Observable
+/// Its values live in the workspace session's Store: ChatDetailView reads `value` through
+/// CCStateSwiftUI, and owner logic uses the synchronous accessors. Nothing republishes the graph
+/// through Observation.
+@MainActor
 final class ConversationProjection {
   private struct Input {
     var history: ChatHistory?
@@ -14,19 +16,33 @@ final class ConversationProjection {
     var closed = false
   }
 
-  @ObservationIgnored private let store = CCState.Store()
-  @ObservationIgnored private let input = CCState.State(Input())
-  @ObservationIgnored private let streamedInput = CCState.State<[ConversationStore.StreamedOutput]>(
-    [])
-  @ObservationIgnored private let replaceStream: Command<Void, [ConversationStore.StreamedOutput]>
-  @ObservationIgnored private let messagesValue: Computed<[ChatMessage]>
-  @ObservationIgnored private let itemsValue: Computed<[ConversationItem]>
-  @ObservationIgnored private let streamedValue: Computed<[ConversationStore.StreamedOutput]>
-  @ObservationIgnored private let write: Command<Void, (inout Input) -> Void>
-  @ObservationIgnored private var subscription: Subscription?
-  @ObservationIgnored private var streamSubscription: Subscription?
+  /// What the transcript renders from this conversation, derived in one graph read.
+  struct Value: Equatable {
+    let history: ChatHistory?
+    let pending: [ConversationStore.PendingMessage]
+    let items: [ConversationItem]
+    let streamed: [ConversationStore.StreamedOutput]
 
-  init() {
+    /// Recommendations stay hidden while the member's own messages are pending.
+    var recommendedFollowups: ChatRecommendedFollowupSource? {
+      pending.isEmpty ? history?.recommendedFollowups : nil
+    }
+  }
+
+  /// The workspace session's Store, which keeps this projection's values.
+  let store: CCState.Store
+  private let input = CCState.State(Input())
+  private let streamedInput = CCState.State<[ConversationStore.StreamedOutput]>([])
+  private let replaceStream: Command<Void, [ConversationStore.StreamedOutput]>
+  private let messagesValue: Computed<[ChatMessage]>
+  private let itemsValue: Computed<[ConversationItem]>
+  private let streamedValue: Computed<[ConversationStore.StreamedOutput]>
+  /// Everything the transcript reads, for CCStateSwiftUI.
+  let value: Computed<Value>
+  private let write: Command<Void, (inout Input) -> Void>
+
+  init(store: CCState.Store) {
+    self.store = store
     let input = input
     let streamedInput = streamedInput
     let messages = Computed<[ChatMessage]> { get in
@@ -36,12 +52,13 @@ final class ConversationProjection {
         + value.pending.filter { !persisted.contains($0.id) }.map(\.message)
     }
     messagesValue = messages
-    itemsValue = Computed { get in
+    let items = Computed<[ConversationItem]> { get in
       let value = try get(input)
       return Self.items(
         messages: try get(messages), history: value.history, expanded: value.expanded)
     }
-    streamedValue = Computed { get in
+    itemsValue = items
+    let streamed = Computed<[ConversationStore.StreamedOutput]> { get in
       let value = try get(input)
       let persisted = value.history?.persistedEventIDs ?? []
       let messageIDs = Set((value.history?.messages ?? []).map { $0.id.lowercased() })
@@ -49,6 +66,13 @@ final class ConversationProjection {
         !$0.text.isEmpty && !persisted.contains($0.eventID)
           && !messageIDs.contains($0.eventID)
       }
+    }
+    streamedValue = streamed
+    value = Computed { get in
+      let current = try get(input)
+      return Value(
+        history: current.history, pending: current.pending, items: try get(items),
+        streamed: try get(streamed))
     }
     replaceStream = Command { context, value in try context.set(streamedInput, value) }
     write = Command { context, update in
@@ -60,38 +84,17 @@ final class ConversationProjection {
           return next
         })
     }
-    do {
-      subscription = try store.watch(input) { [weak self] in
-        guard let self else { return }
-        // Invalidate native Observation consumers without copying a projection.
-        withMutation(keyPath: \.snapshot) {}
-      }
-      streamSubscription = try store.watch(streamedValue) { [weak self] in
-        guard let self else { return }
-        withMutation(keyPath: \.streamed) {}
-      }
-    } catch { preconditionFailure("Cannot observe the local conversation projection: \(error)") }
   }
 
-  private var snapshot: Input {
-    access(keyPath: \.snapshot)
-    return read(input)
-  }
+  private var snapshot: Input { read(input) }
 
+  /// The synchronous value of `value`, for a render whose graph read has not resolved.
+  var currentValue: Value { read(value) }
   var history: ChatHistory? { snapshot.history }
   var pending: [ConversationStore.PendingMessage] { snapshot.pending }
-  var messages: [ChatMessage] {
-    access(keyPath: \.snapshot)
-    return read(messagesValue)
-  }
-  var items: [ConversationItem] {
-    access(keyPath: \.snapshot)
-    return read(itemsValue)
-  }
-  var streamed: [ConversationStore.StreamedOutput] {
-    access(keyPath: \.streamed)
-    return read(streamedValue)
-  }
+  var messages: [ChatMessage] { read(messagesValue) }
+  var items: [ConversationItem] { read(itemsValue) }
+  var streamed: [ConversationStore.StreamedOutput] { read(streamedValue) }
 
   func confirmHistory(_ history: ChatHistory?) {
     guard history != snapshot.history else { return }
@@ -123,14 +126,6 @@ final class ConversationProjection {
 
   func close() {
     update { $0.closed = true }
-    do { try subscription?.cancel() } catch {
-      preconditionFailure("Cannot release the local conversation projection: \(error)")
-    }
-    subscription = nil
-    do { try streamSubscription?.cancel() } catch {
-      preconditionFailure("Cannot release the local stream projection: \(error)")
-    }
-    streamSubscription = nil
   }
 
   private func update(_ mutation: @escaping (inout Input) -> Void) {
@@ -140,7 +135,7 @@ final class ConversationProjection {
     }
   }
 
-  private func read<Value>(_ signal: Signal<Value>) -> Value {
+  private func read<T>(_ signal: Signal<T>) -> T {
     // Only synchronous local values and non-failing derivations live in this graph.
     // HTTP, replay, persistence and delivery errors retain their existing owners.
     do { return try store.get(signal) } catch {

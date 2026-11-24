@@ -2,6 +2,7 @@ import CCState
 import ChatData
 import ChatDomain
 import Foundation
+import SwiftUI
 
 /// One composer owns device persistence, canonical draft hydration and a serialized save loop.
 /// Like the web composer, its draft, upload and voice state live in one CCState graph: SwiftUI
@@ -156,14 +157,20 @@ final class ComposerDraftStore {
     lifecycleTasks.track(task)
   }
 
-  func setForeground(_ active: Bool) {
-    guard !closed, isForeground != active else { return }
+  func setScenePhase(_ phase: ScenePhase) {
+    guard !closed else { return }
+    let active = phase == .active
+    if !active {
+      let pendingStart = voice?.isWaitingToStartCapture == true
+      if pendingStart ? phase == .background : isForeground { voice?.suspend() }
+    }
+    guard isForeground != active else { return }
     isForeground = active
     if active {
+      voice?.resumePendingStart()
       // Resume pending writes, including clears owned by a different cached composer.
       if dirty { requestSync() }
     } else {
-      voice?.suspend()
       persist()
       debounceTask?.cancel()
       // A cancelled task can finish after the next foreground sync has started.
@@ -185,7 +192,7 @@ final class ComposerDraftStore {
   private var revision = 0
   private var applying = false
   private var closed: Bool { signals.snapshot.closed }
-  private var isForeground: Bool {
+  private(set) var isForeground: Bool {
     get { signals.statusSnapshot.isForeground }
     set { signals.updateStatus { $0.isForeground = newValue } }
   }
@@ -395,7 +402,11 @@ final class ComposerDraftStore {
           syncError = nil
           persist()
           await didSave(sent)
-        } catch is CancellationError { return } catch {
+        } catch is CancellationError { return } catch let missing as UnavailableChatThread {
+          guard !closed, !Task.isCancelled else { return }
+          didFail(missing)
+          return
+        } catch {
           guard !closed, !Task.isCancelled else { return }
           persist()
           if let delay = ChatReadRecovery.retryDelay(for: error, attempt: retryAttempt) {
@@ -503,16 +514,26 @@ final class ComposerDraftStore {
     clear()
   }
 
-  func close() {
+  func close(discardingDraft: Bool = false) {
     guard !closed else { return }
     voice?.suspend()
-    persist()
+    if !discardingDraft { persist() }
     editor.dismissKeyboard()
+    if discardingDraft {
+      document = ChatDraftDocument()
+      metadata = []
+      baseline = nil
+      conflictingRemote = nil
+      if let voice {
+        let task = Task { await voice.discard() }
+        lifecycleTasks.track(task)
+      }
+    }
     editor.mentionSource = nil
     signals.close()
     debounceTask?.cancel()
     syncTask?.cancel()
-    attachments.close(preserveFiles: storage != nil)
+    attachments.close(preserveFiles: storage != nil && !discardingDraft)
   }
 
   private func report(_ failure: Error) {
@@ -521,5 +542,16 @@ final class ComposerDraftStore {
     let status = (failure as? APIClientError)?.statusCode
     guard status != 401, status != 426 else { return }
     syncWarning = "This draft has not synced to your other devices. Try again when connected."
+  }
+}
+
+extension ComposerDraftStore {
+  static func removeStoredDraft(_ id: String, from storage: ChatDraftStorage) throws {
+    // A released conversation can still own imported files outside its serialized draft.
+    let key = ChatDraftTarget.thread(id).key
+    if let record = try? storage.load(key, as: LocalRecord.self) {
+      for item in record.files { item.file.remove() }
+    }
+    try storage.removeThreadDraft(id)
   }
 }

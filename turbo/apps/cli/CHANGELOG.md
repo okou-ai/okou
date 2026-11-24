@@ -1,5 +1,32 @@
 # Changelog
 
+## [10.38.0](https://github.com/okou-ai/okou/compare/cli-v10.37.2...cli-v10.38.0) (2026-11-24)
+
+
+### Features
+
+* add member-wide connector account approval ([#50516](https://github.com/okou-ai/okou/issues/50516)) ([ff76d52](https://github.com/okou-ai/okou/commit/ff76d52e21a55cd8f3e34a513e7e5fcfd8ab1e1b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.121.0
+    * @okouai/core bumped to 8.870.1
+    * @okouai/pi-agent-runtime bumped to 1.52.63
+
+## [10.37.2](https://github.com/okou-ai/okou/compare/cli-v10.37.1...cli-v10.37.2) (2026-11-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.120.0
+    * @okouai/core bumped to 8.870.0
+    * @okouai/pi-agent-runtime bumped to 1.52.62
+
 ## [10.37.1](https://github.com/okou-ai/okou/compare/cli-v10.37.0...cli-v10.37.1) (2026-11-24)
 
 

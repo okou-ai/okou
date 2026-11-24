@@ -398,8 +398,18 @@ export function createChatFilesBddApi(context: TestContext) {
     return chatFilesApp(context)(chatThreadMetadataContract);
   }
 
-  function threadDraftClient() {
-    return chatFilesApp(context)(chatThreadDraftContract);
+  async function requestReadThreadDraft<Status extends 200 | 404>(
+    actor: ApiTestUser,
+    threadId: string,
+    statuses: readonly Status[],
+  ) {
+    return await accept(
+      chatFilesApp(context)(chatThreadDraftContract).readComposer({
+        headers: authenticate(context, actor),
+        params: { id: threadId },
+      }),
+      statuses,
+    );
   }
 
   function threadEventsClient() {
@@ -802,17 +812,38 @@ export function createChatFilesBddApi(context: TestContext) {
       );
     },
 
+    legacyThreadDraft(actor: ApiTestUser, threadId: string) {
+      const params = { id: threadId };
+      return {
+        read: async () => {
+          return (
+            await accept(
+              chatFilesApp(context)(chatThreadDraftContract).get({
+                headers: authenticate(context, actor),
+                params,
+              }),
+              [200],
+            )
+          ).body;
+        },
+        save: async (body: ChatThreadDraft) => {
+          return await accept(
+            threadByIdClient().patch({
+              headers: authenticate(context, actor),
+              params,
+              body,
+            }),
+            [204],
+          );
+        },
+      };
+    },
+    requestReadThreadDraft,
     async readThreadDraft(
       actor: ApiTestUser,
       threadId: string,
     ): Promise<ChatThreadDraft> {
-      const response = await accept(
-        threadDraftClient().get({
-          headers: authenticate(context, actor),
-          params: { id: threadId },
-        }),
-        [200],
-      );
+      const response = await requestReadThreadDraft(actor, threadId, [200]);
       return response.body;
     },
 
@@ -824,7 +855,8 @@ export function createChatFilesBddApi(context: TestContext) {
         readonly draftUserMessage: UserMessageInputDocument | null;
         readonly draftAttachments?: readonly PersistedAttachment[] | null;
       },
-    ): Promise<void> {
+      expectedStatus: 204 | 404 = 204,
+    ) {
       const requestBody = {
         suggestionPreset: body.suggestionPreset,
         draftUserMessage: body.draftUserMessage,
@@ -837,13 +869,13 @@ export function createChatFilesBddApi(context: TestContext) {
             }),
       };
 
-      await accept(
-        threadByIdClient().patch({
+      return await accept(
+        chatFilesApp(context)(chatThreadDraftContract).saveComposer({
           headers: authenticate(context, actor),
           params: { id: threadId },
           body: chatThreadDraftSchema.parse(requestBody),
         }),
-        [204],
+        [expectedStatus],
       );
     },
 

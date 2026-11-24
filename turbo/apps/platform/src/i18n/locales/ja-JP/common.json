@@ -1962,8 +1962,10 @@
     "connectorAccountSwitch": {
       "accountFallback": "コネクターアカウント",
       "actionFailed": "アカウントを切り替えられませんでした。",
+      "allowForHour": "1時間許可",
       "customConnector": "カスタムコネクター",
       "loadFailed": "このコネクターアカウントを読み込めませんでした。",
+      "memberScope": "すべてのチャットで許可し、このチャットでこのアカウントを選択します。",
       "reconnectRequired": "再接続が必要です。以降の実行では既存のフォールバックが使用される場合があります。",
       "selected": "{{account}}に切り替えました",
       "switch": "切り替える",

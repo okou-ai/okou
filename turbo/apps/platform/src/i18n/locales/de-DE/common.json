@@ -1968,8 +1968,10 @@
     "connectorAccountSwitch": {
       "accountFallback": "Connector-Konto",
       "actionFailed": "Kontowechsel fehlgeschlagen.",
+      "allowForHour": "1 Stunde zulassen",
       "customConnector": "Benutzerdefinierter Connector",
       "loadFailed": "Dieses Connector-Konto konnte nicht geladen werden.",
+      "memberScope": "Für alle deine Chats zulassen. Dieses Konto hier auswählen.",
       "reconnectRequired": "Erneute Verbindung erforderlich. Spätere Läufe verwenden möglicherweise den vorhandenen Fallback.",
       "selected": "Zu {{account}} gewechselt",
       "switch": "Wechseln",

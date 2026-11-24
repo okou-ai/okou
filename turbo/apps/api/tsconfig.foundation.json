@@ -376,7 +376,8 @@
     "src/signals/services/user-template-data.service.ts",
     "src/signals/external/lark-official.ts",
     "src/lib/lark-official-app.ts",
-    "src/lib/hosted-site-invitation-template.json"
+    "src/lib/hosted-site-invitation-template.json",
+    "src/lib/artifact-invitation-template.json"
   ],
   "exclude": ["node_modules", "dist"],
   "references": [

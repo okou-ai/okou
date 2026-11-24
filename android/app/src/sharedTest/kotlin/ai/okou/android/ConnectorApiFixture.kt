@@ -72,6 +72,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
     @Volatile var devicePollStatus = "pending"
     @Volatile var devicePollInterval = 5
     @Volatile var deviceExpiresIn = 900
+    @Volatile var loseFirstDevicePollReply = false
     val devicePollReplyStarted = CountDownLatch(1)
     @Volatile var devicePollReplyGate: CountDownLatch? = null
     val devicePollRequests = AtomicInteger()
@@ -521,24 +522,26 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
             path == DEVICE_POLL_PATH && request.method == "POST" -> {
                 if (body(request)["sessionToken"]?.jsonPrimitive?.content != "fixture-only")
                     return rejected(400)
-                devicePollRequests.incrementAndGet()
-                when (val status = devicePollStatus) {
-                    "pending" ->
-                        jsonResponse("""{"status":"pending","interval":$devicePollInterval}""")
-                    "complete" -> {
-                        accounts[CONNECTOR_DEVICE_ACCOUNT] =
-                            FixtureAccount(
-                                CONNECTOR_DEVICE_EXAMPLE,
-                                "Device account",
-                                "device@example.com",
-                                authMethod = "device-auth",
+                val attempt = devicePollRequests.incrementAndGet()
+                val response =
+                    when (val status = devicePollStatus) {
+                        "pending" ->
+                            jsonResponse("""{"status":"pending","interval":$devicePollInterval}""")
+                        "complete" -> {
+                            accounts[CONNECTOR_DEVICE_ACCOUNT] =
+                                FixtureAccount(
+                                    CONNECTOR_DEVICE_EXAMPLE,
+                                    "Device account",
+                                    "device@example.com",
+                                    authMethod = "device-auth",
+                                )
+                            jsonResponse(
+                                """{"status":"complete","connectionId":"$CONNECTOR_DEVICE_ACCOUNT"}""",
                             )
-                        jsonResponse(
-                            """{"status":"complete","connectionId":"$CONNECTOR_DEVICE_ACCOUNT"}""",
-                        )
+                        }
+                        else -> jsonResponse("""{"status":"$status"}""")
                     }
-                    else -> jsonResponse("""{"status":"$status"}""")
-                }
+                if (attempt == 1 && loseFirstDevicePollReply) rejected(503) else response
             }
             path == "/api/connectors/$CONNECTOR_MANUAL_EXAMPLE/manual-grant" &&
                 request.method == "POST" -> {

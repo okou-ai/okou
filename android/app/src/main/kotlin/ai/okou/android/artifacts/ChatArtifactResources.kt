@@ -57,7 +57,12 @@ internal fun ChatArtifactLinkPreview(
     }
     BackHandler(onBack = onClose)
     Column(Modifier.fillMaxSize()) {
-        ArtifactToolbar(R.string.artifact_title, R.string.back, onClose, if (wide) 28.dp else 12.dp)
+        ArtifactToolbar(
+            R.string.chat_search_artifact_preview,
+            R.string.back,
+            onClose,
+            if (wide) 28.dp else 12.dp,
+        )
         ArtifactSelectionPreview(model, state, page, link, wide, saveLauncher)
     }
 }
@@ -130,7 +135,7 @@ internal fun ChatArtifactResources(
     if (selected != null) {
         Column(Modifier.fillMaxSize()) {
             ArtifactToolbar(
-                R.string.artifact_title,
+                R.string.chat_search_artifact_preview,
                 R.string.chat_resources_back,
                 ::back,
                 toolbarPadding,

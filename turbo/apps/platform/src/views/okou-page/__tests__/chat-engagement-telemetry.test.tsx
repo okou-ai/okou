@@ -1,6 +1,6 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { screen, waitFor } from "@testing-library/react";
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { click } from "../../../__tests__/page-helper.ts";
 import { buttonByText, setupPage } from "./chat-lifecycle-test-helpers.ts";
@@ -12,48 +12,23 @@ import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 const context = testContext();
 
-type Capture = (
-  eventName: string,
-  properties?: Record<string, unknown>,
-) => void;
-type Identify = (
-  distinctId: string,
-  properties?: Record<string, unknown>,
-) => void;
-type Init = (key: string, config?: unknown) => void;
-type Register = (properties: Record<string, unknown>) => void;
-type Reset = () => void;
-type Unregister = (property: string) => void;
-
-const { posthog } = vi.hoisted(() => {
-  vi.stubEnv("VITE_POSTHOG_KEY", "phc_chat_engagement_telemetry_test");
+vi.hoisted(() => {
   window.location.href = "https://app.okou.ai/";
-  return {
-    posthog: {
-      capture: vi.fn<Capture>(),
-      identify: vi.fn<Identify>(),
-      init: vi.fn<Init>(),
-      register: vi.fn<Register>(),
-      reset: vi.fn<Reset>(),
-      unregister: vi.fn<Unregister>(),
-    },
-  };
-});
-
-vi.mock("posthog-js/dist/module.slim", () => {
-  return { posthog };
 });
 
 beforeEach(() => {
-  posthog.capture.mockClear();
+  context.mocks.posthog();
 });
 
-afterAll(() => {});
-
 function capturedEvents(eventName: string): unknown[][] {
-  return posthog.capture.mock.calls.filter(([capturedEventName]) => {
-    return capturedEventName === eventName;
-  });
+  return context.mocks
+    .posthog()
+    .events.filter(({ name }) => {
+      return name === eventName;
+    })
+    .map(({ name, properties }) => {
+      return [name, properties];
+    });
 }
 
 describe("chat engagement telemetry", () => {

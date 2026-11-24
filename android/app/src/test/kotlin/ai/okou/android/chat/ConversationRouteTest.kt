@@ -17,15 +17,20 @@ import ai.okou.android.historyEventWire
 import ai.okou.android.jsonResponse
 import android.content.ClipboardManager
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
@@ -346,6 +351,107 @@ class ConversationRouteTest {
         compose.runOnIdle { model.history.invalidate() }
         compose.waitUntil(10_000) { compose.runOnIdle { fixture.readRequests.get() >= 6 } }
         assertEquals(6, fixture.readRequests.get())
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w360dp-h400dp")
+    fun reachingTheLatestReplyMarksItReadWhenSuggestionsFillTheViewport() {
+        val followups =
+            """{"version":1,"followups":[{"kind":"talk","prompt":"Summarize the release notes"},{"kind":"email","prompt":"Draft the announcement"},{"kind":"workflow","prompt":"Set up a release checklist"}]}"""
+        serveConversationRows(
+            listOf(
+                historyEventWire(
+                    scrollEventId(1),
+                    1,
+                    payload = """{"content":"The release is ready."}""",
+                ),
+                historyEventWire(scrollEventId(2), 2, type = "run.completed", payload = "null"),
+                historyEventWire(
+                    scrollEventId(3),
+                    3,
+                    type = "output.followups",
+                    payload = """{"content":${JsonPrimitive(followups)}}""",
+                ),
+            ),
+        )
+        val model = createListModel()
+        compose.setContent {
+            val list by model.uiState.collectAsStateWithLifecycle()
+            OkouTheme {
+                ConversationRoute(
+                    model.history,
+                    CHAT_PERSONAL,
+                    list,
+                    modifier = Modifier.height(160.dp),
+                    onFollowup = {},
+                )
+            }
+        }
+        openPersonalHistory(model)
+        compose.onNodeWithText("Set up a release checklist").assertIsDisplayed()
+        compose.onNodeWithText("The release is ready.").assertIsNotDisplayed()
+        assertEquals(0, fixture.readRequests.get())
+
+        compose.onNodeWithTag("conversation").performScrollToIndex(2)
+        compose.onNodeWithText("The release is ready.").assertIsDisplayed()
+        compose.waitUntil("reading the latest reply is acknowledged", 5_000) {
+            fixture.readRequests.get() > 0
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun returningFromAnArtifactRestoresItsFocusAfterANewReply() {
+        val artifact = "/artifacts/aaaaaaaaaa.md"
+        val replies =
+            listOf(
+                historyEventWire(
+                    scrollEventId(1),
+                    1,
+                    payload = """{"content":"[Release checklist]($artifact)"}""",
+                ),
+                historyEventWire(
+                    scrollEventId(2),
+                    2,
+                    payload = """{"content":"The rollout is now scheduled."}""",
+                ),
+            )
+        val available = AtomicInteger(1)
+        serveConversationRows(replies, available::get)
+        val model = createListModel()
+        var opened: Pair<String, String>? = null
+        val restoreKey = mutableStateOf<String?>(null)
+        compose.setContent {
+            val list by model.uiState.collectAsStateWithLifecycle()
+            OkouTheme {
+                ConversationRoute(
+                    model.history,
+                    CHAT_PERSONAL,
+                    list,
+                    artifactActions =
+                        ChatArtifactActions(
+                            open = { link, key -> opened = link to key },
+                            restoreKey = restoreKey.value,
+                            restored = { restoreKey.value = null },
+                        ),
+                )
+            }
+        }
+        openPersonalHistory(model)
+        val card = hasText("Release checklist") and hasClickAction()
+        compose.waitUntilExactlyOneExists(card, 5_000)
+        compose.onNode(card).performClick()
+        val source = compose.runOnIdle { checkNotNull(opened) }
+        assertEquals(artifact, source.first)
+
+        compose.runOnIdle {
+            available.set(2)
+            model.history.refresh()
+        }
+        compose.waitUntilExactlyOneExists(hasText("The rollout is now scheduled."), 5_000)
+        compose.waitUntilExactlyOneExists(card, 5_000)
+        compose.runOnIdle { restoreKey.value = source.second }
+        compose.onNode(card).assertIsFocused()
     }
 
     @Test
@@ -900,6 +1006,29 @@ class ConversationRouteTest {
 
     private fun scrollEventId(sequence: Int) =
         "aaaaaaaa-aaaa-4aaa-8aaa-${sequence.toString().padStart(12, '0')}"
+
+    private fun serveConversationRows(rows: List<String>, published: () -> Int = { rows.size }) {
+        fixture.historyRows = { request ->
+            val after = request.requestUrl?.queryParameter("sinceSeqId")?.toInt() ?: 0
+            val last = published()
+            val tail = rows.subList(after, last).joinToString(",")
+            jsonResponse(
+                """{"rows":[$tail],"cursor":{"lastEventId":"${scrollEventId(last)}","lastSeqId":$last},"hasMore":false}""",
+            )
+        }
+    }
+
+    private fun openPersonalHistory(model: ChatListModel) {
+        compose.waitUntil(5_000) {
+            compose.runOnIdle { model.uiState.value.listPhase == ChatReadPhase.Ready }
+        }
+        compose.runOnIdle {
+            model.history.open(model.uiState.value.threads.single { it.id == CHAT_PERSONAL })
+        }
+        compose.waitUntil(5_000) {
+            compose.runOnIdle { model.history.uiState.value.phase == HistoryPhase.Ready }
+        }
+    }
 
     private fun openScrollHistory(
         received: AtomicInteger,

@@ -49,6 +49,7 @@
     <string name="artifact_open_website">Apri nel browser</string>
     <string name="artifact_browser_unavailable">Impossibile aprire il browser</string>
     <string name="artifact_play_media">Riproduzione multimediale</string>
+    <string name="artifact_play">Riproduci</string>
     <string name="artifact_catalog_access_denied">Non hai accesso a questo catalogo di artefatti</string>
     <string name="artifact_catalog_missing">Questo catalogo di artefatti non è più disponibile</string>
     <string name="chat_resources_related">Chat correlate</string>

@@ -21,7 +21,7 @@ final class WorkspaceStoreTests: XCTestCase {
         return ChatHTTPResponse(body: #"{"threads":{},"unreadAt":{}}"#)
       case "/api/chat-thread-drafts":
         return ChatHTTPResponse(body: #"{"draftThreadIds":["\#(storeThreadID)","\#(otherID)"]}"#)
-      case "/api/chat-drafts/composer", "/api/chat-threads/\(storeThreadID)/draft":
+      case "/api/chat-drafts/composer", "/api/chat-threads/\(storeThreadID)/composer-draft":
         return ChatHTTPResponse(body: #"{"draftUserMessage":null,"draftAttachments":null}"#)
       case "/api/chat-threads/\(storeThreadID)/event-snapshot": return missingHistorySnapshot()
       case "/api/chat-threads/\(storeThreadID)/event-rows":
@@ -482,7 +482,9 @@ final class WorkspaceRefreshTests: XCTestCase {
       await refresh.value
     }
     await fulfillment(of: [sidebarStarted], timeout: 3)
-    try await waitForBusinessResult { conversation.messages.contains { $0.text == "Fresh answer" } }
+    try await waitForBusinessResult(watching: conversation) {
+      conversation.messages.contains { $0.text == "Fresh answer" }
+    }
     releaseSidebar.open()
     await refresh.value
     XCTAssertNil(conversation.error)
@@ -503,7 +505,7 @@ final class WorkspaceRefreshTests: XCTestCase {
         return ChatHTTPResponse(body: #"{"draftThreadIds":[]}"#)
       case "/api/chat-drafts/composer":
         return ChatHTTPResponse(body: "{\"draftUserMessage\":null,\"draftAttachments\":null}")
-      case "/api/chat-threads/\(storeThreadID)/draft":
+      case "/api/chat-threads/\(storeThreadID)/composer-draft":
         return ChatHTTPResponse(
           body: """
             {"draftUserMessage":{"version":1,"parts":[{"type":"text",\

@@ -1968,8 +1968,10 @@
     "connectorAccountSwitch": {
       "accountFallback": "Connector account",
       "actionFailed": "Couldn't switch accounts.",
+      "allowForHour": "Allow for 1h",
       "customConnector": "Custom connector",
       "loadFailed": "Couldn't load this connector account.",
+      "memberScope": "Allow across your chats. Select this account here.",
       "reconnectRequired": "Reconnect required. Later runs may use the existing fallback.",
       "selected": "Switched to {{account}}",
       "switch": "Switch",

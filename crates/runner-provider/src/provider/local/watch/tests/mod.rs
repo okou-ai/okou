@@ -1,3 +1,5 @@
+use std::os::fd::AsRawFd;
+
 use super::*;
 
 fn watcher(path: &Path, kind: QueueFileKind) -> LocalQueueWatcher {
@@ -118,10 +120,10 @@ async fn moved_directories_retire_kernel_watches_before_reconciliation() {
 
         std::fs::write(retired_dir.join("retired.job"), b"job").unwrap();
         std::fs::rename(&retired_dir, root.path().join(format!("kept-{cycle}"))).unwrap();
-        assert!(matches!(
-            watcher.inotify.get_ref().0.read_events(),
+        assert_eq!(
+            nix::unistd::read(&watcher.inotify, &mut [0; 4096]),
             Err(Errno::EAGAIN)
-        ));
+        );
 
         std::fs::write(watched_dir.join("replacement.job"), b"job").unwrap();
         tokio::time::timeout(Duration::from_secs(2), watcher.next_change())

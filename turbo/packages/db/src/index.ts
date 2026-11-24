@@ -1,3 +1,4 @@
+import * as artifactFileShareSchema from "./schema/artifact-file-share";
 import * as voiceTranscriptionSchema from "./schema/voice-transcription";
 import * as hostedSiteShareSchema from "./schema/hosted-site-share";
 import * as hostedSiteShareRateLimitSchema from "./schema/hosted-site-share-rate-limit";
@@ -330,6 +331,7 @@ export const schema = {
   ...builtinConnectorDcrRegistrationSchema,
   ...builtinConnectorAccountOauthBindingSchema,
   ...hostedSiteSchema,
+  ...artifactFileShareSchema,
   ...hostedSiteShareSchema,
   ...hostedSiteShareRateLimitSchema,
   ...hostedSiteBrowserSessionSchema,

@@ -33,7 +33,7 @@ final class ConversationRefreshTests: XCTestCase {
       await refresh.value
     }
     await fulfillment(of: [recoveryStarted], timeout: 3)
-    try await waitForBusinessResult { conversation.messages.count == 3 }
+    try await waitForBusinessResult(watching: conversation) { conversation.messages.count == 3 }
     XCTAssertEqual(conversation.history?.executionState, .recovering)
     gate.open()
     await refresh.value
@@ -332,7 +332,7 @@ final class ConversationRefreshTests: XCTestCase {
       await reading.value
     }
     await fulfillment(of: [began], timeout: 3)
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: conversation) {
       conversation.messages.last?.id == ConversationHistoryFixture.id(2)
     }
     fixture.appendMessage()

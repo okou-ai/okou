@@ -71,6 +71,11 @@ export const clientContractImportManifest = [
     ],
   },
   {
+    module: "artifact-sharing",
+    contracts: ["artifactSharingContract"],
+    bindings: [],
+  },
+  {
     module: "atom-subscription-grants",
     contracts: ["atomSubscriptionGrantsContract"],
     bindings: [],

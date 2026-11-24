@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.64.0](https://github.com/okou-ai/okou/compare/ios-v0.63.1...ios-v0.64.0) (2026-11-24)
+
+
+### Features
+
+* add member-wide connector account approval ([#50516](https://github.com/okou-ai/okou/issues/50516)) ([ff76d52](https://github.com/okou-ai/okou/commit/ff76d52e21a55cd8f3e34a513e7e5fcfd8ab1e1b))
+* **ios:** scroll for you reasons in place instead of show more ([#50498](https://github.com/okou-ai/okou/issues/50498)) ([6a86eb2](https://github.com/okou-ai/okou/commit/6a86eb23751bda3334908e384e9ddc100a553bb7))
+
+
+### Bug Fixes
+
+* **ios:** discard drafts for unavailable chats ([#50503](https://github.com/okou-ai/okou/issues/50503)) ([4aeac42](https://github.com/okou-ai/okou/commit/4aeac42344c6a9c6a81bbb472d509e04548d8c1d))
+* **ios:** truncate collapsed follow-up suggestions to one line ([#50529](https://github.com/okou-ai/okou/issues/50529)) ([85dc94d](https://github.com/okou-ai/okou/commit/85dc94d473e47d9fbb4606946970e8c58b8985f6))
+
+
+### Refactoring
+
+* **ios:** keep the conversation transcript in the workspace graph ([#50497](https://github.com/okou-ai/okou/issues/50497)) ([36d3201](https://github.com/okou-ai/okou/commit/36d3201459a8c12fd00393f3593e1691679de5db))
+
+
+### Performance Improvements
+
+* **ci:** overlap ios simulator startup and compilation in the merge queue ([#50530](https://github.com/okou-ai/okou/issues/50530)) ([63e4fae](https://github.com/okou-ai/okou/commit/63e4fae81f0ab37694e0ad1b66473ceb47a45957))
+
+## [0.63.1](https://github.com/okou-ai/okou/compare/ios-v0.63.0...ios-v0.63.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* **ios:** preserve the first voice input through microphone permission ([#50506](https://github.com/okou-ai/okou/issues/50506)) ([f372155](https://github.com/okou-ai/okou/commit/f3721557e647ec53aee0209cbf830b6ef237e7be))
+
 ## [0.63.0](https://github.com/okou-ai/okou/compare/ios-v0.62.2...ios-v0.63.0) (2026-11-24)
 
 

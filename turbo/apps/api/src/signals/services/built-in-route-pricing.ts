@@ -185,8 +185,8 @@ function isModelProviderFirewallName(name: string): boolean {
 export function validateModelUsage(args: {
   readonly catalog: ModelCatalog;
   readonly modelProvider: ResolvedModelProviderEnvironment;
-  readonly permissionManifest:
-    Pick<PermissionManifest, "firewalls" | "billableFirewalls"> | undefined;
+  readonly providerPermissions:
+    Pick<PermissionManifest, "firewalls"> | undefined;
   /**
    * The run's Built-in route pricing, read from the same catalog snapshot;
    * required for a Built-in run (null for every other run).
@@ -196,12 +196,15 @@ export function validateModelUsage(args: {
   if (!isBuiltInModelProviderType(args.modelProvider.type)) {
     return null;
   }
-  const billableFirewalls = billableFirewallsForPermissions({
-    modelProvider: args.modelProvider,
-    permissions: args.permissionManifest,
-  });
   const route = builtInRouteForContext(args.catalog, args.modelProvider);
-  if (!billableFirewalls.some(isModelProviderFirewallName)) {
+  if (
+    !args.providerPermissions?.firewalls.some((firewall) => {
+      return (
+        firewall.kind === "builtin" &&
+        isModelProviderFirewallName(firewall.name)
+      );
+    })
+  ) {
     return null;
   }
   if (!route?.pricingProvider) {

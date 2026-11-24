@@ -35,6 +35,10 @@ export const clientDescriptorManifest = [
     contracts: ["artifactSharesContract"],
   },
   {
+    module: "artifact-sharing",
+    contracts: ["artifactSharingContract"],
+  },
+  {
     module: "atom-subscription-grants",
     contracts: ["atomSubscriptionGrantsContract"],
   },

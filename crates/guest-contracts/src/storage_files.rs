@@ -24,6 +24,10 @@ pub const MAX_MOUNTS: usize = 1024;
 pub const MAX_TOTAL_FILES: usize = 32 * MAX_MOUNTS;
 /// Prefix identifying binary input to the fixed storage helper.
 pub const INPUT_MAGIC: &[u8; 8] = b"VM0FILE1";
+/// Archive source marker on the first mount of a packed decoded batch.
+pub const PACKED_BATCH_START_URL: &str = "decoded://batch";
+/// Archive source marker on the remaining mounts of a packed decoded batch.
+pub const PACKED_BATCH_FILE_URL: &str = "decoded://";
 /// Manifest limit within binary input; generic exec stdin is unchanged.
 pub const MAX_MANIFEST_BYTES: usize = 64 * 1024;
 /// Maximum complete binary helper input.

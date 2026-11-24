@@ -74,7 +74,15 @@ final class ConversationStore {
     didFail: didFail)
   // Confirmed input for delivery, Stop, read watermarks and the native render window.
   // Independent resource phases remain in their original Tasks, not in this snapshot.
-  @ObservationIgnored private let projection = ConversationProjection()
+  // Its values live in the workspace session's Store; views read `transcript`.
+  @ObservationIgnored private let projection: ConversationProjection
+  /// What the transcript renders. ChatDetailView reads it through CCStateSwiftUI; the
+  /// synchronous accessors below serve owner logic and actions, not view bodies.
+  var transcript: Computed<ConversationProjection.Value> { projection.value }
+  /// The synchronous value of `transcript`, for a render whose graph read has not resolved.
+  var currentTranscript: ConversationProjection.Value { projection.currentValue }
+  /// The workspace session's Store, which keeps this conversation's graph values.
+  var graph: CCState.Store { projection.store }
   private(set) var history: ChatHistory? {
     get { projection.history }
     set {
@@ -92,9 +100,6 @@ final class ConversationStore {
       projection.replacePending(newValue)
       persistPending()
     }
-  }
-  var recommendedFollowups: ChatRecommendedFollowupSource? {
-    pending.isEmpty ? history?.recommendedFollowups : nil
   }
   var messages: [ChatMessage] { projection.messages }
   var visibleItems: [ConversationItem] { reading.visibleItems }
@@ -204,6 +209,7 @@ final class ConversationStore {
       try await Task.sleep(for: $0)
     },
     draftRepository: ChatDraftRepository? = nil, draftStorage: ChatDraftStorage? = nil,
+    voiceCapture: (any VoiceAudioCapture)? = nil,
     didSaveDraft: @escaping @MainActor (ComposerDraft) async -> Void = { _ in },
     measurementScope: ChatCacheScope? = nil,
     didRequestNewChat: @escaping @MainActor () -> Void = {},
@@ -214,16 +220,18 @@ final class ConversationStore {
   ) {
     let lifecycleTasks = lifecycleTasks ?? LifecycleTasks()
     self.lifecycleTasks = lifecycleTasks
+    projection = ConversationProjection(store: graph)
     self.modelSelection = modelSelection
     self.workflowSource = workflowSource
     self.didRequestNewChat = didRequestNewChat
     readResources = ConversationReadResources(
-      sync: sync, threadID: thread.id, sleep: readRetrySleep, didFail: didFail,
+      sync: sync, threadID: thread.id, graph: graph, sleep: readRetrySleep, didFail: didFail,
       lifecycleTasks: lifecycleTasks)
-    self.runUsage = ConversationRunUsageStore(sync: sync, threadID: thread.id, didFail: didFail)
+    self.runUsage = ConversationRunUsageStore(
+      sync: sync, threadID: thread.id, graph: graph, didFail: didFail)
     self.activitySummary = ConversationActivitySummary(
-      sync: sync, threadID: thread.id, didRequireUpgrade: didFail, sleep: activitySleep,
-      lifecycleTasks: lifecycleTasks)
+      sync: sync, threadID: thread.id, graph: graph, didRequireUpgrade: didFail,
+      sleep: activitySleep, lifecycleTasks: lifecycleTasks)
     self.thread = thread
     measurements = ConversationMeasurementCache(
       namespace: measurementScope.map {
@@ -234,7 +242,7 @@ final class ConversationStore {
     composer = ComposerDraftStore(
       target: draftTarget, commands: commands, graph: graph,
       repository: draftRepository, storage: draftStorage, didFail: didFail,
-      didSave: didSaveDraft,
+      didSave: didSaveDraft, voiceCapture: voiceCapture,
       syncSleep: readRetrySleep, lifecycleTasks: lifecycleTasks)
     self.sync = sync
     self.commands = commands
@@ -247,7 +255,7 @@ final class ConversationStore {
     self.didSettle = didSettle
     do {
       var restored =
-        try draftStorage?.load(draftTarget.key + "/pending", as: [PendingMessage].self) ?? []
+        try draftStorage?.load(draftTarget.pendingKey, as: [PendingMessage].self) ?? []
       for index in restored.indices { restored[index].needsRetry = true }
       projection.replacePending(restored)
       // Recovery inputs do not consume the composer; two absent documents are not an identity.
@@ -441,7 +449,8 @@ final class ConversationStore {
     reading.setDetailVisible(visible, owner: owner)
   }
 
-  func reconcileVisibility() {
+  func reconcileVisibility(suspendHiddenVoice: Bool = true) {
+    if suspendHiddenVoice, !isVisible() { composer.voice?.suspend() }
     reading.reconcileVisibility()
   }
 
@@ -454,7 +463,7 @@ final class ConversationStore {
       || history?.messages.contains(where: { $0.id.lowercased() == eventID }) == true
   }
 
-  func close() {
+  func close(discardingDraft: Bool = false) {
     quickShare?.task.cancel()
     sharing.close()
     closed = true
@@ -464,13 +473,14 @@ final class ConversationStore {
     modelSelection?.close()
     cancelRefresh()
     readResources.close()
+    if discardingDraft { projection.replacePending([]) }
     projection.close()
     sendTask?.cancel()
     stopTask?.cancel()
     reading.close()
     failureRecovery.close()
     measurements.clear()
-    composer.close()
+    composer.close(discardingDraft: discardingDraft)
     attachmentViewer.close()
     artifacts.close()
     connectorActions.close()
@@ -533,7 +543,8 @@ final class ConversationStore {
   }
 
   private func persistPending() {
-    do { try draftStorage?.save(pending, key: draftTarget.key + "/pending") } catch { show(error) }
+    guard !closed else { return }
+    do { try draftStorage?.save(pending, key: draftTarget.pendingKey) } catch { show(error) }
   }
 
   private func show(_ failure: Error) {

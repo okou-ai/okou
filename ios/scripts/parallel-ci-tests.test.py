@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify PR artifact provenance, concurrent preparation and executable test products."""
+"""Verify test artifact provenance, concurrent preparation and executable test products."""
 
 import hashlib
 import importlib.util
@@ -31,7 +31,7 @@ class ArtifactTests(unittest.TestCase):
             "GITHUB_SHA": "merge-sha",
             "GITHUB_RUN_ATTEMPT": "1",
             "GITHUB_REPOSITORY": "owner/repo",
-            "PR_HEAD_SHA": "branch-tip",
+            "RUN_HEAD_SHA": "branch-tip",
             "GITHUB_OUTPUT": str(self.output),
         }
         self.job = {
@@ -111,6 +111,28 @@ class ArtifactTests(unittest.TestCase):
                 self.assertEqual(waiter.wait(kind), artifact)
                 self.assertIn("/attempts/1/jobs?", request.call_args_list[0].args[0])
                 self.assertIn("name=" + name, request.call_args_list[-1].args[0])
+
+    def test_queue_products_must_belong_to_the_tested_merge_commit(self):
+        head = self.env["GITHUB_SHA"]
+        artifact = self.artifact | {
+            "workflow_run": self.artifact["workflow_run"] | {"head_sha": head}
+        }
+        with (
+            patch.dict(os.environ, self.env | {"RUN_HEAD_SHA": head}),
+            patch.object(
+                waiter,
+                "request",
+                side_effect=[
+                    {"jobs": [self.job | {"head_sha": head}]},
+                    {"artifacts": [artifact]},
+                    {"jobs": [self.job | {"head_sha": head}]},
+                    {"artifacts": [self.artifact]},
+                ],
+            ),
+        ):
+            self.assertEqual(waiter.wait("products"), artifact)
+            with self.assertRaisesRegex(ValueError, "Artifact identity"):
+                waiter.wait("products")
 
     def test_full_rerun_waits_for_the_replacement_source_upload(self):
         self.env["GITHUB_RUN_ATTEMPT"] = "2"

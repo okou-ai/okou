@@ -22,7 +22,7 @@ final class ConnectorActionResources {
         kind = "reconnect"
         target = .builtin(slug)
         account = id
-      case .select(let value, let id):
+      case .select(let value, let id, _):
         kind = "select"
         target = value
         account = id
@@ -38,7 +38,7 @@ final class ConnectorActionResources {
       components = [
         kind, action.threadID?.lowercased(), target?.kind,
         target?.connectorSlug, target?.customConnectorId?.lowercased(),
-        account?.lowercased()
+        account?.lowercased(), action.isMemberApproval ? action.id : nil
       ]
     }
 

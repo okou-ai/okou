@@ -3,20 +3,17 @@ import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import {
   renderKotlinFiles,
+  renderKotlinProductionFiles,
   generatedKotlinRelativeDirectory,
 } from "../../kotlin-bindings/generate";
-import { renderKotlinRunFailureReasons } from "../../kotlin-bindings/run-failure-reasons";
 import { runRuntimeApiSchemaCli } from "../command";
 
 let root: string;
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "android-consumption-"));
-  for (const [file, source] of renderKotlinFiles())
-    await put(`${generatedKotlinRelativeDirectory}/${file}`, source);
-  await put(
-    `${generatedKotlinRelativeDirectory}/KnownRunFailureReason.kt`,
-    renderKotlinRunFailureReasons(),
-  );
+  for (const [file, source] of renderKotlinProductionFiles()) {
+    await put(file, source);
+  }
 });
 afterEach(async () => {
   vi.restoreAllMocks();
