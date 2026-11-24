@@ -422,9 +422,8 @@ function buildUserPresentationTemplatePrompt(
       return [
         ...templateFraming("a presentation"),
         `Selected presentation template: the user's own imported deck, mounted at ./${userPresentationTemplateDirectory(rowId)}.`,
-        "- This imported template supports HTML only. Before authoring, resolve the output format from the current request and its current-message product preference. If the resolved format is PPTX, explain that this template is incompatible and stop; do not substitute a built-in template or convert the deck.",
         "",
-        "To produce the presentation when the resolved output format is HTML:",
+        "To produce the presentation:",
         `- Read ./${userPresentationTemplateDirectory(rowId)}/SKILL.md fully and follow only the files and assets it names.`,
         "- Author the finished deck directly as semantic HTML, CSS, and SVG for this request's content.",
         "- Do not produce slide JSON, read a `tokens.json`, call a layout-id API, or run a template-specific JSON-to-HTML renderer first. None of those exist for this package; the guidance describes a visual language, not a renderer.",

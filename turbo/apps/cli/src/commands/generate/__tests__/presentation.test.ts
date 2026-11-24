@@ -166,20 +166,26 @@ describe("okou generate presentation command", () => {
       "The preference alone does not request a presentation or change other output types",
     );
     expect(stdout).toContain(
+      "If no format is explicitly requested and the current message has no saved preference, default to HTML without asking for a format or saving this fallback as a preference",
+    );
+    expect(stdout).toContain(
+      "First-use format cards are client-owned and require an explicitly selected Presentation tag with a confirmed unset preference; never trigger one from inferred presentation intent",
+    );
+    expect(stdout).toContain(
       "Do not infer a format from earlier messages, Memory, or intended use, and do not query or update preferences",
     );
     expect(stdout).toContain(
       "Deliver one format unless the user requests multiple formats",
     );
     expect(stdout).toContain(
-      "Follow the HTML authoring, preview, and hosting steps below only when the resolved output format is HTML",
+      "Follow the HTML preview and hosting steps below only when the resolved output format is HTML",
     );
     expect(stdout).toContain(
-      "Only an explicit current request to convert an existing HTML deck uses the enabled conversion workflow instead of new-deck generation",
+      "If the selected template supports only HTML and the resolved format is PPTX, author with that HTML template, then use the enabled built-in HTML-to-PPTX conversion workflow and deliver the converted .pptx, not the intermediate HTML",
     );
     if (templateArgs.length > 0) {
       expect(stdout).toContain(
-        "- Only when the resolved output format is HTML: Keep all slides and visible content in index.html",
+        "- When authoring HTML, including an HTML-only template's source for PPTX conversion: Keep all slides and visible content in index.html",
       );
       expect(stdout).toContain(
         "The newly resolved same-style packet supersedes all remaining instructions in this mismatched packet; follow that packet instead",
@@ -228,7 +234,7 @@ describe("okou generate presentation command", () => {
         "an attached native PPTX package does not override an explicit HTML request",
       );
       expect(stdout).toContain(
-        "For a new PPTX deck, follow the matching native PPTX package's authoring and verification workflow",
+        "For a new PPTX deck with a matching native PPTX version, follow that package's authoring and verification workflow",
       );
       expect(stdout).toContain(
         "Author an editable native PPTX directly with the selected package",
@@ -251,8 +257,12 @@ describe("okou generate presentation command", () => {
       );
       expect(stdout).not.toContain("index.html");
       expect(stdout).not.toContain("okou host");
-      expect(stdout).not.toContain("conversion instructions");
-      expect(stdout).not.toContain("convert to PPTX");
+      expect(stdout).toContain(
+        "When the selected template offers both HTML and PPTX, use its matching version directly",
+      );
+      expect(stdout).toContain(
+        "The final deliverable must match the resolved output format; template delivery instructions do not override it",
+      );
 
       if (templateArgs.length > 0) {
         expect(stdout).toContain(

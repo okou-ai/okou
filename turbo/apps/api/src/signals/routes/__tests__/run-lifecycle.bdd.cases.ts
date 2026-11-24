@@ -8749,7 +8749,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         { enabled: false, savedFormat: "pptx", requestedFormat: "HTML" },
         { enabled: true, savedFormat: "html", requestedFormat: "PPTX" },
       ] as const)(
-        "resolves explicit $requestedFormat over saved $savedFormat presentation preferences and gates existing HTML deck conversion ($enabled)",
+        "resolves explicit $requestedFormat over saved $savedFormat and gates built-in presentation conversion ($enabled)",
         async ({ enabled, savedFormat, requestedFormat }) => {
           const api = createRunsApi(context);
           const connectors = createConnectorBddApi(context);
@@ -8819,10 +8819,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             );
           } else {
             expect(prompt).toContain(
-              "- Only when the resolved output format is HTML: Keep all slides and visible content in index.html",
+              "- When authoring HTML, including an HTML-only template's source for PPTX conversion: Keep all slides and visible content in index.html",
             );
             expect(prompt).toContain(
-              "Follow the HTML authoring, preview, and hosting steps below only when the resolved output format is HTML",
+              "Follow the HTML preview and hosting steps below only when the resolved output format is HTML",
             );
           }
           const token = execution.platformEnvironment.OKOU_TOKEN;
@@ -8845,11 +8845,11 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             "Do not infer a format from earlier messages, Memory, or intended use, and do not query or update preferences",
           );
           expect(prompt).toContain(
-            "For a new PPTX deck, follow the matching native PPTX package's authoring and verification workflow",
+            "When the selected template offers both HTML and PPTX, use its matching version directly",
           );
           expect(prompt).toContain("For HTML output, author and check HTML");
           expect(prompt).toContain(
-            "Only an explicit current request to convert an existing HTML deck uses the enabled conversion workflow instead of new-deck generation",
+            "If the selected template supports only HTML and the resolved format is PPTX, author with that HTML template, then use the enabled built-in HTML-to-PPTX conversion workflow and deliver the converted .pptx, not the intermediate HTML",
           );
           expect(prompt).toContain(
             "Deliver one format unless the user requests multiple formats",
@@ -8860,7 +8860,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               "okou presentation convert --input <deck.html> --out <deck.pptx> --verify",
             );
             expect(prompt).toContain(
-              "Only when the user explicitly requests PowerPoint/PPTX",
+              "The resolved PPTX requirement authorizes this conversion without a separate conversion request",
             );
           } else {
             expect(capabilities).not.toContain("presentation-convert:write");

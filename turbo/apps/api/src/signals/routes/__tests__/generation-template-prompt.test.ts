@@ -121,7 +121,7 @@ describe("buildGenerationTemplatePrompt", () => {
         );
       } else {
         expect(result.prompt).toContain(
-          "- Only when the resolved output format is HTML: Keep all slides and visible content in index.html; render the first slide without JavaScript",
+          "- When authoring HTML, including an HTML-only template's source for PPTX conversion: Keep all slides and visible content in index.html; render the first slide without JavaScript",
         );
         expect(result.prompt).toContain(
           "For HTML delivery, host the finished deck: okou host <output-dir> --site <slug> --artifact-kind presentation-html",
@@ -137,7 +137,13 @@ describe("buildGenerationTemplatePrompt", () => {
         "an attached native PPTX package does not override an explicit HTML request",
       );
       expect(result.prompt).toContain(
-        "If the output format resolved from the current request or its current-message product preference differs from this package",
+        "If no format is explicitly requested and the current message has no saved preference, default to HTML without asking for a format or saving this fallback as a preference",
+      );
+      expect(result.prompt).toContain(
+        "First-use format cards are client-owned and require an explicitly selected Presentation tag with a confirmed unset preference; never trigger one from inferred presentation intent",
+      );
+      expect(result.prompt).toContain(
+        "When this template offers both HTML and PPTX and the output format resolved from the current request or its current-message product preference differs from this package",
       );
       expect(result.prompt).toContain(
         'okou generate presentation --format <html|pptx> --template template:html-ppt-playful-launch --prompt "<user request>"',
@@ -168,12 +174,13 @@ describe("buildGenerationTemplatePrompt", () => {
     },
   );
 
-  it("points a private template at its mounted package and forbids an intermediate representation", () => {
+  it("keeps imported template authoring separate from the final delivery format", () => {
     const result = buildGenerationTemplatePrompt(
       {
         type: "presentation",
         selection: {
           templateId: formatUserPresentationTemplateId(USER_TEMPLATE_ROW_ID),
+          outputFormat: "pptx",
         },
       },
       {
@@ -213,14 +220,15 @@ describe("buildGenerationTemplatePrompt", () => {
     expect(result.prompt).toContain(
       "use an explicit format in the current request first, then the saved default in the CURRENT message's `# Presentation Output Preference`",
     );
+    expect(result.prompt).toContain("To produce the presentation:");
     expect(result.prompt).toContain(
-      "This imported template supports HTML only",
+      "If the selected template supports only HTML and the resolved format is PPTX, author with that HTML template, then use the enabled built-in HTML-to-PPTX conversion workflow and deliver the converted .pptx, not the intermediate HTML",
     );
     expect(result.prompt).toContain(
-      "If the resolved format is PPTX, explain that this template is incompatible and stop; do not substitute a built-in template or convert the deck",
+      "The final deliverable must match the resolved output format; template delivery instructions do not override it",
     );
     expect(result.prompt).toContain(
-      "To produce the presentation when the resolved output format is HTML:",
+      "The resolved PPTX requirement is sufficient; do not require a separate request to convert",
     );
     // A private package has no registry resource to pull.
     expect(result.prompt).not.toContain("okou resource pull");

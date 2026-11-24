@@ -227,7 +227,7 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
     PRESENTATION_DELIVERY_INSTRUCTION,
     ...(args.presentationConvertEnabled
       ? [
-          "- Only when the user explicitly requests PowerPoint/PPTX conversion of an HTML deck (not native PPTX template generation), convert the finished HTML directly with `okou presentation convert --input <deck.html> --out <deck.pptx> --verify`, then upload the PPTX with this surface's `upload-file` command.",
+          "- HTML-to-PPTX conversion: when the resolved delivery format is PPTX and the selected template supports only HTML, convert its finished HTML with `okou presentation convert --input <deck.html> --out <deck.pptx> --verify`, inspect the converted deck's slide images, then upload only the PPTX with this surface's `upload-file` command unless the user requests multiple formats. The resolved PPTX requirement authorizes this conversion without a separate conversion request. Use the same workflow for an explicit request to convert an existing HTML deck. When the selected template has a matching native PPTX version, use that version directly instead of converting HTML.",
         ]
       : []),
     "- Third-party services (GitHub, Slack, Notion, 4,000+ more) can be accessed through connectors. `okou connector search <service-name>` searches every supported service and reports which matching connectors are available to the current run. For supported services, connectors provide a smoother and safer experience: provider credentials stay outside the sandbox and are resolved at the network boundary. When a user wants to connect a third-party service, search for it first. List connected: `okou connector list`. Inspect: `okou connector status <slug>`.",

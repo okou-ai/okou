@@ -1043,19 +1043,16 @@ function createSubmitCurrentInput({
       signal.throwIfAborted();
       const mode = get(create.mode$);
       const taskSelection = set(readTaskSelection$);
-      const visualization =
-        taskSelection.task === "visualization"
-          ? taskSelection.visualization
-          : undefined;
-      const composerAdditionalInfo = buildComposerAdditionalInfo(
-        mode,
-        get(create.presentationSlideCount$),
-        visualization,
-        presentationFormat,
-      );
       const additionalInfo = joinAdditionalInfo(
         callerAdditionalInfo,
-        composerAdditionalInfo,
+        buildComposerAdditionalInfo(
+          mode,
+          get(create.presentationSlideCount$),
+          taskSelection.task === "visualization"
+            ? taskSelection.visualization
+            : undefined,
+          presentationFormat,
+        ),
       );
       const editorDocument = additionalInfo
         ? createEditorDocumentSnapshot(

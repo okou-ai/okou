@@ -103,6 +103,15 @@ describe("presentation runbook packages", () => {
       expect(instructions).toContain(
         "If the selected package is unavailable, stop and report it",
       );
+      expect(instructions).toContain(
+        "The final deliverable must match the resolved output format; template delivery instructions do not override it",
+      );
+      expect(instructions).toContain(
+        "If no format is explicitly requested and the current message has no saved preference, default to HTML without asking for a format or saving this fallback as a preference",
+      );
+      expect(instructions).toContain(
+        "When the selected template offers both HTML and PPTX, use its matching version directly",
+      );
       if (outputFormat === "pptx") {
         expect(instructions).toContain(
           "Author an editable native PPTX directly",

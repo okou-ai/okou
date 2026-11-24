@@ -193,6 +193,96 @@ function executionFiles(
 }
 
 test.each([
+  { label: "explicit PPTX", format: "pptx" },
+  { label: "default HTML", format: undefined },
+] as const)(
+  "uses $label for an HTML-only template without a Presentation tag",
+  async ({ format }) => {
+    const owner = await publicChatActor(context);
+    owner.ownsFeatureSwitches();
+    await owner.run(async () => {
+      if (!owner.actor.orgId) {
+        throw new Error("Expected a workspace owner");
+      }
+      await updateFeatureSwitchesForUser(
+        context,
+        { ...owner.actor, orgId: owner.actor.orgId },
+        { [FeatureSwitchKey.PresentationConvert]: format === "pptx" },
+      );
+    });
+    const fixture = await owner.run(() => {
+      return Promise.resolve(installS3Fixture(context));
+    });
+    const files = [
+      {
+        path: "SKILL.md",
+        content:
+          "# HTML-only presentation template\nThis package provides only an HTML authoring workflow. Use semantic HTML, CSS, and SVG and follow design-system.md.\n",
+      },
+      {
+        path: "design-system.md",
+        content: "Preserve this template's style.\n",
+      },
+    ];
+    const published = await owner.run(async () => {
+      return await publish(
+        "presentation-template",
+        await uploadInputs(owner.actor, fixture, tarGz(files)),
+      );
+    });
+    if (published.status !== 200) {
+      throw new Error("Expected a published template");
+    }
+    const request =
+      format === "pptx"
+        ? "Use this imported template and deliver the deck as PPTX."
+        : "Use this imported template for a quarterly planning deck.";
+    const run = await owner.sendChatRun(owner.actor, {
+      prompt: request,
+      template: selection("presentation-template", published.body.id),
+    });
+    const { execution } = await owner.runExecution(run.runId);
+    expect(execution.prompt).toContain(request);
+    expect(
+      executionFiles(
+        fixture,
+        execution,
+        "presentation-template",
+        published.body.id,
+      ),
+    ).toStrictEqual(files);
+    const prompt = execution.appendSystemPrompt ?? "";
+    expect(prompt).toContain(
+      "Author the finished deck directly as semantic HTML, CSS, and SVG",
+    );
+    expect(prompt).toContain(
+      "If no format is explicitly requested and the current message has no saved preference, default to HTML without asking for a format or saving this fallback as a preference",
+    );
+    expect(prompt).toContain(
+      "First-use format cards are client-owned and require an explicitly selected Presentation tag with a confirmed unset preference; never trigger one from inferred presentation intent",
+    );
+    if (format === "pptx") {
+      expect(prompt).toContain(
+        "If the selected template supports only HTML and the resolved format is PPTX, author with that HTML template, then use the enabled built-in HTML-to-PPTX conversion workflow and deliver the converted .pptx, not the intermediate HTML",
+      );
+      expect(prompt).toContain(
+        "okou presentation convert --input <deck.html> --out <deck.pptx> --verify",
+      );
+      expect(prompt).toContain(
+        "The resolved PPTX requirement authorizes this conversion without a separate conversion request",
+      );
+      expect(prompt).toContain(
+        "inspect the converted deck's slide images, then upload only the PPTX",
+      );
+    } else {
+      expect(prompt).toContain(
+        "For HTML delivery, host the finished deck: okou host",
+      );
+    }
+  },
+);
+
+test.each([
   { kind: "user-template", change: "delete" },
   { kind: "presentation-template", change: "delete" },
   { kind: "user-template", change: "replace" },
