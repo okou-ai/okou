@@ -92,6 +92,7 @@ internal fun HistoryMarkdown(
     messageId: String,
     highlight: ConversationFindHighlight? = null,
     links: ConversationLinkActions? = null,
+    compactReply: Boolean = false,
 ) =
     key(source, artifacts != null, links != null) {
         val rendered by
@@ -122,6 +123,7 @@ internal fun HistoryMarkdown(
                 hit,
                 highlight,
                 links,
+                compactReply,
             )
         }
     }
@@ -145,6 +147,7 @@ private fun HistoryMarkdownBlocks(
     hit: Int = -1,
     highlight: ConversationFindHighlight? = null,
     links: ConversationLinkActions? = null,
+    compactReply: Boolean = false,
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         for ((index, block) in blocks.withIndex()) {
@@ -179,20 +182,23 @@ private fun HistoryMarkdownBlocks(
                                     "$focusPrefix/$index/$itemIndex",
                                     Modifier.weight(1f),
                                     links = links,
+                                    compactReply = compactReply,
                                 )
                             }
                         }
                     }
                 is HistoryMarkdownBlock.Paragraph -> {
                     val blockStyle =
-                        when (block.heading) {
-                            1 ->
+                        when {
+                            block.heading == 0 -> contentStyle
+                            compactReply -> contentStyle.copy(fontWeight = FontWeight.Bold)
+                            block.heading == 1 ->
                                 contentStyle.copy(
                                     fontSize = 20.sp,
                                     lineHeight = 28.sp,
                                     fontWeight = FontWeight.Bold,
                                 )
-                            in 2..6 ->
+                            block.heading in 2..6 ->
                                 contentStyle.copy(
                                     fontSize = 16.sp,
                                     lineHeight = 24.sp,
@@ -204,7 +210,7 @@ private fun HistoryMarkdownBlocks(
                         remember(block.text) {
                             block.text.getStringAnnotations("artifact", 0, block.text.length)
                         }
-                    if (artifacts == null || cards.isEmpty()) {
+                    if (artifacts == null || cards.isEmpty() || compactReply) {
                         ConversationLinkText(
                             block.text,
                             blockStyle,
@@ -254,7 +260,7 @@ private fun HistoryMarkdownBlocks(
 }
 
 @Composable
-private fun MessageArtifactCard(
+internal fun MessageArtifactCard(
     title: String,
     link: String,
     restoreFocus: (() -> Unit)?,
@@ -352,15 +358,17 @@ private fun historyMarkdownBlocks(
     source: String,
     artifactCards: Boolean,
     interactiveLinks: Boolean,
-): List<HistoryMarkdownBlock> =
-    historyMarkdownParser
+): List<HistoryMarkdownBlock> {
+    val seenArtifacts = if (artifactCards) mutableSetOf<String>() else null
+    return historyMarkdownParser
         .parse(source)
         .children()
-        .map { it.historyMarkdownBlock(artifactCards, interactiveLinks) }
+        .map { it.historyMarkdownBlock(seenArtifacts, interactiveLinks) }
         .toList()
+}
 
 private fun Node.historyMarkdownBlock(
-    artifactCards: Boolean,
+    seenArtifacts: MutableSet<String>?,
     interactiveLinks: Boolean,
 ): HistoryMarkdownBlock =
     when (this) {
@@ -375,7 +383,7 @@ private fun Node.historyMarkdownBlock(
                             marker,
                             item
                                 .children()
-                                .map { it.historyMarkdownBlock(artifactCards, interactiveLinks) }
+                                .map { it.historyMarkdownBlock(seenArtifacts, interactiveLinks) }
                                 .toList(),
                         )
                     }
@@ -386,7 +394,7 @@ private fun Node.historyMarkdownBlock(
             val rendered =
                 renderHistoryMarkdownNode(
                     this,
-                    artifactCards = artifactCards,
+                    seenArtifacts = seenArtifacts,
                     interactiveLinks = interactiveLinks,
                 )
             HistoryMarkdownBlock.Paragraph(
@@ -397,6 +405,42 @@ private fun Node.historyMarkdownBlock(
     }
 
 private fun Node.children(): Sequence<Node> = generateSequence(firstChild) { it.next }
+
+internal data class ReplyArtifact(val link: String, val title: String)
+
+/** Keep earlier results available when their reply text is collapsed. */
+internal fun earlierReplyArtifacts(
+    earlier: List<HistoryMessage>,
+    latest: HistoryMessage,
+): List<ReplyArtifact> {
+    fun HistoryMessage.artifacts() =
+        blocks
+            .asSequence()
+            .filter { it.kind == HistoryBlockKind.Text && ('[' in it.text || '<' in it.text) }
+            .flatMap {
+                historyMarkdownBlocks(it.text, artifactCards = true, interactiveLinks = false)
+            }
+            .flatMap { it.artifacts() }
+
+    val earlierCards =
+        earlier.asSequence().flatMap { it.artifacts() }.distinctBy { it.link }.toList()
+    if (earlierCards.isEmpty()) return earlierCards
+    val latestLinks = latest.artifacts().map { it.link }.toSet()
+    return earlierCards.filterNot { it.link in latestLinks }
+}
+
+private fun HistoryMarkdownBlock.artifacts(): Sequence<ReplyArtifact> =
+    when (this) {
+        is HistoryMarkdownBlock.Paragraph ->
+            text.getStringAnnotations("artifact", 0, text.length).asSequence().map {
+                ReplyArtifact(it.item, text.text.substring(it.start, it.end))
+            }
+        is HistoryMarkdownBlock.ListItems ->
+            items.asSequence().flatMap { item ->
+                item.blocks.asSequence().flatMap { it.artifacts() }
+            }
+        is HistoryMarkdownBlock.Table -> emptySequence()
+    }
 
 private fun historyMarkdownRows(
     table: TableBlock,
@@ -487,7 +531,7 @@ internal fun renderHistoryMarkdown(source: String, compactLists: Boolean = false
 private fun renderHistoryMarkdownNode(
     node: Node,
     styleHeadings: Boolean = false,
-    artifactCards: Boolean = false,
+    seenArtifacts: MutableSet<String>? = null,
     interactiveLinks: Boolean = false,
     paragraphBreak: (Paragraph) -> String = { if (it.parent is ListItem) "\n" else "\n\n" },
 ): AnnotatedString = buildAnnotatedString {
@@ -570,12 +614,14 @@ private fun renderHistoryMarkdownNode(
             }
 
             override fun visit(node: Link) {
-                val artifact = if (artifactCards) messageArtifactLink(node.destination) else null
+                val artifact =
+                    if (seenArtifacts != null) messageArtifactLink(node.destination) else null
                 if (artifact != null) {
                     val start = length
                     visitChildren(node)
                     if (length == start) append(node.destination)
-                    addStringAnnotation("artifact", artifact, start, length)
+                    if (seenArtifacts?.add(artifact) == true)
+                        addStringAnnotation("artifact", artifact, start, length)
                     return
                 }
                 if (interactiveLinks && conversationLink(node.destination) != null) {

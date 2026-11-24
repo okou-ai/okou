@@ -15,7 +15,30 @@
     <string name="conversation_view_progress">View progress</string>
     <string name="conversation_processing">Working…</string>
     <string name="conversation_offline_send">Go online to send. Your draft stays here.</string>
-    <string name="conversation_work">Work in progress</string>
+    <string name="conversation_reply_summary">Reply summary</string>
+    <string name="conversation_turn_continued">Continued in the next turn</string>
+    <string name="conversation_replying">Replying…</string>
+    <string name="conversation_turn_done">Completed</string>
+    <string name="conversation_replies_expanded">Expanded</string>
+    <string name="conversation_replies_collapsed">Collapsed</string>
+    <string name="conversation_work_elapsed">Working for %1$s</string>
+    <string name="conversation_work_total">Worked for %1$s</string>
+    <string name="conversation_followup_continue">Keep going</string>
+    <string name="conversation_feedback_pair">%1$s · %2$s</string>
+    <plurals name="conversation_reply_steps">
+        <item quantity="one">%d step</item>
+        <item quantity="other">%d steps</item>
+    </plurals>
+    <string-array name="conversation_completion_phrases">
+        <item>Wrapped up</item>
+        <item>All done</item>
+        <item>Delivered</item>
+        <item>Finished, at your service</item>
+        <item>That was a wrap</item>
+        <item>Mission complete</item>
+        <item>Signed off</item>
+        <item>Done and dusted</item>
+    </string-array>
     <string name="conversation_reply_actions">Reply actions</string>
     <string name="conversation_copy_reply">Copy reply</string>
     <string name="conversation_reply_copied">Reply copied</string>

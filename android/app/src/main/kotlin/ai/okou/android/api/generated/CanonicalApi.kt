@@ -438,6 +438,13 @@ internal interface CanonicalApi {
         @Body body: SendRequest,
     ): Response<AcceptedInput>
 
+    @POST("/api/chat-threads/{id}/activity-summary")
+    suspend fun `summarizeRunActivity`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+        @Body body: RunActivityRequest,
+    ): Response<RunActivitySummary>
+
     @GET("/api/chat-threads/{threadId}/inputs/{eventId}/status")
     suspend fun `inputStatus`(
         @Header("Authorization") token: String,

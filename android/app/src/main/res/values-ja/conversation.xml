@@ -14,7 +14,29 @@
     <string name="conversation_view_progress">進捗を確認</string>
     <string name="conversation_processing">処理中…</string>
     <string name="conversation_offline_send">送信するには接続してください。下書きは残ります。</string>
-    <string name="conversation_work">作業の経過</string>
+    <string name="conversation_reply_summary">返信の要約</string>
+    <string name="conversation_turn_continued">次のターンに引き継ぎ</string>
+    <string name="conversation_replying">返信中…</string>
+    <string name="conversation_turn_done">完了</string>
+    <string name="conversation_replies_expanded">展開済み</string>
+    <string name="conversation_replies_collapsed">折りたたみ</string>
+    <string name="conversation_work_elapsed">%1$s 作業中</string>
+    <string name="conversation_work_total">作業時間 %1$s</string>
+    <string name="conversation_followup_continue">続ける</string>
+    <string name="conversation_feedback_pair">%1$s · %2$s</string>
+    <plurals name="conversation_reply_steps">
+        <item quantity="other">%d ステップ</item>
+    </plurals>
+    <string-array name="conversation_completion_phrases">
+        <item>終了</item>
+        <item>すべて完了</item>
+        <item>配信済み</item>
+        <item>終了しました。ご対応ください</item>
+        <item>これで終わりです</item>
+        <item>ミッション完了</item>
+        <item>サインオフ</item>
+        <item>無事完了</item>
+    </string-array>
     <string name="conversation_reply_actions">返信の操作</string>
     <string name="conversation_copy_reply">返信をコピー</string>
     <string name="conversation_reply_copied">返信をコピーしました</string>

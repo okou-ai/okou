@@ -1894,6 +1894,15 @@ internal fun OkouApp(
                                                     projectId = it.projectId,
                                                 )
                                             }
+                                            var followup by
+                                                remember(composerTarget) {
+                                                    mutableStateOf<String?>(null)
+                                                }
+                                            val canEdit =
+                                                composerTarget != null &&
+                                                    pendingNewChat == null &&
+                                                    composer != null &&
+                                                    controls != null
                                             ConversationRoute(
                                                 chats.history,
                                                 target.id,
@@ -1905,6 +1914,9 @@ internal fun OkouApp(
                                                 stopPlacement = stopPlacement,
                                                 queueOpen = queueOpen,
                                                 dismissQueue = { queueOpen = false },
+                                                onFollowup =
+                                                    if (canEdit) { prompt -> followup = prompt }
+                                                    else null,
                                                 artifactActions =
                                                     if (chatArtifacts == null || thread == null)
                                                         null
@@ -1996,6 +2008,8 @@ internal fun OkouApp(
                                                         composer,
                                                         composerTarget,
                                                         offline = list.offline,
+                                                        followup = followup,
+                                                        onFollowupInserted = { followup = null },
                                                         connectorOptions =
                                                             connectors?.chatOptions.takeIf {
                                                                 canOpenConnectors

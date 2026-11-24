@@ -39,6 +39,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,6 +62,8 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -76,6 +79,8 @@ internal fun ChatComposerField(
     target: ComposerTarget,
     modifier: Modifier = Modifier,
     offline: Boolean = false,
+    followup: String? = null,
+    onFollowupInserted: () -> Unit = {},
     beforeSend: () -> Unit = {},
     connectorOptions: ChatConnectorOptions? = null,
     manageConnectors: (ConnectorAccountTarget?) -> Unit = {},
@@ -113,6 +118,17 @@ internal fun ChatComposerField(
         else maxOf(minimumTextHeight, (window.height * 0.3f).dp.coerceIn(48.dp, 160.dp))
     var inputFocused by remember { mutableStateOf(false) }
     val editorFocus = remember(target.key) { FocusRequester() }
+    val latestInput by rememberUpdatedState(input)
+    val hasDraft = state.journal != null
+    LaunchedEffect(target, followup, hasDraft) {
+        if (followup == null || !hasDraft) return@LaunchedEffect
+        val editor = latestInput
+        val updated = insertConversationFollowup(editor.value.text, followup)
+        editor.edit(updated)
+        if (updated.text != editor.value.text) model.edit(target, updated.text)
+        onFollowupInserted()
+        editorFocus.requestFocus()
+    }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(model, target, lifecycle) {
         fun open() {
@@ -252,6 +268,17 @@ internal fun ChatComposerField(
             }
         }
     }
+}
+
+internal fun insertConversationFollowup(text: String, prompt: String): TextFieldValue {
+    var start = 0
+    for (line in text.splitToSequence('\n')) {
+        if (line == prompt) return TextFieldValue(text, TextRange(start, start + line.length))
+        start += line.length + 1
+    }
+    val separator = if (text.isEmpty() || text.endsWith('\n')) "" else "\n"
+    val result = text + separator + prompt
+    return TextFieldValue(result, TextRange(result.length))
 }
 
 internal val ChatComposerTopInset = 4.dp
