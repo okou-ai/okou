@@ -19,7 +19,7 @@ export interface MemberMemoryHead {
   readonly versionId: string;
   readonly s3Key: string;
   readonly archiveSize: number;
-  readonly fileCount: number;
+  readonly isEmpty: boolean;
   readonly archiveCache: SelectedStoragePresignedUrlCacheRow | null;
 }
 
@@ -32,7 +32,7 @@ export const memberMemoryHeadFields = Object.freeze({
     versionId: memoryVersions.id,
     s3Key: memoryVersions.objectPrefix,
     archiveSize: memoryVersions.archiveSize,
-    fileCount: memoryVersions.fileCount,
+    isEmpty: eq(memoryVersions.fileCount, 0).mapWith(pgBooleanDecoder),
   },
   archiveCache: {
     cacheKey: systemStoragePresignedUrlCache.cacheKey,
