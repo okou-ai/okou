@@ -213,6 +213,10 @@ test("resolve authenticated artifact sources through publication, navigation and
       .click();
     return page.getByRole("menu");
   };
+  const dismissMenu = async () => {
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("menu")).toHaveCount(0);
+  };
   const requireLink = async (container: Locator, href: string) => {
     const item = container.getByRole("menuitem", {
       name: "View creation source",
@@ -450,13 +454,13 @@ test("resolve authenticated artifact sources through publication, navigation and
       .click();
     await requireLink(page.getByRole("menu"), originalHref);
     await screenshot("presentation-source-sidebar");
-    await page.keyboard.press("Escape");
+    await dismissMenu();
     const fileMenu = await menu(fileId);
     await requireLink(fileMenu, `/chats/${first.threadId}`);
-    await page.keyboard.press("Escape");
+    await dismissMenu();
 
     await requireLink(await menu(sharedId), `/chats/${first.threadId}`);
-    await page.keyboard.press("Escape");
+    await dismissMenu();
     await page
       .locator(`tr[data-artifact-id="${importedId}"]`)
       .locator("[data-artifact-open]")
@@ -481,7 +485,7 @@ test("resolve authenticated artifact sources through publication, navigation and
       importedMenu.getByRole("menuitem", { name: "Delete", exact: true }),
     ).not.toHaveAttribute("aria-disabled", "true");
     await screenshot("standalone-source-neutral-sidebar");
-    await page.keyboard.press("Escape");
+    await dismissMenu();
 
     const second = await publish(2);
     expect(second.threadId).not.toBe(first.threadId);
@@ -506,7 +510,7 @@ test("resolve authenticated artifact sources through publication, navigation and
     await page.goto(new URL("/artifacts", appUrl).href);
     await requireLink(await menu(websiteId), originalHref);
     await screenshot("source-retained-after-redeployment");
-    await page.keyboard.press("Escape");
+    await dismissMenu();
     expect(
       (await request(`/api/chat-threads/${first.threadId}`, "DELETE")).status(),
     ).toBe(204);
