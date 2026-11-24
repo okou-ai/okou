@@ -593,22 +593,6 @@ internal fun OkouApp(
             navigation.copy(target = WorkspaceTarget.List, search = search, messageSequence = null)
     }
 
-    val visibleConversationId =
-        thread?.id?.takeIf {
-            settings == null &&
-                !showWorkflows &&
-                !showingConnectors &&
-                !showArtifacts &&
-                resourcesId == null &&
-                inlineArtifactLink == null &&
-                !showingFind &&
-                (listWidth != null || !searchActive)
-        }
-    val conversationSnackbar = remember(chats) { SnackbarHostState() }
-    LaunchedEffect(visibleConversationId) {
-        conversationNavigationErrors.removeAll { it.threadId != visibleConversationId }
-    }
-    val showWorkflowFeedback = showWorkflows && workflowRoute.id != null
     val visibleThread = thread?.takeIf {
         settings == null && !showWorkflows && !showArtifacts && (!searchActive || listWidth != null)
     }
@@ -622,34 +606,6 @@ internal fun OkouApp(
     val renameFocus = renamePresentation?.focusReturn
     fun finishRenameFocus(request: WorkspaceRenameTarget) {
         renamePresentation?.finishFocus(request)
-    }
-    if (renameFocus != null) {
-        val originVisible =
-            when (renameFocus) {
-                is WorkspaceRenameTarget.Chat ->
-                    if (renameFocus.fromConversation) visibleConversationId == renameFocus.id
-                    else showChatList
-                is WorkspaceRenameTarget.Project -> showChatList
-            }
-        if (!originVisible) LaunchedEffect(renameFocus) { finishRenameFocus(renameFocus) }
-    }
-    if (chats != null) {
-        WorkspaceChatFeedback(
-            chats,
-            listState,
-            snackbar,
-            conversationSnackbar,
-            showChatList,
-            visibleConversationId,
-            navigationError =
-                conversationNavigationErrors.firstOrNull { it.threadId == visibleConversationId },
-            dismissNavigationError = { conversationNavigationErrors.remove(it) },
-            showWorkflowFeedback,
-            confirmingProjectDelete = confirmingProjectDelete,
-            dismissProjectDelete = { confirmingProjectDelete = null },
-            renameEditor = renameEditor,
-            dismissRename = { renamePresentation?.dismiss(it) },
-        )
     }
 
     fun openConversation(
@@ -1282,6 +1238,55 @@ internal fun OkouApp(
         else null
     val conversationMissing = runActions?.confirmed?.phase == HistoryPhase.Missing
     val actionableThread = thread.takeUnless { conversationMissing }
+    val visibleConversationId =
+        actionableThread?.id?.takeIf {
+            settings == null &&
+                !showWorkflows &&
+                !showingConnectors &&
+                !showArtifacts &&
+                resourcesId == null &&
+                inlineArtifactLink == null &&
+                !showingFind &&
+                (listWidth != null || !searchActive)
+        }
+    val conversationSnackbar = remember(chats) { SnackbarHostState() }
+    if (visibleConversationId != null) {
+        DisposableEffect(chats, visibleConversationId) {
+            onDispose {
+                // The destination can already have its own navigation error.
+                conversationNavigationErrors.removeAll { it.threadId == visibleConversationId }
+            }
+        }
+    }
+    if (renameFocus != null) {
+        val originVisible =
+            when (renameFocus) {
+                is WorkspaceRenameTarget.Chat ->
+                    if (renameFocus.fromConversation) visibleConversationId == renameFocus.id
+                    else showChatList
+                is WorkspaceRenameTarget.Project -> showChatList
+            }
+        if (!originVisible) LaunchedEffect(renameFocus) { finishRenameFocus(renameFocus) }
+    }
+    if (chats != null) {
+        WorkspaceChatFeedback(
+            chats,
+            listState,
+            snackbar,
+            conversationSnackbar,
+            showChatList,
+            visibleConversationId,
+            navigationError =
+                conversationNavigationErrors.firstOrNull { it.threadId == visibleConversationId },
+            dismissNavigationError = { conversationNavigationErrors.remove(it) },
+            showWorkflowFeedback = showWorkflows && workflowRoute.id != null,
+            confirmingProjectDelete = confirmingProjectDelete,
+            dismissProjectDelete = { confirmingProjectDelete = null },
+            renameEditor = renameEditor,
+            dismissRename = { renamePresentation?.dismiss(it) },
+        )
+    }
+
     val queueCount = runActions?.takeUnless { conversationMissing }?.presentation?.queue?.size ?: 0
     LaunchedEffect(conversationMissing) {
         if (conversationMissing) queueOpen = false
