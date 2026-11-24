@@ -307,6 +307,8 @@ class ScreenshotScenario {
                         }
                     }
                     device.executeShellCommand("wm size 240x760")
+                    // The conversation remains open after the wide search closes.
+                    get(control(R.string.back)).click()
                     device.awaitChatList(localized)
                     get(control(R.string.chat_search_workspace)).click()
                     get(editText().focused(true)).text = "发布"
