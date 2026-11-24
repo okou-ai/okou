@@ -91,17 +91,22 @@ extension XCTestCase {
       line: line, message: message(), predicate)
   }
 
-  /// Waits for a predicate over a conversation's transcript: confirmed history, pending
-  /// messages, streamed output and the items they project.
+  /// Waits for a predicate over a conversation's graph state: its transcript (confirmed
+  /// history, pending messages, streamed output and their items) and its composer's draft.
   func waitForBusinessResult(
     watching conversation: ConversationStore,
     timeout: TimeInterval = 3, file: StaticString = #filePath, line: UInt = #line,
     message: @autoclosure () -> String = "",
     _ predicate: @escaping @MainActor () -> Bool
   ) async throws {
+    let transcript = conversation.transcript
+    let draft = conversation.composer.presentation
+    let state = Computed { get in
+      ConversationWaitState(transcript: try get(transcript), draft: try get(draft))
+    }
     try await waitForBusinessResult(
-      watching: conversation.transcript, in: conversation.graph, timeout: timeout, file: file,
-      line: line, message: message(), predicate)
+      watching: state, in: conversation.graph, timeout: timeout, file: file, line: line,
+      message: message(), predicate)
   }
 
   func waitForFileRemoval(
@@ -130,4 +135,10 @@ extension XCTestCase {
     await fulfillment(of: [stopped], timeout: 3)
     XCTAssertFalse(FileManager.default.fileExists(atPath: url.path), file: file, line: line)
   }
+}
+
+/// Both graph values a conversation owns, so one waiter wakes for either.
+private struct ConversationWaitState: Equatable {
+  let transcript: ConversationProjection.Value
+  let draft: ComposerDraftPresentation
 }
