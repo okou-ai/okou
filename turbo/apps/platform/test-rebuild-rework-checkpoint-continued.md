@@ -35,13 +35,13 @@ Each row below links the individual frozen registration and rewritten source. In
 
 ### Open nominees
 
-- [browser-session-page-010](src/views/browser-session/__tests__/browser-session-page.bdd.md#browser-session-page-010). The production acquisition returns a suspended browser and null viewer for idle reclamation. That response showed Browser not live and Start browser. An active/null response also failed to show the required unavailable text. The separate historic connection read returning BROWSER_NOT_LIVE has no matching current service path.
-- [browser-session-page-014](src/views/browser-session/__tests__/browser-session-page.bdd.md#browser-session-page-014). The 900×600 viewer and held replacement GET were observed. Input became disabled while the previous live canvas remained visible. Resizing at that point cannot establish a measurement taken while concealed; the original concealment prerequisite remains open.
-- [browser-session-page-024](src/views/browser-session/__tests__/browser-session-page.bdd.md#browser-session-page-024). An initial native session GET denied with the authorization code displayed the correct permission panel. At that visible outcome the deferred lease arrival was still unset. A handler prepared to wait is insufficient evidence of a pending request.
-- [browser-session-page-025](src/views/browser-session/__tests__/browser-session-page.bdd.md#browser-session-page-025). The native GET returns session and connection together. The initial denial produced the permission panel with no lease arrival. The probe cannot isolate an initial connection denial with a concurrent lease.
-- [browser-session-page-034](src/views/browser-session/__tests__/browser-session-page.bdd.md#browser-session-page-034). Same-window reload completed its acquisition and restored usable input while the old renewal was held. At that point the new lease had not arrived. Waiting for it with the older lease unresolved also timed out. Releasing first changes the required order.
-- [browser-session-page-035](src/views/browser-session/__tests__/browser-session-page.bdd.md#browser-session-page-035). The new grant reached its lease while the old HTTP handler still waited. The original request signal was already aborted by that transition. A later denial cannot establish independence from a still-live old lease.
-- [browser-session-page-036](src/views/browser-session/__tests__/browser-session-page.bdd.md#browser-session-page-036). The permission change disabled input during the held grant revalidation. The original lease request signal was already aborted before a late denial could be delivered to the viewer.
+- [browser-session-page-010](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.bdd.md#browser-session-page-010). The production acquisition returns a suspended browser and null viewer for idle reclamation. That response showed Browser not live and Start browser. An active/null response also failed to show the required unavailable text. The separate historic connection read returning BROWSER_NOT_LIVE has no matching current service path.
+- [browser-session-page-014](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.bdd.md#browser-session-page-014). The 900×600 viewer and held replacement GET were observed. Input became disabled while the previous live canvas remained visible. Resizing at that point cannot establish a measurement taken while concealed; the original concealment prerequisite remains open.
+- [browser-session-page-024](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.bdd.md#browser-session-page-024). An initial native session GET denied with the authorization code displayed the correct permission panel. At that visible outcome the deferred lease arrival was still unset. A handler prepared to wait is insufficient evidence of a pending request.
+- [browser-session-page-025](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.bdd.md#browser-session-page-025). The native GET returns session and connection together. The initial denial produced the permission panel with no lease arrival. The probe cannot isolate an initial connection denial with a concurrent lease.
+- [browser-session-page-034](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.bdd.md#browser-session-page-034). Same-window reload completed its acquisition and restored usable input while the old renewal was held. At that point the new lease had not arrived. Waiting for it with the older lease unresolved also timed out. Releasing first changes the required order.
+- [browser-session-page-035](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.bdd.md#browser-session-page-035). The new grant reached its lease while the old HTTP handler still waited. The original request signal was already aborted by that transition. A later denial cannot establish independence from a still-live old lease.
+- [browser-session-page-036](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.bdd.md#browser-session-page-036). The permission change disabled input during the held grant revalidation. The original lease request signal was already aborted before a late denial could be delivered to the viewer.
 
 ## First acceptances in batch 71
 
@@ -91,7 +91,7 @@ Each row below links the individual frozen registration and rewritten source. In
 
 ### browser-session-page-004
 
-[Open GWT](src/views/browser-session/__tests__/browser-session-page.bdd.md#L30) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L346) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L136)
+[Open GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.bdd.md#L30) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L346) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L136)
 
 - Given An active browser has image quality applied at 70.
 - When The user clears the quality field, types 100, and presses Enter after ending composition; then types 0 and blurs the field.
@@ -102,7 +102,7 @@ Each row below links the individual frozen registration and rewritten source. In
 
 ### browser-session-page-006
 
-[Open GWT](src/views/browser-session/__tests__/browser-session-page.bdd.md#L46) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L419) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L158)
+[Open GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.bdd.md#L46) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L419) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L158)
 
 - Given An active browser has the image-quality menu open with Balanced selected at 70.
 - When The user selects Data saver, Sharper, and Balanced, adjusts the slider to its endpoints with End and Home, then edits the field and presses Escape twice.
@@ -113,7 +113,7 @@ Each row below links the individual frozen registration and rewritten source. In
 
 ### browser-session-page-007
 
-[Open GWT](src/views/browser-session/__tests__/browser-session-page.bdd.md#L54) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L474) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L661)
+[Open GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.bdd.md#L54) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L474) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L661)
 
 - Given An active browser has applied image quality 70, and the user has drafted 85 in the numeric field.
 - When The user drags the quality slider to 25 and then 60, releasing at 60.
@@ -124,7 +124,7 @@ Each row below links the individual frozen registration and rewritten source. In
 
 ### browser-session-page-008
 
-[Open GWT](src/views/browser-session/__tests__/browser-session-page.bdd.md#L62) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L523) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L673)
+[Open GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.bdd.md#L62) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L523) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L673)
 
 - Given An active browser has applied quality 70 and its quality slider is being dragged to 25.
 - When The user presses Escape while pointer-move and pointer-up events to 90 are queued during menu dismissal, then reopens the quality menu.
@@ -135,7 +135,7 @@ Each row below links the individual frozen registration and rewritten source. In
 
 ### browser-session-page-009
 
-[Open GWT](src/views/browser-session/__tests__/browser-session-page.bdd.md#L70) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L567) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L195)
+[Open GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.bdd.md#L70) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L567) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L195)
 
 - Given An active browser has applied quality 70, and the user has drafted 85 in the quality field.
 - When The user selects Sharper, switches the image format to PNG, then switches it to JPEG.
@@ -146,7 +146,7 @@ Each row below links the individual frozen registration and rewritten source. In
 
 ### browser-session-page-016
 
-[Open GWT](src/views/browser-session/__tests__/browser-session-page.bdd.md#L126) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L781) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L593)
+[Open GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.bdd.md#L126) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L781) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L593)
 
 - Given A null-URL browser viewer is streaming through a browser runtime, and text input to the old page is pending.
 - When The browser session replaces the runtime identity, the replacement viewer loads, and the user types fresh text.
@@ -157,7 +157,7 @@ Each row below links the individual frozen registration and rewritten source. In
 
 ### browser-session-page-017
 
-[Open GWT](src/views/browser-session/__tests__/browser-session-page.bdd.md#L134) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L873) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L248)
+[Open GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.bdd.md#L134) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L873) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L248)
 
 - Given A healthy viewer is open in window 0 with a provider URL.
 - When The browser session is revalidated and its replacement connection is loading, then the user attempts stale input; after it completes, the user types fresh input.
@@ -168,7 +168,7 @@ Each row below links the individual frozen registration and rewritten source. In
 
 ### browser-session-page-018
 
-[Open GWT](src/views/browser-session/__tests__/browser-session-page.bdd.md#L142) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L873) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L249)
+[Open GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.bdd.md#L142) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L873) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L249)
 
 - Given A healthy viewer is open in window 0 without a provider URL.
 - When The browser session is revalidated and its replacement connection is loading, then the user attempts stale input; after it completes, the user types fresh input.
@@ -179,7 +179,7 @@ Each row below links the individual frozen registration and rewritten source. In
 
 ### browser-session-page-022
 
-[Open GWT](src/views/browser-session/__tests__/browser-session-page.bdd.md#L174) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L1039) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L297)
+[Open GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.bdd.md#L174) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L1039) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L297)
 
 - Given A stopped browser page has an initial address field containing text entered during composition before the browser is restarted.
 - When The user restarts the browser, enters “annual report,” and presses Enter.
@@ -190,7 +190,7 @@ Each row below links the individual frozen registration and rewritten source. In
 
 ### browser-session-page-023
 
-[Open GWT](src/views/browser-session/__tests__/browser-session-page.bdd.md#L182) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L1127) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L700)
+[Open GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.bdd.md#L182) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L1127) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L700)
 
 - Given A browser viewer has an earlier blocked address hint, and chat authorization is renewed while another membership check is pending.
 - When The user submits a new address during the renewed viewer session, then the pending check completes.
@@ -201,7 +201,7 @@ Each row below links the individual frozen registration and rewritten source. In
 
 ### browser-session-page-028
 
-[Open GWT](src/views/browser-session/__tests__/browser-session-page.bdd.md#L222) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L1344) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L235)
+[Open GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.bdd.md#L222) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L1344) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L235)
 
 - Given A healthy viewer is open while its lease renewal is pending.
 - When The renewal is denied for missing authorization.
@@ -212,7 +212,7 @@ Each row below links the individual frozen registration and rewritten source. In
 
 ### browser-session-page-032
 
-[Open GWT](src/views/browser-session/__tests__/browser-session-page.bdd.md#L254) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L1445) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L328)
+[Open GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.bdd.md#L254) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L1445) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L328)
 
 - Given An active browser is denied because chat authorization is disabled.
 - When Chat authorization is restored, then disabled again.
@@ -223,7 +223,7 @@ Each row below links the individual frozen registration and rewritten source. In
 
 ### browser-session-page-037
 
-[Open GWT](src/views/browser-session/__tests__/browser-session-page.bdd.md#L294) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L1632) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L440)
+[Open GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.bdd.md#L294) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L1632) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L440)
 
 - Given A healthy shared browser viewer is open with cached browser permission, and its initial lease renewal is pending.
 - When The renewal is denied, then permission is disabled and re-enabled in a batch.
@@ -234,7 +234,7 @@ Each row below links the individual frozen registration and rewritten source. In
 
 ### browser-session-page-038
 
-[Open GWT](src/views/browser-session/__tests__/browser-session-page.bdd.md#L302) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L1667) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L488)
+[Open GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.bdd.md#L302) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L1667) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L488)
 
 - Given A healthy shared browser viewer is open and a lease renewal fails with a temporary 503 outage.
 - When A later renewal confirms that the browser has expired and the session is suspended.
@@ -245,7 +245,7 @@ Each row below links the individual frozen registration and rewritten source. In
 
 ### browser-session-page-039
 
-[Open GWT](src/views/browser-session/__tests__/browser-session-page.bdd.md#L310) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L1711) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L525)
+[Open GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.bdd.md#L310) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L1711) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L525)
 
 - Given A mounted browser panel is usable and its lease renewal receives a transient HTTP 502 failure.
 - When The panel recovers and renews its lease again.
@@ -256,7 +256,7 @@ Each row below links the individual frozen registration and rewritten source. In
 
 ### browser-session-page-045
 
-[Open GWT](src/views/browser-session/__tests__/browser-session-page.bdd.md#L358) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L1826) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L489)
+[Open GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.bdd.md#L358) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L1826) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L489)
 
 - Given A healthy shared browser viewer is open and a lease renewal fails with a temporary capacity error.
 - When The recovery renewal confirms the browser is expired with status 404.
@@ -267,7 +267,7 @@ Each row below links the individual frozen registration and rewritten source. In
 
 ### browser-session-page-050
 
-[Open GWT](src/views/browser-session/__tests__/browser-session-page.bdd.md#L398) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L1960) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L542)
+[Open GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.bdd.md#L398) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L1960) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L542)
 
 - Given A browser viewer is open with its native window at primary window 0 and a lease renewal is pending.
 - When The renewal responds with status 200 after the browser's window changes to primary window 1.
@@ -278,7 +278,7 @@ Each row below links the individual frozen registration and rewritten source. In
 
 ### browser-session-page-053
 
-[Open GWT](src/views/browser-session/__tests__/browser-session-page.bdd.md#L422) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L2015) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L732)
+[Open GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.bdd.md#L422) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L2015) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L732)
 
 - Given A browser viewer has suffered a transient lease failure and a replacement browser connection is being loaded.
 - When A late renewal reports the original session after the replacement has a different instance ID.
@@ -289,7 +289,7 @@ Each row below links the individual frozen registration and rewritten source. In
 
 ### browser-session-page-055
 
-[Open GWT](src/views/browser-session/__tests__/browser-session-page.bdd.md#L438) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L2110) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L798)
+[Open GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.bdd.md#L438) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx#L2110) · [Passing test](src/views/browser-session/__tests__/browser-session-page.test.tsx#L798)
 
 - Given A browser viewer is open and a transient lease failure has occurred; its renewal for the current chat is pending.
 - When The user navigates to a different chat.
@@ -300,7 +300,7 @@ Each row below links the individual frozen registration and rewritten source. In
 
 ### browser-viewer-interaction-002
 
-[Open GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L14) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L159) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L80)
+[Open GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L14) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L159) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L80)
 
 - Given The user has typed draft.example/path and placed the caret after its second character while the page is at https://example.com.
 - When The selected page's membership refreshes; while it is pending, the user types x and submits, then releases the refresh and submits again.
@@ -311,7 +311,7 @@ Each row below links the individual frozen registration and rewritten source. In
 
 ### browser-viewer-interaction-003
 
-[Open GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L22) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L195) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L92)
+[Open GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L22) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L195) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L92)
 
 - Given The user has entered native-admission.example/path while the browser is connected to https://example.com.
 - When The page's membership refresh is held pending and the user submits the address.
@@ -322,7 +322,7 @@ Each row below links the individual frozen registration and rewritten source. In
 
 ### browser-viewer-interaction-015
 
-[Open GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L118) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L526) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L139)
+[Open GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L118) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L526) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L139)
 
 - Given Window 0 contains the Example page and window 1 contains the Other page.
 - When The user closes the last tab in window 0.
@@ -333,7 +333,7 @@ Each row below links the individual frozen registration and rewritten source. In
 
 ### browser-viewer-interaction-021
 
-[Open GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L166) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L672) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L185)
+[Open GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L166) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L672) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L185)
 
 - Given A blank tab exists alongside the Example page, and the blank tab's first image is delayed.
 - When The user selects the blank tab and waits for its first image, then releases the image and navigates to https://new.example.com/page.
@@ -344,7 +344,7 @@ Each row below links the individual frozen registration and rewritten source. In
 
 ### browser-viewer-interaction-028
 
-[Open GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L222) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L881) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L200)
+[Open GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L222) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L881) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L200)
 
 - Given Other is available in a multi-tab viewer, and its first image has not arrived.
 - When The user selects Other while its first image is delayed.
@@ -355,7 +355,7 @@ Each row below links the individual frozen registration and rewritten source. In
 
 ### browser-viewer-interaction-031
 
-[Open GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L246) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L971) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L100)
+[Open GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L246) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L971) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L100)
 
 - Given The viewer uses fallback frame decoding, and the current page is https://example.com.
 - When The user enters example.test/path and submits it.
@@ -366,7 +366,7 @@ Each row below links the individual frozen registration and rewritten source. In
 
 ### browser-viewer-interaction-038
 
-[Open GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L302) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1126) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L120)
+[Open GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L302) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1126) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L120)
 
 - Given The Example page is selected in the viewer.
 - When Another page moves into the same browser window while its membership check is pending, then the check completes.
@@ -400,7 +400,7 @@ After authorship, normalized four-line windows from the changed portions of the 
 
 ### browser-domain-initialization-001
 
-[Nominee GWT](src/views/browser-session/__tests__/browser-domain-initialization.bdd.md#L6) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L133) · [Passing registration](src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L67)
+[Nominee GWT](https://github.com/okou-ai/okou/blob/6d74f8001914677e20aca3fea5ed28c3858672de/turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.bdd.md#L6) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L133) · [Passing registration](src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L67)
 
 - Given The viewer is connecting its Inspector and Page domains, with the Inspector response arriving first.
 - When The Inspector response arrives while the Page response is still pending, then the Page response arrives.
@@ -411,7 +411,7 @@ After authorship, normalized four-line windows from the changed portions of the 
 
 ### browser-domain-initialization-003
 
-[Nominee GWT](src/views/browser-session/__tests__/browser-domain-initialization.bdd.md#L22) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L150) · [Passing registration](src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L77)
+[Nominee GWT](https://github.com/okou-ai/okou/blob/6d74f8001914677e20aca3fea5ed28c3858672de/turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.bdd.md#L22) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L150) · [Passing registration](src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L77)
 
 - Given The Inspector domain enable request fails while the Page response is held pending.
 - When The Inspector failure arrives, followed by the late Page response.
@@ -422,7 +422,7 @@ After authorship, normalized four-line windows from the changed portions of the 
 
 ### browser-domain-initialization-005
 
-[Nominee GWT](src/views/browser-session/__tests__/browser-domain-initialization.bdd.md#L38) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L173) · [Passing registration](src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L107)
+[Nominee GWT](https://github.com/okou-ai/okou/blob/6d74f8001914677e20aca3fea5ed28c3858672de/turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.bdd.md#L38) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L173) · [Passing registration](src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L107)
 
 - Given The initial tab is selected while the Inspector domain enable request is pending.
 - When The user selects the “Other” tab before that request responds.
@@ -433,7 +433,7 @@ After authorship, normalized four-line windows from the changed portions of the 
 
 ### browser-domain-initialization-007
 
-[Nominee GWT](src/views/browser-session/__tests__/browser-domain-initialization.bdd.md#L54) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L192) · [Passing registration](src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L118)
+[Nominee GWT](https://github.com/okou-ai/okou/blob/6d74f8001914677e20aca3fea5ed28c3858672de/turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.bdd.md#L54) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L192) · [Passing registration](src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L118)
 
 - Given The first owned tab is selected while Inspector enable is pending, and another owned tab survives.
 - When The first target is destroyed before the pending response arrives.
@@ -444,7 +444,7 @@ After authorship, normalized four-line windows from the changed portions of the 
 
 ### browser-domain-initialization-009
 
-[Nominee GWT](src/views/browser-session/__tests__/browser-domain-initialization.bdd.md#L70) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L212) · [Passing registration](src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L125)
+[Nominee GWT](https://github.com/okou-ai/okou/blob/6d74f8001914677e20aca3fea5ed28c3858672de/turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.bdd.md#L70) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L212) · [Passing registration](src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L125)
 
 - Given Inspector enable is pending for a viewer with two owned tabs and a sibling tab in another window.
 - When The owned window is removed, then the pending response arrives.
@@ -455,7 +455,7 @@ After authorship, normalized four-line windows from the changed portions of the 
 
 ### browser-domain-initialization-011
 
-[Nominee GWT](src/views/browser-session/__tests__/browser-domain-initialization.bdd.md#L86) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L233) · [Passing registration](src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L137)
+[Nominee GWT](https://github.com/okou-ai/okou/blob/6d74f8001914677e20aca3fea5ed28c3858672de/turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.bdd.md#L86) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L233) · [Passing registration](src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L137)
 
 - Given Inspector enable is pending while the viewer is mounted.
 - When The viewer is unmounted before the response arrives.
@@ -466,7 +466,7 @@ After authorship, normalized four-line windows from the changed portions of the 
 
 ### browser-domain-initialization-013
 
-[Nominee GWT](src/views/browser-session/__tests__/browser-domain-initialization.bdd.md#L102) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L251) · [Passing registration](src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L153)
+[Nominee GWT](https://github.com/okou-ai/okou/blob/6d74f8001914677e20aca3fea5ed28c3858672de/turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.bdd.md#L102) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L251) · [Passing registration](src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L153)
 
 - Given Inspector enable is pending in the current connection mode.
 - When The user switches to “Separate image connection” before the response arrives.
@@ -477,7 +477,7 @@ After authorship, normalized four-line windows from the changed portions of the 
 
 ### browser-viewer-interaction-005
 
-[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L38) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L271) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L296)
+[Nominee GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L38) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L271) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L296)
 
 - Given The user has replaced the address with discarded.example/path.
 - When The user presses Escape, then the document navigates to https://background.example/ while the address remains focused.
@@ -488,7 +488,7 @@ After authorship, normalized four-line windows from the changed portions of the 
 
 ### browser-viewer-interaction-008
 
-[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L62) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L322) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L313)
+[Nominee GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L62) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L322) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L313)
 
 - Given A new-tab creation is pending, and the user has focused the blank address editor without changing its text.
 - When The creation fails after the new target moves to another window.
@@ -499,7 +499,7 @@ After authorship, normalized four-line windows from the changed portions of the 
 
 ### browser-viewer-interaction-011
 
-[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L86) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L385) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L324)
+[Nominee GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L86) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L385) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L324)
 
 - Given A new-tab creation is pending from a page at https://example.com.
 - When The user enters retained.example/path, the creation fails after its target moves to another window, and the user submits the retained draft.
@@ -510,7 +510,7 @@ After authorship, normalized four-line windows from the changed portions of the 
 
 ### browser-viewer-interaction-012
 
-[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L94) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L419) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L342)
+[Nominee GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L94) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L419) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L342)
 
 - Given The window has no open tabs, and a new-tab creation is pending.
 - When The user enters failed-intent.example/path, the creation fails, and a different tab arrives in the window.
@@ -521,7 +521,7 @@ After authorship, normalized four-line windows from the changed portions of the 
 
 ### browser-viewer-interaction-013
 
-[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L102) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L453) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L370)
+[Nominee GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L102) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L453) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L370)
 
 - Given A viewer is open with an existing page in window 0 and a new-tab creation can be delayed.
 - When The user creates a tab, enters draft.example/path and submits before creation is ready, waits for the blank tab's first image, then closes that tab.
@@ -532,7 +532,7 @@ After authorship, normalized four-line windows from the changed portions of the 
 
 ### browser-viewer-interaction-014
 
-[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L110) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L453) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L370)
+[Nominee GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L110) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L453) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L370)
 
 - Given A viewer is open with an existing page in window 1 and a new-tab creation can be delayed.
 - When The user creates a tab, enters draft.example/path and submits before creation is ready, waits for the blank tab's first image, then closes that tab.
@@ -543,7 +543,7 @@ After authorship, normalized four-line windows from the changed portions of the 
 
 ### browser-viewer-interaction-017
 
-[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L134) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L569) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L597)
+[Nominee GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L134) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L569) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L597)
 
 - Given The Example page is the established tab in window 0, and a separate new-tab creation is pending.
 - When The user closes Example, then closes the confirmed blank replacement before the pending creation finishes.
@@ -554,7 +554,7 @@ After authorship, normalized four-line windows from the changed portions of the 
 
 ### browser-viewer-interaction-018
 
-[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L142) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L604) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L402)
+[Nominee GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L142) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L604) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L402)
 
 - Given Example is the last tab in its window.
 - When The user closes it while navigation preparing its blank replacement is pending.
@@ -565,7 +565,7 @@ After authorship, normalized four-line windows from the changed portions of the 
 
 ### browser-viewer-interaction-019
 
-[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L150) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L623) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L640)
+[Nominee GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L150) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L623) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L640)
 
 - Given Example and Other are both in window 0.
 - When The user starts closing both tabs before either remote close completes.
@@ -576,7 +576,7 @@ After authorship, normalized four-line windows from the changed portions of the 
 
 ### browser-viewer-interaction-022
 
-[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L174) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L709) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L417)
+[Nominee GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L174) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L709) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L417)
 
 - Given A new-tab creation is pending while the Example page is selected.
 - When The user selects Other, edits its address to later-choice.example/draft, and then the creation completes.
@@ -587,7 +587,7 @@ After authorship, normalized four-line windows from the changed portions of the 
 
 ### browser-viewer-interaction-023
 
-[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L182) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L747) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L437)
+[Nominee GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L182) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L747) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L437)
 
 - Given A new-tab creation is pending and the user opens and dismisses Browser settings.
 - When The creation completes and the new tab's first image arrives.
@@ -598,7 +598,7 @@ After authorship, normalized four-line windows from the changed portions of the 
 
 ### browser-viewer-interaction-026
 
-[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L206) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L838) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L456)
+[Nominee GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L206) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L838) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L456)
 
 - Given A new-tab creation is pending, and the user has not interacted with the automatically focused blank address.
 - When The creation completes and the new tab's document navigates first to https://first.example/ and then https://second.example/.
@@ -609,7 +609,7 @@ After authorship, normalized four-line windows from the changed portions of the 
 
 ### browser-viewer-interaction-027
 
-[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L214) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L838) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L456)
+[Nominee GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L214) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L838) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L456)
 
 - Given A new-tab creation is pending, and the user has interacted with the automatically focused blank address before creation completes.
 - When The creation completes and the new tab's document navigates first to https://first.example/ and then https://second.example/.
@@ -620,7 +620,7 @@ After authorship, normalized four-line windows from the changed portions of the 
 
 ### browser-viewer-interaction-030
 
-[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L238) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L919) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L724)
+[Nominee GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L238) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L919) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L724)
 
 - Given The user creates a new tab, and the created blank tab's first image is delayed.
 - When The first image fails, then connection recovery runs.
@@ -631,7 +631,7 @@ After authorship, normalized four-line windows from the changed portions of the 
 
 ### browser-viewer-interaction-032
 
-[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L254) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L984) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L480)
+[Nominee GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L254) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L984) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L480)
 
 - Given The user has submitted submitted.example/path, and page navigation is still pending.
 - When The user uses the keyboard to move the caret after the second character before navigation completes.
@@ -642,7 +642,7 @@ After authorship, normalized four-line windows from the changed portions of the 
 
 ### browser-viewer-interaction-034
 
-[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L270) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L984) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L480)
+[Nominee GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L270) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L984) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L480)
 
 - Given The user has submitted submitted.example/path, and page navigation is still pending.
 - When The user starts text composition with the caret after the second character before navigation completes.
@@ -653,7 +653,7 @@ After authorship, normalized four-line windows from the changed portions of the 
 
 ### browser-viewer-interaction-035
 
-[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L278) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1031) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L480)
+[Nominee GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L278) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1031) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L480)
 
 - Given The user has submitted submitted.example/path, and page navigation is still pending.
 - When The user moves focus to Browser settings, dismisses it, refocuses the address, and places the caret after the second character before navigation completes.
@@ -664,7 +664,7 @@ After authorship, normalized four-line windows from the changed portions of the 
 
 ### browser-viewer-interaction-037
 
-[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L294) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1089) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L524)
+[Nominee GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L294) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1089) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L524)
 
 - Given A first address navigation has been sent but its receipt is still pending.
 - When The user submits a second address, then the first navigation receipt arrives and the user retries.
@@ -675,7 +675,7 @@ After authorship, normalized four-line windows from the changed portions of the 
 
 ### browser-viewer-interaction-042
 
-[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L334) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1233) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L663)
+[Nominee GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L334) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1233) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L663)
 
 - Given Other is selected for attachment, and its attachment response is pending when it moves out of the assigned window.
 - When The native connection closes, then the late attachment response arrives.
@@ -686,7 +686,7 @@ After authorship, normalized four-line windows from the changed portions of the 
 
 ### browser-viewer-interaction-043
 
-[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L342) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1276) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L544)
+[Nominee GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L342) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1276) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L544)
 
 - Given The assigned browser window has no open tabs.
 - When The user creates a new tab.
@@ -697,7 +697,7 @@ After authorship, normalized four-line windows from the changed portions of the 
 
 ### browser-viewer-interaction-048
 
-[Substitute GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L382) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1409) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L713)
+[Substitute GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L382) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1409) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L713)
 
 - Given A new-tab creation receipt is pending.
 - When Another caller moves the created page to a different window before the receipt is released.
@@ -708,7 +708,7 @@ After authorship, normalized four-line windows from the changed portions of the 
 
 ### browser-viewer-interaction-165
 
-[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L1318) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L4951) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L555)
+[Nominee GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L1318) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L4951) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L555)
 
 - Given The browser viewer is open with image format settings available.
 - When The user selects PNG as the image format.
@@ -719,7 +719,7 @@ After authorship, normalized four-line windows from the changed portions of the 
 
 ### browser-viewer-interaction-166
 
-[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L1326) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L4975) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L575)
+[Nominee GWT](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L1326) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L4975) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L575)
 
 - Given The browser viewer is open and the panel display area measures 900 by 600 pixels.
 - When The panel is followed by the remote browser.
@@ -757,7 +757,7 @@ Compared 1,794 unique historical blobs from 757 paths, including renamed paths a
 
 ### browser-domain-initialization-014
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-domain-initialization.bdd.md#L110) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L273) · [Passing test](src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L173)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/6d74f8001914677e20aca3fea5ed28c3858672de/turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.bdd.md#L110) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L273) · [Passing test](src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L173)
 
 - Given Page enable is pending when the browser connection is lost.
 - When The viewer reconnects and then the old pending response arrives.
@@ -768,7 +768,7 @@ Compared 1,794 unique historical blobs from 757 paths, including renamed paths a
 
 ### browser-viewer-interaction-049
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L390) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1409) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L761)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L390) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1409) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L761)
 
 - Given A new-tab creation receipt is pending.
 - When Another caller starts navigation of the created page before the receipt is released.
@@ -779,7 +779,7 @@ Compared 1,794 unique historical blobs from 757 paths, including renamed paths a
 
 ### browser-viewer-interaction-050
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L398) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1448) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L801)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L398) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1448) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L801)
 
 - Given The assigned browser contains the Example page.
 - When The user creates a new tab while native tab metadata is updated before the fresh tab read.
@@ -790,7 +790,7 @@ Compared 1,794 unique historical blobs from 757 paths, including renamed paths a
 
 ### browser-viewer-interaction-052
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L414) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1468) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L761)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L414) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1468) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L761)
 
 - Given A new page is being attached and the Browser.getWindowForTarget membership check is delayed.
 - When Another caller starts navigation of that page before the check completes.
@@ -801,7 +801,7 @@ Compared 1,794 unique historical blobs from 757 paths, including renamed paths a
 
 ### browser-viewer-interaction-058
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L462) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1601) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L815)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L462) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1601) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L815)
 
 - Given The address field is open in the remote browser viewer.
 - When The user submits mailto:user@example.com.
@@ -812,7 +812,7 @@ Compared 1,794 unique historical blobs from 757 paths, including renamed paths a
 
 ### browser-viewer-interaction-059
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L470) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1614) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1212)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L470) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1614) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1212)
 
 - Given The remote page's focused editing context changes among search, email, URL, telephone, number, textarea, and password fields.
 - When The user requests updated keyboard hints, then starts composing text while the remote context changes again.
@@ -823,7 +823,7 @@ Compared 1,794 unique historical blobs from 757 paths, including renamed paths a
 
 ### browser-viewer-interaction-060
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L478) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1734) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1265)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L478) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1734) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1265)
 
 - Given The remote page has a password field with numeric input, a Done hint, and Japanese language; the user is composing 中.
 - When The native page title and tab metadata update during composition, then composition ends.
@@ -834,7 +834,7 @@ Compared 1,794 unique historical blobs from 757 paths, including renamed paths a
 
 ### browser-viewer-interaction-066
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L526) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1969) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1291)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L526) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1969) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1291)
 
 - Given The remote input has stale editing hints, and the next editing-context read fails.
 - When The user requests refreshed hints and then enters fresh text.
@@ -845,7 +845,7 @@ Compared 1,794 unique historical blobs from 757 paths, including renamed paths a
 
 ### browser-viewer-interaction-071
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L566) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2265) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1052)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L566) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2265) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1052)
 
 - Given The user is composing “old” text in one browser tab while the composition update is pending, then commits it, submits Enter, and requests backward deletion. A second tab is selected before the pending update completes.
 - When The user enters “fresh” text in the replacement tab and requests backward deletion there.
@@ -856,7 +856,7 @@ Compared 1,794 unique historical blobs from 757 paths, including renamed paths a
 
 ### browser-viewer-interaction-072
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L574) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2339) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1083)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L574) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2339) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1083)
 
 - Given The user is composing “中国” in the remote browser input and deletes backward within the active composition, leaving “中”. The composition is then committed, followed by a backward deletion and fresh text entry.
 - When The input events are processed by the browser.
@@ -867,7 +867,7 @@ Compared 1,794 unique historical blobs from 757 paths, including renamed paths a
 
 ### browser-viewer-interaction-073
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L582) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2424) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1111)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L582) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2424) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1111)
 
 - Given The user focuses the remote browser input while keyboard metadata is still pending.
 - When The user composes and confirms “中”.
@@ -878,7 +878,7 @@ Compared 1,794 unique historical blobs from 757 paths, including renamed paths a
 
 ### browser-viewer-interaction-074
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L590) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2475) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1132)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L590) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2475) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1132)
 
 - Given The user is composing “old” in the remote browser input when the browser reports that execution contexts were cleared without a payload.
 - When The old composition ends, then the user focuses the input again and enters “fresh” as ordinary text.
@@ -889,7 +889,7 @@ Compared 1,794 unique historical blobs from 757 paths, including renamed paths a
 
 ### browser-viewer-interaction-075
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L598) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2524) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1379)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L598) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2524) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1379)
 
 - Given The user enters “typed” while a screenshot frame arrives, starting recovery; the original text input and screenshot-capture cleanup are both still pending.
 - When The original input completes before capture cleanup, then capture cleanup completes and recovery advances by one second.
@@ -900,7 +900,7 @@ Compared 1,794 unique historical blobs from 757 paths, including renamed paths a
 
 ### browser-viewer-interaction-076
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L606) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2552) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L824)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L606) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2552) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L824)
 
 - Given Two browser tabs are open, and closing “Other” is pending.
 - When The user focuses the address field and enters “draft.example” before the close completes.
@@ -911,7 +911,7 @@ Compared 1,794 unique historical blobs from 757 paths, including renamed paths a
 
 ### browser-viewer-interaction-078
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L622) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2574) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1309)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L622) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2574) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1309)
 
 - Given Two tabs are open. Closing “Example” fails but remains pending; the user then closes “Other”, which succeeds, leaving “Example” temporarily disabled as the selected tab.
 - When The user focuses the address field and enters “chosen.example/draft”, then the older close failure arrives.
@@ -922,7 +922,7 @@ Compared 1,794 unique historical blobs from 757 paths, including renamed paths a
 
 ### browser-viewer-interaction-079
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L630) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2623) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L840)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L630) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2623) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L840)
 
 - Given The Example tab is selected, and the user moves focus to the Other tab with the right arrow. The Other page is then removed.
 - When The user starts an address draft and the surviving page's title updates.
@@ -933,7 +933,7 @@ Compared 1,794 unique historical blobs from 757 paths, including renamed paths a
 
 ### browser-viewer-interaction-080
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L638) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2658) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L861)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L638) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2658) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L861)
 
 - Given The Example tab is open, and the Other page's live image is delayed.
 - When The user closes Example and the close completes before the Other page image arrives.
@@ -944,7 +944,7 @@ Compared 1,794 unique historical blobs from 757 paths, including renamed paths a
 
 ### browser-viewer-interaction-082
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L654) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2724) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L879)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L654) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2724) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L879)
 
 - Given The Other tab is selected in a viewer with Example and Other tabs.
 - When The page becomes hidden, then visible while the selected tab's image is being refreshed.
@@ -955,7 +955,7 @@ Compared 1,794 unique historical blobs from 757 paths, including renamed paths a
 
 ### browser-viewer-interaction-083
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L662) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2796) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L898)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L662) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2796) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L898)
 
 - Given The browser viewer is open, and stopping its original screen capture is delayed.
 - When The page becomes hidden, then rapidly alternates visible, hidden, and visible before the original capture stop completes.
@@ -966,7 +966,7 @@ Compared 1,794 unique historical blobs from 757 paths, including renamed paths a
 
 ### browser-viewer-interaction-084
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L670) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2837) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1332)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L670) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2837) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1332)
 
 - Given The browser viewer is open, and the original screen-capture stop fails while the page is being hidden.
 - When The page resumes, then recovery is advanced after the viewer reports reconnecting.
@@ -977,7 +977,7 @@ Compared 1,794 unique historical blobs from 757 paths, including renamed paths a
 
 ### browser-viewer-interaction-087
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L694) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2944) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1404)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L694) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2944) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1404)
 
 - Given A browser capture fails because navigation is still in progress, and the capture remains unchanged.
 - When Navigation ends.
@@ -988,7 +988,7 @@ Compared 1,794 unique historical blobs from 757 paths, including renamed paths a
 
 ### browser-viewer-interaction-096
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L766) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3050) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1430)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L766) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3050) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1430)
 
 - Given Automatic image recovery is paused while preparation is in progress.
 - When The viewer is hidden and resumed, then the replacement image and the interrupted preparation complete.
@@ -999,7 +999,7 @@ Compared 1,794 unique historical blobs from 757 paths, including renamed paths a
 
 ### browser-viewer-interaction-098
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L782) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3109) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L918)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L782) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3109) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L918)
 
 - Given The user has entered the local address draft local-draft.example/path.
 - When The viewer is hidden and resumed while its replacement image is pending, and the user submits the address before that image arrives.
@@ -1010,7 +1010,7 @@ Compared 1,794 unique historical blobs from 757 paths, including renamed paths a
 
 ### browser-viewer-interaction-099
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L790) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3147) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1354)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L790) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3147) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1354)
 
 - Given The viewer has an initialized preview, and membership proof for a newly created tab is pending.
 - When The viewer is hidden and resumed, then fresh membership proof and a replacement image arrive.
@@ -1021,7 +1021,7 @@ Compared 1,794 unique historical blobs from 757 paths, including renamed paths a
 
 ### browser-viewer-interaction-100
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L798) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3180) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L946)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L798) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3180) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L946)
 
 - Given A multi-tab viewer is hidden while a document in the background tab navigates to https://background.example/changed.
 - When The viewer resumes, receives the replacement image, and the user submits after-background-navigation.example/ready.
@@ -1032,7 +1032,7 @@ Compared 1,794 unique historical blobs from 757 paths, including renamed paths a
 
 ### browser-viewer-interaction-101
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L806) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3228) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L973)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L806) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3228) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L973)
 
 - Given A multi-tab viewer is resumed and its replacement picture is still pending.
 - When The viewer is hidden and resumed a second time while a new screencast capture is pending.
@@ -1043,7 +1043,7 @@ Compared 1,794 unique historical blobs from 757 paths, including renamed paths a
 
 ### browser-viewer-interaction-103
 
-[Substitute BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L822) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3322) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1456)
+[Substitute BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L822) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3322) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1456)
 
 - Given The browser viewer is initially hidden and its remote input is disabled.
 - When The viewer becomes visible.
@@ -1054,7 +1054,7 @@ Compared 1,794 unique historical blobs from 757 paths, including renamed paths a
 
 ### browser-viewer-interaction-104
 
-[Substitute BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L830) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3337) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1464)
+[Substitute BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L830) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3337) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1464)
 
 - Given The viewer is visible while a browser page is still initializing.
 - When The viewer is hidden and then shown again before initialization finishes.
@@ -1065,7 +1065,7 @@ Compared 1,794 unique historical blobs from 757 paths, including renamed paths a
 
 ### browser-viewer-interaction-105
 
-[Substitute BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L838) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3359) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1478)
+[Substitute BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L838) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3359) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1478)
 
 - Given The viewer is active and the user has an unfinished composition containing 旧.
 - When The viewer is hidden and shown again, the pending composition completes, and the user enters fresh text.
@@ -1076,7 +1076,7 @@ Compared 1,794 unique historical blobs from 757 paths, including renamed paths a
 
 ### browser-viewer-interaction-123
 
-[Substitute BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L982) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3928) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1500)
+[Substitute BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L982) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3928) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1500)
 
 - Given Opening the viewer encounters an ordinary failure in Page.enable.
 - When The viewer initializes.
@@ -1130,7 +1130,7 @@ Additional substitution probes and exact failure controls are preserved in the l
 
 ### browser-automatic-recovery-001
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L6) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L324) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L139)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L6) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L324) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L139)
 
 - Given The selected tab is recovering after a failed image frame, with one image attempt already made.
 - When A frame succeeds and the browser session is revalidated without changing its binding.
@@ -1141,7 +1141,7 @@ Additional substitution probes and exact failure controls are preserved in the l
 
 ### browser-automatic-recovery-003
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L22) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L361) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L197)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L22) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L361) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L197)
 
 - Given The selected tab is recovering after three failed image attempts, and a successful frame arrives near the original recovery deadline while session revalidation is pending.
 - When The original 180-second deadline passes before revalidation completes.
@@ -1152,7 +1152,7 @@ Additional substitution probes and exact failure controls are preserved in the l
 
 ### browser-automatic-recovery-005
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L38) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L430) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L157)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L38) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L430) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L157)
 
 - Given The selected tab is recovering after a successful image frame, and revalidation confirms the browser is suspended with no viewer.
 - When The descriptor update completes.
@@ -1163,7 +1163,7 @@ Additional substitution probes and exact failure controls are preserved in the l
 
 ### browser-automatic-recovery-006
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L46) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L441) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L169)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L46) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L441) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L169)
 
 - Given The selected tab is recovering after one failed image attempt.
 - When A successful image frame coincides with a same-window endpoint replacement and the replacement viewer initializes.
@@ -1174,7 +1174,7 @@ Additional substitution probes and exact failure controls are preserved in the l
 
 ### browser-automatic-recovery-007
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L54) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L441) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L169)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L54) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L441) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L169)
 
 - Given The selected tab is recovering after three failed image attempts.
 - When A successful image frame coincides with a same-window endpoint replacement and the replacement viewer initializes.
@@ -1185,7 +1185,7 @@ Additional substitution probes and exact failure controls are preserved in the l
 
 ### browser-automatic-recovery-011
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L86) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L583) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L244)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L86) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L583) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L244)
 
 - Given A healthy viewer has a selected tab and a sibling whose membership inventory is still pending.
 - When The selected tab and another known tab are destroyed before inventory completes.
@@ -1196,7 +1196,7 @@ Additional substitution probes and exact failure controls are preserved in the l
 
 ### browser-automatic-recovery-012
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L94) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L583) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L244)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L94) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L583) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L244)
 
 - Given A recovering viewer has a selected tab and a sibling whose membership inventory is still pending.
 - When The selected tab and another known tab are destroyed before inventory completes.
@@ -1207,7 +1207,7 @@ Additional substitution probes and exact failure controls are preserved in the l
 
 ### browser-automatic-recovery-013
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L102) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L642) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L278)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L102) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L642) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L278)
 
 - Given Image recovery has been exhausted and reported, with no pending tab inventory.
 - When The remaining tabs are closed and the user creates a new tab after the empty state appears.
@@ -1218,7 +1218,7 @@ Additional substitution probes and exact failure controls are preserved in the l
 
 ### browser-automatic-recovery-014
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L110) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L642) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L244)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L110) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L642) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L244)
 
 - Given Image recovery has been exhausted and reported, and a new sibling tab has been created while its membership inventory is pending.
 - When The remaining tabs are closed, inventory completes, and the user creates a new tab.
@@ -1229,7 +1229,7 @@ Additional substitution probes and exact failure controls are preserved in the l
 
 ### browser-automatic-recovery-017
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L134) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L755) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L286)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L134) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L755) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L286)
 
 - Given Image recovery has been exhausted and its failure reported once.
 - When The user selects another tab whose initialization fails with an unsupported Page.enable capability error, then reconnects.
@@ -1240,7 +1240,7 @@ Additional substitution probes and exact failure controls are preserved in the l
 
 ### browser-automatic-recovery-021
 
-[Substitute BDD](src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L166) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L932) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L336)
+[Substitute BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L166) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L932) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L336)
 
 - Given Image recovery is underway while creation of a new tab is pending.
 - When The selected recovery target moves to another window and tab creation completes.
@@ -1251,7 +1251,7 @@ Additional substitution probes and exact failure controls are preserved in the l
 
 ### browser-automatic-recovery-033
 
-[Substitute BDD](src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L262) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L1272) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L420)
+[Substitute BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L262) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L1272) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L420)
 
 - Given The user has selected a scoped sibling tab when the browser connection drops.
 - When Automatic recovery encounters two transient descriptor failures, then receives a successful descriptor.
@@ -1262,7 +1262,7 @@ Additional substitution probes and exact failure controls are preserved in the l
 
 ### browser-automatic-recovery-038
 
-[Substitute BDD](src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L302) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L1470) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L356)
+[Substitute BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L302) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L1470) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L356)
 
 - Given The original browser tab is selected and its picture is visible.
 - When The user selects another tab before its first frame arrives.
@@ -1273,7 +1273,7 @@ Additional substitution probes and exact failure controls are preserved in the l
 
 ### browser-automatic-recovery-069
 
-[Substitute BDD](src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L550) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L2349) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L376)
+[Substitute BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L550) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L2349) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L376)
 
 - Given The user has selected the Other tab in the assigned browser window.
 - When The native worker is replaced and automatic recovery runs.
@@ -1284,7 +1284,7 @@ Additional substitution probes and exact failure controls are preserved in the l
 
 ### browser-automatic-recovery-072
 
-[Substitute BDD](src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L574) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L2468) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L393)
+[Substitute BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L574) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L2468) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L393)
 
 - Given The remote browser is ready and a frame is missing.
 - When All three local image recovery attempts fail and the user selects Retry live image.
@@ -1295,7 +1295,7 @@ Additional substitution probes and exact failure controls are preserved in the l
 
 ### browser-automatic-recovery-073
 
-[Substitute BDD](src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L582) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L2500) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L404)
+[Substitute BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L582) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L2500) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L404)
 
 - Given The connected browser loses its two existing targets and disconnects.
 - When Automatic recovery runs with the authoritative window empty.
@@ -1350,7 +1350,7 @@ Additional substitution probes and exact failure controls are preserved in the l
 
 ### browser-viewer-interaction-110
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L878) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3561) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1538)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L878) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3561) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1538)
 
 - Given The user holds Shift on Example, and the original text-input receipt fails.
 - When They switch to Other, edit text there, then return to Example.
@@ -1361,7 +1361,7 @@ Additional substitution probes and exact failure controls are preserved in the l
 
 ### browser-viewer-interaction-113
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L902) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3717) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1567)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L902) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3717) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1567)
 
 - Given The user enters text through an unsupported-only IME composition on Example.
 - When They leave the tab and return to it.
@@ -1372,7 +1372,7 @@ Additional substitution probes and exact failure controls are preserved in the l
 
 ### browser-viewer-interaction-114
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L910) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3725) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1584)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L910) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3725) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1584)
 
 - Given The user enters a composition with mixed IME support on Example.
 - When They leave the tab and return to it.
@@ -1383,7 +1383,7 @@ Additional substitution probes and exact failure controls are preserved in the l
 
 ### browser-viewer-interaction-125
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L998) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3951) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1717)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L998) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3951) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1717)
 
 - Given The viewer uses a separate image connection, and page admission is pending for Other when the frames connection is lost.
 - When Automatic recovery reconnects and Other's image frames become available before the old admission completes.
@@ -1394,7 +1394,7 @@ Additional substitution probes and exact failure controls are preserved in the l
 
 ### browser-viewer-interaction-136
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L1086) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L4236) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1618)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L1086) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L4236) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1618)
 
 - Given The user holds Shift on Example when a background tab-created event triggers membership checking.
 - When The held key is released and the membership check completes, then the user enters a Japanese composition.
@@ -1405,7 +1405,7 @@ Additional substitution probes and exact failure controls are preserved in the l
 
 ### browser-viewer-interaction-141
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L1126) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L4420) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1662)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L1126) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L4420) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1662)
 
 - Given The user has held Shift on the original tab, and input release and capture stop are pending; the input release will succeed.
 - When The user switches to the other tab, then capture stops before input release completes and detachment is confirmed.
@@ -1416,7 +1416,7 @@ Additional substitution probes and exact failure controls are preserved in the l
 
 ### browser-viewer-interaction-142
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L1134) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L4420) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1672)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L1134) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L4420) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1672)
 
 - Given The user has held Shift on the original tab, and input release and capture stop are pending; the input release will fail.
 - When The user switches to the other tab, then capture stops before input release completes and detachment is confirmed.
@@ -1427,7 +1427,7 @@ Additional substitution probes and exact failure controls are preserved in the l
 
 ### browser-viewer-interaction-147
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L1174) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L4518) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1677)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L1174) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L4518) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1677)
 
 - Given The user has held Shift on the original tab, and its input release is unconfirmed.
 - When A capture-detachment proof arrives after the user switches to the other tab, then the user returns to the original tab.
@@ -1438,7 +1438,7 @@ Additional substitution probes and exact failure controls are preserved in the l
 
 ### browser-viewer-interaction-154
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L1230) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L4638) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1694)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L1230) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L4638) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1694)
 
 - Given The selected scoped tab's membership lookup is pending, and membership lookup is unsupported.
 - When Membership lookup fails, then the user chooses Reconnect.
@@ -1449,7 +1449,7 @@ Additional substitution probes and exact failure controls are preserved in the l
 
 ### browser-viewer-interaction-164
 
-[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L1310) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L4906) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1740)
+[Nominee BDD](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L1310) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L4906) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1740)
 
 - Given Two tabs are present; the All tabs picker has focus while the tab bar is narrow.
 - When The tab bar widens, narrows again while the address field contains a draft, then widens once more.
@@ -1605,41 +1605,41 @@ The authoring sources were the frozen GWT, current production entry points, `AGE
 
 - [browser-response-deadlines-054](src/views/browser-session/__tests__/browser-response-deadlines.test.tsx#L260) `browser-response-deadlines-054 Retiring the target with a pending attachment preserves original input`. Destroy the pending replacement and advance past its original deadline. After delivering its old attachment, fresh text reaches the original session and neither the page nor the external error reporter reports an error.
 
-- [browser-response-deadlines-004](src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-004). The observer delivered an offscreen canvas and the native hello was received, but the following native window receipt or the page's paused acknowledgement did not arrive in this ordering.
+- [browser-response-deadlines-004](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-004). The observer delivered an offscreen canvas and the native hello was received, but the following native window receipt or the page's paused acknowledgement did not arrive in this ordering.
 
-- [browser-response-deadlines-006](src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-006). A concealed replacement descriptor reached the local service, but revealing the page after expiry did not establish the expected Reconnecting state before replacement.
+- [browser-response-deadlines-006](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-006). A concealed replacement descriptor reached the local service, but revealing the page after expiry did not establish the expected Reconnecting state before replacement.
 
-- [browser-response-deadlines-007](src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-007). Retiring the hidden startup connection and typing on the new connection succeeded even when the original hello stayed withheld.
+- [browser-response-deadlines-007](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-007). Retiring the hidden startup connection and typing on the new connection succeeded even when the original hello stayed withheld.
 
-- [browser-response-deadlines-009](src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-009). Both delivered and withheld descriptor controls left the replacement address and typing identical. Service ingress or serialization does not identify consumption by the page.
+- [browser-response-deadlines-009](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-009). Both delivered and withheld descriptor controls left the replacement address and typing identical. Service ingress or serialization does not identify consumption by the page.
 
-- [browser-response-deadlines-011](src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-011). Transport phases and expiry were observable, but the remaining exact-one descriptor fetch was distinguished only by counting requests, which the testing guide excludes.
+- [browser-response-deadlines-011](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-011). Transport phases and expiry were observable, but the remaining exact-one descriptor fetch was distinguished only by counting requests, which the testing guide excludes.
 
-- [browser-response-deadlines-018](src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-018). The replacement address, enabled New tab and absent error matched delivery even when the first descriptor reply was withheld. An independent delivered-500 probe could not observe the original action-error message before switching. Server ingress is insufficient to establish that the earlier failure was processed.
+- [browser-response-deadlines-018](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-018). The replacement address, enabled New tab and absent error matched delivery even when the first descriptor reply was withheld. An independent delivered-500 probe could not observe the original action-error message before switching. Server ingress is insufficient to establish that the earlier failure was processed.
 
-- [browser-response-deadlines-022](src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-022). The replacement chat receives new input equally when the old recovery delivery is withheld.
+- [browser-response-deadlines-022](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-022). The replacement chat receives new input equally when the old recovery delivery is withheld.
 
-- [browser-response-deadlines-023](src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-023). Releasing or withholding the old paint after changing chats while hidden leaves the same replacement input outcome.
+- [browser-response-deadlines-023](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-023). Releasing or withholding the old paint after changing chats while hidden leaves the same replacement input outcome.
 
-- [browser-response-deadlines-024](src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-024). The prior image was withheld while wall time moved backwards. The retry capture needed to anchor monotonic expiry did not arrive at the required boundary.
+- [browser-response-deadlines-024](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-024). The prior image was withheld while wall time moved backwards. The retry capture needed to anchor monotonic expiry did not arrive at the required boundary.
 
-- [browser-response-deadlines-026](src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-026). The documented clock and held image did not establish both expired retries, their visible reconnecting states and restored replacement input in the original order.
+- [browser-response-deadlines-026](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-026). The documented clock and held image did not establish both expired retries, their visible reconnecting states and restored replacement input in the original order.
 
-- [browser-response-deadlines-029](src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-029). Delaying the start receipt and holding the first picture did not produce the expected reconnecting state at the picture-relative deadline.
+- [browser-response-deadlines-029](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-029). Delaying the start receipt and holding the first picture did not produce the expected reconnecting state at the picture-relative deadline.
 
-- [browser-response-deadlines-031](src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-031). After resume and image expiry, the pending old stop-screencast acknowledgement required by the scenario did not arrive before the selection.
+- [browser-response-deadlines-031](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-031). After resume and image expiry, the pending old stop-screencast acknowledgement required by the scenario did not arrive before the selection.
 
-- [browser-response-deadlines-034](src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-034). A replacement descriptor and address appeared while the transport was pending, but fresh text on its own page session was not established after release.
+- [browser-response-deadlines-034](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-034). A replacement descriptor and address appeared while the transport was pending, but fresh text on its own page session was not established after release.
 
-- [browser-response-deadlines-035](src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-035). Current-transport readiness and fresh input still pass with the prior transport proof withheld. No acknowledgement distinguishes that old response.
+- [browser-response-deadlines-035](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-035). Current-transport readiness and fresh input still pass with the prior transport proof withheld. No acknowledgement distinguishes that old response.
 
-- [browser-response-deadlines-039](src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-039). The unavailable screen, explicit Reconnect and new tab all work with the old native hello withheld. None proves handling of that hello.
+- [browser-response-deadlines-039](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-039). The unavailable screen, explicit Reconnect and new tab all work with the old native hello withheld. None proves handling of that hello.
 
-- [browser-response-deadlines-043](src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-043). The original address and fresh input still pass when the old native scope reply is withheld.
+- [browser-response-deadlines-043](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-043). The original address and fresh input still pass when the old native scope reply is withheld.
 
-- [browser-response-deadlines-051](src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-051). Recovery reaches the accepted URL, but replay of the same destination has the same final URL. The exact-once clause was not verified via a distinct navigation effect.
+- [browser-response-deadlines-051](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-051). Recovery reaches the accepted URL, but replay of the same destination has the same final URL. The exact-once clause was not verified via a distinct navigation effect.
 
-- [browser-response-deadlines-053](src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-053). Switching chats shows the replacement address and delivers text with the old proof still withheld. The missing acknowledgement remains with this ID.
+- [browser-response-deadlines-053](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-053). Switching chats shows the replacement address and delivers text with the old proof still withheld. The missing acknowledgement remains with this ID.
 
 #### browser-frame-rate
 
@@ -1655,7 +1655,7 @@ The authoring sources were the frozen GWT, current production entry points, `AGE
 
 - [browser-frame-rate-011](src/views/browser-session/__tests__/browser-frame-rate.test.tsx#L101) `browser-frame-rate-011 Tab selection resets samples and reopening FPS discards the old chart`. Switching away and back resets the displayed address, reading and graph for both tabs. Two quiet seconds yield 0 FPS. Disabling removes it; enabling again starts with an empty graph.
 
-- [browser-frame-rate-001](src/views/browser-session/__tests__/browser-frame-rate.bdd.md#browser-frame-rate-001). The menu placement and checked states, chart dimensions, removal and focus are observable. The absence of inserted text does not establish that all browser traffic stayed idle.
+- [browser-frame-rate-001](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/browser-session/__tests__/browser-frame-rate.bdd.md#browser-frame-rate-001). The menu placement and checked states, chart dimensions, removal and focus are observable. The absence of inserted text does not establish that all browser traffic stayed idle.
 
 #### browser-address-search
 
@@ -1667,7 +1667,7 @@ The authoring sources were the frozen GWT, current production entry points, `AGE
 
 [Routed tests](src/views/browser-session/__tests__/browser-domain-initialization.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.bdd.md). Partial file. 0 first acceptances, 8 previously accepted at intake, 1 open. Evidence in the probe archive includes tg75 (documented clock replay); historical real-time probe excluded from acceptance.
 
-- [browser-domain-initialization-018](src/views/browser-session/__tests__/browser-domain-initialization.bdd.md#browser-domain-initialization-018). The Page failure probe displayed Browser view unavailable, retired the original attachment and stayed disabled with one physical connection after 31 real seconds. The explicit timer and enlarged timeout fail the repository lint rules. A second probe used the documented 31,000 ms monotonic advance after retirement; no subsequent application clock read acknowledged the advance before the default case timeout. The timing clause remains open.
+- [browser-domain-initialization-018](https://github.com/okou-ai/okou/blob/6d74f8001914677e20aca3fea5ed28c3858672de/turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.bdd.md#browser-domain-initialization-018). The Page failure probe displayed Browser view unavailable, retired the original attachment and stayed disabled with one physical connection after 31 real seconds. The explicit timer and enlarged timeout fail the repository lint rules. A second probe used the documented 31,000 ms monotonic advance after retirement; no subsequent application clock read acknowledged the advance before the default case timeout. The timing clause remains open.
 
 #### billing-survey
 
@@ -1693,9 +1693,9 @@ The authoring sources were the frozen GWT, current production entry points, `AGE
 
 [Routed tests](src/views/okou-page/__tests__/chat-composer-connector-status.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-status.bdd.md). Partial file. 0 first acceptances, 4 previously accepted at intake, 2 open. Evidence in the probe archive includes carried75 and b75check-chat-composer-connector-status.
 
-- [chat-composer-connector-status-001](src/views/okou-page/__tests__/chat-composer-connector-status.bdd.md#chat-composer-connector-status-001). GitHub details and Acme Search were reachable with saved accounts requiring reconnection. The directory cannot show whether a same-state authorization write, credential read or manual grant request occurred. No request-count assertion was substituted.
+- [chat-composer-connector-status-001](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-status.bdd.md#chat-composer-connector-status-001). GitHub details and Acme Search were reachable with saved accounts requiring reconnection. The directory cannot show whether a same-state authorization write, credential read or manual grant request occurred. No request-count assertion was substituted.
 
-- [chat-composer-connector-status-006](src/views/okou-page/__tests__/chat-composer-connector-status.bdd.md#chat-composer-connector-status-006). With 503 inventory, Accounts are unavailable and the separate Feishu card appeared; Acme Search and No accounts were absent. Browsing does not expose proof of zero authorization updates.
+- [chat-composer-connector-status-006](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-status.bdd.md#chat-composer-connector-status-006). With 503 inventory, Accounts are unavailable and the separate Feishu card appeared; Acme Search and No accounts were absent. Browsing does not expose proof of zero authorization updates.
 
 #### chat-private-artifact-previews
 
@@ -1707,23 +1707,23 @@ The authoring sources were the frozen GWT, current production entry points, `AGE
 
 [Routed tests](src/views/okou-page/__tests__/composer-custom-template-recommendations.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/okou-page/__tests__/composer-custom-template-recommendations.bdd.md). Partial file. 0 first acceptances, 7 previously accepted at intake, 1 open. Evidence in the probe archive includes carried75 and b75check-composer-custom-template-recommendations.
 
-- [composer-custom-template-recommendations-009](src/views/okou-page/__tests__/composer-custom-template-recommendations.bdd.md#composer-custom-template-recommendations-009). Pasting unsupported.pdf adds a visible Remove unsupported.pdf attachment. The draft and Image action survive and the WEBP import sends its style task. The frozen Then forbids the PDF attachment.
+- [composer-custom-template-recommendations-009](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/composer-custom-template-recommendations.bdd.md#composer-custom-template-recommendations-009). Pasting unsupported.pdf adds a visible Remove unsupported.pdf attachment. The draft and Image action survive and the WEBP import sends its style task. The frozen Then forbids the PDF attachment.
 
 #### directed-connect-page
 
 [Routed tests](src/views/okou-page/__tests__/directed-connect-page.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.bdd.md). Partial file. 0 first acceptances, 4 previously accepted at intake, 3 open. Evidence in the probe archive includes opening BDD amendments #48841, #49830 and #49838, complete routed regressions and the #49854 member contract.
 
-- [directed-connect-page-004](src/views/okou-page/__tests__/directed-connect-page.bdd.md#directed-connect-page-004). The current custom connector completion resumes the requesting chat. The old empty-permission agent grant has no verified recipient on this path after the chat-account migration (#48841 and #49838).
+- [directed-connect-page-004](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.bdd.md#directed-connect-page-004). The current custom connector completion resumes the requesting chat. The old empty-permission agent grant has no verified recipient on this path after the chat-account migration (#48841 and #49838).
 
-- [directed-connect-page-008](src/views/okou-page/__tests__/directed-connect-page.bdd.md#directed-connect-page-008). The original Given requires a chat-originated Stripe no-auth link with an agent ID. #49830 changed the originating link and the current Stripe catalog advertises OAuth, device sign-in and API key. No matching no-auth transaction was established.
+- [directed-connect-page-008](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.bdd.md#directed-connect-page-008). The original Given requires a chat-originated Stripe no-auth link with an agent ID. #49830 changed the originating link and the current Stripe catalog advertises OAuth, device sign-in and API key. No matching no-auth transaction was established.
 
-- [directed-connect-page-012](src/views/okou-page/__tests__/directed-connect-page.bdd.md#directed-connect-page-012). The current GitHub OAuth start contract targets the saved connection and callback target. It does not carry the frozen directed agent ID and authorization flag after #49838. The original clause remains open.
+- [directed-connect-page-012](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.bdd.md#directed-connect-page-012). The current GitHub OAuth start contract targets the saved connection and callback target. It does not carry the frozen directed agent ID and authorization flag after #49838. The original clause remains open.
 
 #### discord-oauth-compatibility
 
 [Routed tests](src/views/okou-page/__tests__/discord-oauth-compatibility.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/okou-page/__tests__/discord-oauth-compatibility.bdd.md). Partial file. 0 first acceptances, 7 previously accepted at intake, 1 open. Evidence in the probe archive includes carried75 and b75check-discord-oauth-compatibility.
 
-- [discord-oauth-compatibility-007](src/views/okou-page/__tests__/discord-oauth-compatibility.bdd.md#discord-oauth-compatibility-007). Router probe verifies the matching signed approval was submitted, the original window closed, the consent page reported interruption, removed its proof and omitted Open Discord. The explicit exactly-one HTTP request clause remains unverified under the Platform request-count rule.
+- [discord-oauth-compatibility-007](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/discord-oauth-compatibility.bdd.md#discord-oauth-compatibility-007). Router probe verifies the matching signed approval was submitted, the original window closed, the consent page reported interruption, removed its proof and omitted Open Discord. The explicit exactly-one HTTP request clause remains unverified under the Platform request-count rule.
 
 #### feishu-setup-guide
 
@@ -1787,15 +1787,15 @@ The authoring sources were the frozen GWT, current production entry points, `AGE
 
 [Routed tests](src/views/okou-page/__tests__/settings-model-loading.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/okou-page/__tests__/settings-model-loading.bdd.md). Partial file. 0 first acceptances, 1 previously accepted at intake, 1 open. Evidence in the probe archive includes carried75 and b75check-settings-model-loading.
 
-- [settings-model-loading-001](src/views/okou-page/__tests__/settings-model-loading.bdd.md#settings-model-loading-001). Connect account was enabled before navigating Preference → Models. The rendered heading is “Use more models”; “Models” labels navigation. The frozen heading has no page evidence.
+- [settings-model-loading-001](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/settings-model-loading.bdd.md#settings-model-loading-001). Connect account was enabled before navigating Preference → Models. The rendered heading is “Use more models”; “Models” labels navigation. The frozen heading has no page evidence.
 
 #### settings-wallet-cards
 
 [Routed tests](src/views/okou-page/__tests__/settings-wallet-cards.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/okou-page/__tests__/settings-wallet-cards.bdd.md). Partial file. 0 first acceptances, 3 previously accepted at intake, 2 open. Evidence in the probe archive includes carried75 and b75check-settings-wallet-cards.
 
-- [settings-wallet-cards-005](src/views/okou-page/__tests__/settings-wallet-cards.bdd.md#settings-wallet-cards-005). The real focus action preserved Everyday and the recent purchase. The delayed notification refresh then replaced them with the default Business card and the new purchase. The frozen focus clause also requires no extra requests, which the testing guide excludes as an assertion.
+- [settings-wallet-cards-005](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/settings-wallet-cards.bdd.md#settings-wallet-cards-005). The real focus action preserved Everyday and the recent purchase. The delayed notification refresh then replaced them with the default Business card and the new purchase. The frozen focus clause also requires no extra requests, which the testing guide excludes as an assertion.
 
-- [settings-wallet-cards-010](src/views/okou-page/__tests__/settings-wallet-cards.bdd.md#settings-wallet-cards-010). Disconnecting while the card refresh was held restored the Connect action. The section was already gone before the delayed response was released. No subsequent observable completion identifies consumption or dismissal of that response.
+- [settings-wallet-cards-010](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/settings-wallet-cards.bdd.md#settings-wallet-cards-010). Disconnecting while the card refresh was held restored the Connect action. The section was already gone before the delayed response was released. No subsequent observable completion identifies consumption or dismissal of that response.
 
 #### sidebar-workspace
 
@@ -1825,17 +1825,17 @@ The authoring sources were the frozen GWT, current production entry points, `AGE
 
 [Routed tests](src/views/onboarding-sources-first/__tests__/onboarding-sources-first-flow.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-sources-first-flow.bdd.md). Partial file. 0 first acceptances, 14 previously accepted at intake, 3 open. Evidence in the probe archive includes carried75 and b75check-onboarding-sources-first-flow.
 
-- [onboarding-sources-first-flow-012](src/views/onboarding-sources-first/__tests__/onboarding-sources-first-flow.bdd.md#onboarding-sources-first-flow-012). The owner’s completion was held at the ready page; release allowed the first task to run. The frozen Then also requires exactly one completion. The testing guide forbids request-count assertions.
+- [onboarding-sources-first-flow-012](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-sources-first-flow.bdd.md#onboarding-sources-first-flow-012). The owner’s completion was held at the ready page; release allowed the first task to run. The frozen Then also requires exactly one completion. The testing guide forbids request-count assertions.
 
-- [onboarding-sources-first-flow-015](src/views/onboarding-sources-first/__tests__/onboarding-sources-first-flow.bdd.md#onboarding-sources-first-flow-015). The invited member saw the full competitor-research preset, edited it to Draft my meeting agenda and opened chat with that task. Completion was observed from the ready step. The exact-one completion clause conflicts with the testing guide.
+- [onboarding-sources-first-flow-015](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-sources-first-flow.bdd.md#onboarding-sources-first-flow-015). The invited member saw the full competitor-research preset, edited it to Draft my meeting agenda and opened chat with that task. Completion was observed from the ready step. The exact-one completion clause conflicts with the testing guide.
 
-- [onboarding-sources-first-flow-021](src/views/onboarding-sources-first/__tests__/onboarding-sources-first-flow.bdd.md#onboarding-sources-first-flow-021). The edited EU launch prompt stayed at onboarding until the completion response was released, then reached chat with the document instructions. The frozen single-completion clause cannot be credited under the request-count rule.
+- [onboarding-sources-first-flow-021](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-sources-first-flow.bdd.md#onboarding-sources-first-flow-021). The edited EU launch prompt stayed at onboarding until the completion response was released, then reached chat with the document instructions. The frozen single-completion clause cannot be credited under the request-count rule.
 
 #### onboarding-start
 
 [Routed tests](src/views/onboarding/__tests__/onboarding-start.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/onboarding/__tests__/onboarding-start.bdd.md). Partial file. 0 first acceptances, 2 previously accepted at intake, 1 open. Evidence in the probe archive includes carried75 and b75check-onboarding-start.
 
-- [onboarding-start-001](src/views/onboarding/__tests__/onboarding-start.bdd.md#onboarding-start-001). The open-page probe saw the authenticated, un-aborted production POST with the onboarding-start tag and UUID while its response was held. At ingress the correct actor and workspace already had started telemetry without a status code. The industry question was visible before release. Its exact one-POST requirement conflicts with the current request-count assertion rule. Neither exact count was credited.
+- [onboarding-start-001](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/onboarding/__tests__/onboarding-start.bdd.md#onboarding-start-001). The open-page probe saw the authenticated, un-aborted production POST with the onboarding-start tag and UUID while its response was held. At ingress the correct actor and workspace already had started telemetry without a status code. The industry question was visible before release. Its exact one-POST requirement conflicts with the current request-count assertion rule. Neither exact count was credited.
 
 #### link-navigation
 
@@ -2011,11 +2011,11 @@ All 30 files were assessed using probes written from the frozen GWT, any recorde
 
 #### chat-composer-connector-overview
 
-- [001](src/views/okou-page/__tests__/chat-composer-connector-overview.bdd.md#chat-composer-connector-overview-001). Open. All 20 distinct connector labels appeared on both openings. The selected Then also specifies exact overview/target/legacy reads. Reopening alone could not distinguish those clauses.
-- [003](src/views/okou-page/__tests__/chat-composer-connector-overview.bdd.md#chat-composer-connector-overview-003). Open. The correctly addressed connector:changed event made Probe 1 access off. The subsequent removal/reconnect sequence did not provide the required full refreshed overview with Probe 2.
-- [007](src/views/okou-page/__tests__/chat-composer-connector-overview.bdd.md#chat-composer-connector-overview-007). Open. Try again, independent Probe 2 update, retry and the later off state were observed. The original Then also requires exactly two overview and three target reads; those quantities are not established by the UI.
+- [001](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-overview.bdd.md#chat-composer-connector-overview-001). Open. All 20 distinct connector labels appeared on both openings. The selected Then also specifies exact overview/target/legacy reads. Reopening alone could not distinguish those clauses.
+- [003](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-overview.bdd.md#chat-composer-connector-overview-003). Open. The correctly addressed connector:changed event made Probe 1 access off. The subsequent removal/reconnect sequence did not provide the required full refreshed overview with Probe 2.
+- [007](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-overview.bdd.md#chat-composer-connector-overview-007). Open. Try again, independent Probe 2 update, retry and the later off state were observed. The original Then also requires exactly two overview and three target reads; those quantities are not established by the UI.
 - [008](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-overview.test.tsx#L35). Details were untouched while the top panel was open. Opening GitHub resolved the exact off-page Personal ID and displayed its checked switch and Reconnect required.
-- [009](src/views/okou-page/__tests__/chat-composer-connector-overview.bdd.md#chat-composer-connector-overview-009). Open. The New chat link reached / and history returned to the original thread with the connector visible. Releasing the subscription while away and the exact request mix on return were not established.
+- [009](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-overview.bdd.md#chat-composer-connector-overview-009). Open. The New chat link reached / and history returned to the original thread with the connector visible. Releasing the subscription while away and the exact request mix on return were not established.
 
 #### chat-composer-create
 
@@ -2094,17 +2094,17 @@ All 30 files were assessed using probes written from the frozen GWT, any recorde
 #### chat-continuity-uploads
 
 - [001](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-uploads.test.tsx#L40). Both MIME types reached prepare. The two distinct storage PUTs omitted credentials and sensitive headers, and both files became removable.
-- [003](src/views/okou-page/__tests__/chat-continuity-uploads.bdd.md#chat-continuity-uploads-003). Open. A valid absolute private Artifact URL reached storage, its ID reached completion, and private.txt became removable. The once-only completion clause has no distinguishing evidence in this probe.
+- [003](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-uploads.bdd.md#chat-continuity-uploads-003). Open. A valid absolute private Artifact URL reached storage, its ID reached completion, and private.txt became removable. The once-only completion clause has no distinguishing evidence in this probe.
 - [004](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-uploads.test.tsx#L88). The 503 filename appeared once; only ready.txt remained attached and reached the outgoing message.
 - [006](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-uploads.test.tsx#L237). At the XHR boundary half of part one produced 12%; completing part two started the one-byte fifth part and produced 37%. The bar stayed at 99% until finalization then was replaced by the attachment.
-- [011](src/views/okou-page/__tests__/chat-continuity-uploads.bdd.md#chat-continuity-uploads-011). Open. After the finalization 404 the server message appeared once and the generic error was absent. The UI does not distinguish one completion request from a duplicate with the same outcome.
+- [011](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-uploads.bdd.md#chat-continuity-uploads-011). Open. After the finalization 404 the server message appeared once and the generic error was absent. The UI does not distinguish one completion request from a duplicate with the same outcome.
 - [013](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-uploads.test.tsx#L132). Preparing the exact five-GiB File exposed the full byte size, progress and Cancel. Cancelling removed the control.
 - [014](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-uploads.test.tsx#L273). Four specific active transfers received native abort. Progress disappeared and the fifth never started; no failure notice appeared.
 
 #### chat-conversation-locator
 
 - [001](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-conversation-locator.test.tsx#L35). With the first turn unmounted and 24 markers, the hover preview exposed Aug 1, 10:00 AM and its exact ISO datetime.
-- [002](src/views/okou-page/__tests__/chat-conversation-locator.bdd.md#chat-conversation-locator-002). Open. The upstream amendment requires 30 turns. After clicking the first marker, a late answer required to be unmounted was still present. The original eight-turn fixture cannot close the amended Then.
+- [002](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/chat-conversation-locator.bdd.md#chat-conversation-locator-002). Open. The upstream amendment requires 30 turns. After clicking the first marker, a late answer required to be unmounted was still present. The original eight-turn fixture cannot close the amended Then.
 - [005](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-conversation-locator.test.tsx#L41). Leaving the first marker in the eight-turn fixture dismissed the displayed timestamp.
 
 #### chat-emoji
@@ -3311,3 +3311,7 @@ The [331-row review](./test-rebuild-batch-101.tsv) covers the 30 assigned owners
 | chat-navigation-artifact-drive-017 | One completed reconnect restored both the Google Docs conversion and original-text upload in the same App preview. A second independent start created a distinct attempt. [Upload receipts](../../../test-rebuild-evidence/101/drive/drive-proof.json) · [Attempt control](../../../test-rebuild-evidence/101/drive/drive-duplicate-control.json) |
 
 Within the 49 owners open at `6d74f80019`, the 540 selected cases moved from 391 resolved and 149 open to 394 resolved and 146 open. Two owners closed. The clipboard owner still has open cases. The [pre-migration case snapshot](../../../test-rebuild-evidence/101/pending-before-migration.tsv) identifies each of the 149 baseline cases and records the three transitions. Across the first-pass inventory, 485 passed, 438 owners have no open frozen case and 47 have open cases.
+
+## Active frozen-case register
+
+Track closure per [pending original case](./test-rebuild-pending.bdd.md). The active first-pass ledger links to each case. The [pre-migration snapshot](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/test-rebuild-evidence/101/pending-before-migration.tsv) fixes the open set before consolidation. The same 146 IDs, 47 owners and six product decisions are present after the documentation move. All 47 superseded distributed files were removed. The separate [upstream register](./test-rebuild-upstream-pending.bdd.md) still contains 68 cases.
