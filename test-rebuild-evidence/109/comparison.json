@@ -100,20 +100,20 @@
               "sha256": "a7377369a5568edcd14517718315450eee1c3a0b951cc3bf8000ea4391f116a0",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors-test-helpers.ts": {
-              "sha256": "13793c23ffd010598660ed4d97fcbdc9a1caf96106a805eb7b05b887734701e1",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": {
               "sha256": "c431bdda456b01bc108227ce92a9bb270ebc15cb1b62586769a74cde02018c97",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
               "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors-test-helpers.ts": {
+              "sha256": "13793c23ffd010598660ed4d97fcbdc9a1caf96106a805eb7b05b887734701e1",
               "sharedNewBlocks": 0
             }
           }
@@ -123,16 +123,16 @@
           "currentSuiteAtRef": "1488f0b1159e5b6601ee165bb5475ec1df784103cda2a6dc6bffd21bfcb85cea",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": {
-              "sha256": "e4b2a86e6762065f528e03a846f2f536f5e8541c051491e8c9caabaab9c78035",
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors-test-helpers.ts": {
               "sha256": "ec9a35e56bf7cec1a7c0431d26619ea9777f2a0f96cbc4dd67fbf9207cbbaba8",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/__tests__/page-helper.ts": {
-              "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": {
+              "sha256": "e4b2a86e6762065f528e03a846f2f536f5e8541c051491e8c9caabaab9c78035",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
@@ -156,20 +156,20 @@
               "sha256": "7704468bcd58fbcd1c6b9b91787c2e23cff4de3be405c86192567d0283992c30",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors-test-helpers.ts": {
-              "sha256": "8880f603e54ac78608504433dd5dee8412cb9aa5a7446f0d71eeba17ec7ec2d3",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": {
               "sha256": "7af98f18efaf93e5f7d02b487786e93c4699f6fa08c81e35ffe4bd7d49703950",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
               "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors-test-helpers.ts": {
+              "sha256": "8880f603e54ac78608504433dd5dee8412cb9aa5a7446f0d71eeba17ec7ec2d3",
               "sharedNewBlocks": 0
             }
           }
@@ -179,24 +179,24 @@
           "currentSuiteAtRef": "1c87e44abca4ec0bb72c831bff53ec404d4ab30a8b79f5b82906fcdb8c1c5320",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/views/okou-page/__tests__/composer-menu-page-fixture.ts": {
-              "sha256": "fa5646ab124eb6157137f31c44a025f8e60f175c9719ab06969a770d97ba84d5",
-              "sharedNewBlocks": 0
-            },
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors-test-helpers.ts": {
-              "sha256": "634f089bd4d45e4a1c8f81a549a5883bbfca77fcfbb75b18f009302ddac4a898",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": {
               "sha256": "7af98f18efaf93e5f7d02b487786e93c4699f6fa08c81e35ffe4bd7d49703950",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
               "sha256": "008ed724541ca075e909f9814c1fdfa72647ab0a160059ceb3c2ad09dc104c99",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors-test-helpers.ts": {
+              "sha256": "634f089bd4d45e4a1c8f81a549a5883bbfca77fcfbb75b18f009302ddac4a898",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/composer-menu-page-fixture.ts": {
+              "sha256": "fa5646ab124eb6157137f31c44a025f8e60f175c9719ab06969a770d97ba84d5",
               "sharedNewBlocks": 0
             }
           }
@@ -212,24 +212,24 @@
           "currentSuiteAtRef": "1c144688b39f4dd176d33c490849115be14455d1210d56d7dbfa22316c8d682a",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/__tests__/page-helper.ts": {
-              "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
-              "sharedNewBlocks": 0
-            },
-            "turbo/apps/platform/src/mocks/handlers/connector-account-fixtures.ts": {
-              "sha256": "baad2dfb141e2678309fe0923a14cbd0d523a54a0819aaf0b50351bc1bd78369",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": {
               "sha256": "c431bdda456b01bc108227ce92a9bb270ebc15cb1b62586769a74cde02018c97",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors-test-helpers.ts": {
               "sha256": "13793c23ffd010598660ed4d97fcbdc9a1caf96106a805eb7b05b887734701e1",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/mocks/handlers/connector-account-fixtures.ts": {
+              "sha256": "baad2dfb141e2678309fe0923a14cbd0d523a54a0819aaf0b50351bc1bd78369",
               "sharedNewBlocks": 0
             }
           }
@@ -239,24 +239,24 @@
           "currentSuiteAtRef": "7651f48c94630b6d3e5f976256f45731e64169f02aa0f4bde9f5a194a6481f24",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/__tests__/page-helper.ts": {
-              "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
-              "sharedNewBlocks": 0
-            },
-            "turbo/apps/platform/src/mocks/handlers/connector-account-fixtures.ts": {
-              "sha256": "baad2dfb141e2678309fe0923a14cbd0d523a54a0819aaf0b50351bc1bd78369",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": {
               "sha256": "e4b2a86e6762065f528e03a846f2f536f5e8541c051491e8c9caabaab9c78035",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors-test-helpers.ts": {
               "sha256": "ec9a35e56bf7cec1a7c0431d26619ea9777f2a0f96cbc4dd67fbf9207cbbaba8",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/mocks/handlers/connector-account-fixtures.ts": {
+              "sha256": "baad2dfb141e2678309fe0923a14cbd0d523a54a0819aaf0b50351bc1bd78369",
               "sharedNewBlocks": 0
             }
           }
@@ -272,24 +272,24 @@
           "currentSuiteAtRef": "c34ceb575f72f75bcd5551aa6ee1743e1b89a7bfab4e7664b6e024dadd6b8782",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/__tests__/page-helper.ts": {
-              "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
-              "sharedNewBlocks": 0
-            },
-            "turbo/apps/platform/src/mocks/handlers/connector-account-fixtures.ts": {
-              "sha256": "baad2dfb141e2678309fe0923a14cbd0d523a54a0819aaf0b50351bc1bd78369",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": {
               "sha256": "7af98f18efaf93e5f7d02b487786e93c4699f6fa08c81e35ffe4bd7d49703950",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors-test-helpers.ts": {
               "sha256": "8880f603e54ac78608504433dd5dee8412cb9aa5a7446f0d71eeba17ec7ec2d3",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/mocks/handlers/connector-account-fixtures.ts": {
+              "sha256": "baad2dfb141e2678309fe0923a14cbd0d523a54a0819aaf0b50351bc1bd78369",
               "sharedNewBlocks": 0
             }
           }
@@ -299,24 +299,24 @@
           "currentSuiteAtRef": "d4b8d74ffa764a9abd0ed1a8f54c42d5c1eee1fd1dfeaa57330c247ea4127096",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/views/okou-page/__tests__/composer-menu-page-fixture.ts": {
-              "sha256": "fa5646ab124eb6157137f31c44a025f8e60f175c9719ab06969a770d97ba84d5",
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": {
+              "sha256": "7af98f18efaf93e5f7d02b487786e93c4699f6fa08c81e35ffe4bd7d49703950",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
               "sha256": "008ed724541ca075e909f9814c1fdfa72647ab0a160059ceb3c2ad09dc104c99",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": {
-              "sha256": "7af98f18efaf93e5f7d02b487786e93c4699f6fa08c81e35ffe4bd7d49703950",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors-test-helpers.ts": {
               "sha256": "634f089bd4d45e4a1c8f81a549a5883bbfca77fcfbb75b18f009302ddac4a898",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/views/okou-page/__tests__/composer-menu-page-fixture.ts": {
+              "sha256": "fa5646ab124eb6157137f31c44a025f8e60f175c9719ab06969a770d97ba84d5",
               "sharedNewBlocks": 0
             }
           }
@@ -336,28 +336,28 @@
               "sha256": "63a933c1c04ed4c275097bc7fa326692a490fa30e524d810abdd26a61561aedb",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/mocks/handlers/connector-account-fixtures.ts": {
-              "sha256": "baad2dfb141e2678309fe0923a14cbd0d523a54a0819aaf0b50351bc1bd78369",
-              "sharedNewBlocks": 0
-            },
-            "turbo/apps/platform/src/signals/location.ts": {
-              "sha256": "b76773dbb39b8694ed36948b6c8901a783d9831091f0c9d80bab9f628a637ea4",
-              "sharedNewBlocks": 0
-            },
-            "turbo/apps/platform/src/mocks/handlers/api-billing.ts": {
-              "sha256": "37b6663e011692f363ed7849c508617f11da31c2cbec63fd84eb237564e3d65f",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/lib/time.ts": {
               "sha256": "667b59f54c4090af448563ef2c60ebd15d74297ed613d792ded51d4484ab0f5c",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
               "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/mocks/handlers/api-billing.ts": {
+              "sha256": "37b6663e011692f363ed7849c508617f11da31c2cbec63fd84eb237564e3d65f",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/mocks/handlers/connector-account-fixtures.ts": {
+              "sha256": "baad2dfb141e2678309fe0923a14cbd0d523a54a0819aaf0b50351bc1bd78369",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/location.ts": {
+              "sha256": "b76773dbb39b8694ed36948b6c8901a783d9831091f0c9d80bab9f628a637ea4",
               "sharedNewBlocks": 0
             }
           }
@@ -371,24 +371,24 @@
               "sha256": "c4b5eb411ec6fda3dc1d6818d583b8844555d9cf87dbd18d841bd5d9e6c5850a",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/mocks/handlers/connector-account-fixtures.ts": {
-              "sha256": "baad2dfb141e2678309fe0923a14cbd0d523a54a0819aaf0b50351bc1bd78369",
-              "sharedNewBlocks": 0
-            },
-            "turbo/apps/platform/src/signals/location.ts": {
-              "sha256": "b76773dbb39b8694ed36948b6c8901a783d9831091f0c9d80bab9f628a637ea4",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/lib/time.ts": {
               "sha256": "667b59f54c4090af448563ef2c60ebd15d74297ed613d792ded51d4484ab0f5c",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
               "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/mocks/handlers/connector-account-fixtures.ts": {
+              "sha256": "baad2dfb141e2678309fe0923a14cbd0d523a54a0819aaf0b50351bc1bd78369",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/location.ts": {
+              "sha256": "b76773dbb39b8694ed36948b6c8901a783d9831091f0c9d80bab9f628a637ea4",
               "sharedNewBlocks": 0
             }
           }
@@ -408,28 +408,28 @@
               "sha256": "c4b5eb411ec6fda3dc1d6818d583b8844555d9cf87dbd18d841bd5d9e6c5850a",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/mocks/handlers/connector-account-fixtures.ts": {
-              "sha256": "baad2dfb141e2678309fe0923a14cbd0d523a54a0819aaf0b50351bc1bd78369",
-              "sharedNewBlocks": 0
-            },
-            "turbo/apps/platform/src/signals/location.ts": {
-              "sha256": "b76773dbb39b8694ed36948b6c8901a783d9831091f0c9d80bab9f628a637ea4",
-              "sharedNewBlocks": 0
-            },
-            "turbo/apps/platform/src/mocks/handlers/api-billing.ts": {
-              "sha256": "f95f1d6f8441b01f7720a0deb67d15b8914a069deb76e38fee7b82f7af1f98ad",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/lib/time.ts": {
               "sha256": "667b59f54c4090af448563ef2c60ebd15d74297ed613d792ded51d4484ab0f5c",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
               "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/mocks/handlers/api-billing.ts": {
+              "sha256": "f95f1d6f8441b01f7720a0deb67d15b8914a069deb76e38fee7b82f7af1f98ad",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/mocks/handlers/connector-account-fixtures.ts": {
+              "sha256": "baad2dfb141e2678309fe0923a14cbd0d523a54a0819aaf0b50351bc1bd78369",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/location.ts": {
+              "sha256": "b76773dbb39b8694ed36948b6c8901a783d9831091f0c9d80bab9f628a637ea4",
               "sharedNewBlocks": 0
             }
           }
@@ -439,10 +439,6 @@
           "currentSuiteAtRef": "8ef44c74d01e168ca6d2738bdb9980a410ff4d472571d04c34a0ac0ce08cde3f",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/views/okou-page/__tests__/connector-page-test-helpers.ts": {
-              "sha256": "ca3cae8b2d2716b3c8a1ce7b6b33f9cdff50a62b1bbf5492d126faf135277f16",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/mocks/handlers/api-connectors.ts": {
               "sha256": "c4b5eb411ec6fda3dc1d6818d583b8844555d9cf87dbd18d841bd5d9e6c5850a",
               "sharedNewBlocks": 0
@@ -451,12 +447,16 @@
               "sha256": "7af98f18efaf93e5f7d02b487786e93c4699f6fa08c81e35ffe4bd7d49703950",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-catalog-test-helpers.ts": {
-              "sha256": "34fd2456b02d1a9c9b6f3a03865eb5435187bd69bfa4fe3bf2ef5cb2acf8daa0",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/lib/time.ts": {
               "sha256": "f7f4c950f60c5d215b0c24a3575d878632a69df5bc3ee0d41669a4ed7a5fe68b",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-catalog-test-helpers.ts": {
+              "sha256": "34fd2456b02d1a9c9b6f3a03865eb5435187bd69bfa4fe3bf2ef5cb2acf8daa0",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-test-helpers.ts": {
@@ -467,8 +467,8 @@
               "sha256": "008ed724541ca075e909f9814c1fdfa72647ab0a160059ceb3c2ad09dc104c99",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/views/okou-page/__tests__/connector-page-test-helpers.ts": {
+              "sha256": "ca3cae8b2d2716b3c8a1ce7b6b33f9cdff50a62b1bbf5492d126faf135277f16",
               "sharedNewBlocks": 0
             }
           }
@@ -585,20 +585,20 @@
           "currentSuiteAtRef": "656e3934e8f8342c92e300055a4ff71008aabb2bf030d199160862f4c0d88a82",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-test-helpers.ts": {
-              "sha256": "31306369ecc9a7d940d5ad53dfdca8b1526f898f228b1569268a50005af4fadf",
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/views/okou-page/__tests__/chat-test-helpers.ts": {
               "sha256": "2958853ba274388d352bfcfe6732ed7f1fe44259f1c02342b25a723732a0fe58",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/__tests__/page-helper.ts": {
-              "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
               "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-test-helpers.ts": {
+              "sha256": "31306369ecc9a7d940d5ad53dfdca8b1526f898f228b1569268a50005af4fadf",
               "sharedNewBlocks": 0
             }
           }
@@ -608,16 +608,16 @@
           "currentSuiteAtRef": "fbb648f8a660401618c1854e4719e609b2d92d3b9b5619ae6e9425103a4a28f4",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-test-helpers.ts": {
-              "sha256": "4d8549ca61c48e67c0bf14ce61c36398525f16d16fc7f3bae170afff9f6f43f3",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
               "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
               "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-test-helpers.ts": {
+              "sha256": "4d8549ca61c48e67c0bf14ce61c36398525f16d16fc7f3bae170afff9f6f43f3",
               "sharedNewBlocks": 0
             }
           }
@@ -627,16 +627,16 @@
           "currentSuiteAtRef": "fbb648f8a660401618c1854e4719e609b2d92d3b9b5619ae6e9425103a4a28f4",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-test-helpers.ts": {
-              "sha256": "4d8549ca61c48e67c0bf14ce61c36398525f16d16fc7f3bae170afff9f6f43f3",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
               "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
               "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-test-helpers.ts": {
+              "sha256": "4d8549ca61c48e67c0bf14ce61c36398525f16d16fc7f3bae170afff9f6f43f3",
               "sharedNewBlocks": 0
             }
           }
@@ -646,20 +646,20 @@
           "currentSuiteAtRef": "656e3934e8f8342c92e300055a4ff71008aabb2bf030d199160862f4c0d88a82",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-test-helpers.ts": {
-              "sha256": "0bed40dd199d2e706b64865120eabff4e49851bb62a8bde342fee1be43ede1b8",
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/views/okou-page/__tests__/chat-test-helpers.ts": {
               "sha256": "495bf8901c94e1cf3b10d13f53f8e2ebb0a92aa5cc157dd5c43a7be48a83d9ce",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/__tests__/page-helper.ts": {
-              "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
               "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-test-helpers.ts": {
+              "sha256": "0bed40dd199d2e706b64865120eabff4e49851bb62a8bde342fee1be43ede1b8",
               "sharedNewBlocks": 0
             }
           }
@@ -669,10 +669,6 @@
           "currentSuiteAtRef": "2ea734928f8e7c9166642127ab9a3cdc1047a9a27e2d6d6533ce01528bacf72f",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-test-helpers.ts": {
-              "sha256": "550da6a2c72b33f29d45be6e387c8d509bdcd5dbc7c732864090f4ee8e97a912",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
               "sha256": "008ed724541ca075e909f9814c1fdfa72647ab0a160059ceb3c2ad09dc104c99",
               "sharedNewBlocks": 0
@@ -683,6 +679,10 @@
             },
             "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
               "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-test-helpers.ts": {
+              "sha256": "550da6a2c72b33f29d45be6e387c8d509bdcd5dbc7c732864090f4ee8e97a912",
               "sharedNewBlocks": 0
             }
           }
@@ -698,12 +698,12 @@
           "currentSuiteAtRef": "c3433d4737fab0bc10dfa180033927fa9448fe96793e5c469e3d3b2eab3f8981",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": {
-              "sha256": "462607f4b1e2fa58bfb8a98f0c89b4b39b385b1830f1d812180a42729ffef9c9",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
               "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": {
+              "sha256": "462607f4b1e2fa58bfb8a98f0c89b4b39b385b1830f1d812180a42729ffef9c9",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
@@ -717,12 +717,12 @@
           "currentSuiteAtRef": "2153dfd725fd97647628ab1420d4babbda9fa0648f4a51b65cc584290edf36c1",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": {
-              "sha256": "462607f4b1e2fa58bfb8a98f0c89b4b39b385b1830f1d812180a42729ffef9c9",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
               "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": {
+              "sha256": "462607f4b1e2fa58bfb8a98f0c89b4b39b385b1830f1d812180a42729ffef9c9",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
@@ -736,12 +736,12 @@
           "currentSuiteAtRef": "51f5ccce64c0e792b5e3308dc7571449161a6143986e94f71b04f412fb7883a4",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": {
-              "sha256": "9755f280cba57c0aa5cdfd365997bba73b55d37c12d7c87f93892e2a0bca44c8",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
               "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": {
+              "sha256": "9755f280cba57c0aa5cdfd365997bba73b55d37c12d7c87f93892e2a0bca44c8",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
@@ -755,12 +755,12 @@
           "currentSuiteAtRef": "063e147c0e2eacc03ed140c53eea5fae3ed1f7f3a1d5f207c93dbe2e34ad87ad",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": {
-              "sha256": "e4560fd06941afa21318dac854f662d0b9d94bbfe923322bd9d6be1e67d177f5",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
               "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": {
+              "sha256": "e4560fd06941afa21318dac854f662d0b9d94bbfe923322bd9d6be1e67d177f5",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
@@ -774,20 +774,20 @@
           "currentSuiteAtRef": "c7acd0fc322c546b6724cb456a22bb3f34f6c70f9c8e5c742fb5ff5e764175b5",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": {
-              "sha256": "9da6adf33ea69272795068a9d665dabacb3e40beb29fd4b74137ddbfa7d2bcd2",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
               "sha256": "008ed724541ca075e909f9814c1fdfa72647ab0a160059ceb3c2ad09dc104c99",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": {
+              "sha256": "9da6adf33ea69272795068a9d665dabacb3e40beb29fd4b74137ddbfa7d2bcd2",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": {
               "sha256": "7af98f18efaf93e5f7d02b487786e93c4699f6fa08c81e35ffe4bd7d49703950",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
               "sharedNewBlocks": 0
             }
           }
@@ -803,8 +803,8 @@
           "currentSuiteAtRef": "90cb336afafe997dc596cfdadab46133b28b5918093791692d16a5ac20b0b28c",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": {
-              "sha256": "462607f4b1e2fa58bfb8a98f0c89b4b39b385b1830f1d812180a42729ffef9c9",
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-test-helpers.ts": {
@@ -819,8 +819,8 @@
               "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": {
+              "sha256": "462607f4b1e2fa58bfb8a98f0c89b4b39b385b1830f1d812180a42729ffef9c9",
               "sharedNewBlocks": 0
             }
           }
@@ -830,16 +830,12 @@
           "currentSuiteAtRef": "9b9ec4e9c0423f98c87dc79cd91c9dc2a9c80bb4b3542bc986acf1be8828d01f",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-test-helpers.ts": {
-              "sha256": "0f6b2d210e5b486afb0485eb3b38db1f6677f5eb62b2316c00a55055950687f9",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/mocks/mock-helpers.ts": {
               "sha256": "43803b12d97500d6c5b94f9150db55c8445bf75844cd96393a85bced4a791a2a",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": {
-              "sha256": "462607f4b1e2fa58bfb8a98f0c89b4b39b385b1830f1d812180a42729ffef9c9",
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-test-helpers.ts": {
@@ -854,8 +850,12 @@
               "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": {
+              "sha256": "462607f4b1e2fa58bfb8a98f0c89b4b39b385b1830f1d812180a42729ffef9c9",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-test-helpers.ts": {
+              "sha256": "0f6b2d210e5b486afb0485eb3b38db1f6677f5eb62b2316c00a55055950687f9",
               "sharedNewBlocks": 0
             }
           }
@@ -865,16 +865,12 @@
           "currentSuiteAtRef": "9b9ec4e9c0423f98c87dc79cd91c9dc2a9c80bb4b3542bc986acf1be8828d01f",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-test-helpers.ts": {
-              "sha256": "0f6b2d210e5b486afb0485eb3b38db1f6677f5eb62b2316c00a55055950687f9",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/mocks/mock-helpers.ts": {
               "sha256": "43803b12d97500d6c5b94f9150db55c8445bf75844cd96393a85bced4a791a2a",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": {
-              "sha256": "9755f280cba57c0aa5cdfd365997bba73b55d37c12d7c87f93892e2a0bca44c8",
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-test-helpers.ts": {
@@ -889,8 +885,12 @@
               "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": {
+              "sha256": "9755f280cba57c0aa5cdfd365997bba73b55d37c12d7c87f93892e2a0bca44c8",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-test-helpers.ts": {
+              "sha256": "0f6b2d210e5b486afb0485eb3b38db1f6677f5eb62b2316c00a55055950687f9",
               "sharedNewBlocks": 0
             }
           }
@@ -900,8 +900,8 @@
           "currentSuiteAtRef": "cd59e48a0d3f5e9bee99849b0ae2dc5533c6ba5c547ecd0ae703171fa282d49a",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": {
-              "sha256": "e4560fd06941afa21318dac854f662d0b9d94bbfe923322bd9d6be1e67d177f5",
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-test-helpers.ts": {
@@ -916,8 +916,8 @@
               "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": {
+              "sha256": "e4560fd06941afa21318dac854f662d0b9d94bbfe923322bd9d6be1e67d177f5",
               "sharedNewBlocks": 0
             }
           }
@@ -931,8 +931,8 @@
               "sha256": "93e3df3924efd06a15ee06ceb1d234608878c4eb7b478edfb2314a2a8e9b20b0",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": {
-              "sha256": "9da6adf33ea69272795068a9d665dabacb3e40beb29fd4b74137ddbfa7d2bcd2",
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-test-helpers.ts": {
@@ -943,8 +943,8 @@
               "sha256": "008ed724541ca075e909f9814c1fdfa72647ab0a160059ceb3c2ad09dc104c99",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": {
+              "sha256": "9da6adf33ea69272795068a9d665dabacb3e40beb29fd4b74137ddbfa7d2bcd2",
               "sharedNewBlocks": 0
             }
           }
@@ -964,28 +964,28 @@
               "sha256": "2958853ba274388d352bfcfe6732ed7f1fe44259f1c02342b25a723732a0fe58",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/external/local-storage.ts": {
-              "sha256": "20459e196f6d0f2657b1be18e5f0e5fdf86ed93989e2003835a8828c649bdb86",
+            "turbo/apps/platform/src/signals/route-paths.ts": {
+              "sha256": "19621692c16d0654ad184ba689119e77eb7ea7af05fbb19dc896b8c2d4b96284",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/location.ts": {
-              "sha256": "b76773dbb39b8694ed36948b6c8901a783d9831091f0c9d80bab9f628a637ea4",
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-catalog-test-helpers.ts": {
               "sha256": "a4806da3ee62cac125becaeb2ca79ea125ecbab6a929f302ffcadde41480be55",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/route-paths.ts": {
-              "sha256": "19621692c16d0654ad184ba689119e77eb7ea7af05fbb19dc896b8c2d4b96284",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
               "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/signals/external/local-storage.ts": {
+              "sha256": "20459e196f6d0f2657b1be18e5f0e5fdf86ed93989e2003835a8828c649bdb86",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/location.ts": {
+              "sha256": "b76773dbb39b8694ed36948b6c8901a783d9831091f0c9d80bab9f628a637ea4",
               "sharedNewBlocks": 0
             }
           }
@@ -999,28 +999,28 @@
               "sha256": "0f6b2d210e5b486afb0485eb3b38db1f6677f5eb62b2316c00a55055950687f9",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/external/local-storage.ts": {
-              "sha256": "20459e196f6d0f2657b1be18e5f0e5fdf86ed93989e2003835a8828c649bdb86",
+            "turbo/apps/platform/src/signals/route-paths.ts": {
+              "sha256": "19621692c16d0654ad184ba689119e77eb7ea7af05fbb19dc896b8c2d4b96284",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/location.ts": {
-              "sha256": "b76773dbb39b8694ed36948b6c8901a783d9831091f0c9d80bab9f628a637ea4",
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-catalog-test-helpers.ts": {
               "sha256": "a4806da3ee62cac125becaeb2ca79ea125ecbab6a929f302ffcadde41480be55",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/route-paths.ts": {
-              "sha256": "19621692c16d0654ad184ba689119e77eb7ea7af05fbb19dc896b8c2d4b96284",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
               "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/signals/external/local-storage.ts": {
+              "sha256": "20459e196f6d0f2657b1be18e5f0e5fdf86ed93989e2003835a8828c649bdb86",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/location.ts": {
+              "sha256": "b76773dbb39b8694ed36948b6c8901a783d9831091f0c9d80bab9f628a637ea4",
               "sharedNewBlocks": 0
             }
           }
@@ -1040,28 +1040,28 @@
               "sha256": "495bf8901c94e1cf3b10d13f53f8e2ebb0a92aa5cc157dd5c43a7be48a83d9ce",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/external/local-storage.ts": {
-              "sha256": "20459e196f6d0f2657b1be18e5f0e5fdf86ed93989e2003835a8828c649bdb86",
+            "turbo/apps/platform/src/signals/route-paths.ts": {
+              "sha256": "268cdd3d6ae2956626c469e1a4ffbab3ee4a166538675b81a91bdf437770a815",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/location.ts": {
-              "sha256": "b76773dbb39b8694ed36948b6c8901a783d9831091f0c9d80bab9f628a637ea4",
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-catalog-test-helpers.ts": {
               "sha256": "a4806da3ee62cac125becaeb2ca79ea125ecbab6a929f302ffcadde41480be55",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/route-paths.ts": {
-              "sha256": "268cdd3d6ae2956626c469e1a4ffbab3ee4a166538675b81a91bdf437770a815",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
               "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/signals/external/local-storage.ts": {
+              "sha256": "20459e196f6d0f2657b1be18e5f0e5fdf86ed93989e2003835a8828c649bdb86",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/location.ts": {
+              "sha256": "b76773dbb39b8694ed36948b6c8901a783d9831091f0c9d80bab9f628a637ea4",
               "sharedNewBlocks": 0
             }
           }
@@ -1079,12 +1079,8 @@
               "sha256": "c4b5eb411ec6fda3dc1d6818d583b8844555d9cf87dbd18d841bd5d9e6c5850a",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/views/okou-page/__tests__/connector-integrations-test-helpers.ts": {
-              "sha256": "6a938869cf82c1fe749427bd6bab63e11ccf93862f72d6850e0d22dc6c622e6c",
-              "sharedNewBlocks": 0
-            },
-            "turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-first-chat-test-helpers.ts": {
-              "sha256": "b82d387b0c51d50310acd5834f0c7f92169d9d78353a06e69362e1106934019b",
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-catalog-test-helpers.ts": {
@@ -1095,8 +1091,12 @@
               "sha256": "008ed724541ca075e909f9814c1fdfa72647ab0a160059ceb3c2ad09dc104c99",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-first-chat-test-helpers.ts": {
+              "sha256": "b82d387b0c51d50310acd5834f0c7f92169d9d78353a06e69362e1106934019b",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/connector-integrations-test-helpers.ts": {
+              "sha256": "6a938869cf82c1fe749427bd6bab63e11ccf93862f72d6850e0d22dc6c622e6c",
               "sharedNewBlocks": 0
             }
           }
@@ -1163,12 +1163,12 @@
           "currentSuiteAtRef": "eb1a9a100604234a736543604ec0b24275bed1f7222ed693677b68426af00e5b",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/signals/utils.ts": {
-              "sha256": "2661ad17a8d9f2f0aed38aa8f27b2dfe65fa52a70975df58958f470baaf82f4b",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
               "sha256": "008ed724541ca075e909f9814c1fdfa72647ab0a160059ceb3c2ad09dc104c99",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/utils.ts": {
+              "sha256": "2661ad17a8d9f2f0aed38aa8f27b2dfe65fa52a70975df58958f470baaf82f4b",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
@@ -1188,12 +1188,12 @@
           "currentSuiteAtRef": "c4969981ad016a6c1e14329bb51bdcc853c1dbfbb7755323b56269c55df41ce2",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/views/okou-page/__tests__/connector-integrations-test-helpers.ts": {
-              "sha256": "8bab404ec0aeed3ef1c8c09affda6bedd721776587c6a6ef70a07bd37ab000a3",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/lib/time.ts": {
               "sha256": "667b59f54c4090af448563ef2c60ebd15d74297ed613d792ded51d4484ab0f5c",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
@@ -1204,8 +1204,8 @@
               "sha256": "5c758af5f6c2cf40a57479babd255f0d58facd1348c80d04d9ab680df0730498",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/views/okou-page/__tests__/connector-integrations-test-helpers.ts": {
+              "sha256": "8bab404ec0aeed3ef1c8c09affda6bedd721776587c6a6ef70a07bd37ab000a3",
               "sharedNewBlocks": 0
             }
           }
@@ -1215,12 +1215,12 @@
           "currentSuiteAtRef": "885d87a566ad7c3a14951f932b453f957d8477add6a13ad866750159357d26c9",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/views/okou-page/__tests__/connector-integrations-test-helpers.ts": {
-              "sha256": "e9ce81533ff988bd4bbd3ca3a938e730b418fcce963b2052f713ab011d31623d",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/lib/time.ts": {
               "sha256": "667b59f54c4090af448563ef2c60ebd15d74297ed613d792ded51d4484ab0f5c",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
@@ -1231,8 +1231,8 @@
               "sha256": "5c758af5f6c2cf40a57479babd255f0d58facd1348c80d04d9ab680df0730498",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/views/okou-page/__tests__/connector-integrations-test-helpers.ts": {
+              "sha256": "e9ce81533ff988bd4bbd3ca3a938e730b418fcce963b2052f713ab011d31623d",
               "sharedNewBlocks": 0
             }
           }
@@ -1248,12 +1248,12 @@
           "currentSuiteAtRef": "c7432df5f2693f8a2fbd533370ee9aca6cfc488e90d805018316cf89772c356d",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/views/okou-page/__tests__/connector-integrations-test-helpers.ts": {
-              "sha256": "6a938869cf82c1fe749427bd6bab63e11ccf93862f72d6850e0d22dc6c622e6c",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/lib/time.ts": {
               "sha256": "667b59f54c4090af448563ef2c60ebd15d74297ed613d792ded51d4484ab0f5c",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
@@ -1264,8 +1264,8 @@
               "sha256": "5c758af5f6c2cf40a57479babd255f0d58facd1348c80d04d9ab680df0730498",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/views/okou-page/__tests__/connector-integrations-test-helpers.ts": {
+              "sha256": "6a938869cf82c1fe749427bd6bab63e11ccf93862f72d6850e0d22dc6c622e6c",
               "sharedNewBlocks": 0
             }
           }
@@ -1275,12 +1275,8 @@
           "currentSuiteAtRef": "832d12b291f0d8b0a6b666c9fb13f898afd610764d599bae7acb4c1e3f724653",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/views/okou-page/__tests__/connector-integrations-test-helpers.ts": {
-              "sha256": "6a938869cf82c1fe749427bd6bab63e11ccf93862f72d6850e0d22dc6c622e6c",
-              "sharedNewBlocks": 0
-            },
-            "turbo/apps/platform/src/views/okou-page/__tests__/discord-consent-fixtures.ts": {
-              "sha256": "8bc541b06fb49eaf0f29b964ab07267614723fe7be6853edfc8569138c952e2f",
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
@@ -1291,8 +1287,12 @@
               "sha256": "5c758af5f6c2cf40a57479babd255f0d58facd1348c80d04d9ab680df0730498",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/views/okou-page/__tests__/discord-consent-fixtures.ts": {
+              "sha256": "8bc541b06fb49eaf0f29b964ab07267614723fe7be6853edfc8569138c952e2f",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/connector-integrations-test-helpers.ts": {
+              "sha256": "6a938869cf82c1fe749427bd6bab63e11ccf93862f72d6850e0d22dc6c622e6c",
               "sharedNewBlocks": 0
             }
           }
@@ -1308,28 +1308,28 @@
           "currentSuiteAtRef": null,
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-test-helpers.ts": {
-              "sha256": "2958853ba274388d352bfcfe6732ed7f1fe44259f1c02342b25a723732a0fe58",
+            "turbo/apps/platform/src/lib/time.ts": {
+              "sha256": "667b59f54c4090af448563ef2c60ebd15d74297ed613d792ded51d4484ab0f5c",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
               "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/location.ts": {
-              "sha256": "b76773dbb39b8694ed36948b6c8901a783d9831091f0c9d80bab9f628a637ea4",
-              "sharedNewBlocks": 0
-            },
-            "turbo/apps/platform/src/lib/time.ts": {
-              "sha256": "667b59f54c4090af448563ef2c60ebd15d74297ed613d792ded51d4484ab0f5c",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-test-helpers.ts": {
               "sha256": "31306369ecc9a7d940d5ad53dfdca8b1526f898f228b1569268a50005af4fadf",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-test-helpers.ts": {
+              "sha256": "2958853ba274388d352bfcfe6732ed7f1fe44259f1c02342b25a723732a0fe58",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/location.ts": {
+              "sha256": "b76773dbb39b8694ed36948b6c8901a783d9831091f0c9d80bab9f628a637ea4",
               "sharedNewBlocks": 0
             }
           }
@@ -1339,24 +1339,24 @@
           "currentSuiteAtRef": null,
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-test-helpers.ts": {
-              "sha256": "0f6b2d210e5b486afb0485eb3b38db1f6677f5eb62b2316c00a55055950687f9",
-              "sharedNewBlocks": 0
-            },
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": {
-              "sha256": "462607f4b1e2fa58bfb8a98f0c89b4b39b385b1830f1d812180a42729ffef9c9",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/lib/time.ts": {
               "sha256": "667b59f54c4090af448563ef2c60ebd15d74297ed613d792ded51d4484ab0f5c",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
               "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": {
+              "sha256": "462607f4b1e2fa58bfb8a98f0c89b4b39b385b1830f1d812180a42729ffef9c9",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-test-helpers.ts": {
+              "sha256": "0f6b2d210e5b486afb0485eb3b38db1f6677f5eb62b2316c00a55055950687f9",
               "sharedNewBlocks": 0
             }
           }
@@ -1366,24 +1366,24 @@
           "currentSuiteAtRef": null,
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-test-helpers.ts": {
-              "sha256": "0f6b2d210e5b486afb0485eb3b38db1f6677f5eb62b2316c00a55055950687f9",
-              "sharedNewBlocks": 0
-            },
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": {
-              "sha256": "9755f280cba57c0aa5cdfd365997bba73b55d37c12d7c87f93892e2a0bca44c8",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/lib/time.ts": {
               "sha256": "667b59f54c4090af448563ef2c60ebd15d74297ed613d792ded51d4484ab0f5c",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
               "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": {
+              "sha256": "9755f280cba57c0aa5cdfd365997bba73b55d37c12d7c87f93892e2a0bca44c8",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-test-helpers.ts": {
+              "sha256": "0f6b2d210e5b486afb0485eb3b38db1f6677f5eb62b2316c00a55055950687f9",
               "sharedNewBlocks": 0
             }
           }
@@ -1393,12 +1393,28 @@
           "currentSuiteAtRef": null,
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-test-helpers.ts": {
-              "sha256": "0bed40dd199d2e706b64865120eabff4e49851bb62a8bde342fee1be43ede1b8",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/signals/utils.ts": {
               "sha256": "7704468bcd58fbcd1c6b9b91787c2e23cff4de3be405c86192567d0283992c30",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/lib/time.ts": {
+              "sha256": "667b59f54c4090af448563ef2c60ebd15d74297ed613d792ded51d4484ab0f5c",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/lib/for-you-artwork.ts": {
+              "sha256": "42783782afa11d15d994b1ace5b434efa52390f1c61c80430a851be9eaad027d",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-test-helpers.ts": {
+              "sha256": "0bed40dd199d2e706b64865120eabff4e49851bb62a8bde342fee1be43ede1b8",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/views/okou-page/__tests__/chat-test-helpers.ts": {
@@ -1407,22 +1423,6 @@
             },
             "turbo/apps/platform/src/signals/location.ts": {
               "sha256": "b76773dbb39b8694ed36948b6c8901a783d9831091f0c9d80bab9f628a637ea4",
-              "sharedNewBlocks": 0
-            },
-            "turbo/apps/platform/src/lib/for-you-artwork.ts": {
-              "sha256": "42783782afa11d15d994b1ace5b434efa52390f1c61c80430a851be9eaad027d",
-              "sharedNewBlocks": 0
-            },
-            "turbo/apps/platform/src/lib/time.ts": {
-              "sha256": "667b59f54c4090af448563ef2c60ebd15d74297ed613d792ded51d4484ab0f5c",
-              "sharedNewBlocks": 0
-            },
-            "turbo/apps/platform/src/__tests__/page-helper.ts": {
-              "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
-              "sharedNewBlocks": 0
-            },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
               "sharedNewBlocks": 0
             }
           }
@@ -1436,40 +1436,40 @@
               "sha256": "2661ad17a8d9f2f0aed38aa8f27b2dfe65fa52a70975df58958f470baaf82f4b",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-test-helpers.ts": {
-              "sha256": "f0964cd16b97de4d5881252f0a86e695e4ec5623f6d20b1a4841b156b435b227",
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": {
+              "sha256": "7af98f18efaf93e5f7d02b487786e93c4699f6fa08c81e35ffe4bd7d49703950",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/views/okou-page/__tests__/chat-run-test-fixtures.ts": {
               "sha256": "93e3df3924efd06a15ee06ceb1d234608878c4eb7b478edfb2314a2a8e9b20b0",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/mocks/handlers/api-feature-switches.helpers.ts": {
-              "sha256": "889f113589450d22b07a26755938e283142f0bbe5f301192de75d2b74b8e204f",
-              "sharedNewBlocks": 0
-            },
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": {
-              "sha256": "7af98f18efaf93e5f7d02b487786e93c4699f6fa08c81e35ffe4bd7d49703950",
-              "sharedNewBlocks": 0
-            },
-            "turbo/apps/platform/src/views/okou-page/__tests__/switcher-directory-fixture.ts": {
-              "sha256": "437f26763ea807cb223339adfe93a075727907429307c4ca71a469871f1bc553",
-              "sharedNewBlocks": 0
-            },
-            "turbo/apps/platform/src/signals/location.ts": {
-              "sha256": "b76773dbb39b8694ed36948b6c8901a783d9831091f0c9d80bab9f628a637ea4",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/lib/time.ts": {
               "sha256": "f7f4c950f60c5d215b0c24a3575d878632a69df5bc3ee0d41669a4ed7a5fe68b",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
               "sha256": "008ed724541ca075e909f9814c1fdfa72647ab0a160059ceb3c2ad09dc104c99",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/mocks/handlers/api-feature-switches.helpers.ts": {
+              "sha256": "889f113589450d22b07a26755938e283142f0bbe5f301192de75d2b74b8e204f",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/switcher-directory-fixture.ts": {
+              "sha256": "437f26763ea807cb223339adfe93a075727907429307c4ca71a469871f1bc553",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-test-helpers.ts": {
+              "sha256": "f0964cd16b97de4d5881252f0a86e695e4ec5623f6d20b1a4841b156b435b227",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/location.ts": {
+              "sha256": "b76773dbb39b8694ed36948b6c8901a783d9831091f0c9d80bab9f628a637ea4",
               "sharedNewBlocks": 0
             }
           }
@@ -1536,12 +1536,12 @@
           "currentSuiteAtRef": "afb72b4c52fcc9e38426e52195b3a05a8856cd79ce1e32872120b6a71f3e8aaa",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": {
-              "sha256": "7af98f18efaf93e5f7d02b487786e93c4699f6fa08c81e35ffe4bd7d49703950",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
               "sha256": "008ed724541ca075e909f9814c1fdfa72647ab0a160059ceb3c2ad09dc104c99",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": {
+              "sha256": "7af98f18efaf93e5f7d02b487786e93c4699f6fa08c81e35ffe4bd7d49703950",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
@@ -1612,20 +1612,20 @@
           "currentSuiteAtRef": "6a6cfa4a6ee88f0000ad4131490e69a75103dde872671cfe579049c773aa90d2",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/views/okou-page/__tests__/wallet-settings-test-helpers.ts": {
-              "sha256": "1b2dfe47ea772a987bd1f305b2340a0f39c6e1985f53d102900b2412ade6d3ee",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
               "sha256": "008ed724541ca075e909f9814c1fdfa72647ab0a160059ceb3c2ad09dc104c99",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/views/okou-page/__tests__/connector-integrations-test-helpers.ts": {
               "sha256": "6a938869cf82c1fe749427bd6bab63e11ccf93862f72d6850e0d22dc6c622e6c",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/views/okou-page/__tests__/wallet-settings-test-helpers.ts": {
+              "sha256": "1b2dfe47ea772a987bd1f305b2340a0f39c6e1985f53d102900b2412ade6d3ee",
               "sharedNewBlocks": 0
             }
           }
@@ -1641,24 +1641,24 @@
           "currentSuiteAtRef": "b1738337e9ffcabda10096e72fcad185642f425c568c6b3008a6a8a9fa92a57f",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/__tests__/mock-auth.ts": {
-              "sha256": "a53189888ed023df4a7c720440a53048da89b0cf12a01a66a91022d22b477bb8",
-              "sharedNewBlocks": 0
-            },
-            "turbo/apps/platform/src/views/okou-page/__tests__/connector-integrations-test-helpers.ts": {
-              "sha256": "8bab404ec0aeed3ef1c8c09affda6bedd721776587c6a6ef70a07bd37ab000a3",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/lib/time.ts": {
               "sha256": "667b59f54c4090af448563ef2c60ebd15d74297ed613d792ded51d4484ab0f5c",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
               "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/__tests__/mock-auth.ts": {
+              "sha256": "a53189888ed023df4a7c720440a53048da89b0cf12a01a66a91022d22b477bb8",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/connector-integrations-test-helpers.ts": {
+              "sha256": "8bab404ec0aeed3ef1c8c09affda6bedd721776587c6a6ef70a07bd37ab000a3",
               "sharedNewBlocks": 0
             }
           }
@@ -1668,24 +1668,24 @@
           "currentSuiteAtRef": "b9e65c2fc592c28d8fcc13b173c46584470cacf98e934ba283ad66a9f0249a1e",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/__tests__/mock-auth.ts": {
-              "sha256": "a53189888ed023df4a7c720440a53048da89b0cf12a01a66a91022d22b477bb8",
-              "sharedNewBlocks": 0
-            },
-            "turbo/apps/platform/src/views/okou-page/__tests__/connector-integrations-test-helpers.ts": {
-              "sha256": "e9ce81533ff988bd4bbd3ca3a938e730b418fcce963b2052f713ab011d31623d",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/lib/time.ts": {
               "sha256": "667b59f54c4090af448563ef2c60ebd15d74297ed613d792ded51d4484ab0f5c",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
               "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/__tests__/mock-auth.ts": {
+              "sha256": "a53189888ed023df4a7c720440a53048da89b0cf12a01a66a91022d22b477bb8",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/connector-integrations-test-helpers.ts": {
+              "sha256": "e9ce81533ff988bd4bbd3ca3a938e730b418fcce963b2052f713ab011d31623d",
               "sharedNewBlocks": 0
             }
           }
@@ -1695,16 +1695,16 @@
           "currentSuiteAtRef": "ba15fc50adfb37c2812a950799fcfa575fca7dcba5bf9bab7d86b8325c746ea1",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/views/okou-page/__tests__/connector-page-test-helpers.ts": {
-              "sha256": "193156a6000beddfeb7d7bd703e4e430f318fb2e26268d3d7acc89be8949dd2c",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
               "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/views/okou-page/__tests__/connectors-remote-control-test-helpers.ts": {
               "sha256": "259c04d2f75b4e5b7423415cb8dc3a4b08aa178708ede07cbf909cb6b84d4ba9",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/connector-page-test-helpers.ts": {
+              "sha256": "193156a6000beddfeb7d7bd703e4e430f318fb2e26268d3d7acc89be8949dd2c",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
@@ -1718,24 +1718,24 @@
           "currentSuiteAtRef": "b1738337e9ffcabda10096e72fcad185642f425c568c6b3008a6a8a9fa92a57f",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/__tests__/mock-auth.ts": {
-              "sha256": "a53189888ed023df4a7c720440a53048da89b0cf12a01a66a91022d22b477bb8",
-              "sharedNewBlocks": 0
-            },
-            "turbo/apps/platform/src/views/okou-page/__tests__/connector-integrations-test-helpers.ts": {
-              "sha256": "6a938869cf82c1fe749427bd6bab63e11ccf93862f72d6850e0d22dc6c622e6c",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/lib/time.ts": {
               "sha256": "667b59f54c4090af448563ef2c60ebd15d74297ed613d792ded51d4484ab0f5c",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
               "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/__tests__/mock-auth.ts": {
+              "sha256": "a53189888ed023df4a7c720440a53048da89b0cf12a01a66a91022d22b477bb8",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/connector-integrations-test-helpers.ts": {
+              "sha256": "6a938869cf82c1fe749427bd6bab63e11ccf93862f72d6850e0d22dc6c622e6c",
               "sharedNewBlocks": 0
             }
           }
@@ -1745,28 +1745,28 @@
           "currentSuiteAtRef": "b1a2aee5011f34229b8405ec6caf127b985db64808303ac3285bf39bd519dc74",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/views/okou-page/__tests__/connector-page-test-helpers.ts": {
-              "sha256": "ca3cae8b2d2716b3c8a1ce7b6b33f9cdff50a62b1bbf5492d126faf135277f16",
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": {
+              "sha256": "7af98f18efaf93e5f7d02b487786e93c4699f6fa08c81e35ffe4bd7d49703950",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/views/okou-page/__tests__/connectors-remote-control-test-helpers.ts": {
               "sha256": "259c04d2f75b4e5b7423415cb8dc3a4b08aa178708ede07cbf909cb6b84d4ba9",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/__tests__/mock-auth.ts": {
-              "sha256": "a53189888ed023df4a7c720440a53048da89b0cf12a01a66a91022d22b477bb8",
-              "sharedNewBlocks": 0
-            },
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": {
-              "sha256": "7af98f18efaf93e5f7d02b487786e93c4699f6fa08c81e35ffe4bd7d49703950",
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
               "sha256": "008ed724541ca075e909f9814c1fdfa72647ab0a160059ceb3c2ad09dc104c99",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/__tests__/mock-auth.ts": {
+              "sha256": "a53189888ed023df4a7c720440a53048da89b0cf12a01a66a91022d22b477bb8",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/connector-page-test-helpers.ts": {
+              "sha256": "ca3cae8b2d2716b3c8a1ce7b6b33f9cdff50a62b1bbf5492d126faf135277f16",
               "sharedNewBlocks": 0
             }
           }
@@ -1782,20 +1782,20 @@
           "currentSuiteAtRef": "b94e837847a673a1593f873a90a9d771107a0ab960664fa849a42610e88cd112",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/__tests__/page-helper.ts": {
-              "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
               "sha256": "f44c989a172cb7016262ef8687c8ba5012da8d3baecb56abd8fba9183f56aacd",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/lib/time.ts": {
-              "sha256": "667b59f54c4090af448563ef2c60ebd15d74297ed613d792ded51d4484ab0f5c",
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
               "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/lib/time.ts": {
+              "sha256": "667b59f54c4090af448563ef2c60ebd15d74297ed613d792ded51d4484ab0f5c",
               "sharedNewBlocks": 0
             }
           }
@@ -1805,20 +1805,20 @@
           "currentSuiteAtRef": "11219381c4d625bf692596e9e30ff143e2dd2d94417151d40fa9b2dfc57d5866",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/__tests__/page-helper.ts": {
-              "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
               "sha256": "fefec188dcf9648965532a42c74f4bc88fb74a14d71672f2c8b627ee7d3a640a",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/lib/time.ts": {
-              "sha256": "667b59f54c4090af448563ef2c60ebd15d74297ed613d792ded51d4484ab0f5c",
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
               "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/lib/time.ts": {
+              "sha256": "667b59f54c4090af448563ef2c60ebd15d74297ed613d792ded51d4484ab0f5c",
               "sharedNewBlocks": 0
             }
           }
@@ -1834,20 +1834,20 @@
           "currentSuiteAtRef": "b94e837847a673a1593f873a90a9d771107a0ab960664fa849a42610e88cd112",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/__tests__/page-helper.ts": {
-              "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
               "sha256": "f44c989a172cb7016262ef8687c8ba5012da8d3baecb56abd8fba9183f56aacd",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/lib/time.ts": {
-              "sha256": "667b59f54c4090af448563ef2c60ebd15d74297ed613d792ded51d4484ab0f5c",
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
               "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/lib/time.ts": {
+              "sha256": "667b59f54c4090af448563ef2c60ebd15d74297ed613d792ded51d4484ab0f5c",
               "sharedNewBlocks": 0
             }
           }
@@ -1861,12 +1861,12 @@
               "sha256": "008ed724541ca075e909f9814c1fdfa72647ab0a160059ceb3c2ad09dc104c99",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/views/browser-session/__tests__/browser-native-page-fixture.ts": {
-              "sha256": "29b9002992b95515275cb9842e09a7b927448c94fc8ea4f26a070f22096a6fea",
-              "sharedNewBlocks": 0
-            },
             "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": {
               "sha256": "d1e55d256f0e0e234c094ab373bf72b2b731dabd5e99a9f41c61d9d5a5ccc734",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/views/browser-session/__tests__/browser-native-page-fixture.ts": {
+              "sha256": "29b9002992b95515275cb9842e09a7b927448c94fc8ea4f26a070f22096a6fea",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
@@ -1890,20 +1890,20 @@
               "sha256": "a7377369a5568edcd14517718315450eee1c3a0b951cc3bf8000ea4391f116a0",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": {
-              "sha256": "462607f4b1e2fa58bfb8a98f0c89b4b39b385b1830f1d812180a42729ffef9c9",
-              "sharedNewBlocks": 0
-            },
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-test-helpers.ts": {
-              "sha256": "a5f57145a7883b855cac13782149078ab1c245f46204b129aabf59983ebf3e6d",
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
               "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": {
+              "sha256": "462607f4b1e2fa58bfb8a98f0c89b4b39b385b1830f1d812180a42729ffef9c9",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-test-helpers.ts": {
+              "sha256": "a5f57145a7883b855cac13782149078ab1c245f46204b129aabf59983ebf3e6d",
               "sharedNewBlocks": 0
             }
           }
@@ -1917,20 +1917,20 @@
               "sha256": "a7377369a5568edcd14517718315450eee1c3a0b951cc3bf8000ea4391f116a0",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": {
-              "sha256": "462607f4b1e2fa58bfb8a98f0c89b4b39b385b1830f1d812180a42729ffef9c9",
-              "sharedNewBlocks": 0
-            },
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-test-helpers.ts": {
-              "sha256": "a5f57145a7883b855cac13782149078ab1c245f46204b129aabf59983ebf3e6d",
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
               "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": {
+              "sha256": "462607f4b1e2fa58bfb8a98f0c89b4b39b385b1830f1d812180a42729ffef9c9",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-test-helpers.ts": {
+              "sha256": "a5f57145a7883b855cac13782149078ab1c245f46204b129aabf59983ebf3e6d",
               "sharedNewBlocks": 0
             }
           }
@@ -1950,20 +1950,20 @@
               "sha256": "7704468bcd58fbcd1c6b9b91787c2e23cff4de3be405c86192567d0283992c30",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": {
-              "sha256": "e4560fd06941afa21318dac854f662d0b9d94bbfe923322bd9d6be1e67d177f5",
-              "sharedNewBlocks": 0
-            },
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-test-helpers.ts": {
-              "sha256": "085eeb1cddb5e27c126df4be5a622845b46dd969e342b9710f367479f16d57de",
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/__tests__/page-helper.ts": {
               "sha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": {
+              "sha256": "e4560fd06941afa21318dac854f662d0b9d94bbfe923322bd9d6be1e67d177f5",
+              "sharedNewBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-test-helpers.ts": {
+              "sha256": "085eeb1cddb5e27c126df4be5a622845b46dd969e342b9710f367479f16d57de",
               "sharedNewBlocks": 0
             }
           }
@@ -1973,16 +1973,16 @@
           "currentSuiteAtRef": "15ae6b165baf8fd6ef94c6a6adf8aa63d11d62c9e6d2978e33353525a5806142",
           "sharedNewOwnerBlocks": 0,
           "helpers": {
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-test-helpers.ts": {
-              "sha256": "f0964cd16b97de4d5881252f0a86e695e4ec5623f6d20b1a4841b156b435b227",
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": {
+              "sha256": "7af98f18efaf93e5f7d02b487786e93c4699f6fa08c81e35ffe4bd7d49703950",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/views/okou-page/__tests__/chat-run-test-fixtures.ts": {
               "sha256": "93e3df3924efd06a15ee06ceb1d234608878c4eb7b478edfb2314a2a8e9b20b0",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": {
-              "sha256": "7af98f18efaf93e5f7d02b487786e93c4699f6fa08c81e35ffe4bd7d49703950",
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
               "sharedNewBlocks": 0
             },
             "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-test-helpers.ts": {
@@ -1993,8 +1993,8 @@
               "sha256": "008ed724541ca075e909f9814c1fdfa72647ab0a160059ceb3c2ad09dc104c99",
               "sharedNewBlocks": 0
             },
-            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
-              "sha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-test-helpers.ts": {
+              "sha256": "f0964cd16b97de4d5881252f0a86e695e4ec5623f6d20b1a4841b156b435b227",
               "sharedNewBlocks": 0
             }
           }

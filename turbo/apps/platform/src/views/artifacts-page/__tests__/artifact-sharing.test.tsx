@@ -131,9 +131,9 @@ test.each([false, true])(
         audience: body.audience,
       });
     });
-    context.mocks.api(artifactSharingContract.list, ({ respond }) =>
-      respond(200, { shares: [] }),
-    );
+    context.mocks.api(artifactSharingContract.list, ({ respond }) => {
+      return respond(200, { shares: [] });
+    });
     const menu = within(await openOwnerMenu("private", invitations));
     await waitFor(() => {
       const people = screen.queryByRole("combobox", {
