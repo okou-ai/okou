@@ -146,6 +146,18 @@
               .accessibilityLabel(icon)
             }
           }
+          // A prompt's text takes the glass's vibrancy, so it stays legible on a plain page and
+          // over a picture alike.
+          VStack(spacing: OkouSpace.md) {
+            OkouGlassPrompt("What do you have in mind?")
+            OkouGlassPrompt("What do you have in mind?")
+              .padding(OkouSpace.lg)
+              .background {
+                Image("ForYouCover").resizable().scaledToFill()
+                  .accessibilityHidden(true)
+              }
+              .clipShape(RoundedRectangle(cornerRadius: OkouRadius.card, style: .continuous))
+          }
         }
         OkouCatalogSection("Sheets") {
           Button("Open native scrolling sheet") { showsSheet = true }

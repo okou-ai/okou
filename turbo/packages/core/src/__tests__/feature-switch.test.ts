@@ -23,6 +23,7 @@ describe("FeatureSwitchKey", () => {
 
 describe("isFeatureEnabled", () => {
   it.each([
+    FeatureSwitchKey.IosConnectorManagement,
     FeatureSwitchKey.ZipArtifactPreview,
     FeatureSwitchKey.FollowupPlaceholder,
     FeatureSwitchKey.WorkflowRecencySync,

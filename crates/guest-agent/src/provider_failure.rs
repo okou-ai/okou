@@ -311,6 +311,12 @@ pub(crate) fn provider_error_reason(value: &Value) -> Option<FailureReason> {
         {
             Some(FailureReason::SafetyPolicyRefusal)
         }
+        _ if error.get("code").and_then(Value::as_f64) == Some(403.0)
+            && error.get("message").and_then(Value::as_str)
+                == Some("Output data may contain inappropriate content.") =>
+        {
+            Some(FailureReason::SafetyPolicyRefusal)
+        }
         _ => error
             .get("message")
             .and_then(Value::as_str)

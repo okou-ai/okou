@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.867.1](https://github.com/okou-ai/okou/compare/core-v8.867.0...core-v8.867.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* **app:** remove standalone template picker ([#50365](https://github.com/okou-ai/okou/issues/50365)) ([6a20b9e](https://github.com/okou-ai/okou/commit/6a20b9e686f663c0f71403cf4d52c6d77820e7a6))
+
 ## [8.867.0](https://github.com/okou-ai/okou/compare/core-v8.866.0...core-v8.867.0) (2026-11-24)
 
 

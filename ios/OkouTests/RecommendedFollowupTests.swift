@@ -58,6 +58,42 @@ final class RecommendedFollowupTests: XCTestCase {
       })
   }
 
+  func testPlaceholderAcceptanceEditsOnlyAnEmptyUnmarkedDraft() async throws {
+    let fixture = ConversationHistoryFixture(count: 1)
+    let conversation = fixture.conversation()
+    defer { conversation.close() }
+    let state = conversation.composer
+    let prompt = "Compare the alternatives"
+    let host = UIHostingController(
+      rootView: ChatFeedbackComposer(
+        state: state, inputID: state.attachments.inputID, isFocused: .constant(false),
+        acceptsImages: true, followup: prompt))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    let input = try XCTUnwrap(mentionInputs(in: host.view).first)
+    XCTAssertTrue(conversation.draft.isEmpty)
+    state.editor.acceptFollowup("A different thread's suggestion")
+    XCTAssertTrue(conversation.draft.isEmpty)
+    state.editor.acceptFollowup(prompt)
+    XCTAssertEqual(conversation.draft, prompt)
+    XCTAssertTrue(input.isFirstResponder)
+    input.insertText(" ")
+    input.insertText("please")
+    XCTAssertEqual(conversation.draft, prompt + " please")
+
+    replaceInput("", in: input)
+    input.insertText(" ")
+    XCTAssertEqual(conversation.draft, prompt)
+    replaceInput("", in: input)
+    input.setMarkedText("ni", selectedRange: NSRange(location: 2, length: 0))
+    _ = try XCTUnwrap(input.markedTextRange)
+    state.editor.acceptFollowup(prompt)
+    XCTAssertNotNil(input.markedTextRange)
+    input.insertText(" ")
+    XCTAssertFalse(conversation.draft.contains(prompt))
+    XCTAssertTrue(conversation.pending.isEmpty)
+  }
+
   private func replaceInput(_ text: String, in input: ComposerTextView) {
     input.selectedRange = NSRange(location: 0, length: input.text.utf16.count)
     if text.isEmpty { input.deleteBackward() } else { input.insertText(text) }

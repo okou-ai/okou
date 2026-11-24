@@ -347,6 +347,22 @@ export const iosClientContracts: readonly {
     route: connectorAccountsContract.connections,
   },
   {
+    id: "ios.connectorAccountsContract.inspect",
+    route: connectorAccountsContract.inspect,
+  },
+  {
+    id: "ios.connectorAccountsContract.rename",
+    route: connectorAccountsContract.rename,
+  },
+  {
+    id: "ios.connectorAccountsContract.deletionImpact",
+    route: connectorAccountsContract.deletionImpact,
+  },
+  {
+    id: "ios.connectorAccountsContract.delete",
+    route: connectorAccountsContract.delete,
+  },
+  {
     id: "ios.connectorAccountsContract.oauthCompletion",
     route: connectorAccountsContract.oauthCompletion,
   },

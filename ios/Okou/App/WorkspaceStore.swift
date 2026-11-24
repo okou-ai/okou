@@ -211,7 +211,10 @@ final class WorkspaceStore {
     self.measurementScope = measurementScope
     self.voiceCapture = voiceCapture
     draftRepository = draftStorage.map { _ in ChatDraftRepository(client: client) }
-    let commands = ChatCommands(client: client, sync: sync)
+    let commands = ChatCommands(
+      client: client, sync: sync,
+      voiceInput: VoiceInputClient(
+        client: client, featureSwitches: resources.availableFeatureSwitches))
     self.commands = commands
     self.webURL = webURL
     self.messageMarkdown = MessageMarkdownCache(baseURL: webURL)
@@ -220,6 +223,7 @@ final class WorkspaceStore {
       target: .unassigned, commands: commands, storage: draftStorage,
       didFail: { _ in }, lifecycleTasks: lifecycleTasks)
     newComposer.setForeground(false)
+    resources.featureSnapshot.didRequireUpgrade = { [weak self] in self?.handle($0) }
   }
 
   func start(userID: String, workspaceID: String) async {

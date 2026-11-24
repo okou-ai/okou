@@ -54,4 +54,10 @@
     <string name="chat_resources_related">Chat terkait</string>
     <string name="chat_resources_related_load_failed">Chat terkait tidak dapat dimuat untuk sementara</string>
     <string name="chat_resources_related_access_lost">Chat terkait sudah tidak tersedia</string>
+    <string name="chat_resources_origin">Sumber</string>
+    <string name="chat_resources_workflows">Alur kerja dan automasi</string>
+    <string name="chat_resources_workflows_load_failed">Alur kerja terkait tidak dapat dimuat untuk sementara</string>
+    <string name="chat_resources_wechat">WeChat</string>
+    <string name="chat_resources_feishu">Feishu</string>
+    <string name="chat_resources_messages">Pesan</string>
 </resources>

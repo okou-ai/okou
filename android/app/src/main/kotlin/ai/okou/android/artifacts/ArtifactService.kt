@@ -145,6 +145,13 @@ internal constructor(
             }
         }
 
+    internal suspend fun relatedWorkflows(ids: Set<String>): List<WorkflowResource> =
+        api.workflows().mapNotNull {
+            if (it.id in ids && it.official == null)
+                WorkflowResource(it.id, it.displayName ?: it.name)
+            else null
+        }
+
     internal suspend fun page(
         query: ArtifactQuery,
         cursor: String?,

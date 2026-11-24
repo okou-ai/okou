@@ -49,6 +49,14 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.IosConnectorManagement]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "iOS connector management",
+    description:
+      "Manage connector accounts and permissions in native iOS Settings.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.ComposerVoiceMessages]: {
     maintainer: "ethan@okou.ai",
     displayName: "Voice recordings in the composer",

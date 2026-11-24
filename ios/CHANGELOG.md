@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.61.1](https://github.com/okou-ai/okou/compare/ios-v0.61.0...ios-v0.61.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* **ios:** offer password sign-in from the email code screen ([#50382](https://github.com/okou-ai/okou/issues/50382)) ([7f77e6e](https://github.com/okou-ai/okou/commit/7f77e6e291605036e6a31afab9f3ef6aa4e5dbab))
+
+
+### Refactoring
+
+* **ios:** drive workspace returns with one pan recognizer ([#50355](https://github.com/okou-ai/okou/issues/50355)) ([aad511d](https://github.com/okou-ai/okou/commit/aad511d326a04d0b83628f801b5191c97b47dbe7))
+
 ## [0.61.0](https://github.com/okou-ai/okou/compare/ios-v0.60.0...ios-v0.61.0) (2026-11-24)
 
 

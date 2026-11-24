@@ -1,3 +1,4 @@
+import { chatArtifactCatalogChangedEvent } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
@@ -36,6 +37,7 @@ import {
   findButton,
   quoteSelectedPassage,
   selectPassage,
+  waitForSend,
   type CapturedChatSend,
 } from "./chat-capability-test-helpers.ts";
 
@@ -213,6 +215,131 @@ test("Quote the real Markdown files despite authored provenance markers", async 
   expect(sends[0]?.prompt).toContain(FILE_ID);
   expect(sends[0]?.prompt).toContain("plan.md");
 });
+
+test.each(["notification", "reconnect"] as const)(
+  "Copy and quote a newly published Markdown version on %s without reloading",
+  async (delivery) => {
+    context.mocks.browser.matchMedia((query) => {
+      return query === SPLIT_QUERY;
+    });
+    const clipboard = context.mocks.browser.clipboardWriteText();
+    const updatedUrl = publicArtifactUrl("plan.md").replace(
+      "/chat-attachments/",
+      "/chat-attachments-v2/",
+    );
+    mockMarkdown();
+    context.mocks.http.get(updatedUrl, () => {
+      return HttpResponse.text(`# Updated launch plan\n\n${SECOND_PASSAGE}`);
+    });
+    const firstEvent = {
+      ...markdownEvents()[0]!,
+      content: `[Launch plan](${publicArtifactUrl("plan.md")})`,
+    };
+    const chatEvents = [firstEvent];
+    const artifacts = [markdownFile("plan.md", FILE_ID)];
+    const sends: CapturedChatSend[] = [];
+    mockAttachmentChat(context, {
+      chatEvents,
+      artifacts,
+      onSendRequest: (body) => {
+        sends.push(body);
+      },
+    });
+    await setupPage({
+      context,
+      path: `/chats/${ATTACHMENT_THREAD_ID}`,
+      sharedWorkerTestTransport: "message-port",
+      featureSwitches: {
+        [FeatureSwitchKey.MarkdownArtifactQuote]: true,
+      },
+    });
+    await openMarkdown();
+    await selectPassage(PASSAGE);
+    const firstQuote = await quoteSelectedPassage();
+    expect(firstQuote).toHaveTextContent(PASSAGE);
+    expect(sends).toHaveLength(0);
+
+    const topic = chatArtifactCatalogChangedEvent(ATTACHMENT_THREAD_ID);
+    const messageTopic = `chatThreadMessageCreated:${ATTACHMENT_THREAD_ID}`;
+    await waitFor(() => {
+      expect(context.mocks.ably.hasSubscription(topic)).toBeTruthy();
+    });
+    // V1 has already been opened and quoted from the V1-only inventory.
+    artifacts.push({
+      ...markdownFile("plan.md", SECOND_FILE_ID),
+      url: updatedUrl,
+    });
+    chatEvents.push({
+      ...firstEvent,
+      id: "markdown-quote-reply-v2",
+      content: `[Updated launch plan](${updatedUrl})`,
+      runEventId: "markdown-quote-output-v2",
+      sequenceNumber: 2,
+      createdAt: "2026-11-20T00:00:01Z",
+    });
+    await act(() => {
+      context.mocks.ably.trigger(messageTopic);
+    });
+    await findNamedLink("Updated launch plan");
+    await act(() => {
+      if (delivery === "notification") {
+        context.mocks.ably.trigger(topic);
+      } else {
+        // Recover the missed catalog publication when continuity is lost.
+        context.mocks.ably.triggerConnectionState("suspended");
+        context.mocks.ably.triggerReconnect();
+      }
+    });
+    click(await findNamedLink("Updated launch plan"));
+    const sidebar = await screen.findByTestId("artifact-sidebar");
+    await within(sidebar).findByText(SECOND_PASSAGE);
+    await selectPassage(SECOND_PASSAGE);
+    click(await findButton("Copy"));
+    await expect(screen.findByText("Copied")).resolves.toBeInTheDocument();
+    expect(clipboard.writes).toStrictEqual([SECOND_PASSAGE]);
+    await selectPassage(SECOND_PASSAGE);
+    await quoteSelectedPassage();
+    const quotes = screen.getAllByRole("textbox", {
+      name: "Ask or comment on this quote",
+    });
+    expect(quotes).toHaveLength(2);
+    expect(quotes[0]).toHaveTextContent(PASSAGE);
+    expect(quotes[1]).toHaveTextContent(SECOND_PASSAGE);
+    expect(sends).toHaveLength(0);
+
+    click(await findButton("Send"));
+    const send = await waitForSend(sends, 1);
+    expect(send.threadId).toBe(ATTACHMENT_THREAD_ID);
+    expect(
+      send.userMessage?.parts.filter((part) => {
+        return part.type === "feedback";
+      }),
+    ).toStrictEqual([
+      {
+        type: "feedback",
+        quote: PASSAGE,
+        note: [],
+        source: {
+          type: "artifact",
+          fileId: FILE_ID,
+          filenameSnapshot: "plan.md",
+          artifactId: ARTIFACT_ID,
+        },
+      },
+      {
+        type: "feedback",
+        quote: SECOND_PASSAGE,
+        note: [],
+        source: {
+          type: "artifact",
+          fileId: SECOND_FILE_ID,
+          filenameSnapshot: "plan.md",
+          artifactId: ARTIFACT_ID,
+        },
+      },
+    ]);
+  },
+);
 
 test.each([
   { enabled: undefined, wide: true },

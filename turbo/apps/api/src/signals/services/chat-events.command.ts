@@ -1438,9 +1438,9 @@ function normalSendUserMessage(
       });
 }
 /**
- * A conflict on the insert is accepted as a duplicate without a lookup. Only
- * a follow-up with a server-generated id cannot have collided on its id, so
- * its conflict is the revoke edge taken concurrently.
+ * An ordinary input's ID conflict is accepted as a duplicate without a lookup.
+ * Follow-ups can also conflict on their revoke edge, so their caller-supplied
+ * identities are resolved separately after publication loses a race.
  */
 function normalSendEvent(params: {
   readonly modelSelection: ChatInputModelSelection;
@@ -2468,10 +2468,9 @@ function settledNormalSendResponse(
   createdAt: Date | null,
 ) {
   if (createdAt === null) {
-    // A conflict on the insert is accepted as a duplicate without a
-    // lookup. Only a follow-up with a server-generated id cannot have
-    // collided on its id, so its conflict is the revoke edge taken
-    // concurrently.
+    // Caller-supplied follow-up IDs resolve their receipt before this fast
+    // path. A server-generated ID cannot collide on its ID, so a follow-up
+    // conflict here is the revoke edge taken concurrently.
     return body.revokesEventId && body.clientEventId === undefined
       ? conflict("Recommended follow-up has already been used")
       : acceptedSendResponse(threadId, nowDate(), true);
@@ -2503,6 +2502,41 @@ function forgedMcpSource(body: NormalSendBody): boolean {
   });
 }
 
+const startNormalSendRevocation$ = command(
+  (
+    { set },
+    args: {
+      readonly body: NormalSendBody;
+      readonly existingThread: Promise<ExistingSendThreadRow | null>;
+      readonly enqueueTiming?: ChatEnqueueTimingCollector;
+    },
+    signal: AbortSignal,
+  ) => {
+    return settleIncludingAbort(async () => {
+      const existing = await args.existingThread;
+      signal.throwIfAborted();
+      if (!existing) {
+        return undefined;
+      }
+      return await measureChatEnqueue(
+        args.enqueueTiming,
+        "followup_validation",
+        () => {
+          return set(
+            validateNormalRevocationTarget$,
+            {
+              threadId: existing.id,
+              revokesEventId: args.body.revokesEventId,
+              clientEventId: args.body.clientEventId,
+            },
+            signal,
+          );
+        },
+      );
+    });
+  },
+);
+
 interface NormalSendBootstrap {
   readonly context: AgentRunContextSignals;
   readonly existingThread$: Computed<Promise<ExistingSendThreadRow | null>>;
@@ -2510,6 +2544,9 @@ interface NormalSendBootstrap {
   readonly chatRunSource: NormalSendChatRunSourceRead;
   readonly attachmentRecords?: IncomingAttachmentRecords;
   readonly host?: Parameters<typeof readCapturedComputerAccess>[0];
+  readonly revocation?: ReturnType<
+    (typeof startNormalSendRevocation$)["write"]
+  >;
 }
 
 const startNormalSendReads$ = command(
@@ -2519,6 +2556,7 @@ const startNormalSendReads$ = command(
       readonly auth: OrganizationAuthContext;
       readonly body: NormalSendBody;
       readonly requireVisibleThread?: boolean;
+      readonly enqueueTiming?: ChatEnqueueTimingCollector;
     },
     signal: AbortSignal,
   ): NormalSendBootstrap => {
@@ -2610,7 +2648,29 @@ const startNormalSendReads$ = command(
     if (host) {
       waitUntil(host);
     }
-    return { ...graph, inputId, chatRunSource, attachmentRecords, host };
+    const revocation =
+      body.threadId && body.revokesEventId
+        ? set(
+            startNormalSendRevocation$,
+            {
+              body,
+              existingThread: get(graph.existingThread$),
+              enqueueTiming: args.enqueueTiming,
+            },
+            signal,
+          )
+        : undefined;
+    if (revocation) {
+      waitUntil(revocation);
+    }
+    return {
+      ...graph,
+      inputId,
+      chatRunSource,
+      attachmentRecords,
+      host,
+      revocation,
+    };
   },
 );
 
@@ -2621,6 +2681,7 @@ export const startNormalSendBootstrap$ = command(
       readonly auth: OrganizationAuthContext;
       readonly body: SendBody;
       readonly requireVisibleThread?: boolean;
+      readonly enqueueTiming?: ChatEnqueueTimingCollector;
     },
     signal: AbortSignal,
   ) => {
@@ -2648,6 +2709,7 @@ const prepareNormalSendContext$ = command(
       chatRunSource,
       attachmentRecords,
       host,
+      revocation,
     } = request.bootstrap ?? set(startNormalSendReads$, request, signal);
     const existingRead =
       request.body.threadId === undefined ? undefined : get(existingThread$);
@@ -2660,29 +2722,6 @@ const prepareNormalSendContext$ = command(
       return notFound("Chat thread not found");
     }
     set(preloadAgentRunContext$, context, signal);
-    const revocation =
-      existing && args.body.revokesEventId
-        ? settleIncludingAbort(() => {
-            return measureChatEnqueue(
-              args.enqueueTiming,
-              "followup_validation",
-              () => {
-                return set(
-                  validateNormalRevocationTarget$,
-                  {
-                    threadId: existing.id,
-                    revokesEventId: args.body.revokesEventId,
-                    clientEventId: args.body.clientEventId,
-                  },
-                  signal,
-                );
-              },
-            );
-          })
-        : undefined;
-    if (revocation) {
-      waitUntil(revocation);
-    }
     const prepared = await set(
       authorizeNormalSend$,
       { ...args, existing: existing ?? undefined, chatRunSource },
@@ -2985,6 +3024,26 @@ export const sendNormalEvent$ = command(
       );
     }
     const accepted = enqueued.value;
+    if (
+      accepted === null &&
+      args.body.revokesEventId &&
+      args.body.clientEventId !== undefined
+    ) {
+      const prior = clientEventIdResolutionResponse(
+        await set(
+          resolveClientEventId$,
+          {
+            clientEventId: args.body.clientEventId,
+            orgId: args.orgId,
+            threadId: thread.threadId,
+            userId: args.userId,
+          },
+          signal,
+        ),
+        thread.threadId,
+      );
+      return prior ?? conflict("Recommended follow-up has already been used");
+    }
     if (accepted) {
       args.onAcceptedDocument?.(publication.input.event.userMessage);
     }

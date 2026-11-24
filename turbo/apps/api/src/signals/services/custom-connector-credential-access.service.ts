@@ -82,7 +82,6 @@ export interface CustomConnectorCredentialDefinition {
 
 interface CustomConnectorStoredConnection {
   readonly id: string;
-  readonly updatedAt: Date;
   readonly customConnectorId: string;
   readonly storedAuthMethod: string;
   readonly storedStorageVersion: number;
@@ -134,6 +133,7 @@ interface CustomConnectorRuntimeStorageSnapshot {
 }
 
 export interface CustomConnectorRuntimeStorageRow extends CustomConnectorStoredConnection {
+  readonly updatedAt: Date;
   readonly kind: CustomConnectorRuntimeStorageKind | null;
   readonly key: string | null;
   readonly storedValue: string | null;

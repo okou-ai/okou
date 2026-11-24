@@ -6,10 +6,12 @@ import SwiftUI
 struct ComposerConnectorDirectory: View {
   let store: ComposerConnectorStore
   let resources: ComposerConnectorDirectoryResources
+  var showsCustom = true
 
   var body: some View {
     StoreProvider(resources.store) {
-      ComposerConnectorDirectoryContent(store: store, resources: resources)
+      ComposerConnectorDirectoryContent(
+        store: store, resources: resources, showsCustom: showsCustom)
     }
   }
 }
@@ -17,11 +19,15 @@ struct ComposerConnectorDirectory: View {
 private struct ComposerConnectorDirectoryContent: View {
   let store: ComposerConnectorStore
   let resources: ComposerConnectorDirectoryResources
+  let showsCustom: Bool
   @LoadableValue private var selection: Loadable<ComposerConnectorDirectoryResources.Selection>
 
-  init(store: ComposerConnectorStore, resources: ComposerConnectorDirectoryResources) {
+  init(
+    store: ComposerConnectorStore, resources: ComposerConnectorDirectoryResources, showsCustom: Bool
+  ) {
     self.store = store
     self.resources = resources
+    self.showsCustom = showsCustom
     _selection = LoadableValue(resources.selection)
   }
 
@@ -39,15 +45,17 @@ private struct ComposerConnectorDirectoryContent: View {
   private func content(_ selection: ComposerConnectorDirectoryResources.Selection) -> some View {
     ScrollView {
       VStack(alignment: .leading, spacing: OkouSpace.lg) {
-        OkouSegmentControl(
-          selection: Binding(
-            get: { selection.tab },
-            set: { tab in
-              resources.update(tab: tab)
-            }),
-          options: [(.discover, "Discover"), (.custom, "Custom")]
-        )
-        .padding(.horizontal, OkouSpace.lg)
+        if showsCustom {
+          OkouSegmentControl(
+            selection: Binding(
+              get: { selection.tab },
+              set: { tab in
+                resources.update(tab: tab)
+              }),
+            options: [(.discover, "Discover"), (.custom, "Custom")]
+          )
+          .padding(.horizontal, OkouSpace.lg)
+        }
         if selection.tab == .discover {
           ConnectorDirectoryRead(signal: resources.catalog) { value, isLoading in
             discover(value, selection: selection, isLoading: isLoading)
@@ -62,7 +70,7 @@ private struct ComposerConnectorDirectoryContent: View {
       .padding(.bottom, OkouSpace.xxl)
     }
     .okouGroupedBackground(OkouColor.background)
-    .navigationTitle("Add connectors")
+    .navigationTitle(showsCustom ? "Add connectors" : "Connectors")
     .navigationBarTitleDisplayMode(.inline)
     .searchable(
       text: Binding(
@@ -171,7 +179,7 @@ private struct ComposerConnectorDirectoryContent: View {
       .buttonStyle(.plain)
       if !added {
         Button {
-          Self.connect(connector, store: store)
+          store.connect(connector)
         } label: {
           OkouAddIndicator(isAdded: false)
         }
@@ -267,19 +275,6 @@ private struct ComposerConnectorDirectoryContent: View {
       path: "connectors/\(slug)/connect")
   }
 
-  /// Sign-in in the app when the connector has an account method; a connector that Okou
-  /// manages for the workspace is set up on the web.
-  fileprivate static func connect(
-    _ connector: ChatCatalogConnector, store: ComposerConnectorStore
-  ) {
-    if connector.authMethods.contains(where: { $0.grantKind != "managed" }) {
-      store.connect(target: .builtin(connector.slug))
-    } else {
-      store.openWeb(
-        path: "connectors/\(connector.slug)/connect")
-    }
-  }
-
 }
 
 /// Both native phase projections observe the same cached request Task.
@@ -302,141 +297,6 @@ private struct ConnectorDirectoryRead<Value: Sendable, Content: View>: View {
 
 /// A connector's page in the manner of Manus: the mark, name and what it does on one card,
 /// the actions under them, then the facts (status, category, how it signs in).
-private struct ComposerConnectorDetail: View {
-  let store: ComposerConnectorStore
-  let connector: ChatCatalogConnector
-  @State private var permissionDestination: ComposerConnectorPermissionResources?
-
-  private var added: Bool {
-    store.connectors.contains { $0.target.connectorSlug == connector.slug }
-  }
-
-  var body: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: OkouSpace.lg) {
-        hero
-        facts
-        // One method is already named under "Sign in with"; several are worth explaining.
-        if connector.authMethods.count > 1 {
-          methods
-        }
-      }
-      .padding(.horizontal, OkouSpace.lg)
-      .padding(.bottom, OkouSpace.xxl)
-    }
-    .okouGroupedBackground(OkouColor.background)
-    .navigationTitle("")
-    .navigationBarTitleDisplayMode(.inline)
-    .connectorPermissionDestination(store: store, destination: $permissionDestination)
-  }
-
-  private var hero: some View {
-    VStack(spacing: OkouSpace.md) {
-      OkouLogoTile(size: OkouControl.logoTileLarge) {
-        ConnectorLogo(icon: connector.icon, pointSize: OkouIconSize.partnerLogoLarge)
-      }
-      VStack(spacing: OkouSpace.xs) {
-        Text(connector.label)
-          .font(.okou(.title3).weight(.semibold))
-          .foregroundStyle(OkouColor.foreground)
-        Text(connector.description)
-          .font(.okou(.subheadline))
-          .foregroundStyle(OkouColor.mutedForeground)
-          .multilineTextAlignment(.center)
-          .textSelection(.enabled)
-      }
-      HStack(spacing: OkouSpace.sm) {
-        Button {
-          ComposerConnectorDirectoryContent.connect(connector, store: store)
-        } label: {
-          if added {
-            OkouCompactButtonLabel("Add account", icon: "plus")
-          } else {
-            OkouCompactButtonLabel("Connect", icon: "plug")
-          }
-        }
-        .buttonStyle(OkouButtonStyle(isPrimary: !added, isCompact: true))
-        .accessibilityIdentifier("connector-connect")
-        if connector.permissionSummary.hasPermissions
-          && store.canConfigurePermissions(slug: connector.slug)
-        {
-          Button {
-            permissionDestination = store.openPermissions(
-              slug: connector.slug, label: connector.label)
-          } label: {
-            OkouCompactButtonLabel("Permissions", icon: "shield-check")
-          }
-          .buttonStyle(OkouButtonStyle(isPrimary: false, isCompact: true))
-        }
-      }
-      .padding(.top, OkouSpace.sm)
-    }
-    .frame(maxWidth: .infinity)
-    .padding(OkouSpace.xl)
-    .modifier(OkouSurfaceStyle())
-  }
-
-  private var facts: some View {
-    VStack(spacing: 0) {
-      factRow("Status") {
-        HStack(spacing: OkouSpace.xs) {
-          if added {
-            OkouIcon("check", size: OkouIconSize.inline).foregroundStyle(OkouStatusColor.success)
-            Text("Connected")
-          } else {
-            Text("Not connected")
-          }
-        }
-      }
-      Divider()
-      factRow("Category") { Text(ConnectorCategoryName.full(connector.category)) }
-      if !connector.authMethods.isEmpty {
-        Divider()
-        factRow("Sign in with") {
-          Text(connector.authMethods.map(\.label).joined(separator: ", "))
-        }
-      }
-    }
-    .padding(.horizontal, OkouSpace.lg)
-    .modifier(OkouSurfaceStyle())
-  }
-
-  private func factRow<Value: View>(_ label: LocalizedStringKey, @ViewBuilder value: () -> Value)
-    -> some View
-  {
-    HStack(spacing: OkouSpace.md) {
-      Text(label).foregroundStyle(OkouColor.mutedForeground)
-      Spacer(minLength: 0)
-      value().foregroundStyle(OkouColor.foreground).multilineTextAlignment(.trailing)
-    }
-    .font(.okou(.subheadline))
-    .frame(minHeight: OkouControl.listRow)
-  }
-
-  private var methods: some View {
-    VStack(alignment: .leading, spacing: OkouSpace.sm) {
-      Text("Connection methods").okouSectionHeader()
-      VStack(alignment: .leading, spacing: 0) {
-        ForEach(Array(connector.authMethods.enumerated()), id: \.offset) { index, method in
-          if index > 0 { Divider() }
-          VStack(alignment: .leading, spacing: OkouSpace.two) {
-            Text(method.label).font(.okou(.subheadline).weight(.medium))
-            if let description = method.description, !description.isEmpty {
-              Text(description)
-                .font(.okou(.footnote))
-                .foregroundStyle(OkouColor.mutedForeground)
-            }
-          }
-          .padding(.vertical, OkouSpace.md)
-          .frame(maxWidth: .infinity, alignment: .leading)
-        }
-      }
-      .padding(.horizontal, OkouSpace.lg)
-      .modifier(OkouSurfaceStyle())
-    }
-  }
-}
-
 /// The web's category names (`connector-category-labels.ts`): short ones for chips, the full
 /// ones on a connector's page. The catalog sends stable English ids; an id the app does not
 /// know yet falls back to a readable title.

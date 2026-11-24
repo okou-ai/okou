@@ -1,6 +1,43 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Use this suggestion": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Diesen Vorschlag verwenden" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Usar esta sugerencia" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Utiliser cette suggestion" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "इस सुझाव का उपयोग करें" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Gunakan saran ini" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Usa questo suggerimento" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "この提案を使う" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "이 제안 사용" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Usar esta sugestão" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "使用这条建议" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "使用這項建議" }
+        }
+      }
+    },
     "Voice message": {
       "localizations": {
         "zh-Hans": {
@@ -20102,6 +20139,43 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "顯示完整郵件" }
+        }
+      }
+    },
+    "Show more": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Mehr anzeigen" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Mostrar más" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Afficher plus" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "और दिखाएँ" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Tampilkan lebih banyak" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Mostra di più" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "さらに表示" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "더 보기" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Mostrar mais" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "展开" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "顯示更多" }
         }
       }
     },
