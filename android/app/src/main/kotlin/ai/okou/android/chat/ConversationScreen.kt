@@ -76,8 +76,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
@@ -87,6 +85,7 @@ internal val ConversationContentMaxWidth = 768.dp
 
 private const val HistoryFeedbackDelayMillis = 250L
 private const val TimelineEnd = "conversation_end"
+private const val TimelineStart = "conversation_start"
 private const val TimelineInitial = "conversation_initial"
 private const val TimelineActivity = "conversation_activity"
 private val TimelineEndPadding = 16.dp
@@ -307,7 +306,6 @@ internal fun ConversationRoute(
             if (execution == HistoryExecution.Running) setOf(TimelineActivity) else emptySet()
         val runningFrame = rememberRunningWaveFrame(position, runningRows)
         val scope = rememberCoroutineScope()
-        var replyDisclosureScroll by remember { mutableStateOf<Job?>(null) }
         val controlSnackbar = remember { SnackbarHostState() }
         // The notice can move with the queue panel. Its lifetime belongs to the conversation.
         WorkspaceFeedbackTimeout(controlSnackbar)
@@ -351,9 +349,12 @@ internal fun ConversationRoute(
                 }
             }
         }
-        var restored by remember(linkPosition) { mutableStateOf(false) }
-        var restoredAnchor by remember(linkPosition) { mutableStateOf<ConversationAnchor?>(null) }
+        var initialReadingPosition by
+            remember(linkPosition) {
+                mutableStateOf<ReadingPosition?>(null)
+            }
         var positioned by remember(linkPosition, searchTarget) { mutableStateOf(false) }
+        var transcriptShown by remember { mutableStateOf(false) }
         var findViewport by remember { mutableStateOf<LayoutCoordinates?>(null) }
         var hasSeenLatest by remember { mutableStateOf(false) }
         var newReply by remember { mutableStateOf(false) }
@@ -388,9 +389,10 @@ internal fun ConversationRoute(
         SideEffect { recentSizes.keys.retainAll(recentKeys.toSet()) }
         LaunchedEffect(model, threadId, linkPosition) {
             val source = linkPosition?.source
-            restoredAnchor =
-                if (source != null) source.anchor else model.restoreReadingAnchor(threadId)
-            restored = true
+            initialReadingPosition =
+                ReadingPosition(
+                    if (source != null) source.anchor else model.restoreReadingAnchor(threadId),
+                )
         }
         val foundIndex =
             remember(targetMessageId, timeline) {
@@ -401,6 +403,32 @@ internal fun ConversationRoute(
                     }
             }
         val pendingFind = readingTarget?.takeUnless { it.positioned }
+        val restored = initialReadingPosition
+        val restoredAnchor = restored?.anchor.takeUnless { positioned }
+        val restoredIndex =
+            remember(restoredAnchor, timeline) {
+                restoredAnchor?.let { anchor ->
+                    timeline.indexOfFirst {
+                        it is ConversationMessage && it.includes(anchor.eventId)
+                    }
+                } ?: -1
+            }
+        // Keep cached rows readable while an absent target waits for catch-up.
+        val waitingForAnchor =
+            (pendingFind != null && foundIndex < 0 ||
+                restoredAnchor != null && restoredIndex < 0) &&
+                state.phase == HistoryPhase.Loading &&
+                !list.offline
+        val showTimeline =
+            !hasContent ||
+                missing ||
+                pendingFind != null ||
+                transcriptShown ||
+                positioned ||
+                restored != null && (waitingForAnchor || waitingForSearch)
+        if (showTimeline && hasContent && !missing && !transcriptShown) {
+            SideEffect { transcriptShown = true }
+        }
         LaunchedEffect(
             restored,
             positioned,
@@ -410,26 +438,19 @@ internal fun ConversationRoute(
             readingTarget,
             waitingForSearch,
         ) {
-            if (!restored || positioned || waitingForSearch || (!hasContent && !missing))
+            if (restored == null || positioned || waitingForSearch || (!hasContent && !missing))
                 return@LaunchedEffect
-            val anchor = restoredAnchor
-            val index = timeline.indexOfFirst {
-                it is ConversationMessage && it.includes(anchor?.eventId)
-            }
             val jumpIndex = if (pendingFind == null) -1 else foundIndex
-            // A cached checkpoint can be older than the saved anchor. Give catch-up a chance first.
-            if (
-                (pendingFind != null && jumpIndex < 0 || anchor != null && index < 0) &&
-                    state.phase == HistoryPhase.Loading &&
-                    !list.offline
-            )
-                return@LaunchedEffect
-            val row = (if (jumpIndex >= 0) jumpIndex else index) + 1
+            if (waitingForAnchor) return@LaunchedEffect
+            val row = (if (jumpIndex >= 0) jumpIndex else restoredIndex) + 1
             val offset =
-                if (jumpIndex < 0 && index >= 0 && anchor != null)
-                    with(density) { anchor.offsetDp.dp.roundToPx() }
+                if (jumpIndex < 0 && restoredIndex >= 0 && restoredAnchor != null)
+                    with(density) { restoredAnchor.offsetDp.dp.roundToPx() }
                 else 0
-            if (pendingFind == null) {
+            if (!showTimeline) {
+                // Apply the reading position on the transcript's first measure.
+                position.requestScrollToItem(row, offset)
+            } else if (pendingFind == null) {
                 position.scrollToItem(row, offset)
             } else {
                 // A reader's gesture can cancel the scroll without cancelling this entry.
@@ -591,6 +612,7 @@ internal fun ConversationRoute(
         val contentWidth = Modifier.widthIn(max = ConversationContentMaxWidth)
         Column(modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+                if (!showTimeline) return@Box
                 LazyColumn(
                     contentWidth
                         .fillMaxSize()
@@ -685,14 +707,8 @@ internal fun ConversationRoute(
                                         artifactActions = artifactActions,
                                         findHighlight = highlight,
                                         links = links,
-                                        onToggleEarlierReplies = { toggle ->
-                                            replyDisclosureScroll?.cancel()
-                                            replyDisclosureScroll =
-                                                position.toggleReplyDisclosure(
-                                                    scope,
-                                                    entry.key,
-                                                    toggle,
-                                                )
+                                        beforeToggleEarlierReplies = {
+                                            position.keepReplyTop(entry.key)
                                         },
                                         failureContent = recovery,
                                     )
@@ -710,6 +726,9 @@ internal fun ConversationRoute(
                                     Text(stringResource(R.string.history_empty))
                             }
                         }
+                    } else {
+                        // Keep an anchor above the oldest reply, too.
+                        item(key = TimelineStart) {}
                     }
                 }
                 if (positioned && !atEnd && position.canScrollBackward) {
@@ -805,30 +824,14 @@ internal fun ConversationRoute(
 }
 
 private val TimelineFixedKeys =
-    setOf(TimelineEnd, TimelineInitial, TimelineActivity, ConversationCompletionKey)
+    setOf(TimelineEnd, TimelineStart, TimelineInitial, TimelineActivity, ConversationCompletionKey)
 
 private data class ReadingPosition(val anchor: ConversationAnchor?)
 
-private fun LazyListState.toggleReplyDisclosure(
-    scope: CoroutineScope,
-    key: String,
-    toggle: () -> Unit,
-): Job? {
-    val beforeLayout = layoutInfo
-    val before = beforeLayout.visibleItemsInfo.firstOrNull { it.key == key }
-    val anchor = before?.let { it.size to it.offset + it.size }
-    toggle()
-    if (anchor == null) return null
-    val (size, topFromEnd) = anchor
-    return scope.launch {
-        val afterLayout = snapshotFlow { layoutInfo }.first { it !== beforeLayout }
-        val after = afterLayout.visibleItemsInfo.firstOrNull { it.key == key }
-        if (after != null && after.size != size) {
-            // Reverse layout normally keeps the bottom fixed when a reply grows.
-            val shift = after.offset + after.size - topFromEnd
-            if (shift != 0) scrollBy(shift.toFloat())
-        }
-    }
+private fun LazyListState.keepReplyTop(key: String) {
+    val reply = layoutInfo.visibleItemsInfo.firstOrNull { it.key == key } ?: return
+    // The next item in reverse order starts at the reply's top edge.
+    requestScrollToItem(reply.index + 1, -(reply.offset + reply.size))
 }
 
 private fun LazyListItemInfo.readingAnchor(density: Density): ConversationAnchor =

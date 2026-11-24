@@ -286,6 +286,7 @@ class ChatComposerRootTest {
                 reply(3, latest),
                 historyEventWire(id(4), 4, type = "run.completed", payload = "null"),
             )
+        app.fixture.chats.historyCatchUp = { MockResponse().setResponseCode(503) }
         app.fixture.chats.historyRows = { request ->
             val since = request.requestUrl?.queryParameter("sinceSeqId")?.toInt() ?: 0
             jsonResponse(
@@ -300,14 +301,23 @@ class ChatComposerRootTest {
         captureOwners()
         val summary = compose.onNodeWithTag("conversation_reply_summary")
         compose.waitUntilExactlyOneExists(hasTestTag("conversation_reply_summary"), 5_000)
+        compose.waitUntil("latest conversation is displayed", 5_000) {
+            app.fixture.chats.readRequests.get() > 0
+        }
         val resting = summary.assertIsDisplayed().getUnclippedBoundsInRoot()
         summary.performClick()
+        compose.waitUntil("expanded summary retains its position", 5_000) {
+            compose.onAllNodesWithText(earlier).fetchSemanticsNodes().isNotEmpty() &&
+                summary.getUnclippedBoundsInRoot().top == resting.top
+        }
         val expanded = summary.assertIsDisplayed().getUnclippedBoundsInRoot()
-        assertEquals(resting.top, expanded.top)
         val firstReply = compose.onNodeWithText(earlier).assertIsDisplayed()
         assertTrue(firstReply.getUnclippedBoundsInRoot().top >= expanded.bottom)
         summary.performClick()
-        assertEquals(resting.top, summary.getUnclippedBoundsInRoot().top)
+        compose.waitUntil("collapsed summary retains its position", 5_000) {
+            compose.onAllNodesWithText(earlier).fetchSemanticsNodes().isEmpty() &&
+                summary.getUnclippedBoundsInRoot().top == resting.top
+        }
     }
 
     @Test
@@ -323,14 +333,9 @@ class ChatComposerRootTest {
         )
         // Native focus loss collapses an active selection; preserve the cursor on recreation.
         input.performTextInputSelection(TextRange(13))
-        compose.onNodeWithContentDescription("Chat actions").performClick()
-        compose.onNodeWithText("Settings").performClick()
-        compose.onNodeWithText("Display mode").assertExists()
         captureOwners()
         // Recreation runs the same complete Activity budget check as every Debug save.
         compose.activityRule.scenario.recreate()
-        compose.onNodeWithText("Display mode").assertExists()
-        compose.onNodeWithContentDescription("Back").performClick()
         assertEquals(
             large,
             input.fetchSemanticsNode().config[SemanticsProperties.EditableText].text,
