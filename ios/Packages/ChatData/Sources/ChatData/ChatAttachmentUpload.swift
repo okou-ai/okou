@@ -41,7 +41,8 @@ struct ChatAttachmentUpload {
         multipart: size >= 5 * 1024 * 1024 ? true : nil))
     let prepared: PreparedUpload
     if requirePrivate {
-      prepared = try await client.request("/api/uploads/prepare/private", method: "POST", body: body)
+      prepared = try await client.request(
+        "/api/uploads/prepare/private", method: "POST", body: body)
     } else {
       prepared = try await client.request("/api/uploads/prepare", method: "POST", body: body)
     }

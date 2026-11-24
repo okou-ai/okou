@@ -117,7 +117,7 @@ final class VoiceComposerFixture: Sendable {
           "contentType": .string("audio/wav"), "uploadUrl": .string(url.absoluteString)
         ])
       case "/api/uploads/prepare/voice-object":
-        XCTAssertEqual(Data(try chatRequestBody(request).prefix(4)), Data("RIFF".utf8))
+        XCTAssertEqual(Data(chatRequestBody(request).prefix(4)), Data("RIFF".utf8))
         return ChatHTTPResponse(body: "")
       case "/api/uploads/complete":
         return try ChatHTTPResponse(json: [
