@@ -444,7 +444,6 @@
       "close": "Fermer",
       "closeArtifact": "Fermer l'artéfact",
       "closeNamed": "Fermer {{title}}",
-      "closePreviewMenu": "Fermer le menu d'aperçu",
       "download": "Télécharger",
       "downloadArtifact": "Télécharger l'artéfact",
       "downloadMarkdownAs": "Télécharger au format {{format}}",
@@ -2006,7 +2005,7 @@
       },
       "slashPanel": {
         "browseAll": "Parcourir tous les modèles",
-        "hint": "Rechercher un workflow ou choisir un modèle…",
+        "hint": "Choisir une action",
         "useTemplate": "Utiliser le modèle {{title}}"
       },
       "temporarilySwitchTo": "Passer temporairement à",
@@ -2948,6 +2947,7 @@
       "storageFailed": "Le son n’a pas pu être sauvegardé. Seul le son déjà enregistré sur cet appareil est disponible.",
       "textTakingShape": "Le texte prend forme",
       "transcribing": "Transcription",
+      "uploadingRecording": "Envoi de l’enregistrement…",
       "useRecording": "Utiliser l’enregistrement"
     },
     "walletAction": {
@@ -3085,6 +3085,7 @@
       "edit": "Modifier",
       "grant": "Accorder",
       "reconnect": "Reconnecter",
+      "returnToOkou": "Revenir à Okou",
       "revoke": "Révoquer",
       "save": "Enregistrer",
       "saving": "Enregistrement...",
@@ -5270,6 +5271,7 @@
     }
   },
   "projects": {
+    "archiveProject": "Archiver",
     "back": "Back",
     "close": "Close",
     "collapse": "Replier",
@@ -5310,6 +5312,7 @@
     "removeFromNewChat": "Retirer {{name}}",
     "rename": "Rename",
     "renameProject": "Rename Project",
+    "restoreProject": "Restaurer le projet",
     "retryThreads": "Reload threads",
     "save": "Save",
     "saveError": "Could not save Project",
@@ -6466,7 +6469,6 @@
   },
   "sidebar": {
     "escapeShortcut": "Esc",
-    "filterAll": "Tout",
     "markAllRead": "Tout marquer comme lu",
     "noResults": "Aucun résultat trouvé",
     "resultCount_one": "{{count}} résultat",
@@ -6475,10 +6477,8 @@
     "searching": "Recherche...",
     "searchWorkspace": "Rechercher dans l’espace de travail...",
     "sections": {
-      "artifacts": "Artefacts",
-      "chats": "Chats",
       "messages": "Messages",
-      "workflows": "Workflows"
+      "threads": "Fils de discussion"
     }
   },
   "ssh": {

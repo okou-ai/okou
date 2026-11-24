@@ -43,6 +43,14 @@ export function replayProjectEvents(
       name: event.name,
       createdAt: existing?.createdAt ?? event.createdAt,
       updatedAt: event.createdAt,
+      ...(event.archived != null
+        ? { archived: event.archived, lastArchivedAt: event.lastArchivedAt }
+        : existing?.archived != null
+          ? {
+              archived: existing.archived,
+              lastArchivedAt: existing.lastArchivedAt,
+            }
+          : {}),
       ...(event.sortOrder != null
         ? { sortOrder: event.sortOrder }
         : existing?.sortOrder !== undefined

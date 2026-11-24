@@ -430,7 +430,6 @@
       "close": "Tutup",
       "closeArtifact": "Tutup artefak",
       "closeNamed": "Tutup {{title}}",
-      "closePreviewMenu": "Tutup menu pratinjau",
       "download": "Unduh",
       "downloadArtifact": "Unduh artefak",
       "downloadMarkdownAs": "Unduh sebagai {{format}}",
@@ -1970,7 +1969,7 @@
       },
       "slashPanel": {
         "browseAll": "Jelajahi semua templat",
-        "hint": "Cari alur kerja atau pilih templat…",
+        "hint": "Pilih tindakan",
         "useTemplate": "Gunakan templat {{title}}"
       },
       "temporarilySwitchTo": "Beralih sementara ke",
@@ -2883,6 +2882,7 @@
       "storageFailed": "Audio tidak dapat disimpan. Hanya audio yang sudah tersimpan di perangkat ini yang tersedia.",
       "textTakingShape": "Teks sedang terbentuk",
       "transcribing": "Mentranskripsi",
+      "uploadingRecording": "Mengunggah rekaman…",
       "useRecording": "Gunakan rekaman"
     },
     "walletAction": {
@@ -3014,6 +3014,7 @@
       "edit": "Edit",
       "grant": "Berikan",
       "reconnect": "Hubungkan ulang",
+      "returnToOkou": "Kembali ke Okou",
       "revoke": "Cabut",
       "save": "Simpan",
       "saving": "Menyimpan...",
@@ -5188,6 +5189,7 @@
     }
   },
   "projects": {
+    "archiveProject": "Arsipkan",
     "back": "Back",
     "close": "Close",
     "collapse": "Ciutkan",
@@ -5224,6 +5226,7 @@
     "removeFromNewChat": "Hapus {{name}}",
     "rename": "Rename",
     "renameProject": "Rename Project",
+    "restoreProject": "Pulihkan proyek",
     "retryThreads": "Reload threads",
     "save": "Save",
     "saveError": "Could not save Project",
@@ -6371,17 +6374,14 @@
   },
   "sidebar": {
     "escapeShortcut": "Esc",
-    "filterAll": "Semua",
     "markAllRead": "Tandai semua sudah dibaca",
     "noResults": "Tidak ada hasil ditemukan",
     "resultCount_other": "{{count}} hasil",
     "searching": "Mencari...",
     "searchWorkspace": "Cari di ruang kerja...",
     "sections": {
-      "artifacts": "Artefak",
-      "chats": "Chat",
       "messages": "Pesan",
-      "workflows": "Alur kerja"
+      "threads": "Utas"
     }
   },
   "ssh": {

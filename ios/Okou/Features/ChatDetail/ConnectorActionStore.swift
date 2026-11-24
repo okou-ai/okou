@@ -16,6 +16,7 @@ final class ConnectorAuthorizationFlow: Identifiable {
   var notice: String?
   var busy = false
   var browserURL: URL?
+  var usesProviderApplication = false
   var session: ChatConnectorReceipt?
   var expiresAt: Date?
   var checking = false
@@ -63,6 +64,7 @@ final class ConnectorActionStore {
   private(set) var notices: [String: String] = [:]
   var activationError: String?
   private let service: ChatConnectorService
+  private let providerApplication: any ConnectorProviderApplication
   private let commands: ChatCommands?
   private let thread: ChatThread?
   private let didContinue: @MainActor () async -> Void
@@ -77,11 +79,13 @@ final class ConnectorActionStore {
     service: ChatConnectorService, commands: ChatCommands? = nil, thread: ChatThread? = nil,
     didContinue: @escaping @MainActor () async -> Void,
     didFail: @escaping @MainActor (Error) -> Void,
+    providerApplication: any ConnectorProviderApplication = SystemConnectorProviderApplication(),
     pollSleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
     }
   ) {
     self.service = service
+    self.providerApplication = providerApplication
     resources = ConnectorActionResources(service: service, didFail: didFail)
     self.commands = commands
     self.thread = thread
@@ -184,8 +188,13 @@ final class ConnectorActionStore {
   private func startAuthorization(
     _ flow: ConnectorAuthorizationFlow, status current: ChatConnectorStatus
   ) async throws {
+    flow.usesProviderApplication = false
+    let nativeAppAuthorization =
+      current.target == .builtin("strava")
+      && flow.method?.id == "oauth" && flow.method?.grantKind == "auth-code"
     let result = try await service.start(
-      status: current, method: flow.method, values: flow.values, options: flow.options)
+      status: current, method: flow.method, values: flow.values, options: flow.options,
+      nativeAppAuthorization: nativeAppAuthorization)
     try check(flow)
     flow.values = [:]
     flow.code = ""
@@ -204,10 +213,23 @@ final class ConnectorActionStore {
     }
     if let attemptID = result.oauthAttemptId {
       guard UUID(uuidString: attemptID) != nil else { throw APIClientError.invalidResponse }
-      let url = try browserURL(result.authorizationUrl)
+      let webURL = try browserURL(result.authorizationUrl)
+      let appURL =
+        nativeAppAuthorization
+        ? try ConnectorProviderAuthorization.appURL(
+          receipt: result, target: current.target, methodID: flow.methodID, webURL: webURL) : nil
       flow.session = result
       flow.expiresAt = Date().addingTimeInterval(600)
-      flow.browserURL = url
+      if let appURL {
+        // A refused/canceled authorization is not a failed launch. Only a
+        // definitive OS launch failure permits the same attempt's web fallback.
+        let opened = await providerApplication.open(appURL)
+        try check(flow)
+        flow.usesProviderApplication = opened
+        flow.browserURL = opened ? nil : webURL
+      } else {
+        flow.browserURL = webURL
+      }
       startPolling(flow)
       return
     }
@@ -233,7 +255,7 @@ final class ConnectorActionStore {
         do {
           try await pollSleep(.seconds(flow.pollInterval))
           if try await checkCompletion(flow) { return }
-          if flow.browserClosed, flow.session?.oauthAttemptId != nil {
+          if flow.browserClosed, !flow.checking, flow.session?.oauthAttemptId != nil {
             flow.session = nil
             flow.notice = String(localized: "Authorization canceled. You can try again.")
             return
@@ -350,6 +372,30 @@ final class ConnectorActionStore {
     guard let flow = active else { return }
     flow.browserURL = nil
     flow.browserClosed = true
+  }
+
+  func receiveProviderReturn(_ url: URL) {
+    guard !closed, let flow = active, flow.session?.nativeAppAuthorization?.provider == "strava",
+      let attemptID = ConnectorProviderAuthorization.returnAttemptID(url),
+      flow.session?.oauthAttemptId?.lowercased() == attemptID
+    else { return }
+    // Both success and denial wake the attempt. Only its authenticated backend
+    // receipt can establish success or identify the exact connection.
+    flow.browserURL = nil
+    flow.browserClosed = true
+    if task == nil { startPolling(flow) }
+  }
+
+  func providerSceneActive(_ isActive: Bool) {
+    guard !closed, let flow = active, flow.usesProviderApplication, flow.session != nil else {
+      return
+    }
+    if isActive {
+      if task == nil { startPolling(flow) }
+    } else {
+      task?.cancel()
+      task = nil
+    }
   }
 
   func authenticationFinished(

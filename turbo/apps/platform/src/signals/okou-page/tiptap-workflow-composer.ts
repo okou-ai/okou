@@ -1,4 +1,8 @@
 import {
+  createVoicePlayer,
+  type VoicePlayer,
+} from "../chat-page/voice-player.ts";
+import {
   createProjectMentionNode,
   projectMentionText,
 } from "./composer-project-mention-node.ts";
@@ -80,6 +84,7 @@ import {
 } from "./workflow-composer-domain.ts";
 import {
   PROJECT_MENTION_NODE_NAME,
+  VOICE_CLIP_NODE_NAME,
   CHAT_THREAD_MENTION_NODE_NAME,
   createEditorDocumentSnapshot,
   draftToEditorDoc,
@@ -215,7 +220,14 @@ export interface WorkflowComposerSubmissionSnapshot {
   readonly editorDocument: EditorDocumentSnapshot;
 }
 
+export interface ComposerVoiceChip {
+  readonly key: string;
+  readonly dom: HTMLSpanElement;
+  readonly player: VoicePlayer;
+}
+
 export interface WorkflowComposerSignals {
+  readonly voiceChips$: Computed<readonly ComposerVoiceChip[]>;
   readonly editor: Editor;
   readonly setContainerRef$: Command<
     (() => void) | undefined,
@@ -241,7 +253,7 @@ export interface WorkflowComposerSignals {
   readonly slashWorkflowsExpanded$: Computed<boolean>;
   /** The open menu's inner height when its workflows were revealed. */
   readonly slashWorkflowsExpandedHeight$: Computed<number | null>;
-  readonly recentWorkflowIds$: Computed<readonly string[]>;
+  readonly recentWorkflowIds$: Computed<Promise<readonly string[]>>;
   readonly expandSlashWorkflows$: Command<void, []>;
   /** The composer edge the open slash menu hugs: the half its `/` is in. */
   readonly slashMenuSide$: Computed<SlashMenuSide>;
@@ -270,6 +282,7 @@ export interface WorkflowComposerSignals {
     void,
     [OpenComposerTemplatePickerIntent]
   >;
+  readonly insertVoiceClip$: Command<void, [string]>;
   readonly insertText$: Command<void, [string]>;
   readonly readVoiceContext$: Command<VoiceIoEditorContext, []>;
   readonly selectOrAppendText$: Command<void, [string]>;
@@ -454,6 +467,83 @@ function createChatThreadMentionNodeView(node: ProseMirrorNode): NodeView {
       return true;
     },
   };
+}
+
+function voiceClipLabel() {
+  return i18n.t(($) => {
+    return $.chat.messageDocument.voice;
+  });
+}
+
+function createVoiceClipNode(runtime: WorkflowComposerRuntime) {
+  return Node.create({
+    name: VOICE_CLIP_NODE_NAME,
+    group: "inline",
+    inline: true,
+    atom: true,
+    addAttributes() {
+      return { fileId: { default: null } };
+    },
+    parseHTML() {
+      return [
+        {
+          tag: "span[data-voice-clip]",
+          getAttrs: (element) => {
+            return { fileId: element.dataset.voiceClip };
+          },
+        },
+      ];
+    },
+    renderHTML({ node }) {
+      const fileId: unknown = node.attrs.fileId;
+      return ["span", { "data-voice-clip": fileId }, voiceClipLabel()];
+    },
+    renderText: voiceClipLabel,
+    addNodeView() {
+      return ({ node }) => {
+        const fileId: unknown = node.attrs.fileId;
+        if (typeof fileId !== "string") {
+          throw new Error("Voice clip file ID is missing");
+        }
+        const dom = document.createElement("span");
+        dom.dataset.voiceClip = fileId;
+        dom.className = inlineReferenceVariants({
+          selectable: true,
+          padding: "none",
+          className:
+            "max-w-full select-none gap-0 overflow-hidden whitespace-nowrap",
+        });
+        dom.contentEditable = "false";
+        const chip: ComposerVoiceChip = {
+          dom,
+          key: crypto.randomUUID(),
+          player: createVoicePlayer([{ fileId }]),
+        };
+        runtime.setVoiceChipMounted?.(chip, true);
+        return {
+          dom,
+          destroy() {
+            runtime.setVoiceChipMounted?.(chip, false);
+          },
+          selectNode() {
+            dom.dataset.selected = "";
+          },
+          deselectNode() {
+            delete dom.dataset.selected;
+          },
+          stopEvent(event) {
+            return (
+              event.target instanceof Element &&
+              event.target.closest("button") !== null
+            );
+          },
+          ignoreMutation() {
+            return true;
+          },
+        };
+      };
+    },
+  });
 }
 
 const ChatThreadMentionNode = Node.create({
@@ -1406,6 +1496,9 @@ function valueToWorkflowComposerDoc(value: string): JSONContent {
 }
 
 function composerLeafText(node: ProseMirrorNode): string {
+  if (node.type.name === VOICE_CLIP_NODE_NAME) {
+    return voiceClipLabel();
+  }
   if (node.type.name === PROJECT_MENTION_NODE_NAME) {
     return projectMentionText(node);
   }
@@ -1619,6 +1712,9 @@ function workflowHighlightStorage(editor: Editor): WorkflowHighlightStorage {
 }
 
 interface WorkflowComposerRuntime {
+  readonly voiceChips$: State<readonly ComposerVoiceChip[]>;
+  readonly setVoiceChipMounted$: Command<void, [ComposerVoiceChip, boolean]>;
+  setVoiceChipMounted?: (chip: ComposerVoiceChip, mounted: boolean) => void;
   update(editor: Editor): void;
   selectionUpdate(editor: Editor): void;
   focus(editor: Editor): void;
@@ -1789,6 +1885,7 @@ function createWorkflowEditor(runtime: WorkflowComposerRuntime): Editor {
       createFeedbackItemNode(runtime),
       createProjectMentionNode(),
       ChatThreadMentionNode,
+      createVoiceClipNode(runtime),
       WorkflowHighlight,
       UrlHighlight,
     ],
@@ -1941,6 +2038,7 @@ function refreshWorkflowComposerLocalization(
 }
 
 function resetMountedWorkflowRuntime(runtime: WorkflowComposerRuntime): void {
+  delete runtime.setVoiceChipMounted;
   runtime.update = () => {};
   runtime.selectionUpdate = () => {};
   runtime.focus = () => {};
@@ -2392,6 +2490,9 @@ function createMountEditorCommand({
   const removeFeedback$ = createRemoveFeedbackCommand(editor, draft, feedback);
   return onRef(
     command(async ({ get, set }, element: HTMLElement, signal: AbortSignal) => {
+      runtime.setVoiceChipMounted = (chip, mounted) => {
+        set(runtime.setVoiceChipMounted$, chip, mounted);
+      };
       runtime.update = (updatedEditor) => {
         set(legacyTemplateAttachment.sync$);
         set(templateSelection.sync$);
@@ -2491,6 +2592,7 @@ function createMountEditorCommand({
       signal.addEventListener("abort", () => {
         compositionGate.cancel(signal.reason);
         resetMountedWorkflowRuntime(runtime);
+        set(runtime.voiceChips$, []);
         set(legacyTemplateAttachment.reset$);
         set(draft.setInputSyncTarget$, null);
         set(previewSuggestionIndexState$, null);
@@ -2655,6 +2757,21 @@ function createInsertTextCommands(editor: Editor) {
 
   return {
     readVoiceContext$,
+    insertVoiceClip$: command((_context, fileId: string) => {
+      const doc = editor.state.doc;
+      const clip = { type: VOICE_CLIP_NODE_NAME, attrs: { fileId } };
+      const lastIsParagraph = doc.lastChild?.type.name === "paragraph";
+      const position = doc.content.size - (lastIsParagraph ? 1 : 0);
+      editor
+        .chain()
+        .focus()
+        .insertContentAt(
+          position,
+          lastIsParagraph ? clip : { type: "paragraph", content: [clip] },
+        )
+        .scrollIntoView()
+        .run();
+    }),
     insertText$,
     insertPromptMarkdown$,
     ...createPromptTextCommands(editor),
@@ -2944,6 +3061,7 @@ function createInsertUserMessageCommand(editor: Editor) {
   return command((_context, value: UserMessageDocument) => {
     const insertableParts = value.parts.filter((part) => {
       return (
+        part.type === "voice" ||
         part.type === "text" ||
         part.type === "chat_thread" ||
         part.type === "feedback" ||
@@ -3000,7 +3118,23 @@ function createWorkflowComposerRuntime(
     suggestionContext: SuggestionContext | null,
   ) => string,
 ): WorkflowComposerRuntime {
+  const voiceChips$ = state<readonly ComposerVoiceChip[]>([]);
+  const setVoiceChipMounted$ = command(
+    ({ get, set }, chip: ComposerVoiceChip, mounted: boolean) => {
+      const chips = get(voiceChips$);
+      set(
+        voiceChips$,
+        mounted
+          ? [...chips, chip]
+          : chips.filter((item) => {
+              return item !== chip;
+            }),
+      );
+    },
+  );
   return {
+    voiceChips$,
+    setVoiceChipMounted$,
     update(_editor: Editor): void {},
     selectionUpdate(_editor: Editor): void {},
     focus(_editor: Editor): void {},
@@ -3383,10 +3517,17 @@ export function createWorkflowComposerSignals(
   );
   return {
     editor,
+    voiceChips$: computed((get) => {
+      return get(runtime.voiceChips$);
+    }),
     setContainerRef$,
     focus$,
     hasInput$: computed((get) => {
-      return get(draft.hasInput$) || get(feedback.active$);
+      return (
+        get(draft.hasInput$) ||
+        get(runtime.voiceChips$).length > 0 ||
+        get(feedback.active$)
+      );
     }),
     hasTemplateAttachment$: templates.legacy.active$,
     templateRequests$: templates.selection.requests$,

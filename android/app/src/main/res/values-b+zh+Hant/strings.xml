@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="auth_checking_workspace">正在檢查工作區…</string>
+    <string name="auth_check_failed">暫時無法檢查工作區。</string>
+    <string name="auth_selection_failed">暫時無法進入這個工作區。</string>
+    <string name="auth_sign_out_failed">暫時無法登出。</string>
     <string name="composer_sync_loading">正在載入已儲存的草稿…</string>
     <string name="composer_sync_saving">正在同步草稿…</string>
     <string name="composer_sync_failed">草稿同步失敗，輸入仍儲存在此裝置上。</string>
@@ -7,20 +11,8 @@
     <string name="composer_sync_retry">重試草稿同步</string>
     <string name="composer_restore_draft">還原保留的草稿</string>
     <string name="controls_storage_failed">待處理控制請求暫時無法儲存。</string>
-    <string name="controls_stop">停止執行中的工作</string>
-    <string name="controls_preparing">正在儲存控制請求…</string>
-    <string name="controls_sending">正在傳送控制請求…</string>
-    <string name="controls_accepted">請求已接受，等待確認。</string>
-    <string name="controls_checking">正在確認控制結果…</string>
-    <string name="controls_unknown">控制結果尚未確認。</string>
-    <string name="controls_retryable">原目標仍可操作。</string>
-    <string name="controls_retry_original">重試原請求</string>
-    <string name="controls_check">確認控制結果</string>
-    <string name="controls_recorded">控制請求已記入對話歷程。</string>
-    <string name="controls_target_settled">原目標已結束或已處理。</string>
-    <string name="controls_read_failed">無法確認控制結果。</string>
-    <string name="controls_recovery_failed">暫時無法取得對話復原狀態。</string>
-    <string name="controls_recovering">正在準備繼續對話。</string>
+    <string name="controls_stop">停止任務</string>
+    <string name="controls_stop_failed">無法停止任務。</string>
     <string name="settings">設定</string>
     <string name="back">返回</string>
     <string name="appearance">顯示模式</string>
@@ -29,7 +21,6 @@
     <string name="appearance_dark">深色</string>
     <string name="on_this_device">此裝置</string>
     <string name="retry">重試</string>
-    <string name="auth_restoring">正在恢復登入狀態…</string>
     <string name="auth_preparing_workspace">正在準備工作區…</string>
     <string name="auth_choose_workspace">選擇工作區</string>
     <string name="auth_no_workspace">還沒有可存取的工作區</string>
@@ -140,8 +131,6 @@
     <string name="realtime_connecting">正在連線即時更新…</string>
     <string name="realtime_unavailable">即時更新暫時無法使用，你仍可手動重新整理。</string>
     <string name="settings_account">帳戶</string>
-    <string name="chat_project_expansion_read_failed">無法載入此裝置上的專案展開狀態。</string>
-    <string name="chat_project_expansion_save_failed">無法在此裝置上儲存專案展開狀態。</string>
     <string name="settings_cancel">取消</string>
     <string name="settings_saving">正在儲存…</string>
     <string name="settings_sign_out_title">登出？</string>

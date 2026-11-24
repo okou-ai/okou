@@ -29,7 +29,10 @@ export {
   type OkouAvatarMood,
   type OkouAvatarProps,
 } from "./components/ui/okou-avatar";
-export { inlineReferenceVariants } from "./components/ui/inline-reference";
+export {
+  InlineReferenceContent,
+  inlineReferenceVariants,
+} from "./components/ui/inline-reference";
 export { IconButton, type IconButtonProps } from "./components/ui/icon-button";
 export { Checkbox } from "./components/ui/checkbox";
 export {
@@ -42,6 +45,7 @@ export { CopyButton, type CopyButtonProps } from "./components/ui/copy-button";
 export { Input } from "./components/ui/input";
 export { Kbd, KbdGroup } from "./components/ui/kbd";
 export {
+  useDialogActionsRef,
   Dialog,
   DialogClose,
   DialogTrigger,

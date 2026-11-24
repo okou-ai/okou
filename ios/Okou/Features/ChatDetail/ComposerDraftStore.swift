@@ -116,6 +116,17 @@ final class ComposerDraftStore {
     !closed && isForeground && document.isSupported && !localReadFailed && conflictingRemote == nil
   }
 
+  func appendVoiceClip(_ fileID: String, recordingID: UUID) {
+    guard consumedVoiceID != recordingID else { return }
+    consumedVoiceID = recordingID
+    document.parts.append(
+      .object([
+        "type": .string("voice"), "clips": .array([.object(["fileId": .string(fileID)])])
+      ]))
+    resetEditors()
+    changed()
+  }
+
   func insertVoiceText(_ text: String, id: UUID, at target: ComposerEditor.VoiceInsertion) -> Bool {
     guard canEditVoice else { return false }
     if consumedVoiceID == id { return true }

@@ -120,6 +120,7 @@ struct OkouApp: App {
       }
       .onOpenURL { url in
         if OkouWidgetLinks.shared.receive(url) { return }
+        if ConnectorProviderAuthorization.returnAttemptID(url) != nil { return }
         Task { await authentication?.handleURL(url) }
       }
     }

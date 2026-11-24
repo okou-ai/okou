@@ -430,7 +430,6 @@
       "close": "閉じる",
       "closeArtifact": "アーティファクトを閉じる",
       "closeNamed": "{{title}} を閉じる",
-      "closePreviewMenu": "プレビューメニューを閉じる",
       "download": "ダウンロード",
       "downloadArtifact": "アーティファクトをダウンロードする",
       "downloadMarkdownAs": "{{format}} としてダウンロード",
@@ -1970,7 +1969,7 @@
       },
       "slashPanel": {
         "browseAll": "すべてのテンプレートを見る",
-        "hint": "ワークフローを検索するか、テンプレートを選択…",
+        "hint": "アクションを選択",
         "useTemplate": "テンプレート {{title}} を使う"
       },
       "temporarilySwitchTo": "一時的な切り替え先",
@@ -2883,6 +2882,7 @@
       "storageFailed": "音声を保存できませんでした。この端末に保存済みの音声のみ利用できます。",
       "textTakingShape": "テキストを作成中",
       "transcribing": "文字起こし",
+      "uploadingRecording": "録音をアップロード中…",
       "useRecording": "録音を使う"
     },
     "walletAction": {
@@ -3014,6 +3014,7 @@
       "edit": "編集",
       "grant": "グラント",
       "reconnect": "再接続",
+      "returnToOkou": "Okou に戻る",
       "revoke": "取り消し",
       "save": "保存",
       "saving": "保存中...",
@@ -5188,6 +5189,7 @@
     }
   },
   "projects": {
+    "archiveProject": "アーカイブ",
     "back": "Back",
     "close": "Close",
     "collapse": "折りたたむ",
@@ -5224,6 +5226,7 @@
     "removeFromNewChat": "{{name}}を削除",
     "rename": "Rename",
     "renameProject": "Rename Project",
+    "restoreProject": "プロジェクトを復元",
     "retryThreads": "Reload threads",
     "save": "Save",
     "saveError": "Could not save Project",
@@ -6371,17 +6374,14 @@
   },
   "sidebar": {
     "escapeShortcut": "Esc",
-    "filterAll": "すべて",
     "markAllRead": "すべて既読としてマークする",
     "noResults": "結果が見つかりませんでした",
     "resultCount_other": "{{count}} 件の結果",
     "searching": "検索中...",
     "searchWorkspace": "ワークスペースを検索...",
     "sections": {
-      "artifacts": "アーティファクト",
-      "chats": "チャット",
       "messages": "メッセージ",
-      "workflows": "ワークフロー"
+      "threads": "スレッド"
     }
   },
   "ssh": {

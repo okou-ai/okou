@@ -67,6 +67,18 @@ internal fun String.isBlankWebDraft() = all {
         it in " \u00a0\u1680\u2028\u2029\u202f\u205f\u3000\ufeff"
 }
 
+internal fun draftThreadIdsForList(
+    confirmedIds: Set<String>?,
+    localDrafts: Map<String, EditableComposerDraft>,
+): Set<String> = buildSet {
+    addAll(confirmedIds.orEmpty())
+    for ((key, draft) in localDrafts) {
+        if (!key.startsWith("thread:") || (!draft.dirty && confirmedIds != null)) continue
+        val id = key.removePrefix("thread:")
+        if (draft.text.isBlankWebDraft()) remove(id) else add(id)
+    }
+}
+
 internal fun plainDraftDocument(text: String): JsonObject = buildJsonObject {
     put(
         "draftUserMessage",
@@ -92,7 +104,7 @@ internal fun plainDraftDocument(text: String): JsonObject = buildJsonObject {
 
 /** Preserve every old editable candidate and all frozen requests before changing ownership. */
 internal fun ComposerJournal.withServerDrafts(): ComposerJournal {
-    if (format == 3) {
+    if (format >= 3) {
         val retiredDrafts = drafts.filterKeys {
             it != ServerDraftTarget().key && !it.startsWith("thread:")
         }

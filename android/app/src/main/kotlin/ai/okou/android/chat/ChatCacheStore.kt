@@ -5,6 +5,11 @@ import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.ChatEventsEventsItem
 import ai.okou.android.api.generated.ProjectArchive
 import ai.okou.android.api.generated.ProjectEventsEventsItem
+import ai.okou.android.artifacts.ArtifactItem
+import ai.okou.android.artifacts.ArtifactKind
+import ai.okou.android.artifacts.ArtifactPage
+import ai.okou.android.artifacts.ConfirmedArtifactCatalog
+import ai.okou.android.artifacts.ConfirmedRelatedChats
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.scopeHash
 import ai.okou.android.auth.workspaceStorageKey
@@ -186,6 +191,136 @@ internal constructor(
         private fun checkCurrent() {
             if (!current()) throw CancellationException("Chat cache owner retired")
         }
+
+        internal suspend fun loadArtifactCatalog(threadId: String): ConfirmedArtifactCatalog? =
+            withContext(dispatcher) {
+                lock.withLock {
+                    checkCurrent()
+                    if (database == null && !file.exists()) return@withLock null
+                    val db = database()
+                    val snapshot = db.useReaderConnection { connection ->
+                        connection.deferredTransaction {
+                            val dao = db.chats()
+                            val catalog = dao.artifactCatalog(key, threadId)
+                            if (catalog?.authorization != authorization) {
+                                return@deferredTransaction null
+                            }
+                            val items =
+                                dao.artifactItems(key, threadId).map {
+                                    ArtifactItem(
+                                        it.id,
+                                        it.title,
+                                        ArtifactKind.valueOf(it.kind),
+                                        it.createdAt,
+                                    )
+                                }
+                            ConfirmedArtifactCatalog(
+                                ArtifactPage(items, catalog.nextCursor),
+                                catalog.confirmedAt,
+                            )
+                        }
+                    }
+                    checkCurrent()
+                    snapshot
+                }
+            }
+
+        internal suspend fun saveArtifactCatalog(
+            threadId: String,
+            snapshot: ConfirmedArtifactCatalog,
+            appendedTo: ConfirmedArtifactCatalog?,
+        ) {
+            withContext(dispatcher) {
+                persist(
+                    clear = { it.deleteArtifactCatalog(key, threadId) },
+                    saved = {},
+                ) { dao ->
+                    val stored = dao.artifactCatalog(key, threadId)
+                    val previousSize =
+                        if (
+                            appendedTo != null &&
+                                stored?.authorization == authorization &&
+                                stored.confirmedAt == appendedTo.confirmedAt &&
+                                stored.nextCursor == appendedTo.page.nextCursor
+                        )
+                            appendedTo.page.items.size
+                        else {
+                            dao.deleteArtifactCatalog(key, threadId)
+                            0
+                        }
+                    dao.putArtifactCatalog(
+                        ChatArtifactCatalogRecord(
+                            key,
+                            threadId,
+                            authorization,
+                            snapshot.confirmedAt,
+                            snapshot.page.nextCursor,
+                        ),
+                    )
+                    dao.putArtifactItems(
+                        snapshot.page.items.drop(previousSize).mapIndexed { index, item ->
+                            ChatArtifactItemRecord(
+                                key,
+                                threadId,
+                                previousSize + index,
+                                item.id,
+                                item.title,
+                                item.kind.name,
+                                checkNotNull(item.createdAt),
+                            )
+                        },
+                    )
+                    true
+                }
+            }
+        }
+
+        internal suspend fun deleteArtifactCatalog(threadId: String? = null) =
+            withContext(dispatcher) {
+                persist(clear = {}, saved = {}) { dao ->
+                    if (threadId == null) dao.deleteArtifactCatalogs(key)
+                    else dao.deleteArtifactCatalog(key, threadId)
+                    true
+                }
+            }
+
+        internal suspend fun loadRelatedResources(threadId: String): ConfirmedRelatedChats? =
+            withContext(dispatcher) {
+                lock.withLock {
+                    checkCurrent()
+                    if (database == null && !file.exists()) return@withLock null
+                    val record = database().chats().relatedResources(key, threadId)
+                    checkCurrent()
+                    record
+                        ?.takeIf { it.authorization == authorization }
+                        ?.let {
+                            json.decodeFromString<ConfirmedRelatedChats>(it.payload)
+                        }
+                }
+            }
+
+        internal suspend fun saveRelatedResources(threadId: String, data: ConfirmedRelatedChats) =
+            withContext(dispatcher) {
+                persist(clear = { it.deleteRelatedResources(key, threadId) }, saved = {}) { dao ->
+                    dao.putRelatedResources(
+                        ChatRelatedResourceRecord(
+                            key,
+                            threadId,
+                            authorization,
+                            json.encodeToString(data),
+                        ),
+                    )
+                    true
+                }
+            }
+
+        internal suspend fun deleteRelatedResources(threadId: String?) =
+            withContext(dispatcher) {
+                persist(clear = {}, saved = {}) { dao ->
+                    dao.deleteRelatedResources(key, threadId)
+                    true
+                }
+            }
 
         private fun readingFile(threadId: String) =
             AtomicFile(directory.resolve("${scopeHash(listOf(key, threadId))}-reading.json"))

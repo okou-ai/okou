@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="settings_email_updates">E-Mail-Updates</string>
+    <string name="settings_email_scope">Erhalte Kurzberichte, Erinnerungen und Updates aus allen Arbeitsbereichen.</string>
+    <string name="settings_email_receive">E-Mails erhalten</string>
+    <string name="settings_email_unavailable">E-Mail nicht verfügbar</string>
+    <string name="settings_email_check_address">E-Mail-Adresse des Kontos prüfen</string>
+    <string name="settings_email_load_failed">E-Mail-Einstellungen sind vorübergehend nicht verfügbar.</string>
+    <string name="settings_email_refresh_failed">Synchronisierung fehlgeschlagen. Das zuletzt gespeicherte Abonnement wird angezeigt.</string>
+    <string name="settings_email_refreshing">E-Mail-Abonnement wird synchronisiert</string>
+    <string name="settings_email_save_failed">Das E-Mail-Abonnement konnte nicht aktualisiert werden.</string>
+    <string name="settings_email_save_unconfirmed">Die Änderung des E-Mail-Abonnements ist noch nicht bestätigt.</string>
     <string name="settings_models">Modelle</string>
     <string name="settings_tools">Tools</string>
     <string name="settings_my_okou">Mein Okou</string>
@@ -30,7 +40,7 @@
     <string name="settings_account_reconnect">Erneute Verbindung erforderlich</string>
     <string name="settings_account_switching">Wird gewechselt…</string>
     <string name="settings_account_switch_unconfirmed">Wechsel unbestätigt</string>
-    <string name="settings_account_switch_failed">Kontowechsel fehlgeschlagen.</string>
+    <string name="settings_account_switch_failed">Das Modellkonto konnte nicht gewechselt werden.</string>
     <string name="settings_quota">Kontingent</string>
     <string name="settings_hour_quota">%1$d-Stunden-Kontingent</string>
     <string name="settings_day_quota">%1$d-Tage-Kontingent</string>
@@ -73,4 +83,25 @@
     <string name="settings_model_effort_ultra">Ultra</string>
     <string name="settings_refreshing_model_accounts">Modellkonten werden aktualisiert</string>
     <string name="settings_refreshing_credit_balance">Guthaben wird aktualisiert</string>
+    <string name="settings_proactive_services">Proaktive Dienste</string>
+    <string name="settings_proactive_scope">Diese Einstellungen gelten in „%1$s“.</string>
+    <string name="settings_proactive_loading">Proaktive Dienste werden geladen</string>
+    <string name="settings_proactive_offline">Offline. Stelle eine Verbindung her, um diese Einstellung zu ändern.</string>
+    <string name="settings_proactive_needs_timezone">Wähle eine Zeitzone, um den Versand zu planen.</string>
+    <string name="settings_proactive_read_failed">Diese Einstellung kann gerade nicht geladen werden.</string>
+    <string name="settings_proactive_refresh_failed">Synchronisierung fehlgeschlagen. Die zuletzt bestätigte Einstellung wird angezeigt.</string>
+    <string name="settings_proactive_preparing">Zeitplan wird vorbereitet …</string>
+    <string name="settings_proactive_schedule_failed">Deine Auswahl wurde gespeichert. Prüfe den Zeitplan.</string>
+    <string name="settings_proactive_save_unconfirmed">Das Speichern ist noch nicht bestätigt.</string>
+    <string name="settings_morning_brief">Morgenbriefing</string>
+    <string name="settings_morning_brief_detail">Wird vor 7:00 Uhr in deiner gewählten Zeitzone zugestellt</string>
+    <string name="settings_morning_brief_save_failed">Das Morgenbriefing konnte nicht gespeichert werden. Die vorherige Einstellung wurde wiederhergestellt.</string>
+    <string name="settings_suggestions">Vorschläge</string>
+    <string name="settings_suggestions_detail">Verbundene Inhalte prüfen, dein Profil aktualisieren und Vorschläge machen</string>
+    <string name="settings_suggestions_partial">Teilweise aktiviert</string>
+    <string name="settings_suggestions_hourly_only">Derzeit werden nur Inhalte geprüft und dein Profil aktualisiert.</string>
+    <string name="settings_suggestions_cards_only">Derzeit werden nur Vorschlagskarten zugestellt.</string>
+    <string name="settings_suggestions_enable_both">Beides aktivieren</string>
+    <string name="settings_suggestions_disable_both">Beides deaktivieren</string>
+    <string name="settings_suggestions_save_failed">Die Vorschläge konnten nicht gespeichert werden. Die vorherige Einstellung wurde wiederhergestellt.</string>
 </resources>

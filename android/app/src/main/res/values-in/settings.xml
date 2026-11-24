@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="settings_email_updates">Pembaruan via email</string>
+    <string name="settings_email_scope">Terima ringkasan, pengingat, dan kabar dari semua ruang kerja.</string>
+    <string name="settings_email_receive">Terima email</string>
+    <string name="settings_email_unavailable">Email tidak tersedia</string>
+    <string name="settings_email_check_address">Periksa email akun</string>
+    <string name="settings_email_load_failed">Pengaturan email untuk sementara tidak tersedia.</string>
+    <string name="settings_email_refresh_failed">Tidak dapat menyinkronkan. Menampilkan langganan terakhir yang disimpan.</string>
+    <string name="settings_email_refreshing">Menyinkronkan langganan email</string>
+    <string name="settings_email_save_failed">Tidak dapat memperbarui langganan email.</string>
+    <string name="settings_email_save_unconfirmed">Pembaruan langganan email belum dikonfirmasi.</string>
     <string name="settings_models">Model</string>
     <string name="settings_tools">Alat</string>
     <string name="settings_my_okou">Okou saya</string>
@@ -30,7 +40,7 @@
     <string name="settings_account_reconnect">Perlu dihubungkan kembali</string>
     <string name="settings_account_switching">Mengganti…</string>
     <string name="settings_account_switch_unconfirmed">Peralihan belum dikonfirmasi</string>
-    <string name="settings_account_switch_failed">Gagal mengganti akun.</string>
+    <string name="settings_account_switch_failed">Gagal mengganti akun model.</string>
     <string name="settings_quota">Kuota</string>
     <string name="settings_hour_quota">Kuota %1$d jam</string>
     <string name="settings_day_quota">Kuota %1$d hari</string>
@@ -73,4 +83,25 @@
     <string name="settings_model_effort_ultra">Ultra</string>
     <string name="settings_refreshing_model_accounts">Memperbarui akun model</string>
     <string name="settings_refreshing_credit_balance">Memperbarui saldo kredit</string>
+    <string name="settings_proactive_services">Layanan proaktif</string>
+    <string name="settings_proactive_scope">Setelan ini berlaku di “%1$s”.</string>
+    <string name="settings_proactive_loading">Memuat layanan proaktif</string>
+    <string name="settings_proactive_offline">Offline. Sambungkan untuk mengubah setelan ini.</string>
+    <string name="settings_proactive_needs_timezone">Pilih zona waktu untuk menjadwalkan pengiriman.</string>
+    <string name="settings_proactive_read_failed">Setelan ini tidak dapat dimuat saat ini.</string>
+    <string name="settings_proactive_refresh_failed">Sinkronisasi gagal. Setelan terakhir yang dikonfirmasi ditampilkan.</string>
+    <string name="settings_proactive_preparing">Menyiapkan jadwal…</string>
+    <string name="settings_proactive_schedule_failed">Pilihan Anda tersimpan. Periksa jadwalnya.</string>
+    <string name="settings_proactive_save_unconfirmed">Penyimpanan belum dikonfirmasi.</string>
+    <string name="settings_morning_brief">Ringkasan pagi</string>
+    <string name="settings_morning_brief_detail">Dikirim sebelum pukul 07.00 di zona waktu yang dipilih</string>
+    <string name="settings_morning_brief_save_failed">Ringkasan pagi tidak dapat disimpan. Setelan sebelumnya dipulihkan.</string>
+    <string name="settings_suggestions">Saran</string>
+    <string name="settings_suggestions_detail">Periksa konten yang terhubung, perbarui profil, dan berikan saran</string>
+    <string name="settings_suggestions_partial">Aktif sebagian</string>
+    <string name="settings_suggestions_hourly_only">Saat ini hanya memeriksa konten dan memperbarui profil Anda.</string>
+    <string name="settings_suggestions_cards_only">Saat ini hanya mengirim kartu saran.</string>
+    <string name="settings_suggestions_enable_both">Aktifkan keduanya</string>
+    <string name="settings_suggestions_disable_both">Nonaktifkan keduanya</string>
+    <string name="settings_suggestions_save_failed">Saran tidak dapat disimpan. Setelan sebelumnya dipulihkan.</string>
 </resources>

@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="settings_email_updates">郵件更新</string>
+    <string name="settings_email_scope">接收所有工作區的簡報、提醒和更新。</string>
+    <string name="settings_email_receive">接收郵件</string>
+    <string name="settings_email_unavailable">郵件無法使用</string>
+    <string name="settings_email_check_address">確認帳號電子郵件</string>
+    <string name="settings_email_load_failed">暫時無法載入郵件訂閱。</string>
+    <string name="settings_email_refresh_failed">暫時無法同步，正在顯示已儲存的訂閱狀態。</string>
+    <string name="settings_email_refreshing">正在同步郵件訂閱</string>
+    <string name="settings_email_save_failed">未能更新郵件訂閱</string>
+    <string name="settings_email_save_unconfirmed">郵件訂閱的儲存結果尚未確認</string>
     <string name="settings_models">模型</string>
     <string name="settings_tools">工具</string>
     <string name="settings_my_okou">我的 Okou</string>
@@ -30,7 +40,7 @@
     <string name="settings_account_reconnect">需要重新連接</string>
     <string name="settings_account_switching">正在切換…</string>
     <string name="settings_account_switch_unconfirmed">切換結果尚未確認</string>
-    <string name="settings_account_switch_failed">未能切換帳號。</string>
+    <string name="settings_account_switch_failed">未能切換模型帳號</string>
     <string name="settings_quota">配額</string>
     <string name="settings_hour_quota">%1$d 小時額度</string>
     <string name="settings_day_quota">%1$d 天額度</string>
@@ -73,4 +83,25 @@
     <string name="settings_model_effort_ultra">極高</string>
     <string name="settings_refreshing_model_accounts">正在重新整理模型帳號</string>
     <string name="settings_refreshing_credit_balance">正在重新整理點數餘額</string>
+    <string name="settings_proactive_services">主動服務</string>
+    <string name="settings_proactive_scope">設定在「%1$s」內生效。</string>
+    <string name="settings_proactive_loading">正在載入主動服務</string>
+    <string name="settings_proactive_offline">目前離線，連線後可修改。</string>
+    <string name="settings_proactive_needs_timezone">請先選擇時區以安排傳送。</string>
+    <string name="settings_proactive_read_failed">暫時無法載入此設定。</string>
+    <string name="settings_proactive_refresh_failed">同步失敗，正在顯示上次確認的設定。</string>
+    <string name="settings_proactive_preparing">正在準備排程…</string>
+    <string name="settings_proactive_schedule_failed">設定已儲存，排程需要處理。</string>
+    <string name="settings_proactive_save_unconfirmed">儲存結果尚未確認。</string>
+    <string name="settings_morning_brief">晨報</string>
+    <string name="settings_morning_brief_detail">每天早上 7:00 前按所選時區送達</string>
+    <string name="settings_morning_brief_save_failed">無法儲存晨報設定，已還原原值。</string>
+    <string name="settings_suggestions">建議</string>
+    <string name="settings_suggestions_detail">檢查連線內容、更新個人檔案並提供建議</string>
+    <string name="settings_suggestions_partial">部分開啟</string>
+    <string name="settings_suggestions_hourly_only">目前僅檢查資訊及更新個人檔案。</string>
+    <string name="settings_suggestions_cards_only">目前僅接收建議卡片。</string>
+    <string name="settings_suggestions_enable_both">同時開啟</string>
+    <string name="settings_suggestions_disable_both">同時關閉</string>
+    <string name="settings_suggestions_save_failed">無法儲存建議設定，已還原原值。</string>
 </resources>

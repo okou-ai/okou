@@ -6,6 +6,7 @@ import android.content.Context
 import com.clerk.api.Clerk
 import com.clerk.api.ClerkConfigurationOptions
 import com.clerk.api.network.serialization.ClerkResult
+import com.clerk.api.session.GetTokenOptions
 import com.clerk.api.session.Session
 import com.clerk.api.session.SessionTaskKey
 import com.clerk.api.session.pendingTaskKey
@@ -160,13 +161,18 @@ class ClerkAuthentication(private val context: Context) : Authentication {
         }
     }
 
-    override suspend fun token(expected: NativeSession): String {
+    override suspend fun token(expected: NativeSession): String = token(expected, null)
+
+    override suspend fun renewToken(expected: NativeSession): String =
+        token(expected, GetTokenOptions(skipCache = true))
+
+    private suspend fun token(expected: NativeSession, options: GetTokenOptions?): String {
         requireSession(expected)
         if (Clerk.activeSession == null || !Clerk.isAuthFlowComplete)
             throw ApiFailure.Unauthenticated()
         // Clerk reuses a valid cached token and owns refresh/deduplication. No forced mint per API
         // call.
-        val token = Clerk.auth.getToken().required()
+        val token = Clerk.auth.getToken(options).required()
         currentCoroutineContext().ensureActive()
         requireSession(expected)
         return token
@@ -182,6 +188,12 @@ private fun <T : Any, E : Any> ClerkResult<T, E>.required(): T =
         is ClerkResult.Success -> value
         is ClerkResult.Failure -> {
             if (code == 401 || code == 403) throw ApiFailure.Unauthenticated()
+            val cause = throwable
+            if (cause is java.io.IOException) throw ApiFailure.Network(cause)
+            val status = code
+            if (status == 408 || status == 429 || (status != null && status in 500..599)) {
+                throw ApiFailure.Http(checkNotNull(status), null, null, null)
+            }
             // Provider diagnostics may contain identifiers; the UI uses localized generic recovery.
             throw IllegalStateException("Authentication request failed")
         }

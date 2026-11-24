@@ -6,6 +6,8 @@ import {
   type infer as zInfer,
 } from "zod";
 
+import { connectorNativeAppReturnSchema } from "../validators/connectors";
+
 import { authHeadersSchema, initContract } from "./base";
 import { connectorSlugSchema } from "./connector-identity";
 
@@ -15,10 +17,12 @@ export const connectorOauthCallbackResultSchema = discriminatedUnion("status", [
   object({
     status: literal("success"),
     username: string().nullable(),
+    nativeAppReturn: connectorNativeAppReturnSchema.optional(),
   }),
   object({
     status: literal("error"),
     message: string(),
+    nativeAppReturn: connectorNativeAppReturnSchema.optional(),
   }),
 ]);
 

@@ -1,5 +1,6 @@
 import ChatData
 import ChatDomain
+import Observation
 import SwiftUI
 import Synchronization
 import UniformTypeIdentifiers
@@ -91,12 +92,41 @@ final class ChatComposerPasteTests: XCTestCase {
       completion(Data("pasted".utf8), nil)
       return nil
     }
-    try await pasteAndWaitForResult(
-      providers, in: input, conversation: conversation, fixture: fixture
-    ) {
-      conversation.draft == "Before pasted after"
-        && conversation.attachmentDraft.items.count == 2 && conversation.attachmentDraft.isReady
+    let replaced = expectation(
+      forNotification: UITextView.textDidChangeNotification, object: input
+    ) { _ in
+      MainActor.assumeIsolated { input.text.contains("pasted") }
     }
+    let uploadsSettled = expectation(
+      description: "The pasted images finished importing and uploading")
+    let attachments = conversation.attachmentDraft
+    let pasteStarted = ContinuousClock.now
+    input.paste(itemProviders: providers)
+    // Paste starts the import synchronously. A missing image must reach the count assertion too.
+    let observation = Task {
+      for await settled in Observations({
+        attachments.isReady || attachments.error != nil
+          || attachments.items.contains { if case .failed = $0.state { true } else { false } }
+      }) where settled {
+        uploadsSettled.fulfill()
+        return
+      }
+    }
+    // UIKit edits and attachment uploads finish independently. Bound a hang by XCTest's case budget.
+    let result = await XCTWaiter.fulfillment(
+      of: [replaced, uploadsSettled], timeout: executionTimeAllowance)
+    observation.cancel()
+    await observation.value
+    guard result == .completed, attachments.error == nil, attachments.isReady,
+      attachments.items.count == 2
+    else {
+      return XCTFail(
+        "Paste completion: \(result); editor text: \(input.text ?? "<missing>")\n"
+          + pasteDiagnostics(
+            conversation, fixture: fixture, providers: providers, since: pasteStarted))
+    }
+    XCTAssertEqual(conversation.draft, "Before pasted after")
+    XCTAssertEqual(input.text, conversation.draft)
     try await eventually { input.isFirstResponder }
     let requests = fixture.state.value.withLock { $0.preparations }
     XCTAssertEqual(requests.count, 2)

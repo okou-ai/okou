@@ -444,7 +444,6 @@
       "close": "Fechar",
       "closeArtifact": "Fechar artefato",
       "closeNamed": "Fechar {{title}}",
-      "closePreviewMenu": "Fechar menu de visualização",
       "download": "Baixar",
       "downloadArtifact": "Baixar artefato",
       "downloadMarkdownAs": "Baixar como {{format}}",
@@ -2006,7 +2005,7 @@
       },
       "slashPanel": {
         "browseAll": "Ver todos os modelos",
-        "hint": "Pesquise fluxos de trabalho ou escolha um modelo…",
+        "hint": "Escolha uma ação",
         "useTemplate": "Usar o modelo {{title}}"
       },
       "temporarilySwitchTo": "Mudar temporariamente para",
@@ -2948,6 +2947,7 @@
       "storageFailed": "Não foi possível salvar o áudio. Somente o áudio já salvo neste dispositivo está disponível.",
       "textTakingShape": "O texto está tomando forma",
       "transcribing": "Transcrevendo",
+      "uploadingRecording": "Enviando a gravação…",
       "useRecording": "Usar gravação"
     },
     "walletAction": {
@@ -3085,6 +3085,7 @@
       "edit": "Editar",
       "grant": "Conceder",
       "reconnect": "Reconectar",
+      "returnToOkou": "Voltar ao Okou",
       "revoke": "Revogar",
       "save": "Salvar",
       "saving": "Salvando...",
@@ -5270,6 +5271,7 @@
     }
   },
   "projects": {
+    "archiveProject": "Arquivar",
     "back": "Back",
     "close": "Close",
     "collapse": "Recolher",
@@ -5310,6 +5312,7 @@
     "removeFromNewChat": "Remover {{name}}",
     "rename": "Rename",
     "renameProject": "Rename Project",
+    "restoreProject": "Restaurar projeto",
     "retryThreads": "Reload threads",
     "save": "Save",
     "saveError": "Could not save Project",
@@ -6466,7 +6469,6 @@
   },
   "sidebar": {
     "escapeShortcut": "Esc",
-    "filterAll": "Todos",
     "markAllRead": "Marcar tudo como lido",
     "noResults": "Nenhum resultado encontrado",
     "resultCount_one": "{{count}} resultado",
@@ -6475,10 +6477,8 @@
     "searching": "Pesquisando...",
     "searchWorkspace": "Pesquisar no espaço de trabalho...",
     "sections": {
-      "artifacts": "Artefatos",
-      "chats": "Conversas",
       "messages": "Mensagens",
-      "workflows": "Fluxos de trabalho"
+      "threads": "Threads"
     }
   },
   "ssh": {

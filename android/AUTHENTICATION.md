@@ -1,17 +1,17 @@
 # Authentication Setup and Workspace Sessions
 
-Android uses the official Clerk Android API/UI 1.4.1. A signed-out launch opens
-the native Compose `AuthView`; it does not open the unauthenticated workspace
-shell. This follows the iOS root presentation contract. Clerk renders enabled
-email/code/password/signup/legal/extra-verification/passkey methods and owns
-provider OAuth. Provider OAuth uses the SDK's system-browser session; first-party
-credentials are entered in native controls. Google uses browser OAuth rather
-than a separate One Tap integration.
+Android uses the official Clerk Android API and UI. A signed-out launch opens
+the native Compose `AuthView`, following the iOS root presentation contract.
+Clerk renders enabled methods for email, codes, passwords, signup, legal steps,
+extra verification and passkeys. Provider OAuth, including Google, uses the SDK's
+system-browser session. First-party credentials are entered in native controls.
 
-The first native login/restoration page is composed while SDK initialization is
-pending. Initialization errors expose a localized retry. An authenticated user
-without a usable workspace sees membership selection or web workspace setup
-and refresh/sign-out actions. Full first-user onboarding remains a separate slice.
+The platform launch window briefly covers SDK initialization. The first native
+frame shows the shared brand if restoration is still pending. Initialization
+errors expose a localized retry. An authenticated user without a usable workspace
+sees membership selection or web workspace setup and refresh/sign-out actions.
+The empty workspace page checks memberships when the user returns from web setup
+in the same session. Full first-user onboarding remains a separate slice.
 
 ## Public configuration and provider setup
 
@@ -102,15 +102,18 @@ no separate member-preference cache or durable draft store is introduced.
 Preferences refresh on foreground without replacing those owners. Automatic
 refresh preserves unconfirmed selections after failed saves, including a resume
 caused by locale recreation; explicit refresh reads back the canonical result.
-An HTTP authorization/update-required failure retires the workspace, while an
-ordinary save/network failure remains visible and retryable in Settings.
+A business read rejected with HTTP 401 can renew its credential and retry once
+within the same workspace. If the API still rejects it, the app shows workspace
+recovery. Explicit access loss and required updates retain their own screens.
+Member preference and default-model reads keep the last confirmed values and
+retry twice at three-second intervals on recoverable failures.
 
 Signing out or changing account/workspace closes API resources, cancels pending
 work and clears the old presentation store before another owner can be published.
 Both before and after token acquisition, the captured identity and generation must
 still match. Non-cooperative late completion cannot publish into a replacement.
-SDK token renewal uses its cache/refresh policy and retains the same workspace
-owner; it does not force a new token mint for every API request.
+Healthy requests use the SDK's cache and refresh policy. Concurrent read
+rejections serialize credential renewal and reuse the replacement from Clerk.
 
 ## Verification
 

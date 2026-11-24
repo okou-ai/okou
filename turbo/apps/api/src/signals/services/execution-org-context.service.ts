@@ -2,40 +2,43 @@ import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { eq, type SQL, sql, sum } from "drizzle-orm";
+import { eq, sql, sum } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { boolean, number, object, string, unknown as zUnknown } from "zod";
 import { pgInt8ToSafeIntegerSchema } from "../../lib/db-raw-rows";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import { executionCreditQueries } from "./execution-credit-balance.service";
 import { activeConcurrencySubscriptionPredicate } from "./org-concurrency-entitlements.service";
-import { orgPlanCapabilitiesFromRow } from "./org-plan-entitlement-read.service";
+import {
+  orgPlanCapabilitiesFromRow,
+  type OrgPlanCapabilities,
+} from "./org-plan-entitlement-read.service";
 
 const rawDecoder = zodDriverValueDecoder(zUnknown());
 const metadataSchema = object({
   credits: number(),
   openrouterPreset: string().nullable(),
 });
+export type ExecutionOrgPlan = Pick<
+  OrgPlanCapabilities,
+  | "planKey"
+  | "status"
+  | "baseConcurrencyLimit"
+  | "canBuyCredits"
+  | "restrictedBuiltInModels"
+>;
+
 const planSchema = object({
   planKey: string(),
   status: string(),
   baseConcurrencyLimit: number(),
-  canBuyConcurrency: boolean(),
   canBuyCredits: boolean(),
-  showUsagePack: boolean(),
-  autoRechargeAllowed: boolean(),
   restrictedBuiltInModels: boolean().nullable(),
-  workflowWebhookAutomationAllowed: boolean(),
-  audioLifetimeLimit: number().nullable(),
-  audioDailyRateLimit: number(),
-  audioDailyDurationSeconds: number(),
 });
 /**
  * Transport only: business decoding belongs to independent derived consumers.
- * `attached` is an optional scalar subquery whose facts are consumed alongside
- * these organization settings from the same statement snapshot.
  */
-export function executionOrgQuery(orgId: string, at: Date, attached?: SQL) {
+export function executionOrgQuery(orgId: string, at: Date) {
   const expired = executionCreditQueries({ orgId, userId: "" }, at).expired;
   const builder = new QueryBuilder();
   const slots = builder
@@ -66,20 +69,13 @@ export function executionOrgQuery(orgId: string, at: Date, attached?: SQL) {
         plan: sql`(SELECT jsonb_build_object(
         'planKey', ${orgPlanEntitlements.planKey}, 'status', ${orgPlanEntitlements.status},
         'baseConcurrencyLimit', ${orgPlanEntitlements.baseConcurrencyLimit},
-        'canBuyConcurrency', ${orgPlanEntitlements.canBuyConcurrency}, 'canBuyCredits', ${orgPlanEntitlements.canBuyCredits},
-        'showUsagePack', ${orgPlanEntitlements.showUsagePack}, 'autoRechargeAllowed', ${orgPlanEntitlements.autoRechargeAllowed},
-        'restrictedBuiltInModels', ${orgPlanEntitlements.restrictedBuiltInModels},
-        'workflowWebhookAutomationAllowed', ${orgPlanEntitlements.workflowWebhookTriggerAllowed},
-        'audioLifetimeLimit', ${orgPlanEntitlements.audioLifetimeLimit}, 'audioDailyRateLimit', ${orgPlanEntitlements.audioDailyRateLimit},
-        'audioDailyDurationSeconds', ${orgPlanEntitlements.audioDailyDurationSeconds})
+        'canBuyCredits', ${orgPlanEntitlements.canBuyCredits},
+        'restrictedBuiltInModels', ${orgPlanEntitlements.restrictedBuiltInModels})
         FROM ${orgPlanEntitlements} WHERE ${eq(orgPlanEntitlements.orgId, orgId)})`
           .mapWith(rawDecoder)
           .as("plan"),
         slots: sql`(${slots})`.mapWith(rawDecoder).as("slots"),
         expired: sql`(${expiredTotal})`.mapWith(rawDecoder).as("expired"),
-        attached: (attached ? sql`(${attached})` : sql`NULL`)
-          .mapWith(rawDecoder)
-          .as("attached"),
       })
       .from(orgMetadata)
       // Preserve entitlement-only organizations and absent metadata without a second read.
@@ -96,7 +92,6 @@ export interface ExecutionOrgRows {
     readonly plan: unknown;
     readonly slots: unknown;
     readonly expired: unknown;
-    readonly attached: unknown;
   }[];
 }
 function requiredOrgRow(snapshot: ExecutionOrgRows) {
@@ -109,7 +104,10 @@ function requiredOrgRow(snapshot: ExecutionOrgRows) {
 export function executionOrgMetadata(snapshot: ExecutionOrgRows) {
   return metadataSchema.nullable().parse(requiredOrgRow(snapshot).metadata);
 }
-export function executionOrgPlan(snapshot: ExecutionOrgRows, orgId: string) {
+export function executionOrgPlan(
+  snapshot: ExecutionOrgRows,
+  orgId: string,
+): ExecutionOrgPlan | null {
   const row = requiredOrgRow(snapshot);
   if (row.plan === null) {
     if (row.metadata !== null) {

@@ -115,6 +115,9 @@ describe("CHAT-02: incomplete-round context", () => {
       prompt: "first incomplete",
     });
     const firstExecution = await runExecution(first.runId);
+    expect(firstExecution.execution.appendSystemPrompt).not.toContain(
+      "# Incomplete Rounds Context",
+    );
     await failChatRun(first.runId, firstExecution.sandboxHeaders, "boom one");
     await readCompletedRunSessionId(context, actor, anchor.runId);
 

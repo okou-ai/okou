@@ -1,6 +1,6 @@
 {
   "name": "@okouai/app",
-  "version": "0.1166.0",
+  "version": "0.1171.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -58,6 +58,7 @@
     "@tiptap/markdown": "3.32.2",
     "@tiptap/pm": "3.32.2",
     "@tiptap/react": "3.32.2",
+    "@zip.js/zip.js": "^2.25.0",
     "ably": "^2.28.0",
     "anchorme": "3.0.8",
     "bs58": "6.0.0",

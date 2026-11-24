@@ -57,16 +57,16 @@ export function runtimeStatusForEntitlement(
   }
 }
 
-export function orgPlanCapabilitiesFromRow(
-  capabilities: Omit<
-    OrgPlanCapabilities,
-    "status" | "restrictedBuiltInModels"
-  > & {
+export function orgPlanCapabilitiesFromRow<
+  Row extends {
     readonly status: string;
     readonly restrictedBuiltInModels: boolean | null;
   },
+>(
+  capabilities: Row,
   orgId: string,
-): OrgPlanCapabilities {
+): Omit<Row, "status" | "restrictedBuiltInModels"> &
+  Pick<OrgPlanCapabilities, "status" | "restrictedBuiltInModels"> {
   if (capabilities.restrictedBuiltInModels === null) {
     throw new Error(
       `Unexpected NULL restricted_built_in_models for org plan entitlement ${orgId}`,
@@ -75,11 +75,12 @@ export function orgPlanCapabilitiesFromRow(
 
   // Destructured rather than spread so the non-null narrowing above survives
   // into the returned capability, which is declared as a plain boolean.
-  const { restrictedBuiltInModels, ...runtimeCapabilities } = capabilities;
+  const { restrictedBuiltInModels, status, ...runtimeCapabilities } =
+    capabilities;
   return {
     ...runtimeCapabilities,
     restrictedBuiltInModels,
-    status: runtimeStatusForEntitlement(capabilities.status),
+    status: runtimeStatusForEntitlement(status),
   };
 }
 

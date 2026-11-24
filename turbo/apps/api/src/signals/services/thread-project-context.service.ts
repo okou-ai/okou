@@ -1,7 +1,4 @@
 import { computed, type Computed } from "ccstate";
-import { and, eq, inArray } from "drizzle-orm";
-import { projects } from "@okouai/db/schema/project";
-import { db$ } from "../external/db";
 import { userMessageReferences } from "./chat-user-message.service";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 
@@ -17,7 +14,6 @@ export interface ThreadProjectContext {
 /** Project authority is observed for the actual picked input, before rendering. */
 export function createThreadProjectContext(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  owner: { readonly userId: string; readonly orgId: string },
 ): Computed<Promise<ThreadProjectContext | null>> {
   return computed(async (get) => {
     const picked = await get(pickedEvent$);
@@ -32,36 +28,12 @@ export function createThreadProjectContext(
       : [];
     const { currentProject: current, projectReferences } = picked.preparation;
     const available = new Map(
-      projectReferences?.map((project) => {
+      projectReferences.map((project) => {
         return [project.id, project] as const;
       }),
     );
     if (current) {
       available.set(current.id, current);
-    }
-    const ids = [
-      ...new Set(
-        refs.map((ref) => {
-          return ref.projectId.toLowerCase();
-        }),
-      ),
-    ].filter((id) => {
-      return id !== picked.thread.projectId && !available.has(id);
-    });
-    const rows = ids.length
-      ? await get(db$)
-          .select({ id: projects.id, name: projects.name })
-          .from(projects)
-          .where(
-            and(
-              eq(projects.userId, owner.userId),
-              eq(projects.orgId, owner.orgId),
-              inArray(projects.id, ids),
-            ),
-          )
-      : [];
-    for (const row of rows) {
-      available.set(row.id, row);
     }
     return {
       current,

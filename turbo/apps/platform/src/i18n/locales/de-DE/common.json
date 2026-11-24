@@ -430,7 +430,6 @@
       "close": "Schließen",
       "closeArtifact": "Artefakt schließen",
       "closeNamed": "Schließen {{title}}",
-      "closePreviewMenu": "Vorschaumenü schließen",
       "download": "Herunterladen",
       "downloadArtifact": "Artefakt herunterladen",
       "downloadMarkdownAs": "Als {{format}} herunterladen",
@@ -1976,7 +1975,7 @@
       },
       "slashPanel": {
         "browseAll": "Alle Vorlagen durchsuchen",
-        "hint": "Workflows suchen oder eine Vorlage auswählen…",
+        "hint": "Aktion auswählen",
         "useTemplate": "Vorlage {{title}} verwenden"
       },
       "temporarilySwitchTo": "Vorübergehend wechseln zu",
@@ -2898,6 +2897,7 @@
       "storageFailed": "Audio konnte nicht gespeichert werden. Nur bereits auf diesem Gerät gespeichertes Audio ist verfügbar.",
       "textTakingShape": "Der Text nimmt Form an",
       "transcribing": "Transkribieren",
+      "uploadingRecording": "Aufnahme wird hochgeladen…",
       "useRecording": "Aufnahme verwenden"
     },
     "walletAction": {
@@ -3032,6 +3032,7 @@
       "edit": "Bearbeiten",
       "grant": "Gewähren",
       "reconnect": "Wieder verbinden",
+      "returnToOkou": "Zurück zu Okou",
       "revoke": "Widerrufen",
       "save": "Speichern",
       "saving": "Speichern...",
@@ -5209,6 +5210,7 @@
     }
   },
   "projects": {
+    "archiveProject": "Archivieren",
     "back": "Back",
     "close": "Close",
     "collapse": "Einklappen",
@@ -5247,6 +5249,7 @@
     "removeFromNewChat": "{{name}} entfernen",
     "rename": "Rename",
     "renameProject": "Rename Project",
+    "restoreProject": "Projekt wiederherstellen",
     "retryThreads": "Reload threads",
     "save": "Save",
     "saveError": "Could not save Project",
@@ -6395,7 +6398,6 @@
   },
   "sidebar": {
     "escapeShortcut": "Esc",
-    "filterAll": "Alle",
     "markAllRead": "Alles als gelesen markieren",
     "noResults": "Keine Ergebnisse gefunden",
     "resultCount_one": "{{count}} Ergebnis",
@@ -6403,10 +6405,8 @@
     "searching": "Suche...",
     "searchWorkspace": "Arbeitsbereich durchsuchen...",
     "sections": {
-      "artifacts": "Artefakte",
-      "chats": "Chats",
       "messages": "Nachrichten",
-      "workflows": "Workflows"
+      "threads": "Threads"
     }
   },
   "ssh": {

@@ -134,10 +134,14 @@ class ComposerJournalStore(
             .use { stream -> json.decodeFromStream<ComposerJournal>(stream) }
             .also {
                 if (
-                    it.format !in 1..3 ||
+                    it.format !in 1..CONNECTOR_DRAFT_JOURNAL_FORMAT ||
                         it.format == 1 &&
                             it.entries.values.any { entry -> entry.recovery != null } ||
-                        it.format < 3 && (it.drafts.isNotEmpty() || it.retainedDrafts.isNotEmpty())
+                        it.format < 3 &&
+                            (it.drafts.isNotEmpty() || it.retainedDrafts.isNotEmpty()) ||
+                        it.format < CONNECTOR_DRAFT_JOURNAL_FORMAT &&
+                            (it.newChatConnectorOverrides.isNotEmpty() ||
+                                it.retainedDraftConnectorOverrides.isNotEmpty())
                 )
                     throw IOException("Unsupported composer journal format")
             }

@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="auth_checking_workspace">워크스페이스 확인 중…</string>
+    <string name="auth_check_failed">워크스페이스 접근 권한을 확인하지 못했습니다.</string>
+    <string name="auth_selection_failed">이 워크스페이스를 열지 못했습니다.</string>
+    <string name="auth_sign_out_failed">로그아웃하지 못했습니다.</string>
     <string name="composer_sync_loading">저장된 초안 불러오는 중…</string>
     <string name="composer_sync_saving">초안 동기화 중…</string>
     <string name="composer_sync_failed">초안을 동기화하지 못했습니다. 입력 내용은 이 기기에 보관됩니다.</string>
@@ -8,19 +12,7 @@
     <string name="composer_restore_draft">보관된 초안 복원</string>
     <string name="controls_storage_failed">대기 중인 제어 요청을 저장할 수 없습니다.</string>
     <string name="controls_stop">실행 중인 작업 중지</string>
-    <string name="controls_preparing">제어 요청 저장 중…</string>
-    <string name="controls_sending">제어 요청 전송 중…</string>
-    <string name="controls_accepted">요청이 접수되었습니다. 확인을 기다립니다.</string>
-    <string name="controls_checking">제어 결과 확인 중…</string>
-    <string name="controls_unknown">제어 결과가 아직 확인되지 않았습니다.</string>
-    <string name="controls_retryable">원래 대상에 계속 요청할 수 있습니다.</string>
-    <string name="controls_retry_original">원래 요청 재시도</string>
-    <string name="controls_check">제어 결과 확인</string>
-    <string name="controls_recorded">제어 요청이 대화 기록에 저장되었습니다.</string>
-    <string name="controls_target_settled">원래 대상이 이미 처리되었습니다.</string>
-    <string name="controls_read_failed">제어 결과를 확인할 수 없습니다.</string>
-    <string name="controls_recovery_failed">대화 복구 상태를 확인할 수 없습니다.</string>
-    <string name="controls_recovering">대화를 계속할 준비를 하고 있습니다.</string>
+    <string name="controls_stop_failed">작업을 중지하지 못했습니다.</string>
     <string name="settings">설정</string>
     <string name="back">뒤로</string>
     <string name="appearance">표시 모드</string>
@@ -29,7 +21,6 @@
     <string name="appearance_dark">어둡게</string>
     <string name="on_this_device">이 기기</string>
     <string name="retry">다시 시도</string>
-    <string name="auth_restoring">로그인 상태 복원 중…</string>
     <string name="auth_preparing_workspace">워크스페이스 준비 중…</string>
     <string name="auth_choose_workspace">워크스페이스 선택</string>
     <string name="auth_no_workspace">아직 접근할 수 있는 워크스페이스가 없습니다</string>
@@ -140,8 +131,6 @@
     <string name="realtime_connecting">실시간 업데이트에 연결 중…</string>
     <string name="realtime_unavailable">실시간 업데이트를 사용할 수 없습니다. 수동으로 새로고침할 수 있습니다.</string>
     <string name="settings_account">계정</string>
-    <string name="chat_project_expansion_read_failed">이 기기에서 프로젝트의 펼침 상태를 불러오지 못했습니다.</string>
-    <string name="chat_project_expansion_save_failed">이 기기에서 프로젝트의 펼침 상태를 저장하지 못했습니다.</string>
     <string name="settings_cancel">취소</string>
     <string name="settings_saving">저장 중…</string>
     <string name="settings_sign_out_title">로그아웃할까요?</string>

@@ -1,5 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="conversation_queue_count">कतार (%1$d)</string>
+    <string name="conversation_queue_empty">कतार में कोई आइटम नहीं</string>
+    <string name="conversation_queue_message">संदेश</string>
+    <plurals name="conversation_queue_attachments">
+        <item quantity="one">संदेश · %d अटैचमेंट</item>
+        <item quantity="other">संदेश · %d अटैचमेंट</item>
+    </plurals>
+    <string name="conversation_run_queued">शुरू होने की प्रतीक्षा में</string>
     <string name="conversation_welcome">आज आप किस काम पर आगे बढ़ना चाहते हैं?</string>
     <string name="conversation_welcome_detail">Okou को बताएँ कि आप क्या करना चाहते हैं।</string>
     <string name="conversation_jump_latest">नवीनतम संदेश पर जाएँ</string>
@@ -16,13 +24,8 @@
     <string name="conversation_queue">कतार</string>
     <string name="conversation_queue_automation">वर्कफ़्लो ऑटोमेशन</string>
     <string name="conversation_skip_automation">इस ऑटोमेशन को छोड़ें</string>
-    <string name="conversation_withdrawing">वापस लिया जा रहा है…</string>
-    <string name="conversation_skipping">छोड़ा जा रहा है…</string>
-    <string name="conversation_withdraw_unknown">वापस लेने के नतीजे की पुष्टि बाकी है</string>
-    <string name="conversation_skip_unknown">छोड़ने के नतीजे की पुष्टि बाकी है</string>
     <string name="conversation_withdraw_failed">संदेश वापस नहीं लिया जा सका</string>
     <string name="conversation_skip_failed">ऑटोमेशन छोड़ा नहीं जा सका</string>
-    <string name="conversation_stop">रोकें</string>
     <string name="conversation_find">मैसेज खोजें</string>
     <string name="conversation_find_turns">बातचीत के क्रम देखें</string>
     <string name="conversation_find_empty">खोजने के लिए कोई मैसेज नहीं है</string>

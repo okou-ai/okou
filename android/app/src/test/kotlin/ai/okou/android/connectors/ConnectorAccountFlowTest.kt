@@ -9,8 +9,12 @@ import ai.okou.android.OkouTheme
 import ai.okou.android.TestOkouApplication
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -18,6 +22,7 @@ import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
@@ -66,7 +71,7 @@ class ConnectorAccountFlowTest {
         try {
             compose.setContent { OkouTheme(false) { ConnectorSkeleton("Loading connectors", 1) } }
             val skeleton = compose.onNodeWithContentDescription("Loading connectors")
-            compose.mainClock.advanceTimeBy(80)
+            compose.mainClock.advanceTimeBy(224)
             skeleton.assertDoesNotExist()
             compose.mainClock.advanceTimeBy(64)
             skeleton.assertIsDisplayed()
@@ -195,6 +200,43 @@ class ConnectorAccountFlowTest {
         }
 
     @Test
+    fun firstAccountReadFailureAnnouncesTheErrorAndKeepsBack() = withDirectory { fixture, _ ->
+        awaitText("Gmail")
+        fixture.denyAccountReads = true
+        compose.onNodeWithTag("connector-gmail").performClick()
+        val error = "Could not load accounts."
+        awaitText(error)
+        compose
+            .onNodeWithText(error)
+            .assertWidthIsAtLeast(300.dp)
+            .assert(
+                SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite),
+            )
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.onNodeWithTag("connector-gmail").assertIsDisplayed()
+    }
+
+    @Test
+    fun firstPermissionReadFailureAnnouncesTheErrorAndKeepsClose() = withDirectory { fixture, _ ->
+        awaitText("Gmail")
+        compose.onNodeWithTag("connector-gmail").performClick()
+        val permissions = "Permissions this service can request"
+        awaitText(permissions)
+        fixture.denyPermissionReads = true
+        compose.onNodeWithText(permissions).performClick()
+        val error = "Could not load permissions."
+        awaitText(error)
+        compose
+            .onNodeWithText(error)
+            .assertWidthIsAtLeast(300.dp)
+            .assert(
+                SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite),
+            )
+        compose.onNodeWithText("Close").performClick()
+        compose.onNodeWithText(permissions).assertIsDisplayed()
+    }
+
+    @Test
     fun unavailableServicePermissionPanelCanCloseAfterItsLaunchControlDisappears() =
         withDirectory(initiallyOnline = false) { fixture, connectivity ->
             fixture.authorizeGmail()
@@ -286,6 +328,56 @@ class ConnectorAccountFlowTest {
         compose.onNodeWithTag("connector-sheet").assertIsDisplayed().assertWidthIsEqualTo(460.dp)
         compose.onNodeWithText("Enable by default").assertIsOn()
     }
+
+    @Test
+    fun reauthorizationShowsTheSelectedAccountWhileMethodsLoad() = withDirectory { fixture, _ ->
+        awaitText("Google Calendar")
+        val release = CountDownLatch(1)
+        fixture.detailReplyGate = release
+        try {
+            compose.onNodeWithTag("connector-$CONNECTOR_CALENDAR").performClick()
+            awaitText("Permission update required")
+            compose.onNodeWithText("协作日历").performClick()
+            compose.onNodeWithText("Update permissions").performClick()
+            compose.onNodeWithText("Update permissions · Google Calendar").assertIsDisplayed()
+            compose
+                .onNode(hasText("协作日历") and hasAnyAncestor(hasTestTag("connector-sheet")))
+                .assertIsDisplayed()
+            compose.onNodeWithText("Cancel").assertIsEnabled()
+            compose.onNodeWithText("Continue to provider").assertDoesNotExist()
+        } finally {
+            release.countDown()
+        }
+        awaitText("Continue to provider")
+        compose.onNodeWithText("Continue to provider").assertIsEnabled()
+    }
+
+    @Test
+    fun deniedMethodsKeepTheAuthorizationPanelAndReturnToTheAccount() =
+        withDirectory { fixture, _ ->
+            awaitText("Google Calendar")
+            fixture.denyCatalogDetail = true
+            compose.onNodeWithTag("connector-$CONNECTOR_CALENDAR").performClick()
+            awaitText("Permission update required")
+            compose.onNodeWithText("协作日历").performClick()
+            compose.onNodeWithText("Update permissions").performClick()
+            compose.onNodeWithText("Update permissions · Google Calendar").assertIsDisplayed()
+            compose
+                .onNode(
+                    hasText("Could not load connectors.") and
+                        hasAnyAncestor(hasTestTag("connector-sheet")),
+                )
+                .assertIsDisplayed()
+                .assert(
+                    SemanticsMatcher.expectValue(
+                        SemanticsProperties.LiveRegion,
+                        LiveRegionMode.Polite,
+                    ),
+                )
+            compose.onNodeWithText("Continue to provider").assertDoesNotExist()
+            compose.onNodeWithText("Cancel").performClick()
+            compose.onNodeWithText("Update permissions").assertIsEnabled()
+        }
 
     @Test
     fun removingTheTargetAccountDoesNotTurnReauthorizationIntoAdd() = withCalendar { fixture, _ ->

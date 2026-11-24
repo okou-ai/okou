@@ -13,15 +13,14 @@
     <string name="chat_undo_unconfirmed">Impossibile confermare l’annullamento.</string>
     <string name="chat_feedback_dismiss">Chiudi</string>
     <string name="chat_list_offline">Offline</string>
-    <string name="chat_list_refresh_failed">Aggiornamento della lista chat non riuscito</string>
     <string name="chat_list_first_load_failed">Caricamento temporaneamente non disponibile</string>
     <string name="chat_list_load_when_online">Le chat verranno caricate quando tornerai online.</string>
     <string name="chat_list_title">Chat</string>
     <string name="chat_refresh">Aggiorna chat</string>
     <string name="chat_loading">Caricamento delle chat…</string>
-    <string name="chat_refresh_failed">Impossibile aggiornare. Sono mostrate le ultime chat caricate.</string>
+    <string name="chat_refresh_failed">Impossibile aggiornare lo stato dei messaggi non letti.</string>
     <string name="chat_cache_unavailable">Lo spazio offline non è disponibile. Queste chat potrebbero non essere disponibili dopo un riavvio.</string>
-    <string name="chat_metadata_unavailable">Alcune informazioni su Okou o sui progetti non sono disponibili.</string>
+    <string name="chat_metadata_unavailable">Le informazioni sui progetti non sono temporaneamente disponibili.</string>
     <string name="chat_inbox">Posta in arrivo</string>
     <string name="chat_mark_all_read">Segna tutto come letto</string>
     <string name="chat_mark_all_read_unconfirmed">Alcune chat potrebbero essere ancora da leggere.</string>
@@ -39,6 +38,7 @@
     <string name="chat_back_to_inbox">Torna alla posta in arrivo</string>
     <string name="chat_more_actions">Altre azioni</string>
     <string name="chat_unread">Non lette</string>
+    <string name="chat_has_draft">Contiene una bozza</string>
     <string name="chat_archived">Archiviate</string>
     <string name="chat_muted">Silenziate</string>
     <string name="chat_project_empty">Nessuna chat in questo progetto.</string>

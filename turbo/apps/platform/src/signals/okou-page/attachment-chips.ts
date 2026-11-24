@@ -19,6 +19,11 @@ import {
 } from "../text-preview.ts";
 import { onRef, resetSignal } from "../utils.ts";
 import { createObjectUrlResource } from "../object-url-resource.ts";
+import { isZipArtifact } from "../../lib/zip-artifact.ts";
+import {
+  createZipArtifactPreviewScope,
+  type ZipArtifactPreviewScope,
+} from "../zip-artifact-preview.ts";
 import { createArtifactDiagramPreviewSignals } from "../artifact-diagram-preview.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import type { ChatThreadArtifactGoogleDriveRecovery } from "@okouai/api-contracts/contracts/chat-threads";
@@ -159,6 +164,7 @@ export type AttachmentLightboxState = AttachmentLightboxInput &
     /** The owner passed into every subsequent preview surface. */
     readonly preview: AttachmentPreviewSignals;
     readonly ownerSignal?: AbortSignal;
+    readonly zipPreview?: ZipArtifactPreviewScope;
   };
 
 export const attachmentDiagramPreview = createArtifactDiagramPreviewSignals();
@@ -468,12 +474,17 @@ function createSimpleLightboxOpener(kind: "audio" | "file" | "video") {
       set(internalLightboxDialogVisible$, true);
       set(internalLightboxDialogFullscreen$, false);
       const preview = attachmentPreviewSignalsFor(value);
+      const zipPreview =
+        kind === "file" && isZipArtifact(value.filename, value.contentType)
+          ? createZipArtifactPreviewScope(preview.resourceUrl$)
+          : undefined;
       set(internalLightboxState$, {
         ownerSignal,
         kind,
         ...value,
         preview,
         ...preview,
+        ...(zipPreview ? { zipPreview } : {}),
       });
     },
   );

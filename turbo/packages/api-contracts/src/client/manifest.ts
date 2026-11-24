@@ -260,11 +260,7 @@ export const clientDescriptorManifest = [
   },
   {
     module: "data-router",
-    contracts: [
-      "dataRouterHistoryContract",
-      "dataRouterRequestContract",
-      "runDataRouterRequestContract",
-    ],
+    contracts: ["dataRouterHistoryContract", "runDataRouterRequestContract"],
   },
   {
     module: "debug-morning-brief",

@@ -1,5 +1,6 @@
 package ai.okou.android.chat
 
+import androidx.room.AutoMigration
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
@@ -148,8 +149,76 @@ internal data class HistoryEventRecord(
     val payload: String,
 )
 
+@Entity(tableName = "chat_artifact_catalogs", primaryKeys = ["scope", "threadId"])
+internal data class ChatArtifactCatalogRecord(
+    val scope: String,
+    val threadId: String,
+    val authorization: String,
+    val confirmedAt: Long,
+    val nextCursor: String?,
+)
+
+@Entity(
+    tableName = "chat_artifact_items",
+    primaryKeys = ["scope", "threadId", "position"],
+    foreignKeys =
+        [
+            ForeignKey(
+                entity = ChatArtifactCatalogRecord::class,
+                parentColumns = ["scope", "threadId"],
+                childColumns = ["scope", "threadId"],
+                onDelete = ForeignKey.CASCADE,
+            ),
+        ],
+)
+internal data class ChatArtifactItemRecord(
+    val scope: String,
+    val threadId: String,
+    val position: Int,
+    val id: String,
+    val title: String,
+    val kind: String,
+    val createdAt: Long,
+)
+
+@Entity(tableName = "chat_related_resources", primaryKeys = ["scope", "threadId"])
+internal data class ChatRelatedResourceRecord(
+    val scope: String,
+    val threadId: String,
+    val authorization: String,
+    val payload: String,
+)
+
 @Dao
 internal interface ChatCacheDao {
+    @Query("SELECT * FROM chat_related_resources WHERE scope = :scope AND threadId = :threadId")
+    suspend fun relatedResources(scope: String, threadId: String): ChatRelatedResourceRecord?
+
+    @Upsert suspend fun putRelatedResources(record: ChatRelatedResourceRecord)
+
+    @Query(
+        "DELETE FROM chat_related_resources WHERE scope = :scope AND (:threadId IS NULL OR threadId = :threadId)",
+    )
+    suspend fun deleteRelatedResources(scope: String, threadId: String?)
+
+    @Query("SELECT * FROM chat_artifact_catalogs WHERE scope = :scope AND threadId = :threadId")
+    suspend fun artifactCatalog(scope: String, threadId: String): ChatArtifactCatalogRecord?
+
+    @Upsert suspend fun putArtifactCatalog(catalog: ChatArtifactCatalogRecord)
+
+    @Query(
+        "SELECT * FROM chat_artifact_items WHERE scope = :scope AND threadId = :threadId ORDER BY position",
+    )
+    suspend fun artifactItems(scope: String, threadId: String): List<ChatArtifactItemRecord>
+
+    @Insert suspend fun putArtifactItems(rows: List<ChatArtifactItemRecord>)
+
+    @Query("DELETE FROM chat_artifact_catalogs WHERE scope = :scope AND threadId = :threadId")
+    suspend fun deleteArtifactCatalog(scope: String, threadId: String)
+
+    @Query("DELETE FROM chat_artifact_catalogs WHERE scope = :scope")
+    suspend fun deleteArtifactCatalogs(scope: String)
+
     @Query("SELECT * FROM history_scopes WHERE scope = :scope AND threadId = :threadId")
     suspend fun historyScope(scope: String, threadId: String): HistoryScopeRecord?
 
@@ -250,9 +319,13 @@ internal interface ChatCacheDao {
             ProjectEventRecord::class,
             HistoryScopeRecord::class,
             HistoryEventRecord::class,
+            ChatArtifactCatalogRecord::class,
+            ChatArtifactItemRecord::class,
+            ChatRelatedResourceRecord::class,
         ],
-    version = 4,
+    version = 6,
     exportSchema = true,
+    autoMigrations = [AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6)],
 )
 internal abstract class ChatCacheDatabase : RoomDatabase() {
     abstract fun chats(): ChatCacheDao

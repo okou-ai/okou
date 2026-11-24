@@ -45,6 +45,21 @@ internal interface CanonicalApi {
         @Query("threadId") `queryThreadId`: String? = null,
     ): Response<ConnectorOverview>
 
+    @GET("/api/chat-threads/{threadId}/connector-access")
+    suspend fun `chatConnectorAccessWire`(
+        @Header("Authorization") token: String,
+        @Path("threadId") `pathThreadId`: String,
+        @QueryMap parameters: Map<String, String>,
+    ): Response<ChatConnectorAccess>
+
+    @PUT("/api/chat-threads/{threadId}/connector-access/{connectionId}")
+    suspend fun `chatConnectorOverride`(
+        @Header("Authorization") token: String,
+        @Path("threadId") `pathThreadId`: String,
+        @Path("connectionId") `pathConnectionId`: String,
+        @Body body: ChatConnectorOverrideRequest,
+    ): Response<ChatConnectorAccess>
+
     @GET("/api/connector-account-access/defaults")
     suspend fun `connectorAccountDefaultsWire`(
         @Header("Authorization") token: String,
@@ -265,6 +280,12 @@ internal interface CanonicalApi {
         @Path("id") `pathId`: String,
     ): Response<WorkflowAutomation>
 
+    @GET("/api/chat/search")
+    suspend fun `searchChatMessages`(
+        @Header("Authorization") token: String,
+        @Query("keyword") `queryKeyword`: String,
+    ): Response<ChatMessageSearchResponse>
+
     @GET("/api/chat-drafts/composer")
     suspend fun `workspaceDraft`(@Header("Authorization") token: String): Response<ComposerDraft>
 
@@ -304,8 +325,46 @@ internal interface CanonicalApi {
         @Body body: UpdateDefaultModelPreference,
     ): Response<DefaultModelPreference>
 
+    @GET("/api/preferences/email-subscription")
+    suspend fun `emailSubscription`(
+        @Header("Authorization") token: String,
+    ): Response<EmailSubscription>
+
+    @PUT("/api/preferences/email-subscription")
+    suspend fun `updateEmailSubscription`(
+        @Header("Authorization") token: String,
+        @Body body: UpdateEmailSubscriptionRequest,
+    ): Response<EmailSubscriptionUpdate>
+
     @GET("/api/feature-switches")
     suspend fun `featureSwitches`(@Header("Authorization") token: String): Response<FeatureSwitches>
+
+    @GET("/api/preferences/morning-brief")
+    suspend fun `morningBriefPreference`(
+        @Header("Authorization") token: String,
+    ): Response<MorningBriefPreference>
+
+    @PUT("/api/preferences/morning-brief")
+    suspend fun `updateMorningBriefPreference`(
+        @Header("Authorization") token: String,
+        @Body body: SetMorningBriefPreference,
+    ): Response<MorningBriefPreference>
+
+    @GET("/api/preferences/proactive-suggestions")
+    suspend fun `proactiveSuggestionsPreference`(
+        @Header("Authorization") token: String,
+    ): Response<ProactiveSuggestionsPreference>
+
+    @PUT("/api/preferences/proactive-suggestions/with-feed")
+    suspend fun `updateProactiveSuggestionsWithFeed`(
+        @Header("Authorization") token: String,
+        @Body body: SetProactiveSuggestionsPreference,
+    ): Response<ProactiveSuggestionsPreference>
+
+    @GET("/api/feed/sources")
+    suspend fun `suggestionFeedSources`(
+        @Header("Authorization") token: String,
+    ): Response<SuggestionFeedSources>
 
     @GET("/api/me/3rd-party-subscriptions")
     suspend fun `recoverySubscriptions`(
@@ -410,6 +469,9 @@ internal interface CanonicalApi {
         @Query("includeActiveUnread") `queryIncludeActiveUnread`: String? = null,
     ): Response<Indicators>
 
+    @GET("/api/chat-thread-drafts")
+    suspend fun `chatDraftIndex`(@Header("Authorization") token: String): Response<ChatDraftIndex>
+
     @GET("/api/projects/snapshot")
     suspend fun `projectSnapshot`(@Header("Authorization") token: String): Response<ProjectSnapshot>
 
@@ -418,6 +480,18 @@ internal interface CanonicalApi {
         @Header("Authorization") token: String,
         @Query("sinceSeqId") `querySinceSeqId`: Long,
     ): Response<ProjectEvents>
+
+    @GET("/api/chat-threads/{id}/relations/children")
+    suspend fun `relatedCreatedChats`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+    ): Response<RelatedCreatedChats>
+
+    @GET("/api/chat-threads/{id}/relations/communications")
+    suspend fun `relatedCommunicatingChats`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+    ): Response<RelatedCommunicatingChats>
 
     @POST("/api/chat/events/catch-up")
     suspend fun `historyCatchUp`(
@@ -540,6 +614,48 @@ internal interface CanonicalApi {
         @Path("id") `pathId`: String,
         @Body body: ReorderPinnedThreadRequest,
     ): Response<Unit>
+}
+
+internal suspend fun CanonicalApi.`chatConnectorAccess`(
+    token: String,
+    `pathThreadId`: String,
+    query: ChatConnectorAccessQuery,
+): Response<ChatConnectorAccess> =
+    `chatConnectorAccessWire`(token, `pathThreadId`, query.toQueryParameters())
+
+internal fun ChatConnectorAccessQuery.toQueryParameters(): Map<String, String> {
+    val value = Json.encodeToJsonElement(ChatConnectorAccessQuery.serializer(), this) as JsonObject
+    require(
+        listOf(
+                (value.keys.all { it in setOf("kind", "connectorSlug") } &&
+                    value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "builtin")
+                    } &&
+                    value["connectorSlug"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            field.content.length >= 1 &&
+                            field.content.length <= 64 &&
+                            Regex("^[a-z0-9][a-z0-9-]*\$").containsMatchIn(field.content))
+                    }),
+                (value.keys.all { it in setOf("kind", "customConnectorId") } &&
+                    value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "custom")
+                    } &&
+                    value["customConnectorId"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            Regex(
+                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$",
+                                )
+                                .containsMatchIn(field.content))
+                    }),
+            )
+            .count { it } == 1,
+    ) {
+        "Invalid ChatConnectorAccessQuery"
+    }
+    return value.mapValues { (_, field) -> (field as JsonPrimitive).content }
 }
 
 internal suspend fun CanonicalApi.`connectorAccountDefaults`(

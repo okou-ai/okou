@@ -1,5 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="conversation_queue_count">Queue (%1$d)</string>
+    <string name="conversation_queue_empty">No queued items</string>
+    <string name="conversation_queue_message">Message</string>
+    <plurals name="conversation_queue_attachments">
+        <item quantity="one">Message · %d attachment</item>
+        <item quantity="other">Message · %d attachments</item>
+    </plurals>
+    <string name="conversation_run_queued">Waiting to start</string>
     <string name="conversation_welcome">What would you like to work on?</string>
     <string name="conversation_welcome_detail">Tell Okou what you’d like to do.</string>
     <string name="conversation_jump_latest">Back to latest</string>
@@ -16,13 +24,8 @@
     <string name="conversation_queue">Queue</string>
     <string name="conversation_queue_automation">Workflow automation</string>
     <string name="conversation_skip_automation">Skip this automation</string>
-    <string name="conversation_withdrawing">Withdrawing…</string>
-    <string name="conversation_skipping">Skipping…</string>
-    <string name="conversation_withdraw_unknown">Withdrawal outcome is unknown</string>
-    <string name="conversation_skip_unknown">Skip outcome is unknown</string>
-    <string name="conversation_withdraw_failed">Could not withdraw</string>
-    <string name="conversation_skip_failed">Could not skip</string>
-    <string name="conversation_stop">Stop</string>
+    <string name="conversation_withdraw_failed">Could not withdraw the message.</string>
+    <string name="conversation_skip_failed">Could not skip the automation.</string>
     <string name="conversation_find">Find messages</string>
     <string name="conversation_find_turns">Browse turns</string>
     <string name="conversation_find_empty">No messages to search</string>

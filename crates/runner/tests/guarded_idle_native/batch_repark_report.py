@@ -48,7 +48,7 @@ def validate(directory):
             raise ValueError("physical rollback evidence missing")
         initial = steps[0]["evidence"]["published_status"]["idle_sandboxes"][0]
         history = canonical_uuid(value.get("original_history_run_id"))
-        if initial["reuse_key"] != "thread:native-guarded-"+history or history in runs:
+        if initial["reuse_key"] != report.GUARDED_IDLE_REUSE_KEY_PREFIX+history or history in runs:
             raise ValueError("physical rollback replaced original history")
         runs.add(history)
         started = batch.clock(value.get("started_ns"), steps[0]["monotonic_ns"], event["monotonic_ns"])

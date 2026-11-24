@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="auth_checking_workspace">Verificando espaços de trabalho…</string>
+    <string name="auth_check_failed">Não foi possível verificar o acesso.</string>
+    <string name="auth_selection_failed">Não foi possível abrir este espaço de trabalho.</string>
+    <string name="auth_sign_out_failed">Não foi possível sair.</string>
     <string name="composer_sync_loading">Carregando rascunho salvo…</string>
     <string name="composer_sync_saving">Sincronizando rascunho…</string>
     <string name="composer_sync_failed">Falha ao sincronizar o rascunho. Seu texto permanece neste dispositivo.</string>
@@ -8,19 +12,7 @@
     <string name="composer_restore_draft">Restaurar rascunho preservado</string>
     <string name="controls_storage_failed">Não foi possível salvar os controles pendentes.</string>
     <string name="controls_stop">Parar o trabalho em andamento</string>
-    <string name="controls_preparing">Salvando solicitação de controle…</string>
-    <string name="controls_sending">Enviando solicitação de controle…</string>
-    <string name="controls_accepted">Solicitação aceita. Aguardando confirmação.</string>
-    <string name="controls_checking">Verificando o resultado…</string>
-    <string name="controls_unknown">O resultado ainda é desconhecido.</string>
-    <string name="controls_retryable">O destino original ainda está disponível.</string>
-    <string name="controls_retry_original">Repetir solicitação original</string>
-    <string name="controls_check">Verificar resultado</string>
-    <string name="controls_recorded">Controle registrado no histórico.</string>
-    <string name="controls_target_settled">O destino original já foi resolvido.</string>
-    <string name="controls_read_failed">Não foi possível verificar o resultado.</string>
-    <string name="controls_recovery_failed">O status de recuperação não está disponível.</string>
-    <string name="controls_recovering">Preparando a conversa para continuar.</string>
+    <string name="controls_stop_failed">Não foi possível interromper a tarefa.</string>
     <string name="settings">Configurações</string>
     <string name="back">Voltar</string>
     <string name="appearance">Modo de exibição</string>
@@ -29,7 +21,6 @@
     <string name="appearance_dark">Escuro</string>
     <string name="on_this_device">Neste dispositivo</string>
     <string name="retry">Tentar novamente</string>
-    <string name="auth_restoring">Restaurando sua sessão…</string>
     <string name="auth_preparing_workspace">Preparando seu espaço de trabalho…</string>
     <string name="auth_choose_workspace">Escolha seu espaço de trabalho</string>
     <string name="auth_no_workspace">Ainda não há espaços de trabalho acessíveis</string>
@@ -140,8 +131,6 @@
     <string name="realtime_connecting">Conectando às atualizações em tempo real…</string>
     <string name="realtime_unavailable">As atualizações em tempo real estão indisponíveis. Você ainda pode atualizar manualmente.</string>
     <string name="settings_account">Conta</string>
-    <string name="chat_project_expansion_read_failed">Não foi possível carregar o estado de expansão dos projetos neste dispositivo.</string>
-    <string name="chat_project_expansion_save_failed">Não foi possível salvar o estado de expansão dos projetos neste dispositivo.</string>
     <string name="settings_cancel">Cancelar</string>
     <string name="settings_saving">Salvando…</string>
     <string name="settings_sign_out_title">Sair?</string>

@@ -31,6 +31,7 @@ import { generationTemplateKind } from "@okouai/core/generation-template-kind";
 import { findPresentationRunbookPackage } from "@okouai/core/resource-registry";
 import type { PresentationOutputFormat } from "@okouai/core/presentation-output-format";
 
+export const VOICE_CLIP_NODE_NAME = "voiceClip";
 export const PROJECT_MENTION_NODE_NAME = "projectMention";
 export const CHAT_THREAD_MENTION_NODE_NAME = "chatThreadMention";
 export const TEMPLATE_ATTACHMENT_NODE_NAME = "templateAttachment";
@@ -189,6 +190,14 @@ function appendParagraphParts(
     }
     if (node.type.name === "hardBreak") {
       appendTextPart(parts, "\n");
+      continue;
+    }
+    if (node.type.name === VOICE_CLIP_NODE_NAME) {
+      const fileId: unknown = node.attrs.fileId;
+      if (typeof fileId !== "string") {
+        return false;
+      }
+      parts.push({ type: "voice", clips: [{ fileId }] });
       continue;
     }
     if (node.type.name === PROJECT_MENTION_NODE_NAME) {
@@ -885,6 +894,16 @@ function restoredEditorDoc(userMessage: UserMessageDocument): JSONContent {
     }
     if (part.type === "text") {
       appendRestoredText(state, part.text);
+      continue;
+    }
+    if (part.type === "voice") {
+      for (const { fileId } of part.clips) {
+        state.paragraphContent.push({
+          type: VOICE_CLIP_NODE_NAME,
+          attrs: { fileId },
+        });
+      }
+      state.trailingParagraph = false;
       continue;
     }
     if (part.type === "chat_thread") {

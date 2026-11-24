@@ -1,5 +1,6 @@
 import {
   bigint,
+  boolean,
   index,
   pgEnum,
   pgTable,
@@ -42,6 +43,8 @@ export const projectEvents = pgTable(
     kind: projectEventKind("kind").notNull(),
     name: text("name"),
     sortOrder: text("sort_order"),
+    archived: boolean("archived"),
+    lastArchivedAt: timestamp("last_archived_at"),
     reorderTargetId: uuid("reorder_target_id"),
     reorderSide: text("reorder_side"),
     fromThreadId: uuid("from_thread_id"),

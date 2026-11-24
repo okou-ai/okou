@@ -1,6 +1,7 @@
 package ai.okou.android.artifacts
 
 import ai.okou.android.R
+import ai.okou.android.chat.ChatListSkeletonDelayMillis
 import ai.okou.android.chat.rememberChatWaitIndicator
 import ai.okou.android.state.rememberArtifactPageState
 import androidx.activity.compose.BackHandler
@@ -11,6 +12,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -19,13 +21,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -62,6 +64,10 @@ internal fun ChatArtifactResources(
     threadId: String,
     wide: Boolean,
     onClose: () -> Unit,
+    relatedFocusKey: String?,
+    availableRelatedChats: Set<String>,
+    onRelatedFocusRestored: () -> Unit,
+    onRelatedChat: (String, String) -> Unit,
 ) {
     val state by model.state.collectAsStateWithLifecycle()
     val query = remember(threadId) { ArtifactQuery(chatThreadId = threadId) }
@@ -99,20 +105,38 @@ internal fun ChatArtifactResources(
         return
     }
     val result = state.page.takeIf { state.query == query }
-    val problem = state.problem.takeIf { state.query == query }
+    val failure = state.failedRead.takeIf { state.query == query }
+    val reading = state.reading.takeIf { state.query == query }
+    val related = state.relatedChats.takeIf { state.query == query }
+    val relatedRows =
+        remember(related?.confirmed, availableRelatedChats) {
+            related?.confirmed?.rows().orEmpty().filter { it.threadId in availableRelatedChats }
+        }
+    val relatedError =
+        when (related?.failure) {
+            RelatedChatReadFailure.Temporary -> R.string.chat_resources_related_load_failed
+            RelatedChatReadFailure.AccessLost -> R.string.chat_resources_related_access_lost
+            null -> null
+        }
+    val showRelatedSkeleton =
+        rememberChatWaitIndicator(
+            related?.checking == true &&
+                related.confirmed == null &&
+                (result != null || failure != null),
+            ChatListSkeletonDelayMillis,
+        )
     val showSkeleton =
-        rememberChatWaitIndicator(result == null && problem == null && !state.offline)
+        rememberChatWaitIndicator(result == null && failure == null, ChatListSkeletonDelayMillis)
     val dates = rememberArtifactDates()
     val rowFocus = remember { FocusRequester() }
+    val relatedFocus = remember { FocusRequester() }
     val restoreRow = page.restoreRow
-    LaunchedEffect(result, state.reading, problem, state.offline) {
-        if (
-            result?.nextCursor != null && state.reading == null && problem == null && !state.offline
-        ) {
+    LaunchedEffect(result, reading, failure) {
+        if (result?.nextCursor != null && reading == null && failure == null) {
             snapshotFlow {
                 val layout = position.layoutInfo
                 val last = layout.visibleItemsInfo.lastOrNull()?.index ?: -1
-                last >= 0 && last >= layout.totalItemsCount - 5
+                last >= 0 && last >= result.items.size - 3
             }
                 .collect { nearEnd -> if (nearEnd) model.loadNext() }
         }
@@ -122,73 +146,136 @@ internal fun ChatArtifactResources(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         ArtifactToolbar(R.string.chat_resources, R.string.back, ::back, toolbarPadding)
-        LazyColumn(
-            state = position,
-            modifier = Modifier.widthIn(max = 768.dp).fillMaxWidth().padding(horizontal = 16.dp),
-            contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp),
+        if (
+            result == null &&
+                failure != null &&
+                relatedRows.isEmpty() &&
+                relatedError == null &&
+                !showRelatedSkeleton
         ) {
-            item {
-                Text(
-                    stringResource(R.string.artifact_title),
-                    Modifier.padding(start = 12.dp, bottom = 4.dp).semantics { heading() },
-                    style =
-                        MaterialTheme.typography.labelMedium.copy(
-                            fontSize = 13.sp,
-                            lineHeight = 20.sp,
+            ArtifactInitialReadFailure(
+                failure.label(chatResources = true),
+                Modifier.widthIn(max = 768.dp),
+            )
+            return@Column
+        }
+        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.TopCenter) {
+            LazyColumn(
+                state = position,
+                modifier = Modifier.widthIn(max = 768.dp).fillMaxSize().padding(horizontal = 16.dp),
+                contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp),
+            ) {
+                if (result != null || failure == null)
+                    item(key = "resource-heading") {
+                        ResourceHeading(R.string.artifact_title)
+                    }
+                if (showSkeleton) {
+                    items(3) { ArtifactRowSkeleton(height = 72.dp, horizontalPadding = 16.dp) }
+                }
+                if (result?.items?.isEmpty() == true) {
+                    item {
+                        ArtifactReadNotice(
+                            R.string.artifact_empty,
+                            Modifier.padding(vertical = 12.dp),
+                        )
+                    }
+                }
+                items(result?.items.orEmpty(), key = { it.id }) { item ->
+                    ChatResourceRow(
+                        item.title,
+                        stringResource(
+                            R.string.artifact_metadata,
+                            stringResource(item.kind.label()),
+                            dates.timestamp(checkNotNull(item.createdAt), showDay = true),
                         ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            if (state.offline)
-                item {
-                    ResourceNotice(
-                        if (result == null) R.string.artifact_offline_catalog
-                        else R.string.artifact_offline_cached,
-                    )
-                }
-            if (showSkeleton) {
-                items(3) { ArtifactRowSkeleton(height = 72.dp, horizontalPadding = 16.dp) }
-            }
-            if (result?.items?.isEmpty() == true) item { ResourceNotice(R.string.artifact_empty) }
-            items(result?.items.orEmpty(), key = { it.id }) { item ->
-                ChatArtifactResourceRow(
-                    item,
-                    dates.timestamp(checkNotNull(item.createdAt), showDay = true),
-                    if (item.id == restoreRow) {
-                        Modifier.focusRequester(rowFocus).onGloballyPositioned {
-                            if (page.restoreRow == item.id) {
-                                page.restoreRow = null
-                                rowFocus.requestFocus()
+                        item.kind.icon(),
+                        if (item.id == restoreRow) {
+                            Modifier.focusRequester(rowFocus).onGloballyPositioned {
+                                if (page.restoreRow == item.id) {
+                                    page.restoreRow = null
+                                    rowFocus.requestFocus()
+                                }
                             }
+                        } else Modifier,
+                    ) {
+                        page.selectedId = item.id
+                        model.select(item.id, item)
+                    }
+                }
+                if (failure != null) {
+                    item(key = "resource-read-failure") {
+                        ArtifactReadNotice(
+                            failure.label(chatResources = true),
+                            Modifier.padding(vertical = 8.dp),
+                        )
+                    }
+                }
+                if (reading == ArtifactCatalogRead.More) {
+                    item { ArtifactRowSkeleton(height = 72.dp, horizontalPadding = 16.dp) }
+                }
+                if (relatedRows.isNotEmpty() || relatedError != null || showRelatedSkeleton) {
+                    item(key = "related-heading") {
+                        Spacer(Modifier.height(16.dp))
+                        ResourceHeading(R.string.chat_resources_related)
+                    }
+                    items(relatedRows, key = { "related:${it.threadId}" }) { peer ->
+                        val key = "related:${peer.threadId}"
+                        ChatResourceRow(
+                            peer.title?.takeIf { it.isNotBlank() }
+                                ?: stringResource(R.string.chat_untitled),
+                            null,
+                            R.drawable.ic_chat,
+                            if (key == relatedFocusKey) {
+                                Modifier.focusRequester(relatedFocus).onGloballyPositioned {
+                                    if (relatedFocus.requestFocus()) onRelatedFocusRestored()
+                                }
+                            } else Modifier,
+                        ) {
+                            onRelatedChat(peer.threadId, key)
                         }
-                    } else Modifier,
-                ) {
-                    page.selectedId = item.id
-                    model.select(item.id, item)
+                    }
+                    if (showRelatedSkeleton)
+                        item(key = "related-loading") {
+                            ArtifactRowSkeleton(height = 56.dp, horizontalPadding = 16.dp)
+                        }
+                    if (relatedError != null)
+                        item(key = "related-read-failure") {
+                            ArtifactReadNotice(
+                                relatedError,
+                                Modifier.padding(bottom = 12.dp),
+                            )
+                        }
                 }
             }
-            problem?.let { error -> item { ResourceNotice(error.label()) } }
-            if (result != null && state.reading == ArtifactCatalogRead.More) {
-                item { ArtifactRowSkeleton(height = 72.dp, horizontalPadding = 16.dp) }
+            if (reading == ArtifactCatalogRead.SyncingStale || related?.syncingStale == true) {
+                val label = stringResource(R.string.chat_resources_syncing)
+                val colors = MaterialTheme.colorScheme
+                LinearProgressIndicator(
+                    Modifier.fillMaxWidth().semantics { contentDescription = label },
+                    color = colors.primary,
+                    trackColor =
+                        colors.primary.copy(alpha = 0.18f).compositeOver(colors.background),
+                )
             }
         }
     }
 }
 
 @Composable
-private fun ResourceNotice(label: Int) {
+private fun ResourceHeading(@androidx.annotation.StringRes label: Int) {
     Text(
         stringResource(label),
-        Modifier.padding(vertical = 12.dp).semantics { liveRegion = LiveRegionMode.Polite },
-        style = MaterialTheme.typography.bodyMedium,
+        Modifier.padding(start = 12.dp, bottom = 4.dp).semantics { heading() },
+        style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp, lineHeight = 20.sp),
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 }
 
 @Composable
-private fun ChatArtifactResourceRow(
-    item: ArtifactItem,
-    timestamp: String,
+private fun ChatResourceRow(
+    title: String,
+    subtitle: String?,
+    @androidx.annotation.DrawableRes icon: Int,
     modifier: Modifier,
     onClick: () -> Unit,
 ) {
@@ -196,7 +283,7 @@ private fun ChatArtifactResourceRow(
     Row(
         modifier
             .fillMaxWidth()
-            .heightIn(min = 72.dp)
+            .heightIn(min = if (subtitle == null) 56.dp else 72.dp)
             .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 8.dp),
@@ -204,27 +291,27 @@ private fun ChatArtifactResourceRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
-            Icon(painterResource(item.kind.icon()), null, Modifier.size(20.dp))
+            Icon(painterResource(icon), null, Modifier.size(20.dp))
         }
         Column(Modifier.weight(1f)) {
             Text(
-                item.title,
+                title,
                 style =
                     MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 24.sp),
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                stringResource(
-                    R.string.artifact_metadata,
-                    stringResource(item.kind.label()),
-                    timestamp,
-                ),
-                style =
-                    MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp),
-                color = colors.onSurfaceVariant,
-            )
+            if (subtitle != null)
+                Text(
+                    subtitle,
+                    style =
+                        MaterialTheme.typography.bodyMedium.copy(
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp,
+                        ),
+                    color = colors.onSurfaceVariant,
+                )
         }
         Icon(painterResource(R.drawable.ic_chevron_right), null, Modifier.size(24.dp))
     }

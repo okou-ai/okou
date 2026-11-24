@@ -22,6 +22,8 @@
     <key>WebBaseURL</key><string>$(OKOU_WEB_BASE_URL)</string>
     <key>ClerkPublishableKey</key><string>$(CLERK_PUBLISHABLE_KEY)</string>
     <key>SentryDSN</key><string>$(OKOU_SENTRY_DSN)</string>
+    <key>LSApplicationQueriesSchemes</key>
+    <array><string>strava</string></array>
     <key>CFBundleURLTypes</key>
     <array><dict>
         <key>CFBundleURLName</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>

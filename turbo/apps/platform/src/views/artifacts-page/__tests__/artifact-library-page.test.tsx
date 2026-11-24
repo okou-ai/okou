@@ -42,7 +42,6 @@ function setupLibraryPage(path = "/artifacts") {
     path,
     featureSwitches: {
       [FeatureSwitchKey.ArtifactLibrary]: true,
-      [FeatureSwitchKey.ArtifactPreviewActionGroup]: false,
     },
   });
 }
@@ -657,7 +656,9 @@ test("Rows open with Enter and Space, switch previews, and return focus without 
   ).not.toBeInTheDocument();
   expect(queryButtonByName("Sort descending", viewport)).toBeUndefined();
   await waitFor(() => {
-    expect(getButtonByName("Delete", preview)).toBeInTheDocument();
+    expect(
+      getButtonByName("More artifact actions", preview),
+    ).toBeInTheDocument();
   });
   for (const action of [
     "Share artifact",

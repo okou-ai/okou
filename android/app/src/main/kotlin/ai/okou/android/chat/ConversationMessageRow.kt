@@ -9,7 +9,6 @@ import android.content.ClipData
 import android.os.Build
 import android.widget.Toast
 import androidx.annotation.StringRes
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -19,6 +18,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
@@ -32,12 +32,12 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.LongState
 import androidx.compose.runtime.getValue
@@ -59,6 +59,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
@@ -66,9 +67,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -96,13 +95,6 @@ internal data class ConversationMessage(
     fun includes(id: String?) = message.id == id || earlier.any { it.id == id }
 }
 
-internal fun HistoryMessage.visibleInConversation() =
-    when (status) {
-        null,
-        "run.completed" -> blocks.isNotEmpty() || queued || rejected
-        else -> true
-    }
-
 internal fun conversationMessages(messages: List<HistoryMessage>): List<ConversationMessage> =
     buildList {
         var previous: HistoryMessage? = null
@@ -129,87 +121,6 @@ internal fun conversationMessages(messages: List<HistoryMessage>): List<Conversa
     }
 
 private fun HistoryMessage.isReply() = role == HistoryRole.Assistant && blocks.isNotEmpty()
-
-@Composable
-internal fun QueuedMessageCard(
-    entry: ConversationMessage,
-    controls: ConversationRunControls?,
-) {
-    val message = entry.message
-    val workflow = message.queuedWorkflow
-    val revoke = controls?.revoke(message.id, entry.preview)
-    val phase = controls?.withdrawalPhase(message.id)
-    val check = controls?.checkWithdrawal(message.id)
-    val colors = MaterialTheme.colorScheme
-    val queued = stringResource(R.string.history_queued)
-    val status =
-        when (phase) {
-            null,
-            RunControlPhase.Retryable ->
-                if (workflow == null) queued
-                else
-                    "${workflow.triggerBrief ?: stringResource(R.string.conversation_queue_automation)} · $queued"
-            RunControlPhase.Unknown ->
-                stringResource(
-                    if (workflow == null) R.string.conversation_withdraw_unknown
-                    else R.string.conversation_skip_unknown,
-                )
-            else ->
-                stringResource(
-                    if (workflow == null) R.string.conversation_withdrawing
-                    else R.string.conversation_skipping,
-                )
-        }
-    Surface(
-        modifier = Modifier.fillMaxWidth().testTag("message_${message.id}"),
-        shape = RoundedCornerShape(12.dp),
-        color = colors.surface,
-        border = BorderStroke(1.dp, colors.outline),
-    ) {
-        Row(
-            Modifier.padding(start = 12.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Column(Modifier.semantics { liveRegion = LiveRegionMode.Polite }) {
-                    ConversationMeta(status)
-                    if (phase == RunControlPhase.Retryable)
-                        ConversationMeta(
-                            stringResource(
-                                if (workflow == null) R.string.conversation_withdraw_failed
-                                else R.string.conversation_skip_failed,
-                            ),
-                        )
-                }
-                if (workflow?.name != null)
-                    Text(workflow.name, style = MaterialTheme.typography.bodyMedium)
-                else MessageBody(message, compact = true)
-                if (phase == RunControlPhase.Unknown)
-                    TextButton(onClick = { check?.invoke() }, enabled = check != null) {
-                        Text(stringResource(R.string.controls_check))
-                    }
-            }
-            IconButton(
-                onClick = { revoke?.invoke() },
-                enabled = revoke != null,
-                modifier = Modifier.size(48.dp),
-                colors =
-                    IconButtonDefaults.iconButtonColors(contentColor = colors.onSurfaceVariant),
-            ) {
-                Icon(
-                    painterResource(R.drawable.ic_close),
-                    contentDescription =
-                        stringResource(
-                            if (workflow == null) R.string.conversation_revoke
-                            else R.string.conversation_skip_automation,
-                        ),
-                    modifier = Modifier.size(24.dp),
-                )
-            }
-        }
-    }
-}
 
 @Composable
 internal fun ConversationMessageRow(
@@ -425,26 +336,55 @@ internal fun ConversationActivity(
     @StringRes label: Int,
     modifier: Modifier = Modifier,
     runningFrame: LongState? = null,
+    controls: ConversationRunControls? = null,
+    stopPlacement: ConversationStopPlacement? = null,
 ) {
     val color = LocalActivityStatusColor.current
     Row(
-        modifier.heightIn(min = 24.dp),
+        modifier.fillMaxWidth().heightIn(min = ConversationStopTouchSize),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (label == R.string.conversation_processing && runningFrame != null) {
+        if (label == R.string.conversation_run_queued) {
+            Icon(painterResource(R.drawable.ic_schedule), null, Modifier.size(16.dp), tint = color)
+        } else if (runningFrame != null) {
             Canvas(Modifier.size(14.dp)) { drawRunningWave(color, runningFrame.longValue, row = 0) }
         } else {
             Box(Modifier.size(8.dp).background(color, CircleShape))
         }
-        ConversationMeta(stringResource(label), maxLines = 1)
+        ConversationMeta(stringResource(label), Modifier.weight(1f), maxLines = 1)
+        if (controls?.currentRunId != null && stopPlacement != null) {
+            DisposableEffect(stopPlacement) {
+                onDispose { stopPlacement.reportInlineSlot(null) }
+            }
+            Box(
+                Modifier.size(ConversationStopTouchSize).onGloballyPositioned { slot ->
+                    val bounds = slot.boundsInRoot()
+                    stopPlacement.reportInlineSlot(
+                        bounds.bottom.takeIf {
+                            bounds.width >= slot.size.width - 0.5f &&
+                                bounds.height >= slot.size.height - 0.5f
+                        },
+                    )
+                },
+            ) {
+                if (stopPlacement.inline) ConversationStopButton(controls, stopPlacement, true)
+            }
+        } else {
+            Spacer(Modifier.size(ConversationStopTouchSize))
+        }
     }
 }
 
 @Composable
-private fun ConversationMeta(text: String, maxLines: Int = Int.MAX_VALUE) {
+private fun ConversationMeta(
+    text: String,
+    modifier: Modifier = Modifier,
+    maxLines: Int = Int.MAX_VALUE,
+) {
     Text(
         text,
+        modifier,
         style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp, lineHeight = 20.sp),
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         maxLines = maxLines,

@@ -21,7 +21,9 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
@@ -31,8 +33,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
-internal const val ChatListSyncNoticeAgeMillis = 10 * 60 * 1_000L
-private val listRefreshRetryDelays = listOf(3_000L, 3_000L, 6_000L, 12_000L, 24_000L, 48_000L)
+private const val chatSyncNoticeAgeMillis = 10 * 60 * 1_000L
 private const val listRetryProgressThreshold = 3
 private const val unreadSnapshotLifetimeMillis = 120_000L
 private const val unreadSnapshotRenewalMillis = 30_000L
@@ -44,29 +45,10 @@ private fun CachedUnread.remainingMillis(now: Long): Long {
     } else 0
 }
 
-private fun listRetryAfterMillis(error: Exception): Long? {
-    val seconds =
-        when (error) {
-            is ApiFailure.Network,
-            is ApiFailure.IncompatibleResponse -> 0L
-            is ApiFailure.Http ->
-                if (retryableListReadStatus(error.status)) error.retryAfterSeconds ?: 0L else null
-            // A fresh descriptor can replace a signed URL that expired or was removed.
-            is ChatSnapshotUnavailable ->
-                if (
-                    error.status == 403 ||
-                        error.status == 404 ||
-                        retryableListReadStatus(error.status)
-                )
-                    error.retryAfterSeconds ?: 0L
-                else null
-            else -> null
-        }
-    return seconds?.coerceIn(0, Long.MAX_VALUE / 1_000)?.times(1_000)
+internal fun chatSyncNoticeDelayMillis(confirmedAt: Long, now: Long): Long {
+    val age = (now - confirmedAt).coerceAtLeast(0)
+    return (chatSyncNoticeAgeMillis + 1 - age).coerceAtLeast(0)
 }
-
-private fun retryableListReadStatus(status: Int) =
-    status == 408 || status == 410 || status == 429 || status in 500..599
 
 enum class ChatReadPhase {
     Idle,
@@ -205,7 +187,11 @@ data class ChatListUiState(
     val projectList: ProjectListUiState = ProjectListUiState(),
     internal val chatMoveNotice: ChatMoveNotice? = null,
     val indicators: Indicators? = null,
+    internal val draftThreadIds: Set<String>? = null,
     val indicatorsPhase: ChatReadPhase = ChatReadPhase.Idle,
+    internal val indicatorsNonRetryableFailure: Boolean = false,
+    internal val indicatorsConfirmedAt: Long? = null,
+    internal val indicatorsRetryProgressVisible: Boolean = false,
     val filter: ChatListFilter = ChatListFilter.Inbox,
     val pendingRowActions: Map<String, ChatRowAction> = emptyMap(),
     val failedRowAction: ChatRowActionFailure? = null,
@@ -269,6 +255,16 @@ internal fun ChatListUiState.projectDestinations(
 
 internal val ChatListUiState.displayUnreadAt: Map<String, String>?
     get() = indicators?.unreadAt ?: cachedUnread?.unreadAt
+
+internal val ChatListUiState.unreadConfirmedAt: Long?
+    get() = indicatorsConfirmedAt ?: cachedUnread?.confirmedAt
+
+internal val ChatListUiState.waitingForUnreadIndicators: Boolean
+    get() =
+        filter == ChatListFilter.Unread &&
+            displayUnreadAt == null &&
+            (readIntents.isEmpty() ||
+                threads.none { it.hidden != true && it.muted != true && isUnread(it.id) })
 
 internal fun ChatListUiState.isUnread(threadId: String): Boolean {
     val serverUnreadAt = displayUnreadAt?.get(threadId)
@@ -359,7 +355,9 @@ class ChatListModel(
     private val mutable = MutableStateFlow(ChatListUiState(filter = initialFilter))
     val uiState = mutable.asStateFlow()
     @Volatile private var retired = false
-    private val cache = cacheStore.open(identity) { current() }
+    internal val cache = cacheStore.open(identity) { current() }
+    private val artifactChanges = MutableSharedFlow<ChatChanges>()
+    internal val artifactCatalogChanges = artifactChanges.asSharedFlow()
     private val readWrites = mutableMapOf<String, Job>()
     val history =
         ConversationHistoryModel(
@@ -371,6 +369,7 @@ class ChatListModel(
             { invalidateIndicators() },
             dispatcher,
             precedingReadWrite = { readWrites[it] },
+            wallMillis = wallMillis,
         )
     private val sync = ChatListSync(service, dispatcher)
     private var confirmed: CachedChats? = null
@@ -403,9 +402,20 @@ class ChatListModel(
     private var cacheRead = false
     private var restoreJob: Job? = null
     private var indicatorsJob: Job? = null
+    private var draftIndexRead: DraftIndexRead? = null
+    internal var draftIndexRequestVersion = 0L
+        private set
+
+    private var confirmedDraftIndexVersion = 0L
+    private var indicatorsRetry: ChatDependencyRetry? = null
     private val indicatorReadReceipts = mutableMapOf<String, ChatTimestamp>()
     private val readConfirmations = mutableMapOf<String, ReadConfirmation>()
     private val writes = Mutex()
+
+    private class DraftIndexRead {
+        val presenceOverrides = mutableMapOf<String, Boolean>()
+        var job: Job? = null
+    }
 
     private class ListReadBatch {
         var refresh = false
@@ -459,6 +469,7 @@ class ChatListModel(
     private val indicatorInvalidations = Channel<Unit>(Channel.CONFLATED)
     private val unreadCacheWrites = Channel<CachedUnread>(Channel.CONFLATED)
     private val chatConfirmationWrites = Channel<CachedChats>(Channel.CONFLATED)
+    private var indicatorsInvalidated = false
     private var immediateIndicators = false
     private var readCursorChanged = false
     private var indicatorsStartedAt: Long? = null
@@ -519,6 +530,14 @@ class ChatListModel(
                     changes.detailThreads.forEach { history.invalidateDetail(it) }
                 }
                 if (changes.resync || changes.messageThreads.isNotEmpty()) warming.invalidate()
+                if (
+                    changes.resync ||
+                        changes.list ||
+                        changes.messageThreads.isNotEmpty() ||
+                        changes.artifactThreads.isNotEmpty()
+                ) {
+                    viewModelScope.launch { artifactChanges.emit(changes) }
+                }
             }
         }
 
@@ -534,6 +553,11 @@ class ChatListModel(
                         listRetryProgressVisible =
                             state.listRetryProgressVisible || (!online && staleListRead(state)),
                     )
+                if (!online) {
+                    val staleRead = draftIndexRead
+                    draftIndexRead = null
+                    staleRead?.job?.cancel()
+                }
                 refreshOnReconnect = online
                 updateListRetryVisibility()
             }
@@ -557,7 +581,8 @@ class ChatListModel(
         }
         viewModelScope.launch {
             for (ignored in indicatorInvalidations) {
-                indicatorsJob?.join()
+                awaitIndicatorRead()
+                if (!indicatorsInvalidated) continue
                 val remaining =
                     indicatorsStartedAt?.let { (it + 1_000 - monotonicMillis()).coerceAtLeast(0) }
                         ?: 0
@@ -567,16 +592,10 @@ class ChatListModel(
                         // wakes it immediately and cannot be downgraded by later status demand.
                         while (!immediateIndicators) indicatorInvalidations.receive()
                     }
-                // A manual read can replace the job while this worker waits or throttles.
-                // Drain demand only after the current read finishes, so its guard cannot drop it.
+                // A refresh may have covered this demand while the worker was throttled.
                 awaitIndicatorRead()
-                while (indicatorInvalidations.tryReceive().isSuccess) {}
-                val verifyPendingRead: ((String) -> Boolean)? =
-                    if (readCursorChanged) ({ true }) else null
-                readCursorChanged = false
-                immediateIndicators = false
-                if (current() && !mutable.value.offline) {
-                    readIndicators(verifyPendingRead)
+                if (indicatorsInvalidated && current() && !mutable.value.offline) {
+                    readIndicators()
                     indicatorsJob?.join()
                 }
             }
@@ -616,7 +635,16 @@ class ChatListModel(
         val state = mutable.value
         if (!current() || state.filter == value) return
         mutable.value = state.copy(filter = value)
-        if (value == ChatListFilter.Unread && state.indicators == null) refreshIndicators()
+        if (
+            value == ChatListFilter.Unread &&
+                (state.indicators == null ||
+                    state.indicatorsPhase == ChatReadPhase.Failed ||
+                    state.indicatorsConfirmedAt?.let {
+                        chatSyncNoticeDelayMillis(it, wallMillis()) == 0L
+                    } == true)
+        ) {
+            refreshIndicators()
+        }
     }
 
     internal fun markAllRead() {
@@ -1324,7 +1352,8 @@ class ChatListModel(
 
     internal fun checkRowActionFailure(failure: ChatRowActionFailure) {
         if (!current() || mutable.value.failedRowAction !== failure || failure.rejected) return
-        if (failure.action.updatesChat) reloadAfterRowActionFailure() else retryIndicators()
+        if (failure.action.updatesChat) reloadAfterRowActionFailure()
+        else viewModelScope.launch { readIndicatorsAfterWrite { true } }
     }
 
     internal fun dismissRowActionFailure(failure: ChatRowActionFailure) {
@@ -1409,11 +1438,19 @@ class ChatListModel(
         requestListRead(resetCompletedActivity = true)
         refreshMetadata()
         refreshIndicators()
+        refreshDraftIndex()
     }
 
     internal fun listVisibilityChanged(visible: Boolean) {
+        val reopening = visible && !listIsVisible
         listIsVisible = visible
         updateListRetryVisibility()
+        if (reopening) {
+            val state = mutable.value
+            if (state.projectsPhase == ChatReadPhase.Failed) refreshMetadata()
+            if (state.indicatorsPhase == ChatReadPhase.Failed) refreshIndicators()
+            refreshDraftIndex()
+        }
     }
 
     private fun updateListRetryVisibility() {
@@ -1504,6 +1541,12 @@ class ChatListModel(
         pendingListRead ?: ListReadBatch().also { pendingListRead = it }
 
     fun refreshList() = requestListRead()
+
+    internal fun refreshSearchMetadata() {
+        if (listRetryAt != null) return
+        // A remote search response can arrive while connectivity still reports offline.
+        requestListRead(userRequested = true, resetCompletedActivity = false)
+    }
 
     internal fun retryList() = requestListRead(userRequested = true)
 
@@ -1599,19 +1642,17 @@ class ChatListModel(
             val finishedActivity =
                 if (reconciliation != null) projection.completedOutgoingAttempts() else emptyMap()
             val result = sync.synchronize(confirmed?.checkpoint)
-            val retrying = mutable.value.listReadFailure == ChatListReadFailure.Retrying
             publishList(result, rowDiscardsAfterRead, finishedActivity = finishedActivity)
             rowDiscardsAfterRead.clear()
             if (completedActivityReconciliation === reconciliation)
                 completedActivityReconciliation = null
-            if (retrying) refreshFailedListDependencies()
             if (result.shouldRebase && confirmed?.checkpoint === result.checkpoint) {
                 startListRebase(result.checkpoint)
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
-            val retryAfter = listRetryAfterMillis(error)
+            val retryAfter = chatReadRetryAfterMillis(error)
             fail(error) { state ->
                 val failed = state.copy(listPhase = ChatReadPhase.Failed)
                 if (state.offline || generation != connectivityGeneration) failed
@@ -1638,7 +1679,7 @@ class ChatListModel(
 
     private fun staleListRead(state: ChatListUiState): Boolean =
         state.listPhase == ChatReadPhase.Loading &&
-            state.confirmedAt?.let { wallMillis() - it > ChatListSyncNoticeAgeMillis } == true
+            state.confirmedAt?.let { chatSyncNoticeDelayMillis(it, wallMillis()) == 0L } == true
 
     private fun resetListReadFailures() {
         listRetry?.cancel()
@@ -1650,8 +1691,8 @@ class ChatListModel(
 
     private fun recordListReadFailure(retryAfter: Long) {
         val now = monotonicMillis()
-        listFailures = (listFailures + 1).coerceAtMost(listRefreshRetryDelays.size)
-        val delay = maxOf(listRefreshRetryDelays[listFailures - 1], retryAfter)
+        listFailures = (listFailures + 1).coerceAtMost(chatReadRetryDelays.size)
+        val delay = maxOf(chatReadRetryDelays[listFailures - 1], retryAfter)
         val maxDelay = Long.MAX_VALUE - now.coerceAtLeast(0L)
         val nextRetry = now + minOf(delay, maxDelay)
         listRetryAt = maxOf(nextRetry, listRetryAt ?: nextRetry)
@@ -1662,14 +1703,6 @@ class ChatListModel(
         listRetry?.cancel()
         listRetry = null
         updateListRetryVisibility()
-    }
-
-    private fun refreshFailedListDependencies() {
-        val state = mutable.value
-        if (state.projectsPhase == ChatReadPhase.Failed) {
-            refreshMetadata()
-        }
-        if (state.indicatorsPhase == ChatReadPhase.Failed) refreshIndicators()
     }
 
     private fun startListRebase(checkpoint: ChatCheckpoint) {
@@ -1772,20 +1805,24 @@ class ChatListModel(
     }
 
     private fun requestIndicators(immediate: Boolean, verifyReadCursors: Boolean = false) {
+        indicatorsInvalidated = true
         immediateIndicators = immediateIndicators || immediate
         readCursorChanged = readCursorChanged || verifyReadCursors
         indicatorInvalidations.trySend(Unit)
     }
 
-    private suspend fun awaitIndicatorRead() {
-        while (indicatorsJob?.isCompleted == false) indicatorsJob?.join()
+    private suspend fun awaitIndicatorRead(beforeWriteReadback: Boolean = false) {
+        while (indicatorsJob?.isCompleted == false) {
+            if (beforeWriteReadback) indicatorsRetry?.stopRetrying()
+            indicatorsJob?.join()
+        }
     }
 
     private suspend fun readIndicatorsAfterWrite(verifyPendingRead: ((String) -> Boolean)? = null) {
         // A read already in flight may have started before the write.
-        awaitIndicatorRead()
+        awaitIndicatorRead(beforeWriteReadback = true)
         requireCurrent()
-        readIndicators(verifyPendingRead)
+        readIndicators(verifyPendingRead, afterWrite = true)
         indicatorsJob?.join()
     }
 
@@ -1793,27 +1830,106 @@ class ChatListModel(
         if (!mutable.value.offline) readIndicators()
     }
 
-    internal fun retryIndicators() {
-        if (current()) viewModelScope.launch { readIndicatorsAfterWrite { true } }
+    private fun refreshDraftIndex() {
+        if (!current() || mutable.value.offline || draftIndexRead != null) return
+        val read = DraftIndexRead()
+        val version = ++draftIndexRequestVersion
+        draftIndexRead = read
+        read.job = viewModelScope.launch {
+            try {
+                val ids = service.draftThreadIds().toMutableSet()
+                requireCurrent()
+                for ((id, present) in read.presenceOverrides) {
+                    if (present) ids.add(id) else ids.remove(id)
+                }
+                confirmedDraftIndexVersion = version
+                mutable.value = mutable.value.copy(draftThreadIds = ids)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                requireCurrent()
+                onFailure(error)
+            } finally {
+                if (draftIndexRead === read) draftIndexRead = null
+            }
+        }
     }
 
-    private fun readIndicators(verifyPendingRead: ((String) -> Boolean)? = null) {
+    internal fun confirmDraftPresence(
+        threadId: String,
+        present: Boolean,
+        indexVersionAtStart: Long = draftIndexRequestVersion,
+    ) {
+        if (!current() || indexVersionAtStart < confirmedDraftIndexVersion) return
+        // Compare reads by request start. Acknowledged saves use the latest version on completion.
+        if (indexVersionAtStart == draftIndexRequestVersion)
+            draftIndexRead?.presenceOverrides?.set(threadId, present)
+        val state = mutable.value
+        val ids = state.draftThreadIds ?: return
+        if ((threadId in ids) != present) {
+            val updated = if (present) ids + threadId else ids - threadId
+            mutable.value = state.copy(draftThreadIds = updated)
+        }
+    }
+
+    private fun continueUnreadRead(): Boolean =
+        listIsVisible &&
+            listInForeground &&
+            !mutable.value.offline &&
+            mutable.value.filter == ChatListFilter.Unread
+
+    private fun readIndicators(
+        verifyPendingRead: ((String) -> Boolean)? = null,
+        afterWrite: Boolean = false,
+    ) {
         if (!current() || indicatorsJob?.isActive == true) return
-        indicatorsStartedAt = monotonicMillis()
-        mutable.value = mutable.value.copy(indicatorsPhase = ChatReadPhase.Loading)
+        val retry = if (afterWrite) null else ChatDependencyRetry()
+        indicatorsRetry = retry
+        mutable.value =
+            mutable.value.copy(
+                indicatorsPhase = ChatReadPhase.Loading,
+                indicatorsNonRetryableFailure = false,
+            )
         indicatorsJob = viewModelScope.launch {
+            var verifyInvalidatedCursors = false
             try {
-                // Responses can only settle writes that finished before this request.
-                val eligible = readConfirmations.toMap()
-                val result = service.indicators()
+                suspend fun fetch(): Pair<Map<String, ReadConfirmation>, Indicators> {
+                    if (!afterWrite) {
+                        // A retry also covers invalidations received before this request.
+                        verifyInvalidatedCursors = verifyInvalidatedCursors || readCursorChanged
+                        indicatorsInvalidated = false
+                        readCursorChanged = false
+                        immediateIndicators = false
+                    }
+                    indicatorsStartedAt = monotonicMillis()
+                    indicatorReadReceipts.clear()
+                    // Responses can only settle writes that finished before this request.
+                    val eligible = readConfirmations.toMap()
+                    return eligible to service.indicators()
+                }
+                val (eligible, result) =
+                    retry?.read(
+                        online = { current() && !mutable.value.offline },
+                        continuous = ::continueUnreadRead,
+                        onRetry = { failures ->
+                            val state = mutable.value
+                            if (
+                                failures >= listRetryProgressThreshold &&
+                                    !state.indicatorsRetryProgressVisible
+                            )
+                                mutable.value = state.copy(indicatorsRetryProgressVisible = true)
+                        },
+                        fetch = ::fetch,
+                    ) ?: fetch()
                 requireCurrent()
                 var checkedCursors: MutableMap<String, ThreadDetail>? = null
-                if (verifyPendingRead != null) {
+                if (verifyInvalidatedCursors || verifyPendingRead != null) {
                     for ((id, confirmation) in eligible) {
                         if (
                             !confirmation.reportFailure ||
                                 confirmation.receiptCoversIntent ||
-                                !verifyPendingRead(id) ||
+                                (!verifyInvalidatedCursors &&
+                                    verifyPendingRead?.invoke(id) != true) ||
                                 readConfirmations[id] !== confirmation
                         )
                             continue
@@ -1885,6 +2001,8 @@ class ChatListModel(
                     state.copy(
                         indicators = reconciled,
                         indicatorsPhase = ChatReadPhase.Ready,
+                        indicatorsConfirmedAt = unreadConfirmedAt,
+                        indicatorsRetryProgressVisible = false,
                         cachedUnread = null,
                         readIntents = state.readIntents - settledVisible,
                         failedRowAction = failed,
@@ -1896,11 +2014,27 @@ class ChatListModel(
                             },
                     )
                 unreadCacheWrites.trySend(CachedUnread(unreadConfirmedAt, reconciled.unreadAt))
+            } catch (superseded: ChatDependencyRetry.Superseded) {
+                // A verification for another write cannot consume a realtime cursor signal.
+                if (verifyInvalidatedCursors)
+                    requestIndicators(immediate = true, verifyReadCursors = true)
+                throw superseded
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                fail(error) { it.copy(indicatorsPhase = ChatReadPhase.Failed) }
+                val retryable = dependencyRetryAfterMillis(error) != null
+                val resumeUnread = afterWrite && retryable && continueUnreadRead()
+                fail(error) {
+                    it.copy(
+                        indicatorsPhase = ChatReadPhase.Failed,
+                        indicatorsNonRetryableFailure = !retryable,
+                        indicatorsRetryProgressVisible =
+                            resumeUnread && it.indicatorsRetryProgressVisible,
+                    )
+                }
+                if (resumeUnread && current()) requestIndicators(immediate = true)
             } finally {
+                indicatorsRetry = null
                 indicatorReadReceipts.clear()
             }
         }

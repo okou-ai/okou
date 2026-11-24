@@ -76,6 +76,7 @@ internal constructor(
     private val mutable = MutableStateFlow(WorkflowState())
     internal val state = mutable.asStateFlow()
     private var visible = false
+    private var searchingCatalog = false
     private var foreground = false
     private var offline = false
     private var selected: String? = null
@@ -139,7 +140,20 @@ internal constructor(
         if (open) {
             if (!retainCurrentVisit) presentCachedRanges()
             refresh()
-        } else stopReads()
+        } else stopReads(keepCatalog = searchingCatalog)
+    }
+
+    internal fun searchVisibilityChanged(open: Boolean) {
+        if (searchingCatalog == open) return
+        searchingCatalog = open
+        if (open) {
+            if (!visible && !catalogRead.readAt.isFresh(monotonicMillis())) {
+                mutable.value = mutable.value.copy(catalog = null, catalogFailure = null)
+            }
+            refresh(catalogScope)
+        } else if (!visible) {
+            catalogRead.cancel()
+        }
     }
 
     internal fun foregroundChanged(resumed: Boolean) {
@@ -149,14 +163,14 @@ internal constructor(
         if (resumed) refresh() else stopReads(keepEarlierRequest = true)
     }
 
-    private fun stopReads(keepEarlierRequest: Boolean = false) {
-        stopWorkflowReads()
+    private fun stopReads(keepCatalog: Boolean = false, keepEarlierRequest: Boolean = false) {
+        stopWorkflowReads(keepCatalog)
         cancelHistoryRead(keepEarlierRequest)
         connectionsRead.cancel()
     }
 
-    private fun stopWorkflowReads() {
-        catalogRead.cancel()
+    private fun stopWorkflowReads(keepCatalog: Boolean = false) {
+        if (!keepCatalog) catalogRead.cancel()
         rulesRead.cancel()
         cancelDetailRead()
     }
@@ -222,7 +236,7 @@ internal constructor(
     private fun presentCachedRanges() {
         val current = mutable.value
         val now = monotonicMillis()
-        val catalog = current.catalog.takeIf { catalogRead.readAt.isFresh(now) }
+        val catalog = current.catalog.takeIf { searchingCatalog || catalogRead.readAt.isFresh(now) }
         val rules = current.rules.takeIf { rulesRead.readAt.isFresh(now) }
         val connections = current.connections.takeIf { connectionsRead.readAt.isFresh(now) }
         val detail = selected?.let {
@@ -249,12 +263,15 @@ internal constructor(
     }
 
     private fun refresh(scopes: Set<WorkflowReadScope> = allReadScopes) {
-        if (!authorized() || !visible || !foreground) return
+        if (!authorized() || !foreground || !visible && !searchingCatalog) return
+        val activeScopes =
+            if (visible) scopes
+            else if (WorkflowReadScope.Catalog in scopes) catalogScope else return
         if (mutable.value.writing) {
-            readsAfterWrite.addAll(scopes)
+            readsAfterWrite.addAll(activeScopes)
             return
         }
-        for (scope in scopes) when (scope) {
+        for (scope in activeScopes) when (scope) {
             WorkflowReadScope.Detail -> selected?.let(::loadDetail)
             WorkflowReadScope.History ->
                 if (tab == WorkflowTab.History) {
@@ -621,12 +638,7 @@ internal constructor(
 
     internal fun edit(value: WorkflowEdit?) {
         val state = mutable.value
-        val ruleId = (value as? WorkflowEdit.Rule)?.id
-        if (
-            !authorized() ||
-                state.writing ||
-                value != null && state.detail?.canChange(ruleId) != true
-        )
+        if (!authorized() || state.writing || value != null && state.detail?.canEdit(value) != true)
             return
         val issue =
             state.issue?.takeIf {
@@ -697,7 +709,13 @@ internal constructor(
         val detail = state.detail ?: return
         if (!authorized() || !visible || !foreground || state.writing || detail.id != selected)
             return
-        if (!detail.canChange(ruleId)) {
+        val permitted =
+            when {
+                creating -> detail.canAddAutomation
+                ruleId != null -> detail.canManageAutomation(ruleId)
+                else -> detail.canManage
+            }
+        if (!permitted) {
             if (ruleId != null)
                 mutable.value =
                     state.copy(issue = WorkflowWriteIssue(WorkflowWriteFailure.Failed, ruleId))
@@ -828,6 +846,7 @@ private enum class WorkflowReadScope {
 
 private val directoryScopes =
     setOf(WorkflowReadScope.Catalog, WorkflowReadScope.Rules, WorkflowReadScope.Connections)
+private val catalogScope = setOf(WorkflowReadScope.Catalog)
 private val allReadScopes = WorkflowReadScope.entries.toSet()
 
 private class WorkflowRangeRead {

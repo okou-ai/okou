@@ -29,11 +29,12 @@
     <string name="artifact_empty_type">No hay artefactos de este tipo</string>
     <string name="artifact_no_matches">No hay artefactos que coincidan</string>
     <string name="artifact_show_all">Mostrar todo</string>
-    <string name="artifact_offline_cached">Mostrando resultados guardados sin conexión</string>
-    <string name="artifact_offline_catalog">Conéctate para ver los artefactos</string>
+    <string name="artifact_catalog_load_failed">No se pueden cargar los artefactos en este momento</string>
+    <string name="artifact_catalog_refresh_failed">No se puede actualizar en este momento. Se muestran los artefactos cargados.</string>
+    <string name="artifact_catalog_page_failed">No se pueden cargar más artefactos en este momento</string>
+    <string name="chat_resources_load_failed">No se pueden cargar los recursos del chat en este momento</string>
+    <string name="chat_resources_syncing">Sincronizando recursos del chat</string>
     <string name="artifact_access_denied">No tienes acceso a este artefacto</string>
-    <string name="artifact_missing">Este artefacto ya no está disponible</string>
-    <string name="artifact_unavailable">No disponible temporalmente</string>
     <string name="artifact_preview_unsupported">Este archivo no tiene vista previa</string>
     <string name="artifact_preview_unavailable">La vista previa no se puede cargar por el momento</string>
     <string name="artifact_preview_source_unavailable">Fuente no disponible</string>
@@ -48,4 +49,9 @@
     <string name="artifact_open_website">Abrir en el navegador</string>
     <string name="artifact_browser_unavailable">No se pudo abrir el navegador</string>
     <string name="artifact_play_media">Reproducción multimedia</string>
+    <string name="artifact_catalog_access_denied">No tienes acceso a este catálogo de artefactos</string>
+    <string name="artifact_catalog_missing">Este catálogo de artefactos ya no está disponible</string>
+    <string name="chat_resources_related">Chats relacionados</string>
+    <string name="chat_resources_related_load_failed">No se pueden cargar los chats relacionados en este momento</string>
+    <string name="chat_resources_related_access_lost">Los chats relacionados ya no están disponibles</string>
 </resources>

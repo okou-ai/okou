@@ -7,7 +7,11 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   artifact,
@@ -58,6 +62,16 @@ function currentPreview() {
   return screen.queryByTestId("artifact-sidebar");
 }
 
+function getDeleteMenuItem(menu: HTMLElement) {
+  const item = queryAllByRoleFast("menuitem", menu).find((candidate) => {
+    return candidate.textContent?.trim() === "Delete";
+  });
+  if (!item) {
+    throw new Error('Expected menu item named "Delete"');
+  }
+  return item;
+}
+
 async function openDeletion() {
   if (!currentPreview()) {
     click(await findArtifactAction(report.title));
@@ -67,9 +81,13 @@ async function openDeletion() {
   });
   const preview = currentPreview()!;
   await waitFor(() => {
-    expect(getButtonByName("Delete", preview)).toBeInTheDocument();
+    expect(
+      getButtonByName("More artifact actions", preview),
+    ).toBeInTheDocument();
   });
-  click(getButtonByName("Delete", preview));
+  click(getButtonByName("More artifact actions", preview));
+  const menu = await screen.findByRole("menu");
+  click(getDeleteMenuItem(menu));
   return await screen.findByRole("dialog", { name: `Delete ${report.title}?` });
 }
 
@@ -111,8 +129,12 @@ test("Preview cancellation and deletion keep the catalog consistent", async () =
   });
   await waitFor(() => {
     const preview = screen.getByTestId("artifact-sidebar");
-    expect(getButtonByName("Delete", preview)).toHaveFocus();
+    expect(getButtonByName("More artifact actions", preview)).toHaveFocus();
   });
+  await user.keyboard("{Enter}");
+  const menu = await screen.findByRole("menu");
+  await user.keyboard("{ArrowDown}");
+  expect(getDeleteMenuItem(menu)).toHaveFocus();
   await user.keyboard("{Enter}");
   const keyboardDialog = await screen.findByRole("dialog", {
     name: `Delete ${report.title}?`,
@@ -120,7 +142,9 @@ test("Preview cancellation and deletion keep the catalog consistent", async () =
   await user.keyboard("{Escape}");
   await waitFor(() => {
     expect(keyboardDialog).not.toBeInTheDocument();
-    expect(getButtonByName("Delete", currentPreview()!)).toHaveFocus();
+    expect(
+      getButtonByName("More artifact actions", currentPreview()!),
+    ).toHaveFocus();
   });
   const dialog = await openDeletion();
   click(getButtonByName("Delete", dialog));
@@ -187,7 +211,9 @@ test("a failed deletion can be cancelled, reopened, and retried", async () => {
   click(getButtonByName("Cancel", dialog));
   await waitFor(() => {
     expect(dialog).not.toBeInTheDocument();
-    expect(getButtonByName("Delete", currentPreview()!)).toHaveFocus();
+    expect(
+      getButtonByName("More artifact actions", currentPreview()!),
+    ).toHaveFocus();
   });
   const preview = currentPreview()!;
   click(getButtonByName("Close artifact", preview));

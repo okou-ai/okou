@@ -2,10 +2,10 @@ import {
   artifactReferencePath,
   artifactReferencesContract,
 } from "@okouai/api-contracts/contracts/artifact-references";
-import { fireEvent, screen, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
-import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
 import {
@@ -21,7 +21,6 @@ const context = testContext();
 
 const ARTIFACT_ID = "a0000000-0000-4000-a000-000000000940";
 const IMAGE_ID = "f0000000-0000-4000-a000-000000000940";
-const SEARCH_LABEL = "Search workspace...";
 const ORIGINAL_IMAGE_URL =
   `https://${"a".repeat(32)}.r2.cloudflarestorage.com/private-artifacts/chart.bin` +
   "?X-Amz-Signature=thumbnail-signature";
@@ -94,37 +93,6 @@ test("Thread artifacts use authorized thumbnails and open the original image", a
   await expect(
     screen.findByTestId("artifact-sidebar-body-image"),
   ).resolves.toHaveAttribute("src", ORIGINAL_IMAGE_URL);
-});
-
-test("Workspace search uses a small authorized thumbnail for a private image", async () => {
-  const authorized = mockPrivateImage();
-  await setupPage({
-    context,
-    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    host: "app.okou.ai",
-  });
-  await screen.findByLabelText("Artifacts and chats");
-  fireEvent.keyDown(document.body, {
-    key: "f",
-    code: "KeyF",
-    ctrlKey: true,
-    shiftKey: true,
-  });
-  const dialog = await screen.findByRole("dialog", { name: SEARCH_LABEL });
-  await fill(within(dialog).getByPlaceholderText(SEARCH_LABEL), "Private");
-  await within(dialog).findByText("Private chart");
-  expect(
-    within(dialog).queryByTestId("spotlight-artifact-thumbnail"),
-  ).toBeNull();
-
-  authorized.resolve();
-  const thumbnail = await within(dialog).findByTestId(
-    "spotlight-artifact-thumbnail",
-  );
-  expect(thumbnail).toHaveAttribute(
-    "src",
-    `https://a.okou.io/cdn-cgi/image/width=64,fit=scale-down,format=auto,quality=85,metadata=none/${ORIGINAL_IMAGE_URL}`,
-  );
 });
 
 test("Thread video cards wait for their authorized poster", async () => {

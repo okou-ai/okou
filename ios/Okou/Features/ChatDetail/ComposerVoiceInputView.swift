@@ -80,7 +80,7 @@ struct ComposerVoiceInputTray: View {
         if voice.phase == .processing {
           HStack(spacing: OkouSpace.sm) {
             ProgressView().controlSize(.small).tint(OkouColor.mutedForeground)
-            Text("Preparing text…")
+            Text(voice.asVoiceMessage ? "Uploading recording…" : "Preparing text…")
           }
           .frame(maxWidth: .infinity, alignment: .leading)
         } else {

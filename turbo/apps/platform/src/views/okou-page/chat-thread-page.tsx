@@ -3402,6 +3402,10 @@ function ChatThreadSkeletonOverlay({ thread }: { thread: ChatPanelSignals }) {
 }
 
 function ChatThreadEventsPane({ thread }: { thread: ChatPanelSignals }) {
+  const latestTurnScrollRoom =
+    useLastResolved(featureSwitches$)?.[
+      FeatureSwitchKey.ChatLatestTurnScrollRoom
+    ];
   const scrollContainerOnRef = useSet(thread.scrollContainerOnRef$);
   const loadEarlierGroupsAfterScroll = useSet(
     thread.loadEarlierGroupsAfterScroll$,
@@ -3428,6 +3432,7 @@ function ChatThreadEventsPane({ thread }: { thread: ChatPanelSignals }) {
         className={cn(
           "absolute inset-0 focus:outline-none",
           SCROLL_FADE_Y_END,
+          latestTurnScrollRoom && "[container-type:size]",
           standalonePwa && "overscroll-contain",
         )}
       >
@@ -6776,7 +6781,7 @@ function UserMessageAttachments({
         testId="message-file-attachments"
       >
         {voicePlayer ? (
-          <VoiceMessagePlayer player={voicePlayer} compact />
+          <VoiceMessagePlayer player={voicePlayer} variant="compact" />
         ) : null}
       </UserMessageAttachmentRow>
     </div>
@@ -7595,9 +7600,11 @@ function UserMessageTextActions({
 function WorkflowUserMessage({
   event,
   thread,
+  scrollRoomClass,
 }: {
   event: EnrichedChatEvent & ChatInputEvent;
   thread: ChatPanelSignals;
+  scrollRoomClass: string | undefined;
 }) {
   const turnOnRef = useSet(thread.locator.turnOnRef$);
   const nameLine =
@@ -7624,7 +7631,7 @@ function WorkflowUserMessage({
       data-role="user"
       data-chat-scroll-anchor-event-id={event.id}
       data-turn-created-at={event.createdAt}
-      className="relative group/user-message"
+      className={cn("relative group/user-message", scrollRoomClass)}
       ref={turnOnRef}
     >
       <ChatConversationLandingHighlight thread={thread} eventId={event.id} />
@@ -7715,6 +7722,22 @@ function OptimisticSpinner({ eventId }: { eventId: string }) {
   );
 }
 
+function useLatestTurnScrollRoomClass(
+  thread: ChatPanelSignals,
+  eventId: string,
+) {
+  const enabled =
+    useLastResolved(featureSwitches$)?.[
+      FeatureSwitchKey.ChatLatestTurnScrollRoom
+    ];
+  const latestUserTurnId = useGet(thread.locator.latestUserTurnId$);
+  // Extend scrollable overflow from the prompt without changing the height
+  // of its row or virtual page. The inset matches the transcript's py-4.
+  return enabled && latestUserTurnId === eventId
+    ? "after:pointer-events-none after:absolute after:top-0 after:start-0 after:h-[calc(100cqb-1rem)] after:w-px"
+    : undefined;
+}
+
 function PagedUserMessage({
   event,
   thread,
@@ -7753,6 +7776,7 @@ function PagedUserMessage({
   const nameLine =
     useLastResolved(featureSwitches$)?.[FeatureSwitchKey.ChatReplyNameLine] ===
     true;
+  const scrollRoomClass = useLatestTurnScrollRoomClass(thread, event.id);
   // Under `chatReplyNameLine` a selected group is tinted, so sharing drops the
   // empty copy row together with the pull measured against it.
   const collapseForSharing = nameLine && sharingPhase !== "idle";
@@ -7774,7 +7798,13 @@ function PagedUserMessage({
   };
 
   if (isWorkflowUserMessage(event)) {
-    return <WorkflowUserMessage event={event} thread={thread} />;
+    return (
+      <WorkflowUserMessage
+        event={event}
+        thread={thread}
+        scrollRoomClass={scrollRoomClass}
+      />
+    );
   }
 
   const nonContentRenderPart = userMessageAnnotationRenderPart(renderDocument);
@@ -7791,6 +7821,7 @@ function PagedUserMessage({
       data-chat-user-message-stacked={pulled || undefined}
       className={cn(
         "relative group/user-message",
+        scrollRoomClass,
         pulled && CHAT_THREAD_MESSAGE_STACK_PULL_CLASS,
       )}
     >

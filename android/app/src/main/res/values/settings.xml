@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="settings_email_updates">Email updates</string>
+    <string name="settings_email_scope">Receive briefs, reminders, and updates from all workspaces.</string>
+    <string name="settings_email_receive">Receive emails</string>
+    <string name="settings_email_unavailable">Email unavailable</string>
+    <string name="settings_email_check_address">Check your account email</string>
+    <string name="settings_email_load_failed">Email settings are temporarily unavailable.</string>
+    <string name="settings_email_refresh_failed">Could not sync. Showing the last saved subscription.</string>
+    <string name="settings_email_refreshing">Updating email subscription</string>
+    <string name="settings_email_save_failed">Could not update email subscription.</string>
+    <string name="settings_email_save_unconfirmed">The email subscription update is still unconfirmed.</string>
     <string name="settings_models">Models</string>
     <string name="settings_tools">Tools</string>
     <string name="settings_my_okou">My Okou</string>
@@ -30,7 +40,7 @@
     <string name="settings_account_reconnect">Reconnect required</string>
     <string name="settings_account_switching">Switching…</string>
     <string name="settings_account_switch_unconfirmed">Switch unconfirmed</string>
-    <string name="settings_account_switch_failed">Unable to switch accounts.</string>
+    <string name="settings_account_switch_failed">Unable to switch model accounts.</string>
     <string name="settings_quota">Quota</string>
     <string name="settings_hour_quota">%1$d-hour quota</string>
     <string name="settings_day_quota">%1$d-day quota</string>
@@ -74,4 +84,25 @@
     <string name="settings_model_effort_ultra">Ultra</string>
     <string name="settings_refreshing_model_accounts">Refreshing model accounts</string>
     <string name="settings_refreshing_credit_balance">Refreshing credit balance</string>
+    <string name="settings_proactive_services">Proactive services</string>
+    <string name="settings_proactive_scope">These settings apply in “%1$s”.</string>
+    <string name="settings_proactive_loading">Loading proactive services</string>
+    <string name="settings_proactive_offline">Offline. Connect to change this setting.</string>
+    <string name="settings_proactive_needs_timezone">Choose a timezone to schedule delivery.</string>
+    <string name="settings_proactive_read_failed">Unable to load this setting right now.</string>
+    <string name="settings_proactive_refresh_failed">Unable to sync. Showing the last confirmed setting.</string>
+    <string name="settings_proactive_preparing">Preparing the schedule…</string>
+    <string name="settings_proactive_schedule_failed">Your choice was saved. The schedule needs attention.</string>
+    <string name="settings_proactive_save_unconfirmed">The save is still unconfirmed.</string>
+    <string name="settings_morning_brief">Morning Brief</string>
+    <string name="settings_morning_brief_detail">Delivered before 7:00 AM in your selected timezone</string>
+    <string name="settings_morning_brief_save_failed">Couldn’t save Morning Brief. Restored the previous setting.</string>
+    <string name="settings_suggestions">Suggestions</string>
+    <string name="settings_suggestions_detail">Check connected content, update your profile, and offer suggestions</string>
+    <string name="settings_suggestions_partial">Partially enabled</string>
+    <string name="settings_suggestions_hourly_only">Currently only checks content and updates your profile.</string>
+    <string name="settings_suggestions_cards_only">Currently only delivers suggestion cards.</string>
+    <string name="settings_suggestions_enable_both">Turn both on</string>
+    <string name="settings_suggestions_disable_both">Turn both off</string>
+    <string name="settings_suggestions_save_failed">Couldn’t save Suggestions. Restored the previous setting.</string>
 </resources>

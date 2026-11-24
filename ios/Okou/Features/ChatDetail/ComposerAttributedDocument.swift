@@ -32,7 +32,7 @@ enum ComposerAttributedDocument {
   }
 
   static func isInline(_ part: MessageJSON) -> Bool {
-    ["text", "chat_thread", "template"].contains(part["type"]?.string ?? "")
+    ["text", "voice", "chat_thread", "template"].contains(part["type"]?.string ?? "")
   }
 
   static func attributed(
@@ -136,6 +136,7 @@ enum ComposerAttributedDocument {
         .replacingOccurrences(of: "[", with: "\\[").replacingOccurrences(of: "]", with: "\\]")
       switch part["type"]?.string {
       case "chat_thread": return "[\(escaped)](/chats/\(part["threadId"]?.string ?? ""))"
+      case "voice": return String(localized: "Voice message")
       case "text": return part["text"]?.string ?? ""
       default: return name
       }
@@ -170,9 +171,13 @@ enum ComposerAttributedDocument {
 final class ComposerReferenceAttachment: NSTextAttachment {
   let part: MessageJSON
   var referenceFont = ComposerAttributedDocument.font
-  var title: String { part["nameSnapshot"]?.string ?? part["titleSnapshot"]?.string ?? "" }
+  var title: String {
+    if part["type"]?.string == "voice" { return String(localized: "Voice message") }
+    return part["nameSnapshot"]?.string ?? part["titleSnapshot"]?.string ?? ""
+  }
   var symbol: String {
     switch part["type"]?.string {
+    case "voice": "mic"
     case "chat_thread": "message-circle"
     default: "file"
     }
@@ -186,6 +191,7 @@ final class ComposerReferenceAttachment: NSTextAttachment {
 
   override var accessibilityLabel: String? {
     get {
+      if part["type"]?.string == "voice" { return title }
       let kind = part["type"]?.string == "chat_thread" ? "Chat" : "Template"
       return kind + ": " + title
     }

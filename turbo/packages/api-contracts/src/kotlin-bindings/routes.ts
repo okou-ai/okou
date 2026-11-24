@@ -110,7 +110,6 @@ function queryObject(schema: unknown): asserts schema is Readonly<
     !schemaObject(schema) ||
     schema.type !== "object" ||
     !schemaObject(schema.properties) ||
-    Object.keys(schema.properties).length === 0 ||
     (schema.additionalProperties !== undefined &&
       schema.additionalProperties !== false) ||
     Object.keys(schema).some((key) => {
@@ -163,10 +162,11 @@ export function queryBinding(
     if (union && union.length < 2)
       throw new Error("Unsupported Retrofit query union");
     const branches = union ?? [schema];
-    branches.forEach(queryObject);
     const queryName = `${name[0]!.toUpperCase()}${name.slice(1)}Query`;
     const checks = branches.map((branch) => {
       queryObject(branch);
+      if (Object.keys(branch.properties).length === 0)
+        throw new Error("Unsupported empty Retrofit query union branch");
       const required = new Set(
         Array.isArray(branch.required) ? branch.required : [],
       );

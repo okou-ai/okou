@@ -80,7 +80,9 @@ internal fun WorkflowRuleRow(
     state: WorkflowState,
     actionsEnabled: Boolean,
     timezone: String,
-    onEdit: (WorkflowEdit.Rule) -> Unit,
+    onEdit: (WorkflowEdit.Rule, Boolean) -> Unit,
+    restoreEditorFocus: Boolean,
+    onEditorFocusRestored: () -> Unit,
     onToggle: (WorkflowAutomation) -> Unit,
     onViewConnection: ((String, String?) -> Unit)?,
     restoreConnectionFocus: Boolean,
@@ -205,14 +207,34 @@ internal fun WorkflowRuleRow(
                             ),
                 )
                 if (editable != null)
-                    WorkflowAction(
-                        stringResource(R.string.workflow_edit),
-                        { onEdit(editable) },
+                    WorkflowEditorAction(
+                        R.string.workflow_edit,
                         enabled = actionsEnabled && !state.writing,
-                    )
+                        restoreFocus = restoreEditorFocus,
+                        onFocusRestored = onEditorFocusRestored,
+                    ) { focused ->
+                        onEdit(editable, focused)
+                    }
             }
         }
     }
+}
+
+@Composable
+internal fun WorkflowEditorAction(
+    label: Int,
+    enabled: Boolean,
+    restoreFocus: Boolean,
+    onFocusRestored: () -> Unit,
+    onEdit: (Boolean) -> Unit,
+) {
+    val actionFocus = rememberWorkflowReturnFocus(restoreFocus, enabled, onFocusRestored)
+    WorkflowAction(
+        stringResource(label),
+        { onEdit(actionFocus.keyboardFocused) },
+        actionFocus.modifier,
+        enabled = enabled,
+    )
 }
 
 @Composable
@@ -294,7 +316,7 @@ internal fun WorkflowEditor(
 ) {
     val horizontalPadding = if (wide) 32.dp else 20.dp
     val activeRule = editor as? WorkflowEdit.Rule
-    val available = !state.writing && detail.canChange(activeRule?.id)
+    val available = !state.writing && detail.canEdit(editor)
     val connectionRequired = activeRule?.blockingConnection(detail, state.connections)
     val connector = connectionRequired?.connector
     val showConnectionAction = connector != null && state.connections != null

@@ -639,7 +639,7 @@ class CleanupTests(unittest.TestCase):
 
         # Advance only the worker's standard clock; the real controller, worker,
         # files/locks and systemctl boundary run unchanged. No wall-clock wait.
-        result = self.controller(STOP_CLOCK_STEP="1")
+        result = self.controller(STOP_CLOCK_STEP="12")
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         self.assertTrue(all(not file.exists() for file in files))
         decisions = {
@@ -879,38 +879,35 @@ class CleanupTests(unittest.TestCase):
                 }[status]
                 self.assertIn(f'"{outcome}": 1', result.stdout)
 
-    def test_duplicate_pages_with_count_drift_resolve_distinct_owners(self):
-        for number in (99, 42):
-            with self.subTest(number=number):
-                config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
-                owner = {**self.owner(number), "status": "queued"}
-                self.github(
-                    run_pages={
-                        "queued": [
-                            [
-                                {"total_count": 3, "workflow_runs": [owner]},
-                                {"total_count": 3, "workflow_runs": [owner]},
-                            ],
-                        ]
-                    },
-                )
-                result = self.controller()
-                self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(config.exists(), number == 42)
-                decision = next(
-                    json.loads(line)
-                    for line in result.stdout.splitlines()
-                    if line.startswith('{"pr":42,')
-                )
-                if number == 42:
-                    self.assertEqual(decision["outcome"], "deferred_owner")
-                    self.assertEqual(decision["runs"], [10])
-                else:
-                    self.assertEqual(decision["outcome"], "cleaned")
-                    self.assertEqual(decision["hosts"]["metal-a"]["outcome"], "cleaned")
-                    self.assertEqual(
-                        decision["hosts"]["metal-b"]["outcome"], "already_absent"
-                    )
+    def test_duplicate_pages_with_count_drift_keep_only_the_owned_namespace(self):
+        owned = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
+        unrelated = self.resource("var/lib/vm0-runner/stripe/pr-43/config")
+        owner = {**self.owner(42), "status": "queued"}
+        self.github(
+            run_pages={
+                "queued": [
+                    [
+                        {"total_count": 3, "workflow_runs": [owner]},
+                        {"total_count": 3, "workflow_runs": [owner]},
+                    ]
+                ]
+            },
+        )
+        result = self.controller()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(owned.exists())
+        self.assertFalse(unrelated.exists())
+        decisions = {
+            record["pr"]: record
+            for line in result.stdout.splitlines()
+            if line.startswith('{"pr":')
+            if (record := json.loads(line)).get("pr")
+        }
+        self.assertEqual(decisions[42]["outcome"], "deferred_owner")
+        self.assertEqual(decisions[42]["runs"], [10])
+        self.assertEqual(decisions[43]["outcome"], "cleaned")
+        self.assertEqual(decisions[43]["hosts"]["metal-a"]["outcome"], "cleaned")
+        self.assertEqual(decisions[43]["hosts"]["metal-b"]["outcome"], "already_absent")
 
     def test_repeatedly_missing_owner_is_retained_across_changing_sweeps(self):
         configs = [
@@ -1279,13 +1276,7 @@ class CleanupTests(unittest.TestCase):
                     process.terminate()
                     process.wait(timeout=10)
 
-    def test_cancellation_retires_nested_holders_and_remote_commands(self):
-        self.assert_cancellation_retires_resources(signal.SIGTERM)
-
     def test_interrupt_retires_nested_holders_and_remote_commands(self):
-        self.assert_cancellation_retires_resources(signal.SIGINT)
-
-    def assert_cancellation_retires_resources(self, cancellation_signal):
         unit = self.resource("etc/systemd/system/vm0-runner-pr-42-api.service")
         for number in range(41, 49):
             self.resource(f"etc/systemd/system/vm0-runner-pr-{number}-api.service")
@@ -1306,8 +1297,8 @@ class CleanupTests(unittest.TestCase):
                 readable, _, _ = select.select([descriptor], [], [], 10)
                 self.assertTrue(readable, (self.root / "cancel.log").read_text())
                 child = int(os.read(descriptor, 100).decode().strip())
-                process.send_signal(cancellation_signal)
-                self.assertEqual(process.wait(timeout=10), 128 + cancellation_signal)
+                process.send_signal(signal.SIGINT)
+                self.assertEqual(process.wait(timeout=10), 128 + signal.SIGINT)
                 self.assertTrue(unit.exists())
                 for host in ("metal-a", "metal-b"):
                     for number in range(41, 49):

@@ -1,6 +1,8 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
+import type { Project } from "@okouai/api-contracts/validators/projects";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import {
   chatThreadByIdContract,
@@ -19,7 +21,10 @@ import {
   installContinuityWorkspace,
 } from "./chat-continuity-test-helpers.ts";
 import { chatListThread } from "./chat-list-test-helpers.ts";
-import { menuItemByText } from "./sidebar-test-helpers.tsx";
+import {
+  menuItemByText,
+  queryMenuItemByText,
+} from "./sidebar-test-helpers.tsx";
 
 const context = testContext();
 const launchId = "30000000-0000-4000-8000-000000000081";
@@ -101,7 +106,7 @@ function chatMenuButton(threadId: string) {
 }
 
 function installProjects(
-  projects = [
+  projects: Project[] = [
     { id: launchId, name: "Launch", createdAt: at, updatedAt: at },
     { id: researchId, name: "Research", createdAt: at, updatedAt: at },
   ],
@@ -231,6 +236,83 @@ test.each([false, true])(
     });
   },
 );
+
+test.each([false, true])(
+  "Project menu shows Archive according to the feature switch (%s)",
+  async (enabled) => {
+    const workspace = installContinuityWorkspace(context, {
+      caseId: 327,
+      threads: [],
+    });
+    installProjects();
+    await setupPage({
+      context,
+      path: "/",
+      ...workspace.pageOptions,
+      featureSwitches: { [FeatureSwitchKey.ProjectArchive]: enabled },
+    });
+    const user = userEvent.setup({ delay: null });
+    await user.click(
+      await waitFor(() => {
+        return button("Options for Launch", projectRows());
+      }),
+    );
+    expect(menuItemByText("Rename")).toBeVisible();
+    expect(queryMenuItemByText("Archive") !== null).toBe(enabled);
+  },
+);
+
+test("Archived opens the full contents of an archived Project and the archived chats of an active Project", async () => {
+  const planning = {
+    ...continuityThread(326, 1, "Launch planning"),
+    projectId: launchId,
+  };
+  const notes = {
+    ...continuityThread(326, 2, "Launch notes"),
+    projectId: launchId,
+    archived: true,
+  };
+  const research = {
+    ...continuityThread(326, 3, "Research notes"),
+    projectId: researchId,
+    archived: true,
+  };
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 326,
+    threads: [planning, notes, research],
+  });
+  installProjects([
+    {
+      id: launchId,
+      name: "Launch",
+      createdAt: at,
+      updatedAt: at,
+      archived: true,
+    },
+    { id: researchId, name: "Research", createdAt: at, updatedAt: at },
+  ]);
+  await setupPage({ context, path: "/", ...workspace.pageOptions });
+  const user = userEvent.setup({ delay: null });
+  await waitFor(() => {
+    expect(button("Open chat list menu")).toBeInTheDocument();
+  });
+  await user.click(button("Open chat list menu"));
+  await user.click(menuItemByText("Archived"));
+  await waitFor(() => {
+    expect(projectToggle("Launch")).toBeInTheDocument();
+    expect(projectToggle("Research", researchId)).toBeInTheDocument();
+  });
+  expect(projectToggle("Launch")).not.toHaveTextContent("Archived");
+  await user.click(projectToggle("Launch"));
+  await user.click(projectToggle("Research", researchId));
+  await waitFor(() => {
+    expect(projectChatTitles()).toHaveLength(2);
+    expect(projectChatTitles()).toStrictEqual(
+      expect.arrayContaining(["Launch planning", "Launch notes"]),
+    );
+    expect(projectChatTitles(researchId)).toStrictEqual(["Research notes"]);
+  });
+});
 
 test("An unfolded Project without chats offers the archived ones it holds", async () => {
   const ordinary = continuityThread(303, 1, "Ordinary chat");

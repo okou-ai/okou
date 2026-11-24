@@ -430,7 +430,6 @@
       "close": "닫기",
       "closeArtifact": "아티팩트 닫기",
       "closeNamed": "{{title}} 닫기",
-      "closePreviewMenu": "미리보기 메뉴 닫기",
       "download": "다운로드",
       "downloadArtifact": "아티팩트 다운로드",
       "downloadMarkdownAs": "{{format}}로 다운로드",
@@ -1970,7 +1969,7 @@
       },
       "slashPanel": {
         "browseAll": "모든 템플릿 보기",
-        "hint": "워크플로를 검색하거나 템플릿 선택…",
+        "hint": "작업 선택",
         "useTemplate": "템플릿 {{title}} 사용"
       },
       "temporarilySwitchTo": "임시로 전환할 모델",
@@ -2883,6 +2882,7 @@
       "storageFailed": "오디오를 저장하지 못했습니다. 이 기기에 저장된 오디오만 사용할 수 있습니다.",
       "textTakingShape": "텍스트를 만드는 중",
       "transcribing": "전사 중",
+      "uploadingRecording": "녹음 업로드 중…",
       "useRecording": "녹음 사용"
     },
     "walletAction": {
@@ -3014,6 +3014,7 @@
       "edit": "편집",
       "grant": "부여",
       "reconnect": "재연결",
+      "returnToOkou": "Okou로 돌아가기",
       "revoke": "권한 취소",
       "save": "저장",
       "saving": "저장 중...",
@@ -5188,6 +5189,7 @@
     }
   },
   "projects": {
+    "archiveProject": "보관",
     "back": "Back",
     "close": "Close",
     "collapse": "접기",
@@ -5224,6 +5226,7 @@
     "removeFromNewChat": "{{name}} 제거",
     "rename": "Rename",
     "renameProject": "Rename Project",
+    "restoreProject": "프로젝트 복원",
     "retryThreads": "Reload threads",
     "save": "Save",
     "saveError": "Could not save Project",
@@ -6371,17 +6374,14 @@
   },
   "sidebar": {
     "escapeShortcut": "Esc",
-    "filterAll": "전체",
     "markAllRead": "모두 읽음으로 표시",
     "noResults": "결과가 없습니다",
     "resultCount_other": "결과 {{count}}개",
     "searching": "검색 중...",
     "searchWorkspace": "워크스페이스 검색...",
     "sections": {
-      "artifacts": "아티팩트",
-      "chats": "채팅",
       "messages": "메시지",
-      "workflows": "워크플로"
+      "threads": "스레드"
     }
   },
   "ssh": {

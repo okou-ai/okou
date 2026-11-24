@@ -258,8 +258,8 @@ cd android
 ```
 
 The chat suites exercise real disk reopening, the generated canonical HTTP/codec
-boundary, cursor/replay recovery and retired-owner publication. `ChatListRootTest`
-holds real HTTP responses while exercising native navigation. `NativeChatListTest`
+boundary, cursor/replay recovery and retired-owner publication. The chat-list
+Compose suites hold real HTTP responses while exercising native navigation. `NativeChatListTest`
 runs list → history → Back, Settings and recreation on the existing API 35 managed
 device. History tests cover real gzip transport, malformed archives, paired
 cursors, disk reopen, dirty retry, retired results and visible read confirmation.
@@ -307,13 +307,14 @@ reconciles matching IDs, and the workspace owner releases remaining transient te
 Its external SDK observations are controlled; this is not provider-live evidence.
 
 Run controls use the same authenticated event endpoint and generated request union.
-Stop freezes the displayed live-run IDs; skipping targets one canonical queued
-automation. HTTP acceptance is not completion. The workspace control owner checks
-canonical control/target evidence and never retargets an uncertain request.
+Stop freezes the displayed run, and withdrawal or skip targets one original queue
+entry. The workspace control owner checks canonical control and target evidence
+after HTTP acceptance or an uncertain result. A recovered conversation sync can
+trigger a read-only outcome check for the original pending intent.
 All current controllers of the same origin/user/workspace attach to one shared
 command owner, including target deduplication, phases and journal mutations.
-Retiring one controller cancels only its network requests; peers retain unknown
-commands and can explicitly check/retry their original identities.
+Retiring one controller cancels only its network requests. Peers retain unresolved
+commands and verify the original identity before allowing an explicit retry.
 Frozen pending controls live separately in private `noBackupFilesDir/chat-controls`
 format-1 journals scoped by API origin, user and workspace. Disk commitment precedes
 POST, and restored intent only reads back until an explicit same-request retry.
@@ -409,9 +410,21 @@ On a Linux x64 host with read/write access to `/dev/kvm`, run from `android/`:
 ```
 
 Gradle configures the Pixel 2 API 35 device and owns its lifecycle. Use
-`:app:assembleDebugAndroidTest` to compile without starting the device. CI
-requires every case to pass and retains JUnit, Test Storage and logcat diagnostics
-in the `android-instrumentation-api35-<revision>` artifact.
+`:app:assembleDebugAndroidTest` to compile without starting the device. CI runs
+three `instrumentation` shards on separate runners and verifies the combined
+JUnit results at `ci-gate-android`. JUnit, Test Storage, and logcat diagnostics
+are in `android-instrumentation-api35-<revision>-shard-<index>` artifacts, with an
+attempt suffix on reruns.
+
+CI also runs three `build-test` shards on separate runners with two test JVMs
+each. Shard 0 runs the format, policy, and lint checks and builds the Debug APK.
+Each shard retains its XML in `android-jvm-results-<revision>-shard-<index>`.
+The local commands above run the full suites by default. See
+[test runtime and CI sharding](../docs/android/android-testing.md#test-runtime-and-ci-sharding)
+for case budgets and class boundaries.
+
+After running the full `:app:testDebugUnitTest` suite, check the JVM class size limit from
+`android/` with `python3 scripts/check-jvm-test-counts.py app/build/test-results/testDebugUnitTest`.
 
 ### Release Smoke Tests
 
@@ -481,14 +494,14 @@ commits skip Android validation after release-context detection succeeds. The
 production release job independently builds, signs and verifies its exact-target
 APK; it does not consume validation artifacts. Ordinary change selection includes
 Android sources/docs, CI inputs, Web semantic colors, and shared font/color-evaluator
-assets. One job runs the JVM tests and lint, then uploads the Debug APK for seven
-days. Two separate Linux/KVM jobs run the Debug device integration tests and
-the Release smoke tests. The Release job uploads the unsigned APK and compressed
-R8 map for seven days.
+assets. Three jobs run the Debug JVM suite. Shard 0 also runs lint and uploads
+the Debug APK for seven days. Separate Linux/KVM jobs run the three Debug device
+shards and the Release smoke tests. The Release job uploads the unsigned APK and
+compressed R8 map for seven days.
 The final `ci-gate-android` check always reports an aggregate result. For
-non-release changes it requires successful change detection and all three jobs
-to pass when Android checks are selected. Cancellation, failure or an unexpected
-skip fails the gate. Emulator functional evidence does not establish OEM
+non-release changes it requires successful change detection and every selected
+job to pass. Cancellation, failure or an unexpected skip fails the gate.
+Emulator functional evidence does not establish OEM
 input-method behavior or physical-device startup budgets.
 
 The shared security workflow retains Semgrep scanning. Its result handler
@@ -723,6 +736,15 @@ Foreground/manual opening refreshes a clean editor; automatic live draft events
 remain later work. Sending and clearing a saved draft are separate operations;
 uncertain submissions retain their original identities in memory. Legacy pending
 text is available for explicit draft restoration after upgrade.
+
+Chat options lets users choose built-in connector accounts. Format 4 stores
+explicit account choices with the workspace draft shared by the ordinary and
+Project new-chat entry points. The first input carries those choices in memory
+until the client confirms them on the created chat. A rejected chat creation
+retains the original choices so they can be restored with the draft. A rejected
+connector choice leaves the unsent input and its identities available for
+correction in the current process. Existing chats save exact account overrides
+through the canonical chat API and display confirmed values.
 
 A sent text draft appears in the conversation immediately using its frozen input
 ID. The first send opens the timeline with its allocated thread ID while creation

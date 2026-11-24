@@ -377,64 +377,11 @@ struct ChatSidebarView: View {
   }
 
   private func projectRow(_ group: ChatSidebarPresentation.ProjectGroup) -> some View {
-    let project = group.project
-    let expanded = store.projects.isExpanded(project.id)
-    // An open project leaves unread and working to its chats' own marks. The folder shows one
-    // badge, and unread wins.
-    let unread = !expanded && group.section.hasUnread
-    let working = !expanded && !unread && group.section.isWorking
-    return Button {
-      withAnimation(reduceMotion ? nil : OkouMotion.disclosure) {
-        store.projects.toggle(project.id)
-      }
-    } label: {
-      // The chat rows' geometry: the folder in the status column, so the name starts on the
-      // chat titles' edge.
-      HStack(spacing: OkouSpace.ten) {
-        // A folded project badges its folder, as the menu button does for the whole list: the
-        // trailing column keeps the chevron, in line with the chats' own dots.
-        OkouIcon(expanded ? "folder-open" : "folder", size: OkouIconSize.standard)
-          .foregroundStyle(OkouColor.mutedForeground)
-          .modifier(OkouUnreadBadge(isVisible: unread))
-          .modifier(OkouRunningBadge(isVisible: working))
-          .frame(width: statusColumn, alignment: .leading)
-        Text(verbatim: project.name).font(.okou(.body)).lineLimit(1)
-        Spacer(minLength: 0)
-        // The fold's own mark ends the row in the trailing column, turning from down (open)
-        // to right (folded) with the disclosure.
-        OkouIcon("chevron-down", size: OkouIconSize.standard)
-          .foregroundStyle(OkouColor.quietMark)
-          .rotationEffect(.degrees(expanded ? 0 : -90))
-          .accessibilityHidden(true)
-      }
-      .frame(minHeight: OkouControl.listRow)
-      .contentShape(Rectangle())
-    }
-    .buttonStyle(.plain)
-    .accessibilityIdentifier("project-\(project.id)")
-    // The badge is drawn only, so the value names it, as the menu button's does.
-    .accessibilityValue(
-      [
-        expanded ? String(localized: "Expanded") : String(localized: "Collapsed"),
-        unread ? String(localized: "Unread") : nil,
-        working ? String(localized: "Working") : nil
-      ].compactMap { $0 }.joined(separator: ", ")
-    )
-    .listRowInsets(EdgeInsets(top: 0, leading: rowInset, bottom: 0, trailing: rowInset))
-    .listRowSeparator(.hidden)
-    .listRowBackground(Color.clear)
-    .contextMenu {
-      Button("New chat", okouSymbol: "square-pen") {
-        store.startNewChat(projectID: project.id)
-        close()
-      }
-      .disabled(store.isCreating || store.needsUpgrade)
-      Button("Rename", okouSymbol: "pencil") { showEditor(editor(project: project)) }
-      Button("Delete project", okouSymbol: "trash-2", role: .destructive) {
-        deletingProject = project
-      }
-    }
-    .disabled(store.needsUpgrade || store.projects.pending.contains(project.id))
+    ChatSidebarProjectRow(
+      group: group, store: store, rowInset: rowInset, statusColumn: statusColumn,
+      close: close,
+      rename: { showEditor(editor(project: group.project)) },
+      delete: { deletingProject = group.project })
   }
 
   private func editor(project: ChatProject) -> ProjectEditor {
@@ -555,7 +502,11 @@ struct ChatSidebarView: View {
   private func archiveRemovesRow(_ thread: ChatThread) -> Bool {
     switch store.sidebar.filter {
     case .recent: !thread.isArchived
-    case .archived: thread.isArchived
+    case .archived:
+      thread.isArchived
+        && !store.projects.projects.contains {
+          $0.id == thread.projectId && $0.isArchived
+        }
     case .unread, .muted: false
     }
   }
@@ -575,6 +526,83 @@ struct ChatSidebarView: View {
       newChat: newChat, rowInset: rowInset)
   }
 
+}
+
+private struct ChatSidebarProjectRow: View {
+  let group: ChatSidebarPresentation.ProjectGroup
+  let store: WorkspaceStore
+  let rowInset: CGFloat
+  let statusColumn: CGFloat
+  let close: () -> Void
+  let rename: () -> Void
+  let delete: () -> Void
+
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  var body: some View {
+    let project = group.project
+    let expanded = store.projects.isExpanded(project.id)
+    // An open project leaves unread and working to its chats' own marks. The folder shows one
+    // badge, and unread wins.
+    let unread = !expanded && group.section.hasUnread
+    let working = !expanded && !unread && group.section.isWorking
+    return Button {
+      withAnimation(reduceMotion ? nil : OkouMotion.disclosure) {
+        store.projects.toggle(project.id)
+      }
+    } label: {
+      // The chat rows' geometry: the folder in the status column, so the name starts on the
+      // chat titles' edge.
+      HStack(spacing: OkouSpace.ten) {
+        // A folded project badges its folder, as the menu button does for the whole list: the
+        // trailing column keeps the chevron, in line with the chats' own dots.
+        OkouIcon(expanded ? "folder-open" : "folder", size: OkouIconSize.standard)
+          .foregroundStyle(OkouColor.mutedForeground)
+          .modifier(OkouUnreadBadge(isVisible: unread))
+          .modifier(OkouRunningBadge(isVisible: working))
+          .frame(width: statusColumn, alignment: .leading)
+        Text(verbatim: project.name).font(.okou(.body)).lineLimit(1)
+        if project.isArchived {
+          Text("Archived").font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground)
+        }
+        Spacer(minLength: 0)
+        // The fold's own mark ends the row in the trailing column, turning from down (open)
+        // to right (folded) with the disclosure.
+        OkouIcon("chevron-down", size: OkouIconSize.standard)
+          .foregroundStyle(OkouColor.quietMark)
+          .rotationEffect(.degrees(expanded ? 0 : -90))
+          .accessibilityHidden(true)
+      }
+      .frame(minHeight: OkouControl.listRow)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .accessibilityIdentifier("project-\(project.id)")
+    // The badge is drawn only, so the value names it, as the menu button's does.
+    .accessibilityValue(
+      [
+        expanded ? String(localized: "Expanded") : String(localized: "Collapsed"),
+        unread ? String(localized: "Unread") : nil,
+        working ? String(localized: "Working") : nil
+      ].compactMap { $0 }.joined(separator: ", ")
+    )
+    .listRowInsets(EdgeInsets(top: 0, leading: rowInset, bottom: 0, trailing: rowInset))
+    .listRowSeparator(.hidden)
+    .listRowBackground(Color.clear)
+    .contextMenu {
+      Button("New chat", okouSymbol: "square-pen") {
+        store.startNewChat(projectID: project.id)
+        close()
+      }
+      .disabled(store.isCreating || store.needsUpgrade)
+      Button(project.isArchived ? "Restore project" : "Archive project", okouSymbol: "archive") {
+        Task { await store.projects.setArchived(project.id, archived: !project.isArchived) }
+      }
+      Button("Rename", okouSymbol: "pencil", action: rename)
+      Button("Delete project", okouSymbol: "trash-2", role: .destructive, action: delete)
+    }
+    .disabled(store.needsUpgrade || store.projects.pending.contains(project.id))
+  }
 }
 
 /// Draft observation belongs to this row, not the workspace's list projection.

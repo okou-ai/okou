@@ -28,11 +28,13 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
-import { QueryBuilder } from "drizzle-orm/pg-core";
+import { alias, QueryBuilder } from "drizzle-orm/pg-core";
+import { array, object, string, unknown as zUnknown, uuid } from "zod";
 
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
+  zodDriverValueDecoder,
 } from "../../lib/db-structured-result";
 import { db$ } from "../external/db";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
@@ -41,6 +43,9 @@ import {
   canonicalChatInputModelSelection,
 } from "./canonical-chat-event-read.service";
 import { queuedThreadInputCondition } from "./chat-queued-event.service";
+import { runOwnedChatEventCondition } from "./chat-event-type.service";
+import { visibleChatEventCondition } from "./chat-event-visibility.service";
+import { contextJsonRows } from "./context-rowset";
 import {
   pickedThreadColumns,
   type EnqueuedChatInputFacts,
@@ -151,6 +156,10 @@ function pickedPromptColumns(
         THEN ${requestInput.captureNetworkBodies} ELSE ${storedCapture} END`
     : storedCapture;
   return {
+    hasCompletedPredecessorHistory: completedPredecessorHistory(
+      head,
+      hasCapacity,
+    ),
     isOfficialWorkflowThread:
       sql`CASE WHEN ${hasPromptCapacity} THEN ${officialWorkflowThreadCondition(owner)}
         ELSE false END`.mapWith(pgBooleanDecoder),
@@ -159,6 +168,43 @@ function pickedPromptColumns(
         pgBooleanDecoder,
       ),
   };
+}
+
+function completedPredecessorHistory(
+  head: ReturnType<typeof buildPreparationTables>["head"],
+  hasCapacity: SQL,
+) {
+  const query = new QueryBuilder();
+  const predecessor = exists(
+    query
+      .select({ id: agentRuns.id })
+      .from(agentRuns)
+      .where(
+        and(
+          eq(agentRuns.id, chatThreads.frameworkSessionRunId),
+          eq(agentRuns.chatThreadId, chatThreads.id),
+          eq(agentRuns.userId, chatThreads.userId),
+          eq(agentRuns.status, "completed"),
+          exists(
+            query
+              .select({ id: chatEvents.id })
+              .from(chatEvents)
+              .where(
+                and(
+                  eq(chatEvents.chatThreadId, agentRuns.chatThreadId),
+                  eq(chatEvents.runId, agentRuns.id),
+                  runOwnedChatEventCondition(),
+                  visibleChatEventCondition(),
+                ),
+              ),
+          ),
+        ),
+      ),
+  );
+  return sql`CASE WHEN ${hasCapacity}
+    AND ${inArray(head.contextType, ["web", "agent_run"])}
+    AND ${isNotNull(chatThreads.frameworkSessionRunId)}
+    THEN ${predecessor} ELSE false END`.mapWith(pgBooleanDecoder);
 }
 
 function pickedPhoneUseGrant(hasCapacity: SQL) {
@@ -214,6 +260,7 @@ function pickedProjectJoin(
 function pickedProjectFacts(
   projectId: string | null,
   current: ProjectReferenceRow | null,
+  capturedReferences: readonly ProjectReferenceRow[],
   owned: EnqueuedChatInputFacts | undefined,
 ) {
   const references = owned?.projectReferences;
@@ -222,8 +269,52 @@ function pickedProjectFacts(
       references?.find(({ id }) => {
         return id === projectId;
       }) ?? current,
-    ...(references ? { projectReferences: references } : {}),
+    projectReferences: references ?? capturedReferences,
   };
+}
+
+const projectReferenceRowsDecoder = zodDriverValueDecoder(
+  array(object({ id: uuid(), name: string() })),
+);
+
+function pickedProjectReferences(
+  head: ReturnType<typeof buildPreparationTables>["head"],
+  hasCapacity: SQL,
+) {
+  const referenced = alias(projects, "referenced_project");
+  // Stored documents also carry Project links inside feedback notes.
+  const referenceIds = sql`jsonb_path_query_array(${head.userMessage},
+    '$.parts[*] ? (@.type == "project").projectId')
+    || jsonb_path_query_array(${head.userMessage},
+    '$.parts[*] ? (@.type == "feedback").note[*] ? (@.type == "project").projectId')`;
+  const rows = new QueryBuilder()
+    .select({
+      payload:
+        sql`jsonb_build_object('id', ${referenced.id}, 'name', ${referenced.name})`
+          .mapWith(zodDriverValueDecoder(zUnknown()))
+          .as("payload"),
+    })
+    .from(referenced)
+    .where(
+      and(
+        eq(referenced.orgId, chatThreads.orgId),
+        eq(referenced.userId, chatThreads.userId),
+        sql`${referenced.id} IS DISTINCT FROM ${chatThreads.projectId}`,
+        inArray(
+          referenced.id,
+          sql`(SELECT CASE WHEN pg_input_is_valid(project_id, 'uuid')
+            THEN project_id::uuid END
+            FROM jsonb_array_elements_text(${referenceIds}) AS ids(project_id))`,
+        ),
+      ),
+    );
+  // The head's payload is NULL when this request already owns its references.
+  return sql`CASE WHEN ${hasCapacity}
+    AND ${inArray(head.contextType, ["web", "agent_run"])}
+    AND ${isNotNull(head.userMessage)}
+    THEN ${contextJsonRows(rows)} ELSE '[]'::jsonb END`.mapWith(
+    projectReferenceRowsDecoder,
+  );
 }
 
 /** Capture availability and launch facts for the actual FIFO head together. */
@@ -233,7 +324,6 @@ export function createChatRunPreparationSnapshot(
   requestInput?: EnqueuedChatInputFacts,
 ) {
   return computed(async (get) => {
-    const database = get(db$);
     // The limit belongs to the identity context; occupancy is sampled here.
     const capacity = await get(bootstrap.concurrencyCapacity$);
     const { occupancy, head } = buildPreparationTables(
@@ -244,7 +334,7 @@ export function createChatRunPreparationSnapshot(
     const hasCapacity =
       capacity === 0 ? sql`true` : lt(occupancy.activeCount, capacity);
     const phoneGrant = pickedPhoneUseGrant(hasCapacity);
-    const [row] = await database
+    const [row] = await get(db$)
       .with(occupancy, head)
       .select({
         hasCapacity: sql`${hasCapacity}`.mapWith(pgBooleanDecoder),
@@ -267,6 +357,7 @@ export function createChatRunPreparationSnapshot(
           grantId: phoneGrant.grantId,
         },
         currentProject: { id: projects.id, name: projects.name },
+        projectReferences: pickedProjectReferences(head, hasCapacity),
         head: { ...head._.selectedFields },
         ...pickedPromptColumns(
           head,
@@ -323,7 +414,7 @@ export function createChatRunPreparationSnapshot(
         archiveCache: row.archiveCache,
       },
     };
-    const { thread, head: picked } = row;
+    const { thread, head: picked, hasCompletedPredecessorHistory } = row;
     if (!thread || !picked) {
       return { ...snapshot, pickedEvent: null };
     }
@@ -341,11 +432,17 @@ export function createChatRunPreparationSnapshot(
       userId: thread.userId,
       thread,
       preparation: {
+        hasCompletedPredecessorHistory,
         isOfficialWorkflowThread: row.isOfficialWorkflowThread,
         captureNetworkBodies: row.captureNetworkBodies,
         computerUseHostGrant: row.computerUseHostGrant,
         phoneUseGrant: row.phoneUseGrant,
-        ...pickedProjectFacts(thread.projectId, row.currentProject, owned),
+        ...pickedProjectFacts(
+          thread.projectId,
+          row.currentProject,
+          row.projectReferences,
+          owned,
+        ),
       },
     };
     return { ...snapshot, pickedEvent };

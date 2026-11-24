@@ -55,6 +55,7 @@ export function createExecutionConnectorContext(
       readonly permissions: unknown;
     }>
   >,
+  orgId: string,
 ) {
   const connectorSelection$ = computed(async (get) => {
     const row = await get(raw$);
@@ -70,7 +71,12 @@ export function createExecutionConnectorContext(
         oauthConfig: contextProjectionSchema(oauthColumns).nullable(),
       }),
     ).parse(row.custom);
-    return executionConnectorSelectionFromRows(builtin, custom);
+    return executionConnectorSelectionFromRows(
+      builtin,
+      custom.map(({ connector, oauthConfig }) => {
+        return { connector: { ...connector, orgId }, oauthConfig };
+      }),
+    );
   });
   const permissionGrants$ = computed(async (get) => {
     return array(permissionGrantRow).parse((await get(raw$)).permissions);

@@ -444,7 +444,6 @@
       "close": "Chiudi",
       "closeArtifact": "Chiudi artefatto",
       "closeNamed": "Chiudi {{title}}",
-      "closePreviewMenu": "Chiudi il menu di anteprima",
       "download": "Scarica",
       "downloadArtifact": "Scarica artefatto",
       "downloadMarkdownAs": "Scarica come {{format}}",
@@ -2006,7 +2005,7 @@
       },
       "slashPanel": {
         "browseAll": "Sfoglia tutti i modelli",
-        "hint": "Cerca flussi di lavoro o scegli un modello…",
+        "hint": "Scegli un'azione",
         "useTemplate": "Usa il modello {{title}}"
       },
       "temporarilySwitchTo": "Passa temporaneamente a",
@@ -2948,6 +2947,7 @@
       "storageFailed": "Impossibile salvare l’audio. È disponibile solo l’audio già salvato su questo dispositivo.",
       "textTakingShape": "Il testo sta prendendo forma",
       "transcribing": "Trascrizione",
+      "uploadingRecording": "Caricamento della registrazione…",
       "useRecording": "Usa registrazione"
     },
     "walletAction": {
@@ -3085,6 +3085,7 @@
       "edit": "Modifica",
       "grant": "Concedere",
       "reconnect": "Riconnettiti",
+      "returnToOkou": "Torna a Okou",
       "revoke": "Revoca",
       "save": "Salva",
       "saving": "Salvataggio...",
@@ -5270,6 +5271,7 @@
     }
   },
   "projects": {
+    "archiveProject": "Archivia",
     "back": "Back",
     "close": "Close",
     "collapse": "Comprimi",
@@ -5310,6 +5312,7 @@
     "removeFromNewChat": "Rimuovi {{name}}",
     "rename": "Rename",
     "renameProject": "Rename Project",
+    "restoreProject": "Ripristina progetto",
     "retryThreads": "Reload threads",
     "save": "Save",
     "saveError": "Could not save Project",
@@ -6466,7 +6469,6 @@
   },
   "sidebar": {
     "escapeShortcut": "Esc",
-    "filterAll": "Tutti",
     "markAllRead": "Segna tutti come letti",
     "noResults": "Nessun risultato trovato",
     "resultCount_one": "{{count}} risultato",
@@ -6475,10 +6477,8 @@
     "searching": "Ricerca in corso...",
     "searchWorkspace": "Cerca nello spazio di lavoro...",
     "sections": {
-      "artifacts": "Artefatti",
-      "chats": "Chat",
       "messages": "Messaggi",
-      "workflows": "Flussi di lavoro"
+      "threads": "Thread"
     }
   },
   "ssh": {
