@@ -627,6 +627,7 @@ impl SessionMetadataCapture {
             Framework::ClaudeCode => extract_claude_session_id(event),
             Framework::Codex => extract_codex_thread_id(event),
             Framework::Pi => extract_claude_session_id(event),
+            Framework::Antigravity => None,
         };
         let Some(session_id) = session_id else {
             return;
@@ -635,7 +636,7 @@ impl SessionMetadataCapture {
             Framework::Pi => self
                 .capture
                 .capture_pi_session_id(&session_id, string_field(event, "session_file")),
-            Framework::ClaudeCode | Framework::Codex => {
+            Framework::ClaudeCode | Framework::Codex | Framework::Antigravity => {
                 self.capture.capture_session_id(&session_id);
             }
         }

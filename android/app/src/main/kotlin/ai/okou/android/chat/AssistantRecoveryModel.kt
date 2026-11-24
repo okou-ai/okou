@@ -144,8 +144,8 @@ class AssistantRecoveryModel(
 
     internal suspend fun requireWritable(selected: RecoverySelection, generation: Long) {
         requireCurrent(selected, generation)
-        val journal = controls.uiState.value.journal ?: throw RecoveryUnavailable()
-        if (journal.pending.any { it.threadId == selected.threadId }) throw RecoveryUnavailable()
+        if (controls.uiState.value.pending.any { it.threadId == selected.threadId })
+            throw RecoveryUnavailable()
     }
 
     /** Fresh command prerequisites never acquire/complete the history owner's detail query. */

@@ -234,6 +234,7 @@ final class ConversationHistoryFixture: Sendable {
         id: Self.threadID, title: "History", createdAt: .now,
         updatedAt: .now, sortAt: .now, pinnedAt: nil, pinOrder: nil),
       sync: sync, commands: ChatCommands(client: http.client, sync: sync),
+      graph: makeTestWorkspaceGraph(),
       webURL: http.baseURL, messageMarkdown: MessageMarkdownCache(baseURL: http.baseURL),
       isVisible: isVisible, didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {})
   }

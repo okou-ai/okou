@@ -7,6 +7,27 @@ import XCTest
 final class ChatConnectorAccessTests: XCTestCase {
   private typealias FixtureData = ConnectorHTTPFixtures
 
+  func testMemberPolicyUsesEffectiveEligibilityAndKeepsLegacyDefaults() async throws {
+    var state = ConnectorAccessHTTPFixture.State()
+    state.memberAccess = true
+    let fixture = makeFixture(state)
+    let service = ChatComposerAccess(client: fixture.http.client)
+    let target = ChatConnectorTarget.builtin("slack")
+    try await service.setAccountPolicy(
+      target: target, connectionID: FixtureData.siblingID, policy: .allowDay)
+    let policies = try await service.accountPolicies(target: target)
+    let saved = try XCTUnwrap(policies.first { $0.connectionId == FixtureData.siblingID })
+    XCTAssertTrue(saved.enabled)
+    XCTAssertNotNil(saved.expiresAt)
+    try await service.setAccountPolicy(
+      target: target, connectionID: FixtureData.accountID, policy: .deny)
+    let access = try await service.connectorAccess(
+      target: target, threadID: nil, memberAccess: true)
+    XCTAssertEqual(access.currentConnectionId, FixtureData.siblingID)
+    let legacy = try await service.connectorAccess(target: target, threadID: nil)
+    XCTAssertEqual(legacy.currentConnectionId, FixtureData.accountID)
+  }
+
   func testChatOverridesCurrentAndInheritancePersistWithoutChangingOtherChatsOrDefaults()
     async throws
   {

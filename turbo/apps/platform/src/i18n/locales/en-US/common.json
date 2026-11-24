@@ -253,6 +253,11 @@
         "modelCatalogCacheValidationLatency": "Model Catalog Cache Validation Latency",
         "modelCatalogPrefetchRole": "Model Catalog Prefetch Role",
         "modelCatalogUpstreamEncoding": "Model Catalog Upstream Encoding",
+        "openrouterAttempts": "OpenRouter Provider attempts",
+        "openrouterAttemptsIncomplete": "OpenRouter Incomplete attempts",
+        "openrouterGenerationId": "OpenRouter Generation ID",
+        "openrouterModel": "OpenRouter Model",
+        "openrouterProvider": "OpenRouter Provider",
         "params": "Params",
         "permission": "Permission",
         "permissionError": "Permission Error",
@@ -582,7 +587,6 @@
       "name": "Name",
       "retry": "Try again",
       "search": "Search artifacts",
-      "sort": "Sort artifacts",
       "sortAscending": "Sort ascending",
       "sortDescending": "Sort descending",
       "type": "Type"
@@ -1168,6 +1172,9 @@
       "teamWarning": "Your Team access remains active until the current billing period ends. After that, this workspace moves to {{plan}}.",
       "title": "Downgrade plan"
     },
+    "feedback": {
+      "shareFeedback": "Share feedback"
+    },
     "invoices": {
       "amount": "Amount",
       "date": "Date",
@@ -1311,40 +1318,6 @@
     "sidebar": {
       "description": "More credits & concurrent runs",
       "getPlan": "Get {{plan}}"
-    },
-    "survey": {
-      "checkoutAbandoned": {
-        "answers": {
-          "just_checking_price": "I was just checking the price",
-          "needs_approval": "I need approval from someone else",
-          "not_ready_yet": "I'm not ready to commit yet",
-          "not_seeing_value": "I didn't see the value yet",
-          "other": "Something else",
-          "payment_issue": "I had trouble paying",
-          "price_higher_than_expected": "The price was higher than I expected",
-          "results_not_good_enough": "I wasn't happy with the results"
-        },
-        "description": "One quick question. Your answer helps us improve.",
-        "question": "What stopped you from completing your purchase?"
-      },
-      "creditsExhausted": {
-        "answers": {
-          "no_need_now": "I don't need more right now",
-          "not_sure_worth_it": "I'm not sure it's worth it yet",
-          "other": "Something else",
-          "still_trying": "I want to try it more first",
-          "too_expensive": "It's too expensive"
-        },
-        "question": "What's stopping you from upgrading today?",
-        "reward": "The first eligible answer in this workspace earns {{credits}} bonus credits, valid for 30 days.",
-        "thanksWithCredits": "Thanks! {{credits}} credits were added, so you can keep going."
-      },
-      "error": "Couldn't send your answer. Try again.",
-      "notNow": "Not now",
-      "otherLabel": "Your answer",
-      "otherPlaceholder": "Tell us more (optional)",
-      "submit": "Submit",
-      "thanks": "Thanks for telling us."
     },
     "toasts": {
       "autoRechargeUpdated": "Auto-recharge updated",
@@ -2598,11 +2571,6 @@
       "unsupported": "Manual reset is not supported; usage recovers naturally."
     },
     "taskChips": {
-      "presentationFormat": "Presentation format",
-      "presentationFormats": {
-        "html": "HTML",
-        "pptx": "PPTX"
-      },
       "presentationTemplates": "Presentation templates",
       "removeTask": "Remove {{task}}",
       "shelf": {
@@ -2953,6 +2921,8 @@
     "accountsInChat": "Choose which accounts are on in this chat.",
     "enableByDefault": "Enable {{account}} by default",
     "manageAccounts": "Manage accounts",
+    "memberPolicyLoadFailed": "Could not load account access.",
+    "memberSettingsDescription": "Choose which {{connector}} accounts Okou can use across your chats.",
     "permissions": "Permissions",
     "permissionsDescription": "These rules apply to this connector across your chats and accounts.",
     "settingsDescription": "Choose which {{connector}} accounts Okou can use across your chats. You can change access in each chat.",

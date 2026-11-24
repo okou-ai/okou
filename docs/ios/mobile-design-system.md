@@ -122,7 +122,7 @@ not copied from CSS and are not all mandated by Apple.
 | Text scaling | Use `Font.okou(.body)` and corresponding named styles. A fixed `size:` is only for already scaled measurements or constrained artwork; ordinary body text uses Dynamic Type                                                                                                                                                       |
 | Spacing      | Prefer 4, 8, 12, 16, 20, 24, 32, 40, 48 via `OkouSpace`; smaller named steps serve tight component internals                                                                                                                                                                                                                      |
 | Radius       | Inline code 4, thumbnail 6, small 8, control 14, chat 16, card 20, sheet 28; circles/capsules remain native shapes                                                                                                                                                                                                                |
-| Type roles   | One surface uses at most three sizes: body 17 for content and input, callout 16 for controls inside the composer, footnote/caption for supporting text. Never shrink a control label to make it fit                                                                                                                               |
+| Type roles   | Choose a text style by the role the text plays, at most three sizes on one surface; see [Type roles](#type-roles)                                                                                                                                                                                                                 |
 | Controls     | Minimum interactive area 44 (`minimumTarget`); large form control 52; sidebar row 48; grouped row 52 (`groupedRow`); inline content action 36 tall × 44 wide; status column 22; filter chip 36; catalog logo tile 44 / 64 with a 32 pt add control; dictation waveform 28 tall (3 pt bars, 2 pt gaps); labels can grow vertically |
 | Layout       | Page inset 24 (`pageInset`) is the one leading edge for a screen's header, section headings, rows and footer; readable single-column width 440; respect safe areas and keyboard avoidance                                                                                                                                         |
 | Icons        | Canonical Lucide 24-unit paths; native 2-unit stroke. Compiled image intrinsic size is 20 pt for system menu hosts. Explicit SwiftUI geometry follows the role table below.                                                                                                                                                       |
@@ -135,6 +135,47 @@ buttons require an explicit accessible label. Errors appear next to the owning
 input/action and retain an accessible explanation. Keep keyboard type, content
 type, autofill, IME composition, focus restoration, and native dismissal behavior
 with their owning input/controller.
+
+#### Type roles
+
+Text takes the Dynamic Type style for the role it plays, through `Font.okou(_:)`;
+its size follows from the role, never the other way round. Sizes are at the
+default content size and grow with the reader's text size.
+
+| Style       | Size        | Role                                                                                   | In Okou                                                  |
+| ----------- | ----------- | -------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| Large title | 34          | A screen's own title where no navigation bar names it                                  | Not used yet                                             |
+| Title       | 28          | The one heading of a full-screen moment                                                | Sign-in, subscription headers                            |
+| Title 2     | 22          | A page's heading                                                                       | For you header, new-chat greeting                        |
+| Title 3     | 20          | A heading inside a page, over reading text: a card or panel that is the page's subject | For you card, connector detail                           |
+| Headline    | 17 semibold | An emphasised line among dense text: a row's title, a short heading over a group       | Workspace header, catalog sections                       |
+| Body        | 17          | Reading text and input                                                                 | Messages, the composer, sheets' explanations             |
+| Callout     | 16          | Text beside body that reads a step quieter; controls inside the composer               | Composer controls, chat cards                            |
+| Subheadline | 15          | The secondary line under a body or headline line, and the body of a dense surface      | Row details, list descriptions                           |
+| Footnote    | 13          | Supporting text and metadata                                                           | Status lines, `OkouBanner`, timestamps, sources          |
+| Caption     | 12 / 11     | The smallest labels, a word or two; Caption 2 (11) is the floor                        | Badges, counts, tile and chip captions; never a sentence |
+
+- **Build a surface on one set of neighbours.** A reading surface (a chat, a
+  sheet, a card that is the page's subject) builds on Body: Title 3 heading,
+  Body text, Subheadline for secondary lines (Footnote only for metadata). A
+  dense surface (rows, banners, compact cards) builds one step down: Headline,
+  Subheadline, Footnote. One surface uses at most three sizes.
+- **Don't mix the sets.** A Title 3 heading over paragraphs of Subheadline skips
+  Body and reads as a heading over fine print; a Headline over Body is too weak
+  to lead. Pick the set by what the surface is for, then take its neighbours. A
+  one-line subtitle naming or tagging a heading (a connector's tagline, an empty
+  state's sentence) is a secondary line and may sit in Subheadline under any
+  heading.
+- **Within a size, weight and colour make the hierarchy.** Semibold for
+  headings, medium for a control's or row's label, regular for text;
+  `foreground` for the primary line, `muted-foreground` for the secondary one.
+  Don't add a size to separate two lines that weight or colour can separate.
+- **Keep text readable.** Sentences stay at Footnote 13 or larger; Caption is
+  for a word or two. Chinese, Japanese and Korean read denser at the same size:
+  prefer Subheadline 15 or larger for their reading text, and keep Footnote 13
+  as their smallest sentence.
+- **Never shrink text to fit.** Let it wrap, truncate with a way to see the
+  rest, or scroll. A control's label keeps its style at every size.
 
 ### Iconography
 
@@ -446,7 +487,8 @@ single floating line, and colour is a small accent for status only.
 - **Chat feedback floats above the bottom controls** in `ChatFeedbackSurface`: above the
   list footer or the chat composer, following its height and the keyboard without moving
   the content. Anchor to visible controls, not blank space reserved for hidden ones; keep
-  the 8 pt gap above the visible surface. A horizontal swipe in either direction dismisses
+  the 8 pt gap above the visible surface. For you is the exception: its card's directions sit
+  just above its dock, so it floats the surface under its header (see [For you](#for-you)). A horizontal swipe in either direction dismisses
   it; the close button and VoiceOver escape do too. Do not use a vertical dismissal gesture
   near the bottom-edge system gestures. Finished-action feedback expires after six idle
   seconds while visible, restarting after touch interaction, presentation handoff, or
@@ -884,39 +926,59 @@ feature; the catalog shows each one.
   white canvas: its cover picture runs across the top at one fixed scale (`ForYouCover`) and the
   rest of the page continues in the picture's own sea colour, read from the asset rather than
   written as a colour, so the cards, the deck and the dock stand on the same scene as the header.
-  A taller or shorter card only covers more or less of it; the picture never resizes, so it keeps
-  one size and one sharpness. At night the whole scene dims, so the light header and status bar
+  The picture never resizes as the cards change, so it keeps one size and one sharpness. At night the whole scene dims, so the light header and status bar
   read on it.
 - **Cards** are white `OkouSurfaceStyle` cards at sheet radius with 24 pt above the heading and
   20 pt elsewhere. A direction is a raised button (card fill, hairline, `state-pressed` while
   pressed); one that sends carries the composer's amber send mark, one that drafts a quiet arrow,
   and the chosen one shows progress in its mark until the choice settles. The mark sits beside
-  the direction's label, so its description takes the full width (at most three lines; the mark
-  and VoiceOver's hint say what choosing it does). One card uses at most three sizes: title3,
-  subheadline and footnote.
-- **Dense text stays readable.** A reason shows three lines ending in an inline Show more (the
-  reason itself opens too), and Show less follows it once open. A card's actions stay at its
-  bottom (`ForYouCardLayout`); when the heading is longer than the room it scrolls above them,
-  fading out at the edge where more lies and flashing its scroll indicator, so the reader can
-  tell there is more.
+  the direction's label, centred on its first line without making the row taller, so its
+  description takes the full width (at most two lines; the mark and VoiceOver's hint say what
+  choosing it does) and the row keeps 16 pt above the label and below the description.
+  Directions stand 10 pt apart. A card that ends in text, as a direction's context does, keeps
+  as much room below the text as above it. A card is a reading surface
+  ([Type roles](#type-roles)): a Title 3 title over Body for the reason and each direction's
+  label, with Subheadline for a direction's description and the source.
+- **Dense text stays readable, with one way to overflow.** A closed reason shows as many lines
+  as fit under the title, so the closed card never scrolls and its inline Show more (the reason
+  itself opens too) is always in view; a taller phone shows more of it, and a reason that fits
+  shows whole with no Show more. Only an opened reason scrolls: it runs above the directions,
+  which stay at the card's bottom (`ForYouCardLayout`), fading out at the edge where more lies
+  and flashing its scroll indicator, with Show less at its end. Scrolling text runs out to the card's own edges rather than stopping at its
+  inset, with the scroll indicator along the card's side; above the actions it stops a gap short
+  of them. When the actions would leave the heading less than a third of the card, as at the
+  largest text sizes, heading and actions scroll together from the title.
 - **The deck pages round.** A sideways swipe carries the front card with the finger; it settles
   back a little but never tilts, since paging throws nothing away, and the next card rises out
   of the deck, solid within the first third of the swipe. Past the last card the deck carries on
   to the first, and back from the first to the last, as the web's stack turns. The counter rolls
   and the lit progress segment follows the finger. A handled card sinks away while the next one
   rises into its place. Under Reduce Motion the cards page side by side and the cover holds still.
-  Every card in the deck is as tall as its tallest, never rising above the train's lower edge (the
-  rails and sea may be covered, the train never is), with the room laid between its heading and
-  its actions so the actions stay at the bottom; the dock's room is held on a paused automation
-  too, so the deck's top edge never moves as it pages.
+  Every card fills the room from just under the train's lower edge (the rails and sea may be
+  covered, the train never is) down to the dock, on every phone, so the page keeps one
+  composition whatever the screen or the deck's text, and the deck one shape as it pages. Room
+  the text doesn't need lies between the heading and the actions, so the actions stay at the
+  bottom; the dock's room is held on a paused automation too, so the deck's top edge never moves.
   A card that fits never moves vertically; only one taller than the room scrolls, and only the
   caught-up panel pulls to refresh. The layers under the front card are solid cards, each a little
   more shaded than the one above it.
 - **Haptics**: selection when a new card comes to rest in front, success when a card is
   handled, error on a failure; nothing while the finger moves.
 - **The dock** is an `OkouGlassPrompt` that grows into the composer, and Dismiss with its
-  reasons menu. Confirmations drop in under the header so they never cover the next card's
-  directions.
+  reasons menu.
+- **Confirmations are the chat's feedback surface, under the header.** A finished action
+  ("Noted — this is not planned · Undo", "Sent to the chat · Open chat") drops in as
+  `ChatFeedbackSurface`: one line with its action on the right and a ✕, floating over the scene
+  so the deck never moves and the card's directions are never covered. It lifts away after six
+  idle seconds or a sideways swipe; Undo stays in the caught-up recap. A failure floats in the
+  same place and stays until it is dismissed.
+- **Writing a direction focuses the page.** The scene recedes under the page's ground, so the
+  composer's glass and the keyboard read plain instead of taking the sea's colour, and the counter
+  and segments step aside while keeping their room. The card stays above the input as its
+  context: its heading only, as tall as it is up to the room under the header, scrolling and
+  fading there like a dense card, with its directions and source set aside so the draft is never
+  left behind. The card already says what the direction answers, so the input carries no quote of
+  it. A tap around the card puts the input away; the card itself stays readable.
 
 ### Sign-in and account
 
@@ -979,20 +1041,10 @@ feature; the catalog shows each one.
   controllers, and native Form/List row chrome retain platform interaction and
   material behavior. Product labels and supplied menu icons use the shared
   typography/assets where the public API permits it.
-- With Return set to Send, a composer's key follows only its own editor's text, as in
-  any native field: automatic disabling stays on, and UIKit enables the key as the
-  user types. Quotes, attachments, and send readiness never change keyboard traits;
-  the toolbar's Send reflects them. iOS can retain a disabled Return key after
-  programmatic text insertion or when automatic disabling is turned off, despite
-  `reloadInputViews()`, and the only refresh is restarting the input session, which
-  puts the keyboard away and brings it back. The owning editor restarts only after
-  inserting text programmatically or when an empty editor leaves Send, and returns
-  focus to the same view. Defer this refresh until marked-text composition settles;
-  preserve the document, selection, and undo history rather than replacing text or
-  overriding `hasText`. Skip it while a sheet or cover is presented over the editor:
-  UIKit has put the keyboard away with the editor still first responder, a reload
-  would bring the keyboard back over that presentation, and the keyboard takes the
-  current traits when UIKit returns it.
+- The chat composer uses the native multiline Return key. The toolbar Send button
+  submits the draft. Accepting a follow-up inserts editable text in the same
+  keyboard session. The active input method and suggestion lists own candidate
+  confirmation.
 - First-party authentication uses native provider, email, code, password, and
   required-profile steps, composed from shared controls. Provider availability,
   required fields, verification, transport, OAuth, and session authority come from

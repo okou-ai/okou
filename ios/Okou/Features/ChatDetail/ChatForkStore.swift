@@ -1,3 +1,4 @@
+import CCState
 import ChatData
 import ChatDomain
 import Foundation
@@ -45,7 +46,7 @@ final class ChatForkStore: Identifiable {
 
   init(
     selection: ChatFeedbackSelection, sourceRunID: String, projectID: String?,
-    commands: ChatCommands, models: ChatModelStore,
+    commands: ChatCommands, graph: CCState.Store, models: ChatModelStore,
     workflowSource: ComposerWorkflowSource, lifecycleTasks: LifecycleTasks,
     didCreate: @escaping @MainActor (ChatThread) -> Void,
     didSend: @escaping @MainActor (ChatThread) -> Void,
@@ -62,8 +63,16 @@ final class ChatForkStore: Identifiable {
     self.didSend = didSend
     self.didFail = didFail
     composer = ComposerDraftStore(
-      target: .unassigned, commands: commands, didFail: didFail,
+      target: .unassigned, commands: commands, graph: graph, didFail: didFail,
       lifecycleTasks: lifecycleTasks, preservesFeedbackNotes: true)
+    let draftValue = composer.signals.value
+    let uploadsValue = composer.attachments.value
+    composerEdits = Computed { get in
+      let draft = try get(draftValue)
+      let uploads = try get(uploadsValue)
+      return !draft.document.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        || uploads.hasAttachments
+    }
     modelSelection = ChatModelSelectionStore(models: models, lifecycleTasks: lifecycleTasks)
     composer.addFeedback(selection)
   }
@@ -74,9 +83,14 @@ final class ChatForkStore: Identifiable {
     }
   }
 
+  /// Typed text or files in the fork's composer. The source quote alone is not an edit.
+  let composerEdits: Computed<Bool>
+
   var hasEdits: Bool {
-    hasPendingAttempt || !composer.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-      || composer.attachments.hasAttachments
+    guard !hasPendingAttempt else { return true }
+    do { return try composer.store.get(composerEdits) } catch {
+      preconditionFailure("Cannot read the fork composer graph: \(error)")
+    }
   }
 
   @discardableResult
@@ -95,7 +109,7 @@ final class ChatForkStore: Identifiable {
         model: modelSelection.models.configuration.map { _ in
           modelSelection.captureNewChatSelection()
         }, effort: modelSelection.requestedEffort,
-        options: modelSelection.connectors.pendingOptions,
+        options: modelSelection.connectors.submissionOptions,
         computerAccess: modelSelection.connectors.computerAccess,
         sourceRunID: hasSourceQuote ? sourceRunID : nil)
     }

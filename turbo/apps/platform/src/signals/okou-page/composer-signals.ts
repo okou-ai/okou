@@ -58,10 +58,7 @@ import {
   type ComposerUiSignalGroups,
 } from "./chat-composer.ts";
 import { buildComposerAdditionalInfo } from "./composer-additional-info.ts";
-import {
-  presentationOutputFormat$,
-  presentationOutputFormatEnabled$,
-} from "./presentation-output-format.ts";
+import { presentationOutputFormat$ } from "./presentation-output-format.ts";
 import type { ComposerTaskSelection } from "./composer-task-handoff.ts";
 import type { ComposerProjectSignals } from "../projects/composer-project.ts";
 import {
@@ -1011,6 +1008,8 @@ function createSubmitCurrentInput({
       if (voiceState.status !== "idle") {
         return false;
       }
+      const presentationFormat =
+        (await get(presentationOutputFormat$)) ?? undefined;
       const submission = await set(
         workflowComposer.readInputForSubmission$,
         signal,
@@ -1038,11 +1037,6 @@ function createSubmitCurrentInput({
       const visualization =
         taskSelection.task === "visualization"
           ? taskSelection.visualization
-          : undefined;
-      const presentationFormat =
-        (await get(presentationOutputFormatEnabled$)) &&
-        (mode === "presentation" || visualization?.output === "presentation")
-          ? get(presentationOutputFormat$)
           : undefined;
       const composerAdditionalInfo = buildComposerAdditionalInfo(
         mode,

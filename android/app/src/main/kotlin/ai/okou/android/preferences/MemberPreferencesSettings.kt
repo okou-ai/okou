@@ -8,7 +8,6 @@ import ai.okou.android.SettingsPickerRow
 import ai.okou.android.SettingsRadioOptions
 import ai.okou.android.SettingsSection
 import ai.okou.android.SettingsSheet
-import ai.okou.android.SettingsSheetDescription
 import ai.okou.android.SettingsSheetScroll
 import ai.okou.android.api.generated.UserPreferencesColorTheme
 import ai.okou.android.api.generated.UserPreferencesLocale
@@ -149,8 +148,8 @@ internal fun MemberPreferencesSettings(
             HorizontalDivider()
             TimezonePicker(state?.timezone, model?.let { owner -> { owner.selectTimezone(it) } })
         }
-        if (model != null && state != null && state.pending?.cloudBrowser == null) {
-            PreferenceFeedback(state, model::retry)
+        if (model != null && state != null) {
+            TimezoneScheduleFeedback(state, model::retry)
         }
     }
 }
@@ -173,7 +172,6 @@ internal fun TimezonePicker(
     ) { dismiss ->
         if (current == null || onSelect == null) return@SettingsPickerRow
         SettingsSheet(title, dismiss, scroll = SettingsSheetScroll.None) {
-            SettingsSheetDescription(stringResource(R.string.settings_timezone_hint))
             val locale = LocalConfiguration.current.locales[0]
             val utcName = stringResource(R.string.settings_timezone_utc)
             val options =
@@ -213,49 +211,56 @@ internal fun TimezonePicker(
 }
 
 @Composable
-internal fun TimezoneSaveFeedback(model: MemberPreferencesModel, snackbar: SnackbarHostState) {
+internal fun MemberPreferenceSaveFeedback(
+    model: MemberPreferencesModel,
+    snackbar: SnackbarHostState,
+) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    val message by rememberUpdatedState(stringResource(R.string.settings_timezone_save_rejected))
+    val timezone by rememberUpdatedState(stringResource(R.string.settings_timezone_save_rejected))
+    val rolledBack by
+        rememberUpdatedState(stringResource(R.string.settings_preferences_save_rolled_back))
+    val appearance by rememberUpdatedState(stringResource(R.string.settings_appearance_sync_failed))
+    val unconfirmed by
+        rememberUpdatedState(stringResource(R.string.settings_proactive_save_unconfirmed))
     LaunchedEffect(model, snackbar, lifecycle) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            model.timezoneNotices.collectLatest { notice ->
-                if (notice == TimezoneSaveNotice.Rejected) {
-                    snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
-                }
+            model.notices.collectLatest { notice ->
+                val message =
+                    when (notice) {
+                        null -> return@collectLatest
+                        is PreferenceSaveNotice.Unconfirmed -> unconfirmed
+                        is PreferenceSaveNotice.Rejected ->
+                            buildList {
+                                    if (notice.rolledBack)
+                                        add(if (notice.timezoneOnly) timezone else rolledBack)
+                                    if (notice.keptAppearance) add(appearance)
+                                }
+                                .joinToString(" ")
+                    }
+                snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
+                model.dismissNotice(notice)
             }
         }
     }
 }
 
 @Composable
-internal fun PreferenceFeedback(
+internal fun TimezoneScheduleFeedback(
     state: MemberPreferencesState,
     retry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    if (state.recovering) return
-    val message =
-        when (state.status) {
-            PreferenceStatus.Ready,
-            PreferenceStatus.Saving,
-            PreferenceStatus.Refreshing -> return
-            PreferenceStatus.SaveFailed ->
-                when {
-                    state.timezoneScheduleUpdatePending ->
-                        R.string.settings_timezone_schedule_update_failed
-                    state.pending?.timezone != null -> R.string.settings_proactive_save_unconfirmed
-                    else -> R.string.preference_save_failed
-                }
-            PreferenceStatus.RefreshFailed -> R.string.preference_refresh_failed
-        }
+    if (
+        state.status != PreferenceStatus.SaveFailed ||
+            state.recovering ||
+            !state.timezoneScheduleUpdatePending
+    )
+        return
     val colors = MaterialTheme.colorScheme
-    val textColor =
-        if (message == R.string.settings_proactive_save_unconfirmed) colors.onSurfaceVariant
-        else colors.error
     Column(modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite }) {
         Text(
-            stringResource(message),
-            color = textColor,
+            stringResource(R.string.settings_timezone_schedule_update_failed),
+            color = colors.error,
             style = MaterialTheme.typography.bodyMedium,
         )
         TextButton(

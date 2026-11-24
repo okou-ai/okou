@@ -31,8 +31,6 @@ struct ForYouView: View {
   /// Whether the pager has been put on the card in front since it appeared. Until then it rests
   /// on its first page, the copy of the last card, and what it reports is not the reader's.
   @State private var pagerPlaced = false
-  /// Each card's own content height, whatever height the deck gives it.
-  @State private var naturalHeights: [String: CGFloat] = [:]
   /// The train's lower edge on screen; a card never rises above it.
   @State private var horizon: CGFloat = 0
   private var store: ForYouStore { workspace.forYou }
@@ -53,11 +51,13 @@ struct ForYouView: View {
   /// layer stays a solid card on the scene.
   private static let layerShade: Double = 0.06
   /// The card's padding above and below its content (`surface`).
-  private static let cardPadding = OkouSpace.xxl + OkouSpace.xl
+  private static let cardPadding = ForYouCardInset.top + ForYouCardInset.bottom
   /// However low the ground lies, a card may always take this much of the page.
   private static let minimumRoomShare: CGFloat = 0.6
   /// How far the cover drifts for each card, so it moves well behind the cards.
   private static let coverDrift: CGFloat = 36
+  /// How long a confirmation stays while left alone, as the chat's finished-action feedback.
+  private static let confirmationLife: Duration = .seconds(6)
 
   var body: some View {
     layout
@@ -84,20 +84,12 @@ struct ForYouView: View {
     VStack(spacing: 0) {
       ForYouHeader(
         count: store.cards.count, live: livePosition, position: pagePosition,
-        isBusy: store.busy, canPage: !store.busy && !isComposing, back: { dismiss() },
-        show: show)
-      notices
+        isBusy: store.busy, canPage: !store.busy && !isComposing, showsPlace: !isComposing,
+        back: { dismiss() }, show: show)
       content
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .overlay {
-          // While a direction is being written, a tap anywhere above the input puts it away:
-          // an empty one folds back into its pill, one with text only lowers the keyboard.
-          if isComposing {
-            Color.clear.contentShape(Rectangle())
-              .onTapGesture(perform: collapseDirection)
-              .accessibilityHidden(true)
-          }
-        }
+        .overlay { if isComposing { aroundCard } }
+        .overlay(alignment: .top) { notices }
       dock
     }
     // A card settling, a confirmation arriving or the dock coming and going moves the page as one
@@ -106,13 +98,33 @@ struct ForYouView: View {
     .background {
       ForYouCover(
         drift: reduceMotion ? 0 : loop.unwrapped(pagePosition) * Self.coverDrift,
-        onHorizon: noteHorizon)
+        veiled: isComposing, onHorizon: noteHorizon
+      )
+      .animation(dockMotion, value: isComposing)
     }
     .background(OkouColor.background)
     .composerSuggestionOverlay()
   }
 
   private var readingID: String? { phase == .active ? store.current?.id : nil }
+
+  /// While a direction is being written, a tap anywhere around its card puts it away: an empty
+  /// one folds back into its pill, one with text only lowers the keyboard. The card itself stays
+  /// in reach, so the rest of a long one can still be read.
+  private var aroundCard: some View {
+    GeometryReader { proxy in
+      let frame = proxy.frame(in: .global)
+      let card = front.map { card in
+        CGRect(
+          x: (frame.width - card.width) / 2, y: card.minY - frame.minY, width: card.width,
+          height: card.height)
+      }
+      Color.clear
+        .contentShape(ForYouAroundCard(card: card), eoFill: true)
+        .onTapGesture(perform: collapseDirection)
+    }
+    .accessibilityHidden(true)
+  }
 
   /// Everything whose change reshapes the page: the cards, the confirmation, whether the dock
   /// shows, and which panel stands in for the cards.
@@ -185,36 +197,48 @@ struct ForYouView: View {
 
   // MARK: Header and notices
 
-  /// A confirmation sits on the cover, so it never covers the next card's directions. It drops
-  /// in from under the header and lifts away again, and a new one replaces the last in place.
+  /// What the page has to say floats under the header, over the scene, so the deck never moves
+  /// and the card's directions are never covered. A failure stays until it is dismissed. A
+  /// finished action ("Noted — this is not planned · Undo") is the chat's feedback surface and
+  /// lifts away after a few idle seconds or a sideways swipe, its Undo kept in the caught-up
+  /// recap. Each drops in from under the header, and a new one replaces the last in place.
   @ViewBuilder private var notices: some View {
     Group {
       if let error = store.error, store.current != nil {
-        OkouBanner(Text(error), icon: "circle-alert", tone: .problem)
+        OkouBanner(Text(error), icon: "circle-alert", tone: .problem, dismiss: clearError)
+          .disabled(store.busy)
+          .padding(.top, OkouSpace.sm)
           .id(error)
           .transition(noticeTransition)
       } else if let notice = store.notice {
-        Group {
-          if let undo = notice.undo {
-            OkouBanner(Text(notice.text), icon: "circle-check", dismiss: clearNotice) {
-              Button("Undo") { run { await store.undo(undo) } }
-                .accessibilityIdentifier("for-you-undo")
-            }
-          } else if let id = notice.threadID {
-            OkouBanner(Text(notice.text), icon: "circle-check", dismiss: clearNotice) {
-              Button("Open chat") { run { if await store.open(id) { showChat() } } }
-            }
-          } else {
-            OkouBanner(Text(notice.text), icon: "circle-check", dismiss: clearNotice)
-          }
-        }
-        .id(notice.undo?.undoID ?? notice.text)
-        .transition(noticeTransition)
+        confirmation(notice)
       }
     }
     .frame(maxWidth: OkouControl.readableWidth)
-    .padding(.horizontal, OkouSpace.lg).padding(.top, OkouSpace.sm)
-    .disabled(store.busy)
+    .padding(.horizontal, OkouSpace.lg)
+  }
+
+  private func confirmation(_ notice: ForYouStore.Notice) -> some View {
+    ChatFeedbackSurface(
+      message: notice.text, icon: "circle-check",
+      actionTitle: notice.undo != nil
+        ? String(localized: "Undo")
+        : notice.threadID != nil ? String(localized: "Open chat") : nil,
+      actionEnabled: !store.busy,
+      actionIdentifier: notice.undo != nil ? "for-you-undo" : "for-you-open-chat",
+      autoDismissAfter: Self.confirmationLife, action: { act(on: notice) },
+      dismiss: clearNotice
+    )
+    .id(notice.undo?.undoID ?? notice.text)
+    .transition(noticeTransition)
+  }
+
+  private func act(on notice: ForYouStore.Notice) {
+    if let undo = notice.undo {
+      run { await store.undo(undo) }
+    } else if let id = notice.threadID {
+      run { if await store.open(id) { showChat() } }
+    }
   }
 
   // MARK: Cards
@@ -346,17 +370,12 @@ struct ForYouView: View {
     let leaveShrink = Self.leaveShrink
     let depth = !reduceMotion
     return ScrollView {
-      surface(placementOf: page.id) {
-        cardView(
-          page.card, height: cardHeight(for: page.card.id),
-          // Only the card itself reports, not its copy at an end of the loop.
-          report: ForYouLoop.cardID(page.id) == page.id
-            ? { noteNatural(page.card.id, $0) } : nil
-        )
-        .disabled(store.busy)
+      surface(placementOf: page.id, asContext: store.direction?.cardID == page.card.id) {
+        cardView(page.card, height: cardHeight(for: page.card.id))
+          .disabled(store.busy)
       }
       .padding(.top, OkouSpace.xxl)
-      .padding(.bottom, Self.layerDrop * CGFloat(Self.layerCount) + OkouSpace.sm)
+      .padding(.bottom, deckFoot(asContext: store.direction?.cardID == page.card.id))
     }
     .defaultScrollAnchor(.bottom, for: .initialOffset)
     .defaultScrollAnchor(.bottom, for: .alignment)
@@ -417,13 +436,14 @@ struct ForYouView: View {
   /// The one surface of the page. It reports where it sits, for the cover and the deck: a
   /// card under its id, the standalone panel under none.
   private func surface<Content: View>(
-    placementOf id: String?, @ViewBuilder _ content: () -> Content
+    placementOf id: String?, asContext: Bool = false, @ViewBuilder _ content: () -> Content
   ) -> some View {
     // The card's large corner takes room from its content, so the text keeps well clear of the
     // edge: more above the heading, where the corner curves.
     content()
-      .padding(.horizontal, OkouSpace.xl)
-      .padding(.top, OkouSpace.xxl).padding(.bottom, OkouSpace.xl)
+      .padding(.horizontal, ForYouCardInset.side)
+      .padding(.top, ForYouCardInset.top)
+      .padding(.bottom, asContext ? ForYouCardInset.textBottom : ForYouCardInset.bottom)
       .frame(maxWidth: .infinity, alignment: .leading)
       .modifier(OkouSurfaceStyle(radius: OkouRadius.sheet))
       .onGeometryChange(for: ForYouCardPlacement.self) { proxy in
@@ -439,44 +459,47 @@ struct ForYouView: View {
       .padding(.horizontal, OkouSpace.lg)
   }
 
-  /// The content height a card may take: from the train's lower edge, so the train stays in view
-  /// (the rails and the sea may be covered), down to the deck's place above the dock, and never
-  /// less than most of the page.
-  private var cardRoom: CGFloat? {
+  /// The content height a card may take, down to the deck's place above the dock. Paging, it runs
+  /// from the train's lower edge, so the train stays in view (the rails and the sea may be
+  /// covered), and is never less than most of the page. As the context of a direction being
+  /// written, with the scene veiled, it runs from just under the header.
+  private func cardRoom(asContext: Bool) -> CGFloat? {
     guard pagerFrame.height > 0 else { return nil }
-    let bottom = pagerFrame.maxY - Self.layerDrop * CGFloat(Self.layerCount) - OkouSpace.sm
-    let top = max(pagerFrame.minY + OkouSpace.xxl, horizon)
-    let room = max(bottom - top, pagerFrame.height * Self.minimumRoomShare)
+    let bottom = pagerFrame.maxY - deckFoot(asContext: asContext)
+    let top = pagerFrame.minY + OkouSpace.xxl
+    if asContext {
+      let padding = ForYouCardInset.top + ForYouCardInset.textBottom
+      return max(bottom - top - padding, OkouControl.minimumTarget)
+    }
+    let room = max(bottom - max(top, horizon), pagerFrame.height * Self.minimumRoomShare)
     return room - Self.cardPadding
   }
 
-  /// Every card in the deck is as tall as its tallest, within the room, so the deck keeps one
-  /// shape as it pages; a card longer than the room scrolls its heading while its actions stay at
-  /// the bottom. While a direction is written the card takes its own height above the input.
-  private func cardHeight(for cardID: String) -> CGFloat? {
-    guard !isComposing, naturalHeights[cardID] != nil else { return nil }
-    let tallest = store.cards.compactMap { naturalHeights[$0.id] }.max() ?? 0
-    return cardRoom.map { min(tallest, $0) } ?? tallest
+  /// The room under a card, where the deck's layers peek out. The card a direction is written
+  /// for has no layers under it, so it keeps only the gap above the input.
+  private func deckFoot(asContext: Bool) -> CGFloat {
+    asContext ? OkouSpace.sm : Self.layerDrop * CGFloat(Self.layerCount) + OkouSpace.sm
   }
 
-  private func noteNatural(_ cardID: String, _ height: CGFloat) {
-    if abs((naturalHeights[cardID] ?? 0) - height) > OkouSpace.hairline {
-      naturalHeights[cardID] = height
-    }
+  /// Every card fills the room from just under the train down to the deck's place above the
+  /// dock, on every phone, so the page keeps one composition and the deck one shape as it pages.
+  /// A card longer than the room scrolls its heading while its actions stay at the bottom. The
+  /// card a direction is written for keeps only its heading, as tall as it is within the room
+  /// above the input.
+  private func cardHeight(for cardID: String) -> CGFloat? {
+    cardRoom(asContext: store.direction?.cardID == cardID)
   }
 
   private func noteHorizon(_ line: CGFloat) {
     if abs(horizon - line) > OkouSpace.hairline { horizon = line }
   }
 
-  @ViewBuilder private func cardView(
-    _ card: ForYouCard, height: CGFloat?, report: ((CGFloat) -> Void)?
-  ) -> some View {
+  @ViewBuilder private func cardView(_ card: ForYouCard, height: CGFloat?) -> some View {
     switch card.content {
     case .suggestion(let suggestion):
       ForYouSuggestionView(
-        suggestion: suggestion, height: height, report: report,
-        pendingOptionID: pendingOptionID,
+        suggestion: suggestion, height: height,
+        pendingOptionID: pendingOptionID, isContext: store.direction?.cardID == card.id,
         openSource: { id in run { if await store.open(id) { showChat() } } },
         choose: { option in
           guard !store.busy else { return }
@@ -488,7 +511,7 @@ struct ForYouView: View {
         })
     case .automation(let event):
       ForYouAutomationView(
-        event: event, height: height, report: report,
+        event: event, height: height,
         enable: { run { await store.resolve(card, event: event, enable: true) } },
         dismiss: { run { await store.resolve(card, event: event, enable: false) } })
     case .unsupported: EmptyView()
@@ -581,6 +604,8 @@ struct ForYouView: View {
 
   private func clearNotice() { withAnimation(dockMotion) { store.notice = nil } }
 
+  private func clearError() { withAnimation(dockMotion) { store.error = nil } }
+
   private var noticeTransition: AnyTransition {
     reduceMotion ? .opacity : .offset(y: -OkouSpace.lg).combined(with: .opacity)
   }
@@ -652,6 +677,21 @@ private struct ForYouCardPlacement: Equatable, Sendable {
       minY: minY + (other.minY - minY) * fraction,
       width: width + (other.width - width) * fraction,
       height: height + (other.height - height) * fraction)
+  }
+}
+
+/// The room around the card, where a tap puts the input away; the card itself is left out.
+private struct ForYouAroundCard: Shape {
+  let card: CGRect?
+
+  func path(in rect: CGRect) -> Path {
+    var path = Path(rect)
+    if let card {
+      path.addRoundedRect(
+        in: card, cornerSize: CGSize(width: OkouRadius.sheet, height: OkouRadius.sheet),
+        style: .continuous)
+    }
+    return path
   }
 }
 

@@ -282,16 +282,13 @@ final class ForYouStore {
   {
     if let selection = selections[card.id] {
       guard selection.optionID == optionID && selection.direction == direction
-      else {
-        throw ChatError.invalidContract(
-          String(localized: "Retry the previous action to confirm its result."))
-      }
+      else { throw ForYouUnconfirmedChoice() }
       return selection
     }
     let attempt = Selection(
       cardID: card.id, optionID: optionID, direction: direction,
       model: models.flatMap { $0.models.configuration == nil ? nil : $0.selection },
-      effort: models?.requestedEffort, options: models?.connectors.pendingOptions,
+      effort: models?.requestedEffort, options: models?.connectors.submissionOptions,
       computerAccess: models?.connectors.currentComputerAccess)
     selections[card.id] = attempt
     return attempt
@@ -363,6 +360,15 @@ final class ForYouStore {
     } catch is CancellationError {} catch {
       self.error = error.localizedDescription
     }
+  }
+}
+
+/// An earlier choice on a card has no confirmed result yet: only choosing it again can tell
+/// whether it went through, so nothing else on the card starts until then. The banner says just
+/// that, not that chat data is unreadable.
+private struct ForYouUnconfirmedChoice: LocalizedError {
+  var errorDescription: String? {
+    String(localized: "Retry the previous action to confirm its result.")
   }
 }
 

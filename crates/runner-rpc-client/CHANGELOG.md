@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.4](https://github.com/okou-ai/okou/compare/runner-rpc-client-v0.5.3...runner-rpc-client-v0.5.4) (2026-11-24)
+
+
+### Refactoring
+
+* **runner-rpc:** share terminal response publication ([#50415](https://github.com/okou-ai/okou/issues/50415)) ([502e0d1](https://github.com/okou-ai/okou/commit/502e0d1cf6a285cddf04bb2819f4bf0295f3cfab))
+
 ## [0.5.3](https://github.com/okou-ai/okou/compare/runner-rpc-client-v0.5.2...runner-rpc-client-v0.5.3) (2026-11-13)
 
 

@@ -5,7 +5,6 @@
     <string name="auth_selection_failed">No se pudo abrir este espacio de trabajo.</string>
     <string name="auth_sign_out_failed">No se pudo cerrar la sesión.</string>
     <string name="composer_restore_draft">Restaurar borrador conservado</string>
-    <string name="controls_storage_failed">No se pueden guardar las solicitudes de control pendientes.</string>
     <string name="controls_stop">Detener el trabajo en curso</string>
     <string name="controls_stop_failed">No se pudo detener la tarea.</string>
     <string name="settings">Ajustes</string>
@@ -33,8 +32,6 @@
     <string name="auth_workspace">Espacio de trabajo actual</string>
     <string name="auth_switch_workspace">Cambiar de espacio de trabajo</string>
     <string name="auth_browser_unavailable">Instala un navegador para configurar el espacio de trabajo.</string>
-    <string name="preference_save_failed">No se pudieron guardar las preferencias. Tus opciones siguen activas.</string>
-    <string name="preference_refresh_failed">No se pudieron actualizar las preferencias. Inténtalo de nuevo.</string>
     <string name="preference_color_theme">Tema de color</string>
     <string name="preference_language">Idioma</string>
     <string name="palette_default">Predeterminado</string>
@@ -135,7 +132,6 @@
     <string name="instructions_placeholder">¿Qué quieres que Okou tenga en cuenta?</string>
     <string name="instructions_save_when_online">Conéctate para guardar los cambios.</string>
     <string name="settings_timezone">Zona horaria</string>
-    <string name="settings_timezone_hint">Zona horaria predeterminada para nuevas tareas programadas.</string>
     <string name="settings_timezone_utc">Tiempo universal coordinado</string>
     <string name="settings_timezone_format">%1$s (UTC%2$s)</string>
 </resources>

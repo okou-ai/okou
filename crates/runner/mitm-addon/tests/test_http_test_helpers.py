@@ -403,7 +403,9 @@ def test_threaded_http_server_shutdown_aborts_a_blocked_writer(
             handler.join(timeout=_THREAD_TIMEOUT_SECONDS)
 
 
-def test_threaded_http_server_reports_a_handler_that_cannot_stop() -> None:
+def test_threaded_http_server_reports_a_handler_that_cannot_stop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     server = ThreadedHttpTestServer(
         request_factory=_CapturedRequest,
         default_status=204,
@@ -413,6 +415,7 @@ def test_threaded_http_server_reports_a_handler_that_cannot_stop() -> None:
     release_handler = threading.Event()
     handlers: list[threading.Thread] = []
     connections: list[socket.socket] = []
+    join_timeouts: list[float | None] = []
 
     def block_handler(connection: socket.socket, address: tuple[str, int]) -> None:
         del address
@@ -425,13 +428,23 @@ def test_threaded_http_server_reports_a_handler_that_cannot_stop() -> None:
 
     def exercise_server() -> None:
         nonlocal client
-        with server.run():
+        with monkeypatch.context() as shutdown_patch, server.run():
             assert server._server is not None
             with patch.object(server._server, "finish_request", side_effect=block_handler):
                 client = socket.create_connection(
                     server._server.socket.getsockname(), timeout=_THREAD_TIMEOUT_SECONDS
                 )
                 wait_for_event(entered, timeout=_THREAD_TIMEOUT_SECONDS)
+                [handler] = handlers
+                original_join = handler.join
+
+                def join_after_grace_period(timeout: float | None = None) -> None:
+                    join_timeouts.append(timeout)
+                    # This handler waits for explicit cleanup and cannot finish
+                    # during the grace period. Keep the final bounded join real.
+                    original_join(timeout=0 if len(join_timeouts) == 1 else timeout)
+
+                shutdown_patch.setattr(handler, "join", join_after_grace_period)
 
     try:
         with pytest.raises(
@@ -439,7 +452,10 @@ def test_threaded_http_server_reports_a_handler_that_cannot_stop() -> None:
         ):
             exercise_server()
 
+        assert len(join_timeouts) == 2
+        assert all(timeout is not None and timeout > 0 for timeout in join_timeouts)
         assert handlers[0].is_alive()
+        assert connections[0].fileno() == -1
         with pytest.raises(AssertionError):
             _ = server.api_url
     finally:

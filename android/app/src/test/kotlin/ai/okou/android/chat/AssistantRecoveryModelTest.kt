@@ -59,7 +59,7 @@ class AssistantRecoveryModelTest {
         val context = ApplicationProvider.getApplicationContext<TestOkouApplication>()
         val cache = ChatCacheStore(context, temporary.newFolder(), dispatcher)
         val journal = ComposerJournalStore(context, directory, dispatcher)
-        val controlsStore = RunControlJournalStore(context, temporary.newFolder(), dispatcher)
+        val controlOwners = RunControlOwners()
         val owners = ViewModelStore()
         val auth = AtomicBoolean(true)
         val retired = CompletableDeferred<Unit>()
@@ -105,7 +105,7 @@ class AssistantRecoveryModelTest {
                                 initializer {
                                     RunControlsModel(
                                         api.service,
-                                        controlsStore,
+                                        controlOwners,
                                         api.identity,
                                         history,
                                         { auth.get() },
@@ -148,7 +148,6 @@ class AssistantRecoveryModelTest {
                     history.uiState.first {
                         it.phase == HistoryPhase.Ready && it.detailPhase == ChatReadPhase.Ready
                     }
-                    controls.uiState.first { it.persistence == RunControlPersistence.Durable }
                     recovery.uiState.first {
                         it.phase in setOf(ChatReadPhase.Ready, ChatReadPhase.Failed)
                     }
@@ -179,7 +178,6 @@ class AssistantRecoveryModelTest {
             }
         } finally {
             journal.close()
-            controlsStore.close()
             cache.close()
             Dispatchers.resetMain()
         }

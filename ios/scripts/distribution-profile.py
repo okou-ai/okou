@@ -5,6 +5,7 @@ import argparse
 import datetime
 import fnmatch
 import plistlib
+import re
 import uuid
 from pathlib import Path
 
@@ -18,7 +19,7 @@ BUNDLES = {
 }
 
 
-def prepare(profile_path, destination, bundle_id):
+def prepare(profile_path, destination, bundle_id, connector_callback_host):
     if destination.exists():
         raise ValueError("Entitlement output must be a new file")
     profile = plistlib.loads(profile_path.read_bytes())
@@ -49,6 +50,14 @@ def prepare(profile_path, destination, bundle_id):
         BUNDLES[bundle_id].read_bytes().replace(b"$(APS_ENVIRONMENT)", b"production")
     )
     source = source.replace(b"$(AppIdentifierPrefix)", (TEAM + ".").encode())
+    if b"$(OKOU_CONNECTOR_CALLBACK_HOST)" in source:
+        if not connector_callback_host or not re.fullmatch(
+            r"[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?", connector_callback_host
+        ):
+            raise ValueError("A valid archived connector callback host is required")
+        source = source.replace(
+            b"$(OKOU_CONNECTOR_CALLBACK_HOST)", connector_callback_host.encode()
+        )
     if b"$(" in source:
         raise ValueError("Unresolved source entitlement build setting")
     requested = plistlib.loads(source)
@@ -74,8 +83,11 @@ def main():
     parser.add_argument("profile", type=Path)
     parser.add_argument("destination", type=Path)
     parser.add_argument("--bundle-id", required=True, choices=BUNDLES)
+    parser.add_argument("--connector-callback-host")
     args = parser.parse_args()
-    prepare(args.profile, args.destination, args.bundle_id)
+    prepare(
+        args.profile, args.destination, args.bundle_id, args.connector_callback_host
+    )
 
 
 if __name__ == "__main__":

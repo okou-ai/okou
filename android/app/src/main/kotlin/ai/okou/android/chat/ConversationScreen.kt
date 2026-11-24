@@ -3,7 +3,9 @@ package ai.okou.android.chat
 import ai.okou.android.ContentReadProgress
 import ai.okou.android.R
 import ai.okou.android.WorkspaceFeedbackHost
+import ai.okou.android.WorkspaceFeedbackTimeout
 import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.updates.updateFocusOutline
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
@@ -31,6 +33,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarVisuals
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -89,6 +92,13 @@ private val TimelineEndPadding = 16.dp
 private data class ConversationActivityRow(@StringRes val label: Int, val showHeader: Boolean) :
     ConversationTimelineRow {
     override val key = TimelineActivity
+}
+
+private class ControlFailureSnackbar(override val message: String, val kind: RunControlKind) :
+    SnackbarVisuals {
+    override val actionLabel: String? = null
+    override val withDismissAction = false
+    override val duration = SnackbarDuration.Indefinite
 }
 
 @Composable
@@ -191,7 +201,6 @@ internal fun ConversationRoute(
             (state.consecutiveReadFailures >= 3 ||
                 (syncDelay == 0L || syncDelayReached) &&
                     activity == null &&
-                    controls?.storageFailed != true &&
                     queue.isEmpty() &&
                     content.none { it.preview?.pendingDelivery != null })
     val window = currentWindowSizeDp()
@@ -275,14 +284,16 @@ internal fun ConversationRoute(
             else emptySet()
         val runningFrame = rememberRunningWaveFrame(position, runningRows)
         val scope = rememberCoroutineScope()
-        val stopSnackbar = remember { SnackbarHostState() }
-        val queueSnackbar = remember { SnackbarHostState() }
-        val detailSnackbar =
-            if (!queueOpen && queueSnackbar.currentSnackbarData != null) queueSnackbar
-            else stopSnackbar
-        val stopFeedbackVisible = detailSnackbar.currentSnackbarData != null
+        val controlSnackbar = remember { SnackbarHostState() }
+        // The notice can move with the queue panel. Its lifetime belongs to the conversation.
+        WorkspaceFeedbackTimeout(controlSnackbar)
+        val controlFeedback =
+            controlSnackbar.currentSnackbarData?.visuals as? ControlFailureSnackbar
+        val showQueueFeedback =
+            queueOpen && !missing && controlFeedback?.kind == RunControlKind.Revoke
+        val feedbackInConversation = controlFeedback != null && !showQueueFeedback
         val stopFeedbackBounds =
-            if (stopPlacement != null && stopFeedbackVisible) {
+            if (stopPlacement != null && feedbackInConversation) {
                 DisposableEffect(stopPlacement) {
                     onDispose { stopPlacement.reportFeedbackTop(null) }
                 }
@@ -311,10 +322,7 @@ internal fun ConversationRoute(
             LaunchedEffect(failure) {
                 if (controls.model.consumeActionFailure(failure) && message != null) {
                     scope.launch {
-                        val snackbar =
-                            if (failure.kind == RunControlKind.Revoke) queueSnackbar
-                            else stopSnackbar
-                        snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
+                        controlSnackbar.showSnackbar(ControlFailureSnackbar(message, failure.kind))
                     }
                 }
             }
@@ -659,14 +667,22 @@ internal fun ConversationRoute(
                                             else Alignment.BottomCenter,
                                         )
                                         .padding(
-                                            bottom = if (stopFeedbackVisible) 8.dp else 4.dp,
+                                            bottom = if (feedbackInConversation) 8.dp else 4.dp,
                                             end = if (window.height < 480) 12.dp else 0.dp,
                                         ),
                                 onClick = { scope.launch { position.scrollToItem(0) } },
                             )
                         }
                     }
-                    WorkspaceFeedbackHost(detailSnackbar, stopFeedbackBounds.padding(bottom = 8.dp))
+                    if (!showQueueFeedback) {
+                        val composerTopInset =
+                            if (composer != null && !missing) ChatComposerTopInset else 0.dp
+                        WorkspaceFeedbackHost(
+                            controlSnackbar,
+                            stopFeedbackBounds.padding(bottom = 8.dp - composerTopInset),
+                            manageTimeout = false,
+                        )
+                    }
                 }
                 if (positioned && findTarget != null && foundIndex < 0) {
                     Text(
@@ -685,14 +701,14 @@ internal fun ConversationRoute(
                     }
                 }
             }
-            if (!missing && controls?.storageFailed == true) {
-                Column(contentWidth) {
-                    ConversationControlStorageFailure(controls.model::retryLocal)
-                }
-            }
         }
         if (queueOpen && !missing)
-            ConversationQueueModal(queue, controls, queueSnackbar, dismissQueue)
+            ConversationQueueModal(
+                queue,
+                controls,
+                controlSnackbar.takeIf { showQueueFeedback },
+                dismissQueue,
+            )
     }
 }
 
@@ -774,6 +790,7 @@ private fun ConversationJump(labelId: Int, modifier: Modifier, onClick: () -> Un
         modifier =
             modifier
                 .heightIn(min = 48.dp)
+                .updateFocusOutline(CircleShape, colors.onSurface)
                 .semantics {
                     contentDescription = label
                     if (labelId == R.string.conversation_new_reply)

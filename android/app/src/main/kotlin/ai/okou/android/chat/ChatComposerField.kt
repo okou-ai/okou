@@ -1,6 +1,5 @@
 package ai.okou.android.chat
 
-import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
 import ai.okou.android.connectors.ChatConnectorOptions
 import ai.okou.android.connectors.ConnectorAccountTarget
@@ -136,7 +135,7 @@ internal fun ChatComposerField(
             .imePadding()
             .padding(
                 start = horizontalInset,
-                top = 4.dp,
+                top = ChatComposerTopInset,
                 end = horizontalInset,
                 bottom = bottomInset,
             )
@@ -153,8 +152,7 @@ internal fun ChatComposerField(
                     .background(colors.surface, cardShape)
                     .border(
                         width = if (inputFocused) 2.dp else cardOutline,
-                        color =
-                            if (inputFocused) LocalActivityStatusColor.current else colors.outline,
+                        color = if (inputFocused) colors.onSurface else colors.outline,
                         shape = cardShape,
                     )
                     .padding(
@@ -255,6 +253,8 @@ internal fun ChatComposerField(
         }
     }
 }
+
+internal val ChatComposerTopInset = 4.dp
 
 internal fun composerHorizontalInset(window: IntSize) =
     when {

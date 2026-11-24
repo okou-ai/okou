@@ -42,6 +42,7 @@ class PreviewArtifactTests(unittest.TestCase):
                 "MinimumOSVersion": "26.0",
                 "APIBaseURL": "https://staging-api.vm6.ai",
                 "WebBaseURL": "https://staging-app-okou-app-preview.vm0.workers.dev",
+                "ConnectorCallbackHost": "staging-app.omby.ai",
                 "ClerkPublishableKey": self.key,
                 "SentryDSN": "",
                 "ClerkKeychainAccessGroup": "",
@@ -91,6 +92,13 @@ class PreviewArtifactTests(unittest.TestCase):
         path = self.app / "Info.plist"
         info = plistlib.loads(path.read_bytes())
         info["APIBaseURL"] = "https://api.okou.ai"
+        path.write_bytes(plistlib.dumps(info))
+        self.invoke(success=False)
+
+    def test_production_callback_cannot_be_labelled_as_staging(self):
+        path = self.app / "Info.plist"
+        info = plistlib.loads(path.read_bytes())
+        info["ConnectorCallbackHost"] = "app.okou.ai"
         path.write_bytes(plistlib.dumps(info))
         self.invoke(success=False)
 

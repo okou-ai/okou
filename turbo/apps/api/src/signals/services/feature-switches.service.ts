@@ -75,13 +75,16 @@ export const isAntigravityEnabledForMember$ = command(
   async ({ set }, orgId: string, userId: string, signal: AbortSignal) => {
     return (
       isStaffOrg(orgId) &&
-      isFeatureEnabled(
-        FeatureSwitchKey.GeminiAntigravity,
+      isAntigravityEnabled(
         await set(loadUserFeatureSwitchContext$, orgId, userId, signal),
       )
     );
   },
 );
+
+export function isAntigravityEnabled(context: FeatureSwitchContext): boolean {
+  return isFeatureEnabled(FeatureSwitchKey.GeminiAntigravity, context);
+}
 
 export function userFeatureSwitchContext(
   orgId: string,

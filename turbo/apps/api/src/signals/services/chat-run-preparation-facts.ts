@@ -11,19 +11,16 @@ export const pickedThreadColumns = Object.freeze({
   // Drizzle uses the first column to detect an absent left-joined Chat.
   cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
   projectId: chatThreads.projectId,
-  computerUseHostId: chatThreads.computerUseHostId,
   framework: chatThreads.framework,
   frameworkSessionId: chatThreads.frameworkSessionId,
   frameworkSessionRunId: chatThreads.frameworkSessionRunId,
-  title: chatThreads.title,
-  renamedAt: chatThreads.renamedAt,
 });
 
 export type PickedChatThread = Readonly<
   Pick<
     typeof chatThreads.$inferSelect,
     keyof typeof pickedThreadColumns | "id" | "userId"
-  >
+  > & { titled: boolean }
 >;
 
 /** Preparation facts only: neither a connector grant nor commit-time authority. */

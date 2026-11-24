@@ -32,7 +32,6 @@ import {
   chatArtifactCatalogChangedEvent,
   type ArtifactCatalogDirection,
   type ArtifactCatalogKind,
-  type ArtifactCatalogSort,
   type ArtifactDetail,
   type ArtifactSummary,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
@@ -117,7 +116,7 @@ function encodeArtifactCursor(
 
 const artifactLibraryCursorSchema = object({
   query: string(),
-  value: string(),
+  value: iso.datetime({ precision: 6 }),
   id: uuid(),
 });
 type ArtifactLibraryCursor = zInfer<typeof artifactLibraryCursorSchema>;
@@ -1252,7 +1251,6 @@ interface ListArtifactCatalogArgs {
   readonly kind?: ArtifactCatalogKind;
   readonly chatThreadId?: string;
   readonly keyword?: string;
-  readonly sort?: ArtifactCatalogSort;
   readonly direction?: ArtifactCatalogDirection;
 }
 
@@ -1360,7 +1358,6 @@ function artifactCatalogOwnerFilter(userId: string): SQL {
 
 function artifactCatalogQueryHash(
   args: ListArtifactCatalogArgs,
-  sort: ArtifactCatalogSort,
   direction: ArtifactCatalogDirection,
 ): string {
   return createHash("sha256")
@@ -1371,7 +1368,6 @@ function artifactCatalogQueryHash(
         args.kind ?? null,
         args.chatThreadId ?? null,
         args.keyword ?? null,
-        sort,
         direction,
       ]),
     )
@@ -1381,7 +1377,6 @@ function artifactCatalogQueryHash(
 function isArtifactCatalogCursorValid(
   cursor: ArtifactCursor | ArtifactLibraryCursor | null,
   libraryQuery: boolean,
-  sort: ArtifactCatalogSort,
   queryHash: string,
 ): boolean {
   if (!cursor) {
@@ -1390,22 +1385,11 @@ function isArtifactCatalogCursorValid(
   if ("createdAt" in cursor) {
     return !libraryQuery;
   }
-  if (!libraryQuery || cursor.query !== queryHash) {
-    return false;
-  }
-  return (
-    sort === "title" ||
-    iso.datetime({ precision: 6 }).safeParse(cursor.value).success
-  );
-}
-
-function artifactCatalogSortColumn(sort: ArtifactCatalogSort) {
-  return sort === "title" ? artifacts.title : artifacts.createdAt;
+  return libraryQuery && cursor.query === queryHash;
 }
 
 function artifactCatalogCursorFilter(
   cursor: ArtifactCursor | ArtifactLibraryCursor | null,
-  sort: ArtifactCatalogSort,
   direction: ArtifactCatalogDirection,
 ): SQL | undefined {
   if (!cursor) {
@@ -1417,17 +1401,14 @@ function artifactCatalogCursorFilter(
       sql`(${cursor.createdAt}::timestamptz AT TIME ZONE 'UTC', ${cursor.id}::uuid)`,
     );
   }
-  const sortColumn = artifactCatalogSortColumn(sort);
-  const value =
-    sort === "title" ? sql`${cursor.value}` : sql`${cursor.value}::timestamp`;
   return direction === "asc"
     ? gt(
-        sql`(${sortColumn}, ${artifacts.id})`,
-        sql`(${value}, ${cursor.id}::uuid)`,
+        sql`(${artifacts.createdAt}, ${artifacts.id})`,
+        sql`(${cursor.value}::timestamp, ${cursor.id}::uuid)`,
       )
     : lt(
-        sql`(${sortColumn}, ${artifacts.id})`,
-        sql`(${value}, ${cursor.id}::uuid)`,
+        sql`(${artifacts.createdAt}, ${artifacts.id})`,
+        sql`(${cursor.value}::timestamp, ${cursor.id}::uuid)`,
       );
 }
 
@@ -1462,13 +1443,9 @@ function artifactCatalogKeywordFilter(
   );
 }
 
-function artifactCatalogOrderBy(
-  sort: ArtifactCatalogSort,
-  direction: ArtifactCatalogDirection,
-): SQL[] {
-  const column = artifactCatalogSortColumn(sort);
+function artifactCatalogOrderBy(direction: ArtifactCatalogDirection): SQL[] {
   return [
-    direction === "asc" ? asc(column) : desc(column),
+    direction === "asc" ? asc(artifacts.createdAt) : desc(artifacts.createdAt),
     direction === "asc" ? asc(artifacts.id) : desc(artifacts.id),
   ];
 }
@@ -1481,20 +1458,17 @@ export const listArtifactCatalog$ = command(
   ): Promise<ListArtifactCatalogResult | null> => {
     const db = get(db$);
     const limit = args.limit ?? ARTIFACT_CATALOG_DEFAULT_LIMIT;
-    const libraryQuery =
-      args.sort !== undefined || args.direction !== undefined;
-    const sort = args.sort ?? "createdAt";
+    const libraryQuery = args.direction !== undefined;
     const direction = args.direction ?? "desc";
-    const queryHash = artifactCatalogQueryHash(args, sort, direction);
+    const queryHash = artifactCatalogQueryHash(args, direction);
     const cursor = args.cursor ? decodeArtifactCursor(args.cursor) : null;
     if (
       args.cursor &&
-      !isArtifactCatalogCursorValid(cursor, libraryQuery, sort, queryHash)
+      !isArtifactCatalogCursorValid(cursor, libraryQuery, queryHash)
     ) {
       return null;
     }
-    const sortColumn = artifactCatalogSortColumn(sort);
-    const cursorFilter = artifactCatalogCursorFilter(cursor, sort, direction);
+    const cursorFilter = artifactCatalogCursorFilter(cursor, direction);
     const keywordFilter = artifactCatalogKeywordFilter(
       args.keyword,
       libraryQuery,
@@ -1515,12 +1489,10 @@ export const listArtifactCatalog$ = command(
         updatedAt: artifacts.updatedAt,
         // Preserve PostgreSQL microseconds in new keyset cursors; Date truncates
         // them and can skip records sharing a millisecond at a page boundary.
-        sortValue:
-          !libraryQuery || sort === "title"
-            ? artifacts.title
-            : sql`to_char(${sortColumn}, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.mapWith(
-                pgTextDecoder,
-              ),
+        cursorCreatedAt:
+          sql`to_char(${artifacts.createdAt}, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.mapWith(
+            pgTextDecoder,
+          ),
       })
       .from(artifacts)
       .where(
@@ -1536,7 +1508,7 @@ export const listArtifactCatalog$ = command(
           cursorFilter,
         ),
       )
-      .orderBy(...artifactCatalogOrderBy(sort, direction))
+      .orderBy(...artifactCatalogOrderBy(direction))
       .limit(limit + 1);
     signal.throwIfAborted();
 
@@ -1551,7 +1523,7 @@ export const listArtifactCatalog$ = command(
               libraryQuery
                 ? {
                     query: queryHash,
-                    value: lastRow.sortValue,
+                    value: lastRow.cursorCreatedAt,
                     id: lastRow.id,
                   }
                 : {

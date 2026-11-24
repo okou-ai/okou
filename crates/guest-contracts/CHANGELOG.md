@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.33.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.33...guest-contracts-v0.33.0) (2026-11-24)
+
+
+### Features
+
+* **runner:** execute gemini 4 turns with antigravity cli ([#50389](https://github.com/okou-ai/okou/issues/50389)) ([17f9b83](https://github.com/okou-ai/okou/commit/17f9b831b49c876e71002ac641b338badf0bff40))
+
 ## [0.32.33](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.32...guest-contracts-v0.32.33) (2026-11-23)
 
 

@@ -11,6 +11,9 @@ struct ForYouHeader: View {
   let position: CGFloat
   let isBusy: Bool
   let canPage: Bool
+  /// Whether the count and the segments show. While a direction is written they step aside,
+  /// keeping their room, so only the card and the input hold the eye.
+  var showsPlace = true
   let back: () -> Void
   let show: (Int) -> Void
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -44,10 +47,15 @@ struct ForYouHeader: View {
             .padding(.horizontal, OkouSpace.md)
             .frame(minHeight: OkouSpace.xxxl)
             .glassEffect(.regular, in: Capsule())
+            .opacity(showsPlace ? 1 : 0)
+            .accessibilityHidden(!showsPlace)
         }
       }
-      if count > 1 { progress }
+      if count > 1 {
+        progress.opacity(showsPlace ? 1 : 0).accessibilityHidden(!showsPlace)
+      }
     }
+    .animation(reduceMotion ? nil : OkouMotion.transition, value: showsPlace)
     .foregroundStyle(OkouColor.foreground)
     .padding(.horizontal, OkouSpace.lg).padding(.top, OkouSpace.sm)
   }
@@ -142,7 +150,8 @@ struct ForYouCaughtUp: View {
 struct ForYouLoadingCard: View {
   private static let chip: CGFloat = 140
   private static let titleEnd: CGFloat = 180
-  private static let option: CGFloat = 76
+  /// A direction's height: a Body label over two Subheadline lines.
+  private static let option: CGFloat = 100
 
   var body: some View {
     VStack(alignment: .leading, spacing: OkouSpace.xl) {
@@ -150,9 +159,9 @@ struct ForYouLoadingCard: View {
         OkouSkeletonBlock(width: Self.chip, height: OkouControl.inlineActionHeight)
         OkouSkeletonBlock(height: OkouSpace.xxl)
         OkouSkeletonBlock(width: Self.titleEnd, height: OkouSpace.xxl)
-        OkouSkeletonBlock(height: OkouSpace.lg).padding(.top, OkouSpace.xs)
+        OkouSkeletonBlock(height: OkouSpace.xl).padding(.top, OkouSpace.xs)
       }
-      VStack(spacing: OkouSpace.sm) {
+      VStack(spacing: OkouSpace.ten) {
         ForEach(0..<2, id: \.self) { _ in
           OkouSkeletonBlock(height: Self.option, radius: OkouRadius.control)
         }

@@ -51,23 +51,31 @@ owner over a new repository, service, Store, or universal base class.
 
 ## Choose the State Owner
 
+CCState is the primary state system, as in the web Platform. Business and domain
+state lives in graphs whose values are kept in the authenticated workspace's
+Store. SwiftUI reads them through CCStateSwiftUI, actions write them through
+commands, and follow-up work continues in the command that made the change.
+Observation is reserved for native interaction adapters that never read a graph.
+Observable owners that predate this rule are migrated by their owning issue. Do
+not add another one or extend one with new business state.
+
 Choose the lifetime before choosing a property wrapper.
 
-| State or work                                                                      | Preferred representation                                                                                                      |
-| ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Independently editable domain input or invalidation revision                       | Private CCState `State` within the owning graph                                                                               |
-| Value fully determined by other graph values                                       | `Computed`; do not maintain it with synchronization callbacks                                                                 |
-| Repeatable, shared asynchronous read                                               | `Computed<Task<Value, Error>>`, observed through CCStateSwiftUI where applicable                                              |
-| Semantic graph transition                                                          | A stable `Command`; compose graph writes inside that action                                                                   |
-| Confirmed business snapshot, delivery, authorization, or persistence state machine | The existing feature owner, using explicit domain phases and reconciliation; CCState may represent its inputs and derivations |
-| View-local sheet selection, focus, gesture, scroll, or native editor machinery     | Native SwiftUI/UIKit state or a narrowly owned observable adapter                                                             |
-| HTTP, SQLite, decoding, or serialized synchronization                              | Existing ChatData services and actors; a graph coordinates them rather than replacing them                                    |
+| State or work                                                                      | Preferred representation                                                                                                             |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Independently editable domain input or invalidation revision                       | Private CCState `State` in the owning graph                                                                                          |
+| Value fully determined by other graph values                                       | `Computed`; do not maintain it with synchronization callbacks                                                                        |
+| Repeatable, shared asynchronous read                                               | `Computed<Task<Value, Error>>`, observed through CCStateSwiftUI                                                                      |
+| Semantic graph transition                                                          | A stable `Command`; compose graph writes inside that action                                                                          |
+| Confirmed business snapshot, delivery, authorization, or persistence state machine | Graph `State` for its phases and confirmed values, changed by the owner's commands; the owner keeps native Tasks and storage handles |
+| View-local sheet selection, focus, gesture, scroll, or native editor machinery     | Native SwiftUI/UIKit state, or a narrowly owned `@Observable` adapter that does not read a graph                                     |
+| HTTP, SQLite, decoding, or serialized synchronization                              | Existing ChatData services and actors; a graph coordinates them rather than replacing them                                           |
 
-`@Observable` is not itself a defect, and CCState is not a replacement for every
-actor or native object. Conversely, wrapping an existing `data/loading/error`
-tuple in an observable object does not make it the authoritative request
-lifecycle. Follow the [resource rules](ios-ccstate.md#resource-reads) for new or
-changed resource reads.
+CCState does not replace actors, Data services, or native controls. Wrapping an
+existing `data/loading/error` tuple in a graph does not make it the
+authoritative request lifecycle either. Follow the
+[resource rules](ios-ccstate.md#resource-reads) for new or changed resource
+reads.
 
 Distinguish these scopes:
 

@@ -8,6 +8,8 @@ import java.net.ConnectException
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.hours
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
@@ -66,6 +68,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
     @Volatile var failAccountReads = false
     @Volatile var denyAccountReads = false
     @Volatile var denyPermissionReads = false
+    @Volatile var memberAccess = false
     @Volatile var devicePollStatus = "pending"
     @Volatile var devicePollInterval = 5
     @Volatile var deviceExpiresIn = 900
@@ -86,6 +89,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
     val chatOverrideRequests = CopyOnWriteArrayList<FixtureChatOverride>()
     val chatOverrideReads = CopyOnWriteArrayList<Pair<String, String>>()
     private val chatOverrides = mutableMapOf<Pair<String, String>, Boolean>()
+    private val memberPolicies = mutableMapOf<String, Pair<Boolean, String?>>()
     @Volatile var failOauthCompletion = false
     @Volatile var oauthCompletion: String? = null
     @Volatile var rejectConnection = false
@@ -280,12 +284,26 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
         }
     }
 
+    private fun policy(id: String): JsonObject {
+        val (allowed, expiresAt) = memberPolicies[id] ?: (accounts.getValue(id).enabled to null)
+        return buildJsonObject {
+            put("connectionId", id)
+            put("allowed", allowed)
+            put("enabled", allowed)
+            put("expiresAt", expiresAt)
+        }
+    }
+
     private fun respond(request: RecordedRequest): MockResponse {
         val url = checkNotNull(request.requestUrl)
         val path = url.encodedPath
         val parts = url.pathSegments
         val querySlug = url.queryParameter("connectorSlug")
         return when {
+            path == "/api/feature-switches" ->
+                jsonResponse(
+                    """{"effectiveSwitches":{"memberConnectorAccountAccess":$memberAccess}}""",
+                )
             path == "/api/chat-connector-overview" ->
                 json(
                     JsonArray(
@@ -426,6 +444,38 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                             .map { (id, account) -> account.defaults(id) },
                     ),
                 )
+            path == "/api/connector-account-access/policies" ->
+                if (!memberAccess || url.queryParameter("kind") != "builtin") rejected(403)
+                else
+                    json(
+                        JsonArray(
+                            accounts.filterValues { it.slug == querySlug }.keys.map(::policy),
+                        ),
+                    )
+            parts.getOrNull(1) == "connector-account-access" && parts.getOrNull(3) == "policy" -> {
+                val id = parts[2]
+                val account = accounts[id] ?: return rejected(404)
+                val requestBody = body(request)
+                if (
+                    !memberAccess ||
+                        request.method != "PUT" ||
+                        requestBody["target"] != target(account.slug)
+                )
+                    return rejected(403)
+                val choice = requestBody["policy"]?.jsonPrimitive?.contentOrNull
+                val hours =
+                    when (choice) {
+                        "deny",
+                        "allow-always" -> null
+                        "allow-1h" -> 1
+                        "allow-24h" -> 24
+                        "allow-7d" -> 168
+                        else -> return rejected(400)
+                    }
+                val expiresAt = hours?.let { (Clock.System.now() + it.hours).toString() }
+                memberPolicies[id] = (choice != "deny") to expiresAt
+                json(policy(id))
+            }
             parts.getOrNull(1) == "connector-account-access" &&
                 parts.getOrNull(3) == "default-enabled" -> {
                 val id = parts[2]

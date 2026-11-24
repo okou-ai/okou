@@ -75,11 +75,11 @@ struct NewChatSubmissionView: View {
     .defaultScrollAnchor(.top, for: .alignment)
     .onDisappear { submission.transition.cancel() }
     .safeAreaInset(edge: .bottom, spacing: 0) {
-      @Bindable var composer = submission.composer
+      let composer = submission.composer
       ChatComposerView(
-        draft: $composer.text, isBusy: true, showsProgress: true, canStop: false,
+        isBusy: true, showsProgress: true, canStop: false,
         needsUpgrade: false, error: nil, attachmentURL: webURL,
-        attachments: composer.attachments, draftState: composer,
+        draftState: composer,
         submit: {}, refresh: nil
       )
       .disabled(true)

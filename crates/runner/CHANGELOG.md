@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.250.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.250.1...runner-rs-v0.250.2) (2026-11-24)
+
+
+### Refactoring
+
+* **runner:** share native terminal witness clock ordering ([#50509](https://github.com/okou-ai/okou/issues/50509)) ([6c0c294](https://github.com/okou-ai/okou/commit/6c0c29408ce2c6a00f85db51c9bf304dcd2536ad))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.250.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.250.0...runner-rs-v0.250.1) (2026-11-24)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.250.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.123...runner-rs-v0.250.0) (2026-11-24)
+
+
+### Features
+
+* **runner:** execute gemini 4 turns with antigravity cli ([#50389](https://github.com/okou-ai/okou/issues/50389)) ([17f9b83](https://github.com/okou-ai/okou/commit/17f9b831b49c876e71002ac641b338badf0bff40))
+* **runner:** log managed openrouter routing metadata ([#50392](https://github.com/okou-ai/okou/issues/50392)) ([637a49c](https://github.com/okou-ai/okou/commit/637a49cc6646031aa023c8a631863e88be17ee5d))
+
+
+### Refactoring
+
+* **runner:** share held cleanup coverage receipt validation ([#50421](https://github.com/okou-ai/okou/issues/50421)) ([60f2f23](https://github.com/okou-ai/okou/commit/60f2f23b40cecd7a01b041b8052692faccb0912d))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.123](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.122...runner-rs-v0.249.123) (2026-11-24)
 
 ### Release Dependencies

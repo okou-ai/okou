@@ -58,6 +58,7 @@ def package(archive, output, version):
         infos.append(info)
     if (
         infos[0].get("WebBaseURL") != "https://staging-app-okou-app-preview.vm0.workers.dev"
+        or infos[0].get("ConnectorCallbackHost") != "staging-app.omby.ai"
         or infos[0]["CFBundleVersion"] != infos[1]["CFBundleVersion"]
         or infos[0]["ClerkPublishableKey"] != infos[1]["ClerkPublishableKey"]
     ):

@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.18.34](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.33...runner-lifecycle-v0.18.34) (2026-11-24)
+
+## [0.18.33](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.32...runner-lifecycle-v0.18.33) (2026-11-24)
+
+
+### Bug Fixes
+
+* **runner:** reuse finalizing home for new native sessions ([#50441](https://github.com/okou-ai/okou/issues/50441)) ([7b1d40e](https://github.com/okou-ai/okou/commit/7b1d40ea54326a99bf2140381261f8e8cb301939))
+
 ## [0.18.32](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.31...runner-lifecycle-v0.18.32) (2026-11-24)
 
 ## [0.18.31](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.30...runner-lifecycle-v0.18.31) (2026-11-23)

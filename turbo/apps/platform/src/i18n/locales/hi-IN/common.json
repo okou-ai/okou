@@ -253,6 +253,11 @@
         "modelCatalogCacheValidationLatency": "मॉडल कैटलॉग कैश सत्यापन विलंबता",
         "modelCatalogPrefetchRole": "मॉडल कैटलॉग प्रीफ़ेच भूमिका",
         "modelCatalogUpstreamEncoding": "मॉडल कैटलॉग अपस्ट्रीम एन्कोडिंग",
+        "openrouterAttempts": "OpenRouter प्रदाता प्रयास",
+        "openrouterAttemptsIncomplete": "OpenRouter अधूरे प्रयास",
+        "openrouterGenerationId": "OpenRouter जनरेशन आईडी",
+        "openrouterModel": "OpenRouter मॉडल",
+        "openrouterProvider": "OpenRouter प्रदाता",
         "params": "पैरामीटर",
         "permission": "अनुमति",
         "permissionError": "अनुमति त्रुटि",
@@ -582,7 +587,6 @@
       "name": "नाम",
       "retry": "फिर से कोशिश करें",
       "search": "आर्टिफ़ैक्ट खोजें",
-      "sort": "आर्टिफ़ैक्ट क्रमबद्ध करें",
       "sortAscending": "आरोही क्रम में लगाएँ",
       "sortDescending": "अवरोही क्रम में लगाएँ",
       "type": "प्रकार"
@@ -1168,6 +1172,9 @@
       "teamWarning": "वर्तमान बिलिंग अवधि समाप्त होने तक आपकी टीम की पहुंच सक्रिय रहती है। उसके बाद, यह वर्कस्पेस {{plan}} पर चला जाता है।",
       "title": "डाउनग्रेड योजना"
     },
+    "feedback": {
+      "shareFeedback": "प्रतिक्रिया साझा करें"
+    },
     "invoices": {
       "amount": "मात्रा",
       "date": "तारीख",
@@ -1311,40 +1318,6 @@
     "sidebar": {
       "description": "अधिक क्रेडिट और समवर्ती रन",
       "getPlan": "{{plan}} प्राप्त करें"
-    },
-    "survey": {
-      "checkoutAbandoned": {
-        "answers": {
-          "just_checking_price": "बस कीमत देख रहा था",
-          "needs_approval": "किसी और की मंज़ूरी चाहिए",
-          "not_ready_yet": "अभी तय करने के लिए तैयार नहीं हूँ",
-          "not_seeing_value": "अभी तक इसकी उपयोगिता नहीं दिखी",
-          "other": "कुछ और",
-          "payment_issue": "भुगतान में समस्या आई",
-          "price_higher_than_expected": "कीमत उम्मीद से ज़्यादा थी",
-          "results_not_good_enough": "नतीजों से संतुष्ट नहीं था"
-        },
-        "description": "बस एक सवाल। आपका जवाब हमें बेहतर बनने में मदद करता है।",
-        "question": "आपको खरीदारी पूरी करने से किस बात ने रोका?"
-      },
-      "creditsExhausted": {
-        "answers": {
-          "no_need_now": "अभी और की ज़रूरत नहीं है",
-          "not_sure_worth_it": "अभी पक्का नहीं कि यह इसके लायक है",
-          "other": "कुछ और",
-          "still_trying": "पहले इसे और आज़माना चाहता हूँ",
-          "too_expensive": "यह बहुत महंगा है"
-        },
-        "question": "आज अपग्रेड करने से आपको क्या रोक रहा है?",
-        "reward": "इस कार्यक्षेत्र में पहले पात्र उत्तर पर {{credits}} बोनस क्रेडिट मिलते हैं, जो 30 दिनों तक मान्य हैं।",
-        "thanksWithCredits": "धन्यवाद! {{credits}} क्रेडिट जोड़ दिए गए हैं, आप जारी रख सकते हैं।"
-      },
-      "error": "आपका जवाब नहीं भेजा जा सका। फिर से कोशिश करें।",
-      "notNow": "अभी नहीं",
-      "otherLabel": "आपका जवाब",
-      "otherPlaceholder": "और बताएँ (वैकल्पिक)",
-      "submit": "भेजें",
-      "thanks": "बताने के लिए धन्यवाद।"
     },
     "toasts": {
       "autoRechargeUpdated": "स्वतः-रिचार्ज अद्यतन किया गया",
@@ -2598,11 +2571,6 @@
       "unsupported": "मैन्युअल रीसेट समर्थित नहीं है; उपयोग अपने आप पुनः उपलब्ध होगा।"
     },
     "taskChips": {
-      "presentationFormat": "प्रस्तुति का प्रारूप",
-      "presentationFormats": {
-        "html": "HTML",
-        "pptx": "PPTX"
-      },
       "presentationTemplates": "प्रस्तुति टेम्पलेट",
       "removeTask": "{{task}} हटाएँ",
       "shelf": {
@@ -2953,6 +2921,8 @@
     "accountsInChat": "चुनें कि इस चैट में कौन-से खाते चालू हैं।",
     "enableByDefault": "{{account}} को डिफ़ॉल्ट रूप से चालू करें",
     "manageAccounts": "खाते प्रबंधित करें",
+    "memberPolicyLoadFailed": "खातों की पहुँच लोड नहीं हो सकी।",
+    "memberSettingsDescription": "चुनें कि Okou आपकी चैट में किन {{connector}} खातों का उपयोग कर सकता है।",
     "permissions": "अनुमतियाँ",
     "permissionsDescription": "ये नियम आपकी सभी चैट और खातों में इस कनेक्टर पर लागू होते हैं।",
     "settingsDescription": "चुनें कि Okou आपकी चैट में कौन-से {{connector}} खाते इस्तेमाल कर सकता है। आप हर चैट में ऐक्सेस बदल सकते हैं।",

@@ -1,6 +1,6 @@
 //! Runner job acceptance for complete HTTP input and local submissions.
 use crate::blank_pool::BlankPoolDiagnostics;
-use crate::finalizing_handoff::FinalizingHandoffContext;
+use crate::finalizing_handoff::{FINALIZING_HANDOFF_ACCEPTANCE_GRACE, FinalizingHandoffContext};
 use crate::idle_lifecycle::{
     IdleDestroyTracker, IdlePressureOutcome, IdlePressureRequest, IdlePressureSelection,
     ReservedIdleActivation, SharedIdlePool, rollback_reserved_idle_for_spawn,
@@ -109,19 +109,45 @@ pub(crate) async fn accept_supplied(
     if ctx.cancel_tokens.handle(run_id).await.is_some() {
         return SuppliedAcceptance::Unknown;
     }
-    // Public completion can precede local sandbox/home publication. Identify
-    // the actual producer from authoritative complete input, never acquisition advice.
-    let (resource, blank_pool_selection) = if let Some((source_run_id, reuse_key, predecessor)) =
+    // Native continuation can identify an exact source. A Run starting a new
+    // session can independently wait for a matching local finalizer to park.
+    let finalizing =
         supplied_finalizing_predecessor(&context, request.profile_name, ctx.active_runs)
-    {
-        let handoff = FinalizingHandoffContext {
-            predecessor,
-            deadline: deadline.into_std(),
-            reuse_key: reuse_key.to_owned(),
-            source_run_id,
-            // Revalidated against the bound execution context before waiting.
-            native_generation_run_id: None,
-        };
+            .map(
+                |(source_run_id, reuse_key, predecessor)| FinalizingHandoffContext {
+                    predecessor,
+                    deadline: deadline.into_std(),
+                    reuse_key: reuse_key.to_owned(),
+                    source_run_id,
+                    // Revalidated against the bound execution context before waiting.
+                    native_generation_run_id: None,
+                },
+            )
+            .or_else(|| {
+                if context
+                    .native_continuation
+                    .as_ref()
+                    .is_some_and(|native| native.session_id.is_some())
+                {
+                    return None;
+                }
+                let reuse_key = context.reuse_key().filter(|key| !key.is_empty())?;
+                let (source_run_id, predecessor) = ctx.active_runs.unique_finalizing_reuse_source(
+                    run_id,
+                    reuse_key,
+                    request.profile_name,
+                )?;
+                Some(FinalizingHandoffContext {
+                    predecessor,
+                    deadline: deadline
+                        .into_std()
+                        .min(Instant::now() + FINALIZING_HANDOFF_ACCEPTANCE_GRACE),
+                    reuse_key: reuse_key.to_owned(),
+                    source_run_id,
+                    native_generation_run_id: None,
+                })
+            });
+    let (resource, blank_pool_selection) = if let Some(handoff) = finalizing {
         (AcceptedResource::Finalizing(handoff), None)
     } else {
         let Some(resource) = acquire_local_acceptance_resource(

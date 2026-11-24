@@ -644,7 +644,78 @@ class MemberPreferencesModelTest {
     }
 
     @Test
-    fun sharedAppearanceReadsCanonicalModeAndRetriesASave() =
+    fun exhaustedLocaleSaveUsesTwoThreeSecondRetriesAndRestoresConfirmedLocale() =
+        check { model, api, _ ->
+            val confirmed = model.uiState.value.locale
+            val events = mutableListOf<Pair<String, Long>>()
+            api.load = {
+                events += "read" to currentTime
+                api.stored
+            }
+            api.write = {
+                events += "write" to currentTime
+                throw IOException("request outcome unknown")
+            }
+            model.selectLocale(UserPreferencesLocale.JA_JP)
+            runCurrent()
+            advanceTimeBy(5_999)
+            runCurrent()
+            assertEquals(UserPreferencesLocale.JA_JP, model.uiState.value.locale)
+            assertEquals(listOf("write" to 0L, "read" to 3_000L, "write" to 3_000L), events)
+
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(
+                listOf(
+                    "write" to 0L,
+                    "read" to 3_000L,
+                    "write" to 3_000L,
+                    "read" to 6_000L,
+                    "write" to 6_000L,
+                    "read" to 6_000L,
+                ),
+                events,
+            )
+            assertEquals(confirmed, model.uiState.value.locale)
+            assertNull(model.uiState.value.pending)
+            val notice = model.notices.value as PreferenceSaveNotice.Rejected
+            assertTrue(notice.rolledBack)
+            assertFalse(notice.keptAppearance)
+            advanceTimeBy(60_000)
+            runCurrent()
+            assertEquals(3, api.requests.size)
+        }
+
+    @Test
+    fun unconfirmedSaveWaitsForAuthoritativeReadWithoutReplayingTheWrite() =
+        check { model, api, _ ->
+            val save = api.write
+            api.write = { request ->
+                save(request)
+                throw IOException("response lost")
+            }
+            api.load = { throw IOException("cannot confirm") }
+            model.setCloudBrowser(true)
+            runCurrent()
+            advanceTimeBy(6_000)
+            runCurrent()
+            assertEquals(PreferenceStatus.SaveUnconfirmed, model.uiState.value.status)
+            assertTrue(model.uiState.value.cloudBrowser)
+            assertNull(model.pendingForWorkspaceRestore())
+            assertTrue(model.notices.value is PreferenceSaveNotice.Unconfirmed)
+
+            api.load = { api.stored }
+            model.refreshFromForeground()
+            runCurrent()
+            assertEquals(PreferenceStatus.Ready, model.uiState.value.status)
+            assertTrue(model.uiState.value.confirmed.cloudBrowserEnabledByDefault)
+            assertNull(model.uiState.value.pending)
+            assertNull(model.notices.value)
+            assertEquals(1, api.requests.size)
+        }
+
+    @Test
+    fun sharedAppearanceReadsCanonicalModeAndKeepsLocalModeOnRejection() =
         check(Service().apply { stored = stored.copy(theme = null) }) { model, api, _ ->
             assertEquals(UserPreferencesTheme.SYSTEM, model.uiState.value.theme)
             assertTrue(api.requests.isEmpty())
@@ -655,22 +726,29 @@ class MemberPreferencesModelTest {
             assertEquals(UserPreferencesTheme.DARK, model.uiState.value.confirmed.theme)
 
             val save = api.write
-            api.write = { throw IOException("offline") }
+            api.write = { throw ApiFailure.Http(400, "BAD_REQUEST", null, null) }
             model.selectTheme(UserPreferencesTheme.LIGHT)
             runCurrent()
-            assertEquals(PreferenceStatus.SaveFailed, model.uiState.value.status)
-            assertEquals(UserPreferencesTheme.LIGHT, model.uiState.value.theme)
+            assertEquals(PreferenceStatus.Ready, model.uiState.value.status)
+            assertEquals(UserPreferencesTheme.LIGHT, model.uiState.value.appearance.theme)
             assertEquals(UserPreferencesTheme.DARK, model.uiState.value.confirmed.theme)
+            assertNull(model.uiState.value.pending)
+            val notice = model.notices.value as PreferenceSaveNotice.Rejected
+            assertFalse(notice.rolledBack)
+            assertTrue(notice.keptAppearance)
             assertEquals(
                 UpdatePreferencesRequest(theme = UpdatePreferencesRequestTheme.LIGHT),
                 api.requests.single(),
             )
 
             api.write = save
-            model.retry()
+            model.selectLocale(UserPreferencesLocale.JA_JP)
             runCurrent()
-            assertEquals(PreferenceStatus.Ready, model.uiState.value.status)
-            assertEquals(UserPreferencesTheme.LIGHT, model.uiState.value.confirmed.theme)
+            assertNull(api.requests.last().theme)
+            assertEquals(UserPreferencesTheme.LIGHT, model.uiState.value.theme)
+            model.refreshFromForeground()
+            runCurrent()
+            assertEquals(UserPreferencesTheme.DARK, model.uiState.value.theme)
         }
 
     @Test

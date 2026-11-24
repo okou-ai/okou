@@ -696,8 +696,14 @@ jobs:
 
   publish-ios-testflight:
     name: publish-ios-testflight
-    needs: release-please
-    if: ${{ needs.release-please.outputs.ios_release_created == 'true' }}
+    needs: [release-please, promote-app-worker-production]
+    # Signed Associated Domains must be served before a new app is installed.
+    # An iOS-only release has no App deployment to wait for.
+    if: >-
+      always() && !cancelled() &&
+      needs.release-please.outputs.ios_release_created == 'true' &&
+      (needs.release-please.outputs.app_deploy_required != 'true' ||
+       needs.promote-app-worker-production.result == 'success')
     runs-on: xcode-27
     timeout-minutes: 60
     environment: production

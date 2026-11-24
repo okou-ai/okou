@@ -18,6 +18,7 @@ import ai.okou.android.chat.canRenameProject
 import ai.okou.android.chat.label
 import ai.okou.android.chat.recoversInBackground
 import ai.okou.android.chat.rowActions
+import ai.okou.android.updates.updateFocusOutline
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
@@ -472,7 +473,7 @@ private fun ChatRowFailureFeedback(
 }
 
 @Composable
-internal fun WorkspaceFeedbackHost(state: SnackbarHostState, modifier: Modifier) {
+internal fun WorkspaceFeedbackTimeout(state: SnackbarHostState) {
     val accessibility = LocalAccessibilityManager.current
     val current = state.currentSnackbarData
     val timed = current?.visuals?.withDismissAction == false
@@ -488,6 +489,15 @@ internal fun WorkspaceFeedbackHost(state: SnackbarHostState, modifier: Modifier)
             current.dismiss()
         }
     }
+}
+
+@Composable
+internal fun WorkspaceFeedbackHost(
+    state: SnackbarHostState,
+    modifier: Modifier,
+    manageTimeout: Boolean = true,
+) {
+    if (manageTimeout) WorkspaceFeedbackTimeout(state)
     SnackbarHost(state) { data ->
         val visuals = data.visuals
         val style = MaterialTheme.typography.bodyMedium.copy(letterSpacing = 0.sp)
@@ -517,6 +527,7 @@ private fun FeedbackActions(data: SnackbarData, style: TextStyle) {
     val label = visuals.actionLabel
     val dismissible = visuals.withDismissAction
     if (label == null && !dismissible) return
+    val focusColor = LocalUndoActionColor.current
     Row(
         horizontalArrangement = Arrangement.spacedBy(feedbackActionGap),
         verticalAlignment = Alignment.CenterVertically,
@@ -526,13 +537,14 @@ private fun FeedbackActions(data: SnackbarData, style: TextStyle) {
                 onClick = { action?.onAction?.invoke() ?: data.performAction() },
                 modifier =
                     Modifier.weight(1f, fill = false)
-                        .sizeIn(minWidth = feedbackTouchTarget, minHeight = feedbackTouchTarget),
+                        .sizeIn(minWidth = feedbackTouchTarget, minHeight = feedbackTouchTarget)
+                        .updateFocusOutline(ButtonDefaults.shape, focusColor),
                 enabled = action?.content?.value?.enabled ?: true,
                 contentPadding = PaddingValues(horizontal = 8.dp),
                 colors =
                     ButtonDefaults.textButtonColors(
                         contentColor =
-                            if (dismissible) LocalUndoActionColor.current
+                            if (dismissible) focusColor
                             else MaterialTheme.colorScheme.inversePrimary,
                         disabledContentColor =
                             MaterialTheme.colorScheme.inverseOnSurface.copy(alpha = 0.38f),
@@ -542,7 +554,11 @@ private fun FeedbackActions(data: SnackbarData, style: TextStyle) {
             }
         }
         if (dismissible) {
-            IconButton(data::dismiss, Modifier.size(feedbackTouchTarget)) {
+            IconButton(
+                data::dismiss,
+                Modifier.size(feedbackTouchTarget)
+                    .updateFocusOutline(ButtonDefaults.shape, focusColor),
+            ) {
                 Icon(
                     painterResource(R.drawable.ic_close),
                     stringResource(R.string.chat_feedback_dismiss),

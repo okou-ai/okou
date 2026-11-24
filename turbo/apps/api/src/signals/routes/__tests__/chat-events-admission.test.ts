@@ -3,7 +3,10 @@ import { instructionsRoutes } from "../instructions";
 import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import { userPreferencesRoutes } from "../user-preferences";
 import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
-import { expectCanonicalStorageManifest } from "./helpers/api-bdd-runs";
+import {
+  createRunsApi,
+  expectCanonicalStorageManifest,
+} from "./helpers/api-bdd-runs";
 import { randomUUID } from "node:crypto";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
 import { mailContract } from "@okouai/api-contracts/contracts/mail";
@@ -160,6 +163,20 @@ describe("CHAT-02: on-demand member memory initialization", () => {
 });
 
 describe("CHAT-02: web chat send and client ids", () => {
+  it("dispatches an uppercase client Chat id with the canonical Runner reuse key", async () => {
+    const { actor } = await entitledChatActor();
+    const threadId = `a${randomUUID().slice(1)}`;
+    const { runId } = await sendChatRun(actor, {
+      clientThreadId: threadId.toUpperCase(),
+      prompt: "start a Chat with a client id",
+    });
+    const { reuseKey } =
+      createRunsApi(context).dispatchedRun(runId).executionContext;
+    await cancelChatRun(actor, runId);
+
+    expect(reuseKey).toBe(`thread:${threadId}`);
+  });
+
   it("keeps one input and one launch when the first web send races its retry", async () => {
     const { actor } = await entitledChatActor();
     const clientThreadId = randomUUID();

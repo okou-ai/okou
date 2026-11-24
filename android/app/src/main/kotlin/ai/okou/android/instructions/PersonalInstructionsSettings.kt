@@ -23,6 +23,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -249,6 +250,10 @@ internal fun PersonalInstructionsSettings(
                             .testTag("instructions_editor")
                             .semantics { contentDescription = title },
                     textStyle = MaterialTheme.typography.bodyLarge,
+                    colors =
+                        OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.onSurface,
+                        ),
                     visualTransformation = rememberInstructionsMarkdown(editing.value.text),
                     shape = RoundedCornerShape(12.dp),
                     placeholder = { Text(stringResource(R.string.instructions_placeholder)) },

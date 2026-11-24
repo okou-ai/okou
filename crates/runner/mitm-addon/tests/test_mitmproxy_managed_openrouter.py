@@ -60,6 +60,7 @@ async def test_native_stream_validates_before_forwarding_and_finishes_once(
         peer = WireSession(context, client_h2=client_h2, provider_h2=provider_h2)
         await peer.start(len(complete), dialect)
         assert peer.request_headers[b"authorization"] == b"Bearer fresh-wire"
+        assert peer.request_headers[b"x-openrouter-metadata"] == b"enabled"
         if client_h2:
             await peer.write(b"")
         await peer.write(prefix)

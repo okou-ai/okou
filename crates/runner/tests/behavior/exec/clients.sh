@@ -23,3 +23,10 @@ sudo "$BIN_DIR/runner" exec --timeout 75 \
   --sandbox "$SANDBOX_ID" -- python3 -c "$(<"$SCENARIO_DIR/codex-compact.py")" \
   || fail "Codex compact-generation compatibility"
 echo "PASS: Codex compact-generation compatibility"
+
+# Exercise the installed agy against a loopback inference fixture.
+echo "--- Test: Antigravity model selection and headless protocol ---"
+sudo "$BIN_DIR/runner" exec --timeout 75 \
+  --sandbox "$SANDBOX_ID" -- python3 -c "$(<"$SCENARIO_DIR/antigravity-models.py")" \
+  || fail "Antigravity model selection and headless protocol"
+echo "PASS: Antigravity model selection and headless protocol"

@@ -66,6 +66,19 @@ internal interface CanonicalApi {
         @QueryMap parameters: Map<String, String>,
     ): Response<ConnectorAccountDefaults>
 
+    @GET("/api/connector-account-access/policies")
+    suspend fun `connectorAccountPoliciesWire`(
+        @Header("Authorization") token: String,
+        @QueryMap parameters: Map<String, String>,
+    ): Response<ConnectorAccountPolicies>
+
+    @PUT("/api/connector-account-access/{connectionId}/policy")
+    suspend fun `connectorAccountPolicyUpdate`(
+        @Header("Authorization") token: String,
+        @Path("connectionId") `pathConnectionId`: String,
+        @Body body: ConnectorAccountPolicyRequest,
+    ): Response<ConnectorAccountPolicy>
+
     @PUT("/api/connector-account-access/{connectionId}/default-enabled")
     suspend fun `connectorAccountDefaultUpdate`(
         @Header("Authorization") token: String,
@@ -700,6 +713,48 @@ internal fun ConnectorAccountDefaultsQuery.toQueryParameters(): Map<String, Stri
     return value.mapValues { (_, field) -> (field as JsonPrimitive).content }
 }
 
+internal suspend fun CanonicalApi.`connectorAccountPolicies`(
+    token: String,
+    query: ConnectorAccountPoliciesQuery,
+): Response<ConnectorAccountPolicies> =
+    `connectorAccountPoliciesWire`(token, query.toQueryParameters())
+
+internal fun ConnectorAccountPoliciesQuery.toQueryParameters(): Map<String, String> {
+    val value =
+        Json.encodeToJsonElement(ConnectorAccountPoliciesQuery.serializer(), this) as JsonObject
+    require(
+        listOf(
+                (value.keys.all { it in setOf("kind", "connectorSlug") } &&
+                    value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "builtin")
+                    } &&
+                    value["connectorSlug"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            field.content.length >= 1 &&
+                            field.content.length <= 64 &&
+                            Regex("^[a-z0-9][a-z0-9-]*\$").containsMatchIn(field.content))
+                    }),
+                (value.keys.all { it in setOf("kind", "customConnectorId") } &&
+                    value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "custom")
+                    } &&
+                    value["customConnectorId"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            Regex(
+                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$",
+                                )
+                                .containsMatchIn(field.content))
+                    }),
+            )
+            .count { it } == 1,
+    ) {
+        "Invalid ConnectorAccountPoliciesQuery"
+    }
+    return value.mapValues { (_, field) -> (field as JsonPrimitive).content }
+}
+
 internal suspend fun CanonicalApi.`connectorAccounts`(
     token: String,
     query: ConnectorAccountsQuery,
@@ -930,16 +985,7 @@ internal fun ArtifactCatalogQuery.toQueryParameters(): Map<String, String> {
     require(
         listOf(
                 (value.keys.all {
-                    it in
-                        setOf(
-                            "limit",
-                            "cursor",
-                            "kind",
-                            "chatThreadId",
-                            "keyword",
-                            "sort",
-                            "direction",
-                        )
+                    it in setOf("limit", "cursor", "kind", "chatThreadId", "keyword", "direction")
                 } &&
                     (!value.containsKey("limit") ||
                         value["limit"].let { field ->
@@ -983,12 +1029,6 @@ internal fun ArtifactCatalogQuery.toQueryParameters(): Map<String, String> {
                                 field.isString &&
                                 field.content.length >= 1 &&
                                 field.content.length <= 256)
-                        }) &&
-                    (!value.containsKey("sort") ||
-                        value["sort"].let { field ->
-                            (field is JsonPrimitive &&
-                                field.isString &&
-                                field.content in setOf("createdAt", "title"))
                         }) &&
                     (!value.containsKey("direction") ||
                         value["direction"].let { field ->

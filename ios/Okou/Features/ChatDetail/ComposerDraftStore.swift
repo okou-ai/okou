@@ -1,10 +1,12 @@
+import CCState
 import ChatData
 import ChatDomain
 import Foundation
-import Observation
 
 /// One composer owns device persistence, canonical draft hydration and a serialized save loop.
-@MainActor @Observable
+/// Like the web composer, its draft, upload and voice state live in one CCState graph: SwiftUI
+/// reads `presentation` through CCStateSwiftUI, and actions use the synchronous accessors.
+@MainActor
 final class ComposerDraftStore {
   private let lifecycleTasks: LifecycleTasks
   struct LocalRecord: Codable {
@@ -24,44 +26,18 @@ final class ComposerDraftStore {
       changed()
     }
   }
-  struct EditorBlock: Identifiable {
-    let id: UUID
-    let indices: Range<Int>
-    let quote: String?
-    let content: ChatDraftDocument
-    var isFeedback: Bool { quote != nil }
-    var hasParagraph: Bool {
-      content.parts.contains(where: ComposerAttributedDocument.isInline)
-    }
-    var searchableRanges: [NSRange] {
-      var result: [NSRange] = []
-      var offset = 0
-      var continuesText = false
-      for part in content.parts {
-        guard part["type"]?.string == "text", let text = part["text"]?.string else {
-          continuesText = false
-          if ComposerAttributedDocument.isInline(part) { offset += 1 }
-          continue
-        }
-        let length = text.utf16.count
-        if continuesText {
-          result[result.count - 1].length += length
-        } else {
-          result.append(NSRange(location: offset, length: length))
-        }
-        offset += length
-        continuesText = true
-      }
-      return result
-    }
-  }
+  typealias EditorBlock = ComposerEditorBlock
 
   struct EditorFocusRequest: Equatable {
     let id = UUID()
     let blockID: UUID
   }
 
-  let signals = ComposerDraftSignals()
+  /// The workspace session's Store, which keeps this composer's graph values.
+  let store: CCState.Store
+  let signals: ComposerDraftSignals
+  var presentation: Computed<ComposerDraftPresentation> { signals.presentation }
+  var unsentContent: Computed<Bool> { signals.unsentContent }
   var focusRequest: EditorFocusRequest? { signals.snapshot.focusRequest }
   var editorGeneration: UUID { signals.snapshot.generation }
   var editorBlocks: [EditorBlock] { signals.editorBlocks }
@@ -113,7 +89,7 @@ final class ComposerDraftStore {
   private var consumedVoiceID: UUID?
   var canEditVoice: Bool { canEditDocument }
   private var canEditDocument: Bool {
-    !closed && isForeground && document.isSupported && !localReadFailed && conflictingRemote == nil
+    ComposerDraftRules.canEditDocument(signals.snapshot, signals.statusSnapshot)
   }
 
   func appendVoiceClip(_ fileID: String, recordingID: UUID) {
@@ -142,28 +118,37 @@ final class ComposerDraftStore {
   var hasLocalFailure: Bool { localError != nil }
   var canRetryLocalSave: Bool { !localReadFailed }
   func retryLocalSave() { persist() }
-  private var localReadFailed = false
-  private var localError: String?
-  private var syncError: String?
-  private(set) var syncWarning: String?
+  private var localReadFailed: Bool {
+    get { signals.statusSnapshot.localReadFailed }
+    set { signals.updateStatus { $0.localReadFailed = newValue } }
+  }
+  private var localError: String? {
+    get { signals.statusSnapshot.localError }
+    set { signals.updateStatus { $0.localError = newValue } }
+  }
+  private var syncError: String? {
+    get { signals.statusSnapshot.syncError }
+    set { signals.updateStatus { $0.syncError = newValue } }
+  }
+  private(set) var syncWarning: String? {
+    get { signals.statusSnapshot.syncWarning }
+    set { signals.updateStatus { $0.syncWarning = newValue } }
+  }
   private let syncSleep: @Sendable (Duration) async throws -> Void
-  private(set) var conflictingRemote: ComposerDraft?
+  private(set) var conflictingRemote: ComposerDraft? {
+    get { signals.statusSnapshot.conflictingRemote }
+    set { signals.updateStatus { $0.conflictingRemote = newValue } }
+  }
   var contextLabels: [String] { document.contextLabels }
   var canSend: Bool {
-    let ids = Set(
-      document.parts.compactMap { $0["type"]?.string == "file" ? $0["fileId"]?.string : nil })
-    return document.isSupported && !localReadFailed && conflictingRemote == nil
-      && (voice == nil || voice?.phase == .idle)
-      && ids.isSubset(of: Set(attachments.uploaded.map(\.id)))
+    ComposerDraftRules.canSend(
+      signals.snapshot, signals.statusSnapshot, attachments.snapshot, voice?.snapshot)
   }
-  var hasContent: Bool {
-    !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-      || document.parts.contains { $0["type"]?.string != "text" }
-      || attachments.hasAttachments
-  }
+  var hasContent: Bool { ComposerDraftRules.hasContent(signals.snapshot, attachments.snapshot) }
+  var currentPresentation: ComposerDraftPresentation { signals.currentPresentation }
   var isDurable: Bool {
-    storage != nil && localError == nil && attachments.importingCount == 0
-      && !attachments.items.contains { if case .uploading = $0.state { true } else { false } }
+    ComposerDraftRules.isDurable(
+      persistent: storage != nil, signals.statusSnapshot, attachments.snapshot)
   }
   func requestSync() {
     guard !closed, isForeground, !Task.isCancelled, syncTask == nil else { return }
@@ -200,13 +185,17 @@ final class ComposerDraftStore {
   private var revision = 0
   private var applying = false
   private var closed: Bool { signals.snapshot.closed }
-  private var isForeground = true
+  private var isForeground: Bool {
+    get { signals.statusSnapshot.isForeground }
+    set { signals.updateStatus { $0.isForeground = newValue } }
+  }
   private var syncGeneration = UUID()
   private var debounceTask: Task<Void, Never>?
   private var syncTask: Task<Void, Never>?
 
   init(
-    target: ChatDraftTarget, commands: ChatCommands, repository: ChatDraftRepository? = nil,
+    target: ChatDraftTarget, commands: ChatCommands, graph: CCState.Store,
+    repository: ChatDraftRepository? = nil,
     storage: ChatDraftStorage? = nil, didFail: @escaping @MainActor (Error) -> Void,
     didSave: @escaping @MainActor (ComposerDraft) async -> Void = { _ in },
     voiceCapture: (any VoiceAudioCapture)? = nil,
@@ -223,15 +212,21 @@ final class ComposerDraftStore {
     self.storage = storage
     self.didFail = didFail
     self.didSave = didSave
-    voice =
+    let store = graph
+    self.store = store
+    let voice =
       target == .unassigned
       ? nil
       : storage.map {
         ComposerVoiceInputStore(
           client: commands.voiceInput, storage: $0.voiceDraft(for: target),
-          capture: voiceCapture ?? NativeVoiceAudioCapture(), didRequireUpgrade: didFail)
+          capture: voiceCapture ?? NativeVoiceAudioCapture(), store: store,
+          didRequireUpgrade: didFail)
       }
-    attachments = AttachmentDraftStore(commands: commands, didFail: didFail)
+    self.voice = voice
+    let attachments = AttachmentDraftStore(commands: commands, store: store, didFail: didFail)
+    self.attachments = attachments
+    signals = ComposerDraftSignals(store: store, uploads: attachments.value, voice: voice?.value)
     do {
       if let saved = try storage?.load(target.key, as: LocalRecord.self) {
         document = saved.value.draftUserMessage ?? ChatDraftDocument()
@@ -374,9 +369,9 @@ final class ComposerDraftStore {
         let startedRevision = revision
         do {
           let remote = try await repository.load(target)
-          syncWarning = nil
           try Task.checkCancellation()
           guard !closed else { return }
+          syncWarning = nil
           guard reconcileRemote(remote, startedRevision: startedRevision) else { return }
           baseline = remote
           guard document.isSupported else {

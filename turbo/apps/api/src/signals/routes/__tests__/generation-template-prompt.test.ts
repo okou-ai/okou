@@ -69,73 +69,110 @@ describe("buildGenerationTemplatePrompt", () => {
     expect(result.prompt).toContain(workflow.id);
   });
 
-  it("builds direct-HTML presentation guidance with the Okou image batch command", () => {
-    const item = presentationTemplateBySlug("playful-launch-presentation");
+  it.each(["html", "pptx"] as const)(
+    "builds legacy %s presentation guidance and the Okou image batch command by default",
+    (outputFormat) => {
+      const item = presentationTemplateBySlug("playful-launch-presentation");
 
-    const result = buildGenerationTemplatePrompt({
-      type: "presentation",
-      selection: {
-        templateId: item.templateId,
-        colorSystemId: item.colorSystemId,
-      },
-    });
+      const result = buildGenerationTemplatePrompt({
+        type: "presentation",
+        selection: {
+          templateId: item.templateId,
+          outputFormat,
+          colorSystemId: item.colorSystemId,
+        },
+      });
 
-    expect(result.status).toBe("resolved");
-    if (result.status !== "resolved") {
-      return;
-    }
-    expect(result.prompt).toContain("# Artifact Template Context");
-    expect(result.prompt).toContain(
-      "Selected presentation template: Playful Launch Presentation (template:html-ppt-playful-launch)",
-    );
-    expect(result.prompt).toContain(
-      "okou resource pull template:html-ppt-playful-launch-runbook --dir ./generated/resources",
-    );
-    expect(result.prompt).toContain(
-      "./generated/resources/playful-launch/SKILL.md",
-    );
-    expect(result.prompt).toContain("Color system token: carnival");
-    expect(result.prompt).toContain(
-      "follow its template, authoring, and verification instructions",
-    );
-    expect(result.prompt).toContain(
-      "Keep all slides and visible content in index.html; render the first slide without JavaScript",
-    );
-    expect(result.prompt).toContain(
-      "For HTML delivery, host the finished deck: okou host <output-dir> --site <slug> --artifact-kind presentation-html",
-    );
-    expect(result.prompt).toContain(
-      "when supported, add `--title` with a concise human-readable presentation name",
-    );
-    expect(result.prompt).toContain(
-      "Deliver HTML by default; convert to PPTX only when the user explicitly requests PowerPoint/PPTX",
-    );
-    const imageWorkflowLines = result.prompt.split("\n").filter((line) => {
-      return line.startsWith("- Image workflow:");
-    });
-    expect(imageWorkflowLines).toHaveLength(1);
-    const imageWorkflow = imageWorkflowLines[0] ?? "";
-    expect(imageWorkflow).toContain("with no manifest skip this workflow");
-    expect(imageWorkflow).toContain(
-      "let the command own generation settings/concurrency/retry",
-    );
-    expect(
-      imageWorkflow.indexOf("okou generate image-batch start <manifest.tsv>"),
-    ).toBeLessThan(imageWorkflow.indexOf("author the deck while it runs"));
-    expect(imageWorkflow.indexOf("author the deck while it runs")).toBeLessThan(
-      imageWorkflow.indexOf("okou generate image-batch wait <state-dir>"),
-    );
-    expect(
-      imageWorkflow.indexOf("okou generate image-batch wait <state-dir>"),
-    ).toBeLessThan(imageWorkflow.indexOf("<state-dir>/results.tsv"));
-  });
+      expect(result.status).toBe("resolved");
+      if (result.status !== "resolved") {
+        return;
+      }
+      expect(result.prompt).toContain("# Artifact Template Context");
+      expect(result.prompt).toContain(
+        "Selected presentation template: Playful Launch Presentation (template:html-ppt-playful-launch)",
+      );
+      const native = outputFormat === "pptx";
+      expect(result.prompt).toContain(
+        native
+          ? "okou resource pull template:pptx-playful-launch-runbook --dir ./generated/resources/pptx"
+          : "okou resource pull template:html-ppt-playful-launch-runbook --dir ./generated/resources",
+      );
+      expect(result.prompt).toContain(
+        native
+          ? "./generated/resources/pptx/playful-launch-native/SKILL.md"
+          : "./generated/resources/playful-launch/SKILL.md",
+      );
+      expect(result.prompt).toContain("Color system token: carnival");
+      expect(result.prompt).toContain(
+        "follow its template, authoring, and verification instructions",
+      );
+      if (native) {
+        expect(result.prompt).toContain(
+          "Author an editable native PPTX directly with the selected package; do not author HTML first or convert an HTML deck.",
+        );
+        expect(result.prompt).toContain(
+          "- Follow the package's PowerPoint export and verification workflow",
+        );
+        expect(result.prompt).toContain(
+          "- Deliver the final .pptx with this integration's upload-file command",
+        );
+        expect(result.prompt).toContain(
+          "- Return the exact URL printed by the file delivery command.",
+        );
+      } else {
+        expect(result.prompt).toContain(
+          "- Keep all slides and visible content in index.html; render the first slide without JavaScript",
+        );
+        expect(result.prompt).toContain(
+          "For HTML delivery, host the finished deck: okou host <output-dir> --site <slug> --artifact-kind presentation-html",
+        );
+        expect(result.prompt).toContain(
+          "when supported, add `--title` with a concise human-readable presentation name",
+        );
+        expect(result.prompt).toContain(
+          "Deliver HTML by default; convert to PPTX only when the user explicitly requests PowerPoint/PPTX.",
+        );
+      }
+      expect(result.prompt).not.toContain("# Presentation Output Preference");
+      expect(result.prompt).toContain(
+        "If the user's message requests a different output format",
+      );
+      expect(result.prompt).toContain(
+        'okou generate presentation --format <html|pptx> --template template:html-ppt-playful-launch --prompt "<user request>"',
+      );
+      expect(result.prompt).toContain(
+        "The message wins over the selected format preference.",
+      );
+      const imageWorkflowLines = result.prompt.split("\n").filter((line) => {
+        return line.startsWith("- Image workflow:");
+      });
+      expect(imageWorkflowLines).toHaveLength(1);
+      const imageWorkflow = imageWorkflowLines[0] ?? "";
+      expect(imageWorkflow).toContain("with no manifest skip this workflow");
+      expect(imageWorkflow).toContain(
+        "let the command own generation settings/concurrency/retry",
+      );
+      expect(
+        imageWorkflow.indexOf("okou generate image-batch start <manifest.tsv>"),
+      ).toBeLessThan(imageWorkflow.indexOf("author the deck while it runs"));
+      expect(
+        imageWorkflow.indexOf("author the deck while it runs"),
+      ).toBeLessThan(
+        imageWorkflow.indexOf("okou generate image-batch wait <state-dir>"),
+      );
+      expect(
+        imageWorkflow.indexOf("okou generate image-batch wait <state-dir>"),
+      ).toBeLessThan(imageWorkflow.indexOf("<state-dir>/results.tsv"));
+    },
+  );
 
-  it("points a private template at its mounted package and forbids an intermediate representation", () => {
+  it("keeps imported templates on legacy HTML delivery guidance by default", () => {
     const result = buildGenerationTemplatePrompt(
       {
         type: "presentation",
         selection: {
           templateId: formatUserPresentationTemplateId(USER_TEMPLATE_ROW_ID),
+          outputFormat: "pptx",
         },
       },
       {
@@ -173,8 +210,13 @@ describe("buildGenerationTemplatePrompt", () => {
       "when supported, add `--title` with a concise human-readable presentation name",
     );
     expect(result.prompt).toContain(
-      "Deliver HTML by default; convert to PPTX only when the user explicitly requests PowerPoint/PPTX",
+      "Deliver HTML by default; convert to PPTX only when the user explicitly requests PowerPoint/PPTX.",
     );
+    expect(result.prompt).toContain("To produce the presentation:");
+    expect(result.prompt).toContain(
+      "For an explicit PowerPoint/PPTX request, follow the platform's conversion instructions.",
+    );
+    expect(result.prompt).not.toContain("# Presentation Output Preference");
     // A private package has no registry resource to pull.
     expect(result.prompt).not.toContain("okou resource pull");
     // The raw row id may name the mount, but no storage key may leak.
