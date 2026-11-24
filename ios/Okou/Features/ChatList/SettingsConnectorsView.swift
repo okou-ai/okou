@@ -139,16 +139,21 @@ private struct SettingsConnectedConnectors: View {
           if connector.needsAttention {
             Text("Reconnect required").font(.okou(.footnote))
               .foregroundStyle(OkouStatusColor.warning)
-          } else {
-            Text("\(connector.access.accounts.count) accounts").font(.okou(.footnote))
-              .foregroundStyle(OkouColor.mutedForeground)
           }
         }
         Spacer(minLength: 0)
+        if !connector.needsAttention {
+          accountCount(connector.access.accounts.count)
+            .font(.okou(.body)).foregroundStyle(OkouColor.trailingValue)
+        }
         OkouIcon("chevron-right", size: OkouIconSize.inline)
           .foregroundStyle(OkouColor.mutedForeground).accessibilityHidden(true)
-      }.frame(minHeight: OkouControl.minimumTarget)
+      }
     }.buttonStyle(.plain).disabled(store.isSaving || store.uncertain)
+  }
+
+  private func accountCount(_ count: Int) -> Text {
+    count == 1 ? Text("1 account") : Text("\(count) accounts")
   }
 }
 
