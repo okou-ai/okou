@@ -8,6 +8,7 @@ import ai.okou.android.state.rememberJournalEditor
 import ai.okou.android.state.rememberSettingsFlag
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,10 +22,10 @@ import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -43,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.testTag
@@ -153,6 +155,7 @@ internal fun PersonalInstructionsSettings(
         ::requestDismiss,
         dismissible = !saving,
         confirmDismiss = if (saving || state.draft?.attempted == false) ::confirmDismiss else null,
+        fullScreenInShortWindow = true,
         actions = {
             Column(
                 Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -243,7 +246,14 @@ internal fun PersonalInstructionsSettings(
                         keyboard.hide()
                     }
                 }
-                OutlinedTextField(
+                val interactions = remember { MutableInteractionSource() }
+                val colors = MaterialTheme.colorScheme
+                val fieldColors =
+                    OutlinedTextFieldDefaults.colors(focusedBorderColor = colors.onSurface)
+                val textStyle = MaterialTheme.typography.bodyLarge
+                val markdown = rememberInstructionsMarkdown(editing.value.text)
+                // Keep native selection and IME composition with custom padding.
+                BasicTextField(
                     value = editing.value,
                     onValueChange = { value ->
                         if (value.text != state.content) closeAfterSave = false
@@ -265,14 +275,38 @@ internal fun PersonalInstructionsSettings(
                             }
                             .testTag("instructions_editor")
                             .semantics { contentDescription = title },
-                    textStyle = MaterialTheme.typography.bodyLarge,
-                    colors =
-                        OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MaterialTheme.colorScheme.onSurface,
-                        ),
-                    visualTransformation = rememberInstructionsMarkdown(editing.value.text),
-                    shape = RoundedCornerShape(12.dp),
-                    placeholder = { Text(stringResource(R.string.instructions_placeholder)) },
+                    textStyle = textStyle.copy(color = colors.onSurface),
+                    cursorBrush = SolidColor(colors.primary),
+                    visualTransformation = markdown,
+                    interactionSource = interactions,
+                    decorationBox = { inner ->
+                        OutlinedTextFieldDefaults.DecorationBox(
+                            value = editing.value.text,
+                            innerTextField = inner,
+                            enabled = true,
+                            singleLine = false,
+                            visualTransformation = markdown,
+                            interactionSource = interactions,
+                            isError = false,
+                            placeholder = {
+                                Text(
+                                    stringResource(R.string.instructions_placeholder),
+                                    style = textStyle,
+                                )
+                            },
+                            colors = fieldColors,
+                            contentPadding = PaddingValues(12.dp),
+                            container = {
+                                OutlinedTextFieldDefaults.Container(
+                                    enabled = true,
+                                    isError = false,
+                                    interactionSource = interactions,
+                                    colors = fieldColors,
+                                    shape = RoundedCornerShape(12.dp),
+                                )
+                            },
+                        )
+                    },
                     minLines = 3,
                     maxLines = 8,
                     readOnly = !state.canEdit,

@@ -14,6 +14,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDisplayed
@@ -29,6 +30,8 @@ import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ActivityScenario
@@ -158,7 +161,14 @@ class PersonalInstructionsSettingsTest {
     @Test
     @Config(qualifiers = "en-rUS-w240dp-h200dp")
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    fun shortSettingsWindowAllowsEditingAndSavingAtLargeType() {
+    fun shortSettingsWindowAllowsEditingAndSavingAtLargeType() = assertShortEditor(208.dp)
+
+    @Test
+    @Config(qualifiers = "en-rUS-w820dp-h200dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun shortWideSettingsWindowUsesAvailableWidth() = assertShortEditor(788.dp)
+
+    private fun assertShortEditor(editorWidth: Dp) {
         val app = compose.activity.application as InstructionsApplication
         val originalFontScale = RuntimeEnvironment.getFontScale()
         try {
@@ -182,7 +192,11 @@ class PersonalInstructionsSettingsTest {
             compose.waitUntil(10_000) { compose.runOnIdle { !editor.uiState.value.busy } }
             assertEquals(InstructionsPhase.Ready, editor.uiState.value.phase)
             val input = compose.onNodeWithTag("instructions_editor")
-            input.performScrollTo().assertIsDisplayed().performTextReplacement("Short window draft")
+            input
+                .performScrollTo()
+                .assertIsDisplayed()
+                .assertWidthIsEqualTo(editorWidth)
+                .performTextReplacement("Short window draft")
             val save = compose.onNodeWithText("Save")
             if (!save.isDisplayed()) save.performScrollTo()
             save.assertIsDisplayed().performClick()
