@@ -1061,6 +1061,7 @@ function HostedSiteShareSessionMenu({
 }) {
   const signal = useGet(session.signal$);
   const domainOpen = useGet(session.domains.open$);
+  const editing = useGet(session.editing$);
   const [domainCreating, createDomain] = useLoadableSet(
     session.domains.create$,
   );
@@ -1073,10 +1074,11 @@ function HostedSiteShareSessionMenu({
   const [saving, save] = useLoadableSet(session.save$);
   const [sharing, share] = useLoadableSet(session.people.share$);
   const [removing, remove] = useLoadableSet(session.people.remove$);
-  const emailSharing =
-    useLastResolved(featureSwitches$)?.[
-      FeatureSwitchKey.HostedSiteEmailSharing
-    ];
+  const features = useLastResolved(featureSwitches$);
+  const emailSharing = features?.[FeatureSwitchKey.HostedSiteEmailSharing];
+  const domainEditor =
+    domainOpen ||
+    (editing && features?.[FeatureSwitchKey.HostedSiteCustomDomains]);
   if (!signal) {
     return null;
   }
@@ -1099,7 +1101,7 @@ function HostedSiteShareSessionMenu({
         aria-label={props.ariaLabel}
         className={cn(
           "max-w-[calc(100vw-2rem)] p-0",
-          domainOpen ? "w-150" : emailSharing ? "w-100" : "w-90",
+          domainEditor ? "w-150" : emailSharing ? "w-100" : "w-90",
         )}
       >
         <HostedSiteShareBody
