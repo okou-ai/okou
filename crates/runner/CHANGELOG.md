@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.250.8](https://github.com/okou-ai/okou/compare/runner-rs-v0.250.7...runner-rs-v0.250.8) (2026-11-24)
+
+
+### Refactoring
+
+* **runner:** share foreground heartbeat identity claims ([#50622](https://github.com/okou-ai/okou/issues/50622)) ([b9e0765](https://github.com/okou-ai/okou/commit/b9e07650780189961151469653e8e56329836a5a))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.250.7](https://github.com/okou-ai/okou/compare/runner-rs-v0.250.6...runner-rs-v0.250.7) (2026-11-24)
 
 ### Release Dependencies

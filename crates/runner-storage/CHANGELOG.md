@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.23](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.22...runner-storage-v0.12.23) (2026-11-24)
+
+
+### Performance Improvements
+
+* **runner-storage:** bound the first fresh archive connection ([#50640](https://github.com/okou-ai/okou/issues/50640)) ([6a15838](https://github.com/okou-ai/okou/commit/6a15838679de4ac560ebda8703e7ef890d5e8972))
+
 ## [0.12.22](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.21...runner-storage-v0.12.22) (2026-11-24)
 
 ## [0.12.21](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.20...runner-storage-v0.12.21) (2026-11-24)

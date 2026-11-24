@@ -13,6 +13,26 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1179.0](https://github.com/okou-ai/okou/compare/app-v0.1178.0...app-v0.1179.0) (2026-11-24)
+
+
+### Features
+
+* add first-use presentation format setup ([#50150](https://github.com/okou-ai/okou/issues/50150)) ([0e802ee](https://github.com/okou-ai/okou/commit/0e802ee6b10be62579cc7a5e40f3fc21182a0b15))
+
+
+### Bug Fixes
+
+* **platform:** make project archive and restore optimistic ([#50475](https://github.com/okou-ai/okou/issues/50475)) ([b67b156](https://github.com/okou-ai/okou/commit/b67b1568a19ad0bdddcd9e3941e3cc11d229722c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.873.0
+    * @okouai/ui bumped to 1.22.12
+
 ## [0.1178.0](https://github.com/okou-ai/okou/compare/app-v0.1177.0...app-v0.1178.0) (2026-11-24)
 
 
