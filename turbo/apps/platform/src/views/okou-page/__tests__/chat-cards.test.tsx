@@ -21,10 +21,6 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  connectorAccountActionResourceKey,
-  parseConnectorAccountActionUrl,
-} from "../../../signals/chat-page/connector-account-action-block.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import { createChatEvent } from "../../../mocks/mock-helpers.ts";
 import { mockOAuthCompletions } from "./connector-page-test-helpers.ts";
@@ -1341,6 +1337,11 @@ async function exerciseAccountSwitch(
   if (!chat) {
     return;
   }
+  if (scope === "member") {
+    selectedConnectionId = null;
+    await exerciseFreshMemberApproval(lifecycle, switchUrl);
+    return;
+  }
   // These reply queries depend on text and children, not attribute changes.
   const replyWaitOptions = {
     container: chat,
@@ -1425,6 +1426,25 @@ async function exerciseAccountSwitch(
   }, replyWaitOptions);
 }
 
+async function exerciseFreshMemberApproval(
+  lifecycle: ReturnType<typeof mockChatLifecycle>,
+  previousUrl: URL,
+) {
+  const freshUrl = new URL(previousUrl);
+  freshUrl.searchParams.set(
+    "requestId",
+    "f0000000-0000-4000-a000-000000000904",
+  );
+  await act(() => {
+    lifecycle.completeRun(`Access expired\n\n${freshUrl.toString()}`);
+  });
+  await waitFor(() => {
+    const cards = screen.getAllByTestId("connector-account-action-card");
+    expect(cards).toHaveLength(2);
+    expect(buttonIn(cards[1]!, "Allow for 1h")).toBeEnabled();
+  });
+}
+
 test.each([
   ["chat", "chat"],
   ["direct", "chat"],
@@ -1434,22 +1454,6 @@ test.each([
   "Connector account switching from %s with %s approval",
   exerciseAccountSwitch,
 );
-
-test("A fresh member connector approval uses a new status read even with the same callback", () => {
-  const key = (requestId: string) => {
-    const result = parseConnectorAccountActionUrl(
-      `https://app.okou.ai/connectors/accounts/${EXACT_CONNECTION_ID}/member-approval?kind=builtin&connectorSlug=github&requestId=${requestId}&threadId=${THREAD_ID}&callbackPrompt=Continue`,
-      { threadId: THREAD_ID },
-    );
-    if (result.status !== "valid") {
-      throw new Error("Expected a valid member connector approval action");
-    }
-    return connectorAccountActionResourceKey(result.descriptor);
-  };
-  expect(key("f0000000-0000-4000-a000-000000000904")).not.toBe(
-    key("f0000000-0000-4000-a000-000000000905"),
-  );
-});
 
 test("Ordinary or code links remain message content", async () => {
   const ordinaryUrl = "https://example.com/reference";
@@ -1529,7 +1533,7 @@ test.each(["chat", "direct"] as const)(
 test.each([
   "/banking/access?reason=Review+spend&",
   "/connectors/accounts/f0000000-0000-4000-a000-000000000901/select?kind=builtin&connectorSlug=github&",
-  "/connectors/accounts/f0000000-0000-4000-a000-000000000901/member-approval?kind=builtin&connectorSlug=github&",
+  "/connectors/accounts/f0000000-0000-4000-a000-000000000901/member-approval?kind=builtin&connectorSlug=github&requestId=f0000000-0000-4000-a000-000000000903&",
 ])("A direct approval requires access to its Chat (%s)", async (route) => {
   context.mocks.api(chatThreadMetadataContract.get, ({ respond }) => {
     return respond(404, {

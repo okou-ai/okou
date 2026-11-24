@@ -107,6 +107,10 @@ public struct ChatConnectorAction: Equatable, Sendable, Identifiable {
       guard prompt != nil, callbackThread != nil, UUID(uuidString: String(path[3])) != nil else {
         return invalid()
       }
+      let memberWide = path[4] == "member-approval"
+      if memberWide && param("requestId").flatMap(UUID.init(uuidString:)) == nil {
+        return invalid()
+      }
       let target: ChatConnectorTarget
       if param("kind") == "builtin", let slug = param("connectorSlug"),
         slug.range(of: "^[a-z0-9][a-z0-9-]*$", options: .regularExpression) != nil,
@@ -122,7 +126,7 @@ public struct ChatConnectorAction: Equatable, Sendable, Identifiable {
       }
       kind = .select(
         target: target, connectionID: String(path[3]).lowercased(),
-        memberWide: path[4] == "member-approval")
+        memberWide: memberWide)
     }
     return Self(id: value, kind: kind, threadID: threadID, callbackPrompt: prompt)
   }

@@ -14,6 +14,7 @@ import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-id
 import { runConnectorAccountsContract } from "@okouai/api-contracts/client/run-connector-accounts";
 
 import { command, computed, state, type Command, type Computed } from "ccstate";
+import { uuid } from "zod";
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
@@ -36,8 +37,7 @@ import { parseTrustedPlatformUrl } from "./trusted-platform-url.ts";
 
 export interface ConnectorAccountActionDescriptor {
   readonly selection: ConnectorAccountSelection;
-  readonly memberWide: boolean;
-  readonly requestId: string | null;
+  readonly memberApprovalRequestId: string | null;
   readonly originalUrl: string;
   readonly callbackPrompt: string;
   readonly threadId: string;
@@ -76,7 +76,9 @@ type ConnectorAccountActionCardSignalsRegistry = CardSignalsRegistry<
 export function connectorAccountActionResourceKey(
   descriptor: ConnectorAccountActionDescriptor,
 ): string {
-  const action = descriptor.memberWide ? "member-approval" : "select";
+  const action = descriptor.memberApprovalRequestId
+    ? "member-approval"
+    : "select";
   const path = `/connectors/accounts/${encodeURIComponent(descriptor.selection.connectionId.toLowerCase())}/${action}`;
   const targetKey = connectorAccountTargetKey(descriptor.selection.target);
   const params = new URLSearchParams({
@@ -87,8 +89,8 @@ export function connectorAccountActionResourceKey(
     threadId: descriptor.threadId.toLowerCase(),
     callbackPrompt: descriptor.callbackPrompt,
   });
-  if (descriptor.requestId) {
-    params.set("requestId", descriptor.requestId);
+  if (descriptor.memberApprovalRequestId) {
+    params.set("requestId", descriptor.memberApprovalRequestId);
   }
   return `${path}?${params.toString()}`;
 }
@@ -130,21 +132,24 @@ export function parseConnectorAccountActionUrl(
   }
   const selection = selectionFromUrl(url, connectionId);
   const callback = context ? chatActionCallbackFromUrl(url, context) : null;
+  const requestId =
+    current?.[2] === "member-approval"
+      ? uuid().safeParse(url.searchParams.get("requestId"))
+      : null;
   if (
     !context ||
     !selection ||
     !callback?.callbackPrompt ||
-    !callback.threadId
+    !callback.threadId ||
+    requestId?.success === false
   ) {
     return { status: "invalid", originalUrl: value };
   }
-  const memberWide = current?.[2] === "member-approval";
   return {
     status: "valid",
     descriptor: {
       selection,
-      memberWide,
-      requestId: memberWide ? url.searchParams.get("requestId") : null,
+      memberApprovalRequestId: requestId?.data ?? null,
       originalUrl: value,
       callbackPrompt: callback.callbackPrompt,
       threadId: callback.threadId,
@@ -196,7 +201,7 @@ function createConnectorAccountConfirmSignal(
 
     signal.throwIfAborted();
     const client = get(apiClient$)(runConnectorAccountsContract);
-    const approve = descriptor.memberWide
+    const approve = descriptor.memberApprovalRequestId
       ? client.approveMember
       : client.approve;
     await accept(

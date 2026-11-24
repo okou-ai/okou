@@ -170,6 +170,8 @@ Notes:
           connectionId,
         );
         const origin = await getPlatformOrigin();
+        // Older serving or rollback APIs omit approval scope. Retire the Chat action in #50170
+        // once those APIs and the legacy approval path are outside the supported rollout window.
         const memberScope = inventory.approvalScope === "member";
         const action = memberScope ? "member-approval" : "select";
         const path = `/connectors/accounts/${encodeURIComponent(connectionId)}/${action}`;

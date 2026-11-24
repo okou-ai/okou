@@ -246,7 +246,7 @@ function ReadyConnectorAccountActionCard({
               .filter(Boolean)
               .join(" · ")}
           </div>
-          {signals.memberWide && !selected && (
+          {signals.memberApprovalRequestId && !selected && (
             <p className="mt-1 text-xs leading-4 text-muted-foreground">
               {t(($) => {
                 return $.chat.connectorAccountSwitch.memberScope;
@@ -276,7 +276,7 @@ function ReadyConnectorAccountActionCard({
                 return $.chat.connectorAccountSwitch.switching;
               })
             : t(($) => {
-                return signals.memberWide
+                return signals.memberApprovalRequestId
                   ? $.chat.connectorAccountSwitch.allowForHour
                   : $.chat.connectorAccountSwitch.switch;
               })}
