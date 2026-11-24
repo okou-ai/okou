@@ -874,7 +874,24 @@ test("Preserve the internally resolved account when enabling several accounts be
 
 test("Show member account eligibility in Composer and send the first message without Chat overrides", async () => {
   const user = userEvent.setup({ delay: null });
-  installAccess({ personalOff: true });
+  const { access } = installAccess({ personalOff: true });
+  context.mocks.api(chatConnectorAccessContract.overview, ({ respond }) => {
+    const overview = chatConnectorOverviewFixture({
+      target,
+      label: "GitHub",
+      accounts: [work, personal],
+      access: access("draft"),
+      hasPermissions: true,
+    });
+    return respond(200, [
+      {
+        ...overview,
+        accounts: overview.accounts.map((account) => {
+          return { ...account, defaultEnabled: true };
+        }),
+      },
+    ]);
+  });
   context.mocks.api(
     chatConnectorAccessContract.setThreadOverride,
     ({ respond }) => {

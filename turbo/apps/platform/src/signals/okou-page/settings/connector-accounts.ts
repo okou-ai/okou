@@ -276,7 +276,6 @@ export function createConnectorAccountAccessSettingsSignals(
       await request.updatePolicy(get(apiClient$), connectionId, policy);
       signal.throwIfAborted();
       set(invalidateConnectorAccountProjection$, target);
-      set(reloadUserConnectedConnectors$);
     },
   );
   return { defaults$, policies$, open$, close$, update$, updatePolicy$ };
