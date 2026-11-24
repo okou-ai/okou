@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -20,7 +21,10 @@ import {
   installContinuityWorkspace,
 } from "./chat-continuity-test-helpers.ts";
 import { chatListThread } from "./chat-list-test-helpers.ts";
-import { menuItemByText } from "./sidebar-test-helpers.tsx";
+import {
+  menuItemByText,
+  queryMenuItemByText,
+} from "./sidebar-test-helpers.tsx";
 
 const context = testContext();
 const launchId = "30000000-0000-4000-8000-000000000081";
@@ -233,6 +237,31 @@ test.each([false, true])(
   },
 );
 
+test.each([false, true])(
+  "Project menu shows Archive according to the feature switch (%s)",
+  async (enabled) => {
+    const workspace = installContinuityWorkspace(context, {
+      caseId: 327,
+      threads: [],
+    });
+    installProjects();
+    await setupPage({
+      context,
+      path: "/",
+      ...workspace.pageOptions,
+      featureSwitches: { [FeatureSwitchKey.ProjectArchive]: enabled },
+    });
+    const user = userEvent.setup({ delay: null });
+    await user.click(
+      await waitFor(() => {
+        return button("Options for Launch", projectRows());
+      }),
+    );
+    expect(menuItemByText("Rename")).toBeVisible();
+    expect(queryMenuItemByText("Archive") !== null).toBe(enabled);
+  },
+);
+
 test("Archived opens the full contents of an archived Project and the archived chats of an active Project", async () => {
   const planning = {
     ...continuityThread(326, 1, "Launch planning"),
@@ -273,6 +302,7 @@ test("Archived opens the full contents of an archived Project and the archived c
     expect(projectToggle("Launch")).toBeInTheDocument();
     expect(projectToggle("Research", researchId)).toBeInTheDocument();
   });
+  expect(projectToggle("Launch")).not.toHaveTextContent("Archived");
   await user.click(projectToggle("Launch"));
   await user.click(projectToggle("Research", researchId));
   await waitFor(() => {

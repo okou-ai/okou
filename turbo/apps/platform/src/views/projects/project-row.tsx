@@ -6,6 +6,8 @@ import { useGet, useSet, useLastResolved } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
+  Archive,
+  ArchiveRestore,
   ArrowUp,
   ArrowDown,
   ChevronDown,
@@ -179,6 +181,9 @@ function ProjectMenu({
 }) {
   const { t } = useTranslation();
   const editor = useSet(openProjectEditor$);
+  const archiveEnabled =
+    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.ProjectArchive] ===
+    true;
   const setArchived = useSet(setProjectArchived$);
   const signal = useGet(pageSignal$);
   const open = useSet(setProjectDialog$);
@@ -239,32 +244,29 @@ function ProjectMenu({
             return $.projects.rename;
           })}
         </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() => {
-            detach(
-              setArchived(project.id, !project.archived, signal),
-              Reason.DomCallback,
-            );
-          }}
-        >
-          {project.archived
-            ? t(
-                ($) => {
+        {archiveEnabled && (
+          <DropdownMenuItem
+            onClick={() => {
+              detach(
+                setArchived(project.id, !project.archived, signal),
+                Reason.DomCallback,
+              );
+            }}
+          >
+            {project.archived ? (
+              <ArchiveRestore size={16} />
+            ) : (
+              <Archive size={16} />
+            )}
+            {project.archived
+              ? t(($) => {
                   return $.projects.restoreProject;
-                },
-                {
-                  defaultValue: "Restore project",
-                },
-              )
-            : t(
-                ($) => {
+                })
+              : t(($) => {
                   return $.projects.archiveProject;
-                },
-                {
-                  defaultValue: "Archive project",
-                },
-              )}
-        </DropdownMenuItem>
+                })}
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem
           className="text-destructive focus:text-destructive"
@@ -434,13 +436,6 @@ function ProjectTrigger({
         <HoverScrollTitle title={projectNameParts(project.name).text} />
       ) : (
         <span className="truncate">{projectNameParts(project.name).text}</span>
-      )}
-      {project.archived && (
-        <span className="ml-1 shrink-0 text-xs text-nav-copy-muted">
-          {t(($) => {
-            return $.chat.sidebar.archived;
-          })}
-        </span>
       )}
       {indicator !== null && (
         <span id={stateId}>
