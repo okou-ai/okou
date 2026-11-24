@@ -1925,6 +1925,14 @@
       "message": "メッセージ",
       "modelForThisChat": "このチャットのモデル",
       "placeholder": "ワークフローの自動化、タスクの管理を依頼してください...",
+      "presentationFormatSetup": {
+        "description": "既定の形式を保存してから、プレゼンテーションを生成します。今回のリクエストで形式を明示した場合は、そちらが優先されます。",
+        "htmlDescription": "ブラウザーでの共有に最適",
+        "pptxDescription": "PowerPoint で編集できるスライド",
+        "saveAndGenerate": "保存して生成",
+        "settingsHint": "「設定 → 環境設定 → チャット」でいつでも変更できます。",
+        "title": "プレゼンテーションの既定の形式を選択"
+      },
       "selectedModelUnavailable": "選択されたモデルは使用できません。送信する前に設定してください。",
       "selectedModelUnavailableToast": "選択したモデルは利用できません",
       "selectModel": "モデルを選択してください",
@@ -5964,6 +5972,13 @@
           "title": "デフォルトモデル"
         },
         "description": "新しいチャットの初期設定とメッセージの送信方法を選択します。",
+        "presentationFormat": {
+          "description": "新しいプレゼンテーションの既定の形式を選択します",
+          "saveFailed": "既定の形式を保存できませんでした。もう一度お試しください。",
+          "title": "プレゼンテーションの既定の形式",
+          "unavailable": "利用できません",
+          "unset": "未設定"
+        },
         "sectionTitle": "チャット"
       },
       "debug": {

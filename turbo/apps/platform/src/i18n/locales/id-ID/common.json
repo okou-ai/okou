@@ -1925,6 +1925,14 @@
       "message": "Pesan",
       "modelForThisChat": "Model untuk chat ini",
       "placeholder": "Minta saya mengotomatiskan alur kerja, mengelola tugas...",
+      "presentationFormatSetup": {
+        "description": "Kami akan menyimpan default ini, lalu membuat presentasi Anda. Format yang diminta secara eksplisit tetap diutamakan.",
+        "htmlDescription": "Cocok untuk dibagikan di browser",
+        "pptxDescription": "Slide yang dapat diedit di PowerPoint",
+        "saveAndGenerate": "Simpan dan buat",
+        "settingsHint": "Ubah kapan saja di Pengaturan → Preferensi → Chat.",
+        "title": "Pilih format presentasi default"
+      },
       "selectedModelUnavailable": "Model yang dipilih tidak tersedia. Konfigurasikan sebelum mengirim.",
       "selectedModelUnavailableToast": "Model yang dipilih tidak tersedia",
       "selectModel": "Pilih model",
@@ -5964,6 +5972,13 @@
           "title": "Model default"
         },
         "description": "Pilih default untuk chat baru dan cara pesan dikirim.",
+        "presentationFormat": {
+          "description": "Pilih format default untuk presentasi baru",
+          "saveFailed": "Tidak dapat menyimpan format default. Coba lagi.",
+          "title": "Format presentasi default",
+          "unavailable": "Tidak tersedia",
+          "unset": "Belum diatur"
+        },
         "sectionTitle": "Chat"
       },
       "debug": {

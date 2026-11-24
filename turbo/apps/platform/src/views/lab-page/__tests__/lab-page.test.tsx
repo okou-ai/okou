@@ -1,5 +1,8 @@
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import { getFeatureSwitchMetadata } from "@okouai/core/feature-switch";
+import {
+  getAllFeatureStates,
+  getFeatureSwitchMetadata,
+} from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -107,11 +110,18 @@ test.each([
   FeatureSwitchKey.MarkdownFirstOutput,
 ])("Staff see %s enabled by default in Beta", async (featureKey) => {
   const orgId = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
+  const userId = "presentation-format-peer";
+  context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
+    return respond(200, {
+      switches: {},
+      effectiveSwitches: getAllFeatureStates({ userId, orgId }),
+    });
+  });
   await setupPage({
     context,
     path: "/_/lab",
     auth: {
-      user: { id: "presentation-format-peer", fullName: "Peer" },
+      user: { id: userId, fullName: "Peer" },
       organization: {
         activeOrg: { id: orgId, name: "Staff" },
         memberships: [{ id: orgId }],
@@ -130,24 +140,52 @@ test.each([
   ).toHaveAttribute("aria-checked", "true");
 });
 
-test("External peers cannot opt into presentation format in Lab", async () => {
+test("Any Lab tester can find presentation format in Beta, opt in, and reset it", async () => {
+  const user = userEvent.setup({ delay: null });
   const featureKey = FeatureSwitchKey.PresentationOutputFormat;
+  let switches: Record<string, boolean> = { [FeatureSwitchKey.Lab]: true };
+  context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
+    return respond(200, { switches, effectiveSwitches: switches });
+  });
+  context.mocks.api(featureSwitchesContract.update, ({ body, respond }) => {
+    switches = { ...switches, ...body.switches };
+    return respond(200, { switches, effectiveSwitches: switches });
+  });
+  context.mocks.api(featureSwitchesContract.delete, ({ respond }) => {
+    switches = { [FeatureSwitchKey.Lab]: true };
+    return respond(200, { deleted: true });
+  });
   await setupPage({
     context,
     path: "/_/lab",
-    featureSwitches: {
-      [FeatureSwitchKey.Lab]: true,
-      [featureKey]: true,
+    auth: {
+      user: {
+        id: "presentation-format-tester",
+        fullName: "bingjie",
+        email: "bingjie-tester@example.test",
+      },
     },
   });
 
   await screen.findByRole("heading", { name: "Lab" });
-  expect(screen.getByText(FeatureSwitchKey.Banking)).toBeInTheDocument();
+  await user.click(buttonNamed("bingjie"));
   expect(
-    screen.queryByText(
+    within(featureSwitchGroup("Beta")).getByText(
       getFeatureSwitchMetadata()[featureKey].displayName ?? featureKey,
     ),
-  ).not.toBeInTheDocument();
+  ).toBeInTheDocument();
+  const control = within(featureSwitchRow(featureKey)).getByRole("switch");
+  expect(control).toHaveAttribute("aria-checked", "false");
+
+  await user.click(control);
+  await waitFor(() => {
+    expect(control).toHaveAttribute("aria-checked", "true");
+  });
+
+  await user.click(buttonNamed("Reset all"));
+  await waitFor(() => {
+    expect(control).toHaveAttribute("aria-checked", "false");
+  });
 });
 
 test("Maintainer filters narrow the feature list", async () => {
