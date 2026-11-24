@@ -1169,7 +1169,7 @@
       "title": "降级套餐"
     },
     "feedback": {
-      "shareFeedback": "分享反馈"
+      "earnExtraCredits": "赚取额外积分"
     },
     "invoices": {
       "amount": "金额",
@@ -1716,7 +1716,6 @@
       "customAmountError": "请输入 $1 到 $10,000 之间的金额",
       "customDollarAmount": "自定义金额（美元）",
       "outOfCredits": "你的积分用完了",
-      "redirecting": "正在跳转…",
       "upgradeToContinue": "升级到 Pro，继续和 {{assistantName}} 对话。",
       "upgradeToPro": "升级到 Pro",
       "upgradeToRun": "升级到 Pro 才能运行 {{assistantName}}",

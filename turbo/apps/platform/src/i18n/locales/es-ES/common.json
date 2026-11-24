@@ -1197,7 +1197,7 @@
       "title": "Cambiar a un plan inferior"
     },
     "feedback": {
-      "shareFeedback": "Compartir comentarios"
+      "earnExtraCredits": "Ganar créditos extra"
     },
     "invoices": {
       "amount": "Cantidad",
@@ -1752,7 +1752,6 @@
       "customAmountError": "Introduce entre $1 y $10,000",
       "customDollarAmount": "Cantidad personalizada en dólares",
       "outOfCredits": "Se te han acabado los créditos",
-      "redirecting": "Redirigiendo...",
       "upgradeToContinue": "Actualiza a Pro para seguir charlando con {{assistantName}}.",
       "upgradeToPro": "Actualizar a Pro",
       "upgradeToRun": "Actualizar a Pro para ejecutar {{assistantName}}",

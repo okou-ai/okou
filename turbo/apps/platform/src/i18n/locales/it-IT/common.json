@@ -1197,7 +1197,7 @@
       "title": "Piano di downgrade"
     },
     "feedback": {
-      "shareFeedback": "Condividi feedback"
+      "earnExtraCredits": "Ottieni crediti extra"
     },
     "invoices": {
       "amount": "Importo",
@@ -1752,7 +1752,6 @@
       "customAmountError": "Inserisci tra $ 1 e $ 10.000",
       "customDollarAmount": "Importo in dollari personalizzato",
       "outOfCredits": "Hai esaurito i crediti",
-      "redirecting": "Reindirizzamento...",
       "upgradeToContinue": "Esegui l'upgrade a Pro per continuare a chattare con {{assistantName}}.",
       "upgradeToPro": "Passa a Pro",
       "upgradeToRun": "Passa a Pro per eseguire {{assistantName}}",

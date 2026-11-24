@@ -25,16 +25,16 @@ export function CreditsFeedbackButton({
     <Button
       type="button"
       variant="outline"
-      size="icon-sm"
+      size="sm"
       className="shrink-0"
-      aria-label={t(($) => {
-        return $.billing.feedback.shareFeedback;
-      })}
       onClick={() => {
         detach(request(signal), Reason.DomCallback);
       }}
     >
       <MessageSquare size={16} />
+      {t(($) => {
+        return $.billing.feedback.earnExtraCredits;
+      })}
     </Button>
   );
 }

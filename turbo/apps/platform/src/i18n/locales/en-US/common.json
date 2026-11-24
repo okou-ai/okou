@@ -1173,7 +1173,7 @@
       "title": "Downgrade plan"
     },
     "feedback": {
-      "shareFeedback": "Share feedback"
+      "earnExtraCredits": "Earn extra credits"
     },
     "invoices": {
       "amount": "Amount",
@@ -1722,7 +1722,6 @@
       "customAmountError": "Enter between $1 and $10,000",
       "customDollarAmount": "Custom dollar amount",
       "outOfCredits": "You're out of credits",
-      "redirecting": "Redirecting...",
       "upgradeToContinue": "Upgrade to Pro to keep chatting with {{assistantName}}.",
       "upgradeToPro": "Upgrade to Pro",
       "upgradeToRun": "Upgrade to Pro to run {{assistantName}}",

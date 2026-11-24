@@ -229,7 +229,7 @@ const STRUCTURED_FAILURE_EXPECTATIONS = {
   },
   insufficient_credits: {
     title: "You're out of credits",
-    action: ["$100", "$200", "$300", "Custom", "Buy"],
+    action: ["$5", "$10", "Upgrade to Pro"],
   },
   provider_insufficient_credits: {
     title: "Your subscription account needs more credit",

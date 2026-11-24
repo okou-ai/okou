@@ -1169,7 +1169,7 @@
       "title": "Turunkan paket"
     },
     "feedback": {
-      "shareFeedback": "Bagikan masukan"
+      "earnExtraCredits": "Dapatkan kredit tambahan"
     },
     "invoices": {
       "amount": "Jumlah",
@@ -1716,7 +1716,6 @@
       "customAmountError": "Masukkan antara $1 dan $10.000",
       "customDollarAmount": "Jumlah dolar kustom",
       "outOfCredits": "Kredit Anda habis",
-      "redirecting": "Mengarahkan...",
       "upgradeToContinue": "Upgrade ke Pro agar tetap bisa mengobrol dengan {{assistantName}}.",
       "upgradeToPro": "Upgrade ke Pro",
       "upgradeToRun": "Upgrade ke Pro untuk menjalankan {{assistantName}}",

@@ -1169,7 +1169,7 @@
       "title": "ダウングレード計画"
     },
     "feedback": {
-      "shareFeedback": "フィードバックを送信"
+      "earnExtraCredits": "追加クレジットを獲得"
     },
     "invoices": {
       "amount": "金額",
@@ -1716,7 +1716,6 @@
       "customAmountError": "1 ドルから 10,000 ドルの間で入力してください",
       "customDollarAmount": "カスタムドル額",
       "outOfCredits": "クレジットが不足しています",
-      "redirecting": "リダイレクト中...",
       "upgradeToContinue": "{{assistantName}} とチャットを続けるには、Pro にアップグレードしてください。",
       "upgradeToPro": "プロにアップグレード",
       "upgradeToRun": "{{assistantName}} を実行するには Pro にアップグレードしてください",

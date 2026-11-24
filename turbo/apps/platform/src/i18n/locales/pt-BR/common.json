@@ -1197,7 +1197,7 @@
       "title": "Fazer downgrade do plano"
     },
     "feedback": {
-      "shareFeedback": "Enviar feedback"
+      "earnExtraCredits": "Ganhar créditos extras"
     },
     "invoices": {
       "amount": "Valor",
@@ -1752,7 +1752,6 @@
       "customAmountError": "Insira um valor entre US$ 1 e US$ 10.000",
       "customDollarAmount": "Valor personalizado em dólares",
       "outOfCredits": "Seus créditos acabaram",
-      "redirecting": "Redirecionando...",
       "upgradeToContinue": "Faça upgrade para o Pro para continuar conversando com o {{assistantName}}.",
       "upgradeToPro": "Fazer upgrade para o Pro",
       "upgradeToRun": "Faça upgrade para o Pro para executar o {{assistantName}}",

@@ -344,14 +344,15 @@ import { formatSubscriptionUsageReset } from "./subscription-usage-format.ts";
 import { AvatarFromUrl } from "./sidebar-shared.tsx";
 import { MyOkouAvatarButton } from "./my-okou-avatar-button.tsx";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "./sidebar-breakpoint.ts";
-import { setBillingSubPage$ } from "../../signals/okou-page/settings/workspace-settings-state.ts";
-import { openSettingsDialogAt$ } from "../../signals/okou-page/settings/settings-dialog.ts";
+import {
+  openSettingsBillingPlansDialog$,
+  openSettingsDialogAt$,
+} from "../../signals/okou-page/settings/settings-dialog.ts";
 import { isOrgAdmin$ } from "../../signals/org.ts";
 import {
   billingStatusAsync$,
   creditPurchaseOrigin$,
   type CreditCheckoutSelection,
-  startCheckout$,
   startCreditCheckout$,
 } from "../../signals/okou-page/billing.ts";
 import { orgPlanCapabilitiesFromBilling } from "../../signals/okou-page/org-plan-capabilities.ts";
@@ -4455,6 +4456,7 @@ function isImageFilename(filename: string): boolean {
 }
 
 const CREDITS_PER_DOLLAR = 1000;
+const FREE_CREDIT_TOP_UP_OPTIONS = [5000, 10_000] as const;
 const CREDIT_TOP_UP_OPTIONS = [100_000, 200_000, 300_000] as const;
 
 function formatCreditsUsd(credits: number): string {
@@ -4544,10 +4546,12 @@ function insufficientCreditsCopy(params: {
   };
 }
 
-function PaidCreditCheckoutActions({
+function CreditCheckoutActions({
+  freePlan,
   preparing,
   handleCreditClick,
 }: {
+  readonly freePlan: boolean;
   readonly preparing: boolean;
   readonly handleCreditClick: (
     selection: CreditCheckoutSelection,
@@ -4555,6 +4559,9 @@ function PaidCreditCheckoutActions({
   ) => void;
 }) {
   const { t } = useTranslation();
+  const topUpOptions = freePlan
+    ? FREE_CREDIT_TOP_UP_OPTIONS
+    : CREDIT_TOP_UP_OPTIONS;
   const submitCustomCredits = (
     form: HTMLFormElement | null,
     newTab: boolean,
@@ -4577,7 +4584,7 @@ function PaidCreditCheckoutActions({
   return (
     <div className="flex h-9 shrink-0 items-center gap-2">
       <div className="flex h-9 shrink-0 items-center gap-2">
-        {CREDIT_TOP_UP_OPTIONS.map((credits) => {
+        {topUpOptions.map((credits) => {
           return (
             <Button
               key={credits}
@@ -4586,7 +4593,7 @@ function PaidCreditCheckoutActions({
                 handleCreditClick({ credits }, event.metaKey || event.ctrlKey);
               }}
               disabled={preparing}
-              variant="default"
+              variant={freePlan ? "outline" : "default"}
               size="sm"
               className="disabled:opacity-60"
             >
@@ -4594,76 +4601,76 @@ function PaidCreditCheckoutActions({
             </Button>
           );
         })}
-        <details
-          className="group flex"
-          onToggle={(event) => {
-            if (event.currentTarget.open) {
-              event.currentTarget.querySelector("input")?.focus();
-            }
-          }}
-        >
-          <summary
-            role="button"
-            className={cn(
-              buttonVariants({ size: "sm", variant: "outline" }),
-              "list-none group-open:hidden [&::-webkit-details-marker]:hidden",
-            )}
-          >
-            {t(($) => {
-              return $.chat.billing.custom;
-            })}
-          </summary>
-          <form
-            className="flex items-center gap-2"
-            onSubmit={(event) => {
-              event.preventDefault();
-              submitCustomCredits(event.currentTarget, false);
+        {!freePlan && (
+          <details
+            className="group flex"
+            onToggle={(event) => {
+              if (event.currentTarget.open) {
+                event.currentTarget.querySelector("input")?.focus();
+              }
             }}
           >
-            <div className="relative">
-              <span className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-sm text-muted-foreground">
-                $
-              </span>
-              <Input
-                type="text"
-                inputMode="numeric"
-                name="customUsd"
-                defaultValue="100"
-                onInput={(event) => {
-                  event.currentTarget.value = event.currentTarget.value.replace(
-                    /\D/g,
-                    "",
+            <summary
+              role="button"
+              className={cn(
+                buttonVariants({ size: "sm", variant: "outline" }),
+                "list-none group-open:hidden [&::-webkit-details-marker]:hidden",
+              )}
+            >
+              {t(($) => {
+                return $.chat.billing.custom;
+              })}
+            </summary>
+            <form
+              className="flex items-center gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                submitCustomCredits(event.currentTarget, false);
+              }}
+            >
+              <div className="relative">
+                <span className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-sm text-muted-foreground">
+                  $
+                </span>
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  name="customUsd"
+                  defaultValue="100"
+                  onInput={(event) => {
+                    event.currentTarget.value =
+                      event.currentTarget.value.replace(/\D/g, "");
+                  }}
+                  aria-label={t(($) => {
+                    return $.chat.billing.customDollarAmount;
+                  })}
+                  className="h-8 w-24 pr-2 pl-5"
+                />
+              </div>
+              <Button
+                type="button"
+                onClick={(event) => {
+                  submitCustomCredits(
+                    event.currentTarget.form,
+                    event.metaKey || event.ctrlKey,
                   );
                 }}
-                aria-label={t(($) => {
-                  return $.chat.billing.customDollarAmount;
-                })}
-                className="h-8 w-24 pr-2 pl-5"
-              />
-            </div>
-            <Button
-              type="button"
-              onClick={(event) => {
-                submitCustomCredits(
-                  event.currentTarget.form,
-                  event.metaKey || event.ctrlKey,
-                );
-              }}
-              disabled={preparing}
-              variant="default"
-              size="sm"
-              className="disabled:opacity-60"
-            >
-              {preparing
-                ? t(($) => {
-                    return $.billing.common.preparing;
-                  })
-                : t(($) => {
-                    return $.chat.billing.buy;
-                  })}
-            </Button>
-          </form>
-        </details>
+                disabled={preparing}
+                variant="default"
+                size="sm"
+                className="disabled:opacity-60"
+              >
+                {preparing
+                  ? t(($) => {
+                      return $.billing.common.preparing;
+                    })
+                  : t(($) => {
+                      return $.chat.billing.buy;
+                    })}
+              </Button>
+            </form>
+          </details>
+        )}
       </div>
     </div>
   );
@@ -4677,72 +4684,29 @@ function hasExhaustedCredits(error: string, credits: number | null): boolean {
   );
 }
 
-function InsufficientCreditsCard({ error }: { readonly error: string }) {
+function CreditRecoveryActions({
+  freePlan,
+  canTopUp,
+  showProUpgrade,
+  showCreditsFeedback,
+}: {
+  readonly freePlan: boolean;
+  readonly canTopUp: boolean;
+  readonly showProUpgrade: boolean;
+  readonly showCreditsFeedback: boolean;
+}) {
   const { t } = useTranslation();
-  const billingLoadable = useLoadable(billingStatusAsync$);
-  const [checkoutLoadable, checkout] = useLoadableSet(startCheckout$);
   const [creditCheckoutLoadable, creditCheckout] =
     useLoadableSet(startCreditCheckout$);
-  const openSettings = useSet(openSettingsDialogAt$);
-  const setSubPage = useSet(setBillingSubPage$);
+  const openBillingPlans = useSet(openSettingsBillingPlansDialog$);
   const pageSignal = useGet(pageSignal$);
   const creditPurchaseOrigin = useGet(creditPurchaseOrigin$);
-
-  const billingResolved = billingLoadable.state === "hasData";
-  const credits = billingResolved ? billingLoadable.data.credits : null;
-  const canBuyCredits = billingResolved
-    ? orgPlanCapabilitiesFromBilling(billingLoadable.data).canBuyCredits
-    : false;
-  const isAdminLoadable = useLastLoadable(isOrgAdmin$);
-  const roleResolved = isAdminLoadable.state === "hasData";
-  const canManageBilling = roleResolved ? isAdminLoadable.data : false;
-  const hasAvailableCredits = canBuyCredits && credits !== null && credits > 0;
-  const shouldStartProCheckout = !canBuyCredits;
-  // Credits on hand leave the reserved action slot empty, the way this notice
-  // has always read once a purchase lands.
-  const canShowBillingAction =
-    billingResolved && canManageBilling && !hasAvailableCredits;
-  const checkoutRedirecting = checkoutLoadable.state === "loading";
   const creditCheckoutPreparing =
     creditCheckoutLoadable.state === "loading" ||
     creditPurchaseOrigin === "chat";
 
-  // Credits arriving while the card is on screen replaces this copy and the
-  // action inside the element below, rather than swapping the element itself:
-  // `docs/chat.md#chat-cards` keeps the mounted card's box in layout through every
-  // asynchronous state change.
-  const { headline, helper, icon } = hasAvailableCredits
-    ? { ...creditsAvailableCopy(), icon: null }
-    : {
-        ...insufficientCreditsCopy({
-          canBuyCredits,
-          roleResolved: billingResolved && roleResolved,
-          canManageBilling: billingResolved && canManageBilling,
-        }),
-        icon: (
-          <Coins
-            aria-hidden="true"
-            size={16}
-            className="mt-1 shrink-0 text-brand-text"
-          />
-        ),
-      };
-
-  const openBilling = () => {
-    setSubPage(false);
-    detach(openSettings("billing", pageSignal), Reason.DomCallback);
-  };
-
-  const handleUpgradeClick = (event: ReactMouseEvent<HTMLButtonElement>) => {
-    if (shouldStartProCheckout) {
-      const newTab = event.metaKey || event.ctrlKey;
-      detach(
-        checkout("pro", newTab, undefined, pageSignal),
-        Reason.DomCallback,
-      );
-      return;
-    }
-    openBilling();
+  const handleUpgradeClick = () => {
+    detach(openBillingPlans(pageSignal), Reason.DomCallback);
   };
 
   const handleCreditClick = (
@@ -4755,12 +4719,82 @@ function InsufficientCreditsCard({ error }: { readonly error: string }) {
     );
   };
 
-  // The upgrade question follows only the Pro upgrade action a billing manager
-  // can take, never the credit top-up or the ask-an-admin copy.
-  const showUpgradeSurvey =
+  return (
+    <>
+      {canTopUp && (
+        <CreditCheckoutActions
+          freePlan={freePlan}
+          preparing={creditCheckoutPreparing}
+          handleCreditClick={handleCreditClick}
+        />
+      )}
+      {showProUpgrade && (
+        <Button
+          type="button"
+          onClick={handleUpgradeClick}
+          disabled={creditCheckoutPreparing}
+          variant="default"
+          size="sm"
+          className={cn(ERROR_CARD_ACTION_CLASS, "disabled:opacity-60")}
+        >
+          {t(($) => {
+            return $.chat.billing.upgradeToPro;
+          })}
+        </Button>
+      )}
+      <CreditsFeedbackButton eligible={showCreditsFeedback} />
+    </>
+  );
+}
+
+function InsufficientCreditsCard({ error }: { readonly error: string }) {
+  const billingLoadable = useLoadable(billingStatusAsync$);
+
+  const billingResolved = billingLoadable.state === "hasData";
+  const credits = billingResolved ? billingLoadable.data.credits : null;
+  const freePlan =
+    billingResolved && billingLoadable.data.tier === "limited-free-1";
+  const requiresPro = freePlan && error.trim().toLowerCase() === "pro_required";
+  const canBuyCredits = billingResolved
+    ? orgPlanCapabilitiesFromBilling(billingLoadable.data).canBuyCredits
+    : false;
+  const isAdminLoadable = useLastLoadable(isOrgAdmin$);
+  const roleResolved = isAdminLoadable.state === "hasData";
+  const canManageBilling = roleResolved ? isAdminLoadable.data : false;
+  const canTopUp = canBuyCredits && !requiresPro;
+  const hasAvailableCredits = canTopUp && credits !== null && credits > 0;
+  const showProUpgrade = freePlan || !canTopUp;
+  // Credits on hand leave the reserved action slot empty, the way this notice
+  // has always read once a purchase lands.
+  const canShowBillingAction =
+    billingResolved && canManageBilling && !hasAvailableCredits;
+
+  // Credits arriving while the card is on screen replaces this copy and the
+  // action inside the element below, rather than swapping the element itself:
+  // `docs/chat.md#chat-cards` keeps the mounted card's box in layout through every
+  // asynchronous state change.
+  const { headline, helper, icon } = hasAvailableCredits
+    ? { ...creditsAvailableCopy(), icon: null }
+    : {
+        ...insufficientCreditsCopy({
+          canBuyCredits: canTopUp,
+          roleResolved: billingResolved && roleResolved,
+          canManageBilling: billingResolved && canManageBilling,
+        }),
+        icon: (
+          <Coins
+            aria-hidden="true"
+            size={16}
+            className="mt-1 shrink-0 text-brand-text"
+          />
+        ),
+      };
+
+  // Free admins retain their reward offer when one-time top-ups are available.
+  const showCreditsFeedback =
     hasExhaustedCredits(error, credits) &&
     canShowBillingAction &&
-    shouldStartProCheckout;
+    showProUpgrade;
 
   return (
     <>
@@ -4788,28 +4822,12 @@ function InsufficientCreditsCard({ error }: { readonly error: string }) {
           </div>
         </div>
         <div className={CHAT_NOTICE_ACTION_SLOT_CLASS}>
-          <CreditsFeedbackButton eligible={showUpgradeSurvey} />
-          {!canShowBillingAction ? null : shouldStartProCheckout ? (
-            <Button
-              type="button"
-              onClick={handleUpgradeClick}
-              disabled={checkoutRedirecting}
-              variant="default"
-              size="sm"
-              className={cn(ERROR_CARD_ACTION_CLASS, "disabled:opacity-60")}
-            >
-              {checkoutRedirecting
-                ? t(($) => {
-                    return $.chat.billing.redirecting;
-                  })
-                : t(($) => {
-                    return $.chat.billing.upgradeToPro;
-                  })}
-            </Button>
-          ) : (
-            <PaidCreditCheckoutActions
-              preparing={creditCheckoutPreparing}
-              handleCreditClick={handleCreditClick}
+          {canShowBillingAction && (
+            <CreditRecoveryActions
+              freePlan={freePlan}
+              canTopUp={canTopUp}
+              showProUpgrade={showProUpgrade}
+              showCreditsFeedback={showCreditsFeedback}
             />
           )}
         </div>

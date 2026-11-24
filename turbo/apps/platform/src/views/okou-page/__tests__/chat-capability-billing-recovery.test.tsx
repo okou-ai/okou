@@ -1,7 +1,8 @@
 import {
-  billingCheckoutContract,
   billingCreditCheckoutContract,
   billingStatusContract,
+  billingUsagePackCatalogContract,
+  billingUsagePackManagementContract,
   type BillingStatusResponse,
   type CreditCheckoutRequest,
 } from "@okouai/api-contracts/contracts/billing";
@@ -110,6 +111,25 @@ function installBillingState(args: {
   context.mocks.api(billingStatusContract.get, ({ respond }) => {
     return respond(200, billingStatus(args));
   });
+  context.mocks.api(billingUsagePackCatalogContract.get, ({ respond }) => {
+    return respond(200, {
+      supportsFreeMembers: true,
+      usagePacks: [
+        {
+          usagePackUsd: 20,
+          priceUsd: 20,
+          purchasedCredits: 20_000,
+          bonusCredits: 2000,
+          totalCredits: 22_000,
+        },
+      ],
+    });
+  });
+  context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "No usage-pack subscription" },
+    });
+  });
 }
 
 function installBlockedChat(
@@ -140,20 +160,19 @@ function button(name: string, container: ParentNode = document.body) {
   return match;
 }
 
-async function expectProCheckout(): Promise<void> {
-  const user = userEvent.setup({ delay: null });
-  const checkoutRequests: string[] = [];
-  context.mocks.api(billingCheckoutContract.create, ({ body, respond }) => {
-    checkoutRequests.push(body.tier);
-    return respond(200, { url: "https://checkout.example.test/pro" });
+async function expectProPlans(): Promise<void> {
+  click(await findButton("Upgrade to Pro"));
+  const plans = await screen.findByRole("dialog", { name: "Choose a plan" });
+  click(await within(plans).findByText("Start with Pro"));
+  const configuration = await screen.findByRole("dialog", {
+    name: "Configure member packages",
   });
-
-  await user.click(await findButton("Upgrade to Pro"));
-
+  expect(within(configuration).getByText("Step 2 of 2")).toBeInTheDocument();
+  click(within(configuration).getByLabelText("Close"));
   await waitFor(() => {
-    expect(checkoutRequests).toStrictEqual(["pro"]);
-    expect(window.location.href).toBe("https://checkout.example.test/pro");
+    expect(configuration).not.toBeInTheDocument();
   });
+  expect(screen.getByRole("textbox", { name: "Message" })).toBeInTheDocument();
 }
 
 test("Direct a workspace member to an admin when billing blocks a run", async () => {
@@ -161,7 +180,7 @@ test("Direct a workspace member to an admin when billing blocks a run", async ()
     tier: "limited-free-1",
     role: "member",
     credits: 0,
-    canBuyCredits: false,
+    canBuyCredits: true,
   });
   installBlockedChat();
 
@@ -169,30 +188,64 @@ test("Direct a workspace member to an admin when billing blocks a run", async ()
 
   await readyChat();
   await expect(
-    screen.findByText(/Ask a workspace admin to upgrade to Pro/u),
+    screen.findByText(/Ask a workspace admin to add credits/u),
   ).resolves.toBeVisible();
   expect(queryButton("Upgrade to Pro")).not.toBeInTheDocument();
-  expect(queryButton("$100")).not.toBeInTheDocument();
+  expect(queryButton("$5")).not.toBeInTheDocument();
+  expect(queryButton("$10")).not.toBeInTheDocument();
   expect(queryButton("Custom")).not.toBeInTheDocument();
 });
 
-test("Let a workspace admin recover from a free-plan billing limit", async () => {
+test("Let a free workspace admin choose a small top-up or the Pro plans flow", async () => {
+  const checkoutRequests: CreditCheckoutRequest[] = [];
   installBillingState({
     tier: "limited-free-1",
     role: "admin",
     credits: 0,
-    canBuyCredits: false,
+    canBuyCredits: true,
   });
+  context.mocks.api(
+    billingCreditCheckoutContract.create,
+    ({ body, respond }) => {
+      checkoutRequests.push(body);
+      return respond(200, {
+        status: "preview",
+        credits: body.credits,
+        amountCents: body.credits / 10,
+        currency: "usd",
+        expiresAt: "2026-12-01T00:10:00.000Z",
+        previewToken: `credit-preview-${String(checkoutRequests.length)}`,
+      });
+    },
+  );
   installBlockedChat("insufficient_credits");
 
   await setupPage({ context, path: RUN_PATH });
 
   await readyChat();
   await expect(
-    screen.findByText(/Upgrade to Pro to keep chatting/u),
-  ).resolves.toBeVisible();
+    screen.findByText("You're out of credits"),
+  ).resolves.toBeInTheDocument();
+  const frame = screen.getByTestId("assistant-error-card-shell");
+  for (const dollars of [5, 10]) {
+    click(button(`$${String(dollars)}`, frame));
+    const review = await screen.findByRole("dialog", {
+      name: "Review credit purchase",
+    });
+    expect(
+      within(review).getByText(`$${dollars.toFixed(2)}`),
+    ).toBeInTheDocument();
+    expect(checkoutRequests.at(-1)).toMatchObject({
+      credits: dollars * 1000,
+      supportsInAppPreview: true,
+    });
+    click(button("Cancel", review));
+    await waitFor(() => {
+      expect(review).not.toBeInTheDocument();
+    });
+  }
 
-  await expectProCheckout();
+  await expectProPlans();
 });
 
 test("Let a limited-free workspace admin unlock a Pro-only capability", async () => {
@@ -200,7 +253,7 @@ test("Let a limited-free workspace admin unlock a Pro-only capability", async ()
     tier: "limited-free-1",
     role: "admin",
     credits: 500,
-    canBuyCredits: false,
+    canBuyCredits: true,
   });
   installBlockedChat("pro_required");
 
@@ -211,7 +264,7 @@ test("Let a limited-free workspace admin unlock a Pro-only capability", async ()
     screen.findByText(/Upgrade to Pro to keep chatting/u),
   ).resolves.toBeVisible();
 
-  await expectProCheckout();
+  await expectProPlans();
 });
 
 test("Let a paid workspace admin buy more credits", async () => {
