@@ -1,5 +1,6 @@
 package ai.okou.android.artifacts
 
+import ai.okou.android.ContentReadProgress
 import ai.okou.android.R
 import ai.okou.android.chat.ChatListSkeletonDelayMillis
 import ai.okou.android.chat.ChatResourceOrigin
@@ -18,7 +19,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -27,12 +27,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -378,14 +376,7 @@ internal fun ChatArtifactResources(
                     workflows?.syncingStale == true ||
                     historyStale
             ) {
-                val label = stringResource(R.string.chat_resources_syncing)
-                val colors = MaterialTheme.colorScheme
-                LinearProgressIndicator(
-                    Modifier.fillMaxWidth().semantics { contentDescription = label },
-                    color = colors.primary,
-                    trackColor =
-                        colors.primary.copy(alpha = 0.18f).compositeOver(colors.background),
-                )
+                ContentReadProgress(R.string.chat_resources_syncing)
             }
         }
     }

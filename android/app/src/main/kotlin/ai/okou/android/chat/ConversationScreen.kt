@@ -1,5 +1,6 @@
 package ai.okou.android.chat
 
+import ai.okou.android.ContentReadProgress
 import ai.okou.android.R
 import ai.okou.android.WorkspaceFeedbackHost
 import ai.okou.android.currentWindowSizeDp
@@ -267,7 +268,7 @@ internal fun ConversationRoute(
         // Compose anchors to the first row's key. If that key is a status row, defer row changes
         // until its message can be re-anchored without cancelling the reader's gesture.
         var presentedTimeline by remember { mutableStateOf(incomingTimeline) }
-        val timeline = if (holdTimeline) presentedTimeline else incomingTimeline
+        val timeline = if (holdTimeline && !missing) presentedTimeline else incomingTimeline
         SideEffect { presentedTimeline = timeline }
         val runningRows =
             if (activity == R.string.conversation_processing) setOf(TimelineActivity)
@@ -516,7 +517,7 @@ internal fun ConversationRoute(
         }
         val jump =
             when {
-                !readingReady || atEnd || !position.canScrollBackward -> null
+                missing || !readingReady || atEnd || !position.canScrollBackward -> null
                 newReply || (!hasSeenLatest && list.isUnread(threadId)) ->
                     R.string.conversation_new_reply
                 !pastJumpThreshold -> null
@@ -680,7 +681,7 @@ internal fun ConversationRoute(
                 }
                 if (showHistoryProgress) {
                     Box(Modifier.fillMaxWidth().testTag("history_sync_progress")) {
-                        ChatReadProgress(R.string.history_syncing)
+                        ContentReadProgress(R.string.history_syncing)
                     }
                 }
             }
