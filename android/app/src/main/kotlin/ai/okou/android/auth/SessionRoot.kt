@@ -19,6 +19,7 @@ import ai.okou.android.SettingsSwitchRow
 import ai.okou.android.SettingsTrigger
 import ai.okou.android.chat.WorkspaceRealtimeLifecycle
 import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.entryBrandNameStyle
 import ai.okou.android.entrySpacing
 import ai.okou.android.entryTopPadding
 import ai.okou.android.instructions.PersonalInstructionsSettings
@@ -200,6 +201,8 @@ private fun NativeAuthentication() {
     val hostTop = entryTopPadding(windowHeight) - clerkAppBarPadding
     val logoBottom = entrySpacing(compact) - clerkAppBarPadding
     val maxHostWidth = EntryContentWidth + EntryContentGutter * 2
+    // Resolve the app-owned brand style above Clerk's theme, which has no titleLarge override.
+    val brandNameStyle = entryBrandNameStyle(compact)
     val colors = MaterialTheme.colorScheme
     val type = MaterialTheme.typography
     val theme =
@@ -243,7 +246,13 @@ private fun NativeAuthentication() {
         Box(Modifier.widthIn(max = maxHostWidth).fillMaxSize()) {
             AuthView(
                 clerkTheme = theme,
-                logo = { EntryBrand(compact, Modifier.padding(bottom = logoBottom)) },
+                logo = {
+                    EntryBrand(
+                        compact,
+                        Modifier.padding(bottom = logoBottom),
+                        nameStyle = brandNameStyle,
+                    )
+                },
                 isDismissible = false,
                 persistIdentifiers = false,
                 preferGoogleOneTap = false,
