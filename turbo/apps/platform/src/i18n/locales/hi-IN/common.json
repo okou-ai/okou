@@ -570,6 +570,23 @@
       "text": "मूलपाठ",
       "video": "वीडियो"
     },
+    "library": {
+      "allArtifacts": "सभी आर्टिफ़ैक्ट",
+      "allTypes": "सभी प्रकार",
+      "clearFilters": "फ़िल्टर हटाएँ",
+      "clearSearch": "खोज साफ़ करें",
+      "created": "बनाया गया",
+      "emptyDescription": "कोई दूसरा नाम या प्रकार आज़माएँ।",
+      "emptyTitle": "कोई आर्टिफ़ैक्ट नहीं मिला",
+      "loadMore": "और लोड करें",
+      "name": "नाम",
+      "retry": "फिर से कोशिश करें",
+      "search": "आर्टिफ़ैक्ट खोजें",
+      "sort": "आर्टिफ़ैक्ट क्रमबद्ध करें",
+      "sortAscending": "आरोही क्रम में लगाएँ",
+      "sortDescending": "अवरोही क्रम में लगाएँ",
+      "type": "प्रकार"
+    },
     "metadata": {
       "generated": "{{date}} उत्पन्न किया गया",
       "updated": "{{date}} को अपडेट किया गया"

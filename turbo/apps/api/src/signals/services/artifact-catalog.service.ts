@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { command } from "ccstate";
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
 import { artifactShares } from "@okouai/db/schema/artifact-share";
@@ -11,6 +12,7 @@ import {
   desc,
   eq,
   exists,
+  gt,
   gte,
   ilike,
   inArray,
@@ -28,7 +30,9 @@ import {
 import {
   ARTIFACT_CATALOG_KINDS,
   chatArtifactCatalogChangedEvent,
+  type ArtifactCatalogDirection,
   type ArtifactCatalogKind,
+  type ArtifactCatalogSort,
   type ArtifactDetail,
   type ArtifactSummary,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
@@ -51,7 +55,14 @@ import {
   runUploadedFiles,
   type CanonicalAssetClassification,
 } from "@okouai/db/schema/run-uploaded-file";
-import { object, string, enum as zEnum, type infer as zInfer } from "zod";
+import {
+  iso,
+  object,
+  string,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
 
 import { QueryBuilder } from "drizzle-orm/pg-core";
 
@@ -72,7 +83,7 @@ import {
 } from "../../lib/shared-thread-artifact";
 import { db$, writeDb$, type ReadonlyDb } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
-import { safeUrlParse, settle } from "../utils";
+import { safeJsonParse, safeUrlParse, settle } from "../utils";
 import {
   inferMimetype,
   VIDEO_FILENAME_EXTENSIONS,
@@ -93,19 +104,31 @@ const OFFICIAL_VIDEO_MARKER = "zero-official-video";
 const AVATAR_VIDEO_MARKER = "zero-joggai-avatar-video";
 
 const artifactCursorSchema = object({
-  createdAt: string(),
-  id: string(),
+  createdAt: iso.datetime(),
+  id: uuid(),
 });
 type ArtifactCursor = zInfer<typeof artifactCursorSchema>;
 
-function encodeArtifactCursor(cursor: ArtifactCursor): string {
+function encodeArtifactCursor(
+  cursor: ArtifactCursor | ArtifactLibraryCursor,
+): string {
   return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
 }
 
-function decodeArtifactCursor(raw: string): ArtifactCursor {
-  return artifactCursorSchema.parse(
-    JSON.parse(Buffer.from(raw, "base64url").toString("utf8")),
-  );
+const artifactLibraryCursorSchema = object({
+  query: string(),
+  value: string(),
+  id: uuid(),
+});
+type ArtifactLibraryCursor = zInfer<typeof artifactLibraryCursorSchema>;
+
+function decodeArtifactCursor(
+  raw: string,
+): ArtifactCursor | ArtifactLibraryCursor | null {
+  const result = artifactLibraryCursorSchema
+    .or(artifactCursorSchema)
+    .safeParse(safeJsonParse(Buffer.from(raw, "base64url").toString("utf8")));
+  return result.success ? result.data : null;
 }
 
 interface CatalogFileRow {
@@ -1229,6 +1252,8 @@ interface ListArtifactCatalogArgs {
   readonly kind?: ArtifactCatalogKind;
   readonly chatThreadId?: string;
   readonly keyword?: string;
+  readonly sort?: ArtifactCatalogSort;
+  readonly direction?: ArtifactCatalogDirection;
 }
 
 interface ListArtifactCatalogResult {
@@ -1333,21 +1358,147 @@ function artifactCatalogOwnerFilter(userId: string): SQL {
   ]);
 }
 
+function artifactCatalogQueryHash(
+  args: ListArtifactCatalogArgs,
+  sort: ArtifactCatalogSort,
+  direction: ArtifactCatalogDirection,
+): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify([
+        args.orgId,
+        args.userId,
+        args.kind ?? null,
+        args.chatThreadId ?? null,
+        args.keyword ?? null,
+        sort,
+        direction,
+      ]),
+    )
+    .digest("hex");
+}
+
+function isArtifactCatalogCursorValid(
+  cursor: ArtifactCursor | ArtifactLibraryCursor | null,
+  libraryQuery: boolean,
+  sort: ArtifactCatalogSort,
+  queryHash: string,
+): boolean {
+  if (!cursor) {
+    return false;
+  }
+  if ("createdAt" in cursor) {
+    return !libraryQuery;
+  }
+  if (!libraryQuery || cursor.query !== queryHash) {
+    return false;
+  }
+  return (
+    sort === "title" ||
+    iso.datetime({ precision: 6 }).safeParse(cursor.value).success
+  );
+}
+
+function artifactCatalogSortColumn(sort: ArtifactCatalogSort) {
+  return sort === "title" ? artifacts.title : artifacts.createdAt;
+}
+
+function artifactCatalogCursorFilter(
+  cursor: ArtifactCursor | ArtifactLibraryCursor | null,
+  sort: ArtifactCatalogSort,
+  direction: ArtifactCatalogDirection,
+): SQL | undefined {
+  if (!cursor) {
+    return undefined;
+  }
+  if ("createdAt" in cursor) {
+    return lt(
+      sql`(${artifacts.createdAt}, ${artifacts.id})`,
+      sql`(${cursor.createdAt}::timestamptz AT TIME ZONE 'UTC', ${cursor.id}::uuid)`,
+    );
+  }
+  const sortColumn = artifactCatalogSortColumn(sort);
+  const value =
+    sort === "title" ? sql`${cursor.value}` : sql`${cursor.value}::timestamp`;
+  return direction === "asc"
+    ? gt(
+        sql`(${sortColumn}, ${artifacts.id})`,
+        sql`(${value}, ${cursor.id}::uuid)`,
+      )
+    : lt(
+        sql`(${sortColumn}, ${artifacts.id})`,
+        sql`(${value}, ${cursor.id}::uuid)`,
+      );
+}
+
+function artifactCatalogKeywordFilter(
+  keyword: string | undefined,
+  libraryQuery: boolean,
+): SQL | undefined {
+  if (!keyword) {
+    return undefined;
+  }
+  const pattern = `%${keyword
+    .replaceAll("\\", String.raw`\\`)
+    .replaceAll("%", String.raw`\%`)
+    .replaceAll("_", String.raw`\_`)}%`;
+  const qb = new QueryBuilder();
+  return or(
+    ilike(artifacts.title, pattern),
+    libraryQuery
+      ? exists(
+          qb
+            .select({ id: runUploadedFiles.id })
+            .from(runUploadedFiles)
+            .where(
+              and(
+                eq(runUploadedFiles.id, artifacts.projectionFileId),
+                eq(runUploadedFiles.orgId, artifacts.orgId),
+                ilike(runUploadedFiles.filename, pattern),
+              ),
+            ),
+        )
+      : undefined,
+  );
+}
+
+function artifactCatalogOrderBy(
+  sort: ArtifactCatalogSort,
+  direction: ArtifactCatalogDirection,
+): SQL[] {
+  const column = artifactCatalogSortColumn(sort);
+  return [
+    direction === "asc" ? asc(column) : desc(column),
+    direction === "asc" ? asc(artifacts.id) : desc(artifacts.id),
+  ];
+}
+
 export const listArtifactCatalog$ = command(
   async (
     { get },
     args: ListArtifactCatalogArgs,
     signal: AbortSignal,
-  ): Promise<ListArtifactCatalogResult> => {
+  ): Promise<ListArtifactCatalogResult | null> => {
     const db = get(db$);
     const limit = args.limit ?? ARTIFACT_CATALOG_DEFAULT_LIMIT;
+    const libraryQuery =
+      args.sort !== undefined || args.direction !== undefined;
+    const sort = args.sort ?? "createdAt";
+    const direction = args.direction ?? "desc";
+    const queryHash = artifactCatalogQueryHash(args, sort, direction);
     const cursor = args.cursor ? decodeArtifactCursor(args.cursor) : null;
-    const keywordPattern = args.keyword
-      ? `%${args.keyword
-          .replaceAll("\\", String.raw`\\`)
-          .replaceAll("%", String.raw`\%`)
-          .replaceAll("_", String.raw`\_`)}%`
-      : undefined;
+    if (
+      args.cursor &&
+      !isArtifactCatalogCursorValid(cursor, libraryQuery, sort, queryHash)
+    ) {
+      return null;
+    }
+    const sortColumn = artifactCatalogSortColumn(sort);
+    const cursorFilter = artifactCatalogCursorFilter(cursor, sort, direction);
+    const keywordFilter = artifactCatalogKeywordFilter(
+      args.keyword,
+      libraryQuery,
+    );
     const rows = await db
       .select({
         id: artifacts.id,
@@ -1362,6 +1513,14 @@ export const listArtifactCatalog$ = command(
         thumbnail: artifacts.thumbnail,
         createdAt: artifacts.createdAt,
         updatedAt: artifacts.updatedAt,
+        // Preserve PostgreSQL microseconds in new keyset cursors; Date truncates
+        // them and can skip records sharing a millisecond at a page boundary.
+        sortValue:
+          !libraryQuery || sort === "title"
+            ? artifacts.title
+            : sql`to_char(${sortColumn}, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.mapWith(
+                pgTextDecoder,
+              ),
       })
       .from(artifacts)
       .where(
@@ -1373,16 +1532,11 @@ export const listArtifactCatalog$ = command(
           args.chatThreadId
             ? eq(artifacts.chatThreadId, args.chatThreadId)
             : undefined,
-          keywordPattern ? ilike(artifacts.title, keywordPattern) : undefined,
-          cursor
-            ? lt(
-                sql`(${artifacts.createdAt}, ${artifacts.id})`,
-                sql`(${cursor.createdAt}::timestamptz AT TIME ZONE 'UTC', ${cursor.id}::uuid)`,
-              )
-            : undefined,
+          keywordFilter,
+          cursorFilter,
         ),
       )
-      .orderBy(desc(artifacts.createdAt), desc(artifacts.id))
+      .orderBy(...artifactCatalogOrderBy(sort, direction))
       .limit(limit + 1);
     signal.throwIfAborted();
 
@@ -1393,10 +1547,18 @@ export const listArtifactCatalog$ = command(
       artifacts: pageRows.map(toArtifactSummary),
       nextCursor:
         hasMore && lastRow
-          ? encodeArtifactCursor({
-              createdAt: lastRow.createdAt.toISOString(),
-              id: lastRow.id,
-            })
+          ? encodeArtifactCursor(
+              libraryQuery
+                ? {
+                    query: queryHash,
+                    value: lastRow.sortValue,
+                    id: lastRow.id,
+                  }
+                : {
+                    createdAt: lastRow.createdAt.toISOString(),
+                    id: lastRow.id,
+                  },
+            )
           : null,
     };
   },

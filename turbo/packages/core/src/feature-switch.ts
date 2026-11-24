@@ -189,6 +189,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.ArtifactLibrary]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Artifact library list",
+    description:
+      "Browse artifacts in a searchable list with type filters, creation and name sorting, and the existing sidebar previews.",
+    enabled: false,
+  },
   [FeatureSwitchKey.SlashActions]: {
     maintainer: "tongx@okou.ai",
     displayName: "Slash actions",
