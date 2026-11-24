@@ -543,7 +543,7 @@ export function ThreeColumnSearchDialog({
           <>
             <span
               role="status"
-              className="self-end px-5 pb-1 text-xs text-muted-foreground"
+              className="sr-only"
             >
               {t(
                 ($) => {
