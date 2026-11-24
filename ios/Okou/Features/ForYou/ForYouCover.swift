@@ -4,10 +4,14 @@ import UIKit
 /// The page's scenery: the cover picture at one fixed scale across the top, continued below by
 /// the colour of its own sea, so the cards and the dock stand on the same scene as the header.
 /// A taller card only covers more of it; the picture never resizes, so it keeps one size and
-/// one sharpness while the cards change. At night the whole scene dims.
+/// one sharpness while the cards change. At night the whole scene dims, and while a direction is
+/// written it recedes under the page's ground.
 struct ForYouCover: View {
   /// How far the scene has drifted sideways behind the cards, in points.
   let drift: CGFloat
+  /// Recedes under the page's ground, so the card and the input stand alone and the glass and
+  /// keyboard over it read plain instead of taking the sea's colour.
+  var veiled = false
   /// Hears where the train's lower edge is on screen, so the cards can stay below it.
   var onHorizon: (CGFloat) -> Void = { _ in }
   @Environment(\.colorScheme) private var colorScheme
@@ -24,6 +28,9 @@ struct ForYouCover: View {
   }
   /// The cover dims at night so the page's light header and status bar read on it.
   private static let nightDim: Double = 0.4
+  /// How much of the page's ground lies over the scene while it is veiled: enough to quiet the
+  /// sea, little enough that the scene still shows where the page is.
+  private static let veil: Double = 0.8
 
   var body: some View {
     GeometryReader { geometry in
@@ -57,6 +64,7 @@ struct ForYouCover: View {
         OkouMediaColor.scrim.opacity(Self.nightDim)
       }
     }
+    .overlay { OkouColor.background.opacity(veiled ? Self.veil : 0) }
     .ignoresSafeArea()
     .accessibilityHidden(true)
   }
