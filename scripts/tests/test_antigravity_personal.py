@@ -13,6 +13,7 @@ from uuid import uuid4
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS))
+import antigravity_personal as native
 from antigravity_personal import MODELS, personal_environment, signed_in, verify_model
 
 spec = importlib.util.spec_from_file_location(
@@ -189,7 +190,7 @@ class EnrollmentTest(unittest.TestCase):
         self.record.seek(0)
         with (
             patch.object(
-                worker,
+                native,
                 "verify_model",
                 side_effect=[ValueError("Unavailable"), None, None],
             ) as verify,
@@ -204,7 +205,7 @@ class EnrollmentTest(unittest.TestCase):
         self.record.write(str(self.binding))
         self.record.seek(0)
         with (
-            patch.object(worker, "verify_model") as verify,
+            patch.object(native, "verify_model") as verify,
             patch.object(
                 worker,
                 "binding_status",

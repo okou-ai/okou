@@ -2,12 +2,9 @@
 """Run one fixed, quota-consuming agy prompt per pilot model on the member's own signed-in machine."""
 
 import argparse
-import json
 import shutil
-import subprocess
-import tempfile
 
-from antigravity_personal import MODELS, personal_environment, signed_in, verify_model
+from antigravity_personal import personal_environment, signed_in, verify_models
 
 
 def main():
@@ -37,23 +34,10 @@ def main():
             "Native Google login verified. Model access and subscription quota still need a model test."
         )
         return
-    for model in MODELS:
-        with tempfile.TemporaryDirectory(prefix="agy-member-test-") as directory:
-            try:
-                verify_model(agy, model, environment, directory)
-            except json.JSONDecodeError:
-                parser.exit(1, f"{model}: agy returned malformed JSON.\n")
-            except subprocess.TimeoutExpired:
-                parser.exit(
-                    1,
-                    f"{model}: timed out; confirm that interactive agy is signed in before retrying.\n",
-                )
-            except OSError:
-                parser.exit(1, f"{model}: could not start agy.\n")
-            except ValueError as error:
-                parser.exit(1, f"{model}: {error}\n")
-        print(f"{model}: OK", flush=True)
-    print("Verify the account's plan and quota separately in Google Antigravity.")
+    try:
+        verify_models(agy, environment)
+    except ValueError as error:
+        parser.exit(1, f"{error}\n")
 
 
 if __name__ == "__main__":

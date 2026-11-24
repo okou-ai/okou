@@ -259,3 +259,28 @@ def verify_model(agy, model, environment, directory):
         raise ValueError("The CLI result belongs to a different conversation.")
     if str(final.get("response", "")).strip() != "OK":
         raise ValueError("The CLI did not return the requested response.")
+
+
+def verify_models(agy, environment, *, before_model=None):
+    """Check each pilot model once. Recheck the binding immediately before each prompt."""
+    failures = []
+    for model in MODELS:
+        if before_model is not None:
+            before_model()
+        with tempfile.TemporaryDirectory(prefix="agy-subscription-check-") as directory:
+            try:
+                verify_model(agy, model, environment, directory)
+            except subprocess.TimeoutExpired:
+                problem = "The CLI timed out."
+            except (subprocess.SubprocessError, OSError, json.JSONDecodeError):
+                problem = "Could not complete the CLI check."
+            except ValueError as error:
+                problem = str(error)
+            else:
+                print(f"{model}: OK", flush=True)
+                continue
+            failures.append(model)
+            print(f"{model}: {problem}", flush=True)
+    if failures:
+        raise ValueError("Model verification failed for " + ", ".join(failures) + ".")
+    print("Check the plan and quota for this account in Google Antigravity.")

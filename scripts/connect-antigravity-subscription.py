@@ -14,7 +14,7 @@ from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 from uuid import UUID
 
-from antigravity_personal import MODELS, personal_environment, signed_in, verify_model
+from antigravity_personal import personal_environment, signed_in, verify_models
 
 AGY = "/usr/local/bin/agy"
 
@@ -142,26 +142,12 @@ def connect(binding, record, binary=AGY):
 def test_models(binding, record):
     if record.read().strip() != str(binding):
         raise ValueError("This keyring belongs to a different binding.")
-    env = personal_environment()
-    failures = []
-    for model in MODELS:
+
+    def require_connected():
         if binding_status(binding) != "connected":
             raise ValueError("Complete Google sign-in first.")
-        with tempfile.TemporaryDirectory(prefix="agy-subscription-check-") as directory:
-            try:
-                verify_model(AGY, model, env, directory)
-            except (subprocess.SubprocessError, OSError, json.JSONDecodeError):
-                failures.append(model)
-                print(f"{model}: could not complete the CLI check.", flush=True)
-                continue
-            except ValueError as error:
-                failures.append(model)
-                print(f"{model}: {error}", flush=True)
-                continue
-        print(f"{model}: OK", flush=True)
-    if failures:
-        raise ValueError("Model verification failed for " + ", ".join(failures) + ".")
-    print("Check the plan and quota for this account in Google Antigravity.")
+
+    verify_models(AGY, personal_environment(), before_model=require_connected)
 
 
 def logout(binding, record):
