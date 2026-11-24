@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.63.1](https://github.com/okou-ai/okou/compare/ios-v0.63.0...ios-v0.63.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* **ios:** preserve the first voice input through microphone permission ([#50506](https://github.com/okou-ai/okou/issues/50506)) ([f372155](https://github.com/okou-ai/okou/commit/f3721557e647ec53aee0209cbf830b6ef237e7be))
+
 ## [0.63.0](https://github.com/okou-ai/okou/compare/ios-v0.62.2...ios-v0.63.0) (2026-11-24)
 
 

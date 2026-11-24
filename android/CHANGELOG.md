@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.54.0](https://github.com/okou-ai/okou/compare/android-v0.53.0...android-v0.54.0) (2026-11-24)
+
+
+### Features
+
+* **android:** add built-in tool settings ([#50488](https://github.com/okou-ai/okou/issues/50488)) ([728e8ce](https://github.com/okou-ai/okou/commit/728e8ce2a260f26018932353d8c973a552fd6cf7))
+
+
+### Bug Fixes
+
+* **android:** use neutral focus color in confirmation dialogs ([#50515](https://github.com/okou-ai/okou/issues/50515)) ([115553a](https://github.com/okou-ai/okou/commit/115553a8f2105d71357e178a585992814a1b574e))
+
 ## [0.53.0](https://github.com/okou-ai/okou/compare/android-v0.52.2...android-v0.53.0) (2026-11-24)
 
 
