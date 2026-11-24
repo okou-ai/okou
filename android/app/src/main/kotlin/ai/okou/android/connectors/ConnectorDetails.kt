@@ -851,6 +851,9 @@ internal fun ConnectorActionFeedback(action: ConnectorAction?) {
                 ConnectorProblem.Network -> R.string.connector_network_failed
                 ConnectorProblem.BrowserUnavailable -> R.string.connector_browser_unavailable
                 ConnectorProblem.AuthorizationIncomplete -> R.string.connector_incomplete
+                ConnectorProblem.DeviceAuthorizationDenied -> R.string.connector_device_denied
+                ConnectorProblem.DeviceCodeExpired -> R.string.connector_device_expired
+                ConnectorProblem.DeviceAuthorizationFailed -> R.string.connector_device_failed
                 ConnectorProblem.AuthorizationUnconfirmed ->
                     R.string.connector_authorization_unconfirmed
                 ConnectorProblem.VerificationPending -> R.string.connector_verify_pending

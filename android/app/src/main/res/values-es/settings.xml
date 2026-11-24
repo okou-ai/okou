@@ -70,7 +70,7 @@
     <string name="settings_auto_model_detail">Okou elige un modelo disponible</string>
     <string name="settings_model_plan_restricted">Requiere otro plan</string>
     <string name="settings_model_fast">Modo rápido</string>
-    <string name="settings_model_fast_usage">Consume aproximadamente %1$s veces la cuota</string>
+    <string name="settings_model_fast_usage">Al activarlo, el consumo de tu suscripción a ChatGPT se multiplica por %1$s respecto al modo estándar</string>
     <string name="settings_model_load_when_online">El contenido se cargará cuando vuelvas a conectarte.</string>
     <string name="settings_model_save_rolled_back">No se pudo guardar el modelo predeterminado. Se restauró la configuración anterior.</string>
     <string name="settings_model_save_unconfirmed">El guardado del modelo predeterminado aún no se ha confirmado.</string>
@@ -104,4 +104,6 @@
     <string name="settings_suggestions_enable_both">Activar ambas opciones</string>
     <string name="settings_suggestions_disable_both">Desactivar ambas opciones</string>
     <string name="settings_suggestions_save_failed">No se pudieron guardar las sugerencias. Se restauró el ajuste anterior.</string>
+    <string name="settings_timezone_save_rejected">No se pudo guardar la zona horaria. Se restauró la zona anterior.</string>
+    <string name="settings_timezone_schedule_update_failed">Se guardó la zona horaria, pero no se pudo actualizar el horario del resumen matutino.</string>
 </resources>

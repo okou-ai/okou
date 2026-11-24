@@ -627,6 +627,7 @@ internal data class WorkflowsRoute(
     val tab: WorkflowTab = WorkflowTab.Instructions,
     val scope: WorkflowScope = WorkflowScope.All,
     val draftReturn: WorkflowDraftReturn? = null,
+    val resourceReturnRow: String? = null,
 )
 
 @Composable
@@ -642,6 +643,7 @@ internal fun rememberWorkflowsRoute(): MutableState<WorkflowsRoute> =
                         it.scope.name,
                         it.draftReturn?.action?.name.orEmpty(),
                         (it.draftReturn?.restoreFocus == true).toString(),
+                        it.resourceReturnRow.orEmpty(),
                     )
                 },
                 restore = { saved ->
@@ -657,6 +659,7 @@ internal fun rememberWorkflowsRoute(): MutableState<WorkflowsRoute> =
                                 saved.getOrNull(5).toBoolean(),
                             )
                         },
+                        resourceReturnRow = saved.getOrNull(6)?.ifEmpty { null },
                     )
                 },
             ),

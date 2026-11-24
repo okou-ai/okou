@@ -13,6 +13,29 @@ extension ChatSync {
     try await cache?.acknowledgePrefetchReport(id)
   }
 
+  public func cachedFeatureSwitches() async -> SidebarFeatureSwitches? {
+    do { return try await cache?.loadFeatureSwitches() } catch {
+      Logger(subsystem: "ai.okou.ios", category: "ChatCache")
+        .error(
+          "event=chat.cache.feature_switches.read.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+        )
+      return nil
+    }
+  }
+
+  public func persistFeatureSwitches(_ switches: SidebarFeatureSwitches) async {
+    do {
+      try Task.checkCancellation()
+      try await cache?.saveFeatureSwitches(switches)
+    } catch is CancellationError {
+    } catch {
+      Logger(subsystem: "ai.okou.ios", category: "ChatCache")
+        .error(
+          "event=chat.cache.feature_switches.save.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+        )
+    }
+  }
+
   public func cachedProjects() async -> [ChatProject]? {
     do { return try await cache?.loadProjects() } catch {
       Logger(subsystem: "ai.okou.ios", category: "ChatCache")

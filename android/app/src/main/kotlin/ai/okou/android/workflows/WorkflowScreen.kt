@@ -61,6 +61,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -88,6 +89,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.InputModeManager
@@ -108,12 +110,15 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -153,7 +158,7 @@ internal fun WorkflowScreen(
     restoreHistoryRunId: String?,
     onHistoryFocusRestored: () -> Unit,
     onOpenChat: (runId: String, threadId: String) -> Unit,
-    fromSearch: Boolean = false,
+    directEntry: Boolean = false,
 ) {
     val wide = listWidth != null
     val focus = LocalFocusManager.current
@@ -172,7 +177,7 @@ internal fun WorkflowScreen(
         when {
             editor != null -> exitEditor()
             state.writing -> Unit
-            route.id != null && !wide && !fromSearch && !handoffPending -> {
+            route.id != null && !wide && !directEntry && !handoffPending -> {
                 restoreRow = route.id
                 changeRoute(route.copy(id = null, tab = WorkflowTab.Instructions))
             }
@@ -1180,14 +1185,29 @@ internal fun WorkflowAction(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     primary: Boolean = false,
+    saving: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(12.dp)
     val padding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
     if (primary) {
+        val savingSemantics =
+            if (saving) {
+                val savingLabel = stringResource(R.string.settings_saving)
+                Modifier.clearAndSetSemantics {
+                    contentDescription = label
+                    role = Role.Button
+                    stateDescription = savingLabel
+                    liveRegion = LiveRegionMode.Polite
+                    disabled()
+                }
+            } else Modifier
         Button(
             onClick,
-            modifier.heightIn(min = 48.dp).updateFocusOutline(shape, colors.background),
+            modifier
+                .heightIn(min = 48.dp)
+                .updateFocusOutline(shape, colors.background)
+                .then(savingSemantics),
             enabled = enabled,
             shape = shape,
             colors =
@@ -1197,12 +1217,22 @@ internal fun WorkflowAction(
                 ),
             contentPadding = padding,
         ) {
-            Text(
-                label,
-                style = workflowSmallStyle(),
-                textAlign = TextAlign.Center,
-                fontWeight = FontWeight(550),
-            )
+            Box(contentAlignment = Alignment.Center) {
+                Text(
+                    label,
+                    color = if (saving) Color.Transparent else Color.Unspecified,
+                    style = workflowSmallStyle(),
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight(550),
+                )
+                if (saving) {
+                    CircularProgressIndicator(
+                        Modifier.size(16.dp),
+                        color = colors.onSurfaceVariant,
+                        strokeWidth = 2.dp,
+                    )
+                }
+            }
         }
     } else {
         var focused by remember { mutableStateOf(false) }

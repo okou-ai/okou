@@ -54,4 +54,10 @@
     <string name="chat_resources_related">관련 채팅</string>
     <string name="chat_resources_related_load_failed">일시적으로 관련 채팅을 불러올 수 없습니다</string>
     <string name="chat_resources_related_access_lost">관련 채팅을 더 이상 사용할 수 없습니다</string>
+    <string name="chat_resources_origin">출처</string>
+    <string name="chat_resources_workflows">워크플로 및 자동화</string>
+    <string name="chat_resources_workflows_load_failed">일시적으로 관련 워크플로를 불러올 수 없습니다</string>
+    <string name="chat_resources_wechat">WeChat</string>
+    <string name="chat_resources_feishu">Feishu</string>
+    <string name="chat_resources_messages">메시지</string>
 </resources>

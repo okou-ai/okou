@@ -4,6 +4,7 @@ import ai.okou.android.artifacts.ArtifactCatalogModel
 import ai.okou.android.artifacts.ArtifactsRoute
 import ai.okou.android.artifacts.ChatArtifactLinkPreview
 import ai.okou.android.artifacts.ChatArtifactResources
+import ai.okou.android.chat.AssistantFailureText
 import ai.okou.android.chat.AssistantRecoveryModel
 import ai.okou.android.chat.AssistantRecoveryPanel
 import ai.okou.android.chat.ChatArtifactActions
@@ -35,6 +36,7 @@ import ai.okou.android.chat.ConversationRoute
 import ai.okou.android.chat.ConversationStopButton
 import ai.okou.android.chat.ConversationStopPlacement
 import ai.okou.android.chat.ConversationToolbarActions
+import ai.okou.android.chat.ConversationUiState
 import ai.okou.android.chat.HistoryPhase
 import ai.okou.android.chat.NewConversationWelcome
 import ai.okou.android.chat.ProjectExpansionModel
@@ -149,6 +151,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.currentStateAsState
@@ -505,7 +508,11 @@ internal fun OkouApp(
         navigation = navigation.copy(target = target, settings = null, search = SearchRoute.Open)
     }
 
-    fun openWorkflows(id: String? = null) {
+    fun openWorkflows(
+        id: String? = null,
+        tab: WorkflowTab = WorkflowTab.Instructions,
+        resourceRow: String? = null,
+    ) {
         restoreWorkflowFocus = id == null && workflowEntryFocused
         searchWorkflowId = null
         if (artifactSource != null) closeArtifacts(restoreFocus = false)
@@ -515,7 +522,14 @@ internal fun OkouApp(
         workflowQuery.reset()
         workflowDraftError = null
         workflowHandoffFailed = false
-        changeWorkflowRoute(WorkflowsRoute(mode = WorkflowsMode.Directory, id = id))
+        changeWorkflowRoute(
+            WorkflowsRoute(
+                mode = WorkflowsMode.Directory,
+                id = id,
+                tab = tab,
+                resourceReturnRow = resourceRow,
+            ),
+        )
     }
 
     fun closeWorkflows() {
@@ -523,6 +537,8 @@ internal fun OkouApp(
         handoff = null
         workflowConnectionReturn = null
         workflowPageState.removeState("workflow")
+        if (navigation.chatResourcesId != null)
+            workflowRoute.resourceReturnRow?.let { linkFocusKey = it }
         changeWorkflowRoute(WorkflowsRoute())
     }
 
@@ -1073,7 +1089,8 @@ internal fun OkouApp(
                     workflowDraftError?.takeIf { it.workflowId == workflowRoute.id }?.message,
                 feedback = { WorkspaceFeedbackHost(snackbar, Modifier.padding(vertical = 8.dp)) },
                 onClose = ::closeWorkflows,
-                fromSearch = workflowOrigin.search.isOpen,
+                directEntry =
+                    workflowOrigin.search.isOpen || workflowRoute.resourceReturnRow != null,
                 onCreate = { focused ->
                     workflowDraft(
                         "$creation\n\n",
@@ -1794,6 +1811,18 @@ internal fun OkouApp(
                                 return@detailPane
                             }
                             if (resourcesId != null && chatArtifacts != null) {
+                                val conversation by
+                                    chats.history.uiState.collectAsStateWithLifecycle()
+                                LifecycleStartEffect(chats.history, resourcesId) {
+                                    chats.history.invalidate(resourcesId)
+                                    onStopOrDispose {}
+                                }
+                                val availableChats =
+                                    remember(list.threads) {
+                                        list.threads
+                                            .filter { it.hidden != true }
+                                            .associate { it.id to it.title }
+                                    }
                                 resourcesPageState.SaveableStateProvider(
                                     "chat-resources:$resourcesId",
                                 ) {
@@ -1802,20 +1831,24 @@ internal fun OkouApp(
                                         resourcesId,
                                         listWidth != null,
                                         onClose = { closeResources(returnToActions = true) },
-                                        relatedFocusKey = linkFocusKey,
-                                        availableRelatedChats =
-                                            list.threads
-                                                .asSequence()
-                                                .filter { it.hidden != true }
-                                                .map { it.id }
-                                                .toSet(),
-                                        onRelatedFocusRestored = { linkFocusKey = null },
-                                        onRelatedChat = { id, key ->
+                                        history =
+                                            conversation.takeIf { it.thread?.id == resourcesId }
+                                                ?: ConversationUiState(),
+                                        resourceFocusKey = linkFocusKey,
+                                        availableRelatedChats = availableChats,
+                                        onResourceFocusRestored = { linkFocusKey = null },
+                                        onOpenLink = { link, key ->
                                             openMessageLink(
-                                                ConversationLink.Chat(id, null),
+                                                link,
                                                 ConversationLinkSource(key, null),
                                             )
                                         },
+                                        onOpenWorkflow =
+                                            if (workflows != null) {
+                                                { id, key ->
+                                                    openWorkflows(id, WorkflowTab.Automations, key)
+                                                }
+                                            } else null,
                                     )
                                 }
                                 return@detailPane
@@ -1920,7 +1953,7 @@ internal fun OkouApp(
                                                         }
                                                     }
                                                 },
-                                            ) { failureId ->
+                                            ) { failure ->
                                                 if (
                                                     recovery != null &&
                                                         composer != null &&
@@ -1930,9 +1963,11 @@ internal fun OkouApp(
                                                         recovery,
                                                         composer,
                                                         composerTarget,
-                                                        failureId = failureId,
+                                                        failureId = failure.id,
+                                                        reason = failure.failureReason,
                                                         offline = list.offline,
                                                     )
+                                                else AssistantFailureText(failure.failureReason)
                                             }
                                             Column(contentWidth.fillMaxWidth()) {
                                                 if (showConversationFeedback)

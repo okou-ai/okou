@@ -25,7 +25,7 @@ nix = { workspace = true, features = ["fs", "time"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 nix = { workspace = true, features = ["resource"] }
-rustix = { workspace = true, features = ["event", "fs", "std"] }
+rustix = { workspace = true, features = ["event", "fs", "std", "thread"] }
 
 [dev-dependencies]
 cli-test-support = { workspace = true, features = ["test-support"] }

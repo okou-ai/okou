@@ -54,4 +54,10 @@
     <string name="chat_resources_related">Chat correlate</string>
     <string name="chat_resources_related_load_failed">Impossibile caricare le chat correlate al momento</string>
     <string name="chat_resources_related_access_lost">Le chat correlate non sono più disponibili</string>
+    <string name="chat_resources_origin">Origine</string>
+    <string name="chat_resources_workflows">Flussi di lavoro e automazioni</string>
+    <string name="chat_resources_workflows_load_failed">Impossibile caricare i flussi di lavoro correlati al momento</string>
+    <string name="chat_resources_wechat">WeChat</string>
+    <string name="chat_resources_feishu">Feishu</string>
+    <string name="chat_resources_messages">Messaggi</string>
 </resources>

@@ -2,6 +2,7 @@ package ai.okou.android.chat
 
 import ai.okou.android.R
 import ai.okou.android.SettingsSheet
+import ai.okou.android.SettingsSheetScroll
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,7 +30,7 @@ internal fun SearchWorkflowIntro(
     val action = Modifier.heightIn(min = 48.dp)
     val shape = RoundedCornerShape(12.dp)
     val padding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-    SettingsSheet(title = workflow.title, onDismiss = onClose) {
+    SettingsSheet(title = workflow.title, onDismiss = onClose, scroll = SettingsSheetScroll.Panel) {
         workflow.description
             ?.takeIf { it.isNotBlank() }
             ?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }

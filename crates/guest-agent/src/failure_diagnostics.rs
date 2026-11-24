@@ -496,6 +496,7 @@ fn classify_cli_failure_reason(
                     && [
                         "you've hit your 5-hour limit · resets ",
                         "you've hit your five-hour limit · resets ",
+                        "you've hit your fable limit · resets ",
                     ]
                     .iter()
                     .any(|prefix| normalized.trim_start().starts_with(prefix)))))

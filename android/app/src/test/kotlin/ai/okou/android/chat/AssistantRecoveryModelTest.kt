@@ -322,6 +322,11 @@ class AssistantRecoveryModelTest {
             f.idle()
             val frozen = f.composer.uiState.value.entry(target).recovery!!
             assertNull(frozen.outcome)
+            assertEquals(
+                frozen.selection,
+                f.composer.uiState.value.recoveryFailures[target.key],
+            )
+            assertFalse(target.key in f.composer.uiState.value.failed)
             assertTrue(f.remote.inputs.isEmpty())
             assertEquals(
                 frozen,
@@ -336,7 +341,14 @@ class AssistantRecoveryModelTest {
             f.idle()
             assertEquals(1, f.remote.resets.size)
             f.remote.reset = { jsonResponse("""{"outcome":"alreadyRedeemed"}""") }
-            f.composer.recover(target, RecoveryApiFixture.FAILURE, true)
+            f.composer.checkRecoveryReset(target, RecoveryApiFixture.FAILURE, "stale-key")
+            f.idle()
+            assertEquals(1, f.remote.resets.size)
+            f.composer.checkRecoveryReset(
+                target,
+                RecoveryApiFixture.FAILURE,
+                checkNotNull(frozen.reset).idempotencyKey,
+            )
             f.idle()
             assertEquals(2, f.remote.resets.size)
             assertEquals(f.remote.resets[0], f.remote.resets[1])
@@ -348,6 +360,25 @@ class AssistantRecoveryModelTest {
                 ResetSubscriptionResultOutcome.ALREADYREDEEMED,
                 f.composer.uiState.value.entry(target).recovery!!.outcome,
             )
+        }
+    }
+
+    @Test
+    fun resetConfirmationCannotSpendFromAnAccountThatReplacedTheDisplayedOne() = runTest {
+        withRecovery { f ->
+            val displayedAccount = checkNotNull(f.recovery.uiState.value.data?.resetAccount).id
+            f.remote.account = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+            f.recovery.refresh()
+            f.recovery.uiState.first { it.phase == ChatReadPhase.Ready }
+
+            f.composer.confirmRecoveryReset(target, RecoveryApiFixture.FAILURE, displayedAccount)
+            f.idle()
+            assertTrue(f.remote.resets.isEmpty())
+            assertTrue(f.remote.inputs.isEmpty())
+            f.composer.confirmRecoveryReset(target, RecoveryApiFixture.FAILURE, f.remote.account)
+            f.idle()
+            assertEquals(f.remote.account, f.remote.resets.single().first)
+            assertEquals(1, f.remote.inputs.size)
         }
     }
 
@@ -600,14 +631,30 @@ class AssistantRecoveryModelTest {
     @Test
     fun billingAndSettingsFailuresNeverBlindlyContinueOrReset() = runTest {
         for (reason in listOf("insufficient_credits", "invalid_credentials")) {
+            val billingAttempts = AtomicInteger()
             withRecovery(
-                before = { _, remote, _ ->
+                before = { api, remote, _ ->
                     remote.set(RecoveryApiFixture.input(), RecoveryApiFixture.failure(reason))
+                    val canonical = api.commandResponse
+                    api.commandResponse = { request ->
+                        if (
+                            request.requestUrl?.encodedPath == "/api/billing/status" &&
+                                billingAttempts.incrementAndGet() <= 2
+                        ) {
+                            jsonResponse(
+                                    """{"error":{"code":"UNAVAILABLE","message":"Unavailable"}}""",
+                                )
+                                .setResponseCode(503)
+                        } else canonical(request)
+                    }
                 },
             ) { f ->
                 val data = f.recovery.uiState.value.data!!
                 assertFalse(data.classification.canContinue)
-                if (reason == "insufficient_credits") assertEquals(0.0, data.billing!!.credits, 0.0)
+                if (reason == "insufficient_credits") {
+                    assertEquals(3, billingAttempts.get())
+                    assertEquals(0.0, data.billing!!.credits, 0.0)
+                } else assertEquals(0, billingAttempts.get())
                 f.composer.recover(target, RecoveryApiFixture.FAILURE)
                 f.idle()
                 f.composer.recover(target, RecoveryApiFixture.FAILURE, true)

@@ -681,15 +681,9 @@
       "updated": "웹사이트 URL이 업데이트되었습니다"
     },
     "templates": {
-      "activeHtmlPreview": "{{title}} 활성 HTML 미리보기",
-      "all": "전체",
       "avatar": "아바타",
-      "categories": "템플릿 카테고리",
-      "category": "템플릿 카테고리",
       "fullPreview": "{{title}} 웹사이트 전체 미리보기",
       "htmlPreview": "{{title}} HTML 미리보기",
-      "illustration": "일러스트레이션",
-      "illustrationPreview": "{{title}} 일러스트레이션 미리보기",
       "importDeck": "내 덱 가져오기",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importDocument": "내 문서 가져오기",
@@ -700,18 +694,10 @@
       "importImageHint": "스타일로 저장",
       "multiAccent": "다중 악센트",
       "nextSlide": "다음 슬라이드 미리보기",
-      "noMatches": "일치하는 항목 없음",
-      "previewCurrentSlide": "현재 슬라이드에서 {{title}} 미리보기",
       "previewSlide": "슬라이드 {{slideNumber}} 미리보기",
-      "previewWebsite": "웹사이트 템플릿 {{title}} 미리보기",
       "previousSlide": "이전 슬라이드 미리보기",
-      "searchConnector": "템플릿 검색",
-      "searchConnectors": "템플릿 검색",
       "selectStyle": "스타일 선택 {{style}}",
       "selectTemplate": "템플릿 선택 {{title}}",
-      "selectWebsite": "웹사이트 템플릿 선택 {{title}}",
-      "selectWorkflow": "워크플로 템플릿 선택 {{title}}",
-      "showVariant": "변형 보기 {{variantNumber}}",
       "singleAccent": "단일 악센트",
       "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "{{title}} 슬라이드 미리보기",
@@ -739,15 +725,11 @@
         "terracottaClay": "점토 냄비",
         "warmSand": "아침 신문"
       },
-      "tryDifferentSearch": "다른 검색어를 시도해 보세요.",
-      "use": "사용",
       "useThisTemplate": "이 템플릿 사용",
       "visibility": {
         "changeLabel": "템플릿 공개 범위 변경"
       },
       "website": "웹사이트",
-      "websitePreview": "{{title}} 웹사이트 템플릿 미리보기",
-      "workflow": "워크플로",
       "workflowCatalog": {
         "auto-inbox-label": {
           "description": "Gmail 라벨이 지정되면 실행되어 해당 메일을 처리하는 워크플로를 만듭니다.",
@@ -1923,8 +1905,6 @@
       "add": "추가",
       "configureModel": "모델 구성",
       "create": {
-        "addStyle": "스타일 추가",
-        "addTemplate": "템플릿 추가",
         "documentPlaceholder": "문서에 어떤 내용을 포함하고 싶으신가요?",
         "imagePlaceholder": "만들고 싶은 이미지를 설명하세요…",
         "presentationPlaceholder": "프레젠테이션의 주제는 무엇인가요?",
@@ -1964,11 +1944,9 @@
         "scheduleHint": "일정에 따라 실행",
         "share": "채팅 공유",
         "shareHint": "이 대화의 링크 공유",
-        "templates": "템플릿",
         "unpin": "고정 해제"
       },
       "slashPanel": {
-        "browseAll": "모든 템플릿 보기",
         "hint": "작업 선택",
         "useTemplate": "템플릿 {{title}} 사용"
       },
@@ -2627,7 +2605,6 @@
         "website": "웹사이트",
         "workflow": "워크플로"
       },
-      "viewAll": "모두 보기",
       "visualization": {
         "allCharts": "모든 차트",
         "back": "Back to visualization options",
@@ -2809,8 +2786,6 @@
         "workflow": "워크플로"
       },
       "previewTemplate": "템플릿 미리보기 {{title}}",
-      "previewWebsite": "웹사이트 템플릿 미리보기 {{title}}",
-      "previewWorkflow": "워크플로 템플릿 미리보기 {{title}}",
       "removeTemplate": "템플릿 삭제 {{title}}",
       "removeWebsite": "웹사이트 템플릿 삭제 {{title}}",
       "removeWorkflow": "워크플로 템플릿 삭제 {{title}}"
@@ -3900,7 +3875,6 @@
         "overview": "공급자 및 고객 정보"
       }
     },
-    "filter": "문서 분류",
     "formats": {
       "pdf": "PDF",
       "word": "Word 문서"
@@ -3910,10 +3884,8 @@
     "nextPage": "다음 샘플 페이지",
     "openLarger": "큰 미리보기 열기",
     "page": "{{page}} 페이지",
-    "preview": "{{title}} 미리 보기",
     "previousPage": "이전 샘플 페이지",
-    "title": "문서",
-    "useNamed": "{{title}} 사용"
+    "title": "문서"
   },
   "featureGuide": {
     "close": "새 기능 가이드 닫기",
@@ -6539,11 +6511,8 @@
   "templates": {
     "actions": {
       "delete": "삭제",
-      "menu": "{{title}} 작업",
-      "preview": "{{title}} 미리보기",
       "rename": "템플릿 이름 바꾸기"
     },
-    "builtIn": "기본 제공",
     "custom": "커스텀",
     "delete": {
       "cancel": "취소",
@@ -6558,11 +6527,6 @@
       "page": "{{number}}페이지"
     },
     "loadFailed": "템플릿을 불러오지 못했습니다.",
-    "rename": {
-      "action": "이름 변경",
-      "cancel": "취소",
-      "save": "저장"
-    },
     "renameFailed": "템플릿의 이름을 바꾸지 못했습니다.",
     "sharedBy": "{{owner}} 님이 공유함",
     "sharedByMember": "조직 구성원이 공유함",

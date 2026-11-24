@@ -3,7 +3,6 @@ import { HttpResponse } from "msw";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import { uploadsContract } from "@okouai/api-contracts";
-import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
 
 import {
   click,
@@ -70,12 +69,11 @@ function menuItem(menu: HTMLElement, label: string): HTMLElement {
   return item;
 }
 
-test("groups attachment, template, capability and import skills actions in the add menu", async () => {
+test("groups attachment, capability and import skills actions in the add menu", async () => {
   const editor = await setupComposer();
   const menu = await openAddMenu(editor);
   expect(menuItemLabels(menu)).toStrictEqual([
     "Attach",
-    "Template",
     "Find people",
     "Research",
     "Create",
@@ -115,24 +113,6 @@ test("opens the import skills dialog from the add menu", async () => {
   expect(
     screen.queryByRole("dialog", { name: "Import your skills" }),
   ).toBeNull();
-});
-
-test("opens the template picker from the add menu", async () => {
-  const editor = await setupComposer();
-  const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0];
-  if (!template) {
-    throw new Error("Expected a presentation template fixture");
-  }
-
-  const menu = await openAddMenu(editor);
-  click(menuItem(menu, "Template"));
-
-  await waitFor(() => {
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-  });
-  await expect(
-    screen.findByLabelText(`Select template ${template.title}`),
-  ).resolves.toBeVisible();
 });
 
 // Happy DOM has no native picker. Stub that browser boundary here; native

@@ -24,10 +24,12 @@ import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
 import java.io.File
 import java.io.IOException
+import java.net.SocketTimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -46,6 +48,7 @@ class NativeUpdateTest {
         val gate = CompletableDeferred<Unit>()
         val firstProgress = CompletableDeferred<Unit>()
         val download = AtomicReference(CompletableDeferred<File>())
+        val online = MutableStateFlow(true)
         val release =
             AndroidUpdatesRelease(
                 "99.0.0",
@@ -91,6 +94,7 @@ class NativeUpdateTest {
                 },
                 BuildConfig.VERSION_NAME,
                 35,
+                connectivity = online,
             )
         val previous = app.updateOwner
         app.updateOwner = owner
@@ -193,6 +197,7 @@ class NativeUpdateTest {
             val initialDetailsBounds = detailsBounds()
             gate.complete(Unit)
             exists(R.string.updates_error_check)
+            button(By.pkg(app.packageName).text(app.getString(R.string.updates_retry_check)))
             captureState("details-check-failed")
             assertEquals(initialDetailsBounds, detailsBounds())
             closeDetails()
@@ -337,7 +342,39 @@ class NativeUpdateTest {
             captureState("details-download-failed")
             assertEquals(initialDetailsBounds, detailsBounds())
             download.set(CompletableDeferred())
-            click(R.string.updates_download)
+            click(R.string.updates_retry_download)
+            assertNotNull(text(progressLabel))
+            val timedOut = download.getAndSet(CompletableDeferred())
+            online.value = false
+            timedOut.completeExceptionally(SocketTimeoutException("fixture download timed out"))
+            val waiting = checkNotNull(text(app.getString(R.string.updates_retry_download)))
+            assertFalse(
+                generateSequence(waiting) { it.parent }.any { it.isClickable && it.isEnabled },
+            )
+            captureState("details-retry-offline")
+            assertEquals(initialDetailsBounds, detailsBounds())
+            val originalSize =
+                device.executeShellCommand("wm size").substringAfter("Override size: ", "").trim()
+            val fontScale = device.executeShellCommand("settings get system font_scale").trim()
+            try {
+                device.executeShellCommand("wm size 780x850")
+                device.executeShellCommand("settings put system font_scale 2.0")
+                val resized =
+                    object : Condition<UiDevice, Boolean> {
+                        override fun apply(device: UiDevice) =
+                            device.displayHeight == 850 &&
+                                app.resources.configuration.fontScale >= 2f
+                    }
+                assertTrue(device.wait(resized, 10_000) == true)
+                exists(R.string.updates_retry_download)
+                captureState("details-short-retry-offline")
+            } finally {
+                if (fontScale.toFloatOrNull() == null)
+                    device.executeShellCommand("settings delete system font_scale")
+                else device.executeShellCommand("settings put system font_scale $fontScale")
+                device.executeShellCommand("wm size ${originalSize.ifBlank { "reset" }}")
+            }
+            online.value = true
             assertNotNull(text(progressLabel))
             click(R.string.updates_close)
 

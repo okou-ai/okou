@@ -1,9 +1,7 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { workflowsCollectionContract } from "@okouai/api-contracts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
-import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
@@ -13,13 +11,10 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import {
   composerWorkflow,
-  expectInlineTemplateInComposer,
   findComposerEditor,
-  tabByText,
   createChatComposerHelpers,
 } from "./chat-composer-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
-import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
 import { CREATE_WORKFLOW_WITH_CHAT_PROMPT } from "../../../signals/chat-page/workflow-prompt-action.ts";
 
 const context = testContext();
@@ -59,8 +54,16 @@ async function openSlashMenu(
   query = "",
   path = HOME_PATH,
   slashActions = false,
+  workflowDescription?: string,
 ): Promise<void> {
   setupModels();
+  if (workflowDescription) {
+    context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {
+      return respond(200, [
+        composerWorkflow(WORKFLOW_NAME, workflowDescription),
+      ]);
+    });
+  }
   mockChatLifecycle(context, { threadId: THREAD_ID });
   await setupPage({
     context,
@@ -99,96 +102,24 @@ function slashButton(name: string): HTMLElement {
   return result;
 }
 
-function pointAt(element: HTMLElement): void {
-  fireEvent.mouseOver(element);
-  fireEvent.mouseMove(element);
-}
-
-async function templatePane(path = HOME_PATH): Promise<HTMLElement> {
-  context.mocks.browser.matchMedia((query) => {
-    return query === SIDEBAR_DESKTOP_MEDIA_QUERY;
-  });
-  await openSlashMenu("", path, true);
-  const menu = screen.getByTestId("slash-workflow-menu");
-  const templates = await waitFor(() => {
-    const entry = queryAllByRoleFast("button", menu).find((candidate) => {
-      return slashRowLabel(candidate)?.startsWith("Templates ");
-    });
-    if (!entry) {
-      throw new Error("Expected the Templates overview entry");
-    }
-    return entry;
-  });
-  pointAt(templates);
-  return await within(menu).findByRole("region", { name: "Templates" });
-}
-
-function templateType(pane: HTMLElement, name: string): HTMLElement {
-  const type = queryAllByRoleFast("button", pane).find((candidate) => {
-    return slashRowLabel(candidate)?.startsWith(`${name} `);
-  });
-  if (!type) {
-    throw new Error(`Expected template type ${name}`);
-  }
-  return type;
-}
-
 test.each(["网站", "ウェブサイト", "cafe\u0301"])(
-  "Keep slash search and template browsing available for Unicode query %s",
+  "Unicode query %s finds a workflow description and preserves the surrounding draft",
   async (query) => {
     const user = userEvent.setup({ delay: null });
-    await openSlashMenu();
+    await openSlashMenu("", HOME_PATH, false, `Review ${query} reports`);
     const editor = await findComposerEditor();
     await user.keyboard(query);
     expect(editor.textContent).toBe(`Draft /${query}`);
-    await waitFor(() => {
-      expect(slashButton("Browse all templates")).toBeInTheDocument();
+    const workflow = await waitFor(() => {
+      return slashButton(`/${WORKFLOW_NAME}`);
     });
-    await user.click(slashButton("Browse all templates"));
-    await screen.findByRole("dialog");
-    expect(tabByText("Website")).toBeInTheDocument();
-    expect(editor.textContent).toBe("Draft ");
+    await user.click(workflow);
+    await waitFor(() => {
+      expect(editor).toHaveTextContent(`Draft /${WORKFLOW_NAME}`);
+    });
+    expect(editor).toHaveFocus();
   },
 );
-
-test("The Templates overview keeps illustration proportions and 16:9 deck covers", async () => {
-  const pane = await templatePane();
-  pointAt(templateType(pane, "Presentation"));
-  expect(pane.querySelector("img")?.getAttribute("src")).toContain(
-    "height=234",
-  );
-  pointAt(templateType(pane, "Illustration"));
-  await waitFor(() => {
-    expect(templateType(pane, "Illustration")).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-  });
-  const [style] = ILLUSTRATION_TEMPLATE_ITEMS;
-  if (!style) {
-    throw new Error("Expected an illustration style");
-  }
-  const cover = pane.querySelector("img");
-  expect(cover?.getAttribute("src")).toContain("width=416");
-  expect(cover?.getAttribute("src")).not.toContain("height=");
-  expect(cover?.parentElement?.getAttribute("style")).toContain(
-    `${String(style.width)} / ${String(style.height)}`,
-  );
-});
-
-test("The Templates overview previews the complete website catalog", async () => {
-  const pane = await templatePane();
-  pointAt(templateType(pane, "Website"));
-  await waitFor(() => {
-    expect(templateType(pane, "Website")).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-  });
-  expect(
-    pane.querySelectorAll("[data-slot='slash-template-cover']"),
-  ).toHaveLength(WEBSITE_TEMPLATE_ITEMS.length);
-});
 
 test("Enter keeps the keyboard selection while another workflow is hovered", async () => {
   const user = userEvent.setup();
@@ -231,15 +162,6 @@ test("Clicking a workflow activates the pointer target", async () => {
   expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
 });
 
-test("Browse all templates opens the picker and consumes its slash token", async () => {
-  const user = userEvent.setup();
-  await openSlashMenu();
-  await user.click(slashButton("Browse all templates"));
-  await screen.findByRole("dialog");
-  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
-  await expect(findComposerEditor()).resolves.toHaveTextContent(/^Draft\s*$/u);
-});
-
 test("The panel emphasizes the typed query inside a workflow name", async () => {
   await openSlashMenu("axi");
   const menu = screen.getByTestId("slash-workflow-menu");
@@ -264,7 +186,6 @@ test("Workflow search hides unmatched workflows and restores matching results", 
     expect(within(menu).queryByText("Workflows")).not.toBeInTheDocument();
   });
   expect(querySlashButton(`/${WORKFLOW_NAME}`)).toBeNull();
-  expect(slashButton("Browse all templates")).toBeInTheDocument();
   await fill(await findComposerEditor(), "Draft /axi");
   const matchingMenu = await screen.findByTestId("slash-workflow-menu");
   await expect(
@@ -296,7 +217,6 @@ test.each(COMPOSER_PATHS)(
         `/${WORKFLOW_NAME}`,
         `/${SECOND_WORKFLOW_NAME}`,
         `/${THIRD_WORKFLOW_NAME}`,
-        "Browse all templates",
       ]);
     });
     expect(slashButton(`/${WORKFLOW_NAME}`)).toHaveTextContent(
@@ -340,7 +260,6 @@ test.each(COMPOSER_PATHS)(
         "Create",
         "Research",
         "Find people",
-        "Browse all templates",
       ]);
     });
     expect(screen.getByTestId("slash-workflow-menu")).toHaveAttribute(
@@ -417,7 +336,6 @@ test.each([true, false])(
     const editor = await openManyWorkflows();
     expect(querySlashButton("/daily-9")).toBeNull();
     expect(slashButton("Create")).toBeInTheDocument();
-    expect(slashButton("Browse all templates")).toBeInTheDocument();
     expect(querySlashButton("New workflow")).toBeNull();
     const collapsed = slashMenuButtonNames();
     const showMoreAt = collapsed.indexOf("Show 8 more");
@@ -526,32 +444,3 @@ test("Manage workflows opens the Workflows page", async () => {
   });
   expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
 });
-
-test.each(COMPOSER_PATHS)(
-  "The desktop Templates overview at %s keeps covers selectable across pointer handoff",
-  async (path) => {
-    const pane = await templatePane(path);
-    const website = templateType(pane, "Website");
-    pointAt(website);
-    await waitFor(() => {
-      expect(website).toHaveAttribute("aria-pressed", "true");
-    });
-    const [first] = WEBSITE_TEMPLATE_ITEMS;
-    if (!first) {
-      throw new Error("Expected a website template");
-    }
-    const cover = slashButton(`Use template ${first.title}`);
-    // user-event omits relatedTarget on mouseout; model the real pane boundary.
-    fireEvent.mouseOut(website, { relatedTarget: cover });
-    fireEvent.mouseOver(cover, { relatedTarget: website });
-    expect(website).toHaveAttribute("aria-pressed", "true");
-    await userEvent.setup().click(cover);
-    await expectInlineTemplateInComposer(first.title);
-    const editor = await findComposerEditor();
-    expect(editor).toHaveTextContent("Draft");
-    expect(editor).not.toHaveTextContent("/");
-    expect(editor).toHaveFocus();
-    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
-    expect(screen.queryByRole("dialog")).toBeNull();
-  },
-);

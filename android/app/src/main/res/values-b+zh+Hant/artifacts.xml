@@ -54,4 +54,10 @@
     <string name="chat_resources_related">關聯聊天</string>
     <string name="chat_resources_related_load_failed">暫時無法載入關聯聊天</string>
     <string name="chat_resources_related_access_lost">關聯聊天已無法使用</string>
+    <string name="chat_resources_origin">來源</string>
+    <string name="chat_resources_workflows">工作流程與自動化</string>
+    <string name="chat_resources_workflows_load_failed">暫時無法載入關聯的工作流程</string>
+    <string name="chat_resources_wechat">微信</string>
+    <string name="chat_resources_feishu">飛書</string>
+    <string name="chat_resources_messages">訊息</string>
 </resources>

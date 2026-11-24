@@ -134,41 +134,28 @@ async function prepareForkSuggestions() {
   });
   await fill(editor, "Fork draft /");
   const menu = await screen.findByTestId("slash-workflow-menu");
-  const templates = queryAllByRoleFast("button", menu).find((candidate) => {
-    return candidate.textContent
-      ?.replace(/\s+/gu, " ")
-      .trim()
-      .startsWith("Templates ");
+  const schedule = queryAllByRoleFast("button", menu).find((candidate) => {
+    return candidate.textContent?.trim().startsWith("Schedule");
   });
-  if (!templates) {
-    throw new Error("Expected the Templates overview entry");
+  if (!schedule) {
+    throw new Error("Expected the Schedule action");
   }
   expect(menu).toHaveAttribute("data-side", "top");
   const user = userEvent.setup({ delay: null });
-  expect(templates).not.toHaveAttribute("data-active");
-  expect(within(menu).queryByRole("region", { name: "Templates" })).toBeNull();
-  return { originalComposer, dialog, editor, menu, templates, user };
+  return { originalComposer, dialog, editor, menu, schedule, user };
 }
 
 test("Keep Fork suggestions isolated during preview navigation", async () => {
-  const { originalComposer, dialog, editor, menu, templates, user } =
+  const { originalComposer, dialog, editor, menu, schedule, user } =
     await prepareForkSuggestions();
-  await user.keyboard("{ArrowUp}");
-  expect(templates).toHaveAttribute("data-active", "true");
-  const pane = within(menu).getByRole("region", { name: "Templates" });
-  expect(editor).toHaveFocus();
-  const document = queryAllByRoleFast("button", pane).find((candidate) => {
-    return candidate.textContent
-      ?.replace(/\s+/gu, " ")
-      .trim()
-      .startsWith("Document ");
+  await user.keyboard("{ArrowUp}{ArrowUp}");
+  expect(schedule).toHaveAttribute("data-active", "true");
+  await user.keyboard("{ArrowRight}");
+  const pane = within(menu).getByRole("region", { name: "Schedule" });
+  const everyMorning = queryAllByRoleFast("button", pane).find((candidate) => {
+    return candidate.textContent?.trim().startsWith("Every morning");
   });
-  if (!document) {
-    throw new Error("Expected the Document template type");
-  }
-  fireEvent.mouseOver(document);
-  fireEvent.mouseMove(document);
-  expect(document).toHaveAttribute("aria-pressed", "true");
+  expect(everyMorning).toHaveAttribute("data-active", "true");
   expect(dialog).toBeInTheDocument();
   expect(editor).toHaveTextContent("Fork draft /");
   expect(editor).toHaveFocus();

@@ -79,6 +79,25 @@ public actor ChatCache {
     connection = nil
   }
 
+  func loadFeatureSwitches() throws -> SidebarFeatureSwitches? {
+    try withDatabase { database in
+      let query = try database.prepare("SELECT snapshot FROM feature_switches WHERE id = 1")
+      guard try query.step() else { return nil }
+      return try JSONDecoder().decode(SidebarFeatureSwitches.self, from: query.blob(at: 0))
+    }
+  }
+
+  func saveFeatureSwitches(_ switches: SidebarFeatureSwitches) throws {
+    try Task.checkCancellation()
+    let data = try JSONEncoder().encode(switches)
+    try withDatabase { database in
+      let write = try database.prepare(
+        "INSERT OR REPLACE INTO feature_switches (id, snapshot) VALUES (1, ?)")
+      try write.bind(data, at: 1)
+      try write.run()
+    }
+  }
+
   public func loadProjects() throws -> [ChatProject]? {
     try withDatabase { database in
       let query = try database.prepare("SELECT snapshot FROM project_list WHERE id = 1")
@@ -541,6 +560,9 @@ extension SQLiteDatabase {
     // Additive so both the previous App and its NSE can still open this cache.
     try execute(
       "CREATE TABLE IF NOT EXISTS chat_indicators (id INTEGER PRIMARY KEY CHECK (id = 1), state BLOB NOT NULL)"
+    )
+    try execute(
+      "CREATE TABLE IF NOT EXISTS feature_switches (id INTEGER PRIMARY KEY CHECK (id = 1), snapshot BLOB NOT NULL)"
     )
     let currentVersion: Int
     do {

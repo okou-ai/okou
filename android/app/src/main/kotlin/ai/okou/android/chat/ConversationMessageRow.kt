@@ -128,6 +128,9 @@ internal fun ConversationMessageRow(
     artifactActions: ChatArtifactActions? = null,
     findHighlight: ConversationFindHighlight? = null,
     links: ConversationLinkActions? = null,
+    failureContent: @Composable (HistoryMessage) -> Unit = {
+        AssistantFailureText(it.failureReason)
+    },
 ) {
     val message = entry.message
     val colors = MaterialTheme.colorScheme
@@ -220,8 +223,13 @@ internal fun ConversationMessageRow(
             }
         else ->
             Column(Modifier.fillMaxWidth().testTag("message_${message.id}")) {
-                MessageStatus(message)
-                MessageBody(message, compact = true)
+                if (message.status == "run.failed") {
+                    MessageBody(message, compact = true)
+                    failureContent(message)
+                } else {
+                    MessageStatus(message)
+                    MessageBody(message, compact = true)
+                }
             }
     }
 }
@@ -485,14 +493,29 @@ internal fun Modifier.conversationFindHighlight(highlight: ConversationFindHighl
 private fun MessageStatus(message: HistoryMessage) {
     if (message.rejected) ConversationMeta(stringResource(R.string.history_rejected))
     when (message.status) {
-        "run.failed" -> {
-            val copy = assistantRunFailureCopy(message.failureReason)
-            ConversationMeta(stringResource(copy.title))
-            ConversationMeta(stringResource(copy.description))
-        }
+        "run.failed" -> AssistantFailureText(message.failureReason)
         "run.cancelled" -> ConversationMeta(stringResource(R.string.history_cancelled))
         "output.error" -> ConversationMeta(stringResource(R.string.history_run_failed))
     }
+}
+
+@Composable
+internal fun AssistantFailureText(reason: String?) {
+    val copy = assistantRunFailureCopy(reason)
+    Text(
+        stringResource(copy.title),
+        style =
+            MaterialTheme.typography.bodyLarge.copy(
+                fontSize = 16.sp,
+                lineHeight = 24.sp,
+                fontWeight = FontWeight.Medium,
+            ),
+    )
+    Text(
+        stringResource(copy.description),
+        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 private fun PendingDelivery.label() =

@@ -46,6 +46,14 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.IosConnectorManagement]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "iOS connector management",
+    description:
+      "Manage connector accounts and permissions in native iOS Settings.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.ComposerVoiceMessages]: {
     maintainer: "ethan@okou.ai",
     displayName: "Voice recordings in the composer",
@@ -200,7 +208,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "tongx@okou.ai",
     displayName: "Slash actions",
     description:
-      "Lead the composer's slash menu with chat actions, and open Workflows and Templates as second-level lists.",
+      "Lead the composer's slash menu with chat actions, and open Workflows and action settings as second-level lists.",
     enabled: false,
   },
   [FeatureSwitchKey.FollowupPlaceholder]: {

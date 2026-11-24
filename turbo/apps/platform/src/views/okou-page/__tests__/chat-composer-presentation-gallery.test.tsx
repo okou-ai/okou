@@ -15,7 +15,7 @@ import {
 } from "@okouai/api-contracts/contracts/composer-draft";
 import {
   expectInlineTemplate,
-  openTemplatePicker,
+  openTemplateRecommendations,
   sendComposerMessage,
   templatePart,
   createTemplateGalleryHelpers,
@@ -71,7 +71,11 @@ async function openPresentationThemePreview() {
     }),
   ]);
   const template = builtInTemplate();
-  const drafts = mockSavedThemeDraft(template.colorSystemId);
+  const drafts: ComposerDraftRequest[] = [];
+  context.mocks.api(composerDraftContract.patch, ({ body, respond }) => {
+    drafts.push(body);
+    return respond(204);
+  });
   mockPresentationHtml(template.embedUrl, ["Opening"]);
   const user = userEvent.setup({ delay: null });
 
@@ -81,23 +85,9 @@ async function openPresentationThemePreview() {
     host: "app.okou.ai",
   });
 
-  const inline = await expectInlineTemplate(template.title);
-  const edit = queryAllByRoleFast("button", inline)[0];
-  if (!edit) {
-    throw new Error("The saved presentation template has no edit control");
-  }
-  click(edit);
-  const preview = await waitFor(() => {
-    return buttonByLabel(
-      `Preview ${template.title} at current slide`,
-      document.body,
-    );
-  });
-  const dialog = preview.closest('[role="dialog"]');
-  if (!(dialog instanceof HTMLElement)) {
-    throw new Error("Expected the presentation template picker dialog");
-  }
-  click(preview);
+  const shelf = await openTemplateRecommendations("Presentation");
+  click(within(shelf).getByLabelText(`Preview template ${template.title}`));
+  const dialog = await screen.findByRole("dialog");
   await waitFor(() => {
     expect(detailGroup(template.title)).toBeInTheDocument();
   });
@@ -208,8 +198,14 @@ test("Use a presentation template's default theme", async () => {
     host: "app.okou.ai",
   });
 
-  await openTemplatePicker(user, "Presentation");
-  click(screen.getByLabelText(`Select template ${template.title}`));
+  const shelf = await openTemplateRecommendations("Presentation");
+  const cover = queryAllByRoleFast("button", shelf).find((candidate) => {
+    return candidate.textContent?.trim() === template.title;
+  });
+  if (!cover) {
+    throw new Error(`Expected presentation recommendation ${template.title}`);
+  }
+  click(cover);
   await expectInlineTemplate(template.title);
   await sendComposerMessage(user, "Create a presentation with this template");
   await waitFor(() => {
@@ -236,9 +232,9 @@ test("Navigate every slide in a presentation template", async () => {
     host: "app.okou.ai",
   });
 
-  await openTemplatePicker(user, "Presentation");
+  const shelf = await openTemplateRecommendations("Presentation");
   await user.click(
-    screen.getByLabelText(`Preview ${template.title} at current slide`),
+    within(shelf).getByLabelText(`Preview template ${template.title}`),
   );
   const preview = await waitFor(() => {
     return detailGroup(template.title);
@@ -287,8 +283,8 @@ async function openThreeSlidePreview() {
     host: "app.okou.ai",
   });
 
-  await openTemplatePicker(user, "Presentation");
-  click(screen.getByLabelText(`Preview ${template.title} at current slide`));
+  const shelf = await openTemplateRecommendations("Presentation");
+  click(within(shelf).getByLabelText(`Preview template ${template.title}`));
   const preview = await waitFor(() => {
     return detailGroup(template.title);
   });

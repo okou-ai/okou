@@ -42,16 +42,19 @@ struct OkouLoadErrorRow: View {
 /// Every sheet uses this instead of a bare `ProgressView("…")`, so loading reads the same app-wide.
 struct OkouLoadingRow: View {
   let title: LocalizedStringKey
+  let statusColumnWidth: CGFloat?
 
-  init(_ title: LocalizedStringKey) {
+  init(_ title: LocalizedStringKey, statusColumnWidth: CGFloat? = nil) {
     self.title = title
+    self.statusColumnWidth = statusColumnWidth
   }
 
   var body: some View {
-    HStack(spacing: OkouSpace.sm) {
+    HStack(spacing: statusColumnWidth == nil ? OkouSpace.sm : OkouSpace.ten) {
       ProgressView()
         .controlSize(.small)
         .tint(OkouColor.mutedForeground)
+        .frame(width: statusColumnWidth)
       Text(title)
         .font(.okou(.subheadline))
         .foregroundStyle(OkouColor.mutedForeground)
