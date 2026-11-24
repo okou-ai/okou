@@ -478,7 +478,7 @@ class ScreenshotScenario {
                         check(it.resources.configuration.fontScale >= 1.99f)
                     }
                     find(selector().desc("搜索工作区")).click()
-                    val query = selector().desc("搜索工作区").clazz("android.widget.EditText")
+                    val query = selector().clazz("android.widget.EditText").enabled(true)
                     find(query).text = "release-review"
                     device.waitForIdle()
                     var imeVisible = false
