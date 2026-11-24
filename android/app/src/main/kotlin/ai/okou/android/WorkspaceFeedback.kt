@@ -366,14 +366,18 @@ private fun ProjectDeleteSnackbar(
     LaunchedEffect(chats, snackbar, feedback, message, retry) {
         if (feedback.rejected) snackbar.currentSnackbarData?.dismiss()
         val result =
-            snackbar.showSnackbar(
-                message,
-                actionLabel = retry,
-                withDismissAction = unconfirmed,
-                duration = SnackbarDuration.Indefinite,
-            )
+            try {
+                snackbar.showSnackbar(
+                    message,
+                    actionLabel = retry,
+                    withDismissAction = unconfirmed,
+                    duration = SnackbarDuration.Indefinite,
+                )
+            } finally {
+                if (feedback.rejected) chats.dismissProjectDeleteFeedback(feedback)
+            }
         if (result == SnackbarResult.ActionPerformed) chats.retryProjectDelete(feedback)
-        else chats.dismissProjectDeleteFeedback(feedback)
+        else if (!feedback.rejected) chats.dismissProjectDeleteFeedback(feedback)
     }
 }
 
