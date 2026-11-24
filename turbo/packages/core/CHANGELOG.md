@@ -1,5 +1,21 @@
 # Changelog
 
+## [8.869.0](https://github.com/okou-ai/okou/compare/core-v8.868.1...core-v8.869.0) (2026-11-24)
+
+
+### Features
+
+* enable composer voice recordings for staff organizations ([#50472](https://github.com/okou-ai/okou/issues/50472)) ([459a384](https://github.com/okou-ai/okou/commit/459a38441dd8f34bbacc9e73419c3352a0defa7e))
+* migrate billing feedback to posthog surveys ([#50412](https://github.com/okou-ai/okou/issues/50412)) ([b3c517c](https://github.com/okou-ai/okou/commit/b3c517cd416a26bda272000095c0aa1deafc332e))
+* use saved presentation format for generation ([#50260](https://github.com/okou-ai/okou/issues/50260)) ([ad98aaa](https://github.com/okou-ai/okou/commit/ad98aaa608c934f8eac3325ab079b3ee8fc50dd1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.118.0
+
 ## [8.868.1](https://github.com/okou-ai/okou/compare/core-v8.868.0...core-v8.868.1) (2026-11-24)
 
 
