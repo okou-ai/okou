@@ -281,7 +281,7 @@ internal class RunControlsOwner(
         op.job =
             connection.scope.launch {
                 try {
-                    if (retry && !verifyTarget(op)) return@launch
+                    if (retry && !verifyTarget(op, canResend = true)) return@launch
                     submitWithRetry(op)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -319,7 +319,7 @@ internal class RunControlsOwner(
         invalidate(intent.threadId)
     }
 
-    private suspend fun verifyTarget(op: Operation): Boolean {
+    private suspend fun verifyTarget(op: Operation, canResend: Boolean): Boolean {
         requireCurrent(op)
         phase(op, RunControlPhase.Checking)
         val connection = op.connection
@@ -331,7 +331,8 @@ internal class RunControlsOwner(
             )
         val checkpoint = ChatDependencyRetry().read(online = { current(op) }, fetch = ::read)
         requireCurrent(op)
-        if (controlEvidence(intent, checkpoint) == RunControlEvidence.Eligible) return true
+        if (canResend && controlEvidence(intent, checkpoint) == RunControlEvidence.Eligible)
+            return true
         reconcile(connection, checkpoint, setOf(intent.id))
         invalidate(intent.threadId)
         return false
@@ -354,18 +355,7 @@ internal class RunControlsOwner(
                 val delayMillis = dependencyRetryAfterMillis(error).takeIf { remaining > 0 }
                 if (delayMillis != null) delay(maxOf(ChatDependencyRetryDelayMillis, delayMillis))
                 // Only an authoritative observation of the exact original target permits a resend.
-                if (!verifyTarget(op)) return
-                if (delayMillis == null) {
-                    val state = mutable.value
-                    mutable.value =
-                        state.copy(
-                            phases = state.phases + (op.intent.id to RunControlPhase.Retryable),
-                            actionFailures =
-                                state.actionFailures.filterNot { it.id == op.intent.id } +
-                                    op.intent,
-                        )
-                    return
-                }
+                if (!verifyTarget(op, canResend = delayMillis != null)) return
                 remaining--
             }
         }
@@ -375,63 +365,40 @@ internal class RunControlsOwner(
         mutable.value.journal?.pending?.any { it.threadId == threadId } == true
 
     /** Read-only reconciliation; foreground/navigation/reconnect never call sendControl. */
-    fun check(connection: Connection, threadId: String, intentId: String? = null) {
+    fun check(connection: Connection, threadId: String, unknownOnly: Boolean = false) {
         if (!current(connection) || threadId in reads) return
+        val state = mutable.value
         val pending =
-            mutable.value.journal?.pending.orEmpty().filter {
-                it.threadId == threadId &&
-                    (intentId == null ||
-                        it.id == intentId && mutable.value.phases[it.id] == RunControlPhase.Unknown)
+            state.journal?.pending.orEmpty().filter { intent ->
+                val phase = state.phases[intent.id]
+                intent.threadId == threadId &&
+                    intent.id !in writes &&
+                    (phase == RunControlPhase.Unknown ||
+                        !unknownOnly && phase == RunControlPhase.Accepted)
             }
-        if (pending.isEmpty() || pending.any { it.id in writes }) return
+        if (pending.isEmpty()) return
         val checkedIds = pending.mapTo(hashSetOf()) { it.id }
-        mutable.value =
-            mutable.value.copy(
-                phases =
-                    mutable.value.phases + pending.associate { it.id to RunControlPhase.Checking },
-            )
         val reading = Read(connection, checkedIds)
         reads[threadId] = reading
+        mutable.value =
+            state.copy(
+                phases = state.phases + pending.associate { it.id to RunControlPhase.Checking },
+            )
         reading.job =
             connection.scope.launch {
                 try {
-                    val checkpoint =
-                        connection.sync.synchronize(
-                            threadId,
-                            connection.history.checkpoint(threadId),
-                        )
+                    val before = connection.history.checkpoint(threadId)
+                    val checkpoint = connection.sync.synchronize(threadId, before)
                     currentCoroutineContext().ensureActive()
                     if (!current(connection) || reads[threadId] !== reading) return@launch
                     reconcile(connection, checkpoint, checkedIds)
-                    invalidate(threadId)
+                    // After a history refresh, an unchanged checkpoint needs no new invalidation.
+                    if (!unknownOnly || checkpoint !== before) invalidate(threadId)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
-                    if (current(connection) && reads[threadId] === reading) {
+                    if (current(connection) && reads[threadId] === reading)
                         report(connection, error)
-                        if (!current(connection)) return@launch
-                        val remaining =
-                            mutable.value.journal?.pending.orEmpty().filter { it.id in checkedIds }
-                        if (remaining.isNotEmpty()) {
-                            val state = mutable.value
-                            mutable.value =
-                                state.copy(
-                                    phases =
-                                        state.phases +
-                                            remaining.associate {
-                                                it.id to RunControlPhase.Unknown
-                                            },
-                                    notice =
-                                        if (remaining.any { it.kind == RunControlKind.Interrupt })
-                                            RunControlNotice(
-                                                threadId,
-                                                RunControlNoticeKind.ReadFailed,
-                                                RunControlKind.Interrupt,
-                                            )
-                                        else state.notice,
-                                )
-                        }
-                    }
                 } finally {
                     if (reads[threadId] === reading) {
                         reads.remove(threadId)
@@ -462,36 +429,18 @@ internal class RunControlsOwner(
         }
         val ids = resolved.keys.mapTo(hashSetOf()) { it.id }
         var phases = state.phases - ids
+        var actionFailures = state.actionFailures.filterNot { it.id in ids }
         // Only commands captured by this read receive request phases; newer writes keep theirs.
-        for ((intent, evidence) in results) if (intent.id in checkedIds && intent.id !in ids)
-            phases =
-                phases +
-                    (intent.id to
-                        if (evidence == RunControlEvidence.Eligible) RunControlPhase.Retryable
-                        else RunControlPhase.Unknown)
-        val settledElsewhere =
-            resolved.entries.lastOrNull {
-                it.value == RunControlEvidence.TargetSettled
+        for ((intent, evidence) in results) {
+            if (intent.id !in checkedIds || intent.id in ids) continue
+            if (evidence == RunControlEvidence.Eligible) {
+                phases = phases + (intent.id to RunControlPhase.Retryable)
+                if (intent.id in state.optimistic && intent !in actionFailures)
+                    actionFailures = actionFailures + intent
+            } else {
+                phases = phases + (intent.id to RunControlPhase.Unknown)
             }
-        val notice =
-            when {
-                settledElsewhere != null ->
-                    RunControlNotice(
-                        threadId,
-                        RunControlNoticeKind.TargetSettled,
-                        settledElsewhere.key.kind,
-                    )
-                results.any { (intent, evidence) ->
-                    intent.kind == RunControlKind.Interrupt &&
-                        evidence == RunControlEvidence.Invalid
-                } ->
-                    RunControlNotice(
-                        threadId,
-                        RunControlNoticeKind.ReadFailed,
-                        RunControlKind.Interrupt,
-                    )
-                else -> null
-            }
+        }
         val settledQueue =
             targetsAwaitingHistory(
                 threadId,
@@ -513,9 +462,8 @@ internal class RunControlsOwner(
         val next =
             state.copy(
                 phases = phases,
-                notice = notice ?: state.notice,
                 optimistic = state.optimistic - ids,
-                actionFailures = state.actionFailures.filterNot { it.id in ids },
+                actionFailures = actionFailures,
                 settledQueueInputs =
                     if (settledQueue.isEmpty()) state.settledQueueInputs - threadId
                     else state.settledQueueInputs + (threadId to settledQueue),
@@ -526,13 +474,6 @@ internal class RunControlsOwner(
         if (ids.isNotEmpty())
             persist(journal.copy(pending = journal.pending.filterNot { it.id in ids }), next)
         else if (next != state) mutable.value = next
-        if (notice?.kind == RunControlNoticeKind.TargetSettled) {
-            localScope.launch {
-                delay(4_000)
-                if (mutable.value.notice === notice)
-                    mutable.value = mutable.value.copy(notice = null)
-            }
-        }
     }
 
     /** A validated control read can settle targets before the selected histories catch up. */

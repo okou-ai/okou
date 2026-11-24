@@ -128,6 +128,13 @@ internal fun conversationRunControls(
                 hiddenQueueInputs,
             )
         }
+    if (pending.isNotEmpty()) {
+        val confirmation = confirmed?.confirmation
+        // A successful timeline read can resume verification after an independent read failed.
+        LaunchedEffect(model, threadId, offline, confirmation) {
+            if (!offline && confirmation != null) model.checkUnknown(threadId)
+        }
+    }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(model, lifecycle, threadId) {
         val observer = LifecycleEventObserver { _, event ->
