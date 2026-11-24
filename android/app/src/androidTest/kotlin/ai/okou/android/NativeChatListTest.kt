@@ -441,7 +441,7 @@ class NativeChatListTest {
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             device.awaitChatList(app)
-            click(UiSelector().description(app.getString(R.string.settings)))
+            device.openChatListSettings(app)
             text(app.getString(R.string.appearance))
             scenario.recreate()
             text(app.getString(R.string.appearance))
