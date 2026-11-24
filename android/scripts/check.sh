@@ -14,10 +14,5 @@ python3 scripts/check-jvm-test-counts.test.py
 python3 scripts/check-saved-state.py
 python3 ../.github/scripts/checks/android_launcher.py ..
 python3 scripts/sync-design-tokens.py --check
-tasks=(spotlessCheck)
-if [[ ${1:-} == --skip-jvm-tests ]]; then
-  shift
-else
-  tasks+=(:app:testDebugUnitTest)
-fi
-./gradlew "${tasks[@]}" :app:lintDebug :app:assembleDebug --no-daemon "$@"
+./gradlew spotlessCheck :app:testDebugUnitTest \
+  :app:lintDebug :app:assembleDebug --no-daemon "$@"
