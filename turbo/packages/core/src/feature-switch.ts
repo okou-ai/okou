@@ -166,6 +166,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,
   },
+  [FeatureSwitchKey.ComputerUseWebRtcSnapshots]: {
+    maintainer: "lancy@okou.ai",
+    displayName: "Computer Use WebRTC snapshots",
+    description:
+      "Receive authorized Mac window snapshots over WebRTC in this workspace.",
+    enabled: false,
+  },
   [FeatureSwitchKey.DesktopShell]: {
     maintainer: "lancy@okou.ai",
     displayName: "Desktop Shell",

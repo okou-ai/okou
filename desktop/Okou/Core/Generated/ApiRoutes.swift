@@ -71,6 +71,14 @@ public enum ApiRoutes {
       path: "/api/computer-use/hosts/\(pathSegment(hostId))/commands/next")
   }
 
+  /// Negotiate a snapshot data channel for the claimed read
+  public static func computerUseHostSnapshotSignal(hostId: String, commandId: String) -> ApiRoute {
+    ApiRoute(
+      method: "POST",
+      path: "/api/computer-use/hosts/\(pathSegment(hostId))/commands"
+        + "/\(pathSegment(commandId))/snapshot-signal")
+  }
+
   /// Report a claimed command using the current Clerk session
   public static func computerUseHostCommandComplete(hostId: String, commandId: String) -> ApiRoute {
     ApiRoute(

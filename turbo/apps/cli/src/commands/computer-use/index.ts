@@ -1,3 +1,8 @@
+import {
+  prepareSnapshotReceiver,
+  snapshotReceiverMode,
+  takeSnapshot,
+} from "./snapshot-receiver";
 import { createShellCommand } from "./shell";
 import { decodeSandboxTokenPayload } from "../../lib/api/sandbox-token";
 import { waitForComputerUseCommand } from "./wait-for-command";
@@ -339,10 +344,16 @@ function compactActionResult(
   return compact;
 }
 
+interface SnapshotAttempt {
+  readonly session?: string;
+  readonly warm: boolean;
+}
+
 export async function formatComputerUseResultForConsole(
   result: Record<string, unknown>,
   commandId: string,
   signal?: AbortSignal,
+  attempt?: SnapshotAttempt,
 ): Promise<string> {
   const printable: Record<string, unknown> = { status: "succeeded" };
   const apps = result.apps;
@@ -364,15 +375,27 @@ export async function formatComputerUseResultForConsole(
   } else {
     const pointerType = screenshotPointerType(screenshot);
     if (pointerType === "s3") {
-      const { buffer, mimeType } = await fetchComputerUseScreenshot(
-        commandId,
-        signal,
-      );
+      const peer = attempt?.session
+        ? await takeSnapshot(attempt.session, commandId, result)
+        : null;
+      const { buffer, mimeType } =
+        peer ?? (await fetchComputerUseScreenshot(commandId, signal));
       printable.screenshot = await writeScreenshotBytes(
         result,
         buffer,
         mimeType,
       );
+      if (attempt) {
+        printable.snapshotTransport = {
+          path: peer ? "webrtc-" + peer.route : "r2",
+          connection: attempt.session
+            ? attempt.warm
+              ? "warm"
+              : "cold"
+            : "control",
+          totalMs: Math.round(process.uptime() * 1000),
+        };
+      }
     } else if (pointerType === "expired") {
       printable.screenshot = "[screenshot expired]";
     }
@@ -387,6 +410,7 @@ export async function formatComputerUseResultForConsole(
 async function commandOutputText(
   command: ComputerUseCommandResponse,
   signal: AbortSignal,
+  attempt?: SnapshotAttempt,
 ): Promise<string> {
   if (!command.result) {
     return "";
@@ -395,6 +419,7 @@ async function commandOutputText(
     command.result,
     command.id,
     signal,
+    attempt,
   );
 }
 
@@ -415,9 +440,24 @@ async function runReadCommand(
     const created = await createComputerUseReadCommand({
       kind,
       timeoutMs: timeoutSeconds * 1000,
+      ...(kind === "app.state"
+        ? { snapshotReceiver: snapshotReceiverMode() }
+        : {}),
       ...payload,
     });
-    await waitForCommand(created, timeoutSeconds);
+    const attempt = created.snapshotSession
+      ? prepareSnapshotReceiver(created.snapshotSession, created.commandId)
+      : kind === "app.state" &&
+          process.env.OKOU_COMPUTER_USE_SNAPSHOT_MODE === "control"
+        ? { warm: false }
+        : undefined;
+    await waitForComputerUseCommand(
+      created,
+      timeoutSeconds,
+      (command, signal) => {
+        return commandOutputText(command, signal, attempt);
+      },
+    );
   } catch (error) {
     throwComputerUseAuthorizationGuidanceError(error);
   }

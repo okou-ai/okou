@@ -180,6 +180,7 @@ const computerUseCommandPayloadShape = {
 
 const computerUseCommandCreateBodySchema = object({
   kind: computerUseReadCommandKindSchema,
+  snapshotReceiver: zEnum(["auto", "relay"]).optional(),
   ...computerUseCommandTargetShape,
   ...computerUseCommandPayloadShape,
 }).superRefine((body, ctx) => {
@@ -349,6 +350,7 @@ const computerUseCommandErrorSchema = object({
 // required queue fields or changing the JSON sent by installed 0.54.x builds.
 const computerUseCommandPayloadSchema = looseObject({
   ...desktopShellPayloadSchema.shape,
+  snapshotSession: string().optional(),
   // GUI keyboard.press_key uses the same name with a different key vocabulary.
   key: string().optional(),
 }).meta({ "x-desktop-stable-fields": true });
@@ -471,6 +473,7 @@ export const computerUseCommandCreateResponseSchema = object({
   commandId: string(),
   status: literal("queued"),
   realtime: realtimeSubscriptionSchema.optional(),
+  snapshotSession: string().optional(),
 });
 
 export const computerUseCommandResponseSchema = object({
@@ -605,6 +608,23 @@ export const computerUseAuthorizationRequestsContract = c.router({
   },
 });
 
+// An offer belongs to one already-admitted read. Only Desktop may supply an
+// offer and only the owning Run may answer. Polling stops once negotiation ends.
+const snapshotDescriptionSchema = string().min(1).max(24_576);
+const snapshotIceServerSchema = object({
+  urls: array(string()),
+  username: string().optional(),
+  credential: string().optional(),
+});
+const snapshotSignalResponseSchema = object({
+  description: string().nullable(),
+  iceServers: array(snapshotIceServerSchema).optional(),
+  relayOnly: boolean().optional(),
+});
+export type ComputerUseSnapshotSignal = zInfer<
+  typeof snapshotSignalResponseSchema
+>;
+
 export const computerUseCommandContract = c.router({
   create: {
     method: "POST",
@@ -634,6 +654,21 @@ export const computerUseCommandContract = c.router({
       404: apiErrorSchema,
     },
     summary: "Get a desktop computer-use command result",
+  },
+  snapshotSignal: {
+    method: "POST",
+    path: "/api/computer-use/commands/:commandId/snapshot-signal",
+    headers: authHeadersSchema,
+    pathParams: commandIdPathParamsSchema,
+    body: object({ answer: snapshotDescriptionSchema.optional() }),
+    responses: {
+      200: snapshotSignalResponseSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary: "Exchange a snapshot peer description for the authorized Run",
   },
   screenshotUrl: {
     method: "GET",
@@ -766,6 +801,23 @@ const sessionHostCompleteConflictSchema = object({
   }),
 });
 export const computerUseSessionHostsContract = c.router({
+  snapshotSignal: {
+    method: "POST",
+    path: "/api/computer-use/hosts/:hostId/commands/:commandId/snapshot-signal",
+    headers: authHeadersSchema,
+    pathParams: sessionHostPathParamsSchema.extend({ commandId: uuid() }),
+    body: sessionHostGenerationSchema.extend({
+      offer: snapshotDescriptionSchema.optional(),
+      ice: boolean().optional(),
+    }),
+    responses: {
+      200: snapshotSignalResponseSchema,
+      400: apiErrorSchema,
+      404: apiErrorSchema,
+      ...sessionHostResponses,
+    },
+    summary: "Negotiate a snapshot data channel for the claimed read",
+  },
   register: {
     method: "POST",
     path: "/api/computer-use/hosts/register",

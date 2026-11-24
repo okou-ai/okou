@@ -177,6 +177,22 @@ its raw string instead of failing. Request bodies, command results, and the real
 token stay `JSONValue`: the native helper and Ably author or consume them, not the
 app.
 
+## Trying WebRTC snapshots in staging
+
+Enable **Computer Use WebRTC snapshots** (`_computerUseWebRtcSnapshots`) in Lab for the staff user running the trial. Use a Desktop and Linux sandbox CLI built with snapshot support, then authorize the Mac in the chat and start a Run. Each `okou computer-use get-app-state --app Safari` captures one window. The Mac persists the PNG through the usual command completion and sends an encrypted copy over an ordered WebRTC data channel when the connection is ready. The CLI reads the successful command result before it verifies the PNG and writes both the image and the accessibility tree.
+
+For the Cloudflare relay arm, configure the staging API with `COMPUTER_USE_TURN_KEY_ID` and `COMPUTER_USE_TURN_API_TOKEN` from a Realtime TURN key. The API gives the authorized Mac a 120-second ICE credential. The sandbox can dial the advertised relay address using outbound UDP. Networks that block that path can still retrieve the persisted image.
+
+Set `OKOU_COMPUTER_USE_SNAPSHOT_MODE` on the CLI invocation to choose the trial arm.
+
+| Mode | Expected behavior |
+| --- | --- |
+| `control` | Fetch the persisted PNG and report the baseline time. |
+| `auto` (default) | Negotiate a direct or relayed connection. Read the persisted PNG immediately when verified peer bytes are unavailable. |
+| `relay` | Limit the Mac to TURN candidates. A successful relay reports `webrtc-turn`. |
+
+Use the same app and window in all three arms. Record `snapshotTransport.path`, `connection`, `totalMs` and command failures for each attempt. `totalMs` measures CLI process start through writing the PNG and accessibility tree. Compare first captures separately from consecutive captures in the same Run. Repeat on an actual cross-border route. The proposed trial target is a 100 ms improvement in warm P95 with stable first-capture P95 and completion rate. Turning the Lab switch off returns subsequent captures to the existing artifact path.
+
 ## Existing installations
 
 The bundle ID, URL scheme, Developer ID team, and Application Support directory

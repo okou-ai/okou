@@ -52,6 +52,9 @@ export const computerUseCommands = pgTable(
       .$type<ComputerUseCommandPayload>()
       .default({})
       .notNull(),
+    // Ephemeral ICE descriptions are private to the two signaling routes.
+    snapshotOffer: text("snapshot_offer"),
+    snapshotAnswer: text("snapshot_answer"),
     result: jsonb("result").$type<ComputerUseCommandResult>(),
     error: text("error"),
     timeoutMs: integer("timeout_ms").notNull(),

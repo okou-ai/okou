@@ -1,3 +1,4 @@
+import { exchangeSnapshotSignal$ } from "../services/computer-use-snapshot.service";
 import { trace } from "@opentelemetry/api";
 import { desktopUpgradeRequired } from "../../lib/desktop-compatibility";
 import { logger } from "../../lib/log";
@@ -351,6 +352,34 @@ const next$ = command(async ({ get, set }, signal: AbortSignal) => {
       };
 });
 
+const snapshotParams$ = pathParamsOf(contract.snapshotSignal);
+const snapshotBody$ = bodyResultOf(contract.snapshotSignal);
+const snapshotSignal$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const identity = get(identity$);
+  if (!identity) {
+    return invalidSession;
+  }
+  const body = await get(snapshotBody$);
+  signal.throwIfAborted();
+  if (!body.ok) {
+    return body.response;
+  }
+  const authority = { ...get(snapshotParams$), ...body.data, ...identity };
+  if (!(await set(resolveComputerUseHost$, authority, signal))) {
+    return invalidConnection;
+  }
+  const result = await set(
+    exchangeSnapshotSignal$,
+    { ...authority, role: "sender" },
+    signal,
+  );
+  signal.throwIfAborted();
+  set(setResHeader$, "Cache-Control", "private, no-store");
+  return result
+    ? { status: 200 as const, body: result }
+    : notFound("Snapshot session unavailable");
+});
+
 const completeBody$ = bodyResultOf(contract.complete);
 const completeParams$ = pathParamsOf(contract.complete);
 const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -388,6 +417,7 @@ export const computerUseSessionHostRoutes: readonly RouteEntry[] = [
   { route: contract.state, handler: sessionRoute(state$) },
   { route: contract.realtimeToken, handler: sessionRoute(realtimeToken$) },
   { route: contract.connectionEvent, handler: sessionRoute(connectionEvent$) },
+  { route: contract.snapshotSignal, handler: sessionRoute(snapshotSignal$) },
   { route: contract.stop, handler: sessionRoute(stop$) },
   {
     route: contract.next,

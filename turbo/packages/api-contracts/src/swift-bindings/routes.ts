@@ -57,6 +57,10 @@ export const swiftRouteBindings = [
     route: computerUseSessionHostsContract.next,
   },
   {
+    swiftName: "computerUseHostSnapshotSignal",
+    route: computerUseSessionHostsContract.snapshotSignal,
+  },
+  {
     swiftName: "computerUseHostCommandComplete",
     route: computerUseSessionHostsContract.complete,
   },

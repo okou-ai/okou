@@ -1,0 +1,58 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Computer Use snapshot sender</title>
+<script>
+"use strict";
+const snapshotPeer = (() => {
+  let pc;
+  let channel;
+  function waitFor(target, event, predicate, timeoutMs) {
+    if (predicate()) return Promise.resolve(true);
+    return new Promise(resolve => {
+      const finish = value => {
+        clearTimeout(timer);
+        target.removeEventListener(event, changed);
+        resolve(value);
+      };
+      const changed = () => { if (predicate()) finish(true); };
+      const timer = setTimeout(() => finish(false), timeoutMs);
+      target.addEventListener(event, changed);
+    });
+  }
+  return {
+    async offer(iceServers, relayOnly) {
+      pc = new RTCPeerConnection({ iceServers, iceTransportPolicy: relayOnly ? "relay" : "all" });
+      channel = pc.createDataChannel("okou-snapshots-v1", { ordered: true });
+      channel.onmessage = () => pc.close();
+      pc.ondatachannel = () => pc.close();
+      await pc.setLocalDescription(await pc.createOffer());
+      await waitFor(pc, "icegatheringstatechange", () => pc.iceGatheringState === "complete", 3500);
+      return pc.localDescription.sdp;
+    },
+    async connect(sdp) {
+      await pc.setRemoteDescription({ type: "answer", sdp });
+      if (!await waitFor(channel, "open", () => channel.readyState === "open", 10000)) {
+        throw new Error("Snapshot channel did not open");
+      }
+    },
+    async send(commandId, snapshotId, data) {
+      if (channel.readyState !== "open") throw new Error("Snapshot channel closed");
+      if (channel.bufferedAmount > 0) return false;
+      const stats = await pc.getStats().catch(() => new Map());
+      const reports = Array.from(stats.values());
+      const transport = reports.find(r => r.type === "transport" && r.selectedCandidatePairId);
+      const pair = stats.get(transport?.selectedCandidatePairId)
+        ?? reports.find(r => r.type === "candidate-pair" && r.nominated && r.state === "succeeded");
+      const senderCandidate = pair && stats.get(pair.localCandidateId)?.candidateType;
+      const bytes = Uint8Array.from(atob(data), ch => ch.charCodeAt(0));
+      channel.send(JSON.stringify({ commandId, snapshotId, bytes: bytes.length, senderCandidate }));
+      for (let offset = 0; offset < bytes.length; offset += 16384) {
+        channel.send(bytes.subarray(offset, offset + 16384));
+      }
+      return true;
+    },
+    close() { pc?.close(); }
+  };
+})();
+window.snapshotPeer = snapshotPeer;
+</script>

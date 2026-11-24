@@ -94,6 +94,17 @@ export const computerUseCommandContract: ClientDescriptor<
       404: true,
     },
   },
+  snapshotSignal: {
+    method: "POST",
+    path: "/api/computer-use/commands/:commandId/snapshot-signal",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      403: true,
+      404: true,
+    },
+  },
   screenshotUrl: {
     method: "GET",
     path: "/api/computer-use/commands/:commandId/screenshot/url",
@@ -124,6 +135,20 @@ export const computerUseHostsContract: ClientDescriptor<
 export const computerUseSessionHostsContract: ClientDescriptor<
   typeof OriginalComputerUseSessionHostsContract
 > = {
+  snapshotSignal: {
+    method: "POST",
+    path: "/api/computer-use/hosts/:hostId/commands/:commandId/snapshot-signal",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      403: true,
+      404: true,
+      409: true,
+      429: true,
+      503: true,
+    },
+  },
   register: {
     method: "POST",
     path: "/api/computer-use/hosts/register",

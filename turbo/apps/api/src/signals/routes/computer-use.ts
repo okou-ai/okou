@@ -1,3 +1,4 @@
+import { exchangeSnapshotSignal$ } from "../services/computer-use-snapshot.service";
 import { desktopShellContract } from "@okouai/api-contracts/contracts/desktop-shell";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -96,6 +97,7 @@ const commandCreateInner$ = command(
       {
         orgId: auth.orgId,
         userId: auth.userId,
+        snapshotReceiver: bodyResult.data.snapshotReceiver,
         kind: bodyResult.data.kind,
         payload: bodyResult.data,
         timeoutMs: bodyResult.data.timeoutMs,
@@ -148,6 +150,9 @@ const commandCreateInner$ = command(
       body: {
         commandId: result.commandId,
         status: result.commandStatus,
+        ...(result.snapshotSession
+          ? { snapshotSession: result.snapshotSession }
+          : {}),
         ...(realtime ? { realtime } : {}),
       },
     };
@@ -367,7 +372,9 @@ const commandGetInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       orgId: auth.orgId,
       userId: auth.userId,
       commandId: params.commandId,
-      ...(hostId ? { hostId } : {}),
+      ...(hostId && auth.tokenType === "agent"
+        ? { hostId, runId: auth.runId }
+        : {}),
     },
     signal,
   );
@@ -376,7 +383,42 @@ const commandGetInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!result) {
     return notFound("Computer-use command not found");
   }
+  if (result.result?.snapshotKey) {
+    set(setResHeader$, "Cache-Control", "private, no-store");
+  }
   return { status: 200 as const, body: result };
+});
+
+const snapshotParams$ = pathParamsOf(computerUseCommandContract.snapshotSignal);
+const snapshotBody$ = bodyResultOf(computerUseCommandContract.snapshotSignal);
+const snapshotSignal$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const auth = get(organizationAuthContext$);
+  if (auth.tokenType !== "agent" || !auth.computerUseHostId || !auth.runId) {
+    return computerUseHostNotAuthorized;
+  }
+  const body = await get(snapshotBody$);
+  signal.throwIfAborted();
+  if (!body.ok) {
+    return body.response;
+  }
+  const result = await set(
+    exchangeSnapshotSignal$,
+    {
+      role: "receiver",
+      orgId: auth.orgId,
+      userId: auth.userId,
+      hostId: auth.computerUseHostId,
+      runId: auth.runId,
+      commandId: get(snapshotParams$).commandId,
+      answer: body.data.answer,
+    },
+    signal,
+  );
+  signal.throwIfAborted();
+  set(setResHeader$, "Cache-Control", "private, no-store");
+  return result
+    ? { status: 200 as const, body: result }
+    : notFound("Snapshot session unavailable");
 });
 
 const screenshotUrlParams$ = pathParamsOf(
@@ -397,7 +439,9 @@ const screenshotUrlInner$ = command(
         orgId: auth.orgId,
         userId: auth.userId,
         commandId: params.commandId,
-        ...(hostId ? { hostId } : {}),
+        ...(hostId && auth.tokenType === "agent"
+          ? { hostId, runId: auth.runId }
+          : {}),
       },
       signal,
     );
@@ -472,6 +516,10 @@ export const computerUseRoutes: readonly RouteEntry[] = [
   {
     route: computerUseCommandContract.get,
     handler: authRoute(computerUseCommandAuthOptions, commandGetInner$),
+  },
+  {
+    route: computerUseCommandContract.snapshotSignal,
+    handler: authRoute(computerUseCommandAuthOptions, snapshotSignal$),
   },
   {
     route: computerUseCommandContract.screenshotUrl,

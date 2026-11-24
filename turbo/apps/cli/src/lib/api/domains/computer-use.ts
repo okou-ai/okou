@@ -68,6 +68,7 @@ interface ComputerUseCommandParams<
   readonly text?: string;
   readonly key?: string;
   readonly action?: string;
+  readonly snapshotReceiver?: "auto" | "relay";
   readonly timeoutMs?: number;
 }
 
@@ -78,6 +79,9 @@ function commandBody<
     kind: params.kind,
     timeoutMs: params.timeoutMs ?? 15_000,
     realtime: true as const,
+    ...(params.kind === "app.state" && params.snapshotReceiver
+      ? { snapshotReceiver: params.snapshotReceiver }
+      : {}),
     ...(params.app ? { app: params.app } : {}),
     ...(params.snapshotId ? { snapshotId: params.snapshotId } : {}),
     ...(params.elementId ? { elementId: params.elementId } : {}),
@@ -125,6 +129,24 @@ export async function createComputerUseWriteCommand(
   }
 
   handleError(result, "Failed to create computer-use write command");
+}
+
+export async function exchangeComputerUseSnapshotSignal(
+  commandId: string,
+  answer: string | undefined,
+  signal: AbortSignal,
+): Promise<string | null> {
+  const client = initClient(
+    computerUseCommandContract,
+    await getComputerUseClientConfig(),
+  );
+  const result = await client.snapshotSignal({
+    params: { commandId },
+    body: answer ? { answer } : {},
+    fetchOptions: { signal },
+  });
+  if (result.status === 200) return result.body.description;
+  handleError(result, "Snapshot signaling unavailable");
 }
 
 export async function getComputerUseCommand(

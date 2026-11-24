@@ -16,6 +16,7 @@ export enum FeatureSwitchKey {
   ProjectArchive = "projectArchive",
   ProjectTitleReveal = "projectTitleReveal",
   OkouAnimatedAvatar = "okouAnimatedAvatar",
+  ComputerUseWebRtcSnapshots = "_computerUseWebRtcSnapshots",
   DesktopShell = "desktopShell",
   Dummy = "_dummy",
   TikTokOAuthConnector = "tiktokOAuthConnector",

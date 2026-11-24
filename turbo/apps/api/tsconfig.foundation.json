@@ -281,6 +281,8 @@
     "src/signals/services/codex-reset-credit-expiry.service.ts",
     "src/signals/services/computer-use-host-auth.service.ts",
     "src/signals/services/computer-use.service.ts",
+    "src/signals/services/computer-use-snapshot.service.ts",
+    "src/signals/services/computer-use-snapshot-sdp.ts",
     "src/signals/services/desktop-shell-grant.ts",
     "src/signals/services/connector-oauth-state.service.ts",
     "src/signals/services/custom-connector-automatic-oauth.service.ts",

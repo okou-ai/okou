@@ -19,7 +19,12 @@ const banner = [
   "const require = __createRequire(import.meta.url);",
 ].join("\n");
 
-async function buildImageResizeWorker(): Promise<void> {
+const buildIdentity = {
+  __CLI_VERSION__: JSON.stringify(pkg.version),
+  __DEFAULT_SENTRY_DSN__: JSON.stringify(process.env.DEFAULT_SENTRY_DSN ?? ""),
+};
+
+async function buildWorkers(): Promise<void> {
   const piEntry = fileURLToPath(
     import.meta.resolve("@earendil-works/pi-coding-agent"),
   );
@@ -30,6 +35,8 @@ async function buildImageResizeWorker(): Promise<void> {
   await build({
     config: false,
     entry: {
+      "snapshot-receiver-worker":
+        "src/commands/computer-use/snapshot-receiver-worker.ts",
       "image-resize-worker": resolve(
         dirname(piEntry),
         "utils/image-resize-worker.js",
@@ -45,6 +52,7 @@ async function buildImageResizeWorker(): Promise<void> {
     shims: true,
     removeNodeProtocol: false,
     banner: { js: banner },
+    define: buildIdentity,
     esbuildOptions(options) {
       options.nodePaths = [resolve("node_modules")];
     },
@@ -72,14 +80,9 @@ export default defineConfig({
     options.nodePaths = [resolve("node_modules")];
   },
   // Inject version and default Sentry DSN from package.json/env at build time
-  define: {
-    __CLI_VERSION__: JSON.stringify(pkg.version),
-    __DEFAULT_SENTRY_DSN__: JSON.stringify(
-      process.env.DEFAULT_SENTRY_DSN ?? "",
-    ),
-  },
+  define: buildIdentity,
   onSuccess: async () => {
-    await buildImageResizeWorker();
+    await buildWorkers();
 
     if (!isWatchMode) {
       return;

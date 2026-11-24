@@ -154,6 +154,7 @@ public enum ComputerUseCommandClaim: Codable, Equatable, Sendable {
       public let waitMs: Int?
       public let all: Bool?
       public let shellPermissionId: String?
+      public let snapshotSession: String?
       public let additionalFields: [String: JSONValue]
 
       public init(
@@ -167,6 +168,7 @@ public enum ComputerUseCommandClaim: Codable, Equatable, Sendable {
         waitMs: Int? = nil,
         all: Bool? = nil,
         shellPermissionId: String? = nil,
+        snapshotSession: String? = nil,
         additionalFields: [String: JSONValue] = [:]
       ) {
         self.sessionId = sessionId
@@ -179,6 +181,7 @@ public enum ComputerUseCommandClaim: Codable, Equatable, Sendable {
         self.waitMs = waitMs
         self.all = all
         self.shellPermissionId = shellPermissionId
+        self.snapshotSession = snapshotSession
         self.additionalFields = additionalFields
       }
 
@@ -200,6 +203,7 @@ public enum ComputerUseCommandClaim: Codable, Equatable, Sendable {
         case waitMs = "waitMs"
         case all = "all"
         case shellPermissionId = "shellPermissionId"
+        case snapshotSession = "snapshotSession"
       }
 
       public init(from decoder: any Decoder) throws {
@@ -214,6 +218,7 @@ public enum ComputerUseCommandClaim: Codable, Equatable, Sendable {
         waitMs = try container.decodeIfPresent(Int.self, forKey: .waitMs)
         all = try container.decodeIfPresent(Bool.self, forKey: .all)
         shellPermissionId = try container.decodeIfPresent(String.self, forKey: .shellPermissionId)
+        snapshotSession = try container.decodeIfPresent(String.self, forKey: .snapshotSession)
         let additional = try decoder.container(keyedBy: AdditionalKey.self)
         var fields: [String: JSONValue] = [:]
         for key in additional.allKeys where CodingKeys(stringValue: key.stringValue) == nil {
@@ -234,6 +239,7 @@ public enum ComputerUseCommandClaim: Codable, Equatable, Sendable {
         try container.encodeIfPresent(waitMs, forKey: .waitMs)
         try container.encodeIfPresent(all, forKey: .all)
         try container.encodeIfPresent(shellPermissionId, forKey: .shellPermissionId)
+        try container.encodeIfPresent(snapshotSession, forKey: .snapshotSession)
         var additional = encoder.container(keyedBy: AdditionalKey.self)
         for (key, value) in additionalFields where CodingKeys(stringValue: key) == nil {
           try additional.encode(value, forKey: AdditionalKey(stringValue: key))

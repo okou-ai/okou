@@ -1,3 +1,11 @@
+import { encryptSecretValue } from "./crypto.utils";
+import { createHash } from "node:crypto";
+import {
+  snapshotSessionForCapture$,
+  openSnapshotKey,
+  snapshotClaimEnabled$,
+  snapshotResultAccess$,
+} from "./computer-use-snapshot.service";
 import { trace } from "@opentelemetry/api";
 import { HTTPException } from "hono/http-exception";
 import { providerUnavailable } from "../../lib/error";
@@ -141,6 +149,7 @@ type CreateComputerUseCommandResult =
       readonly status: "created";
       readonly commandId: string;
       readonly commandStatus: "queued";
+      readonly snapshotSession?: string;
       readonly notifyHosts: readonly ComputerUseCommandNotificationHost[];
     }
   | { readonly status: "no_host" }
@@ -157,8 +166,7 @@ type ComputerUseCommandNotificationHost = Pick<
 type ResolveComputerUseCommandTargetsResult =
   | {
       readonly status: "resolved";
-      readonly targetHostId: string;
-      readonly notifyHosts: readonly ComputerUseHostRow[];
+      readonly host: ComputerUseHostRow;
     }
   | { readonly status: "host_ambiguous" }
   | { readonly status: "host_offline" }
@@ -664,13 +672,19 @@ const offloadScreenshotForResult$ = command(
     },
     signal: AbortSignal,
   ): Promise<ComputerUseCommandResult> => {
-    const screenshot = params.result.screenshot;
+    const {
+      snapshotKey,
+      sealedSnapshotKey: _untrusted,
+      snapshotSha256: _unverified,
+      ...result
+    } = params.result;
+    const screenshot = result.screenshot;
     if (typeof screenshot !== "string") {
-      return params.result;
+      return result;
     }
     const parsed = parseScreenshotDataUrl(screenshot);
     if (!parsed) {
-      return params.result;
+      return result;
     }
 
     const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
@@ -692,7 +706,19 @@ const offloadScreenshotForResult$ = command(
       width: numberField(params.result, "screenshotWidth"),
       height: numberField(params.result, "screenshotHeight"),
     };
-    return { ...params.result, screenshot: pointer };
+    return {
+      ...result,
+      screenshot: pointer,
+      ...(typeof snapshotKey === "string" &&
+      /^[A-Za-z0-9+/]{43}=$/.test(snapshotKey)
+        ? {
+            sealedSnapshotKey: encryptSecretValue(snapshotKey),
+            snapshotSha256: createHash("sha256")
+              .update(parsed.buffer)
+              .digest("hex"),
+          }
+        : {}),
+    };
   },
 );
 
@@ -702,8 +728,9 @@ const offloadScreenshotForResult$ = command(
  * Unrecognized values and pointer-free results pass through unchanged.
  */
 function toClientResult(
-  result: Record<string, unknown>,
+  stored: Record<string, unknown>,
 ): Record<string, unknown> {
+  const { sealedSnapshotKey: _internal, ...result } = stored;
   const screenshot = result.screenshot;
   if (isStoredScreenshotPointer(screenshot)) {
     const clientPointer: ClientScreenshotPointer = {
@@ -902,7 +929,15 @@ function serializeHost(row: ComputerUseHostRow, online: boolean) {
   };
 }
 
-function serializeCommand(row: ComputerUseCommandRow, hostName: string | null) {
+function serializeCommand(
+  row: ComputerUseCommandRow,
+  hostName: string | null,
+  includeSnapshot = true,
+) {
+  const payload = { ...row.payload };
+  if (!includeSnapshot) {
+    delete payload.snapshotSession;
+  }
   const result = row.status === "succeeded" ? row.result : null;
   return {
     id: row.id,
@@ -910,7 +945,7 @@ function serializeCommand(row: ComputerUseCommandRow, hostName: string | null) {
     status: row.status as ComputerUseCommandStatus,
     hostId: row.hostId,
     hostName,
-    payload: row.payload,
+    payload,
     ...(result
       ? { result: toClientResult(result) as ComputerUseCommandResult }
       : {}),
@@ -1049,8 +1084,7 @@ function resolveComputerUseCommandTargets(params: {
   }
   return {
     status: "resolved",
-    targetHostId: host.id,
-    notifyHosts: [host],
+    host,
   };
 }
 
@@ -1525,6 +1559,7 @@ export const createComputerUseCommand$ = command(
       readonly orgId: string;
       readonly userId: string;
       readonly runId?: string;
+      readonly snapshotReceiver?: "auto" | "relay";
       readonly targetHostId?: string;
       readonly kind: ComputerUseCommandKind;
       readonly payload: ComputerUseCommandPayload;
@@ -1585,11 +1620,17 @@ export const createComputerUseCommand$ = command(
       return target;
     }
 
+    const snapshotSession = await set(
+      snapshotSessionForCapture$,
+      target.host,
+      params,
+      signal,
+    );
+    if (snapshotSession) {
+      payload.snapshotSession = snapshotSession;
+    }
     if (params.kind.startsWith("shell.")) {
-      const host = onlineHosts.find((candidate) => {
-        return candidate.id === target.targetHostId;
-      });
-      const permission = host && shellPermissionId(host);
+      const permission = shellPermissionId(target.host);
       if (!permission) {
         return { status: "host_unsupported" };
       }
@@ -1600,14 +1641,14 @@ export const createComputerUseCommand$ = command(
           object({ id: uuid() }),
           await db.execute(sql`
           INSERT INTO ${computerUseCommands} (org_id, user_id, run_id, host_id, kind, payload, timeout_ms, shell_authorization_id, created_at, updated_at)
-          SELECT ${params.orgId}, ${params.userId}, ${params.runId ?? null}, ${target.targetHostId}::uuid, ${params.kind}, ${JSON.stringify(payload)}::jsonb, ${params.timeoutMs}, ${desktopShellAuthorizations.id}, ${now.toISOString()}::timestamp, ${now.toISOString()}::timestamp
+          SELECT ${params.orgId}, ${params.userId}, ${params.runId ?? null}, ${target.host.id}::uuid, ${params.kind}, ${JSON.stringify(payload)}::jsonb, ${params.timeoutMs}, ${desktopShellAuthorizations.id}, ${now.toISOString()}::timestamp, ${now.toISOString()}::timestamp
           FROM ${desktopShellAuthorizations}
           JOIN ${agentRuns} ON ${agentRuns.chatThreadId} = ${desktopShellAuthorizations.chatThreadId}
           WHERE ${agentRuns.id} = ${params.runId ?? null}::uuid
             AND ${agentRuns.orgId} = ${params.orgId} AND ${agentRuns.userId} = ${params.userId}
             AND ${desktopShellAuthorizations.orgId} = ${params.orgId}
             AND ${desktopShellAuthorizations.userId} = ${params.userId}
-            AND ${desktopShellAuthorizations.computerUseHostId} = ${target.targetHostId}::uuid
+            AND ${desktopShellAuthorizations.computerUseHostId} = ${target.host.id}::uuid
             AND ${desktopShellAuthorizations.status} = 'approved'
             AND ${desktopShellAuthorizations.grantExpiresAt} > ${now.toISOString()}::timestamp
           RETURNING id
@@ -1619,7 +1660,7 @@ export const createComputerUseCommand$ = command(
             orgId: params.orgId,
             userId: params.userId,
             runId: params.runId ?? null,
-            hostId: target.targetHostId,
+            hostId: target.host.id,
             kind: params.kind,
             status: "queued",
             payload,
@@ -1639,7 +1680,8 @@ export const createComputerUseCommand$ = command(
       status: "created",
       commandId: row.id,
       commandStatus: "queued",
-      notifyHosts: target.notifyHosts,
+      ...(snapshotSession ? { snapshotSession } : {}),
+      notifyHosts: [target.host],
     };
   },
 );
@@ -1691,6 +1733,7 @@ export const getComputerUseCommand$ = command(
       readonly userId: string;
       readonly commandId: string;
       readonly hostId?: string;
+      readonly runId?: string;
     },
     signal: AbortSignal,
   ) => {
@@ -1748,7 +1791,18 @@ export const getComputerUseCommand$ = command(
         connectionGeneration: host.connectionGeneration,
       });
     }
-    return serializeCommand(commandRow, host?.displayName ?? null);
+    const serialized = serializeCommand(commandRow, host?.displayName ?? null);
+    const access = await set(snapshotResultAccess$, params, row, signal);
+    if (access === "denied") {
+      return null;
+    }
+    if (access === "enabled" && serialized.result) {
+      const snapshotKey = openSnapshotKey(commandRow.result?.sealedSnapshotKey);
+      if (snapshotKey) {
+        return { ...serialized, result: { ...serialized.result, snapshotKey } };
+      }
+    }
+    return serialized;
   },
 );
 
@@ -1760,6 +1814,7 @@ export const getComputerUseCommandScreenshotUrl$ = command(
       readonly userId: string;
       readonly commandId: string;
       readonly hostId?: string;
+      readonly runId?: string;
     },
     signal: AbortSignal,
   ) => {
@@ -1768,6 +1823,9 @@ export const getComputerUseCommandScreenshotUrl$ = command(
       .select({
         status: computerUseCommands.status,
         result: computerUseCommands.result,
+        payload: computerUseCommands.payload,
+        runId: computerUseCommands.runId,
+        hostId: computerUseCommands.hostId,
       })
       .from(computerUseCommands)
       .where(
@@ -1784,6 +1842,9 @@ export const getComputerUseCommandScreenshotUrl$ = command(
       .limit(1);
     signal.throwIfAborted();
     if (row?.status !== "succeeded" || !row.result) {
+      return null;
+    }
+    if ((await set(snapshotResultAccess$, params, row, signal)) === "denied") {
       return null;
     }
     const screenshot = row.result.screenshot;
@@ -1968,6 +2029,13 @@ export const claimNextComputerUseHostCommand$ = command(
       return { status: "idle" };
     }
 
+    // A failed optional lookup must not strand a claim the Desktop has not received.
+    const includeSnapshot = await set(
+      snapshotClaimEnabled$,
+      { ...host, supportedCapabilities: capabilities },
+      row,
+      signal,
+    );
     const claimed = await settle(
       db
         .update(computerUseCommands)
@@ -2011,7 +2079,7 @@ export const claimNextComputerUseHostCommand$ = command(
     }
     return {
       status: "command",
-      command: serializeCommand(updated, host.displayName),
+      command: serializeCommand(updated, host.displayName, includeSnapshot),
     };
   },
 );

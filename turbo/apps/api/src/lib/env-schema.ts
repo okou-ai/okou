@@ -115,6 +115,8 @@ function serviceEnvSchema() {
     WORKFLOW_ATTACHMENT_CLEANUP_ENABLED: zEnum(["true", "false"]).default(
       "false",
     ),
+    COMPUTER_USE_TURN_KEY_ID: string().min(1).optional(),
+    COMPUTER_USE_TURN_API_TOKEN: string().min(1).optional(),
     R2_ACCESS_KEY_ID: string().min(1),
     R2_ACCOUNT_ID: string().min(1),
     R2_SECRET_ACCESS_KEY: string().min(1),

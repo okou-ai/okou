@@ -1386,7 +1386,7 @@ function isPublicIpv6Address(words: readonly number[]): boolean {
   return true;
 }
 
-function hostPolicyIpLiteralIsPublic(hostname: string): boolean | null {
+export function hostPolicyIpLiteralIsPublic(hostname: string): boolean | null {
   if (hostname.startsWith("[") && hostname.endsWith("]")) {
     const words = parseIpv6Address(hostname.slice(1, -1));
     return words ? isPublicIpv6Address(words) : false;

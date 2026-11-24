@@ -64,6 +64,7 @@ interface ComputerUseHostStartOptions {
 }
 
 interface ComputerUseReadCommandBody {
+  readonly snapshotReceiver?: "auto" | "relay";
   readonly kind: ComputerUseReadCommandKind;
   readonly app?: string;
   readonly timeoutMs?: number;
@@ -593,6 +594,37 @@ export function createComputerUseBddApi(
           [200],
         );
         return response.body;
+      });
+    },
+
+    requestSnapshotReceiverSignal(
+      auth: ComputerUseAuth,
+      commandId: string,
+      answer?: string,
+    ) {
+      return run(() => {
+        return commandClient().snapshotSignal({
+          headers: authenticate(auth),
+          params: { commandId },
+          body: answer ? { answer } : {},
+        });
+      });
+    },
+
+    requestSnapshotHostSignal(
+      connection: ComputerUseTestConnection,
+      commandId: string,
+      body: { ice?: boolean; offer?: string },
+    ) {
+      return run(() => {
+        return sessionHostsClient().snapshotSignal({
+          headers: authenticateHost(connection.actor),
+          params: { hostId: connection.hostId, commandId },
+          body: {
+            connectionGeneration: connection.connectionGeneration,
+            ...body,
+          },
+        });
       });
     },
 

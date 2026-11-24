@@ -3830,6 +3830,13 @@
       "when": 1795451971668,
       "tag": "1625_project_archive",
       "breakpoints": true
+    },
+    {
+      "idx": 1626,
+      "version": "7",
+      "when": 1795496688957,
+      "tag": "1626_computer_use_snapshot_signals",
+      "breakpoints": true
     }
   ]
 }

@@ -37,6 +37,7 @@ public struct RuntimeState: Sendable {
 
 public actor HostRuntime {
   private let api: APIClient
+  private let snapshotSender: (any SnapshotSender)?
   private let executor: CommandExecutor
   private let notifications: any CommandNotifications
   private let installationId: String
@@ -113,11 +114,13 @@ public actor HostRuntime {
     api: APIClient, executor: CommandExecutor, installationId: String, hostName: String,
     version: String,
     notifications: any CommandNotifications,
+    snapshotSender: (any SnapshotSender)? = nil,
     tokenProvider: @escaping @Sendable (Bool) async throws -> String,
     onChange: @escaping @MainActor @Sendable (RuntimeState) -> Void
   ) {
     self.api = api
     self.executor = executor
+    self.snapshotSender = snapshotSender
     self.notifications = notifications
     self.installationId = installationId
     self.hostName = hostName
@@ -136,12 +139,16 @@ public actor HostRuntime {
       requestStateRefresh(generation: current, connection: connection)
     }
   }
+  private func advertisedCapabilities() async -> [String] {
+    let capabilities = await executor.supportedCapabilities()
+    return snapshotSender == nil ? capabilities : capabilities + ["snapshots.webrtc.v1"]
+  }
   private func body() async -> JSONValue {
     .object([
       "installationId": .string(installationId), "hostName": .string(hostName),
       "appVersion": .string(version),
       "osVersion": .string(ProcessInfo.processInfo.operatingSystemVersionString),
-      "supportedCapabilities": .strings(await executor.supportedCapabilities()),
+      "supportedCapabilities": .strings(await advertisedCapabilities()),
       "permissions": permissions,
     ])
   }
@@ -508,6 +515,7 @@ public actor HostRuntime {
     let task = notificationTask
     notificationTask = nil
     notificationReady = false
+    await snapshotSender?.stop()
     await notifications.stop()
     await task?.value
     let reports = Array(notificationReports.values)
@@ -611,6 +619,25 @@ public actor HostRuntime {
     clearRecovery(.commands)
     await publish()
   }
+  private func prepareSnapshotTransport(
+    _ command: ComputerUseCommandClaim.Command, connection: Connection, generation current: Int
+  ) async {
+    guard command.kind == .appState, let snapshotSender,
+      running, acceptingCommands, generation == current else { return }
+    guard let session = command.payload.snapshotSession else {
+      await snapshotSender.stop()
+      return
+    }
+    await snapshotSender.prepare(session: session) { [weak self] body in
+      guard let self else { throw CancellationError() }
+      let route = ApiRoutes.computerUseHostSnapshotSignal(
+        hostId: connection.hostId, commandId: command.id)
+      let response = try await self.request(
+        route, connection: connection, body: body, timeout: 4, generation: current)
+      guard response.status == 200 else { throw CancellationError() }
+      return response.body
+    }
+  }
   private func drainCommands(generation current: Int, connection: Connection) async {
     defer { if generation == current { drainTask = nil } }
     while running && acceptingCommands && generation == current {
@@ -620,7 +647,7 @@ public actor HostRuntime {
         let claimStarted = ContinuousClock.now
         let response = try await request(
           connection.nextCommand, connection: connection,
-          body: .object(["supportedCapabilities": .strings(await executor.supportedCapabilities())]
+          body: .object(["supportedCapabilities": .strings(await advertisedCapabilities())]
           ),
           timeout: 5, generation: current)
         if await rejectAuthority(response) { return }
@@ -643,10 +670,19 @@ public actor HostRuntime {
             state.commands = Array(state.commands.prefix(100))
             state.lastCommand = Date()
             await publish()
+            async let preparation: Void = prepareSnapshotTransport(command, connection: connection, generation: current)
             result = await executor.execute(command, claimStarted: claimStarted)
+            await preparation
             if let index = state.commands.firstIndex(where: { $0.id == command.id }) {
               state.commands[index].response = result
               state.commands[index].completedAt = Date()
+            }
+            if running, acceptingCommands, generation == current, command.kind == .appState,
+              let session = command.payload.snapshotSession, result["status"].string == "succeeded",
+              let key = await snapshotSender?.enqueue(
+                session: session, commandId: command.id, snapshot: result["result"])
+            {
+              result["result"]["snapshotKey"] = .string(key)
             }
             state.lastCommand = Date()
             await publish()
