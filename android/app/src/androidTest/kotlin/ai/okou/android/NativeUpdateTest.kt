@@ -203,7 +203,7 @@ class NativeUpdateTest {
                 assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
                 device.awaitChatList(app)
             }
-            button(By.pkg(app.packageName).desc(app.getString(R.string.settings))).click()
+            device.openChatListSettings(app)
             val noUpdateNeeded = app.getString(R.string.updates_not_needed)
             val updateNeeded = app.getString(R.string.updates_needed)
             val checking = app.getString(R.string.updates_check_in_progress)
@@ -271,6 +271,7 @@ class NativeUpdateTest {
             fun awaitMenuFocus(label: String) =
                 device.awaitKeyboardFocus(By.pkg(app.packageName).text(label))
             assertNotNull(text(filter))
+            assertNotNull(text(app.getString(R.string.chat_project_create)))
             assertNotNull(text(app.getString(R.string.settings)))
             instrumentation.setInTouchMode(false)
             awaitMenuFocus(filter)

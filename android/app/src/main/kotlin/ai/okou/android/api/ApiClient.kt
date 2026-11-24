@@ -12,6 +12,7 @@ import ai.okou.android.api.generated.CanonicalZero
 import ai.okou.android.api.generated.ChatEvents
 import ai.okou.android.api.generated.ChatSnapshot
 import ai.okou.android.api.generated.ComposerDraft
+import ai.okou.android.api.generated.CreateProjectRequest
 import ai.okou.android.api.generated.CreateThreadRequest
 import ai.okou.android.api.generated.CreateWorkflowAutomationRequest
 import ai.okou.android.api.generated.DeleteProjectRequest
@@ -379,6 +380,16 @@ class ApiClient(
     suspend fun deleteThread(threadId: String, eventId: String) {
         writeNoContent { deleteThread(it, threadId, eventId) }
     }
+
+    internal suspend fun createProject(projectId: String, name: String) =
+        write(201) {
+            createProject(
+                it,
+                CreateProjectRequest(id = projectId, eventId = projectId, name = name),
+            )
+        }
+
+    internal suspend fun projectDetail(projectId: String) = read { projectDetail(it, projectId) }
 
     suspend fun renameProject(projectId: String, name: String, eventId: String) {
         write {

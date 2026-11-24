@@ -1929,6 +1929,12 @@ class ChatListModel(
 
     internal fun renameProject(id: String, input: String) = projectOwner.renameProject(id, input)
 
+    internal fun createProject(name: String) = projectOwner.createProject(name)
+
+    internal fun checkProjectCreation() = projectOwner.checkProjectCreation()
+
+    internal fun dismissProjectCreation() = projectOwner.dismissProjectCreation()
+
     internal fun retryProjectRename(id: String) = projectOwner.retryProjectRename(id)
 
     internal fun checkProjectRename(id: String) = projectOwner.checkProjectRename(id)

@@ -61,6 +61,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
@@ -226,10 +227,12 @@ internal fun ChatListScreen(
     val previousExpansion =
         remember(listState, projectExpansion) { ChatListProjectIds(savedExpansion) }
     val precedingIds = previousExpansion.ids
+    val createdProject = (renameFocus as? WorkspaceRenameTarget.Project)?.takeIf { it.newlyCreated }
     val expansionChanged =
         savedExpansion != null &&
             (precedingIds != null || expansion.hasLocalChoices) &&
-            precedingIds.orEmpty() != savedExpansion
+            precedingIds.orEmpty() != savedExpansion &&
+            (createdProject == null || precedingIds.orEmpty() != savedExpansion - createdProject.id)
     val newlyExpanded =
         if (expansionChanged) expandedProjectIds - precedingIds.orEmpty() else emptySet()
     // Give Compose stable lazy item positions without animating the initial disk restore.
@@ -468,8 +471,17 @@ internal fun ChatListScreen(
                         allowCollapsedChat = false,
                     )
                 if (anchor == null) onRenameFocusFinished(renameFocus)
-                else if (listState.layoutInfo.visibleItemsInfo.none { it.key == renameFocusKey })
-                    listState.requestScrollToItem(anchor.index)
+                else {
+                    val layout = listState.layoutInfo
+                    val row = layout.visibleItemsInfo.firstOrNull { it.key == renameFocusKey }
+                    if (
+                        row == null ||
+                            (createdProject != null &&
+                                (row.offset < layout.viewportStartOffset ||
+                                    row.offset + row.size > layout.viewportEndOffset))
+                    )
+                        listState.requestScrollToItem(anchor.index)
+                }
             }
         }
         LazyColumn(
@@ -485,7 +497,11 @@ internal fun ChatListScreen(
             state = listState,
         ) {
             items(leadingItems.size, key = { leadingItems[it].first }) { leadingItems[it].second() }
-            if (state.confirmedAt != null || pendingByProject.isNotEmpty()) {
+            if (
+                state.confirmedAt != null ||
+                    pendingByProject.isNotEmpty() ||
+                    state.projects.isNotEmpty()
+            ) {
                 sections.forEach { section ->
                     val group = section.group
                     val project = group.project
@@ -956,6 +972,7 @@ private fun ProjectRow(
                 .background(chatListRowBackground(interactions, selected = false))
                 .contextMenuInput(openMenu)
                 .focusRequester(rowFocus)
+                .focusProperties { canFocus = true }
                 .onFocusChanged { rowFocused = it.isFocused }
                 .updateFocusOutline(ChatListRowShape, colors.onBackground, keyboardOnly = true)
                 .combinedClickable(

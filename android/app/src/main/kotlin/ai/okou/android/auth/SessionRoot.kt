@@ -165,8 +165,7 @@ internal fun SessionRoot(
                                 ?: opened?.projectExpansion
                                 ?: cached?.projectExpansion,
                         cachedStartupChats = cached?.chats,
-                        renamePresentation =
-                            ready?.renamePresentation ?: opened?.renamePresentation,
+                        namePresentation = ready?.namePresentation ?: opened?.namePresentation,
                         settingsContent = { destination, open, close ->
                             WorkspaceSettingsContent(
                                 destination,

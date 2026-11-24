@@ -412,13 +412,18 @@ internal fun SettingsSheet(
     actionSpacing: Dp = 8.dp,
     scroll: SettingsSheetScroll = SettingsSheetScroll.Body,
     dismissible: Boolean = true,
+    fullScreenInShortWindow: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val compactHeight = isShortSettingsPanelWindow()
     val scrollModifier =
         if (scroll == SettingsSheetScroll.None) Modifier
         else Modifier.verticalScroll(rememberScrollState())
-    SettingsModal(onDismiss, dismissible = dismissible) { centered ->
+    SettingsModal(
+        onDismiss,
+        dismissible = dismissible,
+        fullScreen = compactHeight && fullScreenInShortWindow,
+    ) { centered ->
         Column(
             modifier
                 .fillMaxWidth()
@@ -427,14 +432,15 @@ internal fun SettingsSheet(
                 .then(if (scroll == SettingsSheetScroll.Panel) scrollModifier else Modifier),
         ) {
             Box(Modifier.fillMaxWidth()) {
+                val compactTitle = compactHeight && fullScreenInShortWindow
                 Text(
                     title,
                     Modifier.padding(start = titleInset, end = titleInset, bottom = 8.dp)
                         .semantics { heading() },
                     style =
                         MaterialTheme.typography.titleLarge.copy(
-                            fontSize = 22.sp,
-                            lineHeight = 28.sp,
+                            fontSize = if (compactTitle) 16.sp else 22.sp,
+                            lineHeight = if (compactTitle) 24.sp else 28.sp,
                             fontWeight = FontWeight.SemiBold,
                         ),
                 )

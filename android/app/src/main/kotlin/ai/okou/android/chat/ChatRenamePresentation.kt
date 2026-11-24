@@ -12,7 +12,8 @@ internal sealed interface WorkspaceRenameTarget {
 
     data class Chat(override val id: String, val fromConversation: Boolean) : WorkspaceRenameTarget
 
-    data class Project(override val id: String) : WorkspaceRenameTarget
+    data class Project(override val id: String, val newlyCreated: Boolean = false) :
+        WorkspaceRenameTarget
 }
 
 internal class ChatRenameEditor(
@@ -21,18 +22,72 @@ internal class ChatRenameEditor(
     val restoreFocus: Boolean,
 ) {
     val baseline = initialName.trim()
-    val input = TextFieldState(initialText = initialName)
-    var focusedSelection: TextRange = input.selection
+    val field = WorkspaceNameField(initialName)
     var submitted by mutableStateOf<String?>(null)
 }
 
-/** Owns the open editor in memory across activity recreation within one authorized workspace. */
-class ChatRenamePresentation : ViewModel() {
+internal class WorkspaceNameField(initialName: String = "") {
+    val input = TextFieldState(initialText = initialName)
+    var focusedSelection: TextRange = input.selection
+    var overlongSubmission by mutableStateOf<String?>(null)
+        private set
+
+    fun submitProjectName(): String? {
+        val name = input.text.toString().trim()
+        overlongSubmission = name.takeIf { it.length > ProjectNameLimit }
+        return name.takeIf { it.length in 1..ProjectNameLimit }
+    }
+}
+
+internal class ProjectCreationEditor(var restoreFocus: Boolean) {
+    val field = WorkspaceNameField()
+}
+
+/** Retains workspace name forms and their focus destinations across Activity recreation. */
+class WorkspaceNamePresentation : ViewModel() {
     internal var editor by mutableStateOf<ChatRenameEditor?>(null)
         private set
 
     internal var focusReturn by mutableStateOf<WorkspaceRenameTarget?>(null)
         private set
+
+    private var creationEditor by mutableStateOf<ProjectCreationEditor?>(null)
+    private var creationOpen by mutableStateOf(false)
+    internal val projectCreation: ProjectCreationEditor?
+        get() = creationEditor.takeIf { creationOpen }
+
+    internal var restoreCreationFocus by mutableStateOf(false)
+        private set
+
+    internal fun openProjectCreation(restoreFocus: Boolean) {
+        focusReturn = null
+        restoreCreationFocus = false
+        val openEditor = creationEditor ?: ProjectCreationEditor(restoreFocus)
+        openEditor.restoreFocus = restoreFocus
+        creationEditor = openEditor
+        creationOpen = true
+    }
+
+    internal fun closeProjectCreation(
+        editor: ProjectCreationEditor,
+        keepForVerification: Boolean = false,
+    ) {
+        if (creationEditor !== editor) return
+        creationOpen = false
+        if (!keepForVerification) creationEditor = null
+        restoreCreationFocus = editor.restoreFocus
+    }
+
+    internal fun finishProjectCreation(createdId: String) {
+        if (creationOpen)
+            focusReturn = WorkspaceRenameTarget.Project(createdId, newlyCreated = true)
+        creationOpen = false
+        creationEditor = null
+    }
+
+    internal fun finishCreationFocus() {
+        restoreCreationFocus = false
+    }
 
     internal fun openChat(
         id: String,
@@ -68,5 +123,8 @@ class ChatRenamePresentation : ViewModel() {
     override fun onCleared() {
         editor = null
         focusReturn = null
+        creationEditor = null
+        creationOpen = false
+        restoreCreationFocus = false
     }
 }

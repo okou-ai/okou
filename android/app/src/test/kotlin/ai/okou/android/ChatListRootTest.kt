@@ -938,7 +938,7 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
         awaitListAndNames()
         compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Personal chat"))
         compose.onNodeWithText("Personal chat").assertExists()
-        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.openChatListSettings()
         compose.onNodeWithText("Display mode").assertExists()
     }
 
@@ -1046,7 +1046,7 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
         }
         assertTrue(descriptors.get() >= 2)
         compose.onNodeWithContentDescription("Back").performClick()
-        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.openChatListSettings()
         compose.onNodeWithText("Display mode").assertExists()
     }
 
@@ -1125,7 +1125,7 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
         compose.onNodeWithContentDescription("Switch workspace", substring = true).performClick()
         compose.onNodeWithText("Workspace B").assertExists()
         compose.onNode(hasText("Workspace A") and isSelectable()).assertIsSelected().performClick()
-        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.openChatListSettings()
         compose.onNodeWithText("Display mode").assertExists()
         (compose.activity.application as ChatListApplication).responseGate.countDown()
         compose.onNodeWithContentDescription("Back").performClick()

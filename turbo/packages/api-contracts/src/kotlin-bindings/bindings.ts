@@ -631,9 +631,20 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     route: chatThreadRenameContract.rename,
   },
   {
+    name: "createProject",
+    request: "CreateProjectRequest",
+    response: "ProjectRecord",
+    route: projectsContract.create,
+  },
+  {
+    name: "projectDetail",
+    response: "ProjectRecord",
+    route: projectsContract.get,
+  },
+  {
     name: "renameProject",
     request: "RenameProjectRequest",
-    response: "RenamedProject",
+    response: "ProjectRecord",
     route: projectsContract.update,
   },
   {
@@ -816,12 +827,17 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
     direction: "output",
   },
   {
+    name: "CreateProjectRequest",
+    schema: projectsContract.create.body,
+    direction: "input",
+  },
+  {
     name: "RenameProjectRequest",
     schema: projectsContract.update.body,
     direction: "input",
   },
   {
-    name: "RenamedProject",
+    name: "ProjectRecord",
     schema: projectsContract.update.responses[200],
     direction: "output",
   },
