@@ -121,7 +121,7 @@ internal class DataToolCatalog(private val url: String) : AutoCloseable {
                     val page = page(cursor, cursors.size + 1)
                     page.tools.mapNotNullTo(listed) { it.metadata?.data?.family }
                     page.metadata.data.families.forEach { families.putIfAbsent(it.id, it) }
-                    cursor = page.nextCursor
+                    cursor = page.nextCursor?.takeIf { it.isNotEmpty() }
                     if (cursor != null && !cursors.add(cursor))
                         throw IOException("Repeated catalog cursor")
                 } while (cursor != null)
