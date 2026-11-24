@@ -28,6 +28,7 @@
     <string name="artifact_empty">还没有成果</string>
     <string name="artifact_empty_type">此分类暂无成果</string>
     <string name="artifact_no_matches">没有匹配的成果</string>
+    <string name="artifact_clear_keyword">清除关键词</string>
     <string name="artifact_show_all">查看全部</string>
     <string name="artifact_catalog_load_failed">暂时无法加载成果</string>
     <string name="artifact_catalog_refresh_failed">暂时无法更新，显示已加载的成果</string>
