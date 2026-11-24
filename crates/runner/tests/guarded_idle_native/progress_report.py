@@ -49,3 +49,10 @@ def heartbeat(value, sequence, begin, end, allocated=(2, 4096)):
             or type(state.get("allocatedMemoryMb")) is not int or state["allocatedMemoryMb"] != allocated[1]):
         raise ValueError("foreground heartbeat lost its original generation/sequence/full lease")
     return state["runnerId"], state["snapshotGeneration"]
+
+
+def claim_heartbeat_identity(original, subsequent, seen, message):
+    """Require one unchanged and previously unclaimed identity for the case."""
+    if any(original != identity for identity in subsequent) or original in seen:
+        raise ValueError(message)
+    seen.add(original)
