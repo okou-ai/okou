@@ -1,4 +1,5 @@
 #if DEBUG
+  import CCState
   import ChatData
   import ChatDomain
   import SwiftUI
@@ -51,6 +52,8 @@
         id: ComputerAuthorizationPreviewTransport.threadID,
         title: "Preview",
         createdAt: .now, updatedAt: .now, sortAt: .now, pinnedAt: nil, pinOrder: nil)
+      // The gallery has no workspace session, so its cards share a Store of their own.
+      let graph = CCState.Store()
       cards = try [
         "/computer-use/authorize/preview_computer",
         "/browser/authorize/preview_browser",
@@ -61,7 +64,7 @@
             path, webURL: origin, threadID: thread.id)
         else { throw APIClientError.invalidURL }
         let card = ComputerAuthorizationStore(
-          action: action, thread: thread, commands: commands, sync: sync,
+          action: action, thread: thread, commands: commands, sync: sync, graph: graph,
           didFail: { _ in }, didContinue: {})
         card.activate()
         return card

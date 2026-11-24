@@ -14,7 +14,8 @@ final class MailDraftCardStore {
   }
 
   let id: String
-  let stateStore = CCState.Store()
+  /// The workspace session Store that keeps this card's graph values.
+  let stateStore: CCState.Store
   let requested: Computed<Bool>
   private(set) var isActive = false
   private(set) var isWorking = false
@@ -38,10 +39,12 @@ final class MailDraftCardStore {
   @ObservationIgnored private var closed = false
 
   init(
-    id: String, client: APIClient, didFail: @escaping @MainActor (Error) -> Void,
+    id: String, client: APIClient, graph: CCState.Store,
+    didFail: @escaping @MainActor (Error) -> Void,
     didBeginMutation: @escaping @MainActor (MailDraftCardStore) -> Void
   ) {
     self.id = id
+    stateStore = graph
     self.client = client
     self.didFail = didFail
     self.didBeginMutation = didBeginMutation
