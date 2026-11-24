@@ -1965,8 +1965,14 @@ internal class ChatSearchRootTest : ChatListRootTestFixture() {
         app.responseGate.countDown()
         awaitListAndNames()
         compose.onNodeWithText("Personal chat").performClick()
-        compose.waitUntilExactlyOneExists(hasText("Queued"), 10_000)
-        compose.onNodeWithText(prompt).assertIsDisplayed()
+        val queue = hasTestTag("open_conversation_queue")
+        compose.waitUntilExactlyOneExists(queue, 10_000)
+        compose.onNodeWithText(prompt).assertDoesNotExist()
+        compose.onNode(queue).performClick()
+        val panel = hasTestTag("conversation_queue")
+        compose.waitUntilExactlyOneExists(panel, 10_000)
+        compose.onNode(hasText(prompt) and hasAnyAncestor(panel)).assertIsDisplayed()
+        compose.onNode(hasContentDescription("Back") and hasAnyAncestor(isDialog())).performClick()
 
         fun findChecklist() {
             compose.onNodeWithContentDescription("Chat actions").performClick()
@@ -1997,7 +2003,7 @@ internal class ChatSearchRootTest : ChatListRootTestFixture() {
                 .invalidate(CHAT_PERSONAL)
         }
         compose.waitUntilExactlyOneExists(hasTestTag("message_$deliveredId"), 10_000)
-        compose.onNodeWithText("Queued").assertDoesNotExist()
+        compose.onNode(queue).assertDoesNotExist()
         findChecklist()
         compose.waitUntilExactlyOneExists(oneMatch, 10_000)
         compose.onNodeWithText(prompt).assertIsDisplayed()

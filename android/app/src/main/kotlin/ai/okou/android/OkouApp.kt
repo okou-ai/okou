@@ -28,8 +28,11 @@ import ai.okou.android.chat.ConversationFindVisit
 import ai.okou.android.chat.ConversationLink
 import ai.okou.android.chat.ConversationLinkPosition
 import ai.okou.android.chat.ConversationLinkSource
+import ai.okou.android.chat.ConversationOffline
+import ai.okou.android.chat.ConversationQueueButton
 import ai.okou.android.chat.ConversationRoute
-import ai.okou.android.chat.ConversationStatus
+import ai.okou.android.chat.ConversationStopButton
+import ai.okou.android.chat.ConversationStopPlacement
 import ai.okou.android.chat.ConversationToolbarActions
 import ai.okou.android.chat.HistoryPhase
 import ai.okou.android.chat.NewConversationWelcome
@@ -127,6 +130,8 @@ import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -1212,6 +1217,11 @@ internal fun OkouApp(
             is WorkspaceTarget.NewChat -> createdId
             else -> null
         }
+    val stopPlacement = remember(controlThreadId) { ConversationStopPlacement() }
+    var queueOpen by remember(controlThreadId) { mutableStateOf(false) }
+    val queueTrigger = remember(controlThreadId) { FocusRequester() }
+    var queueTriggerFocused by remember(controlThreadId) { mutableStateOf(false) }
+    var restoreQueueTrigger by remember(controlThreadId) { mutableStateOf(false) }
     val runActions =
         if (
             settings == null &&
@@ -1225,8 +1235,16 @@ internal fun OkouApp(
                 checkNotNull(chats).history,
                 controlThreadId,
                 list.offline,
+                composer,
             )
         else null
+    val queueCount = runActions?.presentation?.queue?.size ?: 0
+    LaunchedEffect(queueOpen, queueCount) {
+        if (!queueOpen && restoreQueueTrigger) {
+            restoreQueueTrigger = false
+            if (queueCount > 0) queueTrigger.requestFocus()
+        }
+    }
     fun rowAction(id: String, action: ChatRowAction, fromConversation: Boolean = false) {
         val started =
             chats?.performRowAction(
@@ -1279,7 +1297,22 @@ internal fun OkouApp(
     }
     val detailActions =
         @Composable {
-            if (shortConversation) ConversationStatus(list.offline, runActions, short = true)
+            if (shortConversation && list.offline) ConversationOffline(short = true)
+            if (!stopPlacement.inline && !list.offline && runActions?.currentRunId != null)
+                ConversationStopButton(runActions, stopPlacement, inline = false)
+            if (queueCount > 0) {
+                ConversationQueueButton(
+                    queueCount,
+                    onClick = {
+                        restoreQueueTrigger = queueTriggerFocused
+                        queueOpen = true
+                    },
+                    modifier =
+                        Modifier.focusRequester(queueTrigger).onFocusChanged {
+                            queueTriggerFocused = it.isFocused
+                        },
+                )
+            }
             ConversationToolbarActions(
                 state = listState.value,
                 thread = thread,
@@ -1775,6 +1808,9 @@ internal fun OkouApp(
                                                 historyAvailable = !awaitingCreatedChat,
                                                 realtime = chats.updates.takeIf { workspaceReady },
                                                 controls = runActions,
+                                                stopPlacement = stopPlacement,
+                                                queueOpen = queueOpen,
+                                                dismissQueue = { queueOpen = false },
                                                 showComposerStatus =
                                                     !shortConversation &&
                                                         composerTarget != null &&
@@ -1898,6 +1934,9 @@ internal fun OkouApp(
                                                     realtime =
                                                         chats.updates.takeIf { workspaceReady },
                                                     controls = runActions,
+                                                    stopPlacement = stopPlacement,
+                                                    queueOpen = queueOpen,
+                                                    dismissQueue = { queueOpen = false },
                                                     showComposerStatus =
                                                         !shortConversation &&
                                                             createdId == null &&
@@ -1925,12 +1964,12 @@ internal fun OkouApp(
                                                 composer != null
                                         ) {
                                             Column(contentWidth.fillMaxWidth()) {
-                                                if (!shortConversation && provisionalId == null)
-                                                    ConversationStatus(
-                                                        list.offline,
-                                                        null,
-                                                        short = false,
-                                                    )
+                                                if (
+                                                    !shortConversation &&
+                                                        provisionalId == null &&
+                                                        list.offline
+                                                )
+                                                    ConversationOffline(short = false)
                                                 conversations.Content(newTarget.key) {
                                                     ChatComposerField(
                                                         composer,
