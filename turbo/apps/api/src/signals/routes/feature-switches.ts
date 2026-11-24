@@ -4,6 +4,8 @@ import {
   type FeatureSwitchesResponse,
 } from "@okouai/api-contracts/contracts/feature-switches";
 import { getAllFeatureStates } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { isStaffOrg } from "@okouai/core/staff-org";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -26,18 +28,21 @@ function featureSwitchResponseBody(params: {
   readonly userId: string;
   readonly switches: Record<string, boolean>;
 }) {
-  return {
-    switches: params.switches,
-    effectiveSwitches: {
-      ...getAllFeatureStates({
-        orgId: params.orgId,
-        userId: params.userId,
-        overrides: params.switches,
-      }),
-      // Older iOS builds require this response field to review and apply batches.
-      batchConnectorPermissions: true,
-    },
+  const switches = { ...params.switches };
+  const effectiveSwitches: Record<string, boolean> = {
+    ...getAllFeatureStates({
+      orgId: params.orgId,
+      userId: params.userId,
+      overrides: switches,
+    }),
+    // Older iOS builds require this response field to review and apply batches.
+    batchConnectorPermissions: true,
   };
+  if (!isStaffOrg(params.orgId)) {
+    delete switches[FeatureSwitchKey.GeminiAntigravity];
+    delete effectiveSwitches[FeatureSwitchKey.GeminiAntigravity];
+  }
+  return { switches, effectiveSwitches };
 }
 
 const featureSwitchesResponse$ = command(
@@ -77,6 +82,20 @@ const updateFeatureSwitchesInner$ = command(
     signal.throwIfAborted();
     if (!bodyResult.ok) {
       return bodyResult.response;
+    }
+    if (
+      bodyResult.data.switches[FeatureSwitchKey.GeminiAntigravity] &&
+      !isStaffOrg(auth.orgId)
+    ) {
+      return {
+        status: 403 as const,
+        body: {
+          error: {
+            message: "The Antigravity pilot is limited to staff workspaces.",
+            code: "FORBIDDEN",
+          },
+        },
+      };
     }
     const switches = await set(
       updateUserFeatureSwitches$,

@@ -7,6 +7,9 @@ import type {
   ExecutionContext,
   RunnerPreference,
 } from "@okouai/api-contracts/contracts/runners";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { isStaffOrg } from "@okouai/core/staff-org";
 import { command, type Command } from "ccstate";
 import { delay } from "signal-timers";
 import type { output } from "zod";
@@ -28,6 +31,7 @@ import {
   type ExecutionBundleUrlsRead,
 } from "./direct-run-preparation.service";
 import type { ExecutionRuntimeResources } from "./execution-runtime-context";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import {
   selectDirectRunOwner$,
   readDirectRunState$,
@@ -384,6 +388,27 @@ export const dispatchPreparedRun$ = command(
     let uncertain = false;
     const outcome = await settleIncludingAbort(async () => {
       const { executionContext, candidates } = args;
+      if (executionContext.cliAgentType === "antigravity") {
+        // A member can disable the pilot while their selected turn is queued.
+        const { orgId, userId } = input.run;
+        const enabled =
+          isStaffOrg(orgId) &&
+          isFeatureEnabled(
+            FeatureSwitchKey.GeminiAntigravity,
+            await set(loadUserFeatureSwitchContext$, orgId, userId, signal),
+          );
+        if (!enabled) {
+          const terminal = await set(
+            failUnacceptedRun$,
+            {
+              ...failureInput(input, null),
+              failureReason: "provider_model_restricted",
+            },
+            signal,
+          );
+          return { kind: "failed" as const, terminal, failure: undefined };
+        }
+      }
       const window = createDeliveryWindow(get(apiStartTime$));
       const token = `${OFFICIAL_RUNNER_TOKEN_PREFIX}${env("OFFICIAL_RUNNER_SECRET")}`;
       for (const target of candidates) {
