@@ -1,6 +1,376 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "%lldd": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "%lld T." }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "%lld d" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "%lld j" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "%lld दि." }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "%lld hr" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "%lld g" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "%lld日" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "%lld일" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "%lld d" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "%lld天" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "%lld天" }
+        }
+      }
+    },
+    "%lldh": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "%lld Std." }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "%lld h" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "%lld h" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "%lld घं." }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "%lld jam" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "%lld h" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "%lld時間" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "%lld시간" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "%lld h" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "%lld小时" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "%lld小時" }
+        }
+      }
+    },
+    "<1h": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "<1 Std." }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "<1 h" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "<1 h" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "<1 घं." }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "<1 jam" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "<1 h" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "1時間未満" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "1시간 미만" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "<1 h" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "<1小时" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "<1小時" }
+        }
+      }
+    },
+    "Access for %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Zugriff für %@" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Acceso para %@" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Accès pour %@" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "%@ के लिए ऐक्सेस" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Akses untuk %@" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Accesso per %@" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "%@ のアクセス" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "%@ 접근 권한" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Acesso para %@" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "%@ 的访问权限" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "%@ 的存取權限" }
+        }
+      }
+    },
+    "Allow always": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Immer zulassen" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Permitir siempre" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Toujours autoriser" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "हमेशा अनुमति दें" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Selalu izinkan" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Consenti sempre" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "常に許可" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "항상 허용" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Permitir sempre" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "始终允许" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "始終允許" }
+        }
+      }
+    },
+    "Allow for 1h": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "1 Stunde zulassen" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Permitir durante 1 h" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Autoriser pendant 1 h" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "1 घंटे के लिए अनुमति दें" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Izinkan selama 1 jam" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Consenti per 1 ora" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "1時間許可" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "1시간 동안 허용" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Permitir por 1 hora" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "允许 1 小时" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "允許 1 小時" }
+        }
+      }
+    },
+    "Allow for 24h": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "24 Stunden zulassen" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Permitir durante 24 h" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Autoriser pendant 24 h" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "24 घंटे के लिए अनुमति दें" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Izinkan selama 24 jam" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Consenti per 24 ore" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "24時間許可" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "24시간 동안 허용" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Permitir por 24 horas" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "允许 24 小时" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "允許 24 小時" }
+        }
+      }
+    },
+    "Allow for 7d": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "7 Tage zulassen" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Permitir durante 7 días" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Autoriser pendant 7 jours" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "7 दिनों के लिए अनुमति दें" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Izinkan selama 7 hari" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Consenti per 7 giorni" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "7日間許可" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "7일 동안 허용" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Permitir por 7 dias" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "允许 7 天" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "允許 7 天" }
+        }
+      }
+    },
+    "Applies across your chats.": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Gilt für alle deine Chats." }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Se aplica a todos tus chats." }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "S’applique à toutes vos discussions." }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "आपकी सभी चैट पर लागू होता है।" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Berlaku di semua chat Anda." }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Si applica a tutte le tue chat." }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "すべてのチャットに適用されます。" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "모든 채팅에 적용됩니다." }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Aplica-se a todos os seus chats." }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "适用于你的所有聊天。" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "適用於你的所有聊天。" }
+        }
+      }
+    },
+    "Expired": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Abgelaufen" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Caducado" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Expiré" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "समय समाप्त" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Kedaluwarsa" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Scaduto" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "期限切れ" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "만료됨" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Expirado" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "已过期" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "已過期" }
+        }
+      }
+    },
     "Use this suggestion": {
       "localizations": {
         "de": {

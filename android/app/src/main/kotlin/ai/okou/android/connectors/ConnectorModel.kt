@@ -1,12 +1,16 @@
 package ai.okou.android.connectors
 
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.generated.ConnectorAccountPolicyRequestPolicy
 import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItemGrantKind
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import java.util.Locale
+import kotlin.math.roundToInt
+import kotlin.time.Clock
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.DurationUnit
 import kotlin.time.TimeMark
 import kotlin.time.TimeSource
 import kotlinx.coroutines.CancellationException
@@ -503,6 +507,40 @@ class ConnectorModel(
         change(PendingChange(target, null) { it?.defaultEnabled == enabled }) {
             val saved = service.setDefaultEnabled(target.slug, id, enabled)
             replaceAccount(target, id) { it.copy(defaultEnabled = saved) }
+        }
+    }
+
+    internal fun setMemberPolicy(id: String, choice: ConnectorAccountPolicyRequestPolicy) {
+        val target = currentAccount(id) ?: return
+        val previous =
+            mutableState.value.accountsFor(target.slug).find { it.id == id }?.policy ?: return
+        val requestedAt = Clock.System.now()
+        val durationHours =
+            when (choice) {
+                ConnectorAccountPolicyRequestPolicy.DENY,
+                ConnectorAccountPolicyRequestPolicy.ALLOW_ALWAYS -> null
+                ConnectorAccountPolicyRequestPolicy.ALLOW_1H -> 1
+                ConnectorAccountPolicyRequestPolicy.ALLOW_24H -> 24
+                ConnectorAccountPolicyRequestPolicy.ALLOW_7D -> 168
+            }
+        val shouldAllow = choice != ConnectorAccountPolicyRequestPolicy.DENY
+        change(
+            PendingChange(target, null) { account ->
+                val saved = account?.policy ?: return@PendingChange false
+                val expiry = saved.expiresAt
+                if (saved.allowed != shouldAllow) return@PendingChange false
+                if (durationHours == null) {
+                    expiry == null
+                } else {
+                    expiry != null &&
+                        expiry != previous.expiresAt &&
+                        (expiry - requestedAt).toDouble(DurationUnit.HOURS).roundToInt() ==
+                            durationHours
+                }
+            },
+        ) {
+            val saved = service.setAccountPolicy(target.slug, id, choice)
+            replaceAccount(target, id) { it.copy(policy = saved) }
         }
     }
 

@@ -391,6 +391,7 @@ internal fun ConnectorDetails(
                                 canModify,
                                 action?.takeIf { it.target.connectionId == account.id },
                                 onDefault = { model.setDefaultEnabled(account.id, it) },
+                                onPolicy = { model.setMemberPolicy(account.id, it) },
                                 renameFocus = renameFocus,
                                 reauthorizeFocus = reauthorizeFocus,
                                 disconnectFocus = disconnectFocus,
@@ -656,6 +657,7 @@ private fun ConnectorAccountActions(
     canModify: Boolean,
     action: ConnectorAction?,
     onDefault: (Boolean) -> Unit,
+    onPolicy: (ai.okou.android.api.generated.ConnectorAccountPolicyRequestPolicy) -> Unit,
     renameFocus: FocusRequester,
     reauthorizeFocus: FocusRequester,
     disconnectFocus: FocusRequester,
@@ -675,6 +677,14 @@ private fun ConnectorAccountActions(
         account.defaultEnabled.takeIf { account.status == ConnectorAccountStatus.Connected }
     if (defaultEnabled == null) ConnectorAccountStatusText(account)
     Column(Modifier.fillMaxWidth()) {
+        account.policy?.let { policy ->
+            Text(
+                stringResource(R.string.connector_access_scope),
+                color = color.onSurfaceVariant,
+                style = connectorSmallType(),
+            )
+            ConnectorAccountPolicyMenu(account, policy, canModify, onPolicy)
+        }
         if (account.status.needsAttention) {
             ConnectorAccountAction(
                 stringResource(
