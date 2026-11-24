@@ -441,6 +441,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
 };
 
+export const staffOptInOnlySwitchKeys = Object.freeze(
+  Object.values(FeatureSwitchKey).filter((key) => {
+    return FEATURE_SWITCHES[key].staffOptInOnly;
+  }),
+);
+
 interface ResolvedHashes {
   readonly userHash?: string;
   readonly emailHash?: string;

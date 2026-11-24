@@ -3,7 +3,10 @@ import {
   featureSwitchesContract,
   type FeatureSwitchesResponse,
 } from "@okouai/api-contracts/contracts/feature-switches";
-import { getAllFeatureStates } from "@okouai/core/feature-switch";
+import {
+  getAllFeatureStates,
+  staffOptInOnlySwitchKeys,
+} from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isStaffOrg } from "@okouai/core/staff-org";
 
@@ -31,7 +34,7 @@ function featureSwitchResponseBody(params: {
 }) {
   const switches = { ...params.switches };
   if (!isStaffOrg(params.orgId)) {
-    delete switches[FeatureSwitchKey.GeminiAntigravity];
+    for (const key of staffOptInOnlySwitchKeys) delete switches[key];
   }
   return {
     switches,
@@ -86,14 +89,14 @@ const updateFeatureSwitchesInner$ = command(
       return bodyResult.response;
     }
     if (
-      bodyResult.data.switches[FeatureSwitchKey.GeminiAntigravity] &&
-      !isStaffOrg(auth.orgId)
+      !isStaffOrg(auth.orgId) &&
+      staffOptInOnlySwitchKeys.some((key) => bodyResult.data.switches[key])
     ) {
       return {
         status: 403 as const,
         body: {
           error: {
-            message: "The Antigravity pilot is limited to staff workspaces.",
+            message: "This pilot is limited to staff workspaces.",
             code: "FORBIDDEN",
           },
         },

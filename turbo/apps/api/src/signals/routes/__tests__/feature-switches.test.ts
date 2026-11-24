@@ -26,53 +26,63 @@ function client() {
 }
 
 describe("/api/feature-switches", () => {
-  it("stores the Antigravity opt-in only for the individual staff member", async () => {
-    const api = client();
-    const clerk = createRouteMocks(context).clerk;
-    const headers = { authorization: "Bearer clerk-session" };
-    const orgId = createUniqueStaffOrgIdFixture();
-    const userId = `user_${randomUUID()}`;
-    const key = FeatureSwitchKey.GeminiAntigravity;
-    clerk.session(userId, orgId, "org:member");
-    const initial = await accept(api.get({ headers }), [200]);
-    expect(initial.body.effectiveSwitches).toMatchObject({ [key]: false });
-    const enabled = await accept(
-      api.update({ headers, body: { switches: { [key]: true } } }),
-      [200],
-    );
-    expect(enabled.body.effectiveSwitches).toMatchObject({ [key]: true });
+  it.each([
+    FeatureSwitchKey.GeminiAntigravity,
+    FeatureSwitchKey.ComputerUseWebRtcSnapshots,
+  ])(
+    "stores the %s opt-in only for the individual staff member",
+    async (key) => {
+      const api = client();
+      const clerk = createRouteMocks(context).clerk;
+      const headers = { authorization: "Bearer clerk-session" };
+      const orgId = createUniqueStaffOrgIdFixture();
+      const userId = `user_${randomUUID()}`;
+      clerk.session(userId, orgId, "org:member");
+      const initial = await accept(api.get({ headers }), [200]);
+      expect(initial.body.effectiveSwitches).toMatchObject({ [key]: false });
+      const enabled = await accept(
+        api.update({ headers, body: { switches: { [key]: true } } }),
+        [200],
+      );
+      expect(enabled.body.effectiveSwitches).toMatchObject({ [key]: true });
 
-    clerk.session(`user_${randomUUID()}`, orgId, "org:member");
-    const peer = await accept(api.get({ headers }), [200]);
-    expect(peer.body.effectiveSwitches).toMatchObject({ [key]: false });
-    clerk.session(userId, orgId, "org:member");
-    const persisted = await accept(api.get({ headers }), [200]);
-    expect(persisted.body.effectiveSwitches).toMatchObject({ [key]: true });
-    const disabled = await accept(
-      api.update({ headers, body: { switches: { [key]: false } } }),
-      [200],
-    );
-    expect(disabled.body.effectiveSwitches).toMatchObject({ [key]: false });
-  });
+      clerk.session(`user_${randomUUID()}`, orgId, "org:member");
+      const peer = await accept(api.get({ headers }), [200]);
+      expect(peer.body.effectiveSwitches).toMatchObject({ [key]: false });
+      clerk.session(userId, orgId, "org:member");
+      const persisted = await accept(api.get({ headers }), [200]);
+      expect(persisted.body.effectiveSwitches).toMatchObject({ [key]: true });
+      const disabled = await accept(
+        api.update({ headers, body: { switches: { [key]: false } } }),
+        [200],
+      );
+      expect(disabled.body.effectiveSwitches).toMatchObject({ [key]: false });
+    },
+  );
 
-  it("rejects a direct external Antigravity opt-in before writing any overrides", async () => {
-    const api = client();
-    const clerk = createRouteMocks(context).clerk;
-    const headers = { authorization: "Bearer clerk-session" };
-    clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`, "org:admin");
-    const key = FeatureSwitchKey.GeminiAntigravity;
-    await accept(
-      api.update({
-        headers,
-        body: { switches: { [key]: true, [FeatureSwitchKey.Dummy]: true } },
-      }),
-      [403],
-    );
-    const current = await accept(api.get({ headers }), [200]);
-    expect(current.body.switches).not.toHaveProperty(key);
-    expect(current.body.switches).not.toHaveProperty(FeatureSwitchKey.Dummy);
-    expect(current.body.effectiveSwitches).toMatchObject({ [key]: false });
-  });
+  it.each([
+    FeatureSwitchKey.GeminiAntigravity,
+    FeatureSwitchKey.ComputerUseWebRtcSnapshots,
+  ])(
+    "rejects a direct external %s opt-in before writing any overrides",
+    async (key) => {
+      const api = client();
+      const clerk = createRouteMocks(context).clerk;
+      const headers = { authorization: "Bearer clerk-session" };
+      clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`, "org:admin");
+      await accept(
+        api.update({
+          headers,
+          body: { switches: { [key]: true, [FeatureSwitchKey.Dummy]: true } },
+        }),
+        [403],
+      );
+      const current = await accept(api.get({ headers }), [200]);
+      expect(current.body.switches).not.toHaveProperty(key);
+      expect(current.body.switches).not.toHaveProperty(FeatureSwitchKey.Dummy);
+      expect(current.body.effectiveSwitches).toMatchObject({ [key]: false });
+    },
+  );
 
   it("enables presentation format for staff with personal opt-out overrides", async () => {
     const clerk = createRouteMocks(context).clerk;
