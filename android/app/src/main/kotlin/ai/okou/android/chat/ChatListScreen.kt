@@ -640,7 +640,6 @@ internal fun ChatListScreen(
                                             ?.let { state.rowActions(it, group, threadIndex) }
                                             .orEmpty(),
                                     pendingAction = state.pendingRowActions[id],
-                                    enabled = chatActionsEnabled,
                                     deleteDialogOpen = deletingId == id,
                                     rename = { restore -> renameThread(id, restore) },
                                     renameFocus =
@@ -1100,7 +1099,6 @@ private fun ChatRow(
     row: Int,
     actions: List<ChatRowAction>,
     pendingAction: ChatRowAction?,
-    enabled: Boolean,
     deleteDialogOpen: Boolean,
     rename: (Boolean) -> Unit,
     renameFocus: WorkspaceRenameTarget?,
@@ -1167,7 +1165,6 @@ private fun ChatRow(
                 .combinedClickable(
                     interactionSource = interactions,
                     indication = null,
-                    enabled = enabled,
                     onClick = open,
                     onLongClick = openMenu,
                     onLongClickLabel = stringResource(R.string.chat_actions),

@@ -383,6 +383,7 @@ class ChatListModel(
     private val wallMillis: () -> Long = System::currentTimeMillis,
     initialFilter: ChatListFilter = ChatListFilter.Inbox,
     private val networkEnabled: () -> Boolean = { true },
+    awaitNetwork: suspend () -> Unit = {},
 ) : ViewModel() {
     private val mutable = MutableStateFlow(ChatListUiState(filter = initialFilter))
     val uiState = mutable.asStateFlow()
@@ -402,6 +403,7 @@ class ChatListModel(
             dispatcher,
             precedingReadWrite = { readWrites[it] },
             wallMillis = wallMillis,
+            awaitNetwork = awaitNetwork,
         )
     private val sync = ChatListSync(service, dispatcher)
     private var confirmed: CachedChats? = null

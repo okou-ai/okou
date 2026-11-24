@@ -11,9 +11,10 @@ Settings as soon as the selected workspace is identified. The tool shortcuts
 stay in place in the same shell, and a known optional update uses the toolbar.
 A restored active session with known permissions for its selected workspace can
 show matching cached conversations and Projects while Clerk verifies access.
-Local filters and Settings are usable during verification. Online confirmation
-enables chat actions and starts synchronization. The full membership check and
-organization gate still apply when selected permissions are unavailable.
+Local filters and Settings are usable during verification, and cached chats can
+open a read-only transcript. Online confirmation enables chat actions and starts
+synchronization. The full membership check and organization gate still apply when
+selected permissions are unavailable.
 The workspace chat list uses single-line rows, indented
 Project chats, and separators within groups that have pins and ordinary chats.
 Collapsed Projects summarize unread or running chats. Selecting a chat opens

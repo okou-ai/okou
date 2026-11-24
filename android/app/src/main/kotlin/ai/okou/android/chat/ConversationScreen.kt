@@ -111,6 +111,7 @@ internal fun ConversationRoute(
     list: ChatListUiState,
     modifier: Modifier = Modifier,
     visible: Boolean = true,
+    networkEnabled: Boolean = true,
     composer: ChatComposerModel? = null,
     historyAvailable: Boolean = true,
     controls: ConversationRunControls? = null,
@@ -158,7 +159,7 @@ internal fun ConversationRoute(
             model,
             threadId,
             state.generation,
-            visible && historyAvailable,
+            visible && historyAvailable && networkEnabled,
         )
     val activeRun = controls?.currentRunId ?: transcript?.activeRunId
     val execution = transcript?.execution
@@ -218,7 +219,8 @@ internal fun ConversationRoute(
             rememberChatWaitIndicator(syncDelay != null && syncDelay > 0L, syncDelay ?: 0L)
         }
     val showHistoryProgress =
-        transcript != null &&
+        networkEnabled &&
+            transcript != null &&
             state.phase == HistoryPhase.Loading &&
             (state.consecutiveReadFailures >= 3 ||
                 (syncDelay == 0L || syncDelayReached) &&

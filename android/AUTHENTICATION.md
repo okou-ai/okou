@@ -69,8 +69,9 @@ in-memory generation fences replaced work; it is not persisted as identity.
 A locally restored active SDK session with known permissions for its selected
 workspace can display its matching Room chat checkpoint before Clerk refresh
 completes. The cache is scoped to the API origin, user, workspace, role and
-permissions. Local filtering is available during verification. Workspace API
-calls and chat actions wait for online confirmation. Recoverable failures keep
+permissions. Local filtering and read-only cached conversations are available
+during verification. Workspace API calls, read receipts, and conversation
+mutations wait for online confirmation. Recoverable failures keep
 the cached list visible and retry when the app is active and online. Explicit
 denial or a changed scope retires the cached presentation. When local evidence
 is incomplete, startup still checks Clerk before displaying workspace content.

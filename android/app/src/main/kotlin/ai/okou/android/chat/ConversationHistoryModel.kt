@@ -55,6 +55,7 @@ class ConversationHistoryModel(
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val precedingReadWrite: (String) -> Job? = { null },
     private val wallMillis: () -> Long = System::currentTimeMillis,
+    private val awaitNetwork: suspend () -> Unit = {},
 ) {
     private val mutable = MutableStateFlow(ConversationUiState())
     val uiState = mutable.asStateFlow()
@@ -245,6 +246,8 @@ class ConversationHistoryModel(
                 )
             }
             try {
+                awaitNetwork()
+                requireCurrent(ticket)
                 var next =
                     CachedHistory(
                         readWithRetry(thread.id, saved?.checkpoint, ticket),
@@ -350,6 +353,8 @@ class ConversationHistoryModel(
         publish(mutable.value.copy(detailPhase = ChatReadPhase.Loading, detailFailure = null))
         detailJob = scope.launch {
             try {
+                awaitNetwork()
+                requireCurrent(ticket)
                 val detail = service.threadDetail(thread.id)
                 requireCurrent(ticket)
                 publish(mutable.value.copy(detail = detail, detailPhase = ChatReadPhase.Ready))

@@ -682,6 +682,7 @@ class SessionModel(
             networkEnabled = {
                 verification == null || (verification.isCompleted && !verification.isCancelled)
             },
+            awaitNetwork = { verification?.await() },
         )
     }
 

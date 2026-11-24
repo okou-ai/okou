@@ -269,10 +269,11 @@ internal fun OkouApp(
                 ?.value
                 ?.entry(ComposerTarget(projectId = requestedTarget.projectId))
                 ?.let { it.pending != null || it.createdThreadId != null } == true
-    // Let protected destinations wait for preparation without blocking authorized chat navigation.
+    // A cached list can open its conversations while protected destinations wait for verification.
     val target =
         if (
-            chats == null ||
+            listOwner == null ||
+                (chats == null && requestedTarget !is WorkspaceTarget.Chat) ||
                 (!workspaceReady &&
                     requestedTarget is WorkspaceTarget.NewChat &&
                     !restoringFirstSend)
@@ -645,7 +646,7 @@ internal fun OkouApp(
     }
 
     fun openChat(chat: ConfirmedChat, fromSearch: Boolean = false, fromLink: Boolean = false) {
-        val activeChats = chats ?: return
+        val activeChats = listOwner ?: return
         val pending = composer?.uiState?.value?.pendingNewChat(chat.id)
         val destination =
             if (pending == null) WorkspaceTarget.Chat(chat.id)
@@ -888,7 +889,7 @@ internal fun OkouApp(
                 }
             } else if (pending != null && navigation.target == target) {
                 navigation = navigation.copy(target = WorkspaceTarget.NewChat(pending.projectId))
-            } else if (thread != null) chats?.history?.open(thread)
+            } else if (thread != null) listOwner?.history?.open(thread)
             else if (
                 !awaitingCreatedChat &&
                     list.listPhase == ChatReadPhase.Ready &&
@@ -1058,9 +1059,10 @@ internal fun OkouApp(
             )
         else null
     val conversationMissing = runActions?.confirmed?.phase == HistoryPhase.Missing
-    val actionableThread = thread.takeUnless { conversationMissing }
+    val availableThread = thread.takeUnless { conversationMissing }
+    val actionableThread = availableThread.takeIf { chats != null }
     val visibleConversationId =
-        actionableThread?.id?.takeIf {
+        availableThread?.id?.takeIf {
             settings == null &&
                 !showWorkflows &&
                 !showingConnectors &&
@@ -1823,7 +1825,7 @@ internal fun OkouApp(
                     }
                     if (listWidth != null) VerticalDivider()
                     if (
-                        chats != null &&
+                        listOwner != null &&
                             (listWidth != null || (!searchActive && target != WorkspaceTarget.List))
                     ) {
                         Column(
@@ -1844,7 +1846,7 @@ internal fun OkouApp(
                                 }
                                 return@detailPane
                             }
-                            if (resourcesId != null && chatArtifacts != null) {
+                            if (resourcesId != null && chatArtifacts != null && chats != null) {
                                 val conversation by
                                     chats.history.uiState.collectAsStateWithLifecycle()
                                 LifecycleStartEffect(chats.history, resourcesId) {
@@ -1926,10 +1928,11 @@ internal fun OkouApp(
                                                     composer != null &&
                                                     controls != null
                                             ConversationRoute(
-                                                chats.history,
+                                                listOwner.history,
                                                 target.id,
                                                 listState.value,
                                                 Modifier.weight(1f),
+                                                networkEnabled = chats != null,
                                                 composer = composer,
                                                 historyAvailable = !awaitingCreatedChat,
                                                 controls = runActions,
@@ -1968,7 +1971,8 @@ internal fun OkouApp(
                                                         ),
                                                 findTarget = find?.target,
                                                 linkPosition = linkPosition,
-                                                onLink = ::openMessageLink,
+                                                onLink =
+                                                    if (chats != null) ::openMessageLink else null,
                                                 linkFocusKey = linkFocusKey,
                                                 onLinkFocusRestored = { linkFocusKey = null },
                                                 onLinkUnavailable =
@@ -2060,7 +2064,7 @@ internal fun OkouApp(
                                         if (provisionalId != null) {
                                             conversations.Content(provisionalId) {
                                                 ConversationRoute(
-                                                    chats.history,
+                                                    listOwner.history,
                                                     provisionalId,
                                                     listState.value,
                                                     Modifier.weight(1f),
@@ -2110,7 +2114,7 @@ internal fun OkouApp(
                                         }
                                     }
                                 }
-                                if (awaitingCreatedChat || createdId != null) {
+                                if (chats != null && (awaitingCreatedChat || createdId != null)) {
                                     Box(contentWidth.fillMaxWidth()) {
                                         TextButton(
                                             onClick = chats::retryList,

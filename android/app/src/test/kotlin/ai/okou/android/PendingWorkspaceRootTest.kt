@@ -24,6 +24,7 @@ import ai.okou.android.chat.ChatCheckpoint
 import ai.okou.android.chat.ChatCursor
 import ai.okou.android.chat.ChatListSource
 import ai.okou.android.chat.ChatReadPhase
+import ai.okou.android.chat.HistoryCheckpoint
 import ai.okou.android.chat.HistoryCursor
 import ai.okou.android.chat.HistoryEvent
 import ai.okou.android.chat.HistoryPage
@@ -72,12 +73,16 @@ import org.robolectric.annotation.Config
 open class PendingWorkspaceApplication : TestOkouApplication() {
     protected open val selectedAccess: MembershipAccess? = null
     protected open val seedChats = true
+    protected open val seedHistory = false
     protected open val chatCacheAgeMillis = 0L
     var authorizationResponse = CompletableDeferred<Unit>()
     var membershipsResponse = CompletableDeferred(Unit)
     var organizationResponse = CompletableDeferred<Unit>()
     @Volatile var listResponse = CompletableDeferred<Unit>()
     val listRequested = CompletableDeferred<Unit>()
+    val historyRequested = CompletableDeferred<Unit>()
+    val detailRequested = CompletableDeferred<Unit>()
+    val readRequested = CompletableDeferred<Unit>()
     var preferencesResponse = CompletableDeferred<Unit>()
     @Volatile private var editTail = ChatEvents(emptyList(), false)
 
@@ -131,21 +136,32 @@ open class PendingWorkspaceApplication : TestOkouApplication() {
                         ),
                     )
 
-                override suspend fun threadDetail(threadId: String) = ThreadDetail(null, false)
+                override suspend fun threadDetail(threadId: String): ThreadDetail {
+                    detailRequested.complete(Unit)
+                    return ThreadDetail(null, false)
+                }
 
                 override suspend fun historySnapshot(threadId: String): HistorySnapshot =
                     throw ApiFailure.Http(404, "CHAT_EVENT_SNAPSHOT_NOT_FOUND", null, null)
 
-                override suspend fun historyRows(threadId: String, cursor: HistoryCursor) =
-                    if (cursor.seqId == 0L) {
+                override suspend fun historyRows(
+                    threadId: String,
+                    cursor: HistoryCursor,
+                ): HistoryPage {
+                    historyRequested.complete(Unit)
+                    return if (cursor.seqId == 0L) {
                         HistoryPage(
                             listOf(HistoryEvent.decode(historyEventWire(thread = threadId))),
                             HistoryCursor(HISTORY_LAST_EVENT, 37),
                             false,
                         )
                     } else HistoryPage(emptyList(), cursor, false)
+                }
 
-                override suspend fun markRead(threadId: String) = ReadState(CHAT_DATE)
+                override suspend fun markRead(threadId: String): ReadState {
+                    readRequested.complete(Unit)
+                    return ReadState(CHAT_DATE)
+                }
             }
         val events =
             Json.decodeFromString<ChatEvents>(
@@ -174,6 +190,23 @@ open class PendingWorkspaceApplication : TestOkouApplication() {
                             ),
                             System.currentTimeMillis() - chatCacheAgeMillis,
                         )
+                        if (seedHistory) {
+                            cache.saveHistory(
+                                HistoryCheckpoint(
+                                    CHAT_PERSONAL,
+                                    listOf(
+                                        HistoryEvent.decode(
+                                            historyEventWire(
+                                                payload =
+                                                    """{"content":"Cached transcript for this device"}""",
+                                            ),
+                                        ),
+                                    ),
+                                    HistoryCursor(HISTORY_LAST_EVENT, 37),
+                                ),
+                                System.currentTimeMillis(),
+                            )
+                        }
                     }
             }
             if (selectedAccess != null) {
@@ -228,6 +261,10 @@ open class FreshWorkspaceAccessApplication : PendingWorkspaceApplication() {
 
 class UncachedWorkspaceApplication : FreshWorkspaceAccessApplication() {
     override val seedChats = false
+}
+
+class CachedConversationWorkspaceApplication : FreshWorkspaceAccessApplication() {
+    override val seedHistory = true
 }
 
 class StaleCachedWorkspaceApplication : FreshWorkspaceAccessApplication() {
@@ -286,7 +323,7 @@ class PendingWorkspaceRootTest {
         val toolBounds = tools.map { it.getUnclippedBoundsInRoot() }
         check(!app.listRequested.isCompleted)
         val row = compose.onNodeWithTag("chat_$CHAT_PERSONAL")
-        row.assertIsDisplayed().assertIsNotEnabled()
+        row.assertIsDisplayed().assertIsEnabled()
         compose.onNodeWithContentDescription("Loading chats…").assertDoesNotExist()
         compose
             .onNodeWithContentDescription(app.getString(R.string.chat_syncing))
@@ -480,16 +517,18 @@ class PendingWorkspaceRootTest {
         compose.waitUntil(10_000) {
             sessionState().stage == SessionStage.Unavailable && listState()?.offline == true
         }
-        row.assertIsDisplayed().assertIsNotEnabled()
+        row.assertIsDisplayed().assertIsEnabled()
         compose.runOnIdle { app.connectivity.value = true }
         compose.waitUntil(10_000) { sessionState().opening is OpeningWorkspace.Authorized }
         row.assertIsDisplayed().assertIsEnabled()
     }
 
     @Test
-    @Config(application = FreshWorkspaceAccessApplication::class)
-    fun clerkDenialRetiresTheLocallyRestoredChatList() {
+    @Config(application = CachedConversationWorkspaceApplication::class)
+    fun clerkDenialRetiresTheLocallyRestoredConversation() {
         awaitCachedRow()
+        compose.onNodeWithTag("chat_$CHAT_PERSONAL").performClick()
+        awaitLocalTranscript()
         compose.runOnIdle {
             app.authorizationResponse.completeExceptionally(ApiFailure.Unauthenticated())
         }
@@ -497,6 +536,42 @@ class PendingWorkspaceRootTest {
             .onNodeWithText(compose.activity.getString(R.string.auth_access_removed))
             .assertIsDisplayed()
         compose.onNodeWithText(CACHED_CHAT).assertDoesNotExist()
+        compose.onNodeWithText("Cached transcript for this device").assertDoesNotExist()
+    }
+
+    @Test
+    @Config(application = CachedConversationWorkspaceApplication::class)
+    fun cachedConversationOpensAndStaysOpenAcrossVerification() {
+        awaitCachedRow()
+        compose.onNodeWithTag("chat_$CHAT_PERSONAL").performClick()
+        awaitLocalTranscript()
+        compose.onNodeWithContentDescription("Send").assertDoesNotExist()
+        compose
+            .onNodeWithContentDescription(app.getString(R.string.chat_actions))
+            .assertDoesNotExist()
+        check(!app.historyRequested.isCompleted)
+        check(!app.detailRequested.isCompleted)
+        check(!app.readRequested.isCompleted)
+
+        compose.runOnIdle { app.authorizationResponse.complete(Unit) }
+        compose.waitUntil(10_000) {
+            app.historyRequested.isCompleted &&
+                app.detailRequested.isCompleted &&
+                app.readRequested.isCompleted
+        }
+        compose.onNodeWithText("Cached transcript for this device").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.onNodeWithText(CACHED_CHAT).assertIsDisplayed()
+    }
+
+    private fun awaitLocalTranscript() {
+        compose.waitUntil(10_000) {
+            compose
+                .onAllNodesWithText("Cached transcript for this device")
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        compose.onNodeWithText("Cached transcript for this device").assertIsDisplayed()
     }
 
     @Test
