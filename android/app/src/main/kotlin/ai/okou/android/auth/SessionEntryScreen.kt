@@ -384,7 +384,7 @@ private fun SessionPrimaryAction(
 ) {
     val colors = MaterialTheme.colorScheme
     val foreground = if (enabled) colors.onPrimary else colors.onSurfaceVariant
-    WithButtonFocusOutline(if (enabled) foreground else LocalActivityStatusColor.current) {
+    WithButtonFocusOutline(if (enabled) foreground else colors.onSurface) {
         Button(
             onClick = { if (enabled) onClick() },
             modifier =
