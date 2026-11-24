@@ -146,8 +146,9 @@ class ConversationTurnsTest {
         val second = message("second", "[Notes again]($notes)")
         val latest = message("latest", "[Current checklist]($checklist)")
         assertEquals(
-            listOf(ReplyArtifact(notes, "Notes")),
-            earlierReplyArtifacts(listOf(first, second)).excludingArtifacts(latest.blocks),
+            ReplyArtifactGroup(listOf(ReplyArtifact(notes, "Notes")), followsCard = true),
+            earlierReplyArtifacts(listOf(first, second))
+                .afterLatestReply(latest.blocks, interactiveLinks = true),
         )
     }
 

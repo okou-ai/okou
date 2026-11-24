@@ -100,9 +100,10 @@ class ChatListApiFixture : Closeable {
     @Volatile var searchWorkflows: () -> MockResponse = { jsonResponse("[]") }
 
     @Volatile var historyReply = "**Native history** reply"
+    @Volatile var historyEarlierReply: String? = null
 
     private fun defaultHistory(thread: String, after: Long): List<String> =
-        listOf(
+        listOfNotNull(
                 historyEventWire(
                     "input",
                     17,
@@ -110,6 +111,14 @@ class ChatListApiFixture : Closeable {
                     "input.prompt",
                     """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Hello history"}]}}""",
                 ),
+                historyEarlierReply?.let {
+                    historyEventWire(
+                        "earlier-output",
+                        19,
+                        thread,
+                        payload = """{"content":${JsonPrimitive(it)}}""",
+                    )
+                },
                 historyEventWire(
                     "output",
                     23,

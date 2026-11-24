@@ -1174,6 +1174,44 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
     }
 
     @Test
+    fun adjacentArtifactCardsUseEightDpThroughMarkdownListsAndEarlierReplies() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        fixture.installInlineHistory()
+        val note = "Additional material for the handoff."
+        val handoff = "Release handoff notes"
+        app.fixture.historyReply +=
+            "\n\n- [${fixture.checklist.title}](/artifacts/checklist1.md)" +
+                "\n- [${fixture.image.title}](/artifacts/thumbnail1.png)" +
+                "\n- $note\n- [$handoff](/artifacts/part000001.md)"
+        app.fixture.historyEarlierReply =
+            "[${fixture.site.title}](https://fixture.okou.app/)" +
+                "\n\n[${fixture.slides.title}](/artifacts/launchdeck.pptx)"
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithText(fixture.sourceTitle).performClick()
+        awaitText(fixture.slides.title)
+
+        val labels =
+            listOf(
+                fixture.summary.title,
+                fixture.checklist.title,
+                fixture.image.title,
+                note,
+                handoff,
+                fixture.site.title,
+                fixture.slides.title,
+            )
+        val bounds = labels.map { label ->
+            compose.onNodeWithText(label).getUnclippedBoundsInRoot()
+        }
+        assertEquals(
+            listOf(8.dp, 8.dp, 12.dp, 12.dp, 8.dp, 8.dp),
+            bounds.zipWithNext { above, below -> below.top - above.bottom },
+        )
+    }
+
+    @Test
     @Config(qualifiers = "en-rUS-w1180dp-h820dp")
     fun inlineArtifactPreviewReturnsToTheFindHit() {
         val fixture = ArtifactApiFixture(app.fixture)
