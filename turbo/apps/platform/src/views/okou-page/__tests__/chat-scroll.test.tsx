@@ -1363,6 +1363,22 @@ test.each([
   },
 );
 
+test("Loading avatar artwork preserves reader movement before the next scroll event", async () => {
+  const id = THREAD_IDS.growingHistory;
+  mockMutableConversation(id, completedHistoryEvents(8));
+  const container = await openConversation(id, "History answer 8");
+  installChatScrollGeometry(container);
+  scrollFromUser(container, 240);
+  await expectHistoryPositionHeld();
+
+  fireEvent.wheel(container, { deltaY: 60 });
+  container.scrollTop = 300;
+  const artwork = container.querySelector("svg[data-okou-avatar] image");
+  expect(artwork).toBeInTheDocument();
+  fireEvent.load(artwork!);
+  expect(container.scrollTop).toBe(300);
+});
+
 test("Preserve the visible message as content grows", async () => {
   mockMutableConversation(THREAD_IDS.growingHistory, historyWithLateImage(8));
   const container = await openConversation(
@@ -1608,6 +1624,34 @@ test("Fill a tall viewport from a virtual tail while keeping the latest reply pi
   expect(before?.getBoundingClientRect().bottom).toBeLessThanOrEqual(0);
   expect(container.scrollTop).toBe(geometry.bottomScrollTop());
   expect(transcript.queryByText("History answer 1")).toBeNull();
+});
+
+test("Keep the visible message at its offset when an estimated page mounts above it without native anchoring", async () => {
+  const id = THREAD_IDS.incomingHistory;
+  mockMutableConversation(id, completedHistoryEvents(26));
+  const container = await openConversation(id, "History answer 26");
+  const geometry = installChatScrollGeometry(container);
+
+  const css = CSS;
+  vi.stubGlobal("CSS", css);
+  const supports = css.supports.bind(css);
+  vi.spyOn(css, "supports").mockImplementation((property, value?: string) => {
+    if (property === "overflow-anchor") {
+      return false;
+    }
+    return value === undefined ? supports(property) : supports(property, value);
+  });
+  const firstMounted = renderedAnchors(container)[0]!;
+  const originalTop = container.scrollTop;
+  const anchorTop = firstMounted.getBoundingClientRect().top;
+  // Scroll 30 px into the first mounted message, crossing the page boundary.
+  scrollFromUser(container, originalTop + anchorTop + 30);
+
+  await waitFor(() => {
+    expect(renderedAnchors(container)[0]).not.toBe(firstMounted);
+    expect(geometry.firstVisibleAnchor()).toBe(firstMounted);
+    expect(firstMounted.getBoundingClientRect().top).toBe(-30);
+  });
 });
 
 test("Drag into unmounted history, retain the message through new output, and return to the latest reply", async () => {
