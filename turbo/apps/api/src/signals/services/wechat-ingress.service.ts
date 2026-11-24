@@ -445,7 +445,7 @@ export const receiveWechatMessage$ = command(
       );
       await set(
         publishChatThreadMessageCreated$,
-        { ...owner, threadId },
+        { ...owner, threadId, taskStatesChanged: true },
         signal,
       );
       signal.throwIfAborted();

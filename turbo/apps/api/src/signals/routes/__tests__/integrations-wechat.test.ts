@@ -1,4 +1,5 @@
 import { switchRecoverySubscription } from "./helpers/subscription-recovery";
+import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { integrationsWechatMessagesContract } from "@okouai/api-contracts/contracts/integrations-wechat-messages";
 import {
   integrationsWechatUploadInitContract,
@@ -8,6 +9,7 @@ import {
 } from "@okouai/api-contracts/contracts/integrations-wechat-files";
 import { integrationsWechatMessagesRoutes } from "../integrations-wechat-messages";
 import { integrationsWechatFileRoutes } from "../integrations-wechat-files";
+import { chatThreadRoutes } from "../chat-threads";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { sanitizeArtifactFilename } from "../../../lib/file-url";
 import {
@@ -565,6 +567,51 @@ describe("WeChat reply presentation and processing status", () => {
       ]);
     },
   );
+
+  it("publishes a waiting WeChat task before an organization slot opens", async () => {
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+    const fixture = await responseFixture();
+    const blocker = await fixture.runs.createThreadRun(fixture.actor, {
+      prompt: "Hold the only available slot",
+    });
+    const running = await fixture.executionInput();
+    expect(running.runId).toBe(blocker.runId);
+    context.mocks.ably.publish.mockClear();
+
+    await fixture.receive("Wait for the slot from WeChat");
+    await flushWaitUntilForTest();
+    const publicationsWhileWaiting = [...context.mocks.ably.publish.mock.calls];
+    const indicators = setupApp({ context, routes: chatThreadRoutes })(
+      chatThreadsContract,
+    );
+    const snapshot = await accept(
+      indicators.indicators({ headers, query: { includeTaskStates: "true" } }),
+      [200],
+    );
+    const waiting = Object.entries(snapshot.body.taskStates ?? {}).find(
+      ([, state]) => {
+        return state === "queued";
+      },
+    );
+    if (!waiting) {
+      throw new Error("Expected the WeChat conversation to be queued");
+    }
+    const [threadId] = waiting;
+    expect(snapshot.body.taskStates).toStrictEqual({
+      [blocker.threadId]: "running",
+      [threadId]: "queued",
+    });
+
+    await fixture.finish(running, "The slot is open");
+    const launched = await fixture.executionInput();
+    expect(launched.platformEnvironment.OKOU_CHAT_THREAD_ID).toBe(threadId);
+    await fixture.finish(launched, "WeChat task complete");
+    await flushWaitUntilForTest();
+    expect(publicationsWhileWaiting).toContainEqual([
+      `chatThreadMessageCreated:${threadId}`,
+      { taskStatesChanged: true },
+    ]);
+  });
 
   it("delivers long Unicode replies and keeps typing for queued follow-ups", async () => {
     const fixture = await responseFixture();
