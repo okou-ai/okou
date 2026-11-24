@@ -63,7 +63,7 @@ function ZipContents({
   const { t } = useTranslation();
   const entries = useLoadable(signals.entries$);
   const selected = useGet(signals.selection$);
-  const select = useSet(signals.select$);
+  const toggleEntry = useSet(signals.toggleEntry$);
   const revealSelected = useSet(revealSelectedZipEntry$);
   const page = useGet(pageSignal$);
   if (entries.state === "loading") {
@@ -96,7 +96,7 @@ function ZipContents({
                   aria-pressed={selected?.path === entry.path}
                   className="w-full rounded-md px-2 py-1.5 text-start text-sm break-all hover:bg-state-hover aria-pressed:bg-muted"
                   onClick={onDomEventFn(() => {
-                    return select(entry, page);
+                    return toggleEntry(entry, page);
                   })}
                 >
                   {entry.path}
