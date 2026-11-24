@@ -31,6 +31,8 @@
     <string name="auth_signing_out">正在退出登录…</string>
     <string name="auth_workspace">当前工作区</string>
     <string name="auth_switch_workspace">切换工作区</string>
+    <string name="auth_switch_workspace_pending">正在切换工作区</string>
+    <string name="auth_switch_workspace_failed">暂时无法切换到此工作区</string>
     <string name="auth_browser_unavailable">请安装浏览器以打开工作区设置页面。</string>
     <string name="preference_color_theme">配色主题</string>
     <string name="preference_language">语言</string>

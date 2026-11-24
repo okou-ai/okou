@@ -411,13 +411,14 @@ internal fun SettingsSheet(
     progress: (@Composable () -> Unit)? = null,
     actionSpacing: Dp = 8.dp,
     scroll: SettingsSheetScroll = SettingsSheetScroll.Body,
+    dismissible: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val compactHeight = isShortSettingsPanelWindow()
     val scrollModifier =
         if (scroll == SettingsSheetScroll.None) Modifier
         else Modifier.verticalScroll(rememberScrollState())
-    SettingsModal(onDismiss) { centered ->
+    SettingsModal(onDismiss, dismissible = dismissible) { centered ->
         Column(
             modifier
                 .fillMaxWidth()
