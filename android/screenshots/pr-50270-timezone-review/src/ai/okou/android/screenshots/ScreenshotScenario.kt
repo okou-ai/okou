@@ -291,7 +291,6 @@ class ScreenshotScenario {
                     retry.click()
                     check(device.wait(Until.gone(selector().text("时区已保存，晨报时间未能更新。")), 12_000))
                     checkStoredTimezone("Asia/Bishkek")
-
                 }
                 app.preferenceWrite = originalPreferenceWrite
 
@@ -309,11 +308,13 @@ class ScreenshotScenario {
                         settings()
                         showEntry().click()
                         contains("请先选择时区以安排发送。")
-                        text("时区")
-                        tabTo("时区")
+                        val timezone = "加德满都（UTC+5:45）"
+                        contains(timezone)
+                        // The Suggestions description also contains the word for time zone.
+                        tabTo(timezone)
                         check(device.pressEnter())
                         text("用于新建定时任务的默认时区。")
-                        awaitFocus("加德满都（UTC+5:45）")
+                        awaitFocus(timezone)
                         fixture.suggestionsNeedsTimezone = false
                         fixture.suggestionsEligible = remainsEligible
                         check(device.pressEnter())
