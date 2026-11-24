@@ -3299,3 +3299,15 @@ The [fixed list](https://app.okou.ai/artifacts/w8ihug2wrw.md) covers 30 owners, 
 - **Next candidates.** Prioritize browser-viewer-binding-002 if the provider exposes an allocation receipt distinct per acquisition. The current API rechecks an existing window. Revisit voice-draft-audio-010/013 if a user can finish an empty draft or resume recording at the checkpoint. For browser-viewer-interaction-107, a trusted clipboard action with an independently pending write could distinguish cancellation from failure. For chat-list-optimistic-002, the original send must reach the missing-thread artifact response before confirmation. The owner and member onboarding cases require a receipt that distinguishes two completed submissions. Existing reads of completion state are idempotent.
 
 The six reserved decisions retain their original owners and BDDs. The voice-only send and both adjacent-chip deletion keys from the main sync run on the real chat route.
+
+## Batch 101 original GWT acceptance
+
+The [331-row review](./test-rebuild-batch-101.tsv) covers the 30 assigned owners. Three original cases reached first full acceptance. No historical recovery, revision or upstream retirement was added.
+
+| Original case | Evidence |
+| --- | --- |
+| browser-domain-initialization-018 | The terminal domain error detached the Chrome session. The gateway saw one admission through the timeout and a second admission in the silence-only control. [Gateway observations](../../../test-rebuild-evidence/101/native/domain-terminal.json) |
+| browser-viewer-interaction-107 | A trusted copy started a native clipboard write. Blurring cancelled the write and item, preserved the clipboard and allowed fresh remote input. The focused control copied the selection. [Clipboard receipts](../../../test-rebuild-evidence/101/native/clipboard-asserted.json) · [Error receiver control](../../../test-rebuild-evidence/101/native/sentry.json) |
+| chat-navigation-artifact-drive-017 | One completed reconnect restored both the Google Docs conversion and original-text upload in the same App preview. A second independent start created a distinct attempt. [Upload receipts](../../../test-rebuild-evidence/101/drive/drive-proof.json) · [Attempt control](../../../test-rebuild-evidence/101/drive/drive-duplicate-control.json) |
+
+Within the 49 owners open at `6d74f80019`, the 540 selected cases moved from 391 resolved and 149 open to 394 resolved and 146 open. Two owners closed. The clipboard owner still has open cases. The [pre-migration case snapshot](../../../test-rebuild-evidence/101/pending-before-migration.tsv) identifies each of the 149 baseline cases and records the three transitions. Across the first-pass inventory, 485 passed, 438 owners have no open frozen case and 47 have open cases.

@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
@@ -224,6 +224,53 @@ test("Page setup failure leaves input unavailable past the pending inspector dea
   expect(lateReplyRead).toBeFalsy();
   expect(input()).toBeDisabled();
   expect(screen.getByText("Browser view unavailable")).toBeInTheDocument();
+});
+
+test("browser-domain-initialization-018 A terminal Page failure preserves the manual reconnect while Inspector stays silent", async () => {
+  const advance = browserRecoveryClock(context.signal);
+  const editor = document.createElement("textarea");
+  // The provider admits the initial connection and one recovery connection.
+  // An intervening dial consumes the only admission available for Reconnect.
+  const admissions = ["initial", "recovery"];
+  const { cdp, openPage } = arrangeNativePage(context, {
+    autoOpen: false,
+    editors: new Map([["example-page", editor]]),
+    onConnecting(_url, socket) {
+      if (admissions.shift()) {
+        queueMicrotask(() => socket.open());
+      }
+    },
+  });
+  const peer = cdp.holdNext("Inspector.enable");
+  const page = cdp.holdNext("Page.enable");
+  cdp.failNext("Page.enable", "Page domain is unavailable", -32_601);
+  await openPage();
+  await Promise.all([peer.received, page.received]);
+  const original = cdp.pageSession("example-page");
+  await page.release();
+
+  await screen.findByText("Browser view unavailable");
+  await waitFor(() => {
+    expect(cdp.detached).toContain(original);
+  });
+  advance(31_001);
+  await userEvent.type(input(), "blocked");
+  expect(screen.getByText("Browser view unavailable")).toBeInTheDocument();
+  expect(input()).toBeDisabled();
+  expect(editor.value).toBe("");
+
+  await userEvent.click(screen.getByRole("button", { name: "Reconnect" }));
+  await expectStreamingAt("https://example.com");
+  const field = input();
+  field.focus();
+  fireEvent.input(field, {
+    target: { value: "ready" },
+    data: "ready",
+    inputType: "insertText",
+  });
+  await waitFor(() => {
+    expect(editor.value).toBe("ready");
+  });
 });
 
 test("An unanswered domain handshake can recover on a different transport after its deadline", async () => {

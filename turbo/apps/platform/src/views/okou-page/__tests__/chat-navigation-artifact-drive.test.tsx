@@ -576,3 +576,60 @@ test.each([
     });
   },
 );
+
+test("chat-navigation-artifact-drive-017 the repaired Drive account receives both versions from one preview", async () => {
+  const file = installArtifactConversation("shipping-note.txt", {
+    status: "disconnected",
+    recovery: { action: "reconnect", connectionId: account },
+  });
+  const grant = authorization("reconnect");
+  const files: string[] = [];
+  context.mocks.api(
+    artifactGoogleDriveContract.uploadFromChat,
+    ({ body, params, respond }) => {
+      if (
+        body.chatThreadId !== ATTACHMENT_THREAD_ID ||
+        params.artifactId !== artifact ||
+        body.connectionId !== account
+      ) {
+        return respond(403, {
+          error: {
+            code: "FORBIDDEN",
+            message: "File belongs to the repaired account",
+          },
+        });
+      }
+      if (body.mode === "google") {
+        files.push(documentResult.id);
+        return respond(200, documentResult);
+      }
+      files.push(file.filename);
+      return respond(200, {
+        id: "shipping-original",
+        name: file.filename,
+        mimeType: "text/plain",
+        webViewLink: "https://drive.google.com/open?id=shipping-original",
+      });
+    },
+  );
+
+  const panel = await preview();
+  await choose(panel, "Upload to Google Docs");
+  await grant.waitingForAuthorization;
+  expect(grant.popup.location.href).toBe(providerUrl);
+  expect(files).toStrictEqual([]);
+  grant.complete();
+  await screen.findByText("Synced to Google Drive");
+  const actions = await options(panel);
+  expect(
+    await findNamedMenuItem("Open in Google Docs", actions),
+  ).toHaveAttribute("href", docsUrl);
+  click(await findNamedMenuItem("Upload to Google Drive", actions));
+  await waitFor(() => {
+    expect(files).toStrictEqual([documentResult.id, file.filename]);
+  });
+  const afterUpload = await options(panel);
+  expect(
+    await findNamedMenuItem("Open in Google Docs", afterUpload),
+  ).toHaveAttribute("href", docsUrl);
+});

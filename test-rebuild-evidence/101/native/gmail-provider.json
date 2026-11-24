@@ -1,0 +1,27 @@
+{
+  "opened": [
+    {
+      "origin": "https://accounts.google.com",
+      "path": "/o/oauth2/v2/auth",
+      "hash": "1a96dd0fbdc323114d6b344f6ccf8f2f863f1c60970eb0ba0e8703882003bb2d"
+    }
+  ],
+  "admitted": [
+    {
+      "attempt": "1f16c246-4610-4e61-a7cb-b443c797a9d5",
+      "hash": "1a96dd0fbdc323114d6b344f6ccf8f2f863f1c60970eb0ba0e8703882003bb2d",
+      "origin": "https://accounts.google.com",
+      "status": 200
+    }
+  ],
+  "focused": true,
+  "completionStatus": 404,
+  "popupCount": 1,
+  "dialogBeforeClose": true,
+  "popupClosedAtInspection": [
+    false
+  ],
+  "dialogs": [],
+  "error": "page.waitForEvent: Timeout 6000ms exceeded while waiting for event \"close\"\n=========================== logs ===========================\nwaiting for event \"close\"\n============================================================",
+  "body": "Okou\nWorkflows\nConnectors\nArtifacts\nChannels\nR\nNew chat\nCtrl+Shift+O\nNew chat\n\nGet Team\n\nMore credits & concurrent runs\n\nExplore what's new\nInvite humans 🤝\nWelcome back.\nFind people\nCustomers, creators, decision-makers\nExplore\nResearch\nTraffic, ads, products, topics\nExplore\nCreate\nFrom your first idea to something ready to share.\nPresentation\nImage\nDocument\nWebsite\nChart\nWorkflow\nRuns on a schedule or a trigger\nScheduled\nTriggers\nAdvanced\nSOC 2 Type II\nIn progress\nCCPA / CPRA\nCompliant\nGDPR\nCompliant\nHIPAA\nAligned\nISO/IEC 27001\nAligned\nAsk me to automate workflows, manage tasks...\n\n\n\n\nConnectors"
+}
