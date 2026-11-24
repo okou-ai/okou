@@ -10,6 +10,22 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.112.1](https://github.com/okou-ai/okou/compare/api-v2.112.0...api-v2.112.1) (2026-11-24)
+
+
+### Refactoring
+
+* remove voice messages feature switch ([#50338](https://github.com/okou-ai/okou/issues/50338)) ([35e38a9](https://github.com/okou-ai/okou/commit/35e38a9a333962f7477ff090634b8c38b723f55c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.865.1
+    * @okouai/db bumped to 2.63.1
+    * @okouai/pi-agent-runtime bumped to 1.52.54
+
 ## [2.112.0](https://github.com/okou-ai/okou/compare/api-v2.111.1...api-v2.112.0) (2026-11-23)
 
 
