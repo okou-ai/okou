@@ -3,7 +3,6 @@ import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { artifactReferencePath } from "@okouai/api-contracts/validators/artifact-references";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
-
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
@@ -14,6 +13,11 @@ import {
   findNamedMenuItem,
   mockAttachmentChat,
 } from "./chat-attachment-test-helpers.ts";
+import {
+  completedConversation,
+  createChatCapabilityHelpers,
+  RUN_PATH,
+} from "./chat-capability-test-helpers.ts";
 
 const context = testContext();
 
@@ -31,10 +35,12 @@ function signedObject(key: string, disposition?: string): string {
 }
 
 const HEIC_SOURCE = signedObject("7f3c91d2a4");
+
 const HEIC_DOWNLOAD = signedObject(
   "7f3c91d2a4",
   'attachment; filename="photo.HEIC"',
 );
+
 const JPEG_SOURCE = signedObject("c25e8b0f16");
 
 function serveSignedFiles(): void {
@@ -179,4 +185,36 @@ test("an inaccessible HEIC artifact keeps its access error in the image viewer",
       name: "You can’t view this artifact",
     }),
   ).resolves.toBeInTheDocument();
+});
+
+const { installCapabilityChat } = createChatCapabilityHelpers(context);
+
+const ORIGINAL =
+  "https://cdn.vm7.io/artifacts/tests/chat-attachments/photo.BMP";
+
+test("assistant BMP images display the original in the thread and lightbox", async () => {
+  installCapabilityChat({
+    events: completedConversation(
+      `Here is the scan you asked for.\n\n![photo.BMP](${ORIGINAL})`,
+    ),
+  });
+
+  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
+
+  const inline = await waitFor(() => {
+    const image = document.querySelector<HTMLImageElement>(
+      `[data-role='assistant'] img[alt="photo.BMP"]`,
+    );
+    expect(image).toHaveAttribute("src", ORIGINAL);
+    return image as HTMLImageElement;
+  });
+
+  click(inline.closest("a, button") ?? inline);
+
+  const lightbox = await screen.findByTestId("artifact-sidebar");
+  await waitFor(() => {
+    expect(
+      within(lightbox).getByRole("img", { name: "photo.BMP" }),
+    ).toHaveAttribute("src", ORIGINAL);
+  });
 });

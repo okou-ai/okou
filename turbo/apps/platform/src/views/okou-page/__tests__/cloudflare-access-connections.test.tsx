@@ -1,22 +1,58 @@
+import { screen, within, waitFor } from "@testing-library/react";
+import { expect, test } from "vitest";
+import { click, setupPage, fill } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
+import { findNamedLink } from "./chat-attachment-test-helpers.ts";
+import {
+  mockRemoteInventory,
+  REMOTE_TIMESTAMP,
+  sshHost,
+  vncHost,
+  remoteId,
+} from "./connectors-remote-control-test-helpers.ts";
 import {
   cloudflareAccessContract,
   type CloudflareAccessImpactPreview,
   type ScopedCloudflareAccessConfig,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
-import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
-
-import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { getConnectorAction } from "./connector-page-test-helpers.ts";
-import {
-  mockRemoteInventory,
-  REMOTE_TIMESTAMP,
-  remoteId,
-} from "./connectors-remote-control-test-helpers.ts";
 
 const context = testContext();
+
+test("connectors-cloudflare-access-001 Private network offers management for the listed Cloudflare configuration", async () => {
+  const name = "Protected applications";
+  mockRemoteInventory(context, {
+    ssh: [sshHost(1, "Shell host")],
+    vnc: [vncHost(1, "Desktop")],
+    cloudflare: [
+      {
+        id: crypto.randomUUID(),
+        scope: "personal",
+        name,
+        generation: 1,
+        revision: 1,
+        createdAt: REMOTE_TIMESTAMP,
+        updatedAt: REMOTE_TIMESTAMP,
+        sshHosts: [],
+        vncHosts: [],
+      },
+    ],
+  });
+  await setupPage({ context, path: "/connectors" });
+  click(await findFastControl("radio", /^Private network/i));
+  const networks = await screen.findByRole("region", {
+    name: /private network/i,
+  });
+  await within(networks).findByText(name);
+  await expect(
+    findFastControl("button", "Add network", networks),
+  ).resolves.toBeEnabled();
+  await expect(
+    findNamedLink("Manage Protected applications", networks),
+  ).resolves.toBeInTheDocument();
+});
 
 function gateway(
   index: number,
