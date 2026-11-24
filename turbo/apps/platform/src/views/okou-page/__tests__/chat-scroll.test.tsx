@@ -1363,6 +1363,22 @@ test.each([
   },
 );
 
+test("Loading avatar artwork preserves reader movement before the next scroll event", async () => {
+  const id = THREAD_IDS.growingHistory;
+  mockMutableConversation(id, completedHistoryEvents(8));
+  const container = await openConversation(id, "History answer 8");
+  installChatScrollGeometry(container);
+  scrollFromUser(container, 240);
+  await expectHistoryPositionHeld();
+
+  fireEvent.wheel(container, { deltaY: 60 });
+  container.scrollTop = 300;
+  const artwork = container.querySelector("svg[data-okou-avatar] image");
+  expect(artwork).toBeInTheDocument();
+  fireEvent.load(artwork!);
+  expect(container.scrollTop).toBe(300);
+});
+
 test("Preserve the visible message as content grows", async () => {
   mockMutableConversation(THREAD_IDS.growingHistory, historyWithLateImage(8));
   const container = await openConversation(
