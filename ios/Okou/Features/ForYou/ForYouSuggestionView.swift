@@ -5,6 +5,9 @@ import SwiftUI
 /// choosing it does. Dismissing it and writing a direction of one's own live in the page's dock.
 struct ForYouSuggestionView: View {
   let suggestion: ForYouSuggestion
+  /// Room the card is given to match the deck's height: it lies between the heading and the
+  /// directions, so the directions stay at the bottom, by the dock.
+  var extra: CGFloat = 0
   /// The direction whose choice is under way, which shows its progress in place of its arrow.
   var pendingOptionID: String?
   let openSource: (String) -> Void
@@ -52,6 +55,7 @@ struct ForYouSuggestionView: View {
           optionButton(option)
         }
       }
+      .padding(.top, extra)
     }
     .foregroundStyle(OkouColor.foreground)
   }
@@ -113,6 +117,8 @@ struct ForYouSuggestionView: View {
 /// A paused automation: why it stopped, which one it is, and the two ways to settle it.
 struct ForYouAutomationView: View {
   let event: ForYouAutomation
+  /// Room the card is given to match the deck's height, above its actions.
+  var extra: CGFloat = 0
   let enable: () -> Void
   let dismiss: () -> Void
 
@@ -166,7 +172,8 @@ struct ForYouAutomationView: View {
         }
         .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
       }
-      // A card's actions are compact, side by side; Enable is its one commitment.
+      // A card's actions are compact, side by side; Enable is its one commitment. They stay at
+      // the card's bottom when it is given room to match the deck.
       HStack(spacing: OkouSpace.sm) {
         Button("Enable", action: enable)
           .buttonStyle(OkouButtonStyle(isPrimary: true, isCompact: true))
@@ -175,7 +182,7 @@ struct ForYouAutomationView: View {
           .buttonStyle(OkouButtonStyle(isPrimary: false, isCompact: true))
           .accessibilityIdentifier("for-you-event-dismiss")
       }
-      .padding(.top, OkouSpace.xs)
+      .padding(.top, OkouSpace.xs + extra)
     }
     .foregroundStyle(OkouColor.foreground)
   }

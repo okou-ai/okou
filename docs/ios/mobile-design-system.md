@@ -899,6 +899,9 @@ feature; the catalog shows each one.
   to the first, and back from the first to the last, as the web's stack turns. The counter rolls
   and the lit progress segment follows the finger. A handled card sinks away while the next one
   rises into its place. Under Reduce Motion the cards page side by side and the cover holds still.
+  Every card in the deck is as tall as its tallest (within the room above the dock), with the
+  room laid between its heading and its actions so the actions stay at the bottom; the dock's
+  room is held on a paused automation too, so the deck's top edge never moves as it pages.
   A card that fits never moves vertically; only one taller than the room scrolls, and only the
   caught-up panel pulls to refresh. The layers under the front card are solid cards, each a little
   more shaded than the one above it.

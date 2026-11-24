@@ -31,6 +31,8 @@ struct ForYouView: View {
   /// Whether the pager has been put on the card in front since it appeared. Until then it rests
   /// on its first page, the copy of the last card, and what it reports is not the reader's.
   @State private var pagerPlaced = false
+  /// Each card's own height, without the room it is given to match the deck.
+  @State private var naturalHeights: [String: CGFloat] = [:]
   private var store: ForYouStore { workspace.forYou }
 
   /// The deck's layers peek this far below one another under the front card, as on the web.
@@ -337,7 +339,7 @@ struct ForYouView: View {
     let depth = !reduceMotion
     return ScrollView {
       surface(placementOf: page.id) {
-        cardView(page.card).disabled(store.busy)
+        cardView(page.card, extra: extraHeight(for: page.card.id)).disabled(store.busy)
       }
       .padding(.top, OkouSpace.xxl)
       .padding(.bottom, Self.layerDrop * CGFloat(Self.layerCount) + OkouSpace.sm)
@@ -413,17 +415,51 @@ struct ForYouView: View {
       .onGeometryChange(for: ForYouCardPlacement.self) { proxy in
         ForYouCardPlacement(proxy.frame(in: .global))
       } action: { placement in
-        if let id { cardPlacements[id] = placement } else { panelPlacement = placement }
+        guard let id else {
+          panelPlacement = placement
+          return
+        }
+        cardPlacements[id] = placement
+      }
+      // A card's own height, read from its size rather than its place on screen: a card rising
+      // or leaving is drawn scaled, and only the card itself (not its copy at an end of the
+      // loop) reports, so the deck's height settles on one value.
+      .onGeometryChange(for: CGFloat.self) {
+        $0.size.height
+      } action: { height in
+        guard let id, ForYouLoop.cardID(id) == id else { return }
+        let natural = height - extraHeight(for: id)
+        if abs((naturalHeights[id] ?? 0) - natural) > OkouSpace.hairline {
+          naturalHeights[id] = natural
+        }
       }
       .frame(maxWidth: OkouControl.readableWidth)
       .padding(.horizontal, OkouSpace.lg)
   }
 
-  @ViewBuilder private func cardView(_ card: ForYouCard) -> some View {
+  /// Every card in the deck is as tall as its tallest, within the room above the dock, so the
+  /// deck keeps one shape as it pages: the card's top edge holds still and the layers under it
+  /// never change size. While a direction is written the card keeps its own height above the
+  /// input.
+  private var deckHeight: CGFloat {
+    let tallest = store.cards.compactMap { naturalHeights[$0.id] }.max() ?? 0
+    let room =
+      pagerFrame.height - OkouSpace.xxl - Self.layerDrop * CGFloat(Self.layerCount)
+      - OkouSpace.sm
+    return room > 0 ? min(tallest, room) : tallest
+  }
+
+  /// The room a card is given to match the deck, laid between its heading and its actions.
+  private func extraHeight(for cardID: String) -> CGFloat {
+    guard !isComposing, let natural = naturalHeights[cardID] else { return 0 }
+    return max(0, deckHeight - natural)
+  }
+
+  @ViewBuilder private func cardView(_ card: ForYouCard, extra: CGFloat) -> some View {
     switch card.content {
     case .suggestion(let suggestion):
       ForYouSuggestionView(
-        suggestion: suggestion,
+        suggestion: suggestion, extra: extra,
         pendingOptionID: pendingOptionID,
         openSource: { id in run { if await store.open(id) { showChat() } } },
         choose: { option in
@@ -436,7 +472,7 @@ struct ForYouView: View {
         })
     case .automation(let event):
       ForYouAutomationView(
-        event: event,
+        event: event, extra: extra,
         enable: { run { await store.resolve(card, event: event, enable: true) } },
         dismiss: { run { await store.resolve(card, event: event, enable: false) } })
     case .unsupported: EmptyView()
@@ -468,6 +504,12 @@ struct ForYouView: View {
       .disabled(store.busy)
       // A paused automation has no dock: it sinks away, and comes back with the next suggestion.
       .transition(reduceMotion ? .opacity : .offset(y: OkouSpace.lg).combined(with: .opacity))
+    } else if store.current != nil {
+      // Its room stays, so the deck keeps one place and the card's top edge never moves.
+      Color.clear
+        .frame(height: OkouControl.minimumTarget + OkouSpace.md)
+        .padding(.bottom, OkouSpace.sm)
+        .accessibilityHidden(true)
     }
   }
 
