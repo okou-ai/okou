@@ -3,6 +3,7 @@ import { useGet, useLastResolved, useSet } from "ccstate-react";
 import { Button } from "@okouai/ui";
 import {
   creditsFeedbackOffer$,
+  creditsFeedbackSurveyAvailable$,
   requestCreditsFeedback$,
 } from "../../../signals/billing-feedback.ts";
 import { pageSignal$ } from "../../../signals/page-signal.ts";
@@ -15,10 +16,11 @@ export function CreditsFeedbackButton({
   readonly eligible: boolean;
 }) {
   const offer = useLastResolved(creditsFeedbackOffer$);
+  const available = useGet(creditsFeedbackSurveyAvailable$);
   const request = useSet(requestCreditsFeedback$);
   const signal = useGet(pageSignal$);
   const { t } = useTranslation();
-  if (!eligible || !offer) {
+  if (!eligible || !available || !offer) {
     return null;
   }
   return (
