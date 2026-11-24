@@ -1450,7 +1450,9 @@ function createThreadArtifactRuns(
   threadId: string,
   driveAccountRevision$: Computed<string>,
 ) {
-  return computed(async (get): Promise<ChatThreadArtifactRun[]> => {
+  const reloadVersion$ = state(0);
+  const artifacts$ = computed(async (get): Promise<ChatThreadArtifactRun[]> => {
+    get(reloadVersion$);
     get(artifactCatalogRevision$);
     get(driveAccountRevision$);
     const client = get(apiClient$)(chatThreadArtifactsContract);
@@ -1462,6 +1464,12 @@ function createThreadArtifactRuns(
     );
     return result.body.runs;
   });
+  const reloadArtifacts$ = command(({ set }) => {
+    set(reloadVersion$, (version) => {
+      return version + 1;
+    });
+  });
+  return { artifacts$, reloadArtifacts$ };
 }
 
 interface EventTreeRegistries {
@@ -2589,6 +2597,7 @@ interface RunTrackingDeps {
   automationSignals: Pick<ChatPanelSignals, "headerAutomations">;
   cancellationRecovery: ReturnType<typeof createCancellationRecoverySignals>;
   reloadConnectorAccountPreference$: Command<void, []>;
+  reloadArtifacts$: Command<void, []>;
 }
 
 const INITIAL_RENDER_GROUP_COUNT = 5;
@@ -3023,6 +3032,7 @@ function createRunTracking({
   automationSignals,
   cancellationRecovery,
   reloadConnectorAccountPreference$,
+  reloadArtifacts$,
 }: RunTrackingDeps) {
   const onSubscribed$ = createOnSubscribedCommand({
     threadId,
@@ -3045,6 +3055,7 @@ function createRunTracking({
           threadId,
           invalidations: {
             artifactCatalog: [
+              reloadArtifacts$,
               messages.sidebar.artifactCatalog.reload$,
               messages.refreshArtifactPreviews$,
             ],
@@ -3949,7 +3960,10 @@ export function createChatPanelSignals(
     kind: "builtin",
     connectorSlug: "google-drive",
   });
-  const artifacts$ = createThreadArtifactRuns(threadId, driveAccountRevision$);
+  const { artifacts$, reloadArtifacts$ } = createThreadArtifactRuns(
+    threadId,
+    driveAccountRevision$,
+  );
   // The native input graph invokes this only after admitting page input.
   const onPageInput$ = command(({ get, set }) => {
     detach(
@@ -3999,6 +4013,7 @@ export function createChatPanelSignals(
     automationSignals: threadOwned,
     cancellationRecovery,
     reloadConnectorAccountPreference$: composer.connector.chatAccess.reload$,
+    reloadArtifacts$,
   });
   const relations = createChatRelationSignals(threadId, messagePipeline);
   return {
