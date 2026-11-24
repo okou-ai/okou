@@ -10,6 +10,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.118.0](https://github.com/okou-ai/okou/compare/api-v2.117.1...api-v2.118.0) (2026-11-24)
+
+
+### Features
+
+* **android:** add built-in tool settings ([#50488](https://github.com/okou-ai/okou/issues/50488)) ([728e8ce](https://github.com/okou-ai/okou/commit/728e8ce2a260f26018932353d8c973a552fd6cf7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.120.0
+    * @okouai/core bumped to 8.870.0
+    * @okouai/db bumped to 2.64.2
+    * @okouai/pi-agent-runtime bumped to 1.52.62
+
 ## [2.117.1](https://github.com/okou-ai/okou/compare/api-v2.117.0...api-v2.117.1) (2026-11-24)
 
 

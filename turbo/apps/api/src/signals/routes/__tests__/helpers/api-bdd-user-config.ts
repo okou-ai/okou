@@ -4,6 +4,7 @@ import { authContract } from "@okouai/api-contracts/contracts/auth";
 import { pushSubscriptionsContract } from "@okouai/api-contracts/contracts/push-subscriptions";
 import {
   userModelPreferenceContract,
+  type ImageModelPreference,
   type UpdateUserModelPreferenceRequest,
   type UserModelPreferenceResponse,
 } from "@okouai/api-contracts/contracts/user-model-preference";
@@ -201,6 +202,20 @@ export function createUserConfigBddApi(context: TestContext) {
         client.update({ headers: authenticate(actor), body }),
         statuses,
       );
+    },
+
+    async updateImageModelPreference(
+      actor: ApiTestUser,
+      body: ImageModelPreference,
+    ): Promise<UserModelPreferenceResponse> {
+      const client = setupAppWithRoutes({ context, routes: userConfigRoutes })(
+        userModelPreferenceContract,
+      );
+      const response = await accept(
+        client.updateImageModel({ headers: authenticate(actor), body }),
+        [200],
+      );
+      return response.body;
     },
 
     async requestRegisterPush(

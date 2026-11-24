@@ -4,9 +4,11 @@ import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
 import { feishuChatThreadRoutes } from "@okouai/db/schema/feishu-chat-thread-route";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNotNull, ne, or, sql } from "drizzle-orm";
 import { computed, type Computed } from "ccstate";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
+import { array, boolean, object, record, string } from "zod";
+import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 
 import { db$ } from "../external/db";
 import {
@@ -19,6 +21,8 @@ import type { FeishuDeliveryTarget } from "./feishu-chat-callback-payload";
 import { buildFeishuSystemPrompt } from "./feishu-dispatch.service";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
+import { contextJsonProjection, contextJsonRows } from "./context-rowset";
+import { ORG_SENTINEL_USER_ID } from "./feature-switch-scope";
 
 type FeishuLaunchContextRow = Pick<
   typeof chatFeishuContext.$inferSelect,
@@ -94,13 +98,55 @@ export type FeishuThreadContext = ReturnType<
   typeof requiredFeishuLaunchContext
 >;
 
-function createFeishuStoredLaunchContext(source: FeishuLaunchInput) {
+const installerOverridesDecoder = zodDriverValueDecoder(
+  array(object({ userId: string(), switches: record(string(), boolean()) })),
+);
+
+function createFeishuStoredLaunchContext(
+  source: FeishuLaunchInput,
+  purpose: "launch" | "recovery",
+  actorFeatureSwitches$?: Computed<Promise<FeatureSwitchContext>>,
+) {
   return computed(async (get) => {
     const args = "eventId" in source ? source : await get(source);
     if (!args) {
       return undefined;
     }
-    const [row] = await get(db$)
+    const db = get(db$);
+    const ownerId = feishuOrgInstallations.ownerUserId;
+    const installerOverrides =
+      purpose === "launch"
+        ? contextJsonRows(
+            db
+              .select({
+                payload: contextJsonProjection({
+                  userId: userFeatureSwitches.userId,
+                  switches: userFeatureSwitches.switches,
+                }).as("payload"),
+              })
+              .from(userFeatureSwitches)
+              .where(
+                and(
+                  eq(userFeatureSwitches.orgId, args.orgId),
+                  isNotNull(ownerId),
+                  or(
+                    eq(feishuOrgInstallations.platform, "lark"),
+                    eq(feishuOrgInstallations.installationType, "official"),
+                  ),
+                  or(
+                    ne(feishuOrgInstallations.installationType, "official"),
+                    isNotNull(feishuOrgInstallations.setupCompletedAt),
+                  ),
+                  actorFeatureSwitches$ ? ne(ownerId, args.userId) : undefined,
+                  or(
+                    eq(userFeatureSwitches.userId, ownerId),
+                    eq(userFeatureSwitches.userId, ORG_SENTINEL_USER_ID),
+                  ),
+                ),
+              ),
+          )
+        : sql`'[]'::jsonb`;
+    const [row] = await db
       .select({
         conversationHistory: chatFeishuContext.conversationHistory,
         messageText: chatFeishuContext.messageText,
@@ -122,6 +168,9 @@ function createFeishuStoredLaunchContext(source: FeishuLaunchInput) {
         installationId: chatFeishuContext.installationId,
         routeThreadId: feishuChatThreadRoutes.threadId,
         feishuDisplayName: feishuOrgConnections.feishuUserName,
+        installerOverrides: installerOverrides.mapWith(
+          installerOverridesDecoder,
+        ),
       })
       .from(chatEvents)
       .innerJoin(
@@ -177,7 +226,7 @@ function createFeishuStoredLaunchContext(source: FeishuLaunchInput) {
 }
 
 export function createFeishuRecoveryContext(args: FeishuLaunchSource) {
-  const stored$ = createFeishuStoredLaunchContext(args);
+  const stored$ = createFeishuStoredLaunchContext(args, "recovery");
   return computed(async (get): Promise<FeishuThreadContext> => {
     const stored = await get(stored$);
     return requiredFeishuLaunchContext(stored?.row);
@@ -188,7 +237,11 @@ export function createFeishuLaunchContext(
   source: FeishuLaunchInput,
   actorFeatureSwitches$?: Computed<Promise<FeatureSwitchContext>>,
 ) {
-  const stored$ = createFeishuStoredLaunchContext(source);
+  const stored$ = createFeishuStoredLaunchContext(
+    source,
+    "launch",
+    actorFeatureSwitches$,
+  );
   return computed(async (get): Promise<FeishuThreadContext> => {
     const stored = await get(stored$);
     if (!stored) {
@@ -209,11 +262,10 @@ export function createFeishuLaunchContext(
       );
       return enabled ? requiredFeishuLaunchContext(row) : null;
     }
-    const rows = await get(db$)
-      .select(availability.columns)
-      .from(userFeatureSwitches)
-      .where(availability.condition);
-    return feishuInstallationEnabledFromRows(availability.scope, rows)
+    return feishuInstallationEnabledFromRows(
+      availability.scope,
+      row.installerOverrides,
+    )
       ? requiredFeishuLaunchContext(row)
       : null;
   });

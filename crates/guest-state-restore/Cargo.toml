@@ -1,6 +1,6 @@
 [package]
 name = "guest-state-restore"
-version = "0.4.40"
+version = "0.4.41"
 edition.workspace = true
 description = "Repair snapshot-sensitive guest state and apply guest timezones"
 

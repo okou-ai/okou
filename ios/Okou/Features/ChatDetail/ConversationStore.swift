@@ -204,6 +204,7 @@ final class ConversationStore {
       try await Task.sleep(for: $0)
     },
     draftRepository: ChatDraftRepository? = nil, draftStorage: ChatDraftStorage? = nil,
+    voiceCapture: (any VoiceAudioCapture)? = nil,
     didSaveDraft: @escaping @MainActor (ComposerDraft) async -> Void = { _ in },
     measurementScope: ChatCacheScope? = nil,
     didRequestNewChat: @escaping @MainActor () -> Void = {},
@@ -234,7 +235,7 @@ final class ConversationStore {
     composer = ComposerDraftStore(
       target: draftTarget, commands: commands, graph: graph,
       repository: draftRepository, storage: draftStorage, didFail: didFail,
-      didSave: didSaveDraft,
+      didSave: didSaveDraft, voiceCapture: voiceCapture,
       syncSleep: readRetrySleep, lifecycleTasks: lifecycleTasks)
     self.sync = sync
     self.commands = commands
@@ -441,7 +442,8 @@ final class ConversationStore {
     reading.setDetailVisible(visible, owner: owner)
   }
 
-  func reconcileVisibility() {
+  func reconcileVisibility(suspendHiddenVoice: Bool = true) {
+    if suspendHiddenVoice, !isVisible() { composer.voice?.suspend() }
     reading.reconcileVisibility()
   }
 

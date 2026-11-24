@@ -25,7 +25,7 @@ import {
 } from "./utils.ts";
 import { createHostedSiteBannerSignals } from "./hosted-site-banner.ts";
 import { passArtifactPaywall$ } from "./okou-page/artifact-paywall.ts";
-import { createHostedSitePeopleSignals } from "./hosted-site-people.ts";
+import { createSharePeopleSignals } from "./share-people.ts";
 
 type SiteUrl = zInfer<typeof hostedSiteUrlSchema>;
 type Validation = "unchanged" | "invalid" | "available" | "taken";
@@ -266,7 +266,11 @@ function createHostedSiteShareSession(sourceUrl: string) {
   const open$ = state(false);
   const editor = createSiteUrlEditorSignals(details$, saved$);
   const visibility = createSiteVisibilitySignals(details$);
-  const people = createHostedSitePeopleSignals(visibility.visibility$, open$);
+  const peopleTarget$ = computed(async (get) => {
+    const site = await get(visibility.visibility$);
+    return site ? { kind: "site" as const, id: site.siteId } : null;
+  });
+  const people = createSharePeopleSignals(peopleTarget$, open$);
   const banner = createHostedSiteBannerSignals(visibility.visibility$);
   const hasSettings$ = computed(async (get) => {
     const [details, permissions] = await Promise.all([

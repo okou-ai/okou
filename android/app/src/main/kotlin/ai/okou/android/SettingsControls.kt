@@ -279,6 +279,7 @@ internal fun SettingsPickerRow(
     title: String,
     value: String?,
     leading: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
     enabled: Boolean = true,
     visible: Boolean = true,
     fallbackFocus: FocusRequester? = null,
@@ -289,8 +290,15 @@ internal fun SettingsPickerRow(
         visible = visible,
         fallbackFocus = fallbackFocus,
         content = sheet,
-    ) { modifier, open ->
-        SettingsRow(title, leading, modifier, value, onClick = open, enabled = enabled)
+    ) { triggerModifier, open ->
+        SettingsRow(
+            title,
+            leading,
+            modifier.then(triggerModifier),
+            value,
+            onClick = open,
+            enabled = enabled,
+        )
     }
 }
 
@@ -544,7 +552,7 @@ internal fun OkouConfirmationDialog(
                         ) {
                             ProvideTextStyle(bodyStyle, content)
                         }
-                        WithButtonFocusOutline(LocalActivityStatusColor.current) {
+                        WithButtonFocusOutline(colors.onBackground) {
                             FlowRow(
                                 Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
@@ -644,6 +652,7 @@ internal fun SettingsChoiceRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     leading: @Composable () -> Unit = {},
+    trailing: @Composable (Color) -> Unit = {},
 ) {
     val colors = MaterialTheme.colorScheme
     val foreground = if (selected) colors.onSecondaryContainer else colors.onSurface
@@ -674,6 +683,7 @@ internal fun SettingsChoiceRow(
             color = foreground,
             style = MaterialTheme.typography.bodyLarge,
         )
+        trailing(foreground)
         Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
             if (selected)
                 Icon(

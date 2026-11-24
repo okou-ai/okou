@@ -18,12 +18,11 @@ import {
 import { chatThreadsContract } from "../../contracts/chat-threads";
 import {
   checkGeneratedKotlin,
-  generatedKotlinRelativeDirectory,
   renderKotlinFiles,
+  renderKotlinProductionFiles,
   renderKotlinTestFiles,
   renderKotlinTypes,
 } from "../generate";
-import { renderKotlinRunFailureReasons } from "../run-failure-reasons";
 
 describe("selected Kotlin chat readers", () => {
   it("keeps the committed, compiled readers synchronized with generation", async () => {
@@ -227,16 +226,7 @@ describe("selected Kotlin chat readers", () => {
     const root = await mkdtemp(join(tmpdir(), "kotlin-reader-drift-"));
     try {
       const files = new Map([
-        ...[...renderKotlinFiles()].map(([file, source]) => {
-          return [
-            join(generatedKotlinRelativeDirectory, file),
-            source,
-          ] as const;
-        }),
-        [
-          join(generatedKotlinRelativeDirectory, "KnownRunFailureReason.kt"),
-          renderKotlinRunFailureReasons(),
-        ],
+        ...renderKotlinProductionFiles(),
         ...renderKotlinTestFiles(),
       ]);
       for (const [file, source] of files) {

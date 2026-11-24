@@ -1,3 +1,4 @@
+import { artifactSharingRoutes } from "./routes/artifact-sharing";
 import { larkOfficialReadRoutes } from "./routes/lark-official-read";
 import { larkOfficialEventsRoutes } from "./routes/lark-official-events";
 import { larkOfficialRoutes } from "./routes/lark-official";
@@ -379,6 +380,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...featureGuidesRoutes,
   ...hostRoutes,
   ...artifactShareRoutes,
+  ...artifactSharingRoutes,
   ...artifactReferenceRoutes,
   ...artifactOgRoutes,
   ...artifactDownloadRoutes,

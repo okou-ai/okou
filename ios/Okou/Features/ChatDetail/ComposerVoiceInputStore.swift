@@ -66,6 +66,11 @@ final class ComposerVoiceInputStore {
   private var insertion: ComposerEditor.VoiceInsertion?
   private var generation = UUID()
   private var startingTask: Task<Void, Never>?
+  private var startActivation: AsyncStream<Void>.Continuation?
+  var isWaitingToStartCapture: Bool { phase == .starting && startActivation != nil }
+
+  func resumePendingStart() { startActivation?.yield(()) }
+
   private var quotaTask: Task<Void, Error>?
   private(set) var asVoiceMessage: Bool {
     get { snapshot.asVoiceMessage }
@@ -171,29 +176,42 @@ final class ComposerVoiceInputStore {
     quotaAllowed = false
     error = nil
     microphoneDenied = false
+    let (activations, activation) = AsyncStream<Void>.makeStream(
+      bufferingPolicy: .bufferingNewest(1))
+    startActivation = activation
     let starting = Task {
-      await begin(composer: composer, target: target, owner: owner)
-      if generation == owner { startingTask = nil }
+      await begin(composer: composer, target: target, owner: owner, activations: activations)
+      activation.finish()
+      if generation == owner {
+        startActivation = nil
+        startingTask = nil
+        if phase == .starting { phase = .idle }
+      }
     }
     startingTask = starting
     return starting
   }
 
   private func begin(
-    composer: ComposerDraftStore, target: ComposerEditor.VoiceInsertion, owner: UUID
+    composer: ComposerDraftStore, target: ComposerEditor.VoiceInsertion, owner: UUID,
+    activations: AsyncStream<Void>
   ) async {
-    guard generation == owner, !Task.isCancelled, composer.canEditVoice else {
-      if generation == owner { phase = .idle }
-      return
-    }
+    guard generation == owner, !Task.isCancelled else { return }
     do {
       let asMessage = try await client.recordAsMessage()
-      guard generation == owner, !Task.isCancelled, composer.canEditVoice else {
-        if generation == owner { phase = .idle }
+      guard await canStartCapture(in: composer, activations: activations, owner: owner) else {
         return
       }
       asVoiceMessage = asMessage
       quotaTask = asMessage ? nil : checkQuota()
+      try await capture.requestPermission()
+      // Allow can arrive before the scene becomes active again. Keep the same tap,
+      // but wait to open the microphone until the composer is back in the foreground.
+      guard await canStartCapture(in: composer, activations: activations, owner: owner) else {
+        if generation == owner { quotaTask?.cancel() }
+        return
+      }
+      startActivation = nil
       let stream = try await capture.start()
       guard generation == owner, composer.canEditVoice else {
         quotaTask?.cancel()
@@ -249,6 +267,16 @@ final class ComposerVoiceInputStore {
       phase = .saved
       reportQuotaFailure(error)
     }
+  }
+
+  private func canStartCapture(
+    in composer: ComposerDraftStore, activations: AsyncStream<Void>, owner: UUID
+  ) async -> Bool {
+    var iterator = activations.makeAsyncIterator()
+    while generation == owner, !Task.isCancelled, !composer.isForeground {
+      guard await iterator.next() != nil else { return false }
+    }
+    return generation == owner && !Task.isCancelled && composer.canEditVoice
   }
 
   /// Returns the original stream Task to the draft owner for cancellation and draining.
@@ -418,6 +446,7 @@ final class ComposerVoiceInputStore {
 
   func discard() async {
     startRequested = false
+    startActivation = nil
     generation = UUID()
     let owner = generation
     phase = .processing
@@ -454,6 +483,7 @@ final class ComposerVoiceInputStore {
   @discardableResult
   func suspend() -> Task<Void, Never> {
     startRequested = false
+    startActivation = nil
     generation = UUID()
     let owner = generation
     capture.stop()
