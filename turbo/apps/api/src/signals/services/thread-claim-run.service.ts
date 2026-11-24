@@ -734,23 +734,6 @@ function claimCommitInput(input: RunPlan): ThreadRunContext["input"] {
   };
 }
 
-/**
- * Generation writes a title only over NULL title and renamed_at, and a rename
- * sets both, so a titled or renamed claim snapshot never needs another read.
- */
-function threadTitled(
-  thread:
-    | { readonly title: string | null; readonly renamedAt: Date | null }
-    | null
-    | undefined,
-) {
-  return (
-    thread !== null &&
-    thread !== undefined &&
-    (thread.title !== null || thread.renamedAt !== null)
-  );
-}
-
 function claimLaunchRecord(
   record: ClaimLaunchRecord,
   integrationContext: string | undefined,
@@ -1301,7 +1284,7 @@ export function createThreadClaimRunObjects(
             triggerSource,
             discordDelivery: delivery.discordDelivery,
             wechatDelivery: delivery.wechatDelivery,
-            titled: threadTitled((await get(pickedEvent$))?.thread),
+            titled: (await get(pickedEvent$))?.thread.titled ?? false,
           },
         },
       };
@@ -1744,18 +1727,14 @@ export function createThreadClaimRunObjects(
           : ("pi" as const),
     };
   });
-  const runRuntimeInputs$ = computed(async (get) => {
-    const [route, vars, featureSwitchContext, connector] = await Promise.all([
+  const runModelInputs$ = computed(async (get) => {
+    const [route, vars, featureSwitchContext] = await Promise.all([
       get(authorizedRunRoute$),
       get(bootstrap.runVariables$),
       get(bootstrap.featureSwitches$),
-      get(connectorAdmission$),
     ]);
     if (isRouteError(route)) {
       return route;
-    }
-    if (isRouteError(connector)) {
-      return connector;
     }
     const providerPermissions = safeSync(() => {
       return modelProviderPermissionManifest(route.modelProvider, vars);
@@ -1770,15 +1749,7 @@ export function createThreadClaimRunObjects(
       ...route,
       vars,
       featureSwitchContext,
-      connector,
       providerPermissions: providerPermissions.ok,
-      usagePermissions: {
-        firewalls: [
-          ...(providerPermissions.ok?.firewalls ?? []),
-          ...(connector.permissions?.firewalls ?? []),
-        ],
-        billableFirewalls: connector.permissions?.billableFirewalls ?? [],
-      },
     };
   });
   const runIntegration$ = computed(async (get) => {
@@ -1822,30 +1793,51 @@ export function createThreadClaimRunObjects(
         return input;
       }
       const { args, officialWorkflow: officialWorkflowRun, runPrompt } = input;
-      const [runtime, selectedImageModel] = await Promise.all([
-        get(runRuntimeInputs$),
-        get(bootstrap.selectedImageModel$),
-      ]);
+      const usage = (async () => {
+        const runtime = await get(runModelInputs$);
+        if (isRouteError(runtime)) {
+          return runtime;
+        }
+        const [catalog, modelPricing] = await Promise.all([
+          get(claimCatalog$),
+          get(bootstrap.modelPricing$),
+        ]);
+        const usageError = validateModelUsage({
+          catalog,
+          modelProvider: runtime.modelProvider,
+          providerPermissions: runtime.providerPermissions,
+          routePricing: runRoutePricingFromSnapshot(
+            {
+              modelProvider: runtime.modelProvider,
+              serviceTier: args.codexServiceTier,
+            },
+            modelPricing,
+          ),
+        });
+        return usageError === null ? runtime : providerUnavailable(usageError);
+      })();
+      const [route, connector, runtimeResult, selectedImageModel] =
+        await Promise.all([
+          get(authorizedRunRoute$),
+          get(connectorAdmission$),
+          settle(usage),
+          get(bootstrap.selectedImageModel$),
+        ]);
+      // Preserve the existing rejection order when both branches reject admission.
+      if (isRouteError(route)) {
+        return route;
+      }
+      if (isRouteError(connector)) {
+        return connector;
+      }
+      if (!runtimeResult.ok) {
+        throw runtimeResult.error;
+      }
+      const runtime = runtimeResult.value;
       if (isRouteError(runtime)) {
         return runtime;
       }
       const { vars, featureSwitchContext, modelProvider } = runtime;
-      const catalog = await get(claimCatalog$);
-      const usageError = validateModelUsage({
-        catalog,
-        modelProvider,
-        permissionManifest: runtime.usagePermissions,
-        routePricing: runRoutePricingFromSnapshot(
-          {
-            modelProvider,
-            serviceTier: args.codexServiceTier,
-          },
-          await get(bootstrap.modelPricing$),
-        ),
-      });
-      if (usageError !== null) {
-        return providerUnavailable(usageError);
-      }
       const tierError = checkRunServiceTier(
         args.codexServiceTier,
         featureSwitchContext,
@@ -1891,7 +1883,7 @@ export function createThreadClaimRunObjects(
             captureNetworkBodies: args.captureNetworkBodies === true,
             modelProvider,
             modelProviderPermissions: runtime.providerPermissions,
-            connectorEnvironment: runtime.connector.environment,
+            connectorEnvironment: connector.environment,
             userTimezone: runPrompt.userTimezone,
           },
           apiStartTime: await get(runnerApiStartTime$),

@@ -138,6 +138,19 @@ internal constructor(
         DefaultModelSettings(viewModelScope, service, identity, defaultModelStore, authorized) {
             reportSessionFailure(it)
         }
+    internal val builtInTools =
+        service.builtInTools?.let {
+            BuiltInToolsSettings(
+                viewModelScope,
+                it,
+                identity,
+                cache,
+                authorized,
+                ::reportSessionFailure,
+            ) {
+                messages.trySend(it)
+            }
+        }
 
     private var visible: SettingsDestination? = null
     private var restore: Job? = null
@@ -155,6 +168,7 @@ internal constructor(
                 proactive?.online(online)
                 val changed = mutable.value.offline == online
                 mutable.update { it.copy(offline = !online) }
+                if (changed && online) builtInTools?.refresh()
                 if (changed) {
                     if (online) refresh()
                     else {

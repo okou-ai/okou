@@ -1,6 +1,6 @@
 //! Bounded command capture and process-session retirement.
 
-use crate::process_session::CommandSession;
+use crate::process_session::{CommandSession, read_member_state};
 use std::io;
 use std::process::{Output, Stdio};
 use std::time::Duration;
@@ -122,61 +122,12 @@ async fn terminate_command(
     child: &mut tokio::process::Child,
     session: &CommandSession,
 ) -> Result<std::process::ExitStatus, String> {
-    let direct_kill_error = child.start_kill().err();
-    let deadline = tokio::time::Instant::now() + COMMAND_CLEANUP_TIMEOUT;
-    let session_error = session
-        .kill_members(deadline, COMMAND_CLEANUP_TIMEOUT)
+    session
+        .retire(
+            child,
+            COMMAND_CLEANUP_TIMEOUT,
+            "wait after kill",
+            read_member_state,
+        )
         .await
-        .err();
-    let wait_result = wait_for_child_until(child, deadline).await;
-
-    match (session_error, wait_result) {
-        (None, Ok(status)) => Ok(status),
-        (Some(session_error), Ok(status)) => Err(command_cleanup_error(
-            direct_kill_error,
-            Some(session_error),
-            format!("killed child status: {status}"),
-        )),
-        (session_error, Err(wait_error)) => Err(command_cleanup_error(
-            direct_kill_error,
-            session_error,
-            wait_error,
-        )),
-    }
-}
-
-async fn wait_for_child_until(
-    child: &mut tokio::process::Child,
-    deadline: tokio::time::Instant,
-) -> Result<std::process::ExitStatus, String> {
-    match child.try_wait() {
-        Ok(Some(status)) => return Ok(status),
-        Ok(None) => {}
-        Err(error) => return Err(format!("wait after kill failed: {error}")),
-    }
-
-    match tokio::time::timeout_at(deadline, child.wait()).await {
-        Ok(Ok(status)) => Ok(status),
-        Ok(Err(error)) => Err(format!("wait after kill failed: {error}")),
-        Err(_) => Err(format!(
-            "wait after kill timed out after {}ms",
-            COMMAND_CLEANUP_TIMEOUT.as_millis()
-        )),
-    }
-}
-
-fn command_cleanup_error(
-    direct_kill_error: Option<io::Error>,
-    session_error: Option<String>,
-    wait_result: String,
-) -> String {
-    let mut errors = Vec::new();
-    if let Some(direct_kill_error) = direct_kill_error {
-        errors.push(format!("start kill failed: {direct_kill_error}"));
-    }
-    if let Some(session_error) = session_error {
-        errors.push(format!("session cleanup failed: {session_error}"));
-    }
-    errors.push(wait_result);
-    errors.join("; ")
 }

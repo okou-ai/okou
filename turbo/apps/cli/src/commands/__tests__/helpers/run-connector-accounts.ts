@@ -71,10 +71,10 @@ type RunConnectorAccountInventory = zInfer<
 export function stubRunConnectorAccountInventory(
   inventory: Partial<RunConnectorAccountInventory>,
   origin = "http://localhost:3000",
-  onRequest?: () => void,
+  onRequest?: (request: Request) => void,
 ) {
-  return http.get(`${origin}/api/run/connector-accounts`, () => {
-    onRequest?.();
+  return http.get(`${origin}/api/run/connector-accounts`, ({ request }) => {
+    onRequest?.(request);
     return HttpResponse.json({
       chatThreadId: "22222222-2222-4222-8222-222222222222",
       accounts: [],

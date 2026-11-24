@@ -435,6 +435,7 @@ fn storage_inputs(
         inputs.push(PreparedStorageInput::Json(manifest_json(&manifest)?));
     }
     let mut batch = empty_storage_manifest();
+    let mut decoded_batches = Vec::new();
     let empty_bytes = manifest_json_size(&batch)?;
     let mut batch_bytes = empty_bytes;
     let decoded = decoded_storages
@@ -458,7 +459,7 @@ fn storage_inputs(
         let entry_bytes = single_bytes - empty_bytes;
         let comma_bytes = usize::from(manifest_entry_count(&batch) > 0);
         if batch_bytes + comma_bytes + entry_bytes > storage_files::MAX_MANIFEST_BYTES {
-            inputs.push(prepare_decoded_batch(&batch, &files_by_mount)?);
+            decoded_batches.push(batch);
             batch = empty_storage_manifest();
             batch_bytes = empty_bytes;
         }
@@ -467,6 +468,9 @@ fn storage_inputs(
         batch.artifacts.append(&mut single.artifacts);
     }
     if manifest_entry_count(&batch) > 0 {
+        decoded_batches.push(batch);
+    }
+    for batch in pack_decoded_batches(decoded_batches, empty_bytes)? {
         inputs.push(prepare_decoded_batch(&batch, &files_by_mount)?);
     }
     Ok(inputs)
@@ -490,6 +494,64 @@ impl DecodedManifestEntry {
             },
         }
     }
+}
+
+fn pack_decoded_batches(
+    mut batches: Vec<Manifest>,
+    empty_bytes: usize,
+) -> RunnerResult<Vec<Manifest>> {
+    // Packing must never enlarge an individual batch that already fits the cap.
+    if batches.len() < 2
+        || batches
+            .iter_mut()
+            .flat_map(decoded_archive_urls)
+            .any(|url| {
+                url.as_ref()
+                    .is_none_or(|url| url.len() < storage_files::PACKED_BATCH_START_URL.len())
+            })
+    {
+        return Ok(batches);
+    }
+
+    let mut packed = Vec::new();
+    let mut combined = empty_storage_manifest();
+    let mut combined_bytes = empty_bytes;
+    for mut batch in batches {
+        let mut urls = decoded_archive_urls(&mut batch);
+        if let Some(first) = urls.next() {
+            *first = Some(storage_files::PACKED_BATCH_START_URL.into());
+        }
+        for url in urls {
+            *url = Some(storage_files::PACKED_BATCH_FILE_URL.into());
+        }
+        let entry_bytes = manifest_json_size(&batch)? - empty_bytes;
+        let comma_bytes = usize::from(manifest_entry_count(&combined) > 0);
+        if combined_bytes + comma_bytes + entry_bytes > storage_files::MAX_MANIFEST_BYTES {
+            packed.push(combined);
+            combined = empty_storage_manifest();
+            combined_bytes = empty_bytes;
+        }
+        // Each original batch stays whole. Its directory preparation must
+        // follow the previous batch's writes, since guest paths can be aliases.
+        combined_bytes += usize::from(manifest_entry_count(&combined) > 0) + entry_bytes;
+        combined.storages.append(&mut batch.storages);
+        combined.artifacts.append(&mut batch.artifacts);
+    }
+    packed.push(combined);
+    Ok(packed)
+}
+
+fn decoded_archive_urls(manifest: &mut Manifest) -> impl Iterator<Item = &mut Option<String>> {
+    manifest
+        .storages
+        .iter_mut()
+        .map(|entry| &mut entry.archive_url)
+        .chain(
+            manifest
+                .artifacts
+                .iter_mut()
+                .map(|entry| &mut entry.archive_url),
+        )
 }
 
 fn manifest_entry_count(manifest: &Manifest) -> usize {

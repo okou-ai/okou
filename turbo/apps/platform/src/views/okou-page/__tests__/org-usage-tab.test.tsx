@@ -273,26 +273,33 @@ test("Move from workspace credit balance to usage records", async () => {
   });
 });
 
-test("Buy credits from the workspace balance", async () => {
-  mockUsageStory();
-  await openCreditBalance();
+test.each(["pro", "limited-free-1"])(
+  "Buy credits from the %s workspace balance",
+  async (tier) => {
+    mockUsageStory();
+    mockBillingStatus({
+      tier,
+      ...billingPlanCapabilities(tier),
+    });
+    await openCreditBalance();
 
-  await waitFor(() => {
-    expect(
-      screen.getByTestId("credit-balance-buy-credits"),
-    ).toBeInTheDocument();
-  });
-  click(screen.getByTestId("credit-balance-buy-credits"));
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("credit-balance-buy-credits"),
+      ).toBeInTheDocument();
+    });
+    click(screen.getByTestId("credit-balance-buy-credits"));
 
-  await waitFor(() => {
-    expect(
-      screen.getByRole("heading", { name: "Billing" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "Buy credits" }),
-    ).toBeInTheDocument();
-  });
-});
+    await waitFor(() => {
+      expect(
+        screen.getByRole("heading", { name: "Billing" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { name: "Buy credits" }),
+      ).toBeInTheDocument();
+    });
+  },
+);
 
 test("Hide Buy credits from an ineligible workspace", async () => {
   mockUsageStory();

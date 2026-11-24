@@ -268,9 +268,9 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.HostedSiteEmailSharing]: {
     maintainer: "yuma@okou.ai",
-    displayName: "Website email sharing",
+    displayName: "Artifact email sharing",
     description:
-      "Share websites with existing accounts or invite verified email recipients.",
+      "Share websites and files with existing accounts or invite verified email recipients.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

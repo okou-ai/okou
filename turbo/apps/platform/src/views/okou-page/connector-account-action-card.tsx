@@ -26,8 +26,16 @@ export function ConnectorAccountActionCard({
 }) {
   // Keep the frame mounted while async states replace their content. WebKit can
   // clamp the chat's scroll position if the card collapses during a DOM commit.
+  // Member approvals reserve space for wrapped consent copy and an error notice.
   return (
-    <ChatCard className="h-[136px] w-full @[640px]:h-[88px]">
+    <ChatCard
+      className={cn(
+        "w-full",
+        signals.memberApprovalRequestId
+          ? "h-[184px] @[640px]:h-[124px]"
+          : "h-[136px] @[640px]:h-[88px]",
+      )}
+    >
       <ConnectorAccountActionCardContent signals={signals} />
     </ChatCard>
   );
@@ -246,6 +254,13 @@ function ReadyConnectorAccountActionCard({
               .filter(Boolean)
               .join(" · ")}
           </div>
+          {signals.memberApprovalRequestId && !selected && (
+            <p className="mt-1 text-xs leading-4 text-muted-foreground">
+              {t(($) => {
+                return $.chat.connectorAccountSwitch.memberScope;
+              })}
+            </p>
+          )}
           <ConnectorAccountActionNotice
             reconnectRequired={
               status.account.connectionStatus === "reconnect-required"
@@ -269,7 +284,9 @@ function ReadyConnectorAccountActionCard({
                 return $.chat.connectorAccountSwitch.switching;
               })
             : t(($) => {
-                return $.chat.connectorAccountSwitch.switch;
+                return signals.memberApprovalRequestId
+                  ? $.chat.connectorAccountSwitch.allowForHour
+                  : $.chat.connectorAccountSwitch.switch;
               })}
         </Button>
       )}

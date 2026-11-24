@@ -109,6 +109,9 @@ internal fun WorkspaceSettingsFeedback(
     val emailFailed by rememberUpdatedState(stringResource(R.string.settings_email_save_failed))
     val emailUnconfirmed by
         rememberUpdatedState(stringResource(R.string.settings_email_save_unconfirmed))
+    val toolFailed by
+        rememberUpdatedState(stringResource(R.string.settings_preferences_save_rolled_back))
+    val toolUnconfirmed by rememberUpdatedState(stringResource(R.string.settings_tool_save_failed))
     LaunchedEffect(model, snackbar, lifecycle, destination, inOverlay) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             model.notices.collectLatest { notice ->
@@ -117,6 +120,8 @@ internal fun WorkspaceSettingsFeedback(
                         SettingsNotice.ModelAccountSwitchFailed -> switchFailed
                         SettingsNotice.EmailSubscriptionFailed -> emailFailed
                         SettingsNotice.EmailSubscriptionUnconfirmed -> emailUnconfirmed
+                        SettingsNotice.ToolSaveFailed -> toolFailed
+                        SettingsNotice.ToolSaveUnconfirmed -> toolUnconfirmed
                     }
                 snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
             }

@@ -19,7 +19,7 @@ final class ConversationHistoryFixture: Sendable {
     threadSnapshot: ChatHTTPFixture.Handler? = nil,
     beforeEventRows: (@Sendable (URLRequest) async throws -> Void)? = nil,
     eventRowsStatus: @escaping @Sendable () -> Int = { 200 },
-    detail: ChatHTTPFixture.Handler? = nil, updateDetail: ChatHTTPFixture.Handler? = nil,
+    detail: ChatHTTPFixture.Handler? = nil,
     additional: ChatHTTPFixture.Handler? = nil,
     indicators: ChatHTTPFixture.Handler? = nil
   ) {
@@ -27,7 +27,7 @@ final class ConversationHistoryFixture: Sendable {
       rows: (0..<count).map { Self.row($0 + 1) }, beforeRequest: beforeRequest, snapshot: snapshot,
       threadSnapshot: threadSnapshot,
       beforeEventRows: beforeEventRows, eventRowsStatus: eventRowsStatus,
-      detail: detail, updateDetail: updateDetail, additional: additional,
+      detail: detail, additional: additional,
       indicators: indicators)
   }
 
@@ -39,7 +39,7 @@ final class ConversationHistoryFixture: Sendable {
     threadSnapshot: ChatHTTPFixture.Handler? = nil,
     beforeEventRows: (@Sendable (URLRequest) async throws -> Void)? = nil,
     eventRowsStatus: @escaping @Sendable () -> Int = { 200 },
-    detail: ChatHTTPFixture.Handler? = nil, updateDetail: ChatHTTPFixture.Handler? = nil,
+    detail: ChatHTTPFixture.Handler? = nil,
     additional: ChatHTTPFixture.Handler? = nil,
     indicators: ChatHTTPFixture.Handler? = nil
   ) {
@@ -51,9 +51,7 @@ final class ConversationHistoryFixture: Sendable {
     http = ChatHTTPFixture { request in
       let requestPath = request.url?.path ?? ""
       if let method = methods[requestPath], request.httpMethod != method {
-        guard requestPath == path, request.httpMethod == "PATCH", updateDetail != nil else {
-          throw URLError(.unsupportedURL)
-        }
+        throw URLError(.unsupportedURL)
       }
       let artifactPath =
         requestPath.hasPrefix("/api/artifact-references/") || requestPath == path + "/artifacts"
@@ -95,9 +93,6 @@ final class ConversationHistoryFixture: Sendable {
         return try await Self.eventRowsResponse(
           request, rows: rows, beforeEventRows: beforeEventRows, eventRowsStatus: eventRowsStatus)
       case path:
-        if request.httpMethod == "PATCH", let updateDetail {
-          return try await updateDetail(request)
-        }
         if let detail { return try await detail(request) }
         return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
       case path + "/mark-read":

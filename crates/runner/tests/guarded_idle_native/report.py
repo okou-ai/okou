@@ -200,6 +200,19 @@ def validate_witness_clock_order(events, message):
             raise ValueError(message)
 
 
+def validate_terminal_witness_clock_order(
+        terminal, witnesses, *, tail_start_index, tail_end_index, message):
+    """Check pre-exit, required-tail, and post-tail witnesses against terminal receipts."""
+    validate_witness_clock_order(
+        [
+            terminal[1], *witnesses[:tail_start_index],
+            terminal[2], terminal[3], *witnesses[tail_start_index:tail_end_index],
+            terminal[4], *witnesses[tail_end_index:], terminal[5],
+        ],
+        message,
+    )
+
+
 def validate_residency(sample):
     age = sample.get("sample_age_ns")
     if type(age) is not int or age < 0:

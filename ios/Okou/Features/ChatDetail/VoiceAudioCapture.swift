@@ -10,6 +10,7 @@ struct VoiceAudioChunk: Sendable {
 
 @MainActor
 protocol VoiceAudioCapture: AnyObject {
+  func requestPermission() async throws
   func start() async throws -> AsyncThrowingStream<VoiceAudioChunk, Error>
   func stop()
 }
@@ -22,10 +23,13 @@ final class NativeVoiceAudioCapture: VoiceAudioCapture {
   private var continuation: AsyncThrowingStream<VoiceAudioChunk, Error>.Continuation?
   private var observers: [NSObjectProtocol] = []
 
-  func start() async throws -> AsyncThrowingStream<VoiceAudioChunk, Error> {
+  func requestPermission() async throws {
     guard await AVAudioApplication.requestRecordPermission() else {
       throw CaptureError.permissionDenied
     }
+  }
+
+  func start() async throws -> AsyncThrowingStream<VoiceAudioChunk, Error> {
     try Task.checkCancellation()
     let owner = UUID()
     try await AppAudioSession.shared.acquire(.recording, owner: owner)

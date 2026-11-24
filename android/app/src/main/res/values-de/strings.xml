@@ -31,6 +31,8 @@
     <string name="auth_signing_out">Abmeldung läuft…</string>
     <string name="auth_workspace">Aktueller Arbeitsbereich</string>
     <string name="auth_switch_workspace">Arbeitsbereich wechseln</string>
+    <string name="auth_switch_workspace_pending">Arbeitsbereich wird gewechselt</string>
+    <string name="auth_switch_workspace_failed">Zu diesem Arbeitsbereich konnte nicht gewechselt werden.</string>
     <string name="auth_browser_unavailable">Installiere einen Browser, um den Arbeitsbereich einzurichten.</string>
     <string name="preference_color_theme">Farbthema</string>
     <string name="preference_language">Sprache</string>

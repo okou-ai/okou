@@ -204,7 +204,7 @@ function failedRunEvents(
 interface StructuredFailureExpectation {
   readonly title: string;
   readonly description?: string;
-  readonly action?: string;
+  readonly action?: string | readonly string[];
   readonly picker?: boolean;
 }
 
@@ -228,8 +228,8 @@ const STRUCTURED_FAILURE_EXPECTATIONS = {
     action: "Try again",
   },
   insufficient_credits: {
-    title: "Upgrade to Pro to run",
-    action: "Upgrade to Pro",
+    title: "You're out of credits",
+    action: ["$100", "$200", "$300", "Custom", "Buy"],
   },
   provider_insufficient_credits: {
     title: "Your subscription account needs more credit",
@@ -386,8 +386,12 @@ test.each(STRUCTURED_FAILURE_CASES)(
     ].map((control) => {
       return control.textContent?.replace(/\s+/gu, " ").trim();
     });
+    const expectedActionLabels =
+      typeof expected.action === "string"
+        ? [expected.action]
+        : (expected.action ?? []);
     expect(actionLabels).toStrictEqual([
-      ...(expected.action === undefined ? [] : [expected.action]),
+      ...expectedActionLabels,
       ...(failureReason === "usage_limit" ? ["View details"] : []),
     ]);
     expect(within(card).queryByRole("combobox") !== null).toBe(

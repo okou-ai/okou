@@ -13,6 +13,8 @@ type PreconnectionOutcome =
   "used" | "failed" | "expired" | "cancelled" | "instance_cap";
 
 interface TransportOptions {
+  readonly request?: RunnerDispatchTransport["request"];
+  readonly poolStats?: RunnerDispatchTransport["poolStats"];
   readonly observe: (
     runId: string,
     outcome: PreconnectionOutcome,
@@ -29,11 +31,15 @@ type TakeReservation = (
 
 export function createRunnerDispatchTransport({
   observe,
+  request = fetch,
+  poolStats,
 }: TransportOptions): RunnerDispatchTransport {
   const reservations = new Map<string, TakeReservation>();
   const reservedOrigins = new Set<string>();
 
   return {
+    request,
+    poolStats,
     reserve(runId, url, start, signal, encoding = "identity") {
       const origin = new URL(url).origin;
       if (signal.aborted || reservedOrigins.has(origin)) {

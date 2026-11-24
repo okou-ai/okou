@@ -1,12 +1,16 @@
 package ai.okou.android.connectors
 
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.generated.ConnectorAccountPolicyRequestPolicy
 import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItemGrantKind
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import java.util.Locale
+import kotlin.math.roundToInt
+import kotlin.time.Clock
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.DurationUnit
 import kotlin.time.TimeMark
 import kotlin.time.TimeSource
 import kotlinx.coroutines.CancellationException
@@ -506,6 +510,40 @@ class ConnectorModel(
         }
     }
 
+    internal fun setMemberPolicy(id: String, choice: ConnectorAccountPolicyRequestPolicy) {
+        val target = currentAccount(id) ?: return
+        val previous =
+            mutableState.value.accountsFor(target.slug).find { it.id == id }?.policy ?: return
+        val requestedAt = Clock.System.now()
+        val durationHours =
+            when (choice) {
+                ConnectorAccountPolicyRequestPolicy.DENY,
+                ConnectorAccountPolicyRequestPolicy.ALLOW_ALWAYS -> null
+                ConnectorAccountPolicyRequestPolicy.ALLOW_1H -> 1
+                ConnectorAccountPolicyRequestPolicy.ALLOW_24H -> 24
+                ConnectorAccountPolicyRequestPolicy.ALLOW_7D -> 168
+            }
+        val shouldAllow = choice != ConnectorAccountPolicyRequestPolicy.DENY
+        change(
+            PendingChange(target, null) { account ->
+                val saved = account?.policy ?: return@PendingChange false
+                val expiry = saved.expiresAt
+                if (saved.allowed != shouldAllow) return@PendingChange false
+                if (durationHours == null) {
+                    expiry == null
+                } else {
+                    expiry != null &&
+                        expiry != previous.expiresAt &&
+                        (expiry - requestedAt).toDouble(DurationUnit.HOURS).roundToInt() ==
+                            durationHours
+                }
+            },
+        ) {
+            val saved = service.setAccountPolicy(target.slug, id, choice)
+            replaceAccount(target, id) { it.copy(policy = saved) }
+        }
+    }
+
     internal fun disconnect(id: String) {
         val target = currentAccount(id) ?: return
         val impact = mutableState.value.impact ?: return
@@ -672,6 +710,7 @@ class ConnectorModel(
                 return@launch
             }
             var interval = step.interval
+            var outcomeUncertain = false
             while (!deadline.hasPassedNow()) {
                 delay(minOf(interval.coerceAtLeast(1.seconds), -deadline.elapsedNow()))
                 if (deadline.hasPassedNow()) break
@@ -687,16 +726,7 @@ class ConnectorModel(
                             return@launch
                         }
                         is ConnectorDeviceResult.Terminal -> {
-                            val problem =
-                                when (result) {
-                                    ConnectorDeviceResult.Terminal.Denied ->
-                                        ConnectorProblem.DeviceAuthorizationDenied
-                                    ConnectorDeviceResult.Terminal.Expired ->
-                                        ConnectorProblem.DeviceCodeExpired
-                                    ConnectorDeviceResult.Terminal.Failed ->
-                                        ConnectorProblem.DeviceAuthorizationFailed
-                                }
-                            endDeviceAuthorization(step, problem)
+                            endDeviceAuthorization(step, result.problem())
                             return@launch
                         }
                     }
@@ -704,18 +734,34 @@ class ConnectorModel(
                     if (error is CancellationException) throw error
                     reportSessionFailure(error)
                     if (!error.hasUncertainResponse()) {
+                        if (outcomeUncertain) break
                         endDeviceAuthorization(step, ConnectorProblem.DeviceAuthorizationFailed)
                         return@launch
                     }
+                    outcomeUncertain = outcomeUncertain || !error.connectionFailed()
                     interval = maxOf(interval, 5.seconds)
                 }
             }
-            endDeviceAuthorization(step, ConnectorProblem.DeviceCodeExpired)
+            if (outcomeUncertain && mutableState.value.action?.authorization == step) {
+                authorizationDeadline = null
+                updateAction {
+                    it.copy(
+                        authorization = ConnectorAuthorization.DeviceVerification(step),
+                        browserOpened = false,
+                        problem =
+                            if (mutableState.value.offline) ConnectorProblem.VerificationNetwork
+                            else ConnectorProblem.VerificationPending,
+                    )
+                }
+                checkAuthorization()
+            } else {
+                endDeviceAuthorization(step, ConnectorProblem.DeviceCodeExpired)
+            }
         }
     }
 
     private fun endDeviceAuthorization(
-        step: ConnectorAuthorization.Device,
+        step: ConnectorAuthorization,
         problem: ConnectorProblem,
     ) {
         if (mutableState.value.action?.authorization != step) return
@@ -747,6 +793,35 @@ class ConnectorModel(
         when (val step = action.authorization) {
             is ConnectorAuthorization.Receipt ->
                 runAction(action) { finishAuthorization(action.target, step.connectionId) }
+            is ConnectorAuthorization.DeviceVerification -> {
+                if (mutableState.value.offline) return
+                runAction(action) {
+                    val result =
+                        try {
+                            service.pollDevice(action.target.slug, step.attempt)
+                        } catch (error: Exception) {
+                            if (error is CancellationException) throw error
+                            reportSessionFailure(error)
+                            updateAction {
+                                it.copy(
+                                    problem =
+                                        if (error is ApiFailure.Network)
+                                            ConnectorProblem.VerificationNetwork
+                                        else ConnectorProblem.VerificationPending,
+                                )
+                            }
+                            return@runAction
+                        }
+                    when (result) {
+                        is ConnectorDeviceResult.Waiting ->
+                            updateAction { it.copy(problem = ConnectorProblem.VerificationPending) }
+                        is ConnectorDeviceResult.Complete ->
+                            finishAuthorization(action.target, result.connectionId)
+                        is ConnectorDeviceResult.Terminal ->
+                            endDeviceAuthorization(step, result.problem())
+                    }
+                }
+            }
             is ConnectorAuthorization.Browser -> {
                 if (!action.browserOpened) return
                 runAction(action) {
@@ -1066,6 +1141,13 @@ private fun <K, V> LinkedHashMap<K, V>.rememberRead(key: K, value: V) {
     this[key] = value
     if (size > RECENT_READ_LIMIT) remove(keys.first())
 }
+
+private fun ConnectorDeviceResult.Terminal.problem() =
+    when (this) {
+        ConnectorDeviceResult.Terminal.Denied -> ConnectorProblem.DeviceAuthorizationDenied
+        ConnectorDeviceResult.Terminal.Expired -> ConnectorProblem.DeviceCodeExpired
+        ConnectorDeviceResult.Terminal.Failed -> ConnectorProblem.DeviceAuthorizationFailed
+    }
 
 private val ConnectorAction.awaitingBrowserReceipt: Boolean
     get() = browserOpened && authorization is ConnectorAuthorization.Browser

@@ -54,8 +54,7 @@ final class DraftServer: Sendable {
         )
       }
       let draftPaths = [
-        "/api/chat-drafts/composer", "/api/chat-threads/\(draftThreadID)/draft",
-        "/api/chat-threads/\(draftThreadID)"
+        "/api/chat-drafts/composer", "/api/chat-threads/\(draftThreadID)/composer-draft"
       ]
       guard draftPaths.contains(path) else { throw URLError(.unsupportedURL) }
       if request.httpMethod == "PATCH" {

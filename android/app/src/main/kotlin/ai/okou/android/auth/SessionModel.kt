@@ -123,7 +123,10 @@ data class SessionUiState(
     val entryReadFailed: Boolean = false,
     // An in-place check can retire its work while the entry page stays open.
     val entryPageGeneration: Long = generation,
+    val workspaceSwitch: WorkspaceSwitch? = null,
 )
+
+data class WorkspaceSwitch(val target: String, val failed: Boolean = false)
 
 enum class SessionEntryFailure {
     Check,
@@ -177,6 +180,7 @@ class SessionModel(
     private var requiredUpdate = false
     private var workspaceSetupReturn: Long? = null
     private var entrySelection: EntrySelection? = null
+    private var workspaceSwitchJob: Job? = null
     private val foreground = MutableStateFlow(false)
     private val connected = MutableStateFlow(true)
     private val canRetryPreparation =
@@ -210,6 +214,8 @@ class SessionModel(
         generation++
         workspaceSetupReturn = null
         entrySelection = null
+        workspaceSwitchJob?.cancel()
+        workspaceSwitchJob = null
         operation?.cancel()
         operation = null
         membershipLoad?.cancel()
@@ -918,6 +924,25 @@ class SessionModel(
         val previous = mutable.value
         if (previous.working || previous.memberships.none { it.id == id }) return
         if (mutable.value.ready?.identity?.workspaceId == id) return
+        if (previous.ready != null) {
+            if (previous.workspaceSwitch?.failed == false) return
+            mutable.value = previous.copy(workspaceSwitch = WorkspaceSwitch(id))
+            workspaceSwitchJob = viewModelScope.launch {
+                try {
+                    authentication.selectWorkspace(session, id)
+                    currentCoroutineContext().ensureActive()
+                    reconcile(authentication.state.value)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    if (acceptsAction(expectedGeneration)) {
+                        mutable.value =
+                            mutable.value.copy(workspaceSwitch = WorkspaceSwitch(id, failed = true))
+                    }
+                }
+            }
+            return
+        }
         retire()
         val ticket = generation
         val selection =

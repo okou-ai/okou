@@ -23,7 +23,7 @@ export const ORG_PLAN_ENTITLEMENT_TIER_VALUES: Readonly<
     planRank: 0,
     baseConcurrencyLimit: 2,
     canBuyConcurrency: false,
-    canBuyCredits: false,
+    canBuyCredits: true,
     autoRechargeAllowed: false,
     restrictedBuiltInModels: true,
     workflowWebhookAutomationAllowed: false,

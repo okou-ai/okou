@@ -632,6 +632,75 @@ internal class ConnectorAccountModelTest : ConnectorModelTestFixture() {
     }
 
     @Test
+    fun lostDeviceCompletionIsReadBackOnTheOriginalSessionAfterExpiry() =
+        withLostPollAtDeadline("complete") { fixture, model ->
+            val result = model.await { it.action?.result == ConnectorResult.Authorized }
+            assertEquals(CONNECTOR_DEVICE_ACCOUNT, result.action?.target?.connectionId)
+            assertEquals(ConnectorAccountStatus.Connected, result.accounts.data?.single()?.status)
+            assertEquals(1, fixture.deviceStartRequests.get())
+            assertEquals(2, fixture.devicePollRequests.get())
+        }
+
+    @Test
+    fun unconfirmedDeviceCheckRetainsTheAttemptUntilAnExplicitTerminalResult() =
+        withLostPollAtDeadline("pending") { fixture, model ->
+            val verifying = model.await {
+                it.action?.authorization is ConnectorAuthorization.DeviceVerification &&
+                    it.action.problem == ConnectorProblem.VerificationPending &&
+                    !it.action.busy &&
+                    fixture.devicePollRequests.get() == 2
+            }
+            assertFalse(verifying.canChangeAccounts)
+            model.openBrowser { error("An expired device code must not reopen the provider") }
+            model.startAuthorization(null, "device-auth", emptyMap())
+            assertEquals(1, fixture.deviceStartRequests.get())
+            fixture.devicePollStatus = "denied"
+            model.checkAuthorization()
+            val ended = model.await {
+                it.action?.problem == ConnectorProblem.DeviceAuthorizationDenied && !it.action.busy
+            }
+            assertNull(ended.action?.authorization)
+            assertTrue(ended.canChangeAccounts)
+            assertEquals(3, fixture.devicePollRequests.get())
+        }
+
+    private fun withLostPollAtDeadline(
+        status: String,
+        verify: suspend (ConnectorApiFixture, ConnectorModel) -> Unit,
+    ) {
+        val clock = TestTimeSource()
+        val reply = CountDownLatch(1)
+        withModel(
+            CONNECTOR_DEVICE_EXAMPLE,
+            configure = {
+                it.devicePollInterval = 1
+                it.deviceExpiresIn = 30
+                it.devicePollStatus = status
+                it.loseFirstDevicePollReply = true
+                it.devicePollReplyGate = reply
+            },
+            includeGrantExamples = true,
+            clock = clock,
+        ) { fixture, model ->
+            try {
+                model.startAuthorization(null, "device-auth", emptyMap())
+                model.await {
+                    it.action?.busy == false &&
+                        it.action.authorization is ConnectorAuthorization.Device
+                }
+                model.openBrowser { true }
+                withContext(Dispatchers.IO) {
+                    assertTrue(fixture.devicePollReplyStarted.await(10, TimeUnit.SECONDS))
+                }
+                clock += 30.seconds
+            } finally {
+                reply.countDown()
+            }
+            verify(fixture, model)
+        }
+    }
+
+    @Test
     fun anUnsentRenameRemainsEditableAndReconnectDoesNotSendIt() {
         val online = MutableStateFlow(true)
         withModel(CONNECTOR_CALENDAR, connectivity = online) { fixture, model ->

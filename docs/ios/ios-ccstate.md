@@ -181,6 +181,9 @@ and does not create another cache. The workspace root provides the session
 Store, so views below it read session graphs without another provider. A nested
 provider replaces the session Store for its whole subtree. Add one only for a
 Store outside the session, and scope it to the views that read that Store.
+SwiftUI content hosted by UIKit, such as transcript cells built with
+`UIHostingConfiguration`, does not inherit the root's environment. Such content
+provides the session Store again around the views that read it.
 Initialize runtime wrappers' backing storage in the consumer's initializer and
 keep observation close to the view that needs the value.
 

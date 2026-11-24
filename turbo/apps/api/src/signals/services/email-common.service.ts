@@ -1,3 +1,4 @@
+import artifactInvitationTemplate from "../../lib/artifact-invitation-template.json";
 import { renderEmailMarkdown } from "../../lib/email-markdown";
 import crypto from "node:crypto";
 import { escapeUTF8 as escapeHtml } from "entities";
@@ -122,6 +123,14 @@ const emailAttachmentSchema = object({
 }).strict();
 
 export const emailTemplateSchema = discriminatedUnion("template", [
+  object({
+    template: literal("artifact-invitation"),
+    props: object({
+      inviterName: string(),
+      email: string(),
+      artifactUrl: zUrl(),
+    }).strict(),
+  }).strict(),
   object({
     template: literal("hosted-site-invitation"),
     props: object({
@@ -335,7 +344,7 @@ interface RenderedEmailTemplate {
 function renderTemplate(
   template: Exclude<
     EmailTemplate,
-    { readonly template: "hosted-site-invitation" }
+    { readonly template: "hosted-site-invitation" | "artifact-invitation" }
   >,
   headers: Readonly<Record<string, string>> | undefined,
 ): RenderedEmailTemplate {
@@ -376,6 +385,7 @@ function fromAddressForTemplate(template: EmailTemplate): string {
   // Resolve the sender at delivery so legacy or malformed outbox snapshots
   // cannot bypass the user-facing email brand policy.
   switch (template.template) {
+    case "artifact-invitation":
     case "hosted-site-invitation":
     case "credit-low-balance": {
       return buildTeamFromAddress();
@@ -413,6 +423,19 @@ function buildProviderRequest(row: OutboxRow): ProviderRequest {
       ? { attachments: row.template.props.attachments }
       : {}),
   };
+  if (row.template.template === "artifact-invitation") {
+    return {
+      ...envelope,
+      template: {
+        id: artifactInvitationTemplate.alias,
+        variables: {
+          INVITER_NAME: escapeHtml(row.template.props.inviterName),
+          RECIPIENT_EMAIL: escapeHtml(row.template.props.email),
+          ARTIFACT_URL: row.template.props.artifactUrl,
+        },
+      },
+    };
+  }
   if (row.template.template === "hosted-site-invitation") {
     return {
       ...envelope,
