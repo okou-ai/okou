@@ -4,6 +4,8 @@ import UIKit
 final class WorkspacePopTransition: UIPercentDrivenInteractiveTransition,
   UIViewControllerAnimatedTransitioning
 {
+  private var animator: UIViewPropertyAnimator?
+
   func transitionDuration(using transitionContext: (any UIViewControllerContextTransitioning)?)
     -> TimeInterval
   {
@@ -11,36 +13,58 @@ final class WorkspacePopTransition: UIPercentDrivenInteractiveTransition,
   }
 
   func animateTransition(using transitionContext: any UIViewControllerContextTransitioning) {
-    let container = transitionContext.containerView
-    guard let chat = transitionContext.view(forKey: .from),
-      let list = transitionContext.view(forKey: .to),
-      let listController = transitionContext.viewController(forKey: .to)
+    interruptibleAnimator(using: transitionContext).startAnimation()
+  }
+
+  func interruptibleAnimator(using context: any UIViewControllerContextTransitioning)
+    -> any UIViewImplicitlyAnimating
+  {
+    if let animator { return animator }
+    let animator = UIViewPropertyAnimator(
+      duration: transitionDuration(using: context), curve: .linear)
+    self.animator = animator
+    guard let chat = context.view(forKey: .from), let list = context.view(forKey: .to),
+      let listController = context.viewController(forKey: .to)
     else {
-      transitionContext.completeTransition(false)
-      return
+      animator.addCompletion { [weak self] _ in
+        self?.animator = nil
+        context.completeTransition(false)
+      }
+      return animator
     }
-    list.frame = transitionContext.finalFrame(for: listController)
-    container.insertSubview(list, belowSubview: chat)
+
+    let container = context.containerView
+    let chatFrame = chat.frame
+    let listFrame = context.finalFrame(for: listController)
     let width = container.bounds.width
     let offset = container.effectiveUserInterfaceLayoutDirection == .rightToLeft ? -width : width
     let fades = UIAccessibility.isReduceMotionEnabled
-    if !fades { list.transform = CGAffineTransform(translationX: -offset / 3, y: 0) }
-    UIView.animate(
-      withDuration: transitionDuration(using: transitionContext), delay: 0, options: .curveLinear
-    ) {
+    let chatAlpha = chat.alpha
+    container.insertSubview(list, belowSubview: chat)
+    list.frame = fades ? listFrame : listFrame.offsetBy(dx: -offset / 3, dy: 0)
+
+    animator.addAnimations {
       if fades {
         chat.alpha = 0
       } else {
-        chat.transform = CGAffineTransform(translationX: offset, y: 0)
-        list.transform = .identity
+        chat.frame = chatFrame.offsetBy(dx: offset, dy: 0)
+        list.frame = listFrame
       }
-    } completion: { _ in
-      let completed = !transitionContext.transitionWasCancelled
-      if !completed { list.removeFromSuperview() }
-      chat.transform = .identity
-      chat.alpha = 1
-      list.transform = .identity
-      transitionContext.completeTransition(completed)
     }
+    animator.addCompletion { [weak self] _ in
+      let completed = !context.transitionWasCancelled
+      if !completed { list.removeFromSuperview() }
+      context.completeTransition(completed)
+      // Restore the retained hosts in their final hierarchy, including their accessibility frames.
+      chat.frame = chatFrame
+      chat.alpha = chatAlpha
+      list.frame = listFrame
+      if !completed {
+        chat.setNeedsLayout()
+        chat.layoutIfNeeded()
+      }
+      self?.animator = nil
+    }
+    return animator
   }
 }
