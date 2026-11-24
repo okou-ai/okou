@@ -15,9 +15,11 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -66,6 +68,7 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -391,8 +394,11 @@ internal fun SettingsModal(
                 ),
         ) {
             // A vetoed native predictive hide can leave the sheet scaled after Back.
+            val imeVisible = WindowInsets.isImeVisible
+            val keyboard = LocalSoftwareKeyboardController.current
             BackHandler(enabled = confirmDismiss != null) {
-                if (dismissible && confirmDismiss?.invoke() != false) onDismiss()
+                if (imeVisible) keyboard?.hide()
+                else if (dismissible && confirmDismiss?.invoke() != false) onDismiss()
             }
             content(false)
         }
