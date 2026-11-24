@@ -12,6 +12,7 @@ import ai.okou.android.SettingsTrigger
 import ai.okou.android.preferences.MemberPreferencesModel
 import ai.okou.android.preferences.TimezonePicker
 import ai.okou.android.preferences.TimezoneScheduleFeedback
+import ai.okou.android.rememberContentReadSkeleton
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -54,7 +55,6 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.currentStateAsState
 import androidx.lifecycle.repeatOnLifecycle
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
@@ -291,11 +291,7 @@ private fun ProactiveDetail(text: String) {
 
 @Composable
 private fun ProactiveSettingPlaceholder() {
-    var visible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        delay(250)
-        visible = true
-    }
+    val visible = rememberContentReadSkeleton()
     val label = stringResource(R.string.settings_proactive_loading)
     Row(
         Modifier.fillMaxWidth()
