@@ -3058,7 +3058,9 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
             compose.onNodeWithTag("chat_list").assertDoesNotExist()
 
             rejectDelete.countDown()
-            compose.waitUntil(10_000) { currentList()?.failedRowAction?.rejected == true }
+            compose.waitUntil(10_000) {
+                currentList()?.rowActionFailures?.any { it.rejected } == true
+            }
             compose.onNodeWithText(failure).assertDoesNotExist()
             back.performClick()
             row.assertIsDisplayed()
@@ -3066,7 +3068,7 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
             compose.onNode(hasText(failure) and listFeedback).assertIsDisplayed()
 
             otherRow.performClick()
-            compose.waitUntil(10_000) { currentList()?.failedRowAction == null }
+            compose.waitUntil(10_000) { currentList()?.rowActionFailures?.isEmpty() == true }
             back.performClick()
             row.assertIsDisplayed()
             compose.onNodeWithText(failure).assertDoesNotExist()
@@ -3173,7 +3175,10 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
         }
         val feedback = compose.onNodeWithTag("conversation_feedback").assertIsDisplayed()
         val composerTop = composer.getUnclippedBoundsInRoot().top
-        assertTrue(feedback.getUnclippedBoundsInRoot().bottom <= composerTop)
+        assertEquals(8f, (composerTop - feedback.getUnclippedBoundsInRoot().bottom).value, 1f)
+        val undoBounds = compose.onNodeWithText("Undo").getUnclippedBoundsInRoot()
+        assertTrue(undoBounds.right - undoBounds.left >= 48.dp)
+        assertTrue(undoBounds.bottom - undoBounds.top >= 48.dp)
         compose.onNodeWithText("Undo").assertIsDisplayed().performClick()
         compose.onNodeWithTag("conversation").assertIsDisplayed()
         assertEquals(bottom, composer.assertIsDisplayed().getUnclippedBoundsInRoot().bottom)
@@ -3245,7 +3250,7 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
     @Test
     @Config(qualifiers = "en-rUS-w1000dp-h800dp")
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    fun aQueuedConversationFailureDoesNotMoveTheVisibleListFeedback() {
+    fun aConversationFailureAndListFeedbackAreVisibleAtTheSameTime() {
         val app = compose.activity.application as ChatListApplication
         app.fixture.commandResponse = { request ->
             when (request.requestUrl?.encodedPath) {
@@ -3276,14 +3281,11 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
 
         compose.onNodeWithContentDescription("Chat actions").performClick()
         compose.onNodeWithText("Archive chat").performClick()
-        compose.waitUntil(10_000) {
-            currentList()?.failedRowAction?.action == ChatRowAction.Archive
-        }
-        compose.onNode(hasText(listNotice) and inList).assertIsDisplayed()
-        compose.onNodeWithTag("conversation_feedback").assertDoesNotExist()
-        compose.onNode(hasContentDescription("Dismiss") and inList).performClick()
         val conversationNotice = hasText("Could not complete “Archive chat”.")
         compose.waitUntilExactlyOneExists(conversationNotice and inConversation, 10_000)
+        compose.onNode(hasText(listNotice) and inList).assertIsDisplayed()
+        compose.onNode(hasContentDescription("Dismiss") and inList).performClick()
+        compose.onNode(conversationNotice and inConversation).assertIsDisplayed()
     }
 
     @Test
@@ -3325,6 +3327,66 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
         compose.onNode(failure).assertDoesNotExist()
         compose.onNode(undo).performClick()
         compose.waitUntilExactlyOneExists(hasTestTag("chat_$CHAT_PERSONAL"), 10_000)
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1000dp-h800dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun eachPaneKeepsItsUndoWhileListErrorsFinishInOrder() {
+        val app = compose.activity.application as ChatListApplication
+        val events = app.fixture.rowEventTail()
+        app.fixture.commandResponse = { request ->
+            when (request.requestUrl?.encodedPath) {
+                "/api/chat-threads/$CHAT_PERSONAL/archive" -> {
+                    events.add(24L to request.rowEvent(24, CHAT_PERSONAL, "archived"))
+                    MockResponse().setResponseCode(204)
+                }
+                "/api/chat-threads/$CHAT_IN_PROJECT/archive" -> {
+                    events.add(25L to request.rowEvent(25, CHAT_IN_PROJECT, "archived"))
+                    MockResponse().setResponseCode(204)
+                }
+                "/api/chat-threads/$CHAT_IN_PROJECT/unarchive" ->
+                    MockResponse().setResponseCode(400)
+                "/api/chat-threads/$CHAT_IN_PROJECT/mark-read" ->
+                    MockResponse().setResponseCode(409)
+                else -> null
+            }
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithTag("chat_$CHAT_PERSONAL").performClick()
+        compose.onNodeWithContentDescription("Chat actions").performClick()
+        compose.onNodeWithText("Archive chat").performClick()
+        val listHost = hasAnyAncestor(hasTestTag("chat_list_feedback"))
+        val conversationHost = hasAnyAncestor(hasTestTag("conversation_feedback"))
+        val undo = hasText("Undo")
+        compose.waitUntilExactlyOneExists(undo and conversationHost, 10_000)
+
+        setResearchExpanded(true)
+        compose.onNodeWithTag("chat_$CHAT_IN_PROJECT").performTouchInput { longClick() }
+        compose.onNodeWithText("Archive chat").performClick()
+        compose.waitUntilExactlyOneExists(undo and listHost, 10_000)
+        compose.onNode(undo and conversationHost).assertIsDisplayed()
+
+        val filter = compose.onNodeWithContentDescription("Filter")
+        filter.performClick()
+        compose.onNodeWithText("Archived").performClick()
+        compose.onNodeWithTag("chat_$CHAT_IN_PROJECT").performTouchInput { longClick() }
+        compose.onNodeWithText("Unarchive chat").performClick()
+        val firstError = hasText("Could not complete “Unarchive chat”.") and listHost
+        compose.waitUntilExactlyOneExists(firstError, 10_000)
+        compose.onNode(undo and conversationHost).assertIsDisplayed()
+
+        filter.performClick()
+        compose.onNodeWithText("Mark all as read").performClick()
+        compose.waitUntil(10_000) { currentList()?.markAllReadResults?.isNotEmpty() == true }
+        val secondError = hasText("Could not mark chats as read.") and listHost
+        compose.onNode(firstError).assertIsDisplayed()
+        compose.onNode(secondError).assertDoesNotExist()
+        compose.waitUntilExactlyOneExists(secondError, 10_000)
+        compose.onNode(undo and conversationHost).assertIsDisplayed()
+        compose.waitUntilExactlyOneExists(undo and listHost, 10_000)
+        compose.onNode(undo and conversationHost).assertIsDisplayed()
     }
 
     @Test
