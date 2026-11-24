@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.865.1](https://github.com/okou-ai/okou/compare/core-v8.865.0...core-v8.865.1) (2026-11-24)
+
+
+### Refactoring
+
+* remove voice messages feature switch ([#50338](https://github.com/okou-ai/okou/issues/50338)) ([35e38a9](https://github.com/okou-ai/okou/commit/35e38a9a333962f7477ff090634b8c38b723f55c))
+
 ## [8.865.0](https://github.com/okou-ai/okou/compare/core-v8.864.1...core-v8.865.0) (2026-11-23)
 
 
