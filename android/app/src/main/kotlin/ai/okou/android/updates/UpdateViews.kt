@@ -549,7 +549,9 @@ private fun RequiredUpdateContent(
     val titleGap = 8.dp
     val titleStyle = entryTitleStyle(compact)
     val bodyStyle = MaterialTheme.typography.bodyMedium
-    val scroll = rememberScrollState()
+    // The details and the complete page have different scroll origins.
+    val detailsScroll = rememberScrollState()
+    val pageScroll = rememberScrollState()
     BoxWithConstraints(modifier) {
         val measurer = rememberTextMeasurer()
         val brandHeight = measureEntryBrandHeight(compact, maxWidth, measurer)
@@ -570,7 +572,7 @@ private fun RequiredUpdateContent(
             maxHeight < brandHeight + groupSpacing + titleHeight + titleGap + bodyLineHeight
         Column(
             Modifier.fillMaxWidth()
-                .then(if (scrollHeading) Modifier.verticalScroll(scroll) else Modifier),
+                .then(if (scrollHeading) Modifier.verticalScroll(pageScroll) else Modifier),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             EntryBrand(compact)
@@ -584,7 +586,7 @@ private fun RequiredUpdateContent(
             Spacer(Modifier.height(titleGap))
             val details = Modifier.fillMaxWidth()
             Column(
-                if (scrollHeading) details else details.weight(1f).verticalScroll(scroll),
+                if (scrollHeading) details else details.weight(1f).verticalScroll(detailsScroll),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 val requiresNewerAndroid = state.requiresNewerAndroid
