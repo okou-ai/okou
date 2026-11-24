@@ -112,10 +112,10 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
             add(
                 CatalogEntry(
                     CONNECTOR_DEVICE_EXAMPLE,
-                    "Device authorization sample",
-                    "Connect using a code supplied by the service.",
-                    "engineering-team-execution",
-                    null,
+                    "设备授权示例",
+                    "使用服务方提供的设备码连接账号。",
+                    "email",
+                    0,
                     grantKind = "device-auth",
                 ),
             )
@@ -681,7 +681,16 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
     ) {
         fun body(icon: JsonObject): JsonObject {
             val method = if (grantKind == "auth-code") "oauth" else grantKind
-            val methodLabel = if (grantKind == "auth-code") "OAuth" else method
+            val methodLabel =
+                when (grantKind) {
+                    "auth-code" -> "OAuth"
+                    "device-auth" -> "设备码授权"
+                    else -> method
+                }
+            val alternative =
+                if (grantKind == "device-auth") {
+                    """{"id":"direct","label":"直接连接","description":null,"supportsRefresh":false,"grantKind":"none","manualFields":[],"startOptions":[]},"""
+                } else ""
             val singleAuth = if (grantKind == "auth-code") "\"oauth\"" else "null"
             val fields =
                 if (grantKind == "manual") {
@@ -702,7 +711,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                         .joinToString(",", "[", "]")
                 } else "[]"
             return Json.parseToJsonElement(
-                    """{"slug":"$slug","label":"$name","description":"$description","icon":$icon,"category":"$category",${if (rank != null) """ "popularityRank":$rank,""" else ""}"generation":[],"tags":[],"authMethods":[{"id":"$method","label":"$methodLabel","description":null,"supportsRefresh":true,"grantKind":"$grantKind","manualFields":$fields,"startOptions":[]}],"singleAuthCodeAuthMethodId":$singleAuth,"permissionSummary":{"hasPermissions":true,"permissionCount":2,"hasCategories":false,"hasDefaultPolicyOverrides":false},"connectNotice":null}""",
+                    """{"slug":"$slug","label":"$name","description":"$description","icon":$icon,"category":"$category",${if (rank != null) """ "popularityRank":$rank,""" else ""}"generation":[],"tags":[],"authMethods":[$alternative{"id":"$method","label":"$methodLabel","description":null,"supportsRefresh":true,"grantKind":"$grantKind","manualFields":$fields,"startOptions":[]}],"singleAuthCodeAuthMethodId":$singleAuth,"permissionSummary":{"hasPermissions":true,"permissionCount":2,"hasCategories":false,"hasDefaultPolicyOverrides":false},"connectNotice":null}""",
                 )
                 .jsonObject
         }
