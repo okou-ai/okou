@@ -261,6 +261,33 @@ function createSiteUrlSignals(sourceUrl: string) {
   return { saved$, details$, copyUrl$ };
 }
 
+function createSiteSharingSettings(
+  details$: Computed<Promise<SiteUrl | null>>,
+  open$: State<boolean>,
+) {
+  const visibility = createSiteVisibilitySignals(details$);
+  const peopleTarget$ = computed(async (get) => {
+    const site = await get(visibility.visibility$);
+    return site ? { kind: "site" as const, id: site.siteId } : null;
+  });
+  const people = createSharePeopleSignals(peopleTarget$, open$);
+  const banner = createHostedSiteBannerSignals(visibility.visibility$);
+  const hasSettings$ = computed(async (get) => {
+    const [details, permissions] = await Promise.all([
+      get(details$),
+      get(visibility.visibility$),
+    ]);
+    return (
+      permissions !== null ||
+      (details?.isActive === true &&
+        new URL(details.url).hostname.endsWith(
+          `.${resolveEditableHostedSiteDomain()}`,
+        ))
+    );
+  });
+  return { visibility, people, banner, hasSettings$ };
+}
+
 function createHostedSiteShareSession(sourceUrl: string) {
   const signal$ = state<AbortSignal | null>(null);
   const {
@@ -284,26 +311,8 @@ function createHostedSiteShareSession(sourceUrl: string) {
     set(domains.back$);
     set(editor.cancel$);
   });
-  const visibility = createSiteVisibilitySignals(details$);
-  const peopleTarget$ = computed(async (get) => {
-    const site = await get(visibility.visibility$);
-    return site ? { kind: "site" as const, id: site.siteId } : null;
-  });
-  const people = createSharePeopleSignals(peopleTarget$, open$);
-  const banner = createHostedSiteBannerSignals(visibility.visibility$);
-  const hasSettings$ = computed(async (get) => {
-    const [details, permissions] = await Promise.all([
-      get(details$),
-      get(visibility.visibility$),
-    ]);
-    return (
-      permissions !== null ||
-      (details?.isActive === true &&
-        new URL(details.url).hostname.endsWith(
-          `.${resolveEditableHostedSiteDomain()}`,
-        ))
-    );
-  });
+  const { visibility, people, banner, hasSettings$ } =
+    createSiteSharingSettings(details$, open$);
   const resetOpenSignal$ = resetSignal();
   const linkCopy = createShareLinkCopy();
   const setOpen$ = command(({ set }, open: boolean) => {
