@@ -9,6 +9,7 @@ import ai.okou.android.artifacts.ConfirmedWorkflowResources
 import ai.okou.android.artifacts.WorkflowResource
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.chat.ChatChanges
+import ai.okou.android.chat.ConversationHistorySync
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
@@ -495,6 +496,9 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
             app.responseGate.countDown()
             awaitText(artifacts.sourceTitle)
             runBlocking {
+                val checkpoint =
+                    ConversationHistorySync(app.fixture.service).synchronize(CHAT_PERSONAL, null)
+                ready.chats.cache.saveHistory(checkpoint, System.currentTimeMillis())
                 ready.chats.cache.saveWorkflowResources(
                     CHAT_PERSONAL,
                     ConfirmedWorkflowResources(
@@ -505,7 +509,12 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
             }
             assertEquals(0, requestCount.get())
             openChatResources(artifacts.sourceTitle)
-            compose.waitUntil(10_000) { requestCount.get() == 1 }
+            compose.waitUntil(10_000) {
+                compose
+                    .onAllNodes(hasContentDescription("Syncing chat resources"))
+                    .fetchSemanticsNodes()
+                    .isNotEmpty() && requestCount.get() == 1
+            }
             val list = compose.onNodeWithTag("chat_resources_list")
             list.performScrollToNode(hasText("Cached workflow title"))
             compose.onNodeWithText("Cached workflow title").assertIsDisplayed()

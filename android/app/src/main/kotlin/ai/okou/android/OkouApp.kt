@@ -1813,8 +1813,7 @@ internal fun OkouApp(
                                 val conversation by
                                     chats.history.uiState.collectAsStateWithLifecycle()
                                 LifecycleStartEffect(chats.history, resourcesId) {
-                                    if (chats.history.uiState.value.thread?.id == resourcesId)
-                                        chats.history.refreshHistory()
+                                    chats.history.invalidate(resourcesId)
                                     onStopOrDispose {}
                                 }
                                 val availableChats =
