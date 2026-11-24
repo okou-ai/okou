@@ -2541,6 +2541,7 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
         val activeUnreadQuery = AtomicReference<String?>()
         val marked = CopyOnWriteArrayList<String>()
         val releaseWrites = CountDownLatch(1)
+        val releaseRefresh = CountDownLatch(1)
         val events =
             listOf(
                 chatEventWire(),
@@ -2572,6 +2573,7 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
             jsonResponse("""{"events":[$rows],"hasMore":false}""")
         }
         app.fixture.indicators = {
+            if (personalUnread.get() == newer) releaseRefresh.await()
             val unread = buildMap {
                 personalUnread.get()?.let { put(CHAT_PERSONAL, it) }
                 if (projectUnread.get()) put(CHAT_IN_PROJECT, CHAT_DATE)
@@ -2657,16 +2659,23 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
             }
         }
         try {
-            markAll()
-            compose.waitUntil(10_000) { marked.size == 2 }
-            compose.onNodeWithText("Personal chat").assertDoesNotExist()
-            compose.onNodeWithText("Research").assertDoesNotExist()
+            try {
+                markAll()
+                compose.waitUntil(10_000) { marked.size == 2 }
+                compose.onNodeWithText("Personal chat").assertDoesNotExist()
+                compose.onNodeWithText("Research").assertDoesNotExist()
+            } finally {
+                releaseWrites.countDown()
+            }
+            awaitMessage("Chats marked as read: 1. Failed: 1.")
         } finally {
-            releaseWrites.countDown()
+            releaseRefresh.countDown()
         }
-        awaitMessage("Chats marked as read: 1. Failed: 1.")
         assertEquals(setOf(CHAT_PERSONAL, CHAT_IN_PROJECT), marked.toSet())
         assertEquals(2, marked.size)
+        compose.waitUntil(10_000) {
+            currentList()?.indicators?.unreadAt?.get(CHAT_PERSONAL) == newer
+        }
         list.performScrollToNode(hasText("Personal chat"))
         compose.onNodeWithText("Personal chat").assert(unread)
         compose.onNodeWithText("Research").assert(projectUnreadCount)
