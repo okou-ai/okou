@@ -221,7 +221,7 @@ test("chat-composer-connector-overview-003 a targeted account update, removal an
   expect(queryFastControl("button", /^Probe 1\b/)).toBeNull();
 });
 
-test("A failed account refresh can be retried while the other connector continues receiving updates", async () => {
+test("chat-composer-connector-overview-007 A failed account refresh can be retried while the other connector continues receiving updates", async () => {
   const [githubRow, slackRow] = twoProbeConnectors();
   let recovered = false;
   let changed = false;
@@ -233,7 +233,10 @@ test("A failed account refresh can be retried while the other connector continue
     };
   };
   context.mocks.api(chatConnectorAccessContract.overview, ({ respond }) => {
-    return respond(200, [githubRow, slack()]);
+    return respond(200, [
+      recovered ? { ...githubRow, label: "Probe 1 recovered" } : githubRow,
+      slack(),
+    ]);
   });
   context.mocks.api(
     chatConnectorAccessContract.overviewTarget,
@@ -267,16 +270,17 @@ test("A failed account refresh can be retried while the other connector continue
   await openChatMenu(context);
   await findFastControl("button", /^Probe 1/);
   context.mocks.ably.trigger("connector:changed", { connectorSlug: "github" });
-  const retry = await findFastControl("button", "Try again");
+  await findFastControl("button", "Try again");
   await expect(findFastControl("button", /^Probe 1/)).resolves.toBeVisible();
   changed = true;
   context.mocks.ably.trigger("connector:changed", { connectorSlug: "slack" });
   await findFastControl("button", "Probe 2 updated");
   recovered = true;
-  click(retry);
+  click(await findFastControl("button", "Try again"));
   await waitFor(() => {
-    expect(retry).not.toBeInTheDocument();
+    expect(queryFastControl("button", "Try again")).toBeNull();
   });
+  await findFastControl("button", /^Probe 1 recovered/);
   disabled = true;
   context.mocks.ably.trigger("connector:changed", { connectorSlug: "github" });
   click(await findFastControl("button", /^Probe 1/));
@@ -284,4 +288,30 @@ test("A failed account refresh can be retried while the other connector continue
   await waitFor(() => {
     expect(toggle).not.toBeChecked();
   });
+});
+
+test("chat-composer-connector-overview-009 Browser back restores the connector directory for the original chat", async () => {
+  const [account] = twoProbeConnectors();
+  let title = "Probe 1";
+  context.mocks.api(chatConnectorAccessContract.overview, ({ respond }) => {
+    return respond(200, [{ ...account, label: title }]);
+  });
+  await openChatMenu(context);
+  await findFastControl("button", /^Probe 1\b/);
+  await userEvent.keyboard("{Escape}");
+  const original = window.location.pathname;
+  click(await findFastControl("link", /^New chat/));
+  await waitFor(() => {
+    expect(window.location.pathname).toBe("/");
+  });
+  title = "Probe 1 after return";
+  context.mocks.ably.trigger("connector:changed", { connectorSlug: "github" });
+  window.history.back();
+  await waitFor(() => {
+    expect(window.location.pathname).toBe(original);
+  });
+  click(await findFastControl("button", "Connectors"));
+  await expect(
+    findFastControl("button", /^Probe 1 after return/),
+  ).resolves.toBeVisible();
 });

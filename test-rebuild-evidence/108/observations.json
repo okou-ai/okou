@@ -1,0 +1,505 @@
+{
+  "native": {
+    "shelves014": {
+      "stages": [
+        {"label": "two shelves after user publication", "index": 149, "cards": [true, true], "reads": [{"alias": "B", "count": 1, "harbor": true}, {"alias": "A", "count": 1, "harbor": true}, {"alias": "B", "count": 1, "harbor": true}]},
+        {"label": "resume", "index": 152, "cards": [true, true], "reads": []},
+        {"label": "gap", "index": 248, "cards": [true, true], "reads": [{"alias": "B", "count": 1, "harbor": true}, {"alias": "A", "count": 1, "harbor": true}]},
+        {"label": "survivor after second user publication", "index": 286, "cards": [false], "reads": [{"alias": "B", "count": 0, "harbor": false}]},
+        {"label": "independent provider after B decision", "index": 288, "closed": true, "events": [["connection-close", null, null]]}
+      ],
+      "providerSummary": [
+        {"op": "connection-open", "client": "bde4caec-fa4b-412c-9c11-72852d627c16", "occurrences": 1},
+        {"op": "subscribe", "client": "bde4caec-fa4b-412c-9c11-72852d627c16", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "presentationTemplatesChanged", "occurrences": 1},
+        {"op": "subscribe", "client": "bde4caec-fa4b-412c-9c11-72852d627c16", "realm": "SharedWorkerGlobalScope", "name": "org:fixture", "topic": "presentationTemplatesChanged", "occurrences": 1},
+        {"op": "subscribe", "client": "bde4caec-fa4b-412c-9c11-72852d627c16", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "connectorPermissionUpdated", "occurrences": 1},
+        {"op": "subscribe", "client": "bde4caec-fa4b-412c-9c11-72852d627c16", "realm": "SharedWorkerGlobalScope", "name": "user-org:fixture:fixture", "topic": "chatIndicatorsChanged", "occurrences": 1},
+        {"op": "subscribe", "client": "bde4caec-fa4b-412c-9c11-72852d627c16", "realm": "SharedWorkerGlobalScope", "name": "user-org:fixture:fixture", "topic": "chatThreadReadCursorUpdated", "occurrences": 1},
+        {"op": "published", "client": "bde4caec-fa4b-412c-9c11-72852d627c16", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "presentationTemplatesChanged", "occurrences": 2},
+        {"op": "delivery-1", "client": "bde4caec-fa4b-412c-9c11-72852d627c16", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "presentationTemplatesChanged", "occurrences": 2},
+        {"op": "connection-state", "client": "bde4caec-fa4b-412c-9c11-72852d627c16", "realm": "SharedWorkerGlobalScope", "name": "suspended", "topic": "", "occurrences": 2},
+        {"op": "connection-state", "client": "bde4caec-fa4b-412c-9c11-72852d627c16", "realm": "SharedWorkerGlobalScope", "name": "connected", "topic": "", "occurrences": 2},
+        {"op": "channel-state", "client": "bde4caec-fa4b-412c-9c11-72852d627c16", "realm": "SharedWorkerGlobalScope", "name": "attached", "topic": "", "occurrences": 2},
+        {"op": "connection-close", "client": "bde4caec-fa4b-412c-9c11-72852d627c16", "occurrences": 1}
+      ]
+    },
+    "keep014": {
+      "stages": [
+        {"label": "two shelves after user publication", "index": 149, "cards": [true, true], "reads": [{"alias": "B", "count": 1, "harbor": true}, {"alias": "A", "count": 1, "harbor": true}, {"alias": "B", "count": 1, "harbor": true}]},
+        {"label": "resume", "index": 152, "cards": [true, true], "reads": []},
+        {"label": "gap", "index": 224, "cards": [true, true], "reads": [{"alias": "A", "count": 1, "harbor": true}, {"alias": "B", "count": 1, "harbor": true}]},
+        {"label": "survivor after second user publication", "index": 250, "cards": [false], "reads": [{"alias": "B", "count": 0, "harbor": false}]},
+        {"label": "independent provider after B decision", "index": 255, "closed": false, "events": [["delivery-1", "user:test-user-123", "presentationTemplatesChanged"]]}
+      ],
+      "providerSummary": [
+        {"op": "connection-open", "client": "84ccd2cd-2e21-45b0-8bb9-dc4f6cebb501", "occurrences": 1},
+        {"op": "subscribe", "client": "84ccd2cd-2e21-45b0-8bb9-dc4f6cebb501", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "presentationTemplatesChanged", "occurrences": 1},
+        {"op": "subscribe", "client": "84ccd2cd-2e21-45b0-8bb9-dc4f6cebb501", "realm": "SharedWorkerGlobalScope", "name": "org:fixture", "topic": "presentationTemplatesChanged", "occurrences": 1},
+        {"op": "subscribe", "client": "84ccd2cd-2e21-45b0-8bb9-dc4f6cebb501", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "connectorPermissionUpdated", "occurrences": 1},
+        {"op": "subscribe", "client": "84ccd2cd-2e21-45b0-8bb9-dc4f6cebb501", "realm": "SharedWorkerGlobalScope", "name": "user-org:fixture:fixture", "topic": "chatIndicatorsChanged", "occurrences": 1},
+        {"op": "subscribe", "client": "84ccd2cd-2e21-45b0-8bb9-dc4f6cebb501", "realm": "SharedWorkerGlobalScope", "name": "user-org:fixture:fixture", "topic": "chatThreadReadCursorUpdated", "occurrences": 1},
+        {"op": "published", "client": "84ccd2cd-2e21-45b0-8bb9-dc4f6cebb501", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "presentationTemplatesChanged", "occurrences": 3},
+        {"op": "delivery-1", "client": "84ccd2cd-2e21-45b0-8bb9-dc4f6cebb501", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "presentationTemplatesChanged", "occurrences": 3},
+        {"op": "connection-state", "client": "84ccd2cd-2e21-45b0-8bb9-dc4f6cebb501", "realm": "SharedWorkerGlobalScope", "name": "suspended", "topic": "", "occurrences": 2},
+        {"op": "connection-state", "client": "84ccd2cd-2e21-45b0-8bb9-dc4f6cebb501", "realm": "SharedWorkerGlobalScope", "name": "connected", "topic": "", "occurrences": 2},
+        {"op": "channel-state", "client": "84ccd2cd-2e21-45b0-8bb9-dc4f6cebb501", "realm": "SharedWorkerGlobalScope", "name": "attached", "topic": "", "occurrences": 2},
+        {"op": "connection-close", "client": "84ccd2cd-2e21-45b0-8bb9-dc4f6cebb501", "occurrences": 1}
+      ]
+    },
+    "unknown011": {
+      "stages": [
+        {"label": "user:wrong/newFeature:changed", "path": "same thread", "markers": ["Question number 16", "Primary survey", "Side survey"], "reads": [], "topics": [["published", "user:wrong", "newFeature:changed"]]},
+        {"label": "user:test-user-123/different:changed", "path": "same thread", "markers": ["Question number 16", "Primary survey", "Side survey"], "reads": [], "topics": [["published", "user:test-user-123", "different:changed"]]},
+        {"label": "user:test-user-123/newFeature:changed", "path": "same thread", "markers": ["Question number 16", "Primary survey", "Side survey"], "reads": [], "topics": [["published", "user:test-user-123", "newFeature:changed"]]}
+      ],
+      "providerSummary": [
+        {"op": "connection-open", "client": "1e60cb7f-0764-4855-9103-de9ba7bc7234", "occurrences": 1},
+        {"op": "subscribe", "client": "1e60cb7f-0764-4855-9103-de9ba7bc7234", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "presentationTemplatesChanged", "occurrences": 1},
+        {"op": "subscribe", "client": "1e60cb7f-0764-4855-9103-de9ba7bc7234", "realm": "SharedWorkerGlobalScope", "name": "org:fixture", "topic": "presentationTemplatesChanged", "occurrences": 1},
+        {"op": "subscribe", "client": "1e60cb7f-0764-4855-9103-de9ba7bc7234", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "connectorPermissionUpdated", "occurrences": 1},
+        {"op": "subscribe", "client": "1e60cb7f-0764-4855-9103-de9ba7bc7234", "realm": "SharedWorkerGlobalScope", "name": "user-org:fixture:fixture", "topic": "chatIndicatorsChanged", "occurrences": 1},
+        {"op": "subscribe", "client": "1e60cb7f-0764-4855-9103-de9ba7bc7234", "realm": "SharedWorkerGlobalScope", "name": "user-org:fixture:fixture", "topic": "chatThreadReadCursorUpdated", "occurrences": 1},
+        {"op": "published", "client": "1e60cb7f-0764-4855-9103-de9ba7bc7234", "realm": "SharedWorkerGlobalScope", "name": "user:wrong", "topic": "newFeature:changed", "occurrences": 1},
+        {"op": "published", "client": "1e60cb7f-0764-4855-9103-de9ba7bc7234", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "different:changed", "occurrences": 1},
+        {"op": "delivery-0", "client": "1e60cb7f-0764-4855-9103-de9ba7bc7234", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "different:changed", "occurrences": 1},
+        {"op": "published", "client": "1e60cb7f-0764-4855-9103-de9ba7bc7234", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "newFeature:changed", "occurrences": 1},
+        {"op": "delivery-0", "client": "1e60cb7f-0764-4855-9103-de9ba7bc7234", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "newFeature:changed", "occurrences": 1}
+      ]
+    },
+    "sequence033": {
+      "stages": [
+        {"label": "chatIndicatorsChanged", "path": "dashboard", "markers": ["Primary survey", "Side survey"], "reads": [], "topics": [["subscribe", "user:test-user-123", "artifact:changed"], ["subscribe", "user:test-user-123", "chatThreadAutomationsChanged:beef0000-0000-4000-8000-000000000104"], ["subscribe", "user:test-user-123", "chatThreadWorkflowsChanged:beef0000-0000-4000-8000-000000000104"], ["published", "user:test-user-123", "chatIndicatorsChanged"]]},
+        {"label": "chatThreadReadCursorUpdated", "path": "dashboard", "markers": ["Primary survey", "Side survey"], "reads": [], "topics": [["published", "user:test-user-123", "chatThreadReadCursorUpdated"]]},
+        {"label": "message 0", "path": "dashboard", "markers": ["Primary survey", "Side survey"], "reads": [{"op": "catchUp", "status": 200, "threads": [{"source": "side", "cursor": 0, "returned": 0}, {"source": "primary", "cursor": 48, "returned": 3}], "includesPrimary": true}], "topics": [["published", "", "chatThreadMessageCreated:b0000000-0000-4000-a000-000000000081"], ["delivery-1", "user-org:test-user-123:org_default", "chatThreadMessageCreated:b0000000-0000-4000-a000-000000000081"]]},
+        {"label": "message 1", "path": "dashboard", "markers": ["Primary survey", "Side survey"], "reads": [{"op": "catchUp", "status": 200, "threads": [{"source": "side", "cursor": 0, "returned": 0}, {"source": "primary", "cursor": 51, "returned": 3}], "includesPrimary": true}], "topics": [["published", "", "chatThreadMessageCreated:b0000000-0000-4000-a000-000000000081"], ["delivery-1", "user-org:test-user-123:org_default", "chatThreadMessageCreated:b0000000-0000-4000-a000-000000000081"]]},
+        {"label": "offline", "index": 153, "path": "/chats/THREAD", "visible": ["Side survey", "Primary survey", "Primary survey", "Question number 16", "Delivered survey 17"], "network": [["/api/user-preferences", 409], ["/api/user-preferences/initialize", 200], ["/api/chat-threads/THREAD/metadata", 404], ["/api/chat-threads/THREAD/draft", 200], ["/api/chat-threads/THREAD", 200], ["/api/chat-threads/THREAD/mark-read", 200], ["/api/chat-threads/THREAD/draft", 200], ["/api/chat-threads/THREAD", 200], ["/api/chat-threads/THREAD/mark-read", 200]]}
+      ],
+      "providerSummary": [
+
+      ]
+    },
+    "scope036": {
+      "stages": [
+        {"label": "surviving shelf", "index": 146, "path": "/", "visible": ["Side survey", "Primary survey", "Find people", "Harbor exhibit"], "network": [["/api/user-preferences", 409], ["/api/user-model-preference", 200], ["/api/user-preferences/initialize", 200], ["/api/user-templates", 200], ["/api/user-templates", 200], ["/api/user-templates", 200], ["/api/user-preferences", 409], ["/api/user-model-preference", 200], ["/api/user-preferences/initialize", 200], ["/api/user-templates", 200], ["/api/user-templates", 200]]},
+        {"label": "returned shelf", "index": 183, "path": "/", "visible": ["Side survey", "Primary survey", "Find people", "Harbor exhibit"], "network": [["/api/chat-threads/THREAD/draft", 200], ["/api/chat-threads/THREAD", 200]]}
+      ],
+      "providerSummary": [
+
+      ]
+    },
+    "pending038": {
+      "stages": [
+        {"label": "waiting at external attach", "path": "dashboard", "markers": ["Primary survey", "Side survey"], "reads": [{"op": "indicators", "alias": "A", "empty": true}], "topics": [["connection-state", "suspended", ""]]},
+        {"label": "after failure", "path": "dashboard", "markers": ["Primary survey", "Side survey"], "reads": [{"op": "indicators", "alias": "A", "empty": true}], "topics": [["connection-state", "suspended", ""], ["subscribe", "user:test-user-123", "presentationTemplatesChanged"], ["subscribe", "org:org_default", "presentationTemplatesChanged"], ["subscribe", "user:test-user-123", "getStartedRewardsChanged"], ["subscribe", "user:test-user-123", "slack:changed"], ["subscribe", "user:test-user-123", "connectorPermissionUpdated"], ["subscribe", "user:test-user-123", "billing:changed"], ["subscribe", "user:test-user-123", "userPreferenceChanged"], ["subscribe", "user:test-user-123", "runModelsChanged"], ["subscribe", "user:test-user-123", "vnc:observations-changed"], ["subscribe", "user:test-user-123", "cloudflare-access:changed"], ["subscribe", "user:test-user-123", "tailscale:changed"], ["subscribe", "user:test-user-123", "agentphone:changed"], ["subscribe", "user-org:test-user-123:org_default", "*"], ["subscribe", "user-org:test-user-123:org_default", "chatIndicatorsChanged"], ["subscribe", "user-org:test-user-123:org_default", "chatThreadReadCursorUpdated"], ["subscribe", "user:test-user-123", "computerUseHostsChanged"], ["subscribe", "user:test-user-123", "billing:changed"], ["subscribe", "org:org_default", "runQueueChanged"], ["unsubscribe", "org:org_default", "presentationTemplatesChanged"], ["unsubscribe", "org:org_default", "runQueueChanged"]]},
+        {"label": "same topic delivered after reacquisition", "path": "dashboard", "markers": ["Primary survey", "Side survey"], "reads": [{"op": "indicators", "alias": "A", "empty": true}], "topics": [["subscribe", "user:test-user-123", "presentationTemplatesChanged"], ["subscribe", "org:org_default", "presentationTemplatesChanged"], ["subscribe", "user:test-user-123", "getStartedRewardsChanged"], ["subscribe", "user:test-user-123", "slack:changed"], ["subscribe", "user:test-user-123", "connectorPermissionUpdated"], ["subscribe", "user:test-user-123", "billing:changed"], ["subscribe", "user:test-user-123", "userPreferenceChanged"], ["subscribe", "user:test-user-123", "runModelsChanged"], ["subscribe", "user:test-user-123", "vnc:observations-changed"], ["subscribe", "user:test-user-123", "cloudflare-access:changed"], ["subscribe", "user:test-user-123", "tailscale:changed"], ["subscribe", "user:test-user-123", "agentphone:changed"], ["subscribe", "user-org:test-user-123:org_default", "*"], ["subscribe", "user-org:test-user-123:org_default", "chatIndicatorsChanged"], ["subscribe", "user-org:test-user-123:org_default", "chatThreadReadCursorUpdated"], ["subscribe", "user:test-user-123", "computerUseHostsChanged"], ["subscribe", "user:test-user-123", "billing:changed"], ["subscribe", "org:org_default", "runQueueChanged"]]}
+      ],
+      "providerSummary": [
+        {"op": "connection-open", "client": "97973e44-0ff4-423d-b47a-f9efc5b6346a", "occurrences": 1},
+        {"op": "asked", "alias": "attach", "mode": "holdfail", "occurrences": 1},
+        {"op": "connection-state", "client": "97973e44-0ff4-423d-b47a-f9efc5b6346a", "realm": "SharedWorkerGlobalScope", "name": "suspended", "topic": "", "occurrences": 1},
+        {"op": "settled", "alias": "attach", "mode": "holdfail", "status": 503, "occurrences": 1},
+        {"op": "subscribe", "client": "97973e44-0ff4-423d-b47a-f9efc5b6346a", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "presentationTemplatesChanged", "occurrences": 1},
+        {"op": "subscribe", "client": "97973e44-0ff4-423d-b47a-f9efc5b6346a", "realm": "SharedWorkerGlobalScope", "name": "org:fixture", "topic": "presentationTemplatesChanged", "occurrences": 1},
+        {"op": "subscribe", "client": "97973e44-0ff4-423d-b47a-f9efc5b6346a", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "connectorPermissionUpdated", "occurrences": 1},
+        {"op": "subscribe", "client": "97973e44-0ff4-423d-b47a-f9efc5b6346a", "realm": "SharedWorkerGlobalScope", "name": "user-org:fixture:fixture", "topic": "chatIndicatorsChanged", "occurrences": 1},
+        {"op": "subscribe", "client": "97973e44-0ff4-423d-b47a-f9efc5b6346a", "realm": "SharedWorkerGlobalScope", "name": "user-org:fixture:fixture", "topic": "chatThreadReadCursorUpdated", "occurrences": 1},
+        {"op": "unsubscribe", "client": "97973e44-0ff4-423d-b47a-f9efc5b6346a", "realm": "SharedWorkerGlobalScope", "name": "org:fixture", "topic": "presentationTemplatesChanged", "occurrences": 1},
+        {"op": "connection-open", "client": "4a9766b5-18f4-4ee9-bdad-e1b1595f5758", "occurrences": 1},
+        {"op": "subscribe", "client": "4a9766b5-18f4-4ee9-bdad-e1b1595f5758", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "presentationTemplatesChanged", "occurrences": 1},
+        {"op": "subscribe", "client": "4a9766b5-18f4-4ee9-bdad-e1b1595f5758", "realm": "SharedWorkerGlobalScope", "name": "org:fixture", "topic": "presentationTemplatesChanged", "occurrences": 1},
+        {"op": "subscribe", "client": "4a9766b5-18f4-4ee9-bdad-e1b1595f5758", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "connectorPermissionUpdated", "occurrences": 1},
+        {"op": "subscribe", "client": "4a9766b5-18f4-4ee9-bdad-e1b1595f5758", "realm": "SharedWorkerGlobalScope", "name": "user-org:fixture:fixture", "topic": "chatIndicatorsChanged", "occurrences": 1},
+        {"op": "subscribe", "client": "4a9766b5-18f4-4ee9-bdad-e1b1595f5758", "realm": "SharedWorkerGlobalScope", "name": "user-org:fixture:fixture", "topic": "chatThreadReadCursorUpdated", "occurrences": 1}
+      ]
+    },
+    "domain039": {
+      "stages": [
+        {"label": "surviving shelf", "index": 183, "path": "/", "visible": ["Side survey", "Primary survey", "Find people", "Harbor exhibit"], "network": [["/api/user-preferences", 409], ["/api/user-model-preference", 200], ["/api/user-preferences/initialize", 200], ["/api/user-templates", 200], ["/api/user-templates", 200], ["/api/user-templates", 200]]},
+        {"label": "remaining domain offline", "index": 196, "path": "/chats/THREAD", "visible": ["Side survey", "Primary survey", "Side survey"], "network": []}
+      ],
+      "providerSummary": [
+        {"op": "connection-open", "client": "d979c83b-3d6c-46a5-8585-b51c60206d76", "occurrences": 1},
+        {"op": "subscribe", "client": "d979c83b-3d6c-46a5-8585-b51c60206d76", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "presentationTemplatesChanged", "occurrences": 1},
+        {"op": "subscribe", "client": "d979c83b-3d6c-46a5-8585-b51c60206d76", "realm": "SharedWorkerGlobalScope", "name": "org:fixture", "topic": "presentationTemplatesChanged", "occurrences": 1},
+        {"op": "subscribe", "client": "d979c83b-3d6c-46a5-8585-b51c60206d76", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "connectorPermissionUpdated", "occurrences": 1},
+        {"op": "subscribe", "client": "d979c83b-3d6c-46a5-8585-b51c60206d76", "realm": "SharedWorkerGlobalScope", "name": "user-org:fixture:fixture", "topic": "chatIndicatorsChanged", "occurrences": 1},
+        {"op": "subscribe", "client": "d979c83b-3d6c-46a5-8585-b51c60206d76", "realm": "SharedWorkerGlobalScope", "name": "user-org:fixture:fixture", "topic": "chatThreadReadCursorUpdated", "occurrences": 1},
+        {"op": "connection-open", "client": "68899f3d-0bf8-4e3b-9657-143667edc592", "occurrences": 1},
+        {"op": "subscribe", "client": "68899f3d-0bf8-4e3b-9657-143667edc592", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "presentationTemplatesChanged", "occurrences": 1},
+        {"op": "subscribe", "client": "68899f3d-0bf8-4e3b-9657-143667edc592", "realm": "SharedWorkerGlobalScope", "name": "org:fixture", "topic": "presentationTemplatesChanged", "occurrences": 1},
+        {"op": "subscribe", "client": "68899f3d-0bf8-4e3b-9657-143667edc592", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "connectorPermissionUpdated", "occurrences": 1},
+        {"op": "subscribe", "client": "68899f3d-0bf8-4e3b-9657-143667edc592", "realm": "SharedWorkerGlobalScope", "name": "user-org:fixture:fixture", "topic": "chatIndicatorsChanged", "occurrences": 1},
+        {"op": "subscribe", "client": "68899f3d-0bf8-4e3b-9657-143667edc592", "realm": "SharedWorkerGlobalScope", "name": "user-org:fixture:fixture", "topic": "chatThreadReadCursorUpdated", "occurrences": 1},
+        {"op": "published", "client": "68899f3d-0bf8-4e3b-9657-143667edc592", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "presentationTemplatesChanged", "occurrences": 1},
+        {"op": "delivery-1", "client": "68899f3d-0bf8-4e3b-9657-143667edc592", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "presentationTemplatesChanged", "occurrences": 1},
+        {"op": "connection-close", "client": "d979c83b-3d6c-46a5-8585-b51c60206d76", "occurrences": 1},
+        {"op": "connection-close", "client": "68899f3d-0bf8-4e3b-9657-143667edc592", "occurrences": 1}
+      ]
+    },
+    "pending006": {
+      "stages": [
+        {"label": "waiting at external attach", "path": "dashboard", "markers": [], "reads": [], "topics": []}
+      ],
+      "providerSummary": [
+        {"op": "connection-open", "client": "9492a8dd-6656-41f8-bbc5-07bfdae47715", "occurrences": 1},
+        {"op": "asked", "alias": "attach", "mode": "holdfail", "occurrences": 1},
+        {"op": "settled", "alias": "attach", "mode": "holdfail", "status": 503, "occurrences": 1},
+        {"op": "subscribe", "client": "9492a8dd-6656-41f8-bbc5-07bfdae47715", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "presentationTemplatesChanged", "occurrences": 1},
+        {"op": "subscribe", "client": "9492a8dd-6656-41f8-bbc5-07bfdae47715", "realm": "SharedWorkerGlobalScope", "name": "org:fixture", "topic": "presentationTemplatesChanged", "occurrences": 1},
+        {"op": "connection-close", "client": "9492a8dd-6656-41f8-bbc5-07bfdae47715", "occurrences": 1}
+      ]
+    },
+    "pending010": {
+      "stages": [
+        {"label": "waiting at external attach", "path": "dashboard", "markers": [], "reads": [{"op": "indicators", "alias": "A", "empty": true}], "topics": []},
+        {"label": "after failure", "path": "dashboard", "markers": ["Primary survey", "Side survey"], "reads": [{"op": "indicators", "alias": "A", "empty": true}], "topics": [["subscribe", "user:test-user-123", "agentphone:changed"], ["subscribe", "user-org:test-user-123:org_default", "*"], ["subscribe", "user-org:test-user-123:org_default", "chatIndicatorsChanged"], ["subscribe", "user-org:test-user-123:org_default", "chatThreadReadCursorUpdated"], ["subscribe", "user:test-user-123", "computerUseHostsChanged"], ["subscribe", "org:org_default", "runQueueChanged"], ["unsubscribe", "user:test-user-123", "presentationTemplatesChanged"], ["unsubscribe", "org:org_default", "presentationTemplatesChanged"], ["unsubscribe", "user:test-user-123", "getStartedRewardsChanged"], ["unsubscribe", "user:test-user-123", "slack:changed"], ["unsubscribe", "user:test-user-123", "connectorPermissionUpdated"], ["subscribe", "user:test-user-123", "billing:changed"], ["unsubscribe", "user:test-user-123", "vnc:observations-changed"], ["unsubscribe", "user:test-user-123", "billing:changed"], ["unsubscribe", "user:test-user-123", "userPreferenceChanged"], ["unsubscribe", "user:test-user-123", "runModelsChanged"], ["unsubscribe", "user:test-user-123", "cloudflare-access:changed"], ["unsubscribe", "user:test-user-123", "tailscale:changed"], ["unsubscribe", "user:test-user-123", "agentphone:changed"], ["unsubscribe", "user-org:test-user-123:org_default", "*"], ["unsubscribe", "user-org:test-user-123:org_default", "chatIndicatorsChanged"], ["unsubscribe", "user-org:test-user-123:org_default", "chatThreadReadCursorUpdated"], ["unsubscribe", "user:test-user-123", "computerUseHostsChanged"], ["unsubscribe", "org:org_default", "runQueueChanged"], ["unsubscribe", "user:test-user-123", "billing:changed"]]}
+      ],
+      "providerSummary": [
+        {"op": "connection-open", "client": "da086614-9af5-40e3-846f-9333200a3019", "occurrences": 1},
+        {"op": "asked", "alias": "attach", "mode": "holdfail", "occurrences": 1},
+        {"op": "channel-state", "client": "da086614-9af5-40e3-846f-9333200a3019", "realm": "SharedWorkerGlobalScope", "name": "failed", "topic": "", "occurrences": 1},
+        {"op": "settled", "alias": "attach", "mode": "holdfail", "status": 503, "occurrences": 1},
+        {"op": "connection-state", "client": "da086614-9af5-40e3-846f-9333200a3019", "realm": "SharedWorkerGlobalScope", "name": "failed", "topic": "", "occurrences": 1},
+        {"op": "subscribe", "client": "da086614-9af5-40e3-846f-9333200a3019", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "presentationTemplatesChanged", "occurrences": 1},
+        {"op": "subscribe", "client": "da086614-9af5-40e3-846f-9333200a3019", "realm": "SharedWorkerGlobalScope", "name": "org:fixture", "topic": "presentationTemplatesChanged", "occurrences": 1},
+        {"op": "subscribe", "client": "da086614-9af5-40e3-846f-9333200a3019", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "connectorPermissionUpdated", "occurrences": 1},
+        {"op": "subscribe", "client": "da086614-9af5-40e3-846f-9333200a3019", "realm": "SharedWorkerGlobalScope", "name": "user-org:fixture:fixture", "topic": "chatIndicatorsChanged", "occurrences": 1},
+        {"op": "subscribe", "client": "da086614-9af5-40e3-846f-9333200a3019", "realm": "SharedWorkerGlobalScope", "name": "user-org:fixture:fixture", "topic": "chatThreadReadCursorUpdated", "occurrences": 1},
+        {"op": "unsubscribe", "client": "da086614-9af5-40e3-846f-9333200a3019", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "presentationTemplatesChanged", "occurrences": 1},
+        {"op": "unsubscribe", "client": "da086614-9af5-40e3-846f-9333200a3019", "realm": "SharedWorkerGlobalScope", "name": "org:fixture", "topic": "presentationTemplatesChanged", "occurrences": 1},
+        {"op": "unsubscribe", "client": "da086614-9af5-40e3-846f-9333200a3019", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "connectorPermissionUpdated", "occurrences": 1},
+        {"op": "unsubscribe", "client": "da086614-9af5-40e3-846f-9333200a3019", "realm": "SharedWorkerGlobalScope", "name": "user-org:fixture:fixture", "topic": "chatIndicatorsChanged", "occurrences": 1},
+        {"op": "unsubscribe", "client": "da086614-9af5-40e3-846f-9333200a3019", "realm": "SharedWorkerGlobalScope", "name": "user-org:fixture:fixture", "topic": "chatThreadReadCursorUpdated", "occurrences": 1}
+      ]
+    },
+    "011": {
+      "stages": [
+        {"label": "first publication A", "path": "same thread", "markers": ["Question number 16", "Delivered survey 17", "Primary survey", "Side survey"], "reads": [{"op": "indicators", "alias": "A", "empty": true}, {"op": "detail", "status": 200, "pending": false}, {"op": "event-rows", "resource": "primary"}, {"op": "event-rows", "resource": "primary"}, {"op": "event-rows", "resource": "primary"}, {"op": "catchUp", "status": 200, "threads": [{"source": "side", "cursor": 0, "returned": 0}, {"source": "primary", "cursor": 48, "returned": 3}], "includesPrimary": true}, {"op": "event-rows", "resource": "primary"}], "topics": [["subscribe", "user:test-user-123", "presentationTemplatesChanged"], ["subscribe", "org:org_default", "presentationTemplatesChanged"], ["subscribe", "user:test-user-123", "getStartedRewardsChanged"], ["subscribe", "user:test-user-123", "slack:changed"], ["subscribe", "user:test-user-123", "connectorPermissionUpdated"], ["subscribe", "user:test-user-123", "billing:changed"], ["subscribe", "user:test-user-123", "userPreferenceChanged"], ["subscribe", "user:test-user-123", "runModelsChanged"], ["subscribe", "user:test-user-123", "vnc:observations-changed"], ["subscribe", "user:test-user-123", "cloudflare-access:changed"], ["subscribe", "user:test-user-123", "tailscale:changed"], ["subscribe", "user-org:test-user-123:org_default", "*"], ["subscribe", "user-org:test-user-123:org_default", "chatIndicatorsChanged"], ["subscribe", "user-org:test-user-123:org_default", "chatThreadReadCursorUpdated"], ["subscribe", "user:test-user-123", "computerUseHostsChanged"], ["subscribe", "org:org_default", "runQueueChanged"], ["subscribe", "user:test-user-123", "billing:changed"], ["subscribe", "user:test-user-123", "browserSessionChanged"], ["subscribe", "user:test-user-123", "chatArtifactCatalogChanged:b0000000-0000-4000-a000-000000000081"], ["subscribe", "user:test-user-123", "chatThreadDetailChanged:b0000000-0000-4000-a000-000000000081"], ["subscribe", "user:test-user-123", "artifact:changed"], ["subscribe", "user:test-user-123", "chatThreadAutomationsChanged:b0000000-0000-4000-a000-000000000081"], ["subscribe", "user:test-user-123", "chatThreadWorkflowsChanged:b0000000-0000-4000-a000-000000000081"], ["published", "", "chatThreadMessageCreated:b0000000-0000-4000-a000-000000000081"], ["delivery-1", "user-org:test-user-123:org_default", "chatThreadMessageCreated:b0000000-0000-4000-a000-000000000081"]]},
+        {"label": "resume", "path": "same thread", "markers": ["Question number 16", "Delivered survey 17", "Primary survey", "Side survey"], "reads": [], "topics": [["connection-state", "suspended", ""], ["connection-state", "connected", ""]]},
+        {"label": "continuity gap", "path": "same thread", "markers": ["Question number 16", "Delivered survey 17", "Primary survey", "Side survey"], "reads": [], "topics": [["connection-state", "suspended", ""], ["connection-state", "connected", ""]]}
+      ],
+      "providerSummary": [
+
+      ]
+    },
+    "panel009": {
+      "stages": [
+        {"label": "original", "index": 101, "reads": [{"op": "overview-boundary", "kind": "full", "slug": null, "status": 200, "items": [["Probe 1", true], ["Probe 2", true]]}], "topic": [["subscribe", "user:test-user-123"]]},
+        {"label": "away", "index": 118, "reads": [{"op": "overview-boundary", "kind": "full", "slug": null, "status": 200, "items": [["Probe 1", true], ["Probe 2", true]]}], "topic": [["subscribe", "user:test-user-123"], ["unsubscribe", "user:test-user-123"]]},
+        {"label": "publication while away", "index": 123, "reads": [{"op": "overview-boundary", "kind": "full", "slug": null, "status": 200, "items": [["Probe 1", true], ["Probe 2", true]]}], "topic": [["subscribe", "user:test-user-123"], ["unsubscribe", "user:test-user-123"], ["published", "user:test-user-123"], ["delivery-0", "user:test-user-123"]]},
+        {"label": "history returned", "index": 150, "reads": [{"op": "overview-boundary", "kind": "full", "slug": null, "status": 200, "items": [["Probe 1", true], ["Probe 2", true]]}, {"op": "overview-boundary", "kind": "full", "slug": null, "status": 200, "items": [["Probe 1 restored", true], ["Probe 2", true]]}], "topic": [["subscribe", "user:test-user-123"], ["unsubscribe", "user:test-user-123"], ["published", "user:test-user-123"], ["delivery-0", "user:test-user-123"], ["subscribe", "user:test-user-123"]]}
+      ],
+      "providerSummary": [
+
+      ]
+    },
+    "panel007": {
+      "stages": [
+        {"label": "original", "index": 101, "reads": [{"op": "overview-boundary", "kind": "full", "slug": null, "status": 200, "items": [["Probe 1", true], ["Probe 2", true]]}], "topic": [["subscribe", "user:test-user-123"]]},
+        {"label": "failed first only", "index": 106, "reads": [{"op": "overview-boundary", "kind": "full", "slug": null, "status": 200, "items": [["Probe 1", true], ["Probe 2", true]]}, {"op": "overview-boundary", "kind": "target", "slug": "gmail", "status": 503, "items": [["Probe 1", true], ["Probe 2", true]]}], "topic": [["subscribe", "user:test-user-123"], ["published", "user:test-user-123"], ["delivery-1", "user:test-user-123"]]},
+        {"label": "second changed while retry available", "index": 111, "reads": [{"op": "overview-boundary", "kind": "full", "slug": null, "status": 200, "items": [["Probe 1", true], ["Probe 2", true]]}, {"op": "overview-boundary", "kind": "target", "slug": "gmail", "status": 503, "items": [["Probe 1", true], ["Probe 2", true]]}, {"op": "overview-boundary", "kind": "target", "slug": "slack", "status": 200, "items": [["Probe 1", true], ["Probe 2 current", true]]}], "topic": [["subscribe", "user:test-user-123"], ["published", "user:test-user-123"], ["delivery-1", "user:test-user-123"], ["published", "user:test-user-123"], ["delivery-1", "user:test-user-123"]]},
+        {"label": "retry restored", "index": 116, "reads": [{"op": "overview-boundary", "kind": "full", "slug": null, "status": 200, "items": [["Probe 1", true], ["Probe 2", true]]}, {"op": "overview-boundary", "kind": "target", "slug": "gmail", "status": 503, "items": [["Probe 1", true], ["Probe 2", true]]}, {"op": "overview-boundary", "kind": "target", "slug": "slack", "status": 200, "items": [["Probe 1", true], ["Probe 2 current", true]]}, {"op": "overview-boundary", "kind": "full", "slug": null, "status": 200, "items": [["Probe 1 restored", true], ["Probe 2 current", true]]}], "topic": [["subscribe", "user:test-user-123"], ["published", "user:test-user-123"], ["delivery-1", "user:test-user-123"], ["published", "user:test-user-123"], ["delivery-1", "user:test-user-123"], ["unsubscribe", "user:test-user-123"], ["subscribe", "user:test-user-123"]]},
+        {"label": "first off", "index": 125, "reads": [{"op": "overview-boundary", "kind": "full", "slug": null, "status": 200, "items": [["Probe 1", true], ["Probe 2", true]]}, {"op": "overview-boundary", "kind": "target", "slug": "gmail", "status": 503, "items": [["Probe 1", true], ["Probe 2", true]]}, {"op": "overview-boundary", "kind": "target", "slug": "slack", "status": 200, "items": [["Probe 1", true], ["Probe 2 current", true]]}, {"op": "overview-boundary", "kind": "full", "slug": null, "status": 200, "items": [["Probe 1 restored", true], ["Probe 2 current", true]]}, {"op": "overview-boundary", "kind": "target", "slug": "gmail", "status": 200, "items": [["Probe 1 restored", false], ["Probe 2 current", true]]}], "topic": [["subscribe", "user:test-user-123"], ["published", "user:test-user-123"], ["delivery-1", "user:test-user-123"], ["published", "user:test-user-123"], ["delivery-1", "user:test-user-123"], ["unsubscribe", "user:test-user-123"], ["subscribe", "user:test-user-123"], ["published", "user:test-user-123"], ["delivery-1", "user:test-user-123"]]}
+      ],
+      "providerSummary": [
+
+      ]
+    },
+    "permission002": {
+      "stages": [
+        {"label": "first publication", "path": "dashboard", "markers": [], "reads": [], "topics": [["subscribe", "user:test-user-123", "presentationTemplatesChanged"], ["subscribe", "org:org_default", "presentationTemplatesChanged"], ["subscribe", "user:test-user-123", "getStartedRewardsChanged"], ["subscribe", "user:test-user-123", "slack:changed"], ["subscribe", "user:test-user-123", "connectorPermissionUpdated"], ["subscribe", "user:test-user-123", "billing:changed"], ["subscribe", "user:test-user-123", "userPreferenceChanged"], ["subscribe", "user:test-user-123", "runModelsChanged"], ["subscribe", "user:test-user-123", "vnc:observations-changed"], ["subscribe", "user:test-user-123", "cloudflare-access:changed"], ["subscribe", "user:test-user-123", "tailscale:changed"], ["subscribe", "user-org:test-user-123:org_default", "*"], ["subscribe", "user-org:test-user-123:org_default", "chatIndicatorsChanged"], ["subscribe", "user-org:test-user-123:org_default", "chatThreadReadCursorUpdated"], ["subscribe", "user:test-user-123", "computerUseHostsChanged"], ["subscribe", "user:test-user-123", "billing:changed"], ["subscribe", "org:org_default", "runQueueChanged"], ["published", "user:test-user-123", "connectorPermissionUpdated"], ["delivery-1", "user:test-user-123", "connectorPermissionUpdated"]]},
+        {"label": "same topic still live", "path": "dashboard", "markers": [], "reads": [], "topics": [["subscribe", "user:test-user-123", "presentationTemplatesChanged"], ["subscribe", "org:org_default", "presentationTemplatesChanged"], ["subscribe", "user:test-user-123", "getStartedRewardsChanged"], ["subscribe", "user:test-user-123", "slack:changed"], ["subscribe", "user:test-user-123", "connectorPermissionUpdated"], ["subscribe", "user:test-user-123", "billing:changed"], ["subscribe", "user:test-user-123", "userPreferenceChanged"], ["subscribe", "user:test-user-123", "runModelsChanged"], ["subscribe", "user:test-user-123", "vnc:observations-changed"], ["subscribe", "user:test-user-123", "cloudflare-access:changed"], ["subscribe", "user:test-user-123", "tailscale:changed"], ["subscribe", "user-org:test-user-123:org_default", "*"], ["subscribe", "user-org:test-user-123:org_default", "chatIndicatorsChanged"], ["subscribe", "user-org:test-user-123:org_default", "chatThreadReadCursorUpdated"], ["subscribe", "user:test-user-123", "computerUseHostsChanged"], ["subscribe", "user:test-user-123", "billing:changed"], ["subscribe", "org:org_default", "runQueueChanged"], ["published", "user:test-user-123", "connectorPermissionUpdated"], ["delivery-1", "user:test-user-123", "connectorPermissionUpdated"], ["published", "user:test-user-123", "connectorPermissionUpdated"], ["delivery-1", "user:test-user-123", "connectorPermissionUpdated"]]}
+      ],
+      "providerSummary": [
+        {"op": "connection-open", "client": "c3d2e97c-9996-4791-82b4-e7e604e64e2d", "occurrences": 1},
+        {"op": "subscribe", "client": "c3d2e97c-9996-4791-82b4-e7e604e64e2d", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "presentationTemplatesChanged", "occurrences": 1},
+        {"op": "subscribe", "client": "c3d2e97c-9996-4791-82b4-e7e604e64e2d", "realm": "SharedWorkerGlobalScope", "name": "org:fixture", "topic": "presentationTemplatesChanged", "occurrences": 1},
+        {"op": "subscribe", "client": "c3d2e97c-9996-4791-82b4-e7e604e64e2d", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "connectorPermissionUpdated", "occurrences": 1},
+        {"op": "subscribe", "client": "c3d2e97c-9996-4791-82b4-e7e604e64e2d", "realm": "SharedWorkerGlobalScope", "name": "user-org:fixture:fixture", "topic": "chatIndicatorsChanged", "occurrences": 1},
+        {"op": "subscribe", "client": "c3d2e97c-9996-4791-82b4-e7e604e64e2d", "realm": "SharedWorkerGlobalScope", "name": "user-org:fixture:fixture", "topic": "chatThreadReadCursorUpdated", "occurrences": 1},
+        {"op": "published", "client": "c3d2e97c-9996-4791-82b4-e7e604e64e2d", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "connectorPermissionUpdated", "occurrences": 2},
+        {"op": "delivery-1", "client": "c3d2e97c-9996-4791-82b4-e7e604e64e2d", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "connectorPermissionUpdated", "occurrences": 2},
+        {"op": "connection-close", "client": "c3d2e97c-9996-4791-82b4-e7e604e64e2d", "occurrences": 1}
+      ]
+    },
+    "exact033": {
+      "stages": [
+        {"label": "chatIndicatorsChanged", "index": 124, "wire": [{"op": "published", "client": "d759fcc2-fbe6-4016-bb95-4c81303000b3", "name": "user-org:test-user-123:org_default", "topic": "chatIndicatorsChanged", "realm": "SharedWorkerGlobalScope"}, {"op": "indicators", "alias": "A", "empty": false}]},
+        {"label": "chatThreadReadCursorUpdated", "index": 129, "wire": [{"op": "published", "client": "d759fcc2-fbe6-4016-bb95-4c81303000b3", "name": "user-org:test-user-123:org_default", "topic": "chatThreadReadCursorUpdated", "realm": "SharedWorkerGlobalScope"}, {"op": "indicators", "alias": "A", "empty": false}]},
+        {"label": "first message", "index": 137, "wire": [{"op": "published", "client": "d759fcc2-fbe6-4016-bb95-4c81303000b3", "name": "", "topic": "chatThreadMessageCreated:b0000000-0000-4000-a000-000000000081", "realm": "SharedWorkerGlobalScope"}, {"op": "delivery-1", "client": "d759fcc2-fbe6-4016-bb95-4c81303000b3", "name": "user-org:test-user-123:org_default", "topic": "chatThreadMessageCreated:b0000000-0000-4000-a000-000000000081", "realm": "SharedWorkerGlobalScope"}, {"op": "catchUp", "status": 200, "threads": [{"source": "side", "cursor": 0, "returned": 0}, {"source": "primary", "cursor": 1, "returned": 0}], "includesPrimary": true}]},
+        {"label": "second message", "index": 145, "wire": [{"op": "published", "client": "d759fcc2-fbe6-4016-bb95-4c81303000b3", "name": "", "topic": "chatThreadMessageCreated:b0000000-0000-4000-a000-000000000081", "realm": "SharedWorkerGlobalScope"}, {"op": "delivery-1", "client": "d759fcc2-fbe6-4016-bb95-4c81303000b3", "name": "user-org:test-user-123:org_default", "topic": "chatThreadMessageCreated:b0000000-0000-4000-a000-000000000081", "realm": "SharedWorkerGlobalScope"}, {"op": "catchUp", "status": 200, "threads": [{"source": "side", "cursor": 0, "returned": 0}, {"source": "primary", "cursor": 1, "returned": 1}], "includesPrimary": true}]},
+        {"label": "both original and new event offline", "index": 166}
+      ],
+      "providerSummary": [
+
+      ]
+    },
+    "reuseGate037": {
+      "stages": [
+        {"label": "old external attach pending", "index": 46},
+        {"label": "replacement opened before release", "index": 83, "oldClosed": true},
+        {"label": "surviving subscriber after publication", "index": 143, "oldClosed": true, "topic": [["subscribe", "user:test-user-123", "30a7cba2-b966-4602-9266-3380a049ad46"], ["subscribe", "org:org_default", "30a7cba2-b966-4602-9266-3380a049ad46"], ["published", "org:org_default", "30a7cba2-b966-4602-9266-3380a049ad46"], ["delivery-1", "org:org_default", "30a7cba2-b966-4602-9266-3380a049ad46"]]}
+      ],
+      "providerSummary": [
+        {"op": "connection-open", "client": "02a7515b-5826-44b9-8598-133150d4929b", "occurrences": 1},
+        {"op": "asked", "alias": "attach", "mode": "hold", "occurrences": 1},
+        {"op": "connection-close", "client": "02a7515b-5826-44b9-8598-133150d4929b", "occurrences": 1},
+        {"op": "settled", "alias": "attach", "mode": "hold", "status": 200, "occurrences": 1},
+        {"op": "connection-open", "client": "30a7cba2-b966-4602-9266-3380a049ad46", "occurrences": 1},
+        {"op": "subscribe", "client": "30a7cba2-b966-4602-9266-3380a049ad46", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "presentationTemplatesChanged", "occurrences": 1},
+        {"op": "subscribe", "client": "30a7cba2-b966-4602-9266-3380a049ad46", "realm": "SharedWorkerGlobalScope", "name": "org:fixture", "topic": "presentationTemplatesChanged", "occurrences": 1},
+        {"op": "subscribe", "client": "30a7cba2-b966-4602-9266-3380a049ad46", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "connectorPermissionUpdated", "occurrences": 1},
+        {"op": "subscribe", "client": "30a7cba2-b966-4602-9266-3380a049ad46", "realm": "SharedWorkerGlobalScope", "name": "user-org:fixture:fixture", "topic": "chatIndicatorsChanged", "occurrences": 1},
+        {"op": "subscribe", "client": "30a7cba2-b966-4602-9266-3380a049ad46", "realm": "SharedWorkerGlobalScope", "name": "user-org:fixture:fixture", "topic": "chatThreadReadCursorUpdated", "occurrences": 1},
+        {"op": "published", "client": "30a7cba2-b966-4602-9266-3380a049ad46", "realm": "SharedWorkerGlobalScope", "name": "org:fixture", "topic": "presentationTemplatesChanged", "occurrences": 1},
+        {"op": "delivery-1", "client": "30a7cba2-b966-4602-9266-3380a049ad46", "realm": "SharedWorkerGlobalScope", "name": "org:fixture", "topic": "presentationTemplatesChanged", "occurrences": 1},
+        {"op": "connection-close", "client": "30a7cba2-b966-4602-9266-3380a049ad46", "occurrences": 1}
+      ]
+    },
+    "samePort038": {
+      "stages": [
+        {"label": "old external attach pending", "index": 46},
+        {"label": "replacement opened before release", "index": 99, "oldClosed": false},
+        {"label": "surviving subscriber after publication", "index": 200, "oldClosed": false, "topic": [["subscribe", "user:test-user-123", "a2eee8e1-4b74-4a5e-907b-95ddb23ad15c"], ["subscribe", "org:org_default", "a2eee8e1-4b74-4a5e-907b-95ddb23ad15c"], ["unsubscribe", "org:org_default", "a2eee8e1-4b74-4a5e-907b-95ddb23ad15c"], ["published", "org:org_default", "a2eee8e1-4b74-4a5e-907b-95ddb23ad15c"], ["delivery-0", "org:org_default", "a2eee8e1-4b74-4a5e-907b-95ddb23ad15c"]]}
+      ],
+      "providerSummary": [
+        {"op": "connection-open", "client": "a2eee8e1-4b74-4a5e-907b-95ddb23ad15c", "occurrences": 1},
+        {"op": "asked", "alias": "attach", "mode": "holdfail", "occurrences": 1},
+        {"op": "settled", "alias": "attach", "mode": "holdfail", "status": 503, "occurrences": 1},
+        {"op": "subscribe", "client": "a2eee8e1-4b74-4a5e-907b-95ddb23ad15c", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "presentationTemplatesChanged", "occurrences": 1},
+        {"op": "subscribe", "client": "a2eee8e1-4b74-4a5e-907b-95ddb23ad15c", "realm": "SharedWorkerGlobalScope", "name": "org:fixture", "topic": "presentationTemplatesChanged", "occurrences": 1},
+        {"op": "subscribe", "client": "a2eee8e1-4b74-4a5e-907b-95ddb23ad15c", "realm": "SharedWorkerGlobalScope", "name": "user:fixture", "topic": "connectorPermissionUpdated", "occurrences": 1},
+        {"op": "subscribe", "client": "a2eee8e1-4b74-4a5e-907b-95ddb23ad15c", "realm": "SharedWorkerGlobalScope", "name": "user-org:fixture:fixture", "topic": "chatIndicatorsChanged", "occurrences": 1},
+        {"op": "subscribe", "client": "a2eee8e1-4b74-4a5e-907b-95ddb23ad15c", "realm": "SharedWorkerGlobalScope", "name": "user-org:fixture:fixture", "topic": "chatThreadReadCursorUpdated", "occurrences": 1},
+        {"op": "unsubscribe", "client": "a2eee8e1-4b74-4a5e-907b-95ddb23ad15c", "realm": "SharedWorkerGlobalScope", "name": "org:fixture", "topic": "presentationTemplatesChanged", "occurrences": 1},
+        {"op": "published", "client": "a2eee8e1-4b74-4a5e-907b-95ddb23ad15c", "realm": "SharedWorkerGlobalScope", "name": "org:fixture", "topic": "presentationTemplatesChanged", "occurrences": 1},
+        {"op": "delivery-0", "client": "a2eee8e1-4b74-4a5e-907b-95ddb23ad15c", "realm": "SharedWorkerGlobalScope", "name": "org:fixture", "topic": "presentationTemplatesChanged", "occurrences": 1},
+        {"op": "connection-close", "client": "a2eee8e1-4b74-4a5e-907b-95ddb23ad15c", "occurrences": 1}
+      ]
+    }
+  },
+  "routerCdp": {
+  "007": {
+    "requests": [
+      {
+        "id": 31,
+        "method": "Page.navigate",
+        "sessionId": "estuary-session",
+        "params": {
+          "url": "http://estuary.example/first"
+        },
+        "connectionId": 1
+      }
+    ],
+    "feedback": "A page is still opening. Try again shortly."
+  },
+  "007-first": {
+    "read": true
+  },
+  "007-urls": [
+    {
+      "targetId": "estuary",
+      "url": "http://estuary.example/first",
+      "title": "estuary.example",
+      "windowId": 101
+    },
+    {
+      "targetId": "bay",
+      "url": "https://bay.example",
+      "title": "Bay",
+      "windowId": 101
+    }
+  ],
+  "001": {
+    "before": [
+      "Browser.getVersion",
+      "Target.attachToBrowserTarget",
+      "Target.setDiscoverTargets",
+      "Target.getTargets",
+      "Extensions.triggerAction",
+      "Target.attachToTarget",
+      "Runtime.enable",
+      "Runtime.addBinding",
+      "Runtime.evaluate",
+      "Target.setDiscoverTargets",
+      "Runtime.evaluate",
+      "Target.getTargets"
+    ],
+    "after": [
+      [
+        "Browser.getVersion",
+        1
+      ],
+      [
+        "Target.attachToBrowserTarget",
+        1
+      ],
+      [
+        "Target.setDiscoverTargets",
+        1
+      ],
+      [
+        "Target.getTargets",
+        1
+      ],
+      [
+        "Extensions.triggerAction",
+        1
+      ],
+      [
+        "Target.attachToTarget",
+        1
+      ],
+      [
+        "Runtime.enable",
+        1
+      ],
+      [
+        "Runtime.addBinding",
+        1
+      ],
+      [
+        "Runtime.evaluate",
+        1
+      ],
+      [
+        "Target.setDiscoverTargets",
+        1
+      ],
+      [
+        "Runtime.evaluate",
+        1
+      ],
+      [
+        "Target.getTargets",
+        1
+      ]
+    ],
+    "active": 1
+  },
+  "002": {
+    "active": 0,
+    "readV": false,
+    "readA": false,
+    "remainingTargets": [
+      "estuary",
+      "bay"
+    ],
+    "after": []
+  },
+  "003": {
+    "request": {
+      "id": 36,
+      "method": "Target.attachToTarget",
+      "params": {
+        "targetId": "bay",
+        "flatten": true
+      },
+      "connectionId": 1
+    },
+    "payload": "{\"id\":36,\"result\":{\"sessionId\":\"bay-session\"}}",
+    "read": true,
+    "active": 1,
+    "later": [
+      {
+        "id": 54,
+        "method": "Target.detachFromTarget",
+        "params": {
+          "sessionId": "bay-session"
+        },
+        "connectionId": 1
+      }
+    ],
+    "detached": [
+      "estuary-session",
+      "bay-session"
+    ]
+  },
+  "004": {
+    "request": {
+      "id": 2,
+      "method": "Target.attachToBrowserTarget",
+      "params": {},
+      "connectionId": 1
+    },
+    "payload": "{\"id\":2,\"result\":{\"sessionId\":\"native-browser-1\"}}",
+    "read": false,
+    "active": 0,
+    "later": [],
+    "detached": []
+  },
+  "008": {
+    "request": {
+      "id": 20,
+      "method": "Target.attachToTarget",
+      "params": {
+        "targetId": "estuary",
+        "flatten": true
+      },
+      "connectionId": 1
+    },
+    "payload": "{\"id\":20,\"result\":{\"sessionId\":\"estuary-session\"}}",
+    "read": false,
+    "active": 0,
+    "later": [],
+    "detached": []
+  }
+},
+  "chromiumSingleConnectionControl": {
+  "singleSocket": true,
+  "trace": [
+    {
+      "id": 6,
+      "session": "B53933D7AB3B264DE2ED480DA37BE849",
+      "url": "/bay",
+      "frame": "6C550300863CF88DFA2BD552F533EED1"
+    },
+    {
+      "id": 5,
+      "session": "90699857AB1689B1C58C261F4E964BE1",
+      "url": "/estuary",
+      "frame": "35E216802EB9EEAA008BAA3004E77448"
+    }
+  ],
+  "bothFrameTreesVerified": true
+},
+  "twoRouterViewers": {
+  "before": [
+    "http://localhost:8188/remote-example",
+    "http://localhost:8188/remote-other"
+  ],
+  "inlet": [
+    "http://localhost:8188/remote-example#inlet",
+    "http://localhost:8188/remote-other"
+  ],
+  "headland": [
+    "http://localhost:8188/remote-example#headland",
+    "http://localhost:8188/remote-other"
+  ],
+  "after": {
+    "closed": true,
+    "browserSource": "http://localhost:8188/remote-example#after-close",
+    "survivor": "http://localhost:8188/remote-other#survivor",
+    "wire": [
+      {
+        "socketId": 1,
+        "session": "5B91112FC9D65475FF0BD4CD702785FA",
+        "url": "http://localhost:8188/remote-example#inlet"
+      },
+      {
+        "socketId": 1,
+        "session": "5B91112FC9D65475FF0BD4CD702785FA",
+        "url": "http://localhost:8188/remote-example#headland"
+      },
+      {
+        "socketId": 2,
+        "session": "1590410A1F08A0A6764E872698696CB7",
+        "url": "http://localhost:8188/remote-other#survivor"
+      }
+    ],
+    "closes": [
+      1
+    ]
+  }
+}
+}

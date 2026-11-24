@@ -14,7 +14,7 @@ Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/message-port.te
 - **When** Events arrive on another user's channel, under another event name, and then under the requested name on the correct channel.
 - **Then** Only the matching event is forwarded, and a chat-event read still returns its existing row.
 
-**Unverified clauses.** 通过实际用户频道的浏览器请求主题和私有聊天观察匹配与不匹配的通知。没有用户入口订阅冻结的任意 newFeature:changed 主题，未能证明按用户及名称过滤后仍读回原事件。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** Published newFeature:changed to another user, a different name to the right user and the frozen name to the right user. Question number 16 remained readable on the mounted Chat. No Router consumer acquired the arbitrary frozen topic, so a matching forward could not be distinguished. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#message-port-011).
 
 ### message-port-014
 
@@ -24,7 +24,7 @@ Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/message-port.te
 - **When** The topic emits an event, the connection suspends and reconnects, then the first tab disconnects and another event arrives.
 - **Then** Both tabs receive the first event; a plain resume causes no resync, while reconnect causes one resync per tab. After the first tab disconnects, only the second receives the next event, and the shared subscription ends after the second disconnects.
 
-**Unverified clauses.** Two already-open Chromium template shelves subscribed to the same user topic. Both windows displayed the new card before the resume control began. That resume produced no page catalog read. The continuity gap produced one read in A and one in B. Only B read the second, empty catalog after A closed and B lost the card. The provider did not record the final topic unsubscribe after B closed. Obtain an independent final topic-removal receipt after B disconnects, while retaining this per-window continuity control. [Batch 107 review](../../../test-rebuild-evidence/107/README.md#message-port-014).
+**Unverified clauses.** Two mounted shelves showed Harbor exhibit on the first user publication. Plain resume yielded no catalog read; the gap yielded one per window. After A closed only B read the empty catalog. Keeping B open allowed a third publication to reach B. Closing B instead terminated its identified provider connection at the independent loopback server. The server received no topic-specific unsubscribe in that arm. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#message-port-014).
 
 ### message-port-017
 
@@ -94,7 +94,7 @@ Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/message-port.te
 - **When** Indicator-change and read-cursor events arrive, then two chat-message notifications arrive two seconds apart as another row becomes available.
 - **Then** The indicator and read-cursor events cause three indicator reloads and no catch-up requests. Each chat-message notification triggers one catch-up, and the cached rows advance from one row to two.
 
-**Unverified clauses.** Credential-scope notifications, catch-up and rendered rows were exercised. No public handler receipt separates exactly three indicator reloads from two independent warms two seconds apart. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** With one original row, each credential-scoped indicator or cursor publication produced an indicator HTTP read and no catch-up. Two message publications separated by a two-second wait each caused one catch-up from cursor 1, returning zero then one new row. The original question and the new tidal-change row were both readable offline. Two HTTP reads cannot identify the three caller invalidations in the original Then. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#message-port-033).
 
 ### message-port-036
 
@@ -104,7 +104,7 @@ Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/message-port.te
 - **When** The first user subscriber is released, then the remaining user subscriber is released and later reacquired.
 - **Then** After the first release, notifications reach the second user subscriber, organization subscriber, and different-topic subscriber, but not the released subscriber. Releasing the second removes only that user-topic subscription; the organization and different-topic subscriptions remain. A reacquired subscriber receives a later notification.
 
-**Unverified clauses.** The Router registers production user and organization template topics. It does not expose four separately owned subscriptions and independent release of two callers on the same port. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** The provider recorded both user and organization subscriptions to presentationTemplatesChanged from the same worker connection. After closing A, B displayed the card. Navigating B to a chat and back reopened its shelf and delivered another publication. The two-window layout does not identify two independent callbacks plus both other subscriptions on one port. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#message-port-036).
 
 ### message-port-037
 
@@ -114,7 +114,7 @@ Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/message-port.te
 - **When** The subscriber is cancelled and a new subscriber with the same ID starts attaching before the old attach completes; then both attaches complete.
 - **Then** The cancelled subscription rejects with an AbortError. Only the new subscriber receives a subsequent notification, and the worker sends one successful subscription reply for the reused ID without an error reply.
 
-**Unverified clauses.** A delayed native attachment and UI replacement were exercised. Each real acquisition generated a new subscriptionId. The frozen reused-ID race requires an ID chosen by the subscriber. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** Closed A while the organization attach was held. B opened before release, and the replacement delivered Harbor exhibit. The provider recorded one held attach returning 200. The real subscription API assigns a fresh UUID per acquisition. Two attach results for a reused ID and the original AbortError were not witnessed. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#message-port-037).
 
 ### message-port-038
 
@@ -124,7 +124,7 @@ Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/message-port.te
 - **When** The attach fails, then one port reacquires the subscription.
 - **Then** Both subscriptions reject with the attach failure, and the failed topic is no longer subscribed. After reacquisition, a notification reaches the new subscriber.
 
-**Unverified clauses.** Two independent already-open shelves shared an outstanding organization attach. The local receiver released it with 503. After closing both windows, a newly registered window reacquired presentationTemplatesChanged on the same organization channel. Publishing on that topic delivered to one handler and put Harbor exhibit on the new shelf. Neither of the two original callers surfaced its rejected attach result. Observe both original subscription rejections and identify removal of the failed topic before reacquiring it. [Batch 107 review](../../../test-rebuild-evidence/107/README.md#message-port-038).
+**Unverified clauses.** Two open shelves shared an outstanding organization attach and its 503. B then left for a chat and used browser back on the same document to reopen its shelf while A stayed open. The provider recorded an unsubscribe and zero handlers for the later publication; the card was already in the catalog. A separate fresh-port control delivered to one handler and showed a newly published Harbor exhibit. The two original caller rejection receipts remain missing. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#message-port-038).
 
 ### message-port-039
 
@@ -134,7 +134,7 @@ Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/message-port.te
 - **When** The first worker Store is reset and a notification is sent to the topic.
 - **Then** The first worker's signal is aborted and its port closes with no remaining listeners, while the second worker remains active and its subscriber receives the notification. The second worker can still complete a cached chat-data query with an empty result.
 
-**Unverified clauses.** Independent child worker domains are available. The Router assigns its own subscription identifiers and does not expose identical IDs or listener counts across worker stores. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** Two independent Chromium storage contexts created separate worker/provider identities. After A closed, B received the user-topic publication and showed Harbor exhibit. B could open Side survey with the service offline. Its rendered title does not establish an empty cached-query response; port IDs and listener disposal did not surface. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#message-port-039).
 
 ## `src/shared-database/__tests__/platform-direct-bridge.test.ts`
 
@@ -298,7 +298,7 @@ Frozen owner: `turbo/apps/platform/src/signals/__tests__/realtime.test.ts` · [O
 - **When** The app subscribes to a user-scoped connector-permission update and the worker receives a matching event.
 - **Then** The subscription is registered with the worker, the app handles the event once and completes the wait, and no app-side Ably authentication token is requested. The subscription is removed after completion.
 
-**Unverified clauses.** Slack 授权页依次展示两次不同决定，能区别消费通知和忽略通知。它是常驻消费者；一次性等待完成、退订及页面零 token 读取仍缺公开观察。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** The permission review changed to Already denied after the first Slack grant notification. The next notification restored Confirm. Both deliveries reached the same user topic on the worker. This review is a persistent listener; the first update did not complete and remove a one-shot wait. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#realtime-002).
 
 ### realtime-005
 
@@ -318,7 +318,7 @@ Frozen owner: `turbo/apps/platform/src/signals/__tests__/realtime.test.ts` · [O
 - **When** The user cancels that subscriber while attachment is pending.
 - **Then** The wait rejects with the subscriber’s cancellation reason, and its channel subscription is removed.
 
-**Unverified clauses.** With an organization attach held at the HTTP boundary, the presentation shelf opened and the provider received the suspended transition. Chromium confirmed closing the subscriber window before the attach gate was released. The gate then returned 503. Neither the waiting subscriber’s cancellation reason nor its topic removal was acknowledged independently. Keep the provider observer alive beyond the cancellation and identify the subscriber-specific rejection and removal before releasing attach. [Batch 107 review](../../../test-rebuild-evidence/107/README.md#realtime-006).
+**Unverified clauses.** Closed the Chromium subscriber while the external attachment was pending. The receiver later returned 503; the independent observer recorded a connection close. No original caller acknowledged its cancellation reason or topic-specific release. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#realtime-006).
 
 ### realtime-010
 
@@ -328,7 +328,7 @@ Frozen owner: `turbo/apps/platform/src/signals/__tests__/realtime.test.ts` · [O
 - **When** The channel later reports a terminal “connection failed” error.
 - **Then** The callback receives that error, and the channel subscription is removed.
 
-**Unverified clauses.** The external attach was outstanding while the shelf was open. The provider delivered a terminal failed-channel transition with the connection-failed reason, followed by a failed connection and the attach failure. There was no observable acknowledgement from the background subscriber’s error callback or removal of its exact subscription. Use a background subscriber whose failure callback changes a visible value and whose subscription removal can be identified at the same provider. [Batch 107 review](../../../test-rebuild-evidence/107/README.md#realtime-010).
+**Unverified clauses.** The provider delivered failed channel and failed connection transitions during the pending attach and returned 503. The visible shelf did not expose the background error reason or acknowledge that exact subscriber removal. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#realtime-010).
 
 ### realtime-011
 
@@ -338,7 +338,7 @@ Frozen owner: `turbo/apps/platform/src/signals/__tests__/realtime.test.ts` · [O
 - **When** The subscription receives a payload, then the transport disconnects and reconnects.
 - **Then** Initialization runs once on subscription and once after reconnection; the payload is handled, and the continuity gap triggers recovery.
 
-**Unverified clauses.** A genuine payload publication was followed by Delivered survey 17 on the open thread. The external provider then recorded both a resumed connection and a discontinuous reconnect. These receipts do not identify two completed initializations of that particular payload subscriber with runOnSubscribe omitted. Use a mounted payload consumer with a unique visible value produced only by its initialization on both sides of the continuity gap. [Batch 107 review](../../../test-rebuild-evidence/107/README.md#realtime-011).
+**Unverified clauses.** The mounted Chat showed Delivered survey 17 after a real payload. Resumed and discontinuous reconnects were sent separately; both retained the rendered event. Neither establishes two initializations of the particular subscriber whose runOnSubscribe option is omitted. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#realtime-011).
 
 ### realtime-020
 
@@ -372,7 +372,7 @@ Frozen owner: `turbo/apps/platform/src/signals/browser/__tests__/client.test.ts`
 - **When** The probe deadline expires and the client makes a Target.getTargets request.
 - **Then** The version probe rejects as a read-only protocol failure, while Target.getTargets still succeeds with an empty target list.
 
-**Unverified clauses.** 浏览器协议版本答复跨过 31 秒，空窗口仍可创建新页并接收输入。Browser.getVersion 与 Target.getTargets 是两个只读命令；界面不能读出前者异常分类。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-99.tsv).
+**Unverified clauses.** Held Browser.getVersion on connection 1, advanced the monotonic clock 31 seconds and returned an empty target inventory. The Router showed No tabs open and the connection remained active. The wire already contained Target.getTargets before the advance. The original read-only rejection and a new request starting after expiry are not established. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#client-001).
 
 ### client-002
 
@@ -382,7 +382,7 @@ Frozen owner: `turbo/apps/platform/src/signals/browser/__tests__/client.test.ts`
 - **When** The viewer closes and then attempts to notify the browser.
 - **Then** Both pending requests reject, and no notification is sent after closing; the remote browser is not closed by this action.
 
-**Unverified clauses.** 旧连接和替换页的定向对照能区别哪个接收端仍可输入。close 时两个不同的待决公开操作各自拒绝且远程浏览器保持存活，仍缺同一场景的证据。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-99.tsv).
+**Unverified clauses.** Held Browser.getVersion and Target.attachToBrowserTarget together. Leaving the viewer closed the connection. Neither late reply was consumed and the external browser retained both targets. The two separate caller rejections and a post-close notify attempt were not observable. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#client-002).
 
 ### client-003
 
@@ -392,7 +392,7 @@ Frozen owner: `turbo/apps/platform/src/signals/browser/__tests__/client.test.ts`
 - **When** The operation is cancelled, a later Browser.getVersion request is made, and the attachment response arrives late.
 - **Then** The attachment request rejects with AbortError, the connection remains usable, and the late attachment is detached using the original parent session.
 
-**Unverified clauses.** A genuine attach was delayed and the viewer was closed. Its connection closed; continued Browser.getVersion and late detach on that same live connection were not observed. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-99.tsv).
+**Unverified clauses.** Moved Bay out of the assigned window during its held page attachment. Connection 1 consumed the late result and sent Target.detachFromTarget for bay-session. Estuary remained interactive. The outgoing attach had no parent sessionId; no version request or original AbortError receipt was observed. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#client-003).
 
 ### client-004
 
@@ -402,7 +402,7 @@ Frozen owner: `turbo/apps/platform/src/signals/browser/__tests__/client.test.ts`
 - **When** Startup is cancelled and the attachment response arrives late.
 - **Then** Startup rejects with AbortError, the late native attachment is detached, and the connection remains usable for Browser.getVersion.
 
-**Unverified clauses.** Cancelling the browser page disposed its control connection. The native startup rejection, late detached session and continued control connection were not all observable. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-99.tsv).
+**Unverified clauses.** Left the Router while Target.attachToBrowserTarget was pending. The original peer saw zero active connections, no consumption of its late native-browser-1 response and no subsequent detach/version on that connection. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#client-004).
 
 ### client-006
 
@@ -412,7 +412,7 @@ Frozen owner: `turbo/apps/platform/src/signals/browser/__tests__/client.test.ts`
 - **When** Two events arrive on the first connection, including one with a session ID shared by both clients, and another event arrives after the first client closes.
 - **Then** Only the first client receives the two events received while it was open; the second client receives none, and the closed client receives no later event.
 
-**Unverified clauses.** The two live viewers had distinct Chrome session IDs. The shared native session ID, isolated event delivery and post-close event in the original remain unproved. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-101.tsv).
+**Unverified clauses.** Two real Router viewers streamed different Chromium windows. Two same-document navigations changed only the first address. Closing that viewer, changing the original remote page again, and navigating the survivor left the second viewer at its own new fragment. Chrome allocated different session IDs on the two connections. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#client-006).
 
 ### client-007
 
@@ -422,7 +422,7 @@ Frozen owner: `turbo/apps/platform/src/signals/browser/__tests__/client.test.ts`
 - **When** The second session's reply arrives before the first session's reply.
 - **Then** Each request resolves with its own frame ID: second-frame for the second destination and first-frame for the first.
 
-**Unverified clauses.** Two concurrently held native Page.navigate failures reached separate Chromium viewers in reverse order. Each window alone showed the generic failure when its own receipt arrived. On one socket the second submission displayed “A page is still opening” until the first settled. The original still needs two simultaneous requests on one socket, each resolving successfully with its own frame ID. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-101.tsv).
+**Unverified clauses.** Real Chromium accepted two Page.navigate requests on one socket to different sessions and local destinations. The second succeeded before the first and each frame ID matched its independent Page.getFrameTree. The production Router arm selected Bay while Estuary was pending; it displayed A page is still opening, sent only the first request and left Bay unchanged. The Chromium control cannot establish two App caller resolutions. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#client-007).
 
 ### client-008
 
@@ -432,7 +432,7 @@ Frozen owner: `turbo/apps/platform/src/signals/browser/__tests__/client.test.ts`
 - **When** That request is cancelled, the connection is used for Browser.getVersion, and the late attachment response arrives.
 - **Then** The attachment request rejects with AbortError; the late session is detached, and Browser.getVersion succeeds both before and after the late response.
 
-**Unverified clauses.** The public close path cancelled attachment by closing the connection. The late cleanup on the original target/connection and later successful Browser.getVersion remain unproved. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-99.tsv).
+**Unverified clauses.** Left the viewer while its original page attachment was held. The connection closed; its late estuary-session reply was not consumed. No detach or version request remained on this peer. A version on a replacement peer would not establish continuity. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#client-008).
 
 ## `src/signals/chat-page/__tests__/unread-through-at.test.ts`
 
@@ -771,26 +771,6 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-c
 - **Then** All 20 connectors appear both times. The overview is fetched once, no target refresh is fetched, and the legacy connector and thread endpoints are not read.
 
 **Unverified clauses.** 完整库存被扣住或不可用，关闭后重开仍呈现相同 20 项。可用列表证明缓存回退，不能据此区分重复全表读取、定向刷新和不可见旧路径读取。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
-
-### chat-composer-connector-overview-007
-
-Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-overview.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-overview.bdd.md#chat-composer-connector-overview-007)
-
-- **Given** The user has loaded Probe 1 and Probe 2 in the Connectors panel.
-- **When** A refresh notification for Probe 1 fails; a notification for Probe 2 arrives; then the user retries Probe 1 successfully and another Probe 1 notification arrives.
-- **Then** The panel exposes Try again for the failed Probe 1 refresh while still showing Probe 1, and the Probe 2 notification refreshes Probe 2. Retrying restores Probe 1 and removes the retry control; a later notification updates Probe 1 access to off. The full overview is fetched twice and target refreshes three times.
-
-**Unverified clauses.** 外部变更使 Probe 1 刷新失败、可重试；Probe 2 能独立更新。重试成功和后续关闭均可见；这些独立业务结果不能推出全表两次、定向三次。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
-
-### chat-composer-connector-overview-009
-
-Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-overview.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-overview.bdd.md#chat-composer-connector-overview-009)
-
-- **Given** The user has opened the Connectors panel in an existing Chat and loaded Probe 1.
-- **When** They navigate to New chat, return to the original Chat using browser back, and reopen the Connectors panel.
-- **Then** The connector-change subscription is released while away. Returning to the Chat loads Probe 1 again with a second full overview request and no target refreshes.
-
-**Unverified clauses.** The New chat link reached / and history returned to the original thread with the connector visible. Releasing the subscription while away and the exact request mix on return were not established. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
 
 ## `src/views/okou-page/__tests__/chat-composer-connector-status.test.tsx`
 
