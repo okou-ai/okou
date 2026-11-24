@@ -1610,6 +1610,25 @@ test("Fill a tall viewport from a virtual tail while keeping the latest reply pi
   expect(transcript.queryByText("History answer 1")).toBeNull();
 });
 
+test("Keep the visible message at its offset when an estimated page mounts above it", async () => {
+  const id = THREAD_IDS.incomingHistory;
+  mockMutableConversation(id, completedHistoryEvents(26));
+  const container = await openConversation(id, "History answer 26");
+  const geometry = installChatScrollGeometry(container);
+
+  const firstMounted = renderedAnchors(container)[0]!;
+  const originalTop = container.scrollTop;
+  const anchorTop = firstMounted.getBoundingClientRect().top;
+  // Scroll 30 px into the first mounted message, crossing the page boundary.
+  scrollFromUser(container, originalTop + anchorTop + 30);
+
+  await waitFor(() => {
+    expect(renderedAnchors(container)[0]).not.toBe(firstMounted);
+    expect(geometry.firstVisibleAnchor()).toBe(firstMounted);
+    expect(firstMounted.getBoundingClientRect().top).toBe(-30);
+  });
+});
+
 test("Drag into unmounted history, retain the message through new output, and return to the latest reply", async () => {
   const id = THREAD_IDS.incomingHistory;
   const diagramImage = "https://example.com/skipped-history.png";
