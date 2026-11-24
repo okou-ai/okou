@@ -1,10 +1,12 @@
 """Exercise Android test diagnostics and release payload verification."""
 
+from contextlib import suppress
 import gzip
 import json
 import os
 from pathlib import Path
 import runpy
+import select
 import signal
 import subprocess
 import sys
@@ -254,6 +256,27 @@ else:
                             run(apk, root, root / "owned-avd", "0.36.0", preparation)
                         self.assertEqual(events, ["isolated", "prepared", "install"])
                     emulator.return_value.terminate.assert_called_once()
+
+    @unittest.skipUnless(hasattr(os, "waitid"), "Release smoke uses Linux process groups")
+    def test_release_smoke_stops_preparation_descendant_after_leader_exits(self):
+        stop = runpy.run_path(str(SCRIPTS / "release-smoke.py"))["stop_preparation"]
+        worker = "import signal; signal.signal(signal.SIGTERM, signal.SIG_IGN); print('ready', flush=True); signal.pause()"
+        leader = "import signal, subprocess, sys; subprocess.Popen([sys.executable, '-c', sys.argv[1]]); signal.pause()"
+        with subprocess.Popen([sys.executable, "-c", leader, worker], stdout=subprocess.PIPE,
+                              text=True, start_new_session=True) as preparation:
+            verified = False
+            try:
+                self.assertTrue(select.select([preparation.stdout], [], [], 5)[0])
+                self.assertEqual(preparation.stdout.readline(), "ready\n")
+                stop(preparation)
+                self.assertEqual(preparation.returncode, -signal.SIGTERM)
+                self.assertTrue(select.select([preparation.stdout], [], [], 5)[0])
+                self.assertEqual(preparation.stdout.read(), "")
+                verified = True
+            finally:
+                if not verified:
+                    with suppress(ProcessLookupError):
+                        os.killpg(preparation.pid, signal.SIGKILL)
 
     def test_native_gate_rejects_incomplete_failed_and_skipped_results(self):
         with tempfile.TemporaryDirectory() as temporary:

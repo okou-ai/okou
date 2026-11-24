@@ -305,6 +305,20 @@ def terminate(_signum, _frame):
     raise SystemExit(143)
 
 
+def stop_preparation(preparation):
+    with suppress(ProcessLookupError):
+        os.killpg(preparation.pid, signal.SIGTERM)
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        # Leave the leader unreaped until its process group has been stopped.
+        if os.waitid(os.P_PID, preparation.pid, os.WEXITED | os.WNOWAIT | os.WNOHANG):
+            break
+        time.sleep(0.05)
+    with suppress(ProcessLookupError):
+        os.killpg(preparation.pid, signal.SIGKILL)
+    preparation.wait()
+
+
 def run_smoke(apk, artifacts, version, prepare_command):
     preparation = None
     try:
@@ -318,15 +332,8 @@ def run_smoke(apk, artifacts, version, prepare_command):
             preparation.wait()
         raise
     finally:
-        if preparation is not None and preparation.poll() is None:
-            with suppress(ProcessLookupError):
-                os.killpg(preparation.pid, signal.SIGTERM)
-            try:
-                preparation.wait(timeout=15)
-            except subprocess.TimeoutExpired:
-                with suppress(ProcessLookupError):
-                    os.killpg(preparation.pid, signal.SIGKILL)
-                preparation.wait()
+        if preparation is not None and preparation.returncode is None:
+            stop_preparation(preparation)
 
 
 if __name__ == "__main__":
