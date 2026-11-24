@@ -14,6 +14,8 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDisplayed
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -270,7 +272,23 @@ class PersonalInstructionsSettingsTest {
         )
         compose.onNodeWithText("Save").assertIsNotEnabled()
         assertEquals(0, app.fixture.requests.count { it.method == "PUT" })
-        compose.onNodeWithText("Reload latest and discard changes").performScrollTo().performClick()
+        val reload =
+            compose.onNode(hasText("Reload latest and discard changes") and hasClickAction())
+        val discard = compose.onNode(hasText("Discard changes") and hasClickAction())
+        val beforeReload = app.fixture.requests.size
+        reload.performScrollTo().performClick()
+        discard.assertIsDisplayed()
+        assertEquals(beforeReload, app.fixture.requests.size)
+        app.fixture.rejectRead = true
+        discard.performClick()
+        awaitPhase(InstructionsPhase.Failed)
+        assertEquals(
+            "Keep **my** 中文 👋 draft",
+            input.fetchSemanticsNode().config[SemanticsProperties.EditableText].text,
+        )
+        app.fixture.rejectRead = false
+        reload.performScrollTo().performClick()
+        discard.performClick()
         awaitPhase(InstructionsPhase.Ready)
         input.assertTextEquals("Changed on Web")
         input.performScrollTo().performTextClearance()
@@ -278,7 +296,19 @@ class PersonalInstructionsSettingsTest {
         app.fixture.disconnectSave = true
         val markdown = "**Accepted** despite lost response"
         input.performScrollTo().performTextReplacement(markdown)
-        compose.onNodeWithText("Save").performClick()
+        val saveReply = CountDownLatch(1)
+        app.fixture.beforeSave = { saveReply.await() }
+        try {
+            compose.onNodeWithText("Save").performClick()
+            compose
+                .onNodeWithText(app.getString(R.string.settings_saving))
+                .performScrollTo()
+                .assertIsDisplayed()
+                .assertIsNotEnabled()
+            input.assertExists()
+        } finally {
+            saveReply.countDown()
+        }
         compose.waitUntil(10_000) {
             compose.runOnIdle {
                 model.uiState.value.phase == InstructionsPhase.Ready &&
@@ -317,6 +347,17 @@ class PersonalInstructionsSettingsTest {
             input.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange],
         )
         compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        discard.assertIsDisplayed()
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        discard.assertDoesNotExist()
+        input.assertIsFocused()
+        assertEquals(
+            TextRange(13),
+            input.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange],
+        )
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        discard.performClick()
+        input.assertDoesNotExist()
         compose.onNodeWithText("Display mode").assertExists()
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithContentDescription("Chats").assertExists()

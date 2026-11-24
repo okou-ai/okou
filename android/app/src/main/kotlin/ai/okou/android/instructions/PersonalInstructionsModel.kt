@@ -27,6 +27,8 @@ class PersonalInstructionsModel(
 
     fun discard() = editor.discard(connection)
 
+    fun discardEdits() = editor.discardEdits(connection)
+
     fun refresh() = editor.refresh(connection)
 
     fun save() = editor.save(connection)

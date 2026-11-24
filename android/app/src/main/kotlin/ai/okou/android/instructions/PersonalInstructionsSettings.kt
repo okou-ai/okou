@@ -3,8 +3,10 @@ package ai.okou.android.instructions
 import ai.okou.android.OkouConfirmationDialog
 import ai.okou.android.R
 import ai.okou.android.SettingsSheet
+import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.state.rememberJournalEditor
 import ai.okou.android.state.rememberSettingsFlag
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -49,7 +51,6 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -57,7 +58,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 
 @Composable
@@ -87,6 +87,7 @@ internal fun PersonalInstructionsSettings(
     }
     var closeAfterSave by rememberSettingsFlag()
     var confirmDiscard by rememberSettingsFlag()
+    var confirmReload by rememberSettingsFlag()
     var offlineSave by rememberSettingsFlag()
     var editorFocused by rememberSettingsFlag()
     var editorKeyboardVisible by rememberSettingsFlag()
@@ -119,6 +120,26 @@ internal fun PersonalInstructionsSettings(
             rememberJournalEditor(state.content, replacementSelection = TextRange.Zero)
         else null
     val canSubmit = state.canSave || state.canRetrySave
+    val saving = state.phase == InstructionsPhase.Saving
+    fun confirmDismiss(): Boolean {
+        val current = model.uiState.value
+        if (current.phase == InstructionsPhase.Saving) return false
+        if (current.draft?.attempted == false) {
+            confirmDiscard = true
+            return false
+        }
+        return true
+    }
+    fun requestDismiss() {
+        if (confirmDismiss()) dismiss()
+    }
+    BackHandler {
+        when {
+            confirmDiscard -> confirmDiscard = false
+            confirmReload -> confirmReload = false
+            else -> requestDismiss()
+        }
+    }
     fun save() {
         if (offline) {
             offlineSave = true
@@ -129,7 +150,9 @@ internal fun PersonalInstructionsSettings(
     }
     SettingsSheet(
         title,
-        dismiss,
+        ::requestDismiss,
+        dismissible = !saving,
+        confirmDismiss = if (saving || state.draft?.attempted == false) ::confirmDismiss else null,
         actions = {
             Column(
                 Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -157,24 +180,14 @@ internal fun PersonalInstructionsSettings(
                 ) {
                     InstructionsAction(
                         R.string.settings_cancel,
-                        {
-                            if (state.canEdit && state.draft != null) confirmDiscard = true
-                            else dismiss()
-                        },
-                        true,
+                        ::requestDismiss,
+                        !saving,
                     )
-                    val saving =
-                        if (state.phase == InstructionsPhase.Saving)
-                            stringResource(R.string.settings_saving)
-                        else null
                     Button(
                         onClick = ::save,
                         enabled = canSubmit,
                         shape = RoundedCornerShape(12.dp),
-                        modifier =
-                            Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).semantics {
-                                if (saving != null) stateDescription = saving
-                            },
+                        modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                         colors =
                             ButtonDefaults.buttonColors(
@@ -186,8 +199,11 @@ internal fun PersonalInstructionsSettings(
                     ) {
                         Text(
                             stringResource(
-                                if (state.canRetrySave) R.string.instructions_retry_save
-                                else R.string.instructions_save,
+                                when {
+                                    saving -> R.string.settings_saving
+                                    state.canRetrySave -> R.string.instructions_retry_save
+                                    else -> R.string.instructions_save
+                                },
                             ),
                             style =
                                 MaterialTheme.typography.labelLarge.copy(
@@ -266,11 +282,7 @@ internal fun PersonalInstructionsSettings(
                 editing == null &&
                     state.phase in setOf(InstructionsPhase.Idle, InstructionsPhase.Loading)
             if (loading && !offline) {
-                var showSkeleton by remember { mutableStateOf(false) }
-                LaunchedEffect(Unit) {
-                    delay(100)
-                    showSkeleton = true
-                }
+                val showSkeleton = rememberContentReadSkeleton()
                 val label = stringResource(R.string.instructions_loading)
                 Box(
                     Modifier.fillMaxWidth()
@@ -307,20 +319,17 @@ internal fun PersonalInstructionsSettings(
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
+            val canReload = state.conflicting && state.canEdit
             val checkSavedVersion =
-                state.phase == InstructionsPhase.Failed ||
-                    state.phase == InstructionsPhase.Uncertain
-            if (
-                state.phase == InstructionsPhase.Conflict || checkSavedVersion || state.localFailure
-            ) {
+                !canReload &&
+                    (state.phase == InstructionsPhase.Failed ||
+                        state.phase == InstructionsPhase.Uncertain)
+            if (canReload || checkSavedVersion || state.localFailure) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (state.phase == InstructionsPhase.Conflict)
+                    if (canReload)
                         InstructionsAction(
                             R.string.instructions_reload,
-                            {
-                                closeAfterSave = false
-                                model.discard()
-                            },
+                            { confirmReload = true },
                             !offline,
                         )
                     if (checkSavedVersion)
@@ -339,11 +348,25 @@ internal fun PersonalInstructionsSettings(
             onConfirm = {
                 closeAfterSave = false
                 confirmDiscard = false
-                model.discard()
+                model.discardEdits()
                 dismiss()
             },
         ) {
             Text(stringResource(R.string.instructions_unsaved))
+        }
+    }
+    if (confirmReload) {
+        OkouConfirmationDialog(
+            onDismiss = { confirmReload = false },
+            title = stringResource(R.string.instructions_reload),
+            confirm = stringResource(R.string.instructions_discard),
+            onConfirm = {
+                closeAfterSave = false
+                confirmReload = false
+                model.discard()
+            },
+        ) {
+            Text(stringResource(R.string.instructions_conflict))
         }
     }
 }
