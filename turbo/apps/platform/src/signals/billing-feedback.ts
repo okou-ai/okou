@@ -20,7 +20,7 @@ import { isOrgAdmin$ } from "./org.ts";
 import { searchParams$ } from "./route.ts";
 import { resetSignal } from "./utils.ts";
 
-export const creditsFeedbackOffer$ = computed(async (get) => {
+export const billingFeedbackOffer$ = computed(async (get) => {
   const status = await get(billingStatusAsync$);
   if (
     status.hasSubscription ||
@@ -68,12 +68,9 @@ export const showPendingBillingFeedback$ = command(
     ) {
       return;
     }
-    const offer =
-      request.kind === "credits_exhausted"
-        ? await get(creditsFeedbackOffer$)
-        : null;
+    const offer = await get(billingFeedbackOffer$);
     signal.throwIfAborted();
-    if (request.kind === "credits_exhausted" && !offer) {
+    if (!offer) {
       return;
     }
     if (!set(consumeBillingFeedback$, request.id)) {
@@ -85,7 +82,7 @@ export const showPendingBillingFeedback$ = command(
         org_id: identity.orgId,
         billing_feedback_kind: request.kind,
         billing_attempt_id: request.id,
-        ...(offer?.token ? { billing_feedback_reward_token: offer.token } : {}),
+        billing_feedback_reward_token: offer.token,
       },
       currentLocale(),
       signal,

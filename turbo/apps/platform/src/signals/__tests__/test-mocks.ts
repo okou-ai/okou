@@ -887,6 +887,8 @@ function mockClerk(
 }
 
 function mockPostHog(signal: AbortSignal): PostHogMock {
+  const superProperties: Record<string, unknown> = {};
+  let distinctId = "anonymous-posthog-test-user";
   let featureFlagsReady = true;
   const flagCallbacks = new Set<Parameters<typeof posthog.onFeatureFlags>[0]>();
   let observedFlagSubscription: (() => void) | undefined;
@@ -904,19 +906,42 @@ function mockPostHog(signal: AbortSignal): PostHogMock {
   const capture = vi
     .spyOn(posthog, "capture")
     .mockImplementation((name, properties, options) => {
+      const beforeSend = initializations.at(-1)?.config?.before_send;
+      if (typeof beforeSend === "function") {
+        beforeSend({
+          uuid: "posthog-test-event",
+          event: name,
+          properties: properties ?? {},
+        });
+      }
       events.push({ name, properties, options });
       return undefined;
     });
   const identify = vi
     .spyOn(posthog, "identify")
-    .mockImplementation((distinctId, properties, propertiesOnce) => {
-      identifications.push({ distinctId, properties, propertiesOnce });
+    .mockImplementation((id, properties, propertiesOnce) => {
+      distinctId = id ?? distinctId;
+      identifications.push({ distinctId: id, properties, propertiesOnce });
     });
   const init = vi.spyOn(posthog, "init").mockImplementation((key, config) => {
     initializations.push({ key, config });
     return posthog;
   });
-  const register = vi.spyOn(posthog, "register").mockImplementation(() => {});
+  const register = vi
+    .spyOn(posthog, "register")
+    .mockImplementation((properties) => {
+      Object.assign(superProperties, properties);
+    });
+  const getProperty = vi
+    .spyOn(posthog, "get_property")
+    .mockImplementation((key) => {
+      return superProperties[key];
+    });
+  const getDistinctId = vi
+    .spyOn(posthog, "get_distinct_id")
+    .mockImplementation(() => {
+      return distinctId;
+    });
   const reset = vi.spyOn(posthog, "reset").mockImplementation(() => {});
   const unregister = vi
     .spyOn(posthog, "unregister")
@@ -972,6 +997,7 @@ function mockPostHog(signal: AbortSignal): PostHogMock {
     .spyOn(posthog, "displaySurvey")
     .mockImplementation((id, options) => {
       surveyDisplays.push({ id, options });
+      posthog.capture("survey shown", { $survey_id: id });
     });
   const cancelSurvey = vi
     .spyOn(posthog, "cancelPendingSurvey")
@@ -987,6 +1013,8 @@ function mockPostHog(signal: AbortSignal): PostHogMock {
     identify.mockRestore();
     init.mockRestore();
     register.mockRestore();
+    getProperty.mockRestore();
+    getDistinctId.mockRestore();
     reset.mockRestore();
     unregister.mockRestore();
   });

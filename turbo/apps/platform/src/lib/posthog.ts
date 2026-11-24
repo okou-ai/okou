@@ -1,3 +1,4 @@
+import { BILLING_FEEDBACK_SURVEYS } from "@okouai/core/billing-feedback";
 import type { SuggestionPreset } from "@okouai/api-contracts/validators/chat-threads";
 import { command, state } from "ccstate";
 import { posthog, type CaptureResult } from "posthog-js/dist/module.slim";
@@ -10,6 +11,8 @@ import type { ArtifactDownloadType } from "./artifact-download-type.ts";
 const RUNTIME_CONFIG = resolvePlatformRuntimeConfig();
 const POSTHOG_HOST = RUNTIME_CONFIG.postHogHost;
 const POSTHOG_KEY = RUNTIME_CONFIG.postHogKey;
+
+const BILLING_FEEDBACK_SEEN_USER = "billing_feedback_seen_user_id";
 
 const APP_FIRST_SKELETON_PAINT_EVENT = "app_first_skeleton_paint";
 const APP_FIRST_SKELETON_PAINT_DISTINCT_ID = "app-bootstrap";
@@ -110,7 +113,24 @@ export function initPostHog(): void {
       ui_host: "https://us.posthog.com",
       autocapture: false,
       capture_pageview: false,
-      before_send: sanitizePostHogCaptureResult,
+      before_send(captureResult) {
+        if (
+          captureResult?.event === "survey shown" &&
+          Object.values(BILLING_FEEDBACK_SURVEYS).some((surveyId) => {
+            return surveyId === captureResult.properties.$survey_id;
+          })
+        ) {
+          // Count an actual impression, including a dismissal without an answer.
+          // The person-level PostHog targeting rule covers subsequent devices.
+          posthog.register({
+            [BILLING_FEEDBACK_SEEN_USER]: posthog.get_distinct_id(),
+          });
+          for (const surveyId of Object.values(BILLING_FEEDBACK_SURVEYS)) {
+            posthog.surveys?.markSurveyAsSeen(surveyId);
+          }
+        }
+        return sanitizePostHogCaptureResult(captureResult);
+      },
       disable_session_recording: true,
       session_recording: {
         maskAllInputs: true,
@@ -687,6 +707,12 @@ export function displayBillingFeedbackSurvey(
             ? "zh-TW"
             : language,
     });
+    const alreadySeen = () => {
+      return (
+        posthog.get_property(BILLING_FEEDBACK_SEEN_USER) ===
+        posthog.get_distinct_id()
+      );
+    };
     let requested = false;
     let queryInFlight = false;
     let surveysReady = false;
@@ -695,6 +721,7 @@ export function displayBillingFeedbackSurvey(
       if (
         signal.aborted ||
         requested ||
+        alreadySeen() ||
         queryInFlight ||
         !surveysReady ||
         !flagsReady
@@ -707,6 +734,7 @@ export function displayBillingFeedbackSurvey(
         if (
           signal.aborted ||
           requested ||
+          alreadySeen() ||
           !surveys.some((survey) => {
             return survey.id === surveyId;
           })

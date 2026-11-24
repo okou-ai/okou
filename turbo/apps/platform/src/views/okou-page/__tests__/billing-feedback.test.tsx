@@ -6,6 +6,7 @@ import {
   billingUsagePackManagementContract,
 } from "@okouai/api-contracts/contracts/billing";
 import { BILLING_FEEDBACK_SURVEYS } from "@okouai/core/billing-feedback";
+import { initPostHog } from "../../../lib/posthog.ts";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import {
@@ -56,6 +57,9 @@ function freeBilling() {
 }
 
 function prepareBilling(paid = false) {
+  context.mocks.api(billingFeedbackRewardContract.get, ({ respond }) => {
+    return respond(200, { rewardCredits: 200, token: "signed-offer-from-api" });
+  });
   context.mocks.api(billingStatusContract.get, ({ respond }) => {
     return respond(200, {
       ...freeBilling(),
@@ -110,6 +114,7 @@ test("closing the upgrade dialog asks its independent PostHog question and recor
   });
   expect(telemetry.surveyDisplays[0]?.options?.properties).toMatchObject({
     billing_feedback_kind: "upgrade_dismissed",
+    billing_feedback_reward_token: "signed-offer-from-api",
     org_id: expect.any(String),
     billing_attempt_id: expect.any(String),
   });
@@ -133,7 +138,7 @@ test("closing the upgrade dialog asks its independent PostHog question and recor
   ]);
 });
 
-test("a Stripe cancellation uses its own survey without promising a reward", async () => {
+test("a Stripe cancellation includes the same signed reward offer", async () => {
   const telemetry = prepareBilling();
   await setupPage({ context, path: "/?billing=canceled", host: "app.okou.ai" });
   await waitFor(() => {
@@ -145,6 +150,7 @@ test("a Stripe cancellation uses its own survey without promising a reward", asy
   });
   expect(telemetry.surveyDisplays[0]?.options?.properties).toMatchObject({
     billing_feedback_kind: "checkout_canceled",
+    billing_feedback_reward_token: "signed-offer-from-api",
     org_id: expect.any(String),
   });
   expect(
@@ -337,4 +343,38 @@ test("a cached targeting result is retried when identified-user flags arrive", a
   });
   telemetry.refreshFeatureFlags();
   expect(telemetry.surveyDisplays).toHaveLength(1);
+});
+
+test("seeing checkout feedback prevents a later upgrade prompt even without a response", async () => {
+  const telemetry = prepareBilling();
+  initPostHog();
+  await setupPage({ context, path: "/?billing=canceled", host: "app.okou.ai" });
+  await waitFor(() => {
+    expect(telemetry.surveyDisplays).toHaveLength(1);
+  });
+  const plans = await openPlans();
+  click(within(plans).getByLabelText("Close"));
+  await waitFor(() => {
+    expect(plans).not.toBeInTheDocument();
+  });
+  telemetry.refreshFeatureFlags();
+  expect(
+    telemetry.surveyDisplays.map((display) => {
+      return display.id;
+    }),
+  ).toStrictEqual([BILLING_FEEDBACK_SURVEYS.checkout_canceled]);
+});
+
+test("an already rewarded workspace is not offered another rewarded survey", async () => {
+  const telemetry = prepareBilling();
+  context.mocks.api(billingFeedbackRewardContract.get, ({ respond }) => {
+    return respond(200, { rewardCredits: 0, token: null });
+  });
+  await setupPage({ context, path: "/?billing=canceled", host: "app.okou.ai" });
+  const plans = await openPlans();
+  click(within(plans).getByLabelText("Close"));
+  await waitFor(() => {
+    expect(plans).not.toBeInTheDocument();
+  });
+  expect(telemetry.surveyDisplays).toStrictEqual([]);
 });
