@@ -5,7 +5,6 @@
     <string name="auth_selection_failed">このワークスペースを開けませんでした。</string>
     <string name="auth_sign_out_failed">ログアウトできませんでした。</string>
     <string name="composer_restore_draft">保持した下書きを復元</string>
-    <string name="controls_storage_failed">保留中の操作リクエストを保存できません。</string>
     <string name="controls_stop">実行中の作業を停止</string>
     <string name="controls_stop_failed">タスクを停止できませんでした。</string>
     <string name="settings">設定</string>

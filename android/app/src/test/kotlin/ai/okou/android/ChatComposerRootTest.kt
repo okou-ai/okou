@@ -11,7 +11,6 @@ import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.chat.ComposerPersistence
 import ai.okou.android.chat.ComposerTarget
 import ai.okou.android.chat.HistoryPhase
-import ai.okou.android.chat.RunControlPersistence
 import ai.okou.android.chat.RunControlPhase
 import ai.okou.android.chat.plainText
 import android.content.Intent
@@ -851,8 +850,7 @@ class ChatComposerRootTest {
                     substring = true,
                 )
             awaitConversation {
-                ready.chats.history.uiState.value.phase == HistoryPhase.Ready &&
-                    ready.controls.uiState.value.persistence == RunControlPersistence.Durable
+                ready.chats.history.uiState.value.phase == HistoryPhase.Ready
             }
             compose.onNodeWithTag("open_conversation_queue").performClick()
             withdraw
@@ -867,7 +865,7 @@ class ChatComposerRootTest {
             messageText(automationId, workflowName).assertIsDisplayed()
             compose.onNodeWithTag("message_$automationId").assertIsFocused()
             awaitConversation {
-                ready.controls.uiState.value.journal?.pending?.isEmpty() == true
+                ready.controls.uiState.value.pending.isEmpty()
             }
             assertEquals(
                 manualId,
@@ -946,8 +944,7 @@ class ChatComposerRootTest {
         }
         val history = ready.chats.history
         awaitConversation {
-            history.uiState.value.phase == HistoryPhase.Ready &&
-                ready.controls.uiState.value.persistence == RunControlPersistence.Durable
+            history.uiState.value.phase == HistoryPhase.Ready
         }
         compose.onNodeWithTag("open_conversation_queue").performClick()
         val withdraw =
@@ -965,10 +962,13 @@ class ChatComposerRootTest {
         readsUnavailable.set(false)
         compose.runOnIdle { history.invalidate(CHAT_PERSONAL) }
         awaitConversation { history.uiState.value.phase == HistoryPhase.Ready }
-        compose.waitUntilExactlyOneExists(
-            hasText(app.getString(R.string.conversation_withdraw_failed)),
-            10_000,
-        )
+        val failure = hasText(app.getString(R.string.conversation_withdraw_failed))
+        compose.waitUntilExactlyOneExists(failure, 10_000)
+        compose
+            .onNode(
+                failure and hasAnyAncestor(hasTestTag("queue_control_feedback")),
+            )
+            .assertIsDisplayed()
         messageText(queuedId, prompt).assertIsDisplayed()
         compose.onNode(withdraw).assertIsEnabled()
         assertEquals(1, withdrawals.get())

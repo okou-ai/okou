@@ -11,7 +11,6 @@ import ai.okou.android.chat.ComposerSync
 import ai.okou.android.chat.ComposerTarget
 import ai.okou.android.chat.RealtimePhase
 import ai.okou.android.chat.RealtimeSnapshot
-import ai.okou.android.chat.RunControlJournalStore
 import ai.okou.android.chat.RunControlPhase
 import ai.okou.android.chat.RunControlsModel
 import ai.okou.android.chat.RunOutputSignal
@@ -65,7 +64,6 @@ class NativeRealtimeTest {
         val oldChats = app.chatService
         val oldRealtime = app.realtimeService
         val oldJournal = app.journalStore
-        val oldControlJournal = app.controlJournalStore
         val oldControlService = app.controlService
         val oldComposerService = app.composerService
         val oldRecoveryService = app.recoveryService
@@ -74,14 +72,12 @@ class NativeRealtimeTest {
         val directory =
             Files.createTempDirectory(app.cacheDir.toPath(), "realtime-native-").toFile()
         val journal = ComposerJournalStore(app, directory)
-        val controlsJournal = RunControlJournalStore(app, directory.resolve("controls"))
         val fixture = ChatListApiFixture()
         val external = TestRealtimeService()
         external.snapshot.value = RealtimeSnapshot(RealtimePhase.Connecting)
         app.chatService = fixture.service
         app.realtimeService = external
         app.journalStore = journal
-        app.controlJournalStore = controlsJournal
         app.controlService = fixture.service
         app.composerService = fixture.service
         app.recoveryService = fixture.service
@@ -107,9 +103,9 @@ class NativeRealtimeTest {
                 appendLine(
                     "controlPosts=${controlPosts.get()}; responseHeld=${controlResponse.count}",
                 )
-                appendLine("controlPersistence=${control?.persistence}; phases=${control?.phases}")
+                appendLine("controlPhases=${control?.phases}")
                 appendLine(
-                    "pendingControls=${control?.journal?.pending?.map { it.id to it.targetId }}",
+                    "pendingControls=${control?.pending?.map { it.id to it.targetId }}",
                 )
                 appendLine(
                     "historyPhase=${history?.phase}; liveRuns=${history?.transcript?.liveRunIds}",
@@ -592,7 +588,7 @@ class NativeRealtimeTest {
                 interrupted.get()!!.getValue("interruptsRunId").jsonPrimitive.content,
             )
             scenario.onActivity {
-                assertEquals(1, controls?.uiState?.value?.journal?.pending?.size)
+                assertEquals(1, controls?.uiState?.value?.pending?.size)
             }
             assertEquals(1, controlPosts.get())
             external.snapshot.value =
@@ -606,7 +602,7 @@ class NativeRealtimeTest {
                     revision = external.snapshot.value.revision + 1,
                     changes = ChatChanges(resync = true),
                 )
-            condition { controls?.uiState?.value?.journal?.pending?.isEmpty() == true }
+            condition { controls?.uiState?.value?.pending?.isEmpty() == true }
             reveal(app.getString(R.string.history_cancelled))
             assertEquals(1, controlPosts.get())
             assertTrue(
@@ -712,7 +708,6 @@ class NativeRealtimeTest {
                         }
                     },
                     { runBlocking { journal.close() } },
-                    { runBlocking { controlsJournal.close() } },
                     { fixture.close() },
                     { cache.restore() },
                     { app.restoreApiPreferences(oldPreferences) },
@@ -720,7 +715,6 @@ class NativeRealtimeTest {
                         app.chatService = oldChats
                         app.realtimeService = oldRealtime
                         app.journalStore = oldJournal
-                        app.controlJournalStore = oldControlJournal
                         app.controlService = oldControlService
                         app.composerService = oldComposerService
                         app.recoveryService = oldRecoveryService

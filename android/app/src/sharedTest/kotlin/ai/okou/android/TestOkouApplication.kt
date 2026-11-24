@@ -24,7 +24,6 @@ import ai.okou.android.chat.ChatComposerService
 import ai.okou.android.chat.ChatListService
 import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.chat.RealtimeService
-import ai.okou.android.chat.RunControlJournalStore
 import ai.okou.android.chat.RunControlService
 import ai.okou.android.connectors.ConnectorService
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
@@ -110,10 +109,6 @@ open class TestOkouApplication : OkouApplication() {
     var controlService: RunControlService? = null
     var recoveryService: ai.okou.android.chat.AssistantRecoveryService =
         TestAssistantRecoveryService()
-    var controlJournalStore: RunControlJournalStore? = null
-    override val runControlJournal
-        get() = controlJournalStore ?: super.runControlJournal
-
     override val composerJournal
         get() = journalStore ?: super.composerJournal
 

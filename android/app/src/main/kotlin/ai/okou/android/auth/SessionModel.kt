@@ -16,7 +16,7 @@ import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.chat.HistoryPhase
 import ai.okou.android.chat.ProjectExpansionModel
 import ai.okou.android.chat.ProjectExpansionStore
-import ai.okou.android.chat.RunControlJournalStore
+import ai.okou.android.chat.RunControlOwners
 import ai.okou.android.chat.RunControlsModel
 import ai.okou.android.chat.SearchRecentChatsStore
 import ai.okou.android.chat.WorkspaceSearchModel
@@ -152,7 +152,7 @@ class SessionModel(
     private val chatCache: ChatCacheStore,
     private val instructionsDrafts: PersonalInstructionsDraftStore,
     private val composerJournal: ComposerJournalStore,
-    private val runControlJournal: RunControlJournalStore,
+    private val runControlOwners: RunControlOwners,
     private val appearanceCache: MemberAppearanceCache,
     private val projectExpansionStore: ProjectExpansionStore,
     private val defaultModelStore: DefaultModelStore,
@@ -426,7 +426,7 @@ class SessionModel(
                 val controls = store.workspaceModel {
                     RunControlsModel(
                         owner,
-                        runControlJournal,
+                        runControlOwners,
                         identity,
                         chats.history,
                         { current(ticket, snapshot) },

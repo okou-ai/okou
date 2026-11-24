@@ -164,7 +164,7 @@ internal fun ConversationQueueButton(
 internal fun ConversationQueueModal(
     entries: List<ConversationMessage>,
     controls: ConversationRunControls?,
-    snackbar: SnackbarHostState,
+    snackbar: SnackbarHostState?,
     onDismiss: () -> Unit,
 ) {
     val window = currentWindowSizeDp()
@@ -215,8 +215,14 @@ internal fun ConversationQueueModal(
                 }
                 ConversationQueue(entries, controls, titleFocus)
             }
-            Box(Modifier.align(Alignment.BottomCenter)) {
-                WorkspaceFeedbackHost(snackbar, Modifier.padding(bottom = 8.dp))
+            if (snackbar != null) {
+                Box(Modifier.align(Alignment.BottomCenter)) {
+                    WorkspaceFeedbackHost(
+                        snackbar,
+                        Modifier.padding(bottom = 8.dp).testTag("queue_control_feedback"),
+                        manageTimeout = false,
+                    )
+                }
             }
         }
     }
