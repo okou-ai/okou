@@ -505,6 +505,7 @@ internal fun OkouConfirmationDialog(
     confirmEnabled: Boolean = true,
     dismissEnabled: Boolean = true,
     destructive: Boolean = false,
+    dismissLabel: String = stringResource(R.string.settings_cancel),
     content: @Composable () -> Unit,
 ) {
     Dialog(
@@ -572,7 +573,7 @@ internal fun OkouConfirmationDialog(
                                             contentColor = colors.onSurface,
                                         ),
                                 ) {
-                                    Text(stringResource(R.string.settings_cancel))
+                                    Text(dismissLabel)
                                 }
                                 TextButton(
                                     onClick = onConfirm,
