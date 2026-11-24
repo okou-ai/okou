@@ -30,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -94,11 +95,13 @@ internal fun HistoryMarkdown(
     highlight: ConversationFindHighlight? = null,
     links: ConversationLinkActions? = null,
     compactReply: Boolean = false,
+    beforeParsedLayout: (() -> Unit)? = null,
 ) =
     key(source, artifacts != null, links != null) {
+        val onBeforeParsedLayout by rememberUpdatedState(beforeParsedLayout)
         val rendered by
             produceState<List<HistoryMarkdownBlock>?>(null) {
-                value =
+                val blocks =
                     withContext(Dispatchers.Default) {
                         historyMarkdownBlocks(
                             source,
@@ -106,6 +109,8 @@ internal fun HistoryMarkdown(
                             interactiveLinks = links != null,
                         )
                     }
+                onBeforeParsedLayout?.invoke()
+                value = blocks
             }
         val blocks = rendered
         if (blocks == null) {
