@@ -56,7 +56,7 @@ import { computerUseHosts } from "@okouai/db/runtime/computer-use-host";
 import { chatNetworkBodyCaptures } from "@okouai/db/schema/chat-network-body-capture";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
-import { command, computed, type Computed } from "ccstate";
+import { command, computed } from "ccstate";
 import {
   and,
   asc,
@@ -1403,7 +1403,7 @@ function userModelPreferencePlan(
 }
 /** Reject a server-owned Official Workflow claim that cannot be authoritative. */
 function assertOfficialSourceClaim(
-  args: NormalSendArgs,
+  args: Pick<NormalSendArgs, "auth" | "requiredOfficialWorkflowIds">,
   chatRunSource: ChatRunSourceAnnotation | null,
 ): void {
   if (args.requiredOfficialWorkflowIds?.length === 0) {
@@ -2158,47 +2158,6 @@ const appendNormalSendInput$ = command(
   },
 );
 
-const authorizeNormalSend$ = command(
-  async (
-    _context,
-    args: NormalSendArgs & {
-      readonly existing: ExistingSendThreadRow | undefined;
-      readonly chatRunSource: NormalSendChatRunSourceRead;
-    },
-    signal: AbortSignal,
-  ): Promise<
-    | {
-        readonly chatRunSource: ChatRunSourceAnnotation | null;
-        readonly sourceAutonomyBudget: number | null;
-      }
-    | NormalSendFailure
-    | CreatedChatEventResponse
-  > => {
-    const resolvedSource = await args.chatRunSource;
-    signal.throwIfAborted();
-    if (args.existing?.isOfficialWorkflowThread) {
-      return forbidden(OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE);
-    }
-    if (!resolvedSource.ok) {
-      throw resolvedSource.error;
-    }
-    const source = resolvedSource.value;
-    if ("response" in source) {
-      return source.response;
-    }
-    assertOfficialSourceClaim(args, source.source);
-    const invalidTemplate = invalidGenerationTemplateSelection(
-      args.body.userMessage,
-    );
-    if (invalidTemplate) {
-      return invalidTemplate;
-    }
-    return {
-      chatRunSource: source.source,
-      sourceAutonomyBudget: source.sourceAutonomyBudget,
-    };
-  },
-);
 const normalSendThreadTouch$ = command(
   async (
     { set },
@@ -2343,11 +2302,21 @@ const readNormalSendAttachments$ = command(
     args: Pick<NormalSendArgs, "userId" | "orgId" | "enqueueTiming"> & {
       readonly context: AgentRunContextSignals;
     },
-    attachmentRecords: IncomingAttachmentRecords | undefined,
+    prefetch:
+      | {
+          readonly authorize: NormalSendBootstrap["authorize"];
+          readonly records: IncomingAttachmentRecords;
+        }
+      | undefined,
     signal: AbortSignal,
   ) => {
     return settleIncludingAbort(async () => {
-      if (attachmentRecords) {
+      if (prefetch) {
+        const authorization = await prefetch.authorize;
+        signal.throwIfAborted();
+        if (!authorization.ok || "status" in authorization.value) {
+          return [];
+        }
         // Capture member settings before object I/O can delay the send.
         await get(args.context.memberMetadata$);
         signal.throwIfAborted();
@@ -2359,7 +2328,7 @@ const readNormalSendAttachments$ = command(
             userId: args.userId,
             orgId: args.orgId,
             enqueueTiming: args.enqueueTiming,
-            attachmentRecords,
+            attachmentRecords: prefetch?.records,
           },
           signal,
         );
@@ -2370,6 +2339,11 @@ const readNormalSendAttachments$ = command(
 type NormalSendAttachmentRead = ReturnType<
   (typeof readNormalSendAttachments$)["write"]
 >;
+
+interface NormalSendAttachmentPreparation {
+  readonly result: NormalSendAttachmentRead;
+  readonly finish: () => void;
+}
 
 const prepareNormalSendInput$ = command(
   async (
@@ -2575,15 +2549,137 @@ const startNormalSendRevocation$ = command(
 
 interface NormalSendBootstrap {
   readonly context: AgentRunContextSignals;
-  readonly existingThread$: Computed<Promise<ExistingSendThreadRow | null>>;
+  readonly existingThread: Promise<ExistingSendThreadRow | null> | undefined;
   readonly inputId: string;
-  readonly chatRunSource: NormalSendChatRunSourceRead;
-  readonly attachmentRecords?: IncomingAttachmentRecords;
+  readonly authorize: ReturnType<
+    (typeof prepareNormalSendAuthorization$)["write"]
+  >;
+  readonly attachments?: NormalSendAttachmentPreparation;
   readonly host?: Parameters<typeof readCapturedComputerAccess>[0];
   readonly revocation?: ReturnType<
     (typeof startNormalSendRevocation$)["write"]
   >;
 }
+
+const prepareNormalSendAuthorization$ = command(
+  (
+    _context,
+    args: Pick<
+      NormalSendArgs,
+      "auth" | "body" | "requiredOfficialWorkflowIds"
+    > & {
+      readonly existingThread:
+        Promise<ExistingSendThreadRow | null> | undefined;
+      readonly chatRunSource: NormalSendChatRunSourceRead;
+      readonly attachmentRecords: IncomingAttachmentRecords | undefined;
+    },
+    signal: AbortSignal,
+  ) => {
+    return settleIncludingAbort(async () => {
+      const { chatRunSource, attachmentRecords } = args;
+      const existing = await args.existingThread;
+      signal.throwIfAborted();
+      if (args.body.threadId !== undefined && !existing) {
+        return notFound("Chat thread not found");
+      }
+      const resolvedSource = await chatRunSource;
+      signal.throwIfAborted();
+      if (existing?.isOfficialWorkflowThread) {
+        return forbidden(OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE);
+      }
+      if (!resolvedSource.ok) {
+        throw resolvedSource.error;
+      }
+      const source = resolvedSource.value;
+      if ("response" in source) {
+        return source.response;
+      }
+      assertOfficialSourceClaim(args, source.source);
+      const invalidTemplate = invalidGenerationTemplateSelection(
+        args.body.userMessage,
+      );
+      if (invalidTemplate) {
+        return invalidTemplate;
+      }
+      if (attachmentRecords?.voiceIds.length) {
+        const voiceError = await validateIncomingVoiceClips(
+          args.auth,
+          attachmentRecords,
+          signal,
+        );
+        signal.throwIfAborted();
+        if (voiceError) {
+          return voiceError;
+        }
+      }
+      return {
+        chatRunSource: source.source,
+        sourceAutonomyBudget: source.sourceAutonomyBudget,
+      };
+    });
+  },
+);
+
+const startNormalSendAttachmentPreparation$ = command(
+  (
+    { set },
+    args: Pick<
+      NormalSendArgs,
+      "auth" | "body" | "requiredOfficialWorkflowIds" | "enqueueTiming"
+    > & {
+      readonly chatRunSource: NormalSendChatRunSourceRead;
+      readonly existingThread:
+        Promise<ExistingSendThreadRow | null> | undefined;
+      readonly context: AgentRunContextSignals;
+    },
+    signal: AbortSignal,
+  ) => {
+    const attachmentRecords = set(
+      startIncomingAttachmentRecords$,
+      args.body.userMessage,
+      args.auth,
+      signal,
+    );
+    const authorize = set(
+      prepareNormalSendAuthorization$,
+      { ...args, attachmentRecords },
+      signal,
+    );
+    waitUntil(authorize);
+    if (!attachmentRecords) {
+      return { authorize, attachments: undefined };
+    }
+    waitUntil(attachmentRecords.rows);
+    const stop = new AbortController();
+    let finished = false;
+    const result = set(
+      readNormalSendAttachments$,
+      {
+        orgId: args.auth.orgId,
+        userId: args.auth.userId,
+        context: args.context,
+        enqueueTiming: args.enqueueTiming,
+      },
+      { authorize, records: attachmentRecords },
+      AbortSignal.any([signal, stop.signal]),
+    ).finally(() => {
+      finished = true;
+    });
+    return {
+      authorize,
+      attachments: {
+        result,
+        finish() {
+          if (!finished) {
+            // An early exit cancels speculative I/O and retains its cleanup.
+            stop.abort();
+            waitUntil(result);
+          }
+        },
+      },
+    };
+  },
+);
 
 const startNormalSendReads$ = command(
   (
@@ -2593,6 +2689,7 @@ const startNormalSendReads$ = command(
       readonly body: NormalSendBody;
       readonly requireVisibleThread?: boolean;
       readonly enqueueTiming?: ChatEnqueueTimingCollector;
+      readonly requiredOfficialWorkflowIds?: readonly string[];
     },
     signal: AbortSignal,
   ): NormalSendBootstrap => {
@@ -2618,16 +2715,15 @@ const startNormalSendReads$ = command(
       },
     );
     const { context } = graph;
+    const existingThread =
+      body.threadId === undefined ? undefined : get(graph.existingThread$);
     waitUntil(settle(get(context.modelFacts$)));
     waitUntil(settle(get(context.memberMetadata$)));
     waitUntil(settle(get(context.executionPackageSources$)));
     waitUntil(
       settle(
         (async () => {
-          if (
-            body.threadId !== undefined &&
-            !(await get(graph.existingThread$))
-          ) {
+          if (existingThread && !(await existingThread)) {
             return;
           }
           signal.throwIfAborted();
@@ -2653,16 +2749,11 @@ const startNormalSendReads$ = command(
       ),
     );
     waitUntil(chatRunSource);
-    // Only a validated send consumes these records and verifies the objects.
-    const attachmentRecords = set(
-      startIncomingAttachmentRecords$,
-      body.userMessage,
-      auth,
+    const attachmentPreparation = set(
+      startNormalSendAttachmentPreparation$,
+      { ...args, context, existingThread, chatRunSource },
       signal,
     );
-    if (attachmentRecords) {
-      waitUntil(attachmentRecords.rows);
-    }
     const host =
       body.computerUseHostId && body.cloudBrowserEnabled !== true
         ? settleIncludingAbort(() => {
@@ -2685,12 +2776,12 @@ const startNormalSendReads$ = command(
       waitUntil(host);
     }
     const revocation =
-      body.threadId && body.revokesEventId
+      existingThread && body.revokesEventId
         ? set(
             startNormalSendRevocation$,
             {
               body,
-              existingThread: get(graph.existingThread$),
+              existingThread,
               enqueueTiming: args.enqueueTiming,
             },
             signal,
@@ -2700,10 +2791,10 @@ const startNormalSendReads$ = command(
       waitUntil(revocation);
     }
     return {
-      ...graph,
+      context,
+      existingThread,
       inputId,
-      chatRunSource,
-      attachmentRecords,
+      ...attachmentPreparation,
       host,
       revocation,
     };
@@ -2734,48 +2825,37 @@ export const startNormalSendBootstrap$ = command(
 );
 
 const prepareNormalSendContext$ = command(
-  async ({ get, set }, request: NormalSendRequest, signal: AbortSignal) => {
-    if (forgedMcpSource(request.body)) {
-      return badRequestMessage("MCP source annotations are server-managed");
-    }
+  async (
+    { set },
+    request: NormalSendRequest,
+    bootstrap: NormalSendBootstrap,
+    signal: AbortSignal,
+  ) => {
     const {
       context,
-      existingThread$,
+      existingThread,
       inputId,
-      chatRunSource,
-      attachmentRecords,
+      authorize,
+      attachments,
       host,
       revocation,
-    } = request.bootstrap ?? set(startNormalSendReads$, request, signal);
-    const existingRead =
-      request.body.threadId === undefined ? undefined : get(existingThread$);
+    } = bootstrap;
     const args = request;
     const models = settle(set(prepareNormalSendModels$, context, signal));
     waitUntil(models);
-    const existing = await existingRead;
+    const existing = await existingThread;
     signal.throwIfAborted();
-    if (request.body.threadId !== undefined && !existing) {
-      return notFound("Chat thread not found");
+    if (request.body.threadId === undefined || existing) {
+      set(preloadAgentRunContext$, context, signal);
     }
-    set(preloadAgentRunContext$, context, signal);
-    const prepared = await set(
-      authorizeNormalSend$,
-      { ...args, existing: existing ?? undefined, chatRunSource },
-      signal,
-    );
+    const authorization = await authorize;
+    signal.throwIfAborted();
+    if (!authorization.ok) {
+      throw authorization.error;
+    }
+    const prepared = authorization.value;
     if ("status" in prepared) {
       return prepared;
-    }
-    if (attachmentRecords?.voiceIds.length) {
-      const voiceError = await validateIncomingVoiceClips(
-        args,
-        attachmentRecords,
-        signal,
-      );
-      signal.throwIfAborted();
-      if (voiceError) {
-        return voiceError;
-      }
     }
     return {
       ...prepared,
@@ -2784,7 +2864,7 @@ const prepareNormalSendContext$ = command(
       context,
       existing,
       inputId,
-      attachmentRecords,
+      attachments: attachments?.result,
       revocation,
       host,
     };
@@ -2909,33 +2989,41 @@ const resolveFailedNormalSend$ = command(
 const prepareNormalSendPublicationInput$ = command(
   async ({ set }, request: NormalSendRequest, signal: AbortSignal) => {
     signal.throwIfAborted();
-    let unusedAttachmentRead: NormalSendAttachmentRead | undefined;
-    const result = await settleIncludingAbort(async () => {
+    let bootstrap = request.bootstrap;
+    const preparation = settleIncludingAbort(async () => {
       const prepared = await measureChatEnqueue(
         request.enqueueTiming,
         "context_ready",
         async () => {
+          if (forgedMcpSource(request.body)) {
+            return badRequestMessage(
+              "MCP source annotations are server-managed",
+            );
+          }
+          bootstrap ??= set(startNormalSendReads$, request, signal);
           const authorized = await set(
             prepareNormalSendContext$,
             request,
+            bootstrap,
             signal,
           );
           signal.throwIfAborted();
           if ("status" in authorized) {
             return authorized;
           }
-          const attachments = set(
-            readNormalSendAttachments$,
-            {
-              orgId: request.orgId,
-              userId: request.userId,
-              enqueueTiming: request.enqueueTiming,
-              context: authorized.context,
-            },
-            authorized.attachmentRecords,
-            signal,
-          );
-          unusedAttachmentRead = authorized.attachmentRecords && attachments;
+          const attachments =
+            authorized.attachments ??
+            set(
+              readNormalSendAttachments$,
+              {
+                orgId: request.orgId,
+                userId: request.userId,
+                enqueueTiming: request.enqueueTiming,
+                context: authorized.context,
+              },
+              undefined,
+              signal,
+            );
           return set(captureSendModels$, authorized, attachments, signal);
         },
       );
@@ -2989,7 +3077,6 @@ const prepareNormalSendPublicationInput$ = command(
         },
         signal,
       );
-      unusedAttachmentRead = undefined;
       if ("status" in input) {
         return input;
       }
@@ -3017,10 +3104,12 @@ const prepareNormalSendPublicationInput$ = command(
         },
       };
     });
+    const result = await (request.bootstrap
+      ? preparation
+      : preparation.finally(() => {
+          bootstrap?.attachments?.finish();
+        }));
     signal.throwIfAborted();
-    if (unusedAttachmentRead) {
-      waitUntil(unusedAttachmentRead);
-    }
     if (!result.ok) {
       throw result.error;
     }

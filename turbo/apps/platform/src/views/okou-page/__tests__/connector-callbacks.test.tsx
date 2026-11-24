@@ -151,60 +151,77 @@ function serveStravaCatalog() {
     return respond(200, { connector });
   });
 }
-test("A Strava confirmation returns to the iOS app with the attempt identifier alone", async () => {
-  serveStravaCatalog();
-  const attempt = "b86a89e2-052a-4c88-ae3e-1d71aa1631d2";
-  const destination = "ai.okou.ios://connector-authorization/" + attempt;
-  const navigation = context.mocks.browser.locationAssign();
-  context.mocks.api(
-    builtinConnectorsSlugCallbackContract.callback,
-    ({ query, respond }) => {
-      expect(query).toMatchObject({
-        code: "activity-read",
-        state: "trail-return",
-        scope: "read",
-        responseMode: "json",
-      });
-      return respond(200, {
-        status: "success",
-        username: null,
-        nativeAppReturn: { platform: "ios", attemptId: attempt },
-      });
-    },
-  );
-  await setupPage({
-    context,
-    auth: null,
-    path: "/connectors/strava/callback?code=activity-read&state=trail-return&scope=read",
-  });
-  const link = await findNamedLink("Return to Okou");
-  expect(link).toHaveAttribute("href", destination);
-  await waitFor(() => {
-    expect(navigation.calls).toContain(destination);
-  });
-});
-test("Refreshing a denied Strava callback keeps its explicit return to the iOS app", async () => {
-  serveStravaCatalog();
-  const attempt = "b9a238d5-0fb4-43ec-9cd2-d8d5547911a9";
-  context.mocks.api(
-    builtinConnectorsSlugCallbackContract.callback,
-    ({ never }) => {
-      return never();
-    },
-  );
-  await setupPage({
-    context,
-    auth: null,
-    path:
-      "/connectors/strava/callback/error?message=Access+denied&nativeAppAttemptId=" +
-      attempt,
-  });
-  const link = await findNamedLink("Return to Okou");
-  expect(link).toHaveAttribute(
-    "href",
-    "ai.okou.ios://connector-authorization/" + attempt,
-  );
-  expect(
-    screen.getByText("Access denied Close this window and try again."),
-  ).toBeVisible();
-});
+test.each([null, "app.okou.ai"] as const)(
+  "A Strava confirmation returns to iOS with the attempt identifier over %s",
+  async (host) => {
+    serveStravaCatalog();
+    const attempt = "b86a89e2-052a-4c88-ae3e-1d71aa1631d2";
+    const destination = host
+      ? `https://${host}/native/connector-authorization?attemptId=${attempt}`
+      : "ai.okou.ios://connector-authorization/" + attempt;
+    const navigation = context.mocks.browser.locationAssign();
+    context.mocks.api(
+      builtinConnectorsSlugCallbackContract.callback,
+      ({ query, respond }) => {
+        expect(query).toMatchObject({
+          code: "activity-read",
+          state: "trail-return",
+          scope: "read",
+          responseMode: "json",
+        });
+        return respond(200, {
+          status: "success",
+          username: null,
+          nativeAppReturn: {
+            platform: "ios",
+            attemptId: attempt,
+            ...(host ? { httpsHost: host } : {}),
+          },
+        });
+      },
+    );
+    await setupPage({
+      context,
+      auth: null,
+      path: "/connectors/strava/callback?code=activity-read&state=trail-return&scope=read",
+    });
+    const link = await findNamedLink("Return to Okou");
+    expect(link).toHaveAttribute("href", destination);
+    expect(new URLSearchParams(location.search).has("code")).toBe(false);
+    expect(new URLSearchParams(location.search).has("state")).toBe(false);
+    await waitFor(() => {
+      expect(navigation.calls).toContain(destination);
+    });
+  },
+);
+test.each([null, "staging-app.omby.ai"] as const)(
+  "Refreshing the denied Strava page retains the iOS return over %s",
+  async (host) => {
+    serveStravaCatalog();
+    const attempt = "b9a238d5-0fb4-43ec-9cd2-d8d5547911a9";
+    context.mocks.api(
+      builtinConnectorsSlugCallbackContract.callback,
+      ({ never }) => {
+        return never();
+      },
+    );
+    await setupPage({
+      context,
+      auth: null,
+      path:
+        "/connectors/strava/callback/error?message=Access+denied&nativeAppAttemptId=" +
+        attempt +
+        (host ? "&nativeAppHttpsHost=" + host : ""),
+    });
+    const link = await findNamedLink("Return to Okou");
+    expect(link).toHaveAttribute(
+      "href",
+      host
+        ? `https://${host}/native/connector-authorization?attemptId=${attempt}`
+        : "ai.okou.ios://connector-authorization/" + attempt,
+    );
+    expect(
+      screen.getByText("Access denied Close this window and try again."),
+    ).toBeVisible();
+  },
+);

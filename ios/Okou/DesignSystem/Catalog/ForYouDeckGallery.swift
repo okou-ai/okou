@@ -6,8 +6,10 @@
 
   /// On-demand native acceptance of the For you deck: the production page against an isolated
   /// HTTP fixture, so swiping, the dock and the caught-up recap can be checked without signing
-  /// in or sending read receipts to a real account. `--for-you-deck-slow` holds the first load
-  /// for a few seconds and `--for-you-deck-failure` fails it, for the loading and error panels.
+  /// in or sending read receipts to a real account. The input's model list answers as Auto, so
+  /// it opens as it does for a member; a choice that sends never reaches a chat here.
+  /// `--for-you-deck-slow` holds the first load for a few seconds and `--for-you-deck-failure`
+  /// fails it, for the loading and error panels.
   struct ForYouDeckGallery: View {
     @State private var preview = Result { try ForYouDeckPreview() }
 
@@ -71,6 +73,10 @@
       // Paths are recognised by comparison: this fixture answers requests, it never sends one.
       let isItems = path == "/api/feed/items"
       let isSummary = path == "/api/feed/summary"
+      let isPreference = path == "/api/user-model-preference"
+      let isRunModels = path == "/api/run-models"
+      let isCatalog = path == "/api/model-catalog"
+      let isSwitches = path == "/api/feature-switches"
       switch (request.httpMethod ?? "GET", path) {
       case ("GET", _) where isItems && Self.isFailing:
         status = 503
@@ -87,6 +93,14 @@
         body = "{\"items\":[\(items.joined(separator: ","))]}"
       case ("GET", _) where isSummary:
         body = "{\"hasUnread\":false}"
+      case ("GET", _) where isPreference:
+        body = "{}"
+      case ("GET", _) where isRunModels:
+        body = Self.runModels
+      case ("GET", _) where isCatalog:
+        body = Self.modelCatalog
+      case ("GET", _) where isSwitches:
+        body = "{\"effectiveSwitches\":{}}"
       case ("POST", _) where path.hasSuffix("/suggestion/feedback"):
         let undoing = Self.isUndo(request)
         if segments.count > 3 {
@@ -130,6 +144,15 @@
     private static let isFailing = ProcessInfo.processInfo.arguments.contains(
       "--for-you-deck-failure")
     private static let slowLoad: TimeInterval = 4
+    private static let runModels = """
+      {"models":[{"model":null,"modelLabel":"Auto","modelProviderId":null,\
+      "memberEffective":{"providerType":"built-in","runtimeProviderType":"openrouter-codex",\
+      "credentialScope":"org","availability":"available","accountSelection":"not_applicable"}}]}
+      """
+    private static let modelCatalog = """
+      {"systemDefaultModel":"okou-1.0","models":[{"model":"okou-1.0","displayName":"Auto",\
+      "sortOrder":0,"replacedBy":null,"resolvedModel":"okou-1.0"}],"routes":[]}
+      """
 
     private static func isUndo(_ request: URLRequest) -> Bool {
       var data = request.httpBody

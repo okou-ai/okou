@@ -1,11 +1,17 @@
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
-import { catalogConnector } from "./chat-capability-connector-test-helpers.ts";
+import {
+  browserAuthMethod,
+  catalogConnector,
+  connectedConnectorResponse,
+  connectorActionUrl,
+} from "./chat-capability-connector-test-helpers.ts";
 import { manualAuthMethod } from "./chat-composer-connectors-test-helpers.ts";
 import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { runConnectorAccountsContract } from "@okouai/api-contracts/contracts/run-connector-accounts";
 import { mockAuthorizationCallbackThread } from "./authorization-callback-test-helpers.ts";
 import {
+  builtinConnectorsMainContract,
   builtinConnectorManualGrantContract,
   builtinConnectorOauthStartContract,
 } from "@okouai/api-contracts/contracts/connectors";
@@ -364,45 +370,128 @@ async function reconnectCard() {
   expect(card).toHaveTextContent("GitHub · Work GitHub");
   return findEnabledButton("Reconnect", card);
 }
-test("chat-cards-022 the work account offers its stored OAuth method in the conversation", async () => {
-  const authorization =
-    "https://github.example.test/login/oauth/authorize?state=work";
-  const popup = context.mocks.browser.authWindow();
-  const destination = { href: "about:blank" };
-  Object.defineProperty(popup, "location", { value: destination });
-  context.mocks.browser.open(popup);
-  context.mocks.api(
-    builtinConnectorOauthStartContract.start,
-    ({ params, body, respond }) => {
-      if (
-        params.connectorSlug !== "github" ||
-        body.authMethod !== "oauth" ||
-        body.account.intent !== "reconnect" ||
-        body.account.connectionId !== workId
-      ) {
-        throw new Error("Unexpected authorization target");
-      }
+test.each([
+  { title: "chat-cards-022 the exact account", target: "exact" },
+  { title: "The expired default account", target: "default" },
+] as const)(
+  "$title reconnects in one click with its saved OAuth method before the chat resumes",
+  async ({ target }) => {
+    const account = {
+      ...workAccount(),
+      scopeMismatch: false,
+      isDefault: target === "default",
+    };
+    const attempt = crypto.randomUUID();
+    const callback = "Continue account maintenance";
+    const authorization = "https://github.example.test/login/renew";
+    const popup = context.mocks.browser.authWindow();
+    const destination = { href: "about:blank" };
+    Object.defineProperty(popup, "location", { value: destination });
+    context.mocks.browser.open(popup);
+    const catalog = catalogConnector({
+      slug: "github",
+      label: "GitHub",
+      method: browserAuthMethod(),
+    });
+    context.mocks.api(connectorCatalogContract.get, ({ respond }) => {
       return respond(200, {
-        authorizationUrl: authorization,
-        oauthAttemptId: crypto.randomUUID(),
+        connector: {
+          ...catalog,
+          authMethods: [browserAuthMethod("alternate"), browserAuthMethod()],
+          singleAuthCodeAuthMethodId: null,
+        },
       });
-    },
-  );
-  reconnectAccount();
-  await open(origin + reconnectRequest(workId));
-  click(await reconnectCard());
-  const modal = await screen.findByRole("dialog");
-  const dialog = within(modal);
-  expect(dialog.getByText(/Work GitHub/)).toBeInTheDocument();
-  const reconnect = await findEnabledButton("Reconnect", modal);
-  expect(dialog.queryByText("API Token", { selector: "label" })).toBeNull();
-  expect(modal.querySelector("input")).toBeNull();
-  click(reconnect);
-  await waitFor(() => {
-    expect(destination.href).toBe(authorization);
-  });
-  expect(window.location.pathname).toBe(RUN_PATH);
-});
+    });
+    context.mocks.api(connectorAccountsContract.connection, ({ respond }) => {
+      return respond(200, account);
+    });
+    context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
+      return respond(200, {
+        connections: [account],
+        defaultConnection: account.isDefault ? account : null,
+        nextCursor: null,
+      });
+    });
+    context.mocks.api(builtinConnectorsMainContract.list, ({ respond }) => {
+      return respond(200, {
+        connectors: [
+          connectedConnectorResponse({
+            id: account.id,
+            slug: "github",
+            authMethod: "oauth",
+            updatedAt: account.updatedAt,
+            reconnectRequired:
+              account.connectionStatus === "reconnect-required",
+          }),
+        ],
+      });
+    });
+    context.mocks.api(
+      builtinConnectorOauthStartContract.start,
+      ({ body, params, respond }) => {
+        expect(params.connectorSlug).toBe("github");
+        expect(body.authMethod).toBe("oauth");
+        expect(body.account).toStrictEqual({
+          intent: "reconnect",
+          connectionId: account.id,
+        });
+        return respond(200, {
+          authorizationUrl: authorization,
+          oauthAttemptId: attempt,
+          connectionId: account.id,
+        });
+      },
+    );
+    const early = context.mocks.deferred<void>();
+    context.mocks.api(
+      connectorAccountsContract.oauthCompletion,
+      ({ params, respond }) => {
+        expect(params.attemptId).toBe(attempt);
+        if (account.connectionStatus === "connected")
+          return respond(200, { connectionId: account.id });
+        early.resolve();
+        return respond(404, {
+          error: { code: "NOT_FOUND", message: "Authorization pending" },
+        });
+      },
+    );
+    const action =
+      target === "exact"
+        ? origin + reconnectRequest(account.id)
+        : connectorActionUrl({ slug: "github", callbackPrompt: callback });
+    await open(action);
+    const sent = context.mocks.deferred<string>();
+    context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+      expect(body.threadId).toBe(RUN_THREAD_ID);
+      if (typeof body.prompt === "string") sent.resolve(body.prompt);
+      return respond(201, { threadId: RUN_THREAD_ID });
+    });
+    const card = await screen.findByTestId("connector-action-card");
+    expect(card).toHaveTextContent(
+      target === "exact" ? "Work GitHub" : "GitHub",
+    );
+    click(await findEnabledButton("Reconnect", card));
+    await waitFor(() => {
+      return expect(destination.href).toBe(authorization);
+    });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    context.mocks.ably.trigger("connector:changed", {
+      connectorSlug: "github",
+    });
+    await waitFor(() => {
+      expect(early.settled()).toBe(true);
+    });
+    expect(sent.settled()).toBe(false);
+    account.connectionStatus = "connected";
+    account.updatedAt = "2026-09-02T12:00:00.000Z";
+    context.mocks.ably.trigger("connector:changed", {
+      connectorSlug: "github",
+    });
+    if (target === "exact") popup.close();
+    await expect(sent.promise).resolves.toBe(callback);
+    expect(location.pathname).toBe(RUN_PATH);
+  },
+);
 test("chat-cards-025 an account removed after rendering cannot open a reconnect dialog", async () => {
   const service = reconnectAccount();
   await open(origin + reconnectRequest(workId));

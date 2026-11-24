@@ -60,6 +60,8 @@ final class WorkspaceStore {
   @ObservationIgnored lazy var forYou = ForYouStore(
     workspace: self, resources: resources, feed: ForYouFeed(client: client), commands: commands)
   var settingsResources: WorkspaceResources { resources }
+  /// The session's graph. The workspace root provides it to every workspace view.
+  var graph: CCState.Store { resources.store }
   private(set) var needsUpgrade = false
   private(set) var isCreating = false
   private(set) var newChatSubmission: NewChatSubmission?

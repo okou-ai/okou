@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.111.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.31...guest-agent-v0.111.0) (2026-11-24)
+
+
+### Features
+
+* **runner:** execute gemini 4 turns with antigravity cli ([#50389](https://github.com/okou-ai/okou/issues/50389)) ([17f9b83](https://github.com/okou-ai/okou/commit/17f9b831b49c876e71002ac641b338badf0bff40))
+
 ## [0.110.31](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.30...guest-agent-v0.110.31) (2026-11-24)
 
 
