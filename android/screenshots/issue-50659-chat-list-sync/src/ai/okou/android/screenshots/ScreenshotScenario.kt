@@ -300,17 +300,24 @@ class ScreenshotScenario {
             device.executeShellCommand("wm size 1180x920")
             auth.state.value = testAuthenticationState(user = wideUser)
             ActivityScenario.launch(MainActivity::class.java).use {
-                val region = device.awaitChatList(labels).visibleBounds
-                check(region.width() == 344) { "Expected a 344 dp wide list at mdpi, saw $region" }
+                device.awaitChatList(labels)
                 awaitTools()
                 find(text(focusChat))
+                val region = device.awaitChatList(labels).visibleBounds
                 check(!device.hasObject(progress))
                 selectFilter(R.string.chat_unread)
                 val bar = find(progress).visibleBounds
                 find(text(focusChat))
                 ScreenshotCapture.capture("wide-stale-unread.png")
-                check(bar.height() == 4 && bar.width() == 344 && bar.top == region.top) {
-                    "Expected a 344 by 4 dp overlay immediately above $region, saw $bar"
+                // The 344 dp pane includes the 1 dp divider. The overlay spans its content.
+                check(region.width() == 343) {
+                    "Expected 343 dp of list content at mdpi, saw $region"
+                }
+                check(bar.height() == 4 && bar.top == region.top) {
+                    "Expected a 4 dp overlay across the list content edge $region, saw $bar"
+                }
+                check(bar.left == region.left && bar.right == region.right) {
+                    "Expected the overlay to span $region, saw $bar"
                 }
                 wideResponse.countDown()
                 find(text(R.string.chat_empty_unread))
