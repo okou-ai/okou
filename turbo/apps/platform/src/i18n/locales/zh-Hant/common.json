@@ -5768,6 +5768,7 @@
         "check": "查看登入狀態",
         "error": "請檢查分配給你的登入環境，再試一次。",
         "expired": "登入已過期，請重新連線。",
+        "openTerminal": "開啟 Google 登入終端機",
         "terminal": "在終端機執行以下指令，然後使用你的個人 Google AI 帳戶登入。",
         "title": "Google AI（Antigravity）",
         "unassigned": "請管理員為你分配登入終端機。",

@@ -5859,6 +5859,7 @@
         "check": "Verificar login",
         "error": "Confira o ambiente de login atribuído a você e tente novamente.",
         "expired": "O login expirou. Conecte a conta novamente.",
+        "openTerminal": "Abrir o terminal de login do Google",
         "terminal": "Execute este comando no terminal e faça login com sua conta pessoal do Google AI.",
         "title": "Google AI (Antigravity)",
         "unassigned": "Peça a um administrador para atribuir um terminal de login a você.",
