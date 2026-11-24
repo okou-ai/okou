@@ -44,10 +44,15 @@ final class VoiceCaptureFixture: VoiceAudioCapture {
   var finalSeconds = 0
   var startGate: VoiceResponseGate?
   var startFailure: Error?
+  var permissionGranted: XCTestExpectation?
   private var continuation: AsyncThrowingStream<VoiceAudioChunk, Error>.Continuation?
-  func start() async throws -> AsyncThrowingStream<VoiceAudioChunk, Error> {
+  func requestPermission() async throws {
     if let startGate { await startGate.wait() }
     if let startFailure { throw startFailure }
+    permissionGranted?.fulfill()
+  }
+
+  func start() async throws -> AsyncThrowingStream<VoiceAudioChunk, Error> {
     let (stream, continuation) = AsyncThrowingStream<VoiceAudioChunk, Error>.makeStream()
     self.continuation = continuation
     return stream
