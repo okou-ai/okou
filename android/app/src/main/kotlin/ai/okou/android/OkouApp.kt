@@ -1804,6 +1804,8 @@ internal fun OkouApp(
                                     wide = listWidth != null,
                                     newChatEnabled = workspaceReady,
                                     chatActionsEnabled = chats != null,
+                                    startupSyncPending =
+                                        cachedStartupChats != null && startupRecovery == null,
                                     startupRecovery = startupRecovery,
                                     dismissProjectRenameRejection = {
                                         chats?.dismissProjectRenameRejection(it)

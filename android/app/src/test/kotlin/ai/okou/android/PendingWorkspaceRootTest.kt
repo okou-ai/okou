@@ -72,6 +72,7 @@ import org.robolectric.annotation.Config
 open class PendingWorkspaceApplication : TestOkouApplication() {
     protected open val selectedAccess: MembershipAccess? = null
     protected open val seedChats = true
+    protected open val chatCacheAgeMillis = 0L
     var authorizationResponse = CompletableDeferred<Unit>()
     var membershipsResponse = CompletableDeferred(Unit)
     var organizationResponse = CompletableDeferred<Unit>()
@@ -171,7 +172,7 @@ open class PendingWorkspaceApplication : TestOkouApplication() {
                                 events.events,
                                 events.events.single().cursor(),
                             ),
-                            System.currentTimeMillis(),
+                            System.currentTimeMillis() - chatCacheAgeMillis,
                         )
                     }
             }
@@ -229,6 +230,10 @@ class UncachedWorkspaceApplication : FreshWorkspaceAccessApplication() {
     override val seedChats = false
 }
 
+class StaleCachedWorkspaceApplication : FreshWorkspaceAccessApplication() {
+    override val chatCacheAgeMillis = 11 * 60_000L
+}
+
 @RunWith(RobolectricTestRunner::class)
 @Config(
     sdk = [35],
@@ -283,6 +288,9 @@ class PendingWorkspaceRootTest {
         val row = compose.onNodeWithTag("chat_$CHAT_PERSONAL")
         row.assertIsDisplayed().assertIsNotEnabled()
         compose.onNodeWithContentDescription("Loading chats…").assertDoesNotExist()
+        compose
+            .onNodeWithContentDescription(app.getString(R.string.chat_syncing))
+            .assertDoesNotExist()
         assertEquals(searchBounds, search.getUnclippedBoundsInRoot())
         assertEquals(avatarBounds, avatar.getUnclippedBoundsInRoot())
         assertEquals(listBounds, list.getUnclippedBoundsInRoot())
@@ -445,6 +453,17 @@ class PendingWorkspaceRootTest {
         } finally {
             compose.mainClock.autoAdvance = true
         }
+    }
+
+    @Test
+    @Config(application = StaleCachedWorkspaceApplication::class)
+    fun staleCacheShowsSyncProgressWhileAuthorizationIsPending() {
+        awaitCachedRow()
+        compose
+            .onNodeWithContentDescription(app.getString(R.string.chat_syncing))
+            .assertIsDisplayed()
+        compose.onNodeWithContentDescription("Loading chats…").assertDoesNotExist()
+        check(!app.listRequested.isCompleted)
     }
 
     @Test

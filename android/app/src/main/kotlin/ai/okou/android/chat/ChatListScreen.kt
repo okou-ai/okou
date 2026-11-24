@@ -155,6 +155,7 @@ internal fun ChatListScreen(
     wide: Boolean,
     newChatEnabled: Boolean,
     chatActionsEnabled: Boolean,
+    startupSyncPending: Boolean,
     startupRecovery: @Composable (() -> Unit)?,
     dismissProjectRenameRejection: (ProjectRenameRejection) -> Unit,
     feedback: @Composable () -> Unit,
@@ -316,7 +317,10 @@ internal fun ChatListScreen(
     val syncConfirmation =
         if (!hasUsableList || state.offline) null
         else {
-            val listRead = state.confirmedAt.takeIf { state.listPhase == ChatReadPhase.Loading }
+            val listRead =
+                state.confirmedAt.takeIf {
+                    startupSyncPending || state.listPhase == ChatReadPhase.Loading
+                }
             val unreadRead =
                 state.unreadConfirmedAt?.takeIf {
                     unreadFilter && state.indicatorsPhase == ChatReadPhase.Loading
