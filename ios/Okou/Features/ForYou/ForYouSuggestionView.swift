@@ -5,8 +5,8 @@ import SwiftUI
 /// choosing it does. Dismissing it and writing a direction of one's own live in the page's dock.
 struct ForYouSuggestionView: View {
   let suggestion: ForYouSuggestion
-  /// The width the artwork resting on the card's edge takes from the source line.
-  let artworkInset: CGFloat
+  /// The direction whose choice is under way, which shows its progress in place of its arrow.
+  var pendingOptionID: String?
   let openSource: (String) -> Void
   let choose: (ForYouOption) -> Void
 
@@ -20,7 +20,7 @@ struct ForYouSuggestionView: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: OkouSpace.lg) {
+    VStack(alignment: .leading, spacing: OkouSpace.xl) {
       VStack(alignment: .leading, spacing: OkouSpace.sm) {
         if let source {
           Button {
@@ -29,16 +29,15 @@ struct ForYouSuggestionView: View {
             HStack(spacing: OkouSpace.six) {
               OkouIcon("message-circle", size: OkouIconSize.inline)
               Text(source.title).lineLimit(1)
-              OkouIcon("chevron-right", size: OkouIconSize.badge)
+              OkouIcon("chevron-right", size: OkouIconSize.accessory)
+                .foregroundStyle(OkouColor.quietMark)
             }
             .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
-            .padding(.horizontal, OkouSpace.sm)
+            .padding(.horizontal, OkouSpace.ten)
             .frame(minHeight: OkouControl.inlineActionHeight)
-            .background(OkouColor.muted, in: RoundedRectangle(cornerRadius: OkouRadius.small))
-            .contentShape(Rectangle())
           }
-          .buttonStyle(.plain).accessibilityHint("View source")
-          .padding(.trailing, artworkInset)
+          .buttonStyle(ForYouChipButtonStyle()).accessibilityHint("View source")
+          .padding(.bottom, OkouSpace.xs)
         }
         Text(suggestion.title).font(.okou(.title2).weight(.semibold))
           .accessibilityAddTraits(.isHeader).fixedSize(horizontal: false, vertical: true)
@@ -58,15 +57,18 @@ struct ForYouSuggestionView: View {
   }
 
   /// A direction says what choosing it does before it is chosen: one that sends carries the
-  /// composer's send mark, one that only prepares a draft leads on to its chat.
+  /// composer's amber send mark, one that only prepares a draft leads on to its chat. Each is a
+  /// raised button on the card, as the web draws its options, and the one being chosen turns its
+  /// mark into progress until the choice settles.
   private func optionButton(_ option: ForYouOption) -> some View {
     let sends = option.threadId == nil
+    let isPending = pendingOptionID == option.id
     return Button {
       choose(option)
     } label: {
       HStack(spacing: OkouSpace.md) {
         VStack(alignment: .leading, spacing: OkouSpace.two) {
-          Text(option.label).font(.okou(.callout).weight(.medium))
+          Text(option.label).font(.okou(.subheadline).weight(.medium))
           if !option.description.isEmpty {
             Text(option.description).font(.okou(.footnote))
               .foregroundStyle(OkouColor.mutedForeground)
@@ -75,25 +77,18 @@ struct ForYouSuggestionView: View {
             OkouIcon(sends ? "send" : "square-pen", size: OkouIconSize.badge)
             Text(outcome(of: option)).lineLimit(1)
           }
-          .font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground)
-          .padding(.top, OkouSpace.xs)
+          .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
+          .padding(.top, OkouSpace.six)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        OkouIcon(sends ? "arrow-up" : "arrow-right", size: OkouIconSize.inline)
-          .foregroundStyle(sends ? OkouColor.background : OkouColor.foreground)
-          .frame(width: OkouControl.addControl, height: OkouControl.addControl)
-          .background(sends ? OkouColor.foreground : OkouColor.card, in: Circle())
-          .overlay { Circle().strokeBorder(sends ? Color.clear : OkouColor.border) }
-          .accessibilityHidden(true)
+        ForYouOptionMark(sends: sends, isPending: isPending)
       }
       .multilineTextAlignment(.leading)
       .padding(.leading, OkouSpace.lg).padding(.trailing, OkouSpace.md)
       .padding(.vertical, OkouSpace.md)
       .frame(minHeight: OkouControl.minimumTarget)
-      .background(OkouColor.muted, in: RoundedRectangle(cornerRadius: OkouRadius.chat))
-      .contentShape(Rectangle())
     }
-    .buttonStyle(.plain)
+    .buttonStyle(ForYouOptionButtonStyle(isPending: isPending))
     .accessibilityHint(
       sends ? Text("Send to a new chat") : Text("Prepare a draft in the existing chat")
     )
@@ -133,9 +128,11 @@ struct ForYouAutomationView: View {
     VStack(alignment: .leading, spacing: OkouSpace.md) {
       Label("System update", okouSymbol: "workflow", iconSize: OkouIconSize.inline)
         .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
-        .padding(.horizontal, OkouSpace.sm)
+        .padding(.horizontal, OkouSpace.ten)
         .frame(minHeight: OkouControl.inlineActionHeight)
-        .background(OkouColor.muted, in: RoundedRectangle(cornerRadius: OkouRadius.small))
+        .background(
+          OkouColor.stateHover,
+          in: RoundedRectangle(cornerRadius: OkouRadius.small, style: .continuous))
       Text("Automation paused").font(.okou(.title2).weight(.semibold))
         .accessibilityAddTraits(.isHeader)
       Text(
@@ -155,27 +152,102 @@ struct ForYouAutomationView: View {
         }
       }
       .frame(maxWidth: .infinity, alignment: .leading)
-      .padding(OkouSpace.md)
-      .background(OkouColor.muted, in: RoundedRectangle(cornerRadius: OkouRadius.chat))
-      if event.recoveryScheduled {
-        Text("An automatic recovery attempt was scheduled.").font(.okou(.footnote))
-          .foregroundStyle(OkouColor.mutedForeground)
+      .padding(.horizontal, OkouSpace.lg).padding(.vertical, OkouSpace.md)
+      .modifier(OkouSurfaceStyle(radius: OkouRadius.control))
+      // When it stopped and what happens next, as one quiet note under the automation.
+      if event.recoveryScheduled || pausedOn != nil {
+        VStack(alignment: .leading, spacing: OkouSpace.two) {
+          if event.recoveryScheduled {
+            Text("An automatic recovery attempt was scheduled.")
+          }
+          if let pausedOn {
+            Text("Paused on \(pausedOn)")
+          }
+        }
+        .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
       }
-      if let pausedOn {
-        Text("Paused on \(pausedOn)").font(.okou(.caption))
-          .foregroundStyle(OkouColor.mutedForeground)
-      }
+      // A card's actions are compact, side by side; Enable is its one commitment.
       HStack(spacing: OkouSpace.sm) {
         Button("Enable", action: enable)
-          .buttonStyle(OkouButtonStyle(isPrimary: true))
+          .buttonStyle(OkouButtonStyle(isPrimary: true, isCompact: true))
           .accessibilityIdentifier("for-you-enable")
         Button("Dismiss", action: dismiss)
-          .buttonStyle(OkouButtonStyle(isPrimary: false))
-          .fixedSize(horizontal: true, vertical: false)
+          .buttonStyle(OkouButtonStyle(isPrimary: false, isCompact: true))
           .accessibilityIdentifier("for-you-event-dismiss")
       }
+      .padding(.top, OkouSpace.xs)
     }
     .foregroundStyle(OkouColor.foreground)
+  }
+}
+
+/// The mark at a direction's trailing edge: the composer's amber send for one that sends now, a
+/// quiet arrow for one that opens a draft, and progress while the choice is under way.
+private struct ForYouOptionMark: View {
+  let sends: Bool
+  let isPending: Bool
+
+  var body: some View {
+    ZStack {
+      if isPending {
+        ProgressView().controlSize(.small)
+          .tint(sends ? OkouColor.primaryForeground : OkouColor.mutedForeground)
+      } else {
+        OkouIcon(sends ? "arrow-up" : "arrow-right", size: OkouIconSize.inline)
+      }
+    }
+    .transition(.opacity)
+    .foregroundStyle(sends ? OkouColor.primaryForeground : OkouColor.foreground)
+    .frame(width: OkouControl.addControl, height: OkouControl.addControl)
+    .background(sends ? OkouColor.primary : OkouColor.stateHover, in: Circle())
+    .animation(OkouMotion.press, value: isPending)
+    .accessibilityHidden(true)
+  }
+}
+
+/// A direction's raised button, as the web draws its options: the card's fill with a hairline,
+/// darkened by the pressed state layer and eased in a little under the finger. While another
+/// choice is under way it fades as any disabled control does; the one being chosen stays whole.
+private struct ForYouOptionButtonStyle: ButtonStyle {
+  let isPending: Bool
+  @Environment(\.isEnabled) private var isEnabled
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  private static let pressedScale: CGFloat = 0.98
+
+  func makeBody(configuration: Configuration) -> some View {
+    let shape = RoundedRectangle(cornerRadius: OkouRadius.control, style: .continuous)
+    let pressed = configuration.isPressed
+    configuration.label
+      .background(OkouColor.card, in: shape)
+      .overlay {
+        shape.fill(pressed ? OkouColor.statePressed : .clear).allowsHitTesting(false)
+      }
+      .overlay {
+        shape.strokeBorder(
+          pressed ? OkouColor.controlBorder : OkouColor.border, lineWidth: OkouSpace.hairline
+        )
+        .allowsHitTesting(false)
+      }
+      .contentShape(shape)
+      .scaleEffect(pressed && !reduceMotion ? Self.pressedScale : 1)
+      .opacity(isEnabled || isPending ? 1 : 0.5)
+      .animation(reduceMotion ? nil : OkouMotion.press, value: pressed)
+  }
+}
+
+/// The quiet chip that opens a suggestion's source chat: the neutral state layer on the card,
+/// deepening while pressed.
+private struct ForYouChipButtonStyle: ButtonStyle {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label
+      .background(
+        configuration.isPressed ? OkouColor.statePressed : OkouColor.stateHover,
+        in: RoundedRectangle(cornerRadius: OkouRadius.small, style: .continuous)
+      )
+      .contentShape(Rectangle())
+      .animation(reduceMotion ? nil : OkouMotion.press, value: configuration.isPressed)
   }
 }
 

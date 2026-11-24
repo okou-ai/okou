@@ -60,7 +60,6 @@ final class ForYouStore {
   var notice: Notice?
   private(set) var handled: [Handled] = []
   private(set) var direction: ForYouDirection?
-  private var artworkByID: [String: String] = [:]
 
   var current: ForYouCard? { cards.indices.contains(position) ? cards[position] : nil }
   var summary: Computed<Task<Bool, Error>> { resources.forYouSummary }
@@ -88,10 +87,6 @@ final class ForYouStore {
       let result = try await resources.loadForYou()
       try Task.checkCancellation()
       if let direction, !result.contains(where: { $0.id == direction.cardID }) { closeDirection() }
-      let illustrations = ["ForYouReader", "ForYouBridge", "ForYouWay"]
-      for card in result where artworkByID[card.id] == nil {
-        artworkByID[card.id] = illustrations[artworkByID.count % illustrations.count]
-      }
       cards = result
       position = previous.flatMap { id in result.firstIndex { $0.id == id } } ?? 0
       loaded = true
@@ -99,8 +94,6 @@ final class ForYouStore {
     } catch is CancellationError {
     } catch { self.error = error.localizedDescription }
   }
-
-  func illustration(for card: ForYouCard) -> String? { artworkByID[card.id] }
 
   /// The pager came to rest on a card.
   func show(_ id: String) {

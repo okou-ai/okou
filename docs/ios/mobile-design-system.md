@@ -128,7 +128,7 @@ not copied from CSS and are not all mandated by Apple.
 | Icons        | Canonical Lucide 24-unit paths; native 2-unit stroke. Compiled image intrinsic size is 20 pt for system menu hosts. Explicit SwiftUI geometry follows the role table below.                                                                                                                                                       |
 | Motion       | Press feedback 150 ms, ordinary transition 250 ms; honor Reduce Motion; product-specific motion is ported from Web with its timing as `OkouMotion` tokens (greeting words, running cycle, 1 s working spinner turn, fold spring, 50 ms waveform sample, 30 fps Okou avatar; navigation transitions are system-owned)              |
 | Elevation    | No shadows on in-flow content. Only surfaces floating over content (suggestion panels) take `OkouElevation.floating*` (8 % black, radius 16, y 6)                                                                                                                                                                                 |
-| Haptics      | `sensoryFeedback` only for committed moments: send (light impact), stop (medium), success of a copy/approval/send, error, sidebar open/close (selection). Never on scroll or typing                                                                                                                                               |
+| Haptics      | `sensoryFeedback` only for committed moments: send (light impact), stop (medium), success of a copy/approval/send or a handled For you card, error, sidebar open/close and a For you card coming to rest in front (selection). Never while a finger scrolls or on typing                                                          |
 
 An icon inside a `Label` is decorative: its text names the action. Icon-only
 buttons require an explicit accessible label. Errors appear next to the owning
@@ -181,7 +181,8 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
 ### Materials and surfaces
 
 - **Page** canvas is `background`, pure white (`#FFFFFF`) as on the web, where the canvas
-  carries no tint; cards and sheets in the page are white too. The **sidebar** is
+  carries no tint; cards and sheets in the page are white too. For you is the one page whose
+  ground continues its cover picture instead ([For you](#for-you)). The **sidebar** is
   `sidebar` (gray-50), the web's warm chrome.
 - **Fills on white are neutral.** The warm `muted` and `control-surface` read pink on `card`
   and `background`; tiles, placeholders, media backdrops, zebra rows and tracks use the
@@ -196,6 +197,11 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
   "…" menu beside it. UIKit menu entries keep `UIButton.Configuration.glass()`, unless a
   glass group draws the glass around them (the sidebar's chat list menu is `.plain()`).
   Paired controls in one bar are the same size.
+- **Text on glass takes the glass's vibrancy.** A prompt that stands in for an input on glass
+  (`OkouGlassPrompt`, For you's "What do you have in mind?") uses the hierarchical `.secondary`
+  style, not the fixed placeholder grey: the system adapts it to whatever the glass picks up, so
+  it keeps reading over a picture or a coloured scene. A fixed colour is drawn as it is and washed
+  out to about 2.3:1 on For you's sea; the vibrant style keeps the text in the glass's own hue.
   The sidebar filter uses `ChatListFilterMenu` with that native configuration.
   UIKit owns menu presentation and navigation-gesture arbitration.
 - **Floating panels** over the transcript (slash workflows, @mentions) use
@@ -601,6 +607,7 @@ Every shared view, in the same groups. Feature folders keep only views bound to 
 | `OkouIcon`, `OkouToolbarIcon`, `Label(okouSymbol:)`, `Button(okouSymbol:)` | Shared product icon assets; preserve native labels, menu behavior, and button roles                                                                                        |
 | `OkouLineIcon`                                                             | A glyph centred on the first line of the text beside it in a `.firstTextBaseline` row (feedback, search results); a bare glyph there rides high because it has no baseline |
 | `OkouGlassControl`                                                         | Clear glass icon (`.circle`) or labeled (`.capsule`) control on an exact 44 pt shape; pairs and bars read at one size                                                      |
+| `OkouGlassPrompt`                                                          | A one-line prompt on a 44 pt glass capsule that opens an input; its text takes the glass's vibrancy (`.secondary`) so it stays legible on any backdrop                     |
 | `OkouFloatingPanelStyle`                                                   | Card surface plus the floating shadow for suggestion panels over the transcript                                                                                            |
 | `okouGroupedBackground()`                                                  | The one ground for grouped List/Form sheets                                                                                                                                |
 | `okouSheetBackground()`                                                    | A sheet's opaque ground, set on the view the sheet presents (beside its detents), never inside its navigation stack                                                        |
@@ -872,6 +879,32 @@ feature; the catalog shows each one.
   system slides the row away; Delete keeps no role, because the destructive role would
   remove the row before the user confirms.
 
+### For you
+
+- **One scene, not a header on a white page.** For you is the one page whose ground is not the
+  white canvas: its cover picture runs across the top at one fixed scale (`ForYouCover`) and the
+  rest of the page continues in the picture's own sea colour, read from the asset rather than
+  written as a colour, so the cards, the deck and the dock stand on the same scene as the header.
+  A taller or shorter card only covers more or less of it; the picture never resizes, so it keeps
+  one size and one sharpness. At night the whole scene dims, so the light header and status bar
+  read on it.
+- **Cards** are white `OkouSurfaceStyle` cards at sheet radius with 24 pt above the heading and
+  20 pt elsewhere. A direction is a raised button (card fill, hairline, `state-pressed` while
+  pressed); one that sends carries the composer's amber send mark, one that drafts a quiet arrow,
+  and the chosen one shows progress in its mark until the choice settles. One card uses at most
+  three sizes: title2, subheadline and footnote.
+- **The deck pages round.** A sideways swipe carries the front card with the finger; it settles
+  back a little but never tilts, since paging throws nothing away, and the next card rises out
+  of the deck, solid within the first third of the swipe. Past the last card the deck carries on
+  to the first, and back from the first to the last, as the web's stack turns. The counter rolls
+  and the lit progress segment follows the finger. A handled card sinks away while the next one
+  rises into its place. Under Reduce Motion the cards page side by side and the cover holds still.
+- **Haptics**: selection when a new card comes to rest in front, success when a card is
+  handled, error on a failure; nothing while the finger moves.
+- **The dock** is an `OkouGlassPrompt` that grows into the composer, and Dismiss with its
+  reasons menu. Confirmations drop in under the header so they never cover the next card's
+  directions.
+
 ### Sign-in and account
 
 - **Sign-in is one way in.** The first screen holds the providers and the email field
@@ -1001,6 +1034,12 @@ The Status & feedback page links to **Chat sync feedback** (`ChatSyncStatusGalle
 which previews the production retry surfaces for realtime and chat-read failures. In
 Debug builds, `--chat-sync-status` opens this page directly without initializing
 authentication or product services.
+
+In Debug builds, `--for-you-deck` opens the production For you page (`ForYouDeckGallery`)
+against an isolated `.invalid` HTTP fixture with suggestion and paused-automation cards, so
+paging, the dock, dismissal with Undo and the caught-up recap can be checked without signing
+in or sending read receipts. Add `--for-you-deck-slow` to hold the first load (the skeleton)
+or `--for-you-deck-failure` to fail it.
 
 The Iconography page's **Native icon calibration** includes native SF Symbol and
 Okou glass actions, list labels, and a real UIKit menu containing both image
