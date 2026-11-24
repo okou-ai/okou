@@ -72,7 +72,7 @@ public actor ChatSync {
     guard let cached = await readCachedThreadList(newerThan: sequence, excluding: cursor) else {
       return nil
     }
-    let unavailable = await unavailableThreads()
+    let unavailable = await threadAbsences(confirmed: true)
     return cached.list(unavailable: unavailable, persisted: true)
   }
 
@@ -163,7 +163,7 @@ extension ChatSync {
     do {
       persisted = try await persistThreadList(
         state, startingAt: baseline ?? ChatCacheCursor(eventID: nil, seqID: 0),
-        deletions: deletedIDs)
+        previouslyListed: previousIDs, deletions: deletedIDs)
       if let durable = await readCachedThreadList(newerThan: persisted ? state.cursor.seqID : nil) {
         state = durable
         if !persisted { deletedIDs.removeAll() }
@@ -180,7 +180,7 @@ extension ChatSync {
           "event=chat.cache.list.save.failed error=\(error.localizedDescription, privacy: .private)"
         )
     }
-    let unavailable = await unavailableThreads()
+    let unavailable = await threadAbsences(confirmed: true)
     let list = state.list(
       previouslyListed: previousIDs, observedEvents: eventIDs, deleted: deletedIDs,
       unavailable: unavailable, persisted: persisted)

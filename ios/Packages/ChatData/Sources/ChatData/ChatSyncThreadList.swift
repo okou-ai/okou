@@ -40,13 +40,29 @@ extension ChatSync {
     }
   }
 
-  func unavailableThreads() async -> Set<String> {
-    do { return try await cache?.unavailableThreadIDs() ?? [] } catch {
+  func threadAbsences(confirmed: Bool) async -> Set<String> {
+    do { return try await cache?.absentThreadIDs(confirmed: confirmed) ?? [] } catch {
       Logger(subsystem: "ai.okou.ios", category: "ChatCache")
         .error(
           "event=chat.cache.unavailable.read.failed error=\(error.localizedDescription, privacy: .private)"
         )
       return []
+    }
+  }
+
+  public func pendingThreadAbsences() async -> Set<String> {
+    await threadAbsences(confirmed: false)
+  }
+
+  public func resolveThreadAbsences(dismissing: Set<String>, unavailable: Set<String>) async {
+    guard !dismissing.isEmpty || !unavailable.isEmpty else { return }
+    do {
+      try await cache?.resolveThreadAbsences(dismissing: dismissing, unavailable: unavailable)
+    } catch {
+      Logger(subsystem: "ai.okou.ios", category: "ChatCache")
+        .error(
+          "event=chat.cache.absence.resolve.failed error=\(error.localizedDescription, privacy: .private)"
+        )
     }
   }
 
@@ -189,17 +205,19 @@ extension ChatSync {
 
   /// A competing app/extension write wins even if a reset made its cursor smaller.
   func persistThreadList(
-    _ state: ThreadListState, startingAt baseline: ChatCacheCursor, deletions: Set<String>
+    _ state: ThreadListState, startingAt baseline: ChatCacheCursor, previouslyListed: Set<String>,
+    deletions: Set<String>
   )
     async throws -> Bool
   {
     guard let cache else { return false }
     if state.replaced {
+      let listed = Set(state.threads.map(\.id))
       return try await cache.replaceThreadList(
         snapshot: state.snapshotData, cursor: state.snapshotCursor, events: state.newEvents,
         startingAt: baseline, afterExpiry: state.recoveredExpiredCursor,
-        compactedDeletes: deletions.subtracting(state.deletedThreadIDs).subtracting(
-          state.threads.map(\.id)))
+        compactedDeletes: deletions.subtracting(state.deletedThreadIDs).subtracting(listed),
+        unverifiedAbsences: previouslyListed.subtracting(listed).subtracting(deletions))
     }
     return try await cache.appendThreadEvents(state.newEvents, startingAt: baseline)
   }

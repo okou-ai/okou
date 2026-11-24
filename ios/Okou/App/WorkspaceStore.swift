@@ -546,24 +546,30 @@ final class WorkspaceStore {
 extension WorkspaceStore {
   /// A complete list can omit a chat after rollback. Only the parent can authorize draft cleanup.
   private func confirmAbsences(_ absent: Set<String>) async -> Set<String> {
-    for id in absent
-    where selectedThreadID == id || hasDraft(id) || draftStorage?.hasThreadDraft(id) == true {
-      unverifiedDraftThreads.insert(id)
-    }
+    let pending = await sync.pendingThreadAbsences()
+    unverifiedDraftThreads.formUnion(absent.union(pending))
     var confirmed = Set<String>()
+    var dismissed = Set<String>()
     for id in unverifiedDraftThreads {
       guard !closed, !Task.isCancelled else { break }
+      guard selectedThreadID == id || hasDraft(id) || draftStorage?.hasThreadDraft(id) == true
+      else {
+        dismissed.insert(id)
+        continue
+      }
       do {
         _ = try await sync.cancellationRecoveryPending(threadID: id)
+        dismissed.insert(id)
       } catch is UnavailableChatThread {
         confirmed.insert(id)
       } catch {
         handle(error)
-        // Retry on the next list refresh without touching the draft.
-        continue
+        // An omitted chat with a local draft stays pending across relaunches.
       }
-      unverifiedDraftThreads.remove(id)
     }
+    unverifiedDraftThreads.subtract(confirmed.union(dismissed))
+    await sync.resolveThreadAbsences(
+      dismissing: dismissed.intersection(pending), unavailable: confirmed)
     return confirmed
   }
 

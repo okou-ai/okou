@@ -135,9 +135,12 @@ final class ChatThreadDeleteTests: XCTestCase {
       apiBaseURL: fixture.http.baseURL, userID: "owner", workspaceID: "workspace")
     let storage = ChatDraftStorage(scope: scope, directory: directory.url)
     let id = ThreadActionsFixture.thread
-    let store = WorkspaceStore(
-      client: fixture.http.client, webURL: fixture.http.baseURL,
-      cache: directory.cache(scope: scope), draftStorage: storage)
+    func workspace() -> WorkspaceStore {
+      WorkspaceStore(
+        client: fixture.http.client, webURL: fixture.http.baseURL,
+        cache: directory.cache(scope: scope), draftStorage: storage)
+    }
+    let store = workspace()
     defer { store.close() }
     fixture.remote(kind: "renamed", extra: #","title":"Previous timeline""#)
     _ = await store.list.refresh()
@@ -166,13 +169,23 @@ final class ChatThreadDeleteTests: XCTestCase {
       $0.snapshotIncludesThread = false
       $0.parentStatus = 503
     }
-    _ = await store.list.refresh()
-    XCTAssertTrue(store.list.threads.isEmpty)
+    await store.close().value
+    try await prefetch.prefetchThreadList()
+    let afterReset = workspace()
+    defer { afterReset.close() }
+    _ = await afterReset.list.refresh()
+    XCTAssertTrue(afterReset.list.threads.isEmpty)
     XCTAssertTrue(storage.hasThreadDraft(id))
-    XCTAssertNil(store.threadFeedback)
+    XCTAssertNil(afterReset.threadFeedback)
+    await afterReset.close().value
+
     fixture.state.value.withLock { $0.parentStatus = 404 }
-    _ = await store.list.refresh()
+    let retried = workspace()
+    defer { retried.close() }
+    _ = await retried.list.refresh()
     XCTAssertFalse(storage.hasThreadDraft(id))
+    let pending = await reopened.pendingThreadAbsences()
+    XCTAssertTrue(pending.isEmpty)
   }
 
   func testDeleteRemovesTheChatAtOnceAndLeavesItsOpenDetail() async throws {

@@ -206,7 +206,7 @@ public actor ChatCache {
 
 }
 
-// The shared sidebar snapshot, its event cursor and confirmed missing chats.
+// The shared sidebar snapshot, its cursor and absences awaiting verification or device cleanup.
 extension ChatCache {
   public func loadThreadList() throws -> CachedThreadList? {
     try withDatabase { database in
@@ -251,7 +251,7 @@ extension ChatCache {
   public func replaceThreadList(
     snapshot: Data, cursor: ChatCacheCursor, events: [ChatCacheEvent],
     startingAt baseline: ChatCacheCursor? = nil, afterExpiry: Bool = false,
-    compactedDeletes: Set<String> = []
+    compactedDeletes: Set<String> = [], unverifiedAbsences: Set<String> = []
   ) throws -> Bool {
     guard ChatCacheValidation.validListCursor(cursor) else { throw ChatCacheError.invalidCursor }
     try ChatCacheValidation.validate(events, after: cursor.seqID)
@@ -274,7 +274,8 @@ extension ChatCache {
         try insert.bind(cursor.seqID, at: 3)
         try insert.run()
         for event in events { try Self.insert(event, into: "thread_events", database: database) }
-        for id in compactedDeletes { try Self.markThreadUnavailable(id, in: database) }
+        for id in unverifiedAbsences { try database.recordThreadAbsence(id, confirmed: false) }
+        for id in compactedDeletes { try database.recordThreadAbsence(id, confirmed: true) }
         return true
       }
     }
@@ -317,37 +318,26 @@ extension ChatCache {
     }
   }
 
-  func unavailableThreadIDs() throws -> Set<String> {
-    try withDatabase { database in
-      let rows = try database.prepare("SELECT thread_id FROM unavailable_threads")
-      var ids = Set<String>()
-      while try rows.step() {
-        if let id = rows.optionalText(at: 0) { ids.insert(id) }
-      }
-      return ids
-    }
+  func absentThreadIDs(confirmed: Bool) throws -> Set<String> {
+    try withDatabase { try $0.absentThreadIDs(confirmed: confirmed) }
   }
 
   func markThreadUnavailable(_ id: String) throws {
-    try withDatabase { try Self.markThreadUnavailable(id, in: $0) }
+    try withDatabase { try $0.recordThreadAbsence(id, confirmed: true) }
   }
 
-  private static func markThreadUnavailable(_ id: String, in database: SQLiteDatabase) throws {
-    let row = try database.prepare(
-      "INSERT OR IGNORE INTO unavailable_threads (thread_id) VALUES (?)")
-    try row.bind(id, at: 1)
-    try row.run()
+  func resolveThreadAbsences(dismissing: Set<String>, unavailable: Set<String>) throws {
+    try withDatabase { database in
+      try database.transaction {
+        for id in unavailable { try database.recordThreadAbsence(id, confirmed: true) }
+        try database.forgetThreadAbsences(dismissing, confirmed: false)
+      }
+    }
   }
 
   func forgetUnavailableThreads(_ ids: Set<String>) throws {
     try withDatabase { database in
-      try database.transaction {
-        for id in ids {
-          let row = try database.prepare("DELETE FROM unavailable_threads WHERE thread_id = ?")
-          try row.bind(id, at: 1)
-          try row.run()
-        }
-      }
+      try database.transaction { try database.forgetThreadAbsences(ids, confirmed: true) }
     }
   }
 
@@ -656,7 +646,12 @@ extension SQLiteDatabase {
         snapshot BLOB NOT NULL
       )
       """)
-    try execute("CREATE TABLE IF NOT EXISTS unavailable_threads (thread_id TEXT PRIMARY KEY)")
+    try execute(
+      """
+      CREATE TABLE IF NOT EXISTS thread_absences (
+        thread_id TEXT PRIMARY KEY, confirmed INTEGER NOT NULL CHECK (confirmed IN (0, 1))
+      )
+      """)
     if currentVersion == version { return }
     try transaction {
       try execute(
