@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -40,16 +41,15 @@ class ContentReadTimingTest {
         compose.mainClock.advanceTimeBy(224)
         skeleton.assertDoesNotExist()
 
-        compose.runOnIdle { rows.value = emptyList() }
+        updateRead { rows.value = emptyList() }
         compose.mainClock.advanceTimeBy(112)
         skeleton.assertDoesNotExist()
 
-        compose.runOnIdle { rows.value = null }
+        updateRead { rows.value = null }
         compose.mainClock.advanceTimeBy(304)
         skeleton.assertExists()
 
-        compose.runOnIdle { reading.value = false }
-        compose.mainClock.advanceTimeByFrame()
+        updateRead { reading.value = false }
         skeleton.assertDoesNotExist()
     }
 
@@ -65,18 +65,16 @@ class ContentReadTimingTest {
         val syncing = compose.onNodeWithTag("syncing")
         compose.mainClock.advanceTimeBy(112)
 
-        compose.runOnIdle { thread.value = "second" }
+        updateRead { thread.value = "second" }
         compose.mainClock.advanceTimeBy(128)
         syncing.assertDoesNotExist()
         compose.mainClock.advanceTimeBy(112)
         syncing.assertExists()
 
-        compose.runOnIdle { delayMillis.value = null }
-        compose.mainClock.advanceTimeByFrame()
+        updateRead { delayMillis.value = null }
         syncing.assertDoesNotExist()
 
-        compose.runOnIdle { delayMillis.value = 0L }
-        compose.mainClock.advanceTimeByFrame()
+        updateRead { delayMillis.value = 0L }
         syncing.assertExists()
     }
 
@@ -85,5 +83,11 @@ class ContentReadTimingTest {
         val confirmedAt = 1_000_000L
         assertEquals(1L, contentReadStaleDelayMillis(confirmedAt, confirmedAt + 600_000L))
         assertEquals(0L, contentReadStaleDelayMillis(confirmedAt, confirmedAt + 600_001L))
+    }
+
+    private fun updateRead(change: () -> Unit) {
+        // Publish the snapshot before advancing the clock with auto-advance disabled.
+        compose.runOnIdle { Snapshot.withMutableSnapshot(change) }
+        compose.mainClock.advanceTimeByFrame()
     }
 }
