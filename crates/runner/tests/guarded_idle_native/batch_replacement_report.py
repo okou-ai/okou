@@ -55,9 +55,10 @@ def validate(directory, cases=CASES, policy_key="native_batch_replacement_policy
         identity = report.witness_identity(terminal[1])
         if report.witness_identity_changed(events, identity):
             raise ValueError("replacement changed the original physical owner")
-        ordered = [terminal[1],events[0],terminal[2],terminal[3],*events[1:4],terminal[4],*events[4:],terminal[5]]
-        report.validate_witness_clock_order(
-            ordered, "replacement original saving/old refusal/new recovery order changed")
+        report.validate_terminal_witness_clock_order(
+            terminal, events, tail_start_index=1, tail_end_index=4,
+            message="replacement original saving/old refusal/new recovery order changed",
+        )
         blocked, tail, pool, progress, saved, waiting, refused, retired, joined = [e["evidence"] for e in events]
         path = blocked.get("status_path")
         status_evidence.claim_status_path(path, paths, "replacement private status path changed")
