@@ -326,17 +326,42 @@ describe("CHAT-02: prior rounds and thread titles", () => {
       ...recommendedFollowupRequest,
       clientEventId: randomUUID(),
     };
-    const [firstAttempt, secondAttempt] = await Promise.all([
-      chat.requestSendEvent(actor, recommendedFollowupRequest, [201, 409]),
-      chat.requestSendEvent(actor, competingFollowupRequest, [201, 409]),
-    ]);
-    expect([firstAttempt.status, secondAttempt.status].sort()).toStrictEqual([
-      201, 409,
-    ]);
-    const [normalFollowup, acceptedRequest] =
-      firstAttempt.status === 201
-        ? [firstAttempt, recommendedFollowupRequest]
-        : [secondAttempt, competingFollowupRequest];
+    const attempts = await Promise.all(
+      [
+        recommendedFollowupRequest,
+        competingFollowupRequest,
+        recommendedFollowupRequest,
+        competingFollowupRequest,
+      ].map(async (request) => {
+        return {
+          request,
+          response: await chat.requestSendEvent(actor, request, [201, 409]),
+        };
+      }),
+    );
+    expect(
+      attempts
+        .map(({ response }) => {
+          return response.status;
+        })
+        .sort(),
+    ).toStrictEqual([201, 201, 409, 409]);
+    const acceptedAttempt = attempts.find(({ response }) => {
+      return response.status === 201;
+    });
+    if (!acceptedAttempt) {
+      throw new Error("Expected a recommended follow-up send to succeed");
+    }
+    const { response: normalFollowup, request: acceptedRequest } =
+      acceptedAttempt;
+    for (const { request, response } of attempts) {
+      if (request.clientEventId === acceptedRequest.clientEventId) {
+        expect(response.status).toBe(201);
+        expect(response.body).toStrictEqual(normalFollowup.body);
+      } else {
+        expect(response.status).toBe(409);
+      }
+    }
     const recommendedFollowupQueueEventId = acceptedRequest.clientEventId;
     if (normalFollowup.status !== 201) {
       throw new Error("Expected recommended follow-up send to succeed");
@@ -347,6 +372,15 @@ describe("CHAT-02: prior rounds and thread titles", () => {
       [201],
     );
     expect(retriedFollowup.body).toStrictEqual(normalFollowup.body);
+    const rejectedAttempt = attempts.find(({ response }) => {
+      return response.status === 409;
+    });
+    if (!rejectedAttempt) {
+      throw new Error(
+        "Expected a competing recommended follow-up to be rejected",
+      );
+    }
+    await chat.requestSendEvent(actor, rejectedAttempt.request, [409]);
     await flushWaitUntilForTest();
     const afterFollowup = await waitForThreadMessages(
       actor,
@@ -368,6 +402,11 @@ describe("CHAT-02: prior rounds and thread titles", () => {
     if (normalFollowupRunId === undefined) {
       throw new Error("Expected the recommended follow-up to launch a run");
     }
+    expect(
+      afterFollowup.events.filter((event) => {
+        return event.revokesEventId === recommender.id;
+      }),
+    ).toHaveLength(1);
     expect(afterFollowup.events).toContainEqual(
       expect.objectContaining({
         id: recommendedFollowupQueueEventId,

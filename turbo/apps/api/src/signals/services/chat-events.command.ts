@@ -1438,9 +1438,9 @@ function normalSendUserMessage(
       });
 }
 /**
- * A conflict on the insert is accepted as a duplicate without a lookup. Only
- * a follow-up with a server-generated id cannot have collided on its id, so
- * its conflict is the revoke edge taken concurrently.
+ * An ordinary input's ID conflict is accepted as a duplicate without a lookup.
+ * Follow-ups can also conflict on their revoke edge, so their caller-supplied
+ * identities are resolved separately after publication loses a race.
  */
 function normalSendEvent(params: {
   readonly modelSelection: ChatInputModelSelection;
@@ -2468,10 +2468,9 @@ function settledNormalSendResponse(
   createdAt: Date | null,
 ) {
   if (createdAt === null) {
-    // A conflict on the insert is accepted as a duplicate without a
-    // lookup. Only a follow-up with a server-generated id cannot have
-    // collided on its id, so its conflict is the revoke edge taken
-    // concurrently.
+    // Caller-supplied follow-up IDs resolve their receipt before this fast
+    // path. A server-generated ID cannot collide on its ID, so a follow-up
+    // conflict here is the revoke edge taken concurrently.
     return body.revokesEventId && body.clientEventId === undefined
       ? conflict("Recommended follow-up has already been used")
       : acceptedSendResponse(threadId, nowDate(), true);
@@ -3025,6 +3024,26 @@ export const sendNormalEvent$ = command(
       );
     }
     const accepted = enqueued.value;
+    if (
+      accepted === null &&
+      args.body.revokesEventId &&
+      args.body.clientEventId !== undefined
+    ) {
+      const prior = clientEventIdResolutionResponse(
+        await set(
+          resolveClientEventId$,
+          {
+            clientEventId: args.body.clientEventId,
+            orgId: args.orgId,
+            threadId: thread.threadId,
+            userId: args.userId,
+          },
+          signal,
+        ),
+        thread.threadId,
+      );
+      return prior ?? conflict("Recommended follow-up has already been used");
+    }
     if (accepted) {
       args.onAcceptedDocument?.(publication.input.event.userMessage);
     }

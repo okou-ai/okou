@@ -232,6 +232,7 @@ struct ChatComposerView: View {
             } label: {
               OkouToolbarIcon("plus")
                 .frame(width: actionSize, height: actionSize)
+                .contentShape(Rectangle())
                 .overlay(alignment: .topTrailing) {
                   if connectorSelection?.uncertain == true {
                     OkouIcon("circle-alert", size: OkouIconSize.badge)

@@ -415,6 +415,7 @@ internal fun WorkflowEditor(
                 .fillMaxWidth()
                 .padding(horizontal = horizontalPadding, vertical = 8.dp),
             horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             when (state.issue?.failure) {
                 WorkflowWriteFailure.Network -> WorkflowNotice(R.string.workflow_offline_changes)
@@ -463,6 +464,7 @@ internal fun WorkflowEditor(
                     },
                     primary = true,
                     enabled = saveEnabled,
+                    saving = state.writing,
                     modifier =
                         Modifier.focusRequester(saveFocus)
                             .onFocusChanged { saveFocused = it.isFocused }

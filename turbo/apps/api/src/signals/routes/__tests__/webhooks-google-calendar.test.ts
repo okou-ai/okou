@@ -1392,13 +1392,13 @@ describe("POST /api/webhooks/google-calendar", () => {
 
     // Interrupt the account request at its post-commit provider notification,
     // before its best-effort Calendar reconciliation.
-    const request = new AbortController();
+    const requestController = new AbortController();
     context.mocks.ably.batchPublish.mockImplementationOnce((batch) => {
       const error = new Error(
         "Default change request cancelled during notification",
       );
       error.name = "AbortError";
-      request.abort(error);
+      requestController.abort(error);
       return Promise.resolve({
         results: [
           {
@@ -1413,18 +1413,15 @@ describe("POST /api/webhooks/google-calendar", () => {
         failureCount: 0,
       });
     });
-    const accounts = setupApp({
-      context,
+    const defaultChange = await createApp({
       routes: connectorAccountRoutes,
-      signal: request.signal,
-    })(connectorAccountsContract);
-    await expect(
-      accounts.setDefault({
-        headers: authHeaders(),
-        params: { connectionId: second },
-        body: { target },
-      }),
-    ).rejects.toThrow("Unknown response status 500");
+      signal: requestController.signal,
+    }).request(`/api/connector-accounts/${second}/default`, {
+      method: "POST",
+      headers: { ...authHeaders(), "content-type": "application/json" },
+      body: JSON.stringify({ target }),
+    });
+    expect(defaultChange.status).toBe(500);
     await expect(
       connectorsApi.readDefaultBuiltinAccount(actor, "google-calendar"),
     ).resolves.toMatchObject({ id: second });
