@@ -19,10 +19,10 @@ export class ApiRequestError extends Error {
 /**
  * Build authentication headers from a token
  */
-function buildHeaders(token: string) {
+function buildHeaders(token: string): Record<string, string> {
   // Note: Don't set Content-Type here - the contract client adds it for requests with body.
   // Setting Content-Type for bodyless requests (GET, DELETE) can cause server-side parsing issues.
-  const headers = {
+  const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
   };
   return headers;

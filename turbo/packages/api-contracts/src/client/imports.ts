@@ -1214,7 +1214,7 @@ export const clientContractImportManifest = [
   },
   {
     module: "mcp-connectors",
-    contracts: ["mcpConnectorsContract", "runnerMcpConnectorsContract"],
+    contracts: ["mcpConnectorsContract"],
     bindings: [],
   },
   {

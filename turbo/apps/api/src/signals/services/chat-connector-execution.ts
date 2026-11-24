@@ -11,11 +11,9 @@ import { chatThreadConnectorAccessOverrides } from "@okouai/db/schema/chat-threa
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { and, asc, eq, or, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
-import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import {
   connectorAccountAllowedSql,
   legacyChatConnectorAccountAllowedSql,
-  memberConnectorAccountAccessEnabledSql,
 } from "./member-connector-account-access";
 
 export type ChatConnectorExecutionOwner = {
@@ -26,7 +24,7 @@ export type ChatConnectorExecutionOwner = {
   | { readonly kind: "chat"; readonly chatThreadId: string }
 );
 
-/** New Chat choices use live eligibility. Run readers select the eligibility mode they need. */
+/** Chat choices use live eligibility. Run callers can opt into the same rules. */
 export function chatConnectorExecutionReadPlan(
   owner: ChatConnectorExecutionOwner,
   connectorSlug?: string,
@@ -48,12 +46,6 @@ export function chatConnectorExecutionReadPlan(
         ? connectorAccountAllowedSql(owner)
         : legacyChatConnectorAccountAllowedSql()
       ).as("enabled"),
-      memberAccess: (readLiveEligibility
-        ? memberConnectorAccountAccessEnabledSql(owner)
-        : sql`false`
-      )
-        .mapWith(pgBooleanDecoder)
-        .as("member_access"),
       selectedConnectionId: chatThreadConnectorSelections.connectorId,
     })
     .from(chatThreads)

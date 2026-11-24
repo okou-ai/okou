@@ -509,14 +509,8 @@ import { mcpThreadSnapshotContract as OriginalMcpThreadSnapshotContract } from "
 import { mcpThreadSnapshotContract } from "./mcp-chat-snapshots";
 import { mcpChatCommandContract as OriginalMcpChatCommandContract } from "../contracts/mcp-chat-tools";
 import { mcpChatCommandContract } from "./mcp-chat-tools";
-import {
-  mcpConnectorsContract as OriginalMcpConnectorsContract,
-  runnerMcpConnectorsContract as OriginalRunnerMcpConnectorsContract,
-} from "../contracts/mcp-connectors";
-import {
-  mcpConnectorsContract,
-  runnerMcpConnectorsContract,
-} from "./mcp-connectors";
+import { mcpConnectorsContract as OriginalMcpConnectorsContract } from "../contracts/mcp-connectors";
+import { mcpConnectorsContract } from "./mcp-connectors";
 import { mcpOAuthContract as OriginalMcpOAuthContract } from "../contracts/mcp-oauth";
 import { mcpOAuthContract } from "./mcp-oauth";
 import { mcpServerContract as OriginalMcpServerContract } from "../contracts/mcp-server";
@@ -1230,7 +1224,6 @@ export const clientDescriptorContracts: readonly (readonly [
   [mcpThreadSnapshotContract, OriginalMcpThreadSnapshotContract],
   [mcpChatCommandContract, OriginalMcpChatCommandContract],
   [mcpConnectorsContract, OriginalMcpConnectorsContract],
-  [runnerMcpConnectorsContract, OriginalRunnerMcpConnectorsContract],
   [mcpOAuthContract, OriginalMcpOAuthContract],
   [mcpServerContract, OriginalMcpServerContract],
   [modelCatalogContract, OriginalModelCatalogContract],

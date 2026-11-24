@@ -85,12 +85,6 @@ const expectedBindings = [
   },
   {
     method: "POST",
-    path: "/api/runners/runs/:runId/mcp-connectors",
-    rustModulePath: ["runners", "runs", "by_run_id", "mcp_connectors"],
-    rustConstName: "RESOLVE",
-  },
-  {
-    method: "POST",
     path: "/api/runners/builtin-firewalls/resolve",
     rustModulePath: ["runners", "builtin_firewalls", "resolve"],
     rustConstName: "RESOLVE",

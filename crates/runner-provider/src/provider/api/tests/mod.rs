@@ -55,44 +55,6 @@ fn active_input_source_requires_a_thread_run() {
     assert!(!supports_thread_active_input(None));
 }
 
-#[tokio::test]
-async fn published_mcp_credentials_are_stripped_on_cross_origin_redirect() {
-    let api_server = MockServer::start();
-    let other_origin = MockServer::start();
-    let run_id = RunId::new_v4();
-    let redirect = api_server.mock(|when, then| {
-        when.method(POST)
-            .path(format!("/api/runners/runs/{run_id}/mcp-connectors"))
-            .header("authorization", "Bearer runner-token~agent-token");
-        then.status(307)
-            .header("location", other_origin.url("/redirect"));
-    });
-    let rejected = other_origin.mock(|when, then| {
-        when.method(POST)
-            .path("/redirect")
-            .header_missing("authorization");
-        then.status(401).json_body(serde_json::json!({
-            "error": {"code": "UNAUTHORIZED", "message": "No credentials received"}
-        }));
-    });
-    let bindings = guest_contracts::connector_account_context::RunConnectorAccountContext {
-        schema_version: 1,
-        targets: Vec::new(),
-    };
-    let response = api_client_for_url(api_server.base_url())
-        .resolve_published_mcp(
-            run_id,
-            &bindings,
-            "Bearer agent-token",
-            &serde_json::json!({"kind": "list"}),
-        )
-        .await
-        .unwrap();
-    assert_eq!(response.get("status"), Some(&serde_json::json!(401)));
-    redirect.assert_calls(1);
-    rejected.assert_calls(1);
-}
-
 #[test]
 fn builtin_firewall_catalog_resolve_request_uses_bounded_timeout_and_empty_body() {
     let api = ApiClient::new(
@@ -172,7 +134,7 @@ async fn heartbeat_and_connector_sync_allow_api_cold_starts() {
     let calls = async {
         tokio::join!(
             api.heartbeat(&state),
-            api.sync_connector_runtime(run_id, &targets, &[])
+            api.sync_connector_runtime(run_id, &targets)
         )
     };
     tokio::pin!(calls);
@@ -226,7 +188,7 @@ async fn api_client_sync_requires_complete_terminal_diagnostics() {
             base_url_vars: None,
             source_id: None,
         }];
-        let result = api.sync_connector_runtime(run_id, &targets, &[]).await;
+        let result = api.sync_connector_runtime(run_id, &targets).await;
         if terminal {
             assert!(matches!(
                 result,

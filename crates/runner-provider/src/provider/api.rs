@@ -31,8 +31,8 @@ use response_decode::{decode_api_json, decode_api_json_bytes};
 use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_types::ids::RunId;
 use runner_types::types::{
-    CompleteRequest, ConnectorRuntimeSyncBatchResponse, ConnectorRuntimeTarget,
-    ConnectorRuntimeTargetRegistration, ExecutionContext, HeartbeatState,
+    CompleteRequest, ConnectorRuntimeSyncBatchResponse, ConnectorRuntimeTargetRegistration,
+    ExecutionContext, HeartbeatState,
 };
 use serde::Deserialize;
 use std::path::PathBuf;
@@ -662,11 +662,10 @@ impl ApiClient {
         &self,
         run_id: RunId,
         targets: &[ConnectorRuntimeTargetRegistration],
-        account_switches: &[(ConnectorRuntimeTarget, String)],
     ) -> ProviderResult<ConnectorRuntimeSyncOutcome> {
         let run_id = run_id.to_string();
         let resp = send_api(
-            self.connector_runtime_sync_request(&run_id, targets, account_switches),
+            self.connector_runtime_sync_request(&run_id, targets),
             "connector runtime sync",
         )
         .await?;
@@ -697,18 +696,7 @@ impl ApiClient {
         &self,
         run_id: &str,
         targets: &[ConnectorRuntimeTargetRegistration],
-        account_switches: &[(ConnectorRuntimeTarget, String)],
     ) -> ApiRequestBuilder {
-        let mut body = serde_json::Map::from_iter([("targets".into(), serde_json::json!(targets))]);
-        if !account_switches.is_empty() {
-            let switches = serde_json::Value::Array(
-                account_switches
-                    .iter()
-                    .map(|(target, id)| serde_json::json!({ "target": target, "connectionId": id }))
-                    .collect(),
-            );
-            body.insert("accountSwitches".into(), switches);
-        }
         self.http
             .request_resolved_route(
                 routes::runners::runs::by_run_id::connector_runtime::sync::route(
@@ -716,43 +704,7 @@ impl ApiClient {
                 ),
                 &self.token,
             )
-            .json(&body)
-    }
-
-    pub(super) async fn resolve_published_mcp(
-        &self,
-        run_id: RunId,
-        bindings: &guest_contracts::connector_account_context::RunConnectorAccountContext,
-        authorization: &str,
-        request: &serde_json::Value,
-    ) -> ProviderResult<serde_json::Value> {
-        const LABEL: &str = "resolve published MCP connectors";
-        let run_token = authorization
-            .strip_prefix("Bearer ")
-            .ok_or_else(|| ProviderError::Api("invalid MCP Run credential".to_string()))?;
-        // Use the standard Authorization header so cross-origin redirects strip both credentials.
-        let credentials = format!("{}~{run_token}", self.token);
-        let run_id = run_id.to_string();
-        let response = send_api(
-            self.http
-                .request_resolved_route(
-                    routes::runners::runs::by_run_id::mcp_connectors::route(
-                        routes::runners::runs::by_run_id::mcp_connectors::Params {
-                            run_id: &run_id,
-                        },
-                    ),
-                    &credentials,
-                )
-                .json(&serde_json::json!({ "bindings": bindings.targets, "request": request })),
-            LABEL,
-        )
-        .await?;
-        let status = response.status().as_u16();
-        let body: serde_json::Value = response
-            .json()
-            .await
-            .map_err(|_| ProviderError::Api(format!("{LABEL}: invalid response")))?;
-        Ok(serde_json::json!({ "status": status, "body": body }))
+            .json(&serde_json::json!({ "targets": targets }))
     }
 
     pub(super) async fn resolve_builtin_firewall_catalog(

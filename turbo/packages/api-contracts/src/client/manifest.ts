@@ -523,7 +523,7 @@ export const clientDescriptorManifest = [
   },
   {
     module: "mcp-connectors",
-    contracts: ["mcpConnectorsContract", "runnerMcpConnectorsContract"],
+    contracts: ["mcpConnectorsContract"],
   },
   {
     module: "mcp-oauth",

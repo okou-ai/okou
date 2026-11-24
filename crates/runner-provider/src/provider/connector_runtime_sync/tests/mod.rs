@@ -620,7 +620,6 @@ where
             (
                 registration.target(),
                 ActiveConnectorSyncState {
-                    account_switch: None,
                     registration,
                     generation: 0,
                     consecutive_failures: 0,

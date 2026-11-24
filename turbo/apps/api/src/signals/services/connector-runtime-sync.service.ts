@@ -101,17 +101,6 @@ interface ConnectorRuntimeScope {
   readonly runId: string;
 }
 
-interface ConnectorRuntimeResolutionInput {
-  readonly scope: ConnectorRuntimeScope;
-  readonly targets: readonly ConnectorRuntimeTargetRegistration[];
-  readonly accountSwitches?:
-    | readonly {
-        readonly target: ConnectorRuntimeTarget;
-        readonly connectionId: string;
-      }[]
-    | undefined;
-}
-
 type ConnectorRuntimeBuiltinSyncResult = Extract<
   ConnectorRuntimeSyncResult,
   { readonly target: { readonly kind: "builtin" } }
@@ -622,32 +611,27 @@ const readRuntimeConnectorAccountResolutions$ = command(
 );
 
 const selectChatRuntimeAccounts$ = command(
-  async ({ get }, args: ConnectorRuntimeResolutionInput) => {
+  async (
+    { get },
+    args: {
+      readonly scope: ConnectorRuntimeScope;
+      readonly targets: readonly ConnectorRuntimeTargetRegistration[];
+    },
+  ) => {
     const db = get(db$);
+
+    const memberRules = await db
+      .select(memberConnectorPermissionColumns())
+      .from(connectorPermissionGrants)
+      .where(activeMemberConnectorPermissionCondition(args.scope, nowDate()));
+    const unavailableTargets = new Set<string>();
     const read = chatConnectorExecutionReadPlan(
       { ...args.scope, kind: "run" },
       undefined,
       true,
     ).as("chat_execution_accounts");
-    const [memberRules, rows] = await Promise.all([
-      db
-        .select(memberConnectorPermissionColumns())
-        .from(connectorPermissionGrants)
-        .where(activeMemberConnectorPermissionCondition(args.scope, nowDate())),
-      db.select().from(read),
-    ]);
-    const memberAccess = rows[0]?.memberAccess ?? false;
-    const execution = chatConnectorExecutionFromRows(rows);
-    const unavailableTargets = new Set<string>();
-    const switches = new Map(
-      args.accountSwitches?.map(({ target, connectionId }) => {
-        return [connectorRuntimeTargetKey(target), connectionId] as const;
-      }),
-    );
-    const accountsById = new Map(
-      execution.accounts.map((account) => {
-        return [account.connectionId, account] as const;
-      }),
+    const execution = chatConnectorExecutionFromRows(
+      await db.select().from(read),
     );
     const selected = new Map(
       execution.selections.map((selection) => {
@@ -660,30 +644,9 @@ const selectChatRuntimeAccounts$ = command(
     args = {
       ...args,
       targets: args.targets.map((target) => {
-        const key = connectorRuntimeTargetKey(target);
-        const desired = switches.get(key);
-        if (memberAccess && desired !== undefined) {
-          const exact = accountsById.get(desired);
-          if (
-            exact?.enabled &&
-            exact.selectedConnectionId === desired &&
-            connectorAccountTargetKey(exact.target) === key
-          ) {
-            return { ...target, sourceId: desired };
-          }
-          unavailableTargets.add(key);
-          return target;
-        }
-        const published =
-          memberAccess && target.sourceId !== undefined
-            ? accountsById.get(target.sourceId)
-            : undefined;
-        if (published && connectorAccountTargetKey(published.target) === key) {
-          return target;
-        }
-        const connectionId = selected.get(key);
+        const connectionId = selected.get(connectorRuntimeTargetKey(target));
         if (!connectionId) {
-          unavailableTargets.add(key);
+          unavailableTargets.add(connectorRuntimeTargetKey(target));
           return target;
         }
         return { ...target, sourceId: connectionId };
@@ -838,7 +801,10 @@ const resolveBuiltinRuntimeRouting$ = command(
 const resolveConnectorRuntimeTargetStates$ = command(
   async (
     { set },
-    args: ConnectorRuntimeResolutionInput,
+    args: {
+      readonly scope: ConnectorRuntimeScope;
+      readonly targets: readonly ConnectorRuntimeTargetRegistration[];
+    },
   ): Promise<readonly ResolvedConnectorRuntimeTarget[]> => {
     const selected = await set(selectChatRuntimeAccounts$, args);
     args = { ...args, targets: selected.targets };
@@ -982,7 +948,10 @@ function logResolvedConnectorRuntimeTargets(
 export const resolveConnectorRuntimeTargets$ = command(
   async (
     { set },
-    args: ConnectorRuntimeResolutionInput,
+    args: {
+      readonly scope: ConnectorRuntimeScope;
+      readonly targets: readonly ConnectorRuntimeTargetRegistration[];
+    },
   ): Promise<readonly ConnectorRuntimeSyncResult[]> => {
     const resolvedTargets = await set(
       resolveConnectorRuntimeTargetStates$,

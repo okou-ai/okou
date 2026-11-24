@@ -56,7 +56,7 @@ use guest_contracts::connector_account_context::RunConnectorAccountContext;
 use tokio::sync::{
     Mutex, mpsc,
     mpsc::error::{TrySendError, TrySendError::Closed, TrySendError::Full},
-    oneshot, watch,
+    watch,
 };
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
 use tracing::instrument::WithSubscriber;
@@ -227,16 +227,10 @@ impl ActiveRunConnectorRuntimeState {
 struct ActiveConnectorSyncState {
     registration: ConnectorRuntimeTargetRegistration,
     generation: u64,
-    account_switch: Option<PendingAccountSwitch>,
     consecutive_failures: u32,
     scheduled_sync: Option<ScheduledSyncTask>,
     #[cfg(test)]
     successful_generation: tokio::sync::watch::Sender<Option<u64>>,
-}
-
-struct PendingAccountSwitch {
-    connection_id: String,
-    result: oneshot::Sender<bool>,
 }
 
 impl ActiveConnectorSyncState {
@@ -298,7 +292,6 @@ struct PreparedConnectorRuntimePublication {
     deadline: Option<tokio::time::Instant>,
     update: ConnectorRuntimeRegistryUpdate,
     account_binding: Option<ConnectorRuntimeAccountBinding>,
-    explicit_switch: bool,
 }
 
 #[derive(Default)]
@@ -534,66 +527,43 @@ impl ConnectorRuntimeSyncHandle {
         Some(active_runs.get(&run_id)?.account_context.subscribe())
     }
 
-    /// Switch one admitted target through the normal publication owner.
+    /// Refresh one admitted target through the normal publication owner.
+    /// The caller supplies only an expected identity, never credentials or policy.
     pub async fn sync_account_binding(
         &self,
         run_id: RunId,
         target: ConnectorRuntimeTarget,
         connection_id: &str,
     ) -> bool {
-        let (cancel, result) = {
-            let mut runs = self.core.inner.active_runs.lock().await;
-            let Some(run) = runs.get_mut(&run_id) else {
+        let (cancel, mut context, expected) = {
+            let runs = self.core.inner.active_runs.lock().await;
+            let Some(run) = runs.get(&run_id) else {
                 return false;
             };
-            let Some(connector) = run.connectors.get_mut(&target) else {
+            let Some(connector) = run.connectors.get(&target) else {
                 return false;
             };
-            let (sender, result) = oneshot::channel();
-            connector.generation += 1;
-            connector.account_switch = Some(PendingAccountSwitch {
-                connection_id: connection_id.to_owned(),
-                result: sender,
-            });
-            let target = ConnectorSyncTarget {
-                target,
-                generation: connector.generation,
-            };
-            if !self.core.replace_schedule_locked(
-                run,
-                run_id,
-                &target,
-                Some(tokio::time::Instant::now()),
-            ) {
-                return false;
+            let mut expected = connector.registration.clone();
+            match &mut expected {
+                ConnectorRuntimeTargetRegistration::Builtin { source_id, .. }
+                | ConnectorRuntimeTargetRegistration::Custom { source_id, .. } => {
+                    *source_id = Some(connection_id.to_owned());
+                }
             }
-            (run.cancel.clone(), result)
+            (
+                run.cancel.clone(),
+                run.account_context.subscribe(),
+                expected.account_context_target(),
+            )
         };
+        self.core
+            .notify_connector_runtime_sync_until_cancelled(run_id, target, &cancel)
+            .await;
         tokio::select! {
             biased;
             _ = cancel.cancelled() => false,
             _ = self.core.inner.cancel.cancelled() => false,
-            result = result => result.unwrap_or(false),
-        }
-    }
-
-    /// Resolve descriptors or an owner OAuth action for the assignment's published accounts.
-    pub async fn resolve_published_mcp(
-        &self,
-        run_id: RunId,
-        authorization: &str,
-        request: &serde_json::Value,
-    ) -> Option<serde_json::Value> {
-        let (cancel, bindings) = {
-            let runs = self.core.inner.active_runs.lock().await;
-            let run = runs.get(&run_id)?;
-            (run.cancel.clone(), run.account_context.borrow().clone())
-        };
-        tokio::select! {
-            biased;
-            () = cancel.cancelled() => None,
-            () = self.core.inner.cancel.cancelled() => None,
-            response = self.core.inner.api.resolve_published_mcp(run_id, &bindings, authorization, request) => response.ok(),
+            result = context.wait_for(|current| current.targets.contains(&expected)) => result.is_ok(),
         }
     }
 
@@ -668,7 +638,6 @@ impl ConnectorRuntimeSyncCore {
                     (
                         registration.target(),
                         ActiveConnectorSyncState {
-                            account_switch: None,
                             registration: registration.clone(),
                             generation: 0,
                             consecutive_failures: 0,
@@ -941,22 +910,14 @@ impl ConnectorRuntimeSyncCore {
         if current_targets.is_empty() {
             return true;
         }
-        let account_switches = current_targets
-            .iter()
-            .filter_map(|(target, _, intent)| {
-                Some((target.target.clone(), intent.as_ref()?.clone()))
-            })
-            .collect::<Vec<_>>();
-        let (active_targets, requested_targets): (Vec<_>, Vec<_>) = current_targets
-            .into_iter()
-            .map(|(target, registration, _)| (target, registration))
-            .unzip();
+        let (active_targets, requested_targets): (Vec<_>, Vec<_>) =
+            current_targets.into_iter().unzip();
         let mut transport_retry_attempted = false;
         let response = loop {
             let response = self
                 .inner
                 .api
-                .sync_connector_runtime(run_id, &requested_targets, &account_switches)
+                .sync_connector_runtime(run_id, &requested_targets)
                 .await;
             if !transport_retry_attempted && let Err(ProviderError::ApiTransport(error)) = &response
             {
@@ -1030,7 +991,6 @@ impl ConnectorRuntimeSyncCore {
                             &active_targets,
                             response,
                             &registration_cancel,
-                            &account_switches,
                         )
                         .await
                     }
@@ -1058,7 +1018,6 @@ impl ConnectorRuntimeSyncCore {
         active_targets: &[ConnectorSyncTarget],
         response: ConnectorRuntimeSyncBatchResponse,
         registration_cancel: &CancellationToken,
-        account_switches: &[(ConnectorRuntimeTarget, String)],
     ) -> bool {
         let requested_targets = active_targets
             .iter()
@@ -1103,27 +1062,6 @@ impl ConnectorRuntimeSyncCore {
                 continue;
             };
             let account_binding = result.account_binding.clone();
-            let intent = account_switches
-                .iter()
-                .find(|(key, _)| key == &target.target);
-            if let Some((_, expected)) = intent
-                && (!matches!(result.state, ConnectorRuntimeSyncState::Available { .. })
-                    || account_binding
-                        .as_ref()
-                        .map(|binding| &binding.connection_id)
-                        != Some(expected))
-            {
-                let mut runs = self.inner.active_runs.lock().await;
-                if let Some(connector) = runs
-                    .get_mut(&run_id)
-                    .and_then(|run| run.for_registration_mut(registration_cancel))
-                    .and_then(|run| run.current_target_mut(target))
-                {
-                    connector.account_switch.take();
-                }
-                retry_targets.push(target.clone());
-                continue;
-            }
             if let Some(binding) = &account_binding
                 && (!matches!(result.state, ConnectorRuntimeSyncState::Available { .. })
                     || uuid::Uuid::parse_str(&binding.connection_id).is_err())
@@ -1343,7 +1281,6 @@ impl ConnectorRuntimeSyncCore {
                 deadline,
                 update,
                 account_binding,
-                explicit_switch: intent.is_some(),
             });
         }
 
@@ -1381,23 +1318,7 @@ impl ConnectorRuntimeSyncCore {
                     };
                     let prepared_publications = prepared_publications
                         .into_iter()
-                        .filter(|publication| {
-                            let Some(connector) = active.current_target_mut(&publication.target)
-                            else {
-                                return false;
-                            };
-                            if publication.explicit_switch
-                                && !connector
-                                    .account_switch
-                                    .as_ref()
-                                    .is_some_and(|intent| !intent.result.is_closed())
-                            {
-                                connector.account_switch.take();
-                                retry_targets.push(publication.target.clone());
-                                return false;
-                            }
-                            true
-                        })
+                        .filter(|publication| active.current_target(&publication.target).is_some())
                         .collect::<Vec<_>>();
                     if prepared_publications.is_empty() {
                         drop(active_runs);
@@ -1690,11 +1611,7 @@ impl ConnectorRuntimeSyncCore {
         run_id: RunId,
         targets: &[ConnectorSyncTarget],
         registration_cancel: &CancellationToken,
-    ) -> Vec<(
-        ConnectorSyncTarget,
-        ConnectorRuntimeTargetRegistration,
-        Option<String>,
-    )> {
+    ) -> Vec<(ConnectorSyncTarget, ConnectorRuntimeTargetRegistration)> {
         let active_runs = self.inner.active_runs.lock().await;
         let Some(active) = active_runs
             .get(&run_id)
@@ -1720,12 +1637,7 @@ impl ConnectorRuntimeSyncCore {
                         connector.registration.clone()
                     }
                 };
-                let intent = connector
-                    .account_switch
-                    .as_ref()
-                    .filter(|intent| !intent.result.is_closed())
-                    .map(|intent| intent.connection_id.clone());
-                Some((target.clone(), registration, intent))
+                Some((target.clone(), registration))
             })
             .collect()
     }
@@ -1832,11 +1744,7 @@ impl ConnectorRuntimeSyncCore {
         let connector = active.current_target_mut(target)?;
         let recovered_after_failures = connector.consecutive_failures;
         connector.consecutive_failures = 0;
-        let account_switch = connector.account_switch.take();
         let completed = self.replace_schedule_locked(active, run_id, target, deadline);
-        if let Some(intent) = account_switch {
-            let _ = intent.result.send(completed);
-        }
         #[cfg(test)]
         if completed {
             active

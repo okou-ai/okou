@@ -41,14 +41,12 @@ import {
   type CustomConnectorResponse,
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import {
-  MCP_RUNNER_BINDING_REQUIRED,
   mcpConnectorOAuthReauthorizationResponseSchema,
   type McpConnectorOAuthReauthorizationResponse,
   mcpConnectorListResponseSchema,
   mcpConnectorsContract,
   type McpConnector,
 } from "@okouai/api-contracts/contracts/mcp-connectors";
-import { resolvePublishedMcp } from "../../runner-mcp";
 import { handleManagementError } from "../../management-input";
 import {
   getConnectorManagementConfig,
@@ -311,23 +309,11 @@ export async function listRunMcpConnectors(): Promise<McpConnector[]> {
   if (result.status === 200) {
     return mcpConnectorListResponseSchema.parse(result.body).connectors;
   }
-  if (
-    result.status === 409 &&
-    result.body.error.code === MCP_RUNNER_BINDING_REQUIRED
-  ) {
-    const published = await resolvePublishedMcp(
-      config.baseHeaders.Authorization,
-      { kind: "list" },
-    );
-    if (published.kind === "list") return published.connectors;
-    throw new Error("Runner returned an unexpected MCP response");
-  }
   handleError(result, "Failed to list MCP connectors for this run");
 }
 
 export async function reauthorizeRunMcpConnectorOAuth(
   target: ConnectorAccountTarget,
-  expectedConnectionId: string,
   scopes: readonly string[],
   signal: AbortSignal,
 ): Promise<McpConnectorOAuthReauthorizationResponse> {
@@ -340,23 +326,6 @@ export async function reauthorizeRunMcpConnectorOAuth(
   });
   if (result.status === 200) {
     return mcpConnectorOAuthReauthorizationResponseSchema.parse(result.body);
-  }
-  if (
-    result.status === 409 &&
-    result.body.error.code === MCP_RUNNER_BINDING_REQUIRED
-  ) {
-    const published = await resolvePublishedMcp(
-      config.baseHeaders.Authorization,
-      {
-        kind: "reauthorize",
-        target,
-        expectedConnectionId,
-        scopes: [...scopes],
-      },
-      signal,
-    );
-    if (published.kind === "reauthorize") return published.result;
-    throw new Error("Runner returned an unexpected MCP response");
   }
   handleError(result, "Failed to reauthorize MCP OAuth scopes");
 }
