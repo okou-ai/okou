@@ -2940,6 +2940,8 @@
     "accountsInChat": "このチャットで有効にするアカウントを選択します。",
     "enableByDefault": "{{account}} を既定で有効にする",
     "manageAccounts": "アカウントを管理",
+    "memberPolicyLoadFailed": "アカウントへのアクセス設定を読み込めませんでした。",
+    "memberSettingsDescription": "Okou がすべてのチャットで使用できる {{connector}} アカウントを選択します。",
     "permissions": "権限",
     "permissionsDescription": "このルールは、すべてのチャットとアカウントでこのコネクタに適用されます。",
     "settingsDescription": "チャットでOkouが使用できる{{connector}}アカウントを選択します。アクセスはチャットごとに変更できます。",

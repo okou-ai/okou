@@ -2957,6 +2957,8 @@
     "accountsInChat": "Choose which accounts are on in this chat.",
     "enableByDefault": "Enable {{account}} by default",
     "manageAccounts": "Manage accounts",
+    "memberPolicyLoadFailed": "Could not load account access.",
+    "memberSettingsDescription": "Choose which {{connector}} accounts Okou can use across your chats.",
     "permissions": "Permissions",
     "permissionsDescription": "These rules apply to this connector across your chats and accounts.",
     "settingsDescription": "Choose which {{connector}} accounts Okou can use across your chats. You can change access in each chat.",

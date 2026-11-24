@@ -493,6 +493,7 @@ internal fun OkouApp(
     fun closeSearch() {
         searchWorkflowId = null
         releaseSearchFocus()
+        restoreSearchFocus = true
         searchState.reset()
         navigation = navigation.copy(search = SearchRoute.Closed)
     }

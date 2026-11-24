@@ -3009,6 +3009,8 @@
     "accountsInChat": "Elige qué cuentas están activadas en este chat.",
     "enableByDefault": "Activar {{account}} de forma predeterminada",
     "manageAccounts": "Gestionar cuentas",
+    "memberPolicyLoadFailed": "No se pudo cargar el acceso a las cuentas.",
+    "memberSettingsDescription": "Elige qué cuentas de {{connector}} puede usar Okou en tus chats.",
     "permissions": "Permisos",
     "permissionsDescription": "Estas reglas se aplican a este conector en todos tus chats y cuentas.",
     "settingsDescription": "Elige qué cuentas de {{connector}} puede usar Okou en tus chats. Puedes cambiar el acceso en cada chat.",

@@ -52,6 +52,21 @@ class PaletteColorsTest {
                         "$palette/$dark panel refresh indicator",
                         contrast(status, contentReadTrackColor(status, colors.surface)) >= 3f,
                     )
+                    val outline = colors.controlOutline
+                    for (adjacent in listOf(colors.surfaceVariant, colors.background)) {
+                        assertTrue(
+                            "$palette/$dark search outline",
+                            contrast(outline, adjacent) >= 3f,
+                        )
+                        assertTrue(
+                            "$palette/$dark search focus",
+                            contrast(colors.onBackground, adjacent) >= 3f,
+                        )
+                    }
+                    assertTrue(
+                        "$palette/$dark selected filter focus",
+                        contrast(colors.onBackground, colors.secondaryContainer) >= 3f,
+                    )
                     assertEquals(dark, colors.background.luminance() < 0.5f)
                     colors.primary
                 }
@@ -73,6 +88,20 @@ class PaletteColorsTest {
         assertEquals(Color(0xFFF6EFE2), contentReadTrackColor(lightActive, light.surface))
         assertEquals(Color(0xFF3E331D), contentReadTrackColor(darkActive, dark.background))
         assertEquals(Color(0xFF453A25), contentReadTrackColor(darkActive, dark.surface))
+    }
+
+    @Test
+    fun defaultSearchFieldUsesThePublishedOutlineColors() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val palette = UserPreferencesColorTheme.DEFAULT
+        assertEquals(
+            Color(0xFF737373),
+            resolvePalette(context, false, palette).scheme.controlOutline,
+        )
+        assertEquals(
+            Color(0xFFB0ACAB),
+            resolvePalette(context, true, palette).scheme.controlOutline,
+        )
     }
 
     @Test

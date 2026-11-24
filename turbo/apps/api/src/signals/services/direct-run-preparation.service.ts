@@ -33,16 +33,21 @@ import {
   type StoragePresignedUrlCacheWrite,
 } from "./system-storage-presigned-url-cache.service";
 
-/** Receipt from durable Thread Run admission. */
-export interface AdmittedRunLaunch {
-  readonly run: ExecutionPublicationRun;
+/** Inputs captured by the picker before durable Run admission. */
+export interface DirectRunInput {
+  readonly run: Omit<ExecutionPublicationRun, "isFirstRun">;
   readonly facts: AdmittedExecutionFacts;
   readonly packageMounts: ExecutionPackageMounts;
   readonly runnerGroup: string;
   readonly profile: string;
   readonly reuseKey: string;
-  readonly createdAt: Date;
   readonly predecessorRunId: string | null;
+}
+
+/** Receipt from durable Thread Run admission. */
+export interface AdmittedRunLaunch extends DirectRunInput {
+  readonly run: ExecutionPublicationRun;
+  readonly createdAt: Date;
 }
 
 export interface ExecutionBundleCacheObservation {
@@ -134,14 +139,21 @@ export const prepareExecutionBundleUrls$ = command(
   },
 );
 
-export const prepareDirectRun$ = command(
+export interface PreparedDirectRunContext {
+  readonly prepared: Awaited<
+    ReturnType<(typeof prepareExecutionRuntimeContext$)["write"]>
+  >;
+  readonly publication: PreparedExecutionBundleUrls;
+}
+
+export const prepareDirectRunContext$ = command(
   async (
     { set },
-    input: AdmittedRunLaunch,
+    input: DirectRunInput,
     bundleUrls: ExecutionBundleUrlsRead,
     resources: ExecutionRuntimeResources,
     signal: AbortSignal,
-  ) => {
+  ): Promise<PreparedDirectRunContext> => {
     signal.throwIfAborted();
     const [prepared, publication] = await joinAll([
       set(
@@ -155,53 +167,63 @@ export const prepareDirectRun$ = command(
     ]);
     signal.throwIfAborted();
     if (publication === null) {
-      throw new Error("Admitted Run is missing its prepared Bundle URLs");
+      throw new Error("Run is missing its prepared Bundle URLs");
     }
-    const bundleCacheWaitMs = Math.max(
-      0,
-      publication.timing.readyAt - prepared.readyAt,
-    );
-    const { run } = input;
-    const context = prepared.context;
-    const executionContext = buildExecutionContext({
-      run,
-      reuseKey: input.reuseKey,
-      preparedContext: context,
-      networkPolicyInputs: prepared.networkPolicyInputs,
-      contentBundles: publication.signed.contentBundles,
-    });
-    return {
-      cachePublication: {
-        runId: run.id,
-        runnerGroup: input.runnerGroup,
-        profile: input.profile,
-        cacheWrites: [
-          ...prepared.storageCacheWrites,
-          ...publication.signed.cacheWrites,
-        ],
-        bundleCacheRead: {
-          startedAt: publication.timing.timestamp,
-          durationMs: publication.timing.readyAt - publication.timing.startedAt,
-          consumerWaitMs: bundleCacheWaitMs,
-        },
-      } satisfies DirectRunCachePublication,
-      executionContext,
-      contextSnapshot: {
-        runId: run.id,
-        userId: run.userId,
-        prompt: run.prompt,
-        appendSystemPrompt: run.appendSystemPrompt,
-        vars: run.vars,
-        context: {
-          ...context,
-          networkPolicies: executionContext.networkPolicies,
-        },
-        secretNames: ["OKOU_TOKEN"],
-        secretValues: executionContext.secretValues,
-      },
-    };
+    return { prepared, publication };
   },
 );
+
+export function completeDirectRunPreparation(
+  input: AdmittedRunLaunch,
+  {
+    prepared,
+    publication,
+  }: Awaited<ReturnType<(typeof prepareDirectRunContext$)["write"]>>,
+) {
+  const bundleCacheWaitMs = Math.max(
+    0,
+    publication.timing.readyAt - prepared.readyAt,
+  );
+  const { run } = input;
+  const context = prepared.context;
+  const executionContext = buildExecutionContext({
+    run,
+    reuseKey: input.reuseKey,
+    preparedContext: context,
+    networkPolicyInputs: prepared.networkPolicyInputs,
+    contentBundles: publication.signed.contentBundles,
+  });
+  return {
+    cachePublication: {
+      runId: run.id,
+      runnerGroup: input.runnerGroup,
+      profile: input.profile,
+      cacheWrites: [
+        ...prepared.storageCacheWrites,
+        ...publication.signed.cacheWrites,
+      ],
+      bundleCacheRead: {
+        startedAt: publication.timing.timestamp,
+        durationMs: publication.timing.readyAt - publication.timing.startedAt,
+        consumerWaitMs: bundleCacheWaitMs,
+      },
+    } satisfies DirectRunCachePublication,
+    executionContext,
+    contextSnapshot: {
+      runId: run.id,
+      userId: run.userId,
+      prompt: run.prompt,
+      appendSystemPrompt: run.appendSystemPrompt,
+      vars: run.vars,
+      context: {
+        ...context,
+        networkPolicies: executionContext.networkPolicies,
+      },
+      secretNames: ["OKOU_TOKEN"],
+      secretValues: executionContext.secretValues,
+    },
+  };
+}
 
 /** The pick entry owns this optional publication independently of delivery. */
 export const publishDirectRunCache$ = command(

@@ -1,3 +1,6 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { mockNow } from "../../../lib/time.ts";
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
 import {
   getAction,
@@ -371,4 +374,108 @@ test("connectors-accounts-020 reviewing Personal reconnects that account while W
   await waitFor(() => {
     return expect(popup.location.href).toBe(destination);
   });
+});
+
+test("Manage member-wide access and renew an expired account for one hour", async () => {
+  const [connector] = mockConnectors(context, [
+    { connectorSlug: "github", externalUsername: "work" },
+  ]);
+  if (!connector) {
+    throw new Error("Expected GitHub connector");
+  }
+  const work = connectorAccountFixture(target, {
+    id: connector.id,
+    displayName: "Work",
+    isDefault: true,
+    externalUsername: "work",
+  });
+  const personal = connectorAccountFixture(target, {
+    id: crypto.randomUUID(),
+    displayName: "Personal",
+    isDefault: false,
+    externalUsername: "personal",
+  });
+  mockNow(new Date("2026-11-24T07:00:00Z"), context.signal);
+  mockSavedConnectorAccounts(context, () => {
+    return [work, personal];
+  });
+  let personalPolicy = {
+    connectionId: personal.id,
+    allowed: true,
+    enabled: false,
+    expiresAt: "2026-11-24T07:00:00Z",
+  };
+  context.mocks.api(
+    chatConnectorAccessContract.accountPolicies,
+    ({ respond }) => {
+      return respond(200, [
+        {
+          connectionId: work.id,
+          allowed: true,
+          enabled: true,
+          expiresAt: null,
+        },
+        personalPolicy,
+      ]);
+    },
+  );
+  context.mocks.api(
+    chatConnectorAccessContract.updateAccountPolicy,
+    ({ params, body, respond }) => {
+      expect(params.connectionId).toBe(personal.id);
+      expect(body.target).toStrictEqual(personal.target);
+      expect(body.policy).toBe("allow-1h");
+      personalPolicy = {
+        ...personalPolicy,
+        enabled: true,
+        expiresAt: "2026-11-24T08:00:00Z",
+      };
+      return respond(200, personalPolicy);
+    },
+  );
+  await setupPage({
+    context,
+    path: "/connectors",
+    locale: "en-US",
+    featureSwitches: { [FeatureSwitchKey.MemberConnectorAccountAccess]: true },
+  });
+  click(
+    await waitFor(() => {
+      return getAction("button", "Manage GitHub accounts");
+    }),
+  );
+  const manager = await screen.findByRole("dialog", {
+    name: "Manage GitHub accounts",
+  });
+  expect(
+    within(manager).getByText(
+      "Choose which GitHub accounts Okou can use across your chats.",
+    ),
+  ).toBeInTheDocument();
+  expect(within(manager).queryByRole("switch")).toBeNull();
+  click(
+    await findFastControl("button", "Personal access, Deny, Expired", manager),
+  );
+  const menu = await screen.findByRole("menu");
+  for (const name of [
+    "Allow always",
+    "Allow for 1h",
+    "Allow for 24h",
+    "Allow for 7d",
+    "Deny",
+  ]) {
+    expect(within(menu).getByText(name)).toBeInTheDocument();
+  }
+  click(within(menu).getByText("Allow for 1h"));
+  await expect(
+    findFastControl(
+      "button",
+      "Personal access, Allow, Expires in 1 hour",
+      manager,
+    ),
+  ).resolves.toBeEnabled();
+  expect(within(manager).getByText("1h", { exact: true })).toBeInTheDocument();
+  await expect(
+    findFastControl("button", "Work access, Allow, Always", manager),
+  ).resolves.toBeEnabled();
 });

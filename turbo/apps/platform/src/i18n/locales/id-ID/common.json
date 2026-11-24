@@ -2940,6 +2940,8 @@
     "accountsInChat": "Pilih akun yang aktif dalam chat ini.",
     "enableByDefault": "Aktifkan {{account}} secara default",
     "manageAccounts": "Kelola akun",
+    "memberPolicyLoadFailed": "Akses akun tidak dapat dimuat.",
+    "memberSettingsDescription": "Pilih akun {{connector}} yang dapat digunakan Okou di semua chat Anda.",
     "permissions": "Izin",
     "permissionsDescription": "Aturan ini berlaku untuk konektor ini di semua chat dan akun Anda.",
     "settingsDescription": "Pilih akun {{connector}} yang dapat digunakan Okou di chat Anda. Anda dapat mengubah akses di setiap chat.",
