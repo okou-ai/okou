@@ -974,6 +974,89 @@ class SessionModelTest : SessionModelTestFixture() {
     }
 
     @Test
+    fun workspaceAccessLossRetiresContentWhileSignOutKeepsWaitingForClerk() {
+        val auth = TestAuthentication()
+        val preferences = CompletableDeferred<Unit>()
+        val signOut = CompletableDeferred<Unit>()
+        var signOutRequests = 0
+        auth.signOutAction = {
+            signOutRequests++
+            signOut.await()
+            auth.state.value = AuthenticationState(initialized = true)
+        }
+        check(
+            auth,
+            configure = { resource ->
+                resource.update = {
+                    preferences.await()
+                    throw ApiFailure.Unauthenticated()
+                }
+            },
+        ) { model, resources ->
+            runCurrent()
+            val original = model.uiState.value
+            requireNotNull(original.ready)
+                .preferences
+                .selectColorTheme(UserPreferencesColorTheme.BLUE_HORIZON)
+            runCurrent()
+            model.signOut(original.generation)
+            runCurrent()
+            assertTrue(model.uiState.value.signingOut)
+
+            preferences.complete(Unit)
+            runCurrent()
+            val removed = model.uiState.value
+            assertTrue(resources.single().closed)
+            assertEquals(SessionStage.AccessRemoved, removed.stage)
+            assertNull(removed.ready)
+            assertTrue(removed.signingOut)
+            model.signOut(removed.generation)
+            runCurrent()
+            assertEquals(1, signOutRequests)
+
+            signOut.complete(Unit)
+            runCurrent()
+            assertEquals(SessionStage.SignIn, model.uiState.value.stage)
+            assertFalse(model.uiState.value.signingOut)
+        }
+    }
+
+    @Test
+    fun signOutFailureAfterPermissionsChangeKeepsTheRevalidatedWorkspace() {
+        val auth = TestAuthentication()
+        val signOut = CompletableDeferred<Unit>()
+        auth.signOutAction = {
+            signOut.await()
+            error("sign-out rejected")
+        }
+        check(auth) { model, resources ->
+            runCurrent()
+            val original = model.uiState.value
+            model.signOut(original.generation)
+            runCurrent()
+
+            auth.state.value =
+                auth.state.value.copy(
+                    membershipAccess = listOf(MembershipAccess("org-a", "org:member", emptyList())),
+                )
+            runCurrent()
+            val revalidated = model.uiState.value
+            assertEquals(SessionStage.Ready, revalidated.stage)
+            assertTrue(resources.first().closed)
+            assertFalse(resources.last().closed)
+            assertTrue(revalidated.signingOut)
+            assertNotEquals(original.ready?.identity, revalidated.ready?.identity)
+
+            signOut.complete(Unit)
+            runCurrent()
+            assertEquals(
+                revalidated.copy(signingOut = false, entryFailure = SessionEntryFailure.SignOut),
+                model.uiState.value,
+            )
+        }
+    }
+
+    @Test
     fun signOutFailureAfterAccountReplacementCannotRestoreTheOldWorkspace() {
         val auth = TestAuthentication()
         val reply = CompletableDeferred<Unit>()
