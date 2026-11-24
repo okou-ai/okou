@@ -13,6 +13,7 @@ final class ChatModelStore {
   let connectorAuthorization: ChatConnectorService
   let subscriptions: PersonalSubscriptionStore
   private(set) var configuration: ChatModelConfiguration?
+  var usesFollowupPlaceholder: Bool { configuration?.switches["followupPlaceholder"] == true }
   private(set) var active = false
   private var closed = false
   private var reportingCatalog: ModelCatalog?
