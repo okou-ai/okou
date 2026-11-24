@@ -246,12 +246,9 @@ final class ComposerVoiceInputStore {
     }
   }
 
-  private func finishVoiceMessage(
-    session: VoiceDraftSession, id: UUID, composer: ComposerDraftStore, owner: UUID
+  private func insertUploadedRecording(
+    _ fileID: String, session: VoiceDraftSession, id: UUID, composer: ComposerDraftStore, owner: UUID
   ) async throws {
-    let preparation = Task { try await session.uploadClip(recordingID: id) }
-    preparationTask = preparation
-    let fileID = try await preparation.value
     guard generation == owner, composer.canEditVoice else { return }
     composer.appendVoiceClip(fileID, recordingID: id)
     guard !composer.hasLocalFailure else {
@@ -289,7 +286,11 @@ final class ComposerVoiceInputStore {
       await transcriptionTask?.value
       _ = await preparationTask?.result
       if asVoiceMessage {
-        try await finishVoiceMessage(session: session, id: id, composer: composer, owner: owner)
+        guard generation == owner, composer.canEditVoice else { return }
+        let upload = Task { try await session.uploadClip(recordingID: id) }
+        preparationTask = upload
+        try await insertUploadedRecording(
+          upload.value, session: session, id: id, composer: composer, owner: owner)
         return
       }
       let hasPreparedText = await session.hasPreparedText
