@@ -119,4 +119,7 @@
     <string name="chat_connector_saving">Enregistrement du choix de connecteur…</string>
     <string name="chat_connector_save_failed">Impossible d’enregistrer le choix de connecteur.</string>
     <string name="chat_connector_first_send_failed">Impossible d’appliquer les choix de connecteurs. Vérifiez-les dans les options du chat, puis réessayez d’envoyer ce message.</string>
+    <string name="connector_device_denied">Le fournisseur a refusé l’autorisation.</string>
+    <string name="connector_device_expired">Le code de l’appareil a expiré. Relancez l’autorisation.</string>
+    <string name="connector_device_failed">Impossible de terminer l’autorisation de l’appareil.</string>
 </resources>

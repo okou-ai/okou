@@ -111,4 +111,7 @@
     <string name="chat_connector_saving">コネクターの選択を保存中…</string>
     <string name="chat_connector_save_failed">コネクターの選択を保存できませんでした。</string>
     <string name="chat_connector_first_send_failed">コネクターの選択を適用できませんでした。チャットオプションで確認してから、このメッセージの送信を再試行してください。</string>
+    <string name="connector_device_denied">サービス提供元が認証を拒否しました。</string>
+    <string name="connector_device_expired">デバイスコードの有効期限が切れました。認証をやり直してください。</string>
+    <string name="connector_device_failed">デバイス認証を完了できませんでした。</string>
 </resources>
