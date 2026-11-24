@@ -137,8 +137,14 @@ internal data class WorkspaceSearchResults(
     val keyword: String = "",
     val messages: SearchRead<SearchMessageHit> = SearchRead.Loading,
     val artifacts: SearchRead<SearchArtifactHit> = SearchRead.Loading,
-    val moreArtifactsFailed: Boolean = false,
+    val artifactPaging: ArtifactSearchPaging = ArtifactSearchPaging.Idle,
 )
+
+internal enum class ArtifactSearchPaging {
+    Idle,
+    Loading,
+    Failed,
+}
 
 class WorkspaceSearchModel
 internal constructor(
@@ -190,7 +196,10 @@ internal constructor(
             artifactPageJob?.cancel()
             artifactPageJob = null
             mutable.value =
-                mutable.value.copy(artifacts = SearchRead.Loading, moreArtifactsFailed = false)
+                mutable.value.copy(
+                    artifacts = SearchRead.Loading,
+                    artifactPaging = ArtifactSearchPaging.Idle,
+                )
         }
         visibleType.value = type.takeIf { visible && keyword.isNotEmpty() }
         if (visibleType.value == null) return
@@ -217,10 +226,10 @@ internal constructor(
                 read ->
                 state.copy(
                     artifacts = state.artifacts.updated(read),
-                    moreArtifactsFailed =
-                        state.moreArtifactsFailed &&
-                            read !is SearchRead.Ready &&
-                            read != SearchRead.AccessLost,
+                    artifactPaging =
+                        if (read is SearchRead.Ready || read == SearchRead.AccessLost)
+                            ArtifactSearchPaging.Idle
+                        else state.artifactPaging,
                 )
             }
         }
@@ -238,7 +247,7 @@ internal constructor(
                 current.keyword != keyword ||
                 loaded.nextCursor != cursor ||
                 loaded.refreshFailed ||
-                current.moreArtifactsFailed ||
+                current.artifactPaging == ArtifactSearchPaging.Failed ||
                 artifactPageJob?.isActive == true
         )
             return
@@ -246,6 +255,7 @@ internal constructor(
             searches[WorkspaceSearchType.Artifacts]?.join()
             val currentPage = mutable.value.artifacts as? SearchRead.Ready ?: return@launch
             if (currentPage.nextCursor != cursor || currentPage.refreshFailed) return@launch
+            mutable.value = mutable.value.copy(artifactPaging = ArtifactSearchPaging.Loading)
             readSearch(
                 { it == WorkspaceSearchType.Artifacts },
                 { artifactPage(keyword, cursor) },
@@ -260,9 +270,10 @@ internal constructor(
                     }
                 mutable.value =
                     if (next == SearchRead.AccessLost)
-                        latest.copy(artifacts = next, moreArtifactsFailed = false)
-                    else if (merged == null) latest.copy(moreArtifactsFailed = true)
-                    else latest.copy(artifacts = merged, moreArtifactsFailed = false)
+                        latest.copy(artifacts = next, artifactPaging = ArtifactSearchPaging.Idle)
+                    else if (merged == null)
+                        latest.copy(artifactPaging = ArtifactSearchPaging.Failed)
+                    else latest.copy(artifacts = merged, artifactPaging = ArtifactSearchPaging.Idle)
             }
         }
     }

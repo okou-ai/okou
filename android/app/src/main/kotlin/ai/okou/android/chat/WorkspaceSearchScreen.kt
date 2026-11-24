@@ -494,7 +494,20 @@ private fun SearchResults(
     val artifactPage = artifactRead as? SearchRead.Ready
     val artifacts = artifactPage?.rows.orEmpty()
     val artifactCursor = artifactPage?.nextCursor
-    val moreArtifactsFailed = currentRemote?.moreArtifactsFailed == true
+    val artifactPaging = currentRemote?.artifactPaging
+    val moreArtifactsFailed = artifactPaging == ArtifactSearchPaging.Failed
+    val nextArtifactPage =
+        artifactPage
+            ?.takeIf {
+                type == WorkspaceSearchType.Artifacts &&
+                    !moreArtifactsFailed &&
+                    !it.refreshing &&
+                    !it.refreshFailed
+            }
+            ?.nextCursor
+    val waitingForArtifactPage =
+        nextArtifactPage != null &&
+            (artifactPaging == ArtifactSearchPaging.Loading || artifacts.isEmpty())
     val items =
         remember(
             grouped,
@@ -554,15 +567,16 @@ private fun SearchResults(
             needsMessageChats &&
                 (list.listPhase == ChatReadPhase.Loading ||
                     !listFailed && listFailure == ChatListReadFailure.Retrying)
-    val remotePending = reads.any { it.isPending }
+    val waitingForMessageMetadata = needsMessageChats && waitingForList
+    val remotePending =
+        reads.any { it.isPending } || waitingForMessageMetadata || waitingForArtifactPage
     val pending = waitingForList || remotePending
     fun waitingForResult(key: String): Boolean =
         when (searchResultType(key)) {
             WorkspaceSearchType.Chats -> showChats && waitingForList
-            WorkspaceSearchType.Messages ->
-                messageRead.isPending || needsMessageChats && waitingForList
+            WorkspaceSearchType.Messages -> messageRead.isPending || waitingForMessageMetadata
             WorkspaceSearchType.Workflows -> workflowRead.isPending
-            WorkspaceSearchType.Artifacts -> artifactRead.isPending
+            WorkspaceSearchType.Artifacts -> artifactRead.isPending || waitingForArtifactPage
             WorkspaceSearchType.All -> pending
         }
     val confirmedChats = list.confirmedAt != null
@@ -607,6 +621,7 @@ private fun SearchResults(
     val showEmpty =
         items.isEmpty() &&
             !waitingForList &&
+            !waitingForArtifactPage &&
             readFailure == null &&
             (!remotePending || reads.all { it == null || it is SearchRead.Ready })
     val showPending =
@@ -777,18 +792,11 @@ private fun SearchResults(
                     }
                 }
             }
-            if (
-                type == WorkspaceSearchType.Artifacts &&
-                    artifactCursor != null &&
-                    !moreArtifactsFailed &&
-                    !artifactPage.refreshing &&
-                    !artifactPage.refreshFailed
-            ) {
+            if (nextArtifactPage != null) {
                 item(key = "search_more_artifacts") {
-                    LaunchedEffect(keyword, artifactCursor) {
-                        onMoreArtifacts(keyword, artifactCursor)
+                    LaunchedEffect(keyword, nextArtifactPage) {
+                        onMoreArtifacts(keyword, nextArtifactPage)
                     }
-                    LinearProgressIndicator(Modifier.fillMaxWidth().padding(12.dp))
                 }
             }
             if (showSkeleton) {
