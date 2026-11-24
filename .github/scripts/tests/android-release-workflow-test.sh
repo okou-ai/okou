@@ -122,6 +122,9 @@ for native in ['build-test', 'instrumentation', 'release-smoke']:
     assert android[native]['needs'] == 'detect'
 for sharded in ['build-test', 'instrumentation']:
     assert android[sharded]['strategy'] == {'fail-fast': False, 'matrix': {'shard': [0, 1, 2]}}
+jvm_step, = (step for step in build_steps if step.get('name') == 'Run Debug JVM test shard')
+assert 'continue-on-error' not in jvm_step
+assert 'build-test' in android['ci-gate-android']['needs']
 native_results, = (
     step['with'] for step in android['instrumentation']['steps']
     if step.get('with', {}).get('name', '').startswith('android-native-results-')
@@ -135,6 +138,36 @@ assert "needs.release-smoke.result == 'failure'" in retrace['if']
 assert 'retrace-failure' not in android['ci-gate-android']['needs']
 download, = (step for step in retrace['steps'] if step.get('uses', '').startswith('actions/download-artifact@'))
 assert download['with']['artifact-ids'] == '${{ needs.release-smoke.outputs.retrace-artifact-id }}'
+
+with tempfile.TemporaryDirectory() as temp:
+    work = Path(temp)
+    scripts = work / 'scripts'
+    scripts.mkdir()
+    shutil.copyfile(root / 'android/scripts/check.sh', scripts / 'check.sh')
+    python = work / 'python3'
+    python.write_text('#!/usr/bin/env bash\nexit 0\n')
+    python.chmod(0o755)
+    gradlew = work / 'gradlew'
+    gradlew.write_text('#!/usr/bin/env bash\nprintf "%s\\n" "$@"\nexit "${GRADLE_EXIT:-0}"\n')
+    gradlew.chmod(0o755)
+    env = dict(os.environ, PATH=str(work) + os.pathsep + os.environ['PATH'], SHARD_COUNT='3')
+    for shard, tasks in enumerate([
+        ['spotlessCheck', ':app:testDebugUnitTest', ':app:lintDebug', ':app:assembleDebug'],
+        [':app:testDebugUnitTest'],
+        [':app:testDebugUnitTest', ':app:lintDebug'],
+    ]):
+        args = ['--no-daemon', '-Pokou.debugUnitTestForks=2',
+                f'-Pokou.debugUnitTestShardIndex={shard}', '-Pokou.debugUnitTestShardCount=3']
+        if shard == 0:
+            args += ['--exclude-task', ':app:lintDebug']
+        result = subprocess.run(['bash', '-c', jvm_step['run']], cwd=work,
+                                env=env | {'SHARD_INDEX': str(shard), 'GRADLE_EXIT': '7'},
+                                text=True, capture_output=True)
+        assert result.returncode == 7, result.stderr
+        assert result.stdout.splitlines() == tasks + args, result.stdout
+    local = subprocess.check_output(['bash', 'scripts/check.sh'], cwd=work, env=env, text=True)
+    assert local.splitlines() == ['spotlessCheck', ':app:testDebugUnitTest', ':app:lintDebug',
+                                  ':app:assembleDebug', '--no-daemon']
 
 with tempfile.TemporaryDirectory() as temp:
     work = Path(temp)

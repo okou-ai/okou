@@ -120,11 +120,15 @@ jobs:
             "-Pokou.debugUnitTestShardIndex=$SHARD_INDEX"
             "-Pokou.debugUnitTestShardCount=$SHARD_COUNT"
           )
-          # Run the shared checks and build the APK once.
+          # Keep lint on shard 2 so it can reuse the Debug compilation there.
           if [ "$SHARD_INDEX" = 0 ]; then
-            bash scripts/check.sh "${args[@]}"
+            bash scripts/check.sh "${args[@]}" --exclude-task :app:lintDebug
           else
-            ./gradlew :app:testDebugUnitTest --no-daemon "${args[@]}"
+            tasks=(:app:testDebugUnitTest)
+            if [ "$SHARD_INDEX" = 2 ]; then
+              tasks+=(:app:lintDebug)
+            fi
+            ./gradlew "${tasks[@]}" --no-daemon "${args[@]}"
           fi
       - name: Check JVM test class size
         run: python3 android/scripts/check-jvm-test-counts.py android/app/build/test-results/testDebugUnitTest
