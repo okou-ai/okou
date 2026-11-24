@@ -1,7 +1,10 @@
+import CCState
 import Darwin
 import Foundation
 import Observation
 import XCTest
+
+@testable import Okou
 
 @MainActor
 extension XCTestCase {
@@ -33,6 +36,59 @@ extension XCTestCase {
       message() + "; business waiter=\(result); observed=\(String(describing: observed)); "
         + "resumed=\(resumed); joined=\(joined)",
       file: file, line: line)
+  }
+
+  /// Waits for a predicate over graph-owned state. It is checked again whenever the watched
+  /// signal changes, and whenever an Observation-tracked value it reads changes.
+  func waitForBusinessResult<Value>(
+    watching signal: Signal<Value>, in store: CCState.Store,
+    timeout: TimeInterval = 3, file: StaticString = #filePath, line: UInt = #line,
+    message: @autoclosure () -> String = "",
+    _ predicate: @escaping @MainActor () -> Bool
+  ) async throws {
+    if predicate() { return }
+    let started = ContinuousClock.now
+    var observed: Duration?
+    let ready = expectation(
+      description: "The production business result became available at \(file):\(line)")
+    let check: @MainActor () -> Void = {
+      guard observed == nil, predicate() else { return }
+      observed = started.duration(to: .now)
+      ready.fulfill()
+    }
+    let subscription = try store.watch(signal) { check() }
+    defer {
+      do { try subscription.cancel() } catch { XCTFail("Graph waiter cleanup: \(error)") }
+    }
+    let observation = Task {
+      for await result in Observations({ predicate() }) where result {
+        check()
+        return
+      }
+    }
+    // A change committed before the listener was mounted is not replayed to it.
+    check()
+    let result = await XCTWaiter.fulfillment(of: [ready], timeout: timeout)
+    let resumed = started.duration(to: .now)
+    observation.cancel()
+    await observation.value
+    _ = try XCTUnwrap(
+      result == .completed && predicate() ? true : nil,
+      message() + "; graph waiter=\(result); observed=\(String(describing: observed)); "
+        + "resumed=\(resumed)",
+      file: file, line: line)
+  }
+
+  /// Waits for a predicate over a composer's draft, upload, voice phase or synchronization state.
+  func waitForBusinessResult(
+    watching composer: ComposerDraftStore,
+    timeout: TimeInterval = 3, file: StaticString = #filePath, line: UInt = #line,
+    message: @autoclosure () -> String = "",
+    _ predicate: @escaping @MainActor () -> Bool
+  ) async throws {
+    try await waitForBusinessResult(
+      watching: composer.presentation, in: composer.store, timeout: timeout, file: file,
+      line: line, message: message(), predicate)
   }
 
   func waitForFileRemoval(

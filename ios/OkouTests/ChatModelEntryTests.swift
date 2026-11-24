@@ -1,3 +1,4 @@
+import CCStateSwiftUI
 import ChatDataTestSupport
 import SwiftUI
 import XCTest
@@ -58,14 +59,16 @@ private struct ModelEntryComposer: View {
   let workspace: WorkspaceStore
   let didLoadModels: () -> Void
   var body: some View {
-    @Bindable var composer = workspace.newComposer
+    let composer = workspace.newComposer
     VStack {
       Spacer()
-      ChatComposerView(
-        draft: $composer.text, isBusy: false, showsProgress: false, canStop: false,
-        needsUpgrade: false, error: nil, attachmentURL: workspace.webURL,
-        attachments: composer.attachments, draftState: composer,
-        submit: {}, refresh: nil, modelSelection: workspace.newModelSelection)
+      StoreProvider(workspace.graph) {
+        ChatComposerView(
+          isBusy: false, showsProgress: false, canStop: false,
+          needsUpgrade: false, error: nil, attachmentURL: workspace.webURL,
+          draftState: composer,
+          submit: {}, refresh: nil, modelSelection: workspace.newModelSelection)
+      }
     }
     .onChange(of: workspace.modelStore.configuration?.defaultSelection.model) { _, model in
       if model != nil { didLoadModels() }

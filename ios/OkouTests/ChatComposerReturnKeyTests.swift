@@ -1,3 +1,4 @@
+import CCStateSwiftUI
 import ChatData
 import ChatDomain
 import SwiftUI
@@ -25,13 +26,16 @@ final class ChatComposerReturnKeyTests: XCTestCase {
     let prompt = "帮我提一个 issue 记录这个侧栏开关 bug"
 
     conversation.composer.editor.selectOrAppendText(prompt)
-    try await waitForBusinessResult { conversation.draft == prompt && input.isFirstResponder }
+    try await waitForBusinessResult(watching: conversation.composer) {
+      conversation.draft == prompt && input.isFirstResponder
+    }
     // Selecting the same follow-up must keep one prompt and must not submit it.
     conversation.composer.editor.selectOrAppendText(prompt)
     XCTAssertEqual(conversation.draft, prompt)
     XCTAssertTrue(fixture.state.value.withLock { $0.messages.isEmpty })
     input.insertText("\n")
     try await waitForBusinessResult(
+      watching: conversation.composer,
       message: recommendedFollowupSendStatus(
         conversation, fixture: fixture, input: input, prompt: prompt)
     ) {
@@ -133,6 +137,7 @@ final class ChatComposerReturnKeyTests: XCTestCase {
     let attachments = conversation.attachmentDraft
     attachments.importFiles([file])
     try await waitForBusinessResult(
+      watching: conversation.composer,
       message: "Attachment items: \(attachments.items.count); "
         + "error: \(String(describing: attachments.error)); " + mentionInputStatus(input)
     ) { attachments.hasAttachments && attachments.isReady }
@@ -209,8 +214,10 @@ final class ChatComposerReturnKeyTests: XCTestCase {
     let (completions, completion) = AsyncStream<Void>.makeStream()
     defer { completion.finish() }
     let host = UIHostingController(
-      rootView: ChatDetailView(conversation: conversation, didSend: { completion.yield() })
-        .environment(\.composerPreferences, preferences))
+      rootView: StoreProvider(conversation.composer.store) {
+        ChatDetailView(conversation: conversation, didSend: { completion.yield() })
+          .environment(\.composerPreferences, preferences)
+      })
     let window = try await mountMentionHost(host)
     defer { unmount(window) }
     let input = try XCTUnwrap(mentionInputs(in: host.view).first)
@@ -283,7 +290,7 @@ final class ChatComposerReturnKeyTests: XCTestCase {
     preferences.setReturnKey(.send)
     try await eventually { input.returnKeyType == .send }
     input.insertText("\n")
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: conversation.composer) {
       conversation.pending.isEmpty && conversation.draft.isEmpty
         && conversation.messages.contains { $0.text.contains("First\nSecond") }
     }
@@ -327,7 +334,9 @@ final class ChatComposerReturnKeyTests: XCTestCase {
     XCTAssertTrue(fixture.state.value.withLock { $0.messages.isEmpty })
 
     input.insertText("\n")
-    try await waitForBusinessResult(message: mentionInputStatus(input)) {
+    try await waitForBusinessResult(
+      watching: conversation.composer, message: mentionInputStatus(input)
+    ) {
       conversation.pending.isEmpty && conversation.draft.isEmpty
         && conversation.messages.contains { $0.text == composedText }
     }
@@ -360,7 +369,7 @@ final class ChatComposerReturnKeyTests: XCTestCase {
       mentionTable(in: host.view)?.visibleCells.first != nil
     }
     input.insertText("\n")
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: workspace.newComposer) {
       workspace.newComposer.document.parts.contains { $0["type"]?.string == "chat_thread" }
     }
     input.insertText("🌷 old after")
@@ -375,7 +384,9 @@ final class ChatComposerReturnKeyTests: XCTestCase {
     XCTAssertTrue(input.isFirstResponder)
     try await eventually { input.undoManager?.groupingLevel == 0 }
     input.undoManager?.undo()
-    try await waitForBusinessResult { workspace.newComposer.document == before }
+    try await waitForBusinessResult(watching: workspace.newComposer) {
+      workspace.newComposer.document == before
+    }
   }
 
   private func chatReferenceSuggestionStatus(
