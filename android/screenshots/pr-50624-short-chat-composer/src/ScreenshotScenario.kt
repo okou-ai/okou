@@ -1,5 +1,6 @@
 package ai.okou.android.screenshots
 
+import ai.okou.android.CHAT_PERSONAL
 import ai.okou.android.ChatCacheSnapshot
 import ai.okou.android.ChatListApiFixture
 import ai.okou.android.MainActivity
@@ -38,6 +39,8 @@ class ScreenshotScenario {
         val originalControls = app.controlService
         val cache = ChatCacheSnapshot(app.noBackupFilesDir.resolve("chat-list"), app.chatCache)
         ChatListApiFixture().use { api ->
+            val draft = "Review the notes\nConfirm the rollout\nShare the update"
+            api.setThreadDraft(CHAT_PERSONAL, draft)
             app.chatService = api.service
             app.composerService = api.service
             app.controlService = api.service
@@ -52,13 +55,8 @@ class ScreenshotScenario {
                         device.wait(Until.findObject(By.pkg(app.packageName).text("Personal chat")), 12_000),
                     ).click()
                     waitForWindow(scenario, short = false)
-                    val editor = By.pkg(app.packageName).desc(app.getString(R.string.composer_message))
+                    val editor = By.pkg(app.packageName).clazz("android.widget.EditText")
                     val send = By.pkg(app.packageName).desc(app.getString(R.string.composer_send))
-                    val draft = "Review the notes\nConfirm the rollout\nShare the update"
-                    check(device.wait(object : Condition<UiDevice, Boolean> {
-                        override fun apply(device: UiDevice) = device.findObject(editor)?.isEnabled == true
-                    }, 12_000)) { "The conversation draft did not become editable" }
-                    checkNotNull(device.findObject(editor)).setText(draft)
                     val authoredDraft = object : Condition<UiDevice, Boolean> {
                         override fun apply(device: UiDevice) = device.findObject(editor)?.text == draft
                     }
@@ -75,7 +73,8 @@ class ScreenshotScenario {
                         override fun apply(device: UiDevice): Boolean {
                             val compactHeight = device.findObject(editor)?.visibleBounds?.height() ?: return false
                             val sendBounds = device.findObject(send)?.visibleBounds ?: return false
-                            return compactHeight in 48 until regularHeight &&
+                            return device.findObject(editor)?.text == draft.replace('\n', ' ') &&
+                                compactHeight in 48 until regularHeight &&
                                 sendBounds.width() == 48 && sendBounds.height() == 48
                         }
                     }, 12_000)) { "Compact height or 48dp Send target did not match the design" }
