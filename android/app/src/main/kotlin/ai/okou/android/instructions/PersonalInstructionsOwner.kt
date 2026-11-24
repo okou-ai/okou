@@ -133,10 +133,9 @@ internal class PersonalInstructionsOwner(
             replaceDraft(revision, mutable.value.draft)
     }
 
-    fun discard(connection: Connection) {
+    fun reloadLatest(connection: Connection) {
         val state = mutable.value
-        if (!connection.current() || !state.canEdit || state.draft == null) return
-        if (state.conflicting) refresh(connection, discard = true) else discardEdits(connection)
+        if (state.canEdit && state.conflicting) refresh(connection, discard = true)
     }
 
     fun discardEdits(connection: Connection) {

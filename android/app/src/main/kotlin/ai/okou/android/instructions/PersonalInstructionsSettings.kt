@@ -397,7 +397,7 @@ internal fun PersonalInstructionsSettings(
             onConfirm = {
                 closeAfterSave = false
                 confirmReload = false
-                model.discard()
+                model.reloadLatest()
             },
         ) {
             Text(stringResource(R.string.instructions_conflict))

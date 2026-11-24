@@ -119,7 +119,7 @@ class PersonalInstructionsModelTest {
             model.save()
             runCurrent()
             assertTrue(service.writes.isEmpty())
-            model.discard()
+            model.reloadLatest()
             runCurrent()
             assertEquals("Changed on Web", model.uiState.value.content)
             model.edit("")
@@ -174,7 +174,7 @@ class PersonalInstructionsModelTest {
             model.save()
             runCurrent()
             assertTrue(service.writes.isEmpty())
-            model.discard()
+            model.reloadLatest()
             runCurrent()
             assertEquals("Changed on Web", model.uiState.value.content)
             model.edit("")
@@ -208,7 +208,7 @@ class PersonalInstructionsModelTest {
         model.edit("Intentional replacement after failure")
         assertFalse(model.uiState.value.canSave)
         service.read = { service.saved }
-        model.discard()
+        model.reloadLatest()
         runCurrent()
         assertEquals("Changed on Web", model.uiState.value.content)
         assertNull(model.uiState.value.draft)
@@ -217,6 +217,33 @@ class PersonalInstructionsModelTest {
         runCurrent()
         assertEquals("New edit" to "v2", service.writes.last())
     }
+
+    @Test
+    fun reloadConfirmationKeepsANewerDraftAfterAnotherWindowResolvesTheConflict() =
+        check { service, store, create, _ ->
+            val first = create(false)
+            val second = create(false)
+            first.open()
+            runCurrent()
+            first.edit("Original draft")
+            service.saved = service.saved.copy(content = "Changed on Web", version = "v2")
+            first.refresh()
+            runCurrent()
+            assertEquals(InstructionsPhase.Conflict, first.uiState.value.phase)
+            val confirmFirstReload = first::reloadLatest
+
+            second.reloadLatest()
+            runCurrent()
+            assertEquals("Changed on Web", second.uiState.value.content)
+            second.edit("New draft")
+            runCurrent()
+            assertTrue(second.uiState.value.canSave)
+
+            confirmFirstReload()
+            runCurrent()
+            assertEquals("New draft", first.uiState.value.content)
+            assertEquals("New draft", store.load(identity).draft?.content)
+        }
 
     @Test
     fun anAcceptedButDisconnectedSaveReconcilesWithoutReplayingTheWrite() =
@@ -252,7 +279,7 @@ class PersonalInstructionsModelTest {
             assertEquals(InstructionsPhase.Uncertain, model.uiState.value.phase)
             assertFalse(model.uiState.value.canRetrySave)
             model.edit("Replacement must not erase recovery")
-            model.discard()
+            model.discardEdits()
             model.save()
             runCurrent()
             assertEquals("Frozen intent", model.uiState.value.content)
@@ -304,7 +331,7 @@ class PersonalInstructionsModelTest {
             assertTrue(model.uiState.value.localFailure)
             assertTrue(checkNotNull(model.uiState.value.draft).attempted)
             model.edit("Must not replace uncertain intent")
-            model.discard()
+            model.discardEdits()
             runCurrent()
             assertEquals("Frozen intent", model.uiState.value.content)
             assertEquals(1, service.writes.size)
@@ -342,7 +369,7 @@ class PersonalInstructionsModelTest {
         assertEquals(InstructionsPhase.Uncertain, model.uiState.value.phase)
         assertTrue(checkNotNull(model.uiState.value.draft).attempted)
         model.edit("Must not replace the earlier intent")
-        model.discard()
+        model.discardEdits()
         runCurrent()
         assertEquals("Original uncertain intent", model.uiState.value.content)
         assertEquals(2, service.writes.size)
