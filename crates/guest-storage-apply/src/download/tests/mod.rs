@@ -51,6 +51,80 @@ fn pending_at(id: usize, path: &str) -> PendingDownload<'static> {
     PendingDownload::new(id, prepared_task_at(path))
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn scheduler_limits_parallel_inflate_to_a_single_artifact_with_a_small_companion() {
+    use guest_contracts::storage_files::StorageFile;
+
+    enum Companion {
+        Archive(u64),
+        Decoded(usize, &'static [u8]),
+        Artifact,
+    }
+
+    for (companion, local_ready, expected) in [
+        (Companion::Archive(64 * 1024 - 1), true, Some(1)),
+        (Companion::Archive(64 * 1024), true, None),
+        (Companion::Archive(0), true, None),
+        (Companion::Decoded(1, &[0; 64 * 1024]), true, Some(1)),
+        (Companion::Decoded(1, &[0; 64 * 1024 + 1]), true, None),
+        (Companion::Decoded(17, &[]), true, None),
+        (Companion::Artifact, true, None),
+        (Companion::Archive(1), false, None),
+    ] {
+        let mut artifact = pending_at(1, "/artifact");
+        artifact.task.task = DownloadTask::artifact(
+            "artifact".into(),
+            "file:///tmp/artifact.tar.gz".into(),
+            "/artifact".into(),
+        );
+        artifact.estimated_work = 2 * 1024 * 1024;
+
+        let mut other = pending_at(0, "/companion");
+        match companion {
+            Companion::Archive(bytes) => other.estimated_work = bytes,
+            Companion::Decoded(count, content) => {
+                other.task.task.set_files(
+                    (0..count)
+                        .map(|index| StorageFile {
+                            path: format!("file-{index}"),
+                            mode: 0o644,
+                            mtime: 1,
+                            content,
+                        })
+                        .collect(),
+                );
+            }
+            Companion::Artifact => {
+                other.task.task = DownloadTask::artifact(
+                    "other artifact".into(),
+                    "file:///tmp/companion.tar.gz".into(),
+                    "/companion".into(),
+                );
+                other.estimated_work = 32 * 1024;
+            }
+        }
+        let pending = VecDeque::from([other, artifact]);
+        let mut telemetry = DownloadRunTelemetry::start(pending.iter().map(|download| {
+            (
+                download.task.task.telemetry,
+                download.task.logical_mount_path(),
+            )
+        }));
+        let mut scheduler = DownloadScheduler::new(pending, 2, local_ready);
+        let (send, receive) = mpsc::sync_channel(2);
+        assert!(scheduler.start_ready_attempts(&send, &mut telemetry));
+        let inflaters = (0..2)
+            .filter_map(|_| {
+                let download = receive.try_recv().unwrap();
+                download.parallel_inflate.then_some(download.id)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(inflaters, expected.into_iter().collect::<Vec<_>>());
+        telemetry.finish();
+    }
+}
+
 #[test]
 fn scheduler_front_loads_one_archive_then_dispatches_original_order() {
     let pending = [1, 90, 10, 100, 80, 20]
