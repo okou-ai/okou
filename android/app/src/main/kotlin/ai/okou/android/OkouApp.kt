@@ -10,6 +10,7 @@ import ai.okou.android.chat.AssistantRecoveryPanel
 import ai.okou.android.chat.ChatArtifactActions
 import ai.okou.android.chat.ChatComposerField
 import ai.okou.android.chat.ChatComposerModel
+import ai.okou.android.chat.ChatComposerTopInset
 import ai.okou.android.chat.ChatListFilter
 import ai.okou.android.chat.ChatListModel
 import ai.okou.android.chat.ChatListReadFailure
@@ -600,11 +601,7 @@ internal fun OkouApp(
                 !showingFind &&
                 (listWidth != null || !searchActive)
         }
-    val feedbackConversationId by
-        remember(snackbar) { derivedStateOf { snackbar.chatFeedbackConversationId } }
-    val showConversationFeedback =
-        visibleConversationId != null &&
-            (!showChatList || feedbackConversationId == visibleConversationId)
+    val conversationSnackbar = remember(chats) { SnackbarHostState() }
     val showWorkflowFeedback = showWorkflows && workflowRoute.id != null
     val visibleThread = thread?.takeIf {
         settings == null && !showWorkflows && !showArtifacts && (!searchActive || listWidth != null)
@@ -613,7 +610,6 @@ internal fun OkouApp(
         if (visibleThread != null) workspaceSearch?.opened(visibleThread)
     }
 
-    val showRowFeedback = showChatList || showConversationFeedback
     var confirmingProjectDelete by remember(chats) { mutableStateOf<String?>(null) }
     val renameEditor = renamePresentation?.editor
     val renameTarget = renameEditor?.target
@@ -636,10 +632,10 @@ internal fun OkouApp(
             chats,
             listState,
             snackbar,
+            conversationSnackbar,
             showChatList,
             visibleConversationId,
-            showRowFeedback,
-            showRowActionFailure = showRowFeedback || showWorkflowFeedback,
+            showWorkflowFeedback,
             confirmingProjectDelete = confirmingProjectDelete,
             dismissProjectDelete = { confirmingProjectDelete = null },
             renameEditor = renameEditor,
@@ -1594,7 +1590,7 @@ internal fun OkouApp(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.safeDrawing,
         snackbarHost = {
-            if (!feedbackInOverlay && !showChatList && !showConversationFeedback) {
+            if (!feedbackInOverlay && !showChatList && visibleConversationId == null) {
                 WorkspaceFeedbackHost(
                     snackbar,
                     Modifier.padding(bottom = if (settings != null) 8.dp else 16.dp),
@@ -1787,11 +1783,11 @@ internal fun OkouApp(
                                         chats?.dismissProjectRenameRejection(it)
                                     },
                                     feedback = {
-                                        if (!showConversationFeedback)
-                                            WorkspaceFeedbackHost(
-                                                snackbar,
-                                                Modifier.testTag("chat_list_feedback"),
-                                            )
+                                        WorkspaceFeedbackHost(
+                                            snackbar,
+                                            Modifier.testTag("chat_list_feedback"),
+                                            restorePaneFocus = { settingsFocus.requestFocus() },
+                                        )
                                     },
                                 )
                             }
@@ -1949,7 +1945,7 @@ internal fun OkouApp(
                                                             navigation.copy(messageSequence = null)
                                                         if (!found) {
                                                             scope.launch {
-                                                                snackbar.showSnackbar(
+                                                                conversationSnackbar.showSnackbar(
                                                                     missingMessage,
                                                                 )
                                                             }
@@ -1972,24 +1968,39 @@ internal fun OkouApp(
                                                     )
                                                 else AssistantFailureText(failure.failureReason)
                                             }
-                                            Column(contentWidth.fillMaxWidth()) {
-                                                if (showConversationFeedback)
+                                            val hasComposer =
+                                                composerTarget != null &&
+                                                    pendingNewChat == null &&
+                                                    composer != null &&
+                                                    controls != null
+                                            val feedbackGap =
+                                                if (hasComposer) 8.dp - ChatComposerTopInset
+                                                else 8.dp
+                                            Column(
+                                                contentWidth.fillMaxWidth(),
+                                                horizontalAlignment = Alignment.CenterHorizontally,
+                                            ) {
+                                                if (visibleConversationId != null)
                                                     WorkspaceFeedbackHost(
-                                                        snackbar,
-                                                        Modifier.padding(horizontal = 16.dp)
+                                                        conversationSnackbar,
+                                                        Modifier.padding(bottom = feedbackGap)
                                                             .testTag("conversation_feedback"),
-                                                    )
-                                                if (linkSnackbar.currentSnackbarData != null)
-                                                    WorkspaceFeedbackHost(
-                                                        linkSnackbar,
-                                                        Modifier.padding(horizontal = 16.dp),
+                                                        restorePaneFocus = {
+                                                            (if (listWidth == null) settingsFocus
+                                                                else resourcesFocus)
+                                                                .requestFocus()
+                                                        },
                                                     )
                                                 if (
-                                                    composerTarget != null &&
-                                                        pendingNewChat == null &&
-                                                        composer != null &&
-                                                        controls != null
-                                                ) {
+                                                    conversationSnackbar.currentSnackbarData ==
+                                                        null &&
+                                                        linkSnackbar.currentSnackbarData != null
+                                                )
+                                                    WorkspaceFeedbackHost(
+                                                        linkSnackbar,
+                                                        Modifier.padding(bottom = feedbackGap),
+                                                    )
+                                                if (hasComposer) {
                                                     ChatComposerField(
                                                         composer,
                                                         composerTarget,

@@ -2,6 +2,7 @@ package ai.okou.android
 
 import ai.okou.android.chat.ChatListModel
 import ai.okou.android.chat.ChatListUiState
+import ai.okou.android.chat.ChatMarkAllReadResult
 import ai.okou.android.chat.ChatReadPhase
 import ai.okou.android.chat.ChatRenameEditor
 import ai.okou.android.chat.ChatRowAction
@@ -9,6 +10,7 @@ import ai.okou.android.chat.ChatRowActionFailure
 import ai.okou.android.chat.ChatRowUndo
 import ai.okou.android.chat.ChatUndoPhase
 import ai.okou.android.chat.DeleteProjectDialog
+import ai.okou.android.chat.ProjectDeleteFeedback
 import ai.okou.android.chat.ProjectDeleteStatus
 import ai.okou.android.chat.ProjectNameLimit
 import ai.okou.android.chat.RenameListItemSheet
@@ -21,6 +23,7 @@ import ai.okou.android.chat.recoversInBackground
 import ai.okou.android.chat.rowActions
 import ai.okou.android.updates.updateFocusOutline
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -30,6 +33,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -46,13 +50,20 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalAccessibilityManager
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -63,10 +74,10 @@ import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 private val feedbackActionGap = 4.dp
 private val feedbackTouchTarget = 48.dp
+private val feedbackActionShape = RoundedCornerShape(8.dp)
 
 private data class ChatFeedbackContent(
     val message: String,
@@ -77,10 +88,10 @@ private data class ChatFeedbackContent(
 
 private class ChatFeedbackSnackbar(
     val content: State<ChatFeedbackContent>,
-    val conversationId: String?,
-    override val duration: SnackbarDuration = SnackbarDuration.Indefinite,
     val onAction: (() -> Unit)? = null,
 ) : SnackbarVisuals {
+    override val duration = SnackbarDuration.Indefinite
+
     override val message
         get() = content.value.message
 
@@ -90,9 +101,6 @@ private class ChatFeedbackSnackbar(
     override val withDismissAction
         get() = content.value.showDismiss
 }
-
-internal val SnackbarHostState.chatFeedbackConversationId: String?
-    get() = (currentSnackbarData?.visuals as? ChatFeedbackSnackbar)?.conversationId
 
 @Composable
 private fun ChatUndoFeedback(
@@ -136,10 +144,7 @@ private fun ChatUndoFeedback(
         LaunchedEffect(snackbar) {
             snackbar.currentSnackbarData?.dismiss()
             snackbar.showSnackbar(
-                ChatFeedbackSnackbar(
-                    content,
-                    conversationId = undo.threadId.takeIf { undo.fromConversation },
-                ) {
+                ChatFeedbackSnackbar(content) {
                     val current = currentUndo.value
                     if (current.phase == ChatUndoPhase.Unconfirmed) chats.checkRowUndo(current)
                     else chats.undoRowAction(current)
@@ -154,40 +159,23 @@ private fun ChatUndoFeedback(
 internal fun WorkspaceChatFeedback(
     chats: ChatListModel,
     listState: State<ChatListUiState>,
-    snackbar: SnackbarHostState,
+    listSnackbar: SnackbarHostState,
+    conversationSnackbar: SnackbarHostState,
     showChatList: Boolean,
     visibleConversationId: String?,
-    showRowFeedback: Boolean,
-    showRowActionFailure: Boolean,
+    showWorkflowFeedback: Boolean,
     confirmingProjectDelete: String?,
     dismissProjectDelete: () -> Unit,
     renameEditor: ChatRenameEditor?,
     dismissRename: (ChatRenameEditor) -> Unit,
 ) {
     val list = listState.value
-    val scope = rememberCoroutineScope()
+    var savedRename by remember(chats) { mutableStateOf<WorkspaceRenameTarget?>(null) }
     if (renameEditor != null)
         key(renameEditor) {
-            val chat = renameEditor.target as? WorkspaceRenameTarget.Chat
-            val message =
-                stringResource(
-                    if (chat == null) R.string.chat_project_name_saved
-                    else R.string.chat_title_saved,
-                )
-            val feedback = rememberUpdatedState(ChatFeedbackContent(message, null, false, false))
             WorkspaceRenameForm(chats, list, renameEditor, { dismissRename(renameEditor) }) {
                 dismissRename(renameEditor)
-                if (snackbar.currentSnackbarData == null && list.rowUndo == null) {
-                    scope.launch {
-                        snackbar.showSnackbar(
-                            ChatFeedbackSnackbar(
-                                feedback,
-                                chat?.takeIf { it.fromConversation }?.id,
-                                SnackbarDuration.Short,
-                            ),
-                        )
-                    }
-                }
+                savedRename = renameEditor.target
             }
         }
     val deleteFeedback = list.projectDeleteFeedback
@@ -216,137 +204,207 @@ internal fun WorkspaceChatFeedback(
     } else if (confirmingProjectDelete != null && list.projectsPhase == ChatReadPhase.Ready) {
         LaunchedEffect(confirmingProjectDelete) { dismissProjectDelete() }
     }
-    val undo =
-        list.rowUndo?.takeIf {
-            if (it.fromConversation) it.threadId == visibleConversationId else showChatList
-        }
+
+    val conversationUndo = list.conversationUndo?.takeIf { it.threadId == visibleConversationId }
     LaunchedEffect(chats, showChatList) { if (!showChatList) chats.clearListRowUndo() }
-    val hiddenConversationUndo = list.rowUndo?.takeIf { it.fromConversation && it !== undo }
+    val hiddenConversationUndo = list.conversationUndo?.takeUnless { it === conversationUndo }
     LaunchedEffect(chats, hiddenConversationUndo) {
         hiddenConversationUndo?.let(chats::dismissRowUndo)
     }
-    val failure =
-        list.failedRowAction?.takeUnless {
-            it.renameThreadId != null &&
-                it.renameThreadId == (renameEditor?.target as? WorkspaceRenameTarget.Chat)?.id
+    val openRenameId = (renameEditor?.target as? WorkspaceRenameTarget.Chat)?.id
+    val failures = list.rowActionFailures
+    fun ChatRowActionFailure.isVisible(): Boolean =
+        when {
+            deleteFromWorkflow -> showWorkflowFeedback
+            feedbackConversationId != null -> feedbackConversationId == visibleConversationId
+            else -> showChatList
         }
-    val listDeleteRejection =
-        failure?.let {
-            it.action == ChatRowAction.Delete && it.rejected && !it.deleteFromWorkflow
-        } == true
-    val priorityRowFailure =
-        failure?.rejected == true &&
-            when {
-                listDeleteRejection -> showChatList && undo?.fromConversation == false
-                failure.conversationId == null -> showChatList && undo?.fromConversation == false
-                else ->
-                    failure.conversationId == visibleConversationId &&
-                        undo?.fromConversation == true
-            }
-    val priorityProjectDelete =
-        showChatList &&
-            undo?.fromConversation == false &&
-            deleteFeedback != null &&
-            deleteFeedback.projectId != deleteProject?.id &&
-            (deleteFeedback.status == ProjectDeleteStatus.Rejected ||
-                deleteFeedback.status == ProjectDeleteStatus.ConnectionFailed)
-    val batchResult = list.markAllReadResult
-    val priorityBatch =
-        showChatList &&
-            undo?.fromConversation == false &&
-            batchResult != null &&
-            batchResult.rejected > 0
-    if (undo != null && !priorityRowFailure && !priorityProjectDelete && !priorityBatch)
-        ChatUndoFeedback(chats, undo, undo.threadId in list.pendingRowActions, snackbar)
-    if (showRowFeedback && undo == null) {
-        list.chatMoveNotice?.let { notice ->
+    LaunchedEffect(chats, failures, showChatList, visibleConversationId, showWorkflowFeedback) {
+        failures.forEach {
+            // A rejected delete can arrive after navigation has already left the deleted chat.
+            val returnsToList = it.action == ChatRowAction.Delete && !it.deleteFromWorkflow
+            if (it.rejected && !it.isVisible() && !returnsToList) chats.dismissRowActionFailure(it)
+        }
+    }
+
+    val conversationFailures = failures.filter {
+        visibleConversationId != null &&
+            it.feedbackConversationId == visibleConversationId &&
+            (it.renameThreadId == null || it.renameThreadId != openRenameId)
+    }
+    val conversationError = conversationFailures.firstOrNull { it.rejected }
+    val conversationNotice = conversationFailures.firstOrNull()
+    when {
+        conversationError != null &&
+            (conversationUndo?.failureOrder ?: Long.MAX_VALUE) > conversationError.feedbackOrder ->
+            ChatRowFailureFeedback(chats, list, conversationError, conversationSnackbar)
+        conversationUndo != null ->
+            ChatUndoFeedback(
+                chats,
+                conversationUndo,
+                conversationUndo.threadId in list.pendingRowActions,
+                conversationSnackbar,
+            )
+        conversationNotice != null ->
+            ChatRowFailureFeedback(chats, list, conversationNotice, conversationSnackbar)
+    }
+
+    val batchResults = list.markAllReadResults
+    LaunchedEffect(chats, showChatList, batchResults) {
+        if (!showChatList) batchResults.forEach(chats::dismissMarkAllReadResult)
+    }
+    val listFailures = failures.filter {
+        it.feedbackConversationId == null &&
+            it.isVisible() &&
+            (it.renameThreadId == null || it.renameThreadId != openRenameId)
+    }
+    val rowError = listFailures.firstOrNull { it.rejected }
+    val projectNotice = deleteFeedback?.takeIf { showChatList && it.projectId != deleteProject?.id }
+    val projectError = projectNotice?.takeIf {
+        it.status == ProjectDeleteStatus.Rejected ||
+            it.status == ProjectDeleteStatus.ConnectionFailed
+    }
+    val batchError = if (showChatList) batchResults.firstOrNull { it.rejected > 0 } else null
+    val listUndo = list.rowUndo?.takeIf { showChatList }
+    val firstError =
+        listOfNotNull(
+                rowError?.feedbackOrder,
+                projectError?.feedbackOrder,
+                batchError?.feedbackOrder,
+                listUndo?.failureOrder,
+            )
+            .minOrNull()
+    val rowNotice = listFailures.firstOrNull()
+    val batchNotice = batchResults.firstOrNull()?.takeIf { showChatList }
+    val moveNotice = list.chatMoveNotice?.takeIf { showChatList }
+    when {
+        rowError != null && rowError.feedbackOrder == firstError ->
+            ChatRowFailureFeedback(chats, list, rowError, listSnackbar)
+        projectError != null && projectError.feedbackOrder == firstError ->
+            ProjectDeleteSnackbar(chats, projectError, list.canDeleteProject, listSnackbar)
+        batchError != null && batchError.feedbackOrder == firstError ->
+            MarkAllReadSnackbar(chats, batchError, listSnackbar)
+        listUndo != null ->
+            ChatUndoFeedback(
+                chats,
+                listUndo,
+                listUndo.threadId in list.pendingRowActions,
+                listSnackbar,
+            )
+        rowNotice != null -> ChatRowFailureFeedback(chats, list, rowNotice, listSnackbar)
+        projectNotice != null ->
+            ProjectDeleteSnackbar(chats, projectNotice, list.canDeleteProject, listSnackbar)
+        batchNotice != null -> MarkAllReadSnackbar(chats, batchNotice, listSnackbar)
+        moveNotice != null -> {
             val message =
-                notice.projectName?.let { stringResource(R.string.chat_project_moved_named, it) }
-                    ?: stringResource(R.string.chat_project_moved_outside)
-            LaunchedEffect(chats, notice, message) {
-                snackbar.showSnackbar(message, duration = SnackbarDuration.Short)
-                chats.dismissChatMoveNotice(notice)
+                moveNotice.projectName?.let {
+                    stringResource(R.string.chat_project_moved_named, it)
+                } ?: stringResource(R.string.chat_project_moved_outside)
+            LaunchedEffect(chats, listSnackbar, moveNotice, message) {
+                listSnackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
+                chats.dismissChatMoveNotice(moveNotice)
             }
         }
     }
-    if (showRowFeedback && (undo == null || priorityProjectDelete)) {
-        deleteFeedback
-            ?.takeIf { showChatList && it.projectId != deleteProject?.id }
-            ?.let { feedback ->
-                val unconfirmed = feedback.status == ProjectDeleteStatus.Unconfirmed
-                val message =
-                    stringResource(
-                        when (feedback.status) {
-                            ProjectDeleteStatus.Confirmed -> R.string.chat_project_deleted
-                            ProjectDeleteStatus.Rejected -> R.string.chat_project_delete_rejected
-                            ProjectDeleteStatus.ConnectionFailed ->
-                                R.string.chat_action_connection_failed
-                            ProjectDeleteStatus.Unconfirmed ->
-                                R.string.chat_project_delete_unconfirmed
-                        },
-                    )
-                val retry =
-                    if (unconfirmed && list.canDeleteProject) stringResource(R.string.retry)
-                    else null
-                LaunchedEffect(chats, feedback, message, retry) {
-                    val result =
-                        snackbar.showSnackbar(
-                            message,
-                            actionLabel = retry,
-                            withDismissAction = unconfirmed,
-                            duration =
-                                if (unconfirmed) SnackbarDuration.Indefinite
-                                else SnackbarDuration.Short,
-                        )
-                    if (result == SnackbarResult.ActionPerformed) chats.retryProjectDelete(feedback)
-                    else chats.dismissProjectDeleteFeedback(feedback)
-                }
-            }
+
+    savedRename?.let { target ->
+        val origin = (target as? WorkspaceRenameTarget.Chat)?.takeIf { it.fromConversation }?.id
+        val visible = if (origin == null) showChatList else origin == visibleConversationId
+        val snackbar = if (origin == null) listSnackbar else conversationSnackbar
+        val pendingUndo = if (origin == null) listUndo else conversationUndo
+        val message =
+            stringResource(
+                when (target) {
+                    is WorkspaceRenameTarget.Chat -> R.string.chat_title_saved
+                    is WorkspaceRenameTarget.Project -> R.string.chat_project_name_saved
+                },
+            )
+        LaunchedEffect(target, visible) {
+            if (visible && pendingUndo == null && snackbar.currentSnackbarData == null)
+                snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
+            if (savedRename == target) savedRename = null
+        }
     }
-    if (failure != null && (undo == null || priorityRowFailure))
-        ChatRowFailureFeedback(
-            chats,
-            list,
-            failure,
-            snackbar,
-            showChatList,
-            visibleConversationId,
-            showRowActionFailure,
+}
+
+@Composable
+private fun ProjectDeleteSnackbar(
+    chats: ChatListModel,
+    feedback: ProjectDeleteFeedback,
+    canDeleteProject: Boolean,
+    snackbar: SnackbarHostState,
+) {
+    val unconfirmed = feedback.status == ProjectDeleteStatus.Unconfirmed
+    val message =
+        stringResource(
+            when (feedback.status) {
+                ProjectDeleteStatus.Confirmed -> R.string.chat_project_deleted
+                ProjectDeleteStatus.Rejected -> R.string.chat_project_delete_rejected
+                ProjectDeleteStatus.ConnectionFailed -> R.string.chat_action_connection_failed
+                ProjectDeleteStatus.Unconfirmed -> R.string.chat_project_delete_unconfirmed
+            },
         )
-    batchResult
-        ?.takeIf { undo == null || priorityBatch }
-        ?.let { result ->
-            val message =
-                when {
-                    result.rejected == result.requested ->
-                        stringResource(R.string.chat_mark_all_read_failed)
-                    result.confirmed == result.requested ->
-                        pluralStringResource(
-                            R.plurals.chat_mark_all_read_success,
-                            result.confirmed,
-                            result.confirmed,
-                        )
-                    result.rejected > 0 && result.confirmed + result.rejected == result.requested ->
-                        stringResource(
-                            R.string.chat_mark_all_read_partial_failed,
-                            result.confirmed,
-                            result.rejected,
-                        )
-                    result.confirmed > 0 ->
-                        pluralStringResource(
-                            R.plurals.chat_mark_all_read_partial,
-                            result.confirmed,
-                            result.confirmed,
-                            result.requested,
-                        )
-                    else -> stringResource(R.string.chat_mark_all_read_unconfirmed)
-                }
-            LaunchedEffect(chats, result, message, showChatList) {
-                if (showChatList)
-                    snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
-                chats.dismissMarkAllReadResult(result)
-            }
+    val retry = if (unconfirmed && canDeleteProject) stringResource(R.string.retry) else null
+    LaunchedEffect(chats, snackbar, feedback, message, retry) {
+        val error =
+            feedback.status == ProjectDeleteStatus.Rejected ||
+                feedback.status == ProjectDeleteStatus.ConnectionFailed
+        if (error) snackbar.currentSnackbarData?.dismiss()
+        val result =
+            snackbar.showSnackbar(
+                message,
+                actionLabel = retry,
+                withDismissAction = unconfirmed,
+                duration = SnackbarDuration.Indefinite,
+            )
+        if (result == SnackbarResult.ActionPerformed) chats.retryProjectDelete(feedback)
+        else chats.dismissProjectDeleteFeedback(feedback)
+    }
+}
+
+@Composable
+private fun MarkAllReadSnackbar(
+    chats: ChatListModel,
+    result: ChatMarkAllReadResult,
+    snackbar: SnackbarHostState,
+) {
+    val message =
+        when {
+            result.rejected == result.requested ->
+                stringResource(R.string.chat_mark_all_read_failed)
+            result.confirmed == result.requested ->
+                pluralStringResource(
+                    R.plurals.chat_mark_all_read_success,
+                    result.confirmed,
+                    result.confirmed,
+                )
+            result.rejected > 0 && result.confirmed + result.rejected == result.requested ->
+                stringResource(
+                    R.string.chat_mark_all_read_partial_failed,
+                    result.confirmed,
+                    result.rejected,
+                )
+            result.rejected > 0 ->
+                stringResource(
+                    R.string.chat_mark_all_read_mixed,
+                    result.confirmed,
+                    result.rejected,
+                    result.requested - result.confirmed - result.rejected,
+                )
+            result.confirmed > 0 ->
+                pluralStringResource(
+                    R.plurals.chat_mark_all_read_partial,
+                    result.confirmed,
+                    result.confirmed,
+                    result.requested,
+                )
+            else -> stringResource(R.string.chat_mark_all_read_unconfirmed)
         }
+    LaunchedEffect(chats, snackbar, result.feedbackOrder, message) {
+        if (result.rejected > 0) snackbar.currentSnackbarData?.dismiss()
+        snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
+        chats.dismissMarkAllReadResult(result)
+    }
 }
 
 @Composable
@@ -366,7 +424,7 @@ private fun WorkspaceRenameForm(
                 if (list.listPhase == ChatReadPhase.Ready) LaunchedEffect(Unit) { dismiss() }
                 return
             }
-            val failure = list.failedRowAction?.takeIf { it.renameThreadId == id }
+            val failure = list.rowActionFailures.lastOrNull { it.renameThreadId == id }
             val status =
                 when {
                     list.pendingRowActions[id] == ChatRowAction.Rename -> RenameStatus.Saving
@@ -437,45 +495,28 @@ private fun ChatRowFailureFeedback(
     list: ChatListUiState,
     failure: ChatRowActionFailure,
     snackbar: SnackbarHostState,
-    showChatList: Boolean,
-    visibleConversationId: String?,
-    showRowActionFailure: Boolean,
 ) {
     val action = failure.action
-    if (action == ChatRowAction.Delete && failure.rejected && !failure.deleteFromWorkflow) {
-        val message = stringResource(R.string.chat_delete_rejected)
-        LaunchedEffect(chats, snackbar, failure, showChatList) {
-            if (!showChatList) return@LaunchedEffect
-            try {
-                snackbar.showSnackbar(message, duration = SnackbarDuration.Short)
-            } finally {
-                chats.dismissRowActionFailure(failure)
-            }
-        }
-        return
-    }
-    val visible =
-        if (action.recoversInBackground) {
-            val origin = failure.conversationId
-            if (origin == null) showChatList else origin == visibleConversationId
-        } else showRowActionFailure
     val message =
-        if (failure.rejected && action.recoversInBackground) {
-            stringResource(
-                if (failure.connectionFailed) R.string.chat_row_action_offline_named
-                else R.string.chat_row_action_rejected_named,
-                stringResource(action.label()),
-            )
-        } else {
-            stringResource(
-                when {
-                    failure.connectionFailed -> R.string.chat_action_connection_failed
-                    failure.rejected -> R.string.chat_row_action_rejected
-                    action.updatesChat || failure.readIntent != null ->
-                        R.string.chat_row_action_failed
-                    else -> R.string.chat_read_action_failed
-                },
-            )
+        when {
+            action == ChatRowAction.Delete && failure.rejected && !failure.deleteFromWorkflow ->
+                stringResource(R.string.chat_delete_rejected)
+            failure.rejected && action.recoversInBackground ->
+                stringResource(
+                    if (failure.connectionFailed) R.string.chat_row_action_offline_named
+                    else R.string.chat_row_action_rejected_named,
+                    stringResource(action.label()),
+                )
+            else ->
+                stringResource(
+                    when {
+                        failure.connectionFailed -> R.string.chat_action_connection_failed
+                        failure.rejected -> R.string.chat_row_action_rejected
+                        action.updatesChat || failure.readIntent != null ->
+                            R.string.chat_row_action_failed
+                        else -> R.string.chat_read_action_failed
+                    },
+                )
         }
     val refreshLabel = if (failure.rejected) null else stringResource(R.string.chat_refresh)
     val retainOnRefresh = !failure.rejected && action.recoversInBackground
@@ -489,24 +530,22 @@ private fun ChatRowFailureFeedback(
                 showDismiss = !failure.rejected,
             ),
         )
-    LaunchedEffect(chats, snackbar, failure, visible) {
-        if (!visible && retainOnRefresh) return@LaunchedEffect
-        if (visible) {
+    LaunchedEffect(chats, snackbar, failure) {
+        if (failure.rejected) snackbar.currentSnackbarData?.dismiss()
+        try {
             val check = { chats.checkRowActionFailure(failure) }
             val result =
                 snackbar.showSnackbar(
                     ChatFeedbackSnackbar(
                         content,
-                        conversationId = failure.conversationId,
-                        duration =
-                            if (failure.rejected) SnackbarDuration.Short
-                            else SnackbarDuration.Indefinite,
                         onAction = check.takeIf { retainOnRefresh },
                     ),
                 )
             if (result == SnackbarResult.ActionPerformed) check()
+        } finally {
+            if (failure.rejected) chats.dismissRowActionFailure(failure)
         }
-        chats.dismissRowActionFailure(failure)
+        if (!failure.rejected) chats.dismissRowActionFailure(failure)
     }
 }
 
@@ -534,14 +573,28 @@ internal fun WorkspaceFeedbackHost(
     state: SnackbarHostState,
     modifier: Modifier,
     manageTimeout: Boolean = true,
+    restorePaneFocus: (() -> Unit)? = null,
 ) {
     if (manageTimeout) WorkspaceFeedbackTimeout(state)
+    val input = LocalInputModeManager.current
+    val focused = remember(state) { mutableStateOf<SnackbarData?>(null) }
+    val current = state.currentSnackbarData
+    LaunchedEffect(current) {
+        if (
+            current != null &&
+                focused.value != null &&
+                focused.value !== current &&
+                !current.visuals.withDismissAction &&
+                input.inputMode == InputMode.Keyboard
+        )
+            restorePaneFocus?.invoke()
+    }
     SnackbarHost(state) { data ->
         val visuals = data.visuals
         val style = MaterialTheme.typography.bodyMedium.copy(letterSpacing = 0.sp)
         Surface(
             modifier = modifier.padding(horizontal = 12.dp).widthIn(max = 480.dp).fillMaxWidth(),
-            shape = MaterialTheme.shapes.medium,
+            shape = RoundedCornerShape(12.dp),
             color = MaterialTheme.colorScheme.inverseSurface,
             contentColor = MaterialTheme.colorScheme.inverseOnSurface,
             shadowElevation = 4.dp,
@@ -552,21 +605,31 @@ internal fun WorkspaceFeedbackHost(
                 message = {
                     Text(visuals.message, Modifier.padding(vertical = 12.dp), style = style)
                 },
-                actions = { FeedbackActions(data, style) },
+                actions = {
+                    FeedbackActions(
+                        data,
+                        style,
+                        Modifier.onFocusChanged {
+                            if (it.hasFocus) focused.value = data
+                            else if (focused.value === data) focused.value = null
+                        },
+                    )
+                },
             )
         }
     }
 }
 
 @Composable
-private fun FeedbackActions(data: SnackbarData, style: TextStyle) {
+private fun FeedbackActions(data: SnackbarData, style: TextStyle, modifier: Modifier) {
     val visuals = data.visuals
     val action = visuals as? ChatFeedbackSnackbar
     val label = visuals.actionLabel
     val dismissible = visuals.withDismissAction
     if (label == null && !dismissible) return
-    val focusColor = LocalUndoActionColor.current
+    val accent = MaterialTheme.colorScheme.inversePrimary
     Row(
+        modifier = modifier.focusGroup(),
         horizontalArrangement = Arrangement.spacedBy(feedbackActionGap),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -576,14 +639,13 @@ private fun FeedbackActions(data: SnackbarData, style: TextStyle) {
                 modifier =
                     Modifier.weight(1f, fill = false)
                         .sizeIn(minWidth = feedbackTouchTarget, minHeight = feedbackTouchTarget)
-                        .updateFocusOutline(ButtonDefaults.shape, focusColor),
+                        .updateFocusOutline(feedbackActionShape, accent),
                 enabled = action?.content?.value?.enabled ?: true,
                 contentPadding = PaddingValues(horizontal = 8.dp),
+                shape = feedbackActionShape,
                 colors =
                     ButtonDefaults.textButtonColors(
-                        contentColor =
-                            if (dismissible) focusColor
-                            else MaterialTheme.colorScheme.inversePrimary,
+                        contentColor = accent,
                         disabledContentColor =
                             MaterialTheme.colorScheme.inverseOnSurface.copy(alpha = 0.38f),
                     ),
@@ -595,7 +657,8 @@ private fun FeedbackActions(data: SnackbarData, style: TextStyle) {
             IconButton(
                 data::dismiss,
                 Modifier.size(feedbackTouchTarget)
-                    .updateFocusOutline(ButtonDefaults.shape, focusColor),
+                    .clip(feedbackActionShape)
+                    .updateFocusOutline(feedbackActionShape, accent),
             ) {
                 Icon(
                     painterResource(R.drawable.ic_close),
