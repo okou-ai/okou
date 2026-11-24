@@ -41,6 +41,23 @@ exec /usr/bin/python3 -E -s /opt/okou/antigravity/connect-antigravity-subscripti
 
 The program reads `SSH_ORIGINAL_COMMAND` and parses only an operation and a UUID. Validate the empty keyring with `verify-antigravity-subscription.py --check-login` before handing the terminal to the member. An unpaired, already signed-in keyring cannot be claimed.
 
+## Check a personal subscription locally
+
+A tester can check the Google account before a staging worker is provisioned. On the account owner's computer, use the official `agy 1.5.15`, Python 3.11 or newer and a checkout of this revision. Use the following commands at the repository root.
+
+```sh
+agy acp --login
+python3 scripts/verify-antigravity-subscription.py --check-login
+```
+
+The second command opens an empty native session without sending a prompt. Record the plan, time and available quota in Google. To send one fixed prompt each to Neon, Carbon and Hydrogen, use the following command.
+
+```sh
+python3 scripts/verify-antigravity-subscription.py
+```
+
+Record each model's result and the usage that Google displays after the test. This local check covers the Google account and native CLI. Use the steps below to verify the same account through Okou's member binding.
+
 ## Member acceptance
 
 1. Enable the staff Antigravity Lab switch, then open **Settings → Models → Google AI (Antigravity) → Connect account**. The CLI equivalent is `okou subscription antigravity connect` in a member-authenticated CLI session.
