@@ -211,6 +211,50 @@ else:
             self.assertEqual(firewalls, ["iptables", "ip6tables"])
             self.assertFalse((root / "cold-start").exists())
 
+    def test_release_smoke_installs_only_after_successful_apk_preparation(self):
+        run = runpy.run_path(str(SCRIPTS / "release-smoke.py"))["run"]
+        for status in (0, 7):
+            with self.subTest(status=status), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                events = []
+                apk = root / "test.apk"
+
+                def adb(argv, **_options):
+                    args = tuple(argv[1:])
+                    responses = {
+                        ("devices", "-l"): "emulator-5580\tdevice transport_id:41",
+                        ("-t", "41", "shell", "getprop ro.boot.qemu.avd_name && getprop sys.boot_completed"): "owned-avd\n1",
+                    }
+                    if args[:3] == ("-t", "41", "install"):
+                        self.assertEqual(args[3], str(apk))
+                        events.append("install")
+                        return subprocess.CompletedProcess(argv, 1, "", "fixture install failure")
+                    return subprocess.CompletedProcess(argv, 0, responses.get(args, ""), "")
+
+                preparation = mock.Mock(args=["prepare-apk"])
+                preparation.poll.return_value = None
+
+                def wait_for_preparation():
+                    events.append("prepared")
+                    return status
+
+                preparation.wait.side_effect = wait_for_preparation
+                with mock.patch.dict(os.environ, ANDROID_HOME=str(root)), \
+                     mock.patch.object(subprocess, "run", side_effect=adb), \
+                     mock.patch.object(subprocess, "Popen") as emulator, \
+                     mock.patch.dict(run.__globals__, isolate_network=lambda _device: events.append("isolated")):
+                    emulator.return_value.poll.return_value = None
+                    if status:
+                        with self.assertRaises(subprocess.CalledProcessError) as error:
+                            run(apk, root, root / "owned-avd", "0.36.0", preparation)
+                        self.assertEqual(error.exception.returncode, status)
+                        self.assertEqual(events, ["isolated", "prepared"])
+                    else:
+                        with self.assertRaisesRegex(RuntimeError, "fixture install failure"):
+                            run(apk, root, root / "owned-avd", "0.36.0", preparation)
+                        self.assertEqual(events, ["isolated", "prepared", "install"])
+                    emulator.return_value.terminate.assert_called_once()
+
     def test_native_gate_rejects_incomplete_failed_and_skipped_results(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

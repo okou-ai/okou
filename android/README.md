@@ -430,8 +430,8 @@ After running the full `:app:testDebugUnitTest` suite, check the JVM class size 
 
 The smoke test installs the R8-optimized APK signed with a disposable key. The
 shared publishing builder supplies the unsigned APK and R8 mapping. The harness
-verifies the signed payload and mapping, boots an isolated API 35 emulator and
-uses the launcher and platform UI Automator from the host to check initial startup
+prepares and verifies the signed payload while an isolated API 35 emulator boots.
+It uses the launcher and platform UI Automator from the host to check initial startup
 and relaunch after stopping the process. CI uses the same public Sentry DSN as
 publishing. The harness blocks outbound IPv4 and IPv6 in the disposable guest
 before installing the APK so emulator provisioning cannot restore access to live

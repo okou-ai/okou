@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Smoke-test a signed Release APK from the host on a disposable API 35 emulator."""
+"""Smoke-test a signed Release APK, optionally preparing it during emulator boot."""
 
+from contextlib import suppress
 import json
 import os
 from pathlib import Path
@@ -185,7 +186,14 @@ def run_launch(device, emulator, evidence, description, launcher, component, ver
     print(f"Release smoke passed: {description}", flush=True)
 
 
-def run(apk, artifacts, avd_home, version):
+def check_preparation(preparation, *, wait=False):
+    if preparation is not None:
+        status = preparation.wait() if wait else preparation.poll()
+        if status:
+            raise subprocess.CalledProcessError(status, preparation.args)
+
+
+def run(apk, artifacts, avd_home, version, preparation=None):
     sdk = Path(os.environ["ANDROID_HOME"])
     adb = sdk / "platform-tools" / "adb"
 
@@ -213,6 +221,7 @@ def run(apk, artifacts, avd_home, version):
 
     def booted():
         nonlocal transport
+        check_preparation(preparation)
         devices = adb_command("devices", "-l").stdout
         candidate = re.search(
             rf"^{SERIAL}[ \t]+device\b[^\n]*\btransport_id:(\d+)\b", devices, re.MULTILINE,
@@ -243,10 +252,14 @@ def run(apk, artifacts, avd_home, version):
         try:
             wait_until(emulator, booted, "Android boot", 180)
             isolate_network(device)
-            device("shell", "input", "keyevent", "KEYCODE_WAKEUP")
-            device("shell", "wm", "dismiss-keyguard")
             device("shell", "cmd", "connectivity", "airplane-mode", "enable")
             device("shell", "svc", "wifi", "disable")
+            print("Release smoke emulator booted and isolated", flush=True)
+            check_preparation(preparation, wait=True)
+            if emulator.poll() is not None:
+                raise RuntimeError("Emulator exited before Release APK installation")
+            device("shell", "input", "keyevent", "KEYCODE_WAKEUP")
+            device("shell", "wm", "dismiss-keyguard")
             device("install", str(apk), timeout=90)
             launcher = ("-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER")
             component = device(
@@ -292,8 +305,31 @@ def terminate(_signum, _frame):
     raise SystemExit(143)
 
 
+def run_smoke(apk, artifacts, version, prepare_command):
+    preparation = None
+    try:
+        if prepare_command:
+            preparation = subprocess.Popen(prepare_command, start_new_session=True)
+        with tempfile.TemporaryDirectory(prefix="okou-release-smoke-") as temporary:
+            run(apk, artifacts, Path(temporary), version, preparation)
+    except Exception:
+        # A device failure can still leave a usable Release artifact pair.
+        if preparation is not None:
+            preparation.wait()
+        raise
+    finally:
+        if preparation is not None and preparation.poll() is None:
+            with suppress(ProcessLookupError):
+                os.killpg(preparation.pid, signal.SIGTERM)
+            try:
+                preparation.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                with suppress(ProcessLookupError):
+                    os.killpg(preparation.pid, signal.SIGKILL)
+                preparation.wait()
+
+
 if __name__ == "__main__":
     signal.signal(signal.SIGTERM, terminate)
-    apk, artifacts, version = sys.argv[1:]
-    with tempfile.TemporaryDirectory(prefix="okou-release-smoke-") as temporary:
-        run(Path(apk), Path(artifacts), Path(temporary), version)
+    apk, artifacts, version, *prepare_command = sys.argv[1:]
+    run_smoke(Path(apk), Path(artifacts), version, prepare_command)
