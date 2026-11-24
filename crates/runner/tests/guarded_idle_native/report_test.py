@@ -65,6 +65,14 @@ def witness_for_phase(witnesses, phase, *, case=None):
     )
 
 
+def residency_sample_at(template, monotonic_ns):
+    """Copy a single-process fixture and align its sample and observation clocks."""
+    sample = copy.deepcopy(template)
+    sample["monotonic_ns"] = monotonic_ns
+    sample["processes"][0]["observed_monotonic_ns"] = monotonic_ns
+    return sample
+
+
 def write_report_fixture(root, collector, samples, log_groups, *, stdout_suffix=""):
     """Serialize synthetic consumer inputs; callers own evidence and log order."""
     (root / "report.json").write_text(json.dumps(collector))
