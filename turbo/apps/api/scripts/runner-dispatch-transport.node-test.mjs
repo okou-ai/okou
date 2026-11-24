@@ -308,7 +308,7 @@ test(
           assert.deepEqual(peer.requestPaths, []);
           peer.releaseHandshake();
           await send(transport, origin);
-          await delay(5_500, undefined, { signal: t.signal });
+          await delay(5500, undefined, { signal: t.signal });
           await send(transport, origin + "/next");
           assert.deepEqual(peer.requestPaths, ["/", "/next"]);
           assert.deepEqual(peer.bodies, [dispatchBody, dispatchBody]);
