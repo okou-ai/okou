@@ -9,6 +9,7 @@ import ai.okou.android.R
 import ai.okou.android.ScreenshotCapture
 import ai.okou.android.TestAuthentication
 import ai.okou.android.TestOkouApplication
+import ai.okou.android.auth.SessionModel
 import ai.okou.android.awaitChatList
 import ai.okou.android.historyEventWire
 import ai.okou.android.jsonResponse
@@ -16,11 +17,13 @@ import ai.okou.android.testAuthenticationState
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.lifecycle.ViewModelProvider
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.Condition
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.serialization.json.JsonPrimitive
 import okhttp3.mockwebserver.MockResponse
 import org.junit.Test
@@ -55,6 +58,7 @@ class ScreenshotScenario {
                 row(2, "run.completed", "null"),
                 row(3, "output.followups", """{"content":${JsonPrimitive(suggestions)}}"""),
             )
+            val historyAvailable = AtomicBoolean(false)
             api.indicators = {
                 jsonResponse(
                     """{"threads":{"$CHAT_PERSONAL":"unread"},"unreadAt":{"$CHAT_PERSONAL":"$CHAT_DATE"}}""",
@@ -62,23 +66,41 @@ class ScreenshotScenario {
             }
             api.historyCatchUp = { MockResponse().setResponseCode(503) }
             api.historyRows = { request ->
-                val after = request.requestUrl?.queryParameter("sinceSeqId")?.toInt() ?: 0
-                val tail = rows.drop(after).joinToString(",")
-                jsonResponse(
-                    """{"rows":[$tail],"cursor":{"lastEventId":"${id(3)}","lastSeqId":3},"hasMore":false}""",
-                )
+                if (!historyAvailable.get()) MockResponse().setResponseCode(503)
+                else {
+                    val after = request.requestUrl?.queryParameter("sinceSeqId")?.toInt() ?: 0
+                    val tail = rows.drop(after).joinToString(",")
+                    jsonResponse(
+                        """{"rows":[$tail],"cursor":{"lastEventId":"${id(3)}","lastSeqId":3},"hasMore":false}""",
+                    )
+                }
             }
             app.chatService = api.service
             app.composerService = api.service
             app.controlService = api.service
             auth.state.value = testAuthenticationState(user = "latest-jump-${UUID.randomUUID()}")
             try {
-                device.executeShellCommand("wm size 540x320")
+                device.executeShellCommand("wm size 412x892")
                 device.executeShellCommand("wm density 160")
                 device.executeShellCommand("settings put system font_scale 1.0")
-                ActivityScenario.launch(MainActivity::class.java).use {
+                ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                     device.awaitChatList(app)
                     checkNotNull(device.wait(Until.findObject(By.pkg(app.packageName).text("Personal chat")), 12_000)).click()
+                    device.executeShellCommand("wm size 540x320")
+                    check(device.wait(object : Condition<UiDevice, Boolean> {
+                        override fun apply(device: UiDevice): Boolean {
+                            var ready = false
+                            scenario.onActivity {
+                                ready = it.resources.configuration.screenHeightDp in 1..479
+                            }
+                            return ready
+                        }
+                    }, 12_000)) { "Conversation did not resize to a short window" }
+                    historyAvailable.set(true)
+                    scenario.onActivity {
+                        checkNotNull(ViewModelProvider(it)[SessionModel::class.java].uiState.value.ready)
+                            .chats.history.refresh()
+                    }
                     val replySelector = By.pkg(app.packageName).text(reply)
                     val jump = By.pkg(app.packageName).desc(app.getString(R.string.conversation_new_reply))
                     val button = checkNotNull(device.wait(Until.findObject(jump), 12_000))
