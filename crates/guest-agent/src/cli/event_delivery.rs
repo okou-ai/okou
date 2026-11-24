@@ -101,6 +101,9 @@ impl EventDeliverySender {
             crate::env::Framework::ClaudeCode => {
                 super::bounded_event_delivery::Framework::ClaudeCode
             }
+            crate::env::Framework::Antigravity => {
+                super::bounded_event_delivery::Framework::Antigravity
+            }
             crate::env::Framework::Pi => super::bounded_event_delivery::Framework::Pi,
             crate::env::Framework::Codex => super::bounded_event_delivery::Framework::Codex,
         };

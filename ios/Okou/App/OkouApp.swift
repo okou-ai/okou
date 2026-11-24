@@ -15,7 +15,7 @@ struct OkouApp: App {
     if isSSHAuthorizationPreview { return true }
     #if DEBUG
       return ProcessInfo.processInfo.arguments.contains("--mobile-design-system") || isResultStyles
-        || isChatSyncStatus || isComputerAuthorizationPreview
+        || isChatSyncStatus || isComputerAuthorizationPreview || isForYouDeck
     #else
       return false
     #endif
@@ -41,6 +41,15 @@ struct OkouApp: App {
   private static var isComputerAuthorizationPreview: Bool {
     #if DEBUG
       ProcessInfo.processInfo.arguments.contains("--computer-access-cards")
+    #else
+      false
+    #endif
+  }
+
+  /// The For you deck against a local fixture (`ForYouDeckGallery`), without signing in.
+  private static var isForYouDeck: Bool {
+    #if DEBUG
+      ProcessInfo.processInfo.arguments.contains("--for-you-deck")
     #else
       false
     #endif
@@ -92,6 +101,8 @@ struct OkouApp: App {
             #if DEBUG
               if Self.isComputerAuthorizationPreview {
                 NavigationStack { ComputerAuthorizationGallery() }
+              } else if Self.isForYouDeck {
+                ForYouDeckGallery()
               } else if Self.isChatSyncStatus {
                 NavigationStack { ChatSyncStatusGallery() }
               } else if Self.isResultStyles {
@@ -226,6 +237,11 @@ private struct WorkspaceRootView: View {
   }
 
   var body: some View {
+    // Every workspace view reads the session's graph from this one provider.
+    StoreProvider(store.graph) { workspace }
+  }
+
+  private var workspace: some View {
     WorkspaceNavigation(sidebar: sidebar) {
       // Mount the sidebar after identity and its complete local baseline are restored.
       Group {
@@ -233,18 +249,16 @@ private struct WorkspaceRootView: View {
           authentication.presentation?.userID == userID,
           authentication.presentation?.preparedWorkspaceID == workspaceID
         {
-          StoreProvider(store.projects.stateStore) {
-            ChatSidebarView(
-              store: store, authentication: authentication, workspaceID: workspaceID,
-              notifications: notifications,
-              headerHeight: headerHeight,
-              accountError: $accountError,
-              close: closeSidebar,
-              newChat: startNewChat
-            )
-            .id(ObjectIdentifier(store))
-            .chatFeedbackOverlay(store: store, isPresented: sidebar.isOpen)
-          }
+          ChatSidebarView(
+            store: store, authentication: authentication, workspaceID: workspaceID,
+            notifications: notifications,
+            headerHeight: headerHeight,
+            accountError: $accountError,
+            close: closeSidebar,
+            newChat: startNewChat
+          )
+          .id(ObjectIdentifier(store))
+          .chatFeedbackOverlay(store: store, isPresented: sidebar.isOpen)
         }
       }
     } chat: {

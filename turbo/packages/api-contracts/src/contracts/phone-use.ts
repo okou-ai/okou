@@ -39,7 +39,15 @@ export const phoneActionSchema = object({
     .optional(),
   text: string()
     .max(4000)
-    .regex(/^[^\x00-\x1f\x7f]*$/u)
+    .refine((text) => {
+      for (let index = 0; index < text.length; index++) {
+        const code = text.charCodeAt(index);
+        if (code <= 31 || code === 127) {
+          return false;
+        }
+      }
+      return true;
+    }, "Text must not contain ASCII control characters")
     .optional(),
   direction: zEnum(["up", "down", "left", "right"]).optional(),
   goal: string().min(1).max(1000).optional(),

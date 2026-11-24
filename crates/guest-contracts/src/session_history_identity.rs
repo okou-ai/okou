@@ -43,12 +43,17 @@ pub enum SessionHistoryFramework {
     Pi,
 }
 
-impl From<crate::env::CliFramework> for SessionHistoryFramework {
-    fn from(framework: crate::env::CliFramework) -> Self {
+impl TryFrom<crate::env::CliFramework> for SessionHistoryFramework {
+    type Error = SessionHistoryIdentityError;
+
+    fn try_from(framework: crate::env::CliFramework) -> Result<Self, Self::Error> {
         match framework {
-            crate::env::CliFramework::ClaudeCode => Self::ClaudeCode,
-            crate::env::CliFramework::Codex => Self::Codex,
-            crate::env::CliFramework::Pi => Self::Pi,
+            crate::env::CliFramework::ClaudeCode => Ok(Self::ClaudeCode),
+            crate::env::CliFramework::Codex => Ok(Self::Codex),
+            crate::env::CliFramework::Pi => Ok(Self::Pi),
+            crate::env::CliFramework::Antigravity => {
+                Err(SessionHistoryIdentityError::InvalidFramework)
+            }
         }
     }
 }

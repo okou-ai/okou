@@ -4,10 +4,13 @@ import {
   type FeatureSwitchesResponse,
 } from "@okouai/api-contracts/contracts/feature-switches";
 import { getAllFeatureStates } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { isStaffOrg } from "@okouai/core/staff-org";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
+import { publishPersonalModelProvidersChangedSafely } from "../external/realtime";
 import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import {
@@ -26,13 +29,17 @@ function featureSwitchResponseBody(params: {
   readonly userId: string;
   readonly switches: Record<string, boolean>;
 }) {
+  const switches = { ...params.switches };
+  if (!isStaffOrg(params.orgId)) {
+    delete switches[FeatureSwitchKey.GeminiAntigravity];
+  }
   return {
-    switches: params.switches,
+    switches,
     effectiveSwitches: {
       ...getAllFeatureStates({
         orgId: params.orgId,
         userId: params.userId,
-        overrides: params.switches,
+        overrides: switches,
       }),
       // Older iOS builds require this response field to review and apply batches.
       batchConnectorPermissions: true,
@@ -78,6 +85,20 @@ const updateFeatureSwitchesInner$ = command(
     if (!bodyResult.ok) {
       return bodyResult.response;
     }
+    if (
+      bodyResult.data.switches[FeatureSwitchKey.GeminiAntigravity] &&
+      !isStaffOrg(auth.orgId)
+    ) {
+      return {
+        status: 403 as const,
+        body: {
+          error: {
+            message: "The Antigravity pilot is limited to staff workspaces.",
+            code: "FORBIDDEN",
+          },
+        },
+      };
+    }
     const switches = await set(
       updateUserFeatureSwitches$,
       {
@@ -88,6 +109,12 @@ const updateFeatureSwitchesInner$ = command(
       signal,
     );
 
+    if (
+      isStaffOrg(auth.orgId) &&
+      bodyResult.data.switches[FeatureSwitchKey.GeminiAntigravity] !== undefined
+    ) {
+      await publishPersonalModelProvidersChangedSafely(auth.userId);
+    }
     return {
       status: 200 as const,
       body: featureSwitchResponseBody({
@@ -107,6 +134,9 @@ const deleteFeatureSwitchesInner$ = command(
       { orgId: auth.orgId, userId: auth.userId },
       signal,
     );
+    if (isStaffOrg(auth.orgId)) {
+      await publishPersonalModelProvidersChangedSafely(auth.userId);
+    }
     return { status: 200 as const, body: { deleted: true as const } };
   },
 );

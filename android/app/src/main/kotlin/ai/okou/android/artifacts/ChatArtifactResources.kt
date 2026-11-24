@@ -1,5 +1,6 @@
 package ai.okou.android.artifacts
 
+import ai.okou.android.ContentReadProgress
 import ai.okou.android.R
 import ai.okou.android.chat.ChatListSkeletonDelayMillis
 import ai.okou.android.chat.ChatResourceOrigin
@@ -18,7 +19,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -27,12 +27,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -82,14 +80,24 @@ internal fun ChatArtifactResources(
     val page = rememberArtifactPageState()
     val saveLauncher = rememberArtifactSaveLauncher(model, page)
     val position = rememberLazyListState()
-    val selected = page.selectedId
     val matchesQuery = state.query == query
     val failure = state.failedRead.takeIf { matchesQuery }
-    val accessLost =
-        failure == ArtifactCatalogFailure.Denied ||
-            failure == ArtifactCatalogFailure.ChatUnavailable ||
-            history.phase == HistoryPhase.Missing
-    val references = history.transcript?.resources.takeUnless { accessLost }
+    val unavailable =
+        when {
+            history.phase == HistoryPhase.Missing -> ArtifactCatalogFailure.ChatUnavailable
+            failure == ArtifactCatalogFailure.Denied ||
+                failure == ArtifactCatalogFailure.ChatUnavailable ||
+                failure == ArtifactCatalogFailure.Missing -> failure
+            else -> null
+        }
+    val selected = page.selectedId.takeIf { unavailable == null }
+    LaunchedEffect(unavailable) {
+        if (unavailable != null) {
+            page.selectedId = null
+            page.restoreRow = null
+        }
+    }
+    val references = history.transcript?.resources.takeIf { unavailable == null }
     val workflowIds = references?.workflowIds.orEmpty().takeIf { onOpenWorkflow != null }.orEmpty()
     LifecycleStartEffect(model, threadId) {
         model.setActive(true, query)
@@ -109,6 +117,16 @@ internal fun ChatArtifactResources(
 
     BackHandler(onBack = ::back)
     val toolbarPadding = if (wide) 28.dp else 12.dp
+    if (unavailable != null) {
+        Column(
+            Modifier.fillMaxSize().testTag("chat_artifact_resources"),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            ArtifactToolbar(R.string.chat_resources, R.string.back, ::back, toolbarPadding)
+            ArtifactInitialReadFailure(unavailable.label(), Modifier.widthIn(max = 768.dp))
+        }
+        return
+    }
     if (selected != null) {
         Column(Modifier.fillMaxSize()) {
             ArtifactToolbar(
@@ -123,7 +141,7 @@ internal fun ChatArtifactResources(
     }
     val result = state.page.takeIf { matchesQuery }
     val reading = state.reading.takeIf { matchesQuery }
-    val related = state.relatedChats.takeIf { matchesQuery && !accessLost }
+    val related = state.relatedChats.takeIf { matchesQuery }
     val workflows = state.workflows.takeIf { matchesQuery && workflowIds.isNotEmpty() }
     val workflowRows = workflows?.confirmed?.items.orEmpty().filter { it.id in workflowIds }
     val showWorkflowSkeleton =
@@ -227,6 +245,14 @@ internal fun ChatArtifactResources(
                 if (showSkeleton) {
                     items(3) { ArtifactRowSkeleton(height = 72.dp, horizontalPadding = 16.dp) }
                 }
+                if (failure != null && failure != ArtifactCatalogFailure.More) {
+                    item(key = "resource-read-failure") {
+                        ArtifactReadNotice(
+                            failure.label(chatResources = true),
+                            Modifier.padding(bottom = 12.dp),
+                        )
+                    }
+                }
                 if (result?.items?.isEmpty() == true) {
                     item {
                         ArtifactReadNotice(
@@ -257,11 +283,11 @@ internal fun ChatArtifactResources(
                         model.select(item.id, item)
                     }
                 }
-                if (failure != null) {
-                    item(key = "resource-read-failure") {
+                if (failure == ArtifactCatalogFailure.More) {
+                    item(key = "resource-page-failure") {
                         ArtifactReadNotice(
                             failure.label(chatResources = true),
-                            Modifier.padding(vertical = 8.dp),
+                            Modifier.padding(top = 12.dp),
                         )
                     }
                 }
@@ -378,14 +404,7 @@ internal fun ChatArtifactResources(
                     workflows?.syncingStale == true ||
                     historyStale
             ) {
-                val label = stringResource(R.string.chat_resources_syncing)
-                val colors = MaterialTheme.colorScheme
-                LinearProgressIndicator(
-                    Modifier.fillMaxWidth().semantics { contentDescription = label },
-                    color = colors.primary,
-                    trackColor =
-                        colors.primary.copy(alpha = 0.18f).compositeOver(colors.background),
-                )
+                ContentReadProgress(R.string.chat_resources_syncing)
             }
         }
     }

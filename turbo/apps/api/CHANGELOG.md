@@ -10,6 +10,51 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.116.0](https://github.com/okou-ai/okou/compare/api-v2.115.0...api-v2.116.0) (2026-11-24)
+
+
+### Features
+
+* **runner:** log managed openrouter routing metadata ([#50392](https://github.com/okou-ai/okou/issues/50392)) ([637a49c](https://github.com/okou-ai/okou/commit/637a49cc6646031aa023c8a631863e88be17ee5d))
+
+
+### Refactoring
+
+* remove artifact name sorting ([#50428](https://github.com/okou-ai/okou/issues/50428)) ([b693ca5](https://github.com/okou-ai/okou/commit/b693ca5a66bab74587596b3971fdc5163f47f352))
+
+
+### Performance Improvements
+
+* **api:** lower runner dispatch gzip threshold to 160 kib ([#50413](https://github.com/okou-ai/okou/issues/50413)) ([74fc1b7](https://github.com/okou-ai/okou/commit/74fc1b78c227e8a8f05d9d6de3f92986030a5bce))
+* **api:** narrow memory startup projections ([#50437](https://github.com/okou-ai/okou/issues/50437)) ([805f349](https://github.com/okou-ai/okou/commit/805f349ee7f455eac7466e1bb7d8a4b93ab0e8e0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.117.0
+    * @okouai/core bumped to 8.868.1
+    * @okouai/db bumped to 2.63.6
+    * @okouai/pi-agent-runtime bumped to 1.52.59
+
+## [2.115.0](https://github.com/okou-ai/okou/compare/api-v2.114.1...api-v2.115.0) (2026-11-24)
+
+
+### Features
+
+* **ios:** add connector management and align chat account controls ([#50371](https://github.com/okou-ai/okou/issues/50371)) ([b6afd7e](https://github.com/okou-ai/okou/commit/b6afd7e2be27cb0356358062dc7bb813200d18f9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.116.0
+    * @okouai/core bumped to 8.868.0
+    * @okouai/db bumped to 2.63.5
+    * @okouai/pi-agent-runtime bumped to 1.52.58
+
 ## [2.114.1](https://github.com/okou-ai/okou/compare/api-v2.114.0...api-v2.114.1) (2026-11-24)
 
 

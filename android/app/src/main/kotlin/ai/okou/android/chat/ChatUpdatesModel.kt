@@ -3,6 +3,7 @@ package ai.okou.android.chat
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -32,53 +33,57 @@ class ChatUpdatesModel(
         if (closed || foreground == value) return
         foreground = value
         foregroundChanged(value)
-        if (value) retry()
+        if (value) startObservation()
         else {
             generation++
             observation?.cancel()
-            mutable.value = RealtimePhase.Stopped
-            output?.transport(RealtimePhase.Stopped)
+            publishPhase(RealtimePhase.Stopped)
         }
     }
 
-    fun retry() {
+    private fun startObservation() {
         val source = service ?: return
-        if (closed || !foreground || !authorized()) return
-        val previous = observation
-        previous?.cancel()
+        if (!authorized()) return
         val ticket = ++generation
-        mutable.value = RealtimePhase.Connecting
-        output?.transport(RealtimePhase.Connecting)
+        publishPhase(RealtimePhase.Connecting)
         invalidate(ChatChanges(resync = true))
         observation = scope.launch {
-            connection.withLock {
-                if (!current(ticket)) return@withLock
-                try {
-                    source.observeRealtime(
-                        output?.target ?: noOutput,
-                        { target, signal ->
-                            if (current(ticket)) output?.receive(target, signal)
-                        },
-                    ) { next ->
-                        if (current(ticket)) {
-                            mutable.value = next.phase
-                            output?.transport(next.phase)
-                            next.failure?.let(onFailure)
-                            if (current(ticket) && next.changes != ChatChanges())
-                                invalidate(next.changes)
-                        }
-                    }
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (error: Exception) {
-                    if (current(ticket)) {
-                        mutable.value = RealtimePhase.Unavailable
-                        output?.transport(RealtimePhase.Unavailable)
-                        onFailure(error)
-                    }
+            connection.withLock { observeWhileCurrent(source, ticket) }
+        }
+    }
+
+    private suspend fun observeWhileCurrent(source: RealtimeService, ticket: Long) {
+        var retryIndex = 0
+        while (current(ticket)) {
+            try {
+                source.observeRealtime(
+                    output?.target ?: noOutput,
+                    { target, signal -> if (current(ticket)) output?.receive(target, signal) },
+                ) { next ->
+                    if (!current(ticket)) return@observeRealtime
+                    if (next.phase == RealtimePhase.Connected) retryIndex = 0
+                    publishPhase(next.phase)
+                    next.failure?.let(onFailure)
+                    if (current(ticket) && next.changes != ChatChanges()) invalidate(next.changes)
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (!current(ticket)) return
+                publishPhase(RealtimePhase.Unavailable)
+                onFailure(error)
+                val retryAfter = dependencyRetryAfterMillis(error) ?: return
+                // An active SDK observation handles its own reconnections. Start over only after
+                // it has ended and released its subscriptions and token request.
+                delay(maxOf(chatReadRetryDelays[retryIndex], retryAfter))
+                retryIndex = (retryIndex + 1).coerceAtMost(chatReadRetryDelays.lastIndex)
             }
         }
+    }
+
+    private fun publishPhase(phase: RealtimePhase) {
+        mutable.value = phase
+        output?.transport(phase)
     }
 
     private fun current(ticket: Long) =

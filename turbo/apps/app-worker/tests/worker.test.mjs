@@ -2249,4 +2249,52 @@ for (const scenario of [
     : "https://static.okou.io";
   assert.ok(html.includes(`${assetOrigin}/okou-app/assets/index-Test1234.js`));
 }
+{
+  const association = await worker.fetch(
+    new Request("https://app.okou.ai/.well-known/apple-app-site-association"),
+    {},
+  );
+  assert.equal(association.status, 200);
+  assert.equal(association.headers.get("Content-Type"), "application/json");
+  assert.deepEqual(await association.json(), {
+    applinks: {
+      details: [
+        {
+          appIDs: ["C5UWSXYB67.ai.okou.ios"],
+          components: [{ "/": "/native/connector-authorization" }],
+        },
+      ],
+    },
+    webcredentials: { apps: ["C5UWSXYB67.ai.okou.ios"] },
+  });
+  const id = "11111111-2222-4333-8444-555555555555";
+  const recovery = await worker.fetch(
+    new Request(
+      `https://app.okou.ai/native/connector-authorization?attemptId=${id}`,
+    ),
+    {},
+  );
+  assert.equal(recovery.status, 200);
+  assert.equal(recovery.headers.get("Cache-Control"), "no-store");
+  assert.equal(recovery.headers.get("Referrer-Policy"), "no-referrer");
+  const html = await recovery.text();
+  assert.ok(
+    html.includes(`href="ai.okou.ios://connector-authorization/${id}"`),
+  );
+  assert.doesNotMatch(html, /connected|access_token|refresh_token|<script/iu);
+  for (const query of [
+    "attemptId=bad",
+    `attemptId=${id}&attemptId=${id}`,
+    `attemptId=${id}&returnUrl=https://evil.invalid`,
+  ]) {
+    const invalid = await worker.fetch(
+      new Request(
+        `https://app.okou.ai/native/connector-authorization?${query}`,
+      ),
+      {},
+    );
+    assert.equal(invalid.status, 400);
+    assert.equal(invalid.headers.get("Location"), null);
+  }
+}
 console.log("okou app worker tests passed");

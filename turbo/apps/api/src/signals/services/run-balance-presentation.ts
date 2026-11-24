@@ -191,6 +191,15 @@ export function publicBuiltInBalanceNetworkLog(
     ...entry,
     // Keep the upstream payment status in internal telemetry with its response body.
     status: undefined,
+    ...(entry.openrouter === undefined
+      ? {}
+      : {
+          openrouter: {
+            ...entry.openrouter,
+            attempts: undefined,
+            attempts_incomplete: undefined,
+          },
+        }),
     ...(entry.error === undefined ? {} : { error: MODEL_UNAVAILABLE_MESSAGE }),
     ...(entry.response_body === undefined
       ? {}

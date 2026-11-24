@@ -1,6 +1,6 @@
 {
-  "id": "1fc3a612-a060-472a-837f-bed50df07a88",
-  "prevId": "7d624028-c097-4319-8196-a48df1bb171e",
+  "id": "f2a68843-54a4-4224-8f5e-ecfe2e1d0234",
+  "prevId": "95e9e7d4-e1c1-49dd-850a-9f67a19a1591",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -21896,7 +21896,7 @@
       "checkConstraints": {
         "chk_model_routes_provider_type": {
           "name": "chk_model_routes_provider_type",
-          "value": "\"model_routes\".\"provider_type\" IN ('claude-code-oauth-token', 'codex-oauth-token', 'built-in')"
+          "value": "\"model_routes\".\"provider_type\" IN ('claude-code-oauth-token', 'codex-oauth-token', 'antigravity', 'built-in')"
         },
         "chk_model_routes_concrete_provider_type": {
           "name": "chk_model_routes_concrete_provider_type",
@@ -21904,7 +21904,7 @@
         },
         "chk_model_routes_subscription_type": {
           "name": "chk_model_routes_subscription_type",
-          "value": "\"model_routes\".\"subscription_type\" IS NULL OR (\"model_routes\".\"subscription_type\" IN ('claude-code-oauth-token', 'codex-oauth-token') AND \"model_routes\".\"subscription_type\" = \"model_routes\".\"provider_type\")"
+          "value": "(\"model_routes\".\"subscription_type\" IS NULL AND \"model_routes\".\"provider_type\" <> 'antigravity') OR (\"model_routes\".\"subscription_type\" IS NOT NULL AND \"model_routes\".\"provider_type\" <> 'built-in' AND \"model_routes\".\"subscription_type\" = \"model_routes\".\"provider_type\")"
         },
         "chk_model_routes_priority": {
           "name": "chk_model_routes_priority",

@@ -17,7 +17,7 @@ import { runModelCatalog } from "./run-model-catalog";
  * `run_model_catalog`.
  *
  * - `provider_type` is `built-in` (platform Auto) or a personal subscription
- *   type (`claude-code-oauth-token`, `codex-oauth-token`).
+ *   type (`claude-code-oauth-token`, `codex-oauth-token`, or `antigravity`).
  * - `concrete_provider_type` is the provider that serves the request. Built-in
  *   routes are served by `openrouter-codex`; subscription routes serve
  *   themselves.
@@ -82,7 +82,7 @@ export const modelRoutes = pgTable(
         .nullsNotDistinct(),
       check(
         "chk_model_routes_provider_type",
-        sql`${table.providerType} IN ('claude-code-oauth-token', 'codex-oauth-token', 'built-in')`,
+        sql`${table.providerType} IN ('claude-code-oauth-token', 'codex-oauth-token', 'antigravity', 'built-in')`,
       ),
       check(
         "chk_model_routes_concrete_provider_type",
@@ -90,7 +90,7 @@ export const modelRoutes = pgTable(
       ),
       check(
         "chk_model_routes_subscription_type",
-        sql`${table.subscriptionType} IS NULL OR (${table.subscriptionType} IN ('claude-code-oauth-token', 'codex-oauth-token') AND ${table.subscriptionType} = ${table.providerType})`,
+        sql`(${table.subscriptionType} IS NULL AND ${table.providerType} <> 'antigravity') OR (${table.subscriptionType} IS NOT NULL AND ${table.providerType} <> 'built-in' AND ${table.subscriptionType} = ${table.providerType})`,
       ),
       check("chk_model_routes_priority", sql`${table.priority} >= 0`),
       check(

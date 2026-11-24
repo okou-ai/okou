@@ -436,7 +436,7 @@ async fn execute(
     let dns_target = match config.framework {
         env::Framework::ClaudeCode => Some("api.anthropic.com:443"),
         env::Framework::Codex => Some("api.openai.com:443"),
-        env::Framework::Pi => None,
+        env::Framework::Pi | env::Framework::Antigravity => None,
     };
     if let Some(dns_target) = dns_target {
         tokio::spawn(async move {

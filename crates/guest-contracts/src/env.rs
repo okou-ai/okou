@@ -88,6 +88,8 @@ pub enum CliFramework {
     Codex,
     /// Pi native agent loop.
     Pi,
+    /// Google Antigravity CLI.
+    Antigravity,
 }
 
 impl CliFramework {
@@ -98,6 +100,7 @@ impl CliFramework {
             Self::ClaudeCode => "claude-code",
             Self::Codex => "codex",
             Self::Pi => "pi",
+            Self::Antigravity => "antigravity",
         }
     }
 }
@@ -134,6 +137,11 @@ impl<'a> CliAgentTypeSelection<'a> {
             },
             "codex" => Self {
                 framework: CliFramework::Codex,
+                normalized_cli_agent_type: value,
+                unknown: false,
+            },
+            "antigravity" => Self {
+                framework: CliFramework::Antigravity,
                 normalized_cli_agent_type: value,
                 unknown: false,
             },

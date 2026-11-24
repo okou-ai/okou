@@ -78,8 +78,8 @@ export const prepareExecutionMemoryArchive$ = command(
     signal: AbortSignal,
   ): Promise<ExecutionMemoryArchive> => {
     signal.throwIfAborted();
-    const { s3Key, archiveSize, fileCount, archiveCache, versionId } = head;
-    if (fileCount === 0) {
+    const { s3Key, archiveSize, isEmpty, archiveCache, versionId } = head;
+    if (isEmpty) {
       return { entry: { empty: true }, cacheWrites: [] };
     }
     const request = readOnlyStorageSigningRequest({

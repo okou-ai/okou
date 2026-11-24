@@ -280,6 +280,10 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
         val failure = "Temporarily unable to update. Showing loaded artifacts."
         awaitText(failure)
         resource.assertIsDisplayed()
+        assertTrue(
+            compose.onNodeWithText(failure).getUnclippedBoundsInRoot().bottom <=
+                resource.getUnclippedBoundsInRoot().top,
+        )
         refreshing.assertDoesNotExist()
         assertEquals(
             item,
@@ -360,6 +364,27 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
         compose.waitUntil(10_000) {
             runBlocking { cache.loadArtifactCatalog(CHAT_PERSONAL) == null }
         }
+    }
+
+    @Test
+    fun chatResourcesClosesAnOpenPreviewWhenConversationAccessIsLost() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        app.responseGate.countDown()
+        openChatResources(fixture.sourceTitle)
+        awaitText(fixture.summary.title)
+        compose.onNodeWithText(fixture.summary.title).performClick()
+        awaitText(fixture.summary.title)
+        compose.onNodeWithContentDescription("Back to chat resources").assertIsDisplayed()
+
+        app.fixture.historyDetail = { MockResponse().setResponseCode(403) }
+        compose.runOnIdle { ready.chats.history.invalidateDetail(CHAT_PERSONAL) }
+        val unavailable = "This conversation was deleted or is unavailable."
+        awaitText(unavailable)
+        assertInitialReadFeedback(unavailable)
+        compose.onNodeWithText(fixture.summary.title).assertDoesNotExist()
+        compose.onNodeWithContentDescription("Back to chat resources").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Back").assertIsDisplayed()
     }
 
     @Test

@@ -115,15 +115,17 @@ CACHE_TMP_TAR=""
 NODE_VERSION="26.13.1"
 GO_VERSION="1.27.4"
 RUST_VERSION="1.100.0"
-CLAUDE_CODE_VERSION="2.1.330"
-CODEX_CLI_VERSION="0.171.0"
+CLAUDE_CODE_VERSION="2.1.331"
+CODEX_CLI_VERSION="0.172.0"
+AGY_VERSION="1.5.15"
+AGY_BUILD="5514532022517760"
 GWS_CLI_VERSION="0.22.5"
 XURL_VERSION="1.3.4"
 AGENT_BROWSER_VERSION="0.39.4-vm0.1"
-PNPM_VERSION="12.21.0"
+PNPM_VERSION="12.23.0"
 UV_VERSION="0.13.9"
-CHROMIUM_VERSION="156.0.8078.79-1~deb12u1"
-CHROMIUM_SECURITY_SNAPSHOT_URL="https://snapshot.debian.org/archive/debian-security/20261103T160100Z"
+CHROMIUM_VERSION="156.0.8078.108-1~deb12u1"
+CHROMIUM_SECURITY_SNAPSHOT_URL="https://snapshot.debian.org/archive/debian-security/20261123T200458Z"
 
 # ---------------------------------------------------------------------------
 # Dependency checks
@@ -521,6 +523,32 @@ install_runtimes() {
     echo \"\${CHECKSUM}  /usr/local/bin/claude\" | sha256sum -c -
     chmod +x /usr/local/bin/claude
   "
+
+  # Google publishes separate release archives and SHA-512 digests for each CPU.
+  sudo chroot "$ROOTFS_DIR" env AGY_VERSION="$AGY_VERSION" AGY_BUILD="$AGY_BUILD" bash -c '
+    set -euo pipefail
+    case "$(dpkg --print-architecture)" in
+      amd64)
+        asset=linux-x64/cli_linux_x64.tar.gz
+        digest=af3f0be58b8475940d79f9abea19e762ecc3d265ea9f56cff8dd805e27ba299b44a305a79504a7ffe6ebdfa29a294c56edc4caed1875990bfaf2fef1508ec8b0
+        ;;
+      arm64)
+        asset=linux-arm/cli_linux_arm64.tar.gz
+        digest=d64ad759781b50dfacfa7d9826c0ad469959d01bdf5a170acd4c83472eba31c677baf0052ac8ab48eef40f0d3f0e26057e752aabd24331c79f4c881d4b872125
+        ;;
+      *) echo "Unsupported Antigravity CLI architecture" >&2; exit 1 ;;
+    esac
+    work_dir=$(mktemp -d)
+    cd "$work_dir"
+    curl -fsSL "https://storage.googleapis.com/antigravity-public/antigravity-cli/${AGY_VERSION}-${AGY_BUILD}/${asset}" -o agy.tar.gz
+    echo "$digest  agy.tar.gz" | sha512sum -c -
+    tar -xzf agy.tar.gz antigravity
+    install -m 0755 antigravity /usr/local/bin/agy
+    test "$(AGY_CLI_DISABLE_AUTO_UPDATE=true /usr/local/bin/agy --version)" = "$AGY_VERSION"
+    rm -f antigravity agy.tar.gz
+    cd /
+    rmdir "$work_dir"
+  '
 
   # agent-browser CLI (vm0 fork with opt-in native system root certificate support)
   sudo chroot "$ROOTFS_DIR" bash -c "

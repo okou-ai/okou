@@ -18,6 +18,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.test.core.app.ApplicationProvider
 import java.io.IOException
+import java.net.ConnectException
 import kotlin.time.Duration.Companion.days
 import kotlin.time.TestTimeSource
 import kotlinx.coroutines.CompletableDeferred
@@ -273,17 +274,56 @@ internal class ChatComposerModelTest : ChatComposerModelTestFixture() {
                 )
                 .let { it as kotlinx.serialization.json.JsonObject }
         }
-        model.retrySync(existing)
+        model.open(existing)
         runCurrent()
         assertEquals(ComposerSync.Unsupported, model.uiState.value.sync(existing))
         assertTrue(service.saves.isEmpty())
         assertEquals("Durable local candidate", model.uiState.value.entry(existing).text)
         service.draftRead = { plainDraftDocument("") }
-        model.retrySync(existing)
+        model.open(existing)
         advanceUntilIdle()
         assertEquals(ComposerSync.Saved, model.uiState.value.sync(existing))
         assertEquals("Durable local candidate", service.saves.single().second)
     }
+
+    @Test
+    fun draftReadRetriesInPlaceAndANewerEditSupersedesTheFailedWrite() =
+        check { service, _, create ->
+            val model = create(false, identity)
+            var reads = 0
+            service.draftRead = {
+                reads++
+                if (reads < 3) throw ApiFailure.Http(503, null, null, null)
+                plainDraftDocument("Saved draft")
+            }
+            model.open(existing)
+            runCurrent()
+            assertEquals(1, reads)
+            advanceTimeBy(2_999)
+            runCurrent()
+            assertEquals(1, reads)
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(2, reads)
+            advanceTimeBy(3_000)
+            runCurrent()
+            assertEquals(3, reads)
+            assertEquals("Saved draft", model.uiState.value.entry(existing).text)
+
+            service.draftWrite = { target, text ->
+                if (text == "First edit") throw ApiFailure.Network(ConnectException())
+                service.drafts[target] = plainDraftDocument(text)
+            }
+            model.edit(existing, "First edit")
+            runCurrent()
+            advanceTimeBy(500)
+            runCurrent()
+            assertEquals(listOf("First edit"), service.saves.map { it.second })
+            model.edit(existing, "Newer edit")
+            advanceUntilIdle()
+            assertEquals(listOf("First edit", "Newer edit"), service.saves.map { it.second })
+            assertEquals(ComposerSync.Saved, model.uiState.value.sync(existing))
+        }
 
     @Test
     fun myOkouAndProjectsShareOneWorkspaceDraftButKeepCreateContext() =
@@ -367,7 +407,7 @@ internal class ChatComposerModelTest : ChatComposerModelTestFixture() {
         }
 
     @Test
-    fun failedPatchRetainsDirtyIntentAndExplicitRetrySavesLatestText() =
+    fun failedPatchRetainsDirtyIntentAndReopeningSavesLatestText() =
         check { service, store, create ->
             val model = create(false, identity)
             model.open(existing)
@@ -380,7 +420,7 @@ internal class ChatComposerModelTest : ChatComposerModelTestFixture() {
             service.draftWrite = { target, text ->
                 service.drafts[target] = plainDraftDocument(text)
             }
-            model.retrySync(existing)
+            model.open(existing)
             advanceUntilIdle()
             assertEquals(
                 "Retry this exact editable input",

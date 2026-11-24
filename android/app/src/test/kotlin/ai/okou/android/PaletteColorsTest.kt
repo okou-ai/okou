@@ -17,7 +17,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35])
 class PaletteColorsTest {
     @Test
-    fun allEightPalettesResolveInBothModesWithReadableSurfaceAndSelectionText() {
+    fun allEightPalettesResolveInBothModesWithReadableTextAndReadProgress() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         fun contrast(a: Color, b: Color): Float =
             (maxOf(a.luminance(), b.luminance()) + 0.05f) /
@@ -43,11 +43,36 @@ class PaletteColorsTest {
                         "$palette/$dark selection",
                         contrast(colors.onSurface, resolved.selection) >= 4.5f,
                     )
+                    val status = activityStatusColor(palette, dark)
+                    assertTrue(
+                        "$palette/$dark page refresh indicator",
+                        contrast(status, contentReadTrackColor(status, colors.background)) >= 3f,
+                    )
+                    assertTrue(
+                        "$palette/$dark panel refresh indicator",
+                        contrast(status, contentReadTrackColor(status, colors.surface)) >= 3f,
+                    )
                     assertEquals(dark, colors.background.luminance() < 0.5f)
                     colors.primary
                 }
             assertEquals(8, primaries.toSet().size)
         }
+    }
+
+    @Test
+    fun defaultReadProgressUsesTheSpecifiedPageAndPanelColors() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val palette = UserPreferencesColorTheme.DEFAULT
+        val light = resolvePalette(context, false, palette).scheme
+        val dark = resolvePalette(context, true, palette).scheme
+        val lightActive = activityStatusColor(palette, dark = false)
+        val darkActive = activityStatusColor(palette, dark = true)
+        assertEquals(Color(0xFFB5790C), lightActive)
+        assertEquals(Color(0xFFFFA500), darkActive)
+        assertEquals(Color(0xFFF6EFE2), contentReadTrackColor(lightActive, light.background))
+        assertEquals(Color(0xFFF6EFE2), contentReadTrackColor(lightActive, light.surface))
+        assertEquals(Color(0xFF3E331D), contentReadTrackColor(darkActive, dark.background))
+        assertEquals(Color(0xFF453A25), contentReadTrackColor(darkActive, dark.surface))
     }
 
     @Test

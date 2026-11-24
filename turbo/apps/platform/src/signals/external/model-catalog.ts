@@ -7,6 +7,7 @@ import { command, computed, state } from "ccstate";
 import { modelCatalogContract } from "@okouai/api-contracts/client/model-catalog";
 import type { ModelCatalogResponse } from "@okouai/api-contracts/contracts/model-catalog";
 import { piCatalogModel, type PiCatalogModel } from "@okouai/core/pi-execution";
+import { authenticatedSessionKey$ } from "../auth.ts";
 import { apiClient$ } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";
 import { i18n } from "../../i18n/index.ts";
@@ -251,8 +252,9 @@ export function createModelCatalog(
 
 const internalReloadModelCatalog$ = state(0);
 
-/** The global run model catalog; identical for every organization. */
+/** Catalog metadata visible to the signed-in member of this workspace. */
 export const modelCatalog$ = computed(async (get): Promise<ModelCatalog> => {
+  get(authenticatedSessionKey$);
   get(internalReloadModelCatalog$);
   const client = get(apiClient$)(modelCatalogContract, { apiBase: "api" });
   const result = await accept(client.get(), [200]);

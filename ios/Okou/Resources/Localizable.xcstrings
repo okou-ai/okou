@@ -20142,6 +20142,43 @@
         }
       }
     },
+    "Show more": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Mehr anzeigen" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Mostrar más" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Afficher plus" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "और दिखाएँ" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Tampilkan lebih banyak" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Mostra di più" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "さらに表示" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "더 보기" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Mostrar mais" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "展开" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "顯示更多" }
+        }
+      }
+    },
     "Show less": {
       "localizations": {
         "de": {

@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.32.46](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.45...guest-storage-apply-v0.32.46) (2026-11-24)
+
+
+### Performance Improvements
+
+* **guest-storage-apply:** read ahead for highly compressed artifacts ([#50429](https://github.com/okou-ai/okou/issues/50429)) ([81d7680](https://github.com/okou-ai/okou/commit/81d76808921cce43aeee21e52924c335a69def79))
+
+## [0.32.45](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.44...guest-storage-apply-v0.32.45) (2026-11-24)
+
+
+### Performance Improvements
+
+* **guest-storage-apply:** overlap staged artifact inflation and extraction ([#50385](https://github.com/okou-ai/okou/issues/50385)) ([47b1c3b](https://github.com/okou-ai/okou/commit/47b1c3b8c059da366e58f422583f3b03a54c4503))
+
 ## [0.32.44](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.43...guest-storage-apply-v0.32.44) (2026-11-23)
 
 

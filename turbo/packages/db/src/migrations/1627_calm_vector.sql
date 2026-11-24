@@ -1,1 +1,0 @@
-ALTER TABLE "hosted_site_browser_sessions" ADD COLUMN "custom_domain_revision" uuid;

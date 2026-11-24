@@ -1,13 +1,9 @@
 import type { KeyboardEvent, UIEvent } from "react";
-import type {
-  ArtifactCatalogKind,
-  ArtifactCatalogSort,
-} from "@okouai/api-contracts/contracts/artifact-catalog";
+import type { ArtifactCatalogKind } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import {
   ArrowDown,
   ArrowUp,
-  ArrowUpDown,
   File,
   Globe,
   Image,
@@ -52,7 +48,7 @@ import {
   artifactCatalog$,
   artifactCatalogPagingState$,
   artifactCatalogSearch$,
-  artifactCatalogSort$,
+  artifactCatalogDirection$,
   loadMoreArtifactCatalog$,
   openArtifact$,
   reloadArtifactCatalog$,
@@ -61,7 +57,7 @@ import {
   selectedArtifactCatalogKind$,
   setArtifactCatalogKind$,
   setArtifactCatalogSearch$,
-  setArtifactCatalogSort$,
+  setArtifactCatalogDirection$,
 } from "../../signals/artifacts-page/artifact-catalog-signals.ts";
 import type { CatalogArtifact } from "../../signals/artifacts-page/create-artifact-catalog-signals.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -155,55 +151,27 @@ function ArtifactTimestamp({ value }: { readonly value?: string | null }) {
   );
 }
 
-function SortHeading({
-  field,
-  label,
-  className,
-}: {
-  readonly field: ArtifactCatalogSort;
-  readonly label: string;
-  readonly className?: string;
-}) {
-  const order = useGet(artifactCatalogSort$);
-  const setSort = useSet(setArtifactCatalogSort$);
-  const active = order.sort === field;
-  const Icon = active
-    ? order.direction === "asc"
-      ? ArrowUp
-      : ArrowDown
-    : ArrowUpDown;
+function CreatedSortHeading() {
+  const { t } = useTranslation();
+  const direction = useGet(artifactCatalogDirection$);
+  const setDirection = useSet(setArtifactCatalogDirection$);
+  const Icon = direction === "asc" ? ArrowUp : ArrowDown;
   return (
     <TableHead
-      aria-sort={
-        active
-          ? order.direction === "asc"
-            ? "ascending"
-            : "descending"
-          : "none"
-      }
-      className={cn("px-4 text-xs text-muted-foreground", className)}
+      aria-sort={direction === "asc" ? "ascending" : "descending"}
+      className="hidden px-4 text-xs text-muted-foreground @3xl:table-cell"
     >
       <button
         type="button"
         className="inline-flex min-h-10 items-center gap-1.5 rounded-sm text-left outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         onClick={() => {
-          setSort(
-            field,
-            active
-              ? order.direction === "asc"
-                ? "desc"
-                : "asc"
-              : field === "title"
-                ? "asc"
-                : "desc",
-          );
+          setDirection(direction === "asc" ? "desc" : "asc");
         }}
       >
-        {label}
-        <Icon
-          className={cn("size-3.5", !active && "opacity-40")}
-          aria-hidden="true"
-        />
+        {t(($) => {
+          return $.artifacts.library.created;
+        })}
+        <Icon className="size-3.5" aria-hidden="true" />
       </button>
     </TableHead>
   );
@@ -486,76 +454,33 @@ function ArtifactLibraryTypeFilter() {
 
 function ArtifactLibraryCompactSort() {
   const { t } = useTranslation();
-  const order = useGet(artifactCatalogSort$);
-  const setSort = useSet(setArtifactCatalogSort$);
-  const items = [
-    {
-      value: "createdAt",
-      label: t(($) => {
-        return $.artifacts.library.created;
-      }),
-    },
-    {
-      value: "title",
-      label: t(($) => {
-        return $.artifacts.library.name;
-      }),
-    },
-  ] satisfies { value: ArtifactCatalogSort; label: string }[];
+  const direction = useGet(artifactCatalogDirection$);
+  const setDirection = useSet(setArtifactCatalogDirection$);
+  const Icon = direction === "asc" ? ArrowUp : ArrowDown;
   return (
-    <div className="flex items-center gap-1 @3xl:hidden">
-      <Select<ArtifactCatalogSort>
-        items={items}
-        value={order.sort}
-        onValueChange={(value) => {
-          if (value) {
-            setSort(value, value === "title" ? "asc" : "desc");
-          }
-        }}
-      >
-        <SelectTrigger
-          variant="neutral"
-          aria-label={t(($) => {
-            return $.artifacts.library.sort;
-          })}
-          className="h-9 w-auto max-w-44"
-        >
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {items.map((item) => {
-            return (
-              <SelectItem key={item.value} value={item.value}>
-                {item.label}
-              </SelectItem>
-            );
-          })}
-        </SelectContent>
-      </Select>
-      <Button
-        type="button"
-        variant="quiet"
-        size="icon-sm"
-        aria-label={
-          order.direction === "asc"
-            ? t(($) => {
-                return $.artifacts.library.sortDescending;
-              })
-            : t(($) => {
-                return $.artifacts.library.sortAscending;
-              })
-        }
-        onClick={() => {
-          setSort(order.sort, order.direction === "asc" ? "desc" : "asc");
-        }}
-      >
-        {order.direction === "asc" ? (
-          <ArrowUp size={16} />
-        ) : (
-          <ArrowDown size={16} />
-        )}
-      </Button>
-    </div>
+    <Button
+      type="button"
+      variant="neutral"
+      className="h-9 @3xl:hidden"
+      onClick={() => {
+        setDirection(direction === "asc" ? "desc" : "asc");
+      }}
+    >
+      {t(($) => {
+        return $.artifacts.library.created;
+      })}
+      <span className="sr-only">
+        {" "}
+        {direction === "asc"
+          ? t(($) => {
+              return $.artifacts.library.sortDescending;
+            })
+          : t(($) => {
+              return $.artifacts.library.sortAscending;
+            })}
+      </span>
+      <Icon size={16} aria-hidden="true" />
+    </Button>
   );
 }
 
@@ -591,19 +516,12 @@ function ArtifactLibraryTable({
         </colgroup>
         <TableHeader className="bg-background">
           <TableRow>
-            <SortHeading
-              field="title"
-              label={t(($) => {
+            <TableHead className="px-4 text-xs text-muted-foreground">
+              {t(($) => {
                 return $.artifacts.library.name;
               })}
-            />
-            <SortHeading
-              field="createdAt"
-              label={t(($) => {
-                return $.artifacts.library.created;
-              })}
-              className="hidden @3xl:table-cell"
-            />
+            </TableHead>
+            <CreatedSortHeading />
             <TableHead className="hidden px-4 text-xs text-muted-foreground @4xl:table-cell">
               {t(($) => {
                 return $.artifacts.library.type;

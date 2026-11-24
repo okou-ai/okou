@@ -48,6 +48,8 @@ trap cleanup EXIT
 # Validate and prepare before opening the signing keychain. Never compile here.
 python3 ios/scripts/archive-proof.py prepare "$archive" "$work/Okou.xcarchive" \
   --version "$IOS_VERSION" --build-number "$IOS_BUILD_NUMBER"
+connector_callback_host=$(/usr/libexec/PlistBuddy -c 'Print :ConnectorCallbackHost' \
+  "$work/Okou.xcarchive/Products/Applications/Okou.app/Info.plist")
 printf '%s' "$IOS_DISTRIBUTION_P12_BASE64" | base64 -D > "$work/distribution.p12"
 profiles="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
 mkdir -p "$profiles"
@@ -70,7 +72,8 @@ for bundle in app extension widgets; do
   printf '%s' "$encoded_profile" | base64 -D > "$work/$bundle.mobileprovision"
   security cms -D -i "$work/$bundle.mobileprovision" > "$work/$bundle-profile.plist"
   profile_uuid=$(python3 ios/scripts/distribution-profile.py "$work/$bundle-profile.plist" \
-    "$work/$bundle-entitlements.plist" --bundle-id "$bundle_id")
+    "$work/$bundle-entitlements.plist" --bundle-id "$bundle_id" \
+    --connector-callback-host "$connector_callback_host")
   case "$bundle" in
     app) app_profile_uuid=$profile_uuid ;;
     extension) extension_profile_uuid=$profile_uuid ;;

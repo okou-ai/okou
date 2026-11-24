@@ -2808,7 +2808,7 @@ function createEnsureVisibleEventTrees({
   diagramCodesForEvents$,
   mermaidDiagrams,
   syncVisibleRunUsage$,
-  syncVisibleRows$,
+  publishRows$,
   initialEventsReady$,
 }: {
   readonly visibleChatGroups$: Computed<ChatEventGroup[]>;
@@ -2817,7 +2817,7 @@ function createEnsureVisibleEventTrees({
   readonly diagramCodesForEvents$: ChatRenderWindowOptions["diagramCodesForEvents$"];
   readonly mermaidDiagrams: MermaidDiagramRegistry;
   readonly syncVisibleRunUsage$: ChatRenderWindowOptions["syncVisibleRunUsage$"];
-  readonly syncVisibleRows$: Command<void, []>;
+  readonly publishRows$: Command<Promise<void>, [AbortSignal]>;
   readonly initialEventsReady$: State<boolean>;
 }): Command<Promise<void>, [boolean, AbortSignal]> {
   return command(
@@ -2837,16 +2837,19 @@ function createEnsureVisibleEventTrees({
       signal.throwIfAborted();
       // Rows reflect the window once its bodies are parsed; diagram layout
       // below does not change them.
-      set(syncVisibleRows$);
+      const aligned = set(publishRows$, signal);
       if (revealPreparedEvents) {
         set(initialEventsReady$, true);
       }
-      await set(
-        prewarmMermaidDiagrams$,
-        mermaidDiagrams,
-        set(diagramCodesForEvents$, visibleEvents),
-        signal,
-      );
+      await Promise.all([
+        aligned,
+        set(
+          prewarmMermaidDiagrams$,
+          mermaidDiagrams,
+          set(diagramCodesForEvents$, visibleEvents),
+          signal,
+        ),
+      ]);
     },
   );
 }
@@ -2913,6 +2916,7 @@ function createChatRenderWindow({
   const transcriptPages = createTranscriptPages(
     transcriptWindow,
     visibleRows$,
+    syncVisibleRows$,
     threadScrollPosition$,
   );
 
@@ -2929,7 +2933,7 @@ function createChatRenderWindow({
     diagramCodesForEvents$,
     mermaidDiagrams,
     syncVisibleRunUsage$,
-    syncVisibleRows$,
+    publishRows$: transcriptPages.publishRows$,
     initialEventsReady$,
   });
 

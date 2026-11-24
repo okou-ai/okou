@@ -29,7 +29,7 @@ type DispatchObservation =
   "accepted" | "rejected" | "busy" | "unknown" | "not-delivered";
 
 const dispatchTimingHeader = "x-okou-runner-dispatch-timing";
-const gzipMinBodyBytes = 256 * 1024;
+const gzipMinBodyBytes = 160 * 1024;
 const gzipAsync = promisify(gzip);
 
 export function runnerDispatchEncoding(

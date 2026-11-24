@@ -1,6 +1,6 @@
 [package]
 name = "sandbox-mock"
-version = "0.17.87"
+version = "0.17.88"
 edition.workspace = true
 
 [dependencies]

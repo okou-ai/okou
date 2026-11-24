@@ -23,6 +23,7 @@ CREATE TABLE "hosted_site_domains" (
 	CONSTRAINT "hosted_site_domains_site_id_id" UNIQUE("site_id","id")
 );
 --> statement-breakpoint
+ALTER TABLE "hosted_site_browser_sessions" ADD COLUMN "custom_domain_revision" uuid;--> statement-breakpoint
 ALTER TABLE "hosted_site_domain_settings" ADD CONSTRAINT "hosted_site_domain_settings_site_id_hosted_sites_id_fk" FOREIGN KEY ("site_id") REFERENCES "public"."hosted_sites"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "hosted_site_domain_settings" ADD CONSTRAINT "hosted_site_domain_settings_site_id_selected_domain_id_hosted_site_domains_site_id_id_fk" FOREIGN KEY ("site_id","selected_domain_id") REFERENCES "public"."hosted_site_domains"("site_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "hosted_site_domains" ADD CONSTRAINT "hosted_site_domains_site_id_hosted_sites_id_fk" FOREIGN KEY ("site_id") REFERENCES "public"."hosted_sites"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

@@ -30,7 +30,7 @@ internal val LocalActivityStatusColor = staticCompositionLocalOf { Color(0xFFB57
 internal val LocalUndoActionColor = staticCompositionLocalOf { Color.Unspecified }
 internal val LocalOkouDarkMode = staticCompositionLocalOf { false }
 
-private fun activityStatusColor(palette: UserPreferencesColorTheme, dark: Boolean): Color =
+internal fun activityStatusColor(palette: UserPreferencesColorTheme, dark: Boolean): Color =
     when (palette) {
         UserPreferencesColorTheme.DEFAULT -> Color(if (dark) 0xFFFFA500 else 0xFFB5790C)
         UserPreferencesColorTheme.GOLDEN_HOUR -> Color(if (dark) 0xFFCC9655 else 0xFFBB731B)
