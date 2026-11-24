@@ -939,12 +939,12 @@ feature; the catalog shows each one.
   as much room below the text as above it. A card is a reading surface
   ([Type roles](#type-roles)): a Title 3 title over Body for the reason and each direction's
   label, with Subheadline for a direction's description and the source.
-- **Dense text stays readable.** A reason shows as many lines as its card has room for, never
-  fewer than three, ending in an inline Show more only when more remains (the reason itself
-  opens too), and Show less follows it once open; a taller phone shows more of it. A card's actions stay at its
-  bottom (`ForYouCardLayout`); when the heading is longer than the room it scrolls above them,
-  fading out at the edge where more lies and flashing its scroll indicator, so the reader can
-  tell there is more. Scrolling text runs out to the card's own edges rather than stopping at its
+- **Dense text stays readable, with one way to overflow.** A closed reason shows as many lines
+  as fit under the title, so the closed card never scrolls and its inline Show more (the reason
+  itself opens too) is always in view; a taller phone shows more of it, and a reason that fits
+  shows whole with no Show more. Only an opened reason scrolls: it runs above the directions,
+  which stay at the card's bottom (`ForYouCardLayout`), fading out at the edge where more lies
+  and flashing its scroll indicator, with Show less at its end. Scrolling text runs out to the card's own edges rather than stopping at its
   inset, with the scroll indicator along the card's side; above the actions it stops a gap short
   of them. When the actions would leave the heading less than a third of the card, as at the
   largest text sizes, heading and actions scroll together from the title.

@@ -23,8 +23,8 @@ struct ForYouSuggestionView: View {
   /// One line of the reason's type, and two, for how tall each further line is.
   @State private var oneLine: CGFloat = 0
   @State private var twoLines: CGFloat = 0
-  /// A long reason shows as many of its first lines as the card has room for, never fewer than
-  /// these, until it is opened, so a dense card keeps its directions in view.
+  /// A long reason shows its first lines until it is opened, so a dense card keeps its
+  /// directions in view: as many as the card has room for, or these when the room isn't known.
   private static let reasonLines = 3
   /// A direction's description keeps two lines, so two directions stay in view under a dense
   /// reason on a smaller phone.
@@ -93,14 +93,15 @@ struct ForYouSuggestionView: View {
     }
   }
 
-  /// As many lines of the reason as fit in the heading's room under the source and title, never
-  /// fewer than three; three when the room isn't known.
+  /// As many lines of the reason as fit in the heading's room under the source and title, and at
+  /// least one, so the closed card never has to scroll and its Show more always shows; three when
+  /// the room isn't known. Only an opened reason scrolls, above the directions.
   private func reasonLines(in room: CGFloat?) -> Int {
     let nextLine = twoLines - oneLine
     guard let room, leadHeight > 0, oneLine > 0, nextLine > 0 else { return Self.reasonLines }
     let space = room - leadHeight - OkouSpace.sm - oneLine
-    guard space > 0 else { return Self.reasonLines }
-    return max(Self.reasonLines, 1 + Int((space / nextLine).rounded(.down)))
+    guard space > 0 else { return 1 }
+    return 1 + Int((space / nextLine).rounded(.down))
   }
 
   /// Why Okou suggests it: its first lines, ending in Show more when they do not hold all of it,
@@ -420,6 +421,9 @@ struct ForYouCardLayout<Heading: View, Actions: View>: View {
     .defaultScrollAnchor(.top, for: .sizeChanges)
     .scrollBounceBehavior(.basedOnSize, axes: .vertical)
     .scrollIndicatorsFlash(onAppear: true)
+    // An opened reason that now runs past the room flashes the indicator too, so it reads as
+    // something to scroll rather than as cut text.
+    .scrollIndicatorsFlash(trigger: hasMoreBelow)
     .onScrollGeometryChange(for: Bool.self) { geometry in
       geometry.contentOffset.y + geometry.containerSize.height
         < geometry.contentSize.height - OkouSpace.one
