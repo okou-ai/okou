@@ -496,6 +496,9 @@ class ChatComposerRootTest {
         val detail = CountDownLatch(1)
         val detailRequested = AtomicBoolean(false)
         val cursorExpired = AtomicBoolean(false)
+        app.fixture.beforeListReturn = { containsCreatedChat ->
+            if (containsCreatedChat) oldList.await()
+        }
         app.contextGate.countDown()
         try {
             compose.waitUntil(10_000) {
@@ -509,7 +512,6 @@ class ChatComposerRootTest {
             compose.onNodeWithContentDescription("Send").performClick()
             awaitConversation { app.fixture.inputs.size == 1 }
             val pending = checkNotNull(editor?.uiState?.value?.entry(ComposerTarget())?.pending)
-            app.fixture.beforeListReturn = { oldList.await() }
             app.sendGate.countDown()
             awaitConversation {
                 val state = editor?.uiState?.value
