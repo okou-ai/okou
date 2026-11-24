@@ -59,7 +59,7 @@ setDefaultCACertificates([
 ]);
 const dispatchBody = JSON.stringify({ prompt: "Summarize the café menu" });
 
-async function withPeer(signal, run, pool) {
+async function withPeer(signal, run, pool, reply) {
   const handshake = Promise.withResolvers();
   const secure = Promise.withResolvers();
   const firstClosed = Promise.withResolvers();
@@ -110,7 +110,14 @@ async function withPeer(signal, run, pool) {
             : bytes.toString("utf8");
         bodyPorts.push(request.socket.remotePort ?? 0);
         bodies.push(body);
-        response.end(JSON.stringify({ disposition: "accepted" }));
+        const accept = () => {
+          response.end(JSON.stringify({ disposition: "accepted" }));
+        };
+        if (reply) {
+          reply(accept);
+        } else {
+          accept();
+        }
       });
     },
   );
@@ -317,6 +324,44 @@ test(
           assert.equal(transport.poolStats(origin).connected, 1);
         },
         pool,
+      );
+    } finally {
+      await pool.destroy();
+    }
+  },
+);
+
+test(
+  "opens another socket while every existing socket is busy",
+  { timeout: 5000 },
+  async (t) => {
+    const pool = createRunnerDispatchPool();
+    const replies = [];
+    const received = Promise.withResolvers();
+    try {
+      await withPeer(
+        t.signal,
+        async ({ transport, origin, bodyPorts, releaseHandshake }) => {
+          releaseHandshake();
+          const sends = Promise.all(
+            Array.from({ length: 5 }, (_, i) =>
+              send(transport, origin + "/" + i),
+            ),
+          );
+          await Promise.race([received.promise, sends]);
+          assert.equal(new Set(bodyPorts).size, 5);
+          for (const reply of replies) {
+            reply();
+          }
+          await sends;
+        },
+        pool,
+        (reply) => {
+          replies.push(reply);
+          if (replies.length === 5) {
+            received.resolve();
+          }
+        },
       );
     } finally {
       await pool.destroy();

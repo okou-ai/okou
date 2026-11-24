@@ -6,7 +6,8 @@ const IDLE_MS = 30_000;
 export function createRunnerDispatchPool() {
   const dispatcher = new Agent({
     allowH2: false,
-    connections: 4,
+    // Open another socket immediately when all HTTP/1.1 sockets are busy.
+    connections: null,
     pipelining: 1,
     keepAliveTimeout: IDLE_MS,
     keepAliveMaxTimeout: IDLE_MS,
