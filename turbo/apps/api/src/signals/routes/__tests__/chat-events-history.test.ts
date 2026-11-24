@@ -304,9 +304,11 @@ describe("CHAT-02: prior rounds and thread titles", () => {
     });
 
     await chat.renameThread(actor, first.threadId, "Manual Migration Title");
+    const ordinaryInputId = randomUUID();
     const third = await sendChatRun(actor, {
       threadId: first.threadId,
       prompt: "manual title should stay",
+      clientEventId: ordinaryInputId,
     });
     await expect(
       readThreadTitleFromEvents(actor, first.threadId),
@@ -322,6 +324,14 @@ describe("CHAT-02: prior rounds and thread titles", () => {
       revokesEventId: recommender.id,
       clientEventId: randomUUID(),
     };
+    const unrelatedId = await chat.requestSendEvent(
+      actor,
+      { ...recommendedFollowupRequest, clientEventId: ordinaryInputId },
+      [409],
+    );
+    expect(unrelatedId.body).toMatchObject({
+      error: { message: "clientEventId is already in use" },
+    });
     const competingFollowupRequest = {
       ...recommendedFollowupRequest,
       clientEventId: randomUUID(),
