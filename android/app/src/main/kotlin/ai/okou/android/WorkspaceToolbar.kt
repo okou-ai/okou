@@ -156,8 +156,8 @@ internal fun WorkspaceSearchField(
     val colors = MaterialTheme.colorScheme
     val outline =
         when (focused) {
-            true -> Modifier.border(2.dp, LocalActivityStatusColor.current, shape)
-            false -> Modifier.border(1.dp, colors.outline, shape)
+            true -> Modifier.border(2.dp, colors.onBackground, shape)
+            false -> Modifier.border(1.dp, colors.controlOutline, shape)
             null -> Modifier
         }
     Row(

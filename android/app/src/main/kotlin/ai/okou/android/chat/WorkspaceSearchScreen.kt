@@ -11,6 +11,7 @@ import ai.okou.android.workspaceSearchTextStyle
 import androidx.annotation.StringRes
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.BringIntoViewSpec
@@ -66,8 +67,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -268,6 +271,8 @@ private fun SearchTypes(
     onSelect: (WorkspaceSearchType) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
+    val keyboardFocus = LocalInputModeManager.current.inputMode == InputMode.Keyboard
+    val shape = RoundedCornerShape(12.dp)
     val scroll = rememberScrollState()
     val reveal = remember { WorkspaceSearchType.entries.associateWith { BringIntoViewRequester() } }
     var focusedType by remember { mutableStateOf<WorkspaceSearchType?>(null) }
@@ -327,10 +332,15 @@ private fun SearchTypes(
                 Box(
                     Modifier.widthIn(min = 48.dp)
                         .heightIn(min = 48.dp)
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(shape)
                         .focusRequester(typeFocus.getValue(type))
                         .focusProperties { canFocus = true }
                         .background(if (selected) colors.secondaryContainer else colors.background)
+                        .then(
+                            if (keyboardFocus && focusedType == type)
+                                Modifier.border(2.dp, colors.onBackground, shape)
+                            else Modifier,
+                        )
                         .bringIntoViewRequester(reveal.getValue(type))
                         .onFocusChanged {
                             if (it.isFocused) focusedType = type

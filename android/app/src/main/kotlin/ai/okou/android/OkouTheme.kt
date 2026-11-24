@@ -113,6 +113,18 @@ internal data class PaletteColors(
     val swatchCompanion: Color,
 )
 
+internal val ColorScheme.controlOutline: Color
+    get() {
+        val text = onSurface
+        val base = surface
+        fun mix(foreground: Float, background: Float) = foreground * 0.64f + background * 0.36f
+        return Color(
+            red = mix(text.red, base.red),
+            green = mix(text.green, base.green),
+            blue = mix(text.blue, base.blue),
+        )
+    }
+
 /** The wrapper is used only for color lookup; native controls keep the real Activity context. */
 internal fun resolvePalette(
     context: Context,
