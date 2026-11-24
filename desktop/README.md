@@ -197,6 +197,8 @@ Enable **Computer Use WebRTC snapshots** (`_computerUseWebRtcSnapshots`) in Lab 
 
 For the Cloudflare relay arm, configure the staging API with `COMPUTER_USE_TURN_KEY_ID` and `COMPUTER_USE_TURN_API_TOKEN` from a Realtime TURN key. The API gives the authorized Mac a 120-second ICE credential. The sandbox can dial the advertised relay address using outbound UDP. Networks that block that path can still retrieve the persisted image.
 
+For a production trial, store a separate Realtime TURN key in the protected GitHub `production` environment under those same two secret names. The API release loads the pair together. After the API, CLI and Desktop builds are available, each tester can enable the switch in Lab in their staff workspace. It defaults to off, including for staff.
+
 Set `OKOU_COMPUTER_USE_SNAPSHOT_MODE` on the CLI invocation to choose the trial arm.
 
 | Mode | Expected behavior |

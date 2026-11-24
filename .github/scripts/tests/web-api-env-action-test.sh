@@ -445,6 +445,7 @@ while read -r app environment ref phase expected; do
   TEMP_DIRS+=("$turn_dir")
   database_url="postgres://preview-db"
   if [[ "$phase" == seed ]]; then database_url=""; fi
+  if [[ "$ref" == "-" ]]; then ref=""; fi
   turn_output="$(TEST_INPUT_DATABASE_URL="$database_url" run_action "$(build_doppler_secrets_json)" \
     "$turn_dir" "$app" "$environment" "$turn_selector" "$turn_secrets" "$ref" 2>&1)"
   turn_file="$turn_dir/web-api-$app-$environment.env"
@@ -464,7 +465,27 @@ api preview staging deploy absent
 api preview pr-123 seed absent
 web preview pr-123 deploy absent
 api production pr-123 deploy absent
+api production - deploy present
+web production - deploy absent
 TURN_CASES
+
+turn_doppler_json="$(build_doppler_secrets_json)"
+for missing_key in COMPUTER_USE_TURN_KEY_ID COMPUTER_USE_TURN_API_TOKEN; do
+  turn_dir="$(mktemp -d)"
+  TEMP_DIRS+=("$turn_dir")
+  partial_secrets="$(jq -c --arg key "$missing_key" 'del(.[$key])' <<< "$turn_secrets")"
+  if turn_output="$(run_action "$turn_doppler_json" "$turn_dir" api production '{}' "$partial_secrets" '' 2>&1)"; then
+    fail "production must reject incomplete TURN credentials"
+  fi
+  assert_contains "$turn_output" "$missing_key is missing from GitHub secrets"
+  assert_not_contains "$turn_output" "turn-fixture"
+done
+
+turn_dir="$(mktemp -d)"
+TEMP_DIRS+=("$turn_dir")
+run_action "$turn_doppler_json" "$turn_dir" api production '{}' '{}' '' > /dev/null
+assert_env_key_absent "$turn_dir/web-api-api-production.env" COMPUTER_USE_TURN_KEY_ID
+assert_env_key_absent "$turn_dir/web-api-api-production.env" COMPUTER_USE_TURN_API_TOKEN
 
 # The optional Link values stay empty despite conflicting GitHub inputs.
 machine_secret_dir="$(mktemp -d)"

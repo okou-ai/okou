@@ -346,8 +346,11 @@ runs:
         add_doppler_config TELEGRAM_OFFICIAL_BOT_USERNAME
         add_doppler_config TELEGRAM_OFFICIAL_WEBHOOK_SECRET
         if [[ "$INPUT_APP" == "api" ]]; then
-          # Only the selected PR's final API environment receives TURN credentials.
-          if [[ "$INPUT_ENVIRONMENT" == "preview" && -n "$INPUT_DATABASE_URL" &&
+          # Production and the selected PR each supply their own GitHub Environment
+          # secrets. An unconfigured production release can still use the R2 path.
+          if [[ "$INPUT_ENVIRONMENT" == "production" && -z "$INPUT_JOB_REF" &&
+                ( -n "$(repo_secret COMPUTER_USE_TURN_KEY_ID)" || -n "$(repo_secret COMPUTER_USE_TURN_API_TOKEN)" ) ]] ||
+             [[ "$INPUT_ENVIRONMENT" == "preview" && -n "$INPUT_DATABASE_URL" &&
                 "$INPUT_JOB_REF" =~ ^pr-[1-9][0-9]*$ &&
                 "$INPUT_JOB_REF" == "$(repo_var COMPUTER_USE_TURN_TRIAL_PREVIEW)" ]]; then
             add_required_secret COMPUTER_USE_TURN_KEY_ID COMPUTER_USE_TURN_KEY_ID

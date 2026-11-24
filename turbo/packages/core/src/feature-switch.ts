@@ -184,6 +184,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Receive authorized Mac window snapshots over WebRTC in this workspace.",
     enabled: false,
+    staffOptInOnly: true,
   },
   [FeatureSwitchKey.DesktopShell]: {
     maintainer: "lancy@okou.ai",
