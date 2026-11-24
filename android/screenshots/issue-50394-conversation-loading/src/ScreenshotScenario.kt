@@ -163,6 +163,13 @@ class ScreenshotScenario {
                         checkNotNull(device.findObject(progress)).visibleBounds.width() ==
                             device.displayWidth,
                     )
+                    device.executeShellCommand("settings put global animator_duration_scale 0")
+                    try {
+                        awaitStaticSegment(progress)
+                        ScreenshotCapture.capture("06-reduced-motion-progress.png")
+                    } finally {
+                        device.executeShellCommand("settings put global animator_duration_scale 1")
+                    }
 
                     fun recoverHistory() {
                         historyStatus.set(200)
@@ -272,6 +279,21 @@ class ScreenshotScenario {
                 val left = image.getPixel(bar.left + bar.width() / 8, bar.centerY())
                 val right = image.getPixel(bar.right - bar.width() / 8, bar.centerY())
                 center != left || center != right
+            } finally {
+                image.recycle()
+            }
+        }
+
+    private fun awaitStaticSegment(progress: BySelector) =
+        awaitState("the fixed 30% progress segment with animation disabled") {
+            val bar = device.findObject(progress)?.visibleBounds ?: return@awaitState false
+            val image = instrumentation.uiAutomation.takeScreenshot() ?: return@awaitState false
+            try {
+                val active = 0xFFB5790C.toInt()
+                val track = 0xFFF6EFE2.toInt()
+                fun at(percent: Int) =
+                    image.getPixel(bar.left + bar.width() * percent / 100, bar.centerY())
+                at(2) == active && at(29) == active && at(31) == track && at(98) == track
             } finally {
                 image.recycle()
             }
