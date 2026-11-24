@@ -38,10 +38,12 @@ import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModelProvider
@@ -506,26 +508,41 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
             compose.onNodeWithText("Edit instructions").assertIsEnabled().performClick()
             val instruction = compose.onNodeWithContentDescription("Workflow instructions")
             instruction.performTextReplacement("Check the launch owner.")
+            instruction.performTextInputSelection(TextRange(4, 8))
 
             val error = "Connect to save. Your changes are still here."
             val save = compose.onNodeWithTag("workflow_save").assertIsEnabled()
+            val saveBounds = save.getUnclippedBoundsInRoot()
+            save.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+            val selection =
+                instruction.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange]
             compose.onNodeWithText(error).assertDoesNotExist()
             val releaseSave = CountDownLatch(1)
             app.fixture.beforeInstructionSave = { releaseSave.await() }
             try {
+                save.performClick()
                 save
-                    .performSemanticsAction(SemanticsActions.RequestFocus)
-                    .assertIsFocused()
-                    .performClick()
-                save.assertIsNotEnabled()
+                    .assertIsNotEnabled()
+                    .assertTextContains("Save")
+                    .assert(
+                        SemanticsMatcher.expectValue(
+                            SemanticsProperties.StateDescription,
+                            "Saving…",
+                        ),
+                    )
+                assertEquals(saveBounds, save.getUnclippedBoundsInRoot())
             } finally {
                 releaseSave.countDown()
             }
             waitFor(error)
             instruction.assertTextContains("Check the launch owner.")
+            assertEquals(
+                selection,
+                instruction.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange],
+            )
             val notice = compose.onNodeWithText(error).getUnclippedBoundsInRoot()
             assertTrue(
-                notice.bottom <=
+                notice.bottom + 16.dp <=
                     save.assertIsEnabled().assertIsFocused().getUnclippedBoundsInRoot().top,
             )
             val saves =
