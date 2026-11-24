@@ -24,6 +24,7 @@ import ai.okou.android.entryTopPadding
 import ai.okou.android.instructions.PersonalInstructionsSettings
 import ai.okou.android.preferences.MemberPreferenceSaveFeedback
 import ai.okou.android.preferences.MemberPreferencesSettings
+import ai.okou.android.settings.BuiltInToolsPage
 import ai.okou.android.settings.DefaultModelFeedback
 import ai.okou.android.settings.DefaultModelSetting
 import ai.okou.android.settings.EmailSubscriptionSetting
@@ -62,6 +63,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -278,6 +280,8 @@ private fun WorkspaceSettingsContent(
 ) {
     val ready = state.ready
     if (ready != null) {
+        val tools = ready.settings.builtInTools
+        DisposableEffect(tools) { onDispose { tools?.leaveSettings() } }
         WorkspaceSettingsFeedback(ready.settings, snackbar, destination, feedbackInOverlay)
         MemberPreferenceSaveFeedback(ready.preferences, snackbar)
     }
@@ -305,6 +309,11 @@ private fun WorkspaceSettingsContent(
             else WorkspaceSettingsDataPage(destination, ready.organization.name, ready.settings)
         }
         SettingsDestination.Account -> AccountSettings(account, signOut)
+        SettingsDestination.BuiltInTools -> {
+            val tools = ready?.settings?.builtInTools
+            if (ready != null && tools != null) BuiltInToolsPage(ready.organization.name, tools)
+            else WorkspaceSettingsPreparation(state, retry)
+        }
         SettingsDestination.ProactiveServices -> {
             val proactive = ready?.settings?.proactive
             if (ready != null && proactive != null) {
@@ -363,6 +372,15 @@ private fun WorkspaceSettingsContent(
                             supportingText = stringResource(R.string.settings_cloud_browser_detail),
                             onCheckedChange = preferenceModel?.let { it::setCloudBrowser },
                         )
+                        if (ready?.settings?.builtInTools != null) {
+                            HorizontalDivider()
+                            SettingsRow(
+                                stringResource(R.string.settings_built_in_tools),
+                                leading = { SettingsIcon(R.drawable.ic_build) },
+                                modifier = focusFor(SettingsDestination.BuiltInTools),
+                                onClick = { openPage(SettingsDestination.BuiltInTools) },
+                            )
+                        }
                     }
                 },
                 myOkou = {

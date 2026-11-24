@@ -30,4 +30,15 @@ export const userModelPreferenceContract: ClientDescriptor<
       500: true,
     },
   },
+  updateImageModel: {
+    method: "PATCH",
+    path: "/api/user-model-preference",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      403: true,
+      500: true,
+    },
+  },
 };

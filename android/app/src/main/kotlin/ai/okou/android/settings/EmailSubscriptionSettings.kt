@@ -24,6 +24,8 @@ internal enum class SettingsNotice {
     ModelAccountSwitchFailed,
     EmailSubscriptionFailed,
     EmailSubscriptionUnconfirmed,
+    ToolSaveFailed,
+    ToolSaveUnconfirmed,
 }
 
 internal data class EmailSubscriptionState(

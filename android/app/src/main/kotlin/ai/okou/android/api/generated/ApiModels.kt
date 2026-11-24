@@ -13287,6 +13287,7 @@ data class DefaultModelPreference(
     val `selectedModel`: String?,
     val `serviceTier`: DefaultModelPreferenceServiceTier?,
     val `modelSettings`: Map<String, DefaultModelPreferenceModelSettingsValue>,
+    val `selectedImageModel`: String? = null,
 )
 
 @Serializable
@@ -13336,6 +13337,44 @@ data class UpdateDefaultModelPreference(
     val `modelSettingsPatch`: UpdateDefaultModelPreferenceModelSettingsPatch? = null,
     val `selectedImageModel`: CanonicalOptional<UpdateDefaultModelPreferenceSelectedImageModel?> =
         CanonicalOptional.Absent,
+)
+
+@Serializable
+enum class UpdateImageModelPreferenceSelectedImageModel {
+    @SerialName("gpt-image-1") GPT_IMAGE_1,
+    @SerialName("gpt-image-2") GPT_IMAGE_2,
+    @SerialName("gpt-image-2.5-flare") GPT_IMAGE_2_5_FLARE,
+    @SerialName("gpt-image-2.5-sunburst") GPT_IMAGE_2_5_SUNBURST,
+    @SerialName("fal-ai/flux-pro/v1.1") FAL_AI_FLUX_PRO_V1_1,
+    @SerialName("fal-ai/flux-pro/v1.1-ultra") FAL_AI_FLUX_PRO_V1_1_ULTRA,
+    @SerialName("fal-ai/flux-2-pro") FAL_AI_FLUX_2_PRO,
+    @SerialName("alibaba/qwen-image-3/text-to-image") ALIBABA_QWEN_IMAGE_3_TEXT_TO_IMAGE,
+    @SerialName("ideogram/v4") IDEOGRAM_V4,
+    @SerialName("fal-ai/bytedance/seedream/v4/text-to-image")
+    FAL_AI_BYTEDANCE_SEEDREAM_V4_TEXT_TO_IMAGE,
+    @SerialName("fal-ai/nano-banana-2") FAL_AI_NANO_BANANA_2,
+    @SerialName("google/nano-banana-2-lite") GOOGLE_NANO_BANANA_2_LITE,
+}
+
+@Serializable
+data class UpdateImageModelPreference(
+    val `selectedImageModel`: UpdateImageModelPreferenceSelectedImageModel?,
+)
+
+@Serializable
+data class PaidToolPreferences(
+    val `disabledTools`: List<String>,
+)
+
+@Serializable
+data class UpdatePaidTool(
+    val `disabled`: Boolean,
+)
+
+@Serializable
+data class PaidToolUpdate(
+    val `toolId`: String,
+    val `disabled`: Boolean,
 )
 
 @Serializable

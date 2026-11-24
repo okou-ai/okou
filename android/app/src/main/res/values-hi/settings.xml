@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="settings_built_in_tools">बिल्ट-इन टूल</string>
+    <string name="settings_tool_scope">%1$s में टूल इस्तेमाल करने पर क्रेडिट खर्च होते हैं।</string>
+    <string name="settings_common_tools">आम टूल</string>
+    <string name="settings_data_tools">डेटा टूल</string>
+    <string name="settings_tool_web_search">वेब खोज</string>
+    <string name="settings_tool_image_generation">इमेज बनाना</string>
+    <string name="settings_tool_image_model">इमेज बनाने का मॉडल</string>
+    <string name="settings_tools_unavailable">टूल फ़िलहाल उपलब्ध नहीं हैं।</string>
+    <string name="settings_tool_save_failed">बदलाव की पुष्टि नहीं हो पाई।</string>
+    <string name="settings_tool_image_save_failed">चित्र बनाने वाला मॉडल सेव नहीं हो सका</string>
     <string name="settings_preferences_save_rolled_back">सेटिंग सेव नहीं हो सकीं। पिछले मान बहाल कर दिए गए हैं।</string>
     <string name="settings_appearance_sync_failed">दिखावट सिंक नहीं हो सकी। इसे इस डिवाइस पर लागू कर दिया गया है।</string>
     <string name="settings_email_updates">ईमेल अपडेट</string>
