@@ -364,7 +364,6 @@ export {
   type ArtifactCatalogContract,
   type ArtifactCatalogDirection,
   type ArtifactCatalogKind,
-  type ArtifactCatalogSort,
   type ArtifactDetail,
   type ArtifactSummary,
 } from "./artifact-catalog";

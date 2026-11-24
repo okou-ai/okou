@@ -193,7 +193,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "bingjie@okou.ai",
     displayName: "Artifact library list",
     description:
-      "Browse artifacts in a searchable list with type filters, creation and name sorting, and the existing sidebar previews.",
+      "Browse artifacts in a searchable list with type filters, creation-time sorting, and the existing sidebar previews.",
     enabled: false,
   },
   [FeatureSwitchKey.SlashActions]: {

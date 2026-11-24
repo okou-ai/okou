@@ -8,9 +8,7 @@ import { artifactIdPathParamsSchema } from "@okouai/api-contracts/validators/art
 import type {
   ArtifactCatalogDirection,
   ArtifactCatalogKind,
-  ArtifactCatalogSort,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
-import type { ArtifactCatalogOrder } from "./create-artifact-catalog-signals.ts";
 import {
   historyState$,
   pathname$,
@@ -51,19 +49,6 @@ export function artifactCatalogKindFromSearchParams(
   }
 }
 
-function artifactCatalogSortFromSearchParams(
-  params: URLSearchParams,
-): ArtifactCatalogOrder {
-  const sort = params.get("sort");
-  if (sort !== "createdAt" && sort !== "title") {
-    return { sort: "createdAt", direction: "desc" };
-  }
-  return {
-    sort,
-    direction: params.get("direction") === "asc" ? "asc" : "desc",
-  };
-}
-
 export const initializeArtifactCatalogQueryFromRoute$ = command(
   (
     { set },
@@ -79,7 +64,7 @@ export const initializeArtifactCatalogQueryFromRoute$ = command(
       {
         kind: artifactCatalogKindFromSearchParams(params, libraryEnabled),
         search: libraryEnabled ? (params.get("q") ?? "") : "",
-        ...artifactCatalogSortFromSearchParams(params),
+        direction: params.get("direction") === "asc" ? "asc" : "desc",
       },
       signal,
     );
@@ -98,9 +83,7 @@ const writeArtifactCatalogQueryToRoute$ = command(
       } else {
         next.delete("q");
       }
-      const order = get(pageCatalog.sort$);
-      next.set("sort", order.sort);
-      next.set("direction", order.direction);
+      next.set("direction", get(pageCatalog.direction$));
     } else if (!kind || kind === "presentation") {
       next.delete("tab");
     } else {
@@ -156,11 +139,11 @@ export const setArtifactCatalogSearch$ = command(
   },
 );
 
-export const artifactCatalogSort$ = pageCatalog.sort$;
+export const artifactCatalogDirection$ = pageCatalog.direction$;
 
-export const setArtifactCatalogSort$ = command(
-  ({ set }, sort: ArtifactCatalogSort, direction: ArtifactCatalogDirection) => {
-    set(pageCatalog.setSort$, sort, direction);
+export const setArtifactCatalogDirection$ = command(
+  ({ set }, direction: ArtifactCatalogDirection) => {
+    set(pageCatalog.setDirection$, direction);
     set(writeArtifactCatalogQueryToRoute$, false);
   },
 );

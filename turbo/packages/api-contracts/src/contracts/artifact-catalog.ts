@@ -147,7 +147,6 @@ export interface ArtifactCatalogAuthHeaders {
   readonly authorization?: string;
 }
 
-export type ArtifactCatalogSort = "createdAt" | "title";
 export type ArtifactCatalogDirection = "asc" | "desc";
 
 export interface ArtifactCatalogListQuery {
@@ -156,7 +155,6 @@ export interface ArtifactCatalogListQuery {
   readonly kind?: ArtifactCatalogKind;
   readonly chatThreadId?: string;
   readonly keyword?: string;
-  readonly sort?: ArtifactCatalogSort;
   readonly direction?: ArtifactCatalogDirection;
 }
 
@@ -166,7 +164,6 @@ export interface ArtifactCatalogListClientQuery {
   readonly kind?: ArtifactCatalogKind;
   readonly chatThreadId?: string;
   readonly keyword?: string;
-  readonly sort?: ArtifactCatalogSort;
   readonly direction?: ArtifactCatalogDirection;
 }
 
@@ -317,7 +314,6 @@ const artifactCatalogListQuerySchema = object({
   kind: artifactKindSchema.optional(),
   chatThreadId: uuid().optional(),
   keyword: string().trim().min(1).max(256).optional(),
-  sort: zEnum(["createdAt", "title"]).optional(),
   direction: zEnum(["asc", "desc"]).optional(),
 });
 
