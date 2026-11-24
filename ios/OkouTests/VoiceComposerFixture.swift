@@ -105,7 +105,7 @@ final class VoiceComposerFixture: Sendable {
       case "/api/feature-switches":
         let enabled = state.value.withLock { $0.recordAsMessage }
         return try ChatHTTPResponse(json: [
-          "effectiveSwitches": ["composerVoiceMessages": enabled, "voiceMessages": true]
+          "effectiveSwitches": ["composerVoiceMessages": enabled]
         ])
       case "/api/uploads/prepare/private":
         let url = try XCTUnwrap(

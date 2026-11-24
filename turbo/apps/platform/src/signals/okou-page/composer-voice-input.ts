@@ -27,10 +27,7 @@ import {
 
 const recordAsMessage$ = computed(async (get) => {
   const switches = await get(featureSwitches$);
-  return (
-    switches[FeatureSwitchKey.VoiceMessages] &&
-    switches[FeatureSwitchKey.ComposerVoiceMessages]
-  );
+  return switches[FeatureSwitchKey.ComposerVoiceMessages];
 });
 
 export const composerVoiceQuota$ = computed(async (get) => {

@@ -117,7 +117,10 @@ final class ComposerVoiceInputStore {
     }
     do {
       let asMessage = try await client.recordAsMessage()
-      guard generation == owner, !Task.isCancelled, composer.canEditVoice else { return }
+      guard generation == owner, !Task.isCancelled, composer.canEditVoice else {
+        if generation == owner { phase = .idle }
+        return
+      }
       asVoiceMessage = asMessage
       quotaTask = asMessage ? nil : checkQuota()
       let stream = try await capture.start()
@@ -243,6 +246,25 @@ final class ComposerVoiceInputStore {
     }
   }
 
+  private func finishVoiceMessage(
+    session: VoiceDraftSession, id: UUID, composer: ComposerDraftStore, owner: UUID
+  ) async throws {
+    let preparation = Task { try await session.uploadClip(recordingID: id) }
+    preparationTask = preparation
+    let fileID = try await preparation.value
+    guard generation == owner, composer.canEditVoice else { return }
+    composer.appendVoiceClip(fileID, recordingID: id)
+    guard !composer.hasLocalFailure else {
+      error = "Save the draft on this device before discarding the recording."
+      return
+    }
+    try await session.discard()
+    guard generation == owner else { return }
+    recordingID = nil
+    insertion = nil
+    phase = .idle
+  }
+
   func finish() async {
     guard phase == .recording || phase == .saved,
       let composer, composer.canEditVoice, let session, let id = recordingID
@@ -267,20 +289,7 @@ final class ComposerVoiceInputStore {
       await transcriptionTask?.value
       _ = await preparationTask?.result
       if asVoiceMessage {
-        let preparation = Task { try await session.uploadClip(recordingID: id) }
-        preparationTask = preparation
-        let fileID = try await preparation.value
-        guard generation == owner, composer.canEditVoice else { return }
-        composer.appendVoiceClip(fileID, recordingID: id)
-        guard !composer.hasLocalFailure else {
-          error = "Save the draft on this device before discarding the recording."
-          return
-        }
-        try await session.discard()
-        guard generation == owner else { return }
-        recordingID = nil
-        insertion = nil
-        phase = .idle
+        try await finishVoiceMessage(session: session, id: id, composer: composer, owner: owner)
         return
       }
       let hasPreparedText = await session.hasPreparedText

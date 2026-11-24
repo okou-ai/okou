@@ -4,9 +4,8 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
-  ArtifactThreePointTiming = "_artifactThreePointTimingV2",
   ComposerVoiceMessages = "composerVoiceMessages",
-  VoiceMessages = "voiceMessages",
+  ArtifactThreePointTiming = "_artifactThreePointTimingV2",
   PhoneUse = "_phoneUse",
   CustomConnectorCloudflareAccess = "customConnectorCloudflareAccess",
   MemberConnectorAccountAccess = "memberConnectorAccountAccess",

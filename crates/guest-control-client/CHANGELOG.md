@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.129](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.128...guest-control-client-v0.23.129) (2026-11-24)
+
+
+### Refactoring
+
+* **guest-control:** share request budget construction ([#50333](https://github.com/okou-ai/okou/issues/50333)) ([9f960ac](https://github.com/okou-ai/okou/commit/9f960ace131b6277ab89d7fd1c58e808751510c5))
+
 ## [0.23.128](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.127...guest-control-client-v0.23.128) (2026-11-23)
 
 ## [0.23.127](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.126...guest-control-client-v0.23.127) (2026-11-23)

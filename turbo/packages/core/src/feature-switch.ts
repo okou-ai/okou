@@ -53,12 +53,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Attach recordings to chat messages instead of dictating text.",
     enabled: false,
   },
-  [FeatureSwitchKey.VoiceMessages]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Send voice messages and transcribe their recordings with model credits.",
-    enabled: true,
-  },
   [FeatureSwitchKey.ChatShareRefresh]: {
     maintainer: "ming@okou.ai",
     displayName: "Refined message sharing",

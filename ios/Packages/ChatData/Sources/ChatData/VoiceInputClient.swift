@@ -26,7 +26,7 @@ public struct VoiceInputClient: Sendable {
 
   public func recordAsMessage() async throws -> Bool {
     let features = try await ChatModelService(client: client).featureSwitches().effectiveSwitches
-    return features["composerVoiceMessages"] == true && features["voiceMessages"] == true
+    return features["composerVoiceMessages"] == true
   }
 
   func uploadClip(file: URL) async throws -> String {
