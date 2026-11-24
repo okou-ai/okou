@@ -1474,9 +1474,7 @@ describe("POST /api/webhooks/google-calendar", () => {
   it.each([
     { rollout: "staff default", orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
     { rollout: "member override", orgId: undefined },
-  ])("moves the Calendar watch at account access expiry with $rollout", async ({
-    orgId,
-  }) => {
+  ])("moves expired Calendar watches with $rollout", async ({ orgId }) => {
     const cronSecret = "calendar-expiry-cron-secret";
     mockEnv("CRON_SECRET", cronSecret);
     const app = await setupApp({
