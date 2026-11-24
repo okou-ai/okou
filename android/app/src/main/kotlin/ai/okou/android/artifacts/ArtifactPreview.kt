@@ -5,6 +5,7 @@ import ai.okou.android.chat.ConfirmedChat
 import ai.okou.android.chat.HistoryMarkdown
 import ai.okou.android.chat.rememberChatWaitIndicator
 import ai.okou.android.state.rememberArtifactWebScroll
+import ai.okou.android.workspaceSearchFocusOutline
 import android.annotation.SuppressLint
 import android.content.Context
 import android.webkit.RenderProcessGoneDetail
@@ -275,7 +276,7 @@ private fun KeepSpaceWhenHidden(visible: Boolean, content: @Composable () -> Uni
 }
 
 @Composable
-internal fun ArtifactAction(
+private fun ArtifactAction(
     @StringRes label: Int,
     modifier: Modifier = Modifier,
     @DrawableRes icon: Int? = null,
@@ -283,11 +284,13 @@ internal fun ArtifactAction(
     onClick: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(12.dp)
     OutlinedButton(
         onClick = onClick,
-        modifier = modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+        modifier =
+            modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).workspaceSearchFocusOutline(shape),
         enabled = enabled,
-        shape = RoundedCornerShape(12.dp),
+        shape = shape,
         border = BorderStroke(1.dp, colors.outline),
         colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.onSurface),
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),

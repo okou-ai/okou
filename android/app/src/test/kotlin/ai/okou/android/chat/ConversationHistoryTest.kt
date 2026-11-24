@@ -469,6 +469,52 @@ internal class ConversationHistoryTest : ConversationHistoryTestFixture() {
     }
 
     @Test
+    fun roomHistoryPreservesOrderedRowsAcrossBatches() = runTest {
+        val lease = cache().open(identity) { true }
+        fun rows(range: IntRange) = range.map { row(id = "event-$it", seq = 2L * it) }
+        fun checkpoint(rows: List<HistoryEvent>, replaced: Boolean = false) =
+            HistoryCheckpoint(
+                CHAT_PERSONAL,
+                rows,
+                HistoryCursor(rows.last().id, rows.last().seqId),
+                replaced,
+            )
+
+        val initial = checkpoint(rows(1..256), replaced = true)
+        lease.saveHistory(initial, 100)
+        val loaded = checkNotNull(lease.loadHistory(CHAT_PERSONAL))
+        assertEquals(initial.copy(replaced = false), loaded.checkpoint)
+
+        val appended = checkpoint(initial.rows + rows(257..385))
+        lease.saveHistory(appended, 200, loaded)
+        assertEquals(appended, lease.loadHistory(CHAT_PERSONAL)?.checkpoint)
+
+        val replacement = checkpoint(rows(300..555), replaced = true)
+        lease.saveWarmedHistory(replacement, 300, appended.cursor) { null }
+        assertEquals(
+            replacement.copy(replaced = false),
+            lease.loadHistory(CHAT_PERSONAL)?.checkpoint,
+        )
+    }
+
+    @Test
+    fun laterRoomWriteBatchFailureRollsBackRowsAndCursor() = runTest {
+        val lease = cache().open(identity) { true }
+        val original = checkpoint()
+        lease.saveHistory(original, 100)
+        val rows =
+            (38L..165L).map { row(id = "event-$it", seq = it) } +
+                row(id = HISTORY_LAST_EVENT, seq = 166)
+        val incoming = HistoryCheckpoint(CHAT_PERSONAL, rows, HistoryCursor(rows.last().id, 166))
+
+        val failure = runCatching { lease.saveHistory(incoming, 200) }.exceptionOrNull()
+        assertTrue(failure?.message.orEmpty().contains("UNIQUE constraint failed"))
+        val saved = checkNotNull(lease.loadHistory(CHAT_PERSONAL))
+        assertEquals(original, saved.checkpoint)
+        assertEquals(100L, saved.confirmedAt)
+    }
+
+    @Test
     fun unchangedCatchUpReusesTheCachedTranscriptAndProjectsNewEvents() = runTest {
         val baseline = checkpoint()
         val started = CompletableDeferred<HistoryCursor>()

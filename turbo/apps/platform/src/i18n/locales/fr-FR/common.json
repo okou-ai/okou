@@ -1961,6 +1961,14 @@
       "message": "Message",
       "modelForThisChat": "Modèle pour cette discussion",
       "placeholder": "Demandez-moi d’automatiser des workflows, de gérer des tâches...",
+      "presentationFormatSetup": {
+        "description": "Nous enregistrerons ce choix par défaut, puis générerons votre présentation. Un format explicitement demandé reste prioritaire.",
+        "htmlDescription": "Idéal pour le partage dans un navigateur",
+        "pptxDescription": "Diapositives modifiables dans PowerPoint",
+        "saveAndGenerate": "Enregistrer et générer",
+        "settingsHint": "Modifiable dans Paramètres → Préférences → Discussion.",
+        "title": "Choisir un format de présentation par défaut"
+      },
       "selectedModelUnavailable": "Le modèle sélectionné n'est pas disponible. Configurez-le avant d'envoyer.",
       "selectedModelUnavailableToast": "Le modèle sélectionné n'est pas disponible",
       "selectModel": "Sélectionner le modèle",
@@ -6058,6 +6066,13 @@
           "title": "Modèle par défaut"
         },
         "description": "Choisissez les paramètres par défaut des nouvelles discussions et le mode d’envoi des messages.",
+        "presentationFormat": {
+          "description": "Choisissez le format par défaut des nouvelles présentations",
+          "saveFailed": "Impossible d’enregistrer le format par défaut. Réessayez.",
+          "title": "Format de présentation par défaut",
+          "unavailable": "Indisponible",
+          "unset": "Non défini"
+        },
         "sectionTitle": "Chat"
       },
       "debug": {

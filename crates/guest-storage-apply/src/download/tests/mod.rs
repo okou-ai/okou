@@ -117,9 +117,71 @@ fn scheduler_limits_parallel_inflate_to_a_single_artifact_with_a_small_companion
         let inflaters = (0..2)
             .filter_map(|_| {
                 let download = receive.try_recv().unwrap();
-                download.parallel_inflate.then_some(download.id)
+                matches!(
+                    download.inflate_load,
+                    Some(archive::inflate::InflateLoad::Light)
+                )
+                .then_some(download.id)
             })
             .collect::<Vec<_>>();
+        assert_eq!(inflaters, expected.into_iter().collect::<Vec<_>>());
+        telemetry.finish();
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn scheduler_limits_wide_read_ahead_to_the_first_promoted_local_artifact() {
+    for (count, local_ready, artifact_is_largest, expected) in [
+        (32, true, false, Some(9)),
+        (32, true, true, Some(9)),
+        (31, true, false, None),
+        (40, false, false, None),
+    ] {
+        let pending: VecDeque<_> = (0..count)
+            .map(|id| {
+                let path = format!("/independent-{id}");
+                let mut download = pending_at(id, &path);
+                if matches!(id, 9 | 17) {
+                    download.task.task = DownloadTask::artifact(
+                        path.clone(),
+                        "file:///tmp/artifact.tar.gz".into(),
+                        path,
+                    );
+                    download.estimated_work = if id == 9 { 700_000 } else { 500_000 };
+                } else if id == 2 {
+                    download.estimated_work = if artifact_is_largest {
+                        600_000
+                    } else {
+                        900_000
+                    };
+                }
+                download
+            })
+            .collect();
+        let mut telemetry = DownloadRunTelemetry::start(pending.iter().map(|download| {
+            (
+                download.task.task.telemetry,
+                download.task.logical_mount_path(),
+            )
+        }));
+        let mut scheduler = DownloadScheduler::new(pending, LOCAL_CONCURRENT, local_ready);
+        let (send, receive) = mpsc::sync_channel(LOCAL_CONCURRENT);
+        let mut inflaters = Vec::new();
+        while scheduler.has_work() {
+            assert!(scheduler.start_ready_attempts(&send, &mut telemetry));
+            assert!(scheduler.can_make_progress());
+            while let Ok(download) = receive.try_recv() {
+                if let Some(load) = download.inflate_load {
+                    assert!(matches!(load, archive::inflate::InflateLoad::WideBatch));
+                    inflaters.push(download.id);
+                }
+                scheduler.record_completion(DownloadCompletion {
+                    download,
+                    outcome: AttemptOutcome::Finished(Ok(())),
+                });
+            }
+        }
         assert_eq!(inflaters, expected.into_iter().collect::<Vec<_>>());
         telemetry.finish();
     }

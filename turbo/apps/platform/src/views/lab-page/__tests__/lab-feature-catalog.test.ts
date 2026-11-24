@@ -3,6 +3,7 @@ import { getButtonByName } from "../../artifacts-page/__tests__/artifact-catalog
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { onboardingStatusContract } from "@okouai/api-contracts/contracts/onboarding";
 import {
+  getAllFeatureStates,
   getFeatureSwitchMetadata,
   isFeatureSwitchAvailable,
 } from "@okouai/core/feature-switch";
@@ -100,6 +101,23 @@ test("lab-page-002 Each staff-visible feature has exactly one switch under its r
   expect(getButtonByName("Reset all")).toBeEnabled();
 });
 
+test.each([
+  FeatureSwitchKey.PresentationOutputFormat,
+  FeatureSwitchKey.MarkdownFirstOutput,
+])("Staff see %s enabled by default in Beta", async (key) => {
+  context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
+    return respond(200, {
+      switches: {},
+      effectiveSwitches: getAllFeatureStates({ userId: user.id, orgId }),
+    });
+  });
+  await visitLab(false, true);
+  const name = getFeatureSwitchMetadata()[key].displayName ?? key;
+  const row = screen.getByText(name, { exact: true }).closest("li")!;
+  expect(row.closest("section")?.querySelector("h2")).toHaveTextContent("Beta");
+  expect(within(row).getByRole("switch")).toBeChecked();
+});
+
 test("lab-page-005 Filtering the Lab catalog preserves the All total and restores its full switch list", async () => {
   await visitLab();
   const all = screen.getByText("All", { exact: true }).closest("button")!;
@@ -155,6 +173,51 @@ test.each([
   click(reset);
   await waitFor(() => {
     return expect(toggle).not.toBeChecked();
+  });
+});
+
+test("Any Lab tester can find presentation format in Beta, opt in, and reset it", async () => {
+  const featureKey = FeatureSwitchKey.PresentationOutputFormat;
+  let switches: Record<string, boolean> = { [FeatureSwitchKey.Lab]: true };
+  context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
+    return respond(200, { switches, effectiveSwitches: switches });
+  });
+  context.mocks.api(featureSwitchesContract.update, ({ body, respond }) => {
+    switches = { ...switches, ...body.switches };
+    return respond(200, { switches, effectiveSwitches: switches });
+  });
+  context.mocks.api(featureSwitchesContract.delete, ({ respond }) => {
+    switches = { [FeatureSwitchKey.Lab]: true };
+    return respond(200, { deleted: true });
+  });
+  await setupPage({
+    context,
+    path: "/_/lab",
+    auth: {
+      user: {
+        id: "presentation-format-tester",
+        fullName: "bingjie",
+        email: "bingjie-tester@example.test",
+      },
+    },
+  });
+
+  await screen.findByRole("heading", { name: "Lab" });
+  click(getButtonByName("bingjie"));
+  const name = getFeatureSwitchMetadata()[featureKey].displayName ?? featureKey;
+  const row = screen.getByText(name, { exact: true }).closest("li")!;
+  expect(row.closest("section")?.querySelector("h2")).toHaveTextContent("Beta");
+  const control = within(row).getByRole("switch");
+  expect(control).toHaveAttribute("aria-checked", "false");
+
+  click(control);
+  await waitFor(() => {
+    expect(control).toHaveAttribute("aria-checked", "true");
+  });
+
+  click(getButtonByName("Reset all"));
+  await waitFor(() => {
+    expect(control).toHaveAttribute("aria-checked", "false");
   });
 });
 

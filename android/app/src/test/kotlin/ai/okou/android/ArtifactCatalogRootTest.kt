@@ -22,6 +22,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.widget.VideoView
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -50,9 +51,11 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -705,6 +708,86 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "en-rUS-w400dp-h800dp", application = ChatListApplication::class)
 internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
+    @Test
+    fun emptyCatalogActionsRestoreFocusAndKeepTheSelectedTypeWhenClearing() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            compose.activityRule.scenario.recreate()
+            val fixture = ArtifactApiFixture(app.fixture)
+            fixture.install()
+            app.responseGate.countDown()
+            awaitText(fixture.sourceTitle)
+            compose.onNodeWithContentDescription("Artifacts").performClick()
+            awaitText(fixture.checklist.title)
+
+            val files = compose.onNodeWithText("Files")
+            val query = compose.onNodeWithTag("artifact_query")
+            files.performClick()
+            query.performTextReplacement("no matching artifact")
+            awaitText("No matching artifacts")
+            val title = compose.onNodeWithText("No matching artifacts", useUnmergedTree = true)
+            val list = compose.onNodeWithTag("artifact_list").getUnclippedBoundsInRoot()
+            assertEquals(28.dp, title.getUnclippedBoundsInRoot().left - list.left)
+            compose.onNodeWithText("Clear keyword").assertHeightIsAtLeast(48.dp).performClick()
+            awaitText(fixture.checklist.title)
+            query.assertIsFocused()
+            assertEquals(
+                "",
+                query.fetchSemanticsNode().config[SemanticsProperties.EditableText].text,
+            )
+            files.assertIsSelected()
+            compose.onNodeWithText("Yesterday").assertIsDisplayed()
+
+            compose.onNodeWithText("Videos").performClick()
+            awaitText("No artifacts of this type")
+            compose.onNodeWithText("Show all").assertHeightIsAtLeast(48.dp).performClick()
+            awaitText(fixture.checklist.title)
+            compose.onNodeWithText("All").assertIsSelected().assertIsFocused()
+        } finally {
+            instrumentation.resetInTouchMode()
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w840dp-h820dp")
+    fun wideCatalogRevealsKeyboardFiltersAndKeepsFocusOnTheActivatedResult() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            compose.activityRule.scenario.recreate()
+            val fixture = ArtifactApiFixture(app.fixture, includeVideo = true)
+            fixture.install()
+            app.responseGate.countDown()
+            awaitText(fixture.sourceTitle)
+            compose.onNodeWithContentDescription("Artifacts").performClick()
+            awaitText(fixture.checklist.title)
+
+            val catalog = compose.onNodeWithTag("artifact_catalog").getUnclippedBoundsInRoot()
+            val videos = compose.onNodeWithText("Videos")
+            val filterEnd = catalog.right - 16.dp
+            assertTrue(videos.getUnclippedBoundsInRoot().right > filterEnd)
+            videos.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
+            assertTrue(videos.assertIsFocused().getUnclippedBoundsInRoot().right <= filterEnd)
+            videos.performKeyInput { pressKey(Key.Enter) }
+            awaitText(fixture.video.title)
+
+            val row = compose.onNode(hasText(fixture.video.title) and hasClickAction())
+            row.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
+            row.performKeyInput { pressKey(Key.Enter) }
+            awaitText("Play")
+            row.assertIsFocused().assertIsSelected()
+
+            val all = compose.onNodeWithText("All")
+            all.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
+            all.performKeyInput { pressKey(Key.Enter) }
+            awaitText(fixture.checklist.title)
+            compose.onNodeWithTag("artifact_preview_title").assertTextContains(fixture.video.title)
+        } finally {
+            instrumentation.resetInTouchMode()
+        }
+    }
+
     @Test
     fun catalogUsesTheDesignedDateSpacingAndRowAlignment() {
         val fixture = ArtifactApiFixture(app.fixture)
