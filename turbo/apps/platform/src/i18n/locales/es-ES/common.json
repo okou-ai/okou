@@ -523,13 +523,14 @@
       "loading": "Cargando artefactos"
     },
     "customDomain": {
-      "addAnother": "Add another domain",
+      "addressHint": "Choose the full address used when you share this website.",
       "back": "Back to Customize URL",
       "checks": {
         "certificate": "HTTPS",
         "dns": "DNS connection",
         "ownership": "Ownership"
       },
+      "connect": "Connect a domain",
       "continue": "Continue",
       "copied": "Copied",
       "copyFailed": "Could not copy. Select the value to copy it.",
@@ -537,8 +538,12 @@
       "dnsHelp": "Add these records at your DNS provider, then click Verify",
       "domain": "Domain",
       "hostnameExample": "www.example.com",
+      "httpsReady": "HTTPS ready",
       "lastChecked": "Last checked {{time}}",
+      "manage": "Manage {{hostname}}",
+      "needsSetup": "Finish setup",
       "notChecked": "No verification yet",
+      "okouUrl": "Okou URL",
       "ownDomain": "Enter a domain you own",
       "remove": "Remove",
       "removeConfirm": "Your sharing link will return to {{url}}.",
@@ -546,9 +551,9 @@
       "removing": "This domain is disconnected. Click Remove to finish cleaning up its configuration.",
       "title": "Custom domain",
       "urlPreview": "https://{{hostname}}",
-      "verified": "Domain verified. Select it in Customize URL.",
+      "verified": "Domain verified. Continue, then save to use this address.",
       "verify": "Verify",
-      "yourDomains": "Your domains"
+      "yourDomains": "Connected domains"
     },
     "deletion": {
       "cancel": "Cancelar",

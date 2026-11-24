@@ -33,6 +33,16 @@ const siteId = "00000000-0000-4000-8000-000000000042";
 const artifactId = "00000000-0000-4000-8000-000000000043";
 const siteTitle = "Quarterly launch report";
 
+function tabNamed(name: string, container: HTMLElement) {
+  const tab = queryAllByRoleFast("tab", container).find((item) => {
+    return item.textContent?.startsWith(name);
+  });
+  if (!tab) {
+    throw new Error(`Tab not found: ${name}`);
+  }
+  return tab;
+}
+
 async function setupHostedSite(
   initialSlug = "launch-site",
   hostDomain = "okou.app",
@@ -396,9 +406,10 @@ test("custom domain verification stays manual and requires selection and Save be
   click(buttonNamed("Customize URL", menu));
   await within(menu).findByLabelText("Website URL");
   expect(
-    await within(menu).findByRole("combobox", { name: "Domain" }),
-  ).toHaveTextContent(".okou.app");
-  click(buttonNamed("Custom domain", menu));
+    within(menu).queryByRole("combobox", { name: "Domain" }),
+  ).not.toBeInTheDocument();
+  expect(tabNamed("Okou URL", menu)).toHaveAttribute("aria-selected", "true");
+  click(tabNamed("Custom domain", menu));
   const input = await within(menu).findByPlaceholderText("www.example.com");
   fireEvent.change(input, { target: { value: "www.customer-example.net" } });
   expect(input).toHaveValue("www.customer-example.net");
@@ -406,20 +417,22 @@ test("custom domain verification stays manual and requires selection and Save be
   click(buttonNamed("Continue", menu));
   await within(menu).findByText("No verification yet");
   expect(
-    within(menu).getByRole("combobox", { name: "Your domains" }),
-  ).toHaveTextContent("www.customer-example.net");
+    within(menu).getByRole("heading", { name: "www.customer-example.net" }),
+  ).toBeInTheDocument();
   expect(verifies).toBe(0);
   click(buttonNamed("Verify", menu));
-  await within(menu).findByText("Domain verified. Select it in Customize URL.");
+  await within(menu).findByText(
+    "Domain verified. Continue, then save to use this address.",
+  );
   expect(verifies).toBe(1);
   expect(saves).toBe(0);
-  click(buttonNamed("Back to Customize URL", menu));
-  const select = await within(menu).findByRole("combobox", { name: "Domain" });
-  click(select);
-  const option = await screen.findByRole("option", {
-    name: "www.customer-example.net",
-  });
-  click(option);
+  click(buttonNamed("Continue", menu));
+  await expect(
+    within(menu).findByRole("radio", {
+      name: "www.customer-example.net HTTPS ready",
+    }),
+  ).resolves.toBeChecked();
+  expect(within(menu).queryByLabelText("Website URL")).not.toBeInTheDocument();
   await within(menu).findByText("https://www.customer-example.net");
   expect(saves).toBe(0);
   click(buttonNamed("Save", menu));
@@ -433,4 +446,125 @@ test("custom domain verification stays manual and requires selection and Save be
     );
   });
   expect(saves).toBe(1);
+  click(buttonNamed("Customize URL", menu));
+  await waitFor(() => {
+    expect(tabNamed("Custom domain", menu)).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+  });
+  click(tabNamed("Okou URL", menu));
+  await expect(
+    within(menu).findByLabelText("Website URL"),
+  ).resolves.toHaveValue("launch-site");
+  expect(within(menu).getByText(".okou.app")).toBeInTheDocument();
+  click(buttonNamed("Cancel", menu));
+  click(
+    await waitFor(() => {
+      return buttonNamed("Copied", menu);
+    }),
+  );
+  await waitFor(() => {
+    expect(clipboard.writes.at(-1)).toBe("https://www.customer-example.net");
+  });
+  expect(saves).toBe(1);
+});
+
+test("pending domains are managed as full hostnames and cannot replace the sharing address", async () => {
+  const domainId = "00000000-0000-4000-8000-000000000061";
+  const revision = "00000000-0000-4000-8000-000000000062";
+  const settings: zInfer<typeof hostedDomainSettingsSchema> = {
+    siteId,
+    defaultUrl: "https://launch-site.okou.app",
+    effectiveUrl: "https://launch-site.okou.app",
+    selectedDomainId: null,
+    revision,
+    allowed: true,
+    domains: [
+      {
+        id: domainId,
+        hostname: "pending.customer-example.net",
+        revision,
+        ready: false,
+        removing: false,
+        records: [],
+        verification: null,
+      },
+    ],
+  };
+  context.mocks.api(hostContract.siteDomains, ({ respond }) => {
+    return respond(200, settings);
+  });
+  const preview = await setupHostedSite("launch-site", "okou.app", true);
+  const menu = await openHostedSiteShare(preview);
+  click(buttonNamed("Customize URL", menu));
+  click(
+    await waitFor(() => {
+      return tabNamed("Custom domain", menu);
+    }),
+  );
+  await expect(
+    within(menu).findByRole("radio", {
+      name: "pending.customer-example.net Finish setup",
+    }),
+  ).resolves.toHaveAttribute("aria-disabled", "true");
+  expect(buttonNamed("Save", menu)).toBeDisabled();
+  expect(within(menu).queryByRole("combobox")).not.toBeInTheDocument();
+  click(buttonNamed("Manage pending.customer-example.net", menu));
+  await within(menu).findByRole("heading", {
+    name: "pending.customer-example.net",
+  });
+  expect(within(menu).getByText("No verification yet")).toBeInTheDocument();
+  click(buttonNamed("Back to Customize URL", menu));
+  await expect(
+    within(menu).findByRole("radio", {
+      name: "pending.customer-example.net Finish setup",
+    }),
+  ).resolves.toHaveAttribute("aria-disabled", "true");
+  click(tabNamed("Okou URL", menu));
+  await expect(
+    within(menu).findByLabelText("Website URL"),
+  ).resolves.toHaveValue("launch-site");
+});
+
+test("a workspace without an active subscription cannot select an existing verified custom domain", async () => {
+  const revision = "00000000-0000-4000-8000-000000000072";
+  context.mocks.api(hostContract.siteDomains, ({ respond }) => {
+    return respond(200, {
+      siteId,
+      defaultUrl: "https://launch-site.okou.app",
+      effectiveUrl: "https://launch-site.okou.app",
+      selectedDomainId: null,
+      revision,
+      allowed: false,
+      domains: [
+        {
+          id: "00000000-0000-4000-8000-000000000071",
+          hostname: "verified.customer-example.net",
+          revision,
+          ready: true,
+          removing: false,
+          records: [],
+          verification: null,
+        },
+      ],
+    });
+  });
+  const preview = await setupHostedSite("launch-site", "okou.app", true);
+  const menu = await openHostedSiteShare(preview);
+  click(buttonNamed("Customize URL", menu));
+  click(
+    await waitFor(() => {
+      return tabNamed("Custom domain", menu);
+    }),
+  );
+  await expect(
+    within(menu).findByRole("radio", {
+      name: "verified.customer-example.net HTTPS ready",
+    }),
+  ).resolves.toHaveAttribute("aria-disabled", "true");
+  expect(buttonNamed("Save", menu)).toBeDisabled();
+  expect(
+    buttonNamed("Manage verified.customer-example.net", menu),
+  ).toBeEnabled();
 });

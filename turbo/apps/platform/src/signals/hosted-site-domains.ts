@@ -16,6 +16,7 @@ type SiteSignal = Computed<Promise<zInfer<typeof hostedSiteUrlSchema> | null>>;
 function createDomainState(site$: SiteSignal) {
   const saved$ = state<Settings | null>(null);
   const open$ = state(false);
+  const addressMode$ = state<"platform" | "custom">("platform");
   const selectedDomainId$ = state<string | null>(null);
   const managedDomainId$ = state<string | null>(null);
   const hostname$ = state("");
@@ -53,6 +54,7 @@ function createDomainState(site$: SiteSignal) {
   return {
     saved$,
     open$,
+    addressMode$,
     selectedDomainId$,
     managedDomainId$,
     hostname$,
@@ -67,6 +69,7 @@ type DomainAction = "create" | "verify" | "remove";
 function createDomainNavigation(scope: DomainState) {
   const {
     open$,
+    addressMode$,
     selectedDomainId$,
     managedDomainId$,
     hostname$,
@@ -79,30 +82,26 @@ function createDomainNavigation(scope: DomainState) {
     signal.throwIfAborted();
     set(open$, false);
     set(notice$, null);
-    set(
-      selectedDomainId$,
+    const selected =
       settings?.allowed &&
-        settings.domains.some((domain) => {
-          return domain.id === settings.selectedDomainId && domain.ready;
-        })
+      settings.domains.some((domain) => {
+        return domain.id === settings.selectedDomainId && domain.ready;
+      })
         ? settings.selectedDomainId
-        : null,
-    );
+        : null;
+    set(selectedDomainId$, selected);
+    set(addressMode$, selected ? "custom" : "platform");
   });
   const show$ = command(async ({ get, set }, signal: AbortSignal) => {
     const settings = await get(settings$);
     signal.throwIfAborted();
-    if (!settings || (!settings.allowed && settings.domains.length === 0)) {
+    if (!settings?.allowed) {
       await set(openSettingsBillingPlansDialog$, signal);
       signal.throwIfAborted();
       return;
     }
-    set(
-      managedDomainId$,
-      settings.domains.find((domain) => {
-        return !domain.removing;
-      })?.id ?? null,
-    );
+    set(managedDomainId$, null);
+    set(hostname$, "");
     set(notice$, null);
     set(open$, true);
   });
@@ -114,9 +113,53 @@ function createDomainNavigation(scope: DomainState) {
     set(selectedDomainId$, id);
     set(notice$, null);
   });
+  const changeMode$ = command(
+    async ({ get, set }, mode: "platform" | "custom", signal: AbortSignal) => {
+      const settings = await get(settings$);
+      signal.throwIfAborted();
+      set(addressMode$, mode);
+      set(open$, false);
+      set(notice$, null);
+      if (mode === "platform") {
+        set(selectedDomainId$, null);
+        return;
+      }
+      if (!settings?.allowed) {
+        set(selectedDomainId$, null);
+        return;
+      }
+      const selected = settings?.domains.find((domain) => {
+        return domain.id === get(selectedDomainId$) && domain.ready;
+      });
+      const ready =
+        selected ??
+        settings?.domains.find((domain) => {
+          return domain.ready && !domain.removing;
+        });
+      set(selectedDomainId$, ready?.id ?? null);
+      if (settings?.allowed && settings.domains.length === 0) {
+        set(managedDomainId$, null);
+        set(hostname$, "");
+        set(open$, true);
+      }
+    },
+  );
   const manage$ = command(({ set }, id: string | null) => {
     set(managedDomainId$, id);
-    set(hostname$, "");
+    set(notice$, null);
+    set(open$, true);
+  });
+  const useManaged$ = command(async ({ get, set }, signal: AbortSignal) => {
+    const settings = await get(settings$);
+    signal.throwIfAborted();
+    const domain = settings?.domains.find((item) => {
+      return item.id === get(managedDomainId$) && item.ready && !item.removing;
+    });
+    if (!domain || !settings?.allowed) {
+      return;
+    }
+    set(selectedDomainId$, domain.id);
+    set(open$, false);
     set(notice$, null);
   });
   const editHostname$ = command(({ set }, value: string) => {
@@ -141,9 +184,11 @@ function createDomainNavigation(scope: DomainState) {
   return {
     begin$,
     show$,
+    changeMode$,
     back$,
     choose$,
     manage$,
+    useManaged$,
     editHostname$,
     confirmRemoval$,
     copy$,
@@ -190,8 +235,14 @@ const applyDomainSettings$ = command(
     },
   ) => {
     const { scope, settings, action, domainId } = args;
-    const { saved$, selectedDomainId$, notice$, managedDomainId$, hostname$ } =
-      scope;
+    const {
+      saved$,
+      selectedDomainId$,
+      notice$,
+      managedDomainId$,
+      hostname$,
+      open$,
+    } = scope;
     set(saved$, settings);
     if (
       get(selectedDomainId$) &&
@@ -219,6 +270,7 @@ const applyDomainSettings$ = command(
     }
     if (action === "remove") {
       set(managedDomainId$, null);
+      set(open$, false);
       if (get(selectedDomainId$) === domainId) {
         set(selectedDomainId$, null);
       }

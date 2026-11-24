@@ -10,11 +10,6 @@ import {
   Button,
   IconButton,
   Input,
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
 } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import type { HostedSiteShareSession } from "../../signals/hosted-site-sharing.ts";
@@ -38,60 +33,6 @@ interface DomainPanelProps {
 }
 function domainBusy(operations: HostedSiteDomainOperations) {
   return operations.creating || operations.verifying || operations.removing;
-}
-function DomainPicker({
-  session,
-  operations,
-  configuration,
-}: { readonly configuration: DomainSettings } & DomainPanelProps) {
-  const { t } = useTranslation();
-  const busy = domainBusy(operations);
-  const id = useGet(session.domains.managedDomainId$);
-  const manage = useSet(session.domains.manage$);
-  return (
-    <div className="mb-4">
-      <label
-        className="mb-2 block text-sm"
-        htmlFor={`${session.inputId}-domain`}
-      >
-        {t(($) => {
-          return $.artifacts.customDomain.yourDomains;
-        })}
-      </label>
-      <Select
-        value={id ?? "new"}
-        onValueChange={(value) => {
-          return manage(value === "new" ? null : value);
-        }}
-        disabled={busy}
-      >
-        <SelectTrigger autoFocus id={`${session.inputId}-domain`}>
-          <SelectValue>
-            {configuration.domains.find((domain) => {
-              return domain.id === id;
-            })?.hostname ??
-              t(($) => {
-                return $.artifacts.customDomain.addAnother;
-              })}
-          </SelectValue>
-        </SelectTrigger>
-        <SelectContent>
-          {configuration.domains.map((item) => {
-            return (
-              <SelectItem key={item.id} value={item.id}>
-                {item.hostname}
-              </SelectItem>
-            );
-          })}
-          <SelectItem value="new">
-            {t(($) => {
-              return $.artifacts.customDomain.addAnother;
-            })}
-          </SelectItem>
-        </SelectContent>
-      </Select>
-    </div>
-  );
 }
 function NewDomainForm({ session, operations }: DomainPanelProps) {
   const { t } = useTranslation();
@@ -308,6 +249,8 @@ function DomainActions({
   const busy = domainBusy(operations);
   const confirmRemoval = useSet(session.domains.confirmRemoval$);
   const back = useSet(session.domains.back$);
+  const chooseManaged = useSet(session.domains.useManaged$);
+  const signal = useGet(session.signal$);
   const { remove, verify } = operations;
   return (
     <div className="mt-4 flex flex-wrap justify-end gap-1">
@@ -340,7 +283,8 @@ function DomainActions({
       </Button>
       <Button
         className="min-w-24"
-        disabled={busy || domain.removing}
+        variant={domain.ready ? "quiet" : "default"}
+        disabled={busy || domain.removing || !configuration.allowed}
         onClick={() => {
           verify();
         }}
@@ -350,6 +294,20 @@ function DomainActions({
           return $.artifacts.customDomain.verify;
         })}
       </Button>
+      {domain.ready && (
+        <Button
+          disabled={busy || !configuration.allowed}
+          onClick={() => {
+            if (signal) {
+              detach(chooseManaged(signal), Reason.DomCallback);
+            }
+          }}
+        >
+          {t(($) => {
+            return $.artifacts.customDomain.continue;
+          })}
+        </Button>
+      )}
     </div>
   );
 }
@@ -434,7 +392,6 @@ export function HostedSiteDomains({ session, operations }: DomainPanelProps) {
   });
   return (
     <section
-      className="mt-4"
       aria-label={t(($) => {
         return $.artifacts.customDomain.title;
       })}
@@ -451,20 +408,14 @@ export function HostedSiteDomains({ session, operations }: DomainPanelProps) {
         >
           <ArrowLeft size={16} />
         </IconButton>
-        <h3 className="text-sm font-medium">
-          {t(($) => {
-            return $.artifacts.customDomain.title;
-          })}
+        <h3 className="min-w-0 break-all text-sm font-medium">
+          {domain?.hostname ??
+            t(($) => {
+              return $.artifacts.customDomain.connect;
+            })}
         </h3>
       </div>
 
-      {configuration.domains.length > 0 && (
-        <DomainPicker
-          session={session}
-          operations={operations}
-          configuration={configuration}
-        />
-      )}
       {domain ? (
         <>
           <DomainRecords session={session} domain={domain} />

@@ -13,16 +13,19 @@ import {
   Loader2,
   PanelTop,
   Pencil,
+  Plus,
   Share2,
 } from "lucide-react";
 import {
   Button,
   Input,
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
+  IconButton,
+  Radio,
+  RadioGroup,
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
   MENU_ROW_HEIGHT_CLASS,
   Popover,
   PopoverContent,
@@ -313,121 +316,110 @@ function WebsiteUrlStatus({
   );
 }
 
-function WebsiteDomainSelector({
+function WebsiteDomainChoices({
   session,
   saving,
-  standalone,
   configuration,
 }: {
   readonly session: HostedSiteShareSession;
   readonly saving: boolean;
-  readonly standalone: boolean;
   readonly configuration: zInfer<typeof hostedDomainSettingsSchema>;
 }) {
   const { t } = useTranslation();
   const selectedDomainId = useGet(session.domains.selectedDomainId$);
   const chooseDomain = useSet(session.domains.choose$);
-  const id = session.inputId;
-  return (
-    <Select
-      value={selectedDomainId ?? "platform"}
-      disabled={saving}
-      onValueChange={(value) => {
-        return chooseDomain(value === "platform" ? null : value);
-      }}
-    >
-      <SelectTrigger
-        id={standalone ? id : `${id}-domain`}
-        autoFocus={standalone}
-        aria-label={t(($) => {
-          return $.artifacts.customDomain.domain;
-        })}
-        className={standalone ? "w-full" : "h-auto border-0 bg-transparent p-0"}
-      >
-        <SelectValue>
-          {configuration.domains.find((domain) => {
-            return domain.id === selectedDomainId;
-          })?.hostname ?? `.${resolveEditableHostedSiteDomain()}`}
-        </SelectValue>
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="platform">
-          .{resolveEditableHostedSiteDomain()}
-        </SelectItem>
-        {configuration.domains
-          .filter((domain) => {
-            return domain.ready && !domain.removing;
-          })
-          .map((domain) => {
-            return (
-              <SelectItem key={domain.id} value={domain.id}>
-                {domain.hostname}
-              </SelectItem>
-            );
-          })}
-      </SelectContent>
-    </Select>
-  );
-}
-function WebsiteCustomDomainRow({
-  session,
-  saving,
-}: {
-  readonly session: HostedSiteShareSession;
-  readonly saving: boolean;
-}) {
-  const { t } = useTranslation();
-  const domainSettings = useLoadable(session.domains.settings$);
-  const previousDomainSettings = useLastResolved(session.domains.settings$);
-  const configuration =
-    domainSettings.state === "hasData"
-      ? domainSettings.data
-      : previousDomainSettings;
   const showDomains = useSet(session.domains.show$);
+  const manageDomain = useSet(session.domains.manage$);
   const signal = useGet(session.signal$);
   if (!signal) {
     return null;
   }
   return (
     <>
-      {" "}
-      {configuration && (
-        <div className="mt-3 border-t border-border pt-2">
-          <Button
-            aria-label={t(($) => {
-              return $.artifacts.customDomain.title;
-            })}
-            type="button"
-            variant="quiet"
-            disabled={saving}
-            className="w-full justify-start font-normal"
-            onClick={() => {
-              detach(showDomains(signal), Reason.DomCallback);
-            }}
-          >
-            <span>
-              {t(($) => {
-                return $.artifacts.customDomain.title;
-              })}
-            </span>
-            <ProBadge />
-            <ChevronRight size={14} className="ml-auto" />
-          </Button>
-        </div>
+      {configuration.domains.length > 0 && (
+        <RadioGroup
+          value={selectedDomainId ?? ""}
+          aria-label={t(($) => {
+            return $.artifacts.customDomain.yourDomains;
+          })}
+          className="space-y-2"
+          onValueChange={(value) => {
+            if (typeof value === "string") {
+              chooseDomain(value);
+            }
+          }}
+        >
+          {configuration.domains.map((domain) => {
+            const radioId = `${session.inputId}-${domain.id}`;
+            return (
+              <div
+                key={domain.id}
+                className={cn(
+                  "flex items-center gap-3 rounded-xl border border-border p-3",
+                  domain.id === selectedDomainId && "bg-gray-50",
+                )}
+              >
+                <Radio
+                  id={radioId}
+                  value={domain.id}
+                  disabled={
+                    saving ||
+                    !configuration.allowed ||
+                    !domain.ready ||
+                    domain.removing
+                  }
+                />
+                <label htmlFor={radioId} className="min-w-0 flex-1">
+                  <span className="block break-all text-sm font-medium">
+                    {domain.hostname}
+                  </span>
+                  <span className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                    {domain.ready && <Check size={12} />}
+                    {domain.ready
+                      ? t(($) => {
+                          return $.artifacts.customDomain.httpsReady;
+                        })
+                      : t(($) => {
+                          return $.artifacts.customDomain.needsSetup;
+                        })}
+                  </span>
+                </label>
+                <IconButton
+                  aria-label={t(
+                    ($) => {
+                      return $.artifacts.customDomain.manage;
+                    },
+                    { hostname: domain.hostname },
+                  )}
+                  disabled={saving}
+                  onClick={() => {
+                    manageDomain(domain.id);
+                  }}
+                >
+                  <ChevronRight size={14} />
+                </IconButton>
+              </div>
+            );
+          })}
+        </RadioGroup>
       )}
-      {domainSettings.state === "loading" && (
-        <Skeleton className="mt-3 h-9 w-full rounded-lg" />
-      )}
+      <Button
+        type="button"
+        variant="quiet"
+        disabled={saving}
+        className="mt-3 w-full justify-start font-normal"
+        onClick={() => {
+          detach(showDomains(signal), Reason.DomCallback);
+        }}
+      >
+        <Plus size={14} />
+        {t(($) => {
+          return $.artifacts.customDomain.connect;
+        })}
+        {!configuration.allowed && <ProBadge />}
+      </Button>
     </>
   );
-}
-function canSaveWebsiteAddress(
-  custom: boolean,
-  changed: boolean,
-  available: boolean,
-  unchanged: boolean,
-) {
-  return custom ? changed : available || (changed && unchanged);
 }
 function WebsiteSlugInput({
   session,
@@ -510,6 +502,148 @@ function WebsiteUrlActions({
     </div>
   );
 }
+function PlatformWebsiteUrlForm({
+  session,
+  saving,
+  saveFailed,
+  onSave,
+  configuration,
+}: {
+  readonly session: HostedSiteShareSession;
+  readonly saving: boolean;
+  readonly saveFailed: boolean;
+  readonly onSave: () => void;
+  readonly configuration: zInfer<typeof hostedDomainSettingsSchema> | null;
+}) {
+  const { t } = useTranslation();
+  const signal = useGet(session.signal$);
+  const id = session.inputId;
+  const details = useLastResolved(session.details$);
+  const draft = useGet(session.draft$);
+  const validation = useGet(session.validation$);
+  const [checking, change] = useLoadableSet(session.change$);
+  const feedback = useWebsiteUrlFeedback(
+    session,
+    checking.state === "loading",
+    checking.state === "hasError",
+    saveFailed,
+  );
+  const selectedDomainId = useGet(session.domains.selectedDomainId$);
+  const domainNotice = useGet(session.domains.notice$);
+  if (!details || draft === null || !signal) {
+    return null;
+  }
+  const changedDomain =
+    configuration !== null &&
+    selectedDomainId !== configuration.selectedDomainId;
+  const canSavePlatform =
+    validation === "available" ||
+    (changedDomain && draft === details.publicSlug);
+  const suffix = new URL(details.url).hostname.slice(details.publicSlug.length);
+  return (
+    <form
+      className={configuration ? undefined : "mt-4"}
+      onSubmit={(event) => {
+        // This form owns URL submission; keep navigation with the current preview.
+        event.preventDefault();
+        onSave();
+      }}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <label htmlFor={id} className="text-sm font-medium">
+          {t(($) => {
+            return $.artifacts.siteUrl.label;
+          })}
+        </label>
+        <WebsiteUrlStatus status={feedback.status} />
+      </div>
+      <WebsiteSlugInput
+        session={session}
+        saving={saving}
+        suffix={suffix}
+        onChange={(value) => {
+          detach(change(value, signal), Reason.DomCallback);
+        }}
+      />
+      <p
+        id={`${id}-hint`}
+        role="status"
+        className={cn(
+          "mt-2 text-xs",
+          feedback.error ? "text-destructive" : "text-muted-foreground",
+        )}
+      >
+        {domainNotice ?? feedback.message}
+      </p>
+      <WebsiteUrlActions
+        session={session}
+        saving={saving}
+        disabled={saving || checking.state === "loading" || !canSavePlatform}
+      />
+    </form>
+  );
+}
+
+function WebsiteDomainSelectionForm({
+  session,
+  saving,
+  configuration,
+  onSave,
+}: {
+  readonly session: HostedSiteShareSession;
+  readonly saving: boolean;
+  readonly configuration: zInfer<typeof hostedDomainSettingsSchema>;
+  readonly onSave: () => void;
+}) {
+  const { t } = useTranslation();
+  const selected = useGet(session.domains.selectedDomainId$);
+  const notice = useGet(session.domains.notice$);
+  const domain = configuration.domains.find((item) => {
+    return item.id === selected && item.ready && !item.removing;
+  });
+  const changed = selected !== configuration.selectedDomainId;
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (domain && changed) {
+          onSave();
+        }
+      }}
+    >
+      <p className="mb-3 text-xs text-muted-foreground">
+        {t(($) => {
+          return $.artifacts.customDomain.addressHint;
+        })}
+      </p>
+      <WebsiteDomainChoices
+        session={session}
+        saving={saving}
+        configuration={configuration}
+      />
+      <p
+        role="status"
+        className="mt-3 min-h-5 break-all text-xs text-muted-foreground"
+      >
+        {notice ??
+          (domain
+            ? t(
+                ($) => {
+                  return $.artifacts.customDomain.urlPreview;
+                },
+                { hostname: domain.hostname },
+              )
+            : null)}
+      </p>
+      <WebsiteUrlActions
+        session={session}
+        saving={saving}
+        disabled={saving || !domain || !changed}
+      />
+    </form>
+  );
+}
+
 function WebsiteUrlEditor({
   session,
   saving,
@@ -525,112 +659,91 @@ function WebsiteUrlEditor({
 }) {
   const { t } = useTranslation();
   const signal = useGet(session.signal$);
-  const id = session.inputId;
   const details = useLastResolved(session.details$);
-  const draft = useGet(session.draft$);
-  const validation = useGet(session.validation$);
-  const [checking, change] = useLoadableSet(session.change$);
-  const feedback = useWebsiteUrlFeedback(
-    session,
-    checking.state === "loading",
-    checking.state === "hasError",
-    saveFailed,
-  );
   const domainSettings = useLoadable(session.domains.settings$);
   const previousDomainSettings = useLastResolved(session.domains.settings$);
-  const selectedDomainId = useGet(session.domains.selectedDomainId$);
+  const addressMode = useGet(session.domains.addressMode$);
+  const changeAddressMode = useSet(session.domains.changeMode$);
+  const features = useLastResolved(featureSwitches$);
   const domainOpen = useGet(session.domains.open$);
-  const domainNotice = useGet(session.domains.notice$);
-  if (!details || draft === null || !signal) {
+  if (!details || !signal) {
     return null;
   }
   const configuration =
     domainSettings.state === "hasData"
       ? domainSettings.data
       : (previousDomainSettings ?? null);
-  const customDomain = configuration?.domains.find((domain) => {
-    return domain.id === selectedDomainId && domain.ready;
-  });
-  const changedDomain =
-    configuration !== null &&
-    selectedDomainId !== configuration.selectedDomainId;
-  const canSave = canSaveWebsiteAddress(
-    Boolean(customDomain),
-    changedDomain,
-    validation === "available",
-    draft === details.publicSlug,
-  );
-  if (domainOpen) {
-    return (
-      <HostedSiteDomains session={session} operations={domainOperations} />
-    );
-  }
-  const domainSelector = configuration ? (
-    <WebsiteDomainSelector
+  const platformForm = (
+    <PlatformWebsiteUrlForm
       session={session}
       saving={saving}
-      standalone={Boolean(customDomain)}
+      saveFailed={saveFailed}
+      onSave={onSave}
       configuration={configuration}
     />
-  ) : null;
-  const suffix = new URL(details.url).hostname.slice(details.publicSlug.length);
+  );
+  const busy =
+    saving ||
+    domainOperations.creating ||
+    domainOperations.verifying ||
+    domainOperations.removing;
+  if (!configuration) {
+    if (
+      domainSettings.state === "loading" &&
+      (features?.[FeatureSwitchKey.HostedSiteCustomDomains] ||
+        details.effectiveUrl)
+    ) {
+      return (
+        <div className="mt-4 space-y-4" aria-busy="true">
+          <Skeleton className="h-9 w-full rounded-lg" />
+          <Skeleton className="h-9 w-full rounded-lg" />
+          <div className="flex justify-end">
+            <Skeleton className="h-8 w-16 rounded-lg" />
+          </div>
+        </div>
+      );
+    }
+    return platformForm;
+  }
   return (
-    <form
+    <Tabs
       className="mt-4"
-      onSubmit={(event) => {
-        // This form owns URL submission; keep navigation with the current preview.
-        event.preventDefault();
-        onSave();
+      value={addressMode}
+      onValueChange={(value) => {
+        if (value === "platform" || value === "custom") {
+          detach(changeAddressMode(value, signal), Reason.DomCallback);
+        }
       }}
     >
-      <div className="flex items-center justify-between gap-2">
-        <label htmlFor={id} className="text-sm font-medium">
+      <TabsList className="w-full">
+        <TabsTrigger className="flex-1" value="platform" disabled={busy}>
           {t(($) => {
-            return $.artifacts.siteUrl.label;
+            return $.artifacts.customDomain.okouUrl;
           })}
-        </label>
-        {!customDomain && <WebsiteUrlStatus status={feedback.status} />}
-      </div>
-
-      {customDomain ? (
-        <div className="mt-2">{domainSelector}</div>
-      ) : (
-        <WebsiteSlugInput
-          session={session}
-          saving={saving}
-          suffix={domainSelector ?? suffix}
-          onChange={(value) => {
-            detach(change(value, signal), Reason.DomCallback);
-          }}
-        />
-      )}
-      <p
-        id={`${id}-hint`}
-        role="status"
-        className={cn(
-          "mt-2 text-xs",
-          feedback.error ? "text-destructive" : "text-muted-foreground",
+        </TabsTrigger>
+        <TabsTrigger className="flex-1" value="custom" disabled={busy}>
+          {t(($) => {
+            return $.artifacts.customDomain.title;
+          })}
+          <ProBadge />
+        </TabsTrigger>
+      </TabsList>
+      <TabsContent value="platform" className="mt-4">
+        {platformForm}
+      </TabsContent>
+      <TabsContent value="custom" className="mt-4">
+        {domainOpen ? (
+          <HostedSiteDomains session={session} operations={domainOperations} />
+        ) : (
+          <WebsiteDomainSelectionForm
+            session={session}
+            saving={busy}
+            configuration={configuration}
+            onSave={onSave}
+          />
         )}
-      >
-        {domainNotice ??
-          (customDomain
-            ? t(
-                ($) => {
-                  return $.artifacts.customDomain.urlPreview;
-                },
-                { hostname: customDomain.hostname },
-              )
-            : feedback.message)}
-      </p>
-      <WebsiteCustomDomainRow session={session} saving={saving} />
-      <WebsiteUrlActions
-        session={session}
-        saving={saving}
-        disabled={
-          saving || (!customDomain && checking.state === "loading") || !canSave
-        }
-      />
-    </form>
+      </TabsContent>
+    </Tabs>
   );
 }
 
