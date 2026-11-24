@@ -24,6 +24,8 @@
     <string name="chat_inbox">Inbox</string>
     <string name="chat_mark_all_read">Mark all as read</string>
     <string name="chat_mark_all_read_unconfirmed">Some chats may still be unread.</string>
+    <string name="chat_mark_all_read_failed">Could not mark chats as read.</string>
+    <string name="chat_mark_all_read_partial_failed">Chats marked as read: %1$d. Failed: %2$d.</string>
     <plurals name="chat_mark_all_read_partial">
         <item quantity="one">Marked %1$d of %2$d chats as read.</item>
         <item quantity="other">Marked %1$d of %2$d chats as read.</item>

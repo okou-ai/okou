@@ -24,6 +24,8 @@
     <string name="chat_inbox">Kotak masuk</string>
     <string name="chat_mark_all_read">Tandai semua sebagai telah dibaca</string>
     <string name="chat_mark_all_read_unconfirmed">Beberapa chat mungkin masih belum dibaca.</string>
+    <string name="chat_mark_all_read_failed">Chat tidak dapat ditandai sudah dibaca.</string>
+    <string name="chat_mark_all_read_partial_failed">Ditandai sudah dibaca: %1$d. Gagal: %2$d.</string>
     <plurals name="chat_mark_all_read_partial">
         <item quantity="other">%1$d dari %2$d chat ditandai sudah dibaca.</item>
     </plurals>
