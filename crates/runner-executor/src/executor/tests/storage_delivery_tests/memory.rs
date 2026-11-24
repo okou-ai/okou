@@ -43,6 +43,14 @@ impl std::io::Write for ByteCounter {
     }
 }
 
+fn expected_compact_manifest(manifest: &Manifest) -> serde_json::Value {
+    let mut value = serde_json::to_value(manifest).unwrap();
+    for mount in value["storageMounts"].as_array_mut().unwrap() {
+        mount["archiveUrl"] = serde_json::json!("decoded://");
+    }
+    value
+}
+
 fn assert_complete_delivery(
     calls: &[sandbox_mock::StorageManifestCall],
     expected: &serde_json::Value,
@@ -91,10 +99,11 @@ async fn decoded_storage_batch_memory_child() {
         return;
     }
 
-    let fixture = DeliveryFixture::new(256, 256, 35_000).await;
+    let fixture = DeliveryFixture::new(256, 256, 604).await;
     let sandbox = MockSandbox::new("large-decoded-manifest");
-    let (manifest, files) = fixture.prepare(&sandbox).await;
-    let expected = serde_json::to_value(&manifest).unwrap();
+    let (mut manifest, files) = fixture.prepare(&sandbox).await;
+    pad_versions_for_split(&mut manifest);
+    let expected = expected_compact_manifest(&manifest);
     let mut source_bytes = ByteCounter::default();
     serde_json::to_writer(&mut source_bytes, &manifest).unwrap();
     let source_bytes = source_bytes.0;
@@ -131,7 +140,10 @@ async fn encoded_payloads_follow_the_current_guest_operation() {
     let gate = MockLifecycleGate::new();
     overrides.set_storage_manifest_lifecycle_gate(gate.clone());
     let sandbox = MockSandbox::with_overrides("completed-storage-buffers", overrides);
-    let (manifest, files) = fixture.prepare(&sandbox).await;
+    let (mut manifest, files) = fixture.prepare(&sandbox).await;
+    // Keep the legacy boundaries without logging padded names or version IDs
+    // when the allocation child exercises the real materializer.
+    manifest.storages[0].vas_storage_name = Some("workflow".into());
     let expected = serde_json::to_value(&manifest).unwrap();
     let context = minimal_context();
     let mut telemetry = test_telemetry(&fixture.config, &context);
@@ -224,13 +236,17 @@ async fn mixed_decoded_mounts_preserve_the_canonical_manifest_boundary() {
             .unwrap()
             .extend(std::iter::repeat_n('x', target - before));
         assert_eq!(serde_json::to_vec(&manifest).unwrap().len(), target);
-        let expected = serde_json::to_value(&manifest).unwrap();
+        let expected = if overflow == 0 {
+            serde_json::to_value(&manifest).unwrap()
+        } else {
+            expected_compact_manifest(&manifest)
+        };
         let result = apply_with_telemetry(&fixture, &sandbox, manifest, &files).await;
         fixture.shutdown().await;
 
         result.unwrap();
         let calls = sandbox.storage_manifest_calls();
         assert_complete_delivery(&calls, &expected, b"content");
-        assert_eq!(calls.len(), 1 + overflow);
+        assert_eq!(calls.len(), 1);
     }
 }

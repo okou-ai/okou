@@ -288,21 +288,31 @@ async fn apply_with_telemetry(
     download_storages_with_files(sandbox, &context, manifest, files, &mut telemetry).await
 }
 
+fn pad_versions_for_split(manifest: &mut Manifest) {
+    // Keep one entry per batch even after the unused archive URLs are shortened.
+    let padding = "v".repeat(35_000);
+    for storage in &mut manifest.storages {
+        storage.vas_version_id.as_mut().unwrap().push_str(&padding);
+    }
+}
+
 #[tokio::test]
 async fn guest_apply_telemetry_attributes_one_and_three_batches() {
-    for (count, url_bytes, expected_count, expected_size, expected_positions) in [
-        (1, 604, "one", "at_most_4_kib", vec!["dedicated_only"]),
+    for (count, expected_count, expected_size, expected_positions) in [
+        (1, "one", "at_most_4_kib", vec!["dedicated_only"]),
         (
             3,
-            35_000,
             "three",
             "32_to_64_kib",
             vec!["dedicated_first", "dedicated_middle", "dedicated_last"],
         ),
     ] {
-        let fixture = DeliveryFixture::new(count, count, url_bytes).await;
+        let fixture = DeliveryFixture::new(count, count, 604).await;
         let sandbox = MockSandbox::new("storage-batch-attribution");
-        let (manifest, files) = fixture.prepare(&sandbox).await;
+        let (mut manifest, files) = fixture.prepare(&sandbox).await;
+        if count > 1 {
+            pad_versions_for_split(&mut manifest);
+        }
         let context = minimal_context();
         let mut telemetry = test_telemetry(&fixture.config, &context);
         download_storages_with_files(&sandbox, &context, manifest, &files, &mut telemetry)
@@ -335,9 +345,10 @@ async fn guest_apply_telemetry_attributes_one_and_three_batches() {
 
 #[tokio::test]
 async fn guest_apply_telemetry_caps_large_batch_runs_and_retains_the_last_batch() {
-    let fixture = DeliveryFixture::new(18, 18, 35_000).await;
+    let fixture = DeliveryFixture::new(18, 18, 604).await;
     let sandbox = MockSandbox::new("storage-batch-attribution-cap");
-    let (manifest, files) = fixture.prepare(&sandbox).await;
+    let (mut manifest, files) = fixture.prepare(&sandbox).await;
+    pad_versions_for_split(&mut manifest);
     let context = minimal_context();
     let mut telemetry = test_telemetry(&fixture.config, &context);
     download_storages_with_files(&sandbox, &context, manifest, &files, &mut telemetry)
@@ -364,7 +375,7 @@ async fn guest_apply_telemetry_caps_large_batch_runs_and_retains_the_last_batch(
 
 #[tokio::test]
 async fn guest_apply_telemetry_pairs_guest_server_duration_per_batch() {
-    let fixture = DeliveryFixture::new(3, 3, 35_000).await;
+    let fixture = DeliveryFixture::new(3, 3, 604).await;
     let overrides = Arc::new(MockSandboxOverrides::new());
     for guest_duration_ms in [Some(0), None, Some(u32::MAX)] {
         let mut result = ExecResult::new(0, Vec::new(), Vec::new());
@@ -372,7 +383,8 @@ async fn guest_apply_telemetry_pairs_guest_server_duration_per_batch() {
         overrides.push_storage_manifest_result(Ok(result));
     }
     let sandbox = MockSandbox::with_overrides("storage-batch-guest-timing", overrides);
-    let (manifest, files) = fixture.prepare(&sandbox).await;
+    let (mut manifest, files) = fixture.prepare(&sandbox).await;
+    pad_versions_for_split(&mut manifest);
     let context = minimal_context();
     let mut telemetry = test_telemetry(&fixture.config, &context);
 
@@ -483,63 +495,67 @@ async fn fresh_artifact_hit_retains_identity_and_delivers_decoded_files() {
 }
 
 #[tokio::test]
-async fn oversized_artifact_manifest_uses_preencoded_decoded_batches() {
+async fn oversized_artifact_manifest_compacts_urls_and_preserves_identity() {
     let fixture = DeliveryFixture::artifacts(3, 3, 35_000).await;
     let sandbox = MockSandbox::new("decoded-large-artifacts");
     let (manifest, files) = fixture.prepare(&sandbox).await;
     assert_eq!(files.len(), 3);
+    let mut expected = manifest.artifacts.clone();
+    for artifact in &mut expected {
+        artifact.archive_url = Some("decoded://".into());
+    }
     apply_with_telemetry(&fixture, &sandbox, manifest, &files)
         .await
         .unwrap();
-    assert_eq!(sandbox.storage_manifest_calls().len(), 3);
-    for call in sandbox.storage_manifest_calls() {
-        let (json, _) = storage_files::split_input(&call.manifest_json).unwrap();
-        let batch: Manifest = serde_json::from_slice(json).unwrap();
-        assert!(batch.storages.is_empty());
-        assert_eq!(batch.artifacts.len(), 1);
-        assert!(batch.cleanup_paths.is_empty());
-        assert!(batch.instruction_cleanups.is_empty());
-    }
+    let calls = sandbox.storage_manifest_calls();
+    assert_eq!(calls.len(), 1);
+    let (json, _) = storage_files::split_input(&calls[0].manifest_json).unwrap();
+    let batch: Manifest = serde_json::from_slice(json).unwrap();
+    assert!(batch.storages.is_empty());
+    assert_eq!(batch.artifacts, expected);
     assert_binary_calls(&sandbox, 3);
     fixture.shutdown().await;
 }
 
 #[tokio::test]
-async fn oversized_mixed_manifest_preserves_decoded_entry_kinds() {
-    let fixture = DeliveryFixture::artifacts(2, 2, 35_000).await;
-    let sandbox = MockSandbox::new("decoded-large-mixed");
-    let (mut manifest, mut files) = fixture.prepare(&sandbox).await;
-    let storage_mount = fixture.root.path().join("guest/storage");
-    let prefix = "http://127.0.0.1:9/storage?signature=";
-    manifest.storages.push(StorageEntry {
-        template_guidance: None,
-        mount_path: storage_mount.to_str().unwrap().into(),
-        archive_url: Some(format!("{prefix}{}", "x".repeat(35_000 - prefix.len()))),
-        cached: false,
-        vas_storage_name: Some("mixed-storage".into()),
-        vas_version_id: Some("v1".into()),
-    });
-    let storage_files = Arc::clone(&files[0].1);
-    files.push((storage_mount.to_str().unwrap().into(), storage_files));
+async fn oversized_mixed_manifest_preserves_workflow_batch_boundaries() {
+    for (name, expected_calls) in [("mixed-storage", 1), ("workflow", 3)] {
+        let fixture = DeliveryFixture::artifacts(2, 2, 35_000).await;
+        let sandbox = MockSandbox::new("decoded-large-mixed");
+        let (mut manifest, mut files) = fixture.prepare(&sandbox).await;
+        let storage_mount = fixture.root.path().join("guest/mixed--wf-copy");
+        let prefix = "http://127.0.0.1:9/storage?signature=";
+        let mut storage = StorageEntry {
+            template_guidance: None,
+            mount_path: storage_mount.to_str().unwrap().into(),
+            archive_url: Some(format!("{prefix}{}", "x".repeat(35_000 - prefix.len()))),
+            cached: false,
+            vas_storage_name: Some(name.into()),
+            vas_version_id: Some("v1".into()),
+        };
+        manifest.storages.push(storage.clone());
+        files.push((
+            storage_mount.to_str().unwrap().into(),
+            Arc::clone(&files[0].1),
+        ));
 
-    apply_with_telemetry(&fixture, &sandbox, manifest, &files)
-        .await
-        .unwrap();
-    let mut storage_entries = 0;
-    let mut artifact_entries = 0;
-    for call in sandbox.storage_manifest_calls() {
-        let (json, _) = storage_files::split_input(&call.manifest_json).unwrap();
-        let batch: Manifest = serde_json::from_slice(json).unwrap();
-        assert_eq!(batch.storages.len() + batch.artifacts.len(), 1);
-        assert!(batch.cleanup_paths.is_empty());
-        assert!(batch.instruction_cleanups.is_empty());
-        storage_entries += batch.storages.len();
-        artifact_entries += batch.artifacts.len();
+        apply_with_telemetry(&fixture, &sandbox, manifest, &files)
+            .await
+            .unwrap();
+        let calls = sandbox.storage_manifest_calls();
+        assert_eq!(calls.len(), expected_calls);
+        let (json, _) = storage_files::split_input(&calls[0].manifest_json).unwrap();
+        let first_batch: Manifest = serde_json::from_slice(json).unwrap();
+        if expected_calls == 1 {
+            storage.archive_url = Some("decoded://".into());
+            assert_eq!(first_batch.artifacts.len(), 2);
+        } else {
+            assert!(first_batch.artifacts.is_empty());
+        }
+        assert_eq!(first_batch.storages, [storage]);
+        assert_binary_calls(&sandbox, 3);
+        fixture.shutdown().await;
     }
-    assert_eq!(storage_entries, 1);
-    assert_eq!(artifact_entries, 2);
-    assert_binary_calls(&sandbox, 3);
-    fixture.shutdown().await;
 }
 
 #[tokio::test]
@@ -556,23 +572,28 @@ async fn mixed_decoded_batch_uses_exact_per_array_comma_accounting() {
         vas_storage_name: Some("boundary-storage".into()),
         vas_version_id: Some("v1".into()),
     };
-    let decoded_manifest = |storage: StorageEntry| Manifest {
-        archive_readiness: None,
-        storages: vec![storage],
-        artifacts: manifest.artifacts.clone(),
-        cleanup_paths: Vec::new(),
-        instruction_cleanups: Vec::new(),
+    let compact_manifest = |mut storage: StorageEntry| {
+        storage.archive_url = Some("decoded://".into());
+        let mut artifacts = manifest.artifacts.clone();
+        artifacts[0].archive_url = Some("decoded://".into());
+        Manifest {
+            archive_readiness: None,
+            storages: vec![storage],
+            artifacts,
+            cleanup_paths: Vec::new(),
+            instruction_cleanups: Vec::new(),
+        }
     };
-    let base_len = serde_json::to_vec(&decoded_manifest(storage.clone()))
+    let base_len = serde_json::to_vec(&compact_manifest(storage.clone()))
         .unwrap()
         .len();
     storage
-        .archive_url
+        .vas_version_id
         .as_mut()
         .unwrap()
         .push_str(&"x".repeat(storage_files::MAX_MANIFEST_BYTES - base_len));
     assert_eq!(
-        serde_json::to_vec(&decoded_manifest(storage.clone()))
+        serde_json::to_vec(&compact_manifest(storage.clone()))
             .unwrap()
             .len(),
         storage_files::MAX_MANIFEST_BYTES
@@ -607,6 +628,7 @@ async fn mixed_decoded_batch_uses_exact_per_array_comma_accounting() {
         .collect::<Vec<_>>();
     assert_eq!(binary_calls.len(), 1);
     let (json, _) = storage_files::split_input(&binary_calls[0].manifest_json).unwrap();
+    assert_eq!(json.len(), storage_files::MAX_MANIFEST_BYTES);
     let batch: Manifest = serde_json::from_slice(json).unwrap();
     assert_eq!(batch.storages.len(), 1);
     assert_eq!(batch.artifacts.len(), 1);
@@ -749,7 +771,7 @@ async fn split_decoded_batches_clean_once_and_preserve_real_files_and_metadata()
         .await
         .unwrap();
     let calls = sandbox.storage_manifest_calls();
-    assert_eq!(calls.len(), 4);
+    assert_eq!(calls.len(), 2);
     assert!(
         !calls[0]
             .manifest_json
@@ -794,9 +816,10 @@ async fn split_decoded_batches_clean_once_and_preserve_real_files_and_metadata()
 #[tokio::test]
 async fn split_decoded_delivery_stops_after_the_first_failed_helper() {
     for failed_batch in 0..3 {
-        let fixture = DeliveryFixture::new(3, 3, 35_000).await;
+        let fixture = DeliveryFixture::new(3, 3, 604).await;
         let sandbox = MockSandbox::new("decoded-failure");
-        let (manifest, files) = fixture.prepare(&sandbox).await;
+        let (mut manifest, files) = fixture.prepare(&sandbox).await;
+        pad_versions_for_split(&mut manifest);
         for _ in 0..failed_batch {
             sandbox.push_exec_result(Ok(ExecResult::new(0, Vec::new(), Vec::new())));
         }
@@ -967,9 +990,7 @@ async fn decoded_entry_admission_obeys_exact_canonical_json_boundary() {
         assert_binary_calls(&sandbox, 2 - extra);
         if extra == 0 {
             let calls = sandbox.storage_manifest_calls();
-            assert_eq!(calls.len(), 2);
-            let (json, _) = storage_files::split_input(&calls[0].manifest_json).unwrap();
-            assert_eq!(json.len(), storage_files::MAX_MANIFEST_BYTES);
+            assert_eq!(calls.len(), 1);
         }
         fixture.shutdown().await;
     }
@@ -1028,7 +1049,7 @@ async fn high_fanout_archive_hits_warm_decoded_files_only_after_agent_spawn() {
 
 #[tokio::test]
 async fn decoded_batch_failure_prevents_agent_spawn() {
-    let fixture = DeliveryFixture::new(3, 3, 35_000).await;
+    let fixture = DeliveryFixture::new(4, 3, 35_000).await;
     let overrides = Arc::new(MockSandboxOverrides::new());
     overrides.push_storage_manifest_result(Ok(ExecResult::new(0, Vec::new(), Vec::new())));
     let mut failed = ExecResult::new(1, Vec::new(), b"second batch failed".to_vec());
@@ -1075,8 +1096,13 @@ async fn cancelling_during_a_decoded_batch_prevents_later_batches_and_spawn() {
     let DeliveryFixture {
         root,
         config,
-        manifest,
-    } = DeliveryFixture::new(3, 3, 35_000).await;
+        mut manifest,
+    } = DeliveryFixture::new(36, 36, 604).await;
+    // Independent long mount paths still need three batches after URL compaction.
+    let suffix = format!("/{}", "d".repeat(200)).repeat(19);
+    for (index, storage) in manifest.storages.iter_mut().enumerate() {
+        storage.mount_path = format!("/mnt/storage-{index}{suffix}");
+    }
     let cache = config.decoded_cache.clone();
     let background = config.background_fill.clone();
     let overrides = Arc::new(MockSandboxOverrides::new());

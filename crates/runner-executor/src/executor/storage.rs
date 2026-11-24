@@ -415,14 +415,36 @@ fn storage_inputs(
     storage_files::encoded_payload_len(&groups)
         .map_err(|e| RunnerError::Internal(format!("storage files payload: {e}")))?;
     let files_by_mount = groups.into_iter().collect::<HashMap<_, _>>();
-    let (decoded_storages, ordinary_storages) = std::mem::take(&mut manifest.storages)
-        .into_iter()
-        .partition(|entry| files_by_mount.contains_key(entry.mount_path.as_str()));
-    let (decoded_artifacts, ordinary_artifacts) = std::mem::take(&mut manifest.artifacts)
-        .into_iter()
-        .partition(|entry| files_by_mount.contains_key(entry.mount_path.as_str()));
+    let (mut decoded_storages, ordinary_storages): (Vec<_>, Vec<_>) =
+        std::mem::take(&mut manifest.storages)
+            .into_iter()
+            .partition(|entry| files_by_mount.contains_key(entry.mount_path.as_str()));
+    let (mut decoded_artifacts, ordinary_artifacts): (Vec<_>, Vec<_>) =
+        std::mem::take(&mut manifest.artifacts)
+            .into_iter()
+            .partition(|entry| files_by_mount.contains_key(entry.mount_path.as_str()));
     manifest.storages = ordinary_storages;
     manifest.artifacts = ordinary_artifacts;
+    // The Guest builds a task from a nonempty URL, then binds its decoded file
+    // group before running it. Keep a source marker and omit the signed URL.
+    // A legacy Workflow can rewrite its document after each helper call. Keep
+    // those batch boundaries, including when mounts alias the same directory.
+    if decoded_storages
+        .iter()
+        .all(|entry| entry.vas_storage_name.as_deref() != Some("workflow"))
+    {
+        for url in decoded_storages
+            .iter_mut()
+            .map(|entry| &mut entry.archive_url)
+            .chain(
+                decoded_artifacts
+                    .iter_mut()
+                    .map(|entry| &mut entry.archive_url),
+            )
+        {
+            *url = Some("decoded://".into());
+        }
+    }
     let mut inputs = Vec::new();
     // All cleanup, reused paths, instructions and unselected artifacts stay
     // together and run before any decoded writes. Subsequent batches never
