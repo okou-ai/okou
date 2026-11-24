@@ -68,6 +68,7 @@ class ScreenshotScenario {
                 open(412, 892, artifacts) { capturePhone(artifacts) }
                 open(1180, 820, artifacts) { captureWide(artifacts) }
             } finally {
+                instrumentation.resetInTouchMode()
                 restoreDisplay("size", oldSize)
                 restoreDisplay("density", oldDensity)
                 if (oldFontScale.toFloatOrNull() == null) {
@@ -135,7 +136,12 @@ class ScreenshotScenario {
 
     private fun captureWide(artifacts: ArtifactApiFixture) {
         val videos = By.text("视频")
-        focusWithTab(videos)
+        instrumentation.setInTouchMode(false)
+        focusWithTab(By.text("全部"))
+        for (label in listOf("文件", "网站", "图片", "演示文稿", "视频")) {
+            assertTrue(device.pressDPadRight())
+            verifyFocus(By.text(label))
+        }
         assertTrue(actionBounds("视频").width() >= 48)
         ScreenshotCapture.capture("filter-focus-wide.png")
         assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_ENTER))
@@ -167,15 +173,37 @@ class ScreenshotScenario {
         val scoped = By.copy(selector).pkg(app.packageName)
         val focused = By.copy(scoped).focused(true)
         val focusedControl = By.focused(true).hasChild(scoped)
+        val trail = mutableListOf<String?>()
+        fun reached() = device.hasObject(focused) || device.hasObject(focusedControl)
         repeat(18) {
-            if (device.hasObject(focused) || device.hasObject(focusedControl)) return
+            if (reached()) return
+            val before = focusName()
+            trail.add(before)
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_TAB))
+            device.wait(object : Condition<UiDevice, Boolean> {
+                override fun apply(device: UiDevice): Boolean = reached() || focusName() != before
+            }, 1_500)
         }
-        verifyFocus(selector)
+        if (!reached()) runCatching { ScreenshotCapture.capture("tab-diagnostic.png") }
+        check(reached()) { "Tab did not reach $selector. Focus trail: $trail" }
     }
 
-    private fun verifyFocus(selector: BySelector) =
-        device.awaitKeyboardFocus(By.copy(selector).pkg(app.packageName))
+    private fun focusName(): String? = try {
+        device.findObject(By.pkg(app.packageName).focused(true))?.let { node ->
+            node.text ?: node.contentDescription ?: node.children.firstOrNull()?.text
+        }
+    } catch (_: StaleObjectException) {
+        null
+    }
+
+    private fun verifyFocus(selector: BySelector) {
+        try {
+            device.awaitKeyboardFocus(By.copy(selector).pkg(app.packageName))
+        } catch (error: IllegalStateException) {
+            runCatching { ScreenshotCapture.capture("focus-diagnostic.png") }
+            throw IllegalStateException("Expected $selector. Observed focus on ${focusName()}", error)
+        }
+    }
 
     private fun bounds(selector: BySelector): Rect = read(selector) { it.visibleBounds }
 
