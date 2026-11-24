@@ -74,6 +74,34 @@ describe("presentation runbook packages", () => {
   });
 
   it.each(["html", "pptx"] as const)(
+    "preserves the legacy %s packet when the format policy is disabled or omitted",
+    async (outputFormat) => {
+      const pkg = findPresentationRunbookPackage(
+        "template:html-ppt-schoolhouse",
+        outputFormat,
+      );
+      if (!pkg) {
+        throw new Error(`Missing ${outputFormat} Schoolhouse package`);
+      }
+      const args = {
+        runbookPackage: pkg,
+        colorSystemToken: "bauhaus-primary",
+        imageGenerationEnabled: false,
+      };
+      const legacy = buildPresentationRunbookInstructionLines(args);
+      expect(
+        buildPresentationRunbookInstructionLines({
+          ...args,
+          presentationOutputFormatEnabled: false,
+        }),
+      ).toEqual(legacy);
+      await expect(legacy.join("\n")).toMatchFileSnapshot(
+        `./__snapshots__/presentation-runbook-packages-legacy-${outputFormat}.txt`,
+      );
+    },
+  );
+
+  it.each(["html", "pptx"] as const)(
     "uses the matching %s package directory and authoring workflow",
     (outputFormat) => {
       const pkg = findPresentationRunbookPackage(
@@ -87,6 +115,7 @@ describe("presentation runbook packages", () => {
         runbookPackage: pkg,
         colorSystemToken: "bauhaus-primary",
         imageGenerationEnabled: false,
+        presentationOutputFormatEnabled: true,
       }).join("\n");
       const resourceDir =
         outputFormat === "pptx"
@@ -104,13 +133,26 @@ describe("presentation runbook packages", () => {
         "If the selected package is unavailable, stop and report it",
       );
       expect(instructions).toContain(
-        "The final deliverable must match the resolved output format; template delivery instructions do not override it",
+        "resolve the output format from the explicit current request, then the saved default in the CURRENT message's `# Presentation Output Preference`",
       );
       expect(instructions).toContain(
-        "If no format is explicitly requested and the current message has no saved preference, default to HTML without asking for a format or saving this fallback as a preference",
+        "A default alone does not request a presentation or change other artifact types",
+      );
+      expect(instructions).toContain("do not query or update preferences");
+      expect(instructions).toContain(
+        "deliver PPTX, not intermediate HTML; no separate conversion request is needed",
       );
       expect(instructions).toContain(
-        "When the selected template offers both HTML and PPTX, use its matching version directly",
+        "If a package or conversion is unavailable, or conversion fails, report the blocker instead of substituting a format or style",
+      );
+      expect(instructions).toContain(
+        "Template instructions do not override the resolved format",
+      );
+      expect(instructions).toContain(
+        "then HTML without asking or saving a preference",
+      );
+      expect(instructions).toContain(
+        "Use the matching HTML/PPTX template version directly",
       );
       if (outputFormat === "pptx") {
         expect(instructions).toContain(

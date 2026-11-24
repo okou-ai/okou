@@ -1,4 +1,14 @@
 import { Command, InvalidArgumentError, Option } from "commander";
+import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
+import {
+  featureSwitchesContract,
+  featureSwitchesResponseSchema,
+} from "@okouai/api-contracts/contracts/feature-switches";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
+  getClientConfig,
+  handleError,
+} from "../../lib/api/core/client-factory";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { dispatchGenerate } from "../generate/lib/dispatch";
 import { isPaidToolEnabled } from "../../lib/command/paid-tools";
@@ -139,6 +149,24 @@ ${formatPresentationTemplateListing(templates)}`;
           prompt: options.prompt,
         });
         if (dispatch.outcome === "handled") return;
+        const client = initClient(
+          featureSwitchesContract,
+          await getClientConfig(),
+        );
+        const response = await client.get({
+          fetchOptions: { cache: "no-store" },
+        });
+        if (response.status !== 200) {
+          handleError(
+            response,
+            "Could not check presentation output format availability",
+          );
+        }
+        const { effectiveSwitches } = featureSwitchesResponseSchema.parse(
+          response.body,
+        );
+        const presentationOutputFormatEnabled =
+          effectiveSwitches[FeatureSwitchKey.PresentationOutputFormat] === true;
         const prompt = dispatch.prompt;
         const outputFormat = options.format;
         const resourceDir =
@@ -192,6 +220,7 @@ ${formatPresentationTemplateListing(templates)}`;
                 colorSystemToken: template.defaultColorSystem,
                 imageGenerationEnabled: isPaidToolEnabled("image-generation"),
                 hostCommand,
+                presentationOutputFormatEnabled,
               }),
               ...deliveryInstructions,
               "",
@@ -251,6 +280,7 @@ ${formatPresentationTemplateListing(templates)}`;
             ...presentationDeliveryInstructions({
               outputFormat,
               hostCommand,
+              presentationOutputFormatEnabled,
             }),
             ...deliveryInstructions,
           ].join("\n"),

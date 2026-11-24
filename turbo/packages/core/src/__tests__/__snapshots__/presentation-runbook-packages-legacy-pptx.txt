@@ -1,0 +1,15 @@
+Selected presentation template: Schoolhouse Presentation (template:html-ppt-schoolhouse)
+Output format: PPTX
+Color system token: bauhaus-primary
+
+To produce the presentation:
+- If the user's message requests a different output format, resolve this style for that format with `okou generate presentation --format <html|pptx> --template template:html-ppt-schoolhouse --prompt "<user request>"` before pulling a package. The message wins over the selected format preference.
+- Pull the selected package once: okou resource pull template:pptx-schoolhouse-runbook --dir ./generated/resources/pptx
+- If the selected package is unavailable, stop and report it; do not substitute another format, an HTML conversion, or a different source.
+- Before preparing sources, planning slides, or authoring, read ./generated/resources/pptx/schoolhouse-native/SKILL.md fully and follow its template, authoring, and verification instructions.
+- Read any workflow SKILL.md it references before starting that workflow. Use the documented entry command and bundled parallel workflow when specified, reusing the local package and saved task state.
+- Use the requested slide count; default to 8.
+- Author an editable native PPTX directly with the selected package; do not author HTML first or convert an HTML deck.
+- Follow the package's PowerPoint export and verification workflow, then render and inspect its slide images before delivery.
+- Deliver the final .pptx with this integration's upload-file command. Do not host an HTML deck instead. Deliver one format unless the user requests multiple formats.
+- Return the exact URL printed by the file delivery command.

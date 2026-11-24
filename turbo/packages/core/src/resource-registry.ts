@@ -3603,6 +3603,7 @@ export function buildPresentationRunbookInstructionLines(args: {
   readonly colorSystemToken: string;
   readonly imageGenerationEnabled: boolean;
   readonly hostCommand?: string;
+  readonly presentationOutputFormatEnabled?: boolean;
 }): readonly string[] {
   const { runbookPackage: pkg, colorSystemToken } = args;
   const resourceDir =
@@ -3616,8 +3617,9 @@ export function buildPresentationRunbookInstructionLines(args: {
     `Color system token: ${colorSystemToken}`,
     "",
     "To produce the presentation:",
-    `- When this template offers both HTML and PPTX and the output format resolved from the current request or its current-message product preference differs from this package, resolve this style for that format with \`okou generate presentation --format <html|pptx> --template ${pkg.templateId} --prompt "<user request>"\` before pulling a package. The newly resolved same-style packet supersedes all remaining instructions in this mismatched packet; follow that packet instead. The message wins over the selected format preference.`,
-    "- If this template supports only HTML and the resolved output format is PPTX, keep its HTML package for authoring, then use the enabled built-in HTML-to-PPTX conversion workflow; deliver only the converted PPTX unless multiple formats were requested.",
+    args.presentationOutputFormatEnabled
+      ? `- If the resolved output format differs from this package, resolve the same style with \`okou generate presentation --format <html|pptx> --template ${pkg.templateId} --prompt "<user request>"\` before pulling it. The replacement packet supersedes all remaining instructions here.`
+      : `- If the user's message requests a different output format, resolve this style for that format with \`okou generate presentation --format <html|pptx> --template ${pkg.templateId} --prompt "<user request>"\` before pulling a package. The message wins over the selected format preference.`,
     `- Pull the selected package once: okou resource pull ${pkg.resourceId} --dir ${resourceDir}`,
     "- If the selected package is unavailable, stop and report it; do not substitute another format, an HTML conversion, or a different source.",
     `- Before preparing sources, planning slides, or authoring, read ${packageDir}/SKILL.md fully and follow its template, authoring, and verification instructions.`,
@@ -3630,6 +3632,7 @@ export function buildPresentationRunbookInstructionLines(args: {
     ...presentationDeliveryInstructions({
       outputFormat: pkg.outputFormat,
       hostCommand: args.hostCommand,
+      presentationOutputFormatEnabled: args.presentationOutputFormatEnabled,
     }),
   ];
 }

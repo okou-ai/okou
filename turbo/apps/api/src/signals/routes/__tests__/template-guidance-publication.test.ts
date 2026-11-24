@@ -10,6 +10,7 @@ import { readTemplateGuidanceBundle } from "@okouai/core/template-guidance-bundl
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { mockNow } from "../../../lib/time";
 import { mockEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -193,12 +194,19 @@ function executionFiles(
 }
 
 test.each([
-  { label: "explicit PPTX", format: "pptx" },
-  { label: "default HTML", format: undefined },
+  { label: "explicit PPTX", format: "pptx", outputFormatEnabled: true },
+  { label: "default HTML", format: undefined, outputFormatEnabled: true },
+  {
+    label: "legacy explicit PPTX",
+    format: "pptx",
+    outputFormatEnabled: false,
+  },
 ] as const)(
   "uses $label for an HTML-only template without a Presentation tag",
-  async ({ format }) => {
-    const owner = await publicChatActor(context);
+  async ({ format, outputFormatEnabled }) => {
+    const owner = await publicChatActor(context, {
+      actor: bdd.user({ orgId: createUniqueStaffOrgIdFixture() }),
+    });
     owner.ownsFeatureSwitches();
     await owner.run(async () => {
       if (!owner.actor.orgId) {
@@ -207,7 +215,10 @@ test.each([
       await updateFeatureSwitchesForUser(
         context,
         { ...owner.actor, orgId: owner.actor.orgId },
-        { [FeatureSwitchKey.PresentationConvert]: format === "pptx" },
+        {
+          [FeatureSwitchKey.PresentationOutputFormat]: outputFormatEnabled,
+          [FeatureSwitchKey.PresentationConvert]: format === "pptx",
+        },
       );
     });
     const fixture = await owner.run(() => {
@@ -243,6 +254,25 @@ test.each([
     });
     const { execution } = await owner.runExecution(run.runId);
     expect(execution.prompt).toContain(request);
+    expect(execution.prompt).not.toContain("Create a presentation.");
+    expect(execution.prompt).not.toContain(
+      "# Presentation Generation Defaults",
+    );
+    const { events } = await owner.run(() => {
+      return chat.chat.listThreadEvents(owner.actor, run.threadId);
+    });
+    const input = events.find((event) => {
+      return event.eventType === "input.prompt" && event.runId === run.runId;
+    });
+    if (input?.eventType !== "input.prompt") {
+      throw new Error("Expected the run-bound user message");
+    }
+    // A template and deck request do not select the composer's Presentation tag.
+    expect(
+      input.userMessage.parts.filter((part) => {
+        return part.type === "additional_info";
+      }),
+    ).toStrictEqual([]);
     expect(
       executionFiles(
         fixture,
@@ -255,25 +285,42 @@ test.each([
     expect(prompt).toContain(
       "Author the finished deck directly as semantic HTML, CSS, and SVG",
     );
-    expect(prompt).toContain(
-      "If no format is explicitly requested and the current message has no saved preference, default to HTML without asking for a format or saving this fallback as a preference",
-    );
-    expect(prompt).toContain(
-      "First-use format cards are client-owned and require an explicitly selected Presentation tag with a confirmed unset preference; never trigger one from inferred presentation intent",
-    );
-    if (format === "pptx") {
-      expect(prompt).toContain(
-        "If the selected template supports only HTML and the resolved format is PPTX, author with that HTML template, then use the enabled built-in HTML-to-PPTX conversion workflow and deliver the converted .pptx, not the intermediate HTML",
+    const policyMarker =
+      "resolve the output format from the explicit current request";
+    const templatePrompt =
+      prompt.split(/^# Inline Templates$/mu)[1]?.split(/^# /mu)[0] ?? "";
+    if (outputFormatEnabled) {
+      expect(templatePrompt).toContain(policyMarker);
+      expect(templatePrompt).toContain(
+        "then HTML without asking or saving a preference",
       );
+      expect(templatePrompt).toContain(
+        "For resolved PPTX output with an HTML-only template, use the enabled HTML-to-PPTX conversion workflow and deliver PPTX, not intermediate HTML; no separate conversion request is needed.",
+      );
+      expect(templatePrompt).toContain(
+        "Template instructions do not override the resolved format.",
+      );
+    } else {
+      expect(prompt).not.toContain(policyMarker);
+      expect(templatePrompt).toContain(
+        "Deliver HTML by default; convert to PPTX only when the user explicitly requests PowerPoint/PPTX.",
+      );
+    }
+    if (format === "pptx") {
       expect(prompt).toContain(
         "okou presentation convert --input <deck.html> --out <deck.pptx> --verify",
       );
       expect(prompt).toContain(
-        "The resolved PPTX requirement authorizes this conversion without a separate conversion request",
+        outputFormatEnabled
+          ? "For PPTX output from an HTML-only template, or an explicit request to convert an existing HTML deck"
+          : "- Only when the user explicitly requests PowerPoint/PPTX conversion of an HTML deck (not native PPTX template generation), convert the finished HTML directly with `okou presentation convert --input <deck.html> --out <deck.pptx> --verify`, then upload the PPTX with this surface's `upload-file` command.",
       );
-      expect(prompt).toContain(
-        "inspect the converted deck's slide images, then upload only the PPTX",
-      );
+      if (outputFormatEnabled) {
+        expect(prompt).toContain("inspect the converted slide images");
+        expect(prompt).toContain(
+          "Do not deliver intermediate HTML unless multiple formats were requested.",
+        );
+      }
     } else {
       expect(prompt).toContain(
         "For HTML delivery, host the finished deck: okou host",

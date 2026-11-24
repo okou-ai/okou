@@ -70,7 +70,7 @@ describe("buildGenerationTemplatePrompt", () => {
   });
 
   it.each(["html", "pptx"] as const)(
-    "builds %s presentation guidance with current-message format precedence and the Okou image batch command",
+    "builds legacy %s presentation guidance and the Okou image batch command by default",
     (outputFormat) => {
       const item = presentationTemplateBySlug("playful-launch-presentation");
 
@@ -108,20 +108,20 @@ describe("buildGenerationTemplatePrompt", () => {
       );
       if (native) {
         expect(result.prompt).toContain(
-          "Author an editable native PPTX directly with the selected package when generating a new deck with resolved PPTX output",
+          "Author an editable native PPTX directly with the selected package; do not author HTML first or convert an HTML deck.",
         );
         expect(result.prompt).toContain(
-          "- Only when the resolved output format is PPTX: Follow the package's PowerPoint export and verification workflow",
+          "- Follow the package's PowerPoint export and verification workflow",
         );
         expect(result.prompt).toContain(
-          "- Only when the resolved output format is PPTX: Deliver the final .pptx with this integration's upload-file command",
+          "- Deliver the final .pptx with this integration's upload-file command",
         );
         expect(result.prompt).toContain(
-          "- Only when the resolved output format is PPTX: Return the exact URL printed by the file delivery command.",
+          "- Return the exact URL printed by the file delivery command.",
         );
       } else {
         expect(result.prompt).toContain(
-          "- When authoring HTML, including an HTML-only template's source for PPTX conversion: Keep all slides and visible content in index.html; render the first slide without JavaScript",
+          "- Keep all slides and visible content in index.html; render the first slide without JavaScript",
         );
         expect(result.prompt).toContain(
           "For HTML delivery, host the finished deck: okou host <output-dir> --site <slug> --artifact-kind presentation-html",
@@ -129,27 +129,19 @@ describe("buildGenerationTemplatePrompt", () => {
         expect(result.prompt).toContain(
           "when supported, add `--title` with a concise human-readable presentation name",
         );
+        expect(result.prompt).toContain(
+          "Deliver HTML by default; convert to PPTX only when the user explicitly requests PowerPoint/PPTX.",
+        );
       }
+      expect(result.prompt).not.toContain("# Presentation Output Preference");
       expect(result.prompt).toContain(
-        "use an explicit format in the current request first, then the saved default in the CURRENT message's `# Presentation Output Preference`",
-      );
-      expect(result.prompt).toContain(
-        "an attached native PPTX package does not override an explicit HTML request",
-      );
-      expect(result.prompt).toContain(
-        "If no format is explicitly requested and the current message has no saved preference, default to HTML without asking for a format or saving this fallback as a preference",
-      );
-      expect(result.prompt).toContain(
-        "First-use format cards are client-owned and require an explicitly selected Presentation tag with a confirmed unset preference; never trigger one from inferred presentation intent",
-      );
-      expect(result.prompt).toContain(
-        "When this template offers both HTML and PPTX and the output format resolved from the current request or its current-message product preference differs from this package",
+        "If the user's message requests a different output format",
       );
       expect(result.prompt).toContain(
         'okou generate presentation --format <html|pptx> --template template:html-ppt-playful-launch --prompt "<user request>"',
       );
       expect(result.prompt).toContain(
-        "The newly resolved same-style packet supersedes all remaining instructions in this mismatched packet; follow that packet instead",
+        "The message wins over the selected format preference.",
       );
       const imageWorkflowLines = result.prompt.split("\n").filter((line) => {
         return line.startsWith("- Image workflow:");
@@ -174,7 +166,7 @@ describe("buildGenerationTemplatePrompt", () => {
     },
   );
 
-  it("keeps imported template authoring separate from the final delivery format", () => {
+  it("keeps imported templates on legacy HTML delivery guidance by default", () => {
     const result = buildGenerationTemplatePrompt(
       {
         type: "presentation",
@@ -218,18 +210,13 @@ describe("buildGenerationTemplatePrompt", () => {
       "when supported, add `--title` with a concise human-readable presentation name",
     );
     expect(result.prompt).toContain(
-      "use an explicit format in the current request first, then the saved default in the CURRENT message's `# Presentation Output Preference`",
+      "Deliver HTML by default; convert to PPTX only when the user explicitly requests PowerPoint/PPTX.",
     );
     expect(result.prompt).toContain("To produce the presentation:");
     expect(result.prompt).toContain(
-      "If the selected template supports only HTML and the resolved format is PPTX, author with that HTML template, then use the enabled built-in HTML-to-PPTX conversion workflow and deliver the converted .pptx, not the intermediate HTML",
+      "For an explicit PowerPoint/PPTX request, follow the platform's conversion instructions.",
     );
-    expect(result.prompt).toContain(
-      "The final deliverable must match the resolved output format; template delivery instructions do not override it",
-    );
-    expect(result.prompt).toContain(
-      "The resolved PPTX requirement is sufficient; do not require a separate request to convert",
-    );
+    expect(result.prompt).not.toContain("# Presentation Output Preference");
     // A private package has no registry resource to pull.
     expect(result.prompt).not.toContain("okou resource pull");
     // The raw row id may name the mount, but no storage key may leak.

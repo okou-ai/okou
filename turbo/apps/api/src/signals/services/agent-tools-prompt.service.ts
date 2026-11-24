@@ -8,7 +8,10 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { CANONICAL_WORKING_DIR } from "@okouai/api-contracts/contracts/runners";
 import { presentationTemplateSkillInstruction } from "@okouai/core/presentation-template-skill";
-import { PRESENTATION_DELIVERY_INSTRUCTION } from "@okouai/core/presentation-generation-instructions";
+import {
+  PRESENTATION_DELIVERY_INSTRUCTION,
+  PRESENTATION_OUTPUT_FORMAT_INSTRUCTION,
+} from "@okouai/core/presentation-generation-instructions";
 import { artifactPreviewInstructions } from "@okouai/core/artifact-preview-instructions";
 
 const wechatToolsGuidance = Object.freeze([
@@ -60,6 +63,7 @@ export interface AgentToolsPromptInputs {
   readonly larkOfficialEnabled: boolean;
   readonly wechatEnabled: boolean;
   readonly presentationConvertEnabled: boolean;
+  readonly presentationOutputFormatEnabled: boolean;
   readonly markdownFirstOutputEnabled: boolean;
   readonly cloudBrowserEnabled: boolean;
   readonly artifactThreePointTimingEnabled: boolean;
@@ -91,6 +95,10 @@ export function buildAgentToolsPromptInputs(args: {
     ),
     presentationConvertEnabled: isFeatureEnabled(
       FeatureSwitchKey.PresentationConvert,
+      context,
+    ),
+    presentationOutputFormatEnabled: isFeatureEnabled(
+      FeatureSwitchKey.PresentationOutputFormat,
       context,
     ),
     markdownFirstOutputEnabled: isFeatureEnabled(
@@ -224,10 +232,14 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
     ...buildIntegrationToolsPrompt(args.markdownFirstOutputEnabled),
     "- Presentation page images: use `okou presentation screenshot --input <deck.ppt|deck.pptx|deck.pdf|page.html|layouts-dir|url> --out <dir>` to render any presentation source to ordered `page-001.png` files at one fixed page size. PPT, PPTX, and PDF are rasterised through LibreOffice and Poppler; HTML pages, layout directories, and URLs are captured through a browser, one image per slide. It only writes local image files: it uploads nothing, publishes nothing, and is unrelated to `okou presentation-template publish`, so it is the right tool whenever page images are the goal, including review and analysis. Prefer it over `pdftoppm`, `soffice`, or hand-driven `agent-browser` screenshot calls, because a screenshot of a page the browser never painted looks like a successful screenshot. Run `okou presentation screenshot --help` for the current interface.",
     "- Static web artifacts can be published with `okou host <dir> --site <slug> [--spa]`; for HTML presentations, include `--artifact-kind presentation-html`; run `okou host --help` for details.",
-    PRESENTATION_DELIVERY_INSTRUCTION,
+    args.presentationOutputFormatEnabled
+      ? PRESENTATION_OUTPUT_FORMAT_INSTRUCTION
+      : PRESENTATION_DELIVERY_INSTRUCTION,
     ...(args.presentationConvertEnabled
       ? [
-          "- HTML-to-PPTX conversion: when the resolved delivery format is PPTX and the selected template supports only HTML, convert its finished HTML with `okou presentation convert --input <deck.html> --out <deck.pptx> --verify`, inspect the converted deck's slide images, then upload only the PPTX with this surface's `upload-file` command unless the user requests multiple formats. The resolved PPTX requirement authorizes this conversion without a separate conversion request. Use the same workflow for an explicit request to convert an existing HTML deck. When the selected template has a matching native PPTX version, use that version directly instead of converting HTML.",
+          args.presentationOutputFormatEnabled
+            ? "- For PPTX output from an HTML-only template, or an explicit request to convert an existing HTML deck, run `okou presentation convert --input <deck.html> --out <deck.pptx> --verify`, inspect the converted slide images, then upload the PPTX with this surface's `upload-file` command. Do not deliver intermediate HTML unless multiple formats were requested."
+            : "- Only when the user explicitly requests PowerPoint/PPTX conversion of an HTML deck (not native PPTX template generation), convert the finished HTML directly with `okou presentation convert --input <deck.html> --out <deck.pptx> --verify`, then upload the PPTX with this surface's `upload-file` command.",
         ]
       : []),
     "- Third-party services (GitHub, Slack, Notion, 4,000+ more) can be accessed through connectors. `okou connector search <service-name>` searches every supported service and reports which matching connectors are available to the current run. For supported services, connectors provide a smoother and safer experience: provider credentials stay outside the sandbox and are resolved at the network boundary. When a user wants to connect a third-party service, search for it first. List connected: `okou connector list`. Inspect: `okou connector status <slug>`.",
