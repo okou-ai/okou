@@ -278,12 +278,17 @@ test.each([true, false])(
     const client = project("Seaside research", "a0");
     await open([client], [], undefined, enabled);
     click(await findFastControl("button", "Options for Seaside research"));
-    const menu = within(await screen.findByRole("menu"));
-    await expect(
-      menu.findByRole("menuitem", { name: "Rename" }),
-    ).resolves.toBeVisible();
-    expect(menu.queryAllByRole("menuitem", { name: "Archive" })).toHaveLength(
-      Number(enabled),
+    const menu = await screen.findByRole("menu");
+    const actions = queryAllByRoleFast("menuitem", menu).filter((item) => {
+      const label = item.textContent?.trim();
+      return label === "Rename" || label === "Archive";
+    });
+    const labels = actions.map((action) => {
+      expect(action).toBeVisible();
+      return action.textContent?.trim();
+    });
+    expect(labels.sort()).toStrictEqual(
+      enabled ? ["Archive", "Rename"] : ["Rename"],
     );
   },
 );
