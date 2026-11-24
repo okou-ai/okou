@@ -1,0 +1,338 @@
+{
+  "revisions": {
+    "frozen": "b0a10287edf4242383c28e39c6f7675053febb32",
+    "beforeFirstWithdrawal": "5310dbb9ba6bd8b95507bc7293f6da3ed8aa004b",
+    "beforeSecondWithdrawal": "a445586e0483bb7e2440e60200a8deed30aa3df9",
+    "main": "99a62fde56ed92bfc343b04cb5b0df207c07fd0a",
+    "opening": "10e42998a931e337c08a02e313bec67f7019523d"
+  },
+  "cases": {
+    "message-port-018": {
+      "frozenOwner": "turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts",
+      "verifiedAt": "turbo/apps/platform/src/views/okou-page/__tests__/registered-unread-refresh.test.ts"
+    },
+    "message-port-023": {
+      "frozenOwner": "turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts",
+      "verifiedAt": "native Chromium Router and independent receivers"
+    },
+    "message-port-030": {
+      "frozenOwner": "turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts",
+      "verifiedAt": "native Chromium Router and independent receivers"
+    },
+    "indexeddb-client-002": {
+      "frozenOwner": "turbo/apps/platform/src/signals/external/__tests__/indexeddb-client.test.ts",
+      "verifiedAt": "turbo/apps/platform/src/views/okou-page/__tests__/chat-storage-telemetry.test.ts"
+    },
+    "indexeddb-client-003": {
+      "frozenOwner": "turbo/apps/platform/src/signals/external/__tests__/indexeddb-client.test.ts",
+      "verifiedAt": "native Chromium Router and independent receivers"
+    },
+    "realtime-005": {
+      "frozenOwner": "turbo/apps/platform/src/signals/__tests__/realtime.test.ts",
+      "verifiedAt": "native Chromium Router and independent receivers"
+    },
+    "realtime-006": {
+      "frozenOwner": "turbo/apps/platform/src/signals/__tests__/realtime.test.ts",
+      "verifiedAt": "native Chromium Router and independent receivers"
+    },
+    "realtime-010": {
+      "frozenOwner": "turbo/apps/platform/src/signals/__tests__/realtime.test.ts",
+      "verifiedAt": "native Chromium Router and independent receivers"
+    },
+    "realtime-020": {
+      "frozenOwner": "turbo/apps/platform/src/signals/__tests__/realtime.test.ts",
+      "verifiedAt": "native Chromium Router and independent receivers"
+    },
+    "clerk-user-003": {
+      "frozenOwner": "turbo/apps/platform/src/signals/__tests__/clerk-user.test.ts",
+      "verifiedAt": "turbo/apps/platform/src/views/auth-v1/__tests__/identity-startup.test.ts"
+    },
+    "clerk-user-005": {
+      "frozenOwner": "turbo/apps/platform/src/signals/__tests__/clerk-user.test.ts",
+      "verifiedAt": "turbo/apps/platform/src/views/auth-v1/__tests__/identity-startup.test.ts"
+    },
+    "clerk-user-006": {
+      "frozenOwner": "turbo/apps/platform/src/signals/__tests__/clerk-user.test.ts",
+      "verifiedAt": "turbo/apps/platform/src/views/auth-v1/__tests__/identity-startup.test.ts"
+    },
+    "clerk-user-007": {
+      "frozenOwner": "turbo/apps/platform/src/signals/__tests__/clerk-user.test.ts",
+      "verifiedAt": "turbo/apps/platform/src/views/auth-v1/__tests__/identity-startup.test.ts"
+    },
+    "command-scheduling-001": {
+      "frozenOwner": "turbo/apps/platform/src/signals/__tests__/command-scheduling.test.ts",
+      "verifiedAt": "turbo/apps/platform/src/signals/__tests__/command-scheduling.test.ts"
+    },
+    "command-scheduling-002": {
+      "frozenOwner": "turbo/apps/platform/src/signals/__tests__/command-scheduling.test.ts",
+      "verifiedAt": "turbo/apps/platform/src/signals/__tests__/command-scheduling.test.ts"
+    },
+    "command-scheduling-003": {
+      "frozenOwner": "turbo/apps/platform/src/signals/__tests__/command-scheduling.test.ts",
+      "verifiedAt": "turbo/apps/platform/src/signals/__tests__/command-scheduling.test.ts"
+    },
+    "command-scheduling-004": {
+      "frozenOwner": "turbo/apps/platform/src/signals/__tests__/command-scheduling.test.ts",
+      "verifiedAt": "turbo/apps/platform/src/signals/__tests__/command-scheduling.test.ts"
+    },
+    "command-scheduling-006": {
+      "frozenOwner": "turbo/apps/platform/src/signals/__tests__/command-scheduling.test.ts",
+      "verifiedAt": "turbo/apps/platform/src/signals/__tests__/command-scheduling.test.ts"
+    },
+    "client-001": {
+      "frozenOwner": "turbo/apps/platform/src/signals/browser/__tests__/client.test.ts",
+      "verifiedAt": "turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.test.tsx"
+    },
+    "client-002": {
+      "frozenOwner": "turbo/apps/platform/src/signals/browser/__tests__/client.test.ts",
+      "verifiedAt": "turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.test.tsx"
+    }
+  },
+  "ownerAndHelperBlobs": {
+    "frozen": {
+      "turbo/apps/platform/src/__tests__/mock-auth.ts": "66e10fdecd7c0d2fbf119649f9fa60a69748496d",
+      "turbo/apps/platform/src/__tests__/page-helper.ts": "503ff86cdec111e7acb5c2a163170f667dcb8cd7",
+      "turbo/apps/platform/src/lib/ably-realtime.ts": "c0d45a05f13fa93e41f1d5b04f67a564e4871428",
+      "turbo/apps/platform/src/lib/clerk-runtime.ts": "1ab3391e3062f795a1a0239099972a14ee3a3e3e",
+      "turbo/apps/platform/src/lib/time.ts": "697cec147ba575faeb007b852eefa857b723dee6",
+      "turbo/apps/platform/src/mocks/ably.ts": "90e901b91a29c8afb3d0b3cb626cd3fee1d1a152",
+      "turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts": "580baa671bd48a8f041a34939aef93c99f34e71f",
+      "turbo/apps/platform/src/shared-database/protocol.ts": "718c65cba96d9890df2d0e3b9862ee785e6422e3",
+      "turbo/apps/platform/src/shared-database/worker-context.ts": "b394e7c1f9c605a847e919df415a5679a6a1a153",
+      "turbo/apps/platform/src/signals/__tests__/clerk-user.test.ts": "e13b6caf84d8fb4e93c3e73b703a341da8ff17f7",
+      "turbo/apps/platform/src/signals/__tests__/command-scheduling.test.ts": "bff5b9cd416e26d6e84e7300b6b66b3a9ce9771e",
+      "turbo/apps/platform/src/signals/__tests__/realtime.test.ts": "0fca14af8e3a6c283bf9db6304bd5b6876eb41e8",
+      "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "728b18a9075783660512557fe91e447847f0a770",
+      "turbo/apps/platform/src/signals/auth.ts": "63fef0e3bdf807898f5d6ce2d0521d32dd689a85",
+      "turbo/apps/platform/src/signals/browser/__tests__/client.test.ts": "1cecdc68ed57e74adeb0965c96d2e641112972f2",
+      "turbo/apps/platform/src/signals/browser/cdp/client.ts": "a8b1776ff3279c6b64fe180f09c291235503c630",
+      "turbo/apps/platform/src/signals/browser/viewer/frame-window.ts": "62a872fb932be752c9a5f6ebe517e5143ddd23a0",
+      "turbo/apps/platform/src/signals/external/__tests__/indexeddb-client.test.ts": "9f6e20438d3de07344fa06030148b710494fd608",
+      "turbo/apps/platform/src/signals/external/idb-event-row-store.ts": "4bf0e1142ff40bdea7fa157fbb322ab927dba9d1",
+      "turbo/apps/platform/src/signals/external/idb-metadata-event-store.ts": "d7e8f5d5158e1d7b24f4c2e51cdb08022c5c5349",
+      "turbo/apps/platform/src/signals/external/indexeddb-client.ts": "38ad13aa8ddbc4fb59f8f6087b99eca397a730ac",
+      "turbo/apps/platform/src/signals/prompt-page/marketing-handoff.ts": "196bf64f9b61ba62718c91fc87f56cb2e07efd11",
+      "turbo/apps/platform/src/signals/realtime.ts": "890aa2cf2cd6c5af246e59f272c4264dd664f584",
+      "turbo/apps/platform/src/signals/shared-database-bridge-state.ts": "883f6210f3f2a7146ff68adcc7e174762c9c2d77",
+      "turbo/apps/platform/src/signals/utils.ts": "08b3141ba199c7b5983b61c518770bab460f3da9",
+      "turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.test.tsx": "bf53583f131b06c751e1f84a83732d18830ed442",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-test-helpers.ts": "4c6e43692ac4c82ccc353cf31c58eb39c6772ad0",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": "775ed1605a2dacd60f658d5966ca769c7f43c038",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": "4efb987b57ca9ad0a004590332a61778d509edd3",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-run-test-fixtures.ts": "190710e62035fad86425c59f7969a38294cab94f",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-test-helpers.ts": "f6140d46219e4f1b7a9b4fb208a22e56d37590f9"
+    },
+    "beforeFirstWithdrawal": {
+      "turbo/apps/platform/src/__tests__/mock-auth.ts": "66e10fdecd7c0d2fbf119649f9fa60a69748496d",
+      "turbo/apps/platform/src/__tests__/page-helper.ts": "503ff86cdec111e7acb5c2a163170f667dcb8cd7",
+      "turbo/apps/platform/src/lib/ably-realtime.ts": "c0d45a05f13fa93e41f1d5b04f67a564e4871428",
+      "turbo/apps/platform/src/lib/clerk-runtime.ts": "1ab3391e3062f795a1a0239099972a14ee3a3e3e",
+      "turbo/apps/platform/src/lib/time.ts": "697cec147ba575faeb007b852eefa857b723dee6",
+      "turbo/apps/platform/src/mocks/ably.ts": "90e901b91a29c8afb3d0b3cb626cd3fee1d1a152",
+      "turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts": "c3536fc66bd8c19ee1d9ef3b1130c4632cdb6305",
+      "turbo/apps/platform/src/shared-database/protocol.ts": "718c65cba96d9890df2d0e3b9862ee785e6422e3",
+      "turbo/apps/platform/src/shared-database/worker-context.ts": "b394e7c1f9c605a847e919df415a5679a6a1a153",
+      "turbo/apps/platform/src/signals/__tests__/clerk-user.test.ts": "31070421dc606f121c7f25efbbe4f204a029965e",
+      "turbo/apps/platform/src/signals/__tests__/command-scheduling.test.ts": "1e43951c65e22e5d132694940fc375868cba86e8",
+      "turbo/apps/platform/src/signals/__tests__/realtime.test.ts": "6c05edf7299d0ea3aebe6804578c981a98c34538",
+      "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "728b18a9075783660512557fe91e447847f0a770",
+      "turbo/apps/platform/src/signals/auth.ts": "63fef0e3bdf807898f5d6ce2d0521d32dd689a85",
+      "turbo/apps/platform/src/signals/browser/__tests__/client.test.ts": "36bb707358b5f92642c411726e6441b2c075c82a",
+      "turbo/apps/platform/src/signals/browser/cdp/client.ts": "a8b1776ff3279c6b64fe180f09c291235503c630",
+      "turbo/apps/platform/src/signals/browser/viewer/frame-window.ts": "62a872fb932be752c9a5f6ebe517e5143ddd23a0",
+      "turbo/apps/platform/src/signals/external/__tests__/indexeddb-client.test.ts": "c1d9acd67ae61fca3d08aaecfc07d40ef17e7bdc",
+      "turbo/apps/platform/src/signals/external/idb-event-row-store.ts": "4bf0e1142ff40bdea7fa157fbb322ab927dba9d1",
+      "turbo/apps/platform/src/signals/external/idb-metadata-event-store.ts": "d7e8f5d5158e1d7b24f4c2e51cdb08022c5c5349",
+      "turbo/apps/platform/src/signals/external/indexeddb-client.ts": "38ad13aa8ddbc4fb59f8f6087b99eca397a730ac",
+      "turbo/apps/platform/src/signals/prompt-page/marketing-handoff.ts": "196bf64f9b61ba62718c91fc87f56cb2e07efd11",
+      "turbo/apps/platform/src/signals/realtime.ts": "890aa2cf2cd6c5af246e59f272c4264dd664f584",
+      "turbo/apps/platform/src/signals/shared-database-bridge-state.ts": "883f6210f3f2a7146ff68adcc7e174762c9c2d77",
+      "turbo/apps/platform/src/signals/utils.ts": "08b3141ba199c7b5983b61c518770bab460f3da9",
+      "turbo/apps/platform/src/views/browser-session/__tests__/browser-native-page-fixture.ts": "0cc54f9004efe927064023ee75175a38c86f97b1",
+      "turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.test.tsx": "52b6d2ee3e3e2e57f518a9f0a4c8eca21f1310cb",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-test-helpers.ts": "4c6e43692ac4c82ccc353cf31c58eb39c6772ad0",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": "775ed1605a2dacd60f658d5966ca769c7f43c038",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": "bad1c0ca12687d0cc1082787a5f05a0e3f58964c",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-run-test-fixtures.ts": "190710e62035fad86425c59f7969a38294cab94f",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-test-helpers.ts": "fb8257b4f9196d72aaf3d9754a7511f12244eee8"
+    },
+    "beforeSecondWithdrawal": {
+      "turbo/apps/platform/src/__tests__/mock-auth.ts": "66e10fdecd7c0d2fbf119649f9fa60a69748496d",
+      "turbo/apps/platform/src/__tests__/page-helper.ts": "503ff86cdec111e7acb5c2a163170f667dcb8cd7",
+      "turbo/apps/platform/src/lib/ably-realtime.ts": "c0d45a05f13fa93e41f1d5b04f67a564e4871428",
+      "turbo/apps/platform/src/lib/clerk-runtime.ts": "1ab3391e3062f795a1a0239099972a14ee3a3e3e",
+      "turbo/apps/platform/src/lib/time.ts": "697cec147ba575faeb007b852eefa857b723dee6",
+      "turbo/apps/platform/src/mocks/ably.ts": "90e901b91a29c8afb3d0b3cb626cd3fee1d1a152",
+      "turbo/apps/platform/src/shared-database/protocol.ts": "718c65cba96d9890df2d0e3b9862ee785e6422e3",
+      "turbo/apps/platform/src/shared-database/worker-context.ts": "b394e7c1f9c605a847e919df415a5679a6a1a153",
+      "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "728b18a9075783660512557fe91e447847f0a770",
+      "turbo/apps/platform/src/signals/auth.ts": "63fef0e3bdf807898f5d6ce2d0521d32dd689a85",
+      "turbo/apps/platform/src/signals/browser/cdp/client.ts": "a8b1776ff3279c6b64fe180f09c291235503c630",
+      "turbo/apps/platform/src/signals/browser/viewer/frame-window.ts": "62a872fb932be752c9a5f6ebe517e5143ddd23a0",
+      "turbo/apps/platform/src/signals/external/idb-event-row-store.ts": "4bf0e1142ff40bdea7fa157fbb322ab927dba9d1",
+      "turbo/apps/platform/src/signals/external/idb-metadata-event-store.ts": "d7e8f5d5158e1d7b24f4c2e51cdb08022c5c5349",
+      "turbo/apps/platform/src/signals/external/indexeddb-client.ts": "38ad13aa8ddbc4fb59f8f6087b99eca397a730ac",
+      "turbo/apps/platform/src/signals/prompt-page/marketing-handoff.ts": "196bf64f9b61ba62718c91fc87f56cb2e07efd11",
+      "turbo/apps/platform/src/signals/realtime.ts": "890aa2cf2cd6c5af246e59f272c4264dd664f584",
+      "turbo/apps/platform/src/signals/shared-database-bridge-state.ts": "883f6210f3f2a7146ff68adcc7e174762c9c2d77",
+      "turbo/apps/platform/src/signals/utils.ts": "08b3141ba199c7b5983b61c518770bab460f3da9",
+      "turbo/apps/platform/src/views/browser-session/__tests__/browser-native-page-fixture.ts": "0cc54f9004efe927064023ee75175a38c86f97b1",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-test-helpers.ts": "4c6e43692ac4c82ccc353cf31c58eb39c6772ad0",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": "662032ee97395f0fa7c78b57e8605c374e88fc66",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": "5a69dc50b02d324a59af1b48511f94eaea3892c2",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-run-test-fixtures.ts": "8edcca255d055feee25597249ef63b175ae52f3d",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-test-helpers.ts": "fb8257b4f9196d72aaf3d9754a7511f12244eee8"
+    },
+    "main": {
+      "turbo/apps/platform/src/__tests__/mock-auth.ts": "66e10fdecd7c0d2fbf119649f9fa60a69748496d",
+      "turbo/apps/platform/src/__tests__/page-helper.ts": "503ff86cdec111e7acb5c2a163170f667dcb8cd7",
+      "turbo/apps/platform/src/lib/ably-realtime.ts": "c0d45a05f13fa93e41f1d5b04f67a564e4871428",
+      "turbo/apps/platform/src/lib/clerk-runtime.ts": "1ab3391e3062f795a1a0239099972a14ee3a3e3e",
+      "turbo/apps/platform/src/lib/time.ts": "697cec147ba575faeb007b852eefa857b723dee6",
+      "turbo/apps/platform/src/mocks/ably.ts": "90e901b91a29c8afb3d0b3cb626cd3fee1d1a152",
+      "turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts": "99cec3ba4d7d73bbf39d3ef516222c69f62eea59",
+      "turbo/apps/platform/src/shared-database/protocol.ts": "718c65cba96d9890df2d0e3b9862ee785e6422e3",
+      "turbo/apps/platform/src/shared-database/worker-context.ts": "b394e7c1f9c605a847e919df415a5679a6a1a153",
+      "turbo/apps/platform/src/signals/__tests__/clerk-user.test.ts": "e13b6caf84d8fb4e93c3e73b703a341da8ff17f7",
+      "turbo/apps/platform/src/signals/__tests__/command-scheduling.test.ts": "bff5b9cd416e26d6e84e7300b6b66b3a9ce9771e",
+      "turbo/apps/platform/src/signals/__tests__/realtime.test.ts": "7267d0c0bde6b38e3a944d41ea762432ae8a4f5c",
+      "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "728b18a9075783660512557fe91e447847f0a770",
+      "turbo/apps/platform/src/signals/auth.ts": "63fef0e3bdf807898f5d6ce2d0521d32dd689a85",
+      "turbo/apps/platform/src/signals/browser/__tests__/client.test.ts": "1cecdc68ed57e74adeb0965c96d2e641112972f2",
+      "turbo/apps/platform/src/signals/browser/cdp/client.ts": "a8b1776ff3279c6b64fe180f09c291235503c630",
+      "turbo/apps/platform/src/signals/browser/viewer/frame-window.ts": "62a872fb932be752c9a5f6ebe517e5143ddd23a0",
+      "turbo/apps/platform/src/signals/external/__tests__/indexeddb-client.test.ts": "9f6e20438d3de07344fa06030148b710494fd608",
+      "turbo/apps/platform/src/signals/external/idb-event-row-store.ts": "4bf0e1142ff40bdea7fa157fbb322ab927dba9d1",
+      "turbo/apps/platform/src/signals/external/idb-metadata-event-store.ts": "d7e8f5d5158e1d7b24f4c2e51cdb08022c5c5349",
+      "turbo/apps/platform/src/signals/external/indexeddb-client.ts": "38ad13aa8ddbc4fb59f8f6087b99eca397a730ac",
+      "turbo/apps/platform/src/signals/prompt-page/marketing-handoff.ts": "196bf64f9b61ba62718c91fc87f56cb2e07efd11",
+      "turbo/apps/platform/src/signals/realtime.ts": "890aa2cf2cd6c5af246e59f272c4264dd664f584",
+      "turbo/apps/platform/src/signals/shared-database-bridge-state.ts": "883f6210f3f2a7146ff68adcc7e174762c9c2d77",
+      "turbo/apps/platform/src/signals/utils.ts": "9b005f875a1875cfc0447d599664bc9e295529eb",
+      "turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.test.tsx": "bf53583f131b06c751e1f84a83732d18830ed442",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-test-helpers.ts": "a09b5734f146df049ea0368e0cb7a62e41768307",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": "495bb81978eb0f6a5746ee0a10f5cbb5b6443410",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": "cae4b78c183f01eb5302b6a80ee83207801ddfe5",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-run-test-fixtures.ts": "d85ad49532734a4021be9e7d081058ec9f50fb41",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-test-helpers.ts": "4ab0ec4aafa634501add3f87f8f78824a2338219"
+    },
+    "opening": {
+      "turbo/apps/platform/src/__tests__/mock-auth.ts": "66e10fdecd7c0d2fbf119649f9fa60a69748496d",
+      "turbo/apps/platform/src/__tests__/page-helper.ts": "1a7f0b68f4728337d72def72d1d03d93542cd629",
+      "turbo/apps/platform/src/lib/ably-realtime.ts": "c0d45a05f13fa93e41f1d5b04f67a564e4871428",
+      "turbo/apps/platform/src/lib/clerk-runtime.ts": "1ab3391e3062f795a1a0239099972a14ee3a3e3e",
+      "turbo/apps/platform/src/lib/time.ts": "4a9a3eef8190dd419d97d31228720bda5ea9d143",
+      "turbo/apps/platform/src/mocks/ably.ts": "0b468471d4bb9ed0c075399c7e8eefe43f883f3b",
+      "turbo/apps/platform/src/shared-database/protocol.ts": "718c65cba96d9890df2d0e3b9862ee785e6422e3",
+      "turbo/apps/platform/src/shared-database/worker-context.ts": "b394e7c1f9c605a847e919df415a5679a6a1a153",
+      "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "728b18a9075783660512557fe91e447847f0a770",
+      "turbo/apps/platform/src/signals/auth.ts": "63fef0e3bdf807898f5d6ce2d0521d32dd689a85",
+      "turbo/apps/platform/src/signals/browser/__tests__/client.test.ts": "a0228e20a0b1b206e8f3bcbaa91836d894bccdbf",
+      "turbo/apps/platform/src/signals/browser/cdp/client.ts": "a8b1776ff3279c6b64fe180f09c291235503c630",
+      "turbo/apps/platform/src/signals/browser/viewer/frame-window.ts": "62a872fb932be752c9a5f6ebe517e5143ddd23a0",
+      "turbo/apps/platform/src/signals/external/idb-event-row-store.ts": "4bf0e1142ff40bdea7fa157fbb322ab927dba9d1",
+      "turbo/apps/platform/src/signals/external/idb-metadata-event-store.ts": "d7e8f5d5158e1d7b24f4c2e51cdb08022c5c5349",
+      "turbo/apps/platform/src/signals/external/indexeddb-client.ts": "38ad13aa8ddbc4fb59f8f6087b99eca397a730ac",
+      "turbo/apps/platform/src/signals/prompt-page/marketing-handoff.ts": "196bf64f9b61ba62718c91fc87f56cb2e07efd11",
+      "turbo/apps/platform/src/signals/realtime.ts": "890aa2cf2cd6c5af246e59f272c4264dd664f584",
+      "turbo/apps/platform/src/signals/shared-database-bridge-state.ts": "883f6210f3f2a7146ff68adcc7e174762c9c2d77",
+      "turbo/apps/platform/src/signals/utils.ts": "0680e174ac1f65b6a185a57414dadc0b7e39b9e7",
+      "turbo/apps/platform/src/views/auth-v1/__tests__/identity-startup.test.ts": "af3035b29163af69c2a5195c99c17878dad65ceb",
+      "turbo/apps/platform/src/views/browser-session/__tests__/browser-native-page-fixture.ts": "2e2ebf4ba9e02fd4d936410429dce12d873e01f8",
+      "turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.test.tsx": "52bf56e929051dd95680ae5d0d10a4fa47da70f1",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-test-helpers.ts": "a09b5734f146df049ea0368e0cb7a62e41768307",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": "dde91fed1d2929cf1fe66f36c86da5e05c95c1f7",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": "cae4b78c183f01eb5302b6a80ee83207801ddfe5",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-run-test-fixtures.ts": "d85ad49532734a4021be9e7d081058ec9f50fb41",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-storage-telemetry.test.ts": "99b04cfb895a580c0e5f31ca563c58201985a7fb",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-test-helpers.ts": "bb2fde210cc6fe23b61719de2069e42a1b0425eb",
+      "turbo/apps/platform/src/views/okou-page/__tests__/registered-unread-refresh.test.ts": "f2adeeac3de1ca6447fab9de0a9195d05c7a70c4"
+    }
+  },
+  "independentBodies": {
+    "turbo/apps/platform/src/views/okou-page/__tests__/registered-unread-refresh.test.ts#37": {
+      "sha256": "b7e1dce3ac47b4df9f9a65ed5c3afeecbac01a25aa1701e1f4dd55f23fbe8b7c",
+      "matches": []
+    },
+    "turbo/apps/platform/src/views/okou-page/__tests__/registered-unread-refresh.test.ts#255": {
+      "sha256": "c13fdae688f417ac96c357426be61e7462e7b7965e82a0eb793e8633015e1bd4",
+      "matches": []
+    },
+    "turbo/apps/platform/src/views/okou-page/__tests__/registered-unread-refresh.test.ts#260": {
+      "sha256": "ad5930ad398397606000b66037655274700f9e19bb1c3e92596335b869a01939",
+      "matches": []
+    },
+    "turbo/apps/platform/src/views/okou-page/__tests__/chat-storage-telemetry.test.ts#216": {
+      "sha256": "d480ac03b61cb7ae7800fb76e4b7b180e0c3caaaea4b9cf5dec006496b3c35f2",
+      "matches": []
+    },
+    "turbo/apps/platform/src/views/auth-v1/__tests__/identity-startup.test.ts#220": {
+      "sha256": "ae5d0c01e88cf4d64e0040e1a0908ffb5006ee7a0e212fdbe75344685f91ce03",
+      "matches": []
+    },
+    "turbo/apps/platform/src/views/auth-v1/__tests__/identity-startup.test.ts#226": {
+      "sha256": "e3d9260fb114fee686e8942834c363a4ed2c2b6961a06e8bc6b625b1ee4320b6",
+      "matches": []
+    },
+    "turbo/apps/platform/src/views/auth-v1/__tests__/identity-startup.test.ts#233": {
+      "sha256": "dcdff696970b45845672a048277261f42f35546363eb94b67ef1cb6c19e77d60",
+      "matches": []
+    },
+    "turbo/apps/platform/src/views/auth-v1/__tests__/identity-startup.test.ts#307": {
+      "sha256": "3fa7d068b90aee19ff78cf89f6db88d138d0b3d008741f7ac68cc4ae6983ec68",
+      "matches": []
+    },
+    "turbo/apps/platform/src/views/auth-v1/__tests__/identity-startup.test.ts#346": {
+      "sha256": "e759e9b1c30bef38ec046994636a1a498c5f4747e0da2876d85fe4ee3265ad0d",
+      "matches": []
+    },
+    "turbo/apps/platform/src/signals/__tests__/command-scheduling.test.ts#20": {
+      "sha256": "9f84b46c1bef418716a84bd9476c76a12b120fb37343bce61c87917087964991",
+      "matches": []
+    },
+    "turbo/apps/platform/src/signals/__tests__/command-scheduling.test.ts#36": {
+      "sha256": "c3fa11993b55d72285c7a5a8612207bcde422e7def69903486395d70cf962de3",
+      "matches": []
+    },
+    "turbo/apps/platform/src/signals/__tests__/command-scheduling.test.ts#60": {
+      "sha256": "b13692d15c2faaf92ff6ad9cc8690ecf5b2bbcd626954ff953badf2fdb971398",
+      "matches": []
+    },
+    "turbo/apps/platform/src/signals/__tests__/command-scheduling.test.ts#90": {
+      "sha256": "227b9492d055dc86500238cd8d48b8802814bd60feeeca2eda5c2fb9bc660879",
+      "matches": []
+    },
+    "turbo/apps/platform/src/signals/__tests__/command-scheduling.test.ts#125": {
+      "sha256": "096a8ba59209cf3bec6fe889d61522f369f3e94656a205d62d09863a825fd3fa",
+      "matches": []
+    },
+    "turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.test.tsx#1037": {
+      "sha256": "5aaa64cfd5ae2a135d5269a7c4b2e3fab554664536ff7002a1e507d433f03b94",
+      "matches": []
+    },
+    "turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.test.tsx#1073": {
+      "sha256": "d8b24a3c6e194bbcd4315171e7cf2d0fc5fee5b5ba1c59cb0f4135838e84304e",
+      "matches": []
+    },
+    "turbo/apps/platform/src/views/okou-page/__tests__/registered-unread-refresh.test.ts#refreshUnreadHistory": {
+      "sha256": "626572f183318f4b30d896737e1d815c725ea865609b80f254ba49247f53e6ea",
+      "matches": []
+    },
+    "turbo/apps/platform/src/views/auth-v1/__tests__/identity-startup.test.ts#resolvePendingHandoff": {
+      "sha256": "2f0328c43222163b37ba83ddb51f7528b5434e11dc76be79124492596cee7a92",
+      "matches": []
+    },
+    "turbo/apps/platform/src/signals/__tests__/command-scheduling.test.ts#issueLabels": {
+      "sha256": "f84614b83794b8e2174163c6df606b27c923c149cc447b2c7e7ff3daeff6cc15",
+      "matches": []
+    }
+  },
+  "review": [
+    "The indicator tests in frozen and withdrawn owners directly instantiated worker and bridge machinery. This round reaches an original registered window by refreshing unread history. Snapshot readiness is a distinct error path.",
+    "The historical database transaction calls put and get inside a test-supplied callback. Event and metadata production clients group multiple writes or read before a write. Public transaction telemetry has no returned record field.",
+    "The former Clerk bodies read user state from the test store. The handoff in this round exercises production promise-identity validation through its original authenticated request after the organization changes. A same-session replacement defeats that check.",
+    "The documented scheduling factories expose invocation results, cooperative abort and per-Store ownership. New caller commands record delivered labels, keep independent job receipts and hold an actual running job. No scheduling implementation was changed. The browser replay independently exercised production intervals.",
+    "The former CDP owner used a client object directly. Real Browser Router actions here distinguish the empty inventory returned on a surviving transport from the optional version-probe receipt; the latter remains open. The CDP fixture can withhold only the target-created event.",
+    "The independent realtime and token-provider receivers record provider and business delivery. They cannot observe the three distinct setup/subscription results, the cancelled reason, or a detached caller callback. These return-contract clauses remain open."
+  ]
+}

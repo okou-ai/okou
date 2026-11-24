@@ -26,16 +26,6 @@ Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/message-port.te
 
 **Unverified clauses.** Two mounted shelves showed Harbor exhibit on the first user publication. Plain resume yielded no catalog read; the gap yielded one per window. After A closed only B read the empty catalog. Keeping B open allowed a third publication to reach B. Closing B instead terminated its identified provider connection at the independent loopback server. The server received no topic-specific unsubscribe in that arm. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#message-port-014).
 
-### message-port-018
-
-Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/shared-database/__tests__/message-port.bdd.md#message-port-018)
-
-- **Given** A registered tab requests chat-thread indicators and the API responds with HTTP 426 and code REQUEST_FAILED.
-- **When** The computed result crosses the message port.
-- **Then** It rejects as an API error retaining status 426 and code REQUEST_FAILED.
-
-**Unverified clauses.** Find a documented indicators caller that exposes the computed rejection, including its class, status and code. [Batch 110 observations](../../../test-rebuild-evidence/110/README.md#message-port-018).
-
 ### message-port-020
 
 Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/shared-database/__tests__/message-port.bdd.md#message-port-020)
@@ -54,7 +44,7 @@ Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/message-port.te
 - **When** The second token provider also rejects.
 - **Then** The shared read rejects with AggregateError after every tab's token provider fails.
 
-**Unverified clauses.** A rejected at the identity boundary while B was held and B subsequently rejected. After both rejections, restoring the provider allowed a new turn to appear. The Router did not expose the aggregate error type from that particular shared read. Use a supported consumer that distinguishes AggregateError after both providers fail from an individual rejection or a generic unavailable state. [Batch 105](../../../test-rebuild-evidence/105/README.md#message-port-023).
+**Unverified clauses.** Find a consumer that preserves the originating shared indicators read and returns its specific aggregate after both credential providers reject. The detached error from a separate snapshot is insufficient. [Batch 111 observations](../../../test-rebuild-evidence/111/README.md#message-port-023).
 
 ### message-port-027
 
@@ -74,7 +64,7 @@ Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/message-port.te
 - **When** It attempts a cache-only chat-event query.
 - **Then** The query rejects because tab registration is required.
 
-**Unverified clauses.** The first real browser messages include register-tab before queries. Issuing a pre-registration read would require sending a private bridge message on behalf of a tab. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** An independently registered client entry that can issue cache-only before registration, or a final upstream change replacing that requirement, is needed. [Batch 111 observations](../../../test-rebuild-evidence/111/README.md#message-port-030).
 
 ### message-port-033
 
@@ -194,17 +184,7 @@ Frozen owner: `turbo/apps/platform/src/signals/__tests__/clerk-user.test.ts` · 
 - **When** A reader waits for the user while transitioning, then the session signs in as user-a and the transition ends.
 - **Then** The read stays pending during the transition and resolves to user-a rather than reporting sign-out.
 
-**Unverified clauses.** 同成员刷新和受保护页面仍有回归；无法从中定位进入过渡前已待决的同一个读取，更无法证明它解析为 user-a。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-99.tsv).
-
-### clerk-user-005
-
-Frozen owner: `turbo/apps/platform/src/signals/__tests__/clerk-user.test.ts` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/signals/__tests__/clerk-user.bdd.md#clerk-user-005)
-
-- **Given** Clerk user state has settled for user-a.
-- **When** Clerk emits the same user again.
-- **Then** The settled user read retains the same promise identity.
-
-**Unverified clauses.** 同一用户再次到达后，账号菜单和工作流均正常；用户可见数据相同并不能证明两次读取返回同一 Promise 对象。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-99.tsv).
+**Unverified clauses.** Find a supported waiting consumer that uses the resolved user's ID on that same read and distinguishes user-a from another signed-in member. [Batch 111 observations](../../../test-rebuild-evidence/111/README.md#clerk-user-003).
 
 ### clerk-user-006
 
@@ -214,7 +194,7 @@ Frozen owner: `turbo/apps/platform/src/signals/__tests__/clerk-user.test.ts` · 
 - **When** A reader requests the user value synchronously before owner initialization finishes.
 - **Then** The read is a promise the owner can resolve and eventually resolves to user-a.
 
-**Unverified clauses.** The page owns startup and installs its reader internally. A synchronous read ahead of owner completion and the identity of the owner-resolved promise are not exposed on this route. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-99.tsv).
+**Unverified clauses.** Locate a public reader demonstrably invoked before user-owner initialization finishes and verify that its particular returned promise resolves to user-a. [Batch 111 observations](../../../test-rebuild-evidence/111/README.md#clerk-user-006).
 
 ### clerk-user-007
 
@@ -224,59 +204,7 @@ Frozen owner: `turbo/apps/platform/src/signals/__tests__/clerk-user.test.ts` · 
 - **When** The owner is replaced, then Clerk emits while the session is transitioning.
 - **Then** The last published user value remains available as the same settled promise resolving to user-a; the new event is not observed.
 
-**Unverified clauses.** A Clerk session switch cancels the previous real page owner. The fixture has no public read of the prior settled promise under the replacement owner or listener-observation identity. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-99.tsv).
-
-## `src/signals/__tests__/command-scheduling.test.ts`
-
-### command-scheduling-001
-
-Frozen owner: `turbo/apps/platform/src/signals/__tests__/command-scheduling.test.ts` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/signals/__tests__/command-scheduling.bdd.md#command-scheduling-001)
-
-- **Given** A debounced command accepts a value and repetition count.
-- **When** The user submits “old” once and then “new” twice before the 20 ms delay expires.
-- **Then** The first call is rejected with an AbortError. The latest call returns “newnew”, and only “new” executes.
-
-**Unverified clauses.** 受保护搜索在同轮提交五种值，只有末词及对应结果出现。没有真实页面消费冻结命令的 newnew 字符串或前一次调用的 AbortError。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-99.tsv).
-
-### command-scheduling-002
-
-Frozen owner: `turbo/apps/platform/src/signals/__tests__/command-scheduling.test.ts` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/signals/__tests__/command-scheduling.bdd.md#command-scheduling-002)
-
-- **Given** A debounced command has started processing “old” and is waiting to finish.
-- **When** The user submits “new” before the old work is released.
-- **Then** The old call is rejected with an AbortError after it cooperatively checks cancellation. The new call returns “new”.
-
-**Unverified clauses.** 草稿保存的旧 HTTP signal 被中止；旧保存继续扣住或返回时 UI 都保留新稿。传输取消与顶层命令抛出的 AbortError、返回 new 不能等同。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-99.tsv).
-
-### command-scheduling-003
-
-Frozen owner: `turbo/apps/platform/src/signals/__tests__/command-scheduling.test.ts` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/signals/__tests__/command-scheduling.bdd.md#command-scheduling-003)
-
-- **Given** A pending debounced call for “discarded” belongs to a caller that is then cancelled.
-- **When** The user submits “latest” with a valid caller, followed by “invalid” with the cancelled caller.
-- **Then** The discarded call is rejected with an AbortError carrying the cancellation reason, and the invalid call is rejected with that reason. Only “latest” executes and returns successfully.
-
-**Unverified clauses.** A production edit cannot resubmit with a deliberately cancelled caller signal, nor retrieve the two returned AbortErrors and their original reason. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-99.tsv).
-
-### command-scheduling-004
-
-Frozen owner: `turbo/apps/platform/src/signals/__tests__/command-scheduling.test.ts` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/signals/__tests__/command-scheduling.bdd.md#command-scheduling-004)
-
-- **Given** A throttled command has a 1,000 ms interval and its first call, “first”, is still running.
-- **When** At 200 ms the user submits “discarded”, then at 600 ms submits “latest” with a repetition count of two.
-- **Then** No trailing work executes while the first call is running. At 1,000 ms, the first call returns “first” and both trailing callers receive “latestlatest”; only “first” and “latest” execute.
-
-**Unverified clauses.** The worker warm and draft UI produce observable updates. Two trailing throttle callers sharing the returned latestlatest promise at the 1000 ms boundary have no user-facing equivalent. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-99.tsv).
-
-### command-scheduling-006
-
-Frozen owner: `turbo/apps/platform/src/signals/__tests__/command-scheduling.test.ts` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/signals/__tests__/command-scheduling.bdd.md#command-scheduling-006)
-
-- **Given** Two separate Stores use the same debounced command with a 20 ms delay.
-- **When** One Store submits “first” and the other submits “second”.
-- **Then** Neither execution occurs immediately. Both calls complete with their own values, and both commands execute; scheduling in one Store does not replace the other Store’s work.
-
-**Unverified clauses.** Separate runtime domains were exercised on real pages. The generic debounced command invocation, private store identity and its two completion values have no production user operation. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-99.tsv).
+**Unverified clauses.** Need an already-issued observation surviving owner replacement that can distinguish the same settled old promise and continued user-a value from a successor re-read. [Batch 111 observations](../../../test-rebuild-evidence/111/README.md#clerk-user-007).
 
 ## `src/signals/__tests__/realtime.test.ts`
 
@@ -298,7 +226,7 @@ Frozen owner: `turbo/apps/platform/src/signals/__tests__/realtime.test.ts` · [O
 - **When** Realtime setup and the pending subscription attempt to connect.
 - **Then** Both reject with an Ably connection failure, no live subscription remains, and a later subscription request also rejects with an Ably connection failure.
 
-**Unverified clauses.** Two independent Chromium Routers used the local identity service. The provider invoked the production auth callback, the realtime-token HTTP receiver returned 500, and the provider received its failure. Loading another window did not surface distinct setup, pending subscription and later subscription rejections with that failure. Identify each caller at a supported consumer of the failed token exchange, including a later subscription after terminal failure. [Batch 107 review](../../../test-rebuild-evidence/107/README.md#realtime-005).
+**Unverified clauses.** Capture all three original Ably connection failures and verify that no live subscription remains at the terminal point through a supported consumer. [Batch 111 observations](../../../test-rebuild-evidence/111/README.md#realtime-005).
 
 ### realtime-006
 
@@ -308,7 +236,7 @@ Frozen owner: `turbo/apps/platform/src/signals/__tests__/realtime.test.ts` · [O
 - **When** The user cancels that subscriber while attachment is pending.
 - **Then** The wait rejects with the subscriber’s cancellation reason, and its channel subscription is removed.
 
-**Unverified clauses.** Closed the Chromium subscriber while the external attachment was pending. The receiver later returned 503; the independent observer recorded a connection close. No original caller acknowledged its cancellation reason or topic-specific release. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#realtime-006).
+**Unverified clauses.** Need the live subscriber's own cancellable wait and its reason, with topic release identifiable independently of full connection teardown. [Batch 111 observations](../../../test-rebuild-evidence/111/README.md#realtime-006).
 
 ### realtime-010
 
@@ -318,7 +246,7 @@ Frozen owner: `turbo/apps/platform/src/signals/__tests__/realtime.test.ts` · [O
 - **When** The channel later reports a terminal “connection failed” error.
 - **Then** The callback receives that error, and the channel subscription is removed.
 
-**Unverified clauses.** The provider delivered failed channel and failed connection transitions during the pending attach and returned 503. The visible shelf did not expose the background error reason or acknowledge that exact subscriber removal. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#realtime-010).
+**Unverified clauses.** Use a supported subscriber supplying an observable error callback on the suspended transport. Correlate that exact terminal error with release of its topic. [Batch 111 observations](../../../test-rebuild-evidence/111/README.md#realtime-010).
 
 ### realtime-011
 
@@ -338,7 +266,7 @@ Frozen owner: `turbo/apps/platform/src/signals/__tests__/realtime.test.ts` · [O
 - **When** Subscription initialization throws an error.
 - **Then** The subscription request rejects with the initialization error, but the chat-thread automations live subscription remains active.
 
-**Unverified clauses.** The startup thread detail returned HTTP 500. The same open panel still changed Cedar schedule to Maple schedule after the later automation notification. The external HTTP failure has no identified receipt from the original subscription caller. Observe the caller of the subscription initialization receiving its original error while the same open automation panel subsequently changes. [Batch 107 review](../../../test-rebuild-evidence/107/README.md#realtime-020).
+**Unverified clauses.** The initiating subscribe caller must expose its initialization rejection. The detail HTTP failure and continued automation update do not expose that rejection. [Batch 111 observations](../../../test-rebuild-evidence/111/README.md#realtime-020).
 
 ## `src/signals/__tests__/shared-database-browser.test.ts`
 
@@ -362,7 +290,7 @@ Frozen owner: `turbo/apps/platform/src/signals/browser/__tests__/client.test.ts`
 - **When** The probe deadline expires and the client makes a Target.getTargets request.
 - **Then** The version probe rejects as a read-only protocol failure, while Target.getTargets still succeeds with an empty target list.
 
-**Unverified clauses.** Held Browser.getVersion on connection 1, advanced the monotonic clock 31 seconds and returned an empty target inventory. The Router showed No tabs open and the connection remained active. The wire already contained Target.getTargets before the advance. The original read-only rejection and a new request starting after expiry are not established. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#client-001).
+**Unverified clauses.** The original version-probe rejection must itself be independently observed as a read-only protocol failure. The successful later read only establishes continued availability. [Batch 111 observations](../../../test-rebuild-evidence/111/README.md#client-001).
 
 ### client-002
 
@@ -372,7 +300,7 @@ Frozen owner: `turbo/apps/platform/src/signals/browser/__tests__/client.test.ts`
 - **When** The viewer closes and then attempts to notify the browser.
 - **Then** Both pending requests reject, and no notification is sent after closing; the remote browser is not closed by this action.
 
-**Unverified clauses.** Held Browser.getVersion and Target.attachToBrowserTarget together. Leaving the viewer closed the connection. Neither late reply was consumed and the external browser retained both targets. The two separate caller rejections and a post-close notify attempt were not observable. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#client-002).
+**Unverified clauses.** Need a supported caller retaining both pending promise results and attempting a post-close notification, with the independent remote browser still running. [Batch 111 observations](../../../test-rebuild-evidence/111/README.md#client-002).
 
 ### client-003
 
@@ -446,7 +374,7 @@ Frozen owner: `turbo/apps/platform/src/signals/external/__tests__/indexeddb-clie
 - **When** The user opens the database and the failure is reported to telemetry.
 - **Then** The open rejects with the original error, and an error chat.open event with a numeric duration is recorded without the error message or user and workspace identifiers.
 
-**Unverified clauses.** 由外部 IndexedDB.open 抛错后依然能进入 Workflows。chat.open 的失败遥测带数字时长且屏蔽私有错误及身份；日志与页面不能证明调用方拿到同一异常对象。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** Find a public consumer that actually returns the open rejection. Compare its reason by object identity while retaining the telemetry privacy assertions. [Batch 111 observations](../../../test-rebuild-evidence/111/README.md#indexeddb-client-002).
 
 ### indexeddb-client-003
 
@@ -456,7 +384,7 @@ Frozen owner: `turbo/apps/platform/src/signals/external/__tests__/indexeddb-clie
 - **When** The transaction is created, executed, and reported to telemetry.
 - **Then** The read returns the written value, and separate successful transaction-creation and execution events are recorded for the shared-worker runtime. The execution event reports two requests, and neither event exposes the key or value.
 
-**Unverified clauses.** Find a production journey that writes and immediately reads that same value in one read-write transaction, with a separately attributable two-request execution receipt. [Batch 110 observations](../../../test-rebuild-evidence/110/README.md#indexeddb-client-003).
+**Unverified clauses.** A production entry that writes and reads the same sensitive record in one read-write transaction must also return that value. The transaction request count cannot establish operation order or the returned object. [Batch 111 observations](../../../test-rebuild-evidence/111/README.md#indexeddb-client-003).
 
 ## `src/signals/voice-io/__tests__/voice-draft-audio.test.ts`
 

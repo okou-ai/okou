@@ -1,0 +1,67 @@
+{
+  "baseline": "10e42998a931e337c08a02e313bec67f7019523d",
+  "starting": 90,
+  "handled": [
+    "message-port-018",
+    "message-port-023",
+    "message-port-030",
+    "indexeddb-client-002",
+    "indexeddb-client-003",
+    "realtime-005",
+    "realtime-006",
+    "realtime-010",
+    "realtime-020",
+    "clerk-user-003",
+    "clerk-user-005",
+    "clerk-user-006",
+    "clerk-user-007",
+    "command-scheduling-001",
+    "command-scheduling-002",
+    "command-scheduling-003",
+    "command-scheduling-004",
+    "command-scheduling-006",
+    "client-001",
+    "client-002"
+  ],
+  "substitutions": [],
+  "removed": [
+    "clerk-user-005",
+    "command-scheduling-001",
+    "command-scheduling-002",
+    "command-scheduling-003",
+    "command-scheduling-004",
+    "command-scheduling-006",
+    "message-port-018"
+  ],
+  "added": [],
+  "remaining": 83,
+  "remainingOwners": 32,
+  "closedOwners": [
+    "turbo/apps/platform/src/signals/__tests__/command-scheduling.test.ts"
+  ],
+  "firstOriginalAcceptances": [
+    "message-port-018",
+    "clerk-user-005",
+    "command-scheduling-001",
+    "command-scheduling-002",
+    "command-scheduling-003",
+    "command-scheduling-004",
+    "command-scheduling-006"
+  ],
+  "restorations": [],
+  "revisions": [],
+  "retirements": [],
+  "decisions": [
+    "platform-direct-bridge-002",
+    "shared-database-browser-006",
+    "unread-through-at-001",
+    "chat-continuity-uploads-003",
+    "connector-provider-pages-013",
+    "paid-media-creation-002"
+  ],
+  "upstream": 68,
+  "activeLedgerAnchors": 83,
+  "survivingOriginalGwtAndOwnerPairs": 83,
+  "beforeSetSHA256": "7b3d4b982cfabb136c59055b17b3f195bc6164e7ddf58759cc515362aa9a3f1e",
+  "afterSetSHA256": "11916aafeea07fb56b990cd3e16c27ee9708398482b2c2ef59e8fb6317e5b97f"
+}

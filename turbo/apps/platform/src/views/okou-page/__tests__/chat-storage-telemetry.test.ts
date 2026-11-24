@@ -4,7 +4,7 @@ import { HttpResponse } from "msw";
 import { screen, waitFor } from "@testing-library/react";
 
 import { expect, test, vi } from "vitest";
-import { setupPage } from "../../../__tests__/page-helper.ts";
+import { setupPage, startPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { chatListAuth } from "./chat-list-test-helpers.ts";
 import { RUN_PATH, RUN_THREAD_ID } from "./chat-run-test-fixtures.ts";
@@ -210,5 +210,43 @@ test("The workspace reports an unavailable private chat cache without publishing
   });
   expect(JSON.stringify(reports("chat.open"))).not.toMatch(
     /private ferry archive|chat-list-(?:org|user)-789/u,
+  );
+});
+
+test("Opening a conversation with a failing local archive reports only the database operation", async () => {
+  const original = new DOMException(
+    "private cove diagnostic",
+    "InvalidStateError",
+  );
+  const open = indexedDB.open.bind(indexedDB);
+  const entered = context.mocks.deferred<void>();
+  vi.spyOn(indexedDB, "open").mockImplementation((name, version) => {
+    if (name.endsWith("chat-list-user-789-chat-list-org-789")) {
+      if (!entered.settled()) {
+        entered.resolve();
+      }
+      throw original;
+    }
+    return open(name, version);
+  });
+  mockChatLifecycle(context, { threadId: RUN_THREAD_ID });
+  sink.mockClear();
+  const route = await startPage({ ...settings, path: RUN_PATH });
+  await entered.promise;
+  await route.ready;
+  await expect(
+    screen.findByRole("textbox", { name: "Message" }),
+  ).resolves.toBeInTheDocument();
+  const records = reports("chat.open");
+  expect(records).toContainEqual(
+    expect.objectContaining({
+      duration: expect.any(Number),
+      "attributes.custom": expect.objectContaining({
+        "okou.client.outcome": "error",
+      }),
+    }),
+  );
+  expect(JSON.stringify(records)).not.toMatch(
+    /private cove diagnostic|chat-list-(?:user|org)-789/u,
   );
 });

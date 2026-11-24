@@ -1033,3 +1033,57 @@ test("browser-response-deadlines-043 A late window read cannot displace the reco
   expect(cdp.connections()).toBe(before);
   expect(read).toBeTruthy();
 });
+
+test("A new-tab action reads the inventory after the outstanding version probe expires", async () => {
+  const advance = browserRecoveryClock(context.signal);
+  const { cdp, openPage } = arrangeNativePage(context, {
+    targets: [],
+    announceNewTargets: false,
+  });
+  const probe = cdp.holdNext("Browser.getVersion");
+  await openPage();
+  await probe.received;
+  await screen.findByText("No tabs open");
+  advance(31_001);
+  const refresh = cdp.holdNext("Target.getTargets");
+  const consumed = context.mocks.deferred<void>();
+  click(
+    await screen.findByLabelText("New tab", {
+      selector: "button[data-browser-new-tab]",
+    }),
+  );
+  await refresh.received;
+  await refresh.release({ targetInfos: [] }, () => {
+    if (!consumed.settled()) {
+      consumed.resolve();
+    }
+  });
+  await consumed.promise;
+  const created = cdp.targets.at(-1);
+  if (!created) {
+    throw new Error("The native browser did not create a tab");
+  }
+  cdp.event("Target.targetCreated", {
+    targetInfo: { ...created, type: "page" },
+  });
+  await expectStreamingAt("");
+  expect(cdp.connections()).toBe(1);
+});
+
+test("Leaving the viewer retires two outstanding requests without closing its remote page", async () => {
+  const { cdp, openPage } = viewer();
+  const version = cdp.holdNext("Browser.getVersion");
+  const attachment = cdp.holdNext("Target.attachToBrowserTarget");
+  await openPage();
+  await Promise.all([version.received, attachment.received]);
+  window.history.pushState({}, "", "/workflows");
+  window.dispatchEvent(new PopStateEvent("popstate"));
+  await screen.findByRole("heading", { name: "Workflows" });
+  await waitFor(() => {
+    return expect(cdp.activeConnections()).toBe(0);
+  });
+  await attachment.release({ sessionId: "expired-owner" });
+  await version.release({ product: "Local Browser" });
+  expect(cdp.targets).toContainEqual(original);
+  expect(screen.queryByLabelText("Remote browser input")).toBeNull();
+});

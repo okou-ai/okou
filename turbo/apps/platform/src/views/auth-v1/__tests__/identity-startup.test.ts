@@ -1,9 +1,20 @@
 import { act, screen, waitFor } from "@testing-library/react";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
-import { installMockedClerkBootstrap } from "../../../__tests__/mock-auth.ts";
+import { hostContract } from "@okouai/api-contracts/contracts/host";
+import { onboardingStatusContract } from "@okouai/api-contracts/contracts/onboarding";
+import { marketingHandoffsContract } from "@okouai/api-contracts/contracts/marketing-handoffs";
+import {
+  mockedClerk,
+  mockClerkSessionTransitioning,
+  installMockedClerkBootstrap,
+} from "../../../__tests__/mock-auth.ts";
 import { click, setupPage, startPage } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { installPlatformLifecycle } from "../../../test/platform-lifecycle.ts";
+import {
+  createTestRuntime,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 import { bootstrapSkeleton } from "../../../test/bootstrap-skeleton.ts";
 
 const context = testContext();
@@ -142,4 +153,229 @@ test("A refreshed profile for the same member remains usable from the Workflows 
   click(updated);
   await expect(screen.findByRole("menu")).resolves.toBeVisible();
   expect(screen.getByRole("heading", { name: "Workflows" })).toBeVisible();
+});
+
+const handoffTask = "Prepare the bathymetry index";
+async function resolvePendingHandoff(
+  change: "profile refresh" | "transition back to the same member",
+) {
+  const sdk = context.mocks.clerk();
+  const session = { id: "lake-session", token: "lake-test-token" };
+  const received = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  const statusStarted = context.mocks.deferred<void>();
+  const allowStatus = context.mocks.deferred<void>();
+  context.mocks.api(onboardingStatusContract.getStatus, async ({ respond }) => {
+    if (!statusStarted.settled()) {
+      statusStarted.resolve();
+    }
+    await allowStatus.promise;
+    return respond(200, {
+      needsOnboarding: true,
+      onboardingComplete: false,
+      isAdmin: true,
+      hasOrg: false,
+    });
+  });
+  context.mocks.api(marketingHandoffsContract.resolve, async ({ respond }) => {
+    if (!received.settled()) {
+      received.resolve();
+    }
+    await release.promise;
+    return respond(200, {
+      version: 1,
+      prompt: handoffTask,
+      options: {},
+      files: [],
+    });
+  });
+  const entry = await startPage({
+    context,
+    path: "/onboarding?handoff=" + "4".repeat(64),
+    auth: {
+      user: { id: "user-a", fullName: "Lake Survey" },
+      session,
+    },
+  });
+  await statusStarted.promise;
+  act(() => {
+    sdk.organization({ activeOrg: null, memberships: [] });
+    sdk.stateChanged();
+  });
+  allowStatus.resolve();
+  await received.promise;
+  act(() => {
+    if (change === "transition back to the same member") {
+      mockClerkSessionTransitioning(true);
+    }
+    sdk.user({ id: "user-a", fullName: "Lake Surveyor" }, session);
+    sdk.stateChanged();
+    if (change === "transition back to the same member") {
+      mockClerkSessionTransitioning(false);
+    }
+  });
+  release.resolve();
+  return entry.ready;
+}
+test("clerk-user-005 The same member's refreshed profile can finish its original pending handoff", async () => {
+  await resolvePendingHandoff("profile refresh");
+  await expect(
+    screen.findByLabelText("Onboarding prompt"),
+  ).resolves.toHaveTextContent(handoffTask);
+});
+test("Replacing the member read during a transition cancels the original handoff", async () => {
+  await expect(
+    resolvePendingHandoff("transition back to the same member"),
+  ).rejects.toMatchObject({ name: "AbortError", message: "Session changed" });
+  expect(screen.queryByText(handoffTask)).toBeNull();
+});
+
+test("A protected history entry waits out the signed-out member transition", async () => {
+  const clerk = context.mocks.clerk();
+  await setupPage({
+    context,
+    host: "app.okou.ai",
+    path: "/sign-in",
+    auth: null,
+  });
+  await screen.findByTestId("app-sign-in");
+  act(() => {
+    mockClerkSessionTransitioning(true);
+  });
+  const grant = context.mocks.deferred<string | null>();
+  context.mocks.http.post(
+    "*" + hostContract.authorizeSiteSession.path,
+    ({ request }) => {
+      grant.resolve(request.headers.get("authorization"));
+      return new Response(
+        JSON.stringify({
+          error: { code: "FORBIDDEN", message: "Synthetic denial" },
+        }),
+        { status: 403, headers: { "Content-Type": "application/json" } },
+      );
+    },
+  );
+  const path = "/hosted-site-authorize";
+  const params = new URLSearchParams({
+    siteId: "aad10111-3310-493d-a741-1f9111111111",
+    origin: "https://survey.okou.app",
+    state: "a".repeat(43),
+    codeChallenge: "p".repeat(43),
+  });
+  const checked = context.mocks.deferred<void>();
+  const loaded = mockedClerk.loaded;
+  const boundary = vi
+    .spyOn(mockedClerk, "loaded", "get")
+    .mockImplementation(() => {
+      if (!checked.settled() && location.pathname === path) {
+        checked.resolve();
+      }
+      return loaded;
+    });
+  act(() => {
+    history.pushState({}, "", path + "?" + params);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+  await waitFor(() => {
+    return expect(checked.settled()).toBeTruthy();
+  });
+  boundary.mockRestore();
+  expect(grant.settled()).toBeFalsy();
+  expect(location.pathname).toBe(path);
+  act(() => {
+    clerk.user(
+      { id: "user-a", fullName: "Inez Field" },
+      { id: "field-trip", token: "local-field-token" },
+    );
+    clerk.organization({
+      activeOrg: { id: "org-field", name: "Field" },
+      memberships: [{ id: "org-field" }],
+    });
+    clerk.sessionSignedOut(false);
+    mockClerkSessionTransitioning(false);
+  });
+  await waitFor(() => {
+    return expect(grant.settled()).toBeTruthy();
+  });
+  await expect(grant.promise).resolves.toBe("Bearer local-field-token");
+  await waitFor(() => {
+    return expect(location.pathname).toBe("/hosted-site-access");
+  });
+  expect(new URL(location.href).searchParams.get("reason")).toBe("denied");
+});
+
+test("The workspace starts its member subscription after a delayed identity load", async () => {
+  const sdk = context.mocks.clerk();
+  const gate = sdk.runtimePending();
+  const source = context.mocks.ably;
+  try {
+    const startup = await startPage({
+      context,
+      sharedWorkerTestTransport: "message-port",
+      path: "/workflows",
+      auth: { user: { id: "user-a", fullName: "Basin Member" } },
+    });
+    await waitFor(() => {
+      return expect(sdk.loads.length).toBeGreaterThan(0);
+    });
+    expect(screen.queryByLabelText("Basin Member")).toBeNull();
+    expect(
+      source.hasSubscriptionOnChannel(
+        "user:user-a",
+        "connectorPermissionUpdated",
+      ),
+    ).toBeFalsy();
+    gate.resolve();
+    await startup.ready;
+    await screen.findByLabelText("Basin Member");
+    await waitFor(() => {
+      return expect(
+        source.hasSubscriptionOnChannel(
+          "user:user-a",
+          "connectorPermissionUpdated",
+        ),
+      ).toBeTruthy();
+    });
+  } finally {
+    if (!gate.settled()) {
+      gate.resolve();
+    }
+  }
+});
+
+test("Only the replacement workspace receives the member profile after the owner changes", async () => {
+  const first = createTestRuntime(context);
+  installPlatformLifecycle(first.signal);
+  await setupPage({
+    ...workflows,
+    context: first,
+    auth: { user: { id: "user-a", fullName: "First chart owner" } },
+  });
+  const oldMenu = await screen.findByLabelText("First chart owner");
+  first.dispose();
+  expect(oldMenu).not.toBeInTheDocument();
+  const next = createTestRuntime(context);
+  installPlatformLifecycle(next.signal);
+  await setupPage({
+    ...workflows,
+    context: next,
+    auth: { user: { id: "user-a", fullName: "Second chart owner" } },
+  });
+  await screen.findByLabelText("Second chart owner");
+  act(() => {
+    return mockClerkSessionTransitioning(true);
+  });
+  expect(screen.queryByLabelText("First chart owner")).toBeNull();
+  act(() => {
+    const sdk = next.mocks.clerk();
+    sdk.user(
+      { id: "user-a", fullName: "Restored chart owner" },
+      { token: "local-restored" },
+    );
+    mockClerkSessionTransitioning(false);
+  });
+  await expect(
+    screen.findByLabelText("Restored chart owner"),
+  ).resolves.toBeInTheDocument();
+  expect(oldMenu).not.toBeInTheDocument();
 });

@@ -43,6 +43,7 @@ export function mockBrowserCdp(
     readonly autoOpen?: boolean;
     readonly onConnecting?: (url: string, socket: { open(): void }) => void;
     readonly streaming?: boolean;
+    readonly announceNewTargets?: boolean;
     readonly targets?: readonly BrowserTarget[];
     readonly editors?: ReadonlyMap<string, HTMLTextAreaElement>;
     readonly unavailableTargets?: readonly string[];
@@ -223,7 +224,11 @@ export function mockBrowserCdp(
       windowId,
     };
     targets.push(target);
-    event("Target.targetCreated", { targetInfo: { ...target, type: "page" } });
+    if (options.announceNewTargets !== false) {
+      event("Target.targetCreated", {
+        targetInfo: { ...target, type: "page" },
+      });
+    }
     nativeEvent("tab-created", target);
     return target;
   }
