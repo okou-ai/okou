@@ -111,8 +111,8 @@ test("opens the assigned browser terminal without SSH, Google credentials or a m
     featureSwitches: { [FeatureSwitchKey.GeminiAntigravity]: true },
     auth: pilotAuth(),
   });
-  const link = await screen.findByRole("link", {
-    name: "Open Google sign-in terminal",
+  const link = await screen.findByText("Open Google sign-in terminal", {
+    selector: "a",
   });
   expect(link).toHaveAttribute("href", `${loginOrigin}/?arg=${bindingId}`);
   expect(link).toHaveAttribute("rel", "noopener noreferrer");

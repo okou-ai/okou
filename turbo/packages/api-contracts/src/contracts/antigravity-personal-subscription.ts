@@ -1,4 +1,5 @@
 import {
+  type infer as zInfer,
   discriminatedUnion,
   iso,
   literal,
@@ -35,6 +36,8 @@ const profile = union([
     .and(antigravityTerminal),
   binding.extend({ status: literal("connected") }).and(antigravityTerminal),
 ]);
+export type AntigravitySubscriptionProfile = zInfer<typeof profile>;
+
 const responses = {
   200: profile,
   400: apiErrorSchema,

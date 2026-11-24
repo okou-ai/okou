@@ -1,3 +1,4 @@
+import type { AntigravitySubscriptionProfile } from "@okouai/api-contracts/contracts/antigravity-personal-subscription";
 import {
   antigravityBrowserTerminalUrl,
   antigravityTerminalCommand,
@@ -13,6 +14,47 @@ import {
 } from "../../../../signals/okou-page/settings/antigravity-subscription.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import { detach, Reason } from "../../../../signals/utils.ts";
+
+function AntigravityTerminal({
+  profile,
+}: {
+  readonly profile: AntigravitySubscriptionProfile;
+}) {
+  const { t } = useTranslation();
+  if ("loginOrigin" in profile) {
+    return (
+      <a
+        className="text-sm font-medium text-foreground underline"
+        href={antigravityBrowserTerminalUrl(profile)}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        {t(($) => {
+          return $.settings.models.antigravity.openTerminal;
+        })}
+      </a>
+    );
+  }
+  if (!("loginHost" in profile)) {
+    return null;
+  }
+  return (
+    <>
+      <p className="text-sm text-muted-foreground">
+        {profile.status === "pending"
+          ? t(($) => {
+              return $.settings.models.antigravity.terminal;
+            })
+          : t(($) => {
+              return $.settings.models.antigravity.verify;
+            })}
+      </p>
+      <code className="max-w-full select-all break-all rounded-md bg-muted px-2 py-1 text-xs">
+        {antigravityTerminalCommand(profile)}
+      </code>
+    </>
+  );
+}
 
 export function AntigravitySubscription() {
   const { t } = useTranslation();
@@ -51,34 +93,7 @@ export function AntigravitySubscription() {
           })}
         </p>
       )}
-      {enabled && "loginOrigin" in profile && (
-        <a
-          className="text-sm font-medium text-foreground underline"
-          href={antigravityBrowserTerminalUrl(profile)}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          {t(($) => {
-            return $.settings.models.antigravity.openTerminal;
-          })}
-        </a>
-      )}
-      {enabled && "loginHost" in profile && (
-        <>
-          <p className="text-sm text-muted-foreground">
-            {profile.status === "pending"
-              ? t(($) => {
-                  return $.settings.models.antigravity.terminal;
-                })
-              : t(($) => {
-                  return $.settings.models.antigravity.verify;
-                })}
-          </p>
-          <code className="max-w-full select-all break-all rounded-md bg-muted px-2 py-1 text-xs">
-            {antigravityTerminalCommand(profile)}
-          </code>
-        </>
-      )}
+      {enabled && <AntigravityTerminal profile={profile} />}
       {profile.status === "expired" && (
         <p role="status" className="text-sm text-muted-foreground">
           {t(($) => {
