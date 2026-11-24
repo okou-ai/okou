@@ -7,10 +7,10 @@ import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.builtins.SetSerializer
@@ -75,74 +75,83 @@ internal class BuiltInToolsSettings(
     }
 
     fun refresh() {
-        if (!visible || !authorized() || read?.isActive == true) return
-        val tools = toolRevision
-        val image = imageRevision
-        val snapshot = state.value
+        if (!visible || !authorized()) return
+        // Reconnecting starts fresh reads even if a request on the old link is still pending.
+        read?.cancel()
         read = scope.launch {
-            coroutineScope {
-                if (
-                    snapshot.catalog.value == null ||
-                        snapshot.catalog.isStale(System.currentTimeMillis())
-                )
-                    launch {
-                        mutable.update { it.copy(catalog = it.catalog.copy(refreshing = true)) }
-                        val families = readResource(reportFailure = false) { service.catalog() }
-                        if (authorized())
-                            mutable.update {
-                                it.copy(
-                                    catalog =
-                                        if (families == null)
-                                            it.catalog.copy(unavailable = true, refreshing = false)
-                                        else
-                                            SettingsRead(
-                                                value = families,
-                                                readAt = System.currentTimeMillis(),
-                                            ),
-                                )
-                            }
-                    }
-                if (snapshot.savingTools.isEmpty())
-                    launch {
-                        if (snapshot.disabled == null) {
-                            val saved =
-                                cache?.load(identity, disabledToolsCache, disabledToolsSerializer)
-                            if (saved != null && authorized() && tools == toolRevision) {
-                                mutable.update { it.copy(disabled = saved.value) }
-                            }
-                        }
-                        val disabled = readResource { service.disabledTools() }
-                        if (authorized() && tools == toolRevision) {
-                            mutable.update {
-                                it.copy(
-                                    disabled = disabled ?: it.disabled,
-                                    preferencesUnavailable = disabled == null,
-                                )
-                            }
-                            if (disabled != null) cacheDisabled(disabled)
-                        }
-                    }
-                if (!snapshot.savingImage)
-                    launch {
-                        if (snapshot.confirmedImage == null) {
-                            val saved = cache?.load(identity, imageModelCache, String.serializer())
-                            if (saved != null && authorized() && image == imageRevision) {
-                                mutable.update { it.copy(confirmedImage = saved.value) }
-                            }
-                        }
-                        val model = readResource { service.imageModel() ?: defaultImageToolModel }
-                        if (authorized() && image == imageRevision) {
-                            mutable.update {
-                                it.copy(
-                                    confirmedImage = model ?: it.confirmedImage,
-                                    imageUnavailable = model == null && it.confirmedImage == null,
-                                )
-                            }
-                            if (model != null) cacheImage(model)
-                        }
-                    }
+            launch { refreshCatalog() }
+            launch { refreshToolPreferences() }
+            launch { refreshImagePreference() }
+        }
+    }
+
+    private suspend fun refreshCatalog() {
+        val current = state.value.catalog
+        if (current.value != null && !current.isStale(System.currentTimeMillis())) return
+        mutable.update { it.copy(catalog = it.catalog.copy(refreshing = true)) }
+        val families = readResource(reportFailure = false, load = service::catalog)
+        if (!authorized()) return
+        mutable.update {
+            it.copy(
+                catalog =
+                    if (families == null) it.catalog.copy(unavailable = true, refreshing = false)
+                    else SettingsRead(value = families, readAt = System.currentTimeMillis()),
+            )
+        }
+    }
+
+    private suspend fun refreshToolPreferences() {
+        if (state.value.disabled == null) {
+            val saved = cache?.load(identity, disabledToolsCache, disabledToolsSerializer)
+            if (saved != null && authorized()) mutable.update { it.copy(disabled = saved.value) }
+        }
+        val disabled =
+            readPreferenceAfterWrites({ it.savingTools.isNotEmpty() }, { toolRevision }) {
+                service.disabledTools()
+            }
+        if (!authorized()) return
+        mutable.update {
+            it.copy(disabled = disabled ?: it.disabled, preferencesUnavailable = disabled == null)
+        }
+        if (disabled != null) cacheDisabled(disabled)
+    }
+
+    private suspend fun refreshImagePreference() {
+        if (state.value.confirmedImage == null) {
+            val saved = cache?.load(identity, imageModelCache, String.serializer())
+            if (saved != null && authorized()) {
+                mutable.update { it.copy(confirmedImage = saved.value, imageUnavailable = false) }
             }
         }
+        val model =
+            readPreferenceAfterWrites({ it.savingImage }, { imageRevision }) {
+                service.imageModel() ?: defaultImageToolModel
+            }
+        if (!authorized()) return
+        mutable.update {
+            val draft = it.draftImage.takeUnless { draft -> draft == model }
+            it.copy(
+                confirmedImage = model ?: it.confirmedImage,
+                imageUnavailable = model == null && it.confirmedImage == null,
+                draftImage = draft,
+                imageFailed = it.imageFailed && draft != null,
+            )
+        }
+        if (model != null) cacheImage(model)
+    }
+
+    private suspend fun <T : Any> readPreferenceAfterWrites(
+        writing: (BuiltInToolsState) -> Boolean,
+        revision: () -> Long,
+        load: suspend () -> T,
+    ): T? {
+        while (authorized()) {
+            state.first { !writing(it) }
+            val before = revision()
+            val value = readResource(load = load)
+            if (before == revision()) return value
+        }
+        return null
     }
 
     fun toggle(id: String, enabled: Boolean) {
@@ -210,7 +219,6 @@ internal class BuiltInToolsSettings(
         )
             return
         if (current.confirmedImage == id && current.draftImage == null) return
-        val currentVisit = visit
         imageRevision++
         mutable.update { it.copy(draftImage = id, savingImage = true, imageFailed = false) }
         scope.launch {
@@ -221,8 +229,7 @@ internal class BuiltInToolsSettings(
             if (!authorized()) return@launch
             imageRevision++
             mutable.update {
-                val failed =
-                    model != id && currentVisit == visit && it.enabled(imageGenerationTool) == true
+                val failed = model != id && it.draftImage == id
                 it.copy(
                     confirmedImage = model ?: it.confirmedImage,
                     draftImage = id.takeIf { failed },
@@ -230,7 +237,7 @@ internal class BuiltInToolsSettings(
                     imageFailed = failed,
                 )
             }
-            if (model != null) cacheImage(model)
+            if (model != null) state.value.confirmedImage?.let(::cacheImage)
         }
     }
 
