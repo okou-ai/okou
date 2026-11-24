@@ -698,7 +698,9 @@ private fun UpdateAction(
 ) {
     val transfer = state.transfer
     val colors = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(12.dp)
+    val shape = if (state.required) ButtonDefaults.shape else RoundedCornerShape(12.dp)
+    val foreground = if (state.required) colors.onPrimary else colors.inverseOnSurface
+    val background = if (state.required) colors.primary else colors.inverseSurface
     val focus = rememberInstallControlFocus(inProgress = installProgress != null)
     val waitingForCheck =
         state.check == UpdateCheck.Waiting && !state.canInstall && !state.canDownload
@@ -733,7 +735,7 @@ private fun UpdateAction(
             .then(focus.modifier)
             .updateFocusOutline(
                 shape,
-                if (enabled) colors.inverseOnSurface else LocalActivityStatusColor.current,
+                if (enabled) foreground else LocalActivityStatusColor.current,
             )
     if (progress != null) {
         val fraction = (transfer as? UpdateTransfer.Downloading)?.fraction()
@@ -806,13 +808,19 @@ private fun UpdateAction(
         contentPadding = updateActionPadding,
         colors =
             ButtonDefaults.buttonColors(
-                containerColor = colors.inverseSurface,
-                contentColor = colors.inverseOnSurface,
+                containerColor = background,
+                contentColor = foreground,
                 disabledContainerColor = colors.surfaceVariant,
                 disabledContentColor = colors.onSurfaceVariant,
             ),
     ) {
-        Text(stringResource(label), style = updateActionLabelStyle(), textAlign = TextAlign.Center)
+        Text(
+            stringResource(label),
+            style =
+                if (state.required) MaterialTheme.typography.labelLarge
+                else updateActionLabelStyle(),
+            textAlign = TextAlign.Center,
+        )
     }
 }
 
