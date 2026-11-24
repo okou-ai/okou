@@ -123,4 +123,8 @@
     <string name="workflow_history_earlier_failed">以前の実行を読み込めませんでした。</string>
     <string name="workflow_rule_checking">結果を確認しています…</string>
     <string name="workflow_rule_unconfirmed">結果はまだ確認できていません。</string>
+    <string name="workflow_event">イベント</string>
+    <string name="workflow_event_source">イベントのソース</string>
+    <string name="workflow_source_gmail">Gmail · メール受信</string>
+    <string name="workflow_source_calendar">Google Calendar · 予定作成</string>
 </resources>

@@ -124,4 +124,8 @@
     <string name="workflow_history_earlier_failed">Could not load earlier runs.</string>
     <string name="workflow_rule_checking">Checking the result…</string>
     <string name="workflow_rule_unconfirmed">The result is still unconfirmed.</string>
+    <string name="workflow_event">Event</string>
+    <string name="workflow_event_source">Event source</string>
+    <string name="workflow_source_gmail">Gmail · Message received</string>
+    <string name="workflow_source_calendar">Google Calendar · Event created</string>
 </resources>
