@@ -48,7 +48,6 @@ internal fun RenameListItemSheet(
     @StringRes labelRes: Int,
     enabled: Boolean,
     status: RenameStatus,
-    checkEnabled: Boolean,
     check: () -> Unit,
     dismiss: () -> Unit,
     saved: () -> Unit,
@@ -110,7 +109,7 @@ internal fun RenameListItemSheet(
                 confirm = {
                     if (unconfirmed) check() else if (save(name)) editor.submitted = name
                 },
-                confirmEnabled = if (unconfirmed) checkEnabled && !checking else canSave,
+                confirmEnabled = if (unconfirmed) !checking else canSave,
             )
         },
     ) {

@@ -8,7 +8,8 @@ import ai.okou.android.R
 import ai.okou.android.SettingsModal
 import ai.okou.android.chat.ChatSkeletonBlock
 import ai.okou.android.chat.rememberChatWaitIndicator
-import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.isShortSettingsPanelWindow
+import ai.okou.android.settingsPanelPadding
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -519,7 +520,7 @@ internal fun ConnectorSheet(
     actions: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val shortWindow = currentWindowSizeDp().height < 480
+    val shortWindow = isShortSettingsPanelWindow()
     val fullScreen = expandInShortWindow && shortWindow
     val scroll = key(title) { rememberScrollState() }
     val titleStyle =
@@ -535,14 +536,7 @@ internal fun ConnectorSheet(
                         alignment = if (centered) Alignment.Center else Alignment.BottomCenter,
                     )
         BoxWithConstraints(
-            frame
-                .testTag("connector-sheet")
-                .padding(
-                    start = 16.dp,
-                    end = 16.dp,
-                    top = if (centered) 16.dp else 0.dp,
-                    bottom = if (shortWindow) 12.dp else 22.dp,
-                ),
+            frame.testTag("connector-sheet").padding(settingsPanelPadding(centered, shortWindow)),
         ) {
             val minimumControlsHeight =
                 with(LocalDensity.current) {
