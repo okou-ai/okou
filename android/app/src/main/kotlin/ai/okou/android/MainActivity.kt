@@ -231,6 +231,7 @@ class MainActivity : AppCompatActivity() {
                             onDismiss = { updateInstall.dismissExplanation(explanation) },
                             onConfirm = { authorizeUpdate(explanation) },
                             dismissLabel = stringResource(R.string.updates_later),
+                            minimumBodyLines = 1,
                         ) {
                             Text(stringResource(R.string.updates_permission))
                         }
