@@ -112,4 +112,9 @@
     <string name="chat_rename_save_unconfirmed">提交结果尚未确认。</string>
     <string name="chat_title_saved">聊天名称已保存</string>
     <string name="chat_project_name_saved">项目名称已保存</string>
+    <string name="inline_image_loading">正在加载图片</string>
+    <string name="inline_image_no_thumbnail">无缩略图</string>
+    <string name="inline_image_unavailable">图片不可用</string>
+    <string name="inline_image_view_original">查看原图</string>
+    <string name="inline_image_open_link">打开链接</string>
 </resources>
