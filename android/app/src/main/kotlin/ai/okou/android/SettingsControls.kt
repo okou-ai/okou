@@ -27,6 +27,7 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -326,6 +327,7 @@ internal fun SettingsModal(
     onDismiss: () -> Unit,
     dismissible: Boolean = true,
     fullScreen: Boolean = false,
+    showDragHandle: Boolean = true,
     content: @Composable (centered: Boolean) -> Unit,
 ) {
     val window = currentWindowSizeDp()
@@ -359,6 +361,7 @@ internal fun SettingsModal(
                     confirmValueChange = { it != SheetValue.Hidden || allowDismiss },
                 ),
             sheetGesturesEnabled = dismissible,
+            dragHandle = if (showDragHandle) ({ BottomSheetDefaults.DragHandle() }) else null,
             containerColor = MaterialTheme.colorScheme.surface,
             properties =
                 ModalBottomSheetProperties(
