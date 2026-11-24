@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="settings_preferences_save_rolled_back">설정을 저장하지 못해 이전 값으로 복원했어요.</string>
+    <string name="settings_appearance_sync_failed">디자인 설정을 동기화하지 못해 이 기기에 적용했어요.</string>
     <string name="settings_email_updates">이메일 업데이트</string>
     <string name="settings_email_scope">모든 워크스페이스의 브리핑, 알림 및 업데이트를 받습니다.</string>
     <string name="settings_email_receive">이메일 받기</string>

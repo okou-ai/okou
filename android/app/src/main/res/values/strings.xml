@@ -136,7 +136,6 @@
     <string name="instructions_placeholder">What would you like Okou to keep in mind?</string>
     <string name="instructions_save_when_online">Connect to save your changes.</string>
     <string name="settings_timezone">Time zone</string>
-    <string name="settings_timezone_hint">Default time zone for new scheduled tasks.</string>
     <string name="settings_timezone_utc">Coordinated Universal Time</string>
     <string name="settings_timezone_format">%1$s (UTC%2$s)</string>
 </resources>
