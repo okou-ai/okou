@@ -175,7 +175,9 @@ test("resolve authenticated artifact sources through publication, navigation and
   const apiBuild = await json(await request("/api/build-info"));
   expect(appCommit).toBe(process.env.GITHUB_SHA);
   expect(apiBuild.commitSha).toBe(appCommit);
+  const executions: Record<string, unknown>[] = [];
   const evidence: Record<string, unknown> = {
+    executions,
     preview: new URL(appUrl).origin,
     api: new URL(apiUrl).origin,
     buildCommitSha: appCommit,
@@ -228,6 +230,7 @@ test("resolve authenticated artifact sources through publication, navigation and
   };
   const anonymous = await playwrightRequest.newContext();
   const publish = async (revision: number) => {
+    evidence.phase = `publishing-revision-${revision}`;
     const clientEventId = randomUUID();
     const prompt = publisherPrompt(apiUrl, prefix, revision);
     const sent = await json(
@@ -280,16 +283,58 @@ test("resolve authenticated artifact sources through publication, navigation and
       .toBe(true);
     if (!runId || !promptId)
       throw new Error("Fixture Run identity unavailable");
+    const execution: Record<string, unknown> = {
+      revision,
+      threadId,
+      runId,
+      promptId,
+      status: "admitted",
+    };
+    executions.push(execution);
     await expect
       .poll(
         async () => {
           const run = await json(await request(`/api/runs/${runId}`));
+          execution.status = string(run.status);
           expect(["failed", "cancelled", "timeout"]).not.toContain(run.status);
           return run.status;
         },
         { timeout: 180_000, intervals: [1_000, 2_000, 3_000] },
       )
       .toBe("completed");
+    const outputRows = records(
+      (
+        await json(
+          await request(
+            `/api/chat-threads/${threadId}/event-rows?sinceSeqId=0&limit=50`,
+          ),
+        )
+      ).rows,
+    ).filter(
+      (row) => row.eventType === "output.message" && row.runId === runId,
+    );
+    const output = outputRows
+      .map((row) => {
+        const content = record(row.payload).content;
+        return typeof content === "string" ? content : "";
+      })
+      .join("\n");
+    // Only fixed classifications leave trusted CI, never arbitrary output.
+    execution.messageCount = outputRows.length;
+    execution.publisherConfirmation = output.includes("FIXTURES_READY");
+    execution.errorCategories = (
+      [
+        ["missing-run-identity", /Run-scoped API identity unavailable/],
+        ["missing-hosted-upload", /Hosted fixture upload missing/],
+        ["hosted-upload-failed", /Hosted fixture upload failed/],
+        ["file-upload-failed", /File fixture upload failed/],
+        ["fixture-api-client-error", /Fixture API returned HTTP 4\d{2}/],
+        ["fixture-api-server-error", /Fixture API returned HTTP 5\d{2}/],
+        ["javascript-runtime-error", /ReferenceError|SyntaxError/],
+      ] as const
+    )
+      .filter(([, pattern]) => pattern.test(output))
+      .map(([category]) => category);
     return { threadId, runId, promptId };
   };
 
@@ -326,6 +371,7 @@ test("resolve authenticated artifact sources through publication, navigation and
         { timeout: 30_000 },
       )
       .toBe(3);
+    evidence.phase = "source-api-and-navigation";
     fixtures.forEach((item) => artifactIds.add(string(item.id)));
     const website = fixtures.find((item) => item.kind === "hosted-site");
     const slides = fixtures.find((item) => item.kind === "presentation");
@@ -443,6 +489,7 @@ test("resolve authenticated artifact sources through publication, navigation and
       page.locator(`[data-role="user"][id="run-${first.runId}"]`),
     ).toContainText("deterministic fixture publisher");
 
+    evidence.phase = "sidebar-sources";
     await page.goto(new URL("/artifacts", appUrl).href);
     await page
       .locator(`tr[data-artifact-id="${slidesId}"]`)
@@ -507,6 +554,7 @@ test("resolve authenticated artifact sources through publication, navigation and
     evidence.provenance =
       "Original Run and Chat retained after actual redeployment; generic file is Chat-only";
 
+    evidence.phase = "redeployment-and-deletion";
     await page.goto(new URL("/artifacts", appUrl).href);
     await requireLink(await menu(websiteId), originalHref);
     await screenshot("source-retained-after-redeployment");
@@ -582,6 +630,7 @@ test("resolve authenticated artifact sources through publication, navigation and
     evidence.deletion =
       "Deleted original Chat disables source without changing independent owner Delete, cancellation or focus; newer Chat and other artifact remain readable";
 
+    evidence.phase = "flag-off";
     await page.goto(new URL("/_/lab", appUrl).href);
     await expect(
       page.getByRole("switch", { name: /Artifact library list/ }),
@@ -637,9 +686,18 @@ test("resolve authenticated artifact sources through publication, navigation and
         404,
       );
     }
+    evidence.cleanup =
+      "Owned publisher Chats and all fixture artifacts deleted through public APIs; CI separately removes recorded Clerk resources";
+    await writeFile(
+      path.join(evidenceDirectory, "execution.json"),
+      JSON.stringify(
+        { status: "execution-only, not a success receipt", ...evidence },
+        null,
+        2,
+      ),
+    );
   }
-  evidence.cleanup =
-    "Owned publisher Chats and all fixture artifacts deleted through public APIs; CI separately removes recorded Clerk resources";
+  evidence.phase = "complete";
   const safeEvidence = JSON.stringify(evidence, null, 2);
   await writeFile(
     path.join(evidenceDirectory, "acceptance.json"),
