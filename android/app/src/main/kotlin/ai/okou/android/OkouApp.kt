@@ -586,6 +586,20 @@ internal fun OkouApp(
     var confirmingProjectDelete by remember(chats) { mutableStateOf<String?>(null) }
     val renameEditor = renamePresentation?.editor
     val renameTarget = renameEditor?.target
+    val renameFocus = renamePresentation?.focusReturn
+    fun finishRenameFocus(request: WorkspaceRenameTarget) {
+        renamePresentation?.finishFocus(request)
+    }
+    if (renameFocus != null) {
+        val originVisible =
+            when (renameFocus) {
+                is WorkspaceRenameTarget.Chat ->
+                    if (renameFocus.fromConversation) visibleConversationId == renameFocus.id
+                    else showChatList
+                is WorkspaceRenameTarget.Project -> showChatList
+            }
+        if (!originVisible) LaunchedEffect(renameFocus) { finishRenameFocus(renameFocus) }
+    }
     if (chats != null) {
         WorkspaceChatFeedback(
             chats,
@@ -1248,17 +1262,19 @@ internal fun OkouApp(
                 thread = thread,
                 onRowAction = { id, action -> rowAction(id, action, fromConversation = true) },
                 onMove = { requestMove(it, fromList = false) },
-                onRename = { id ->
+                onRename = { id, restore ->
                     renamePresentation?.openChat(
                         id,
                         fromConversation = true,
+                        restoreFocus = restore,
                         list = listState.value,
                     )
                 },
-                renameOpen =
-                    (renameTarget as? WorkspaceRenameTarget.Chat)?.let {
-                        it.fromConversation && it.id == thread?.id
-                    } == true,
+                renameFocus =
+                    (renameFocus as? WorkspaceRenameTarget.Chat)?.takeIf {
+                        it.fromConversation && it.id == visibleConversationId
+                    },
+                onRenameFocusFinished = ::finishRenameFocus,
                 openResources =
                     thread
                         ?.id
@@ -1630,18 +1646,25 @@ internal fun OkouApp(
                                     onMoveFocusFinished = { request ->
                                         if (moveFocus == request) moveFocus = null
                                     },
-                                    { id ->
+                                    renameThread = { id, restore ->
                                         renamePresentation?.openChat(
                                             id,
                                             fromConversation = false,
+                                            restoreFocus = restore,
                                             list = listState.value,
                                         )
                                     },
-                                    { id -> renamePresentation?.openProject(id, listState.value) },
-                                    (renameTarget as? WorkspaceRenameTarget.Chat)
-                                        ?.takeUnless { it.fromConversation }
-                                        ?.id,
-                                    (renameTarget as? WorkspaceRenameTarget.Project)?.id,
+                                    renameProject = { id, restore ->
+                                        renamePresentation?.openProject(
+                                            id,
+                                            restore,
+                                            listState.value,
+                                        )
+                                    },
+                                    renamingProjectId =
+                                        (renameTarget as? WorkspaceRenameTarget.Project)?.id,
+                                    renameFocus = renameFocus,
+                                    onRenameFocusFinished = ::finishRenameFocus,
                                     { id -> confirmingProjectDelete = id },
                                     confirmingProjectDelete,
                                     { id -> chats?.retryProjectRename(id) },

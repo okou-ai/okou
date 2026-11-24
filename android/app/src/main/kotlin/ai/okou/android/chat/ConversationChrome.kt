@@ -43,8 +43,9 @@ internal fun ConversationToolbarActions(
     thread: ConfirmedChat?,
     onRowAction: (String, ChatRowAction) -> Unit,
     onMove: (String) -> Unit,
-    onRename: (String) -> Unit,
-    renameOpen: Boolean,
+    onRename: (String, Boolean) -> Unit,
+    renameFocus: WorkspaceRenameTarget.Chat?,
+    onRenameFocusFinished: (WorkspaceRenameTarget) -> Unit,
     openSettings: ((restoreFocus: Boolean) -> Unit)?,
     openResources: ((restoreFocus: Boolean) -> Unit)? = null,
     settingsFocus: FocusRequester? = null,
@@ -56,6 +57,7 @@ internal fun ConversationToolbarActions(
         var menu by remember { mutableStateOf(false) }
         var delete by remember { mutableStateOf(false) }
         val focus = settingsFocus ?: remember { FocusRequester() }
+        if (renameFocus != null) RestoreRenameOriginFocus(renameFocus, focus, onRenameFocusFinished)
         var keyboardFocused by remember { mutableStateOf(false) }
         var restoreFocus by remember { mutableStateOf(false) }
         val busy = thread?.id in state.pendingRowActions
@@ -127,7 +129,10 @@ internal fun ConversationToolbarActions(
                                 ) {
                                     menu = false
                                     when (action) {
-                                        ChatRowAction.Rename -> onRename(checkNotNull(thread).id)
+                                        ChatRowAction.Rename -> {
+                                            onRename(checkNotNull(thread).id, restoreFocus)
+                                            restoreFocus = false
+                                        }
                                         ChatRowAction.Delete -> delete = true
                                         ChatRowAction.MoveProject -> onMove(checkNotNull(thread).id)
                                         else -> onRowAction(checkNotNull(thread).id, action)
@@ -149,8 +154,8 @@ internal fun ConversationToolbarActions(
                     onRowAction(thread.id, ChatRowAction.Delete)
                 },
             )
-        LaunchedEffect(menu, renameOpen, delete) {
-            if (!menu && !renameOpen && !delete && restoreFocus) {
+        LaunchedEffect(menu, delete) {
+            if (!menu && !delete && restoreFocus) {
                 restoreFocus = false
                 focus.requestFocus()
             }
