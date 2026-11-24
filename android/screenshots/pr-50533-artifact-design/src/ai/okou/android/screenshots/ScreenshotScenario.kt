@@ -11,12 +11,17 @@ import ai.okou.android.api.generated.UserPreferencesLocale
 import ai.okou.android.api.generated.UserPreferencesTheme
 import ai.okou.android.testAuthenticationState
 import ai.okou.android.testPreferences
+import android.graphics.Rect
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
+import androidx.test.uiautomator.SearchCondition
+import androidx.test.uiautomator.Searchable
+import androidx.test.uiautomator.StaleObjectException
 import androidx.test.uiautomator.UiDevice
+import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
 import java.util.UUID
 import org.junit.Assert.assertEquals
@@ -89,11 +94,11 @@ class ScreenshotScenario {
                 assertEquals(160, it.resources.configuration.densityDpi)
                 assertEquals(1f, it.resources.configuration.fontScale, 0f)
             }
-            node(By.text(artifacts.sourceTitle))
-            node(By.desc("成果").enabled(true)).click()
-            val today = node(By.text("今天")).visibleBounds
-            val yesterday = node(By.text("昨天")).visibleBounds
-            val earlier = node(By.text("更早")).visibleBounds
+            see(By.text(artifacts.sourceTitle))
+            tap(By.desc("成果").enabled(true))
+            val today = read(By.text("今天")) { it.visibleBounds }
+            val yesterday = read(By.text("昨天")) { it.visibleBounds }
+            val earlier = read(By.text("更早")) { it.visibleBounds }
             assertTrue(today.bottom < yesterday.top)
             assertTrue(yesterday.bottom < earlier.top)
             block()
@@ -101,69 +106,85 @@ class ScreenshotScenario {
     }
 
     private fun capturePhone(artifacts: ArtifactApiFixture) {
-        val avatar = control(artifacts.image.title)
-        val avatarPosition = avatar.visibleBounds
+        val avatarPosition = control(artifacts.image.title).bounds
         ScreenshotCapture.capture("catalog-phone.png")
-        avatar.click()
-        node(By.text("此文件暂不支持预览"))
+        tap(By.text(artifacts.image.title))
+        see(By.text("此文件暂不支持预览"))
         ScreenshotCapture.capture("unavailable-phone.png")
-        node(By.desc("返回成果列表")).click()
-        assertEquals(avatarPosition, control(artifacts.image.title).visibleBounds)
-        control("视频").click()
-        control(artifacts.video.title).click()
+        tap(By.desc("返回成果列表"))
+        assertEquals(avatarPosition, control(artifacts.image.title).bounds)
+        tap(By.text("视频"))
+        tap(By.text(artifacts.video.title))
         val play = control("播放")
-        assertTrue(play.visibleBounds.height() >= 48)
+        assertTrue(play.bounds.height() >= 48)
         assertFalse(device.hasObject(By.desc("媒体播放").pkg(app.packageName)))
         ScreenshotCapture.capture("video-phone.png")
         device.pressBack()
-        control(artifacts.video.title)
-        val filter = control("视频")
-        assertTrue(filter.isSelected || filter.isChecked)
+        see(By.text(artifacts.video.title))
+        assertTrue(control("视频").selected)
 
-        node(By.desc("返回工作区")).click()
-        node(By.text(artifacts.sourceTitle)).click()
-        node(By.desc("聊天操作").enabled(true)).click()
-        node(By.text("对话资料")).click()
-        val resource = control(artifacts.summary.title)
-        val resourcePosition = resource.visibleBounds
-        resource.click()
-        node(By.text("成果预览"))
-        node(By.textContains("仅供预览"))
-        node(By.textContains("帮助团队继续推进在手工作"))
+        tap(By.desc("返回工作区"))
+        tap(By.text(artifacts.sourceTitle))
+        tap(By.desc("聊天操作").enabled(true))
+        tap(By.text("对话资料"))
+        val resourcePosition = control(artifacts.summary.title).bounds
+        tap(By.text(artifacts.summary.title))
+        see(By.text("成果预览"))
+        see(By.textContains("仅供预览"))
+        see(By.textContains("帮助团队继续推进在手工作"))
         ScreenshotCapture.capture("chat-preview-phone.png")
         device.pressBack()
-        assertEquals(resourcePosition, control(artifacts.summary.title).visibleBounds)
+        assertEquals(resourcePosition, control(artifacts.summary.title).bounds)
     }
 
     private fun captureWide(artifacts: ArtifactApiFixture) {
-        val row = control(artifacts.summary.title)
-        val rowPosition = row.visibleBounds
-        row.click()
-        node(By.textContains("仅供预览"))
+        val rowPosition = control(artifacts.summary.title).bounds
+        tap(By.text(artifacts.summary.title))
+        see(By.textContains("仅供预览"))
         val source = control("查看来源对话")
         assertFalse(device.hasObject(By.text("保存文件").pkg(app.packageName)))
-        assertTrue(rowPosition.right < source.visibleBounds.left)
-        assertTrue(source.visibleBounds.height() >= 48)
-        node(By.textContains("帮助团队继续推进在手工作"))
+        assertTrue(rowPosition.right < source.bounds.left)
+        assertTrue(source.bounds.height() >= 48)
+        see(By.textContains("帮助团队继续推进在手工作"))
         ScreenshotCapture.capture("preview-wide.png")
-        source.click()
-        node(By.desc("返回成果预览")).click()
-        control("查看来源对话")
-        assertEquals(rowPosition, control(artifacts.summary.title).visibleBounds)
+        tap(By.text("查看来源对话"))
+        tap(By.desc("返回成果预览"))
+        see(By.text("查看来源对话"))
+        assertEquals(rowPosition, control(artifacts.summary.title).bounds)
     }
 
-    private fun control(label: String) =
-        checkNotNull(generateSequence(node(By.text(label))) { it.parent }.firstOrNull { it.isClickable }) {
-            "Missing clickable ancestor for $label"
+    private data class Control(val bounds: Rect, val selected: Boolean)
+
+    private fun control(label: String): Control =
+        read(By.text(label)) { text ->
+            generateSequence(text) { it.parent }.firstOrNull { it.isClickable }?.let {
+                Control(it.visibleBounds, it.isSelected || it.isChecked)
+            }
         }
 
-    private fun node(selector: BySelector) =
-        checkNotNull(device.wait(Until.findObject(By.copy(selector).pkg(app.packageName)), 15_000)) {
-            val labels = device.findObjects(By.pkg(app.packageName)).flatMap {
-                listOfNotNull(it.text, it.contentDescription)
+    private fun tap(selector: BySelector) {
+        val bounds = read(selector) { it.visibleBounds }
+        assertTrue(device.click(bounds.centerX(), bounds.centerY()))
+    }
+
+    private fun see(selector: BySelector) {
+        assertTrue("Missing $selector", device.wait(Until.hasObject(By.copy(selector).pkg(app.packageName)), 15_000))
+    }
+
+    private fun <T : Any> read(selector: BySelector, snapshot: (UiObject2) -> T?): T {
+        val scoped = By.copy(selector).pkg(app.packageName)
+        return checkNotNull(device.wait(object : SearchCondition<T>() {
+            override fun apply(searchable: Searchable): T? {
+                return try {
+                    searchable.findObject(scoped)?.let(snapshot)
+                } catch (_: StaleObjectException) {
+                    null
+                }
             }
-            "Missing $selector among $labels"
+        }, 15_000)) {
+            "Could not read a stable accessibility node for $selector"
         }
+    }
 
     private fun restoreDisplay(setting: String, previous: String) {
         val overrideValue = previous.lineSequence().firstOrNull { it.startsWith("Override ") }?.substringAfter(": ")
