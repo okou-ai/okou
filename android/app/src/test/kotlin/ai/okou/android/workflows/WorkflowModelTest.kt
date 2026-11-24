@@ -133,6 +133,10 @@ internal abstract class WorkflowModelTestFixture {
         var toggle: suspend (String, Boolean) -> WorkflowAutomation = { _, _ ->
             error("Unexpected automation toggle")
         }
+        var updateRule: suspend (String, UpdateWorkflowAutomationRequest) -> WorkflowAutomation =
+            { _, _ ->
+                error("Unexpected automation update")
+            }
         val toggleRequests = mutableListOf<Pair<String, Boolean>>()
         var detailReads = 0
             private set
@@ -213,7 +217,7 @@ internal abstract class WorkflowModelTestFixture {
         override suspend fun updateAutomation(
             id: String,
             request: UpdateWorkflowAutomationRequest,
-        ) = error("Unexpected automation update")
+        ): WorkflowAutomation = updateRule(id, request)
 
         override suspend fun setAutomationEnabled(
             id: String,
@@ -760,8 +764,8 @@ internal class WorkflowToggleModelTest : WorkflowModelTestFixture() {
     private fun TestScope.openRule(
         service: Service,
         model: WorkflowModel,
+        rule: WorkflowAutomationVariant1 = service.weeklyRule(),
     ): WorkflowAutomationVariant1 {
-        val rule = service.weeklyRule()
         service.detail = service.detail.copy(automations = listOf(rule))
         service.rulesRead = { listOf(WorkspaceWorkflowAutomationsItem(service.summary, rule)) }
         model.visibilityChanged(true)
@@ -822,6 +826,64 @@ internal class WorkflowToggleModelTest : WorkflowModelTestFixture() {
         assertEquals(listOf(paused), model.state.value.detail?.automations)
         assertTrue(model.state.value.toggles.isEmpty())
         assertNull(model.state.value.issue)
+    }
+
+    @Test
+    fun leavingDuringAToggleRequiresAReadBeforeTheRuleCanBeChangedAgain() =
+        check { service, model ->
+            val active = openRule(service, model)
+            val receipt = CompletableDeferred<WorkflowAutomation>()
+            val readback = CompletableDeferred<WorkflowDetail>()
+            service.toggle = { _, _ -> receipt.await() }
+
+            model.toggle(active)
+            runCurrent()
+            model.select(null)
+            receipt.completeExceptionally(ApiFailure.Network(IOException("Lost response")))
+            runCurrent()
+
+            service.detailRead = { readback.await() }
+            model.select(service.summary.id, WorkflowTab.Automations)
+            runCurrent()
+            model.toggle(active)
+            runCurrent()
+            assertEquals(listOf(active.id to false), service.toggleRequests)
+
+            val paused = active.copy(enabled = false, nextRunAt = null)
+            readback.complete(service.detail.copy(automations = listOf(paused)))
+            runCurrent()
+            assertEquals(listOf(paused), model.state.value.detail?.automations)
+        }
+
+    @Test
+    fun savingAnEditToTheRuleClearsItsPreviousToggleFailure() = check { service, model ->
+        val schedule =
+            WorkflowAutomationVariant1ScheduleVariant1(
+                WorkflowAutomationVariant1ScheduleVariant1Type.CRON,
+                "0 9 * * 1-5",
+                "UTC",
+            )
+        val active = openRule(service, model, service.weeklyRule().copy(schedule = schedule))
+        service.toggle = { _, _ -> throw ApiFailure.Network(IOException("Lost response")) }
+        model.toggle(active)
+        runCurrent()
+        assertEquals(WorkflowTogglePhase.Failed, model.state.value.toggles[active.id]?.phase)
+
+        val original = checkNotNull(active.editableRule("UTC"))
+        val changed = original.copy(value = original.value.copy(time = "09:30"))
+        val confirmed = active.copy(schedule = schedule.copy(cronExpression = "30 9 * * 1-5"))
+        service.updateRule = { id, request ->
+            assertEquals(active.id, id)
+            assertEquals(changed.value.updateRequest(), request)
+            confirmed
+        }
+        model.edit(changed)
+        model.save(changed)
+        runCurrent()
+
+        assertEquals(listOf(confirmed), model.state.value.detail?.automations)
+        assertNull(model.state.value.editor)
+        assertNull(model.state.value.toggles[active.id])
     }
 
     @Test
