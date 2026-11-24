@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { buildArtifactPrefix } from "../../../lib/file-url";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { publicChatActor } from "./helpers/public-chat-actor";
@@ -115,6 +116,7 @@ describe("Published member instructions in direct Runs", () => {
           command instanceof ListObjectsV2Command &&
           command.input.Prefix === buildArtifactPrefix(member.userId, fileId)
         ) {
+          await flushWaitUntilForTest();
           await bdd.updatePersonalInstructions(
             member,
             "Member instructions updated during attachment verification",

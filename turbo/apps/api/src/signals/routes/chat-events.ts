@@ -21,6 +21,7 @@ import { measureChatEnqueue } from "../services/chat-enqueue-timing.service";
 import {
   handleSendChatEvent$,
   chatEnqueueTiming$,
+  retainNormalSendAttachments,
   startNormalSendBootstrap$,
 } from "../services/chat-events.command";
 import { captureProjectReferences } from "../services/project-reference.service";
@@ -141,51 +142,58 @@ export const sendValidatedChatEvent$ = command(
     if (suggestionRead) {
       waitUntil(suggestionRead);
     }
-    const projectReferences = await referenceRead;
-    signal.throwIfAborted();
-    if (projectReferences === null) {
-      return notFound(
-        projectId ? "Project not found" : "Project or conversation not found",
-      );
-    }
-    const checkedSuggestion = await suggestionRead;
-    signal.throwIfAborted();
-    if (checkedSuggestion && !checkedSuggestion.ok) {
-      throw checkedSuggestion.error;
-    }
-    const suggestion = checkedSuggestion?.value;
-    if (suggestion && "status" in suggestion) {
-      return suggestion;
-    }
-    let acceptedDocument = suggestion?.acceptedDocument;
-    const result = await set(
-      handleSendChatEvent$,
-      {
-        body: data,
-        projectId,
-        projectReferences,
-        bootstrap,
-        onAcceptedDocument: suggestion
-          ? (document) => {
-              acceptedDocument = document;
-            }
-          : undefined,
-      },
-      signal,
-    );
-    if (suggestion && result.status === 201) {
-      await set(
-        recordAcceptedSuggestionFollowup$,
-        auth,
+    const response = (async () => {
+      const projectReferences = await referenceRead;
+      signal.throwIfAborted();
+      if (projectReferences === null) {
+        return notFound(
+          projectId ? "Project not found" : "Project or conversation not found",
+        );
+      }
+      const checkedSuggestion = await suggestionRead;
+      signal.throwIfAborted();
+      if (checkedSuggestion && !checkedSuggestion.ok) {
+        throw checkedSuggestion.error;
+      }
+      const suggestion = checkedSuggestion?.value;
+      if (suggestion && "status" in suggestion) {
+        return suggestion;
+      }
+      let acceptedDocument = suggestion?.acceptedDocument;
+      const result = await set(
+        handleSendChatEvent$,
         {
-          threadId: result.body.threadId,
-          eventId: suggestion.eventId,
-          acceptedDocument,
+          body: data,
+          projectId,
+          projectReferences,
+          bootstrap,
+          onAcceptedDocument: suggestion
+            ? (document) => {
+                acceptedDocument = document;
+              }
+            : undefined,
         },
         signal,
       );
-    }
-    return result;
+      if (suggestion && result.status === 201) {
+        await set(
+          recordAcceptedSuggestionFollowup$,
+          auth,
+          {
+            threadId: result.body.threadId,
+            eventId: suggestion.eventId,
+            acceptedDocument,
+          },
+          signal,
+        );
+      }
+      return result;
+    })();
+    return await (bootstrap?.attachments
+      ? response.finally(() => {
+          retainNormalSendAttachments(bootstrap);
+        })
+      : response);
   },
 );
 

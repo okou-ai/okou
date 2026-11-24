@@ -2556,6 +2556,15 @@ interface NormalSendBootstrap {
   >;
 }
 
+/** Keep any unfinished attachment read alive after its foreground owner exits. */
+export function retainNormalSendAttachments(
+  bootstrap: NormalSendBootstrap | undefined,
+): void {
+  if (bootstrap?.attachments) {
+    waitUntil(bootstrap.attachments);
+  }
+}
+
 const prepareNormalSendAuthorization$ = command(
   (
     _context,
@@ -2657,9 +2666,6 @@ const startNormalSendAttachmentPreparation$ = command(
           signal,
         )
       : undefined;
-    if (attachments) {
-      waitUntil(attachments);
-    }
     return { authorize, attachments };
   },
 );
@@ -2808,10 +2814,12 @@ export const startNormalSendBootstrap$ = command(
 );
 
 const prepareNormalSendContext$ = command(
-  async ({ set }, request: NormalSendRequest, signal: AbortSignal) => {
-    if (forgedMcpSource(request.body)) {
-      return badRequestMessage("MCP source annotations are server-managed");
-    }
+  async (
+    { set },
+    request: NormalSendRequest,
+    bootstrap: NormalSendBootstrap,
+    signal: AbortSignal,
+  ) => {
     const {
       context,
       existingThread,
@@ -2820,7 +2828,7 @@ const prepareNormalSendContext$ = command(
       attachments,
       host,
       revocation,
-    } = request.bootstrap ?? set(startNormalSendReads$, request, signal);
+    } = bootstrap;
     const args = request;
     const models = settle(set(prepareNormalSendModels$, context, signal));
     waitUntil(models);
@@ -2970,14 +2978,22 @@ const resolveFailedNormalSend$ = command(
 const prepareNormalSendPublicationInput$ = command(
   async ({ set }, request: NormalSendRequest, signal: AbortSignal) => {
     signal.throwIfAborted();
-    const result = await settleIncludingAbort(async () => {
+    let bootstrap = request.bootstrap;
+    const preparation = settleIncludingAbort(async () => {
       const prepared = await measureChatEnqueue(
         request.enqueueTiming,
         "context_ready",
         async () => {
+          if (forgedMcpSource(request.body)) {
+            return badRequestMessage(
+              "MCP source annotations are server-managed",
+            );
+          }
+          bootstrap ??= set(startNormalSendReads$, request, signal);
           const authorized = await set(
             prepareNormalSendContext$,
             request,
+            bootstrap,
             signal,
           );
           signal.throwIfAborted();
@@ -3077,6 +3093,11 @@ const prepareNormalSendPublicationInput$ = command(
         },
       };
     });
+    const result = await (request.bootstrap
+      ? preparation
+      : preparation.finally(() => {
+          retainNormalSendAttachments(bootstrap);
+        }));
     signal.throwIfAborted();
     if (!result.ok) {
       throw result.error;
