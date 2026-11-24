@@ -84,7 +84,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.ArtifactThreePointTiming]: {
     maintainer: "bingjie@okou.ai",
-    displayName: "Artifact three-point phase timing",
     description:
       "Record versioned research, generation, and authenticated completion observations in Axiom.",
     enabled: false,
@@ -94,7 +93,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.PhoneUse]: {
     maintainer: "lancy@okou.ai",
-    displayName: "Phone Use",
     description: "Internal cloud-controlled iOS device automation.",
     enabled: false,
   },
@@ -383,14 +381,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.CodexExecution]: {
     maintainer: "liangyou@okou.ai",
-    displayName: "Codex execution (test only)",
     description:
       "Test-only override to use Codex instead of Pi for supported ChatGPT subscription runs. Auto always stays on Pi.",
     enabled: false,
   },
   [FeatureSwitchKey.GeminiAntigravity]: {
     maintainer: "lancy@okou.ai",
-    displayName: "Gemini 4 with Antigravity",
     description:
       "Opt into Neon, Carbon, and Hydrogen with a personal Google AI subscription.",
     enabled: false,

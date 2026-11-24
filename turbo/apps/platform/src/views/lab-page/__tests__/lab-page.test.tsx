@@ -88,10 +88,10 @@ test("Lab groups active feature switches", async () => {
   } as const;
   const keys = Object.values(FeatureSwitchKey);
   for (const key of keys) {
-    const group = featureSwitchGroup(stageGroups[metadata[key].rolloutStage]);
-    expect(
-      within(group).getByText(metadata[key].displayName ?? key),
-    ).toBeInTheDocument();
+    const { rolloutStage, displayName } = metadata[key];
+    const group = featureSwitchGroup(stageGroups[rolloutStage]);
+    const label = rolloutStage === "internal" ? key : (displayName ?? key);
+    expect(within(group).getByText(label)).toBeInTheDocument();
   }
   expect(screen.getAllByRole("switch")).toHaveLength(keys.length);
   expect(
