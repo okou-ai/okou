@@ -2,6 +2,7 @@ package ai.okou.android
 
 import ai.okou.android.state.rememberSettingsFlag
 import ai.okou.android.updates.updateFocusOutline
+import androidx.activity.compose.BackHandler
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -344,12 +345,13 @@ internal fun SettingsModal(
     dismissible: Boolean = true,
     fullScreen: Boolean = false,
     showDragHandle: Boolean = true,
+    confirmDismiss: (() -> Boolean)? = null,
     content: @Composable (centered: Boolean) -> Unit,
 ) {
     val window = currentWindowSizeDp()
     if (fullScreen || workspaceListPaneWidth(window.width, window.height) != null) {
         Dialog(
-            onDismissRequest = onDismiss,
+            onDismissRequest = { if (confirmDismiss?.invoke() != false) onDismiss() },
             properties =
                 DialogProperties(
                     dismissOnBackPress = dismissible,
@@ -368,23 +370,30 @@ internal fun SettingsModal(
         }
     } else {
         val allowDismiss by rememberUpdatedState(dismissible)
+        val confirm by rememberUpdatedState(confirmDismiss)
         ModalBottomSheet(
             onDismissRequest = onDismiss,
             sheetState =
                 rememberBottomSheetState(
                     initialValue = SheetValue.Hidden,
                     enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
-                    confirmValueChange = { it != SheetValue.Hidden || allowDismiss },
+                    confirmValueChange = {
+                        it != SheetValue.Hidden || allowDismiss && confirm?.invoke() != false
+                    },
                 ),
             sheetGesturesEnabled = dismissible,
             dragHandle = if (showDragHandle) ({ BottomSheetDefaults.DragHandle() }) else null,
             containerColor = MaterialTheme.colorScheme.surface,
             properties =
                 ModalBottomSheetProperties(
-                    shouldDismissOnBackPress = dismissible,
+                    shouldDismissOnBackPress = dismissible && confirmDismiss == null,
                     shouldDismissOnClickOutside = dismissible,
                 ),
         ) {
+            // A vetoed native predictive hide can leave the sheet scaled after Back.
+            BackHandler(enabled = confirmDismiss != null) {
+                if (dismissible && confirmDismiss?.invoke() != false) onDismiss()
+            }
             content(false)
         }
     }
@@ -412,13 +421,15 @@ internal fun SettingsSheet(
     actionSpacing: Dp = 8.dp,
     scroll: SettingsSheetScroll = SettingsSheetScroll.Body,
     dismissible: Boolean = true,
+    confirmDismiss: (() -> Boolean)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val compactHeight = isShortSettingsPanelWindow()
     val scrollModifier =
         if (scroll == SettingsSheetScroll.None) Modifier
         else Modifier.verticalScroll(rememberScrollState())
-    SettingsModal(onDismiss, dismissible = dismissible) { centered ->
+    SettingsModal(onDismiss, dismissible = dismissible, confirmDismiss = confirmDismiss) { centered
+        ->
         Column(
             modifier
                 .fillMaxWidth()
