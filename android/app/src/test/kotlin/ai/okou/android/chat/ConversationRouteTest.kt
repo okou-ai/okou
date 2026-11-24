@@ -355,7 +355,12 @@ class ConversationRouteTest {
 
     @Test
     @Config(qualifiers = "en-rUS-w360dp-h400dp")
-    fun reachingTheLatestReplyMarksItReadWhenSuggestionsFillTheViewport() {
+    fun jumpRevealsAndAcknowledgesTheLatestReplyWhenSuggestionsFillTheViewport() {
+        fixture.indicators = {
+            jsonResponse(
+                """{"threads":{"$CHAT_PERSONAL":"unread"},"unreadAt":{"$CHAT_PERSONAL":"$CHAT_DATE"}}""",
+            )
+        }
         val followups =
             """{"version":1,"followups":[{"kind":"talk","prompt":"Summarize the release notes"},{"kind":"email","prompt":"Draft the announcement"},{"kind":"workflow","prompt":"Set up a release checklist"}]}"""
         serveConversationRows(
@@ -392,8 +397,13 @@ class ConversationRouteTest {
         compose.onNodeWithText("The release is ready.").assertIsNotDisplayed()
         assertEquals(0, fixture.readRequests.get())
 
-        compose.onNodeWithTag("conversation").performScrollToIndex(2)
+        val jump =
+            hasTestTag("conversation_jump") and
+                hasContentDescription(compose.activity.getString(R.string.conversation_new_reply))
+        compose.waitUntilExactlyOneExists(jump, 5_000)
+        compose.onNode(jump).performClick()
         compose.onNodeWithText("The release is ready.").assertIsDisplayed()
+        compose.onNode(jump).assertDoesNotExist()
         compose.waitUntil("reading the latest reply is acknowledged", 5_000) {
             fixture.readRequests.get() > 0
         }
