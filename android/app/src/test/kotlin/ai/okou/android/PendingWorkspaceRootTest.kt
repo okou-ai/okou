@@ -621,13 +621,19 @@ class PendingWorkspaceRootTest {
         compose.runOnIdle { app.organizationResponse.complete(Unit) }
         awaitCachedRow()
         compose.runOnIdle { app.listResponse.complete(Unit) }
-        compose.waitUntil(10_000) { listState()?.source == ChatListSource.Network }
+        compose.waitUntil(10_000) {
+            val list = listState()
+            list?.source == ChatListSource.Network && list.projectsSource != null
+        }
 
         compose.runOnIdle { app.listResponse = CompletableDeferred() }
         compose.runOnIdle { app.connectivity.value = false }
         compose.waitUntil(10_000) { listState()?.offline == true }
         compose.runOnIdle { app.connectivity.value = true }
-        compose.waitUntil(10_000) { listState()?.listPhase == ChatReadPhase.Loading }
+        compose.waitUntil(10_000) {
+            val list = listState()
+            list?.offline == false && list.listPhase == ChatReadPhase.Loading
+        }
         compose.onNodeWithText("Refreshing chats…").assertDoesNotExist()
         val row = hasTestTag("chat_$CHAT_PERSONAL")
         compose.onNode(row).performSemanticsAction(SemanticsActions.OnLongClick)
