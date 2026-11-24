@@ -33,8 +33,6 @@
     <string name="auth_workspace">Ruang kerja saat ini</string>
     <string name="auth_switch_workspace">Ganti ruang kerja</string>
     <string name="auth_browser_unavailable">Instal browser untuk membuka pengaturan ruang kerja.</string>
-    <string name="preference_save_failed">Preferensi tidak dapat disimpan. Pilihan Anda tetap aktif.</string>
-    <string name="preference_refresh_failed">Preferensi tidak dapat dimuat ulang. Coba lagi.</string>
     <string name="preference_color_theme">Tema warna</string>
     <string name="preference_language">Bahasa</string>
     <string name="palette_default">Default</string>

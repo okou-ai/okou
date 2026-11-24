@@ -11,6 +11,7 @@ import ai.okou.android.chat.ChatComposerModel
 import ai.okou.android.chat.ChatListModel
 import ai.okou.android.chat.ChatListService
 import ai.okou.android.chat.RunControlsModel
+import ai.okou.android.preferences.MemberPreferenceSaveFeedback
 import ai.okou.android.preferences.MemberPreferencesModel
 import ai.okou.android.preferences.MemberPreferencesSettings
 import ai.okou.android.updates.UpdateTransfer
@@ -24,10 +25,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
@@ -171,7 +174,7 @@ class OkouAppTest {
                                         if (failPreferenceSave())
                                             throw ai.okou.android.api.ApiFailure.Http(
                                                 400,
-                                                null,
+                                                "BAD_REQUEST",
                                                 null,
                                                 null,
                                             )
@@ -235,6 +238,7 @@ class OkouAppTest {
                 val dark = state.theme.resolveDark(isSystemInDarkTheme())
                 OkouTheme(dark) {
                     val color = MaterialTheme.colorScheme.background
+                    val snackbar = remember { SnackbarHostState() }
                     SideEffect { background = color }
                     Box {
                         Box(Modifier.heightIn(max = contentHeight.value)) {
@@ -243,7 +247,9 @@ class OkouAppTest {
                                 models.first.second,
                                 controls,
                                 projectExpansion = null,
+                                snackbar = snackbar,
                                 settingsContent = { _, _, _ ->
+                                    MemberPreferenceSaveFeedback(models.second, snackbar)
                                     SettingsScreen(
                                         models = {},
                                         tools = {},
@@ -427,23 +433,25 @@ class OkouAppTest {
     }
 
     @Test
-    fun preferenceFailuresAreVisibleAndRetryRestoresNativeSelection() {
+    fun appearanceRejectKeepsLocalSelectionAndTheNextChoiceDismissesFeedback() {
         var fail = true
         render(failPreferenceSave = { fail })
         compose.onNodeWithContentDescription("Settings").performClick()
         selectAppearance("Dark")
-        compose
-            .onNodeWithText("Could not save your preferences. Your selections are still in use.")
-            .assertExists()
+        val notice =
+            compose.onNodeWithText(
+                compose.activity.getString(R.string.settings_appearance_sync_failed),
+            )
+        notice.assertIsDisplayed()
         compose.onNodeWithText("Dark").assertIsDisplayed()
         compose.runOnIdle { fail = false }
-        compose.onNodeWithText("Try again").performScrollTo().performClick()
         compose.onNodeWithText("Display mode").performClick()
         compose.onNode(isSelectable() and hasText("Dark")).assertIsSelected()
         compose
             .onNode(isSelectable() and hasText("Light"))
             .performSemanticsAction(SemanticsActions.OnClick)
         compose.onNodeWithText("Light").assertIsDisplayed()
+        notice.assertDoesNotExist()
     }
 
     @Test

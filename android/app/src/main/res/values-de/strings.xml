@@ -33,8 +33,6 @@
     <string name="auth_workspace">Aktueller Arbeitsbereich</string>
     <string name="auth_switch_workspace">Arbeitsbereich wechseln</string>
     <string name="auth_browser_unavailable">Installiere einen Browser, um den Arbeitsbereich einzurichten.</string>
-    <string name="preference_save_failed">Deine Einstellungen konnten nicht gespeichert werden. Deine Auswahl bleibt aktiv.</string>
-    <string name="preference_refresh_failed">Einstellungen konnten nicht aktualisiert werden. Versuche es erneut.</string>
     <string name="preference_color_theme">Farbthema</string>
     <string name="preference_language">Sprache</string>
     <string name="palette_default">Standard</string>

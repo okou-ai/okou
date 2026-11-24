@@ -33,8 +33,6 @@
     <string name="auth_workspace">현재 워크스페이스</string>
     <string name="auth_switch_workspace">워크스페이스 전환</string>
     <string name="auth_browser_unavailable">워크스페이스 설정을 열려면 브라우저를 설치하세요.</string>
-    <string name="preference_save_failed">환경설정을 저장하지 못했습니다. 선택한 설정은 계속 적용됩니다.</string>
-    <string name="preference_refresh_failed">환경설정을 새로고침할 수 없습니다. 다시 시도하세요.</string>
     <string name="preference_color_theme">컬러 테마</string>
     <string name="preference_language">언어</string>
     <string name="palette_default">기본</string>

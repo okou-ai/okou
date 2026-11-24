@@ -33,8 +33,6 @@
     <string name="auth_workspace">मौजूदा वर्कस्पेस</string>
     <string name="auth_switch_workspace">कार्यक्षेत्र बदलें</string>
     <string name="auth_browser_unavailable">कार्यक्षेत्र सेट अप करने के लिए ब्राउज़र इंस्टॉल करें।</string>
-    <string name="preference_save_failed">आपकी प्राथमिकताएँ सेव नहीं हो सकीं। आपके चुनाव अब भी लागू हैं।</string>
-    <string name="preference_refresh_failed">प्राथमिकताएँ रीफ़्रेश नहीं हो सकीं। फिर कोशिश करें।</string>
     <string name="preference_color_theme">कलर थीम</string>
     <string name="preference_language">भाषा</string>
     <string name="palette_default">डिफ़ॉल्ट</string>

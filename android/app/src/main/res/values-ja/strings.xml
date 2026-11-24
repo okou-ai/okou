@@ -33,8 +33,6 @@
     <string name="auth_workspace">現在のワークスペース</string>
     <string name="auth_switch_workspace">ワークスペースを切り替え</string>
     <string name="auth_browser_unavailable">ワークスペースの設定を開くにはブラウザをインストールしてください。</string>
-    <string name="preference_save_failed">設定を保存できませんでした。選択した設定は引き続き有効です。</string>
-    <string name="preference_refresh_failed">設定を更新できませんでした。再試行してください。</string>
     <string name="preference_color_theme">カラーテーマ</string>
     <string name="preference_language">言語</string>
     <string name="palette_default">デフォルト</string>
