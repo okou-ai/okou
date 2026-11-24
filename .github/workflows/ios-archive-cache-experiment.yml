@@ -1,17 +1,19 @@
-name: iOS Release Archive Cache Experiment
-
-on:
+name: iOS queue timing experiment
+run-name: Queue timing ${{ inputs.label }} / ${{ inputs.mode }}
+'on':
   workflow_dispatch:
     inputs:
       mode:
-        description: Cold seed, warm reuse, or uncached baseline
+        description: App test layout
         type: choice
-        options: [seed, warm, baseline]
-        default: warm
+        options:
+        - baseline
+        - warm
+        required: true
       label:
-        description: Measurement label
+        description: Timing pair
         type: string
-        default: warm
+        required: true
   workflow_call:
     inputs:
       mode:
@@ -20,75 +22,429 @@ on:
       label:
         type: string
         required: true
-
 permissions:
   contents: read
   actions: read
-
 env:
-  npm_config_audit: "false"
-
+  npm_config_audit: 'false'
+  GIT_CONFIG_COUNT: '1'
+  GIT_CONFIG_KEY_0: http.version
+  GIT_CONFIG_VALUE_0: HTTP/1.1
 jobs:
-  measure:
-    name: ${{ inputs.label }}
+  detect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      attempt: ${{ steps.changes.outputs.attempt }}
+      needed: ${{ steps.changes.outputs.needed }}
+      scripts-needed: ${{ steps.changes.outputs.scripts-needed }}
+      release: ${{ steps.changes.outputs.release }}
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        fetch-depth: 32
+        sparse-checkout: |
+          /ios/scripts/ci-changed.sh
+          /.github/scripts/checks/changed-base-ref.sh
+        sparse-checkout-cone-mode: 'false'
+    - name: Detect iOS changes
+      id: changes
+      env:
+        EVENT_NAME: ${{ github.event_name }}
+        HEAD_REF: ${{ github.head_ref }}
+        CHECKOUT_REF: ${{ github.ref }}
+        PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        PUSH_BEFORE_SHA: ${{ github.event.before }}
+      run: |
+        echo "attempt=$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+        bash ios/scripts/ci-changed.sh >> "$GITHUB_OUTPUT"
+        # A queued release commit may reuse published validation. Its subject only
+        # selects the resolver, which still classifies the whole group's diff.
+        release=false
+        if [[ "$EVENT_NAME" == merge_group && "$(git log -1 --format=%s)" == 'chore: release'* ]]; then
+          release=true
+        fi
+        echo "release=$release" >> "$GITHUB_OUTPUT"
+  script-checks:
+    needs: detect
+    if: needs.detect.outputs.scripts-needed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: 22.23.4
+    - name: Verify CI change detection and promotion contracts
+      run: |
+        bash -n ios/scripts/*.sh
+        shellcheck ios/scripts/*.sh
+        bash ios/scripts/test-ci.sh
+        node --test ios/scripts/testflight.test.mjs ios/scripts/distribution-availability.test.mjs ios/scripts/app-review.test.mjs
+        node --test .github/scripts/release/ios-app-review.test.mjs
+        python3 ios/scripts/archive-proof.test.py
+        python3 ios/scripts/preview-artifact.test.py
+        python3 ios/scripts/upload-sentry-symbols.test.py
+        python3 ios/scripts/distribution-profile.test.py
+        python3 ios/scripts/archive-promotion.test.py
+        python3 ios/scripts/preboot-simulator.test.py
+        python3 ios/scripts/prepare-package-sources.test.py
+        python3 ios/scripts/run-ci-tests.test.py
+        python3 ios/scripts/parallel-ci-tests.test.py
+        python3 ios/scripts/sample-xcode-startup.test.py
+        python3 ios/scripts/build-cache.test.py
+        python3 ios/scripts/reset-oversized-compilation-cache.test.py
+        python3 ios/scripts/install-swiftlint.test.py
+  swiftlint:
+    needs:
+    - detect
+    - resolve-release
+    if: |-
+      !cancelled() && needs.detect.outputs.needed == 'true' && (needs.resolve-release.result == 'skipped' ||
+       (needs.resolve-release.result == 'success' && needs.resolve-release.outputs.reuse == 'false'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: swift:6.4.2-noble@sha256:bca121f6eb59fd80340d1296887b2698ed8f3eb9eca7d80c181f8af769dc7ee0
+    defaults:
+      run:
+        shell: bash
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: 'false'
+    - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      id: tool-cache
+      with:
+        path: ios/.tools/swiftlint
+        key: native-swiftlint-linux-6.4.2-${{ hashFiles('ios/.swiftlint-version') }}-${{ hashFiles('ios/Tools/SwiftLint/Rules/*.swift', 'ios/Tools/SwiftLint/build.py') }}
+        restore-keys: |
+          native-swiftlint-linux-6.4.2-${{ hashFiles('ios/.swiftlint-version') }}-
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+      with:
+        python-version: '3.12'
+    - name: Build the pinned native-rule SwiftLint
+      run: bash ios/scripts/install-swiftlint.sh
+    - name: Check native-rule formatting
+      run: swift-format lint --strict --recursive ios/Tools/SwiftLint/Rules
+    - name: Verify native rules through the real CLI
+      run: python3 ios/Tools/SwiftLint/Tests/rules.test.py
+    - name: Verify SwiftLint scope and failure handling
+      run: bash ios/scripts/test-lint.sh
+    - name: Lint owned Swift sources
+      run: bash ios/scripts/lint.sh
+  test-packages:
+    needs:
+    - detect
+    - resolve-release
+    if: |-
+      !cancelled() && needs.detect.outputs.needed == 'true' && github.event_name != 'push' && (needs.resolve-release.result == 'skipped' ||
+       (needs.resolve-release.result == 'success' && needs.resolve-release.outputs.reuse == 'false'))
+    runs-on: xcode-27
+    timeout-minutes: 15
+    env:
+      IOS_PARALLEL_PR_TESTS: ${{ inputs.mode == 'warm' && needs.detect.outputs.attempt == github.run_attempt && 'true' || 'false' }}
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+      IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      id: checkout
+    - name: Restore native build caches for the parallel build
+      id: producer-cache
+      if: env.IOS_PARALLEL_PR_TESTS == 'true'
+      uses: ./.github/actions/setup-ios-build-cache
+    - name: Await locked sources from this run
+      id: producer-sources
+      if: env.IOS_PARALLEL_PR_TESTS == 'true'
+      env:
+        GH_TOKEN: ${{ github.token }}
+        PR_HEAD_SHA: ${{ github.sha }}
+      run: python3 ios/scripts/wait-ci-test-artifact.py sources
+    - name: Receive locked sources for the parallel build
+      if: env.IOS_PARALLEL_PR_TESTS == 'true'
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        name: ${{ steps.producer-sources.outputs.name }}
+        path: ${{ runner.temp }}/ios-package-sources
+    - name: Compile the complete App test products
+      if: env.IOS_PARALLEL_PR_TESTS == 'true'
+      env:
+        IOS_BUILD_CACHE_ENABLED: 'true'
+        IOS_PRODUCT_TOOLCHAIN: ${{ steps.producer-cache.outputs.toolchain-file }}
+      run: |
+        export IOS_PACKAGE_SOURCES_DIR="$RUNNER_TEMP/ios-package-sources"
+        # Xcode's system Git helper reads the locked mirrors prepared by ci-test.sh.
+        git config --global --add include.path "$RUNNER_TEMP/okou-ios-ci/package-sources.gitconfig"
+        bash ios/scripts/ci-test.sh build
+        bash ios/scripts/transfer-ci-test-products.sh pack
+    - name: Transfer the built App and its test specification
+      if: env.IOS_PARALLEL_PR_TESTS == 'true'
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: ios-ci-products-${{ github.sha }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/ios-native-products/
+        compression-level: 0
+        if-no-files-found: error
+        retention-days: 1
+    - name: Run isolated Swift package tests
+      if: '!cancelled() && steps.checkout.outcome == ''success'''
+      run: bash ios/scripts/ci-package-test.sh
+    - name: Capture package test inputs
+      run: |
+        python3 ios/scripts/archive-promotion.py toolchain "$RUNNER_TEMP/package-toolchain.json"
+        python3 ios/scripts/archive-promotion.py inputs --toolchain "$RUNNER_TEMP/package-toolchain.json" --output "$RUNNER_TEMP/package-inputs.json"
+    - name: Transfer package test inputs
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: ios-package-tests-${{ github.sha }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/package-inputs.json
+        if-no-files-found: error
+        retention-days: 7
+  prepare-package-sources:
+    needs:
+    - detect
+    - resolve-release
+    if: |-
+      !cancelled() && needs.detect.outputs.needed == 'true' && github.event_name != 'push' && (needs.resolve-release.result == 'skipped' ||
+       (needs.resolve-release.result == 'success' && needs.resolve-release.outputs.reuse == 'false'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+    - name: Fetch locked package revisions
+      id: sources
+      run: |
+        mkdir "$RUNNER_TEMP/package-inputs"
+        sources=$(python3 ios/scripts/prepare-package-sources.py ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved "$RUNNER_TEMP/package-inputs")
+        echo "path=$sources" >> "$GITHUB_OUTPUT"
+    - name: Transfer locked source repositories
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: ios-package-sources-${{ github.sha }}
+        overwrite: 'true'
+        path: ${{ steps.sources.outputs.path }}
+        compression-level: 0
+        if-no-files-found: error
+        retention-days: 1
+  build-test:
+    needs:
+    - detect
+    - prepare-package-sources
+    if: '!cancelled() && needs.prepare-package-sources.result == ''success'''
+    runs-on: xcode-27
+    timeout-minutes: 30
+    env:
+      IOS_PARALLEL_PR_TESTS: ${{ inputs.mode == 'warm' && needs.detect.outputs.attempt == github.run_attempt && 'true' || 'false' }}
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+      IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
+      IOS_BUILD_CACHE_ENABLED: 'true'
+      IOS_XCODE_STARTUP_SAMPLING: ${{ github.event_name == 'workflow_dispatch' && inputs.sample_xcode_startup && 'true' || 'false' }}
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        fetch-depth: 32
+    - name: Configure archive workspace
+      run: |
+        echo "IOS_ARCHIVE_DIR=$RUNNER_TEMP/okou-ios-promotion" >> "$GITHUB_ENV"
+        echo "IOS_PACKAGE_SOURCES_DIR=$RUNNER_TEMP/ios-package-sources" >> "$GITHUB_ENV"
+    - name: Capture promotion inputs
+      run: |
+        mkdir "$IOS_ARCHIVE_DIR"
+        python3 ios/scripts/archive-promotion.py toolchain "$IOS_ARCHIVE_DIR/toolchain.json"
+        python3 ios/scripts/archive-promotion.py inputs --toolchain "$IOS_ARCHIVE_DIR/toolchain.json" --output "$IOS_ARCHIVE_DIR/inputs.json"
+    - name: Classify the whole merge group
+      id: release-only
+      env:
+        MERGE_GROUP_BASE_SHA: 7b1d40ea54326a99bf2140381261f8e8cb301939
+      run: |
+        release_only=$(python3 ios/scripts/archive-promotion.py release-only --base "$MERGE_GROUP_BASE_SHA")
+        echo "release_only=$release_only" >> "$GITHUB_OUTPUT"
+    - name: Install AWS CLI
+      if: ${{ false }}
+      run: |
+        if ! command -v aws >/dev/null; then
+          HOMEBREW_NO_AUTO_UPDATE=1 brew install awscli
+        fi
+        aws --version
+    - name: Resolve exact-input test evidence
+      id: evidence
+      env:
+        MERGE_GROUP_BASE_SHA: 7b1d40ea54326a99bf2140381261f8e8cb301939
+        GH_TOKEN: ${{ github.token }}
+      run: |-
+        test "${{ steps.release-only.outputs.release_only }}" = false
+        python3 ios/scripts/archive-promotion.py resolve-tests "$IOS_ARCHIVE_DIR"
+    - name: Restore native build caches
+      id: build-cache
+      if: env.IOS_PARALLEL_PR_TESTS != 'true' && (steps.evidence.outputs.run_tests == 'true')
+      uses: ./.github/actions/setup-ios-build-cache
+      with:
+        toolchain-file: ${{ env.IOS_ARCHIVE_DIR }}/toolchain.json
+    - name: Receive locked source repositories
+      if: env.IOS_PARALLEL_PR_TESTS != 'true' && (steps.evidence.outputs.run_tests == 'true')
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        name: ios-package-sources-${{ github.sha }}
+        path: ${{ env.IOS_PACKAGE_SOURCES_DIR }}
+    - name: Configure locked package sources
+      if: env.IOS_PARALLEL_PR_TESTS != 'true' && (steps.evidence.outputs.run_tests == 'true')
+      run: |
+        mkdir -p "$RUNNER_TEMP/okou-ios-ci"
+        python3 ios/scripts/prepare-package-sources.py ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved "$RUNNER_TEMP/okou-ios-ci" "$IOS_PACKAGE_SOURCES_DIR"
+        # Expose locked sources to Xcode's SCM helper on this ephemeral runner.
+        printf '\n' >> "$HOME/.gitconfig"
+        cat "$RUNNER_TEMP/okou-ios-ci/package-sources.gitconfig" >> "$HOME/.gitconfig"
+    - name: Check Swift formatting and property lists
+      run: |
+        xcodebuild -version
+        xcrun swift-format lint --strict --recursive ios/Okou ios/OkouTests ios/Push ios/Widgets
+        plutil -lint ios/Okou/Resources/Info.plist ios/Okou/Resources/Okou.entitlements ios/NotificationExtension/Info.plist ios/NotificationExtension/NotificationExtension.entitlements ios/Widgets/Info.plist ios/Widgets/OkouWidgets.entitlements ios/Okou.xcodeproj/project.pbxproj
+    - name: Prepare the simulator and receive its test products concurrently
+      if: env.IOS_PARALLEL_PR_TESTS == 'true'
+      env:
+        GH_TOKEN: ${{ github.token }}
+        PR_HEAD_SHA: ${{ github.sha }}
+      run: bash ios/scripts/prepare-parallel-simulator.sh
+    - name: Build app and run isolated simulator tests
+      if: steps.evidence.outputs.run_tests == 'true'
+      env:
+        IOS_PRODUCT_TOOLCHAIN: ${{ env.IOS_ARCHIVE_DIR }}/toolchain.json
+      run: |
+        if [[ "$IOS_PARALLEL_PR_TESTS" == true ]]; then
+          bash ios/scripts/transfer-ci-test-products.sh unpack
+          echo "iOS starting test-without-building"
+          bash ios/scripts/ci-test.sh run
+        else
+          bash ios/scripts/run-ci-tests.sh
+        fi
+    - name: Upload Xcode startup observations
+      if: always() && github.event_name == 'workflow_dispatch' && inputs.sample_xcode_startup
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: ios-xcode-startup-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/okou-ios-ci/startup-samples
+        if-no-files-found: ignore
+        retention-days: 7
+    - name: Record simulator inputs and test decision
+      run: |
+        python3 ios/scripts/archive-promotion.py inputs --toolchain "$IOS_ARCHIVE_DIR/toolchain.json" --output "$IOS_ARCHIVE_DIR/test-inputs.json"
+        echo "${{ steps.evidence.outputs.run_tests }}" > "$IOS_ARCHIVE_DIR/ran-tests.txt"
+    - name: Transfer simulator inputs and evidence
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: ios-tests-${{ github.sha }}-${{ github.run_attempt }}
+        path: |
+          ${{ env.IOS_ARCHIVE_DIR }}/test-inputs.json
+          ${{ env.IOS_ARCHIVE_DIR }}/test-evidence.json
+          ${{ env.IOS_ARCHIVE_DIR }}/ran-tests.txt
+        if-no-files-found: error
+        retention-days: 7
+    - name: Upload failed test results
+      if: failure()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: ios-test-results-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/okou-ios-ci/*.xcresult
+        if-no-files-found: ignore
+        retention-days: 7
+  build-archive:
+    needs:
+    - detect
+    - resolve-release
+    if: '!cancelled() && needs.detect.outputs.needed == ''true'' && needs.resolve-release.result == ''skipped'''
     runs-on: xcode-27
     timeout-minutes: 15
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
       IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
-      IOS_ARCHIVE_CACHE_MODE: ${{ inputs.mode }}
-      IOS_ARCHIVE_CACHE_LABEL: ${{ inputs.label }}
-      IOS_ARCHIVE_CACHE_ENABLED: ${{ inputs.mode != 'baseline' && 'true' || 'false' }}
-      GIT_CONFIG_COUNT: "1"
-      GIT_CONFIG_KEY_0: http.version
-      GIT_CONFIG_VALUE_0: HTTP/1.1
+      IOS_ARCHIVE_CACHE_ENABLED: 'true'
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Pin archive inputs and start measurement
-        run: python3 ops/ios-archive-cache/measure.py prepare
-      - name: Restore persistent Release archive caches
-        id: cache
-        if: inputs.mode != 'baseline'
-        uses: ./.github/actions/setup-ios-build-cache
-        with:
-          target: archive
-      - name: Require exact warm cache reuse
-        if: inputs.mode == 'warm'
-        env:
-          DEPENDENCIES_HIT: ${{ steps.cache.outputs.dependencies-hit }}
-          COMPILATION_HIT: ${{ steps.cache.outputs.compilation-hit }}
-        run: test "$DEPENDENCIES_HIT" = true && test "$COMPILATION_HIT" = true
-      - name: Build and validate a fresh device Release archive
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash ios/scripts/build-archive.sh 2>&1 | tee "$IOS_ARCHIVE_MEASUREMENT_DIR/build.log"
-      # Diagnostic writes are scoped to this dispatch ref by GitHub's cache service.
-      # Normal shared-cache writers remain restricted to main in ios-build-cache.yml.
-      - name: Save Release dependency cache
-        if: inputs.mode == 'seed' && steps.cache.outputs.dependencies-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ steps.cache.outputs.dependencies-path }}
-          key: ${{ steps.cache.outputs.dependencies-key }}
-      - name: Save Release compiler cache
-        if: inputs.mode == 'seed' && steps.cache.outputs.compilation-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ steps.cache.outputs.compilation-path }}
-          key: ${{ steps.cache.outputs.compilation-key }}
-      - name: Record measurements including cache saves
-        env:
-          IOS_CACHE_DEPENDENCIES_HIT: ${{ steps.cache.outputs.dependencies-hit }}
-          IOS_CACHE_COMPILATION_HIT: ${{ steps.cache.outputs.compilation-hit }}
-        run: python3 ops/ios-archive-cache/measure.py report
-      - name: Retain archive measurements
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: ios-release-cache-${{ inputs.label }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/ios-archive-cache-measurement
-          if-no-files-found: error
-          retention-days: 7
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+    - name: Configure archive workspace
+      run: echo "IOS_ARCHIVE_DIR=$RUNNER_TEMP/okou-ios-promotion" >> "$GITHUB_ENV"
+    - name: Restore Release archive caches
+      id: cache
+      uses: ./.github/actions/setup-ios-build-cache
+      with:
+        target: archive
+    - name: Capture archive toolchain
+      run: |
+        mkdir -p "$IOS_ARCHIVE_DIR"
+        cp "${{ steps.cache.outputs.toolchain-file }}" "$IOS_ARCHIVE_DIR/toolchain.json"
+    - name: Build unsigned device Release archive
+      run: |
+        bash ios/scripts/build-archive.sh
+        python3 ios/scripts/archive-promotion.py inputs --toolchain "$IOS_ARCHIVE_DIR/toolchain.json" --output "$IOS_ARCHIVE_DIR/inputs.json"
+    - name: Transfer unsigned archive and inputs
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: ios-promotion-${{ github.sha }}-${{ github.run_attempt }}
+        path: |
+          ${{ env.IOS_ARCHIVE_DIR }}/archive.tar.gz
+          ${{ env.IOS_ARCHIVE_DIR }}/archive-sha256.txt
+          ${{ env.IOS_ARCHIVE_DIR }}/inputs.json
+        if-no-files-found: error
+        retention-days: 7
+  resolve-release:
+    if: ${{ false }}
+    runs-on: ubuntu-latest
+    steps:
+    - run: 'true'
+  verify-archive:
+    needs:
+    - detect
+    - script-checks
+    - swiftlint
+    - test-packages
+    - build-test
+    - build-archive
+    if: success()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        fetch-depth: 32
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        name: ios-promotion-${{ github.sha }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/okou-ios-promotion
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        name: ios-tests-${{ github.sha }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/okou-ios-promotion
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        name: ios-package-tests-${{ github.sha }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/okou-ios-promotion
+    - name: Verify archive, app and package receipts
+      env:
+        WORK: ${{ runner.temp }}/okou-ios-promotion
+      run: |
+        set -euo pipefail
+        test "$(<"$WORK/ran-tests.txt")" = true
+        cmp "$WORK/inputs.json" "$WORK/test-inputs.json"
+        cmp "$WORK/inputs.json" "$WORK/package-inputs.json"
+        jq '.toolchain' "$WORK/inputs.json" > "$WORK/toolchain.json"
+        python3 ios/scripts/archive-promotion.py inputs --toolchain "$WORK/toolchain.json" --output "$WORK/recomputed.json"
+        cmp "$WORK/recomputed.json" "$WORK/inputs.json"
+        (cd "$WORK" && printf '%s  archive.tar.gz\n' "$(<archive-sha256.txt)" | sha256sum -c -)
+  ci-gate-ios:
+    if: always()
+    needs:
+    - detect
+    - script-checks
+    - swiftlint
+    - test-packages
+    - prepare-package-sources
+    - build-test
+    - build-archive
+    - verify-archive
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+    - name: Require complete tests and a verified device archive
+      env:
+        RESULTS: ${{ toJSON(needs) }}
+      run: 'jq -e ''all(.[]; .result == "success")'' <<< "$RESULTS" '
