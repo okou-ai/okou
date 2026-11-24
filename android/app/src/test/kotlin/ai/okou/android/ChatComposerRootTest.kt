@@ -60,6 +60,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.mockwebserver.MockResponse
@@ -263,6 +264,50 @@ class ChatComposerRootTest {
             editor[SemanticsProperties.EditableText].text,
         )
         compose.onNodeWithContentDescription("Send").assertIsDisplayed().assertIsEnabled()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h520dp")
+    fun earlierRepliesExpandBelowTheSummaryWithoutMovingIt() {
+        val app = compose.activity.application as ComposerRootApplication
+        val earlier = "The website copy is checked."
+        val latest =
+            "The release materials are ready.\n\n" +
+                "The website and email are confirmed. Two checks remain before launch.\n\n" +
+                "Please share the updated checklist with all channel owners.\n\n" +
+                "Record the final decisions in the release notes."
+        fun id(seq: Long) = "50624000-0000-4000-8000-${seq.toString().padStart(12, '0')}"
+        fun reply(seq: Long, text: String) =
+            historyEventWire(id(seq), seq, payload = """{"content":${JsonPrimitive(text)}}""")
+        val rows =
+            listOf(
+                reply(1, earlier),
+                reply(2, "The email draft is checked."),
+                reply(3, latest),
+                historyEventWire(id(4), 4, type = "run.completed", payload = "null"),
+            )
+        app.fixture.chats.historyRows = { request ->
+            val since = request.requestUrl?.queryParameter("sinceSeqId")?.toInt() ?: 0
+            jsonResponse(
+                """{"rows":[${rows.drop(since).joinToString(",")}],"cursor":{"lastEventId":"${id(4)}","lastSeqId":4},"hasMore":false}""",
+            )
+        }
+        app.contextGate.countDown()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText("Personal chat").fetchSemanticsNodes().size == 1
+        }
+        compose.onNodeWithText("Personal chat").performClick()
+        captureOwners()
+        val summary = compose.onNodeWithTag("conversation_reply_summary")
+        compose.waitUntilExactlyOneExists(hasTestTag("conversation_reply_summary"), 5_000)
+        val resting = summary.assertIsDisplayed().getUnclippedBoundsInRoot()
+        summary.performClick()
+        val expanded = summary.assertIsDisplayed().getUnclippedBoundsInRoot()
+        assertEquals(resting.top, expanded.top)
+        val firstReply = compose.onNodeWithText(earlier).assertIsDisplayed()
+        assertTrue(firstReply.getUnclippedBoundsInRoot().top >= expanded.bottom)
+        summary.performClick()
+        assertEquals(resting.top, summary.getUnclippedBoundsInRoot().top)
     }
 
     @Test

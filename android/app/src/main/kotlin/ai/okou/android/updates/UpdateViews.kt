@@ -1001,6 +1001,7 @@ internal fun Modifier.updateFocusOutline(
     shape: Shape,
     color: Color,
     keyboardOnly: Boolean = false,
+    outlineInset: Dp = 2.dp,
 ): Modifier {
     val focused = remember { mutableStateOf(false) }
     val showOutline = !keyboardOnly || LocalInputModeManager.current.inputMode == InputMode.Keyboard
@@ -1009,7 +1010,7 @@ internal fun Modifier.updateFocusOutline(
             drawContent()
             if (focused.value && showOutline) {
                 val width = 2.dp.toPx()
-                inset(width) {
+                inset(outlineInset.toPx()) {
                     drawOutline(
                         shape.createOutline(size, layoutDirection, this),
                         color,
