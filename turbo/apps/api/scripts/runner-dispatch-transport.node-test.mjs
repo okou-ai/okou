@@ -16,9 +16,19 @@ import {
   setDefaultCACertificates,
 } from "node:tls";
 import "../src/__tests__/global-setup-env.ts";
-import { createRunnerDispatchPool } from "../src/runner-dispatch-pool.node.ts";
 import { createRunnerDispatchTransport } from "../src/runner-dispatch-transport.node.ts";
 import { awaitWithSignal } from "../src/signals/utils.ts";
+
+const dispatcherKeys = [
+  Symbol.for("undici.globalDispatcher.1"),
+  Symbol.for("undici.globalDispatcher.2"),
+];
+void globalThis.Request;
+const nativeDispatchers = dispatcherKeys.map((key) => {
+  return globalThis[key];
+});
+const { createRunnerDispatchPool } =
+  await import("../src/runner-dispatch-pool.node.ts");
 
 async function createPeerCredentials() {
   const directory = await mkdtemp(join(tmpdir(), "runner-transport-tls-"));
@@ -223,6 +233,18 @@ async function send(transport, url) {
     reserved?.clearDeadline();
   }
 }
+
+test("preserves the process-wide Fetch dispatcher", async () => {
+  const pool = createRunnerDispatchPool();
+  try {
+    for (const [index, key] of dispatcherKeys.entries()) {
+      assert.equal(globalThis[key], nativeDispatchers[index]);
+    }
+  } finally {
+    await pool.destroy();
+  }
+});
+
 test(
   "releases gzip bytes on its reserved HTTPS request",
   { timeout: 5000 },

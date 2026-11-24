@@ -1,7 +1,8 @@
-import { Agent, fetch } from "undici";
-import type { RunnerDispatchRequest } from "./signals/external/runner-dispatch-transport";
+import "./initialize-fetch.node.ts";
+import { Agent } from "undici";
 
 const IDLE_MS = 30_000;
+type FetchDispatcher = NonNullable<RequestInit["dispatcher"]>;
 
 export function createRunnerDispatchPool() {
   const dispatcher = new Agent({
@@ -12,10 +13,16 @@ export function createRunnerDispatchPool() {
     keepAliveTimeout: IDLE_MS,
     keepAliveMaxTimeout: IDLE_MS,
   });
+  // Native Fetch uses dispatch. Its bundled types also describe a different
+  // version of Undici's compose API.
+  const fetchDispatcher: Pick<FetchDispatcher, "dispatch"> = dispatcher;
 
   return {
-    request(url: string, options: RunnerDispatchRequest) {
-      return fetch(url, { ...options, dispatcher });
+    request(url: string, options: RequestInit) {
+      return fetch(url, {
+        ...options,
+        dispatcher: fetchDispatcher as FetchDispatcher,
+      });
     },
     poolStats(origin: string) {
       const stats = dispatcher.stats[origin];

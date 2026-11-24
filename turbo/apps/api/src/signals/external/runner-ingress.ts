@@ -21,8 +21,6 @@ import {
   currentRunnerDispatchTransport,
   runnerDispatchPath,
   type RunnerDispatchEncoding,
-  type RunnerDispatchRequest,
-  type RunnerDispatchResponse,
   type RunnerDispatchTiming,
   type RunnerDispatchTransport,
   type TakenRunnerDispatch,
@@ -120,9 +118,7 @@ const dispatchTransport = singleton(() => {
   return scope;
 });
 
-function readRunnerDispatchTiming(
-  response: RunnerDispatchResponse | undefined,
-) {
+function readRunnerDispatchTiming(response: Response | undefined) {
   const header = response?.headers.get(dispatchTimingHeader);
   if (!header || header.length > 512) {
     return undefined;
@@ -184,7 +180,7 @@ export function reserveRunnerDispatch(
     origin + path,
     (body, connectionSignal) => {
       const timing = { origin, path, sendCount: 0, startedAt: monotonicNow() };
-      const options: RunnerDispatchRequest = {
+      const options: RequestInit = {
         ...dispatchRequestOptions(serviceToken, encoding),
         body,
         duplex: "half",
@@ -236,7 +232,7 @@ export async function postRunnerDispatch(
   signal.throwIfAborted();
   const { target, runId, body, bodyBytes, serviceToken, timeoutMs } = args;
   const encoding = typeof body === "string" ? "identity" : "gzip";
-  let response: RunnerDispatchResponse | undefined;
+  let response: Response | undefined;
   let responseHeadersMs: number | undefined;
   let observation: DispatchObservation | undefined;
   const startedAt = monotonicNow();
@@ -350,7 +346,7 @@ export async function postRunnerDispatch(
 }
 
 async function observeRunnerDispatch(
-  response: RunnerDispatchResponse,
+  response: Response,
   target: DirectRunTarget,
   runId: string,
   signal: AbortSignal,
