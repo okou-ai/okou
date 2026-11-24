@@ -152,7 +152,6 @@ test("The add menu opens each home capability and restores its own trigger only 
   expect(queryAllByRoleFast("menuitem", menu).map(controlLabel)).toStrictEqual([
     "Attach",
     "Project",
-    "Template",
     ...CAPABILITY_LABELS,
     "Import skills",
   ]);
@@ -183,13 +182,13 @@ test.each([
     slashActions: false,
     desktop: true,
     capabilityOrder: [...CAPABILITY_LABELS].reverse(),
-    otherEntries: ["/daily-recap", "Browse all templates"],
+    otherEntries: ["/daily-recap"],
   },
   {
     slashActions: true,
     desktop: false,
     capabilityOrder: CAPABILITY_LABELS,
-    otherEntries: ["Connect", "Workflows 1", "Templates "],
+    otherEntries: ["Connect", "Workflows 1"],
   },
 ])(
   "Slash capabilities preserve the draft with SlashActions=$slashActions and desktop=$desktop",
@@ -231,33 +230,6 @@ test.each([
     expect(window.location.pathname).toBe(path);
   },
 );
-
-test("The Templates browser preserves the draft when opening its picker", async () => {
-  const { editor } = await setupMenus({ slashActions: true, desktop: true });
-  const user = userEvent.setup({ delay: null });
-  await fill(editor, "Keep my template brief /");
-  const menu = await screen.findByTestId("slash-workflow-menu");
-  const templates = await waitFor(() => {
-    return slashEntry(menu, "Templates ");
-  });
-  await user.hover(templates);
-  const pane = await within(menu).findByRole("region", { name: "Templates" });
-  const website = slashEntry(pane, "Website ");
-  click(website);
-  await waitFor(() => {
-    expect(slashEntry(pane, "Website ")).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-  });
-  click(control("button", "Browse all templates", pane));
-  const picker = await screen.findByRole("dialog");
-  expect(control("tab", "Presentation", picker)).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
-  expect(editor.textContent).toBe("Keep my template brief ");
-});
 
 test("Both menus reopen the remembered creation type and workflow kind without toggling them off", async () => {
   const { editor } = await setupMenus({ slashActions: true });

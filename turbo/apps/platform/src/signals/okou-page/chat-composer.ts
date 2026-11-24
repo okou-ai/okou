@@ -1,7 +1,5 @@
-import type { DocumentTemplateCategory } from "@okouai/core/document-template-items";
-import { createDocumentTemplateSignals } from "./document-template-picker.ts";
-import { command, computed, state, type Command } from "ccstate";
-import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
+import { createDocumentTemplateSignals } from "./document-template-preview.ts";
+import { command, computed, state } from "ccstate";
 import { onRef } from "../utils.ts";
 import {
   createPresentationTemplatePreviewSignals,
@@ -9,33 +7,11 @@ import {
 } from "./presentation-template-preview.ts";
 import { createImportedPresentationTemplateSignals } from "./presentation-template-library.ts";
 import {
+  cancelDeleteCustomTemplate$,
+  closeCustomTemplate$,
   deleteCustomTemplate$ as deleteCustomTemplateRecord$,
   openCustomTemplate$,
 } from "./custom-template-library.ts";
-import type { WorkflowComposerSignals } from "./tiptap-workflow-composer.ts";
-
-/** `category` is null until an entry point or the member names one. */
-export function resolveTemplatePickerCategory(category: string | null): string {
-  switch (category) {
-    case "document":
-    case "slides":
-    case "website":
-    case "illustration":
-    case "workflow": {
-      return category;
-    }
-    default: {
-      // Presentation leads the content types in the picker.
-      return "slides";
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Composer UI state — search, dialogs, loading indicators
-// ---------------------------------------------------------------------------
-
-// -- New-thread computer access selection -----------------------------------
 
 // A thread reaches at most one computer, so the composer holds a single
 // selection rather than two flags that have to clear each other.
@@ -93,19 +69,6 @@ export const resetNewThreadComputerAccess$ = command(({ set }) => {
   set(internalNewThreadComputerAccess$, null);
 });
 
-// -- Model picker open state ------------------------------------------------
-
-export interface OpenTemplatePickerDialogOptions {
-  readonly category: string;
-  readonly referenceValue: GenerationTemplateRequest | null;
-  readonly directPreview?: boolean;
-}
-
-export type OpenTemplatePickerDialogCommand = Command<
-  void,
-  [OpenTemplatePickerDialogOptions]
->;
-
 function createBasicComposerUiSignals() {
   const internalModelPickerOpen$ = state(false);
   const modelPickerOpen$ = computed((get) => {
@@ -114,15 +77,10 @@ function createBasicComposerUiSignals() {
   const setModelPickerOpen$ = command(({ set }, open: boolean) => {
     set(internalModelPickerOpen$, open);
   });
-  return {
-    model: {
-      modelPickerOpen$,
-      setModelPickerOpen$,
-    },
-  };
+  return { modelPickerOpen$, setModelPickerOpen$ };
 }
 
-function createTemplatePickerReturnFocusSignals() {
+function createTemplatePreviewReturnFocusSignals() {
   const trigger$ = state<HTMLElement | null>(null);
   const shelf$ = state<HTMLElement | null>(null);
   const capture$ = command(({ set }) => {
@@ -136,8 +94,8 @@ function createTemplatePickerReturnFocusSignals() {
     if (trigger?.isConnected) {
       return trigger;
     }
-    // Deleting a custom template removes its Eye. Keep focus on a surviving
-    // shelf control rather than falling back to the page body.
+    // Deleting a custom template removes its Eye. Restore a surviving shelf
+    // control rather than leaving focus on the page body.
     const shelf = get(shelf$);
     return shelf?.isConnected
       ? shelf.querySelector<HTMLElement>(
@@ -148,306 +106,110 @@ function createTemplatePickerReturnFocusSignals() {
   return { capture$, finalFocus$ };
 }
 
-function createTemplatePickerDialogSignals() {
-  const focus = createTemplatePickerReturnFocusSignals();
-  const internalTemplatePickerDirectPreview$ = state(false);
-  const templatePickerDirectPreview$ = computed((get) => {
-    return get(internalTemplatePickerDirectPreview$);
-  });
-  const setTemplatePickerDirectPreview$ = command(
-    ({ set }, direct: boolean) => {
-      set(internalTemplatePickerDirectPreview$, direct);
-    },
-  );
-  const internalTemplatePickerMounted$ = state(false);
-  const internalTemplatePickerOpen$ = state(false);
-  const templatePickerMounted$ = computed((get) => {
-    return get(internalTemplatePickerMounted$);
-  });
-  const templatePickerOpen$ = computed((get) => {
-    return get(internalTemplatePickerOpen$);
-  });
-  const internalTemplatePickerPopup$ = state<HTMLElement | null>(null);
-  const templatePickerInitialFocus$ = command(
-    ({ get }, interactionType: string) => {
-      const popup = get(internalTemplatePickerPopup$);
-      if (interactionType === "touch") {
-        return popup;
-      }
-      const selector = window.matchMedia("(min-width: 640px)").matches
-        ? '[data-template-picker-sidebar] [role="tab"][aria-selected="true"]'
-        : "[data-template-picker-category-select]";
-      return popup?.querySelector<HTMLElement>(selector) ?? null;
-    },
-  );
-  const setTemplatePickerPopup$ = onRef(
-    command(({ get, set }, element: HTMLElement, signal: AbortSignal) => {
-      set(internalTemplatePickerPopup$, element);
-      signal.addEventListener(
-        "abort",
-        () => {
-          if (get(internalTemplatePickerPopup$) === element) {
-            set(internalTemplatePickerPopup$, null);
-          }
-        },
-        { once: true },
-      );
-    }),
-  );
-  const setTemplatePickerOpen$ = command(({ set }, open: boolean) => {
-    if (open) {
-      // Detail refs focus before the dialog mounts. Remember the originating
-      // shelf control now, so dismissal cannot restore an unmounted breadcrumb.
-      set(focus.capture$);
-      set(internalTemplatePickerMounted$, true);
-    }
-    set(internalTemplatePickerOpen$, open);
-  });
-  const completeTemplatePickerClose$ = command(({ get, set }) => {
-    if (get(internalTemplatePickerOpen$)) {
-      return;
-    }
-    set(internalTemplatePickerMounted$, false);
-  });
+type TemplatePreviewKind = "presentation" | "document" | "website" | "custom";
 
-  const internalTemplatePickerReferenceValue$ =
-    state<GenerationTemplateRequest | null>(null);
-  const templatePickerReferenceValue$ = computed((get) => {
-    return get(internalTemplatePickerReferenceValue$);
+function createTemplatePreviewSignals(
+  presentation: ReturnType<typeof createPresentationTemplatePreviewSignals>,
+  document: ReturnType<typeof createDocumentTemplateSignals>,
+) {
+  const focus = createTemplatePreviewReturnFocusSignals();
+  const kind$ = state<TemplatePreviewKind | null>(null);
+  const open$ = state(false);
+  const templatePreviewKind$ = computed((get) => {
+    return get(kind$);
   });
-  const setTemplatePickerReferenceValue$ = command(
-    ({ set }, value: GenerationTemplateRequest | null) => {
-      set(internalTemplatePickerReferenceValue$, value);
-    },
-  );
-
-  const internalWebsiteTemplatePreviewId$ = state<string | null>(null);
-  const internalWebsiteTemplatePreviewLoaded$ = state(false);
-  const internalWebsiteTemplatePreviewOpen$ = state(false);
+  const templatePreviewMounted$ = computed((get) => {
+    return get(kind$) !== null;
+  });
+  const templatePreviewOpen$ = computed((get) => {
+    return get(open$);
+  });
+  const websiteId$ = state<string | null>(null);
+  const websiteLoaded$ = state(false);
   const websiteTemplatePreviewId$ = computed((get) => {
-    return get(internalWebsiteTemplatePreviewId$);
+    return get(websiteId$);
   });
   const websiteTemplatePreviewLoaded$ = computed((get) => {
-    return get(internalWebsiteTemplatePreviewLoaded$);
-  });
-  const websiteTemplatePreviewOpen$ = computed((get) => {
-    return get(internalWebsiteTemplatePreviewOpen$);
+    return get(websiteLoaded$);
   });
   const markWebsiteTemplatePreviewLoaded$ = command(({ set }) => {
-    set(internalWebsiteTemplatePreviewLoaded$, true);
+    set(websiteLoaded$, true);
   });
-  const openWebsiteTemplatePreview$ = command(({ set }, templateId: string) => {
-    set(internalWebsiteTemplatePreviewLoaded$, false);
-    set(internalWebsiteTemplatePreviewId$, templateId);
-    set(internalWebsiteTemplatePreviewOpen$, true);
+  const openWebsiteTemplatePreview$ = command(({ set }, id: string) => {
+    set(websiteId$, id);
+    set(websiteLoaded$, false);
   });
-  const closeWebsiteTemplatePreview$ = command(({ set }) => {
-    set(internalWebsiteTemplatePreviewOpen$, false);
+  const clearContent$ = command(({ set }) => {
+    set(presentation.clearPresentationTemplatePreviews$);
+    set(document.closeDocumentPreview$);
+    set(closeCustomTemplate$);
+    set(cancelDeleteCustomTemplate$);
+    set(websiteId$, null);
+    set(websiteLoaded$, false);
   });
-  const completeWebsiteTemplatePreviewClose$ = command(({ get, set }) => {
-    if (get(internalWebsiteTemplatePreviewOpen$)) {
+  const openTemplatePreview$ = command(({ set }, kind: TemplatePreviewKind) => {
+    // Capture before a detail's mounted ref moves focus away from its Eye.
+    set(focus.capture$);
+    set(clearContent$);
+    set(kind$, kind);
+    set(open$, true);
+  });
+  const closeTemplatePreview$ = command(({ set }) => {
+    set(open$, false);
+  });
+  const completeTemplatePreviewClose$ = command(({ get, set }) => {
+    if (get(open$)) {
       return;
     }
-    set(internalWebsiteTemplatePreviewLoaded$, false);
-    set(internalWebsiteTemplatePreviewId$, null);
+    // The real detail dialog owns exit completion; keep its content mounted
+    // until then, including when it was opened without any gallery behind it.
+    set(clearContent$);
+    set(kind$, null);
   });
-
-  return {
-    templatePickerDirectPreview$,
-    setTemplatePickerDirectPreview$,
-    templatePickerFinalFocus$: focus.finalFocus$,
-    templatePickerMounted$,
-    templatePickerOpen$,
-    templatePickerInitialFocus$,
-    setTemplatePickerPopup$,
-    setTemplatePickerOpen$,
-    completeTemplatePickerClose$,
-    templatePickerReferenceValue$,
-    setTemplatePickerReferenceValue$,
-    websiteTemplatePreviewId$,
-    websiteTemplatePreviewLoaded$,
-    websiteTemplatePreviewOpen$,
-    markWebsiteTemplatePreviewLoaded$,
-    openWebsiteTemplatePreview$,
-    closeWebsiteTemplatePreview$,
-    completeWebsiteTemplatePreviewClose$,
-  };
-}
-
-function createTemplatePickerListSignals() {
-  // Null until an entry point names a category, so the picker can open on the
-  // first content type.
-  const internalTemplatePickerCategory$ = state<string | null>(null);
-  const templatePickerCategory$ = computed((get) => {
-    return get(internalTemplatePickerCategory$);
-  });
-  const selectedTemplatePickerCategory$ = computed((get) => {
-    return resolveTemplatePickerCategory(get(templatePickerCategory$));
-  });
-  const setTemplatePickerCategory$ = command(({ set }, category: string) => {
-    set(internalTemplatePickerCategory$, category);
-  });
-
-  const internalTemplatePickerSearch$ = state("");
-  const templatePickerSearch$ = computed((get) => {
-    return get(internalTemplatePickerSearch$);
-  });
-  const setTemplatePickerSearch$ = command(({ set }, value: string) => {
-    set(internalTemplatePickerSearch$, value);
-  });
-
-  // Selected persona pill in the workflow template tab ("all" or a category from
-  // WORKFLOW_TEMPLATE_CATEGORIES). Mirrors the ideation gallery's pill filter.
-  const internalTemplatePickerWorkflowCategory$ = state("all");
-  const templatePickerWorkflowCategory$ = computed((get) => {
-    return get(internalTemplatePickerWorkflowCategory$);
-  });
-  const setTemplatePickerWorkflowCategory$ = command(
-    ({ set }, category: string) => {
-      set(internalTemplatePickerWorkflowCategory$, category);
-    },
-  );
-
-  const internalTemplatePickerPresentationScrollTop$ = state(0);
-  const setTemplatePickerPresentationScrollTop$ = command(
-    ({ set }, scrollTop: number) => {
-      set(internalTemplatePickerPresentationScrollTop$, scrollTop);
-    },
-  );
-  const restoreTemplatePickerPresentationScrollRef$ = onRef<HTMLDivElement>(
-    command(({ get }, node: HTMLDivElement) => {
-      node.scrollTop = get(internalTemplatePickerPresentationScrollTop$);
-    }),
-  );
-
-  // Inline illustration cards show a hero image plus a variant thumbnail strip.
-  // Several cards are visible at once, so the active variant index is tracked per
-  // illustration style slug rather than as a single shared value.
-  const internalIllustrationVariantIndex$ = state<
-    Readonly<Record<string, number>>
-  >({});
-  const illustrationVariantIndex$ = computed((get) => {
-    return get(internalIllustrationVariantIndex$);
-  });
-  const setIllustrationVariantIndex$ = command(
-    ({ get, set }, slug: string, index: number) => {
-      set(internalIllustrationVariantIndex$, {
-        ...get(internalIllustrationVariantIndex$),
-        [slug]: index,
-      });
-    },
-  );
-
-  return {
-    signals: {
-      templatePickerCategory$,
-      selectedTemplatePickerCategory$,
-      setTemplatePickerCategory$,
-      templatePickerSearch$,
-      setTemplatePickerSearch$,
-      templatePickerWorkflowCategory$,
-      setTemplatePickerWorkflowCategory$,
-      setTemplatePickerPresentationScrollTop$,
-      restoreTemplatePickerPresentationScrollRef$,
-      illustrationVariantIndex$,
-      setIllustrationVariantIndex$,
-    },
-  };
-}
-
-function createOpenTemplatePickerDialogCommand(
-  dialog: ReturnType<typeof createTemplatePickerDialogSignals>,
-  list: ReturnType<typeof createTemplatePickerListSignals>,
-  previews: ReturnType<typeof createPresentationTemplatePreviewSignals>,
-): OpenTemplatePickerDialogCommand {
-  return command(({ set }, options: OpenTemplatePickerDialogOptions): void => {
-    set(list.signals.setTemplatePickerSearch$, "");
-    set(previews.clearPresentationTemplatePreviews$);
-    set(dialog.setTemplatePickerReferenceValue$, options.referenceValue);
-    set(dialog.setTemplatePickerDirectPreview$, options.directPreview ?? false);
-    set(list.signals.setTemplatePickerCategory$, options.category);
-    set(dialog.setTemplatePickerOpen$, true);
-  });
-}
-
-function createTemplateCardSignals() {
-  const internalTemplateCardThemeIdBySlug$ = state<
-    Readonly<Record<string, string>>
-  >({});
-  const templateCardThemeIdBySlug$ = computed((get) => {
-    return get(internalTemplateCardThemeIdBySlug$);
-  });
-  const setTemplateCardThemeId$ = command(
-    ({ get, set }, slug: string, themeId: string) => {
-      const next = {
-        ...get(templateCardThemeIdBySlug$),
-        [slug]: themeId,
-      };
-      set(internalTemplateCardThemeIdBySlug$, next);
-    },
-  );
-
-  return {
-    signals: {
-      templateCardThemeIdBySlug$,
-      setTemplateCardThemeId$,
-    },
-  };
-}
-
-function createTemplatePickerFocusSignals(
-  dialog: ReturnType<typeof createTemplatePickerDialogSignals>,
-  previews: ReturnType<typeof createPresentationTemplatePreviewSignals>,
-) {
-  const pendingPreviewTriggerId$ = state<string | null>(null);
   const deleteCustomTemplate$ = command(
-    async ({ get, set }, templateId: string, signal: AbortSignal) => {
+    async ({ set }, templateId: string, signal: AbortSignal) => {
       await set(deleteCustomTemplateRecord$, templateId, signal);
       signal.throwIfAborted();
-      if (get(dialog.templatePickerDirectPreview$)) {
-        set(dialog.setTemplatePickerOpen$, false);
-      }
+      set(closeTemplatePreview$);
     },
-  );
-  const closeOpenedTemplate$ = command(({ get, set }) => {
-    const templateId = get(previews.openedTemplateId$);
-    set(
-      pendingPreviewTriggerId$,
-      templateId === null ? null : `built-in:${templateId}`,
-    );
-    set(previews.closeOpenedTemplate$);
-  });
-  const restoreTemplatePreviewTriggerRef$ = onRef<HTMLButtonElement>(
-    command(({ get, set }, element: HTMLButtonElement) => {
-      if (element.dataset.templatePreviewId === get(pendingPreviewTriggerId$)) {
-        element.focus({ preventScroll: true });
-        set(pendingPreviewTriggerId$, null);
-      }
-    }),
   );
   const focusTemplatePreviewRef$ = onRef<HTMLDivElement>(
     command((_, element: HTMLDivElement) => {
       element.focus({ preventScroll: true });
     }),
   );
-  const completeTemplatePickerClose$ = command(({ get, set }) => {
-    if (get(dialog.templatePickerOpen$)) {
-      return;
-    }
-    set(pendingPreviewTriggerId$, null);
-    set(dialog.completeTemplatePickerClose$);
-  });
   return {
-    deleteCustomTemplate$,
-    closeOpenedTemplate$,
-    restoreTemplatePreviewTriggerRef$,
+    templatePreviewKind$,
+    templatePreviewMounted$,
+    templatePreviewOpen$,
+    openTemplatePreview$,
+    closeTemplatePreview$,
+    completeTemplatePreviewClose$,
+    templatePreviewFinalFocus$: focus.finalFocus$,
     focusTemplatePreviewRef$,
-    completeTemplatePickerClose$,
+    deleteCustomTemplate$,
+    websiteTemplatePreviewId$,
+    websiteTemplatePreviewLoaded$,
+    markWebsiteTemplatePreviewLoaded$,
+    openWebsiteTemplatePreview$,
+  };
+}
+
+function createPresentationTemplateThemeSignals() {
+  const themes$ = state<Readonly<Record<string, string>>>({});
+  return {
+    presentationTemplateThemeIdBySlug$: computed((get) => {
+      return get(themes$);
+    }),
+    setPresentationTemplateTheme$: command(
+      ({ get, set }, slug: string, themeId: string) => {
+        set(themes$, { ...get(themes$), [slug]: themeId });
+      },
+    ),
   };
 }
 
 export function createComposerUiSignals() {
-  const basic = createBasicComposerUiSignals();
   const internalAddMenuRestoreFocus$ = state(true);
   const restoreFocus$ = command(({ get }) => {
     return get(internalAddMenuRestoreFocus$);
@@ -455,32 +217,17 @@ export function createComposerUiSignals() {
   const setRestoreFocus$ = command(({ set }, restoreFocus: boolean) => {
     set(internalAddMenuRestoreFocus$, restoreFocus);
   });
-  const dialog = createTemplatePickerDialogSignals();
-  const list = createTemplatePickerListSignals();
-  const cards = createTemplateCardSignals();
-  const previews = createPresentationTemplatePreviewSignals();
-  const importedPresentationTemplates =
-    createImportedPresentationTemplateSignals();
-
+  const presentation = createPresentationTemplatePreviewSignals();
+  const document = createDocumentTemplateSignals();
   return {
-    model: basic.model,
-    addMenu: {
-      restoreFocus$,
-      setRestoreFocus$,
-    },
-    openTemplatePickerDialog$: createOpenTemplatePickerDialogCommand(
-      dialog,
-      list,
-      previews,
-    ),
+    model: createBasicComposerUiSignals(),
+    addMenu: { restoreFocus$, setRestoreFocus$ },
     template: {
-      ...dialog,
-      ...createDocumentTemplateSignals(),
-      ...list.signals,
-      ...cards.signals,
-      ...previews,
-      ...importedPresentationTemplates,
-      ...createTemplatePickerFocusSignals(dialog, previews),
+      ...createTemplatePreviewSignals(presentation, document),
+      ...document,
+      ...presentation,
+      ...createPresentationTemplateThemeSignals(),
+      ...createImportedPresentationTemplateSignals(),
     },
   };
 }
@@ -493,49 +240,20 @@ type TemplateRecommendationPreview =
       readonly selection: SelectTemplatePreview;
     }
   | {
-      readonly type: "website";
-      readonly templateId: string;
-    }
-  | {
-      readonly type: "document";
-      readonly templateId: string;
-      readonly category: DocumentTemplateCategory | "custom" | "all";
-    }
-  | {
-      readonly type: "custom";
-      readonly kind: "presentation";
+      readonly type: "website" | "document";
       readonly templateId: string;
     }
   | {
       readonly type: "custom";
-      readonly kind: "document";
+      readonly kind: "presentation" | "document";
       readonly templateId: string;
-      readonly category: DocumentTemplateCategory | "custom" | "all";
     };
 
 export function createTemplateRecommendationPreviewCommand(
   template: ComposerUiSignalGroups["template"],
-  openTemplatePicker$: WorkflowComposerSignals["openTemplatePicker$"],
 ) {
   return command(({ set }, preview: TemplateRecommendationPreview) => {
-    if (
-      preview.type === "document" ||
-      (preview.type === "custom" && preview.kind === "document")
-    ) {
-      set(template.setDocumentCategory$, preview.category);
-    }
-    const category =
-      preview.type === "presentation" ||
-      (preview.type === "custom" && preview.kind === "presentation")
-        ? "slides"
-        : preview.type === "custom"
-          ? "document"
-          : preview.type;
-    set(openTemplatePicker$, {
-      kind: "insert",
-      category,
-      directPreview: true,
-    });
+    set(template.openTemplatePreview$, preview.type);
     switch (preview.type) {
       case "presentation": {
         set(template.openPresentationTemplate$, preview.selection);

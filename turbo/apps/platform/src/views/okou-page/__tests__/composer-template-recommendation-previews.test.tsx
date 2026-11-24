@@ -197,10 +197,10 @@ test("A presentation recommendation previews slides and a theme before attaching
   });
 });
 
-test("Direct presentation dismissal restores the Eye while View all still returns to its gallery", async () => {
+test("Direct presentation dismissal restores the Eye and preserves the draft", async () => {
   const capture = mockTemplateChat();
   mockPresentationHtml(presentation.embedUrl, ["One", "Two"]);
-  const { editor, shelf, tray } = await openTray("Presentation");
+  const { editor, shelf } = await openTray("Presentation");
   const user = userEvent.setup({ delay: null });
   const eye = control(
     "button",
@@ -229,32 +229,6 @@ test("Direct presentation dismissal restores the Eye while View all still return
     expect(shelf).toBeInTheDocument();
     expect(editor).toHaveTextContent(DRAFT);
   }
-  click(control("button", "View all", tray));
-  const picker = await screen.findByRole("dialog");
-  expect(control("tab", "Presentation", picker)).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
-  const previewLabel = `Preview ${presentation.title} at current slide`;
-  await user.click(control("button", previewLabel, picker));
-  const stage = await screen.findByRole("group", {
-    name: `${presentation.title} slide preview`,
-  });
-  await within(stage).findByText("1 / 2");
-  const prefix = within(picker).getByText("Template", { selector: "span" });
-  expect(
-    prefix.closest("button, a, [role='button'], [role='link']"),
-  ).toBeNull();
-  await user.click(prefix);
-  expect(stage).toBeInTheDocument();
-  await user.keyboard("{Escape}");
-  await waitFor(() => {
-    expect(control("button", previewLabel, picker)).toHaveFocus();
-  });
-  expect(control("tab", "Presentation", picker)).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
   expect(editor).toHaveTextContent(DRAFT);
   expect(composerInlineTemplates()).toHaveLength(0);
   expect(capture.sentMessages).toHaveLength(0);
@@ -480,17 +454,10 @@ test.each([
   async ({ kind, dismiss }) => {
     const capture = mockTemplateChat();
     const detail = mockCustomTemplate(kind);
-    const { editor, shelf, tray } = await openTray(
+    const { editor, shelf } = await openTray(
       kind === "presentation" ? "Presentation" : "Document",
     );
     await within(shelf).findByText(detail.title);
-    if (kind === "document") {
-      click(control("button", "View all", tray));
-      const picker = await screen.findByRole("dialog");
-      click(control("button", "Invoice", picker));
-      click(control("button", "Close", picker));
-      await screen.findByRole("group", { name: "Document templates" });
-    }
     const user = userEvent.setup({ delay: null });
     const eye = control("button", `Preview template ${detail.title}`, shelf);
     await user.click(eye);

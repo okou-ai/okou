@@ -1,15 +1,6 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { workflowsCollectionContract } from "@okouai/api-contracts";
-import {
-  userTemplatesContract,
-  type UserTemplateCatalogEntry,
-  type UserTemplateKind,
-} from "@okouai/api-contracts/contracts/user-templates";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { DOCUMENT_TEMPLATE_ITEMS } from "@okouai/core/document-template-items";
-import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
-import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
-import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
@@ -25,7 +16,6 @@ import {
 import {
   composerWorkflow,
   findComposerEditor,
-  tabByText,
   createChatComposerHelpers,
 } from "./chat-composer-test-helpers.ts";
 import { buildRunModel } from "./chat-model-builders.ts";
@@ -120,7 +110,7 @@ function firstLevelNames(): string[] {
   return queryAllByRoleFast("button", screen.getByTestId("slash-workflow-menu"))
     .filter((button) => {
       return !button.closest(
-        '[data-slot="slash-workflow-detail"], [data-slot="slash-templates-detail"], [data-slot="slash-submenu-detail"]',
+        '[data-slot="slash-workflow-detail"], [data-slot="slash-submenu-detail"]',
       );
     })
     .map((button) => {
@@ -128,10 +118,10 @@ function firstLevelNames(): string[] {
     });
 }
 
-test("The bare slash leads with capabilities and chat actions, then Workflows and Templates with their counts", async () => {
+test("The bare slash leads with capabilities and chat actions, then available Workflows", async () => {
   await openSlashActions();
   await waitFor(() => {
-    expect(firstLevelNames()).toHaveLength(10);
+    expect(firstLevelNames()).toHaveLength(9);
   });
   const names = firstLevelNames();
   expect(names.slice(0, 4)).toStrictEqual([
@@ -146,7 +136,6 @@ test("The bare slash leads with capabilities and chat actions, then Workflows an
     }),
   ).toStrictEqual(["Model", "Effort", "Connect", "Schedule"]);
   expect(names[8]).toBe("Workflows 3");
-  expect(names[9]).toMatch(/^Templates \d+$/u);
 });
 
 test("A chat adds the actions on the chat itself", async () => {
@@ -192,8 +181,8 @@ test("The keyboard enters the Workflows list and leaves it again", async () => {
     return menuButton("Workflows");
   });
 
-  // Up from the composer reaches Templates, then Workflows.
-  await user.keyboard("{ArrowUp}{ArrowUp}");
+  // Workflows is the last first-level entry, nearest the composer.
+  await user.keyboard("{ArrowUp}");
   expect(menuButton("Workflows")).toHaveAttribute("data-active", "true");
   await user.keyboard("{ArrowRight}");
   expect(menuButton("/axiom-red")).toHaveAttribute("data-active", "true");
@@ -205,26 +194,6 @@ test("The keyboard enters the Workflows list and leaves it again", async () => {
   await waitFor(() => {
     expect(editor).toHaveTextContent("Draft /axiom-status");
   });
-});
-
-test("Templates opens its types with their counts, and Browse all opens the picker", async () => {
-  context.mocks.browser.matchMedia((query) => {
-    return query === SIDEBAR_DESKTOP_MEDIA_QUERY;
-  });
-  const user = userEvent.setup();
-  const { menu } = await openSlashActions();
-  const entry = await waitFor(() => {
-    return menuButton("Templates");
-  });
-  fireEvent.mouseOver(entry);
-  fireEvent.mouseMove(entry);
-
-  const pane = within(menu).getByRole("region", { name: "Templates" });
-  expect(within(pane).getByText("Presentation")).toBeInTheDocument();
-  await user.click(within(pane).getByText("Browse all templates"));
-
-  await screen.findByRole("dialog");
-  expect(tabByText("Presentation")).toBeInTheDocument();
 });
 
 function pointAt(row: HTMLElement): void {
@@ -347,8 +316,8 @@ test("The keyboard enters an action's choices and leaves them again", async () =
     return menuButton("Schedule");
   });
 
-  // Up from the composer reaches Templates, Workflows, then Schedule.
-  await user.keyboard("{ArrowUp}{ArrowUp}{ArrowUp}");
+  // Up from the composer reaches Workflows, then Schedule.
+  await user.keyboard("{ArrowUp}{ArrowUp}");
   expect(menuButton("Schedule")).toHaveAttribute("data-active", "true");
   await user.keyboard("{ArrowRight}");
   expect(menuButton("Every morning")).toHaveAttribute("data-active", "true");
@@ -461,69 +430,6 @@ test("A typed command keyword finds the chat's own actions", async () => {
   ).toBeUndefined();
 });
 
-function customTemplate(
-  kind: UserTemplateKind,
-  index: number,
-): UserTemplateCatalogEntry {
-  const id = `11111111-1111-4111-8111-${String(index).padStart(12, "0")}`;
-  return {
-    id,
-    kind,
-    title: `My ${kind} template ${String(index)}`,
-    sourceFilename: `source-${kind}.pdf`,
-    coverUrl: null,
-    coverHasMorePages: false,
-    pageCount: null,
-    visibility: "private",
-    ownerUserId: "user_self",
-    ownerDisplayName: "Dana Self",
-    canManage: true,
-    createdAt: "2026-01-02T00:00:00Z",
-    updatedAt: "2026-01-02T00:00:00Z",
-    previewAssets: [],
-  };
-}
-
-test("Template counts include the custom templates listed beside the built-in ones", async () => {
-  context.mocks.browser.matchMedia((query) => {
-    return query === SIDEBAR_DESKTOP_MEDIA_QUERY;
-  });
-  context.mocks.api(userTemplatesContract.list, ({ respond }) => {
-    return respond(200, [
-      customTemplate("presentation", 1),
-      customTemplate("presentation", 2),
-      customTemplate("document", 3),
-    ]);
-  });
-  const { menu } = await openSlashActions();
-  const counts = {
-    Presentation: PRESENTATION_TEMPLATE_PICKER_ITEMS.length + 2,
-    Document: DOCUMENT_TEMPLATE_ITEMS.length + 1,
-    Illustration: ILLUSTRATION_TEMPLATE_ITEMS.length,
-    Website: WEBSITE_TEMPLATE_ITEMS.length,
-  };
-  const total = Object.values(counts).reduce((sum, count) => {
-    return sum + count;
-  }, 0);
-  const entry = await waitFor(() => {
-    return menuButton(`Templates ${String(total)}`);
-  });
-  fireEvent.mouseOver(entry);
-  fireEvent.mouseMove(entry);
-
-  const pane = within(menu).getByRole("region", { name: "Templates" });
-  const tabs = queryAllByRoleFast("button", pane).map((tab) => {
-    return tab.textContent?.replace(/\s+/gu, " ").trim();
-  });
-  expect(tabs).toStrictEqual(
-    expect.arrayContaining(
-      Object.entries(counts).map(([label, count]) => {
-        return `${label} ${String(count)}`;
-      }),
-    ),
-  );
-});
-
 test("Effort stays out when the chat model has no effort levels", async () => {
   await openSlashActions({ noEffort: true });
   await waitFor(() => {
@@ -582,7 +488,7 @@ test("A slash typed in the composer's right half puts the menu at the right edge
   });
 
   // The second level opens on the left, so Left enters it and Right leaves.
-  await user.keyboard("{ArrowUp}{ArrowUp}");
+  await user.keyboard("{ArrowUp}");
   expect(menuButton("Workflows")).toHaveAttribute("data-active", "true");
   await user.keyboard("{ArrowLeft}");
   expect(menuButton("/axiom-red")).toHaveAttribute("data-active", "true");

@@ -6,7 +6,7 @@ import {
 } from "./chat-clipboard-test-helpers.ts";
 import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
@@ -531,5 +531,5 @@ test("Copy and paste a structured chat message from the keyboard without flatten
     name: "Ask or comment on this quote",
   });
   expect(feedback).toHaveTextContent("Adapt this for the new launch.");
-  expect(buttonIn(document.body, "Preview template Paper cut")).toBeVisible();
+  expect(within(composer).getByText("Paper cut")).toBeInTheDocument();
 });

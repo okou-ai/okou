@@ -1,53 +1,21 @@
 import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 // The slash panel indexes actions and workflows inside slash-workflow.tsx's
-// popover shell. Template covers are shared with the slash-actions overview.
+// popover shell.
 import type { ComponentProps, CSSProperties, ReactNode } from "react";
 import {
   ChevronDown,
   ChevronRight,
-  FileText,
-  Globe,
-  Image,
-  LayoutGrid,
   Plus,
-  Presentation,
   Route,
   Settings2,
 } from "lucide-react";
 import { cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
-import { useGet, useLastLoadable, useLastResolved } from "ccstate-react";
-import type { UserTemplateKind } from "@okouai/api-contracts/contracts/user-templates";
-import {
-  customTemplateCatalog$,
-  projectCustomTemplate$,
-} from "../../signals/okou-page/custom-template-library.ts";
 import { SlashWorkflowName, slashWorkflowOptionId } from "./slash-workflow.tsx";
-import { CustomTemplatesLoadError } from "./custom-template-preview-dialog.tsx";
-import { DocumentTemplateCover } from "./document-template-cover.tsx";
-import { i18n } from "../../i18n/index.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import type { ComposerSlashWorkflowMatch } from "../../signals/okou-page/workflow-composer-domain.ts";
 import { Link } from "../router/link.tsx";
-import { slashCustomTemplateCounts$ } from "../../signals/okou-page/slash-actions.ts";
 import type { SlashAction } from "./slash-actions.ts";
-import {
-  isSlashTemplateNativeAspectCategory,
-  customSlashTemplatePreview,
-  slashTemplatePreviews,
-  type SlashTemplateCategory,
-  type SlashTemplatePreview,
-} from "./composer-template-catalog.ts";
-
-// Concentric corners, the same rule the shared DropdownMenu states: an inner
-// radius equals the outer radius minus the gap. The popover is 12px and the row
-// gutters are `p-1` (4px), so every hoverable row is `rounded-lg` (8px).
-const SLASH_TEMPLATE_CATEGORY_ICONS = {
-  slides: Presentation,
-  document: FileText,
-  illustration: Image,
-  website: Globe,
-} as const satisfies Record<SlashTemplateCategory, typeof Presentation>;
 
 // The overview lists the four most recent workflows and reveals the rest in
 // place, from a row directly beneath them.
@@ -68,11 +36,9 @@ function slashQuietRowState(marked: boolean): string {
     : "text-muted-foreground hover:bg-state-hover hover:text-foreground";
 }
 
-// The row the pointer or the keyboard has marked. Pointing at Browse all takes
-// the mark off it, so the only fill in the index is the one under the pointer,
-// while the preview keeps showing the type it last opened.
+// The row the pointer or the keyboard has marked.
 export const SLASH_ROW_MARKED =
-  "bg-state-selected hover:bg-state-selected-hover group-has-[[data-slot=slash-browse-all]:hover]/slash-panel:bg-transparent";
+  "bg-state-selected hover:bg-state-selected-hover";
 
 // A workflow description is written for the agent and often runs a paragraph,
 // so a row shows only its first clause: up to the first comma, colon,
@@ -111,35 +77,7 @@ interface SlashTemplatePanelProps {
   readonly previewIndex: number | null;
   readonly onPreview: (index: number | null) => void;
   readonly onSelectWorkflow: (workflow: ComposerSlashWorkflowMatch) => void;
-  readonly onBrowseAll: () => void;
   readonly workflowOptionId: (workflowId: string) => string;
-}
-
-export function slashTemplateCategoryLabel(
-  category: SlashTemplateCategory,
-): string {
-  switch (category) {
-    case "document": {
-      return i18n.t(($) => {
-        return $.documentTemplates.title;
-      });
-    }
-    case "slides": {
-      return i18n.t(($) => {
-        return $.artifacts.kinds.presentation;
-      });
-    }
-    case "illustration": {
-      return i18n.t(($) => {
-        return $.artifacts.templates.illustration;
-      });
-    }
-    case "website": {
-      return i18n.t(($) => {
-        return $.artifacts.templates.website;
-      });
-    }
-  }
 }
 
 function SectionLabel({ children }: { readonly children: string }) {
@@ -147,239 +85,6 @@ function SectionLabel({ children }: { readonly children: string }) {
     <div className="px-2.5 pt-2.5 pb-1 text-xs font-medium text-muted-foreground">
       {children}
     </div>
-  );
-}
-
-/**
- * One cover. `aspect` is present only for categories that show the artwork
- * uncropped, and then it drives an inline ratio rather than the shared tile —
- * the same thing the picker dialog's illustration card does.
- */
-function SlashTemplateCover({
-  preview,
-  category,
-  onSelectTemplate,
-}: {
-  readonly preview: SlashTemplatePreview;
-  readonly category: SlashTemplateCategory;
-  readonly onSelectTemplate: () => void;
-}) {
-  const { t } = useTranslation();
-  const aspect = preview.aspect;
-  const Icon = SLASH_TEMPLATE_CATEGORY_ICONS[category];
-  return (
-    <button
-      type="button"
-      data-slot="slash-template-cover"
-      className={cn(
-        "group min-w-0 text-left",
-        isSlashTemplateNativeAspectCategory(category) &&
-          "mb-2.5 block w-full break-inside-avoid supports-[display:grid-lanes]:mb-0 supports-[display:grid-lanes]:break-inside-auto",
-      )}
-      aria-label={t(
-        ($) => {
-          return $.chat.composer.slashPanel.useTemplate;
-        },
-        { title: preview.title },
-      )}
-      onClick={onSelectTemplate}
-    >
-      <span
-        className={cn(
-          "relative flex items-center justify-center overflow-hidden rounded-lg bg-muted ring-1 ring-border/60 transition-colors group-hover:bg-state-hover",
-          !aspect && "aspect-video",
-        )}
-        style={
-          aspect
-            ? {
-                aspectRatio: `${String(aspect.width)} / ${String(aspect.height)}`,
-              }
-            : undefined
-        }
-      >
-        {/* A document is drawn as the picker's card draws it; other custom
-            artwork has no known shape, so it is fitted. */}
-        {preview.coverUrl && preview.documentPage ? (
-          <DocumentTemplateCover
-            coverUrl={preview.coverUrl}
-            hasMorePages={preview.documentPage.hasMorePages}
-          />
-        ) : preview.coverUrl ? (
-          <img
-            src={preview.coverUrl}
-            alt=""
-            loading="lazy"
-            className={cn(
-              "h-full w-full",
-              preview.template.type === "custom"
-                ? "object-contain"
-                : "object-cover transition-transform duration-200 group-hover:scale-[1.04]",
-            )}
-          />
-        ) : (
-          <Icon className="size-6 text-muted-foreground" aria-hidden />
-        )}
-      </span>
-      <span className="mt-1 block truncate text-[12px] text-muted-foreground">
-        {preview.title}
-      </span>
-    </button>
-  );
-}
-
-/** The custom templates a category lists; websites have none. */
-function customTemplateKind(
-  category: Exclude<SlashTemplateCategory, "website">,
-): UserTemplateKind {
-  return category === "slides" ? "presentation" : category;
-}
-
-/**
- * How many covers a category shows: its built-in templates plus the custom
- * ones listed beside them, so a count matches the covers it opens.
- */
-export function useSlashTemplateCount(): (
-  category: SlashTemplateCategory,
-) => number {
-  const customCounts = useLastResolved(slashCustomTemplateCounts$);
-  return (category) => {
-    const custom =
-      category === "website"
-        ? 0
-        : (customCounts?.get(customTemplateKind(category)) ?? 0);
-    return slashTemplatePreviews(category).length + custom;
-  };
-}
-
-/** Mounted only while a category can show custom templates. */
-function SlashCustomTemplateCovers({
-  category,
-  onSelectTemplate,
-}: {
-  readonly category: Exclude<SlashTemplateCategory, "website">;
-  readonly onSelectTemplate: (
-    preview: SlashTemplatePreview,
-    category: SlashTemplateCategory,
-  ) => void;
-}) {
-  const catalog = useLastLoadable(customTemplateCatalog$);
-  const project = useGet(projectCustomTemplate$);
-  const kind = customTemplateKind(category);
-  if (catalog.state === "hasError") {
-    return (
-      <div className="col-span-full break-inside-avoid pb-2.5">
-        <CustomTemplatesLoadError />
-      </div>
-    );
-  }
-  if (catalog.state !== "hasData") {
-    return null;
-  }
-  return catalog.data.flatMap((template) => {
-    const projected = project(template);
-    if (projected?.kind !== kind) {
-      return [];
-    }
-    const preview = customSlashTemplatePreview(projected);
-    return [
-      <SlashTemplateCover
-        key={preview.slug}
-        preview={preview}
-        category={category}
-        onSelectTemplate={() => {
-          onSelectTemplate(preview, category);
-        }}
-      />,
-    ];
-  });
-}
-
-/**
- * The covers of one category, filling the slash-actions Templates pane.
- */
-export function SlashTemplateCovers({
-  category,
-  onSelectTemplate,
-}: {
-  readonly category: SlashTemplateCategory;
-  readonly onSelectTemplate: (
-    preview: SlashTemplatePreview,
-    category: SlashTemplateCategory,
-  ) => void;
-}) {
-  const previews = slashTemplatePreviews(category);
-  const nativeAspect = isSlashTemplateNativeAspectCategory(category);
-  return (
-    <>
-      {/*
-        No top or bottom padding: the covers scroll all the way to the panel's
-        top and bottom edges, so a half-visible row reads as more content
-        rather than being cut off by a white gutter. The leading and trailing
-        space live inside the scroller.
-      */}
-      <div
-        // The command list owns the menu height; previews scroll within it.
-        className="absolute inset-0 flex flex-col px-4"
-      >
-        {/*
-          The scroller reaches the pane's right edge and pads its content back,
-          so the overlay scrollbar — which draws inward from the viewport edge —
-          lands in that gutter instead of on top of the right-hand covers.
-          The grid is a child of the scroller rather than the scroller itself,
-          so its trailing padding is an ordinary block margin every engine
-          measures, not padding on a scroll container.
-
-          The 16px top inset is padding on the scroller, not on the pane, so
-          the first row rests 16px down but scrolls up to the pane's top edge.
-          The 1px left padding keeps the left column's hairline visible: `ring`
-          is an outset shadow and `overflow-y-auto` clips to the padding box on
-          both axes. `-ml-px` cancels it.
-        */}
-        {/*
-          Keyed by category so each type gets its own scroller. The pane stays
-          mounted while the pointer moves down the rows, so a shared one keeps
-          the offset the previous type was left at — and now that a category
-          carries all of its covers, that offset is deep enough to open the next
-          type halfway down its wall.
-        */}
-        <div
-          key={category}
-          data-slot="slash-template-covers"
-          className="-ml-px -mr-4 min-h-0 flex-1 overflow-y-auto pl-px pr-4 pt-4"
-        >
-          {/*
-            Native-aspect covers use Grid Lanes when available, with multi-column
-            masonry as a fallback. Other categories keep their 16:9 grid rows.
-          */}
-          <div
-            className={cn(
-              nativeAspect
-                ? "columns-2 gap-2.5 pb-4 supports-[display:grid-lanes]:columns-auto supports-[display:grid-lanes]:grid-cols-2 supports-[display:grid-lanes]:[display:grid-lanes]"
-                : "grid grid-cols-2 gap-2.5 pb-4",
-            )}
-          >
-            {category !== "website" && (
-              <SlashCustomTemplateCovers
-                category={category}
-                onSelectTemplate={onSelectTemplate}
-              />
-            )}
-            {previews.map((preview) => {
-              return (
-                <SlashTemplateCover
-                  key={preview.slug}
-                  preview={preview}
-                  category={category}
-                  onSelectTemplate={() => {
-                    onSelectTemplate(preview, category);
-                  }}
-                />
-              );
-            })}
-          </div>
-        </div>
-      </div>
-    </>
   );
 }
 
@@ -805,42 +510,6 @@ function SlashPanelActionList({
   );
 }
 
-function SlashPanelBrowseAll({
-  onBrowseAll,
-}: Pick<SlashTemplatePanelProps, "onBrowseAll">) {
-  const { t } = useTranslation();
-  // This is one more row of the list: no gap above it, and the
-  // scroller's 4px below it matches the 4px inset at the sides.
-  return (
-    <div className="px-1">
-      {/*
-        Full width like the rows above it, so its hover fill has the same shape
-        as theirs instead of a pill around the label.
-      */}
-      <button
-        type="button"
-        data-slot="slash-browse-all"
-        className="flex h-8 w-full items-center gap-2 rounded-lg px-2 text-[13px] text-muted-foreground transition-colors hover:bg-state-hover hover:text-foreground"
-        onClick={onBrowseAll}
-      >
-        <span className="flex size-4 shrink-0 items-center justify-center">
-          <LayoutGrid size={14} strokeWidth={1.6} aria-hidden />
-        </span>
-        <span className="min-w-0 truncate">
-          {t(($) => {
-            return $.chat.composer.slashPanel.browseAll;
-          })}
-        </span>
-        <ChevronRight
-          size={16}
-          className="ml-auto shrink-0 text-muted-foreground/50"
-          aria-hidden
-        />
-      </button>
-    </div>
-  );
-}
-
 export function SlashTemplatePanel({
   actions,
   workflows,
@@ -857,7 +526,6 @@ export function SlashTemplatePanel({
   previewIndex,
   onPreview,
   onSelectWorkflow,
-  onBrowseAll,
   workflowOptionId,
 }: SlashTemplatePanelProps) {
   // Pointer marking is separate from the keyboard's selected row.
@@ -924,7 +592,6 @@ export function SlashTemplatePanel({
           {reversed
             ? [workflowSection, actionSection]
             : [actionSection, workflowSection]}
-          <SlashPanelBrowseAll onBrowseAll={onBrowseAll} />
         </div>
       </div>
     </div>
