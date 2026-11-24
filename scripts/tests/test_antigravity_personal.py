@@ -201,17 +201,23 @@ class EnrollmentTest(unittest.TestCase):
         self,
     ):
         os.environ["OKOU_ANTIGRAVITY_FILE_HOME"] = self.directory
+        poll = self.enterContext(
+            patch.object(worker.select, "select", return_value=([], [], []))
+        )
         with (
             patch.object(sys, "argv", ["worker", "browser", str(self.binding)]),
             patch.object(worker, "connect") as connect,
             patch.object(worker, "test_models") as verify,
-            patch("builtins.input", side_effect=EOFError),
+            patch("builtins.input") as input_line,
             self.assertRaises(SystemExit),
-            patch("sys.stderr", new_callable=io.StringIO),
+            patch("sys.stderr", new_callable=io.StringIO) as errors,
         ):
             worker.main()
+        self.assertIn("timed out", errors.getvalue())
+        input_line.assert_not_called()
         connect.assert_not_called()
         verify.assert_not_called()
+        poll.return_value = ([sys.stdin], [], [])
         with (
             patch.object(sys, "argv", ["worker", "browser", str(self.binding)]),
             patch.object(worker, "test_models") as verify,

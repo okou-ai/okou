@@ -5,6 +5,7 @@ import argparse
 import fcntl
 import json
 import os
+import select
 import subprocess
 import sys
 import tempfile
@@ -243,7 +244,10 @@ def main():
                 print(
                     "Type logout to disconnect and remove your native Google sign-in."
                 )
-                action = input("Action: ").strip() or "connect"
+                print("Action: ", end="", flush=True)
+                if not select.select([sys.stdin], [], [], 15 * 60)[0]:
+                    raise ValueError("The terminal timed out. Reopen it in Okou.")
+                action = input().strip() or "connect"
                 if action not in ("connect", "verify", "logout"):
                     raise ValueError("Choose connect, verify or logout.")
             if action == "logout":

@@ -184,7 +184,7 @@ async def _probe(binary, env, directory, logout):
 
 
 def check_native_login_file(home, *, required):
-    """Check metadata only; agy is the only component that handles the contents."""
+    """Check metadata. Only the native CLI handles the contents."""
     profile = home / NATIVE_LOGIN_FILE
     if profile.resolve() != profile:
         raise ValueError("The native Antigravity login file must stay in its profile.")
