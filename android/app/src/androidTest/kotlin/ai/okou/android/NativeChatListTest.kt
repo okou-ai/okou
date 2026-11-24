@@ -346,9 +346,9 @@ class NativeChatListTest {
             text("Research")
             click(UiSelector().description(app.getString(R.string.chat_actions)))
             clickText(app.getString(R.string.settings))
-            text(app.getString(R.string.appearance))
+            text(app.getString(R.string.instructions_title))
             scenario.recreate()
-            text(app.getString(R.string.appearance))
+            text(app.getString(R.string.instructions_title))
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             assertNotNull(device.wait(Until.findObject(By.textContains("Native history")), 10_000))
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
@@ -396,7 +396,7 @@ class NativeChatListTest {
         withChatListJourney("wide-layout") {
             openProjectChat()
             text("Native history reply")
-            withDisplaySize("1000x1000") {
+            device.withDisplaySize("1000x1000") {
                 val listTitle = device.awaitChatList(app)
                 val conversation = text("Native history reply")
                 assertTrue(listTitle.visibleBounds.right < conversation.visibleBounds.left)
@@ -406,72 +406,67 @@ class NativeChatListTest {
                 val toolbarBack = By.pkg(app.packageName).desc(app.getString(R.string.back))
                 assertTrue(device.wait(Until.gone(toolbarBack), 10_000))
                 takeScreenshot().writeToTestStorage("android-list-home-two-pane")
-                click(UiSelector().description(app.getString(R.string.settings)))
-                text(app.getString(R.string.appearance))
-                assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
-                device.awaitChatList(app)
-                text("Native history reply")
             }
             assertTrue(device.wait(Until.gone(chatListRegion(app)), 10_000))
             text("Native history reply")
-            click(UiSelector().description(app.getString(R.string.back)))
-            revealText("Project chat")
-            revealText("Research")
-            clickText("Research")
-            assertTrue(device.wait(Until.gone(By.text("Project chat")), 10_000))
+        }
+
+    @Test
+    fun closingWideSettingsReturnsToTheOpenHistory() =
+        withWideChatListJourney("wide-settings") {
+            openProjectChat()
+            text("Native history reply")
+            click(UiSelector().description(app.getString(R.string.settings)))
+            text(app.getString(R.string.instructions_title))
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            device.awaitChatList(app)
+            text("Native history reply")
         }
 
     @Test
     fun wideChatFilterSupportsNativeKeyboardFocusWithHistoryOpen() =
-        withChatListJourney("wide-filter") {
+        withWideChatListJourney("wide-filter") {
             openProjectChat()
             text("Native history reply")
-            withDisplaySize("1000x1000") {
-                device.awaitChatList(app)
-                val filter = app.getString(R.string.chat_filter)
-                val archived = app.getString(R.string.chat_archived)
-                val inbox = By.pkg(app.packageName).text(app.getString(R.string.chat_inbox))
-                click(UiSelector().description(filter))
-                text(app.getString(R.string.chat_inbox))
-                InstrumentationRegistry.getInstrumentation().setInTouchMode(false)
-                // The popup can close without the accessibility event that pressBack() awaits.
-                assertTrue("Could not inject Back", device.pressKeyCode(KeyEvent.KEYCODE_BACK))
-                assertTrue(
-                    "Chat filter popup stayed open after Back",
-                    device.wait(Until.gone(inbox), 10_000),
-                )
-                device.awaitKeyboardFocus(By.pkg(app.packageName).desc(filter))
-                assertTrue(device.pressDPadCenter())
-                text(app.getString(R.string.chat_inbox))
-                assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_MOVE_END))
-                device.awaitKeyboardFocus(
-                    By.pkg(app.packageName).text(app.getString(R.string.chat_muted)),
-                )
-                assertTrue(device.pressDPadUp())
-                device.awaitKeyboardFocus(By.pkg(app.packageName).text(archived))
-                assertTrue(device.pressDPadCenter())
-                text(app.getString(R.string.chat_empty_archived))
-                device.awaitKeyboardFocus(By.pkg(app.packageName).desc(filter))
-                assertTrue(
-                    device.wait(
-                        Until.hasObject(
-                            By.pkg(app.packageName).text(archived).hasAncestor(chatListRegion(app)),
-                        ),
-                        10_000,
+            val filter = app.getString(R.string.chat_filter)
+            val archived = app.getString(R.string.chat_archived)
+            val inbox = By.pkg(app.packageName).text(app.getString(R.string.chat_inbox))
+            click(UiSelector().description(filter))
+            text(app.getString(R.string.chat_inbox))
+            InstrumentationRegistry.getInstrumentation().setInTouchMode(false)
+            // The popup can close without the accessibility event that pressBack() awaits.
+            assertTrue("Could not inject Back", device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            assertTrue(
+                "Chat filter popup stayed open after Back",
+                device.wait(Until.gone(inbox), 10_000),
+            )
+            device.awaitKeyboardFocus(By.pkg(app.packageName).desc(filter))
+            assertTrue(device.pressDPadCenter())
+            text(app.getString(R.string.chat_inbox))
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_MOVE_END))
+            device.awaitKeyboardFocus(
+                By.pkg(app.packageName).text(app.getString(R.string.chat_muted)),
+            )
+            assertTrue(device.pressDPadUp())
+            device.awaitKeyboardFocus(By.pkg(app.packageName).text(archived))
+            assertTrue(device.pressDPadCenter())
+            text(app.getString(R.string.chat_empty_archived))
+            device.awaitKeyboardFocus(By.pkg(app.packageName).desc(filter))
+            assertTrue(
+                device.wait(
+                    Until.hasObject(
+                        By.pkg(app.packageName).text(archived).hasAncestor(chatListRegion(app)),
                     ),
-                )
-                text("Native history reply")
-                assertTrue(device.pressDPadCenter())
-                text(app.getString(R.string.chat_inbox))
-                assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_MOVE_END))
-                device.awaitKeyboardFocus(
-                    By.pkg(app.packageName).text(app.getString(R.string.chat_muted)),
-                )
-                repeat(3) { assertTrue(device.pressDPadUp()) }
-                device.awaitKeyboardFocus(inbox)
-                assertTrue(device.pressDPadCenter())
-                revealText("Project chat")
-            }
+                    10_000,
+                ),
+            )
+            text("Native history reply")
+            assertTrue(device.pressDPadCenter())
+            text(app.getString(R.string.chat_inbox))
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_MOVE_HOME))
+            device.awaitKeyboardFocus(inbox)
+            assertTrue(device.pressDPadCenter())
+            revealText("Project chat")
         }
 
     @Test
@@ -535,7 +530,7 @@ class NativeChatListTest {
                 device.wait(Until.gone(personalChat), 10_000),
             )
             takeScreenshot().writeToTestStorage("android-chat-list-undo")
-            withDisplaySize("320x800") {
+            device.withDisplaySize("320x800") {
                 val fontScale = device.executeShellCommand("settings get system font_scale").trim()
                 try {
                     device.executeShellCommand("settings put system font_scale 2.0")
@@ -558,6 +553,13 @@ class NativeChatListTest {
                     else device.executeShellCommand("settings put system font_scale $fontScale")
                 }
             }
+        }
+    }
+
+    private fun withWideChatListJourney(name: String, exercise: ChatListJourney.() -> Unit) {
+        val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+        device.withDisplaySize("1000x1000") {
+            withChatListJourney(name, exercise = exercise)
         }
     }
 
@@ -724,29 +726,25 @@ class NativeChatListTest {
             revealText("Project chat")
             clickText("Project chat")
         }
+    }
+}
 
-        fun withDisplaySize(size: String, exercise: () -> Unit) {
-            val originalSize = device.executeShellCommand("wm size")
-            val originalDensity = device.executeShellCommand("wm density")
-            check(
-                originalSize.contains("Physical size:") &&
-                    originalDensity.contains("Physical density:"),
-            )
-            val sizeOverride =
-                Regex("Override size: (\\d+x\\d+)").find(originalSize)?.groupValues?.get(1)
-            val densityOverride =
-                Regex("Override density: (\\d+)").find(originalDensity)?.groupValues?.get(1)
-            try {
-                device.executeShellCommand("wm size $size")
-                device.executeShellCommand("wm density 160")
-                exercise()
-            } finally {
-                try {
-                    device.executeShellCommand("wm size ${sizeOverride ?: "reset"}")
-                } finally {
-                    device.executeShellCommand("wm density ${densityOverride ?: "reset"}")
-                }
-            }
+private fun UiDevice.withDisplaySize(size: String, exercise: () -> Unit) {
+    val originalSize = executeShellCommand("wm size")
+    val originalDensity = executeShellCommand("wm density")
+    check(originalSize.contains("Physical size:") && originalDensity.contains("Physical density:"))
+    val sizeOverride = Regex("Override size: (\\d+x\\d+)").find(originalSize)?.groupValues?.get(1)
+    val densityOverride =
+        Regex("Override density: (\\d+)").find(originalDensity)?.groupValues?.get(1)
+    try {
+        executeShellCommand("wm size $size")
+        executeShellCommand("wm density 160")
+        exercise()
+    } finally {
+        try {
+            executeShellCommand("wm size ${sizeOverride ?: "reset"}")
+        } finally {
+            executeShellCommand("wm density ${densityOverride ?: "reset"}")
         }
     }
 }
