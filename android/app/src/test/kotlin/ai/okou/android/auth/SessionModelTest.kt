@@ -894,7 +894,7 @@ class SessionModelTest : SessionModelTestFixture() {
     }
 
     @Test
-    fun failedOrganizationCheckCanRetryButSignOutRetiresBeforeTheProviderResponds() {
+    fun failedOrganizationCheckCanRetryAndSignOutRetiresAfterClerkPublishes() {
         val auth = TestAuthentication()
         val signOut = CompletableDeferred<Unit>()
         var fail = true
@@ -914,16 +914,93 @@ class SessionModelTest : SessionModelTestFixture() {
             model.retry(model.uiState.value.generation)
             runCurrent()
             assertEquals(SessionStage.Ready, model.uiState.value.stage)
-            auth.signOutAction = {
-                signOut.await()
-                auth.state.value = AuthenticationState(initialized = true)
-            }
+            auth.signOutAction = { signOut.await() }
             model.signOut(model.uiState.value.generation)
-            assertTrue(resources.last().closed)
-            assertNull(model.uiState.value.ready)
+            assertTrue(model.uiState.value.signingOut)
+            assertFalse(resources.last().closed)
             signOut.complete(Unit)
             runCurrent()
+            assertTrue(model.uiState.value.signingOut)
+            assertFalse(resources.last().closed)
+            auth.state.value = AuthenticationState(initialized = true)
+            runCurrent()
+            assertTrue(resources.last().closed)
+            assertNull(model.uiState.value.ready)
+            assertFalse(model.uiState.value.signingOut)
             assertEquals(SessionStage.SignIn, model.uiState.value.stage)
+        }
+    }
+
+    @Test
+    fun signOutFailureKeepsTheAuthorizedOwnerAndAllowsAnExplicitRetry() {
+        val auth = TestAuthentication()
+        val reply = CompletableDeferred<Unit>()
+        var calls = 0
+        auth.signOutAction = {
+            calls++
+            reply.await()
+            error("sign-out rejected")
+        }
+        check(auth) { model, resources ->
+            runCurrent()
+            val original = model.uiState.value
+            model.signOut(original.generation)
+            model.signOut(original.generation)
+            model.chooseWorkspace("org-b", original.generation)
+            model.retry(original.generation)
+            runCurrent()
+            assertEquals(1, calls)
+            assertTrue(model.uiState.value.signingOut)
+            assertSame(original.ready, model.uiState.value.ready)
+
+            reply.complete(Unit)
+            runCurrent()
+            assertEquals(
+                original.copy(entryFailure = SessionEntryFailure.SignOut),
+                model.uiState.value,
+            )
+            assertFalse(resources.single().closed)
+
+            auth.signOutAction = {
+                calls++
+                auth.state.value = AuthenticationState(initialized = true)
+            }
+            model.signOut(original.generation)
+            runCurrent()
+            assertEquals(2, calls)
+            assertTrue(resources.single().closed)
+            assertEquals(SessionStage.SignIn, model.uiState.value.stage)
+        }
+    }
+
+    @Test
+    fun signOutFailureAfterAccountReplacementCannotRestoreTheOldWorkspace() {
+        val auth = TestAuthentication()
+        val reply = CompletableDeferred<Unit>()
+        auth.signOutAction = {
+            withContext(NonCancellable) { reply.await() }
+            error("sign-out rejected")
+        }
+        check(auth) { model, resources ->
+            runCurrent()
+            val original = model.uiState.value
+            try {
+                model.signOut(original.generation)
+                runCurrent()
+                auth.state.value = testAuthenticationState("user-b", "session-b", "org-b")
+                runCurrent()
+                val replacement = model.uiState.value
+                assertTrue(resources.first().closed)
+                assertEquals("user-b", replacement.ready?.identity?.userId)
+                assertFalse(replacement.signingOut)
+
+                reply.complete(Unit)
+                runCurrent()
+                assertSame(replacement, model.uiState.value)
+                assertFalse(resources.last().closed)
+            } finally {
+                reply.complete(Unit)
+            }
         }
     }
 }

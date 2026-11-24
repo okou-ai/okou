@@ -81,6 +81,11 @@ workspace's protected actions, settings and realtime attachment. Ordinary prefer
 failures leave the authorized list visible and retry initialization in the same
 workspace. A change of identity, access loss or required update retires the owner.
 
+After the user confirms sign-out, the waiting screen hides workspace content
+during the Clerk request. A rejected request with the same authorization restores
+the originating page and shows localized feedback. The Clerk session change
+retires the former workspace.
+
 There is no backend schema or migration. Existing server initialization can fill
 missing preference/default-executor metadata and create missing member memory and
 its existing proactive workflows. It does not replace existing memory content.
