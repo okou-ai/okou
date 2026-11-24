@@ -1010,7 +1010,7 @@ test("Refresh Composer eligibility when a member policy save finishes after clos
   });
   await user.click(await openMenu());
   const accounts = within(await screen.findByRole("group", { name: "GitHub" }));
-  expect(accounts.getAllByText("Allow")).toHaveLength(2);
+  await expect(accounts.findAllByText("Allow")).resolves.toHaveLength(2);
   response.resolve();
   await expect(accounts.findByText("Deny")).resolves.toBeInTheDocument();
 });
