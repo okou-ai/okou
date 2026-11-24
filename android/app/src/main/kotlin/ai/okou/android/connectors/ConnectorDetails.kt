@@ -853,7 +853,11 @@ private fun ConnectorDisconnectDialog(
 internal fun ConnectorActionFeedback(action: ConnectorAction?) {
     if (action?.busy == true)
         ConnectorProgress(
-            if (action.reconciling || action.authorization is ConnectorAuthorization.Browser)
+            if (
+                action.reconciling ||
+                    action.authorization is ConnectorAuthorization.Browser ||
+                    action.authorization is ConnectorAuthorization.DeviceVerification
+            )
                 R.string.connector_working
             else R.string.connector_submitting,
         )
