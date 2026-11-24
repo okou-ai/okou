@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.51.0](https://github.com/okou-ai/okou/compare/android-v0.50.1...android-v0.51.0) (2026-11-24)
+
+
+### Features
+
+* **artifacts:** add a gated searchable artifact library list ([#50231](https://github.com/okou-ai/okou/issues/50231)) ([2bb0a85](https://github.com/okou-ai/okou/commit/2bb0a8587efb1fc8abc513dba5c50109406226ed))
+
+
+### Bug Fixes
+
+* **android:** keep search progress below the filters ([#50362](https://github.com/okou-ai/okou/issues/50362)) ([d2a61ad](https://github.com/okou-ai/okou/commit/d2a61ad3b2f7d8a241ee089124639ce608e0ecd6))
+* **android:** retain chat list rename forms through save failures ([#50302](https://github.com/okou-ai/okou/issues/50302)) ([6958795](https://github.com/okou-ai/okou/commit/695879543d6a6b057a784ef392c32dc03a1af516))
+
 ## [0.50.1](https://github.com/okou-ai/okou/compare/android-v0.50.0...android-v0.50.1) (2026-11-24)
 
 
