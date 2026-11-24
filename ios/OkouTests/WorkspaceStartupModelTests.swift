@@ -115,9 +115,9 @@ final class WorkspaceStartupModelTests: XCTestCase {
       await models.value
     }
     await fulfillment(of: [began], timeout: 3)
-    try await waitForBusinessResult {
-      workspace.selectedConversation?.messages.count == 2
-    }
+    try await waitForBusinessResult { workspace.selectedConversation != nil }
+    let selected = try XCTUnwrap(workspace.selectedConversation)
+    try await waitForBusinessResult(watching: selected) { selected.messages.count == 2 }
     XCTAssertEqual(workspace.list.threads.map(\.id), [ConversationHistoryFixture.threadID])
     release.open()
     await startup.value
