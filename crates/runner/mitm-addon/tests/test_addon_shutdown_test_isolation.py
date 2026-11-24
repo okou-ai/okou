@@ -1,6 +1,7 @@
 """Real shutdown tests must not close the executor owned by later tests."""
 
 import multiprocessing
+import os
 import threading
 from pathlib import Path
 
@@ -17,7 +18,12 @@ def _check_executor_after_shutdown_test(node_id: str) -> None:
     caller = threading.current_thread()
     try:
         assert original.submit(threading.current_thread).result(timeout=5) is not caller
-        assert pytest.main(["-q", str(_ADDON_ROOT / node_id)]) == pytest.ExitCode.OK
+        # The fresh child runs its explicit node independently of outer pytest options.
+        os.environ.pop("PYTEST_ADDOPTS", None)
+        assert (
+            pytest.main(["-q", "-p", "no:cacheprovider", str(_ADDON_ROOT / node_id)])
+            == pytest.ExitCode.OK
+        )
 
         # pytest.main has returned, including every fixture's teardown. A probe
         # inside the selected test would miss restoration-before-cleanup leaks.
