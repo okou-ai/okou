@@ -51,12 +51,10 @@ def validate(directory):
                      "observer_joined_ns": observed, "tracker_shutdown_pending": True,
                      "accounting_shutdown_pending": True, "coverage": lost["coverage"]},
               "observer outcome or shutdown custody is incomplete")
-        held, status_held, heartbeat_pending = [pool.get(k) for k in (
-            "pool_held_ns", "status_held_ns", "heartbeat_pending_ns")]
-        if (not all(report.positive_integer(t) for t in (held, status_held, heartbeat_pending))
-                or not events[1]["monotonic_ns"] < held <= status_held < heartbeat_pending < events[2]["monotonic_ns"]):
-            raise ValueError("observer-loss pool/status contention is absent")
-        foreground.observer(pool.get("observer"), heartbeat_pending, events[2]["monotonic_ns"])
+        held, status_held, heartbeat_pending = foreground.held_pool_observer(
+            pool, events[1]["monotonic_ns"], events[2]["monotonic_ns"],
+            "observer-loss pool/status contention is absent",
+        )
         coverage(pool.get("coverage"), policy, True)
         exact(pool, {"pool_held_ns": held, "status_held_ns": status_held,
                      "heartbeat_pending_ns": heartbeat_pending, "heartbeat_polled_pending": True,
