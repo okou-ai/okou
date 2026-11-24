@@ -280,7 +280,7 @@ run_action() {
     GITHUB_SHA="test-sha" \
     INPUT_APP="$input_app" \
     INPUT_ENVIRONMENT="$input_environment" \
-    INPUT_DATABASE_URL="postgres://preview-db" \
+    INPUT_DATABASE_URL="${TEST_INPUT_DATABASE_URL-postgres://preview-db}" \
     INPUT_JOB_REF="$input_job_ref" \
     INPUT_WEB_URL="https://pr-123-www.okou.test" \
     INPUT_APP_URL="https://pr-123-app.okou.test" \
@@ -433,6 +433,35 @@ for integration_app in api web; do
     assert_env_key_absent "$integration_env_file" MCP_OAUTH_ISSUER
   fi
 done
+
+# Supply the same fixture secrets in every case to exercise their deployment scope.
+turn_selector='{"COMPUTER_USE_TURN_TRIAL_PREVIEW":"pr-123"}'
+turn_secrets='{"COMPUTER_USE_TURN_KEY_ID":"turn-fixture-id","COMPUTER_USE_TURN_API_TOKEN":"turn-fixture-token"}'
+while read -r app environment ref phase expected; do
+  turn_dir="$(mktemp -d)"
+  TEMP_DIRS+=("$turn_dir")
+  database_url="postgres://preview-db"
+  if [[ "$phase" == seed ]]; then database_url=""; fi
+  turn_output="$(TEST_INPUT_DATABASE_URL="$database_url" run_action "$(build_doppler_secrets_json)" \
+    "$turn_dir" "$app" "$environment" "$turn_selector" "$turn_secrets" "$ref" 2>&1)"
+  turn_file="$turn_dir/web-api-$app-$environment.env"
+  if [[ "$expected" == present ]]; then
+    assert_env_value "$turn_file" COMPUTER_USE_TURN_KEY_ID "turn-fixture-id"
+    assert_env_value "$turn_file" COMPUTER_USE_TURN_API_TOKEN "turn-fixture-token"
+  else
+    assert_env_key_absent "$turn_file" COMPUTER_USE_TURN_KEY_ID
+    assert_env_key_absent "$turn_file" COMPUTER_USE_TURN_API_TOKEN
+  fi
+  assert_not_contains "$turn_output" "turn-fixture-id"
+  assert_not_contains "$turn_output" "turn-fixture-token"
+done <<'TURN_CASES'
+api preview pr-123 deploy present
+api preview pr-456 deploy absent
+api preview staging deploy absent
+api preview pr-123 seed absent
+web preview pr-123 deploy absent
+api production pr-123 deploy absent
+TURN_CASES
 
 # The optional Link values stay empty despite conflicting GitHub inputs.
 machine_secret_dir="$(mktemp -d)"

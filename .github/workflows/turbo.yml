@@ -261,6 +261,12 @@ jobs:
       image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261116
     outputs:
       job-ref: ${{ steps.set-job-ref.outputs.job-ref }}
+      turn-preview-environment: >-
+        ${{ github.event_name == 'pull_request' &&
+            github.event.pull_request.head.repo.full_name == github.repository &&
+            vars.COMPUTER_USE_TURN_TRIAL_PREVIEW != '' &&
+            steps.set-job-ref.outputs.job-ref == vars.COMPUTER_USE_TURN_TRIAL_PREVIEW &&
+            format('cu-turn-{0}', steps.set-job-ref.outputs.job-ref) || '' }}
       runner-image-job-ref: ${{ steps.set-job-ref.outputs.runner-image-job-ref }}
       app-preview-url: ${{ steps.preview-urls.outputs.app-url }}
       api-preview-url: ${{ steps.preview-urls.outputs.api-url }}
@@ -1187,6 +1193,10 @@ jobs:
   deploy-api:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    environment:
+      # Only the selected PR receives its branch-restricted TURN credentials.
+      name: ${{ needs.prepare.outputs.turn-preview-environment }}
+      deployment: false
     concurrency:
       # Worker resource cleanup shares this identity. Parent PR cancellation
       # still takes precedence; later runs reconcile the same preview resources.
@@ -1258,6 +1268,7 @@ jobs:
       - name: Create Neon Branch
         id: neon
         env:
+          REUSE_PREVIEW_BRANCH: ${{ needs.prepare.outputs.turn-preview-environment != '' }}
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
           WEB_API_ENV_FILE: ${{ steps.api-seed-env.outputs.file }}

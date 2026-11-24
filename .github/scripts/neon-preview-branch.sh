@@ -75,6 +75,16 @@ prepare_branch() {
       jq -r --arg name "$branch_name" '.branches[] | select(.name == $name) | .id'
   )
 
+  if [[ "${REUSE_PREVIEW_BRANCH:-false}" == true ]]; then
+    if [[ -z "$branch_id" ]]; then
+      echo "Cannot reuse missing preview branch: $branch_name" >&2
+      return 1
+    fi
+    echo "Reusing existing $branch_name for staging acceptance" >&2
+    connection_string "$branch_id"
+    return
+  fi
+
   if [ -n "$branch_id" ]; then
     local parent_id
     parent_id=$(neon_api GET "/branches/${branch_id}" | jq -r '.branch.parent_id')
