@@ -961,7 +961,6 @@ function customConnectorSourceSelectionRows(
   }
   const base = {
     id: source.sourceId,
-    updatedAt: connection.updatedAt,
     customConnectorId: source.customConnectorId,
     storedAuthMethod: connection.authMethod,
     storedStorageVersion: connection.storageVersion,

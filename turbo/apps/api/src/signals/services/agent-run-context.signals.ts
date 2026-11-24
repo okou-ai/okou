@@ -694,7 +694,6 @@ const bootstrapConnectorAccountColumns = Object.freeze({
   authMethod: connectors.authMethod,
   storageVersion: connectors.storageVersion,
   tokenExpiresAt: connectors.tokenExpiresAt,
-  updatedAt: connectors.updatedAt,
 });
 
 type BootstrapEnvironmentSnapshot =
