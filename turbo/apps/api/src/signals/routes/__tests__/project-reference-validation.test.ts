@@ -9,6 +9,7 @@ import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { createDeferredPromise } from "../../utils";
 import { chatEventsRoutes } from "../chat-events";
 import { projectRoutes } from "../projects";
 import type { ApiTestUser } from "./helpers/api-bdd";
@@ -176,6 +177,73 @@ describe("project reference admission through chat send", () => {
     );
     expect(renamed.body.name).toBe("Research during verification");
     await fixture.cancelChatRun(actor, run.runId);
+  });
+
+  it("returns the Project rejection without waiting for attachment preparation", async () => {
+    const { actor } = await fixture.entitledNativeChatActor();
+    const thread = await fixture.chat.createThread(actor, {});
+    const storage = installS3Fixture(context);
+    const filename = "attachment.txt";
+    const contentType = "text/plain";
+    const bytes = Buffer.from("attachment");
+    const upload = await fixture.chat.prepareUpload(actor, {
+      filename,
+      contentType,
+      size: bytes.length,
+    });
+    if (!("uploadUrl" in upload)) {
+      throw new Error("Expected a single-part upload");
+    }
+    storage.put(upload.uploadUrl, bytes, contentType);
+    const key = storage.signedKey(upload.uploadUrl);
+    const send = context.mocks.s3.send.getMockImplementation();
+    if (!key || !send) {
+      throw new Error("Expected an attachment object and storage transport");
+    }
+    let started = 0;
+    const release = createDeferredPromise<void>(context.signal);
+    context.mocks.s3.send.mockImplementation(async (command: unknown) => {
+      if (command instanceof HeadObjectCommand && command.input.Key === key) {
+        started += 1;
+        await release.promise;
+      }
+      return await send(command);
+    });
+    const eventId = randomUUID();
+    const response = await fixture.chat
+      .requestSendEvent(
+        actor,
+        {
+          threadId: thread.id,
+          clientEventId: eventId,
+          prompt: "Send with an unavailable Project",
+          userMessage: {
+            version: 1,
+            parts: [
+              mention(randomUUID()),
+              {
+                type: "file",
+                fileId: upload.id,
+                filenameSnapshot: filename,
+                contentType,
+              },
+            ],
+          },
+        },
+        [404],
+      )
+      .finally(() => {
+        release.resolve();
+      });
+    expect(response.body).toMatchObject({ error: { code: "NOT_FOUND" } });
+    await flushWaitUntilForTest();
+    expect(started).toBe(1);
+    const { events } = await fixture.chat.listThreadEvents(actor, thread.id);
+    expect(
+      events.some(({ id }) => {
+        return id === eventId;
+      }),
+    ).toBeFalsy();
   });
 
   it("uses current Project names and missing references when a queued input launches", async () => {
