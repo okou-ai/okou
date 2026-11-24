@@ -623,6 +623,7 @@ private fun MediaArtifactPreview(content: ArtifactContent.Media) {
         }
     } else {
         var player by remember { mutableStateOf<VideoView?>(null) }
+        val lifecycle = LocalLifecycleOwner.current.lifecycle
         LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { player?.pause() }
         val playbackLabel = stringResource(R.string.artifact_play_media)
         AndroidView(
@@ -641,7 +642,8 @@ private fun MediaArtifactPreview(content: ArtifactContent.Media) {
                         true
                     }
                     setVideoURI(content.url.toString().toUri())
-                    start()
+                    // The Play action may have scheduled this frame before the activity paused.
+                    if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) start()
                     player = this
                 }
             },

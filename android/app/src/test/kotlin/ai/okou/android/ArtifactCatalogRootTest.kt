@@ -1272,15 +1272,7 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
 
     @Test
     fun mediaStartsOnlyAfterPlayAndKeepsItsFrameWhenPlaybackFails() {
-        val fixture = ArtifactApiFixture(app.fixture, includeVideo = true)
-        fixture.install()
-        app.responseGate.countDown()
-        awaitText(fixture.sourceTitle)
-        compose.onNodeWithContentDescription("Artifacts").performClick()
-        compose.onNodeWithText("Videos").performClick()
-        awaitText(fixture.video.title)
-        compose.onNodeWithText(fixture.video.title).performClick()
-        awaitText("Play")
+        val videoTitle = openVideoPreview()
 
         val surface = compose.onNodeWithTag("artifact_preview_surface")
         val frame = surface.getUnclippedBoundsInRoot()
@@ -1306,8 +1298,43 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
         assertEquals(frame, surface.getUnclippedBoundsInRoot())
         assertNull(compose.runOnIdle { compose.activity.window.decorView.videoPreview() })
         compose.onNodeWithContentDescription("Back to artifacts").performClick()
-        compose.onNodeWithText(fixture.video.title).assertIsDisplayed()
+        compose.onNodeWithText(videoTitle).assertIsDisplayed()
         compose.onNodeWithText("Videos").assertIsSelected()
+    }
+
+    @Test
+    fun mediaDoesNotStartWhenThePlayFrameArrivesAfterPause() {
+        openVideoPreview()
+        val scenario = compose.activityRule.scenario
+        compose.mainClock.autoAdvance = false
+        try {
+            compose.onNodeWithText("Play").performClick()
+            assertNull(compose.runOnIdle { compose.activity.window.decorView.videoPreview() })
+            scenario.moveToState(Lifecycle.State.STARTED)
+            compose.mainClock.advanceTimeByFrame()
+            val view =
+                checkNotNull(
+                    compose.runOnIdle { compose.activity.window.decorView.videoPreview() },
+                )
+            compose.runOnIdle { assertTrue(!view.isPlaying) }
+            scenario.moveToState(Lifecycle.State.RESUMED)
+            compose.runOnIdle { assertTrue(!view.isPlaying) }
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+    }
+
+    private fun openVideoPreview(): String {
+        val fixture = ArtifactApiFixture(app.fixture, includeVideo = true)
+        fixture.install()
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithContentDescription("Artifacts").performClick()
+        compose.onNodeWithText("Videos").performClick()
+        awaitText(fixture.video.title)
+        compose.onNodeWithText(fixture.video.title).performClick()
+        awaitText("Play")
+        return fixture.video.title
     }
 
     private fun View.videoPreview(): VideoView? =
