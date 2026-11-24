@@ -79,17 +79,21 @@ test("delivers complete input after binding its process", async () => {
 });
 
 test.each([
-  { copies: 1, encoding: null },
-  { copies: 40_000, encoding: "gzip" },
+  { copies: 6500, encoding: null, minKiB: 0, maxKiB: 160 },
+  { copies: 12_000, encoding: "gzip", minKiB: 160, maxKiB: 256 },
+  { copies: 40_000, encoding: "gzip", minKiB: 256, maxKiB: 4096 },
 ])(
-  "sends a complete dispatch with content encoding $encoding",
-  async ({ copies, encoding }) => {
+  "sends a complete $minKiB–$maxKiB KiB dispatch with content encoding $encoding",
+  async ({ copies, encoding, minKiB, maxKiB }) => {
     const f = await launchFixture();
     const prompt = "Café review. ".repeat(copies).trim();
+    const requests: { bodyKiB: number; encoding: string | null }[] = [];
     await f.api.registerDirectRunner(f.group, {
-      reply: (envelope, _body, actualEncoding) => {
-        expect(actualEncoding).toBe(encoding);
-        expect(envelope.executionContext.prompt).toContain(prompt);
+      reply: (envelope, body, actualEncoding) => {
+        requests.push({
+          bodyKiB: Buffer.byteLength(body, "utf8") / 1024,
+          encoding: actualEncoding,
+        });
         return HttpResponse.json({
           runnerId: envelope.runnerId,
           heartbeatGeneration: envelope.heartbeatGeneration,
@@ -100,8 +104,13 @@ test.each([
     });
     const run = await f.api.createThreadRun(f.actor, { prompt });
     expect(run.status).toBe("running");
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.encoding).toBe(encoding);
+    expect(requests[0]?.bodyKiB).toBeGreaterThanOrEqual(minKiB);
+    expect(requests[0]?.bodyKiB).toBeLessThan(maxKiB);
     await expect(f.api.executionInput(run.runId)).resolves.toMatchObject({
       runId: run.runId,
+      prompt: expect.stringContaining(prompt),
     });
   },
 );
