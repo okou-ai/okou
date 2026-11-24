@@ -113,6 +113,8 @@ open class TestOkouApplication : OkouApplication() {
         get() = journalStore ?: super.composerJournal
 
     var instructionsService: PersonalInstructionsService? = null
+    var workspaceDisplayName: String? = null
+    var builtInToolsService: ai.okou.android.settings.BuiltInToolsService? = null
     internal var proactivePreferencesService:
         ai.okou.android.settings.ProactivePreferencesService? =
         null
@@ -152,6 +154,7 @@ open class TestOkouApplication : OkouApplication() {
             override val workflowService = workflows
             override val connectors = connectorService
             override val proactivePreferences = proactivePreferencesService
+            override val builtInTools = builtInToolsService
 
             override suspend fun usagePackCredits() =
                 (fixture ?: canonical.value).usagePackCredits()
@@ -190,7 +193,9 @@ open class TestOkouApplication : OkouApplication() {
                 checkNotNull(instructionsService).updatePersonalInstructions(content, ifVersion)
 
             override suspend fun organization() =
-                testOrganization(identity.workspaceId).copy(role = workspaceRole)
+                testOrganization(identity.workspaceId).let {
+                    it.copy(name = workspaceDisplayName ?: it.name, role = workspaceRole)
+                }
 
             override suspend fun preferences() = stored()
 
