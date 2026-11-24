@@ -49,6 +49,7 @@
     <string name="artifact_open_website">Ouvrir dans le navigateur</string>
     <string name="artifact_browser_unavailable">Impossible d’ouvrir le navigateur</string>
     <string name="artifact_play_media">Lecture multimédia</string>
+    <string name="artifact_play">Lire</string>
     <string name="artifact_catalog_access_denied">Vous n’avez pas accès à ce catalogue d’artefacts</string>
     <string name="artifact_catalog_missing">Ce catalogue d’artefacts n’est plus disponible</string>
     <string name="chat_resources_related">Conversations associées</string>

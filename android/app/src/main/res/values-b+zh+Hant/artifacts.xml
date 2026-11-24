@@ -49,6 +49,7 @@
     <string name="artifact_open_website">在瀏覽器中開啟</string>
     <string name="artifact_browser_unavailable">無法開啟瀏覽器</string>
     <string name="artifact_play_media">媒體播放</string>
+    <string name="artifact_play">播放</string>
     <string name="artifact_catalog_access_denied">你無權存取此成果目錄</string>
     <string name="artifact_catalog_missing">此成果目錄已無法使用</string>
     <string name="chat_resources_related">關聯聊天</string>

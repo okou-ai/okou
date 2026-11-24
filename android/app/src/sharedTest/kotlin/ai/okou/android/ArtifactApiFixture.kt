@@ -25,6 +25,7 @@ internal class ArtifactApiFixture(
     private val chinese: Boolean = false,
     private val summaryDownloadAllowed: Boolean = false,
     private val imageBody: ByteArray? = null,
+    includeVideo: Boolean = false,
 ) {
     data class Item(val id: String, val kind: String, val title: String, val date: String)
 
@@ -67,7 +68,15 @@ internal class ArtifactApiFixture(
             title("Launch avatar", "发布头像示例"),
             date(-5),
         )
-    val allItems = listOf(checklist, summary, site, slides, image)
+    val video =
+        Item(
+            "10000000-1000-4000-8000-000000000006",
+            "video",
+            title("Release walkthrough", "发布演示视频"),
+            date(-6),
+        )
+    val allItems =
+        listOfNotNull(checklist, summary, site, slides, image, video.takeIf { includeVideo })
     val checklistBody =
         title(
             "1. Check the release notes\n2. Approve the website copy\n3. Confirm the launch owner",
@@ -255,19 +264,29 @@ internal class ArtifactApiFixture(
                             when (item) {
                                 checklist -> "/artifacts/checklist1.md"
                                 summary -> "/artifacts/artifacts2.md"
+                                video -> api.server.url("/artifact-bytes/video").toString()
                                 else -> api.server.url("/artifact-bytes/image").toString()
                             }
-                        val filename = if (item == image) "avatar.png" else "launch.md"
-                        val type = if (item == image) "image/png" else "text/markdown"
+                        val (filename, type) =
+                            when (item) {
+                                image -> "avatar.png" to "image/png"
+                                video -> "walkthrough.mp4" to "video/mp4"
+                                else -> "launch.md" to "text/markdown"
+                            }
                         put(
                             "file",
                             Json.parseToJsonElement(
                                 """{"id":"${item.id}","filename":"$filename","contentType":"$type","size":40,"url":"$path","previewImageUrl":null}""",
                             ),
                         )
-                        if (item == image) {
+                        if (item == image || item == video) {
                             put("model", kotlinx.serialization.json.JsonNull)
+                        }
+                        if (item == image) {
                             put("provider", kotlinx.serialization.json.JsonNull)
+                        }
+                        if (item == video) {
+                            put("durationSeconds", 1)
                         }
                     }
                 }
