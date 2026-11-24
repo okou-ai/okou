@@ -255,9 +255,7 @@ const applyDomainSettings$ = command(
               .toLowerCase()
               .replace(/\.$/u, "")
           );
-        })?.id ??
-          settings.domains.at(-1)?.id ??
-          null,
+        })?.id ?? null,
       );
     }
     if (action === "remove") {

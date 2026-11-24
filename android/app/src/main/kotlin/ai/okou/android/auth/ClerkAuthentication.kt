@@ -19,6 +19,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
@@ -179,7 +180,14 @@ class ClerkAuthentication(private val context: Context) : Authentication {
     }
 
     override suspend fun signOut() {
-        Clerk.auth.signOut().required()
+        val sessionId = state.value.session?.sessionId
+        val result = Clerk.auth.signOut()
+        // Clerk can clear its local session even when remote revocation reports an error.
+        // Wait for that change to reach the app before returning the operation result.
+        if (sessionId != null && Clerk.session?.id != sessionId) {
+            state.first { it.session?.sessionId != sessionId }
+        }
+        result.required()
     }
 }
 

@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.65.0](https://github.com/okou-ai/okou/compare/ios-v0.64.0...ios-v0.65.0) (2026-11-24)
+
+
+### Features
+
+* **ios:** say what for you directions do and throw the top card both ways ([#50568](https://github.com/okou-ai/okou/issues/50568)) ([dfc99d5](https://github.com/okou-ai/okou/commit/dfc99d5c28b54aa7d1d7960f2d46938732f8e19a))
+
+
+### Bug Fixes
+
+* **ios:** close the fork after its sheet dismisses ([#50554](https://github.com/okou-ai/okou/issues/50554)) ([ef5b4dc](https://github.com/okou-ai/okou/commit/ef5b4dc21a619da181fa8c6283fe07c00b72e3d0))
+
+
+### Refactoring
+
+* **ios:** keep conversation reads and run usage in the session Store ([#50556](https://github.com/okou-ai/okou/issues/50556)) ([229d5ea](https://github.com/okou-ai/okou/commit/229d5ea180cebda0c13f98987025c841d2211651))
+
+## [0.64.0](https://github.com/okou-ai/okou/compare/ios-v0.63.1...ios-v0.64.0) (2026-11-24)
+
+
+### Features
+
+* add member-wide connector account approval ([#50516](https://github.com/okou-ai/okou/issues/50516)) ([ff76d52](https://github.com/okou-ai/okou/commit/ff76d52e21a55cd8f3e34a513e7e5fcfd8ab1e1b))
+* **ios:** scroll for you reasons in place instead of show more ([#50498](https://github.com/okou-ai/okou/issues/50498)) ([6a86eb2](https://github.com/okou-ai/okou/commit/6a86eb23751bda3334908e384e9ddc100a553bb7))
+
+
+### Bug Fixes
+
+* **ios:** discard drafts for unavailable chats ([#50503](https://github.com/okou-ai/okou/issues/50503)) ([4aeac42](https://github.com/okou-ai/okou/commit/4aeac42344c6a9c6a81bbb472d509e04548d8c1d))
+* **ios:** truncate collapsed follow-up suggestions to one line ([#50529](https://github.com/okou-ai/okou/issues/50529)) ([85dc94d](https://github.com/okou-ai/okou/commit/85dc94d473e47d9fbb4606946970e8c58b8985f6))
+
+
+### Refactoring
+
+* **ios:** keep the conversation transcript in the workspace graph ([#50497](https://github.com/okou-ai/okou/issues/50497)) ([36d3201](https://github.com/okou-ai/okou/commit/36d3201459a8c12fd00393f3593e1691679de5db))
+
+
+### Performance Improvements
+
+* **ci:** overlap ios simulator startup and compilation in the merge queue ([#50530](https://github.com/okou-ai/okou/issues/50530)) ([63e4fae](https://github.com/okou-ai/okou/commit/63e4fae81f0ab37694e0ad1b66473ceb47a45957))
+
 ## [0.63.1](https://github.com/okou-ai/okou/compare/ios-v0.63.0...ios-v0.63.1) (2026-11-24)
 
 

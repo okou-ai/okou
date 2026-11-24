@@ -8,8 +8,9 @@
   /// HTTP fixture, so swiping, the dock and the caught-up recap can be checked without signing
   /// in or sending read receipts to a real account. The input's model list answers as Auto, so
   /// it opens as it does for a member; a choice that sends never reaches a chat here.
-  /// `--for-you-deck-slow` holds the first load for a few seconds and `--for-you-deck-failure`
-  /// fails it, for the loading and error panels.
+  /// `--for-you-deck-slow` holds the first load and every choice for a few seconds, for the
+  /// skeleton and a direction's progress; `--for-you-deck-failure` fails the first load, for the
+  /// error panel.
   struct ForYouDeckGallery: View {
     @State private var preview = Result { try ForYouDeckPreview() }
 
@@ -122,6 +123,10 @@
       case ("POST", _) where path.hasSuffix("/read"):
         body = "{}"
       default:
+        // A choice reaches no chat here; held, it shows its progress before it fails.
+        if Self.isSlow, request.httpMethod == "POST" {
+          Thread.sleep(forTimeInterval: Self.slowLoad)
+        }
         status = 404
         body = "{\"error\":\"Not in the For you preview\"}"
       }

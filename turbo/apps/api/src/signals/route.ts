@@ -47,6 +47,7 @@ import { chatRemoteAccessRoutes } from "./routes/chat-remote-access";
 import { projectChatRoutes } from "./routes/project-chat";
 import { projectRoutes } from "./routes/projects";
 import { chatThreadRoutes } from "./routes/chat-threads";
+import { antigravityPersonalSubscriptionRoutes } from "./routes/antigravity-personal-subscription";
 import { claudeCodeDeviceAuthRoutes } from "./routes/claude-code-device-auth";
 import { cliAuthRoutes } from "./routes/cli-auth";
 import { cloudflareAccessRoutes } from "./routes/cloudflare-access";
@@ -351,6 +352,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...chatEventsRoutes,
   ...sharedThreadRoutes,
   ...chatThreadPdfFilenameRoutes,
+  ...antigravityPersonalSubscriptionRoutes,
   ...claudeCodeDeviceAuthRoutes,
   ...computerUseAuthorizationRoutes,
   ...desktopShellAuthorizationRoutes,

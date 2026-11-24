@@ -127,10 +127,7 @@ with ThreadingHTTPServer(("127.0.0.1", 0), InferenceHandler) as server:
                 result["conversation_id"]
                 and result["conversation_id"] == events[0]["conversation_id"]
             ), slug
-            assert any(
-                e.get("step_update", {}).get("step_type") == "agent_response"
-                for e in events
-            ), slug
+            # A headless turn can deliver its answer only in the terminal result.
             assert result["response"].strip() == "fixture answer", slug
             assert result["usage"]["total_tokens"] == 16, slug
             assert server.requests == [

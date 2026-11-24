@@ -15618,6 +15618,31 @@ data class AcceptedInput(
     val `createdAt`: String? = null,
 )
 
+@Serializable
+data class RunActivityRequest(
+    val `runId`: String,
+)
+
+@Serializable
+data class RunActivitySummaryMessagesItem(
+    val `id`: String,
+    val `text`: String,
+)
+
+@Serializable
+enum class RunActivitySummaryStatus {
+    @SerialName("available") AVAILABLE,
+    @SerialName("ineligible") INELIGIBLE,
+    @SerialName("unavailable") UNAVAILABLE,
+}
+
+@Serializable
+data class RunActivitySummary(
+    val `runId`: String,
+    val `messages`: List<RunActivitySummaryMessagesItem>,
+    val `status`: RunActivitySummaryStatus,
+)
+
 @Serializable(with = InputStatusSerializer::class) sealed interface InputStatus
 
 @Serializable

@@ -10,6 +10,7 @@ import {
 } from "../../lib/api/domains/subscriptions";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { getPlatformOrigin } from "../../lib/platform-url";
+import { antigravitySubscriptionCommand } from "./antigravity";
 
 const SWITCH_EFFECT =
   "This changes the default subscription for this provider in the current organization. It applies to subsequent runs that do not explicitly pin an account; running runs keep their captured subscription. The model and other providers are unchanged.";
@@ -221,4 +222,5 @@ export const subscriptionCommand = new Command("subscription")
   .addCommand(listCommand)
   .addCommand(showCommand)
   .addCommand(resetLinkCommand)
+  .addCommand(antigravitySubscriptionCommand, { hidden: true })
   .addCommand(switchCommand);

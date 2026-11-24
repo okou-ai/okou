@@ -9,6 +9,7 @@ import ai.okou.android.TestOkouApplication
 import ai.okou.android.TestRealtimeService
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.HistoryCatchUpRequest
+import ai.okou.android.api.generated.HistorySnapshot
 import ai.okou.android.historyEventWire
 import ai.okou.android.jsonResponse
 import androidx.lifecycle.ViewModelProvider
@@ -21,7 +22,9 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -66,6 +69,7 @@ class HistoryWarmingTest {
     private suspend fun TestScope.withModel(
         prepare: (ChatListApiFixture) -> Unit = {},
         expectFailure: Boolean = false,
+        service: (ChatListApiFixture) -> ChatListService = { it.service },
         block: suspend TestScope.(Ready) -> Unit,
     ) {
         val dispatcher = StandardTestDispatcher(testScheduler)
@@ -86,7 +90,7 @@ class HistoryWarmingTest {
                         viewModelFactory {
                             initializer {
                                 ChatListModel(
-                                    api.service,
+                                    service(api),
                                     cache,
                                     api.identity,
                                     allowed::get,
@@ -152,11 +156,13 @@ class HistoryWarmingTest {
 
     private val recoveringThreads = listOf(CHAT_IN_PROJECT, "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
 
-    private fun recoveryCohort(api: ChatListApiFixture) {
-        api.historyThreadIds = api.historyThreadIds + recoveringThreads
+    private fun recoveryCohort(api: ChatListApiFixture) = recoveryCohort(api, recoveringThreads)
+
+    private fun recoveryCohort(api: ChatListApiFixture, threads: List<String>) {
+        api.historyThreadIds = api.historyThreadIds + threads
         api.indicators = {
             jsonResponse(
-                """{"threads":{${recoveringThreads.joinToString(",") { "\"$it\":\"active\"" }}},"unreadAt":{}}""",
+                """{"threads":{${threads.joinToString(",") { "\"$it\":\"active\"" }}},"unreadAt":{}}""",
             )
         }
     }
@@ -164,17 +170,18 @@ class HistoryWarmingTest {
     private fun recoverSnapshots(
         api: ChatListApiFixture,
         seq: Long,
+        threads: List<String> = recoveringThreads,
         beforeSnapshot: (String) -> MockResponse? = { null },
     ) {
         api.historyCatchUp = {
             jsonResponse(
-                """{"events":{},"notFoundThreads":[${recoveringThreads.joinToString(",") { "\"$it\"" }}]}""",
+                """{"events":{},"notFoundThreads":[${threads.joinToString(",") { "\"$it\"" }}]}""",
             )
         }
         val rows = api.historyRows
         api.historyRows = { request ->
             val id = checkNotNull(request.requestUrl).pathSegments[2]
-            if (id in recoveringThreads)
+            if (id in threads)
                 jsonResponse(
                     """{"rows":[],"cursor":{"lastEventId":"$id","lastSeqId":$seq},"hasMore":false}""",
                 )
@@ -182,7 +189,7 @@ class HistoryWarmingTest {
         }
         api.commandResponse = { request ->
             val path = checkNotNull(request.requestUrl).encodedPath
-            val id = recoveringThreads.firstOrNull { path.contains(it) }
+            val id = threads.firstOrNull { path.contains(it) }
             when {
                 id == null -> null
                 path.endsWith("/event-snapshot") ->
@@ -193,6 +200,52 @@ class HistoryWarmingTest {
                 path.startsWith("/recovery-archive/") ->
                     MockResponse().setBody(historyEventWire(id, seq, id) + "\n")
                 else -> null
+            }
+        }
+    }
+
+    @Test
+    fun snapshotRecoveryQueuesExtraWorkWithoutBlockingTheSelectedConversation() = runTest {
+        val threads = recoveringThreads + "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+        val started = Channel<String>(Channel.UNLIMITED)
+        val release = CompletableDeferred<Unit>()
+        withModel(
+            prepare = { recoveryCohort(it, threads) },
+            service = { api ->
+                val upstream = api.service
+                object : ChatListService by upstream {
+                    override suspend fun historySnapshot(threadId: String): HistorySnapshot {
+                        if (threadId in threads) {
+                            started.send(threadId)
+                            release.await()
+                        }
+                        return upstream.historySnapshot(threadId)
+                    }
+                }
+            },
+        ) { ready ->
+            val (api, model, realtime) = ready
+            recoverSnapshots(api, 55, threads)
+            val revision = model.warming.state.value.revision
+            val confirmation = model.history.uiState.value.confirmation
+            realtime.invalidate(ChatChanges(messageThreads = threads.toSet()))
+            advanceTimeBy(1_000)
+            val running = setOf(started.receive(), started.receive())
+            runCurrent()
+            assertTrue(started.tryReceive().isFailure)
+
+            model.history.refresh()
+            model.history.uiState.first {
+                it.phase == HistoryPhase.Ready && it.confirmation != confirmation
+            }
+            assertTrue(started.tryReceive().isFailure)
+            release.complete(Unit)
+            assertEquals(threads.toSet() - running, setOf(started.receive()))
+            model.warming.state.first { it.phase == ChatReadPhase.Ready && it.revision > revision }
+            ready.store.clear()
+            val lease = ready.cache.open(api.identity) { true }
+            for (threadId in threads) {
+                assertEquals(55L, lease.loadHistory(threadId)!!.checkpoint.cursor.seqId)
             }
         }
     }

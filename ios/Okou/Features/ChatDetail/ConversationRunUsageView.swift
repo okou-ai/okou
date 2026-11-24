@@ -23,7 +23,7 @@ struct ConversationRunUsageView: View {
   let showDetails: () -> Void
 
   var body: some View {
-    StoreProvider(usage.stateStore) {
+    StoreProvider(usage.store) {
       if let resource = usage.resources[runID] {
         RunUsageValue(resource: resource) { state in
           ConversationRunUsageLabel(runID: runID, state: state, showDetails: showDetails)
@@ -96,7 +96,7 @@ struct ConversationRunUsageDetails: View {
   let retry: () -> Void
 
   var body: some View {
-    StoreProvider(usage.stateStore) {
+    StoreProvider(usage.store) {
       if let resource = usage.resources[runID] {
         RunUsageValue(resource: resource) { state in
           ConversationRunUsageDetailsContent(state: state, catalog: catalog, retry: retry)

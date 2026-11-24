@@ -5777,6 +5777,15 @@
       "actions": {
         "resetUsage": "Reset usage"
       },
+      "antigravity": {
+        "check": "Check sign-in",
+        "error": "Check your assigned sign-in worker and try again.",
+        "expired": "Sign-in expired. Connect again to start a new session.",
+        "terminal": "Run this command in your terminal and sign in with your personal Google AI account.",
+        "title": "Google AI (Antigravity)",
+        "unassigned": "Ask an administrator to assign your sign-in terminal.",
+        "verify": "This command uses your subscription to send one request each to Neon, Carbon and Hydrogen."
+      },
       "deviceAuth": {
         "claude": {
           "authorizationCode": "Authorization code",

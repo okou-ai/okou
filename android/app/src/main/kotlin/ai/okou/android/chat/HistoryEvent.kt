@@ -1,5 +1,6 @@
 package ai.okou.android.chat
 
+import ai.okou.android.api.ApiFailure
 import java.io.InputStream
 import java.io.InputStreamReader
 import java.nio.charset.CodingErrorAction
@@ -44,6 +45,7 @@ private data class HistoryEventFacts(
     val eventType: HistoryEventType,
     val runId: String?,
     val revokesEventId: String?,
+    val createdAt: String? = null,
 )
 
 @Serializable private data class HistoryContent(val content: String? = null)
@@ -84,6 +86,15 @@ private constructor(
 
     val revokesId: String?
         get() = facts.revokesEventId
+
+    internal fun timeMillis(): Long? =
+        facts.createdAt?.let {
+            try {
+                chatTime(it)
+            } catch (_: ApiFailure.IncompatibleResponse) {
+                null
+            }
+        }
 
     /** Raw cache input is retained separately from business fields. */
     internal fun archiveJson(): String = wire.toString()

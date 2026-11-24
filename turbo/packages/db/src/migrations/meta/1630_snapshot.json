@@ -1,5 +1,5 @@
 {
-  "id": "8f453091-8dd4-48fe-83b0-6065a3b7d667",
+  "id": "6a9c7085-f044-426a-b4b1-09701d2cb5da",
   "prevId": "1a637a61-87af-4698-95c4-090dc9079e46",
   "version": "7",
   "dialect": "postgresql",
@@ -1927,6 +1927,72 @@
         }
       },
       "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.antigravity_member_profiles": {
+      "name": "antigravity_member_profiles",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "machine_id": {
+          "name": "machine_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "confirmed_at": {
+          "name": "confirmed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "antigravity_member_profiles_machine_id_unique": {
+          "name": "antigravity_member_profiles_machine_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "machine_id"
+          ]
+        },
+        "antigravity_member_profiles_org_id_user_id_unique": {
+          "name": "antigravity_member_profiles_org_id_user_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "org_id",
+            "user_id"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -18311,12 +18377,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "custom_domain_revision": {
-          "name": "custom_domain_revision",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "user_id": {
           "name": "user_id",
           "type": "text",
@@ -18410,254 +18470,6 @@
           "value": "(\"hosted_site_browser_sessions\".\"code_hash\" IS NOT NULL AND \"hosted_site_browser_sessions\".\"code_challenge\" IS NOT NULL AND \"hosted_site_browser_sessions\".\"token_hash\" IS NULL) OR (\"hosted_site_browser_sessions\".\"code_hash\" IS NULL AND \"hosted_site_browser_sessions\".\"code_challenge\" IS NULL AND \"hosted_site_browser_sessions\".\"token_hash\" IS NOT NULL)"
         }
       },
-      "isRLSEnabled": false
-    },
-    "public.hosted_site_domain_settings": {
-      "name": "hosted_site_domain_settings",
-      "schema": "",
-      "columns": {
-        "site_id": {
-          "name": "site_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "selected_domain_id": {
-          "name": "selected_domain_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "revision": {
-          "name": "revision",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "hosted_site_domain_settings_site_id_hosted_sites_id_fk": {
-          "name": "hosted_site_domain_settings_site_id_hosted_sites_id_fk",
-          "tableFrom": "hosted_site_domain_settings",
-          "tableTo": "hosted_sites",
-          "columnsFrom": [
-            "site_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "hosted_site_domain_settings_site_id_selected_domain_id_hosted_site_domains_site_id_id_fk": {
-          "name": "hosted_site_domain_settings_site_id_selected_domain_id_hosted_site_domains_site_id_id_fk",
-          "tableFrom": "hosted_site_domain_settings",
-          "tableTo": "hosted_site_domains",
-          "columnsFrom": [
-            "site_id",
-            "selected_domain_id"
-          ],
-          "columnsTo": [
-            "site_id",
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.hosted_site_domains": {
-      "name": "hosted_site_domains",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "site_id": {
-          "name": "site_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "hostname": {
-          "name": "hostname",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "revision": {
-          "name": "revision",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "challenge": {
-          "name": "challenge",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "challenge_expires_at": {
-          "name": "challenge_expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "provider_id": {
-          "name": "provider_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "provider_started": {
-          "name": "provider_started",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "verified_at": {
-          "name": "verified_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "revoked_at": {
-          "name": "revoked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "released_at": {
-          "name": "released_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "verification": {
-          "name": "verification",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_hosted_site_domains_site": {
-          "name": "idx_hosted_site_domains_site",
-          "columns": [
-            {
-              "expression": "site_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "hosted_site_domains_site_hostname": {
-          "name": "hosted_site_domains_site_hostname",
-          "columns": [
-            {
-              "expression": "site_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "hostname",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"hosted_site_domains\".\"released_at\" IS NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "hosted_site_domains_verified_hostname": {
-          "name": "hosted_site_domains_verified_hostname",
-          "columns": [
-            {
-              "expression": "hostname",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"hosted_site_domains\".\"verified_at\" IS NOT NULL AND \"hosted_site_domains\".\"released_at\" IS NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "hosted_site_domains_provider_id": {
-          "name": "hosted_site_domains_provider_id",
-          "columns": [
-            {
-              "expression": "provider_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "hosted_site_domains_site_id_hosted_sites_id_fk": {
-          "name": "hosted_site_domains_site_id_hosted_sites_id_fk",
-          "tableFrom": "hosted_site_domains",
-          "tableTo": "hosted_sites",
-          "columnsFrom": [
-            "site_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "hosted_site_domains_site_id_id": {
-          "name": "hosted_site_domains_site_id_id",
-          "nullsNotDistinct": false,
-          "columns": [
-            "site_id",
-            "id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.hosted_site_share_rate_limits": {

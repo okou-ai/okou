@@ -121,4 +121,8 @@
     <string name="workflow_history_trigger_unavailable">Trigger non disponibile</string>
     <string name="workflow_history_scheduled">Attivazione programmata</string>
     <string name="workflow_history_manual">Esecuzione manuale</string>
+    <string name="workflow_catalog_refresh_failed">Impossibile aggiornare la directory dei flussi di lavoro. Vengono mostrati i flussi già caricati.</string>
+    <string name="workflow_history_earlier_failed">Impossibile caricare le esecuzioni precedenti.</string>
+    <string name="workflow_rule_checking">Verifica del risultato…</string>
+    <string name="workflow_rule_unconfirmed">Il risultato non è ancora confermato.</string>
 </resources>

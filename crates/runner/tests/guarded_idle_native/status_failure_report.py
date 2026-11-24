@@ -44,12 +44,10 @@ def validate(directory):
         exact(blocked, {"policy": policy, "published_status": blocked["published_status"],
                         "status_path": status_path, "receiver_polled_pending": True,
                         "coverage": blocked["coverage"]}, "original status or accepted saving missing")
-        held, status_held, heartbeat_pending = [pool.get(k) for k in (
-            "pool_held_ns", "status_held_ns", "heartbeat_pending_ns")]
-        if (not all(report.positive_integer(t) for t in (held, status_held, heartbeat_pending))
-                or not events[0]["monotonic_ns"] < held <= status_held < heartbeat_pending < events[1]["monotonic_ns"]):
-            raise ValueError("status-failure original pool/status contention absent")
-        foreground.observer(pool.get("observer"), heartbeat_pending, events[1]["monotonic_ns"])
+        held, status_held, heartbeat_pending = foreground.held_pool_observer(
+            pool, events[0]["monotonic_ns"], events[1]["monotonic_ns"],
+            "status-failure original pool/status contention absent",
+        )
         coverage(pool.get("coverage"), policy, True)
         exact(pool, {"pool_held_ns": held, "status_held_ns": status_held,
                      "heartbeat_pending_ns": heartbeat_pending, "heartbeat_polled_pending": True,

@@ -30,7 +30,7 @@ final class HostedSitePreviewTests: XCTestCase {
     let commands = ChatCommands(client: fixture.client, sync: ChatSync(client: fixture.client))
     let viewer = MessageArtifactStore(
       service: commands.artifacts, threadID: "thread", webURL: URL(string: "https://app.okou.ai")!,
-      markdown: MessageMarkdownCache(baseURL: fixture.baseURL),
+      markdown: MessageMarkdownCache(baseURL: fixture.baseURL), graph: makeTestWorkspaceGraph(),
       didFail: { _ in XCTFail("Preview renewal must not expire the account") })
     defer { viewer.close() }
     let resource = try XCTUnwrap(viewer.resource("https://court.okou.app/lessons?week=2#serve"))
@@ -80,7 +80,7 @@ final class HostedSitePreviewTests: XCTestCase {
     let commands = ChatCommands(client: fixture.client, sync: ChatSync(client: fixture.client))
     let viewer = MessageArtifactStore(
       service: commands.artifacts, threadID: "thread", webURL: URL(string: "https://app.okou.ai")!,
-      markdown: MessageMarkdownCache(baseURL: fixture.baseURL),
+      markdown: MessageMarkdownCache(baseURL: fixture.baseURL), graph: makeTestWorkspaceGraph(),
       didFail: { _ in XCTFail("Site access denial must not expire the account") })
     defer { viewer.close() }
     let resource = try XCTUnwrap(viewer.resource("https://court.okou.app/"))

@@ -82,15 +82,15 @@ internal fun SessionEntryScreen(
     val windowHeight = currentWindowSizeDp().height
     val compact = windowHeight < EntryCompactHeight
     val groupSpacing = entrySpacing(compact)
-    if (state.stage == SessionStage.Restoring) {
+    if (state.stage == SessionStage.Restoring && !state.signingOut) {
         Box(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.Center) {
             EntryBrand(compact)
         }
         return
     }
-    val choosing = state.stage == SessionStage.ChooseWorkspace
+    val choosing = !state.signingOut && state.stage == SessionStage.ChooseWorkspace
     val noWorkspace = choosing && state.memberships.isEmpty()
-    val accessRemoved = state.stage == SessionStage.AccessRemoved
+    val accessRemoved = !state.signingOut && state.stage == SessionStage.AccessRemoved
     var activatedRow by remember { mutableStateOf<EntryRowFocus?>(null) }
     val rowFocus = remember { FocusRequester() }
     val windowFocused = LocalWindowInfo.current.isWindowFocused
@@ -99,13 +99,13 @@ internal fun SessionEntryScreen(
     var signOutFocused by remember(state.entryPageGeneration) { mutableStateOf(false) }
     var restoreSignOutFocus by remember(state.entryPageGeneration) { mutableStateOf(false) }
     val title =
-        when (state.stage) {
-            SessionStage.LoadingWorkspace -> R.string.auth_preparing_workspace
-            SessionStage.SigningOut -> R.string.auth_signing_out
-            SessionStage.ChooseWorkspace ->
+        when {
+            state.signingOut -> R.string.auth_signing_out
+            state.stage == SessionStage.LoadingWorkspace -> R.string.auth_preparing_workspace
+            choosing ->
                 if (noWorkspace) R.string.auth_no_workspace else R.string.auth_choose_workspace
-            SessionStage.AccessRemoved -> R.string.auth_access_removed
-            SessionStage.UpdateRequired -> R.string.auth_update_required
+            accessRemoved -> R.string.auth_access_removed
+            state.stage == SessionStage.UpdateRequired -> R.string.auth_update_required
             else -> R.string.auth_unavailable
         }
     val detail =
@@ -115,14 +115,14 @@ internal fun SessionEntryScreen(
             else -> null
         }
     val canRetry =
-        !state.working &&
+        !state.signingOut &&
+            !state.working &&
             !state.entryReadFailed &&
             (!choosing || noWorkspace) &&
-            state.stage != SessionStage.SigningOut &&
             state.stage != SessionStage.UpdateRequired
     val canSignOut =
-        state.stage != SessionStage.LoadingWorkspace &&
-            state.stage != SessionStage.SigningOut &&
+        !state.signingOut &&
+            state.stage != SessionStage.LoadingWorkspace &&
             state.stage != SessionStage.UpdateRequired
     val restoredRow = activatedRow?.takeIf { target ->
         choosing &&
@@ -160,7 +160,7 @@ internal fun SessionEntryScreen(
                 title,
                 detail,
                 compact = compact,
-                waiting = state.working,
+                waiting = state.signingOut || state.working,
             )
             if (choosing && !noWorkspace) {
                 SettingsGroup {
@@ -249,7 +249,10 @@ internal fun SessionEntryScreen(
                                 liveRegion = LiveRegionMode.Polite
                             },
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color =
+                                if (state.entryFailure == SessionEntryFailure.SignOut)
+                                    MaterialTheme.colorScheme.error
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
                         )
                     }
@@ -258,18 +261,22 @@ internal fun SessionEntryScreen(
         }
     }
     if (confirmSignOut && canSignOut) {
-        OkouConfirmationDialog(
-            title = stringResource(R.string.settings_sign_out_title),
-            confirm = stringResource(R.string.auth_sign_out),
-            onDismiss = { confirmSignOut = false },
-            onConfirm = {
-                restoreSignOutFocus = false
-                confirmSignOut = false
-                signOut()
-            },
-        ) {
-            Text(stringResource(R.string.settings_sign_out_body))
-        }
+        SignOutConfirmation({ confirmSignOut = false }, signOut)
+    }
+}
+
+@Composable
+internal fun SignOutConfirmation(dismiss: () -> Unit, signOut: () -> Unit) {
+    OkouConfirmationDialog(
+        title = stringResource(R.string.settings_sign_out_title),
+        confirm = stringResource(R.string.auth_sign_out),
+        onDismiss = dismiss,
+        onConfirm = {
+            dismiss()
+            signOut()
+        },
+    ) {
+        Text(stringResource(R.string.settings_sign_out_body))
     }
 }
 

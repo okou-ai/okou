@@ -254,6 +254,13 @@ runs:
           # Repository variables configure previews; production overrides the
           # same names through its GitHub Environment, like the Clerk bindings.
           add_var MCP_OAUTH_ISSUER MCP_OAUTH_ISSUER
+          workers="$(repo_var ANTIGRAVITY_SUBSCRIPTION_WORKERS)"
+          if [[ -n "$workers" ]]; then
+            # GitHub variables can contain formatted JSON. The environment file
+            # stores exactly one assignment per line.
+            workers="$(jq -ce 'arrays' <<< "$workers")"
+            add_env ANTIGRAVITY_SUBSCRIPTION_WORKERS "$workers"
+          fi
           # GitHub Environment production overrides the same repository keys.
           add_var GCP_LLM_PROJECT_ID GCP_LLM_PROJECT_ID
           add_var GCP_LLM_WORKLOAD_IDENTITY_PROVIDER GCP_LLM_WORKLOAD_IDENTITY_PROVIDER

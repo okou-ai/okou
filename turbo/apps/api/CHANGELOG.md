@@ -10,6 +10,51 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.119.1](https://github.com/okou-ai/okou/compare/api-v2.119.0...api-v2.119.1) (2026-11-24)
+
+
+### Performance Improvements
+
+* **api:** trim pending run commit result ([#50572](https://github.com/okou-ai/okou/issues/50572)) ([0bec3de](https://github.com/okou-ai/okou/commit/0bec3de9e9af11512cc04261b844bb2ff365859f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.122.0
+    * @okouai/core bumped to 8.870.2
+    * @okouai/db bumped to 2.65.1
+    * @okouai/pi-agent-runtime bumped to 1.52.64
+
+## [2.119.0](https://github.com/okou-ai/okou/compare/api-v2.118.0...api-v2.119.0) (2026-11-24)
+
+
+### Features
+
+* add member-wide connector account approval ([#50516](https://github.com/okou-ai/okou/issues/50516)) ([ff76d52](https://github.com/okou-ai/okou/commit/ff76d52e21a55cd8f3e34a513e7e5fcfd8ab1e1b))
+* **billing:** allow free workspaces to buy credits ([#50532](https://github.com/okou-ai/okou/issues/50532)) ([f79cdfd](https://github.com/okou-ai/okou/commit/f79cdfde1673397bf7716c1411dd68e8c3020875))
+
+
+### Bug Fixes
+
+* **ios:** discard drafts for unavailable chats ([#50503](https://github.com/okou-ai/okou/issues/50503)) ([4aeac42](https://github.com/okou-ai/okou/commit/4aeac42344c6a9c6a81bbb472d509e04548d8c1d))
+
+
+### Performance Improvements
+
+* **api:** remove redundant connector policy preparation ([#50537](https://github.com/okou-ai/okou/issues/50537)) ([519bc1a](https://github.com/okou-ai/okou/commit/519bc1a711128be1116ecd351babf60f86c15ccc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.121.0
+    * @okouai/core bumped to 8.870.1
+    * @okouai/db bumped to 2.65.0
+    * @okouai/pi-agent-runtime bumped to 1.52.63
+
 ## [2.118.0](https://github.com/okou-ai/okou/compare/api-v2.117.1...api-v2.118.0) (2026-11-24)
 
 

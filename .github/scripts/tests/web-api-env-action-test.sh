@@ -356,6 +356,7 @@ gateway_config_keys='[
 integration_api_origin="https://pr-123-api.okou.test"
 integration_api_url="$integration_api_origin/"
 integration_mcp_issuer="https://clerk-dev.example.test"
+pilot_workers='[{"orgId":"org_pilot","userId":"user_pilot","machineId":"mch_pilot","loginHost":"tester@agy.example.test"}]'
 integration_doppler_json="$(
   jq -cn --argjson keys "$integration_config_keys" --argjson gateway_keys "$gateway_config_keys" '
     reduce ($keys + $gateway_keys)[] as $key ({}; .[$key] = ("doppler-integration-" + $key)) |
@@ -376,11 +377,12 @@ integration_repo_secrets="$(
   ) + {MARKETING_REWARDS_EVENTS_SECRET: "github-marketing-events-secret"}' <<< "$integration_doppler_json"
 )"
 integration_repo_vars="$(
-  jq -c --arg issuer "$integration_mcp_issuer" '
+  jq -c --arg issuer "$integration_mcp_issuer" --arg workers "$(jq . <<< "$pilot_workers")" '
     del(.MARKETING_REWARDS_EVENTS_SECRET) + {
       MARKETING_REWARDS_EVENTS_ORIGIN: "https://events.example.test",
       WHATSAPP_ALLOWED_COUNTRY_PREFIXES: "+1,+49",
       MCP_OAUTH_ISSUER: $issuer,
+      ANTIGRAVITY_SUBSCRIPTION_WORKERS: $workers,
       MCP_RESOURCE_URL: "https://wrong-resource.example.test/mcp"
     }
   ' <<< "$integration_repo_secrets"
@@ -417,6 +419,7 @@ for integration_app in api web; do
     assert_api_backend_url_canonical "$integration_env_file" "$integration_api_url"
     assert_env_value "$integration_env_file" MCP_RESOURCE_URL "$integration_api_origin/mcp"
     assert_env_value "$integration_env_file" MCP_OAUTH_ISSUER "$integration_mcp_issuer"
+    assert_env_value "$integration_env_file" ANTIGRAVITY_SUBSCRIPTION_WORKERS "$pilot_workers"
     assert_env_value "$integration_env_file" FEISHU_CALLBACK_BASE_URL "$integration_api_url"
     assert_env_value "$integration_env_file" FINICITY_WEBHOOK_BASE_URL "$integration_api_url"
   else
@@ -434,6 +437,7 @@ for integration_app in api web; do
     assert_api_backend_url_absent "$integration_env_file"
     assert_env_key_absent "$integration_env_file" MCP_RESOURCE_URL
     assert_env_key_absent "$integration_env_file" MCP_OAUTH_ISSUER
+    assert_env_key_absent "$integration_env_file" ANTIGRAVITY_SUBSCRIPTION_WORKERS
   fi
 done
 
@@ -628,6 +632,7 @@ assert_env_value "$production_api_env_file" FEISHU_CALLBACK_BASE_URL "https://pr
 assert_env_value "$production_api_env_file" FINICITY_WEBHOOK_BASE_URL "https://pr-123-api-backend.okou.test"
 assert_env_value "$production_api_env_file" ATOM_URL "https://atom.github.test"
 assert_machine_secret_canonical "$production_api_env_file" "github-atom-machine-secret"
+assert_env_key_absent "$production_api_env_file" ANTIGRAVITY_SUBSCRIPTION_WORKERS
 assert_env_value "$production_api_env_file" MICROSOFT_TEAMS_BOT_APP_ID ""
 assert_env_value "$production_api_env_file" MICROSOFT_TEAMS_BOT_APP_PASSWORD "doppler-teams-bot-app-password"
 assert_env_value "$production_api_env_file" MICROSOFT_TEAMS_APP_TENANT_ID ""

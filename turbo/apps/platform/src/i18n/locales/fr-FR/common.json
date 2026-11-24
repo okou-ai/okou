@@ -5847,6 +5847,15 @@
       "actions": {
         "resetUsage": "Réinitialiser l'utilisation"
       },
+      "antigravity": {
+        "check": "Vérifier la connexion",
+        "error": "Vérifiez l’environnement de connexion qui vous a été attribué et réessayez.",
+        "expired": "La connexion a expiré. Reconnectez votre compte.",
+        "terminal": "Exécutez cette commande dans votre terminal, puis connectez-vous avec votre compte Google AI personnel.",
+        "title": "Google AI (Antigravity)",
+        "unassigned": "Demandez à un administrateur de vous attribuer un terminal de connexion.",
+        "verify": "Cette commande utilise votre abonnement pour envoyer une requête à chacun des modèles Neon, Carbon et Hydrogen."
+      },
       "deviceAuth": {
         "claude": {
           "authorizationCode": "Code d'autorisation",

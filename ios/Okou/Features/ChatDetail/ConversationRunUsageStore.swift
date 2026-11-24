@@ -140,7 +140,8 @@ private final class ConversationRunUsageBatch {
 /// One immutable conversation scope; only Runs represented in the render window own reads.
 @MainActor @Observable
 final class ConversationRunUsageStore {
-  let stateStore = CCState.Store()
+  /// The workspace session's Store, which keeps each run's usage read.
+  @ObservationIgnored let store: CCState.Store
   private(set) var resources: [String: ConversationRunUsageResource] = [:]
   private let sync: ChatSync
   private let threadID: String
@@ -152,7 +153,11 @@ final class ConversationRunUsageStore {
   private var generation = UUID()
   private var closed = false
 
-  init(sync: ChatSync, threadID: String, didFail: @escaping @MainActor (Error) -> Void) {
+  init(
+    sync: ChatSync, threadID: String, graph: CCState.Store,
+    didFail: @escaping @MainActor (Error) -> Void
+  ) {
+    store = graph
     self.sync = sync
     self.threadID = threadID
     self.didFail = didFail
@@ -167,7 +172,7 @@ final class ConversationRunUsageStore {
     recentRunIDs = Array(recentRunIDs.suffix(max(128, wanted.count)))
     let retained = Set(recentRunIDs)
     for (id, resource) in resources where !retained.contains(id) {
-      do { try resource.close(in: stateStore) } catch { didFail(error) }
+      do { try resource.close(in: store) } catch { didFail(error) }
     }
     resources = resources.filter { retained.contains($0.key) }
     requestedEvents = requestedEvents.filter { retained.contains($0.key) }
@@ -185,7 +190,7 @@ final class ConversationRunUsageStore {
     closed = true
     stopReading()
     for resource in resources.values {
-      do { try resource.close(in: stateStore) } catch { didFail(error) }
+      do { try resource.close(in: store) } catch { didFail(error) }
     }
     resources = [:]
     requestedEvents = [:]
@@ -228,13 +233,13 @@ final class ConversationRunUsageStore {
       for (id, read) in batch.reads {
         requestedEvents[id] = events[id]
         if let existing = resources[id] {
-          try existing.use(read, in: stateStore)
+          try existing.use(read, in: store)
         } else {
           resources[id] = ConversationRunUsageResource(runID: id, read: read)
         }
       }
       // The conversation starts one shared batch, independently of mounted subscribers.
-      _ = try stateStore.get(batch.value)
+      _ = try store.get(batch.value)
     } catch { didFail(error) }
   }
 }

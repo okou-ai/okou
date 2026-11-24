@@ -142,7 +142,7 @@ final class WorkspaceStore {
   /// Previews of results opened from workspace search, which belong to no chat.
   @ObservationIgnored lazy var searchArtifacts = MessageArtifactStore(
     service: commands.artifacts, threadID: nil, webURL: webURL, markdown: messageMarkdown,
-    didFail: { [weak self] in self?.handle($0) })
+    graph: resources.store, didFail: { [weak self] in self?.handle($0) })
 
   @ObservationIgnored lazy var list = ThreadListStore(
     client: client, sync: sync, commands: commands, resources: resources,
@@ -474,7 +474,7 @@ final class WorkspaceStore {
       composer: ComposerDraftStore(
         target: .unassigned, commands: commands, graph: resources.store, didFail: { _ in }),
       viewer: MessageAttachmentStore(
-        commands: commands, didFail: { [weak self] in self?.handle($0) }),
+        commands: commands, graph: resources.store, didFail: { [weak self] in self?.handle($0) }),
       transition: transition)
     newChatSubmission = submission
     defer {

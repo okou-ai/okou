@@ -182,7 +182,7 @@ test("a restored upgrade dialog defers checkout feedback until closing completes
   expect(plans).not.toBeInTheDocument();
 });
 
-test("an upgrade-required exhaustion card requests the reward questionnaire with the server-issued offer", async () => {
+function prepareExhaustedCredits() {
   const telemetry = prepareBilling();
   context.mocks.api(billingStatusContract.get, ({ respond }) => {
     return respond(200, { ...freeBilling(), canBuyCredits: false });
@@ -211,6 +211,11 @@ test("an upgrade-required exhaustion card requests the reward questionnaire with
       },
     ],
   });
+  return telemetry;
+}
+
+test("an upgrade-required exhaustion card requests the reward questionnaire with the server-issued offer", async () => {
+  const telemetry = prepareExhaustedCredits();
   await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
   await readyChat();
   await waitFor(() => {
@@ -227,6 +232,50 @@ test("an upgrade-required exhaustion card requests the reward questionnaire with
   expect(telemetry.surveyDisplays[0]?.options?.properties).toMatchObject({
     billing_feedback_kind: "credits_exhausted",
     billing_feedback_reward_token: "signed-offer-from-api",
+  });
+});
+
+test("the exhaustion feedback entry follows PostHog survey availability", async () => {
+  const telemetry = prepareExhaustedCredits();
+  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
+  await readyChat();
+  await waitFor(() => {
+    expect(button("Share feedback")).toBeInTheDocument();
+  });
+
+  telemetry.setActiveSurveyIds([]);
+  telemetry.refreshFeatureFlags();
+  await waitFor(() => {
+    expect(screen.queryByLabelText("Share feedback")).not.toBeInTheDocument();
+  });
+  expect(button("Upgrade to Pro")).toBeInTheDocument();
+
+  telemetry.setActiveSurveyIds([BILLING_FEEDBACK_SURVEYS.credits_exhausted]);
+  telemetry.refreshFeatureFlags();
+  await waitFor(() => {
+    expect(button("Share feedback")).toBeInTheDocument();
+  });
+
+  telemetry.setActiveSurveyIds([BILLING_FEEDBACK_SURVEYS.upgrade_dismissed]);
+  telemetry.refreshFeatureFlags();
+  await waitFor(() => {
+    expect(screen.queryByLabelText("Share feedback")).not.toBeInTheDocument();
+  });
+  expect(button("Upgrade to Pro")).toBeInTheDocument();
+});
+
+test("the exhaustion feedback entry waits for PostHog targeting before appearing", async () => {
+  const telemetry = prepareExhaustedCredits();
+  const flags = telemetry.deferFeatureFlags();
+  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
+  await readyChat();
+  await flags.subscribed;
+  expect(button("Upgrade to Pro")).toBeInTheDocument();
+  expect(screen.queryByLabelText("Share feedback")).not.toBeInTheDocument();
+
+  flags.resolve();
+  await waitFor(() => {
+    expect(button("Share feedback")).toBeInTheDocument();
   });
 });
 

@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.24.4](https://github.com/okou-ai/okou/compare/runner-executor-v0.24.3...runner-executor-v0.24.4) (2026-11-24)
+
+## [0.24.3](https://github.com/okou-ai/okou/compare/runner-executor-v0.24.2...runner-executor-v0.24.3) (2026-11-24)
+
+
+### Performance Improvements
+
+* **runner:** compact decoded storage apply manifests ([#50508](https://github.com/okou-ai/okou/issues/50508)) ([65487f7](https://github.com/okou-ai/okou/commit/65487f765b77fdb941a715f238660dc3add05f81))
+
 ## [0.24.2](https://github.com/okou-ai/okou/compare/runner-executor-v0.24.1...runner-executor-v0.24.2) (2026-11-24)
 
 ## [0.24.1](https://github.com/okou-ai/okou/compare/runner-executor-v0.24.0...runner-executor-v0.24.1) (2026-11-24)

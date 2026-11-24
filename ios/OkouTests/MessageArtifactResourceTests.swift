@@ -536,7 +536,8 @@ private struct ArtifactReadFixture {
     let commands = ChatCommands(client: http.client, sync: ChatSync(client: http.client))
     let viewer = MessageArtifactStore(
       service: commands.artifacts, threadID: "thread", webURL: http.baseURL,
-      markdown: MessageMarkdownCache(baseURL: http.baseURL), didFail: didFail)
+      markdown: MessageMarkdownCache(baseURL: http.baseURL), graph: makeTestWorkspaceGraph(),
+      didFail: didFail)
     owner.addTeardownBlock { @MainActor in
       viewer.close()
       commands.artifacts.closeFileCache()
