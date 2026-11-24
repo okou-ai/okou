@@ -288,7 +288,7 @@ class UpdateRootTest {
             compose.activityRule.scenario.recreate()
             val release = updateRelease("99.1234.5678").copy(size = 123_456_789)
             compose.runOnIdle { app.fixture.response = AndroidUpdates(null, release) }
-            openUpdateSettings()
+            openUpdateSettings(viaOverflow = false)
             updateSettingsRow().performScrollTo().performClick()
             val heading = updateDetailsHeading()
             val close = updateDetailText("Close")
@@ -531,16 +531,17 @@ class UpdateRootTest {
         assertNoPlatformLaunch()
     }
 
-    private fun openUpdateSettings() {
+    private fun openUpdateSettings(viaOverflow: Boolean = true) {
         compose.runOnIdle {
             (app.authentication as TestAuthentication).state.value = testAuthenticationState()
         }
-        val more = app.getString(R.string.chat_more_actions)
+        val entry =
+            app.getString(if (viaOverflow) R.string.chat_more_actions else R.string.settings)
         compose.waitUntil(10_000) {
-            compose.onAllNodesWithContentDescription(more).fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodesWithContentDescription(entry).fetchSemanticsNodes().isNotEmpty()
         }
-        compose.onNodeWithContentDescription(more).performClick()
-        compose.onNodeWithText(app.getString(R.string.settings)).performClick()
+        compose.onNodeWithContentDescription(entry).performClick()
+        if (viaOverflow) compose.onNodeWithText(app.getString(R.string.settings)).performClick()
     }
 
     private fun updateSettingsRow() =
