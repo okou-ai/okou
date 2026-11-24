@@ -9,6 +9,7 @@ import ai.okou.android.TestAuthentication
 import ai.okou.android.TestOkouApplication
 import ai.okou.android.api.generated.UserPreferencesLocale
 import ai.okou.android.api.generated.UserPreferencesTheme
+import ai.okou.android.awaitKeyboardFocus
 import ai.okou.android.testAuthenticationState
 import ai.okou.android.testPreferences
 import android.graphics.Rect
@@ -18,6 +19,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
+import androidx.test.uiautomator.Condition
 import androidx.test.uiautomator.SearchCondition
 import androidx.test.uiautomator.Searchable
 import androidx.test.uiautomator.StaleObjectException
@@ -104,14 +106,20 @@ class ScreenshotScenario {
         ScreenshotCapture.capture("catalog-phone.png")
         tap(By.text("文件"))
         val query = By.desc("搜索成果")
-        read(query) { field ->
-            field.text = "unmatched"
-            true
-        }
+        focusWithTab(query)
+        device.executeShellCommand("input text unmatched")
+        assertTrue(
+            "The catalog did not receive the keyword typed into the focused native field",
+            device.wait(object : Condition<UiDevice, Boolean> {
+                override fun apply(device: UiDevice): Boolean =
+                    artifacts.catalogQueries.any { (_, keyword) -> keyword == "unmatched" }
+            }, 15_000),
+        )
         see(By.text("没有匹配的成果"))
         assertTrue(actionBounds("清除关键词").height() >= 48)
         ScreenshotCapture.capture("empty-search-phone.png")
-        tap(By.text("清除关键词"))
+        focusWithTab(By.text("清除关键词"))
+        assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_ENTER))
         see(By.text(artifacts.checklist.title))
         see(By.text("昨天"))
         verifyFocus(query)
@@ -119,7 +127,8 @@ class ScreenshotScenario {
         see(By.text("此分类暂无成果"))
         assertTrue(actionBounds("查看全部").height() >= 48)
         ScreenshotCapture.capture("empty-filter-phone.png")
-        tap(By.text("查看全部"))
+        focusWithTab(By.text("查看全部"))
+        assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_ENTER))
         see(By.text(artifacts.image.title))
         verifyFocus(By.text("全部"))
     }
@@ -155,15 +164,18 @@ class ScreenshotScenario {
     }
 
     private fun focusWithTab(selector: BySelector) {
-        val focused = By.copy(selector).focused(true).pkg(app.packageName)
+        val scoped = By.copy(selector).pkg(app.packageName)
+        val focused = By.copy(scoped).focused(true)
+        val focusedControl = By.focused(true).hasChild(scoped)
         repeat(18) {
-            if (device.hasObject(focused)) return
+            if (device.hasObject(focused) || device.hasObject(focusedControl)) return
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_TAB))
         }
         verifyFocus(selector)
     }
 
-    private fun verifyFocus(selector: BySelector) = see(By.copy(selector).focused(true))
+    private fun verifyFocus(selector: BySelector) =
+        device.awaitKeyboardFocus(By.copy(selector).pkg(app.packageName))
 
     private fun bounds(selector: BySelector): Rect = read(selector) { it.visibleBounds }
 
@@ -178,7 +190,9 @@ class ScreenshotScenario {
     }
 
     private fun see(selector: BySelector) {
-        assertTrue("Missing $selector", device.wait(Until.hasObject(By.copy(selector).pkg(app.packageName)), 15_000))
+        val present = device.wait(Until.hasObject(By.copy(selector).pkg(app.packageName)), 15_000)
+        if (!present) runCatching { ScreenshotCapture.capture("diagnostic.png") }
+        assertTrue("Missing $selector", present)
     }
 
     private fun <T : Any> read(selector: BySelector, snapshot: (UiObject2) -> T?): T {
