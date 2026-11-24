@@ -59,6 +59,8 @@ class ScreenshotScenario {
         val auth = app.authentication as TestAuthentication
         val originalAuth = auth.state.value
         val originalChat = app.chatService
+        val originalWorkflows = app.workflows
+        val originalConnectors = app.connectorService
         val originalOnline = app.connectivity.value
         val originalPreferences = app.snapshotApiPreferences()
         val originalInitialPreferences = app.initialPreferences
@@ -155,6 +157,11 @@ class ScreenshotScenario {
 
         val loading = desc(R.string.chat_loading)
         val progress = desc(R.string.chat_syncing)
+        fun awaitTools() {
+            find(desc(R.string.workspace_workflows).enabled(true))
+            find(desc(R.string.workspace_connectors).enabled(true))
+        }
+
         fun seedList(user: String, unreadAgeMillis: Long) {
             val workspace =
                 WorkspaceIdentity(
@@ -204,6 +211,8 @@ class ScreenshotScenario {
             device.executeShellCommand("settings put system font_scale 1.0")
             device.executeShellCommand("settings put global animator_duration_scale 0")
             app.chatService = fixture.service
+            app.workflows = fixture.service.workflowService
+            app.connectorService = fixture.service.connectors
             app.connectivity.value = true
             app.initialPreferences =
                 testPreferences()
@@ -215,6 +224,7 @@ class ScreenshotScenario {
             auth.state.value = testAuthenticationState(user = "list-initial-${UUID.randomUUID()}")
             ActivityScenario.launch(MainActivity::class.java).use {
                 device.awaitChatList(labels)
+                awaitTools()
                 find(text(focusChat))
                 selectFilter(R.string.chat_unread)
                 find(loading)
@@ -240,25 +250,29 @@ class ScreenshotScenario {
             auth.state.value = testAuthenticationState(user = cachedUser)
             ActivityScenario.launch(MainActivity::class.java).use {
                 device.awaitChatList(labels)
+                awaitTools()
                 find(text(projectName))
                 find(text(focusChat))
                 check(!device.hasObject(progress))
                 ScreenshotCapture.capture("phone-cached-inbox.png")
                 selectFilter(R.string.chat_unread)
+                val viewport = device.awaitChatList(labels).visibleBounds
                 val before = find(text(focusChat)).visibleBounds
                 check(!device.hasObject(loading))
                 check(!device.hasObject(progress))
 
                 firstRetryableResponse.countDown()
                 val bar = find(progress).visibleBounds
+                val after = find(text(focusChat)).visibleBounds
+                ScreenshotCapture.capture("phone-retrying-unread.png")
                 check(attempts.get() >= 3)
                 check(bar.height() == 4) { "Expected 4 dp progress height at mdpi, saw $bar" }
-                check(bar.top == device.awaitChatList(labels).visibleBounds.top) {
-                    "Progress must overlay the list's leading edge"
+                // Accessibility clips the list's visible bounds when the separate overlay appears.
+                check(bar.top == viewport.top) {
+                    "Progress $bar did not overlay the unobscured viewport edge $viewport"
                 }
-                check(find(text(focusChat)).visibleBounds == before)
+                check(after == before) { "The chat row shifted from $before to $after" }
                 check(!device.hasObject(text(R.string.chat_empty_unread)))
-                ScreenshotCapture.capture("phone-retrying-unread.png")
 
                 check(fourthRequest.await(10, TimeUnit.SECONDS)) {
                     "Fourth indicator request did not start"
@@ -288,13 +302,16 @@ class ScreenshotScenario {
             ActivityScenario.launch(MainActivity::class.java).use {
                 val region = device.awaitChatList(labels).visibleBounds
                 check(region.width() == 344) { "Expected a 344 dp wide list at mdpi, saw $region" }
+                awaitTools()
                 find(text(focusChat))
                 check(!device.hasObject(progress))
                 selectFilter(R.string.chat_unread)
                 val bar = find(progress).visibleBounds
-                check(bar.height() == 4 && bar.width() == 344 && bar.top == region.top)
                 find(text(focusChat))
                 ScreenshotCapture.capture("wide-stale-unread.png")
+                check(bar.height() == 4 && bar.width() == 344 && bar.top == region.top) {
+                    "Expected a 344 by 4 dp overlay immediately above $region, saw $bar"
+                }
                 wideResponse.countDown()
                 find(text(R.string.chat_empty_unread))
             }
@@ -312,6 +329,8 @@ class ScreenshotScenario {
                     { app.restoreApiPreferences(originalPreferences) },
                     { app.initialPreferences = originalInitialPreferences },
                     { app.chatService = originalChat },
+                    { app.workflows = originalWorkflows },
+                    { app.connectorService = originalConnectors },
                     { app.connectivity.value = originalOnline },
                     { auth.state.value = originalAuth },
                     {
