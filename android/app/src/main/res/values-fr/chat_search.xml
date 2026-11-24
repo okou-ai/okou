@@ -27,6 +27,7 @@
     <string name="chat_search_short">Rechercher</string>
     <string name="chat_search_partial_local">Certains résultats n’ont pas pu être chargés. Seules les discussions enregistrées sont affichées.</string>
     <string name="chat_search_saved_chats">Impossible d’actualiser. Les discussions enregistrées sont affichées.</string>
+    <string name="chat_search_saved_chats_no_matches">La recherche se limite aux discussions enregistrées. Aucun résultat.</string>
     <string name="chat_search_saved_results">Impossible d’actualiser. Les résultats précédents sont affichés.</string>
     <string name="chat_search_messages_failed">Impossible de rechercher des messages</string>
     <string name="chat_search_workflows_failed">Impossible de rechercher des workflows</string>

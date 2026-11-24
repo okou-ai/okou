@@ -541,16 +541,27 @@ private fun SearchResults(
             workspacePreparation == null &&
                 onOpenArtifact == null &&
                 type == WorkspaceSearchType.Artifacts
-    val hasRemoteResults =
-        messages.isNotEmpty() || workflowRead is SearchRead.Ready || artifacts.isNotEmpty()
+    val hasUsableRemoteSource =
+        messages.isNotEmpty() ||
+            (messageRead is SearchRead.Ready && !needsMessageChats) ||
+            workflowRead is SearchRead.Ready ||
+            artifactPage != null
+    val onlySavedChats = confirmedChats && !hasUsableRemoteSource
     val readFailure =
         when {
             grouped &&
                 (messageFailure || workflowFailure || artifactFailure || chatRefreshFailed) ->
-                if (confirmedChats && !hasRemoteResults) R.string.chat_search_partial_local
-                else R.string.chat_search_unavailable
+                when {
+                    onlySavedChats && items.isEmpty() -> R.string.chat_search_saved_chats_no_matches
+                    onlySavedChats -> R.string.chat_search_partial_local
+                    items.isEmpty() -> R.string.chat_search_failed
+                    else -> R.string.chat_search_unavailable
+                }
             needsChatList && !confirmedChats && listFailed -> R.string.chat_list_first_load_failed
-            showChats && chatRefreshFailed -> R.string.chat_search_saved_chats
+            showChats && chatRefreshFailed ->
+                if (keyword.isNotEmpty() && items.isEmpty())
+                    R.string.chat_search_saved_chats_no_matches
+                else R.string.chat_search_saved_chats
             grouped -> null
             keyword.isEmpty() -> null
             type == WorkspaceSearchType.Messages && messageFailure ->
@@ -564,7 +575,7 @@ private fun SearchResults(
                 else R.string.chat_search_artifacts_failed
             else -> null
         }
-    val status = readFailure.takeUnless { remotePending }
+    val status = readFailure.takeUnless { pending }
     val showEmpty =
         items.isEmpty() &&
             !waitingForList &&
@@ -573,19 +584,11 @@ private fun SearchResults(
             (!remotePending || reads.all { it == null || it is SearchRead.Ready })
     val showPending =
         key(keyword, type) {
-            rememberChatWaitIndicator(
-                remotePending || waitingForList && items.isEmpty() && status == null,
-                delayMillis = 250,
-            )
+            rememberChatWaitIndicator(pending, delayMillis = 250)
         }
-    val showSkeleton = showPending && items.isEmpty() && status == null && !showEmpty
-    val showProgress = showPending && items.isNotEmpty() && remotePending
-    val errorTitle =
-        status
-            ?.takeIf { items.isEmpty() }
-            ?.let {
-                if (grouped) R.string.chat_search_failed else it
-            }
+    val showSkeleton = showPending && items.isEmpty() && !showEmpty
+    val showProgress = showPending && items.isNotEmpty()
+    val errorTitle = status.takeIf { items.isEmpty() }
     val inlineStatus = status.takeIf { errorTitle == null }
     val visibleItems =
         remember(inlineStatus, items) {

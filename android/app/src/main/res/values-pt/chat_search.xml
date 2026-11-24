@@ -27,6 +27,7 @@
     <string name="chat_search_short">Buscar</string>
     <string name="chat_search_partial_local">Não foi possível carregar alguns resultados. Apenas as conversas salvas são exibidas.</string>
     <string name="chat_search_saved_chats">Não foi possível atualizar. As conversas salvas são exibidas.</string>
+    <string name="chat_search_saved_chats_no_matches">A pesquisa está limitada às conversas salvas. Nenhuma correspondência.</string>
     <string name="chat_search_saved_results">Não foi possível atualizar. Os resultados anteriores são exibidos.</string>
     <string name="chat_search_messages_failed">Não foi possível buscar mensagens</string>
     <string name="chat_search_workflows_failed">Não foi possível buscar workflows</string>
