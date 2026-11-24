@@ -8,7 +8,7 @@ import {
   hostedSiteReturnPathSchema,
 } from "@okouai/api-contracts/contracts/hosted-site-access";
 import {
-  hostedSiteRecoveryTarget,
+  hostedSiteRecoveryCandidate,
   hostedSiteRecoveryUrl,
 } from "../lib/hosted-site-access.ts";
 import { accept } from "../lib/accept.ts";
@@ -32,7 +32,7 @@ export const setupHostedSiteAuthorizationPage$ = command(
     );
     const target =
       input.success && input.data.origin === new URL(input.data.origin).origin
-        ? hostedSiteRecoveryTarget(
+        ? hostedSiteRecoveryCandidate(
             new URL(input.data.returnTo ?? "/", input.data.origin).href,
           )
         : null;
@@ -57,16 +57,14 @@ export const setupHostedSiteAuthorizationPage$ = command(
     );
     signal.throwIfAborted();
     if (!result.ok) {
-      window.location.replace(
-        hostedSiteRecoveryUrl(target.href, "unavailable"),
-      );
+      window.location.replace(hostedSiteRecoveryUrl(target, "unavailable"));
       return;
     }
     const response = result.value;
     if (response.status !== 200) {
       window.location.replace(
         hostedSiteRecoveryUrl(
-          target.href,
+          target,
           response.status === 401
             ? "authenticate"
             : response.status === 403
@@ -84,9 +82,7 @@ export const setupHostedSiteAuthorizationPage$ = command(
       !hostedSiteAuthCodeSchema.safeParse(callback.searchParams.get("code"))
         .success
     ) {
-      window.location.replace(
-        hostedSiteRecoveryUrl(target.href, "unavailable"),
-      );
+      window.location.replace(hostedSiteRecoveryUrl(target, "unavailable"));
       return;
     }
     window.location.replace(callback.href);

@@ -1,5 +1,6 @@
 import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
+import { hostContract } from "@okouai/api-contracts/contracts/host";
 import {
   setupPage,
   queryAllByRoleFast,
@@ -63,6 +64,30 @@ test("expired website sessions offer a fresh authorization for the original path
   expect(action("button", "Switch account")).toBeEnabled();
 });
 
+test("a verified custom domain can restart authorization for the original path", async () => {
+  const url = "https://report.customer-example.net/report?view=summary";
+  context.mocks.api(hostContract.resolveCustomDomain, ({ respond }) => {
+    return respond(200, {
+      siteId: "00000000-0000-4000-8000-000000000001",
+      publicSlug: "report",
+      revision: "00000000-0000-4000-8000-000000000002",
+    });
+  });
+  await setupPage({
+    context,
+    host: "app.okou.ai",
+    path: path("expired", url),
+    auth: null,
+  });
+  expect(
+    screen.getByRole("heading", { name: "Verify your access again" }),
+  ).toBeInTheDocument();
+  expect(action("link", "Sign in")).toHaveAttribute(
+    "href",
+    `https://report.customer-example.net/.okou/auth/start?${new URLSearchParams({ returnTo: "/report?view=summary" })}`,
+  );
+});
+
 test("a denied website offers account switching and access guidance", async () => {
   await setupPage({ context, host: "app.okou.ai", path: path("denied") });
   expect(
@@ -91,9 +116,13 @@ test.each([
   String.raw`https://demo.okou.app/\attacker.example/report`,
   `https://pv-${"a".repeat(48)}.okou.app/`,
   "https://demo.okou.app/.okou/auth/callback?code=secret",
+  "https://removed.customer-example.net/report",
 ])(
   "an invalid recovery target %s cannot become a sign-in destination",
   async (url) => {
+    context.mocks.api(hostContract.resolveCustomDomain, ({ respond }) => {
+      return respond(200, null);
+    });
     await setupPage({
       context,
       host: "app.okou.ai",

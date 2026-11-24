@@ -12,41 +12,55 @@ const codeChallenge = "b".repeat(43);
 const path = `/hosted-site-authorize?${new URLSearchParams({ siteId, origin, state, codeChallenge })}`;
 
 // The browser navigation is the external result; it must never carry a Clerk JWT.
-test("the trusted App returns only a one-use authorization code to the exact site", async () => {
-  const callbackUrl = `${origin}/.okou/auth/callback?code=${"c".repeat(64)}&state=${state}`;
-  const redirect = vi
-    .spyOn(window.location, "replace")
-    .mockImplementation(() => {});
-  context.mocks.api(
-    hostContract.authorizeSiteSession,
-    ({ body, params, respond }) => {
-      expect(params.siteId).toBe(siteId);
-      expect(body).toStrictEqual({ origin, state, codeChallenge });
-      return respond(200, { callbackUrl });
-    },
-  );
-  await startPage({ context, host: "app.okou.ai", path });
-  await waitFor(() => {
-    return expect(redirect).toHaveBeenCalledWith(callbackUrl);
-  });
-});
-
-test("a denied website navigates to the dedicated access page", async () => {
-  const redirect = vi
-    .spyOn(window.location, "replace")
-    .mockImplementation(() => {});
-  context.mocks.api(hostContract.authorizeSiteSession, ({ respond }) => {
-    return respond(403, {
-      error: { code: "FORBIDDEN", message: "Website access is unavailable" },
-    });
-  });
-  await startPage({ context, host: "app.okou.ai", path });
-  await waitFor(() => {
-    expect(redirect).toHaveBeenCalledWith(
-      `https://app.okou.ai/hosted-site-access?${new URLSearchParams({ url: `${origin}/`, reason: "denied" })}`,
+test.each([origin, "https://report.customer-example.net"])(
+  "the trusted App returns only a one-use authorization code to the exact site at %s",
+  async (origin) => {
+    const callbackUrl = `${origin}/.okou/auth/callback?code=${"c".repeat(64)}&state=${state}`;
+    const redirect = vi
+      .spyOn(window.location, "replace")
+      .mockImplementation(() => {});
+    context.mocks.api(
+      hostContract.authorizeSiteSession,
+      ({ body, params, respond }) => {
+        expect(params.siteId).toBe(siteId);
+        expect(body).toStrictEqual({ origin, state, codeChallenge });
+        return respond(200, { callbackUrl });
+      },
     );
-  });
-});
+    await startPage({
+      context,
+      host: "app.okou.ai",
+      path: `/hosted-site-authorize?${new URLSearchParams({ siteId, origin, state, codeChallenge })}`,
+    });
+    await waitFor(() => {
+      return expect(redirect).toHaveBeenCalledWith(callbackUrl);
+    });
+  },
+);
+
+test.each([origin, "https://report.customer-example.net"])(
+  "a denied website at %s navigates to the dedicated access page",
+  async (origin) => {
+    const redirect = vi
+      .spyOn(window.location, "replace")
+      .mockImplementation(() => {});
+    context.mocks.api(hostContract.authorizeSiteSession, ({ respond }) => {
+      return respond(403, {
+        error: { code: "FORBIDDEN", message: "Website access is unavailable" },
+      });
+    });
+    await startPage({
+      context,
+      host: "app.okou.ai",
+      path: `/hosted-site-authorize?${new URLSearchParams({ siteId, origin, state, codeChallenge })}`,
+    });
+    await waitFor(() => {
+      expect(redirect).toHaveBeenCalledWith(
+        `https://app.okou.ai/hosted-site-access?${new URLSearchParams({ url: `${origin}/`, reason: "denied" })}`,
+      );
+    });
+  },
+);
 
 test.each([401, 500] as const)(
   "authorization status %s preserves the website destination for recovery",

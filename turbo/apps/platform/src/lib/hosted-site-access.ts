@@ -47,7 +47,8 @@ export function hostedSiteRecoveryReason(
   return "unavailable";
 }
 
-export function hostedSiteRecoveryTarget(value: string | null): URL | null {
+/** Syntax only; custom origins still require the API's current binding authority. */
+export function hostedSiteRecoveryCandidate(value: string | null): URL | null {
   if (!value || !URL.canParse(value)) {
     return null;
   }
@@ -61,8 +62,10 @@ export function hostedSiteRecoveryTarget(value: string | null): URL | null {
     url.port ||
     url.username ||
     url.password ||
-    !/^[a-z0-9][a-z0-9-]*$/u.test(label) ||
-    /^(?:pv|ps|sh)-/u.test(label) ||
+    url.origin === location.origin ||
+    (url.hostname.endsWith(`.${domain}`) &&
+      (!/^[a-z0-9][a-z0-9-]*$/u.test(label) ||
+        /^(?:pv|ps|sh)-/u.test(label))) ||
     !hostedSiteReturnPathSchema.safeParse(`${url.pathname}${url.search}`)
       .success
   ) {
@@ -71,12 +74,18 @@ export function hostedSiteRecoveryTarget(value: string | null): URL | null {
   return url;
 }
 
+export function hostedSiteRecoveryTarget(value: string | null): URL | null {
+  const target = hostedSiteRecoveryCandidate(value);
+  return target?.hostname.endsWith(`.${resolveEditableHostedSiteDomain()}`)
+    ? target
+    : null;
+}
+
 export function hostedSiteRecoveryUrl(
-  siteUrl: string | null,
+  target: URL | null,
   reason: HostedSiteAccessReason,
 ): string {
   const url = new URL(HOSTED_SITE_ACCESS_PATH, location.origin);
-  const target = hostedSiteRecoveryTarget(siteUrl);
   if (target) {
     url.searchParams.set("url", target.href);
   }
