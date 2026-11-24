@@ -2012,7 +2012,7 @@ jobs:
   cli-e2e-02-playwright:
     name: cli-e2e-02-playwright
     runs-on: ubuntu-latest
-    # Two four-minute attempts plus setup, account cleanup, and reporting.
+    # Smoke retries plus bounded, explicitly opted-in acceptance and cleanup.
     timeout-minutes: 20
     concurrency:
       group: cli-e2e-02-playwright-${{ needs.prepare.outputs.job-ref }}
@@ -2069,6 +2069,7 @@ jobs:
             --config playwright/playwright.config.ts \
             --project=chat-smoke
         env:
+          RUN_ARTIFACT_SOURCE_ACCEPTANCE: ${{ github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'acceptance:creation-source') && 'true' || 'false' }}
           E2E_CLERK_RESOURCE_DIR: /tmp/e2e-clerk-playwright
           OKOU_API_BACKEND_URL: ${{ needs.deploy-api.outputs.preview-url }}
           OKOU_APP_URL: ${{ needs.deploy-app.outputs.preview-url }}
@@ -2085,6 +2086,15 @@ jobs:
           E2E_CLERK_RESOURCE_DIR: /tmp/e2e-clerk-playwright
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           JOB_REF: ${{ needs.prepare.outputs.job-ref }}
+      - name: Upload artifact creation-source acceptance evidence
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: artifact-creation-source-acceptance
+          path: e2e/playwright/acceptance-evidence/artifact-creation-source/
+          retention-days: 7
+          if-no-files-found: ignore
       - name: Upload Playwright blob report
         if: always()
         continue-on-error: true

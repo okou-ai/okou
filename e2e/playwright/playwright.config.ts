@@ -63,7 +63,7 @@ export default defineConfig({
   projects: [
     {
       name: "chat-smoke",
-      testMatch: "smoke.spec.ts",
+      testMatch: ["smoke.spec.ts", "artifact-creation-source.spec.ts"],
       retries: 1,
     },
   ],
