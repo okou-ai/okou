@@ -82,7 +82,7 @@ async fn antigravity_turn_delivery_failure_and_cancellation()
 -> Result<(), Box<dyn std::error::Error>> {
     let root = tempfile::tempdir()?;
     let peer = root.path().join("agy-peer");
-    fs::write(&peer, include_str!("fixtures/antigravity-peer.py"))?;
+    fs::write(&peer, include_str!("../fixtures/antigravity-peer.py"))?;
     fs::set_permissions(&peer, fs::Permissions::from_mode(0o700))?;
     let server = common::RecordingServer::start(200, Duration::ZERO).await?;
     let masker = SecretMasker::from_raw("Y29uZmlndXJlZC1zZWNyZXQ=");
