@@ -196,8 +196,8 @@ describe("GET /api/indicators", () => {
     const waitingThread = waiting.body.threadId;
     const legacy = { threads: { [running.threadId]: "active" }, unreadAt: {} };
     const headers = { authorization };
-    const read = async () =>
-      (
+    const read = async () => {
+      return (
         await accept(
           client().indicators({
             headers,
@@ -206,22 +206,33 @@ describe("GET /api/indicators", () => {
           [200],
         )
       ).body;
+    };
     expect(
       (await accept(client().indicators({ headers }), [200])).body,
     ).toStrictEqual(legacy);
-    expect(await read()).toStrictEqual({
+    await expect(read()).resolves.toStrictEqual({
       ...legacy,
       taskStates: { [running.threadId]: "running", [waitingThread]: "queued" },
     });
+    await flushWaitUntilForTest();
+    const waitingTopic = `chatThreadMessageCreated:${waitingThread}`;
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith(waitingTopic, {
+      taskStatesChanged: true,
+    });
 
+    context.mocks.ably.publish.mockClear();
     await chat.requestSendEvent(
       actor,
       { threadId: waitingThread, revokesEventId: queuedId },
       [201],
     );
-    expect(await read()).toStrictEqual({
+    await expect(read()).resolves.toStrictEqual({
       ...legacy,
       taskStates: { [running.threadId]: "running" },
+    });
+    await flushWaitUntilForTest();
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith(waitingTopic, {
+      taskStatesChanged: true,
     });
   });
 

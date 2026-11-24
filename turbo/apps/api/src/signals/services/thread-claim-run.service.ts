@@ -848,6 +848,7 @@ export function createThreadClaimRunObjects(
           userId: head.userId,
           orgId: head.orgId,
           threadId: head.chatThreadId,
+          taskStatesChanged: true,
         },
         signal,
       );

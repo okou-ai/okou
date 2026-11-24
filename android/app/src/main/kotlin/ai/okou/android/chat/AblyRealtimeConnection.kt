@@ -202,7 +202,7 @@ internal class AblyRealtimeConnection(
                     }
                 }
                 channel.subscribe { message ->
-                    val changes = chatChanges(message.name) ?: return@subscribe
+                    val changes = chatChanges(message.name, message.data) ?: return@subscribe
                     synchronized(lock) {
                         if (!closed.get()) {
                             pending += changes

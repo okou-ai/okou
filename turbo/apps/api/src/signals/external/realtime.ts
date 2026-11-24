@@ -603,6 +603,8 @@ export async function publishChatThreadDetailChangedSafely(
  * publishing mutation. Clients that have already cached that sequence can
  * skip a delayed duplicate notification. Omit it when the batch boundary is
  * not known; payload-less events retain the unconditional catch-up behavior.
+ * `taskStatesChanged` requests a refresh of the task indicator projection
+ * when a queue mutation or claim changes more than the thread's transcript.
  *
  * Best-effort: a failed publish must not fail the mutation that triggered it.
  */
@@ -611,13 +613,19 @@ export async function publishChatThreadMessageCreatedSafely(args: {
   readonly orgId: string;
   readonly threadId: string;
   readonly syncThroughSeqId?: number;
+  readonly taskStatesChanged?: true;
 }): Promise<void> {
   await publishChatDatabaseSignal(
     args,
     `chatThreadMessageCreated:${args.threadId}`,
-    args.syncThroughSeqId === undefined
+    args.syncThroughSeqId === undefined && !args.taskStatesChanged
       ? null
-      : { syncThroughSeqId: args.syncThroughSeqId },
+      : {
+          ...(args.syncThroughSeqId === undefined
+            ? {}
+            : { syncThroughSeqId: args.syncThroughSeqId }),
+          ...(args.taskStatesChanged ? { taskStatesChanged: true } : {}),
+        },
   );
 }
 

@@ -6,6 +6,7 @@ import ai.okou.android.chat.ChatListReadFailure
 import ai.okou.android.chat.ChatRowAction
 import ai.okou.android.chat.HistoryPhase
 import ai.okou.android.chat.ProjectDeleteStatus
+import ai.okou.android.chat.chatChanges
 import android.os.Looper
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.MotionDurationScale
@@ -587,7 +588,14 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
 
         running.set(true)
         val realtime = app.realtimeService as TestRealtimeService
-        realtime.invalidate(ChatChanges(messageThreads = setOf(CHAT_PERSONAL)))
+        realtime.invalidate(
+            checkNotNull(
+                chatChanges(
+                    "chatThreadMessageCreated:$CHAT_PERSONAL",
+                    """{"taskStatesChanged":true}""",
+                ),
+            ),
+        )
         awaitStatus("Active, Unread")
         assertEquals(before, task.getUnclippedBoundsInRoot())
     }

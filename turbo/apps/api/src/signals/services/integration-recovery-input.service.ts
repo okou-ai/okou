@@ -26,6 +26,7 @@ import { chatAgentphoneContext } from "@okouai/db/schema/chat-agentphone-context
 import { chatEmailContext } from "@okouai/db/schema/email-integration";
 import { chatWechatContext } from "@okouai/db/schema/wechat";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
+import { publishChatIndicatorsChangedSafely } from "../external/realtime";
 import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { pgTextDecoder } from "../../lib/db-structured-result";
@@ -297,16 +298,22 @@ export const enqueueIntegrationRecovery$ = command(
     `),
     );
     signal.throwIfAborted();
-    return event
-      ? {
-          orgId: args.orgId,
-          userId: args.userId,
-          selectedModel: args.selectedModel,
-          eventId: event.id,
-          chatThreadId: source.threadId,
-          contextType,
-          createdAt,
-        }
-      : null;
+    if (!event) {
+      return null;
+    }
+    await publishChatIndicatorsChangedSafely({
+      userId: args.userId,
+      orgId: args.orgId,
+    });
+    signal.throwIfAborted();
+    return {
+      orgId: args.orgId,
+      userId: args.userId,
+      selectedModel: args.selectedModel,
+      eventId: event.id,
+      chatThreadId: source.threadId,
+      contextType,
+      createdAt,
+    };
   },
 );

@@ -1,7 +1,12 @@
 package ai.okou.android.chat
 
 import ai.okou.android.api.generated.SessionOutputDelta
+import com.google.gson.JsonObject as GsonJsonObject
+import com.google.gson.JsonPrimitive as GsonJsonPrimitive
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 data class RunOutputTarget(val threadId: String, val runId: String, val generation: Long)
 
@@ -57,7 +62,7 @@ interface RealtimeService {
     ): Nothing
 }
 
-internal fun chatChanges(topic: String?): ChatChanges? {
+internal fun chatChanges(topic: String?, data: Any? = null): ChatChanges? {
     when (topic) {
         "threadListChanged" -> return ChatChanges(list = true)
         "chatIndicatorsChanged" -> return ChatChanges(indicators = true)
@@ -67,9 +72,22 @@ internal fun chatChanges(topic: String?): ChatChanges? {
     val id = topic.substringAfter(':', "")
     if (!Regex("[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}").matches(id)) return null
     return when (name) {
-        "chatThreadMessageCreated" -> ChatChanges(messageThreads = setOf(id))
+        "chatThreadMessageCreated" ->
+            ChatChanges(indicators = taskStatesChanged(data), messageThreads = setOf(id))
         "chatThreadDetailChanged" -> ChatChanges(detailThreads = setOf(id))
         "chatArtifactCatalogChanged" -> ChatChanges(artifactThreads = setOf(id))
         else -> null
     }
 }
+
+private fun taskStatesChanged(data: Any?): Boolean =
+    when (data) {
+        is GsonJsonObject -> data.get("taskStatesChanged") == GsonJsonPrimitive(true)
+        is String ->
+            runCatching {
+                    (Json.parseToJsonElement(data) as? JsonObject)?.get("taskStatesChanged") ==
+                        JsonPrimitive(true)
+                }
+                .getOrDefault(false)
+        else -> false
+    }

@@ -39,7 +39,10 @@ export const projectCommittedChatThreadSearch$ = command(
 export const publishChatThreadMessageCreated$ = command(
   async (
     _,
-    args: ChatEventPublicationScope & { readonly syncThroughSeqId?: number },
+    args: ChatEventPublicationScope & {
+      readonly syncThroughSeqId?: number;
+      readonly taskStatesChanged?: true;
+    },
     signal: AbortSignal,
   ): Promise<void> => {
     await publishChatThreadMessageCreatedSafely(args);

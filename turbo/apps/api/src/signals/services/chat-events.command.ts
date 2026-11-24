@@ -2268,6 +2268,7 @@ const publishEnqueuedNormalSend$ = command(
         userId: args.userId,
         orgId: args.orgId,
         threadId: thread.threadId,
+        taskStatesChanged: true,
       },
       signal,
     );
@@ -3607,6 +3608,7 @@ export const recallChatEvent$ = command(
         userId,
         orgId,
         threadId: body.threadId,
+        taskStatesChanged: true,
       },
       signal,
     );

@@ -1,4 +1,5 @@
 import { writeDb$ } from "../external/db";
+import { publishChatIndicatorsChangedSafely } from "../external/realtime";
 import { chatEmailContext } from "@okouai/db/schema/email-integration";
 import { chatAgentphoneContext } from "@okouai/db/schema/chat-agentphone-context";
 import { chatDiscordContext } from "@okouai/db/schema/chat-discord-context";
@@ -343,6 +344,12 @@ export const enqueueIntegrationChatInput$ = command(
     `),
     );
     signal.throwIfAborted();
-    return event?.id ?? null;
+    if (!event) {
+      return null;
+    }
+    const { userId } = args.input;
+    await publishChatIndicatorsChangedSafely({ userId, orgId: args.orgId });
+    signal.throwIfAborted();
+    return event.id;
   },
 );

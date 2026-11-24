@@ -99,6 +99,7 @@ export const revokeDeletedWorkflowAutomationInputs$ = command(
           orgId: args.orgId,
           userId,
           threadId,
+          taskStatesChanged: true,
         },
         signal,
       );

@@ -578,7 +578,9 @@ export function chatIndicators(
       }
       threads[row.threadId] = "unread";
     }
-    if (!waitingRows) return { threads, unreadAt };
+    if (!waitingRows) {
+      return { threads, unreadAt };
+    }
     const taskStates: NonNullable<Indicators["taskStates"]> = {};
     for (const row of waitingRows) {
       taskStates[row.threadId] = "queued";

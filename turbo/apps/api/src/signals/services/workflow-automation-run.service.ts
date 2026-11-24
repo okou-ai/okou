@@ -112,6 +112,7 @@ export const publishEnqueuedWorkflowInput$ = command(
         userId: input.userId,
         orgId: input.orgId,
         threadId: input.chatThreadId,
+        taskStatesChanged: true,
       },
       signal,
     );
