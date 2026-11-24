@@ -57,7 +57,6 @@ import {
 } from "@okouai/db/schema/run-uploaded-file";
 import {
   iso,
-  literal,
   object,
   string,
   uuid,
@@ -117,7 +116,6 @@ function encodeArtifactCursor(
 }
 
 const artifactLibraryCursorSchema = object({
-  version: literal(2),
   query: string(),
   value: string(),
   id: uuid(),
@@ -1552,7 +1550,6 @@ export const listArtifactCatalog$ = command(
           ? encodeArtifactCursor(
               libraryQuery
                 ? {
-                    version: 2,
                     query: queryHash,
                     value: lastRow.sortValue,
                     id: lastRow.id,
