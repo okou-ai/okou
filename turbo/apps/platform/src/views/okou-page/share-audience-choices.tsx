@@ -49,7 +49,7 @@ function useAudienceOptions(organizationName: string | null) {
   ] as const;
 }
 
-export function HostedSiteAudienceChoices({
+export function ShareAudienceChoices({
   selected,
   organizationName,
   saving,

@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.870.0](https://github.com/okou-ai/okou/compare/core-v8.869.1...core-v8.870.0) (2026-11-24)
+
+
+### Features
+
+* **android:** add built-in tool settings ([#50488](https://github.com/okou-ai/okou/issues/50488)) ([728e8ce](https://github.com/okou-ai/okou/commit/728e8ce2a260f26018932353d8c973a552fd6cf7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.120.0
+
 ## [8.869.1](https://github.com/okou-ai/okou/compare/core-v8.869.0...core-v8.869.1) (2026-11-24)
 
 
