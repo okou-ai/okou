@@ -153,6 +153,7 @@ internal constructor(
     internal val conversationId: String? = null,
     internal val deleteFromWorkflow: Boolean = false,
     internal val renameThreadId: String? = null,
+    internal val fromUndo: Boolean = false,
 ) {
     internal val feedbackOrder = nextChatFeedbackOrder()
     internal val feedbackConversationId: String?
@@ -162,7 +163,6 @@ internal constructor(
 internal enum class ChatUndoPhase {
     Offered,
     Checking,
-    Failed,
     Unconfirmed,
 }
 
@@ -173,7 +173,6 @@ internal constructor(
     val action: ChatRowAction,
     internal val sequence: Long,
     internal val phase: ChatUndoPhase = ChatUndoPhase.Offered,
-    internal val failureOrder: Long? = null,
     internal val checkEvent: ChatRowEdit? = null,
     internal val fromConversation: Boolean = false,
 ) {
@@ -735,17 +734,13 @@ class ChatListModel(
                                 )
                         }
                     }
-                if (!confirmations.all { it.connectionFailed }) {
-                    val requiresReadback = confirmations.any {
-                        !it.rejected && !it.receiptCoversIntent
+                if (confirmations.any { !it.rejected && !it.confirmed }) {
+                    readIndicatorsAfterWrite { id ->
+                        intents[id]?.let { readConfirmations[id]?.intent === it } == true
                     }
-                    val verify =
-                        if (requiresReadback) {
-                            { id: String ->
-                                intents[id]?.let { readConfirmations[id]?.intent === it } == true
-                            }
-                        } else null
-                    readIndicatorsAfterWrite(verify)
+                } else if (confirmations.any { !it.connectionFailed }) {
+                    indicatorsRetry?.stopRetrying()
+                    invalidateIndicators()
                 }
                 requireCurrent()
                 val latest = mutable.value
@@ -954,13 +949,31 @@ class ChatListModel(
                     fromConversation = undo.fromConversation,
                 )
         )
-            completeRowUndo(undo, ChatUndoPhase.Failed)
+            failRowUndo(undo)
     }
 
     internal fun dismissRowUndo(undo: ChatRowUndo) {
         val state = mutable.value
         if (current() && state.activeUndo(undo.fromConversation)?.sequence == undo.sequence)
             mutable.value = state.withUndo(undo.fromConversation, null)
+    }
+
+    private fun failRowUndo(undo: ChatRowUndo) {
+        if (!current()) return
+        val state = mutable.value
+        val remainingUndo =
+            state.activeUndo(undo.fromConversation)?.takeUnless { it.sequence == undo.sequence }
+        val failure =
+            ChatRowActionFailure(
+                undo.inverse,
+                rejected = true,
+                conversationId = undo.threadId.takeIf { undo.fromConversation },
+                fromUndo = true,
+            )
+        mutable.value =
+            state
+                .withUndo(undo.fromConversation, remainingUndo)
+                .copy(rowActionFailures = state.rowActionFailures + failure)
     }
 
     private fun completeRowUndo(
@@ -974,14 +987,7 @@ class ChatListModel(
                 when (phase) {
                     null -> null
                     undo.phase -> undo
-                    else ->
-                        undo.copy(
-                            phase = phase,
-                            failureOrder =
-                                if (phase == ChatUndoPhase.Failed) nextChatFeedbackOrder()
-                                else null,
-                            checkEvent = checkEvent,
-                        )
+                    else -> undo.copy(phase = phase, checkEvent = checkEvent)
                 }
             mutable.value = state.withUndo(undo.fromConversation, notice)
         }
@@ -1212,7 +1218,7 @@ class ChatListModel(
                     if (undoRequest != null) {
                         val latest = mutable.value
                         if (latest.undoTarget(undoRequest) == null) {
-                            completeRowUndo(undoRequest, ChatUndoPhase.Failed)
+                            failRowUndo(undoRequest)
                             return@launch
                         }
                     }
@@ -1282,10 +1288,8 @@ class ChatListModel(
                 val settledRead = confirmation?.rejected == true || confirmedRead == true
                 if (undoRequest != null && (settledRead || rolledBack)) {
                     if (rollback == ChatRowMutationOwner.Rollback.Rejected) refreshList()
-                    completeRowUndo(
-                        undoRequest,
-                        if (confirmedRead == true) null else ChatUndoPhase.Failed,
-                    )
+                    if (confirmedRead == true) completeRowUndo(undoRequest, null)
+                    else failRowUndo(undoRequest)
                     invalidateIndicators()
                     return@launch
                 }

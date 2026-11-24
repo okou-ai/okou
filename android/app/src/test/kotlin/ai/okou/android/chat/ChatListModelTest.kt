@@ -1174,7 +1174,8 @@ internal class ChatListUnreadModelTest : ChatListModelTestFixture() {
                 runCurrent()
                 val settled = model.uiState.value
                 assertEquals(ChatReadPhase.Loading, settled.indicatorsPhase)
-                assertEquals(if (rejected) ChatUndoPhase.Failed else null, settled.rowUndo?.phase)
+                assertNull(settled.rowUndo)
+                assertEquals(rejected, settled.rowActionFailures.singleOrNull()?.fromUndo == true)
                 assertFalse(CHAT_PERSONAL in settled.pendingRowActions)
                 assertEquals(!rejected, settled.isUnread(CHAT_PERSONAL))
 
@@ -1301,9 +1302,10 @@ internal class ChatListUnreadModelTest : ChatListModelTestFixture() {
     }
 
     @Test
-    fun bulkReadShowsNewerUnreadActivityWhileWriteAndReadbackArePending() = runTest {
+    fun bulkReadCompletesWhileIndicatorsRefreshAndKeepsNewerUnreadActivity() = runTest {
         val write = CompletableDeferred<ReadState>()
         val readback = CompletableDeferred<Indicators>()
+        val readbackStarted = CompletableDeferred<Unit>()
         fun unread(time: String) =
             Indicators(
                 mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
@@ -1327,11 +1329,21 @@ internal class ChatListUnreadModelTest : ChatListModelTestFixture() {
             runCurrent()
             assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
 
-            source.statusRead = { readback.await() }
+            source.statusRead = { throw ApiFailure.Http(503, null, null, null) }
+            model.refreshIndicators()
+            runCurrent()
+            source.statusRead = {
+                readbackStarted.complete(Unit)
+                readback.await()
+            }
             write.complete(ReadState(CHAT_DATE))
             runCurrent()
-            assertTrue(model.uiState.value.markingAllRead)
-            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+            val settled = model.uiState.value
+            assertTrue(readbackStarted.isCompleted)
+            assertEquals(ChatReadPhase.Loading, settled.indicatorsPhase)
+            assertFalse(settled.markingAllRead)
+            assertEquals(ChatMarkAllReadResult(1, 1), settled.markAllReadResult)
+            assertTrue(settled.isUnread(CHAT_PERSONAL))
 
             readback.complete(newer)
             advanceUntilIdle()
@@ -1734,7 +1746,8 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
                 if (rejected) {
                     runCurrent()
                     val state = model.uiState.value
-                    assertEquals(ChatUndoPhase.Failed, state.rowUndo?.phase)
+                    assertNull(state.rowUndo)
+                    assertTrue(state.rowActionFailures.single().fromUndo)
                     assertTrue(state.threads.single { it.id == CHAT_PERSONAL }.archived)
                     assertTrue(state.pendingRowActions.isEmpty())
                     readback.complete(Unit)
@@ -1742,11 +1755,11 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
                 advanceUntilIdle()
                 val state = model.uiState.value
                 assertEquals(
-                    if (rejected) ChatUndoPhase.Failed else ChatUndoPhase.Unconfirmed,
+                    if (rejected) null else ChatUndoPhase.Unconfirmed,
                     state.rowUndo?.phase,
                 )
                 assertTrue(state.threads.single { it.id == CHAT_PERSONAL }.archived)
-                assertNull(state.failedRowAction)
+                assertEquals(rejected, state.rowActionFailures.singleOrNull()?.fromUndo == true)
                 assertTrue(state.pendingRowActions.isEmpty())
                 assertEquals(1, inverseWrites)
             }
@@ -1773,15 +1786,15 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
             val offer = checkNotNull(model.uiState.value.rowUndo)
             model.undoRowAction(offer)
             advanceUntilIdle()
-            val failed = checkNotNull(model.uiState.value.rowUndo)
-            assertEquals(ChatUndoPhase.Failed, failed.phase)
+            val failed = model.uiState.value.rowActionFailures.single()
+            assertTrue(failed.fromUndo)
+            assertNull(model.uiState.value.rowUndo)
             assertTrue(model.uiState.value.threads.first { it.id == CHAT_PERSONAL }.archived)
             assertEquals(1, inverseWrites)
 
             connectivity.value = true
             advanceUntilIdle()
-            assertSame(failed, model.uiState.value.rowUndo)
-            model.undoRowAction(failed)
+            assertSame(failed, model.uiState.value.rowActionFailures.single())
             model.undoRowAction(offer)
             advanceUntilIdle()
             assertEquals(1, inverseWrites)
@@ -1815,6 +1828,40 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
             assertNull(model.uiState.value.rowUndo)
             assertFalse(model.uiState.value.threads.first { it.id == CHAT_PERSONAL }.archived)
             assertEquals(1, inverseWrites)
+        }
+    }
+
+    @Test
+    fun aRejectedUndoKeepsItsFeedbackAfterANewerArchiveConfirms() = runTest {
+        val releaseInverse = CompletableDeferred<Unit>()
+        val source = ArchiveService()
+        source.beforeUnarchive = {
+            releaseInverse.await()
+            throw ApiFailure.Http(403, null, null, null)
+        }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.Archive))
+            advanceUntilIdle()
+            val firstUndo = checkNotNull(model.uiState.value.rowUndo)
+            model.undoRowAction(firstUndo)
+            runCurrent()
+            assertEquals(ChatUndoPhase.Checking, model.uiState.value.rowUndo?.phase)
+
+            assertTrue(model.performRowAction(CHAT_IN_PROJECT, ChatRowAction.Archive))
+            advanceUntilIdle()
+            val newerUndo = checkNotNull(model.uiState.value.rowUndo)
+            assertEquals(CHAT_IN_PROJECT, newerUndo.threadId)
+
+            releaseInverse.complete(Unit)
+            advanceUntilIdle()
+            val state = model.uiState.value
+            assertSame(newerUndo, state.rowUndo)
+            assertTrue(state.threads.single { it.id == CHAT_PERSONAL }.archived)
+            val failure = state.rowActionFailures.single()
+            assertTrue(failure.rejected && failure.fromUndo)
+            assertEquals(ChatRowAction.Unarchive, failure.action)
         }
     }
 
