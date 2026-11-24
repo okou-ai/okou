@@ -433,7 +433,6 @@ function WebsiteDomainChoices({
         {t(($) => {
           return $.artifacts.customDomain.connect;
         })}
-        {!configuration.allowed && <ProBadge />}
       </Button>
     </>
   );
@@ -743,7 +742,6 @@ function WebsiteUrlEditor({
             {t(($) => {
               return $.artifacts.customDomain.title;
             })}
-            <ProBadge />
           </TabsTrigger>
         </TabsList>
         <TabsContent value="platform" className="mt-4">
