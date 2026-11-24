@@ -544,7 +544,7 @@ internal fun OkouConfirmationDialog(
                         ) {
                             ProvideTextStyle(bodyStyle, content)
                         }
-                        WithButtonFocusOutline(LocalActivityStatusColor.current) {
+                        WithButtonFocusOutline(colors.onBackground) {
                             FlowRow(
                                 Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
