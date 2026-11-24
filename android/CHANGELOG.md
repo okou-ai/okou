@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.55.1](https://github.com/okou-ai/okou/compare/android-v0.55.0...android-v0.55.1) (2026-11-24)
+
+
+### Performance Improvements
+
+* **android:** bound concurrent history snapshot warming ([#50548](https://github.com/okou-ai/okou/issues/50548)) ([07da7e2](https://github.com/okou-ai/okou/commit/07da7e260519967a920c94ac508559d3b165ea4c))
+
 ## [0.55.0](https://github.com/okou-ai/okou/compare/android-v0.54.1...android-v0.55.0) (2026-11-24)
 
 

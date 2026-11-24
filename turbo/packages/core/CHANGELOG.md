@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.871.0](https://github.com/okou-ai/okou/compare/core-v8.870.2...core-v8.871.0) (2026-11-24)
+
+
+### Features
+
+* bind internal antigravity sign-in to member profiles ([#50523](https://github.com/okou-ai/okou/issues/50523)) ([ab93ff8](https://github.com/okou-ai/okou/commit/ab93ff8c008746117d5d90211f58425c1f6a0ae8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.123.0
+
 ## [8.870.2](https://github.com/okou-ai/okou/compare/core-v8.870.1...core-v8.870.2) (2026-11-24)
 
 
