@@ -13,7 +13,7 @@ use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 use std::thread;
 use std::time::Duration;
 
-const STAGED_ARTIFACT_BYTES: std::ops::Range<u64> = 1024 * 1024..4 * 1024 * 1024;
+const STAGED_ARTIFACT_BYTES: std::ops::Range<u64> = 256 * 1024..4 * 1024 * 1024;
 const MIN_EXPANDED_BYTES: u32 = 8 * 1024 * 1024;
 // Fewer input refills and decoded block handoffs during extraction.
 const COMPRESSED_BUFFER_BYTES: usize = 128 * 1024;
