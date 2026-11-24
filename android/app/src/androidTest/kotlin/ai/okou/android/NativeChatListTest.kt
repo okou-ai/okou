@@ -400,9 +400,6 @@ class NativeChatListTest {
                 val listTitle = device.awaitChatList(app)
                 val conversation = text("Native history reply")
                 assertTrue(listTitle.visibleBounds.right < conversation.visibleBounds.left)
-                toolLabels.forEach { label ->
-                    assertTrue(tool(label).visibleBounds.right < conversation.visibleBounds.left)
-                }
                 val toolbarBack = By.pkg(app.packageName).desc(app.getString(R.string.back))
                 assertTrue(device.wait(Until.gone(toolbarBack), 10_000))
                 takeScreenshot().writeToTestStorage("android-list-home-two-pane")
@@ -415,7 +412,10 @@ class NativeChatListTest {
     fun closingWideSettingsReturnsToTheOpenHistory() =
         withWideChatListJourney("wide-settings") {
             openProjectChat()
-            text("Native history reply")
+            val conversation = text("Native history reply")
+            toolLabels.forEach { label ->
+                assertTrue(tool(label).visibleBounds.right < conversation.visibleBounds.left)
+            }
             click(UiSelector().description(app.getString(R.string.settings)))
             text(app.getString(R.string.instructions_title))
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
@@ -424,12 +424,11 @@ class NativeChatListTest {
         }
 
     @Test
-    fun wideChatFilterSupportsNativeKeyboardFocusWithHistoryOpen() =
-        withWideChatListJourney("wide-filter") {
+    fun wideFilterBackRestoresToolbarFocusWithoutClosingHistory() =
+        withWideChatListJourney("wide-filter-back") {
             openProjectChat()
             text("Native history reply")
             val filter = app.getString(R.string.chat_filter)
-            val archived = app.getString(R.string.chat_archived)
             val inbox = By.pkg(app.packageName).text(app.getString(R.string.chat_inbox))
             click(UiSelector().description(filter))
             text(app.getString(R.string.chat_inbox))
@@ -443,10 +442,25 @@ class NativeChatListTest {
             device.awaitKeyboardFocus(By.pkg(app.packageName).desc(filter))
             assertTrue(device.pressDPadCenter())
             text(app.getString(R.string.chat_inbox))
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            assertTrue(device.wait(Until.gone(inbox), 10_000))
+            text("Native history reply")
+        }
+
+    @Test
+    fun wideChatFilterSupportsNativeKeyboardFocusWithHistoryOpen() =
+        withWideChatListJourney("wide-filter") {
+            openProjectChat()
+            text("Native history reply")
+            val filter = app.getString(R.string.chat_filter)
+            val archived = app.getString(R.string.chat_archived)
+            val inbox = By.pkg(app.packageName).text(app.getString(R.string.chat_inbox))
+            val muted = By.pkg(app.packageName).text(app.getString(R.string.chat_muted))
+            click(UiSelector().description(filter))
+            text(app.getString(R.string.chat_inbox))
+            InstrumentationRegistry.getInstrumentation().setInTouchMode(false)
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_MOVE_END))
-            device.awaitKeyboardFocus(
-                By.pkg(app.packageName).text(app.getString(R.string.chat_muted)),
-            )
+            device.awaitKeyboardFocus(muted)
             assertTrue(device.pressDPadUp())
             device.awaitKeyboardFocus(By.pkg(app.packageName).text(archived))
             assertTrue(device.pressDPadCenter())
@@ -463,7 +477,9 @@ class NativeChatListTest {
             text("Native history reply")
             assertTrue(device.pressDPadCenter())
             text(app.getString(R.string.chat_inbox))
-            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_MOVE_HOME))
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_MOVE_END))
+            device.awaitKeyboardFocus(muted)
+            repeat(3) { assertTrue(device.pressDPadUp()) }
             device.awaitKeyboardFocus(inbox)
             assertTrue(device.pressDPadCenter())
             revealText("Project chat")
@@ -722,9 +738,9 @@ class NativeChatListTest {
 
         fun openProjectChat() {
             revealText("Research")
-            clickText("Research")
+            text("Research").click()
             revealText("Project chat")
-            clickText("Project chat")
+            text("Project chat").click()
         }
     }
 }
