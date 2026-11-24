@@ -49,6 +49,7 @@
     <string name="artifact_open_website">Open in browser</string>
     <string name="artifact_browser_unavailable">Couldn’t open a browser</string>
     <string name="artifact_play_media">Media playback</string>
+    <string name="artifact_play">Play</string>
     <string name="artifact_catalog_access_denied">You don’t have access to this artifact catalog</string>
     <string name="artifact_catalog_missing">This artifact catalog is no longer available</string>
     <string name="chat_resources_related">Related chats</string>
