@@ -17,6 +17,7 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.SemanticsPropertyKey
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ComposeUiTestConfig
 import androidx.compose.ui.test.MouseButton
 import androidx.compose.ui.test.SemanticsMatcher
@@ -1899,6 +1900,52 @@ internal class ChatSearchRootTest : ChatListRootTestFixture() {
         field.assertIsFocused()
         compose.onNode(hasText("Messages") and isSelectable()).assertIsSelected()
         compose.onNodeWithText("Enter a keyword to search").assertIsDisplayed()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w960dp-h800dp")
+    fun workspaceMessageSearchRevealsOnlyTheMatchedFoldedTurnInTheDetailPane() {
+        val app = compose.activity.application as ChatListApplication
+        val fixture = FoldedWorkspaceSearchFixture(app.fixture)
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithTag("chat_$CHAT_PERSONAL").performClick()
+
+        val summary = hasTestTag("conversation_reply_summary")
+        val matchedSummary =
+            summary and hasAnyAncestor(hasTestTag("message_${fixture.matchedFinalId}"))
+        val otherSummary = summary and hasAnyAncestor(hasTestTag("message_${fixture.otherFinalId}"))
+        fun disclosure(@androidx.annotation.StringRes id: Int) =
+            SemanticsMatcher("reply disclosure matches") { node ->
+                node.config
+                    .getOrNull(SemanticsProperties.StateDescription)
+                    ?.endsWith(compose.activity.getString(id)) == true
+            }
+        val collapsed = disclosure(R.string.conversation_replies_collapsed)
+        val expanded = disclosure(R.string.conversation_replies_expanded)
+        compose.waitUntil(5_000) {
+            compose.onAllNodes(otherSummary, useUnmergedTree = true).fetchSemanticsNodes().size == 1
+        }
+        compose.onNode(matchedSummary, useUnmergedTree = true).assert(collapsed)
+        compose.onNode(otherSummary, useUnmergedTree = true).assert(collapsed)
+
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        compose.onNodeWithTag("search_type_Messages").performClick()
+        compose.onNodeWithTag("chat_search_query").performTextInput(fixture.keyword)
+        val result = hasText(fixture.hit) and hasAnyAncestor(hasTestTag("chat_search_results"))
+        compose.waitUntilExactlyOneExists(result, 5_000)
+        compose.onNode(result).performClick()
+
+        val focused = hasTestTag("conversation_find_hit") and isFocused()
+        compose.waitUntilExactlyOneExists(focused, 5_000)
+        compose.onNode(focused).assertIsDisplayed().assertTextContains(fixture.hit)
+        compose.onNode(matchedSummary, useUnmergedTree = true).assert(expanded)
+        compose.onNode(otherSummary, useUnmergedTree = true).assert(collapsed)
+        compose.onNodeWithText(fixture.otherEarlierReply).assertDoesNotExist()
+        compose.onNodeWithTag("chat_search").assertDoesNotExist()
+        val list = compose.onNodeWithTag("chat_list").getUnclippedBoundsInRoot()
+        assertTrue(compose.onNode(focused).getUnclippedBoundsInRoot().left > list.right)
+        compose.onNodeWithTag("chat_$CHAT_PERSONAL").assertIsSelected()
     }
 
     @Test
