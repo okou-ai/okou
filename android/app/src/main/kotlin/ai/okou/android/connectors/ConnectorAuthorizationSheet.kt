@@ -4,10 +4,12 @@ import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.OkouFormActions
 import ai.okou.android.OkouFormLayout
 import ai.okou.android.R
+import ai.okou.android.RenameFieldError
 import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItem
 import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItemGrantKind
 import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItemManualFieldsItemInputType
 import ai.okou.android.okouFormInputStyle
+import ai.okou.android.renameForm
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
@@ -43,8 +45,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -69,15 +69,14 @@ internal fun ConnectorRenameSheet(
     val currentLabel = account.label()
     val baseline = remember(account.id) { currentLabel }
     val label = remember(account.id) { TextFieldState(initialText = baseline) }
-    var showError by remember(account.id) { mutableStateOf(false) }
-    val focus = remember { FocusRequester() }
-    val name = label.text.toString().trim()
+    val form =
+        renameForm(label.text, baseline, currentLabel, canModify, CONNECTOR_ACCOUNT_NAME_LIMIT)
     val errorMessage =
-        when {
-            name.isEmpty() -> stringResource(R.string.connector_rename_required)
-            name.length > CONNECTOR_ACCOUNT_NAME_LIMIT ->
+        when (form.error) {
+            RenameFieldError.Required -> stringResource(R.string.connector_rename_required)
+            RenameFieldError.TooLong ->
                 stringResource(R.string.connector_rename_too_long, CONNECTOR_ACCOUNT_NAME_LIMIT)
-            else -> null
+            null -> null
         }
     ConnectorSheet(
         stringResource(R.string.connector_rename_title),
@@ -86,16 +85,11 @@ internal fun ConnectorRenameSheet(
         actions = {
             ConnectorFormActions(
                 stringResource(R.string.instructions_save),
-                enabled = canModify && name != baseline.trim(),
+                enabled = form.canSave,
                 cancel = cancel,
                 cancelEnabled = action?.busy != true,
             ) {
-                if (errorMessage == null) {
-                    save(name)
-                } else {
-                    showError = true
-                    focus.requestFocus()
-                }
+                save(form.name)
             }
         },
     ) {
@@ -103,10 +97,9 @@ internal fun ConnectorRenameSheet(
             stringResource(R.string.connector_account_name),
             label,
             readOnly = !canModify,
-            modifier = Modifier.focusRequester(focus),
             supportingText =
                 stringResource(R.string.connector_rename_hint, CONNECTOR_ACCOUNT_NAME_LIMIT),
-            errorMessage = errorMessage.takeIf { showError },
+            errorMessage = errorMessage,
         )
         ConnectorActionFeedback(action)
     }
