@@ -41,6 +41,8 @@ export const ROUTES = {
   desktopShellAuthorize: "/computer-use/shell/authorize/:shellAuthorizationId",
   bankingAccess: "/banking/access",
   connectorAccountSelect: "/connectors/accounts/:approvalConnectionId/select",
+  connectorAccountMemberApproval:
+    "/connectors/accounts/:approvalConnectionId/member-approval",
   bankingConnectReturn: "/banking/connect/return",
   bankingConnectReturnResult: "/banking/connect/return/:bankingConnectStatus",
   feishuOAuthCallback: "/connectors/feishu/callback",

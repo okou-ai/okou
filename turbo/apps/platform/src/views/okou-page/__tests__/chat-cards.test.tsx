@@ -1146,18 +1146,29 @@ function mockOwnedApprovalThread() {
   });
 }
 
-async function exerciseAccountSwitch(entry: "chat" | "direct") {
+async function exerciseAccountSwitch(
+  entry: "chat" | "direct",
+  scope: "chat" | "member",
+) {
   const github = connectorSlugSchema.parse("github");
   const connectionId = "f0000000-0000-4000-a000-000000000901";
   const otherConnectionId = "f0000000-0000-4000-a000-000000000902";
   const iconUrl = "https://icons.example.test/account-switch-github.svg";
+  const action = scope === "member" ? "member-approval" : "select";
+  const button = scope === "member" ? "Allow for 1h" : "Switch";
   const switchUrl = new URL(
-    `https://app.okou.ai/connectors/accounts/${connectionId}/select`,
+    `https://app.okou.ai/connectors/accounts/${connectionId}/${action}`,
   );
   switchUrl.searchParams.set("kind", "builtin");
   switchUrl.searchParams.set("connectorSlug", github);
   switchUrl.searchParams.set("threadId", THREAD_ID);
   switchUrl.searchParams.set("callbackPrompt", "Continue");
+  if (scope === "member") {
+    switchUrl.searchParams.set(
+      "requestId",
+      "f0000000-0000-4000-a000-000000000903",
+    );
+  }
   context.mocks.api(
     connectorAccountsContract.connection,
     ({ params, respond }) => {
@@ -1204,7 +1215,9 @@ async function exerciseAccountSwitch(entry: "chat" | "direct") {
     },
   );
   context.mocks.api(
-    runConnectorAccountsContract.approve,
+    scope === "member"
+      ? runConnectorAccountsContract.approveMember
+      : runConnectorAccountsContract.approve,
     ({ body, respond }) => {
       expect(body).toStrictEqual({
         ...selection,
@@ -1294,6 +1307,11 @@ async function exerciseAccountSwitch(entry: "chat" | "direct") {
 
   const card = await screen.findByTestId("connector-account-action-card");
   expect(card).toHaveTextContent("Switch to Work GitHub?");
+  expect(
+    within(card).queryByText(
+      "Allow across your chats. Select this account here.",
+    ) !== null,
+  ).toBe(scope === "member");
   await waitFor(() => {
     expect(card.querySelector(`img[src="${iconUrl}"]`)).toBeInTheDocument();
   });
@@ -1301,7 +1319,7 @@ async function exerciseAccountSwitch(entry: "chat" | "direct") {
   expect(statusReads).toBe(0);
 
   expect(selectionWrites).toBe(0);
-  click(buttonIn(card, "Switch"));
+  click(buttonIn(card, button));
   await waitFor(() => {
     expect(callbackIds).toHaveLength(1);
   });
@@ -1317,6 +1335,11 @@ async function exerciseAccountSwitch(entry: "chat" | "direct") {
   const chat = screen.queryByRole("region", { name: "Chat thread" });
   expect(Boolean(chat)).toBe(entry === "chat");
   if (!chat) {
+    return;
+  }
+  if (scope === "member") {
+    selectedConnectionId = null;
+    await exerciseFreshMemberApproval(lifecycle, switchUrl);
     return;
   }
   // These reply queries depend on text and children, not attribute changes.
@@ -1355,10 +1378,10 @@ async function exerciseAccountSwitch(entry: "chat" | "direct") {
   });
   const otherCard = screen.getAllByTestId("connector-account-action-card")[1]!;
   expect(otherCard).toHaveTextContent("Switch to Personal GitHub?");
-  click(buttonIn(otherCard, "Switch"));
+  click(buttonIn(otherCard, button));
   await waitFor(() => {
     expect(otherCard).toHaveTextContent("Switched to Personal GitHub");
-    expect(buttonIn(card, "Switch")).toBeEnabled();
+    expect(buttonIn(card, button)).toBeEnabled();
     expect(callbackIds).toHaveLength(2);
   });
   expect(selectionWrites).toBe(2);
@@ -1372,7 +1395,7 @@ async function exerciseAccountSwitch(entry: "chat" | "direct") {
     ).toBeInTheDocument();
   }, replyWaitOptions);
 
-  click(buttonIn(card, "Switch"));
+  click(buttonIn(card, button));
   await waitFor(() => {
     expect(card).toHaveTextContent("Switched to Work GitHub");
     expect(callbackIds).toHaveLength(3);
@@ -1403,8 +1426,32 @@ async function exerciseAccountSwitch(entry: "chat" | "direct") {
   }, replyWaitOptions);
 }
 
-test.each(["chat", "direct"] as const)(
-  "Connector account switching from %s",
+async function exerciseFreshMemberApproval(
+  lifecycle: ReturnType<typeof mockChatLifecycle>,
+  previousUrl: URL,
+) {
+  const freshUrl = new URL(previousUrl);
+  freshUrl.searchParams.set(
+    "requestId",
+    "f0000000-0000-4000-a000-000000000904",
+  );
+  await act(() => {
+    lifecycle.completeRun(`Access expired\n\n${freshUrl.toString()}`);
+  });
+  await waitFor(() => {
+    const cards = screen.getAllByTestId("connector-account-action-card");
+    expect(cards).toHaveLength(2);
+    expect(buttonIn(cards[1]!, "Allow for 1h")).toBeEnabled();
+  });
+}
+
+test.each([
+  ["chat", "chat"],
+  ["direct", "chat"],
+  ["chat", "member"],
+  ["direct", "member"],
+] as const)(
+  "Connector account switching from %s with %s approval",
   exerciseAccountSwitch,
 );
 
@@ -1486,6 +1533,7 @@ test.each(["chat", "direct"] as const)(
 test.each([
   "/banking/access?reason=Review+spend&",
   "/connectors/accounts/f0000000-0000-4000-a000-000000000901/select?kind=builtin&connectorSlug=github&",
+  "/connectors/accounts/f0000000-0000-4000-a000-000000000901/member-approval?kind=builtin&connectorSlug=github&requestId=f0000000-0000-4000-a000-000000000903&",
 ])("A direct approval requires access to its Chat (%s)", async (route) => {
   context.mocks.api(chatThreadMetadataContract.get, ({ respond }) => {
     return respond(404, {

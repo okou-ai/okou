@@ -4,6 +4,7 @@ import { db$ } from "../external/db";
 import {
   setChatConnectorCurrent$,
   setChatConnectorAccessOverride$,
+  approveMemberConnectorAccount$,
 } from "../services/chat-connector-access.service";
 import { runConnectorAccountsContract } from "@okouai/api-contracts/contracts/run-connector-accounts";
 import { connectorAccountTargetKey } from "@okouai/api-contracts/contracts/connector-accounts";
@@ -17,7 +18,7 @@ import { command, computed } from "ccstate";
 
 import { badRequestMessage, notFound } from "../../lib/error";
 import { authRoute } from "../auth/auth-route";
-import { bodyResultOf, pathParamsOf } from "../context/request";
+import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { nowDate } from "../../lib/time";
 import { activeMemberConnectorPermissionCondition } from "../services/member-connector-selection";
 import type { RouteEntry } from "../route-entry";
@@ -27,6 +28,8 @@ import {
   chatConnectorExecutionFromRows,
 } from "../services/chat-connector-execution";
 import { publishChatThreadDetailChangedSafely } from "../external/realtime";
+import { memberConnectorAccountAccessEnabledSql } from "../services/member-connector-account-access";
+import { pgBooleanDecoder } from "../../lib/db-structured-result";
 
 const identity$ = computed((get) => {
   const auth = get(organizationAuthContext$);
@@ -149,7 +152,34 @@ const list$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "no-store");
   const inventory = await get(inventory$);
   signal.throwIfAborted();
-  return inventory ? { status: 200 as const, body: inventory } : missing;
+  if (!inventory) {
+    return missing;
+  }
+  if (
+    get(queryOf(runConnectorAccountsContract.list)).includeApprovalScope !==
+    "true"
+  ) {
+    return { status: 200 as const, body: inventory };
+  }
+  const [scope] = await get(db$)
+    .select({
+      member: memberConnectorAccountAccessEnabledSql(
+        await get(identity$),
+      ).mapWith(pgBooleanDecoder),
+    })
+    .from(chatThreads)
+    .where(eq(chatThreads.id, inventory.chatThreadId));
+  signal.throwIfAborted();
+  if (!scope) {
+    return missing;
+  }
+  return {
+    status: 200 as const,
+    body: {
+      ...inventory,
+      approvalScope: scope.member ? ("member" as const) : ("chat" as const),
+    },
+  };
 });
 const select$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
@@ -230,6 +260,40 @@ const runAuth = {
   missingOrganizationStatus: 401,
   requiredCapability: "connector-account:switch",
 } as const;
+
+const ownerAuth = {
+  accept: ["session"],
+  requireOrganization: true,
+  missingOrganizationStatus: 401,
+} as const;
+
+const approveMember$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const route = runConnectorAccountsContract.approveMember;
+  const body = await get(bodyResultOf(route));
+  signal.throwIfAborted();
+  if (!body.ok) {
+    return body.response;
+  }
+  const owner = {
+    ...(await get(identity$)),
+    chatThreadId: get(pathParamsOf(route)).threadId,
+    target: body.data.target,
+  };
+  signal.throwIfAborted();
+  if (
+    !(await set(
+      approveMemberConnectorAccount$,
+      owner,
+      body.data.connectionId,
+      signal,
+    ))
+  ) {
+    return missing;
+  }
+  await publishChatThreadDetailChangedSafely(owner.userId, owner.chatThreadId);
+  signal.throwIfAborted();
+  return { status: 200 as const, body: body.data };
+});
 export const runConnectorAccountRoutes: readonly RouteEntry[] = [
   {
     route: runConnectorAccountsContract.list,
@@ -241,13 +305,10 @@ export const runConnectorAccountRoutes: readonly RouteEntry[] = [
   },
   {
     route: runConnectorAccountsContract.approve,
-    handler: authRoute(
-      {
-        accept: ["session"],
-        requireOrganization: true,
-        missingOrganizationStatus: 401,
-      },
-      approve$,
-    ),
+    handler: authRoute(ownerAuth, approve$),
+  },
+  {
+    route: runConnectorAccountsContract.approveMember,
+    handler: authRoute(ownerAuth, approveMember$),
   },
 ];
