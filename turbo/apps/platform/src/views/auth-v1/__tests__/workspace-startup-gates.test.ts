@@ -6,16 +6,19 @@ import { expect, test, vi } from "vitest";
 import {
   startPage,
   queryAllByRoleFast,
+  setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { bootstrapSkeleton } from "../../../test/bootstrap-skeleton.ts";
 
 const context = testContext();
+
 const workspace = {
   context,
   path: "/workflows",
   sharedWorkerTestTransport: "message-port",
 } as const;
+
 function startupView() {
   const skeleton = bootstrapSkeleton();
   return {
@@ -45,6 +48,7 @@ test("authentication-startup-001 Workflows stays hidden until the current member
   expect(queryAllByRoleFast("link").length).toBeGreaterThan(0);
   expect(screen.queryByTestId("clerk-sign-in")).toBeNull();
 });
+
 test("bootstrap-feature-switch-002 Workspace features release the page and the feature guide request", async () => {
   const arrived = context.mocks.deferred<void>(),
     reply = context.mocks.deferred<void>();
@@ -76,6 +80,7 @@ test("bootstrap-feature-switch-002 Workspace features release the page and the f
   expect(held).toMatchObject({ loading: true, root: false, editions: [] });
   expect(editions).toStrictEqual([featureGuidesContract.current.path]);
 });
+
 test("authentication-startup-013 An old onboarding response cannot redirect the member after the active workspace changes", async () => {
   const clerk = context.mocks.clerk();
   const held = context.mocks.deferred<void>(),
@@ -117,4 +122,15 @@ test("authentication-startup-013 An old onboarding response cannot redirect the 
       name: /what do you want to make first|onboarding/i,
     }),
   ).toBeNull();
+});
+
+test("bootstrap-feature-switch-001 Workspace features stay private while the signed-out member sees sign-in", async () => {
+  const unexpected = context.mocks.deferred<void>();
+  context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
+    unexpected.resolve();
+    return respond(200, { switches: {}, effectiveSwitches: {} });
+  });
+  await setupPage({ context, path: "/sign-in", auth: null });
+  await expect(screen.findByTestId("clerk-sign-in")).resolves.toBeVisible();
+  expect(unexpected.settled()).toBeFalsy();
 });
