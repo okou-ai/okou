@@ -16,7 +16,7 @@ const playerStyles = Object.freeze({
     "h-12 w-[245px] shrink-0 gap-3 rounded-full border border-border bg-muted px-3",
   compact:
     "h-9 w-26 shrink-0 gap-1 rounded-lg border border-border bg-background px-2",
-  composer: "h-full w-25 min-w-0 gap-1 rounded-l-md pl-1.5 pr-1",
+  composer: "h-full w-25 min-w-0 gap-1 rounded-md px-1.5",
 });
 
 function ClipMetadata({ track }: { track: VoicePlayer["tracks"][number] }) {

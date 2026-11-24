@@ -446,42 +446,58 @@ test("Send a recording from the composer as a voice-only message", async () => {
   expect(dictationRequests).toHaveLength(0);
 });
 
-test("Removing a draft recording preserves neighboring text, references and recordings", async () => {
-  const fileId = "b0000000-0000-4000-a000-000000000612";
-  const clip = { type: "voice" as const, clips: [{ fileId }] };
-  const reference = {
-    type: "chat_thread" as const,
-    threadId: ATTACHMENT_THREAD_ID,
-    titleSnapshot: "Project notes",
-  };
-  const text = { type: "text" as const, text: "Please summarize " };
-  const submitted: unknown[] = [];
-  mockAttachmentChat(context, {
-    draft: {
-      draftUserMessage: { version: 1, parts: [clip, text, reference, clip] },
-      draftAttachments: null,
-    },
-    onSendRequest: (body) => {
-      submitted.push(body.userMessage);
-    },
-  });
-  mockPrivateUrlSequence(context, {
-    [fileId]: ["https://private-files.example/recording.wav"],
-  });
-  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-  const editor = await screen.findByRole("textbox", { name: "Message" });
-  await waitFor(() => {
-    expect(queryNamedButtons("Remove voice draft", editor)).toHaveLength(2);
-  });
-  const remove = queryNamedButtons("Remove voice draft", editor);
-  click(remove[0]!);
-  await waitFor(() => {
-    expect(queryNamedButtons("Play voice message", editor)).toHaveLength(1);
-  });
-  expect(editor).toHaveTextContent("Please summarize");
-  expect(editor).toHaveTextContent("Project notes");
-  click(await findEnabledButton("Send"));
-  await waitFor(() => {
-    expect(submitted).toStrictEqual([userMessage([text, reference, clip])]);
-  });
-});
+test.each(["Backspace", "Delete"] as const)(
+  "%s removes only the adjacent draft recording",
+  async (key) => {
+    const fileId = "b0000000-0000-4000-a000-000000000612";
+    const clip = { type: "voice" as const, clips: [{ fileId }] };
+    const reference = {
+      type: "chat_thread" as const,
+      threadId: ATTACHMENT_THREAD_ID,
+      titleSnapshot: "Project notes",
+    };
+    const text = { type: "text" as const, text: "Please summarize " };
+    const submitted: unknown[] = [];
+    mockAttachmentChat(context, {
+      draft: {
+        draftUserMessage: { version: 1, parts: [clip, text, clip, reference] },
+        draftAttachments: null,
+      },
+      onSendRequest: (body) => {
+        submitted.push(body.userMessage);
+      },
+    });
+    mockPrivateUrlSequence(context, {
+      [fileId]: ["https://private-files.example/recording.wav"],
+    });
+    await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+    const editor = await screen.findByRole("textbox", { name: "Message" });
+    await waitFor(() => {
+      expect(queryNamedButtons("Play voice message", editor)).toHaveLength(2);
+    });
+    expect(queryNamedButtons("Remove voice draft", editor)).toHaveLength(0);
+    editor.focus();
+    placeCaret(editor, text.text, key === "Backspace" ? 0 : text.text.length);
+    document.dispatchEvent(new Event("selectionchange"));
+    fireEvent.keyDown(editor, {
+      key,
+      code: key,
+      keyCode: key === "Backspace" ? 8 : 46,
+    });
+    await waitFor(() => {
+      expect(queryNamedButtons("Play voice message", editor)).toHaveLength(1);
+    });
+    expect(editor).toHaveTextContent("Please summarize");
+    expect(editor).toHaveTextContent("Project notes");
+    click(await findEnabledButton("Send"));
+    await waitFor(() => {
+      expect(submitted).toStrictEqual([
+        userMessage(
+          key === "Backspace"
+            ? [text, clip, reference]
+            : [clip, text, reference],
+        ),
+      ]);
+    });
+  },
+);

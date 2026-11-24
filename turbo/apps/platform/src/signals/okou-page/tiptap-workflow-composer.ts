@@ -224,7 +224,6 @@ export interface ComposerVoiceChip {
   readonly key: string;
   readonly dom: HTMLSpanElement;
   readonly player: VoicePlayer;
-  remove(): void;
 }
 
 export interface WorkflowComposerSignals {
@@ -501,7 +500,7 @@ function createVoiceClipNode(runtime: WorkflowComposerRuntime) {
     },
     renderText: voiceClipLabel,
     addNodeView() {
-      return ({ editor, node, getPos }) => {
+      return ({ node }) => {
         const fileId: unknown = node.attrs.fileId;
         if (typeof fileId !== "string") {
           throw new Error("Voice clip file ID is missing");
@@ -519,16 +518,6 @@ function createVoiceClipNode(runtime: WorkflowComposerRuntime) {
           dom,
           key: crypto.randomUUID(),
           player: createVoicePlayer([{ fileId }]),
-          remove() {
-            const from = getPos();
-            if (from !== undefined) {
-              editor
-                .chain()
-                .deleteRange({ from, to: from + node.nodeSize })
-                .focus()
-                .run();
-            }
-          },
         };
         runtime.setVoiceChipMounted?.(chip, true);
         return {
