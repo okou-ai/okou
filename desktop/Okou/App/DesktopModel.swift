@@ -115,7 +115,10 @@ final class DesktopModel: ObservableObject {
     ]
     executor = CommandExecutor(
       helper: NativeProcess(executable: Self.helperURL, environment: telemetry))
-    api = APIClient(baseURL: configuration.apiURL, version: version)
+    let previewCredential = DesktopPreviewCredential.load(
+      for: configuration.apiURL, bundleIdentifier: Bundle.main.bundleIdentifier,
+      path: ProcessInfo.processInfo.environment["OKOU_DESKTOP_PREVIEW_CREDENTIAL_FILE"])
+    api = APIClient(baseURL: configuration.apiURL, version: version, previewCredential: previewCredential)
     let installationId = try preferences.installationId
     host = HostRuntime(
       api: api, executor: executor, installationId: installationId, hostName: deviceName,

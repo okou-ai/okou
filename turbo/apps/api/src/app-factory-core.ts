@@ -22,6 +22,7 @@ import { Hono, type Context, type Next } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { bodyLimit } from "hono/body-limit";
 import { matchedRoutes, routePath } from "hono/route";
+import { errors as joseErrors } from "jose";
 
 import { compareAppVersions } from "./lib/app-version";
 import { corsMiddleware } from "./lib/cors";
@@ -36,6 +37,10 @@ import {
   androidUpgradeRequired,
   isSupportedAndroidClientVersion,
 } from "./lib/android-client-compatibility";
+import {
+  verifyDesktopPreviewCredential,
+  DESKTOP_PREVIEW_HEADER,
+} from "./lib/desktop-preview-credential";
 import { flushLogs, logger } from "./lib/log";
 import {
   cookieHeaderValue,
@@ -64,6 +69,7 @@ import {
   normalizeThrown,
   safeSync,
   safeUrlParse,
+  settle,
   settleIncludingAbort,
 } from "./signals/utils";
 
@@ -409,6 +415,27 @@ async function previewAutomationBypassMiddleware(
   ) {
     await next();
     return;
+  }
+
+  const desktopCredential = context.req.header(DESKTOP_PREVIEW_HEADER);
+  if (desktopCredential) {
+    const verified = await settle(
+      verifyDesktopPreviewCredential(
+        desktopCredential,
+        context.req.raw,
+        env("OKOU_API_BACKEND_URL"),
+        requestRouteTemplate(context),
+        secret,
+      ),
+      context.req.raw.signal,
+    );
+    if (!verified.ok && !(verified.error instanceof joseErrors.JOSEError)) {
+      throw verified.error;
+    }
+    if (verified.ok && verified.value) {
+      await next();
+      return;
+    }
   }
 
   return context.json(

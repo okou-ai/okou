@@ -55,17 +55,20 @@ public actor APIClient {
   private let version: String
   private let sessionId = UUID().uuidString.lowercased()
   private let session: URLSession
+  private let previewCredential: DesktopPreviewCredential?
   private let now: @Sendable () -> ContinuousClock.Instant
   private let awakeNow: @Sendable () -> SuspendingClock.Instant
 
   public init(
     baseURL: URL, version: String, session: URLSession = .shared,
+    previewCredential: DesktopPreviewCredential? = nil,
     now: @escaping @Sendable () -> ContinuousClock.Instant = { .now },
     awakeNow: @escaping @Sendable () -> SuspendingClock.Instant = { .now }
   ) {
     self.baseURL = baseURL
     self.version = version
     self.session = session
+    self.previewCredential = previewCredential
     self.now = now
     self.awakeNow = awakeNow
   }
@@ -210,8 +213,12 @@ public actor APIClient {
     trace: APIRequestTrace?
   ) async throws -> APIResponse {
     await trace?.begin(.httpRequest)
-    var request = URLRequest(
-      url: try Self.url(for: route, baseURL: baseURL), timeoutInterval: timeout)
+    let url = try Self.url(for: route, baseURL: baseURL)
+    var request = URLRequest(url: url, timeoutInterval: timeout)
+    let previewToken = previewCredential?.value(for: url)
+    if let previewToken {
+      request.setValue(previewToken, forHTTPHeaderField: DesktopPreviewCredential.header)
+    }
     request.httpMethod = route.method
     if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
     request.setValue(
@@ -229,7 +236,7 @@ public actor APIClient {
     let started = now()
     let awakeStarted = awakeNow()
     let startedAt = Date()
-    let metrics = trace.map { _ in APIRequestMetrics() }
+    let metrics = trace != nil || previewToken != nil ? APIRequestMetrics() : nil
     let data: Data
     let response: URLResponse
     do {

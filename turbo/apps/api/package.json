@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "desktop:preview-credential": "tsx scripts/issue-desktop-preview-credential.ts",
     "build": "vite build",
     "build:worker": "node scripts/build-worker.mjs",
     "test:worker-build": "node --test scripts/build-worker.node-test.mjs scripts/worker-contract-boundaries.node-test.mjs",

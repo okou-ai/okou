@@ -9,7 +9,14 @@ import {
   CLIENT_VERSION_HEADER,
 } from "@okouai/api-contracts/contracts/client-headers";
 import { createApp } from "../app-factory";
+import {
+  issueDesktopPreviewCredential,
+  DESKTOP_PREVIEW_HEADER,
+} from "../lib/desktop-preview-credential";
+import { authMeRoutes } from "../signals/routes/auth-me";
+import { computerUseSessionHostRoutes } from "../signals/routes/computer-use-session-hosts";
 import { mockEnv } from "../lib/env";
+import { now, withMockNowForTest } from "../lib/time";
 import webClientCompatibility from "../lib/web-client-compatibility.json";
 import { healthRoutes } from "../signals/routes/health";
 import { mailRoutes } from "../signals/routes/mail";
@@ -115,6 +122,89 @@ describe("createApp", () => {
   });
 
   describe("preview automation bypass", () => {
+    it("admits a signed Desktop preview credential only at its PR and preserves session authentication", async () => {
+      const origin = "https://pr-123-api.vm6.ai";
+      const secret = "test-only-preview-key";
+      mockEnv("ENV", "preview");
+      mockEnv("VERCEL_AUTOMATION_BYPASS_SECRET", secret);
+      mockEnv("OKOU_API_BACKEND_URL", origin);
+      const app = createApp({
+        signal: context.signal,
+        routes: [
+          ...authMeRoutes,
+          ...computerUseSessionHostRoutes,
+          ...healthRoutes,
+        ],
+      });
+      const { token } = await issueDesktopPreviewCredential(origin, secret);
+      const headers = { [DESKTOP_PREVIEW_HEADER]: token };
+      expect(
+        (await app.request(origin + "/api/auth/me", { headers })).status,
+      ).toBe(401);
+      const host = "12345678-1234-4123-8123-1234567890ab";
+      const wait = await app.request(
+        origin + "/api/computer-use/hosts/" + host + "/commands/wait",
+        {
+          method: "POST",
+          headers: { ...headers, "content-type": "application/json" },
+          body: JSON.stringify({ connectionGeneration: 1 }),
+        },
+      );
+      expect(wait.status).toBe(401);
+      expect((await app.request(origin + "/health", { headers })).status).toBe(
+        403,
+      );
+      expect(
+        (
+          await app.request(origin + "/api/auth/me", {
+            method: "POST",
+            headers,
+          })
+        ).status,
+      ).toBe(403);
+      expect(
+        (
+          await app.request("https://pr-456-api.vm6.ai/api/auth/me", {
+            headers,
+          })
+        ).status,
+      ).toBe(403);
+      const foreign = await issueDesktopPreviewCredential(
+        "https://pr-456-api.vm6.ai",
+        secret,
+      );
+      const otherSigner = await issueDesktopPreviewCredential(
+        origin,
+        "other-test-key",
+      );
+      for (const invalid of [foreign.token, otherSigner.token, "malformed"]) {
+        const response = await app.request(origin + "/api/auth/me", {
+          headers: { [DESKTOP_PREVIEW_HEADER]: invalid },
+        });
+        expect(response.status).toBe(403);
+      }
+      mockEnv("OKOU_API_BACKEND_URL", "https://pr-456-api.vm6.ai");
+      expect(
+        (await app.request(origin + "/api/auth/me", { headers })).status,
+      ).toBe(403);
+    });
+
+    it("rejects an expired Desktop preview credential", async () => {
+      const origin = "https://pr-123-api.vm6.ai";
+      const secret = "test-only-preview-key";
+      mockEnv("ENV", "preview");
+      mockEnv("VERCEL_AUTOMATION_BYPASS_SECRET", secret);
+      mockEnv("OKOU_API_BACKEND_URL", origin);
+      const { token } = await withMockNowForTest(now() - 16 * 60_000, () => {
+        return issueDesktopPreviewCredential(origin, secret);
+      });
+      const app = createApp({ signal: context.signal, routes: authMeRoutes });
+      const response = await app.request(origin + "/api/auth/me", {
+        headers: { [DESKTOP_PREVIEW_HEADER]: token },
+      });
+      expect(response.status).toBe(403);
+    });
+
     it("rejects preview requests without the Vercel bypass header or cookie", async () => {
       mockEnv("ENV", "preview");
       mockEnv("VERCEL_AUTOMATION_BYPASS_SECRET", "preview-secret");

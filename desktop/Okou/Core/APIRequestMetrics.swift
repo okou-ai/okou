@@ -12,6 +12,15 @@ final class APIRequestMetrics: NSObject, URLSessionTaskDelegate, @unchecked Send
     lock.withLock { diagnostic = value }
   }
 
+  func urlSession(
+    _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+    newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void
+  ) {
+    // Preview API calls are JSON requests. Never forward their credential on redirects.
+    let protectedRequest = task.originalRequest?.value(forHTTPHeaderField: DesktopPreviewCredential.header) != nil
+    completionHandler(protectedRequest ? nil : request)
+  }
+
   func snapshot() -> APITransportDiagnostic? { lock.withLock { diagnostic } }
 }
 
