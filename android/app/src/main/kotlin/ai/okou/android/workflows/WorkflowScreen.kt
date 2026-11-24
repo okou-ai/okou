@@ -22,6 +22,7 @@ import ai.okou.android.state.rememberWorkflowDiscardConfirmation
 import ai.okou.android.state.rememberWorkflowEditorReturnFocus
 import ai.okou.android.state.retainWhileComposing
 import ai.okou.android.updates.updateFocusOutline
+import ai.okou.android.workspaceSearchFocusOutline
 import ai.okou.android.workspaceSearchTextStyle
 import androidx.activity.compose.BackHandler
 import androidx.annotation.StringRes
@@ -394,7 +395,10 @@ private fun WorkflowToolbar(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onBack) {
+            IconButton(
+                onClick = onBack,
+                modifier = Modifier.workspaceSearchFocusOutline(CircleShape),
+            ) {
                 Icon(painterResource(R.drawable.ic_arrow_back), stringResource(R.string.back))
             }
             Text(
@@ -653,6 +657,7 @@ private fun WorkflowQuery(query: ChatSearchState) {
                             requester.requestFocus()
                             keyboard?.show()
                         },
+                        modifier = Modifier.workspaceSearchFocusOutline(CircleShape),
                     ) {
                         Icon(
                             painterResource(R.drawable.ic_close),
@@ -694,9 +699,14 @@ private fun WorkflowEmpty(
             },
             style = workflowBodyStyle().copy(fontWeight = FontWeight.SemiBold),
         )
+        val recovery = Modifier.workspaceSearchFocusOutline(RoundedCornerShape(12.dp))
         when {
-            hasQuery -> ChatListTextAction(R.string.workflow_clear_search, onClick = reset)
-            scoped -> ChatListTextAction(R.string.workflow_show_all) { onScope(WorkflowScope.All) }
+            hasQuery ->
+                ChatListTextAction(R.string.workflow_clear_search, recovery, onClick = reset)
+            scoped ->
+                ChatListTextAction(R.string.workflow_show_all, recovery) {
+                    onScope(WorkflowScope.All)
+                }
         }
     }
 }
@@ -970,19 +980,16 @@ private fun WorkflowDetailPane(
                                 )
                             }
                         item(key = "history_earlier") {
-                            TextButton(
+                            ChatListTextAction(
+                                if (state.historyRead == WorkflowHistoryRead.Earlier)
+                                    R.string.workflow_history_loading
+                                else R.string.workflow_history_earlier,
                                 onClick = onEarlierRuns,
                                 enabled = !handoffPending && state.historyRead?.loading != true,
-                                modifier = Modifier.testTag("workflow_earlier_runs"),
-                            ) {
-                                Text(
-                                    stringResource(
-                                        if (state.historyRead == WorkflowHistoryRead.Earlier)
-                                            R.string.workflow_history_loading
-                                        else R.string.workflow_history_earlier,
-                                    ),
-                                )
-                            }
+                                modifier =
+                                    Modifier.workspaceSearchFocusOutline(RoundedCornerShape(12.dp))
+                                        .testTag("workflow_earlier_runs"),
+                            )
                         }
                     }
                 }

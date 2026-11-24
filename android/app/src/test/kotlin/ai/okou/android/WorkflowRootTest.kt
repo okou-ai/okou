@@ -25,8 +25,11 @@ import androidx.compose.ui.test.click
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isDialog
+import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -37,6 +40,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performFirstLinkClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextInputSelection
@@ -165,6 +169,12 @@ internal abstract class WorkflowRootTestFixture {
                     SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton),
             )
             .performClick()
+
+    protected fun selectGmailTrigger() {
+        compose.onNodeWithText("Event").performClick()
+        compose.onNodeWithText("Google Calendar · Event created").performClick()
+        compose.onNodeWithText("Gmail · Message received").performClick()
+    }
 
     protected fun waitFor(label: String) =
         compose.waitUntil(10_000) {
@@ -360,8 +370,7 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
         compose.onNodeWithText("Shanghai (UTC+8)").assertIsDisplayed()
         back()
         compose.onNodeWithText("Add automation").performClick()
-        compose.onNodeWithText("Schedule").performClick()
-        compose.onNodeWithText("Gmail message received").performClick()
+        selectGmailTrigger()
         compose.onNodeWithContentDescription("Subject contains").performTextInput("Release")
         compose
             .onNodeWithText("A Gmail connection is required to save this rule.")
@@ -834,6 +843,18 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
         val timeBounds = time.getUnclippedBoundsInRoot()
         assertTrue(timeBounds.bottom - timeBounds.top >= 56.dp)
         time.performTextReplacement("09:30")
+        val timezone = compose.onNodeWithTag("workflow_timezone")
+        timezone.pressEnter()
+        compose
+            .onNode(hasText("Coordinated Universal Time (UTC+0)") and isSelectable())
+            .assertIsSelected()
+            .assertIsFocused()
+        val kathmandu = android.icu.util.TimeZone.getCanonicalID("Asia/Kathmandu")
+        compose
+            .onNode(hasScrollToIndexAction() and hasAnyAncestor(isDialog()))
+            .performScrollToKey(kathmandu)
+        compose.onNode(hasText("Kathmandu (UTC+5:45)") and isSelectable()).pressEnter()
+        timezone.assertIsFocused().assertTextContains("Kathmandu (UTC+5:45)")
         val createPath = "/api/workflows/$WORKFLOW_SHARED/automations"
         try {
             save.pressEnter()
@@ -859,7 +880,7 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
         assertFalse(body.getValue("enabled").jsonPrimitive.boolean)
         val schedule = body.getValue("schedule").jsonObject
         assertEquals("30 9 * * 1-5", schedule.getValue("cronExpression").jsonPrimitive.content)
-        assertEquals("UTC", schedule.getValue("timezone").jsonPrimitive.content)
+        assertEquals(kathmandu, schedule.getValue("timezone").jsonPrimitive.content)
 
         val edit =
             compose.onNode(
@@ -958,9 +979,12 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
             openWorkflowDetail(WORKFLOW_SHARED)
             compose.onNodeWithTag("workflow_tab_automations").performClick()
             add.pressEnter()
-            compose.onNodeWithText("Schedule").performClick()
-            compose.onNodeWithText("Gmail message received").performClick()
+            selectGmailTrigger()
             subject.performTextInput("Release summary")
+            compose.onNodeWithText("Schedule").performClick().assertIsSelected()
+            compose.onNodeWithText("Event").performClick().assertIsSelected()
+            compose.onNodeWithText("Gmail · Message received").assertIsDisplayed()
+            subject.assertTextContains("Release summary")
             save.assertIsNotEnabled()
             connection.assertDoesNotExist()
         } finally {
@@ -1003,8 +1027,8 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
         openWorkflowDetail()
         compose.onNodeWithTag("workflow_tab_automations").performClick()
         compose.onNodeWithText("Add automation").performClick()
-        compose.onNodeWithText("Schedule").performClick()
-        compose.onNodeWithText("Calendar event created").performClick()
+        compose.onNodeWithText("Event").performClick().assertIsSelected()
+        compose.onNodeWithText("Google Calendar · Event created").assertIsDisplayed()
         val calendar = compose.onNodeWithContentDescription("Calendar ID")
         calendar.performTextReplacement("test-calendar")
         waitFor("View connections")
@@ -1033,8 +1057,7 @@ internal class WorkflowHistoryRootTest : WorkflowRootTestFixture() {
         openWorkflowDetail()
         compose.onNodeWithTag("workflow_tab_automations").performClick()
         compose.onNodeWithText("Add automation").performClick()
-        compose.onNodeWithText("Schedule").performClick()
-        compose.onNodeWithText("Gmail message received").performClick()
+        selectGmailTrigger()
         val subject = compose.onNodeWithContentDescription("Subject contains")
         subject.performTextReplacement("Release summary")
         waitFor("View connections")

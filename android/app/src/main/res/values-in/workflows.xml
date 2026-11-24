@@ -123,4 +123,8 @@
     <string name="workflow_history_earlier_failed">Eksekusi sebelumnya tidak dapat dimuat.</string>
     <string name="workflow_rule_checking">Memeriksa hasil…</string>
     <string name="workflow_rule_unconfirmed">Hasilnya belum dikonfirmasi.</string>
+    <string name="workflow_event">Peristiwa</string>
+    <string name="workflow_event_source">Sumber peristiwa</string>
+    <string name="workflow_source_gmail">Gmail · Email diterima</string>
+    <string name="workflow_source_calendar">Google Calendar · Acara dibuat</string>
 </resources>

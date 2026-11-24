@@ -53,6 +53,7 @@ internal fun <T : Any> WorkspaceFilterRow(
     label: @Composable (T) -> String,
     modifier: Modifier = Modifier,
     optionModifier: (T) -> Modifier = { Modifier },
+    enabled: Boolean = true,
     onSelect: (T) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -119,7 +120,7 @@ internal fun <T : Any> WorkspaceFilterRow(
                         .heightIn(min = 48.dp)
                         .clip(shape)
                         .then(optionModifier(option))
-                        .focusProperties { canFocus = true }
+                        .focusProperties { canFocus = enabled }
                         .background(if (checked) colors.secondaryContainer else colors.background)
                         .then(
                             if (keyboardFocus && focused == option)
@@ -131,7 +132,7 @@ internal fun <T : Any> WorkspaceFilterRow(
                             if (it.isFocused) focused = option
                             else if (focused == option) focused = null
                         }
-                        .selectable(checked, role = role) { onSelect(option) }
+                        .selectable(checked, enabled = enabled, role = role) { onSelect(option) }
                         .padding(horizontal = 8.dp, vertical = 8.dp),
                     contentAlignment = Alignment.Center,
                 ) {
