@@ -235,6 +235,29 @@ class ScreenshotScenario {
                 assertTrue(action(fixture.releaseTitle).visibleBounds.height() >= 80)
                 ScreenshotCapture.capture("phone-directory.png")
 
+                val search =
+                    checkNotNull(
+                        device.wait(
+                            Until.findObject(
+                                By.pkg(app.packageName)
+                                    .clazz("android.widget.EditText")
+                                    .desc("搜索工作流"),
+                            ),
+                            10_000,
+                        ),
+                    )
+                search.setText("未找到的工作流")
+                val empty = text("没有匹配的工作流").visibleBounds
+                val all = action("全部").visibleBounds
+                val clear = action("清除关键词")
+                val clearBounds = clear.visibleBounds
+                assertEquals(12, empty.left - all.left)
+                assertEquals(24, empty.top - all.bottom - 8)
+                assertEquals(8, clearBounds.top - empty.bottom)
+                assertTrue(clearBounds.height() >= 48)
+                ScreenshotCapture.capture("phone-directory-empty.png")
+                clear.click()
+
                 text(fixture.releaseTitle).click()
                 text("工作流说明")
                 val use = action("在聊天中使用").visibleBounds
