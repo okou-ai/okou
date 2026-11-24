@@ -33,7 +33,8 @@ export const googlePlayProvider: AuthCodeConnectorAuthProvider<"google-play"> =
           args.code,
           args.redirectUri,
         );
-        if (!result.scopes.includes(ANDROID_PUBLISHER_SCOPE)) {
+        const grantedScopes = new Set(result.scopes);
+        if (!grantedScopes.has(ANDROID_PUBLISHER_SCOPE)) {
           throw new Error(
             "Grant Google Play Developer API access to connect this account.",
           );
