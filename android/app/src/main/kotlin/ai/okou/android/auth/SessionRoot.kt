@@ -17,6 +17,7 @@ import ai.okou.android.chat.WorkspaceRealtimeLifecycle
 import ai.okou.android.instructions.PersonalInstructionsSettings
 import ai.okou.android.preferences.MemberPreferencesSettings
 import ai.okou.android.preferences.PreferenceFeedback
+import ai.okou.android.preferences.TimezoneSaveFeedback
 import ai.okou.android.settings.DefaultModelFeedback
 import ai.okou.android.settings.DefaultModelSetting
 import ai.okou.android.settings.EmailSubscriptionSetting
@@ -263,6 +264,7 @@ private fun WorkspaceSettingsContent(
     val ready = state.ready
     if (ready != null) {
         WorkspaceSettingsFeedback(ready.settings, snackbar, destination, feedbackInOverlay)
+        TimezoneSaveFeedback(ready.preferences, snackbar)
     }
     val rowFocus = remember { SettingsDestination.entries.associateWith { FocusRequester() } }
     var focused by remember { mutableStateOf<SettingsDestination?>(null) }

@@ -115,4 +115,7 @@
     <string name="chat_connector_saving">Saving connector choice…</string>
     <string name="chat_connector_save_failed">Could not save the connector choice.</string>
     <string name="chat_connector_first_send_failed">Could not apply the connector choices. Review them in Chat options, then retry this message.</string>
+    <string name="connector_device_denied">The provider denied authorization.</string>
+    <string name="connector_device_expired">The device code expired. Start authorization again.</string>
+    <string name="connector_device_failed">Could not complete device authorization.</string>
 </resources>

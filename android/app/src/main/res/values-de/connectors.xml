@@ -115,4 +115,7 @@
     <string name="chat_connector_saving">Konnektorauswahl wird gespeichert…</string>
     <string name="chat_connector_save_failed">Die Konnektorauswahl konnte nicht gespeichert werden.</string>
     <string name="chat_connector_first_send_failed">Die Konnektorauswahl konnte nicht angewendet werden. Prüfe sie in den Chatoptionen und sende diese Nachricht erneut.</string>
+    <string name="connector_device_denied">Der Anbieter hat die Autorisierung abgelehnt.</string>
+    <string name="connector_device_expired">Der Gerätecode ist abgelaufen. Starte die Autorisierung erneut.</string>
+    <string name="connector_device_failed">Die Geräteautorisierung konnte nicht abgeschlossen werden.</string>
 </resources>

@@ -115,4 +115,7 @@
     <string name="chat_connector_saving">कनेक्टर का चुनाव सेव हो रहा है…</string>
     <string name="chat_connector_save_failed">कनेक्टर का चुनाव सेव नहीं हो सका।</string>
     <string name="chat_connector_first_send_failed">कनेक्टर के चुनाव लागू नहीं हो सके। चैट के विकल्पों में उनकी जाँच करें और फिर यह मैसेज भेजने की कोशिश करें।</string>
+    <string name="connector_device_denied">सेवा प्रदाता ने अनुमति देने से मना कर दिया।</string>
+    <string name="connector_device_expired">डिवाइस कोड की समय-सीमा समाप्त हो गई। अनुमति की प्रक्रिया फिर शुरू करें।</string>
+    <string name="connector_device_failed">डिवाइस को अनुमति देने की प्रक्रिया पूरी नहीं हो सकी।</string>
 </resources>

@@ -17,6 +17,7 @@ import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -24,6 +25,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 
 enum class PreferenceStatus {
@@ -32,6 +34,11 @@ enum class PreferenceStatus {
     Refreshing,
     SaveFailed,
     RefreshFailed,
+}
+
+internal enum class TimezoneSaveNotice {
+    Selected,
+    Rejected,
 }
 
 data class PreferenceChange(
@@ -103,6 +110,11 @@ data class MemberPreferencesState(
     val timezone: String
         get() = pending?.timezone ?: checkNotNull(confirmed.timezone)
 
+    internal val timezoneScheduleUpdatePending: Boolean
+        get() =
+            pending?.timezone == null &&
+                pending?.timezoneToReconcile?.let { it == confirmed.timezone } == true
+
     val cloudBrowser: Boolean
         get() = pending?.cloudBrowser ?: confirmed.cloudBrowserEnabledByDefault
 
@@ -121,7 +133,7 @@ private fun MemberPreferencesState.afterTimezoneConflict(
     // The timezone endpoint returns this conflict after saving the fields and before finishing
     // Morning Brief reconciliation. Keep the schedule repair pending and acknowledge the values.
     val timezone = checkNotNull(sent.timezoneToWrite)
-    val remaining = pending?.after(sent) ?: PreferenceChange()
+    val remaining = pending?.after(sent)
     return copy(
         confirmed =
             confirmed.copy(
@@ -132,7 +144,9 @@ private fun MemberPreferencesState.afterTimezoneConflict(
                 cloudBrowserEnabledByDefault =
                     sent.cloudBrowser ?: confirmed.cloudBrowserEnabledByDefault,
             ),
-        pending = remaining.copy(timezoneToReconcile = timezone),
+        pending = (remaining ?: PreferenceChange()).copy(timezoneToReconcile = timezone),
+        status = if (remaining == null) PreferenceStatus.SaveFailed else PreferenceStatus.Ready,
+        recovering = false,
         timezoneConfirmation = timezoneConfirmation + 1,
     )
 }
@@ -149,6 +163,8 @@ class MemberPreferencesModel(
     private val mutable =
         MutableStateFlow(MemberPreferencesState(initial, initialPending?.afterReadback(initial)))
     val uiState = mutable.asStateFlow()
+    private val timezoneSaveNotices = Channel<TimezoneSaveNotice>(Channel.CONFLATED)
+    internal val timezoneNotices = timezoneSaveNotices.receiveAsFlow()
     private var retired = false
     private var online = true
     private var request: Job? = null
@@ -202,9 +218,14 @@ class MemberPreferencesModel(
     }
 
     fun selectTimezone(value: String, missingOnServer: Boolean = false) {
+        if (!current()) return
         val state = mutable.value
-        if (state.pending?.timezoneToWrite != value && (state.timezone != value || missingOnServer))
+        if (
+            state.pending?.timezoneToWrite != value && (state.timezone != value || missingOnServer)
+        ) {
+            timezoneSaveNotices.trySend(TimezoneSaveNotice.Selected)
             select((state.pending ?: PreferenceChange()).copy(timezone = value))
+        }
     }
 
     fun setCloudBrowser(enabled: Boolean) {
@@ -269,7 +290,7 @@ class MemberPreferencesModel(
             )
         val job =
             viewModelScope.launch(start = CoroutineStart.LAZY) {
-                var success = false
+                var continueSync = false
                 try {
                     val confirmed =
                         if (change == null || verifying) service.preferences()
@@ -301,15 +322,15 @@ class MemberPreferencesModel(
                             )
                         retryDelay = 5_000L
                         readFailures = 0
-                        success = true
+                        continueSync = true
                     }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
-                    fail(error, saving, sent = change.takeUnless { verifying })
+                    continueSync = fail(error, saving, sent = change.takeUnless { verifying })
                 } finally {
                     request = null
-                    if (success) synchronize()
+                    if (continueSync) synchronize()
                 }
             }
         request = job
@@ -323,15 +344,29 @@ class MemberPreferencesModel(
         readFailures = 0
     }
 
-    private fun fail(error: Exception, saving: Boolean, sent: PreferenceChange?) {
-        if (!current()) return
+    private fun fail(error: Exception, saving: Boolean, sent: PreferenceChange?): Boolean {
+        if (!current()) return false
         // Authorization/update failures retire the parent workspace before another publication.
         onFailure(error)
-        if (!current()) return
+        if (!current()) return false
+        // The preferences endpoint rejects invalid input before committing any fields.
+        if (
+            error is ApiFailure.Http &&
+                error.status == 400 &&
+                error.code == "BAD_REQUEST" &&
+                sent?.timezone != null
+        ) {
+            rejectTimezone(sent)
+            return true
+        }
         val conflict = error is ApiFailure.Http && error.status == 409 && error.code == "CONFLICT"
-        val state =
-            if (conflict && sent?.timezoneToWrite != null) mutable.value.afterTimezoneConflict(sent)
-            else mutable.value
+        if (conflict && sent?.timezoneToWrite != null) {
+            val state = mutable.value.afterTimezoneConflict(sent)
+            mutable.value = state
+            // New selections can proceed after readback. A schedule repair alone waits for Retry.
+            return state.status == PreferenceStatus.Ready
+        }
+        val state = mutable.value
         val pending = state.pending != null
         val recoverable =
             when (error) {
@@ -352,7 +387,7 @@ class MemberPreferencesModel(
                 )
             readRequested = retry
             if (wait != null && online) scheduleRecovery(wait)
-            return
+            return false
         }
         mutable.value =
             state.copy(
@@ -368,6 +403,24 @@ class MemberPreferencesModel(
                 scheduleRecovery(wait)
             }
         }
+        return false
+    }
+
+    private fun rejectTimezone(sent: PreferenceChange) {
+        val state = mutable.value
+        val latest = checkNotNull(state.pending)
+        val rejected = latest.timezone == sent.timezone
+        // Restore any schedule repair that was pending before the rejected write.
+        val remaining =
+            latest
+                .copy(
+                    timezone = latest.timezone.takeUnless { rejected },
+                    timezoneToReconcile = sent.timezoneToReconcile,
+                )
+                .takeUnless { it == PreferenceChange() }
+        needsWriteReadback = remaining?.timezoneToReconcile != null
+        mutable.value = state.copy(pending = remaining, status = PreferenceStatus.Ready)
+        if (rejected) timezoneSaveNotices.trySend(TimezoneSaveNotice.Rejected)
     }
 
     private fun scheduleRecovery(wait: Long) {

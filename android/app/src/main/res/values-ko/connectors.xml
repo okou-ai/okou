@@ -111,4 +111,7 @@
     <string name="chat_connector_saving">커넥터 선택 저장 중…</string>
     <string name="chat_connector_save_failed">커넥터 선택을 저장하지 못했습니다.</string>
     <string name="chat_connector_first_send_failed">커넥터 선택을 적용하지 못했습니다. 채팅 옵션에서 확인한 후 이 메시지를 다시 보내세요.</string>
+    <string name="connector_device_denied">서비스 제공업체가 인증을 거부했습니다.</string>
+    <string name="connector_device_expired">기기 코드가 만료되었습니다. 인증을 다시 시작하세요.</string>
+    <string name="connector_device_failed">기기 인증을 완료하지 못했습니다.</string>
 </resources>

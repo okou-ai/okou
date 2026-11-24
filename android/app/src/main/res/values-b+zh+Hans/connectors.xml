@@ -111,4 +111,7 @@
     <string name="chat_connector_saving">正在保存连接器选择…</string>
     <string name="chat_connector_save_failed">暂时无法保存连接器选择。</string>
     <string name="chat_connector_first_send_failed">连接器选择未能应用。请在「聊天选项」中检查后重试这条消息。</string>
+    <string name="connector_device_denied">服务方已拒绝授权。</string>
+    <string name="connector_device_expired">设备码已过期，请重新发起授权。</string>
+    <string name="connector_device_failed">暂时无法完成设备授权。</string>
 </resources>
