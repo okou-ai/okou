@@ -85,6 +85,7 @@ internal val ConversationContentMaxWidth = 768.dp
 
 private const val HistoryFeedbackDelayMillis = 250L
 private const val TimelineEnd = "conversation_end"
+private const val TimelineStart = "conversation_start"
 private const val TimelineInitial = "conversation_initial"
 private const val TimelineActivity = "conversation_activity"
 private val TimelineEndPadding = 16.dp
@@ -151,8 +152,6 @@ internal fun ConversationRoute(
     val hasContent = transcript != null || content.isNotEmpty() || queue.isNotEmpty()
     val firstReadFailed = !hasContent && thread != null && state.initialReadFailed
     val waitingForHistory = historyAvailable && !hasContent && !firstReadFailed && !missing
-    val showSkeleton =
-        key(threadId) { rememberChatWaitIndicator(waitingForHistory, HistoryFeedbackDelayMillis) }
     val visit =
         rememberConversationReadVisit(
             model,
@@ -348,9 +347,12 @@ internal fun ConversationRoute(
                 }
             }
         }
-        var restored by remember(linkPosition) { mutableStateOf(false) }
-        var restoredAnchor by remember(linkPosition) { mutableStateOf<ConversationAnchor?>(null) }
+        var initialReadingPosition by
+            remember(linkPosition) {
+                mutableStateOf<ReadingPosition?>(null)
+            }
         var positioned by remember(linkPosition, searchTarget) { mutableStateOf(false) }
+        var transcriptShown by remember { mutableStateOf(false) }
         var findViewport by remember { mutableStateOf<LayoutCoordinates?>(null) }
         var hasSeenLatest by remember { mutableStateOf(false) }
         var newReply by remember { mutableStateOf(false) }
@@ -385,9 +387,10 @@ internal fun ConversationRoute(
         SideEffect { recentSizes.keys.retainAll(recentKeys.toSet()) }
         LaunchedEffect(model, threadId, linkPosition) {
             val source = linkPosition?.source
-            restoredAnchor =
-                if (source != null) source.anchor else model.restoreReadingAnchor(threadId)
-            restored = true
+            initialReadingPosition =
+                ReadingPosition(
+                    if (source != null) source.anchor else model.restoreReadingAnchor(threadId),
+                )
         }
         val foundIndex =
             remember(targetMessageId, timeline) {
@@ -398,34 +401,68 @@ internal fun ConversationRoute(
                     }
             }
         val pendingFind = readingTarget?.takeUnless { it.positioned }
-        LaunchedEffect(
-            restored,
-            positioned,
-            timeline,
-            state.phase,
-            list.offline,
-            readingTarget,
-            waitingForSearch,
-        ) {
-            if (!restored || positioned || waitingForSearch || (!hasContent && !missing))
-                return@LaunchedEffect
-            val anchor = restoredAnchor
-            val index = timeline.indexOfFirst {
-                it is ConversationMessage && it.includes(anchor?.eventId)
+        val restored = initialReadingPosition
+        val restoredAnchor = restored?.anchor.takeUnless { positioned }
+        val restoredIndex =
+            remember(restoredAnchor, timeline) {
+                restoredAnchor?.let { anchor ->
+                    timeline.indexOfFirst {
+                        it is ConversationMessage && it.includes(anchor.eventId)
+                    }
+                } ?: -1
             }
-            val jumpIndex = if (pendingFind == null) -1 else foundIndex
-            // A cached checkpoint can be older than the saved anchor. Give catch-up a chance first.
-            if (
-                (pendingFind != null && jumpIndex < 0 || anchor != null && index < 0) &&
-                    state.phase == HistoryPhase.Loading &&
-                    !list.offline
-            )
-                return@LaunchedEffect
-            val row = (if (jumpIndex >= 0) jumpIndex else index) + 1
-            val offset =
-                if (jumpIndex < 0 && index >= 0 && anchor != null)
-                    with(density) { anchor.offsetDp.dp.roundToPx() }
-                else 0
+        // Keep cached rows readable while an absent target waits for catch-up.
+        val waitingForAnchor =
+            (pendingFind != null && foundIndex < 0 ||
+                restoredAnchor != null && restoredIndex < 0) &&
+                state.phase == HistoryPhase.Loading &&
+                !list.offline
+        val canPosition =
+            restored != null &&
+                !positioned &&
+                !waitingForAnchor &&
+                !waitingForSearch &&
+                (hasContent || missing)
+        val positionOnFirstMeasure =
+            canPosition && hasContent && !missing && !transcriptShown && pendingFind == null
+        val showTimeline =
+            !hasContent ||
+                missing ||
+                pendingFind != null ||
+                transcriptShown ||
+                positioned ||
+                positionOnFirstMeasure ||
+                restored != null && (waitingForAnchor || waitingForSearch)
+        val visibleTimeline = if (showTimeline) timeline else emptyList()
+        val waitingForTimeline = waitingForHistory || !showTimeline
+        val showSkeleton = rememberChatWaitIndicator(waitingForTimeline, HistoryFeedbackDelayMillis)
+        val jumpIndex = if (pendingFind == null) -1 else foundIndex
+        val row = (if (jumpIndex >= 0) jumpIndex else restoredIndex) + 1
+        val offset =
+            if (jumpIndex < 0 && restoredIndex >= 0 && restoredAnchor != null)
+                with(density) { restoredAnchor.offsetDp.dp.roundToPx() }
+            else 0
+        if (showTimeline && hasContent && !missing && !transcriptShown) {
+            SideEffect {
+                if (positionOnFirstMeasure) {
+                    // Set the scroll request as the transcript replaces the loading rows.
+                    position.requestScrollToItem(row, offset)
+                    positioned = true
+                }
+                transcriptShown = true
+            }
+        }
+        LaunchedEffect(
+            linkPosition,
+            searchTarget,
+            canPosition,
+            positionOnFirstMeasure,
+            pendingFind,
+            jumpIndex,
+            row,
+            offset,
+        ) {
+            if (!canPosition || positionOnFirstMeasure) return@LaunchedEffect
             if (pendingFind == null) {
                 position.scrollToItem(row, offset)
             } else {
@@ -619,7 +656,7 @@ internal fun ConversationRoute(
                             },
                         )
                     }
-                    itemsIndexed(timeline, key = { _, entry -> entry.key }) { index, entry ->
+                    itemsIndexed(visibleTimeline, key = { _, entry -> entry.key }) { index, entry ->
                         val trackSize =
                             if (index < 4)
                                 Modifier.onSizeChanged { recentSizes[entry.key] = it.height }
@@ -682,22 +719,32 @@ internal fun ConversationRoute(
                                         artifactActions = artifactActions,
                                         findHighlight = highlight,
                                         links = links,
+                                        beforeEarlierRepliesResize = {
+                                            if (
+                                                !awaitingFindPosition &&
+                                                    !position.isScrollInProgress
+                                            )
+                                                position.keepReplyTop(entry.key)
+                                        },
                                         failureContent = recovery,
                                     )
                                 }
                             }
                         }
                     }
-                    if (timeline.isEmpty()) {
+                    if (visibleTimeline.isEmpty()) {
                         item(key = TimelineInitial) {
                             when {
                                 missing -> ContentReadFeedback(R.string.history_missing)
-                                waitingForHistory -> if (showSkeleton) ConversationSkeleton()
+                                waitingForTimeline -> if (showSkeleton) ConversationSkeleton()
                                 firstReadFailed -> ContentReadFeedback(R.string.history_failed)
                                 transcript != null && queue.isEmpty() ->
                                     Text(stringResource(R.string.history_empty))
                             }
                         }
+                    } else {
+                        // Keep an anchor above the oldest reply, too.
+                        item(key = TimelineStart) {}
                     }
                 }
                 if (positioned && !atEnd && position.canScrollBackward) {
@@ -775,7 +822,7 @@ internal fun ConversationRoute(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
-                if (showHistoryProgress) {
+                if (showTimeline && showHistoryProgress) {
                     Box(Modifier.fillMaxWidth().testTag("history_sync_progress")) {
                         ContentReadProgress(R.string.history_syncing)
                     }
@@ -793,9 +840,15 @@ internal fun ConversationRoute(
 }
 
 private val TimelineFixedKeys =
-    setOf(TimelineEnd, TimelineInitial, TimelineActivity, ConversationCompletionKey)
+    setOf(TimelineEnd, TimelineStart, TimelineInitial, TimelineActivity, ConversationCompletionKey)
 
 private data class ReadingPosition(val anchor: ConversationAnchor?)
+
+private fun LazyListState.keepReplyTop(key: String) {
+    val reply = layoutInfo.visibleItemsInfo.firstOrNull { it.key == key } ?: return
+    // The next item in reverse order starts at the reply's top edge.
+    requestScrollToItem(reply.index + 1, -(reply.offset + reply.size))
+}
 
 private fun LazyListItemInfo.readingAnchor(density: Density): ConversationAnchor =
     ConversationAnchor(key as String, with(density) { (-offset).toDp().value })

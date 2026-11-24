@@ -41,6 +41,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -62,8 +63,12 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -72,6 +77,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
+// Keep original line breaks in the journal and preserve native selection offsets.
+private val CompactDraftDisplay = VisualTransformation { text ->
+    val line = text.text.replace('\n', ' ').replace('\r', ' ')
+    TransformedText(if (line == text.text) text else AnnotatedString(line), OffsetMapping.Identity)
+}
 
 @Composable
 internal fun ChatComposerField(
@@ -117,6 +128,8 @@ internal fun ChatComposerField(
         if (shortWindow) minimumTextHeight
         else maxOf(minimumTextHeight, (window.height * 0.3f).dp.coerceIn(48.dp, 160.dp))
     var inputFocused by remember { mutableStateOf(false) }
+    val restoreFocusOnResize = remember(shortWindow) { inputFocused }
+    val currentShortWindow by rememberUpdatedState(shortWindow)
     val editorFocus = remember(target.key) { FocusRequester() }
     val latestInput by rememberUpdatedState(input)
     val hasDraft = state.journal != null
@@ -191,48 +204,59 @@ internal fun ChatComposerField(
                         editorFocus,
                         manageConnectors,
                     )
-                BasicTextField(
-                    value = input.value,
-                    onValueChange = {
-                        input.edit(it)
-                        model.edit(target, it.text)
-                    },
-                    modifier =
-                        Modifier.weight(1f)
-                            .heightIn(min = minimumTextHeight, max = availableTextHeight)
-                            .focusRequester(editorFocus)
-                            .onFocusChanged { inputFocused = it.isFocused }
-                            .testTag("message_input")
-                            .semantics { contentDescription = label },
-                    enabled = state.journal != null,
-                    textStyle = textStyle,
-                    cursorBrush = SolidColor(colors.onSurface),
-                    maxLines = if (shortWindow) 1 else Int.MAX_VALUE,
-                    decorationBox = { editor ->
-                        Box(
-                            Modifier.fillMaxWidth()
-                                .padding(
-                                    start = 2.dp,
-                                    top = textPadding,
-                                    end = 10.dp,
-                                    bottom = textPadding,
-                                ),
-                            contentAlignment = Alignment.CenterStart,
-                        ) {
-                            if (input.value.text.isEmpty()) {
-                                Text(
-                                    label,
-                                    modifier = Modifier.clearAndSetSemantics {},
-                                    color = colors.onSurfaceVariant,
-                                    style = textStyle,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
+                // Scroll state saved by Compose belongs to this orientation.
+                key(shortWindow) {
+                    BasicTextField(
+                        value = input.value,
+                        onValueChange = {
+                            // A retiring field can clear its selection while focus moves.
+                            if (shortWindow == currentShortWindow) {
+                                input.edit(it)
+                                model.edit(target, it.text)
                             }
-                            editor()
-                        }
-                    },
-                )
+                        },
+                        modifier =
+                            Modifier.weight(1f)
+                                .heightIn(min = minimumTextHeight, max = availableTextHeight)
+                                .focusRequester(editorFocus)
+                                .onFocusChanged { inputFocused = it.isFocused }
+                                .testTag("message_input")
+                                .semantics { contentDescription = label },
+                        enabled = state.journal != null,
+                        textStyle = textStyle,
+                        cursorBrush = SolidColor(colors.onSurface),
+                        singleLine = shortWindow,
+                        visualTransformation =
+                            if (shortWindow) CompactDraftDisplay else VisualTransformation.None,
+                        decorationBox = { editor ->
+                            Box(
+                                Modifier.fillMaxWidth()
+                                    .padding(
+                                        start = 2.dp,
+                                        top = textPadding,
+                                        end = 10.dp,
+                                        bottom = textPadding,
+                                    ),
+                                contentAlignment = Alignment.CenterStart,
+                            ) {
+                                if (input.value.text.isEmpty()) {
+                                    Text(
+                                        label,
+                                        modifier = Modifier.clearAndSetSemantics {},
+                                        color = colors.onSurfaceVariant,
+                                        style = textStyle,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                editor()
+                            }
+                        },
+                    )
+                    if (restoreFocusOnResize) {
+                        LaunchedEffect(editorFocus) { editorFocus.requestFocus() }
+                    }
+                }
                 FilledIconButton(
                     onClick = {
                         if (offline) {
