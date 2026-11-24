@@ -1272,12 +1272,13 @@ internal fun ChatListTextAction(
     @StringRes label: Int,
     @DrawableRes icon: Int? = null,
     enabled: Boolean = true,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     TextButton(
         onClick = onClick,
         enabled = enabled,
-        modifier = Modifier.heightIn(min = 48.dp),
+        modifier = modifier.heightIn(min = 48.dp),
         shape = RoundedCornerShape(12.dp),
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
         colors =

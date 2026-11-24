@@ -102,6 +102,10 @@ private val searchIconGap = 8.dp
 @Composable internal fun workspaceSearchTextStyle() = MaterialTheme.typography.bodyLarge
 
 @Composable
+internal fun Modifier.workspaceSearchFocusOutline(shape: Shape): Modifier =
+    updateFocusOutline(shape, MaterialTheme.colorScheme.onBackground, keyboardOnly = true)
+
+@Composable
 internal fun workspaceSearchControlHeight(): Dp {
     val lineHeight = workspaceSearchTextStyle().lineHeight
     return with(LocalDensity.current) { maxOf(48.dp, lineHeight.toDp() + 16.dp) }
@@ -223,6 +227,7 @@ internal fun WorkspaceListToolbar(
                         .focusRequester(searchFocus)
                         .focusProperties { canFocus = openSearch != null }
                         .onFocusChanged { onSearchFocusChanged(it.isFocused) }
+                        .workspaceSearchFocusOutline(CircleShape)
                         .testTag("workspace_search_entry")
                         .semantics { if (openSearch != null) contentDescription = label },
                     onClick = openSearch,

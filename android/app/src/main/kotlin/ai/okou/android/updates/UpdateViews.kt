@@ -990,12 +990,17 @@ private fun measureUpdateSheetActions(width: Dp): UpdateSheetActionSize {
 }
 
 @Composable
-internal fun Modifier.updateFocusOutline(shape: Shape, color: Color): Modifier {
+internal fun Modifier.updateFocusOutline(
+    shape: Shape,
+    color: Color,
+    keyboardOnly: Boolean = false,
+): Modifier {
     val focused = remember { mutableStateOf(false) }
+    val showOutline = !keyboardOnly || LocalInputModeManager.current.inputMode == InputMode.Keyboard
     return onFocusChanged { focused.value = it.isFocused }
         .drawWithContent {
             drawContent()
-            if (focused.value) {
+            if (focused.value && showOutline) {
                 val width = 2.dp.toPx()
                 inset(width) {
                     drawOutline(
