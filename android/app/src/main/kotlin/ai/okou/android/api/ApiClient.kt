@@ -241,6 +241,8 @@ class ApiClient(
         indicators(it, queryIncludeActiveUnread = "true")
     }
 
+    suspend fun draftThreadIds(): List<String> = read { chatDraftIndex(it) }.draftThreadIds
+
     suspend fun createThread(body: CreateThreadRequest) = write(201) { createThread(it, body) }
 
     suspend fun sendInput(body: SendRequest) = write(201) { sendInput(it, body) }
@@ -319,6 +321,14 @@ class ApiClient(
     }
 
     suspend fun threadDetail(threadId: String) = read { threadDetail(it, threadId) }
+
+    internal suspend fun relatedCreatedChats(threadId: String) = read {
+        relatedCreatedChats(it, threadId)
+    }
+
+    internal suspend fun relatedCommunicatingChats(threadId: String) = read {
+        relatedCommunicatingChats(it, threadId)
+    }
 
     internal suspend fun artifactCatalog(query: ArtifactCatalogQuery) = read {
         artifactCatalog(it, query)

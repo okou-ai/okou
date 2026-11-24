@@ -307,13 +307,14 @@ reconciles matching IDs, and the workspace owner releases remaining transient te
 Its external SDK observations are controlled; this is not provider-live evidence.
 
 Run controls use the same authenticated event endpoint and generated request union.
-Stop freezes the displayed live-run IDs; skipping targets one canonical queued
-automation. HTTP acceptance is not completion. The workspace control owner checks
-canonical control/target evidence and never retargets an uncertain request.
+Stop freezes the displayed run, and withdrawal or skip targets one original queue
+entry. The workspace control owner checks canonical control and target evidence
+after HTTP acceptance or an uncertain result. A recovered conversation sync can
+trigger a read-only outcome check for the original pending intent.
 All current controllers of the same origin/user/workspace attach to one shared
 command owner, including target deduplication, phases and journal mutations.
-Retiring one controller cancels only its network requests; peers retain unknown
-commands and can explicitly check/retry their original identities.
+Retiring one controller cancels only its network requests. Peers retain unresolved
+commands and verify the original identity before allowing an explicit retry.
 Frozen pending controls live separately in private `noBackupFilesDir/chat-controls`
 format-1 journals scoped by API origin, user and workspace. Disk commitment precedes
 POST, and restored intent only reads back until an explicit same-request retry.

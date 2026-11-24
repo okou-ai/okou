@@ -1,5 +1,50 @@
 # Changelog
 
+## [0.50.0](https://github.com/okou-ai/okou/compare/android-v0.49.0...android-v0.50.0) (2026-11-23)
+
+
+### Features
+
+* archive projects in the chat sidebar ([#50306](https://github.com/okou-ai/okou/issues/50306)) ([8c9f004](https://github.com/okou-ai/okou/commit/8c9f004ac760d95f3f47e8e3fa83d470f2de28c6))
+
+## [0.49.0](https://github.com/okou-ai/okou/compare/android-v0.48.0...android-v0.49.0) (2026-11-23)
+
+
+### Features
+
+* **android:** align chat list drafts and wide bottom controls ([#50256](https://github.com/okou-ai/okou/issues/50256)) ([18ad5d8](https://github.com/okou-ai/okou/commit/18ad5d8f9ba476b1a0400caef510d680929169f0))
+* **android:** show related chats in chat resources ([#50295](https://github.com/okou-ai/okou/issues/50295)) ([e9c83d6](https://github.com/okou-ai/okou/commit/e9c83d638bb2e6a56f2c915ba0128017971f0f1f))
+
+
+### Bug Fixes
+
+* **android:** align workspace entry focus and checking feedback ([#50284](https://github.com/okou-ai/okou/issues/50284)) ([d3ced66](https://github.com/okou-ai/okou/commit/d3ced66b762fc4fad17b1cf8acec6fa75c1d722d))
+* **android:** keep connector authorization visible while reading methods ([#50294](https://github.com/okou-ai/okou/issues/50294)) ([9012db7](https://github.com/okou-ai/okou/commit/9012db748061a8b1b78ad761d162f4da18fd3ee7))
+* **android:** keep workspace search feedback and position stable ([#50275](https://github.com/okou-ai/okou/issues/50275)) ([34f4b5a](https://github.com/okou-ai/okou/commit/34f4b5a25731e43c17fcccfde5acde63d87561ac))
+* **android:** recover workflow results in workspace search ([#50297](https://github.com/okou-ai/okou/issues/50297)) ([705de92](https://github.com/okou-ai/okou/commit/705de92bea2ba697f3fe396bd4fa757d8b6e56f0))
+
+## [0.48.0](https://github.com/okou-ai/okou/compare/android-v0.47.0...android-v0.48.0) (2026-11-23)
+
+
+### Features
+
+* **android:** add email updates and settings action feedback ([#50223](https://github.com/okou-ai/okou/issues/50223)) ([6faf333](https://github.com/okou-ai/okou/commit/6faf333aee0332d6d744ecfcf6f91c4ba79879c1))
+* **android:** add native proactive service settings ([#50250](https://github.com/okou-ai/okou/issues/50250)) ([3c962bf](https://github.com/okou-ai/okou/commit/3c962bf9bfb8ed665f9904436eb1cebd6c49449d))
+* **android:** choose connector accounts in chat options ([#50186](https://github.com/okou-ai/okou/issues/50186)) ([d70f73e](https://github.com/okou-ai/okou/commit/d70f73ea643c4fcf04e8d37936398d52a1c4bbd4))
+* persist presentation output format preference ([#50220](https://github.com/okou-ai/okou/issues/50220)) ([c68256f](https://github.com/okou-ai/okou/commit/c68256fc724a9baf19e9c099443be1a2d86b513e))
+
+
+### Bug Fixes
+
+* **android:** align artifact catalog reads with design ([#50240](https://github.com/okou-ai/okou/issues/50240)) ([680e490](https://github.com/okou-ai/okou/commit/680e490d2ad89b003a60f2037e43670bbdb2ddd7))
+* **android:** align chat list read recovery with design ([#50197](https://github.com/okou-ai/okou/issues/50197)) ([ef44d56](https://github.com/okou-ai/okou/commit/ef44d562f065b85ae8c920d7193fd4547734fa90))
+* **android:** align connector first-read feedback ([#50261](https://github.com/okou-ai/okou/issues/50261)) ([73a9249](https://github.com/okou-ai/okou/commit/73a924951b736fed27ed53d7c00ede1968e5eea8))
+* **android:** align sign-in and workspace entry recovery ([#50205](https://github.com/okou-ai/okou/issues/50205)) ([9905594](https://github.com/okou-ai/okou/commit/9905594ef6b46ce92e4aa8ebb8d3085369cd08db))
+* **android:** allow member automations on shared workflows ([#50217](https://github.com/okou-ai/okou/issues/50217)) ([19966e8](https://github.com/okou-ai/okou/commit/19966e8a567f0895ddb1b680db11ffd39e926bd3))
+* **android:** recover conversation history reads automatically ([#50209](https://github.com/okou-ai/okou/issues/50209)) ([cf2caac](https://github.com/okou-ai/okou/commit/cf2caacaf435779acf001f9ed0585d42b50e049a))
+* **android:** recover workspace reads after transient authentication failures ([#50230](https://github.com/okou-ai/okou/issues/50230)) ([f4763bd](https://github.com/okou-ai/okou/commit/f4763bd47f5e667833b5b8b9b28d1e674fee3ad6))
+* **android:** restore focus when workflow editors close ([#50257](https://github.com/okou-ai/okou/issues/50257)) ([5ee5ef5](https://github.com/okou-ai/okou/commit/5ee5ef569f298a632dad54cb1b0ea4d664d3726e))
+
 ## [0.47.0](https://github.com/okou-ai/okou/compare/android-v0.46.1...android-v0.47.0) (2026-11-23)
 
 

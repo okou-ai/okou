@@ -13,6 +13,102 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1171.1](https://github.com/okou-ai/okou/compare/app-v0.1171.0...app-v0.1171.1) (2026-11-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.865.1
+    * @okouai/ui bumped to 1.21.111
+
+## [0.1171.0](https://github.com/okou-ai/okou/compare/app-v0.1170.1...app-v0.1171.0) (2026-11-23)
+
+
+### Features
+
+* archive projects in the chat sidebar ([#50306](https://github.com/okou-ai/okou/issues/50306)) ([8c9f004](https://github.com/okou-ai/okou/commit/8c9f004ac760d95f3f47e8e3fa83d470f2de28c6))
+
+
+### Bug Fixes
+
+* **platform:** close the batch permission dialog after approval ([#50322](https://github.com/okou-ai/okou/issues/50322)) ([f86223c](https://github.com/okou-ai/okou/commit/f86223c0465d43ad576333e524e4fa8ab31e3541))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.113.0
+    * @okouai/connectors bumped to 3.23.3
+    * @okouai/core bumped to 8.865.0
+    * @okouai/ui bumped to 1.21.110
+
+## [0.1170.1](https://github.com/okou-ai/okou/compare/app-v0.1170.0...app-v0.1170.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* remove the Okou symbol from default workspace avatars ([#50313](https://github.com/okou-ai/okou/issues/50313)) ([caf7355](https://github.com/okou-ai/okou/commit/caf73558c2663ca0345dd35943f05379213c4c4f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.864.1
+    * @okouai/ui bumped to 1.21.109
+
+## [0.1170.0](https://github.com/okou-ai/okou/compare/app-v0.1169.0...app-v0.1170.0) (2026-11-23)
+
+
+### Features
+
+* **app:** group workspace search results by chats and messages ([#50305](https://github.com/okou-ai/okou/issues/50305)) ([7c905cd](https://github.com/okou-ai/okou/commit/7c905cdbc1f90c0b0cf533378c18d2bf4326bb15))
+* **platform:** give the latest chat prompt room to scroll to the top ([#50151](https://github.com/okou-ai/okou/issues/50151)) ([a738388](https://github.com/okou-ai/okou/commit/a738388b05000a471c4b11d52081cc492abe2704))
+* **workflows:** sync recent usage across devices ([#50189](https://github.com/okou-ai/okou/issues/50189)) ([6f67414](https://github.com/okou-ai/okou/commit/6f674143c8776b90c2fbc6410baebbfc02eb4443))
+
+
+### Bug Fixes
+
+* **app:** keep connector account panels fixed while scrolling ([#50239](https://github.com/okou-ai/okou/issues/50239)) ([b3b8f64](https://github.com/okou-ai/okou/commit/b3b8f64c0cac2d694f737238052a2edd97c2248f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.112.0
+    * @okouai/core bumped to 8.864.0
+    * @okouai/ui bumped to 1.21.108
+
+## [0.1169.0](https://github.com/okou-ai/okou/compare/app-v0.1168.0...app-v0.1169.0) (2026-11-23)
+
+
+### Features
+
+* **app:** preview small zip artifacts ([#50234](https://github.com/okou-ai/okou/issues/50234)) ([4eacaf8](https://github.com/okou-ai/okou/commit/4eacaf86edc8ef2029a31605da1a0b7f78b75aa5))
+
+
+### Bug Fixes
+
+* **app:** preserve cover hover through empty card stack ([#50241](https://github.com/okou-ai/okou/issues/50241)) ([a312c90](https://github.com/okou-ai/okou/commit/a312c901bcc1e326dd7ece01db277286b1a02e2b))
+
+
+### Refactoring
+
+* **app:** remove artifact preview action group feature switch ([#50243](https://github.com/okou-ai/okou/issues/50243)) ([9a9aae7](https://github.com/okou-ai/okou/commit/9a9aae784b871bcbd4f9823252cdc8d0b183b241))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.111.0
+    * @okouai/core bumped to 8.863.0
+    * @okouai/ui bumped to 1.21.107
+
 ## [0.1168.0](https://github.com/okou-ai/okou/compare/app-v0.1167.0...app-v0.1168.0) (2026-11-23)
 
 

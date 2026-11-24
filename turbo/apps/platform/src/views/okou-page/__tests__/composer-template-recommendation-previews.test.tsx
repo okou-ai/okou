@@ -61,9 +61,7 @@ async function openTray(task: "Presentation" | "Document") {
   const create = within(
     screen.getByRole("group", { name: "Explore Okou capabilities" }),
   ).getByRole("region", { name: "Create" });
-  click(control("button", "Presentation", create));
-  const types = await screen.findByRole("radiogroup", { name: "Create" });
-  click(control("radio", task, types));
+  click(control("button", task, create));
   const shelf = await screen.findByRole("group", {
     name: `${task} templates`,
   });

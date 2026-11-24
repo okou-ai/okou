@@ -87,6 +87,7 @@ const update$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const owner = get(organizationAuthContext$);
   const id = get(pathParamsOf(projectsContract.update)).id;
+  // The existing metadata event keeps Project replay compatible with installed clients.
   const result = await set(
     mutateProject$,
     owner,

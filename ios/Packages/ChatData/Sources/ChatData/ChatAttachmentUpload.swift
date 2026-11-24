@@ -24,7 +24,7 @@ struct ChatAttachmentUpload {
   let client: APIClient
 
   func upload(
-    file: URL, filename: String, contentType: String,
+    file: URL, filename: String, contentType: String, requirePrivate: Bool = false,
     progress: @escaping @Sendable (Double) -> Void
   ) async throws -> ChatAttachment {
     let values = try file.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
@@ -34,12 +34,18 @@ struct ChatAttachmentUpload {
     guard size <= ChatAttachment.maximumUploadSize else {
       throw ChatError.invalidContract("File too large (max 512 MB).")
     }
-    let prepared: PreparedUpload = try await client.request(
-      "/api/uploads/prepare", method: "POST",
-      body: JSONEncoder().encode(
-        PrepareBody(
-          filename: filename, contentType: contentType, size: size,
-          multipart: size >= 5 * 1024 * 1024 ? true : nil)))
+    let body = try JSONEncoder().encode(
+      PrepareBody(
+        filename: filename, contentType: contentType, size: size,
+        requirePrivateArtifact: requirePrivate ? true : nil,
+        multipart: size >= 5 * 1024 * 1024 ? true : nil))
+    let prepared: PreparedUpload
+    if requirePrivate {
+      prepared = try await client.request(
+        "/api/uploads/prepare/private", method: "POST", body: body)
+    } else {
+      prepared = try await client.request("/api/uploads/prepare", method: "POST", body: body)
+    }
     if let multipart = prepared.multipart {
       do {
         let handle = try FileHandle(forReadingFrom: file)
@@ -103,6 +109,7 @@ struct ChatAttachmentUpload {
     let filename: String
     let contentType: String
     let size: Int
+    let requirePrivateArtifact: Bool?
     let multipart: Bool?
   }
   private struct PreparedUpload: Decodable, Sendable {

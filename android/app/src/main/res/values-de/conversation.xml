@@ -1,5 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="conversation_queue_count">Warteschlange (%1$d)</string>
+    <string name="conversation_queue_empty">Keine Einträge in der Warteschlange</string>
+    <string name="conversation_queue_message">Nachricht</string>
+    <plurals name="conversation_queue_attachments">
+        <item quantity="one">Nachricht · %d Anhang</item>
+        <item quantity="other">Nachricht · %d Anhänge</item>
+    </plurals>
+    <string name="conversation_run_queued">Wartet auf den Start</string>
     <string name="conversation_welcome">Was möchtest du heute erledigen?</string>
     <string name="conversation_welcome_detail">Sag Okou, was du tun möchtest.</string>
     <string name="conversation_jump_latest">Zur neuesten Nachricht</string>
@@ -16,13 +24,8 @@
     <string name="conversation_queue">Warteschlange</string>
     <string name="conversation_queue_automation">Workflow-Automatisierung</string>
     <string name="conversation_skip_automation">Diese Automatisierung überspringen</string>
-    <string name="conversation_withdrawing">Wird zurückgezogen…</string>
-    <string name="conversation_skipping">Wird übersprungen…</string>
-    <string name="conversation_withdraw_unknown">Ergebnis des Zurückziehens unklar</string>
-    <string name="conversation_skip_unknown">Ergebnis des Überspringens unklar</string>
-    <string name="conversation_withdraw_failed">Zurückziehen fehlgeschlagen</string>
-    <string name="conversation_skip_failed">Überspringen fehlgeschlagen</string>
-    <string name="conversation_stop">Stopp</string>
+    <string name="conversation_withdraw_failed">Die Nachricht konnte nicht zurückgezogen werden.</string>
+    <string name="conversation_skip_failed">Die Automatisierung konnte nicht übersprungen werden.</string>
     <string name="conversation_find">Nachrichten suchen</string>
     <string name="conversation_find_turns">Unterhaltungsrunden durchsuchen</string>
     <string name="conversation_find_empty">Keine Nachrichten zum Durchsuchen</string>

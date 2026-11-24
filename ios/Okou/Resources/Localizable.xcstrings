@@ -1,6 +1,20 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Voice message": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "语音消息" }
+        }
+      }
+    },
+    "Uploading recording…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "正在上传录音…" }
+        }
+      }
+    },
     "Sends now · new chat": {
       "localizations": {
         "zh-Hans": {

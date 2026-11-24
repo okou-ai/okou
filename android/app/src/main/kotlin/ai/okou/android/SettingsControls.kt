@@ -371,13 +371,8 @@ internal fun SettingsModal(
     }
 }
 
-internal fun settingsPanelPadding(windowHeightDp: Int, centered: Boolean) =
-    PaddingValues(
-        start = 16.dp,
-        end = 16.dp,
-        top = if (centered) 16.dp else 0.dp,
-        bottom = if (windowHeightDp < 480) 12.dp else 22.dp,
-    )
+internal fun settingsPanelContentPadding(compactHeight: Boolean) =
+    PaddingValues(start = 16.dp, end = 16.dp, bottom = if (compactHeight) 12.dp else 22.dp)
 
 internal enum class SettingsSheetScroll {
     Panel,
@@ -396,7 +391,7 @@ internal fun SettingsSheet(
     scroll: SettingsSheetScroll = SettingsSheetScroll.Body,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val windowHeight = currentWindowSizeDp().height
+    val compactHeight = currentWindowSizeDp().height < 480
     val scrollModifier =
         if (scroll == SettingsSheetScroll.None) Modifier
         else Modifier.verticalScroll(rememberScrollState())
@@ -404,7 +399,8 @@ internal fun SettingsSheet(
         Column(
             modifier
                 .fillMaxWidth()
-                .padding(settingsPanelPadding(windowHeight, centered))
+                .padding(settingsPanelContentPadding(compactHeight))
+                .padding(top = if (centered) 16.dp else 0.dp)
                 .then(if (scroll == SettingsSheetScroll.Panel) scrollModifier else Modifier),
         ) {
             Box(Modifier.fillMaxWidth()) {

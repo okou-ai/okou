@@ -9,7 +9,7 @@ import ai.okou.android.SettingsSwitchRow
 import ai.okou.android.SettingsTrigger
 import ai.okou.android.WorkspaceFeedbackHost
 import ai.okou.android.currentWindowSizeDp
-import ai.okou.android.settingsPanelPadding
+import ai.okou.android.settingsPanelContentPadding
 import ai.okou.android.updates.updateFocusOutline
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
@@ -201,7 +201,8 @@ private fun DefaultModelSheet(
         Column(
             Modifier.fillMaxWidth()
                 .then(size)
-                .padding(settingsPanelPadding(windowHeight, centered && !fullScreen)),
+                .padding(settingsPanelContentPadding(compactHeight = fullScreen))
+                .padding(top = if (centered && !fullScreen) 16.dp else 0.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = dismiss) {

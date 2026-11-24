@@ -25,12 +25,14 @@ final class WorkspacePopGestureDelegate: NSObject, UIGestureRecognizerDelegate {
     guard let navigation, navigation.viewControllers.count > 1,
       navigation.transitionCoordinator == nil
     else { return false }
-    guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
-    let velocity = pan.velocity(in: navigation.view)
-    let x =
-      navigation.view.effectiveUserInterfaceLayoutDirection == .rightToLeft
-      ? -velocity.x : velocity.x
-    return x > abs(velocity.y)
+    // Trackpad scroll events have no touch sequence for the displacement recognizer.
+    if let pan = gestureRecognizer as? UIPanGestureRecognizer, pan.numberOfTouches == 0 {
+      let velocity = pan.velocity(in: navigation.view)
+      let isRightToLeft = navigation.view.effectiveUserInterfaceLayoutDirection == .rightToLeft
+      let dx = isRightToLeft ? -velocity.x : velocity.x
+      return dx >= 4 && abs(velocity.y) <= 2.5 * dx
+    }
+    return true
   }
 
   func gestureRecognizer(

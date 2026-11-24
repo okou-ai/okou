@@ -2,7 +2,6 @@ import { number, object, string } from "zod";
 import { throwOAuthError } from "../../oauth/error";
 import { reportedOAuthScopes } from "../../oauth/scope";
 
-export const CHATGPT_OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 const CHATGPT_OAUTH_ISSUER = "https://auth.openai.com";
 
 const CHATGPT_OAUTH_TOKEN_URL = `${CHATGPT_OAUTH_ISSUER}/oauth/token`;

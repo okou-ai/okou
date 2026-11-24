@@ -105,9 +105,8 @@ internal constructor(
             refresh(
                 buildSet {
                     if (
-                        (visible || !searchingCatalog) &&
-                            (!catalogRead.readAt.isFresh(now) ||
-                                current.catalogFailure == WorkflowReadFailure.Network)
+                        !catalogRead.readAt.isFresh(now) ||
+                            current.catalogFailure == WorkflowReadFailure.Network
                     )
                         add(WorkflowReadScope.Catalog)
                     if (

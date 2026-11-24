@@ -59,6 +59,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
     @Volatile var unavailableCatalogSlugs: Set<String> = emptySet()
     @Volatile var failDiscovery = false
     @Volatile var denyDefaultDiscovery = false
+    @Volatile var denyCatalogDetail = false
     @Volatile var failAccountReads = false
     @Volatile var denyAccountReads = false
     @Volatile var denyPermissionReads = false
@@ -332,7 +333,8 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                     jsonResponse(
                         """{"permissions":{"connectorSlug":"$slug","label":"${entry.name}","icon":${icon(entry.slug)},"permissionCount":2,"permissions":[{"name":"$read"},{"name":"$write"}],"categories":null,"defaultPolicy":{"permissionDefault":"ask","unknownPolicy":"deny"}}}""",
                     )
-                } else json(buildJsonObject { put("connector", entry.body(icon(entry.slug))) })
+                } else if (denyCatalogDetail) rejected(403)
+                else json(buildJsonObject { put("connector", entry.body(icon(entry.slug))) })
             }
             path == "/api/connector-accounts/inspect" -> {
                 val selected = body(request).getValue("selections").jsonArray

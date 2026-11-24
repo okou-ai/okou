@@ -185,7 +185,7 @@ import {
 import { env } from "../../lib/env";
 import type { ModelCatalog } from "./model-catalog.service";
 import { isCatalogCodexServiceTierSupported } from "./model-route-capabilities.service";
-import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
+import type { ExecutionOrgPlan } from "./execution-org-context.service";
 import { selectedUserPresentationTemplateIds } from "./presentation-template-data.service";
 import { selectedUserTemplateIds } from "./user-template-data.service";
 import {
@@ -266,7 +266,7 @@ interface NormalSendRequest {
    * caller inside an auth route whose `orgId` is that organization, so the
    * send and its model selection share one read.
    */
-  readonly orgPlanCapabilities?: OrgPlanCapabilities | null;
+  readonly orgPlanCapabilities?: ExecutionOrgPlan | null;
   /**
    * Route-entry time of `POST /api/chat/events`. A run picked by this request
    * for this input is measured from it; other callers omit it.
@@ -701,32 +701,27 @@ const startIncomingAttachmentRecords$ = command(
   },
 );
 
-const validateIncomingVoiceClips$ = command(
-  async (
-    { get },
-    args: { readonly orgId: string; readonly userId: string },
-    context: AgentRunContextSignals,
-    { voiceIds, rows }: IncomingAttachmentRecords,
-    signal: AbortSignal,
-  ) => {
-    const features = await get(context.featureSwitches$);
-    signal.throwIfAborted();
-    const error = voiceClipRequestError(voiceIds, features);
-    if (error) {
-      return error;
-    }
-    const records = await rows;
-    signal.throwIfAborted();
-    if (!records.ok) {
-      throw records.error;
-    }
-    const voice = resolveVoiceClipRecords(
-      { orgId: args.orgId, userId: args.userId, fileIds: voiceIds },
-      records.value,
-    );
-    return "status" in voice ? voice : null;
-  },
-);
+async function validateIncomingVoiceClips(
+  args: { readonly orgId: string; readonly userId: string },
+  { voiceIds, rows }: IncomingAttachmentRecords,
+  signal: AbortSignal,
+) {
+  signal.throwIfAborted();
+  const error = voiceClipRequestError(voiceIds);
+  if (error) {
+    return error;
+  }
+  const records = await rows;
+  signal.throwIfAborted();
+  if (!records.ok) {
+    throw records.error;
+  }
+  const voice = resolveVoiceClipRecords(
+    { orgId: args.orgId, userId: args.userId, fileIds: voiceIds },
+    records.value,
+  );
+  return "status" in voice ? voice : null;
+}
 
 const resolveIncomingAttachmentObject$ = command(
   async (
@@ -1125,7 +1120,7 @@ const resolveSendThread$ = command(
       readonly existing?: {
         readonly thread: ExistingSendThreadRow;
       };
-      readonly orgPlanCapabilities: OrgPlanCapabilities | null | undefined;
+      readonly orgPlanCapabilities: ExecutionOrgPlan | null | undefined;
       readonly modelBootstrap: ModelSelectionBootstrap;
       readonly host?: Parameters<typeof readCapturedComputerAccess>[0];
       readonly context: AgentRunContextSignals;
@@ -2385,7 +2380,7 @@ const prepareNormalSendInput$ = command(
       readonly body: NormalSendBody;
       readonly thread: SendThread;
       readonly catalog: ModelCatalog;
-      readonly orgPlanCapabilities: OrgPlanCapabilities | null | undefined;
+      readonly orgPlanCapabilities: ExecutionOrgPlan | null | undefined;
       readonly modelBootstrap: ModelSelectionBootstrap;
       readonly attachments: NormalSendAttachmentRead;
       readonly enqueueTiming?: ChatEnqueueTimingCollector;
@@ -2697,10 +2692,8 @@ const prepareNormalSendContext$ = command(
       return prepared;
     }
     if (attachmentRecords?.voiceIds.length) {
-      const voiceError = await set(
-        validateIncomingVoiceClips$,
+      const voiceError = await validateIncomingVoiceClips(
         args,
-        context,
         attachmentRecords,
         signal,
       );

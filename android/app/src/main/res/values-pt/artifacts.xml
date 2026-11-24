@@ -51,4 +51,7 @@
     <string name="artifact_play_media">Reprodução de mídia</string>
     <string name="artifact_catalog_access_denied">Você não tem acesso a este catálogo de artefatos</string>
     <string name="artifact_catalog_missing">Este catálogo de artefatos não está mais disponível</string>
+    <string name="chat_resources_related">Conversas relacionadas</string>
+    <string name="chat_resources_related_load_failed">Não é possível carregar as conversas relacionadas no momento</string>
+    <string name="chat_resources_related_access_lost">As conversas relacionadas não estão mais disponíveis</string>
 </resources>

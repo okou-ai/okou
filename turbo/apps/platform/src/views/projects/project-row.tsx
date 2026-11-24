@@ -6,6 +6,8 @@ import { useGet, useSet, useLastResolved } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
+  Archive,
+  ArchiveRestore,
   ArrowUp,
   ArrowDown,
   ChevronDown,
@@ -35,7 +37,10 @@ import {
 import type { Project } from "@okouai/api-contracts/validators/projects";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
-import { projects$ } from "../../signals/projects/projects.ts";
+import {
+  projects$,
+  setProjectArchived$,
+} from "../../signals/projects/projects.ts";
 import {
   projectReorderEnabled$,
   stepProject$,
@@ -176,6 +181,11 @@ function ProjectMenu({
 }) {
   const { t } = useTranslation();
   const editor = useSet(openProjectEditor$);
+  const archiveEnabled =
+    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.ProjectArchive] ===
+    true;
+  const setArchived = useSet(setProjectArchived$);
+  const signal = useGet(pageSignal$);
   const open = useSet(setProjectDialog$);
   const dialog = useGet(projectDialog$);
   return (
@@ -234,6 +244,29 @@ function ProjectMenu({
             return $.projects.rename;
           })}
         </DropdownMenuItem>
+        {archiveEnabled && (
+          <DropdownMenuItem
+            onClick={() => {
+              detach(
+                setArchived(project.id, !project.archived, signal),
+                Reason.DomCallback,
+              );
+            }}
+          >
+            {project.archived ? (
+              <ArchiveRestore size={16} />
+            ) : (
+              <Archive size={16} />
+            )}
+            {project.archived
+              ? t(($) => {
+                  return $.projects.restoreProject;
+                })
+              : t(($) => {
+                  return $.projects.archiveProject;
+                })}
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem
           className="text-destructive focus:text-destructive"

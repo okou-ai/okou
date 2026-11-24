@@ -124,11 +124,28 @@ interface DispatchOffer extends SerializedDispatch {
   };
 }
 
+interface WireDispatchOffer extends Omit<DispatchOffer, "body"> {
+  readonly body: string | Uint8Array<ArrayBuffer>;
+  readonly gzipEncodeMs?: number;
+}
+
 const mayHaveTakenCustody = {
   busy: false,
   "not-delivered": false,
   unknown: true,
 } as const;
+
+function createDeliveryWindow(apiStartTime: number): DeliveryWindow {
+  // A queued input's latency marker can originate in an earlier invocation.
+  const notAfter = Math.min(
+    now() + 30_000,
+    apiStartTime + API_INVOCATION_MAX_DURATION_SECONDS * 1000 - 10_000,
+  );
+  return {
+    notAfter,
+    monotonicDeadline: performance.now() + Math.max(0, notAfter - now()),
+  };
+}
 
 function remainingDelivery(window: DeliveryWindow): number {
   return Math.min(
@@ -207,14 +224,22 @@ function failureInput(input: AdmittedRunLaunch, owner: DirectRunTarget | null) {
   };
 }
 
-function prepareGzipOffer(offer: DispatchOffer, window: DeliveryWindow) {
+async function encodeDispatchOffer(
+  offer: DispatchOffer,
+  window: DeliveryWindow,
+): Promise<WireDispatchOffer> {
   if (
-    runnerDispatchEncoding(offer.bodyBytes) === "gzip" &&
-    remainingDelivery(window) > 0
+    runnerDispatchEncoding(offer.bodyBytes) === "identity" ||
+    remainingDelivery(window) <= 0
   ) {
-    return gzipRunnerDispatchBody(offer.body, offer.bodyBytes);
+    return offer;
   }
-  return undefined;
+  const gzip = await gzipRunnerDispatchBody(offer.body, offer.bodyBytes);
+  return {
+    ...offer,
+    body: gzip.bytes ?? offer.body,
+    gzipEncodeMs: gzip.elapsedMs,
+  };
 }
 
 function reserveFirstOffer(
@@ -255,6 +280,7 @@ const offerToProcess$ = command(
       readonly runId: string;
       readonly body: SerializedDispatch;
       readonly envelope: DispatchEnvelope;
+      readonly preparedFirstOffer: WireDispatchOffer | undefined;
       readonly token: string;
       readonly window: DeliveryWindow;
       readonly firstCandidateReadyAt: number | undefined;
@@ -265,24 +291,28 @@ const offerToProcess$ = command(
     let uncertain = false;
     let retry = 0;
     let firstCandidateReadyAt = args.firstCandidateReadyAt;
-    const offer = createDispatchOffer(
-      args.envelope,
-      args.body,
-      args.target.preference,
-      args.window,
-    );
-    const pendingGzip = prepareGzipOffer(offer, args.window);
-    const gzipBody = pendingGzip && (await pendingGzip);
+    const offer =
+      args.preparedFirstOffer ??
+      (await encodeDispatchOffer(
+        createDispatchOffer(
+          args.envelope,
+          args.body,
+          args.target.preference,
+          args.window,
+        ),
+        args.window,
+      ));
     signal.throwIfAborted();
-    const wireBody = gzipBody?.bytes ?? offer.body;
-    let gzipEncodeMs = gzipBody?.elapsedMs;
+    let gzipEncodeMs = offer.gzipEncodeMs;
+    let checkOwner = args.preparedFirstOffer === undefined;
     for (;;) {
-      // Runner reconciles cancellation asynchronously after binding the supplied
-      // input. Verify ownership after encoding and before each POST.
-      const state = await set(readDirectRunState$, args.runId, signal);
-      if (!isCurrentOwner(state, args.target)) {
-        return uncertain ? ("uncertain" as const) : ("stopped" as const);
+      if (checkOwner) {
+        const state = await set(readDirectRunState$, args.runId, signal);
+        if (!isCurrentOwner(state, args.target)) {
+          return uncertain ? ("uncertain" as const) : ("stopped" as const);
+        }
       }
+      checkOwner = true;
       const remaining = remainingDelivery(args.window);
       if (remaining <= 0) {
         return uncertain ? ("uncertain" as const) : ("not-accepted" as const);
@@ -294,7 +324,7 @@ const offerToProcess$ = command(
         {
           target: args.target,
           runId: args.runId,
-          body: wireBody,
+          body: offer.body,
           bodyBytes: offer.bodyBytes,
           gzipEncodeMs,
           serviceToken: args.token,
@@ -354,17 +384,7 @@ export const dispatchPreparedRun$ = command(
     let uncertain = false;
     const outcome = await settleIncludingAbort(async () => {
       const { executionContext, candidates } = args;
-      // A queued input's latency marker can originate in an earlier invocation.
-      const notAfter = Math.min(
-        now() + 30_000,
-        get(apiStartTime$) +
-          API_INVOCATION_MAX_DURATION_SECONDS * 1000 -
-          10_000,
-      );
-      const window = {
-        notAfter,
-        monotonicDeadline: performance.now() + Math.max(0, notAfter - now()),
-      };
+      const window = createDeliveryWindow(get(apiStartTime$));
       const token = `${OFFICIAL_RUNNER_TOKEN_PREFIX}${env("OFFICIAL_RUNNER_SECRET")}`;
       for (const target of candidates) {
         if (remainingDelivery(window) <= 0) {
@@ -374,7 +394,7 @@ export const dispatchPreparedRun$ = command(
           runnerId: target.runnerId,
           heartbeatGeneration: target.heartbeatGeneration,
           profile: input.profile,
-          notAfter,
+          notAfter: window.notAfter,
           executionContext,
         };
         const body = serializeDispatch(envelope);
@@ -383,6 +403,15 @@ export const dispatchPreparedRun$ = command(
         }
         if (owner === null) {
           reserveFirstOffer(target, input.run.id, body.bodyBytes, signal);
+        }
+        // Finish ordinary first-send preparation before the conditional write.
+        // The Runner reconciles cancellations committed after that write.
+        const preparedFirstOffer =
+          owner === null && !target.preference
+            ? await encodeDispatchOffer(body, window)
+            : undefined;
+        if (preparedFirstOffer && remainingDelivery(window) <= 0) {
+          break;
         }
         const selected = await set(
           selectDirectRunOwner$,
@@ -415,6 +444,7 @@ export const dispatchPreparedRun$ = command(
             runId: input.run.id,
             body,
             envelope,
+            preparedFirstOffer,
             token,
             window,
             firstCandidateReadyAt: firstOwner

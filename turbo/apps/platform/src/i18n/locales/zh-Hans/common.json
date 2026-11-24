@@ -2865,6 +2865,7 @@
       "storageFailed": "音频未能保存。只能使用已保存在此设备上的音频。",
       "textTakingShape": "文字正在成形",
       "transcribing": "正在转写",
+      "uploadingRecording": "正在上传录音…",
       "useRecording": "使用录音"
     },
     "walletAction": {
@@ -5171,6 +5172,7 @@
     }
   },
   "projects": {
+    "archiveProject": "归档",
     "back": "返回",
     "close": "Close",
     "collapse": "收起",
@@ -5207,6 +5209,7 @@
     "removeFromNewChat": "移除{{name}}",
     "rename": "重命名",
     "renameProject": "重命名 Project",
+    "restoreProject": "恢复项目",
     "retryThreads": "重新加载聊天",
     "save": "保存",
     "saveError": "无法保存 Project",
@@ -6354,17 +6357,14 @@
   },
   "sidebar": {
     "escapeShortcut": "Esc",
-    "filterAll": "全部",
     "markAllRead": "全部标为已读",
     "noResults": "没有找到结果",
     "resultCount_other": "{{count}} 条结果",
     "searching": "搜索中…",
     "searchWorkspace": "搜索工作区…",
     "sections": {
-      "artifacts": "成果",
-      "chats": "聊天",
       "messages": "消息",
-      "workflows": "工作流"
+      "threads": "会话"
     }
   },
   "ssh": {

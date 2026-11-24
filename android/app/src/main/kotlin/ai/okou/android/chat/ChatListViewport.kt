@@ -50,6 +50,7 @@ import kotlinx.coroutines.flow.first
 internal val ChatListRowHeight = 52.dp
 internal val ChatListRowShape = RoundedCornerShape(8.dp)
 internal val ChatListRowPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+internal val ChatPaneBottomInset = 16.dp
 internal const val ChatListSkeletonDelayMillis = 250L
 
 internal fun Density.chatInlineFeedbackHeight() = maxOf(216.dp, 16.sp.toDp() * 9)
@@ -75,7 +76,7 @@ internal fun ChatListViewport(
     SubcomposeLayout(modifier) { bounds ->
         val height = bounds.maxHeight
         val short = height < chatInlineFeedbackHeight().roundToPx()
-        val edge = 16.dp.roundToPx()
+        val edge = ChatPaneBottomInset.roundToPx()
         val gap = 8.dp.roundToPx()
         val loose = bounds.copy(minWidth = 0, minHeight = 0)
         val feedbackLayer =
@@ -125,16 +126,7 @@ internal fun ChatListViewport(
                 .measure(loose)
         val progress =
             if (syncing) {
-                subcompose(ListLayer.Sync) {
-                        val label = stringResource(R.string.chat_syncing)
-                        val colors = MaterialTheme.colorScheme
-                        LinearProgressIndicator(
-                            Modifier.fillMaxWidth().semantics { contentDescription = label },
-                            color = colors.primary,
-                            trackColor =
-                                colors.primary.copy(alpha = 0.18f).compositeOver(colors.background),
-                        )
-                    }
+                subcompose(ListLayer.Sync) { ChatReadProgress(R.string.chat_syncing) }
                     .single()
                     .measure(loose.copy(maxWidth = rows.width))
             } else null
@@ -146,6 +138,17 @@ internal fun ChatListViewport(
             feedbackLayer.placeRelative((bounds.maxWidth - feedbackLayer.width) / 2, feedbackTop)
         }
     }
+}
+
+@Composable
+internal fun ChatReadProgress(@StringRes label: Int) {
+    val description = stringResource(label)
+    val colors = MaterialTheme.colorScheme
+    LinearProgressIndicator(
+        Modifier.fillMaxWidth().height(4.dp).semantics { contentDescription = description },
+        color = colors.primary,
+        trackColor = colors.primary.copy(alpha = 0.18f).compositeOver(colors.background),
+    )
 }
 
 @Composable

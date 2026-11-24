@@ -267,12 +267,8 @@ impl ParkedIdleCandidate {
         successor_run_id: RunId,
         predecessor_run_id: RunId,
     ) -> FinalizingHandoffCandidate {
-        debug_assert_eq!(self.metadata.source_run_id, Some(predecessor_run_id));
-        FinalizingHandoffCandidate {
-            candidate: IdleParkCandidate::Ordinary(self),
-            successor_run_id,
-            predecessor_run_id,
-        }
+        IdleParkCandidate::Ordinary(self)
+            .into_finalizing_handoff(successor_run_id, predecessor_run_id)
     }
 
     pub fn into_active_destroy_parts(self) -> (IdleDestroyPayload, BudgetLease) {
@@ -316,12 +312,8 @@ impl ImmediateHandoffCandidate {
         successor_run_id: RunId,
         predecessor_run_id: RunId,
     ) -> FinalizingHandoffCandidate {
-        debug_assert_eq!(self.metadata.source_run_id, Some(predecessor_run_id));
-        FinalizingHandoffCandidate {
-            candidate: IdleParkCandidate::Immediate(self),
-            successor_run_id,
-            predecessor_run_id,
-        }
+        IdleParkCandidate::Immediate(self)
+            .into_finalizing_handoff(successor_run_id, predecessor_run_id)
     }
 
     pub fn into_active_destroy_parts(self) -> (IdleDestroyPayload, BudgetLease) {
@@ -380,6 +372,28 @@ impl ImmediateHandoffCandidate {
     }
 }
 
+impl IdleParkCandidate {
+    pub fn into_finalizing_handoff(
+        self,
+        successor_run_id: RunId,
+        predecessor_run_id: RunId,
+    ) -> FinalizingHandoffCandidate {
+        debug_assert_eq!(self.source_run_id(), Some(predecessor_run_id));
+        FinalizingHandoffCandidate {
+            candidate: self,
+            successor_run_id,
+            predecessor_run_id,
+        }
+    }
+
+    fn source_run_id(&self) -> Option<RunId> {
+        match self {
+            Self::Ordinary(candidate) => candidate.metadata.source_run_id,
+            Self::Immediate(candidate) => candidate.metadata.source_run_id,
+        }
+    }
+}
+
 impl FinalizingHandoffCandidate {
     pub(super) fn into_guarded_parts(self: Box<Self>) -> (IdleParkCandidate, RunId, RunId) {
         (
@@ -394,11 +408,7 @@ impl FinalizingHandoffCandidate {
         successor_run_id: RunId,
         predecessor_run_id: RunId,
     ) -> Result<ReservedIdleSandbox, Box<Self>> {
-        let source = match &self.candidate {
-            IdleParkCandidate::Ordinary(candidate) => candidate.metadata.source_run_id,
-            IdleParkCandidate::Immediate(candidate) => candidate.metadata.source_run_id,
-        };
-        if source == Some(predecessor_run_id)
+        if self.candidate.source_run_id() == Some(predecessor_run_id)
             && self.successor_run_id == successor_run_id
             && self.predecessor_run_id == predecessor_run_id
         {

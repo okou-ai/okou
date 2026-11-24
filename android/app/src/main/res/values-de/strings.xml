@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="auth_checking_workspace">Arbeitsbereiche werden geprüft…</string>
+    <string name="auth_check_failed">Zugriff konnte nicht geprüft werden.</string>
+    <string name="auth_selection_failed">Arbeitsbereich konnte nicht geöffnet werden.</string>
+    <string name="auth_sign_out_failed">Abmeldung fehlgeschlagen.</string>
     <string name="composer_sync_loading">Gespeicherten Entwurf laden…</string>
     <string name="composer_sync_saving">Entwurf synchronisieren…</string>
     <string name="composer_sync_failed">Entwurf konnte nicht synchronisiert werden. Deine Eingabe bleibt auf diesem Gerät.</string>
@@ -8,19 +12,7 @@
     <string name="composer_restore_draft">Behaltenen Entwurf wiederherstellen</string>
     <string name="controls_storage_failed">Ausstehende Steuerbefehle können nicht gespeichert werden.</string>
     <string name="controls_stop">Laufende Arbeit stoppen</string>
-    <string name="controls_preparing">Steuerbefehl wird gespeichert…</string>
-    <string name="controls_sending">Steuerbefehl wird gesendet…</string>
-    <string name="controls_accepted">Anfrage angenommen. Bestätigung steht aus.</string>
-    <string name="controls_checking">Ergebnis wird geprüft…</string>
-    <string name="controls_unknown">Ergebnis ist noch unbekannt.</string>
-    <string name="controls_retryable">Das ursprüngliche Ziel ist noch verfügbar.</string>
-    <string name="controls_retry_original">Ursprüngliche Anfrage wiederholen</string>
-    <string name="controls_check">Ergebnis prüfen</string>
-    <string name="controls_recorded">Steuerbefehl im Verlauf erfasst.</string>
-    <string name="controls_target_settled">Das ursprüngliche Ziel ist bereits erledigt.</string>
-    <string name="controls_read_failed">Ergebnis konnte nicht geprüft werden.</string>
-    <string name="controls_recovery_failed">Wiederherstellungsstatus ist nicht verfügbar.</string>
-    <string name="controls_recovering">Fortsetzung wird vorbereitet.</string>
+    <string name="controls_stop_failed">Die Aufgabe konnte nicht gestoppt werden.</string>
     <string name="settings">Einstellungen</string>
     <string name="back">Zurück</string>
     <string name="appearance">Anzeigemodus</string>
@@ -29,7 +21,6 @@
     <string name="appearance_dark">Dunkel</string>
     <string name="on_this_device">Auf diesem Gerät</string>
     <string name="retry">Erneut versuchen</string>
-    <string name="auth_restoring">Sitzung wird wiederhergestellt…</string>
     <string name="auth_preparing_workspace">Arbeitsbereich wird vorbereitet…</string>
     <string name="auth_choose_workspace">Arbeitsbereich auswählen</string>
     <string name="auth_no_workspace">Noch keine zugänglichen Arbeitsbereiche</string>

@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="auth_checking_workspace">Memeriksa ruang kerja…</string>
+    <string name="auth_check_failed">Akses ruang kerja tidak dapat diperiksa.</string>
+    <string name="auth_selection_failed">Ruang kerja ini tidak dapat dibuka.</string>
+    <string name="auth_sign_out_failed">Tidak dapat keluar.</string>
     <string name="composer_sync_loading">Memuat draf tersimpan…</string>
     <string name="composer_sync_saving">Menyinkronkan draf…</string>
     <string name="composer_sync_failed">Sinkronisasi draf gagal. Teks Anda tetap tersimpan di perangkat ini.</string>
@@ -8,19 +12,7 @@
     <string name="composer_restore_draft">Pulihkan draf tersimpan</string>
     <string name="controls_storage_failed">Permintaan kontrol tertunda tidak dapat disimpan.</string>
     <string name="controls_stop">Hentikan pekerjaan berjalan</string>
-    <string name="controls_preparing">Menyimpan permintaan kontrol…</string>
-    <string name="controls_sending">Mengirim permintaan kontrol…</string>
-    <string name="controls_accepted">Permintaan diterima. Menunggu konfirmasi.</string>
-    <string name="controls_checking">Memeriksa hasil kontrol…</string>
-    <string name="controls_unknown">Hasil kontrol belum diketahui.</string>
-    <string name="controls_retryable">Target semula masih tersedia.</string>
-    <string name="controls_retry_original">Ulangi permintaan semula</string>
-    <string name="controls_check">Periksa hasil kontrol</string>
-    <string name="controls_recorded">Kontrol tercatat dalam riwayat.</string>
-    <string name="controls_target_settled">Target semula sudah selesai diproses.</string>
-    <string name="controls_read_failed">Hasil kontrol tidak dapat diperiksa.</string>
-    <string name="controls_recovery_failed">Status pemulihan percakapan tidak tersedia.</string>
-    <string name="controls_recovering">Menyiapkan percakapan untuk dilanjutkan.</string>
+    <string name="controls_stop_failed">Tugas tidak dapat dihentikan.</string>
     <string name="settings">Setelan</string>
     <string name="back">Kembali</string>
     <string name="appearance">Mode tampilan</string>
@@ -29,7 +21,6 @@
     <string name="appearance_dark">Gelap</string>
     <string name="on_this_device">Di perangkat ini</string>
     <string name="retry">Coba lagi</string>
-    <string name="auth_restoring">Memulihkan sesi Anda…</string>
     <string name="auth_preparing_workspace">Menyiapkan ruang kerja Anda…</string>
     <string name="auth_choose_workspace">Pilih ruang kerja</string>
     <string name="auth_no_workspace">Belum ada ruang kerja yang dapat diakses</string>

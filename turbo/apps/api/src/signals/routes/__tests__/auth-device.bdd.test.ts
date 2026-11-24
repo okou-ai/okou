@@ -290,7 +290,7 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
           userCodeRequests += 1;
           const body: unknown = await request.json();
           expect(body).toMatchObject({
-            client_id: "app_EMoamEEZ73f0CkXaXp7hrann",
+            client_id: "test-codex-client-id",
           });
           return HttpResponse.json({
             device_auth_id: "device-auth-bdd",
@@ -396,6 +396,9 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
     const browserUrl = new URL(started.body.browserUrl);
     expect(browserUrl.origin).toBe("https://claude.com");
     expect(browserUrl.pathname).toBe("/cai/oauth/authorize");
+    expect(browserUrl.searchParams.get("client_id")).toBe(
+      "test-claude-code-client-id",
+    );
     expect(browserUrl.searchParams.get("response_type")).toBe("code");
     expect(browserUrl.searchParams.get("scope")).toBe(
       "user:profile user:inference",
@@ -616,7 +619,7 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
       interval: 5,
     });
     expect(calls.userCode).toStrictEqual([
-      { client_id: "app_EMoamEEZ73f0CkXaXp7hrann" },
+      { client_id: "test-codex-client-id" },
     ]);
 
     const completed = await authDevice.requestCodexComplete(
@@ -643,9 +646,7 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
     expect(oauthTokenBody?.get("redirect_uri")).toBe(
       "https://auth.openai.com/deviceauth/callback",
     );
-    expect(oauthTokenBody?.get("client_id")).toBe(
-      "app_EMoamEEZ73f0CkXaXp7hrann",
-    );
+    expect(oauthTokenBody?.get("client_id")).toBe("test-codex-client-id");
     expect(oauthTokenBody?.get("code_verifier")).toBe("code_verifier_test");
 
     const providers = await support.listPersonalModelProviders(admin, [200]);
@@ -1316,7 +1317,7 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
       grant_type: "authorization_code",
       code: "auth_code_test",
       redirect_uri: "https://platform.claude.com/oauth/code/callback",
-      client_id: "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
+      client_id: "test-claude-code-client-id",
       state,
       expires_in: 31_536_000,
       code_verifier: expect.any(String),

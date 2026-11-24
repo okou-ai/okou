@@ -2880,6 +2880,7 @@
       "storageFailed": "ऑडियो सेव नहीं हो सका। केवल इस डिवाइस पर पहले से सेव ऑडियो उपलब्ध है।",
       "textTakingShape": "टेक्स्ट तैयार हो रहा है",
       "transcribing": "प्रतिलेखन",
+      "uploadingRecording": "रिकॉर्डिंग अपलोड हो रही है…",
       "useRecording": "रिकॉर्डिंग इस्तेमाल करें"
     },
     "walletAction": {
@@ -5192,6 +5193,7 @@
     }
   },
   "projects": {
+    "archiveProject": "संग्रहित करें",
     "back": "Back",
     "close": "Close",
     "collapse": "संक्षिप्त करें",
@@ -5230,6 +5232,7 @@
     "removeFromNewChat": "{{name}} हटाएँ",
     "rename": "Rename",
     "renameProject": "Rename Project",
+    "restoreProject": "प्रोजेक्ट बहाल करें",
     "retryThreads": "Reload threads",
     "save": "Save",
     "saveError": "Could not save Project",
@@ -6378,7 +6381,6 @@
   },
   "sidebar": {
     "escapeShortcut": "Esc",
-    "filterAll": "सभी",
     "markAllRead": "सभी को पढ़ा दिखाएं",
     "noResults": "कोई परिणाम नहीं मिला",
     "resultCount_one": "{{count}} परिणाम",
@@ -6386,10 +6388,8 @@
     "searching": "खोज जारी है...",
     "searchWorkspace": "वर्कस्पेस में खोजें...",
     "sections": {
-      "artifacts": "आर्टिफ़ैक्ट्स",
-      "chats": "चैट",
       "messages": "संदेश",
-      "workflows": "वर्कफ़्लो"
+      "threads": "थ्रेड"
     }
   },
   "ssh": {

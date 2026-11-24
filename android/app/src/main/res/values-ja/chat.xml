@@ -34,6 +34,7 @@
     <string name="chat_back_to_inbox">受信トレイに戻る</string>
     <string name="chat_more_actions">その他の操作</string>
     <string name="chat_unread">未読</string>
+    <string name="chat_has_draft">下書きあり</string>
     <string name="chat_archived">アーカイブ済み</string>
     <string name="chat_muted">ミュート中</string>
     <string name="chat_project_empty">このプロジェクトにチャットはありません。</string>

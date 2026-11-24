@@ -1,9 +1,11 @@
 package ai.okou.android.chat
 
 import ai.okou.android.R
+import ai.okou.android.WorkspaceFeedbackHost
 import ai.okou.android.currentWindowSizeDp
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,15 +19,17 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListItemInfo
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -43,13 +47,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -68,6 +76,8 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+
+internal val ConversationContentMaxWidth = 768.dp
 
 private const val HistoryFeedbackDelayMillis = 250L
 private const val TimelineEnd = "conversation_end"
@@ -92,6 +102,9 @@ internal fun ConversationRoute(
     realtime: ChatUpdatesModel? = null,
     controls: ConversationRunControls? = null,
     showComposerStatus: Boolean = false,
+    stopPlacement: ConversationStopPlacement? = null,
+    queueOpen: Boolean = false,
+    dismissQueue: () -> Unit = {},
     artifactActions: ChatArtifactActions? = null,
     findTarget: ConversationFindTarget? = null,
     linkPosition: ConversationLinkPosition? = null,
@@ -106,39 +119,30 @@ internal fun ConversationRoute(
     // Deferred work must acknowledge this composition's confirmation, never a newer State.value.
     val state = model.uiState.collectAsStateWithLifecycle().value
     val output = model.output.state.collectAsStateWithLifecycle().value
-    val input = composer?.uiState?.collectAsStateWithLifecycle()
+    val input = if (controls == null) composer?.uiState?.collectAsStateWithLifecycle() else null
     val localMessages by
         remember(input, threadId) {
             derivedStateOf { input?.value?.messagesFor(threadId).orEmpty() }
         }
     val thread = state.thread?.takeIf { historyAvailable && it.id == threadId }
     val transcript = state.transcript.takeIf { thread != null }
-    val settledQueueInputs = controls?.settledQueueInputs.orEmpty()
     val presentation =
-        remember(transcript, output, threadId, localMessages, settledQueueInputs) {
-            conversationContent(transcript, output, threadId, localMessages, settledQueueInputs)
-        }
+        controls?.presentation
+            ?: remember(transcript, output, threadId, localMessages) {
+                conversationContent(transcript, output, threadId, localMessages, emptySet())
+            }
     val content = presentation.messages
     val queue = presentation.queue
-    val queueIds = remember(queue) { queue.mapTo(hashSetOf()) { it.message.id } }
-    val showControlFeedback = controls?.hasFeedback(queueIds) == true
     val hasContent = transcript != null || content.isNotEmpty() || queue.isNotEmpty()
     val missing = thread != null && state.phase == HistoryPhase.Missing
     val firstReadFailed = !hasContent && thread != null && state.initialReadFailed
     val waitingForHistory =
         historyAvailable &&
-            !list.offline &&
             !hasContent &&
             !firstReadFailed &&
             (thread == null || state.phase == HistoryPhase.Loading)
-    val showSkeleton = key(threadId) { rememberChatWaitIndicator(waitingForHistory) }
-    val showSync =
-        key(threadId) {
-            rememberChatWaitIndicator(
-                transcript != null && state.phase == HistoryPhase.Loading && !list.offline,
-                delayMillis = HistoryFeedbackDelayMillis,
-            )
-        }
+    val showSkeleton =
+        key(threadId) { rememberChatWaitIndicator(waitingForHistory, HistoryFeedbackDelayMillis) }
     val realtimePhase = realtime?.phase?.collectAsStateWithLifecycle()?.value
     val reconnect = realtime.takeIf { !list.offline && realtimePhase == RealtimePhase.Unavailable }
     val showRealtimeConnecting =
@@ -169,7 +173,12 @@ internal fun ConversationRoute(
         }
     val activeRun = controls?.currentRunId ?: transcript?.activeRunId
     val execution = transcript?.execution?.takeUnless { list.offline || missing }
-    val activity = R.string.conversation_processing.takeIf { execution == HistoryExecution.Running }
+    val activity =
+        when (execution) {
+            HistoryExecution.Running -> R.string.conversation_processing
+            HistoryExecution.Queued -> R.string.conversation_run_queued
+            else -> null
+        }
     val activeMessage =
         remember(content, activeRun) {
             activeRun?.let { runId ->
@@ -181,7 +190,7 @@ internal fun ConversationRoute(
     val incomingTimeline =
         remember(content, activity, activeMessage) {
             val messages = content.asReversed()
-            if (activity == null || messages.isEmpty()) messages
+            if (activity == null) messages
             else
                 buildList<ConversationTimelineRow> {
                     addAll(messages)
@@ -197,14 +206,22 @@ internal fun ConversationRoute(
                     )
                 }
         }
-    val showHistorySyncNotice =
-        showSync &&
-            (activity == null || content.isEmpty()) &&
-            queue.isEmpty() &&
-            content.none { it.preview?.pendingDelivery != null }
+    val syncDelay = state.syncProgressDelayMillis.takeIf { transcript != null }
+    val syncDelayReached =
+        key(threadId) {
+            rememberChatWaitIndicator(syncDelay != null && syncDelay > 0L, syncDelay ?: 0L)
+        }
+    val showHistoryProgress =
+        transcript != null &&
+            state.phase == HistoryPhase.Loading &&
+            (state.consecutiveReadFailures >= 3 ||
+                (syncDelay == 0L || syncDelayReached) &&
+                    activity == null &&
+                    controls?.storageFailed != true &&
+                    queue.isEmpty() &&
+                    content.none { it.preview?.pendingDelivery != null })
     val feedback: @Composable (() -> Unit)? =
         when {
-            showHistorySyncNotice -> ({ HistorySyncNotice() })
             reconnect != null && !firstReadFailed -> ({
                     RealtimeNotice(reconnect, RealtimePhase.Unavailable)
                 })
@@ -272,6 +289,19 @@ internal fun ConversationRoute(
         }
     key(model, threadId) {
         val position = rememberLazyListState()
+        val timelineFocus = remember { FocusRequester() }
+        val inputMode = LocalInputModeManager.current
+        var queueWasOpen by remember { mutableStateOf(false) }
+        LaunchedEffect(queueOpen) {
+            if (
+                !queueOpen &&
+                    queueWasOpen &&
+                    queue.isEmpty() &&
+                    inputMode.inputMode == InputMode.Keyboard
+            )
+                timelineFocus.requestFocus()
+            queueWasOpen = queueOpen
+        }
         val holdTimeline by
             remember(position) {
                 derivedStateOf {
@@ -290,6 +320,50 @@ internal fun ConversationRoute(
             else emptySet()
         val runningFrame = rememberRunningWaveFrame(position, runningRows)
         val scope = rememberCoroutineScope()
+        val stopSnackbar = remember { SnackbarHostState() }
+        val queueSnackbar = remember { SnackbarHostState() }
+        val detailSnackbar =
+            if (!queueOpen && queueSnackbar.currentSnackbarData != null) queueSnackbar
+            else stopSnackbar
+        val stopFeedbackVisible = detailSnackbar.currentSnackbarData != null
+        val stopFeedbackBounds =
+            if (stopPlacement != null && stopFeedbackVisible) {
+                DisposableEffect(stopPlacement) {
+                    onDispose { stopPlacement.reportFeedbackTop(null) }
+                }
+                Modifier.onGloballyPositioned {
+                    stopPlacement.reportFeedbackTop(it.boundsInRoot().top)
+                }
+            } else Modifier
+        val failure = controls?.state?.actionFailures?.firstOrNull { it.threadId == threadId }
+        if (visible && failure != null) {
+            val messageId =
+                when (failure.kind) {
+                    RunControlKind.Interrupt ->
+                        R.string.controls_stop_failed.takeIf {
+                            failure.targetId == controls.currentRunId
+                        }
+                    RunControlKind.Revoke ->
+                        queue
+                            .firstOrNull { it.message.id == failure.targetId }
+                            ?.let {
+                                if (it.message.queuedWorkflow == null)
+                                    R.string.conversation_withdraw_failed
+                                else R.string.conversation_skip_failed
+                            }
+                }
+            val message = messageId?.let { stringResource(it) }
+            LaunchedEffect(failure) {
+                if (controls.model.consumeActionFailure(failure) && message != null) {
+                    scope.launch {
+                        val snackbar =
+                            if (failure.kind == RunControlKind.Revoke) queueSnackbar
+                            else stopSnackbar
+                        snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
+                    }
+                }
+            }
+        }
         var restored by remember(linkPosition) { mutableStateOf(false) }
         var restoredAnchor by remember(linkPosition) { mutableStateOf<ConversationAnchor?>(null) }
         var positioned by remember(linkPosition, searchTarget) { mutableStateOf(false) }
@@ -380,8 +454,14 @@ internal fun ConversationRoute(
         if (onLinkUnavailable != null) {
             val missingLinkTarget =
                 positioned && linkTarget != null && readingTarget === linkTarget && foundIndex < 0
-            LaunchedEffect(missing, firstReadFailed, missingLinkTarget, linkPosition) {
-                if (missing || firstReadFailed || missingLinkTarget) onLinkUnavailable()
+            // The first failed read follows local cache lookup. An offline link without local
+            // content returns to its source instead of keeping an unreachable destination open.
+            val offlineWithoutHistory =
+                list.offline && thread != null && !hasContent && state.consecutiveReadFailures > 0
+            val linkUnavailable =
+                missing || firstReadFailed || missingLinkTarget || offlineWithoutHistory
+            LaunchedEffect(linkUnavailable, linkPosition) {
+                if (linkUnavailable) onLinkUnavailable()
             }
         }
         val awaitingFindPosition = foundIndex >= 0 && pendingFind != null
@@ -503,11 +583,15 @@ internal fun ConversationRoute(
                 onLinkFocusRestored,
             )
         }
-        Column(modifier.fillMaxSize()) {
-            Box(Modifier.weight(1f).fillMaxWidth()) {
+        val contentWidth = Modifier.widthIn(max = ConversationContentMaxWidth)
+        Column(modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
                 LazyColumn(
-                    Modifier.fillMaxSize()
+                    contentWidth
+                        .fillMaxSize()
                         .testTag("conversation")
+                        .focusRequester(timelineFocus)
+                        .focusable()
                         .then(
                             if (awaitingFindPosition)
                                 Modifier.onGloballyPositioned { findViewport = it }
@@ -532,17 +616,7 @@ internal fun ConversationRoute(
                                 recentSizes[TimelineEnd] = it.height
                             },
                         ) {
-                            if (feedback != null || showControlFeedback)
-                                Column(
-                                    Modifier.padding(
-                                        top = if (showHistorySyncNotice) 4.dp else 8.dp,
-                                    ),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    feedback?.invoke()
-                                    if (showControlFeedback)
-                                        RunControlsFeedback(checkNotNull(controls), queueIds)
-                                }
+                            if (feedback != null) Box(Modifier.padding(top = 8.dp)) { feedback() }
                         }
                     }
                     itemsIndexed(timeline, key = { _, entry -> entry.key }) { index, entry ->
@@ -558,7 +632,12 @@ internal fun ConversationRoute(
                                         .padding(top = if (entry.showHeader) 20.dp else 8.dp),
                                 ) {
                                     if (entry.showHeader) ConversationReplyHeader()
-                                    ConversationActivity(entry.label, runningFrame = runningFrame)
+                                    ConversationActivity(
+                                        entry.label,
+                                        runningFrame = runningFrame,
+                                        controls = controls,
+                                        stopPlacement = stopPlacement,
+                                    )
                                 }
                             is ConversationMessage -> {
                                 val highlight =
@@ -593,6 +672,7 @@ internal fun ConversationRoute(
                         item(key = TimelineInitial) {
                             when {
                                 missing -> Text(stringResource(R.string.history_missing))
+                                waitingForHistory -> if (showSkeleton) ConversationSkeleton()
                                 list.offline && !hasContent ->
                                     Text(stringResource(R.string.conversation_history_offline))
                                 firstReadFailed ->
@@ -604,7 +684,6 @@ internal fun ConversationRoute(
                                             reconnect != null ||
                                                 state.phase != HistoryPhase.Loading,
                                     )
-                                waitingForHistory -> if (showSkeleton) ConversationSkeleton()
                                 transcript != null && queue.isEmpty() ->
                                     Text(stringResource(R.string.history_empty))
                             }
@@ -613,7 +692,8 @@ internal fun ConversationRoute(
                 }
                 if (positioned && !atEnd && position.canScrollBackward) {
                     Box(
-                        Modifier.align(Alignment.BottomCenter)
+                        contentWidth
+                            .align(Alignment.BottomCenter)
                             .fillMaxWidth()
                             .height(24.dp)
                             .background(
@@ -623,35 +703,55 @@ internal fun ConversationRoute(
                             ),
                     )
                 }
-                if (jump != null) {
-                    ConversationJump(
-                        jump,
-                        modifier =
-                            Modifier.align(
-                                    if (window.height < 480) Alignment.BottomEnd
-                                    else Alignment.BottomCenter,
-                                )
-                                .padding(
-                                    bottom = 4.dp,
-                                    end = if (window.height < 480) 12.dp else 0.dp,
-                                ),
-                        onClick = { scope.launch { position.scrollToItem(0) } },
-                    )
+                Column(
+                    contentWidth.align(Alignment.BottomCenter).fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    if (jump != null) {
+                        Box(Modifier.fillMaxWidth()) {
+                            ConversationJump(
+                                jump,
+                                modifier =
+                                    Modifier.align(
+                                            if (window.height < 480) Alignment.BottomEnd
+                                            else Alignment.BottomCenter,
+                                        )
+                                        .padding(
+                                            bottom = if (stopFeedbackVisible) 8.dp else 4.dp,
+                                            end = if (window.height < 480) 12.dp else 0.dp,
+                                        ),
+                                onClick = { scope.launch { position.scrollToItem(0) } },
+                            )
+                        }
+                    }
+                    WorkspaceFeedbackHost(detailSnackbar, stopFeedbackBounds.padding(bottom = 8.dp))
                 }
                 if (positioned && findTarget != null && foundIndex < 0) {
                     Text(
                         stringResource(R.string.conversation_find_unavailable),
-                        Modifier.align(Alignment.TopCenter)
+                        contentWidth
+                            .align(Alignment.TopCenter)
                             .background(MaterialTheme.colorScheme.surface)
                             .padding(horizontal = 16.dp, vertical = 8.dp)
                             .semantics { liveRegion = LiveRegionMode.Polite },
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
+                if (showHistoryProgress) {
+                    Box(Modifier.fillMaxWidth().testTag("history_sync_progress")) {
+                        ChatReadProgress(R.string.history_syncing)
+                    }
+                }
             }
-            if (showComposerStatus) ConversationStatus(list.offline, controls, short = false)
-            if (!missing) ConversationQueue(queue, controls)
+            if (!missing) {
+                Column(contentWidth) {
+                    if (showComposerStatus && list.offline) ConversationOffline(short = false)
+                    if (controls?.storageFailed == true)
+                        ConversationControlStorageFailure(controls.model::retryLocal)
+                }
+            }
         }
+        if (queueOpen) ConversationQueueModal(queue, controls, queueSnackbar, dismissQueue)
     }
 }
 
@@ -768,28 +868,6 @@ private fun ConversationJump(labelId: Int, modifier: Modifier, onClick: () -> Un
                         ),
                 )
         }
-    }
-}
-
-@Composable
-private fun HistorySyncNotice() {
-    val color = MaterialTheme.colorScheme.onSurfaceVariant
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        CircularProgressIndicator(
-            Modifier.size(14.dp),
-            color = color,
-            strokeWidth = 2.dp,
-            strokeCap = StrokeCap.Round,
-        )
-        Text(
-            stringResource(R.string.history_syncing),
-            color = color,
-            fontSize = 13.sp,
-            lineHeight = 20.sp,
-        )
     }
 }
 

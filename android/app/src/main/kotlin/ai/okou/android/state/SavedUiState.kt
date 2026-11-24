@@ -246,7 +246,7 @@ internal fun rememberSearchWorkflowId(): MutableState<String?> = rememberSaveabl
 
 private const val MAX_SAVED_SEARCH_QUERY_CHARS = 256
 
-internal data class SearchResultAnchor(val key: String, val offset: Int)
+internal data class SearchResultAnchor(val key: String, val offset: Int, val index: Int)
 
 internal class ChatSearchState(
     query: TextFieldValue = TextFieldValue(),
@@ -331,7 +331,7 @@ internal class ChatSearchState(
             .firstOrNull { it.index == position.firstVisibleItemIndex }
             ?.let { item ->
                 (item.key as? String)?.let {
-                    SearchResultAnchor(it, position.firstVisibleItemScrollOffset)
+                    SearchResultAnchor(it, position.firstVisibleItemScrollOffset, item.index)
                 }
             }
     }
@@ -365,6 +365,7 @@ internal fun rememberChatSearchState(): ChatSearchState =
                             anchor?.offset ?: 0,
                             it.type.name,
                             it.pendingFocus.orEmpty(),
+                            anchor?.index ?: 0,
                         )
                     } else emptyList()
                 },
@@ -374,7 +375,13 @@ internal fun rememberChatSearchState(): ChatSearchState =
                         TextFieldValue(text as String, TextRange(start as Int, end as Int)),
                         (key as String)
                             .takeIf { it.isNotEmpty() }
-                            ?.let { SearchResultAnchor(it, offset as Int) },
+                            ?.let {
+                                SearchResultAnchor(
+                                    it,
+                                    offset as Int,
+                                    fields.getOrNull(7) as? Int ?: 0,
+                                )
+                            },
                         WorkspaceSearchType.entries.firstOrNull { it.name == fields.getOrNull(5) }
                             ?: WorkspaceSearchType.All,
                         (fields.getOrNull(6) as? String)?.ifEmpty { null },
@@ -607,11 +614,19 @@ internal enum class WorkflowScope {
     Shared,
 }
 
+internal enum class WorkflowDraftAction {
+    Create,
+    Use,
+}
+
+internal data class WorkflowDraftReturn(val action: WorkflowDraftAction, val restoreFocus: Boolean)
+
 internal data class WorkflowsRoute(
     val mode: WorkflowsMode = WorkflowsMode.Closed,
     val id: String? = null,
     val tab: WorkflowTab = WorkflowTab.Instructions,
     val scope: WorkflowScope = WorkflowScope.All,
+    val draftReturn: WorkflowDraftReturn? = null,
 )
 
 @Composable
@@ -619,13 +634,29 @@ internal fun rememberWorkflowsRoute(): MutableState<WorkflowsRoute> =
     rememberSaveable(
         stateSaver =
             listSaver<WorkflowsRoute, String>(
-                save = { listOf(it.mode.name, it.id.orEmpty(), it.tab.name, it.scope.name) },
-                restore = { (mode, id, tab, scope) ->
+                save = {
+                    listOf(
+                        it.mode.name,
+                        it.id.orEmpty(),
+                        it.tab.name,
+                        it.scope.name,
+                        it.draftReturn?.action?.name.orEmpty(),
+                        (it.draftReturn?.restoreFocus == true).toString(),
+                    )
+                },
+                restore = { saved ->
+                    val (mode, id, tab, scope) = saved
                     WorkflowsRoute(
                         WorkflowsMode.valueOf(mode),
                         id.ifEmpty { null },
                         WorkflowTab.valueOf(tab),
                         WorkflowScope.valueOf(scope),
+                        saved.getOrNull(4)?.takeIf(String::isNotEmpty)?.let { action ->
+                            WorkflowDraftReturn(
+                                WorkflowDraftAction.valueOf(action),
+                                saved.getOrNull(5).toBoolean(),
+                            )
+                        },
                     )
                 },
             ),

@@ -47,12 +47,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.LongState
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -100,6 +103,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.text.NumberFormat
 
 private const val ProjectMotionMillis = 250
+private val ChatListLeadingIconSize = 18.dp
+private val ChatListLeadingIconGap = 8.dp
 internal val ChatListMotionEasing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
 private val projectPlacement = tween<IntOffset>(ProjectMotionMillis, easing = ChatListMotionEasing)
 private val projectChildFade = tween<Float>(ProjectMotionMillis, easing = ChatListMotionEasing)
@@ -108,6 +113,7 @@ private val immediatePlacement = snap<IntOffset>()
 @Composable
 internal fun ChatListScreen(
     state: ChatListUiState,
+    composer: State<ComposerState>?,
     open: (ConfirmedChat) -> Unit,
     provisionalChats: List<ProvisionalChat>,
     openProvisional: (ProvisionalChat) -> Unit,
@@ -131,6 +137,15 @@ internal fun ChatListScreen(
     dismissProjectRenameRejection: (ProjectRenameRejection) -> Unit,
     feedback: @Composable () -> Unit,
 ) {
+    val draftIds by
+        remember(composer, state.draftThreadIds) {
+            derivedStateOf(structuralEqualityPolicy()) {
+                draftThreadIdsForList(
+                    state.draftThreadIds,
+                    composer?.value?.journal?.drafts.orEmpty(),
+                )
+            }
+        }
     var renamingId by remember { mutableStateOf<String?>(null) }
     var renamingProjectId by remember { mutableStateOf<String?>(null) }
     val projectToRename = state.projects.firstOrNull { it.id == renamingProjectId }
@@ -323,10 +338,7 @@ internal fun ChatListScreen(
         }
     val syncDelay =
         remember(syncConfirmation) {
-            syncConfirmation?.let {
-                val age = (System.currentTimeMillis() - it).coerceAtLeast(0)
-                (ChatListSyncNoticeAgeMillis + 1 - age).coerceAtLeast(0)
-            }
+            syncConfirmation?.let { chatSyncNoticeDelayMillis(it, System.currentTimeMillis()) }
         }
     // Keep the timer's composition in place as reads start and finish.
     val syncDelayReached =
@@ -603,6 +615,7 @@ internal fun ChatListScreen(
                                                 unread,
                                             ),
                                     unread = unread,
+                                    hasDraft = thread != null && id in draftIds,
                                     isSelected = id == selectedChatId,
                                     runningFrame = runningFrame,
                                     row = section.firstChatRow + index,
@@ -981,9 +994,9 @@ private fun ProjectRow(
                 painterResource(if (collapsed) R.drawable.ic_folder else R.drawable.ic_folder_open),
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(ChatListLeadingIconSize),
             )
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(ChatListLeadingIconGap))
             Row(
                 Modifier.weight(1f),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -1088,6 +1101,7 @@ private fun ChatRow(
     pinned: Boolean,
     status: ChatRowStatus,
     unread: Boolean,
+    hasDraft: Boolean,
     isSelected: Boolean,
     runningFrame: LongState,
     row: Int,
@@ -1120,6 +1134,7 @@ private fun ChatRow(
             status.label(),
             if (status == ChatRowStatus.Running && unread) stringResource(R.string.chat_unread)
             else null,
+            if (hasDraft) stringResource(R.string.chat_has_draft) else null,
             if (pinned) stringResource(R.string.chat_pinned) else null,
             pendingAction?.let {
                 stringResource(
@@ -1162,6 +1177,15 @@ private fun ChatRow(
                 .padding(ChatListRowPadding),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            if (hasDraft) {
+                Icon(
+                    painterResource(R.drawable.ic_edit),
+                    contentDescription = null,
+                    tint = colors.onSurfaceVariant,
+                    modifier = Modifier.size(ChatListLeadingIconSize).testTag("chat_draft_icon"),
+                )
+                Spacer(Modifier.width(ChatListLeadingIconGap))
+            }
             Text(
                 title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.chat_untitled),
                 Modifier.weight(1f),

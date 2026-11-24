@@ -4,8 +4,8 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
+  ComposerVoiceMessages = "composerVoiceMessages",
   ArtifactThreePointTiming = "_artifactThreePointTimingV2",
-  VoiceMessages = "voiceMessages",
   PhoneUse = "_phoneUse",
   CustomConnectorCloudflareAccess = "customConnectorCloudflareAccess",
   MemberConnectorAccountAccess = "memberConnectorAccountAccess",
@@ -13,6 +13,7 @@ export enum FeatureSwitchKey {
   PresentationOutputFormat = "presentationOutputFormat",
   MarkdownFirstOutput = "markdownFirstOutput",
   MarkdownArtifactQuote = "markdownArtifactQuote",
+  ProjectArchive = "projectArchive",
   ProjectTitleReveal = "projectTitleReveal",
   OkouAnimatedAvatar = "okouAnimatedAvatar",
   DesktopShell = "desktopShell",
@@ -41,7 +42,9 @@ export enum FeatureSwitchKey {
   AgentSuggestion = "agentSuggestion",
   SubscriptionLinkingEntry = "subscriptionLinkingEntry",
   SlashActions = "slashActions",
+  WorkflowRecencySync = "workflowRecencySync",
   FollowupPlaceholder = "followupPlaceholder",
+  ChatLatestTurnScrollRoom = "chatLatestTurnScrollRoom",
   ChatReplyNameLine = "chatReplyNameLine",
   CloudBrowserPanel = "cloudBrowserPanel",
   ShareAudienceDescriptions = "shareAudienceDescriptions",

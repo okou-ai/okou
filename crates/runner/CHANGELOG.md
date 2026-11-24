@@ -1,5 +1,58 @@
 # Changelog
 
+## [0.249.119](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.118...runner-rs-v0.249.119) (2026-11-24)
+
+
+### Refactoring
+
+* **runner:** share native test witness phase lookup ([#50337](https://github.com/okou-ai/okou/issues/50337)) ([d467cac](https://github.com/okou-ai/okou/commit/d467cac852e2b8b3d421182e3e9d01e5221a62a2))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.118](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.117...runner-rs-v0.249.118) (2026-11-24)
+
+## [0.249.117](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.116...runner-rs-v0.249.117) (2026-11-23)
+
+
+### Refactoring
+
+* **runner:** share indexed native witness refusal checks ([#50331](https://github.com/okou-ai/okou/issues/50331)) ([55954e0](https://github.com/okou-ai/okou/commit/55954e059d8190e4ecee4cba65f8955975d6ac54))
+* **runner:** share native witness omission and duplication checks ([#50318](https://github.com/okou-ai/okou/issues/50318)) ([1ec8153](https://github.com/okou-ai/okou/commit/1ec815376d93e451c8e3a82eb29e1ac23f4e3cef))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.116](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.115...runner-rs-v0.249.116) (2026-11-23)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.115](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.114...runner-rs-v0.249.115) (2026-11-23)
+
+
+### Refactoring
+
+* **runner:** share native scalar receipt refusal sweeps ([#50303](https://github.com/okou-ai/okou/issues/50303)) ([8d5dd5c](https://github.com/okou-ai/okou/commit/8d5dd5c0d4d648555ce75bfcea8f81286731d350))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.114](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.113...runner-rs-v0.249.114) (2026-11-23)
+
+
+### Refactoring
+
+* **runner:** share native create cancellation receipt validation ([#50277](https://github.com/okou-ai/okou/issues/50277)) ([f99f699](https://github.com/okou-ai/okou/commit/f99f699d2d71edbdeef145bcf37e74a08accf3db))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.113](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.112...runner-rs-v0.249.113) (2026-11-23)
 
 

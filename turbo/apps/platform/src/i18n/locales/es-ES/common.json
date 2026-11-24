@@ -2930,6 +2930,7 @@
       "storageFailed": "No se pudo guardar el audio. Solo está disponible el audio ya guardado en este dispositivo.",
       "textTakingShape": "El texto está tomando forma",
       "transcribing": "Transcribiendo",
+      "uploadingRecording": "Subiendo la grabación…",
       "useRecording": "Usar grabación"
     },
     "walletAction": {
@@ -5253,6 +5254,7 @@
     }
   },
   "projects": {
+    "archiveProject": "Archivar",
     "back": "Back",
     "close": "Close",
     "collapse": "Contraer",
@@ -5293,6 +5295,7 @@
     "removeFromNewChat": "Quitar {{name}}",
     "rename": "Rename",
     "renameProject": "Rename Project",
+    "restoreProject": "Restaurar proyecto",
     "retryThreads": "Reload threads",
     "save": "Save",
     "saveError": "Could not save Project",
@@ -6449,7 +6452,6 @@
   },
   "sidebar": {
     "escapeShortcut": "Esc",
-    "filterAll": "Todos",
     "markAllRead": "Marcar todo como leído",
     "noResults": "No se encontraron resultados",
     "resultCount_one": "{{count}} resultado",
@@ -6458,10 +6460,8 @@
     "searching": "Buscando...",
     "searchWorkspace": "Buscar en el espacio de trabajo...",
     "sections": {
-      "artifacts": "Artefactos",
-      "chats": "Conversaciones",
       "messages": "Mensajes",
-      "workflows": "Flujos de trabajo"
+      "threads": "Hilos"
     }
   },
   "ssh": {

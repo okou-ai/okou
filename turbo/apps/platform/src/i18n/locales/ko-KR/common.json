@@ -2865,6 +2865,7 @@
       "storageFailed": "오디오를 저장하지 못했습니다. 이 기기에 저장된 오디오만 사용할 수 있습니다.",
       "textTakingShape": "텍스트를 만드는 중",
       "transcribing": "전사 중",
+      "uploadingRecording": "녹음 업로드 중…",
       "useRecording": "녹음 사용"
     },
     "walletAction": {
@@ -5171,6 +5172,7 @@
     }
   },
   "projects": {
+    "archiveProject": "보관",
     "back": "Back",
     "close": "Close",
     "collapse": "접기",
@@ -5207,6 +5209,7 @@
     "removeFromNewChat": "{{name}} 제거",
     "rename": "Rename",
     "renameProject": "Rename Project",
+    "restoreProject": "프로젝트 복원",
     "retryThreads": "Reload threads",
     "save": "Save",
     "saveError": "Could not save Project",
@@ -6354,17 +6357,14 @@
   },
   "sidebar": {
     "escapeShortcut": "Esc",
-    "filterAll": "전체",
     "markAllRead": "모두 읽음으로 표시",
     "noResults": "결과가 없습니다",
     "resultCount_other": "결과 {{count}}개",
     "searching": "검색 중...",
     "searchWorkspace": "워크스페이스 검색...",
     "sections": {
-      "artifacts": "아티팩트",
-      "chats": "채팅",
       "messages": "메시지",
-      "workflows": "워크플로"
+      "threads": "스레드"
     }
   },
   "ssh": {

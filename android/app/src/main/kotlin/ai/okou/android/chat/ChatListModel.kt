@@ -33,7 +33,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
-internal const val ChatListSyncNoticeAgeMillis = 10 * 60 * 1_000L
+private const val chatSyncNoticeAgeMillis = 10 * 60 * 1_000L
 private const val listRetryProgressThreshold = 3
 private const val unreadSnapshotLifetimeMillis = 120_000L
 private const val unreadSnapshotRenewalMillis = 30_000L
@@ -43,6 +43,11 @@ private fun CachedUnread.remainingMillis(now: Long): Long {
     return if (confirmedAt > 0 && age in 0 until unreadSnapshotLifetimeMillis) {
         unreadSnapshotLifetimeMillis - age
     } else 0
+}
+
+internal fun chatSyncNoticeDelayMillis(confirmedAt: Long, now: Long): Long {
+    val age = (now - confirmedAt).coerceAtLeast(0)
+    return (chatSyncNoticeAgeMillis + 1 - age).coerceAtLeast(0)
 }
 
 enum class ChatReadPhase {
@@ -182,6 +187,7 @@ data class ChatListUiState(
     val projectList: ProjectListUiState = ProjectListUiState(),
     internal val chatMoveNotice: ChatMoveNotice? = null,
     val indicators: Indicators? = null,
+    internal val draftThreadIds: Set<String>? = null,
     val indicatorsPhase: ChatReadPhase = ChatReadPhase.Idle,
     internal val indicatorsNonRetryableFailure: Boolean = false,
     internal val indicatorsConfirmedAt: Long? = null,
@@ -363,6 +369,7 @@ class ChatListModel(
             { invalidateIndicators() },
             dispatcher,
             precedingReadWrite = { readWrites[it] },
+            wallMillis = wallMillis,
         )
     private val sync = ChatListSync(service, dispatcher)
     private var confirmed: CachedChats? = null
@@ -395,10 +402,20 @@ class ChatListModel(
     private var cacheRead = false
     private var restoreJob: Job? = null
     private var indicatorsJob: Job? = null
+    private var draftIndexRead: DraftIndexRead? = null
+    internal var draftIndexRequestVersion = 0L
+        private set
+
+    private var confirmedDraftIndexVersion = 0L
     private var indicatorsRetry: ChatDependencyRetry? = null
     private val indicatorReadReceipts = mutableMapOf<String, ChatTimestamp>()
     private val readConfirmations = mutableMapOf<String, ReadConfirmation>()
     private val writes = Mutex()
+
+    private class DraftIndexRead {
+        val presenceOverrides = mutableMapOf<String, Boolean>()
+        var job: Job? = null
+    }
 
     private class ListReadBatch {
         var refresh = false
@@ -513,7 +530,12 @@ class ChatListModel(
                     changes.detailThreads.forEach { history.invalidateDetail(it) }
                 }
                 if (changes.resync || changes.messageThreads.isNotEmpty()) warming.invalidate()
-                if (changes.resync || changes.artifactThreads.isNotEmpty()) {
+                if (
+                    changes.resync ||
+                        changes.list ||
+                        changes.messageThreads.isNotEmpty() ||
+                        changes.artifactThreads.isNotEmpty()
+                ) {
                     viewModelScope.launch { artifactChanges.emit(changes) }
                 }
             }
@@ -531,6 +553,11 @@ class ChatListModel(
                         listRetryProgressVisible =
                             state.listRetryProgressVisible || (!online && staleListRead(state)),
                     )
+                if (!online) {
+                    val staleRead = draftIndexRead
+                    draftIndexRead = null
+                    staleRead?.job?.cancel()
+                }
                 refreshOnReconnect = online
                 updateListRetryVisibility()
             }
@@ -613,7 +640,7 @@ class ChatListModel(
                 (state.indicators == null ||
                     state.indicatorsPhase == ChatReadPhase.Failed ||
                     state.indicatorsConfirmedAt?.let {
-                        wallMillis() - it > ChatListSyncNoticeAgeMillis
+                        chatSyncNoticeDelayMillis(it, wallMillis()) == 0L
                     } == true)
         ) {
             refreshIndicators()
@@ -1411,6 +1438,7 @@ class ChatListModel(
         requestListRead(resetCompletedActivity = true)
         refreshMetadata()
         refreshIndicators()
+        refreshDraftIndex()
     }
 
     internal fun listVisibilityChanged(visible: Boolean) {
@@ -1421,6 +1449,7 @@ class ChatListModel(
             val state = mutable.value
             if (state.projectsPhase == ChatReadPhase.Failed) refreshMetadata()
             if (state.indicatorsPhase == ChatReadPhase.Failed) refreshIndicators()
+            refreshDraftIndex()
         }
     }
 
@@ -1650,7 +1679,7 @@ class ChatListModel(
 
     private fun staleListRead(state: ChatListUiState): Boolean =
         state.listPhase == ChatReadPhase.Loading &&
-            state.confirmedAt?.let { wallMillis() - it > ChatListSyncNoticeAgeMillis } == true
+            state.confirmedAt?.let { chatSyncNoticeDelayMillis(it, wallMillis()) == 0L } == true
 
     private fun resetListReadFailures() {
         listRetry?.cancel()
@@ -1799,6 +1828,48 @@ class ChatListModel(
 
     fun refreshIndicators() {
         if (!mutable.value.offline) readIndicators()
+    }
+
+    private fun refreshDraftIndex() {
+        if (!current() || mutable.value.offline || draftIndexRead != null) return
+        val read = DraftIndexRead()
+        val version = ++draftIndexRequestVersion
+        draftIndexRead = read
+        read.job = viewModelScope.launch {
+            try {
+                val ids = service.draftThreadIds().toMutableSet()
+                requireCurrent()
+                for ((id, present) in read.presenceOverrides) {
+                    if (present) ids.add(id) else ids.remove(id)
+                }
+                confirmedDraftIndexVersion = version
+                mutable.value = mutable.value.copy(draftThreadIds = ids)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                requireCurrent()
+                onFailure(error)
+            } finally {
+                if (draftIndexRead === read) draftIndexRead = null
+            }
+        }
+    }
+
+    internal fun confirmDraftPresence(
+        threadId: String,
+        present: Boolean,
+        indexVersionAtStart: Long = draftIndexRequestVersion,
+    ) {
+        if (!current() || indexVersionAtStart < confirmedDraftIndexVersion) return
+        // Compare reads by request start. Acknowledged saves use the latest version on completion.
+        if (indexVersionAtStart == draftIndexRequestVersion)
+            draftIndexRead?.presenceOverrides?.set(threadId, present)
+        val state = mutable.value
+        val ids = state.draftThreadIds ?: return
+        if ((threadId in ids) != present) {
+            val updated = if (present) ids + threadId else ids - threadId
+            mutable.value = state.copy(draftThreadIds = updated)
+        }
     }
 
     private fun continueUnreadRead(): Boolean =

@@ -40,12 +40,6 @@ test "$expected_files" = "$(printf '%s\n' \
   'sw.txt')"
 grep -Fq 'https://static.okou.io/okou-app/assets/app-123.js' \
   "${worker_shell}/index.html"
-test ! -e "${worker_shell}/app.js.map"
-
-empty_shell="${tmp_dir}/empty-shell"
-mkdir "$empty_shell"
-bash "$script" "$canonical_dist" "$empty_shell"
-
 
 nonempty_shell="${tmp_dir}/nonempty-shell"
 mkdir "$nonempty_shell"

@@ -2,7 +2,6 @@ package ai.okou.android.connectors
 
 import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
-import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItem
 import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItemGrantKind
 import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItemManualFieldsItemInputType
 import android.content.ActivityNotFoundException
@@ -115,7 +114,9 @@ internal fun ConnectorRenameSheet(
 @Composable
 internal fun ConnectorAuthorizationSheet(
     model: ConnectorModel,
-    detail: ConnectorServiceDetail,
+    service: String,
+    detail: ConnectorRead<ConnectorServiceDetail>,
+    offline: Boolean,
     account: ConnectorSavedAccount?,
     addingAccount: Boolean,
     canModify: Boolean,
@@ -133,34 +134,22 @@ internal fun ConnectorAuthorizationSheet(
             }
         }
     val verb = stringResource(actionLabel)
-    val title = stringResource(R.string.connector_authorization, verb, detail.entry.name)
+    val title = stringResource(R.string.connector_authorization, verb, service)
     val accountLabel = account?.label()
     val step = action?.authorization
     val canDismiss = action?.busy != true
-    if (action == null || step == null) {
-        val methods = detail.methods.filter { account == null || it.id == account.authMethod }
-        if (methods.isEmpty()) {
-            ConnectorSheet(
-                title,
-                cancel,
-                expandInShortWindow = true,
-                actions = { ConnectorCloseAction(cancel) },
-            ) {
-                ConnectorStatusBanner(R.string.connector_unavailable)
-            }
-        } else {
-            ConnectorMethodForm(
-                title,
-                accountLabel,
-                methods,
-                detail.googleSecurityWarning,
-                canModify,
-                action,
-                verb,
-                cancel,
-            ) { method, values ->
-                model.startAuthorization(account?.id, method, values)
-            }
+    if (action == null || step == null || detail.data == null) {
+        ConnectorMethodForm(
+            title,
+            account,
+            detail,
+            offline,
+            canModify,
+            action,
+            verb,
+            cancel,
+        ) { method, values ->
+            model.startAuthorization(account?.id, method, values)
         }
         return
     }
@@ -268,32 +257,36 @@ internal fun ConnectorAuthorizationSheet(
 @Composable
 private fun ConnectorMethodForm(
     title: String,
-    accountLabel: String?,
-    methods: List<ConnectorDetailConnectorAuthMethodsItem>,
-    googleSecurityWarning: Boolean,
+    account: ConnectorSavedAccount?,
+    detail: ConnectorRead<ConnectorServiceDetail>,
+    offline: Boolean,
     enabled: Boolean,
     action: ConnectorAction?,
     verb: String,
     cancel: () -> Unit,
     start: (String, Map<String, String>) -> Unit,
 ) {
-    var selectedId by remember { mutableStateOf(methods.first().id) }
-    val method = methods.firstOrNull { it.id == selectedId } ?: methods.first()
+    val methods =
+        detail.data?.methods.orEmpty().filter { account == null || it.id == account.authMethod }
+    var selectedId by remember { mutableStateOf(methods.firstOrNull()?.id) }
+    val method = methods.firstOrNull { it.id == selectedId } ?: methods.firstOrNull()
     val options =
-        remember(method.id) {
+        remember(method?.id) {
             mutableStateMapOf<String, String>().apply {
-                method.startOptions.forEach { option ->
+                method?.startOptions.orEmpty().forEach { option ->
                     option.defaultValue?.let { put(option.id, it) }
                 }
             }
         }
-    val fieldIds = method.manualFields.map { it.id }
-    val fields = remember(method.id, fieldIds) { fieldIds.associateWith { TextFieldState() } }
+    val fieldIds = method?.manualFields.orEmpty().map { it.id }
+    val fields = remember(method?.id, fieldIds) { fieldIds.associateWith { TextFieldState() } }
     val ready =
-        method.manualFields.all { !it.required || fields.getValue(it.id).text.isNotBlank() } &&
+        method != null &&
+            method.manualFields.all { !it.required || fields.getValue(it.id).text.isNotBlank() } &&
             method.startOptions.all { !it.required || !options[it.id].isNullOrBlank() }
     val submitLabel =
-        when (method.grantKind) {
+        when (method?.grantKind) {
+            null -> null
             ConnectorDetailConnectorAuthMethodsItemGrantKind.NONE,
             ConnectorDetailConnectorAuthMethodsItemGrantKind.MANUAL -> verb
             else -> stringResource(R.string.connector_continue_provider)
@@ -313,12 +306,26 @@ private fun ConnectorMethodForm(
                 cancel = cancel,
                 cancelEnabled = action?.busy != true,
             ) {
-                val values = options + fields.mapValues { it.value.text.toString() }
-                start(method.id, values.filterValues { it.isNotBlank() })
+                if (method != null) {
+                    val values = options + fields.mapValues { it.value.text.toString() }
+                    start(method.id, values.filterValues { it.isNotBlank() })
+                }
             }
         },
     ) {
-        ConnectorAuthorizationAccount(accountLabel)
+        ConnectorAuthorizationAccount(account?.label())
+        if (method == null) {
+            when {
+                detail.data != null -> ConnectorStatusBanner(R.string.connector_unavailable)
+                detail.failure == ConnectorReadFailure.Unavailable ->
+                    ConnectorReadError(R.string.connector_load_failed)
+                offline -> ConnectorLoadWhenOnline()
+                detail.failure != null -> ConnectorReadError(R.string.connector_load_failed)
+                else -> ConnectorSkeleton(stringResource(R.string.connector_loading), rows = 1)
+            }
+            ConnectorActionFeedback(action)
+            return@ConnectorSheet
+        }
         if (methods.size > 1) {
             Column(Modifier.fillMaxWidth().selectableGroup()) {
                 for (item in methods) {
@@ -358,7 +365,7 @@ private fun ConnectorMethodForm(
                     stringResource(R.string.connector_authorize_browser),
                     style = connectorBodyType(),
                 )
-                if (googleSecurityWarning) {
+                if (detail.data?.googleSecurityWarning == true) {
                     Text(
                         stringResource(R.string.connector_google_warning),
                         style = connectorFeedbackType(),
@@ -486,7 +493,7 @@ private fun ConnectorInput(
 
 @Composable
 private fun ConnectorFormActions(
-    label: String,
+    label: String?,
     enabled: Boolean,
     cancel: () -> Unit,
     cancelEnabled: Boolean,
@@ -503,7 +510,7 @@ private fun ConnectorFormActions(
             enabled = cancelEnabled,
             treatment = ConnectorButtonTreatment.Text,
         )
-        ConnectorButton(label, submit, enabled = enabled)
+        if (label != null) ConnectorButton(label, submit, enabled = enabled)
     }
 }
 

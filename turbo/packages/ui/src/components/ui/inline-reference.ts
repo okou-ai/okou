@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { cva } from "class-variance-authority";
 
 /**
@@ -36,3 +38,14 @@ export const inlineReferenceVariants = cva(
     },
   },
 );
+
+/** Mount the React controls in the inline reference element owned by the rich text editor. */
+export function InlineReferenceContent({
+  host,
+  children,
+}: {
+  host: HTMLElement;
+  children: ReactNode;
+}) {
+  return createPortal(children, host);
+}

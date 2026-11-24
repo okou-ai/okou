@@ -15,18 +15,19 @@ extension ConversationStore {
     var needsRetry = false
 
     var message: ChatMessage {
-      ChatMessage(
+      let userMessage: ChatUserMessage? = document.flatMap { draft in
+        guard let data = try? JSONEncoder().encode(draft) else { return nil }
+        return try? JSONDecoder().decode(ChatUserMessage.self, from: data)
+      }
+      return ChatMessage(
         id: id, role: .user,
         text: text,
         attachments: attachments.map {
           ChatMessageAttachment(
             id: $0.id, filename: $0.filename, contentType: $0.contentType, size: $0.size)
-        }, createdAt: createdAt,
+        } + (userMessage?.parts.flatMap(\.voiceAttachments) ?? []), createdAt: createdAt,
         runID: nil, isQueued: false, isError: false,
-        userMessage: document.flatMap { draft in
-          guard let data = try? JSONEncoder().encode(draft) else { return nil }
-          return try? JSONDecoder().decode(ChatUserMessage.self, from: data)
-        })
+        userMessage: userMessage)
     }
   }
 

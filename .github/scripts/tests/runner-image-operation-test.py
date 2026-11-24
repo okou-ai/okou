@@ -555,7 +555,7 @@ class ImageOperationTest(unittest.TestCase):
                     self.wait_for(
                         lambda: retry.poll() is not None or self.process_opened(retry_pid, gate)
                     )
-                    self.assertFalse(select.select([retry.stdout, retry.stderr], [], [], 0.5)[0])
+                    self.assertIsNone(retry.poll())
                     release.touch()
                     output, error = retry.communicate(timeout=10)
                     self.assertEqual(retry.returncode, 0, output + error)
@@ -751,7 +751,6 @@ class ImageOperationTest(unittest.TestCase):
         faults = {
             "missing-hash": "invalid image result hash",
             "wrong-result": "invalid or mismatched image result",
-            "invalid-result-hash": "invalid image result hash",
         }
         for attempt, (fault, error) in enumerate(faults.items(), start=2):
             with self.subTest(fault=fault):

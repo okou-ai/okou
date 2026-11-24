@@ -33,6 +33,7 @@ import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasTestTag
@@ -47,6 +48,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performFirstLinkClick
 import androidx.compose.ui.test.performKeyInput
@@ -100,7 +102,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
-class ChatListApplication : TestOkouApplication() {
+open class ChatListApplication : TestOkouApplication() {
     lateinit var fixture: ChatListApiFixture
     lateinit var cacheSnapshot: ChatCacheSnapshot
     val responseGate = CountDownLatch(1)
@@ -112,6 +114,13 @@ class ChatListApplication : TestOkouApplication() {
         searchService = fixture.service
         cacheSnapshot = ChatCacheSnapshot(noBackupFilesDir.resolve("chat-list"), chatCache)
         super.onCreate()
+    }
+}
+
+class ChatListDraftApplication : ChatListApplication() {
+    override fun onCreate() {
+        super.onCreate()
+        composerService = fixture.service
     }
 }
 
@@ -227,6 +236,128 @@ internal abstract class ChatListRootTestFixture {
         compose.runOnIdle { app.connectivity.value = false }
         compose.waitUntil(10_000) { currentList()?.offline == true }
         compose.runOnIdle { app.connectivity.value = true }
+    }
+}
+
+@RunWith(RobolectricTestRunner::class)
+@Config(
+    sdk = [35],
+    qualifiers = "en-rUS-w1000dp-h800dp",
+    application = ChatListDraftApplication::class,
+)
+internal class ChatListDraftRootTest : ChatListRootTestFixture() {
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun wideSingleLineComposerMatchesTheFloatingActionHeightAndBottom() {
+        val app = compose.activity.application as ChatListApplication
+        app.responseGate.countDown()
+        awaitListAndNames()
+        val newChat = compose.onNode(hasText("New chat") and hasClickAction())
+        val composer = compose.onNodeWithTag("chat_input_card", useUnmergedTree = true)
+        val editor = hasTestTag("message_input") and hasSetTextAction()
+        fun assertAligned() {
+            compose.waitUntilExactlyOneExists(editor, 10_000)
+            val action = newChat.assertIsDisplayed().getUnclippedBoundsInRoot()
+            val card = composer.assertIsDisplayed().getUnclippedBoundsInRoot()
+            assertEquals(56.dp, action.bottom - action.top)
+            assertEquals(action.top, card.top)
+            assertEquals(action.bottom, card.bottom)
+        }
+        assertAligned()
+
+        compose.onNodeWithTag("chat_$CHAT_PERSONAL").performClick().assertIsSelected()
+        assertAligned()
+        compose.onNode(editor).performTextInput("Draft")
+        assertAligned()
+    }
+
+    @Test
+    fun openedChatsDraftReadUpdatesThePencilAfterAnOlderIndex() {
+        val app = compose.activity.application as ChatListApplication
+        val webDraft = "Draft saved on Web"
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.waitUntil(10_000) { currentList()?.draftThreadIds?.isEmpty() == true }
+
+        val row = hasTestTag("chat_$CHAT_PERSONAL")
+        val glyph =
+            compose.onNode(
+                hasTestTag("chat_draft_icon") and hasAnyAncestor(row),
+                useUnmergedTree = true,
+            )
+        glyph.assertDoesNotExist()
+        app.fixture.setThreadDraft(CHAT_PERSONAL, webDraft)
+        compose.onNode(row).performClick().assertIsSelected()
+        compose.waitUntilExactlyOneExists(
+            hasTestTag("message_input") and hasSetTextAction() and hasText(webDraft),
+            10_000,
+        )
+        glyph.assertIsDisplayed()
+    }
+
+    @Test
+    fun draftPencilAppearsBesideTheTitleAndKeepsTheActivityState() {
+        val app = compose.activity.application as ChatListApplication
+        app.fixture.setThreadDraft(CHAT_PERSONAL, "Existing draft")
+        val releaseIndex = CountDownLatch(1)
+        app.fixture.draftIndex = {
+            releaseIndex.await()
+            jsonResponse("""{"draftThreadIds":["$CHAT_PERSONAL"]}""")
+        }
+        val rowTag = hasTestTag("chat_$CHAT_PERSONAL")
+        val row = compose.onNode(rowTag)
+        val title =
+            compose.onNode(
+                hasText("Personal chat") and hasAnyAncestor(rowTag),
+                useUnmergedTree = true,
+            )
+        val glyph =
+            compose.onNode(
+                hasTestTag("chat_draft_icon") and hasAnyAncestor(rowTag),
+                useUnmergedTree = true,
+            )
+        try {
+            app.responseGate.countDown()
+            awaitListAndNames()
+            glyph.assertDoesNotExist()
+            val before = title.getUnclippedBoundsInRoot()
+            val rowBounds = row.getUnclippedBoundsInRoot()
+            assertEquals(12.dp, before.left - rowBounds.left)
+            assertEquals(52.dp, rowBounds.bottom - rowBounds.top)
+            val activity = row.fetchSemanticsNode().config[SemanticsProperties.StateDescription]
+
+            releaseIndex.countDown()
+            compose.waitUntil(10_000) { currentList()?.draftThreadIds == setOf(CHAT_PERSONAL) }
+            row.performClick().assertIsSelected()
+            val icon = glyph.getUnclippedBoundsInRoot()
+            val marked = title.getUnclippedBoundsInRoot()
+            assertEquals(18.dp, icon.right - icon.left)
+            assertEquals(8.dp, marked.left - icon.right)
+            assertEquals(26.dp, marked.left - before.left)
+            assertEquals(rowBounds, row.getUnclippedBoundsInRoot())
+            assertEquals(
+                "$activity, Has draft",
+                row.fetchSemanticsNode().config[SemanticsProperties.StateDescription],
+            )
+
+            val editor = compose.onNode(hasTestTag("message_input") and hasSetTextAction())
+            compose.waitUntilExactlyOneExists(
+                hasTestTag("message_input") and hasSetTextAction(),
+                10_000,
+            )
+            editor.performTextInput("A local draft")
+            editor.performTextReplacement("")
+            glyph.assertDoesNotExist()
+            assertEquals(before.left, title.getUnclippedBoundsInRoot().left)
+            assertEquals(
+                activity,
+                row.fetchSemanticsNode().config[SemanticsProperties.StateDescription],
+            )
+            editor.performTextInput("A local draft")
+            glyph.assertExists()
+        } finally {
+            releaseIndex.countDown()
+        }
     }
 }
 
@@ -692,6 +823,70 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Display mode").assertExists()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1280dp-h800dp")
+    fun wideConversationSyncProgressSpansThePaneAndPreservesContentBounds() {
+        val app = compose.activity.application as ChatListApplication
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithText("Personal chat").performClick()
+        compose.waitUntilExactlyOneExists(hasText("Hello history"), 10_000)
+        val history = compose.runOnIdle {
+            checkNotNull(
+                    ViewModelProvider(compose.activity)[SessionModel::class.java]
+                        .uiState
+                        .value
+                        .ready
+                        ?.chats,
+                )
+                .history
+        }
+        compose.waitUntil(5_000) {
+            compose.runOnIdle { history.uiState.value.phase == HistoryPhase.Ready }
+        }
+        val timeline = compose.onNodeWithTag("conversation")
+        val composer = compose.onNodeWithTag("chat_composer")
+        val reply = compose.onNodeWithText("Hello history")
+        val timelineBounds = timeline.getUnclippedBoundsInRoot()
+        val composerBounds = composer.getUnclippedBoundsInRoot()
+        val replyBounds = reply.getUnclippedBoundsInRoot()
+        val sync = hasContentDescription(compose.activity.getString(R.string.history_syncing))
+        val successfulRows = app.fixture.historyRows
+        app.fixture.historyRows = { MockResponse().setResponseCode(503) }
+        try {
+            compose.runOnIdle { history.refresh() }
+            for (failures in 1..3) {
+                compose.waitUntil(5_000) {
+                    compose.runOnIdle {
+                        history.uiState.value.consecutiveReadFailures >= failures
+                    }
+                }
+                if (failures < 3) {
+                    compose.onNode(sync).assertDoesNotExist()
+                    shadowOf(Looper.getMainLooper()).idleFor(3, TimeUnit.SECONDS)
+                }
+            }
+
+            compose.onNode(sync).assertIsDisplayed()
+            val bar = compose.onNodeWithTag("history_sync_progress").getUnclippedBoundsInRoot()
+            val list = compose.onNodeWithTag("chat_list").getUnclippedBoundsInRoot()
+            assertEquals(list.right + 1.dp, bar.left)
+            assertEquals(compose.onRoot().getUnclippedBoundsInRoot().right, bar.right)
+            assertEquals(timelineBounds.top, bar.top)
+            assertEquals(4.dp, bar.bottom - bar.top)
+            assertEquals(768.dp, timelineBounds.right - timelineBounds.left)
+            assertEquals(timelineBounds, timeline.getUnclippedBoundsInRoot())
+            assertEquals(composerBounds, composer.getUnclippedBoundsInRoot())
+            assertEquals(replyBounds, reply.getUnclippedBoundsInRoot())
+        } finally {
+            app.fixture.historyRows = successfulRows
+        }
+        shadowOf(Looper.getMainLooper()).idleFor(6, TimeUnit.SECONDS)
+        compose.waitUntilDoesNotExist(sync, 5_000)
+        assertEquals(replyBounds, reply.getUnclippedBoundsInRoot())
+        assertEquals(composerBounds, composer.getUnclippedBoundsInRoot())
     }
 
     @Test
@@ -1770,8 +1965,14 @@ internal class ChatSearchRootTest : ChatListRootTestFixture() {
         app.responseGate.countDown()
         awaitListAndNames()
         compose.onNodeWithText("Personal chat").performClick()
-        compose.waitUntilExactlyOneExists(hasText("Queued"), 10_000)
-        compose.onNodeWithText(prompt).assertIsDisplayed()
+        val queue = hasTestTag("open_conversation_queue")
+        compose.waitUntilExactlyOneExists(queue, 10_000)
+        compose.onNodeWithText(prompt).assertDoesNotExist()
+        compose.onNode(queue).performClick()
+        val panel = hasTestTag("conversation_queue")
+        compose.waitUntilExactlyOneExists(panel, 10_000)
+        compose.onNode(hasText(prompt) and hasAnyAncestor(panel)).assertIsDisplayed()
+        compose.onNode(hasContentDescription("Back") and hasAnyAncestor(isDialog())).performClick()
 
         fun findChecklist() {
             compose.onNodeWithContentDescription("Chat actions").performClick()
@@ -1802,7 +2003,7 @@ internal class ChatSearchRootTest : ChatListRootTestFixture() {
                 .invalidate(CHAT_PERSONAL)
         }
         compose.waitUntilExactlyOneExists(hasTestTag("message_$deliveredId"), 10_000)
-        compose.onNodeWithText("Queued").assertDoesNotExist()
+        compose.onNode(queue).assertDoesNotExist()
         findChecklist()
         compose.waitUntilExactlyOneExists(oneMatch, 10_000)
         compose.onNodeWithText(prompt).assertIsDisplayed()

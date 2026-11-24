@@ -2880,6 +2880,7 @@
       "storageFailed": "Audio could not be saved. Only audio already saved on this device is available.",
       "textTakingShape": "Text is taking shape",
       "transcribing": "Transcribing",
+      "uploadingRecording": "Uploading recording…",
       "useRecording": "Use recording"
     },
     "walletAction": {
@@ -5190,6 +5191,7 @@
     }
   },
   "projects": {
+    "archiveProject": "Archive",
     "back": "Back",
     "close": "Close",
     "collapse": "Collapse",
@@ -5228,6 +5230,7 @@
     "removeFromNewChat": "Remove {{name}}",
     "rename": "Rename",
     "renameProject": "Rename Project",
+    "restoreProject": "Restore project",
     "retryThreads": "Reload threads",
     "save": "Save",
     "saveError": "Could not save Project",
@@ -6376,7 +6379,6 @@
   },
   "sidebar": {
     "escapeShortcut": "Esc",
-    "filterAll": "All",
     "markAllRead": "Mark all read",
     "noResults": "No results found",
     "resultCount_one": "{{count}} result",
@@ -6384,10 +6386,8 @@
     "searching": "Searching...",
     "searchWorkspace": "Search workspace...",
     "sections": {
-      "artifacts": "Artifacts",
-      "chats": "Chats",
       "messages": "Messages",
-      "workflows": "Workflows"
+      "threads": "Threads"
     }
   },
   "ssh": {

@@ -64,6 +64,10 @@ internal fun ChatArtifactResources(
     threadId: String,
     wide: Boolean,
     onClose: () -> Unit,
+    relatedFocusKey: String?,
+    availableRelatedChats: Set<String>,
+    onRelatedFocusRestored: () -> Unit,
+    onRelatedChat: (String, String) -> Unit,
 ) {
     val state by model.state.collectAsStateWithLifecycle()
     val query = remember(threadId) { ArtifactQuery(chatThreadId = threadId) }
@@ -103,17 +107,36 @@ internal fun ChatArtifactResources(
     val result = state.page.takeIf { state.query == query }
     val failure = state.failedRead.takeIf { state.query == query }
     val reading = state.reading.takeIf { state.query == query }
+    val related = state.relatedChats.takeIf { state.query == query }
+    val relatedRows =
+        remember(related?.confirmed, availableRelatedChats) {
+            related?.confirmed?.rows().orEmpty().filter { it.threadId in availableRelatedChats }
+        }
+    val relatedError =
+        when (related?.failure) {
+            RelatedChatReadFailure.Temporary -> R.string.chat_resources_related_load_failed
+            RelatedChatReadFailure.AccessLost -> R.string.chat_resources_related_access_lost
+            null -> null
+        }
+    val showRelatedSkeleton =
+        rememberChatWaitIndicator(
+            related?.checking == true &&
+                related.confirmed == null &&
+                (result != null || failure != null),
+            ChatListSkeletonDelayMillis,
+        )
     val showSkeleton =
         rememberChatWaitIndicator(result == null && failure == null, ChatListSkeletonDelayMillis)
     val dates = rememberArtifactDates()
     val rowFocus = remember { FocusRequester() }
+    val relatedFocus = remember { FocusRequester() }
     val restoreRow = page.restoreRow
     LaunchedEffect(result, reading, failure) {
         if (result?.nextCursor != null && reading == null && failure == null) {
             snapshotFlow {
                 val layout = position.layoutInfo
                 val last = layout.visibleItemsInfo.lastOrNull()?.index ?: -1
-                last >= 0 && last >= layout.totalItemsCount - 5
+                last >= 0 && last >= result.items.size - 3
             }
                 .collect { nearEnd -> if (nearEnd) model.loadNext() }
         }
@@ -123,7 +146,13 @@ internal fun ChatArtifactResources(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         ArtifactToolbar(R.string.chat_resources, R.string.back, ::back, toolbarPadding)
-        if (result == null && failure != null) {
+        if (
+            result == null &&
+                failure != null &&
+                relatedRows.isEmpty() &&
+                relatedError == null &&
+                !showRelatedSkeleton
+        ) {
             ArtifactInitialReadFailure(
                 failure.label(chatResources = true),
                 Modifier.widthIn(max = 768.dp),
@@ -136,18 +165,10 @@ internal fun ChatArtifactResources(
                 modifier = Modifier.widthIn(max = 768.dp).fillMaxSize().padding(horizontal = 16.dp),
                 contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp),
             ) {
-                item(key = "resource-heading") {
-                    Text(
-                        stringResource(R.string.artifact_title),
-                        Modifier.padding(start = 12.dp, bottom = 4.dp).semantics { heading() },
-                        style =
-                            MaterialTheme.typography.labelMedium.copy(
-                                fontSize = 13.sp,
-                                lineHeight = 20.sp,
-                            ),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                if (result != null || failure == null)
+                    item(key = "resource-heading") {
+                        ResourceHeading(R.string.artifact_title)
+                    }
                 if (showSkeleton) {
                     items(3) { ArtifactRowSkeleton(height = 72.dp, horizontalPadding = 16.dp) }
                 }
@@ -160,9 +181,14 @@ internal fun ChatArtifactResources(
                     }
                 }
                 items(result?.items.orEmpty(), key = { it.id }) { item ->
-                    ChatArtifactResourceRow(
-                        item,
-                        dates.timestamp(checkNotNull(item.createdAt), showDay = true),
+                    ChatResourceRow(
+                        item.title,
+                        stringResource(
+                            R.string.artifact_metadata,
+                            stringResource(item.kind.label()),
+                            dates.timestamp(checkNotNull(item.createdAt), showDay = true),
+                        ),
+                        item.kind.icon(),
                         if (item.id == restoreRow) {
                             Modifier.focusRequester(rowFocus).onGloballyPositioned {
                                 if (page.restoreRow == item.id) {
@@ -187,8 +213,41 @@ internal fun ChatArtifactResources(
                 if (reading == ArtifactCatalogRead.More) {
                     item { ArtifactRowSkeleton(height = 72.dp, horizontalPadding = 16.dp) }
                 }
+                if (relatedRows.isNotEmpty() || relatedError != null || showRelatedSkeleton) {
+                    item(key = "related-heading") {
+                        Spacer(Modifier.height(16.dp))
+                        ResourceHeading(R.string.chat_resources_related)
+                    }
+                    items(relatedRows, key = { "related:${it.threadId}" }) { peer ->
+                        val key = "related:${peer.threadId}"
+                        ChatResourceRow(
+                            peer.title?.takeIf { it.isNotBlank() }
+                                ?: stringResource(R.string.chat_untitled),
+                            null,
+                            R.drawable.ic_chat,
+                            if (key == relatedFocusKey) {
+                                Modifier.focusRequester(relatedFocus).onGloballyPositioned {
+                                    if (relatedFocus.requestFocus()) onRelatedFocusRestored()
+                                }
+                            } else Modifier,
+                        ) {
+                            onRelatedChat(peer.threadId, key)
+                        }
+                    }
+                    if (showRelatedSkeleton)
+                        item(key = "related-loading") {
+                            ArtifactRowSkeleton(height = 56.dp, horizontalPadding = 16.dp)
+                        }
+                    if (relatedError != null)
+                        item(key = "related-read-failure") {
+                            ArtifactReadNotice(
+                                relatedError,
+                                Modifier.padding(bottom = 12.dp),
+                            )
+                        }
+                }
             }
-            if (reading == ArtifactCatalogRead.SyncingStale) {
+            if (reading == ArtifactCatalogRead.SyncingStale || related?.syncingStale == true) {
                 val label = stringResource(R.string.chat_resources_syncing)
                 val colors = MaterialTheme.colorScheme
                 LinearProgressIndicator(
@@ -203,9 +262,20 @@ internal fun ChatArtifactResources(
 }
 
 @Composable
-private fun ChatArtifactResourceRow(
-    item: ArtifactItem,
-    timestamp: String,
+private fun ResourceHeading(@androidx.annotation.StringRes label: Int) {
+    Text(
+        stringResource(label),
+        Modifier.padding(start = 12.dp, bottom = 4.dp).semantics { heading() },
+        style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp, lineHeight = 20.sp),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+@Composable
+private fun ChatResourceRow(
+    title: String,
+    subtitle: String?,
+    @androidx.annotation.DrawableRes icon: Int,
     modifier: Modifier,
     onClick: () -> Unit,
 ) {
@@ -213,7 +283,7 @@ private fun ChatArtifactResourceRow(
     Row(
         modifier
             .fillMaxWidth()
-            .heightIn(min = 72.dp)
+            .heightIn(min = if (subtitle == null) 56.dp else 72.dp)
             .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 8.dp),
@@ -221,27 +291,27 @@ private fun ChatArtifactResourceRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
-            Icon(painterResource(item.kind.icon()), null, Modifier.size(20.dp))
+            Icon(painterResource(icon), null, Modifier.size(20.dp))
         }
         Column(Modifier.weight(1f)) {
             Text(
-                item.title,
+                title,
                 style =
                     MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 24.sp),
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                stringResource(
-                    R.string.artifact_metadata,
-                    stringResource(item.kind.label()),
-                    timestamp,
-                ),
-                style =
-                    MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp),
-                color = colors.onSurfaceVariant,
-            )
+            if (subtitle != null)
+                Text(
+                    subtitle,
+                    style =
+                        MaterialTheme.typography.bodyMedium.copy(
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp,
+                        ),
+                    color = colors.onSurfaceVariant,
+                )
         }
         Icon(painterResource(R.drawable.ic_chevron_right), null, Modifier.size(24.dp))
     }

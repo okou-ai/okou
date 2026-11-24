@@ -417,6 +417,22 @@ export const renameProject$ = command(
     await set(syncProjects$, signal);
   },
 );
+export const setProjectArchived$ = command(
+  async ({ get, set }, id: string, archived: boolean, signal: AbortSignal) => {
+    await set(waitForProjectCreation$, id, signal);
+    await accept(
+      get(apiClient$)(projectsContract).update({
+        params: { id },
+        body: { archived, eventId: operation() },
+        fetchOptions: { signal },
+      }),
+      [200],
+      signal,
+    );
+    await set(syncProjects$, signal);
+  },
+);
+
 export const deleteProjectWithEventId$ = command(
   async (
     { get, set },

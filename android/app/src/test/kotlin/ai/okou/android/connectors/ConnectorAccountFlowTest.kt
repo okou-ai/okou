@@ -330,6 +330,56 @@ class ConnectorAccountFlowTest {
     }
 
     @Test
+    fun reauthorizationShowsTheSelectedAccountWhileMethodsLoad() = withDirectory { fixture, _ ->
+        awaitText("Google Calendar")
+        val release = CountDownLatch(1)
+        fixture.detailReplyGate = release
+        try {
+            compose.onNodeWithTag("connector-$CONNECTOR_CALENDAR").performClick()
+            awaitText("Permission update required")
+            compose.onNodeWithText("协作日历").performClick()
+            compose.onNodeWithText("Update permissions").performClick()
+            compose.onNodeWithText("Update permissions · Google Calendar").assertIsDisplayed()
+            compose
+                .onNode(hasText("协作日历") and hasAnyAncestor(hasTestTag("connector-sheet")))
+                .assertIsDisplayed()
+            compose.onNodeWithText("Cancel").assertIsEnabled()
+            compose.onNodeWithText("Continue to provider").assertDoesNotExist()
+        } finally {
+            release.countDown()
+        }
+        awaitText("Continue to provider")
+        compose.onNodeWithText("Continue to provider").assertIsEnabled()
+    }
+
+    @Test
+    fun deniedMethodsKeepTheAuthorizationPanelAndReturnToTheAccount() =
+        withDirectory { fixture, _ ->
+            awaitText("Google Calendar")
+            fixture.denyCatalogDetail = true
+            compose.onNodeWithTag("connector-$CONNECTOR_CALENDAR").performClick()
+            awaitText("Permission update required")
+            compose.onNodeWithText("协作日历").performClick()
+            compose.onNodeWithText("Update permissions").performClick()
+            compose.onNodeWithText("Update permissions · Google Calendar").assertIsDisplayed()
+            compose
+                .onNode(
+                    hasText("Could not load connectors.") and
+                        hasAnyAncestor(hasTestTag("connector-sheet")),
+                )
+                .assertIsDisplayed()
+                .assert(
+                    SemanticsMatcher.expectValue(
+                        SemanticsProperties.LiveRegion,
+                        LiveRegionMode.Polite,
+                    ),
+                )
+            compose.onNodeWithText("Continue to provider").assertDoesNotExist()
+            compose.onNodeWithText("Cancel").performClick()
+            compose.onNodeWithText("Update permissions").assertIsEnabled()
+        }
+
+    @Test
     fun removingTheTargetAccountDoesNotTurnReauthorizationIntoAdd() = withCalendar { fixture, _ ->
         compose.onNodeWithText("协作日历").performClick()
         compose.onNodeWithText("Update permissions").performClick()

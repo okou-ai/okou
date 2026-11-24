@@ -1,8 +1,6 @@
 import { workspaceLogoColorway } from "@okouai/core/workspace-logo";
 import { cn } from "@okouai/ui";
 
-import { OkouLogomark } from "./okou-logomark.tsx";
-
 /**
  * Shared thumbnail scale for the two identity marks in the app chrome: the
  * person behind the session (`UserAvatar`) and the workspace they are in
@@ -161,8 +159,7 @@ export function WorkspaceLogo({
 }
 
 /**
- * The mark a workspace wears until it has a logo: a tonal brand texture with
- * the logomark on top, in a colourway chosen by the workspace id. It carries
+ * A tonal brand texture in a colourway chosen by the workspace id. It carries
  * no hairline — the opaque texture already gives the square its edge, the way
  * it does behind the chat home's agent avatar.
  */
@@ -182,21 +179,14 @@ export function DefaultWorkspaceLogo({
       role="img"
       aria-label={name}
       className={cn(
-        "grid shrink-0 place-items-center bg-[length:160%] bg-center",
+        "block shrink-0 bg-[length:160%] bg-center",
         THUMBNAIL_SIZE[size],
         THUMBNAIL_RADIUS[size],
       )}
       style={{
         backgroundColor: colorway.ground,
         backgroundImage: `url(${colorway.textureUrl})`,
-        color: colorway.mark,
       }}
-    >
-      {/* The mark keeps one proportion wherever the logo sits. `Button` and
-          `DropdownMenuItem` size every descendant svg to an icon with
-          `[&_svg]:size-4`, which outranks a plain width and would draw the
-          mark at 44% of the rail button and 67% of a menu row. */}
-      <OkouLogomark className="h-auto! w-[58%]!" />
-    </span>
+    />
   );
 }

@@ -1,8 +1,5 @@
 import { command } from "ccstate";
-import {
-  runWebhookContract,
-  webhookFirewallAuthContract,
-} from "@okouai/api-contracts/contracts/webhooks";
+import { runWebhookContract } from "@okouai/api-contracts/contracts/webhooks";
 
 import { badRequestMessage } from "../../lib/error";
 import { authorization$ } from "../context/hono";
@@ -16,7 +13,7 @@ import {
   admitPreparedFirewallAuthResponse$,
 } from "../services/agent-webhook-firewall-auth.service";
 
-const firewallAuthBody$ = bodyResultOf(webhookFirewallAuthContract.resolve);
+const firewallAuthBody$ = bodyResultOf(runWebhookContract.firewallAuth);
 
 const missingAuthorizationResponse = Object.freeze({
   status: 401 as const,
@@ -126,10 +123,6 @@ const firewallAuthRoute$ = command(
 export const webhooksAgentFirewallAuthRoutes: readonly RouteEntry[] = [
   {
     route: runWebhookContract.firewallAuth,
-    handler: firewallAuthRoute$,
-  },
-  {
-    route: webhookFirewallAuthContract.resolve,
     handler: firewallAuthRoute$,
   },
 ];

@@ -1,3 +1,4 @@
+import ChatDomain
 import Foundation
 
 public enum VoiceDraftError: LocalizedError {
@@ -42,11 +43,14 @@ public actor VoiceDraftSession {
   private struct Record: Codable {
     let id: UUID
     let context: VoiceEditorContext
+    var asVoiceMessage: Bool?
+    var uploadedClipID: String?
     var segments: [Segment] = []
     var text: String?
   }
 
   public nonisolated let restoredRecordingID: UUID?
+  public nonisolated let restoredAsVoiceMessage: Bool
   public nonisolated let restoredDuration: Double
   public var hasPreparedText: Bool { record?.text != nil }
   private let storage: VoiceDraftStorage
@@ -85,11 +89,12 @@ public actor VoiceDraftSession {
     } else {
       sampleCount = 0
     }
+    restoredAsVoiceMessage = record?.asVoiceMessage == true
     restoredRecordingID = record?.id
     restoredDuration = Double(sampleCount) / Double(Self.sampleRate)
   }
 
-  public func begin(context: VoiceEditorContext) throws -> UUID {
+  public func begin(context: VoiceEditorContext, asVoiceMessage: Bool = false) throws -> UUID {
     guard record == nil, !storage.hasRecording else { throw VoiceDraftError.changed }
     try FileManager.default.createDirectory(
       at: storage.directory, withIntermediateDirectories: true,
@@ -101,7 +106,7 @@ public actor VoiceDraftSession {
     try Data().write(
       to: directory.appendingPathComponent("audio.pcm"),
       options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
-    let saved = Record(id: UUID(), context: context)
+    let saved = Record(id: UUID(), context: context, asVoiceMessage: asVoiceMessage)
     try save(saved)
     record = saved
     sampleCount = 0
@@ -111,14 +116,21 @@ public actor VoiceDraftSession {
   public func append(_ pcm: Data, recordingID: UUID) throws -> Double {
     guard record?.id == recordingID else { throw VoiceDraftError.changed }
     guard pcm.count.isMultiple(of: 2) else { throw VoiceDraftError.unavailable }
-    let remaining = Self.maximumBytes - sampleCount * 2
+    let maximum = record?.asVoiceMessage == true ? 25 * 1024 * 1024 - 44 : Self.maximumBytes
+    let remaining = maximum - sampleCount * 2
     let bytes = pcm.prefix(remaining)
     let file = try FileHandle(forWritingTo: storage.directory.appendingPathComponent("audio.pcm"))
     defer { try? file.close() }
     try file.seekToEnd()
     try file.write(contentsOf: bytes)
     sampleCount += bytes.count / 2
-    if bytes.count < pcm.count { throw VoiceDraftError.durationLimit }
+    if bytes.count < pcm.count {
+      if record?.asVoiceMessage == true {
+        throw ChatError.invalidContract(
+          "Voice recordings can contain up to 25 MiB. Your recording is saved.")
+      }
+      throw VoiceDraftError.durationLimit
+    }
     return Double(sampleCount) / Double(Self.sampleRate)
   }
 
@@ -185,6 +197,25 @@ public actor VoiceDraftSession {
     try save(updated)
     record = updated
     return text
+  }
+
+  public func uploadClip(recordingID: UUID) async throws -> String {
+    guard let current = record, current.id == recordingID, current.asVoiceMessage == true,
+      sampleCount > 0
+    else { throw VoiceDraftError.unavailable }
+    if let id = current.uploadedClipID { return id }
+    let pcm = try Data(contentsOf: storage.directory.appendingPathComponent("audio.pcm"))
+    let url = storage.directory.appendingPathComponent("recording.wav")
+    try Self.wav(pcm).write(
+      to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    defer { try? FileManager.default.removeItem(at: url) }
+    let id = try await client.uploadClip(file: url)
+    try Task.checkCancellation()
+    guard var updated = record, updated.id == recordingID else { throw VoiceDraftError.changed }
+    updated.uploadedClipID = id
+    try save(updated)
+    record = updated
+    return id
   }
 
   public func discard() throws {

@@ -38,7 +38,7 @@ function draftTransforms(client: ClientResponseTransform["client"]) {
     client,
     method: "GET",
     status: 200,
-    maxVersion: null,
+    maxVersion: client === "ios" ? "0.60.0" : null,
     since: "#49901",
     transform: legacyVoiceDraft,
   } as const;

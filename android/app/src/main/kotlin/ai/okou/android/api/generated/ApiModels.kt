@@ -9589,12 +9589,15 @@ data class ChatMessageSearchResponseResultsItem(
 )
 
 @Serializable
-data class ChatMessageSearchResponse(val `results`: List<ChatMessageSearchResponseResultsItem>)
+data class ChatMessageSearchResponse(
+    val `results`: List<ChatMessageSearchResponseResultsItem>,
+)
 
 @Serializable
 data class RenameProjectRequest(
     val `eventId`: String,
-    val `name`: String,
+    val `name`: String? = null,
+    val `archived`: Boolean? = null,
 )
 
 @Serializable
@@ -9604,6 +9607,8 @@ data class RenamedProject(
     val `createdAt`: String,
     val `updatedAt`: String,
     val `sortOrder`: String? = null,
+    val `archived`: Boolean? = null,
+    val `lastArchivedAt`: String? = null,
 )
 
 @Serializable
@@ -16133,6 +16138,11 @@ data class Indicators(
     val `unreadAt`: Map<String, String>,
 )
 
+@Serializable
+data class ChatDraftIndex(
+    val `draftThreadIds`: List<String>,
+)
+
 @Serializable(with = ProjectSnapshotSerializer::class) sealed interface ProjectSnapshot
 
 @Serializable
@@ -16142,6 +16152,8 @@ data class ProjectSnapshotVariant1ProjectsItem(
     val `createdAt`: String,
     val `updatedAt`: String,
     val `sortOrder`: String? = null,
+    val `archived`: Boolean? = null,
+    val `lastArchivedAt`: String? = null,
 )
 
 @Serializable
@@ -16205,6 +16217,8 @@ data class ProjectEventsEventsItem(
     val `kind`: ProjectEventsEventsItemKind,
     val `name`: String?,
     val `sortOrder`: String? = null,
+    val `archived`: Boolean? = null,
+    val `lastArchivedAt`: String? = null,
     val `createdAt`: String,
 )
 
@@ -16212,6 +16226,52 @@ data class ProjectEventsEventsItem(
 data class ProjectEvents(
     val `events`: List<ProjectEventsEventsItem>,
     val `hasMore`: Boolean,
+)
+
+@Serializable
+enum class RelatedCreatedChatsItemsItemStatus {
+    @SerialName("running") RUNNING,
+    @SerialName("queued") QUEUED,
+    @SerialName("idle") IDLE,
+    @SerialName("unavailable") UNAVAILABLE,
+}
+
+@Serializable
+data class RelatedCreatedChatsItemsItem(
+    val `threadId`: String,
+    val `title`: String?,
+    val `status`: RelatedCreatedChatsItemsItemStatus,
+    val `id`: String,
+    val `sourceRunId`: String,
+    val `createdAt`: String,
+)
+
+@Serializable
+data class RelatedCreatedChats(
+    val `items`: List<RelatedCreatedChatsItemsItem>,
+)
+
+@Serializable
+enum class RelatedCommunicatingChatsItemsItemStatus {
+    @SerialName("running") RUNNING,
+    @SerialName("queued") QUEUED,
+    @SerialName("idle") IDLE,
+    @SerialName("unavailable") UNAVAILABLE,
+}
+
+@Serializable
+data class RelatedCommunicatingChatsItemsItem(
+    val `threadId`: String,
+    val `title`: String?,
+    val `status`: RelatedCommunicatingChatsItemsItemStatus,
+    val `sentCount`: Long,
+    val `receivedCount`: Long,
+    val `lastMessageAt`: String,
+)
+
+@Serializable
+data class RelatedCommunicatingChats(
+    val `items`: List<RelatedCommunicatingChatsItemsItem>,
 )
 
 @Serializable
@@ -16494,6 +16554,8 @@ data class ProjectArchiveProjectsItem(
     val `createdAt`: String,
     val `updatedAt`: String,
     val `sortOrder`: String? = null,
+    val `archived`: Boolean? = null,
+    val `lastArchivedAt`: String? = null,
 )
 
 @Serializable

@@ -469,6 +469,9 @@ internal interface CanonicalApi {
         @Query("includeActiveUnread") `queryIncludeActiveUnread`: String? = null,
     ): Response<Indicators>
 
+    @GET("/api/chat-thread-drafts")
+    suspend fun `chatDraftIndex`(@Header("Authorization") token: String): Response<ChatDraftIndex>
+
     @GET("/api/projects/snapshot")
     suspend fun `projectSnapshot`(@Header("Authorization") token: String): Response<ProjectSnapshot>
 
@@ -477,6 +480,18 @@ internal interface CanonicalApi {
         @Header("Authorization") token: String,
         @Query("sinceSeqId") `querySinceSeqId`: Long,
     ): Response<ProjectEvents>
+
+    @GET("/api/chat-threads/{id}/relations/children")
+    suspend fun `relatedCreatedChats`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+    ): Response<RelatedCreatedChats>
+
+    @GET("/api/chat-threads/{id}/relations/communications")
+    suspend fun `relatedCommunicatingChats`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+    ): Response<RelatedCommunicatingChats>
 
     @POST("/api/chat/events/catch-up")
     suspend fun `historyCatchUp`(

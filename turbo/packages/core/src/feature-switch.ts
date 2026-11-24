@@ -46,10 +46,11 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
-  [FeatureSwitchKey.VoiceMessages]: {
+  [FeatureSwitchKey.ComposerVoiceMessages]: {
     maintainer: "ethan@okou.ai",
+    displayName: "Voice recordings in the composer",
     description:
-      "Send voice messages and transcribe their recordings with model credits.",
+      "Attach recordings to chat messages instead of dictating text.",
     enabled: false,
   },
   [FeatureSwitchKey.ChatShareRefresh]: {
@@ -133,6 +134,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Copy or quote selected Markdown passages into the owning chat in desktop split view.",
     enabled: false,
   },
+  [FeatureSwitchKey.ProjectArchive]: {
+    maintainer: "ethan@okou.ai",
+    displayName: "Project archiving",
+    description: "Archive and restore Projects from their row menu.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.ProjectTitleReveal]: {
     maintainer: "ming@okou.ai",
     displayName: "Project title reveal",
@@ -166,6 +174,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.WorkflowRecencySync]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Workflow recency sync",
+    description:
+      "Sync recently used workflows across devices in each workspace.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.ZipArtifactPreview]: {
     maintainer: "liangyou@okou.ai",
     displayName: "ZIP artifact preview",
@@ -185,6 +201,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Follow-up placeholder",
     description:
       "Show the first follow-up in the empty composer and press Tab to accept it.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.ChatLatestTurnScrollRoom]: {
+    maintainer: "ethan@okou.ai",
+    displayName: "Start the latest chat turn at the top",
+    description:
+      "Leave room below a short reply so the latest question can scroll to the top of the conversation.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

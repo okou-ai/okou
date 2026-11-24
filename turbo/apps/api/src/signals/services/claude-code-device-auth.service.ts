@@ -16,6 +16,7 @@ import {
   type infer as zInfer,
 } from "zod";
 
+import { subscriptionOAuthClientId } from "./subscription-oauth-client-id";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import {
@@ -50,8 +51,6 @@ const CLAUDE_CODE_DEVICE_AUTH_TOKEN_URL =
   "https://platform.claude.com/v1/oauth/token";
 const CLAUDE_CODE_DEVICE_AUTH_REDIRECT_URI =
   "https://platform.claude.com/oauth/code/callback";
-const CLAUDE_CODE_DEVICE_AUTH_CLIENT_ID =
-  "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 const CLAUDE_CODE_DEVICE_AUTH_SCOPE = "user:profile user:inference";
 const CLAUDE_CODE_DEVICE_AUTH_TOKEN_TTL_SECONDS = 365 * 24 * 60 * 60;
 const CLAUDE_CODE_DEVICE_AUTH_SESSION_TTL_SECONDS = 15 * 60;
@@ -485,7 +484,10 @@ function buildApprovalUrl(args: {
 }): string {
   const url = new URL(CLAUDE_CODE_DEVICE_AUTH_AUTHORIZE_URL);
   url.searchParams.set("code", "true");
-  url.searchParams.set("client_id", CLAUDE_CODE_DEVICE_AUTH_CLIENT_ID);
+  url.searchParams.set(
+    "client_id",
+    subscriptionOAuthClientId("CLAUDE_CODE_OAUTH_CLIENT_ID"),
+  );
   url.searchParams.set("response_type", "code");
   url.searchParams.set("redirect_uri", CLAUDE_CODE_DEVICE_AUTH_REDIRECT_URI);
   url.searchParams.set("scope", CLAUDE_CODE_DEVICE_AUTH_SCOPE);
@@ -572,7 +574,7 @@ async function exchangeClaudeCodeAuthorizationCode(
           grant_type: "authorization_code",
           code: args.authorizationCode,
           redirect_uri: CLAUDE_CODE_DEVICE_AUTH_REDIRECT_URI,
-          client_id: CLAUDE_CODE_DEVICE_AUTH_CLIENT_ID,
+          client_id: subscriptionOAuthClientId("CLAUDE_CODE_OAUTH_CLIENT_ID"),
           code_verifier: args.codeVerifier,
           state: args.state,
           expires_in: CLAUDE_CODE_DEVICE_AUTH_TOKEN_TTL_SECONDS,

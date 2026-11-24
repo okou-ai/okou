@@ -38,6 +38,7 @@
     <string name="chat_back_to_inbox">Voltar para a caixa de entrada</string>
     <string name="chat_more_actions">Mais ações</string>
     <string name="chat_unread">Não lidas</string>
+    <string name="chat_has_draft">Tem rascunho</string>
     <string name="chat_archived">Arquivadas</string>
     <string name="chat_muted">Silenciadas</string>
     <string name="chat_project_empty">Nenhuma conversa neste projeto.</string>
