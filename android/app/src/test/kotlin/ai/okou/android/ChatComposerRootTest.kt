@@ -12,6 +12,7 @@ import ai.okou.android.chat.ComposerPersistence
 import ai.okou.android.chat.ComposerTarget
 import ai.okou.android.chat.HistoryPhase
 import ai.okou.android.chat.RunControlPersistence
+import ai.okou.android.chat.RunControlPhase
 import ai.okou.android.chat.plainText
 import android.content.Intent
 import android.os.Looper
@@ -53,6 +54,7 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
@@ -886,6 +888,90 @@ class ChatComposerRootTest {
             releaseHistory.countDown()
             instrumentation.resetInTouchMode()
         }
+    }
+
+    @Test
+    fun recoveredHistoryRestoresAWithdrawalWhenItsOutcomeReadAlsoFailed() {
+        val app = compose.activity.application as ComposerRootApplication
+        val api = app.fixture.chats
+        val queuedId = UUID.randomUUID().toString()
+        val prompt = "Restore this queued message"
+        val queued =
+            historyEventWire(
+                queuedId,
+                1,
+                type = "input.prompt",
+                payload =
+                    """{"userMessage":{"version":1,"parts":[{"type":"text","text":"$prompt"}]}}""",
+                run = null,
+            )
+        val readsUnavailable = AtomicBoolean(false)
+        val withdrawals = AtomicInteger()
+        val otherRows = api.historyRows
+        api.historyRows = { request ->
+            val url = checkNotNull(request.requestUrl)
+            if (url.pathSegments[2] != CHAT_PERSONAL) otherRows(request)
+            else if (readsUnavailable.get()) MockResponse().setResponseCode(400)
+            else {
+                val since = url.queryParameter("sinceSeqId")?.toInt() ?: 0
+                val rows = if (since < 1) queued else ""
+                jsonResponse(
+                    """{"rows":[$rows],"cursor":{"lastEventId":"$queuedId","lastSeqId":1},"hasMore":false}""",
+                )
+            }
+        }
+        val otherCommands = api.commandResponse
+        api.commandResponse = { request ->
+            val body =
+                if (
+                    request.method == "POST" &&
+                        request.requestUrl?.encodedPath == "/api/chat/events"
+                )
+                    Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
+                else null
+            if (body != null && "revokesEventId" in body) {
+                withdrawals.incrementAndGet()
+                readsUnavailable.set(true)
+                jsonResponse("{}").setResponseCode(201)
+            } else otherCommands(request)
+        }
+
+        app.contextGate.countDown()
+        compose.waitUntilExactlyOneExists(hasText("Personal chat"), 10_000)
+        compose.onNodeWithText("Personal chat").performClick()
+        val ready = compose.runOnIdle {
+            checkNotNull(
+                ViewModelProvider(compose.activity)[SessionModel::class.java].uiState.value.ready,
+            )
+        }
+        val history = ready.chats.history
+        awaitConversation {
+            history.uiState.value.phase == HistoryPhase.Ready &&
+                ready.controls.uiState.value.persistence == RunControlPersistence.Durable
+        }
+        compose.onNodeWithTag("open_conversation_queue").performClick()
+        val withdraw =
+            hasContentDescription(
+                app.getString(R.string.conversation_revoke),
+                substring = true,
+            ) and hasAnyAncestor(hasTestTag("message_$queuedId"))
+        compose.onNode(withdraw).assertIsEnabled().performClick()
+        awaitConversation {
+            history.uiState.value.phase == HistoryPhase.Failed &&
+                ready.controls.uiState.value.phases.values.singleOrNull() == RunControlPhase.Unknown
+        }
+        compose.onNodeWithTag("message_$queuedId").assertDoesNotExist()
+
+        readsUnavailable.set(false)
+        compose.runOnIdle { history.invalidate(CHAT_PERSONAL) }
+        awaitConversation { history.uiState.value.phase == HistoryPhase.Ready }
+        compose.waitUntilExactlyOneExists(
+            hasText(app.getString(R.string.conversation_withdraw_failed)),
+            10_000,
+        )
+        messageText(queuedId, prompt).assertIsDisplayed()
+        compose.onNode(withdraw).assertIsEnabled()
+        assertEquals(1, withdrawals.get())
     }
 
     @Test

@@ -361,11 +361,8 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
                 ),
             )
             f.controls.check(CHAT_PERSONAL)
-            val done =
-                f.controls.uiState.first {
-                    it.journal?.pending?.isEmpty() == true && it.notice != null
-                }
-            assertEquals(RunControlNoticeKind.TargetSettled, done.notice!!.kind)
+            val done = f.controls.uiState.first { it.journal?.pending?.isEmpty() == true }
+            assertTrue(done.actionFailures.isEmpty())
             assertEquals(1, f.remote.posts.size)
         }
     }
@@ -491,7 +488,7 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
     }
 
     @Test
-    fun checkingOneRestoredWithdrawalLeavesTheOtherQueueEntryUnresolved() = runTest {
+    fun recoveredHistoryCanVerifyBothRestoredWithdrawalsWithoutSending() = runTest {
         val manual = eventId("queued manual message")
         val manualIntent =
             RunControlIntent(
@@ -515,10 +512,13 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
                     input(automation, 2, run = null, type = "input.automation"),
                 ),
         ) { f ->
-            f.controls.checkIntent(CHAT_PERSONAL, manualIntent.id)
+            f.controls.checkUnknown(CHAT_PERSONAL)
             val checked =
-                f.controls.uiState.first { it.phases[manualIntent.id] == RunControlPhase.Retryable }
-            assertEquals(RunControlPhase.Unknown, checked.phases[automationIntent.id])
+                f.controls.uiState.first {
+                    it.phases[manualIntent.id] == RunControlPhase.Retryable &&
+                        it.phases[automationIntent.id] == RunControlPhase.Retryable
+                }
+            assertTrue(checked.actionFailures.isEmpty())
             assertTrue(f.remote.posts.isEmpty())
         }
     }
@@ -552,7 +552,7 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
                     input("input", 1),
                     historyEventWire(intent.id, 2, type = "control.interrupt", payload = "null"),
                 )
-                f.controls.checkIntent(CHAT_PERSONAL, intent.id)
+                f.controls.checkUnknown(CHAT_PERSONAL)
                 val settled = f.controls.uiState.first { it.journal?.pending?.isEmpty() == true }
                 assertEquals(setOf(HISTORY_RUN), settled.settledRuns[CHAT_PERSONAL])
                 assertEquals(HISTORY_RUN, f.history.uiState.value.transcript?.activeRunId)
@@ -619,8 +619,8 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
             f.refresh()
             f.remote.failRows.set(true)
             f.controls.check(CHAT_PERSONAL)
-            f.controls.uiState.first { it.notice?.kind == RunControlNoticeKind.ReadFailed }
-            assertEquals(RunControlPhase.Unknown, f.controls.uiState.value.phases[intent.id])
+            assertEquals(RunControlPhase.Checking, f.controls.uiState.value.phases[intent.id])
+            f.controls.uiState.first { it.phases[intent.id] == RunControlPhase.Unknown }
             f.remote.failRows.set(false)
             f.controls.retry(intent.id)
             f.refresh()
@@ -674,10 +674,7 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
                 f.remote.failRows.set(true)
                 if (retry) f.controls.retry(intent.id) else f.controls.check(CHAT_PERSONAL)
                 val failed =
-                    f.controls.uiState.first {
-                        if (retry) it.phases[intent.id] == RunControlPhase.Unknown
-                        else it.notice?.kind == RunControlNoticeKind.ReadFailed
-                    }
+                    f.controls.uiState.first { it.phases[intent.id] == RunControlPhase.Unknown }
                 assertEquals(ChatReadPhase.Loading, f.history.uiState.value.detailPhase)
                 assertEquals(RunControlPhase.Unknown, failed.phases[intent.id])
                 release.countDown()
@@ -780,7 +777,7 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
                 f.remote.failRows.set(true)
                 release.countDown()
                 val failed =
-                    f.controls.uiState.first { it.notice?.kind == RunControlNoticeKind.ReadFailed }
+                    f.controls.uiState.first { it.phases[intent.id] == RunControlPhase.Unknown }
                 assertEquals(ChatReadPhase.Ready, f.history.uiState.value.detailPhase)
                 assertEquals(true, f.history.uiState.value.detail?.cancellationRecoveryPending)
                 assertEquals(RunControlPhase.Unknown, failed.phases[intent.id])
@@ -879,7 +876,7 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
                     releaseRead.countDown()
                     val checked =
                         f.controls.uiState.first {
-                            if (readFails) it.notice?.kind == RunControlNoticeKind.ReadFailed
+                            if (readFails) it.phases[original.id] == RunControlPhase.Unknown
                             else it.phases[original.id] == RunControlPhase.Retryable
                         }
                     assertEquals(RunControlPhase.Sending, checked.phases[newer.id])

@@ -23,22 +23,10 @@ enum class RunControlPhase {
     Retryable,
 }
 
-enum class RunControlNoticeKind {
-    TargetSettled,
-    ReadFailed,
-}
-
-data class RunControlNotice(
-    val threadId: String,
-    val kind: RunControlNoticeKind,
-    val operation: RunControlKind,
-)
-
 data class RunControlsState(
     val journal: RunControlJournal? = null,
     val persistence: RunControlPersistence = RunControlPersistence.Loading,
     val phases: Map<String, RunControlPhase> = emptyMap(),
-    val notice: RunControlNotice? = null,
     internal val settledQueueInputs: Map<String, Set<String>> = emptyMap(),
     internal val settledRuns: Map<String, Set<String>> = emptyMap(),
     internal val optimistic: Set<String> = emptySet(),
@@ -119,8 +107,8 @@ class RunControlsModel(
         else refreshRecovery(threadId)
     }
 
-    internal fun checkIntent(threadId: String, intentId: String) =
-        owner.check(connection, threadId, intentId = intentId)
+    internal fun checkUnknown(threadId: String) =
+        owner.check(connection, threadId, unknownOnly = true)
 
     internal fun consumeActionFailure(intent: RunControlIntent) =
         owner.consumeActionFailure(connection, intent)

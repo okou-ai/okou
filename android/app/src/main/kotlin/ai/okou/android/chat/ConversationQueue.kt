@@ -181,7 +181,10 @@ internal fun ConversationQueueModal(
         }
     SettingsModal(onDismiss, fullScreen = fullScreen) {
         Box(Modifier.fillMaxWidth().then(panelHeight)) {
-            Column(Modifier.fillMaxWidth().padding(settingsPanelContentPadding(fullScreen))) {
+            Column(
+                Modifier.fillMaxWidth()
+                    .padding(settingsPanelContentPadding(compactHeight = fullScreen)),
+            ) {
                 Row(
                     Modifier.fillMaxWidth().heightIn(min = 56.dp),
                     verticalAlignment = Alignment.CenterVertically,
