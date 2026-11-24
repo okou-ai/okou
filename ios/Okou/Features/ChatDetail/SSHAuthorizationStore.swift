@@ -2,17 +2,30 @@ import CCState
 import ChatData
 import ChatDomain
 import Foundation
-import Observation
 
 /// One conversation owns both the cached read and an explicit authorization attempt.
-@MainActor @Observable
+@MainActor
 final class SSHAuthorizationStore {
+  /// What the card shows besides the request: whether its transcript row reads the request,
+  /// and the explicit approve or revoke attempt.
+  struct Presentation: Equatable {
+    var isActive = false
+    var isWorking = false
+    var error: String?
+  }
+
+  private struct Attempt: Equatable {
+    var isWorking = false
+    var error: String?
+  }
+
   let action: ChatSSHAuthorizationAction
   /// The workspace session Store that keeps this card's graph values.
   let stateStore: CCState.Store
-  private(set) var isActive = false
-  private(set) var isWorking = false
-  private(set) var error: String?
+  let presentation: Computed<Presentation>
+  // The read is available only while the row is active, so activation is a graph input.
+  private let active = CCState.State(false)
+  private let attempt = CCState.State(Attempt())
   private let revision = CCState.State(0)
   private let lifetime = CCState.State(true)
   private let reload: Command<Void, Void>
@@ -21,10 +34,14 @@ final class SSHAuthorizationStore {
   private let didFail: @MainActor (Error) -> Void
   private let didContinue: @MainActor () async -> Void
   private let didRetainInteraction: @MainActor (SSHAuthorizationStore) -> Void
-  @ObservationIgnored private var readTask: Task<ChatSSHAuthorization, Error>?
-  @ObservationIgnored private var operation: Task<Void, Never>?
-  @ObservationIgnored private var generation = UUID()
-  @ObservationIgnored private var closed = false
+  private var readTask: Task<ChatSSHAuthorization, Error>?
+  private var operation: Task<Void, Never>?
+  private var generation = UUID()
+  private var closed = false
+
+  var isActive: Bool { value(of: active) }
+  var isWorking: Bool { value(of: attempt).isWorking }
+  var error: String? { value(of: attempt).error }
 
   init(
     action: ChatSSHAuthorizationAction, threadID: String, client: APIClient,
@@ -41,13 +58,22 @@ final class SSHAuthorizationStore {
     self.didRetainInteraction = didRetainInteraction
     let revision = revision
     reload = Command { context in try context.set(revision, update: { $0 + 1 }) }
+    let active = active
+    let attempt = attempt
+    presentation = Computed { get in
+      let isActive = try get(active)
+      let current = try get(attempt)
+      return Presentation(isActive: isActive, isWorking: current.isWorking, error: current.error)
+    }
   }
 
-  @ObservationIgnored lazy var request = makeRequest()
+  lazy var request = makeRequest()
 
   private func makeRequest() -> Computed<Task<ChatSSHAuthorization, Error>> {
     Computed { [weak self] get, options in
-      guard let self, !closed, isActive, try get(lifetime) else { throw CancellationError() }
+      guard let self, !closed, try get(active), try get(lifetime) else {
+        throw CancellationError()
+      }
       guard action.threadID == threadID else {
         throw ChatError.invalidContract("This authorization belongs to a different chat.")
       }
@@ -90,8 +116,8 @@ final class SSHAuthorizationStore {
 
   func activate() {
     guard !closed, !isActive else { return }
-    isActive = true
-    invalidate()
+    // Activation is a dependency of the read, so the next read revalidates the request.
+    write(active, true)
   }
 
   func invalidate() {
@@ -102,7 +128,7 @@ final class SSHAuthorizationStore {
 
   func refresh() async {
     guard isActive, !closed, operation == nil, !Task.isCancelled else { return }
-    error = nil
+    update { $0.error = nil }
     invalidate()
     // The resource Task owns its original failure; the card presents it with Retry.
     do { _ = try await read() } catch {}
@@ -113,14 +139,13 @@ final class SSHAuthorizationStore {
   func decide(_ decision: Decision) async {
     guard isActive, !closed, operation == nil, !Task.isCancelled else { return }
     didRetainInteraction(self)
-    isWorking = true
-    error = nil
+    update { $0 = Attempt(isWorking: true, error: nil) }
     let generation = generation
     let task = Task { @MainActor [weak self] in
       guard let self else { return }
       defer {
         if self.generation == generation {
-          isWorking = false
+          update { $0.isWorking = false }
           operation = nil
         }
       }
@@ -154,7 +179,8 @@ final class SSHAuthorizationStore {
       } catch is CancellationError {
       } catch {
         guard !closed, self.generation == generation, !Task.isCancelled else { return }
-        self.error = ChatRequestFailure.message(for: error)
+        let message = ChatRequestFailure.message(for: error)
+        update { $0.error = message }
         didFail(error)
         // Reconcile an uncertain write without replaying approval or continuation.
         invalidate()
@@ -170,19 +196,38 @@ final class SSHAuthorizationStore {
   }
 
   func deactivate() {
-    isActive = false
+    write(active, false)
     generation = UUID()
     readTask?.cancel()
     readTask = nil
     operation?.cancel()
     operation = nil
-    isWorking = false
+    update { $0.isWorking = false }
   }
 
   func close() {
     closed = true
     deactivate()
     do { try stateStore.set(lifetime, false) } catch { didFail(error) }
+  }
+
+  // The card's own states are synchronous in-process values; reads and writes cannot fail.
+  private func value<Value>(of signal: Signal<Value>) -> Value {
+    do { return try stateStore.get(signal) } catch {
+      preconditionFailure("Cannot read the SSH access card graph: \(error)")
+    }
+  }
+
+  private func write<Value>(_ state: CCState.State<Value>, _ value: Value) {
+    do { try stateStore.set(state, value) } catch {
+      preconditionFailure("Cannot update the SSH access card graph: \(error)")
+    }
+  }
+
+  private func update(_ mutation: (inout Attempt) -> Void) {
+    var next = value(of: attempt)
+    mutation(&next)
+    write(attempt, next)
   }
 
   isolated deinit {
