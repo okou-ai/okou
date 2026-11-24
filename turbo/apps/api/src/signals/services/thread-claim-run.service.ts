@@ -733,23 +733,6 @@ function claimCommitInput(input: RunPlan): ThreadRunContext["input"] {
   };
 }
 
-/**
- * Generation writes a title only over NULL title and renamed_at, and a rename
- * sets both, so a titled or renamed claim snapshot never needs another read.
- */
-function threadTitled(
-  thread:
-    | { readonly title: string | null; readonly renamedAt: Date | null }
-    | null
-    | undefined,
-) {
-  return (
-    thread !== null &&
-    thread !== undefined &&
-    (thread.title !== null || thread.renamedAt !== null)
-  );
-}
-
 function claimLaunchRecord(
   record: ClaimLaunchRecord,
   integrationContext: string | undefined,
@@ -1300,7 +1283,7 @@ export function createThreadClaimRunObjects(
             triggerSource,
             discordDelivery: delivery.discordDelivery,
             wechatDelivery: delivery.wechatDelivery,
-            titled: threadTitled((await get(pickedEvent$))?.thread),
+            titled: (await get(pickedEvent$))?.thread.titled ?? false,
           },
         },
       };

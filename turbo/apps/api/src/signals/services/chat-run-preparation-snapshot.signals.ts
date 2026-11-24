@@ -331,6 +331,7 @@ function preparationSnapshotQuery(
   const hasCapacity =
     capacity === 0 ? sql`true` : lt(occupancy.activeCount, capacity);
   const phoneGrant = pickedPhoneUseGrant(hasCapacity);
+  const { chatThreadId, ...headFields } = head._.selectedFields;
   return db
     .with(occupancy, head)
     .select({
@@ -345,6 +346,10 @@ function preparationSnapshotQuery(
       revision: memberMemoryHeadFields.revision,
       archiveCache: memberMemoryHeadFields.archiveCache,
       thread: pickedThreadColumns,
+      titled:
+        sql`CASE WHEN ${isNotNull(chatThreads.title)} THEN true ELSE ${isNotNull(chatThreads.renamedAt)} END`.mapWith(
+          pgBooleanDecoder,
+        ),
       computerUseHostGrant: {
         hostId: computerUseHosts.id,
         displayName: computerUseHosts.displayName,
@@ -355,7 +360,7 @@ function preparationSnapshotQuery(
       },
       currentProject: { id: projects.id, name: projects.name },
       projectReferences: pickedProjectReferences(head, hasCapacity),
-      head: { ...head._.selectedFields },
+      head: headFields,
       ...pickedPromptColumns(
         head,
         hasCapacity,
@@ -372,7 +377,7 @@ function preparationSnapshotQuery(
     .leftJoin(
       chatThreads,
       and(
-        eq(chatThreads.id, head.chatThreadId),
+        eq(chatThreads.id, chatThreadId),
         eq(chatThreads.userId, owner.userId),
         eq(chatThreads.orgId, owner.orgId),
       ),
@@ -439,13 +444,15 @@ export function createChatRunPreparationSnapshot(
     }
     const thread = {
       ...joinedThread,
-      id: picked.chatThreadId,
+      id: claim.chatThreadId,
       userId: bootstrap.userId,
+      titled: row.titled,
     };
     // Only this request's actual FIFO head may use its canonical input facts.
     const owned = requestInput?.id === picked.id ? requestInput : undefined;
     const pickedEvent: PickedThreadInputEvent = {
       ...picked,
+      chatThreadId: thread.id,
       sourceAutonomyBudget:
         owned?.sourceAutonomyBudget ?? picked.sourceAutonomyBudget,
       userMessage: owned ? owned.userMessage : picked.userMessage,
