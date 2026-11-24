@@ -142,7 +142,7 @@ class NativeUpdateTest {
                 device.waitForIdle()
                 takeScreenshot().writeToTestStorage("android-update-$name")
             }
-            fun withShortWindowAndLargeText(width: Int, height: Int, block: () -> Unit) {
+            fun withShortWindowAndLargeText(width: Int, block: () -> Unit) {
                 val originalSize =
                     device
                         .executeShellCommand("wm size")
@@ -150,13 +150,13 @@ class NativeUpdateTest {
                         .trim()
                 val fontScale = device.executeShellCommand("settings get system font_scale").trim()
                 try {
-                    device.executeShellCommand("wm size ${width}x$height")
+                    device.executeShellCommand("wm size ${width}x850")
                     device.executeShellCommand("settings put system font_scale 2.0")
                     val resized =
                         object : Condition<UiDevice, Boolean> {
                             override fun apply(device: UiDevice) =
                                 device.displayWidth == width &&
-                                    device.displayHeight == height &&
+                                    device.displayHeight == 850 &&
                                     app.resources.configuration.fontScale >= 2f
                         }
                     assertTrue(device.wait(resized, 10_000) == true)
@@ -379,7 +379,7 @@ class NativeUpdateTest {
             )
             captureState("details-retry-offline")
             assertEquals(initialDetailsBounds, detailsBounds())
-            withShortWindowAndLargeText(width = 780, height = 850) {
+            withShortWindowAndLargeText(width = 780) {
                 exists(R.string.updates_retry_download)
                 captureState("details-short-retry-offline")
             }
@@ -397,7 +397,7 @@ class NativeUpdateTest {
             download.get().complete(file)
             exists(R.string.updates_open_settings)
             captureState("install-permission")
-            withShortWindowAndLargeText(width = 1000, height = 900) {
+            withShortWindowAndLargeText(width = 1000) {
                 exists(R.string.updates_allow_install)
                 val minTouchHeight = (48 * density).roundToInt() - 1
                 for (label in listOf(R.string.updates_later, R.string.updates_open_settings)) {

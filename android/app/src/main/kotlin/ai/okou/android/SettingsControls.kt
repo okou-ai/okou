@@ -506,7 +506,7 @@ internal fun OkouConfirmationDialog(
     dismissEnabled: Boolean = true,
     destructive: Boolean = false,
     dismissLabel: String = stringResource(R.string.settings_cancel),
-    minimumBodyLines: Int = 2,
+    keepActionsVisible: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     Dialog(
@@ -606,7 +606,8 @@ internal fun OkouConfirmationDialog(
                             actionSpace
                     // Let the whole dialog scroll if there is too little room for the body.
                     val minimumBodyHeight =
-                        bodyStyle.lineHeight.toDp().roundToPx() * minimumBodyLines
+                        if (keepActionsVisible) bodyStyle.fontSize.toDp().roundToPx()
+                        else bodyStyle.lineHeight.toDp().roundToPx() * 2
                     val body =
                         children[1].measure(
                             loose.copy(
