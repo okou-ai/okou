@@ -26,8 +26,12 @@ struct ForYouSuggestionView: View {
   /// A long reason shows as many of its first lines as the card has room for, never fewer than
   /// these, until it is opened, so a dense card keeps its directions in view.
   private static let reasonLines = 3
-  private static let descriptionLines = 3
-  private static let labelFont = Font.okou(.subheadline).weight(.medium)
+  /// A direction's description keeps two lines, so two directions stay in view under a dense
+  /// reason on a smaller phone.
+  private static let descriptionLines = 2
+  /// The card is a reading surface: a Title 3 heading over Body text, with Subheadline for
+  /// secondary lines (docs/ios/mobile-design-system.md#type-roles).
+  private static let labelFont = Font.okou(.body).weight(.medium)
   /// The room between directions: enough that each reads as its own button.
   private static let directionGap = OkouSpace.ten
 
@@ -76,7 +80,7 @@ struct ForYouSuggestionView: View {
             OkouIcon("chevron-right", size: OkouIconSize.accessory)
               .foregroundStyle(OkouColor.quietMark)
           }
-          .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
+          .font(.okou(.subheadline)).foregroundStyle(OkouColor.mutedForeground)
           .padding(.horizontal, OkouSpace.ten)
           .frame(minHeight: OkouControl.inlineActionHeight)
         }
@@ -105,7 +109,7 @@ struct ForYouSuggestionView: View {
   private func reason(lines: Int) -> some View {
     let clipped = wholeReasonHeight > shownReasonHeight + OkouSpace.one
     return VStack(alignment: .leading, spacing: 0) {
-      Text(suggestion.rationale).font(.okou(.subheadline))
+      Text(suggestion.rationale).font(.okou(.body))
         .foregroundStyle(OkouColor.mutedForeground)
         .lineLimit(showsWholeReason ? nil : lines)
         .fixedSize(horizontal: false, vertical: true)
@@ -118,20 +122,20 @@ struct ForYouSuggestionView: View {
         // hold all of it; one line and two tell how many lines the room holds.
         .background(alignment: .top) {
           ZStack(alignment: .top) {
-            Text(suggestion.rationale).font(.okou(.subheadline))
+            Text(suggestion.rationale).font(.okou(.body))
               .fixedSize(horizontal: false, vertical: true)
               .onGeometryChange(for: CGFloat.self) {
                 $0.size.height
               } action: {
                 wholeReasonHeight = $0
               }
-            Text(verbatim: "A").font(.okou(.subheadline))
+            Text(verbatim: "A").font(.okou(.body))
               .onGeometryChange(for: CGFloat.self) {
                 $0.size.height
               } action: {
                 oneLine = $0
               }
-            Text(verbatim: "A\nA").font(.okou(.subheadline)).fixedSize()
+            Text(verbatim: "A\nA").font(.okou(.body)).fixedSize()
               .onGeometryChange(for: CGFloat.self) {
                 $0.size.height
               } action: {
@@ -168,7 +172,7 @@ struct ForYouSuggestionView: View {
   private func reasonToggle(_ title: LocalizedStringKey) -> some View {
     Button(title, action: toggleReason)
       .buttonStyle(.plain)
-      .font(.okou(.subheadline).weight(.semibold)).foregroundStyle(OkouColor.foreground)
+      .font(.okou(.body).weight(.semibold)).foregroundStyle(OkouColor.foreground)
       .contentShape(Rectangle().inset(by: -OkouSpace.ten))
       .accessibilityHidden(true)
   }
@@ -203,7 +207,7 @@ struct ForYouSuggestionView: View {
         // A long description keeps its first lines so a dense card leaves its heading room;
         // VoiceOver reads all of it.
         if !option.description.isEmpty {
-          Text(option.description).font(.okou(.footnote))
+          Text(option.description).font(.okou(.subheadline))
             .foregroundStyle(OkouColor.mutedForeground)
             .lineLimit(Self.descriptionLines)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -264,7 +268,7 @@ struct ForYouAutomationView: View {
   private var heading: some View {
     VStack(alignment: .leading, spacing: OkouSpace.md) {
       Label("System update", okouSymbol: "workflow", iconSize: OkouIconSize.inline)
-        .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
+        .font(.okou(.subheadline)).foregroundStyle(OkouColor.mutedForeground)
         .padding(.horizontal, OkouSpace.ten)
         .frame(minHeight: OkouControl.inlineActionHeight)
         .background(
@@ -279,12 +283,12 @@ struct ForYouAutomationView: View {
         runs again.
         """
       )
-      .font(.okou(.subheadline)).foregroundStyle(OkouColor.mutedForeground)
+      .font(.okou(.body)).foregroundStyle(OkouColor.mutedForeground)
       .fixedSize(horizontal: false, vertical: true)
       VStack(alignment: .leading, spacing: OkouSpace.two) {
-        Text(verbatim: event.automationName).font(.okou(.subheadline).weight(.medium))
+        Text(verbatim: event.automationName).font(.okou(.body).weight(.medium))
         if let description = event.automationDescription, !description.isEmpty {
-          Text(verbatim: description).font(.okou(.footnote))
+          Text(verbatim: description).font(.okou(.subheadline))
             .foregroundStyle(OkouColor.mutedForeground)
         }
       }
@@ -301,7 +305,7 @@ struct ForYouAutomationView: View {
             Text("Paused on \(pausedOn)")
           }
         }
-        .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
+        .font(.okou(.subheadline)).foregroundStyle(OkouColor.mutedForeground)
       }
     }
   }

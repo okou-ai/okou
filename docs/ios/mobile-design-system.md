@@ -160,9 +160,12 @@ default content size and grow with the reader's text size.
   Body text, Subheadline for secondary lines (Footnote only for metadata). A
   dense surface (rows, banners, compact cards) builds one step down: Headline,
   Subheadline, Footnote. One surface uses at most three sizes.
-- **Don't mix the sets.** A Title 3 heading straight over Subheadline text skips
+- **Don't mix the sets.** A Title 3 heading over paragraphs of Subheadline skips
   Body and reads as a heading over fine print; a Headline over Body is too weak
-  to lead. Pick the set by what the surface is for, then take its neighbours.
+  to lead. Pick the set by what the surface is for, then take its neighbours. A
+  one-line subtitle naming or tagging a heading (a connector's tagline, an empty
+  state's sentence) is a secondary line and may sit in Subheadline under any
+  heading.
 - **Within a size, weight and colour make the hierarchy.** Semibold for
   headings, medium for a control's or row's label, regular for text;
   `foreground` for the primary line, `muted-foreground` for the secondary one.
@@ -930,11 +933,12 @@ feature; the catalog shows each one.
   pressed); one that sends carries the composer's amber send mark, one that drafts a quiet arrow,
   and the chosen one shows progress in its mark until the choice settles. The mark sits beside
   the direction's label, centred on its first line without making the row taller, so its
-  description takes the full width (at most three lines; the mark and VoiceOver's hint say what
+  description takes the full width (at most two lines; the mark and VoiceOver's hint say what
   choosing it does) and the row keeps 16 pt above the label and below the description.
   Directions stand 10 pt apart. A card that ends in text, as a direction's context does, keeps
-  as much room below the text as above it. One card uses at most three sizes: title3,
-  subheadline and footnote.
+  as much room below the text as above it. A card is a reading surface
+  ([Type roles](#type-roles)): a Title 3 title over Body for the reason and each direction's
+  label, with Subheadline for a direction's description and the source.
 - **Dense text stays readable.** A reason shows as many lines as its card has room for, never
   fewer than three, ending in an inline Show more only when more remains (the reason itself
   opens too), and Show less follows it once open; a taller phone shows more of it. A card's actions stay at its
