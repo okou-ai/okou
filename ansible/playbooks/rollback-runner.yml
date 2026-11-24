@@ -54,8 +54,8 @@
 #
 # Conditionally Required (binary fallback only — ignored when the target
 # bin dir survives on the host, which is the common case):
-#   - github_token: GitHub API token for downloading the release binary if
-#                   the repo is private. Omit for public repos.
+#   - runner_asset_url: Public release asset URL for the version and target.
+#   - runner_asset_checksum: Published digest in sha256:<hex> format.
 #
 # Optional Variables:
 #   - sentry_dsn: Forwarded to the systemd unit as SENTRY_DSN
@@ -313,11 +313,13 @@
     # re-downloading on every rollback is pure waste.
     - name: Probe target binary
       when: not (skip_install | default(false))
+      tags: [runner-rollback-asset]
       stat:
         path: "{{ bin_dir }}/runner"
       register: tgt_bin
 
     - name: Download target runner binary if missing
+      tags: [runner-rollback-asset]
       when:
         - not (skip_install | default(false))
         - not (tgt_bin.stat.exists and tgt_bin.stat.executable)
@@ -328,23 +330,8 @@
             state: directory
             mode: "0755"
 
-        # Pre-compute headers as a proper dict fact so `get_url` receives
-        # a real dict rather than an inline Jinja-to-dict string coercion
-        # (the inline form works on recent Ansible but has been brittle on
-        # older 2.9-2.11 releases). Empty dict when no token is provided —
-        # uniformly handled by `get_url` without the nested-omit fragility.
-        - name: Prepare download headers
-          set_fact:
-            download_headers: "{{ {'Authorization': 'token ' + github_token} if (github_token is defined and github_token | length > 0) else {} }}"
-
-        # Release asset naming comes from runner-image-target.sh, the same
-        # helper used by release-please.yml when uploading assets.
-        - name: Download runner binary from GitHub Release
-          get_url:
-            url: "https://github.com/okou-ai/okou/releases/download/{{ derived_runner_release_tag }}/{{ derived_runner_release_asset_name }}"
-            dest: "{{ bin_dir }}/runner"
-            mode: "0755"
-            headers: "{{ download_headers }}"
+        - name: Stage verified rollback binary
+          import_tasks: ../tasks/stage-runner-release-asset.yml
 
     - name: Verify artifact-regen inputs are provided
       when: not (skip_install | default(false))

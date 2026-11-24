@@ -1425,22 +1425,20 @@ if [ "$runner_group_count" -lt 1 ]; then
   fail "No production Runner host groups found."
 fi
 
-runner_assets=$(curl -fsSL \
-  --retry 5 \
-  --retry-delay 2 \
-  --retry-max-time 60 \
-  --retry-all-errors \
-  -H "Authorization: token ${GH_TOKEN}" \
-  -H "Accept: application/vnd.github+json" \
-  "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/${runner_tag}" \
-  | jq -r '.assets[].name')
+# shellcheck source=../runner/runner-release-assets.sh
+. "${script_dir}/../runner/runner-release-assets.sh"
+runner_assets=$(runner_release_assets_read "$runner_tag")
 
 runner_targets=$(jq -r '.[].target' <<<"$runner_matrix")
 while IFS= read -r target; do
   asset_name=$(runner_image_release_asset_name "$runner_version" "$target")
-  if ! grep -qx "$asset_name" <<<"$runner_assets"; then
-    fail "Runner release ${runner_tag} is missing ${asset_name}."
+  if ! asset_checksum=$(runner_release_asset_checksum "$asset_name" <<<"$runner_assets"); then
+    fail "Runner release ${runner_tag} is missing ${asset_name} or has multiple matching assets."
   fi
+  asset_url=$(runner_release_asset_url "$runner_tag" "$asset_name")
+  runner_matrix=$(jq -c --arg target "$target" --arg url "$asset_url" --arg checksum "$asset_checksum" '
+    map(if .target == $target then . + {asset_url: $url, asset_checksum: $checksum} else . end)
+  ' <<<"$runner_matrix")
 done <<<"$runner_targets"
 
 {
