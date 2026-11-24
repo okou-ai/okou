@@ -419,8 +419,13 @@ internal class ProjectListOwner(
         val rows = confirmedRows(snapshot.source)
         val pending = projectRename
         val creation = snapshot.creation
+        // A create and subsequent delete can arrive in the same batch.
         val settledCreation =
-            if (creation != null && createRequest != null && rows.any { it.id == creation.id }) {
+            if (
+                creation != null &&
+                    createRequest != null &&
+                    (rows.any { it.id == creation.id } || hasProjectReceipt(creation.id))
+            ) {
                 createRequest = null
                 creation.copy(phase = ProjectCreatePhase.Confirmed)
             } else creation

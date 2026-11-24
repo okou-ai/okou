@@ -151,6 +151,67 @@ internal class ChatListProjectCreationRootTest : ChatListRootTestFixture() {
     }
 
     @Test
+    fun aCreationDeletedBeforeItsReplySettlesWithoutChangingTheFilter() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        compose.activityRule.scenario.recreate()
+        val app = compose.activity.application as ChatListApplication
+        val releaseWrite = CountDownLatch(1)
+        val projectId = AtomicReference<String>()
+        val publishedEvents = AtomicReference("")
+        app.fixture.commandResponse = { request ->
+            if (request.method == "POST" && request.path == "/api/projects") {
+                projectId.set(request.jsonCommandBody().getValue("id").jsonPrimitive.content)
+                releaseWrite.await()
+                MockResponse().setResponseCode(404)
+            } else null
+        }
+        app.fixture.projectEvents = { request ->
+            val events =
+                publishedEvents
+                    .get()
+                    .takeIf {
+                        request.requestUrl?.queryParameter("sinceSeqId") == "0"
+                    }
+                    .orEmpty()
+            jsonResponse("""{"events":[$events],"hasMore":false}""")
+        }
+        try {
+            app.responseGate.countDown()
+            awaitListAndNames()
+            val filter = compose.onNodeWithContentDescription("Filter")
+            filter.performClick()
+            compose.onNodeWithText("Archived").performClick()
+            val more = compose.onNodeWithContentDescription("More actions")
+            more.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+            val name = openCreate()
+            name.performTextReplacement("Field notes")
+            confirm().performClick()
+            compose.waitUntil(10_000) { projectId.get() != null }
+            compose.onNodeWithText("Creating…").assertIsDisplayed()
+
+            val id = checkNotNull(projectId.get())
+            publishedEvents.set(
+                """
+                    {"id":"$id","seqId":1,"projectId":"$id","kind":"created","name":"Field notes","createdAt":"$CHAT_DATE"},
+                    {"id":"00000002-0000-4000-8000-000000000000","seqId":2,"projectId":"$id","kind":"deleted","name":null,"createdAt":"$CHAT_DATE"}
+                """
+                    .trimIndent(),
+            )
+            reconnectList(app)
+            compose.waitUntilDoesNotExist(hasTestTag("create_project_sheet"), 10_000)
+            compose.onNodeWithTag("chat_filter_heading").assertTextContains("Archived")
+            more.assertIsFocused()
+            filter.performClick()
+            compose.onNodeWithText("Inbox").performClick()
+            compose.onNodeWithText("Field notes").assertDoesNotExist()
+        } finally {
+            releaseWrite.countDown()
+            instrumentation.setInTouchMode(true)
+        }
+    }
+
+    @Test
     fun anUnconfirmedResponseResumesAfterCloseAndChecksTheOriginalIdWithoutAnotherCreate() {
         val app = compose.activity.application as ChatListApplication
         val id = AtomicReference<String>()
@@ -161,8 +222,12 @@ internal class ChatListProjectCreationRootTest : ChatListRootTestFixture() {
             when {
                 request.method == "POST" && request.path == "/api/projects" -> {
                     writes.incrementAndGet()
-                    id.set(request.jsonCommandBody().getValue("id").jsonPrimitive.content)
-                    jsonResponse("{}").setResponseCode(201)
+                    val project = request.jsonCommandBody().getValue("id").jsonPrimitive.content
+                    id.set(project)
+                    jsonResponse(
+                            """{"id":"$project","name":"Field notes","createdAt":"invalid","updatedAt":"$CHAT_DATE"}""",
+                        )
+                        .setResponseCode(201)
                 }
                 request.method == "GET" && request.path == "/api/projects/${id.get()}" -> {
                     lookups.incrementAndGet()
@@ -174,6 +239,7 @@ internal class ChatListProjectCreationRootTest : ChatListRootTestFixture() {
         }
         app.responseGate.countDown()
         awaitListAndNames()
+        compose.onNodeWithText("Research").assertIsDisplayed()
         val field = openCreate()
         field.performTextReplacement("Field notes")
         confirm().performClick()
