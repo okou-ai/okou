@@ -1,18 +1,23 @@
 package ai.okou.android.chat
 
+import ai.okou.android.R
 import ai.okou.android.artifacts.ArtifactKind
 import ai.okou.android.artifacts.icon
 import ai.okou.android.artifacts.label
 import ai.okou.android.artifacts.messageArtifactLink
+import ai.okou.android.workspaceSearchFocusOutline
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -39,6 +44,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
@@ -82,6 +88,9 @@ internal data class ChatArtifactActions(
     val restoreKey: String?,
     val restored: () -> Unit,
 )
+
+internal val MessageArtifactCardSpacing = 8.dp
+private val HistoryMarkdownBlockSpacing = 12.dp
 
 /** UI-owned parsing stays off Main; no HTML execution, image downloads or automatic link opens. */
 @Composable
@@ -152,10 +161,32 @@ private fun HistoryMarkdownBlocks(
     links: ConversationLinkActions? = null,
     compactReply: Boolean = false,
 ) {
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(modifier) {
+        var previousEndsWithCard = false
         for ((index, block) in blocks.withIndex()) {
+            val cardText =
+                (block as? HistoryMarkdownBlock.Paragraph)?.text?.takeIf {
+                    artifacts != null && !compactReply
+                }
+            val cards =
+                if (cardText == null) emptyList()
+                else
+                    remember(cardText) {
+                        cardText.getStringAnnotations("artifact", 0, cardText.length)
+                    }
+            val startsWithCard =
+                cardText != null &&
+                    cards.firstOrNull()?.let { cardText.text.take(it.start).isBlank() } == true
+            val spacing =
+                if (previousEndsWithCard && startsWithCard) MessageArtifactCardSpacing
+                else HistoryMarkdownBlockSpacing
+            previousEndsWithCard =
+                cardText != null &&
+                    cards.lastOrNull()?.let { cardText.text.drop(it.end).isBlank() } == true
             val selected = highlight.takeIf { index == hit }
-            val blockModifier = Modifier.conversationFindHighlight(selected)
+            val blockModifier =
+                (if (index == 0) Modifier else Modifier.padding(top = spacing))
+                    .conversationFindHighlight(selected)
             val highlighted = selected?.target?.highlighted == true
             val contentStyle =
                 if (highlighted) style.copy(color = MaterialTheme.colorScheme.onSecondaryContainer)
@@ -210,11 +241,7 @@ private fun HistoryMarkdownBlocks(
                                 )
                             else -> contentStyle
                         }
-                    val cards =
-                        remember(block.text) {
-                            block.text.getStringAnnotations("artifact", 0, block.text.length)
-                        }
-                    if (artifacts == null || cards.isEmpty() || compactReply) {
+                    if (artifacts == null || cards.isEmpty()) {
                         ConversationLinkText(
                             block.text,
                             blockStyle,
@@ -223,17 +250,23 @@ private fun HistoryMarkdownBlocks(
                             blockModifier,
                         )
                     } else {
-                        Column(blockModifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Column(blockModifier) {
                             var start = 0
                             for (card in cards) {
                                 val before = block.text.subSequence(start, card.start)
-                                if (before.isNotBlank())
+                                if (before.isNotBlank()) {
+                                    if (start > 0)
+                                        Spacer(Modifier.height(HistoryMarkdownBlockSpacing))
                                     ConversationLinkText(
                                         before,
                                         blockStyle,
                                         "$focusPrefix/$index/$start",
                                         links,
                                     )
+                                    Spacer(Modifier.height(HistoryMarkdownBlockSpacing))
+                                } else if (start > 0) {
+                                    Spacer(Modifier.height(MessageArtifactCardSpacing))
+                                }
                                 MessageArtifactCard(
                                     block.text.text.substring(card.start, card.end),
                                     card.item,
@@ -243,13 +276,15 @@ private fun HistoryMarkdownBlocks(
                                 start = card.end
                             }
                             val after = block.text.subSequence(start, block.text.length)
-                            if (after.isNotBlank())
+                            if (after.isNotBlank()) {
+                                Spacer(Modifier.height(HistoryMarkdownBlockSpacing))
                                 ConversationLinkText(
                                     after,
                                     blockStyle,
                                     "$focusPrefix/$index/$start",
                                     links,
                                 )
+                            }
                         }
                     }
                 }
@@ -277,6 +312,7 @@ internal fun MessageArtifactCard(
             else -> ArtifactKind.File
         }
     val shape = RoundedCornerShape(16.dp)
+    val colors = MaterialTheme.colorScheme
     val focus = remember { FocusRequester() }
     val restore =
         if (restoreFocus == null) Modifier
@@ -284,26 +320,34 @@ internal fun MessageArtifactCard(
             Modifier.focusRequester(focus).onGloballyPositioned {
                 if (focus.requestFocus()) restoreFocus()
             }
-    Surface(shape = shape, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+    Surface(shape = shape, border = BorderStroke(1.dp, colors.outlineVariant)) {
         Row(
             Modifier.fillMaxWidth()
                 .focusProperties { canFocus = true }
                 .then(restore)
                 .heightIn(min = 60.dp)
                 .clip(shape)
-                .clickable { actions.open(link, focusKey) }
+                .workspaceSearchFocusOutline(shape)
+                .clickable(role = Role.Button) { actions.open(link, focusKey) }
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(painterResource(kind.icon()), null, Modifier.size(20.dp))
-            Column {
+            val leading =
+                if (kind == ArtifactKind.Image || kind == ArtifactKind.Video)
+                    Modifier.size(32.dp).background(colors.surfaceVariant, RoundedCornerShape(8.dp))
+                else Modifier.size(20.dp)
+            Box(leading, contentAlignment = Alignment.Center) {
+                Icon(painterResource(kind.icon()), null, Modifier.size(20.dp))
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     title,
                     style =
                         MaterialTheme.typography.bodyMedium.copy(
                             fontSize = 14.sp,
                             lineHeight = 20.sp,
+                            fontWeight = FontWeight.SemiBold,
                         ),
                 )
                 Text(
@@ -313,9 +357,14 @@ internal fun MessageArtifactCard(
                             fontSize = 12.sp,
                             lineHeight = 16.sp,
                         ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = colors.onSurfaceVariant,
                 )
             }
+            Icon(
+                painterResource(R.drawable.ic_chevron_right),
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+            )
         }
     }
 }

@@ -24,6 +24,7 @@ import android.webkit.WebView
 import android.widget.VideoView
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
@@ -1127,23 +1128,49 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
 
     @Test
     fun conversationCardOpensAnAuthorizedPreviewWithoutReadingTheCatalog() {
-        val fixture = ArtifactApiFixture(app.fixture)
-        fixture.install()
-        fixture.installInlineHistory()
-        app.responseGate.countDown()
-        awaitText(fixture.sourceTitle)
-        compose.onNodeWithText(fixture.sourceTitle).performClick()
-        awaitText(fixture.summary.title)
-        assertTrue(fixture.requestedReferences.isEmpty())
-        compose.onNodeWithText(fixture.summary.title).assertHeightIsAtLeast(60.dp).performClick()
-        awaitText("Preview only", partial = true)
-        compose.onNodeWithText("Artifact preview").assertIsDisplayed()
-        compose.onNodeWithText("Save file").assertDoesNotExist()
-        assertEquals(1, fixture.requestedReferences.size)
-        assertTrue(fixture.catalogScopes.isEmpty())
-        compose.onNodeWithContentDescription("Back").performClick()
-        awaitText(fixture.summary.title)
-        compose.onNodeWithText(fixture.summary.title).assertIsFocused()
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            compose.activityRule.scenario.recreate()
+            val fixture = ArtifactApiFixture(app.fixture)
+            fixture.install()
+            fixture.installInlineHistory()
+            app.fixture.historyReply +=
+                "\n\n[${fixture.checklist.title}](/artifacts/checklist1.md) " +
+                    "[${fixture.image.title}](/artifacts/thumbnail1.png)"
+            app.responseGate.countDown()
+            awaitText(fixture.sourceTitle)
+            compose.onNodeWithText(fixture.sourceTitle).performClick()
+            awaitText(fixture.image.title)
+
+            val button = SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button)
+            val summary = compose.onNode(hasText(fixture.summary.title) and button)
+            val checklist = compose.onNode(hasText(fixture.checklist.title) and button)
+            val image = compose.onNode(hasText(fixture.image.title) and button)
+            val intro = compose.onNodeWithText("The release summary is ready.")
+            val summaryBounds = summary.assertHeightIsAtLeast(60.dp).getUnclippedBoundsInRoot()
+            val checklistBounds = checklist.getUnclippedBoundsInRoot()
+            assertEquals(12.dp, summaryBounds.top - intro.getUnclippedBoundsInRoot().bottom)
+            assertEquals(8.dp, checklistBounds.top - summaryBounds.bottom)
+            assertEquals(8.dp, image.getUnclippedBoundsInRoot().top - checklistBounds.bottom)
+            assertTrue(fixture.requestedReferences.isEmpty())
+            summary.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
+            summary.assertIsFocused().performKeyInput { pressKey(Key.Enter) }
+
+            awaitText("Preview only", partial = true)
+            compose.onNodeWithText("Artifact preview").assertIsDisplayed()
+            compose.onNodeWithText("Save file").assertDoesNotExist()
+            assertEquals(
+                listOf("/api/artifact-references/artifacts2.md"),
+                fixture.requestedReferences,
+            )
+            assertTrue(fixture.catalogScopes.isEmpty())
+            compose.onNodeWithContentDescription("Back").performClick()
+            awaitText(fixture.image.title)
+            summary.assertIsFocused()
+        } finally {
+            instrumentation.resetInTouchMode()
+        }
     }
 
     @Test
