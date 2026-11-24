@@ -319,7 +319,12 @@ internal constructor(
             dao.relatedResources(key, threadId)
                 ?.takeIf { it.authorization == authorization }
                 ?.let {
-                    json.decodeFromString<CachedChatRelations>(it.payload)
+                    try {
+                        json.decodeFromString<CachedChatRelations>(it.payload)
+                    } catch (_: SerializationException) {
+                        Log.w("ChatCacheStore", "Ignoring unreadable chat resource cache")
+                        null
+                    }
                 }
 
         internal suspend fun saveRelatedResources(threadId: String, data: ConfirmedRelatedChats?) =

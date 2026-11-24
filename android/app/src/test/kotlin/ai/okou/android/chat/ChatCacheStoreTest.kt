@@ -223,6 +223,35 @@ class ChatCacheStoreTest {
         }
 
     @Test
+    fun freshRelationsCanReplaceAnUnreadableCacheAndPreserveEachOthersData() = runTest {
+        val root = temporary.newFolder()
+        val store = cache(root)
+        val workflows =
+            ConfirmedWorkflowResources(listOf(WorkflowResource("workflow", "Release")), 5_000)
+        val related = ConfirmedRelatedChats(created = ConfirmedRelatedChatRead(emptyList(), 6_000))
+        store.open(identity) { true }.use { it.saveWorkflowResources(CHAT_PERSONAL, workflows) }
+        store.close()
+        BundledSQLiteDriver().open(root.resolve("chats.db").path).use {
+            it.execSQL("UPDATE chat_related_resources SET payload = '{'")
+        }
+
+        val reopened = cache(root)
+        reopened
+            .open(identity) { true }
+            .use {
+                it.saveRelatedResources(CHAT_PERSONAL, related)
+                it.saveWorkflowResources(CHAT_PERSONAL, workflows)
+            }
+        reopened.close()
+        cache(root)
+            .open(identity) { true }
+            .use {
+                assertEquals(related, it.loadRelatedResources(CHAT_PERSONAL))
+                assertEquals(workflows, it.loadWorkflowResources(CHAT_PERSONAL))
+            }
+    }
+
+    @Test
     fun unreadSnapshotReopensOnlyForTheSameAuthorizedWorkspaceAndAccount() = runTest {
         val root = temporary.newFolder()
         val snapshot = CachedUnread(1_000L, mapOf(CHAT_PERSONAL to CHAT_DATE))

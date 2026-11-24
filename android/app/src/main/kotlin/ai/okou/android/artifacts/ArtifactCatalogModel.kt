@@ -120,6 +120,7 @@ internal constructor(
     private var catalogWrite: Job? = null
     private var relatedRead: Job? = null
     private var workflowRead: Job? = null
+    private var workflowRefreshPending = false
     private var workflowReferences: Pair<String, Set<String>>? = null
     private var previewJob: Job? = null
     private var missingThread: String? = null
@@ -192,8 +193,7 @@ internal constructor(
             catalogJob?.cancel()
             previewJob?.cancel()
             relatedRead?.cancel()
-            workflowRead?.cancel()
-            workflowRead = null
+            cancelWorkflowRefresh()
             mutable.update {
                 it.copy(
                     reading = null,
@@ -208,8 +208,7 @@ internal constructor(
         if (next == mutable.value.query) return
         catalogJob?.cancel()
         relatedRead?.cancel()
-        workflowRead?.cancel()
-        workflowRead = null
+        cancelWorkflowRefresh()
         mutable.update {
             it.copy(
                 query = next,
@@ -229,8 +228,7 @@ internal constructor(
         val previous = workflowReferences
         if (previous?.first == threadId && previous.second == ids) return
         workflowReferences = threadId to ids
-        workflowRead?.cancel()
-        workflowRead = null
+        cancelWorkflowRefresh()
         if (mutable.value.query.chatThreadId == threadId) {
             mutable.update {
                 it.copy(
@@ -446,50 +444,63 @@ internal constructor(
                 ids.isEmpty() ||
                 threadId != current.query.chatThreadId ||
                 threadId == missingThread ||
-                current.failedRead == ArtifactCatalogFailure.ChatUnavailable ||
-                workflowRead?.isActive == true
+                current.failedRead == ArtifactCatalogFailure.ChatUnavailable
         )
             return
+        if (workflowRead?.isActive == true) {
+            workflowRefreshPending = true
+            return
+        }
         workflowRead = viewModelScope.launch {
-            val baseline = current.workflows.confirmed ?: restoreWorkflows(threadId)
-            currentCoroutineContext().ensureActive()
-            val state = WorkflowResourcesState(confirmed = baseline, checking = true)
-            mutable.update { it.copy(workflows = state) }
-            val progress =
-                baseline?.confirmedAt?.let { confirmedAt ->
-                    launch {
-                        val remaining = ChatArtifactFreshMillis - (wallMillis() - confirmedAt)
-                        delay((remaining + 1).coerceAtLeast(0L))
-                        mutable.update { it.copy(workflows = state.copy(syncingStale = true)) }
-                    }
-                }
-            val result =
-                try {
-                    val items = retryArtifactOperation { service.relatedWorkflows(ids) }
-                    WorkflowResourcesState(ConfirmedWorkflowResources(items, wallMillis()))
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (error: Exception) {
-                    when (problem(error)) {
-                        ArtifactProblem.Denied,
-                        ArtifactProblem.Missing ->
-                            WorkflowResourcesState(
-                                ConfirmedWorkflowResources(emptyList(), wallMillis()),
-                            )
-                        else -> WorkflowResourcesState(confirmed = baseline, failed = true)
-                    }
-                } finally {
-                    progress?.cancelAndJoin()
-                }
-            currentCoroutineContext().ensureActive()
-            val confirmed = result.confirmed
-            if (confirmed != null && !result.failed) {
-                cache?.let { lease ->
-                    storeCatalog { lease.saveWorkflowResources(threadId, confirmed) }
+            do {
+                workflowRefreshPending = false
+                readWorkflows(threadId, ids)
+            } while (workflowRefreshPending)
+        }
+    }
+
+    private fun cancelWorkflowRefresh() {
+        workflowRead?.cancel()
+        workflowRead = null
+        workflowRefreshPending = false
+    }
+
+    private suspend fun readWorkflows(threadId: String, ids: Set<String>) = coroutineScope {
+        val baseline = mutable.value.workflows.confirmed ?: restoreWorkflows(threadId)
+        currentCoroutineContext().ensureActive()
+        val state = WorkflowResourcesState(confirmed = baseline, checking = true)
+        mutable.update { it.copy(workflows = state) }
+        val progress =
+            baseline?.confirmedAt?.let { confirmedAt ->
+                launch {
+                    val remaining = ChatArtifactFreshMillis - (wallMillis() - confirmedAt)
+                    delay((remaining + 1).coerceAtLeast(0L))
+                    mutable.update { it.copy(workflows = state.copy(syncingStale = true)) }
                 }
             }
-            mutable.update { it.copy(workflows = result) }
+        val result =
+            try {
+                val items = retryArtifactOperation { service.relatedWorkflows(ids) }
+                WorkflowResourcesState(ConfirmedWorkflowResources(items, wallMillis()))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                val status = (error as? ApiFailure.Http)?.status
+                if (status == 401) sessionFailure(error) else handleSessionFailure(error)
+                if (status == 403)
+                    WorkflowResourcesState(ConfirmedWorkflowResources(emptyList(), wallMillis()))
+                else WorkflowResourcesState(confirmed = baseline, failed = true)
+            } finally {
+                progress?.cancelAndJoin()
+            }
+        currentCoroutineContext().ensureActive()
+        val confirmed = result.confirmed
+        if (confirmed != null && !result.failed) {
+            cache?.let { lease ->
+                storeCatalog { lease.saveWorkflowResources(threadId, confirmed) }
+            }
         }
+        mutable.update { it.copy(workflows = result) }
     }
 
     private suspend fun restoreWorkflows(threadId: String): ConfirmedWorkflowResources? =
@@ -637,8 +648,7 @@ internal constructor(
         if (mutable.value.query != query) return
         catalogJob?.cancel()
         relatedRead?.cancel()
-        workflowRead?.cancel()
-        workflowRead = null
+        cancelWorkflowRefresh()
         if (catalogVisible) previewJob?.cancel()
         mutable.update {
             it.copy(
@@ -664,8 +674,7 @@ internal constructor(
     internal fun evictDeniedCatalogs() {
         catalogJob?.cancel()
         relatedRead?.cancel()
-        workflowRead?.cancel()
-        workflowRead = null
+        cancelWorkflowRefresh()
         previewJob?.cancel()
         catalogs.clear()
         previews.clear()
