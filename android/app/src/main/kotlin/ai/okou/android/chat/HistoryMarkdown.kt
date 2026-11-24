@@ -410,25 +410,22 @@ private fun Node.children(): Sequence<Node> = generateSequence(firstChild) { it.
 internal data class ReplyArtifact(val link: String, val title: String)
 
 /** Keep earlier results available when their reply text is collapsed. */
-internal fun earlierReplyArtifacts(
-    earlier: List<HistoryMessage>,
-    latest: HistoryMessage,
-): List<ReplyArtifact> {
-    fun HistoryMessage.artifacts() =
-        blocks
-            .asSequence()
-            .filter { it.kind == HistoryBlockKind.Text && ('[' in it.text || '<' in it.text) }
-            .flatMap {
-                historyMarkdownBlocks(it.text, artifactCards = true, interactiveLinks = false)
-            }
-            .flatMap { it.artifacts() }
+internal fun earlierReplyArtifacts(earlier: List<HistoryMessage>): List<ReplyArtifact> =
+    earlier.asSequence().flatMap { replyArtifacts(it.blocks) }.distinctBy { it.link }.toList()
 
-    val earlierCards =
-        earlier.asSequence().flatMap { it.artifacts() }.distinctBy { it.link }.toList()
-    if (earlierCards.isEmpty()) return earlierCards
-    val latestLinks = latest.artifacts().map { it.link }.toSet()
-    return earlierCards.filterNot { it.link in latestLinks }
+internal fun List<ReplyArtifact>.excludingArtifacts(
+    blocks: List<HistoryBlock>,
+): List<ReplyArtifact> {
+    val links = replyArtifacts(blocks).map { it.link }.toSet()
+    return filterNot { it.link in links }
 }
+
+private fun replyArtifacts(blocks: List<HistoryBlock>): Sequence<ReplyArtifact> =
+    blocks
+        .asSequence()
+        .filter { it.kind == HistoryBlockKind.Text && ('[' in it.text || '<' in it.text) }
+        .flatMap { historyMarkdownBlocks(it.text, artifactCards = true, interactiveLinks = false) }
+        .flatMap { it.artifacts() }
 
 private fun HistoryMarkdownBlock.artifacts(): Sequence<ReplyArtifact> =
     when (this) {

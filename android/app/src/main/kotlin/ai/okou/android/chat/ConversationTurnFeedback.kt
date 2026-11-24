@@ -9,13 +9,17 @@ import android.text.format.DateFormat
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -32,6 +36,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
@@ -40,6 +45,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -222,18 +228,29 @@ internal fun ConversationCompletionRow(
             else stringResource(R.string.conversation_feedback_pair, time, phrase)
         }
     Column(modifier.fillMaxWidth().testTag(ConversationCompletionKey)) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                label,
-                color = colors.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic),
-            )
-            HorizontalDivider(Modifier.weight(1f), color = colors.outlineVariant)
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val lineGap = 8.dp
+            val minimumLineWidth = 8.dp
+            val labelWidth = (maxWidth - lineGap - minimumLineWidth).coerceAtLeast(0.dp)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(lineGap),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    label,
+                    Modifier.widthIn(max = labelWidth),
+                    color = colors.onSurfaceVariant,
+                    style =
+                        MaterialTheme.typography.bodyMedium.copy(
+                            fontStyle = FontStyle.Italic,
+                            fontFeatureSettings = "tnum",
+                        ),
+                )
+                HorizontalDivider(Modifier.weight(1f), color = colors.outlineVariant)
+            }
         }
-        if (onFollowup != null) {
+        if (onFollowup != null && completion.followups.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
             for (followup in completion.followups) {
                 ConversationFollowupRow(followup) { onFollowup(followup.prompt) }
             }
@@ -244,6 +261,8 @@ internal fun ConversationCompletionRow(
 @Composable
 private fun ConversationFollowupRow(followup: ConversationFollowup, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
+    val textStyle = MaterialTheme.typography.bodyMedium
+    val lineHeight = with(LocalDensity.current) { textStyle.lineHeight.toDp() }
     val shape = RoundedCornerShape(12.dp)
     val icon =
         when (followup.kind) {
@@ -262,17 +281,24 @@ private fun ConversationFollowupRow(followup: ConversationFollowup, onClick: () 
         color = colors.surface,
         shape = shape,
     ) {
-        Row(
-            Modifier.padding(vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(painterResource(icon), null, Modifier.size(16.dp), tint = colors.onSurfaceVariant)
-            Text(
-                followup.prompt,
-                color = colors.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyMedium,
-            )
+        Box(Modifier.padding(vertical = 8.dp), contentAlignment = Alignment.CenterStart) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(Modifier.height(lineHeight), contentAlignment = Alignment.Center) {
+                    Icon(
+                        painterResource(icon),
+                        null,
+                        Modifier.size(16.dp),
+                        tint = colors.onSurfaceVariant,
+                    )
+                }
+                Text(
+                    followup.prompt,
+                    color = colors.onSurfaceVariant,
+                    style = textStyle,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }

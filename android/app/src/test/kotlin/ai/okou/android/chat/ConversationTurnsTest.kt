@@ -118,6 +118,20 @@ class ConversationTurnsTest {
     }
 
     @Test
+    fun aReplyWithoutARunHasNoWorkSummary() {
+        val input = row(1, "input.prompt")
+        val reply = row(2)
+        val completed = row(3, "run.completed")
+        val delivery = row(4, run = null)
+        val turns = content(input, reply, completed, delivery)
+
+        assertEquals(listOf(input.id, reply.id, delivery.id), turns.messages.map { it.message.id })
+        assertEquals(ReplyPhase.Completed, turns.messages[1].summary?.phase)
+        assertNull(turns.messages.last().summary)
+        assertNull(turns.completion)
+    }
+
+    @Test
     fun earlierArtifactsFollowTheLatestReplyOnlyOnce() {
         val checklist = "/artifacts/aaaaaaaaaa.md"
         val notes = "/artifacts/bbbbbbbbbb.md"
@@ -133,7 +147,7 @@ class ConversationTurnsTest {
         val latest = message("latest", "[Current checklist]($checklist)")
         assertEquals(
             listOf(ReplyArtifact(notes, "Notes")),
-            earlierReplyArtifacts(listOf(first, second), latest),
+            earlierReplyArtifacts(listOf(first, second)).excludingArtifacts(latest.blocks),
         )
     }
 
@@ -155,6 +169,19 @@ class ConversationTurnsTest {
         val second = insertConversationFollowup(first.text, "Make a checklist")
         assertEquals(first.text, second.text)
         assertEquals(TextRange(first.text.indexOf('\n') + 1, first.text.length), second.selection)
+    }
+
+    @Test
+    fun aRepeatedMultilineSuggestionSelectsTheWholeDraftRange() {
+        val prompt = "Make a checklist.\nInclude the deadlines."
+        val existing = "Existing notes"
+        val first = insertConversationFollowup(existing, prompt)
+        assertEquals("$existing\n$prompt", first.text)
+
+        val draft = "${first.text}\nKeep this too."
+        val repeated = insertConversationFollowup(draft, prompt)
+        assertEquals(draft, repeated.text)
+        assertEquals(TextRange(existing.length + 1, first.text.length), repeated.selection)
     }
 
     private fun row(

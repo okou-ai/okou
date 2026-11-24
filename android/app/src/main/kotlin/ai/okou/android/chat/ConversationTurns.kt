@@ -118,6 +118,7 @@ internal fun conversationTurns(
     var completion: ConversationCompletion? = null
     val reversedMessages = buildList {
         for (turn in turns.asReversed()) {
+            val runId = turn.first().runId
             val input = turn.first().takeIf { it.isDeliveredInput() }
             val terminal = turn.lastOrNull { it.isTerminalStatus() }
             val replies = turn.filter { it.isOutputReply() }
@@ -130,7 +131,7 @@ internal fun conversationTurns(
                     else ->
                         when {
                             nextInput != null -> ReplyPhase.Continued
-                            turn.first().runId in liveRunIds -> ReplyPhase.Replying
+                            runId in liveRunIds -> ReplyPhase.Replying
                             else -> ReplyPhase.Unknown
                         }
                 }
@@ -152,7 +153,13 @@ internal fun conversationTurns(
             for (message in turn.asReversed()) {
                 if (!message.visibleInConversation()) continue
                 if (message === latestReply) {
-                    add(ConversationMessage(message, replies.dropLast(1), summary = summary))
+                    add(
+                        ConversationMessage(
+                            message,
+                            replies.dropLast(1),
+                            summary = summary.takeIf { runId != null },
+                        ),
+                    )
                 } else if (!message.isOutputReply()) {
                     add(ConversationMessage(message))
                 }

@@ -207,13 +207,25 @@ internal fun ConversationMessageRow(
 
 @Composable
 private fun EarlierReplyArtifacts(entry: ConversationMessage, actions: ChatArtifactActions) {
+    // Reuse the earlier replies' parsed results across chunks of the latest reply.
+    val candidates =
+        key(entry.earlier) {
+                produceState<List<ReplyArtifact>?>(null) {
+                    value =
+                        withContext(Dispatchers.Default) { earlierReplyArtifacts(entry.earlier) }
+                }
+            }
+            .value
     // Keep the previous cards laid out while fresh text is being parsed.
     val cards by
-        produceState(emptyList<ReplyArtifact>(), entry.earlier, entry.message.blocks) {
+        produceState(emptyList<ReplyArtifact>(), candidates, entry.message.blocks) {
+            val earlier = candidates ?: return@produceState
             value =
-                withContext(Dispatchers.Default) {
-                    earlierReplyArtifacts(entry.earlier, entry.message)
-                }
+                if (earlier.isEmpty()) earlier
+                else
+                    withContext(Dispatchers.Default) {
+                        earlier.excludingArtifacts(entry.message.blocks)
+                    }
         }
     if (cards.isNotEmpty()) {
         Column(

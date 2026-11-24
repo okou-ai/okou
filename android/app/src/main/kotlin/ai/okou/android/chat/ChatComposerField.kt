@@ -271,10 +271,13 @@ internal fun ChatComposerField(
 }
 
 internal fun insertConversationFollowup(text: String, prompt: String): TextFieldValue {
-    var start = 0
-    for (line in text.splitToSequence('\n')) {
-        if (line == prompt) return TextFieldValue(text, TextRange(start, start + line.length))
-        start += line.length + 1
+    var start = text.indexOf(prompt)
+    while (start in text.indices) {
+        val end = start + prompt.length
+        val wholeLines =
+            (start == 0 || text[start - 1] == '\n') && (end == text.length || text[end] == '\n')
+        if (wholeLines) return TextFieldValue(text, TextRange(start, end))
+        start = text.indexOf(prompt, start + 1)
     }
     val separator = if (text.isEmpty() || text.endsWith('\n')) "" else "\n"
     val result = text + separator + prompt
