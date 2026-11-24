@@ -88,20 +88,22 @@ export const prepareDirectRunInputs$ = command(
     { bundleUrls, resources }: DirectRunPreparationResources,
     signal: AbortSignal,
   ) => {
-    return joinAll([
-      timedPreparation(() => {
-        return set(readDirectRunCandidateSnapshot$, input, createdAt, signal);
-      }),
-      timedPreparation(() => {
-        return set(
-          prepareDirectRunContext$,
-          input,
-          bundleUrls,
-          resources,
-          signal,
-        );
-      }),
-    ]);
+    return settleIncludingAbort(
+      joinAll([
+        timedPreparation(() => {
+          return set(readDirectRunCandidateSnapshot$, input, createdAt, signal);
+        }),
+        timedPreparation(() => {
+          return set(
+            prepareDirectRunContext$,
+            input,
+            bundleUrls,
+            resources,
+            signal,
+          );
+        }),
+      ]),
+    );
   },
 );
 
@@ -120,7 +122,7 @@ export const prepareDirectRunDispatch$ = command(
   ): Promise<DirectRunDispatchPreparation> => {
     signal.throwIfAborted();
     const prepared = await settleIncludingAbort(async () => {
-      const [snapshot, context] = await (early ??
+      const preparation = await (early ??
         set(
           prepareDirectRunInputs$,
           input,
@@ -129,6 +131,10 @@ export const prepareDirectRunDispatch$ = command(
           signal,
         ));
       signal.throwIfAborted();
+      if (!preparation.ok) {
+        throw preparation.error;
+      }
+      const [snapshot, context] = preparation.value;
       let placement = snapshot;
       let candidates = rankDirectRunCandidates(
         placement.value,

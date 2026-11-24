@@ -290,17 +290,24 @@ async function leaseQueuedThread(
   return { row, cursor };
 }
 
-function observeAdmissionResources(
+async function awaitPendingAdmission(
   admitted: ReturnType<
     ReturnType<typeof createThreadClaimRunObjects>["admitRun$"]["write"]
   > | null,
 ) {
-  if (admitted) {
-    waitUntil(settle(admitted.resources.memory));
-    if (admitted.early) {
-      waitUntil(settleIncludingAbort(admitted.early));
-    }
+  if (!admitted) {
+    return null;
   }
+  waitUntil(settle(admitted.resources.memory));
+  const pending = await settleIncludingAbort(admitted.pending);
+  // Dispatch joins successful preparation. An abandoned read has no consumer.
+  if (admitted.early && (!pending.ok || !pending.value)) {
+    waitUntil(admitted.early);
+  }
+  if (!pending.ok) {
+    throw pending.error;
+  }
+  return pending.value;
 }
 
 function createPickObjects() {
@@ -546,8 +553,7 @@ function createPickObjects() {
             signal,
           )
         : null;
-      observeAdmissionResources(admitted);
-      const pending = admitted ? await admitted.pending : null;
+      const pending = await awaitPendingAdmission(admitted);
       signal.throwIfAborted();
       // Admission can append a claim or a public rejection. This pick owns
       // publication for its captured thread, independently of Runner dispatch.
