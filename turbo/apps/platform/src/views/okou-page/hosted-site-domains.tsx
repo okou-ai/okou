@@ -1,5 +1,5 @@
 import { useGet, useLoadable, useSet } from "ccstate-react";
-import { ArrowLeft, Check, Copy, Loader2 } from "lucide-react";
+import { Check, Copy, Loader2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -21,9 +21,12 @@ export interface HostedSiteDomainOperations {
   readonly creating: boolean;
   readonly verifying: boolean;
   readonly removing: boolean;
+  readonly saving: boolean;
+  readonly saveFailed: boolean;
   readonly create: () => void;
   readonly verify: () => void;
   readonly remove: () => void;
+  readonly save: () => void;
 }
 type DomainSettings = zInfer<typeof hostedDomainSettingsSchema>;
 type Domain = DomainSettings["domains"][number];
@@ -32,7 +35,12 @@ interface DomainPanelProps {
   readonly operations: HostedSiteDomainOperations;
 }
 function domainBusy(operations: HostedSiteDomainOperations) {
-  return operations.creating || operations.verifying || operations.removing;
+  return (
+    operations.creating ||
+    operations.verifying ||
+    operations.removing ||
+    operations.saving
+  );
 }
 function NewDomainForm({ session, operations }: DomainPanelProps) {
   const { t } = useTranslation();
@@ -41,6 +49,7 @@ function NewDomainForm({ session, operations }: DomainPanelProps) {
   const notice = useGet(session.domains.notice$);
   const edit = useSet(session.domains.editHostname$);
   const create = operations.create;
+  const cancel = useSet(session.domains.back$);
   return (
     <form
       onSubmit={(event) => {
@@ -87,7 +96,19 @@ function NewDomainForm({ session, operations }: DomainPanelProps) {
       <p role="status" className="mt-3 min-h-10 text-xs text-destructive">
         {notice}
       </p>
-      <div className="mt-4 flex justify-end">
+      <div className="mt-4 flex justify-between">
+        <Button
+          type="button"
+          variant="quiet"
+          disabled={busy}
+          onClick={() => {
+            cancel();
+          }}
+        >
+          {t(($) => {
+            return $.artifacts.siteUrl.cancel;
+          })}
+        </Button>
         <Button type="submit" disabled={busy || !hostname.trim()}>
           {operations.creating && (
             <Loader2 size={14} className="animate-spin" />
@@ -247,71 +268,48 @@ function DomainActions({
 }) {
   const { t } = useTranslation();
   const busy = domainBusy(operations);
-  const confirmRemoval = useSet(session.domains.confirmRemoval$);
-  const back = useSet(session.domains.back$);
-  const chooseManaged = useSet(session.domains.useManaged$);
-  const signal = useGet(session.signal$);
-  const { remove, verify } = operations;
+  const cancel = useSet(session.domains.back$);
+  const choose = useSet(session.domains.choose$);
   return (
-    <div className="mt-4 flex flex-wrap justify-end gap-1">
-      <Button
-        variant="quiet"
-        className="mr-auto"
-        disabled={busy}
-        onClick={() => {
-          if (configuration.selectedDomainId === domain.id) {
-            confirmRemoval(true);
-            return;
-          }
-          remove();
-        }}
-      >
-        {t(($) => {
-          return $.artifacts.customDomain.remove;
-        })}
-      </Button>
+    <div className="mt-4 flex items-center justify-between gap-2">
       <Button
         variant="quiet"
         disabled={busy}
         onClick={() => {
-          return back();
+          cancel();
         }}
       >
         {t(($) => {
-          return $.artifacts.customDomain.back;
+          return $.artifacts.siteUrl.cancel;
         })}
       </Button>
       <Button
         className="min-w-24"
-        variant={domain.ready ? "quiet" : "default"}
         disabled={busy || domain.removing || !configuration.allowed}
         onClick={() => {
-          verify();
+          if (domain.ready) {
+            choose(domain.id);
+            operations.save();
+          } else {
+            operations.verify();
+          }
         }}
       >
-        {operations.verifying && <Loader2 size={14} className="animate-spin" />}
-        {t(($) => {
-          return $.artifacts.customDomain.verify;
-        })}
+        {(operations.verifying || operations.saving) && (
+          <Loader2 size={14} className="animate-spin" />
+        )}
+        {domain.ready
+          ? t(($) => {
+              return $.artifacts.siteUrl.save;
+            })
+          : t(($) => {
+              return $.artifacts.customDomain.verify;
+            })}
       </Button>
-      {domain.ready && (
-        <Button
-          disabled={busy || !configuration.allowed}
-          onClick={() => {
-            if (signal) {
-              detach(chooseManaged(signal), Reason.DomCallback);
-            }
-          }}
-        >
-          {t(($) => {
-            return $.artifacts.customDomain.continue;
-          })}
-        </Button>
-      )}
     </div>
   );
 }
-function DomainRemoveDialog({
+export function HostedSiteDomainRemoveDialog({
   session,
   operations,
   configuration,
@@ -321,6 +319,7 @@ function DomainRemoveDialog({
   const removalConfirmation = useGet(session.domains.removalConfirmation$);
   const confirmRemoval = useSet(session.domains.confirmRemoval$);
   const remove = operations.remove;
+  const managedId = useGet(session.domains.managedDomainId$);
   return (
     <Dialog
       open={removalConfirmation}
@@ -338,14 +337,16 @@ function DomainRemoveDialog({
             })}
           </DialogTitle>
           <DialogDescription>
-            {t(
-              ($) => {
-                return $.artifacts.customDomain.removeConfirm;
-              },
-              {
-                url: configuration.defaultUrl,
-              },
-            )}
+            {managedId === configuration.selectedDomainId
+              ? t(
+                  ($) => {
+                    return $.artifacts.customDomain.removeConfirm;
+                  },
+                  { url: configuration.defaultUrl },
+                )
+              : t(($) => {
+                  return $.artifacts.customDomain.disconnectConfirm;
+                })}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
@@ -377,12 +378,10 @@ function DomainRemoveDialog({
 }
 export function HostedSiteDomains({ session, operations }: DomainPanelProps) {
   const { t } = useTranslation();
-  const busy = domainBusy(operations);
   const settings = useLoadable(session.domains.settings$);
   const id = useGet(session.domains.managedDomainId$);
   const notice = useGet(session.domains.notice$);
   const signal = useGet(session.signal$);
-  const back = useSet(session.domains.back$);
   if (!signal || settings.state !== "hasData" || !settings.data) {
     return null;
   }
@@ -397,17 +396,6 @@ export function HostedSiteDomains({ session, operations }: DomainPanelProps) {
       })}
     >
       <div className="mb-4 flex items-center gap-2">
-        <IconButton
-          aria-label={t(($) => {
-            return $.artifacts.customDomain.back;
-          })}
-          disabled={busy}
-          onClick={() => {
-            return back();
-          }}
-        >
-          <ArrowLeft size={16} />
-        </IconButton>
         <h3 className="min-w-0 break-all text-sm font-medium">
           {domain?.hostname ??
             t(($) => {
@@ -419,7 +407,16 @@ export function HostedSiteDomains({ session, operations }: DomainPanelProps) {
       {domain ? (
         <>
           <DomainRecords session={session} domain={domain} />
-          <DomainStatus domain={domain} notice={notice} />
+          <DomainStatus
+            domain={domain}
+            notice={
+              operations.saveFailed
+                ? t(($) => {
+                    return $.artifacts.siteUrl.saveFailed;
+                  })
+                : notice
+            }
+          />
           <DomainActions
             session={session}
             operations={operations}
@@ -430,11 +427,6 @@ export function HostedSiteDomains({ session, operations }: DomainPanelProps) {
       ) : (
         <NewDomainForm session={session} operations={operations} />
       )}
-      <DomainRemoveDialog
-        session={session}
-        operations={operations}
-        configuration={configuration}
-      />
     </section>
   );
 }

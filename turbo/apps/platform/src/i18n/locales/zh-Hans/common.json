@@ -508,7 +508,6 @@
     },
     "customDomain": {
       "addressHint": "Choose the full address used when you share this website.",
-      "back": "返回自定义网址",
       "checks": {
         "certificate": "HTTPS",
         "dns": "DNS 连接",
@@ -519,6 +518,7 @@
       "copied": "已复制",
       "copyFailed": "无法复制，请选中记录值手动复制",
       "copyRecord": "复制 {{type}} 值",
+      "disconnectConfirm": "This domain will be disconnected from this website.",
       "dnsHelp": "在 DNS 服务商处配置这些记录，然后点击验证",
       "domain": "域名",
       "hostnameExample": "www.example.com",
@@ -531,11 +531,12 @@
       "ownDomain": "输入你拥有的域名",
       "remove": "移除",
       "removeConfirm": "分享链接将恢复为 {{url}}。",
+      "removeHostname": "Remove {{hostname}}",
       "removeTitle": "移除自定义域名？",
       "removing": "此域名已断开连接。点击移除以完成配置清理。",
       "title": "自定义域名",
       "urlPreview": "https://{{hostname}}",
-      "verified": "Domain verified. Continue, then save to use this address.",
+      "verified": "Domain verified. Save to use this address.",
       "verify": "验证",
       "yourDomains": "Connected domains"
     },

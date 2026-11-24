@@ -149,17 +149,9 @@ function createDomainNavigation(scope: DomainState) {
     set(notice$, null);
     set(open$, true);
   });
-  const useManaged$ = command(async ({ get, set }, signal: AbortSignal) => {
-    const settings = await get(settings$);
-    signal.throwIfAborted();
-    const domain = settings?.domains.find((item) => {
-      return item.id === get(managedDomainId$) && item.ready && !item.removing;
-    });
-    if (!domain || !settings?.allowed) {
-      return;
-    }
-    set(selectedDomainId$, domain.id);
-    set(open$, false);
+  const requestRemoval$ = command(({ set }, id: string) => {
+    set(managedDomainId$, id);
+    set(removalConfirmation$, true);
     set(notice$, null);
   });
   const editHostname$ = command(({ set }, value: string) => {
@@ -188,7 +180,7 @@ function createDomainNavigation(scope: DomainState) {
     back$,
     choose$,
     manage$,
-    useManaged$,
+    requestRemoval$,
     editHostname$,
     confirmRemoval$,
     copy$,

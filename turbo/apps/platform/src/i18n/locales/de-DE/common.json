@@ -509,7 +509,6 @@
     },
     "customDomain": {
       "addressHint": "Choose the full address used when you share this website.",
-      "back": "Back to Customize URL",
       "checks": {
         "certificate": "HTTPS",
         "dns": "DNS connection",
@@ -520,6 +519,7 @@
       "copied": "Copied",
       "copyFailed": "Could not copy. Select the value to copy it.",
       "copyRecord": "Copy {{type}} value",
+      "disconnectConfirm": "This domain will be disconnected from this website.",
       "dnsHelp": "Add these records at your DNS provider, then click Verify",
       "domain": "Domain",
       "hostnameExample": "www.example.com",
@@ -532,11 +532,12 @@
       "ownDomain": "Enter a domain you own",
       "remove": "Remove",
       "removeConfirm": "Your sharing link will return to {{url}}.",
+      "removeHostname": "Remove {{hostname}}",
       "removeTitle": "Remove custom domain?",
       "removing": "This domain is disconnected. Click Remove to finish cleaning up its configuration.",
       "title": "Custom domain",
       "urlPreview": "https://{{hostname}}",
-      "verified": "Domain verified. Continue, then save to use this address.",
+      "verified": "Domain verified. Save to use this address.",
       "verify": "Verify",
       "yourDomains": "Connected domains"
     },

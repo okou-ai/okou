@@ -2,6 +2,7 @@ import type { infer as zInfer } from "zod";
 import type { hostedDomainSettingsSchema } from "@okouai/api-contracts/contracts/hosted-site-domains";
 import {
   HostedSiteDomains,
+  HostedSiteDomainRemoveDialog,
   type HostedSiteDomainOperations,
 } from "./hosted-site-domains.tsx";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
@@ -15,6 +16,7 @@ import {
   Pencil,
   Plus,
   Share2,
+  Trash2,
 } from "lucide-react";
 import {
   Button,
@@ -330,6 +332,7 @@ function WebsiteDomainChoices({
   const chooseDomain = useSet(session.domains.choose$);
   const showDomains = useSet(session.domains.show$);
   const manageDomain = useSet(session.domains.manage$);
+  const requestRemoval = useSet(session.domains.requestRemoval$);
   const signal = useGet(session.signal$);
   if (!signal) {
     return null;
@@ -397,6 +400,20 @@ function WebsiteDomainChoices({
                   }}
                 >
                   <ChevronRight size={14} />
+                </IconButton>
+                <IconButton
+                  aria-label={t(
+                    ($) => {
+                      return $.artifacts.customDomain.removeHostname;
+                    },
+                    { hostname: domain.hostname },
+                  )}
+                  disabled={saving}
+                  onClick={() => {
+                    requestRemoval(domain.id);
+                  }}
+                >
+                  <Trash2 size={14} />
                 </IconButton>
               </div>
             );
@@ -706,44 +723,54 @@ function WebsiteUrlEditor({
     return platformForm;
   }
   return (
-    <Tabs
-      className="mt-4"
-      value={addressMode}
-      onValueChange={(value) => {
-        if (value === "platform" || value === "custom") {
-          detach(changeAddressMode(value, signal), Reason.DomCallback);
-        }
-      }}
-    >
-      <TabsList className="w-full">
-        <TabsTrigger className="flex-1" value="platform" disabled={busy}>
-          {t(($) => {
-            return $.artifacts.customDomain.okouUrl;
-          })}
-        </TabsTrigger>
-        <TabsTrigger className="flex-1" value="custom" disabled={busy}>
-          {t(($) => {
-            return $.artifacts.customDomain.title;
-          })}
-          <ProBadge />
-        </TabsTrigger>
-      </TabsList>
-      <TabsContent value="platform" className="mt-4">
-        {platformForm}
-      </TabsContent>
-      <TabsContent value="custom" className="mt-4">
-        {domainOpen ? (
-          <HostedSiteDomains session={session} operations={domainOperations} />
-        ) : (
-          <WebsiteDomainSelectionForm
-            session={session}
-            saving={busy}
-            configuration={configuration}
-            onSave={onSave}
-          />
-        )}
-      </TabsContent>
-    </Tabs>
+    <>
+      <Tabs
+        className="mt-4"
+        value={addressMode}
+        onValueChange={(value) => {
+          if (value === "platform" || value === "custom") {
+            detach(changeAddressMode(value, signal), Reason.DomCallback);
+          }
+        }}
+      >
+        <TabsList className="w-full">
+          <TabsTrigger className="flex-1" value="platform" disabled={busy}>
+            {t(($) => {
+              return $.artifacts.customDomain.okouUrl;
+            })}
+          </TabsTrigger>
+          <TabsTrigger className="flex-1" value="custom" disabled={busy}>
+            {t(($) => {
+              return $.artifacts.customDomain.title;
+            })}
+            <ProBadge />
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="platform" className="mt-4">
+          {platformForm}
+        </TabsContent>
+        <TabsContent value="custom" className="mt-4">
+          {domainOpen ? (
+            <HostedSiteDomains
+              session={session}
+              operations={domainOperations}
+            />
+          ) : (
+            <WebsiteDomainSelectionForm
+              session={session}
+              saving={busy}
+              configuration={configuration}
+              onSave={onSave}
+            />
+          )}
+        </TabsContent>
+      </Tabs>
+      <HostedSiteDomainRemoveDialog
+        session={session}
+        operations={domainOperations}
+        configuration={configuration}
+      />
+    </>
   );
 }
 
@@ -1101,7 +1128,7 @@ function HostedSiteShareSessionMenu({
         aria-label={props.ariaLabel}
         className={cn(
           "max-w-[calc(100vw-2rem)] p-0",
-          domainEditor ? "w-150" : emailSharing ? "w-100" : "w-90",
+          domainEditor ? "w-105" : emailSharing ? "w-100" : "w-90",
         )}
       >
         <HostedSiteShareBody
@@ -1136,6 +1163,8 @@ function HostedSiteShareSessionMenu({
               creating: domainCreating.state === "loading",
               verifying: domainVerifying.state === "loading",
               removing: domainRemoving.state === "loading",
+              saving: saving.state === "loading",
+              saveFailed: saving.state === "hasError",
               create: () => {
                 detach(createDomain(signal), Reason.DomCallback);
               },
@@ -1144,6 +1173,9 @@ function HostedSiteShareSessionMenu({
               },
               remove: () => {
                 detach(removeDomain(signal), Reason.DomCallback);
+              },
+              save: () => {
+                detach(save(signal), Reason.DomCallback);
               },
             }}
             onSave={() => {

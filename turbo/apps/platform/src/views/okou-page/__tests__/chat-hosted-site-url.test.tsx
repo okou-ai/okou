@@ -335,7 +335,7 @@ test("Share directly copies legacy website links without URL customization", asy
   ).not.toBeInTheDocument();
 });
 
-test("custom domain verification stays manual and requires selection and Save before changing the sharing link", async () => {
+test("custom domain verification stays manual and saves directly from the verification view", async () => {
   const domainId = "00000000-0000-4000-8000-000000000051";
   const revision = "00000000-0000-4000-8000-000000000052";
   let settings: zInfer<typeof hostedDomainSettingsSchema> = {
@@ -421,20 +421,12 @@ test("custom domain verification stays manual and requires selection and Save be
   ).toBeInTheDocument();
   expect(verifies).toBe(0);
   click(buttonNamed("Verify", menu));
-  await within(menu).findByText(
-    "Domain verified. Continue, then save to use this address.",
-  );
+  await within(menu).findByText("Domain verified. Save to use this address.");
   expect(verifies).toBe(1);
   expect(saves).toBe(0);
-  click(buttonNamed("Continue", menu));
-  await expect(
-    within(menu).findByRole("radio", {
-      name: "www.customer-example.net HTTPS ready",
-    }),
-  ).resolves.toBeChecked();
-  expect(within(menu).queryByLabelText("Website URL")).not.toBeInTheDocument();
-  await within(menu).findByText("https://www.customer-example.net");
-  expect(saves).toBe(0);
+  expect(within(menu).queryByText("Continue")).not.toBeInTheDocument();
+  expect(within(menu).queryByText("Remove")).not.toBeInTheDocument();
+  expect(buttonNamed("Cancel", menu)).toBeEnabled();
   click(buttonNamed("Save", menu));
   await waitFor(() => {
     return expect(buttonNamed("Copy link", menu)).toBeEnabled();
@@ -453,6 +445,12 @@ test("custom domain verification stays manual and requires selection and Save be
       "true",
     );
   });
+  await expect(
+    within(menu).findByRole("radio", {
+      name: "www.customer-example.net HTTPS ready",
+    }),
+  ).resolves.toBeChecked();
+  expect(buttonNamed("Remove www.customer-example.net", menu)).toBeEnabled();
   click(tabNamed("Okou URL", menu));
   await expect(
     within(menu).findByLabelText("Website URL"),
@@ -473,7 +471,7 @@ test("custom domain verification stays manual and requires selection and Save be
 test("pending domains are managed as full hostnames and cannot replace the sharing address", async () => {
   const domainId = "00000000-0000-4000-8000-000000000061";
   const revision = "00000000-0000-4000-8000-000000000062";
-  const settings: zInfer<typeof hostedDomainSettingsSchema> = {
+  let settings: zInfer<typeof hostedDomainSettingsSchema> = {
     siteId,
     defaultUrl: "https://launch-site.okou.app",
     effectiveUrl: "https://launch-site.okou.app",
@@ -493,6 +491,12 @@ test("pending domains are managed as full hostnames and cannot replace the shari
     ],
   };
   context.mocks.api(hostContract.siteDomains, ({ respond }) => {
+    return respond(200, settings);
+  });
+  let removals = 0;
+  context.mocks.api(hostContract.removeSiteDomain, ({ respond }) => {
+    removals++;
+    settings = { ...settings, domains: [] };
     return respond(200, settings);
   });
   const preview = await setupHostedSite("launch-site", "okou.app", true);
@@ -515,12 +519,27 @@ test("pending domains are managed as full hostnames and cannot replace the shari
     name: "pending.customer-example.net",
   });
   expect(within(menu).getByText("No verification yet")).toBeInTheDocument();
-  click(buttonNamed("Back to Customize URL", menu));
+  click(buttonNamed("Cancel", menu));
   await expect(
     within(menu).findByRole("radio", {
       name: "pending.customer-example.net Finish setup",
     }),
   ).resolves.toHaveAttribute("aria-disabled", "true");
+  click(buttonNamed("Remove pending.customer-example.net", menu));
+  let confirmation = await screen.findByRole("dialog", { name: /Remove/ });
+  click(buttonNamed("Cancel", confirmation));
+  expect(removals).toBe(0);
+  click(buttonNamed("Remove pending.customer-example.net", menu));
+  confirmation = await screen.findByRole("dialog", { name: /Remove/ });
+  click(buttonNamed("Remove", confirmation));
+  await waitFor(() => {
+    expect(removals).toBe(1);
+  });
+  await waitFor(() => {
+    expect(
+      within(menu).queryByText("pending.customer-example.net"),
+    ).not.toBeInTheDocument();
+  });
   click(tabNamed("Okou URL", menu));
   await expect(
     within(menu).findByLabelText("Website URL"),
