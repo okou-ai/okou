@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use api_contracts::generated::types::runners::storage::ArtifactEntryMissingRootPolicy;
 use guest_contracts::storage_files;
-use guest_contracts::storage_manifest::{Manifest, StorageEntry, WORKFLOW_STORAGE_NAME};
+use guest_contracts::storage_manifest::{ArtifactEntry, Manifest, StorageEntry};
 use sandbox::ExecResult;
 use sandbox_mock::{MockLifecycleGate, MockSandbox, MockSandboxOverrides};
 use tracing::instrument::WithSubscriber;
@@ -20,7 +20,7 @@ use crate::storage_cache::decoded::CachedFiles;
 use crate::storage_cache::{populate_cache_with_fresh_delivery, prepare_fresh_archive_delivery};
 use crate::storage_plan::build_storage_plan;
 use guest_contracts::runtime_paths::STORAGE_MANIFEST_PATH;
-use runner_types::storage_manifest::StorageManifest;
+use runner_types::storage_manifest::{StorageManifest, WORKFLOW_STORAGE_NAME};
 
 mod memory;
 
@@ -31,10 +31,10 @@ struct DeliveryFixture {
 }
 
 fn archive_bytes() -> Vec<u8> {
-    archive_with_content(b"content")
+    archive_with_content("file", b"content")
 }
 
-fn archive_with_content(content: &[u8]) -> Vec<u8> {
+fn archive_with_content(path: &str, content: &[u8]) -> Vec<u8> {
     let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::none());
     let mut archive = tar::Builder::new(encoder);
     let mut header = tar::Header::new_ustar();
@@ -42,7 +42,7 @@ fn archive_with_content(content: &[u8]) -> Vec<u8> {
     header.set_mode(0o755);
     header.set_mtime(1234);
     header.set_cksum();
-    archive.append_data(&mut header, "file", content).unwrap();
+    archive.append_data(&mut header, path, content).unwrap();
     archive.into_inner().unwrap().finish().unwrap()
 }
 
@@ -502,7 +502,7 @@ async fn oversized_artifact_manifest_compacts_urls_and_preserves_identity() {
     assert_eq!(files.len(), 3);
     let mut expected = manifest.artifacts.clone();
     for artifact in &mut expected {
-        artifact.archive_url = Some("decoded://".into());
+        artifact.archive_url = Some(storage_files::PACKED_BATCH_START_URL.into());
     }
     apply_with_telemetry(&fixture, &sandbox, manifest, &files)
         .await
@@ -518,53 +518,41 @@ async fn oversized_artifact_manifest_compacts_urls_and_preserves_identity() {
 }
 
 #[tokio::test]
-async fn oversized_mixed_manifest_preserves_legacy_workflow_batch_boundaries() {
-    for (name, directory, expected_calls) in [
-        (WORKFLOW_STORAGE_NAME, "current-workflow", 1),
-        (WORKFLOW_STORAGE_NAME, "copy--wf-source", 3),
-        (WORKFLOW_STORAGE_NAME, "copy--instruction", 3),
-        ("mixed-storage", "copy--wf-source", 1),
-    ] {
-        let fixture = DeliveryFixture::artifacts(2, 2, 35_000).await;
-        let sandbox = MockSandbox::new("decoded-large-mixed");
-        let (mut manifest, mut files) = fixture.prepare(&sandbox).await;
-        let storage_mount = fixture.root.path().join("guest").join(directory);
-        let prefix = "http://127.0.0.1:9/storage?signature=";
-        let mut storage = StorageEntry {
-            template_guidance: None,
-            mount_path: storage_mount.to_str().unwrap().into(),
-            archive_url: Some(format!("{prefix}{}", "x".repeat(35_000 - prefix.len()))),
-            cached: false,
-            vas_storage_name: Some(name.into()),
-            vas_version_id: Some("v1".into()),
-        };
-        manifest.storages.push(storage.clone());
-        files.push((
-            storage_mount.to_str().unwrap().into(),
-            Arc::clone(&files[0].1),
-        ));
-
-        apply_with_telemetry(&fixture, &sandbox, manifest, &files)
-            .await
-            .unwrap();
-        let calls = sandbox.storage_manifest_calls();
-        assert_eq!(calls.len(), expected_calls);
-        let (json, _) = storage_files::split_input(&calls[0].manifest_json).unwrap();
-        let first_batch: Manifest = serde_json::from_slice(json).unwrap();
-        if expected_calls == 1 {
-            storage.archive_url = Some("decoded://".into());
-            assert_eq!(first_batch.artifacts.len(), 2);
-        } else {
-            assert!(first_batch.artifacts.is_empty());
-        }
-        assert_eq!(first_batch.storages, [storage]);
-        assert_binary_calls(&sandbox, 3);
-        fixture.shutdown().await;
-    }
+async fn packed_decoded_batches_apply_workflow_documents_before_the_next_batch() {
+    let mut fixture = DeliveryFixture::with_archive(
+        2,
+        2,
+        35_000,
+        archive_with_content("SKILL.md", b"---\nname: source\n---\n\nInstruction.\n"),
+    )
+    .await;
+    let shared = fixture.root.path().join("guest/copy--wf-source");
+    std::fs::create_dir_all(&shared).unwrap();
+    let alias = fixture.root.path().join("guest/regular");
+    std::os::unix::fs::symlink(&shared, &alias).unwrap();
+    fixture.manifest.storages[0].mount_path = shared.to_str().unwrap().into();
+    fixture.manifest.storages[1].mount_path = alias.to_str().unwrap().into();
+    let sandbox = MockSandbox::new("packed-workflow-document");
+    let (mut manifest, files) = fixture.prepare(&sandbox).await;
+    manifest.storages[0].vas_storage_name = Some(WORKFLOW_STORAGE_NAME.into());
+    apply_with_telemetry(&fixture, &sandbox, manifest, &files)
+        .await
+        .unwrap();
+    let calls = sandbox.storage_manifest_calls();
+    assert_eq!(calls.len(), 1);
+    let call = calls.first().unwrap();
+    assert!(guest_storage_apply::run_storage_files_bytes(
+        &call.manifest_json
+    ));
+    assert_eq!(
+        std::fs::read_to_string(shared.join("SKILL.md")).unwrap(),
+        "---\nname: source\n---\n\nInstruction.\n"
+    );
+    fixture.shutdown().await;
 }
 
 #[tokio::test]
-async fn mixed_decoded_batch_uses_exact_per_array_comma_accounting() {
+async fn mixed_decoded_batches_pack_to_the_exact_canonical_manifest_limit() {
     let fixture = DeliveryFixture::artifacts(1, 1, 604).await;
     let sandbox = MockSandbox::new("decoded-mixed-boundary");
     let (mut manifest, mut files) = fixture.prepare(&sandbox).await;
@@ -578,9 +566,9 @@ async fn mixed_decoded_batch_uses_exact_per_array_comma_accounting() {
         vas_version_id: Some("v1".into()),
     };
     let compact_manifest = |mut storage: StorageEntry| {
-        storage.archive_url = Some("decoded://".into());
+        storage.archive_url = Some(storage_files::PACKED_BATCH_START_URL.into());
         let mut artifacts = manifest.artifacts.clone();
-        artifacts[0].archive_url = Some("decoded://".into());
+        artifacts[0].archive_url = Some(storage_files::PACKED_BATCH_START_URL.into());
         Manifest {
             archive_readiness: None,
             storages: vec![storage],
@@ -689,7 +677,7 @@ async fn decoded_selection_keeps_the_aggregate_mount_budget_across_batches() {
 
 #[tokio::test]
 async fn decoded_selection_keeps_payload_framing_inside_the_aggregate_budget() {
-    let archive = archive_with_content(&vec![b'a'; storage_files::MAX_FILE_BYTES]);
+    let archive = archive_with_content("file", &vec![b'a'; storage_files::MAX_FILE_BYTES]);
     let mut fixture = DeliveryFixture::with_archive(2, 2, 604, archive.clone()).await;
     let first = fixture.manifest.storages[0].clone();
     let last = fixture.manifest.storages[1].clone();
@@ -815,6 +803,79 @@ async fn split_decoded_batches_clean_once_and_preserve_real_files_and_metadata()
         std::fs::read(framework_home.join("skills/custom/SKILL.md")).unwrap(),
         b"user skill"
     );
+    fixture.shutdown().await;
+}
+
+#[tokio::test]
+async fn packed_decoded_batches_create_directories_for_later_mounts_after_artifact_repair() {
+    let mut fixture = DeliveryFixture::with_archive(
+        2,
+        2,
+        35_000,
+        archive_with_content("nested/index.txt", b"content"),
+    )
+    .await;
+    let workspace = fixture.root.path().join("workspace");
+    let alias = fixture.root.path().join("workspace-alias");
+    std::fs::create_dir(&workspace).unwrap();
+    std::os::unix::fs::symlink(&workspace, &alias).unwrap();
+    let bundle = workspace.join("bundle");
+    let first_mount = bundle.join("generated");
+    let second_mount = bundle.join("published/documents");
+    fixture.manifest.storages[0].mount_path = first_mount.to_str().unwrap().into();
+    fixture.manifest.storages[1].mount_path = second_mount.to_str().unwrap().into();
+
+    let archive_path = fixture.root.path().join("bundle.tar.gz");
+    let gzip = flate2::write::GzEncoder::new(
+        std::fs::File::create(&archive_path).unwrap(),
+        flate2::Compression::none(),
+    );
+    let mut archive = tar::Builder::new(gzip);
+    let mut header = tar::Header::new_gnu();
+    header.set_entry_type(tar::EntryType::Symlink);
+    header.set_size(0);
+    header.set_mode(0o755);
+    archive
+        .append_link(&mut header, "published", "generated/nested")
+        .unwrap();
+    archive.into_inner().unwrap().finish().unwrap();
+
+    let sandbox = MockSandbox::new("packed-aliased-mounts");
+    let (mut manifest, files) = fixture.prepare(&sandbox).await;
+    manifest
+        .cleanup_paths
+        .extend(files.iter().map(|(mount, _)| mount.clone()));
+    manifest.artifacts.push(ArtifactEntry {
+        mount_path: alias.join("bundle").to_str().unwrap().into(),
+        archive_url: Some(format!("file://{}", archive_path.display())),
+        empty: false,
+        cached: true,
+        vas_storage_name: Some("bundle-to-repair".into()),
+        vas_storage_id: Some("id".into()),
+        vas_version_id: Some("v1".into()),
+        missing_root_policy: None,
+    });
+    apply_with_telemetry(&fixture, &sandbox, manifest, &files)
+        .await
+        .unwrap();
+    let calls = sandbox.storage_manifest_calls();
+    let [ordinary, packed] = calls.as_slice() else {
+        panic!("expected an ordinary repair and one packed decoded input");
+    };
+    assert!(guest_storage_apply::run_manifest_bytes(
+        &ordinary.manifest_json
+    ));
+    assert!(bundle.join("published").is_symlink());
+    assert!(!second_mount.exists());
+    assert!(guest_storage_apply::run_storage_files_bytes(
+        &packed.manifest_json
+    ));
+    for mount in [first_mount, second_mount] {
+        assert_eq!(
+            std::fs::read(mount.join("nested/index.txt")).unwrap(),
+            b"content"
+        );
+    }
     fixture.shutdown().await;
 }
 

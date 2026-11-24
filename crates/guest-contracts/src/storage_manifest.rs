@@ -38,7 +38,6 @@
 //! is not an input requirement of this decoder.
 
 use std::collections::HashSet;
-use std::{io, path::Path};
 
 use serde::{Deserialize, Serialize};
 
@@ -46,9 +45,6 @@ mod readiness;
 mod template_guidance;
 pub use readiness::ArchiveReadiness;
 pub use template_guidance::*;
-
-/// Business cache namespace for complete Workflow packages.
-pub const WORKFLOW_STORAGE_NAME: &str = "workflow";
 
 /// In-memory execution projection behind the canonical storage manifest wire contract.
 ///
@@ -256,33 +252,6 @@ pub struct StorageEntry {
     /// Optional immutable template profile; absent for existing inputs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub template_guidance: Option<TemplateGuidanceReference>,
-}
-
-impl StorageEntry {
-    /// Resolve the target name for an older shared Workflow document rewrite.
-    pub fn workflow_document_name(&self) -> io::Result<Option<&str>> {
-        if self.vas_storage_name.as_deref() != Some(WORKFLOW_STORAGE_NAME) {
-            return Ok(None);
-        }
-        let name = Path::new(&self.mount_path)
-            .file_name()
-            .and_then(|value| value.to_str())
-            .ok_or_else(|| io::Error::other("Workflow mount has no name"))?;
-        if !name.contains("--wf-") && !name.ends_with("--instruction") {
-            return Ok(None);
-        }
-        if name.is_empty()
-            || name.len() > 64
-            || name.starts_with('-')
-            || name.ends_with('-')
-            || !name
-                .bytes()
-                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
-        {
-            return Err(io::Error::other("Invalid Workflow document name"));
-        }
-        Ok(Some(name))
-    }
 }
 
 /// Artifact entry in the guest storage manifest.

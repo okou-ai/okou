@@ -3,7 +3,6 @@ use super::super::allocation::{
     LARGEST, LIVE_PAYLOAD_BYTES, Measurement, PAYLOAD_THRESHOLD, RELEASED_PAYLOAD_BYTES,
 };
 use super::*;
-use guest_contracts::storage_manifest::ArtifactEntry;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
@@ -43,10 +42,10 @@ impl std::io::Write for ByteCounter {
     }
 }
 
-fn expected_compact_manifest(manifest: &Manifest) -> serde_json::Value {
+fn expected_manifest_with_each_mount_starting_a_batch(manifest: &Manifest) -> serde_json::Value {
     let mut value = serde_json::to_value(manifest).unwrap();
     for mount in value["storageMounts"].as_array_mut().unwrap() {
-        mount["archiveUrl"] = serde_json::json!("decoded://");
+        mount["archiveUrl"] = serde_json::json!(storage_files::PACKED_BATCH_START_URL);
     }
     value
 }
@@ -103,7 +102,7 @@ async fn decoded_storage_batch_memory_child() {
     let sandbox = MockSandbox::new("large-decoded-manifest");
     let (mut manifest, files) = fixture.prepare(&sandbox).await;
     pad_versions_for_split(&mut manifest);
-    let expected = expected_compact_manifest(&manifest);
+    let expected = expected_manifest_with_each_mount_starting_a_batch(&manifest);
     let mut source_bytes = ByteCounter::default();
     serde_json::to_writer(&mut source_bytes, &manifest).unwrap();
     let source_bytes = source_bytes.0;
@@ -135,25 +134,30 @@ async fn encoded_payloads_follow_the_current_guest_operation() {
     let content = (0..storage_files::MAX_FILE_BYTES)
         .map(|index| index as u8)
         .collect::<Vec<_>>();
-    let mut fixture =
-        DeliveryFixture::with_archive(3, 3, 35_000, archive_with_content(&content)).await;
-    let workflow_mount = fixture.root.path().join("guest/mount-000--wf-source");
-    std::fs::create_dir_all(&workflow_mount).unwrap();
-    std::fs::write(
-        workflow_mount.join("SKILL.md"),
-        b"---\nname: mount-000--wf-source\n---\n\nWorkflow instruction.\n",
-    )
-    .unwrap();
-    fixture.manifest.storages[0].mount_path = workflow_mount.to_str().unwrap().into();
+    let fixture =
+        DeliveryFixture::with_archive(3, 3, 604, archive_with_content("file", &content)).await;
     let overrides = Arc::new(MockSandboxOverrides::new());
     let gate = MockLifecycleGate::new();
     overrides.set_storage_manifest_lifecycle_gate(gate.clone());
     let sandbox = MockSandbox::with_overrides("completed-storage-buffers", overrides);
     let (mut manifest, files) = fixture.prepare(&sandbox).await;
-    // Keep the legacy boundaries without logging padded names or version IDs
-    // when the allocation child exercises the real materializer.
-    manifest.storages[0].vas_storage_name = Some(WORKFLOW_STORAGE_NAME.into());
-    let expected = serde_json::to_value(&manifest).unwrap();
+    // Large, unlogged identity fields keep one mount per Guest request.
+    manifest.artifacts = manifest
+        .storages
+        .drain(..)
+        .enumerate()
+        .map(|(index, storage)| ArtifactEntry {
+            mount_path: storage.mount_path,
+            archive_url: storage.archive_url,
+            empty: false,
+            cached: false,
+            vas_storage_name: storage.vas_storage_name,
+            vas_storage_id: Some(format!("artifact-{index}-{}", "i".repeat(35_000))),
+            vas_version_id: storage.vas_version_id,
+            missing_root_policy: None,
+        })
+        .collect();
+    let expected = expected_manifest_with_each_mount_starting_a_batch(&manifest);
     let context = minimal_context();
     let mut telemetry = test_telemetry(&fixture.config, &context);
     let mut released_before_apply = Vec::with_capacity(3);
@@ -248,7 +252,7 @@ async fn mixed_decoded_mounts_preserve_the_canonical_manifest_boundary() {
         let expected = if overflow == 0 {
             serde_json::to_value(&manifest).unwrap()
         } else {
-            expected_compact_manifest(&manifest)
+            expected_manifest_with_each_mount_starting_a_batch(&manifest)
         };
         let result = apply_with_telemetry(&fixture, &sandbox, manifest, &files).await;
         fixture.shutdown().await;
