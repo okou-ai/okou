@@ -7,6 +7,7 @@ import ai.okou.android.WorkspaceMenu
 import ai.okou.android.WorkspaceMenuItem
 import ai.okou.android.api.generated.IndicatorsThreadsValue
 import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.updates.updateFocusOutline
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.compose.animation.core.CubicBezierEasing
@@ -15,6 +16,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -61,6 +65,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isShiftPressed
@@ -102,6 +107,26 @@ internal val ChatListMotionEasing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
 private val projectPlacement = tween<IntOffset>(ProjectMotionMillis, easing = ChatListMotionEasing)
 private val projectChildFade = tween<Float>(ProjectMotionMillis, easing = ChatListMotionEasing)
 private val immediatePlacement = snap<IntOffset>()
+internal const val ChatListPressedOpacity = 0.09f
+
+@Composable
+private fun chatListRowBackground(
+    interactions: MutableInteractionSource,
+    selected: Boolean,
+): Color {
+    val colors = MaterialTheme.colorScheme
+    if (selected) return colors.secondaryContainer
+    val pressed by interactions.collectIsPressedAsState()
+    val hovered by interactions.collectIsHoveredAsState()
+    return when {
+        pressed ->
+            colors.onBackground
+                .copy(alpha = ChatListPressedOpacity)
+                .compositeOver(colors.background)
+        hovered -> colors.onBackground.copy(alpha = 0.05f).compositeOver(colors.background)
+        else -> colors.background
+    }
+}
 
 @Composable
 internal fun ChatListScreen(
@@ -879,6 +904,8 @@ private fun ProjectRow(
 ) {
     val collapsed = activity != null
     val status = activity?.status ?: ChatRowStatus.None
+    val colors = MaterialTheme.colorScheme
+    val interactions = remember { MutableInteractionSource() }
     val locale = LocalConfiguration.current.locales[0]
     val number = remember(locale) { NumberFormat.getIntegerInstance(locale) }
     val unread = stringResource(R.string.chat_unread)
@@ -919,10 +946,14 @@ private fun ProjectRow(
             Modifier.fillMaxWidth()
                 .heightIn(min = ChatListRowHeight)
                 .clip(ChatListRowShape)
+                .background(chatListRowBackground(interactions, selected = false))
                 .contextMenuInput(openMenu)
                 .focusRequester(rowFocus)
                 .onFocusChanged { rowFocused = it.isFocused }
+                .updateFocusOutline(ChatListRowShape, colors.onBackground, keyboardOnly = true)
                 .combinedClickable(
+                    interactionSource = interactions,
+                    indication = null,
                     role = Role.Button,
                     onClick = toggle,
                     onLongClick = openMenu,
@@ -961,6 +992,7 @@ private fun ProjectRow(
                 Text(
                     name,
                     Modifier.weight(1f, fill = false),
+                    color = colors.onBackground,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = chatListTitleStyle(),
@@ -977,10 +1009,8 @@ private fun ProjectRow(
                     modifier = Modifier.size(16.dp),
                 )
             }
-            if (status != ChatRowStatus.None) {
-                Spacer(Modifier.width(8.dp))
-                ChatStatusGlyph(status, runningFrame, row)
-            }
+            Spacer(Modifier.width(8.dp))
+            ChatStatusGlyph(status, runningFrame, row)
         }
         if (menuOpen && openMenu != null) {
             val items = buildList {
@@ -1110,6 +1140,7 @@ private fun ChatRow(
     val archiveAction = actions.firstOrNull {
         it == ChatRowAction.Archive || it == ChatRowAction.Unarchive
     }
+    val interactions = remember { MutableInteractionSource() }
     ChatRowSwipe(
         readAction = readAction.takeIf { openMenu != null },
         archiveAction = archiveAction.takeIf { openMenu != null },
@@ -1120,11 +1151,14 @@ private fun ChatRow(
                 .fillMaxWidth()
                 .heightIn(min = ChatListRowHeight)
                 .clip(ChatListRowShape)
-                .background(if (isSelected) colors.secondaryContainer else colors.background)
+                .background(chatListRowBackground(interactions, isSelected))
                 .contextMenuInput(openMenu)
                 .focusRequester(rowFocus)
                 .onFocusChanged { rowFocused = it.isFocused }
+                .updateFocusOutline(ChatListRowShape, colors.onBackground, keyboardOnly = true)
                 .combinedClickable(
+                    interactionSource = interactions,
+                    indication = null,
                     onClick = open,
                     onLongClick = openMenu,
                     onLongClickLabel = stringResource(R.string.chat_actions),
@@ -1139,7 +1173,7 @@ private fun ChatRow(
         ) {
             if (hasDraft) {
                 Icon(
-                    painterResource(R.drawable.ic_edit),
+                    painterResource(R.drawable.ic_edit_note),
                     contentDescription = null,
                     tint = colors.onSurfaceVariant,
                     modifier = Modifier.size(ChatListLeadingIconSize).testTag("chat_draft_icon"),
@@ -1149,7 +1183,7 @@ private fun ChatRow(
             Text(
                 title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.chat_untitled),
                 Modifier.weight(1f),
-                color = if (isSelected) colors.onSecondaryContainer else colors.onSurface,
+                color = if (isSelected) colors.onSecondaryContainer else colors.onBackground,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 style = chatListTitleStyle(),

@@ -505,6 +505,8 @@ internal fun OkouConfirmationDialog(
     confirmEnabled: Boolean = true,
     dismissEnabled: Boolean = true,
     destructive: Boolean = false,
+    dismissLabel: String = stringResource(R.string.settings_cancel),
+    keepActionsVisible: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     Dialog(
@@ -572,7 +574,7 @@ internal fun OkouConfirmationDialog(
                                             contentColor = colors.onSurface,
                                         ),
                                 ) {
-                                    Text(stringResource(R.string.settings_cancel))
+                                    Text(dismissLabel)
                                 }
                                 TextButton(
                                     onClick = onConfirm,
@@ -602,12 +604,14 @@ internal fun OkouConfirmationDialog(
                             actions.height -
                             titleSpace -
                             actionSpace
-                    // Let the whole dialog scroll if the body would be squeezed below two lines.
+                    // Let the whole dialog scroll if there is too little room for the body.
+                    val minimumBodyHeight =
+                        if (keepActionsVisible) bodyStyle.fontSize.toDp().roundToPx()
+                        else bodyStyle.lineHeight.toDp().roundToPx() * 2
                     val body =
                         children[1].measure(
                             loose.copy(
-                                maxHeight =
-                                    maxOf(bodySpace, bodyStyle.lineHeight.toDp().roundToPx() * 2),
+                                maxHeight = maxOf(bodySpace, minimumBodyHeight),
                             ),
                         )
                     val bodyTop = heading.height + titleSpace

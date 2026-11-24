@@ -10,6 +10,7 @@ import {
 } from "../text-preview.ts";
 import {
   createAttachmentPreviewSignals,
+  shouldRefreshArtifactPreview,
   type AttachmentPreviewSignals,
 } from "../attachment-resource-url.ts";
 import {
@@ -57,6 +58,7 @@ export function createArtifactSignals(
 ): ArtifactSignals {
   const preview = createAttachmentPreviewSignals(descriptor.url, {
     contentType: descriptor.contentType,
+    refreshOnArtifactChange: shouldRefreshArtifactPreview(descriptor.kind),
   });
   const previewImageLoad = createImageLoadSignals();
   const previewImageUrl$ = computed(async (get) => {
@@ -95,7 +97,7 @@ export function createArtifactCardSignalsRegistry(): ArtifactCardSignalsRegistry
     ...registry,
     refresh$: command(({ get, set }) => {
       for (const artifact of get(registry.values$)) {
-        set(artifact.refresh$);
+        set(artifact.refreshOnArtifactChange$);
       }
     }),
   };

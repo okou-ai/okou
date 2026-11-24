@@ -33,13 +33,14 @@ function storedFile(
   summary: ArtifactSummary,
   filename: string,
   contentType: string,
+  fileId = "a0000000-0000-4000-a000-000000000e99",
 ): { readonly detail: ArtifactDetail; readonly url: string } {
   const url = `https://files.example.test/catalog/${filename}`;
   return {
     detail: fileArtifactDetail(summary, {
       filename,
       contentType,
-      fileId: "a0000000-0000-4000-a000-000000000e99",
+      fileId,
       url,
     }),
     url,
@@ -337,4 +338,63 @@ test("The catalog offers the download fallback for a ZIP whose declared size exc
   ).resolves.toBeVisible();
   expect(panel.queryByText("small.txt")).toBeNull();
   expect(getButtonByName("Download artifact")).toBeEnabled();
+});
+
+test("Reopening a catalog item reads the file selected by its publication update", async () => {
+  const item = artifact({
+    id: "c0000000-0000-4000-a000-000000000189",
+    title: "Field journal",
+  });
+  const first = storedFile(item, "field-notes.txt", "text/plain");
+  const second = storedFile(
+    { ...item, title: "field-notes-approved.txt" },
+    "field-notes-approved.txt",
+    "text/plain",
+    "c0000000-0000-4000-a000-000000000190",
+  );
+  let current = first;
+  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
+    return respond(200, { artifacts: [current.detail], nextCursor: null });
+  });
+  context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
+    return respond(200, current.detail);
+  });
+  context.mocks.http.get(first.url, () => {
+    return HttpResponse.text("Draft observations from the estuary");
+  });
+  context.mocks.http.get(second.url, () => {
+    return HttpResponse.text("Approved observations from the estuary");
+  });
+  await openCatalog("/artifacts?tab=file");
+  await waitFor(() => {
+    expect(context.mocks.ably.hasSubscription("artifact:changed")).toBeTruthy();
+  });
+  click(await findArtifactAction(item.title));
+  const panel = await screen.findByTestId("artifact-sidebar");
+  await expect(
+    within(panel).findByText("Draft observations from the estuary"),
+  ).resolves.toBeVisible();
+  current = second;
+  await act(() => {
+    context.mocks.ably.trigger("artifact:changed", { artifactId: item.id });
+  });
+  await expect(
+    within(await screen.findByTestId("artifact-sidebar")).findByText(
+      "field-notes-approved.txt",
+    ),
+  ).resolves.toBeVisible();
+  click(
+    getButtonByName(
+      "Close artifact",
+      await screen.findByTestId("artifact-sidebar"),
+    ),
+  );
+  await waitFor(() => {
+    expect(sidebar()).toBeNull();
+  });
+  click(await findArtifactAction(second.detail.title));
+  const reopened = await screen.findByTestId("artifact-sidebar");
+  await expect(
+    within(reopened).findByText("Approved observations from the estuary"),
+  ).resolves.toBeVisible();
 });

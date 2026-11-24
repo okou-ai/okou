@@ -1,6 +1,7 @@
 import {
   createAttachmentPreviewRegistry,
   createAttachmentPreviewSignals,
+  shouldRefreshArtifactPreview,
   type AttachmentPreviewSignals,
 } from "../attachment-resource-url.ts";
 import { command, computed, state, type Command, type Computed } from "ccstate";
@@ -526,6 +527,7 @@ function createCatalogSelectionSignals(
       const registered = set(previews.register$, {
         url: source.url,
         contentType: source.contentType,
+        refreshOnArtifactChange: shouldRefreshArtifactPreview(source.kind),
         ...(preview ? { preview } : {}),
       });
       if (get(internalSelectedArtifactId$) === artifactId) {
@@ -597,7 +599,7 @@ function createCatalogView(source: CatalogSource) {
   };
 }
 
-/** Re-read the first page, discard old cursors, and refresh retained previews. */
+/** Re-read the first page, discard old cursors, and refresh mutable previews. */
 function createCatalogReload$(
   { reloadVersion$ }: CatalogSource,
   ...invalidations: readonly Command<void, []>[]

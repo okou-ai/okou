@@ -3,7 +3,7 @@
     "frozen": "b0a10287edf4242383c28e39c6f7675053febb32",
     "beforeFirstWithdrawal": "5310dbb9ba6bd8b95507bc7293f6da3ed8aa004b",
     "beforeSecondWithdrawal": "a445586e0483bb7e2440e60200a8deed30aa3df9",
-    "main": "40612fc8e5b64953367f02b51a71531f352f7560",
+    "main": "653f75c18eebe91760896f7716046fa318801b9e",
     "opening": "10e42998a931e337c08a02e313bec67f7019523d"
   },
   "cases": {
@@ -359,5 +359,13 @@
       }
     },
     "result": "Kept the rebuilt access, authorization and sharing entries. Added the upstream active and removed custom hostname, exact callback and denial, manual verification and selection, pending-domain removal, and subscription-gated management scenarios to the same owning suites."
+  },
+  "previewSync": {
+    "upstream": "0e338829de",
+    "suite": "turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx",
+    "preSync": "781902498715fb14bf705435ccb170fc32eb410c",
+    "upstreamBlob": "bf272db43d1f20158a9b35a0a8677ba364364aa8",
+    "resolvedBlob": "c94af0b4673687cc87c9d551b45c38ad489f1983",
+    "result": "Kept the seven reconstructed catalog scenarios. The real reader sees the original file content, observes the updated publication while the sidebar is open, closes the preview, then reopens the same catalog item and reads a different file ID and body. The independent Chat immutable-preview suite was retained."
   }
 }
