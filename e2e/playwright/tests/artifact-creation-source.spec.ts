@@ -232,7 +232,7 @@ test("resolve authenticated artifact sources through publication, navigation and
         prompt,
         userMessage: { version: 1, parts: [{ type: "text", text: prompt }] },
         hasTextContent: true,
-        model: "claude-sonnet-4-6",
+        model: null,
         realAgentInPreview: true,
       }),
       201,
@@ -292,12 +292,14 @@ test("resolve authenticated artifact sources through publication, navigation and
     const librarySwitch = page.getByRole("switch", {
       name: /Artifact library list/,
     });
-    await librarySwitch.check();
+    await expect(librarySwitch).not.toBeChecked();
+    await librarySwitch.click();
     await expect(librarySwitch).toBeChecked();
     const realAgentSwitch = page.getByRole("switch", {
       name: new RegExp(`^${FeatureSwitchKey.RealAgentInPreview}`),
     });
-    await realAgentSwitch.check();
+    await expect(realAgentSwitch).not.toBeChecked();
+    await realAgentSwitch.click();
     await expect(realAgentSwitch).toBeChecked();
     const effective = record(
       (await json(await request("/api/feature-switches"))).effectiveSwitches,
@@ -570,7 +572,10 @@ test("resolve authenticated artifact sources through publication, navigation and
       "Deleted original Chat disables source without changing independent owner Delete, cancellation or focus; newer Chat and other artifact remain readable";
 
     await page.goto(new URL("/_/lab", appUrl).href);
-    await page.getByRole("switch", { name: /Artifact library list/ }).uncheck();
+    await expect(
+      page.getByRole("switch", { name: /Artifact library list/ }),
+    ).toBeChecked();
+    await page.getByRole("switch", { name: /Artifact library list/ }).click();
     await expect(
       page.getByRole("switch", { name: /Artifact library list/ }),
     ).not.toBeChecked();
