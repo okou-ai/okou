@@ -10,6 +10,7 @@ import {
 import {
   click,
   fill,
+  holdElementAnimations,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
@@ -173,10 +174,15 @@ test("A presentation recommendation previews slides and a theme before attaching
   expect(within(stage).getByText("2 / 3")).toBeInTheDocument();
   expect(composerInlineTemplates()).toHaveLength(0);
   expect(editor).toHaveTextContent(DRAFT);
+  const finishClose = holdElementAnimations(dialog);
   click(control("button", `Select template ${presentation.title}`, dialog));
   await waitFor(() => {
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(composerInlineTemplates()).toHaveLength(1);
+  });
+  expect(dialog).toBeInTheDocument();
+  finishClose();
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
   expect(composerInlineTemplates()[0]).toHaveTextContent(presentation.title);
   expect(editor).toHaveTextContent(DRAFT);

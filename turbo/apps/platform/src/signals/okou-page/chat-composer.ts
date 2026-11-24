@@ -89,6 +89,9 @@ function createTemplatePreviewReturnFocusSignals() {
     set(trigger$, trigger);
     set(shelf$, trigger?.closest<HTMLElement>("[data-rail-root]") ?? null);
   });
+  const setFinalFocus$ = command(({ set }, target: HTMLElement) => {
+    set(trigger$, target);
+  });
   const finalFocus$ = command(({ get }) => {
     const trigger = get(trigger$);
     if (trigger?.isConnected) {
@@ -103,7 +106,7 @@ function createTemplatePreviewReturnFocusSignals() {
         )
       : null;
   });
-  return { capture$, finalFocus$ };
+  return { capture$, setFinalFocus$, finalFocus$ };
 }
 
 type TemplatePreviewKind = "presentation" | "document" | "website" | "custom";
@@ -186,6 +189,7 @@ function createTemplatePreviewSignals(
     closeTemplatePreview$,
     completeTemplatePreviewClose$,
     templatePreviewFinalFocus$: focus.finalFocus$,
+    setTemplatePreviewFinalFocus$: focus.setFinalFocus$,
     focusTemplatePreviewRef$,
     deleteCustomTemplate$,
     websiteTemplatePreviewId$,

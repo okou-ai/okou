@@ -2003,8 +2003,11 @@ function ComposerTemplatePreviewSlot({
   const mounted = useGet(signals.template.templatePreviewMounted$);
   const kind = useGet(signals.template.templatePreviewKind$);
   const close = useSet(signals.template.closeTemplatePreview$);
+  const setFinalFocus = useSet(signals.template.setTemplatePreviewFinalFocus$);
   const selection = useComposerTemplateSelection(signals);
   const select = (value: GenerationTemplateRequest) => {
+    // The dialog restores focus after its exit animation, later than insertion.
+    setFinalFocus(signals.editor.editor.view.dom);
     selection.onChange(value);
     close();
   };
