@@ -58,6 +58,8 @@ struct ForYouView: View {
   private static let minimumRoomShare: CGFloat = 0.6
   /// How far the cover drifts for each card, so it moves well behind the cards.
   private static let coverDrift: CGFloat = 36
+  /// How long a confirmation stays while left alone, as the chat's finished-action feedback.
+  private static let confirmationLife: Duration = .seconds(6)
 
   var body: some View {
     layout
@@ -90,6 +92,7 @@ struct ForYouView: View {
       content
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay { if isComposing { aroundCard } }
+        .overlay(alignment: .top) { confirmation }
       dock
     }
     // A card settling, a confirmation arriving or the dock coming and going moves the page as one
@@ -197,36 +200,50 @@ struct ForYouView: View {
 
   // MARK: Header and notices
 
-  /// A confirmation sits on the cover, so it never covers the next card's directions. It drops
-  /// in from under the header and lifts away again, and a new one replaces the last in place.
+  /// A failure sits on the cover in the page's flow until it is dismissed, so it never covers the
+  /// next card's directions. It drops in from under the header and lifts away again.
   @ViewBuilder private var notices: some View {
     Group {
       if let error = store.error, store.current != nil {
         OkouBanner(Text(error), icon: "circle-alert", tone: .problem, dismiss: clearError)
           .id(error)
           .transition(noticeTransition)
-      } else if let notice = store.notice {
-        Group {
-          if let undo = notice.undo {
-            OkouBanner(Text(notice.text), icon: "circle-check", dismiss: clearNotice) {
-              Button("Undo") { run { await store.undo(undo) } }
-                .accessibilityIdentifier("for-you-undo")
-            }
-          } else if let id = notice.threadID {
-            OkouBanner(Text(notice.text), icon: "circle-check", dismiss: clearNotice) {
-              Button("Open chat") { run { if await store.open(id) { showChat() } } }
-            }
-          } else {
-            OkouBanner(Text(notice.text), icon: "circle-check", dismiss: clearNotice)
-          }
-        }
-        .id(notice.undo?.undoID ?? notice.text)
-        .transition(noticeTransition)
       }
     }
     .frame(maxWidth: OkouControl.readableWidth)
     .padding(.horizontal, OkouSpace.lg).padding(.top, OkouSpace.sm)
     .disabled(store.busy)
+  }
+
+  /// A finished action ("Noted — this is not planned · Undo") floats under the header in the
+  /// chat's feedback surface: over the scene, so the deck never moves and the card's directions
+  /// are never covered. It drops in, lifts away after a few idle seconds or a sideways swipe, and
+  /// a new one replaces the last in place; Undo stays in the caught-up recap.
+  @ViewBuilder private var confirmation: some View {
+    if let notice = store.notice, store.error == nil {
+      ChatFeedbackSurface(
+        message: notice.text, icon: "circle-check",
+        actionTitle: notice.undo != nil
+          ? String(localized: "Undo")
+          : notice.threadID != nil ? String(localized: "Open chat") : nil,
+        actionEnabled: !store.busy,
+        actionIdentifier: notice.undo != nil ? "for-you-undo" : "for-you-open-chat",
+        autoDismissAfter: Self.confirmationLife, action: { act(on: notice) },
+        dismiss: clearNotice
+      )
+      .frame(maxWidth: OkouControl.readableWidth)
+      .padding(.horizontal, OkouSpace.lg)
+      .id(notice.undo?.undoID ?? notice.text)
+      .transition(noticeTransition)
+    }
+  }
+
+  private func act(on notice: ForYouStore.Notice) {
+    if let undo = notice.undo {
+      run { await store.undo(undo) }
+    } else if let id = notice.threadID {
+      run { if await store.open(id) { showChat() } }
+    }
   }
 
   // MARK: Cards

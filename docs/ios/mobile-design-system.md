@@ -446,7 +446,8 @@ single floating line, and colour is a small accent for status only.
 - **Chat feedback floats above the bottom controls** in `ChatFeedbackSurface`: above the
   list footer or the chat composer, following its height and the keyboard without moving
   the content. Anchor to visible controls, not blank space reserved for hidden ones; keep
-  the 8 pt gap above the visible surface. A horizontal swipe in either direction dismisses
+  the 8 pt gap above the visible surface. For you is the exception: its card's directions sit
+  just above its dock, so it floats the surface under its header (see [For you](#for-you)). A horizontal swipe in either direction dismisses
   it; the close button and VoiceOver escape do too. Do not use a vertical dismissal gesture
   near the bottom-edge system gestures. Finished-action feedback expires after six idle
   seconds while visible, restarting after touch interaction, presentation handoff, or
@@ -898,9 +899,10 @@ feature; the catalog shows each one.
   reason itself opens too), and Show less follows it once open. A card's actions stay at its
   bottom (`ForYouCardLayout`); when the heading is longer than the room it scrolls above them,
   fading out at the edge where more lies and flashing its scroll indicator, so the reader can
-  tell there is more. Scrolling text runs out to the card's own edge (and down to the actions),
-  never stopping at the card's inset. When the actions would leave the heading less than a third
-  of the card, as at the largest text sizes, heading and actions scroll together from the title.
+  tell there is more. Scrolling text runs out to the card's own edges rather than stopping at its
+  inset, with the scroll indicator along the card's side; above the actions it stops a gap short
+  of them. When the actions would leave the heading less than a third of the card, as at the
+  largest text sizes, heading and actions scroll together from the title.
 - **The deck pages round.** A sideways swipe carries the front card with the finger; it settles
   back a little but never tilts, since paging throws nothing away, and the next card rises out
   of the deck, solid within the first third of the swipe. Past the last card the deck carries on
@@ -917,8 +919,13 @@ feature; the catalog shows each one.
 - **Haptics**: selection when a new card comes to rest in front, success when a card is
   handled, error on a failure; nothing while the finger moves.
 - **The dock** is an `OkouGlassPrompt` that grows into the composer, and Dismiss with its
-  reasons menu. Confirmations drop in under the header so they never cover the next card's
-  directions; a failure there can be dismissed too.
+  reasons menu.
+- **Confirmations are the chat's feedback surface, under the header.** A finished action
+  ("Noted — this is not planned · Undo", "Sent to the chat · Open chat") drops in as
+  `ChatFeedbackSurface`: one line with its action on the right and a ✕, floating over the scene
+  so the deck never moves and the card's directions are never covered. It lifts away after six
+  idle seconds or a sideways swipe; Undo stays in the caught-up recap. A failure stays in the
+  page's flow until it is dismissed.
 - **Writing a direction focuses the page.** The scene recedes under the page's ground, so the
   composer's glass and the keyboard read plain instead of taking the sea's colour, and the counter
   and segments step aside while keeping their room. The card stays above the input as its

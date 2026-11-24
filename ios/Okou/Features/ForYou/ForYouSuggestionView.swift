@@ -272,14 +272,15 @@ enum ForYouCardInset {
 
 /// A card's heading over its actions. Given the deck's height, the actions stay at the card's
 /// bottom and the heading takes what is left, scrolling there when it is longer. A scrolling
-/// heading runs from the card's top edge down to the actions, so its text comes and goes at those
-/// edges rather than at the card's inset; it fades out at whichever edge more lies beyond, and
-/// its scroll indicator flashes when it appears, so the reader can tell there is more. When the
-/// actions would leave the heading less than a third of the card, as at the largest text sizes,
-/// heading and actions scroll as one from the title. Without its actions, as while a direction is
-/// written, the heading takes its own height up to the one given and runs out through the card's
-/// bottom edge past it. Without a height the card takes its own. Either way it reports its own
-/// height (heading, gap and actions), which never depends on the height it is given.
+/// heading runs out to the card's own edges, so its text comes and goes there rather than at the
+/// card's inset, and its scroll indicator runs along the card's side; above the actions it stops
+/// a gap short of them. It fades out at whichever end more lies beyond, and its indicator flashes
+/// when it appears, so the reader can tell there is more. When the actions would leave the
+/// heading less than a third of the card, as at the largest text sizes, heading and actions
+/// scroll as one from the title. Without its actions, as while a direction is written, the
+/// heading takes its own height up to the one given and runs out through the card's bottom edge
+/// past it. Without a height the card takes its own. Either way it reports its own height
+/// (heading, gap and actions), which never depends on the height it is given.
 struct ForYouCardLayout<Heading: View, Actions: View>: View {
   let height: CGFloat?
   let spacing: CGFloat
@@ -313,7 +314,7 @@ struct ForYouCardLayout<Heading: View, Actions: View>: View {
     if let height {
       let pinsActions = showsActions && height - actionsHeight - spacing >= height * headingShare
       VStack(alignment: .leading, spacing: spacing) {
-        scrolling(below: pinsActions ? spacing : ForYouCardInset.bottom) {
+        scrolling(below: pinsActions ? 0 : ForYouCardInset.bottom) {
           measuredHeading
           if showsActions && !pinsActions {
             measuredActions.padding(.top, spacing).transition(.opacity)
@@ -330,16 +331,18 @@ struct ForYouCardLayout<Heading: View, Actions: View>: View {
     }
   }
 
-  /// Scrolls its content within the card. It reaches past the content by the card's top inset
-  /// above and by `below` underneath, keeping that room inside the scroll, so the text scrolls in
-  /// and out at the card's edge (or at the actions) instead of stopping short of it.
+  /// Scrolls its content within the card. It reaches past the content by the card's insets on
+  /// the sides and above, and by `below` underneath, keeping that room inside the scroll, so the
+  /// text scrolls in and out at the card's edge instead of stopping short of it, and the scroll
+  /// indicator runs along the card's side rather than beside the text.
   private func scrolling<Content: View>(
     below: CGFloat, @ViewBuilder _ content: () -> Content
   ) -> some View {
     let above = ForYouCardInset.top
+    let side = ForYouCardInset.side
     return ScrollView {
       VStack(alignment: .leading, spacing: 0) { content() }
-        .padding(.top, above).padding(.bottom, below)
+        .padding(.horizontal, side).padding(.top, above).padding(.bottom, below)
     }
     .contentMargins(.top, above, for: .scrollIndicators)
     .contentMargins(.bottom, below, for: .scrollIndicators)
@@ -378,7 +381,7 @@ struct ForYouCardLayout<Heading: View, Actions: View>: View {
     }
     .animation(reduceMotion ? nil : OkouMotion.transition, value: hasMoreBelow)
     .animation(reduceMotion ? nil : OkouMotion.transition, value: hasMoreAbove)
-    .padding(.top, -above).padding(.bottom, -below)
+    .padding(.horizontal, -side).padding(.top, -above).padding(.bottom, -below)
   }
 
   /// The card's content height for the height it is given: all of it beside the actions, or
