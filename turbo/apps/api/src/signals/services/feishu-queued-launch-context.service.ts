@@ -104,7 +104,8 @@ const installerOverridesDecoder = zodDriverValueDecoder(
 
 function createFeishuStoredLaunchContext(
   source: FeishuLaunchInput,
-  availability?: { readonly reuseActorOverrides: boolean },
+  purpose: "launch" | "recovery",
+  actorFeatureSwitches$?: Computed<Promise<FeatureSwitchContext>>,
 ) {
   return computed(async (get) => {
     const args = "eventId" in source ? source : await get(source);
@@ -113,35 +114,38 @@ function createFeishuStoredLaunchContext(
     }
     const db = get(db$);
     const ownerId = feishuOrgInstallations.ownerUserId;
-    const installerOverrides = db
-      .select({
-        payload: contextJsonProjection({
-          userId: userFeatureSwitches.userId,
-          switches: userFeatureSwitches.switches,
-        }).as("payload"),
-      })
-      .from(userFeatureSwitches)
-      .where(
-        and(
-          eq(userFeatureSwitches.orgId, args.orgId),
-          isNotNull(ownerId),
-          or(
-            eq(feishuOrgInstallations.platform, "lark"),
-            eq(feishuOrgInstallations.installationType, "official"),
-          ),
-          or(
-            ne(feishuOrgInstallations.installationType, "official"),
-            isNotNull(feishuOrgInstallations.setupCompletedAt),
-          ),
-          availability?.reuseActorOverrides
-            ? ne(ownerId, args.userId)
-            : undefined,
-          or(
-            eq(userFeatureSwitches.userId, ownerId),
-            eq(userFeatureSwitches.userId, ORG_SENTINEL_USER_ID),
-          ),
-        ),
-      );
+    const installerOverrides =
+      purpose === "launch"
+        ? contextJsonRows(
+            db
+              .select({
+                payload: contextJsonProjection({
+                  userId: userFeatureSwitches.userId,
+                  switches: userFeatureSwitches.switches,
+                }).as("payload"),
+              })
+              .from(userFeatureSwitches)
+              .where(
+                and(
+                  eq(userFeatureSwitches.orgId, args.orgId),
+                  isNotNull(ownerId),
+                  or(
+                    eq(feishuOrgInstallations.platform, "lark"),
+                    eq(feishuOrgInstallations.installationType, "official"),
+                  ),
+                  or(
+                    ne(feishuOrgInstallations.installationType, "official"),
+                    isNotNull(feishuOrgInstallations.setupCompletedAt),
+                  ),
+                  actorFeatureSwitches$ ? ne(ownerId, args.userId) : undefined,
+                  or(
+                    eq(userFeatureSwitches.userId, ownerId),
+                    eq(userFeatureSwitches.userId, ORG_SENTINEL_USER_ID),
+                  ),
+                ),
+              ),
+          )
+        : sql`'[]'::jsonb`;
     const [row] = await db
       .select({
         conversationHistory: chatFeishuContext.conversationHistory,
@@ -164,10 +168,9 @@ function createFeishuStoredLaunchContext(
         installationId: chatFeishuContext.installationId,
         routeThreadId: feishuChatThreadRoutes.threadId,
         feishuDisplayName: feishuOrgConnections.feishuUserName,
-        installerOverrides: (availability
-          ? contextJsonRows(installerOverrides)
-          : sql`'[]'::jsonb`
-        ).mapWith(installerOverridesDecoder),
+        installerOverrides: installerOverrides.mapWith(
+          installerOverridesDecoder,
+        ),
       })
       .from(chatEvents)
       .innerJoin(
@@ -223,7 +226,7 @@ function createFeishuStoredLaunchContext(
 }
 
 export function createFeishuRecoveryContext(args: FeishuLaunchSource) {
-  const stored$ = createFeishuStoredLaunchContext(args);
+  const stored$ = createFeishuStoredLaunchContext(args, "recovery");
   return computed(async (get): Promise<FeishuThreadContext> => {
     const stored = await get(stored$);
     return requiredFeishuLaunchContext(stored?.row);
@@ -234,9 +237,11 @@ export function createFeishuLaunchContext(
   source: FeishuLaunchInput,
   actorFeatureSwitches$?: Computed<Promise<FeatureSwitchContext>>,
 ) {
-  const stored$ = createFeishuStoredLaunchContext(source, {
-    reuseActorOverrides: actorFeatureSwitches$ !== undefined,
-  });
+  const stored$ = createFeishuStoredLaunchContext(
+    source,
+    "launch",
+    actorFeatureSwitches$,
+  );
   return computed(async (get): Promise<FeishuThreadContext> => {
     const stored = await get(stored$);
     if (!stored) {
