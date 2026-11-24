@@ -393,11 +393,15 @@ internal fun WorkflowEditor(
                         if (editor.id == null) R.string.workflow_add_automation
                         else R.string.workflow_edit_automation
                 }
-            Text(
-                stringResource(heading),
-                Modifier.semantics { heading() },
-                style = MaterialTheme.typography.headlineSmall,
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    stringResource(heading),
+                    Modifier.semantics { heading() },
+                    style = MaterialTheme.typography.headlineSmall,
+                )
+                if (activeRule != null)
+                    WorkflowSecondary(detail.displayName ?: detail.name, small = true)
+            }
             when (editor) {
                 is WorkflowEdit.Instructions -> {
                     val value = editor.value

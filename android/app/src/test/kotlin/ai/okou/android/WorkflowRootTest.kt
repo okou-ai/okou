@@ -979,6 +979,7 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
             openWorkflowDetail(WORKFLOW_SHARED)
             compose.onNodeWithTag("workflow_tab_automations").performClick()
             add.pressEnter()
+            compose.onNodeWithText(app.fixture.sharedTitle).assertIsDisplayed()
             selectGmailTrigger()
             subject.performTextInput("Release summary")
             compose.onNodeWithText("Schedule").performClick().assertIsSelected()
