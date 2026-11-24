@@ -34,36 +34,40 @@ async function details(originalTitle?: string, tailGate?: Promise<void>) {
       hasMore: false,
     });
   });
-  let returnedToMissing = false;
+  let missingResponse: Promise<void> | undefined;
   const missingRead = context.mocks.deferred<void>();
-  context.mocks.api(chatThreadMetadataContract.get, ({ params, respond }) => {
-    const old = params.id === first.id;
-    if (old && returnedToMissing) {
-      if (!missingRead.settled()) {
-        missingRead.resolve();
+  context.mocks.api(
+    chatThreadMetadataContract.get,
+    async ({ params, respond }) => {
+      const old = params.id === first.id;
+      if (old && missingResponse) {
+        if (!missingRead.settled()) {
+          missingRead.resolve();
+        }
+        await missingResponse;
+        return respond(404, {
+          error: {
+            code: "NOT_FOUND",
+            message: "This conversation is no longer available",
+          },
+        });
       }
-      return respond(404, {
-        error: {
-          code: "NOT_FOUND",
-          message: "This conversation is no longer available",
-        },
+      const title = old ? (originalTitle ?? first.title) : newChat.title;
+      const response = respond(200, {
+        id: params.id,
+        title,
+        selectedModel: "claude-sonnet-5",
+        serviceTier: null,
+        modelSettings: {},
+        pinnedAt: null,
+        archived: false,
+        muted: false,
+        computerUseHostId: null,
+        cloudBrowserEnabled: false,
       });
-    }
-    const title = old ? (originalTitle ?? first.title) : newChat.title;
-    const response = respond(200, {
-      id: params.id,
-      title,
-      selectedModel: "claude-sonnet-5",
-      serviceTier: null,
-      modelSettings: {},
-      pinnedAt: null,
-      archived: false,
-      muted: false,
-      computerUseHostId: null,
-      cloudBrowserEnabled: false,
-    });
-    return response;
-  });
+      return response;
+    },
+  );
   context.mocks.api(chatThreadByIdContract.get, ({ respond }) => {
     return respond(200, {
       lastReadAt: null,
@@ -92,8 +96,8 @@ async function details(originalTitle?: string, tailGate?: Promise<void>) {
     app,
     announce,
     missingRead,
-    markMissing: () => {
-      returnedToMissing = true;
+    markMissing: (delivery: Promise<void>) => {
+      missingResponse = delivery;
     },
   };
 }
@@ -157,7 +161,7 @@ test.each([
 });
 
 test.each(["deliver", "withhold"] as const)(
-  "Returning from Workflows to a missing conversation excludes its abandoned title (%s)",
+  "Returning from Workflows keeps the abandoned conversation out of the pending and confirmed missing states (%s)",
   async (delivery) => {
     const stale = "Superseded field notes";
     const held = holdTitle(stale);
@@ -174,11 +178,22 @@ test.each(["deliver", "withhold"] as const)(
       });
     }
     expect(document.title).toBe("Workflows | Okou");
-    live.markMissing();
+    const notFound = context.mocks.deferred<void>();
+    live.markMissing(notFound.promise);
     act(() => {
       history.back();
     });
     await live.missingRead.promise;
+    try {
+      await waitFor(() => {
+        expect(location.pathname).toBe("/chats/" + live.first.id);
+        expect(screen.queryByRole("heading", { name: "Workflows" })).toBeNull();
+      });
+      expect(screen.queryByRole("region", { name: "Chat thread" })).toBeNull();
+      expect(screen.queryByText(stale)).toBeNull();
+    } finally {
+      notFound.resolve();
+    }
     await screen.findByText(
       /thread not found|chat not found|conversation not found/i,
     );

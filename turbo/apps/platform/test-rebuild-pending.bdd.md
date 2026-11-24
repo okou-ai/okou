@@ -974,7 +974,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestio
 - **When** The user chooses the first card's action.
 - **Then** The unavailable-model error appears, and the first card remains in its original place.
 
-**Unverified clauses.** 外部模型列表为空时，内置 Auto 仍然可用，无法建立无可用模型的前提。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** After the member disconnected the last personal provider, the run-model API returned available built-in Auto and the first card sent successfully. A separately supplied empty model response produced the expected error and preserved both card positions. The real no-model precondition remains open. [Batch 103 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/103/README.md#agent-suggestions-015).
 
 ### agent-suggestions-021
 
@@ -984,7 +984,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestio
 - **When** The user retries the send and the server accepts it.
 - **Then** The failure leaves the dialog and its text intact; the retry uses the same chat and event identities and includes the suggestion background and follow-up. Acceptance closes the dialog, removes the card, shows the sent confirmation and All caught up, and leaves the user on For you; no ordinary card-consumption request is recorded.
 
-**Unverified clauses.** 原对话框由内联编辑替代；失败后保留编辑器和身份的回归不能证明没有普通 consume。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** The inline editor retained the card, background and note after a real conflict. The successful retry reused the chat ID and event ID. The authenticated event and custom feedback show acceptance. A rejected ordinary consume replay leaves the same feed receipt. Its absence remains unproved. [Batch 103 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/103/README.md#agent-suggestions-021).
 
 ## `src/views/okou-page/__tests__/chat-attachment-annotation.test.tsx`
 
@@ -1142,18 +1142,6 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-list-optim
 
 **Unverified clauses.** 未确认的创建可显示所选 Claude Sonnet 5，冻结要求的零次草稿请求缺少独立可见证据。 #50334 changes the voice attachment upload and composer document. The optimistic QuickTime path still renders its resolved video URL independently of thread-artifacts. The 404 read and pending draft lookup retain their previous evidence. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
 
-## `src/views/okou-page/__tests__/chat-metadata.test.tsx`
-
-### chat-metadata-003
-
-Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-metadata.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/chat-metadata.bdd.md#chat-metadata-003)
-
-- **Given** The user enters a chat while its metadata request is pending, leaves for Agents, and the abandoned request then completes.
-- **When** The user returns to the chat, whose new metadata lookup reports not found.
-- **Then** The abandoned title is never shown; Agents remains correctly titled after leaving, and on returning no chat region or abandoned title appears.
-
-**Unverified clauses.** 第 77–79 批迟交与扣留对照已有旧标题和 Workflows 标题的结果。回到 404 会话仍有 chat region；没有支持删除该 Then 的上游。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
-
 ## `src/views/okou-page/__tests__/chat-navigation-browser.test.tsx`
 
 ### chat-navigation-browser-011
@@ -1298,7 +1286,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/composer-custom
 - **When** They paste an unsupported PDF, then import a valid WEBP image as a reusable style.
 - **Then** The PDF is not attached and does not send a message; the draft remains and an Image removal control is present. The WEBP starts a reusable-template analysis and publish message containing the file, without selecting a generation template, and navigates to a chat.
 
-**Unverified clauses.** 实际粘贴 PDF 会加入编辑器，选择器过滤同一 PDF；两臂都能继续把 WEBP 导入模板。#50326 只改从 Create 卡进入，未更改粘贴契约。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** The real paste attaches the PDF while the shelf file input filters it. Both can then import a WEBP. The contextual import survives removal of the standalone picker. The upstream file-input scenario does not dispose of the frozen clipboard clause. [Batch 103 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/103/README.md#composer-custom-template-recommendations-009).
 
 ## `src/views/okou-page/__tests__/connector-directory.test.tsx`
 

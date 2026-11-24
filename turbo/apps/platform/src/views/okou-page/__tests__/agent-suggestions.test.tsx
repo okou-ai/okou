@@ -1,3 +1,4 @@
+import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
@@ -1190,4 +1191,27 @@ test("agent-suggestions-013 the new conversation keeps the displayed option afte
   await expect(created.promise).resolves.toBe(thread);
   await screen.findByText("Sent to a new chat");
   expect(location.pathname).toBe("/for-you");
+});
+
+test("For you keeps the first and second cards in order when the model list is empty", async () => {
+  const first = proposal("Tidal survey", 20);
+  const second = proposal("Harbor lights", 10);
+  feed([first, second]);
+  context.mocks.api(runModelsMainContract.list, ({ respond }) => {
+    return respond(200, { models: [] });
+  });
+
+  await openDeck();
+  const choose = await findFastControl(
+    "button",
+    "Prepare Tidal survey",
+    await activeCard(first),
+  );
+  click(choose);
+  await screen.findByText("The selected model is not available");
+  await activeCard(first);
+  click(await findFastControl("link", "Show suggestion 2 of 2"));
+  await activeCard(second);
+  click(await findFastControl("link", "Show suggestion 1 of 2"));
+  await expect(activeCard(first)).resolves.toBeInTheDocument();
 });

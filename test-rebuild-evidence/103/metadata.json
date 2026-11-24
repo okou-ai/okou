@@ -1,0 +1,25 @@
+{
+  "member": "user_8ef4a717-4398-412e-9f6a-3339ac309685",
+  "workspace": "org_e03ffe9d-3203-4064-8cf8-4e462e71bd4d",
+  "thread": "66858fb2-c960-488d-8e8f-fc54c8562e2a",
+  "oldTitle": "Tide table for Tuesday",
+  "initialStatus": 200,
+  "destinationTitle": "Workflows | Okou",
+  "oldResponseDecoded": true,
+  "deleteStatus": 204,
+  "returnStatus": 404,
+  "pending": {
+    "chatRegion": false,
+    "oldTitle": false
+  },
+  "metadata404DecodedWhileSnapshotPending": {
+    "chatRegion": false,
+    "oldTitle": false
+  },
+  "canonicalListDelivered": {
+    "chatRegion": true,
+    "pane": "Chat thread not found",
+    "composer": false,
+    "oldTitle": false
+  }
+}
