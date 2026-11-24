@@ -32,6 +32,8 @@
     <string name="auth_signing_out">Signing out…</string>
     <string name="auth_workspace">Current workspace</string>
     <string name="auth_switch_workspace">Switch workspace</string>
+    <string name="auth_switch_workspace_pending">Switching workspace</string>
+    <string name="auth_switch_workspace_failed">Couldn’t switch to this workspace.</string>
     <string name="auth_browser_unavailable">Install a browser to open workspace setup.</string>
     <string name="preference_color_theme">Color theme</string>
     <string name="preference_language">Language</string>

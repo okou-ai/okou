@@ -204,6 +204,10 @@ public actor ChatCache {
     }
   }
 
+}
+
+// The shared sidebar snapshot, its cursor and absences awaiting verification or device cleanup.
+extension ChatCache {
   public func loadThreadList() throws -> CachedThreadList? {
     try withDatabase { database in
       let snapshot = try database.prepare(
@@ -227,24 +231,39 @@ public actor ChatCache {
     }
   }
 
+  private static func listCursor(in database: SQLiteDatabase) throws -> ChatCacheCursor? {
+    let head = try database.prepare(
+      """
+      SELECT event_id, seq_id FROM (
+        SELECT snapshot_event_id AS event_id, snapshot_seq_id AS seq_id FROM thread_list
+        UNION ALL SELECT id, seq_id FROM thread_events
+      ) ORDER BY seq_id DESC LIMIT 1
+      """)
+    guard try head.step() else { return nil }
+    return ChatCacheCursor(eventID: head.optionalText(at: 0), seqID: try head.integer(at: 1))
+  }
+
+  func threadListCursor() throws -> ChatCacheCursor? {
+    try withDatabase { try Self.listCursor(in: $0) }
+  }
+
+  @discardableResult
   public func replaceThreadList(
-    snapshot: Data, cursor: ChatCacheCursor, events: [ChatCacheEvent]
-  ) throws {
+    snapshot: Data, cursor: ChatCacheCursor, events: [ChatCacheEvent],
+    startingAt baseline: ChatCacheCursor? = nil, afterExpiry: Bool = false,
+    compactedDeletes: Set<String> = [], unverifiedAbsences: Set<String> = []
+  ) throws -> Bool {
     guard ChatCacheValidation.validListCursor(cursor) else { throw ChatCacheError.invalidCursor }
     try ChatCacheValidation.validate(events, after: cursor.seqID)
-    try withDatabase { database in
+    return try withDatabase { database in
       try database.transaction {
-        // Another process may have committed a newer snapshot/tail while this
-        // request was in flight. Never replace that committed state with an older one.
-        let latest = try database.prepare(
-          "SELECT MAX(seq_id) FROM (SELECT snapshot_seq_id AS seq_id FROM thread_list UNION ALL SELECT seq_id FROM thread_events)"
-        )
-        _ = try latest.step()
-        if let current = try latest.optionalInteger(at: 0),
-          current > (events.last?.seqID ?? cursor.seqID)
-        {
-          return
-        }
+        let current = try Self.listCursor(in: database) ?? ChatCacheCursor(eventID: nil, seqID: 0)
+        if let baseline, current != baseline { return false }
+        // Only the server's rejection of this exact cursor permits a backwards replacement.
+        guard
+          (afterExpiry && current == baseline)
+            || current.seqID <= (events.last?.seqID ?? cursor.seqID)
+        else { return false }
         try database.execute("DELETE FROM thread_events")
         try database.execute("DELETE FROM thread_list")
         let insert = try database.prepare(
@@ -255,21 +274,32 @@ public actor ChatCache {
         try insert.bind(cursor.seqID, at: 3)
         try insert.run()
         for event in events { try Self.insert(event, into: "thread_events", database: database) }
+        for id in unverifiedAbsences { try database.recordThreadAbsence(id, confirmed: false) }
+        for id in compactedDeletes { try database.recordThreadAbsence(id, confirmed: true) }
+        return true
       }
     }
   }
 
-  public func appendThreadEvents(_ events: [ChatCacheEvent]) throws {
-    guard !events.isEmpty else { return }
+  @discardableResult
+  public func appendThreadEvents(
+    _ events: [ChatCacheEvent], startingAt baseline: ChatCacheCursor? = nil
+  ) throws -> Bool {
+    if events.isEmpty {
+      guard let baseline else { return true }
+      return try threadListCursor() == baseline
+    }
     try ChatCacheValidation.validate(events, after: 0)
-    try withDatabase { database in
+    return try withDatabase { database in
       try database.transaction {
         let base = try database.prepare("SELECT snapshot_seq_id FROM thread_list WHERE id = 1")
         guard try base.step() else { throw ChatCacheError.missingThreadList }
         let snapshotSeqID = try base.integer(at: 0)
-        let latest = try database.prepare("SELECT MAX(seq_id) FROM thread_events")
-        _ = try latest.step()
-        var previous = max(snapshotSeqID, try latest.optionalInteger(at: 0) ?? snapshotSeqID)
+        guard let current = try Self.listCursor(in: database) else {
+          throw ChatCacheError.missingThreadList
+        }
+        if let baseline, current != baseline { return false }
+        var previous = current.seqID
         for event in events {
           // A newer snapshot already includes events from an older in-flight page.
           if event.seqID <= snapshotSeqID { continue }
@@ -283,11 +313,38 @@ public actor ChatCache {
             previous = event.seqID
           }
         }
+        return true
       }
     }
   }
 
+  func absentThreadIDs(confirmed: Bool) throws -> Set<String> {
+    try withDatabase { try $0.absentThreadIDs(confirmed: confirmed) }
+  }
+
+  func markThreadUnavailable(_ id: String) throws {
+    try withDatabase { try $0.recordThreadAbsence(id, confirmed: true) }
+  }
+
+  func resolveThreadAbsences(dismissing: Set<String>, unavailable: Set<String>) throws {
+    try withDatabase { database in
+      try database.transaction {
+        for id in unavailable { try database.recordThreadAbsence(id, confirmed: true) }
+        try database.forgetThreadAbsences(dismissing, confirmed: false)
+      }
+    }
+  }
+
+  func forgetUnavailableThreads(_ ids: Set<String>) throws {
+    try withDatabase { database in
+      try database.transaction { try database.forgetThreadAbsences(ids, confirmed: true) }
+    }
+  }
+
   /// Warming needs only the durable cursor, not a replay of every cached message.
+}
+
+extension ChatCache {
   public func loadHistoryCursor(threadID: String, schemaVersion: Int) throws -> ChatCacheCursor? {
     try withDatabase { database in
       let query = try database.prepare(
@@ -587,6 +644,12 @@ extension SQLiteDatabase {
       CREATE TABLE IF NOT EXISTS project_sync (
         id INTEGER PRIMARY KEY CHECK (id = 1),
         snapshot BLOB NOT NULL
+      )
+      """)
+    try execute(
+      """
+      CREATE TABLE IF NOT EXISTS thread_absences (
+        thread_id TEXT PRIMARY KEY, confirmed INTEGER NOT NULL CHECK (confirmed IN (0, 1))
       )
       """)
     if currentVersion == version { return }

@@ -7,6 +7,8 @@ public enum ChatDraftTarget: Equatable, Sendable {
   case workspace
   case thread(String)
 
+  public var pendingKey: String { key + "/pending" }
+
   public var key: String {
     switch self {
     case .unassigned: "unassigned"
@@ -73,7 +75,10 @@ public struct ChatDraftRepository: Sendable {
     switch target {
     case .unassigned: throw ChatError.composerUnavailable
     case .workspace: return try await client.request("/api/chat-drafts/composer")
-    case .thread(let id): return try await client.request("/api/chat-threads/\(id)/draft")
+    case .thread(let id):
+      return try await withExistingChatThread(id, at: .composerDraft) {
+        try await client.request("/api/chat-threads/\(id)/composer-draft")
+      }
     }
   }
   public func save(_ draft: ComposerDraft, to target: ChatDraftTarget) async throws {
@@ -83,8 +88,11 @@ public struct ChatDraftRepository: Sendable {
       try await client.data(
         "/api/chat-drafts/composer", method: "PATCH", body: JSONEncoder().encode(draft))
     case .thread(let id):
-      try await client.data(
-        "/api/chat-threads/\(id)", method: "PATCH", body: JSONEncoder().encode(draft))
+      _ = try await withExistingChatThread(id, at: .composerDraft) {
+        try await client.data(
+          "/api/chat-threads/\(id)/composer-draft", method: "PATCH",
+          body: JSONEncoder().encode(draft))
+      }
     }
   }
 }
@@ -117,6 +125,23 @@ public struct ChatDraftStorage: Sendable {
     try mutable.setResourceValues(values)
     try JSONEncoder().encode(value).write(
       to: file(key), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+  }
+  public func hasThreadDraft(_ id: String) -> Bool {
+    let target = ChatDraftTarget.thread(id)
+    return [target.key, target.pendingKey].contains {
+      FileManager.default.fileExists(atPath: file($0).path)
+    }
+      || voiceDraft(for: target).hasRecording
+  }
+  public func removeThreadDraft(_ id: String) throws {
+    let target = ChatDraftTarget.thread(id)
+    for key in [target.key, target.pendingKey] {
+      let url = file(key)
+      if FileManager.default.fileExists(atPath: url.path) {
+        try FileManager.default.removeItem(at: url)
+      }
+    }
+    try voiceDraft(for: target).remove()
   }
   public func voiceDraft(for target: ChatDraftTarget) -> VoiceDraftStorage {
     VoiceDraftStorage(directory: voiceDirectory(target.key))

@@ -590,6 +590,47 @@ class SessionModelTest : SessionModelTestFixture() {
     }
 
     @Test
+    fun workspaceSwitchKeepsTheAuthorizedOriginOnFailureAndReplacesItOnRetry() {
+        val auth = TestAuthentication()
+        val activate = auth.selectAction
+        val reject = CompletableDeferred<Unit>()
+        var attempts = 0
+        auth.selectAction = { _, _ ->
+            attempts++
+            reject.await()
+            error("Selection failed")
+        }
+        check(auth) { model, resources ->
+            runCurrent()
+            val original = requireNotNull(model.uiState.value.ready)
+            val generation = model.uiState.value.generation
+            model.chooseWorkspace("org-b", generation)
+            model.chooseWorkspace("org-b", generation)
+            runCurrent()
+            assertEquals(1, attempts)
+            assertSame(original, model.uiState.value.ready)
+            assertFalse(resources.first().closed)
+            assertEquals(WorkspaceSwitch("org-b"), model.uiState.value.workspaceSwitch)
+
+            reject.complete(Unit)
+            runCurrent()
+            assertSame(original, model.uiState.value.ready)
+            assertFalse(resources.first().closed)
+            assertEquals(
+                WorkspaceSwitch("org-b", failed = true),
+                model.uiState.value.workspaceSwitch,
+            )
+
+            auth.selectAction = activate
+            model.chooseWorkspace("org-b", generation)
+            runCurrent()
+            assertEquals("org-b", model.uiState.value.ready?.identity?.workspaceId)
+            assertTrue(resources.first().closed)
+            assertNull(model.uiState.value.workspaceSwitch)
+        }
+    }
+
+    @Test
     fun lateTokenCannotEscapeAReplacedWorkspaceAndItsFilterRestoresOnlyOnReturn() {
         val auth = TestAuthentication()
         val token = CompletableDeferred<String>()
