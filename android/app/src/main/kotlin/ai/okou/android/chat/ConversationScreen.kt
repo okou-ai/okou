@@ -503,27 +503,37 @@ internal fun ConversationRoute(
                         ?.id
                 content.lastOrNull { it.includes(id) }?.key
             }
-        val latestDisplayed by
-            remember(position, latestConfirmed) {
+        val completionAnchor = completion?.anchorKey
+        val latestAtReadingEdge by
+            remember(position, latestConfirmed, completionAnchor) {
                 derivedStateOf {
                     val laidOut = position.layoutInfo.visibleItemsInfo
-                    laidOut.any { it.key == TimelineEnd } &&
-                        (latestConfirmed == null || laidOut.any { it.key == latestConfirmed })
+                    val latest = laidOut.firstOrNull { it.key == latestConfirmed }
+                    when {
+                        latest == null && latestConfirmed != null -> false
+                        atEnd -> laidOut.any { it.key == TimelineEnd }
+                        latest != null && latest.key == completionAnchor ->
+                            // Suggestions can fill a short viewport below the newest reply.
+                            position.firstVisibleItemIndex < latest.index ||
+                                position.firstVisibleItemIndex == latest.index &&
+                                    position.firstVisibleItemScrollOffset == 0
+                        else -> false
+                    }
                 }
             }
         val displayedConfirmation =
-            state.confirmation.takeIf { readingReady && atEnd && latestDisplayed && !list.offline }
+            state.confirmation.takeIf { readingReady && latestAtReadingEdge && !list.offline }
         LaunchedEffect(visit, displayedConfirmation) {
             displayedConfirmation?.let { visit?.confirmDisplayed(it) }
         }
         SideEffect {
             if (readingReady) {
-                if (atEnd && visible && latestDisplayed) {
+                if (!atEnd) position.keepMessageWhenStatusMoves(timeline)
+                if (visible && latestAtReadingEdge) {
                     hasSeenLatest = true
                     newReply = false
-                } else if (!atEnd) {
-                    position.keepMessageWhenStatusMoves(timeline)
-                    if (newestReply != null && newestReply != lastReply) newReply = true
+                } else if (!atEnd && newestReply != null && newestReply != lastReply) {
+                    newReply = true
                 }
             }
             lastReply = newestReply

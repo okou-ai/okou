@@ -184,6 +184,7 @@ internal fun ConversationMessageRow(
                 MessageBody(
                     message,
                     artifactActions = artifactActions,
+                    artifactTurnKey = entry.key,
                     findHighlight = findHighlight?.takeIf { it.messageId == message.id },
                     links = links,
                 )
@@ -206,28 +207,22 @@ internal fun ConversationMessageRow(
 
 @Composable
 private fun EarlierReplyArtifacts(entry: ConversationMessage, actions: ChatArtifactActions) {
-    key(entry.earlier, entry.message.blocks) {
-        val cards by
-            produceState(emptyList<ReplyArtifact>()) {
-                value =
-                    withContext(Dispatchers.Default) {
-                        earlierReplyArtifacts(entry.earlier, entry.message)
-                    }
-            }
-        if (cards.isNotEmpty()) {
-            Column(
-                Modifier.padding(top = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                for ((index, card) in cards.withIndex()) {
-                    val focusKey = "${entry.key}/earlier-artifact/$index"
-                    MessageArtifactCard(
-                        card.title,
-                        card.link,
-                        actions.restored.takeIf { actions.restoreKey == focusKey },
-                    ) {
-                        actions.open(card.link, focusKey)
-                    }
+    // Keep the previous cards laid out while fresh text is being parsed.
+    val cards by
+        produceState(emptyList<ReplyArtifact>(), entry.earlier, entry.message.blocks) {
+            value =
+                withContext(Dispatchers.Default) {
+                    earlierReplyArtifacts(entry.earlier, entry.message)
+                }
+        }
+    if (cards.isNotEmpty()) {
+        Column(
+            Modifier.padding(top = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            for (card in cards) {
+                key(card.link) {
+                    MessageArtifactCard(card.title, card.link, entry.key, actions)
                 }
             }
         }
@@ -417,6 +412,7 @@ private fun MessageBody(
     compact: Boolean = false,
     earlierReply: Boolean = false,
     artifactActions: ChatArtifactActions? = null,
+    artifactTurnKey: String = message.id,
     findHighlight: ConversationFindHighlight? = null,
     links: ConversationLinkActions? = null,
 ) {
@@ -463,6 +459,7 @@ private fun MessageBody(
                                 style,
                                 artifactActions,
                                 "${message.id}/$index",
+                                artifactTurnKey,
                                 markdownHighlight,
                                 links,
                                 compactReply = earlierReply,

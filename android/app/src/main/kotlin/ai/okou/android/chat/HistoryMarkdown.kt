@@ -90,6 +90,7 @@ internal fun HistoryMarkdown(
     style: TextStyle,
     artifacts: ChatArtifactActions?,
     messageId: String,
+    artifactTurnKey: String,
     highlight: ConversationFindHighlight? = null,
     links: ConversationLinkActions? = null,
     compactReply: Boolean = false,
@@ -119,6 +120,7 @@ internal fun HistoryMarkdown(
                 else style,
                 artifacts,
                 messageId,
+                artifactTurnKey,
                 Modifier.conversationFindHighlight(whole),
                 hit,
                 highlight,
@@ -143,6 +145,7 @@ private fun HistoryMarkdownBlocks(
     style: TextStyle,
     artifacts: ChatArtifactActions?,
     focusPrefix: String,
+    artifactTurnKey: String,
     modifier: Modifier = Modifier,
     hit: Int = -1,
     highlight: ConversationFindHighlight? = null,
@@ -180,6 +183,7 @@ private fun HistoryMarkdownBlocks(
                                     contentStyle,
                                     artifacts,
                                     "$focusPrefix/$index/$itemIndex",
+                                    artifactTurnKey,
                                     Modifier.weight(1f),
                                     links = links,
                                     compactReply = compactReply,
@@ -230,17 +234,12 @@ private fun HistoryMarkdownBlocks(
                                         "$focusPrefix/$index/$start",
                                         links,
                                     )
-                                val focusKey = "$focusPrefix/$index/${card.start}"
                                 MessageArtifactCard(
                                     block.text.text.substring(card.start, card.end),
                                     card.item,
-                                    restoreFocus =
-                                        artifacts.restored.takeIf {
-                                            artifacts.restoreKey == focusKey
-                                        },
-                                ) {
-                                    artifacts.open(card.item, focusKey)
-                                }
+                                    artifactTurnKey,
+                                    artifacts,
+                                )
                                 start = card.end
                             }
                             val after = block.text.subSequence(start, block.text.length)
@@ -263,9 +262,11 @@ private fun HistoryMarkdownBlocks(
 internal fun MessageArtifactCard(
     title: String,
     link: String,
-    restoreFocus: (() -> Unit)?,
-    onOpen: () -> Unit,
+    turnKey: String,
+    actions: ChatArtifactActions,
 ) {
+    val focusKey = "$turnKey/artifact/$link"
+    val restoreFocus = actions.restored.takeIf { actions.restoreKey == focusKey }
     val kind =
         when {
             link.startsWith("https://") -> ArtifactKind.Website
@@ -290,7 +291,7 @@ internal fun MessageArtifactCard(
                 .then(restore)
                 .heightIn(min = 60.dp)
                 .clip(shape)
-                .clickable(onClick = onOpen)
+                .clickable { actions.open(link, focusKey) }
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
