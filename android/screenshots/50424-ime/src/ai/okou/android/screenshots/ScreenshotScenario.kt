@@ -63,8 +63,12 @@ class ScreenshotScenario {
             email.click()
             awaitIme(scenario, visible = true)
             val value = "design-check@example.invalid"
-            checkNotNull(device.findObject(identifier)).text = value
-            check(checkNotNull(device.findObject(identifier)).text == value)
+            val focusedIdentifier = By.copy(identifier).focused(true)
+            val fieldWithFocus = checkNotNull(device.wait(Until.findObject(focusedIdentifier), 5_000))
+            fieldWithFocus.text = value
+            checkNotNull(device.wait(Until.findObject(By.copy(focusedIdentifier).text(value)), 5_000)) {
+                "The focused Clerk field did not show the test value in the $prefix viewport"
+            }
             check(checkNotNull(device.findObject(brand)).visibleBounds.top == brandTop)
             ScreenshotCapture.capture("$prefix-ime-open.png")
             check(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
