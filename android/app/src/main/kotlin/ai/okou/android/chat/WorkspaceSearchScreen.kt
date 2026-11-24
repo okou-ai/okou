@@ -38,7 +38,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -63,7 +62,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
@@ -147,7 +145,7 @@ internal fun WorkspaceSearchScreen(
     val searchLabel = stringResource(R.string.chat_search_workspace)
     val inputStyle = workspaceSearchTextStyle().copy(color = colors.onSurface)
     val contentWidth = Modifier.widthIn(max = 720.dp).fillMaxWidth()
-    val allTabFocus = remember { FocusRequester() }
+    val typeFocus = remember { WorkspaceSearchType.entries.associateWith { FocusRequester() } }
     fun selectType(type: WorkspaceSearchType) {
         if (inputFocused) {
             focus.clearFocus()
@@ -232,7 +230,7 @@ internal fun WorkspaceSearchScreen(
                 )
             },
         )
-        SearchTypes(search.type, allTabFocus, contentWidth, ::selectType)
+        SearchTypes(search.type, typeFocus, contentWidth, ::selectType)
         SearchResults(
             resultList,
             search,
@@ -248,10 +246,9 @@ internal fun WorkspaceSearchScreen(
             onMoreArtifacts,
             refreshChats,
             restoreResultFocus,
-            onSelectType = ::selectType,
-            onBroaden = {
-                selectType(WorkspaceSearchType.All)
-                allTabFocus.requestFocus()
+            onSelectType = { type ->
+                selectType(type)
+                typeFocus.getValue(type).requestFocus()
             },
         )
     }
@@ -260,12 +257,16 @@ internal fun WorkspaceSearchScreen(
 @Composable
 private fun SearchTypes(
     selectedType: WorkspaceSearchType,
-    allTabFocus: FocusRequester,
+    typeFocus: Map<WorkspaceSearchType, FocusRequester>,
     modifier: Modifier,
     onSelect: (WorkspaceSearchType) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     val scroll = rememberScrollState()
+    val reveal = remember { WorkspaceSearchType.entries.associateWith { BringIntoViewRequester() } }
+    var focusedType by remember { mutableStateOf<WorkspaceSearchType?>(null) }
+    val visibleType = focusedType ?: selectedType
+    LaunchedEffect(visibleType, scroll.maxValue) { reveal.getValue(visibleType).bringIntoView() }
     Row(
         modifier
             .padding(start = 16.dp, end = 16.dp, bottom = 6.dp)
@@ -296,23 +297,18 @@ private fun SearchTypes(
     ) {
         for (type in WorkspaceSearchType.entries) {
             val selected = selectedType == type
-            val reveal = remember { BringIntoViewRequester() }
-            var focused by remember { mutableStateOf(false) }
-            LaunchedEffect(selected, focused, scroll.maxValue) {
-                if (selected || focused) reveal.bringIntoView()
-            }
             Box(
                 Modifier.widthIn(min = 48.dp)
                     .heightIn(min = 48.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .then(
-                        if (type == WorkspaceSearchType.All)
-                            Modifier.focusRequester(allTabFocus).focusProperties { canFocus = true }
-                        else Modifier,
-                    )
+                    .focusRequester(typeFocus.getValue(type))
+                    .focusProperties { canFocus = true }
                     .background(if (selected) colors.secondaryContainer else colors.background)
-                    .bringIntoViewRequester(reveal)
-                    .onFocusChanged { focused = it.isFocused }
+                    .bringIntoViewRequester(reveal.getValue(type))
+                    .onFocusChanged {
+                        if (it.isFocused) focusedType = type
+                        else if (focusedType == type) focusedType = null
+                    }
                     .testTag("search_type_${type.name}")
                     .selectable(selected, role = Role.Tab) { onSelect(type) }
                     .padding(horizontal = 8.dp, vertical = 8.dp),
@@ -363,7 +359,8 @@ private sealed interface SearchItem {
     data class Group(
         val type: WorkspaceSearchType,
         @StringRes val title: Int,
-        val more: Boolean = false,
+        val more: Boolean,
+        val separated: Boolean,
     ) : SearchItem {
         override val key = "$GroupKeyPrefix${type.name}"
     }
@@ -395,7 +392,14 @@ private fun <T> MutableList<SearchItem>.addGroup(
     item: (T) -> SearchItem,
 ) {
     if (rows.isEmpty()) return
-    add(SearchItem.Group(type, title, compact && (more || rows.size > GroupedSearchResultLimit)))
+    add(
+        SearchItem.Group(
+            type,
+            title,
+            more = compact && (more || rows.size > GroupedSearchResultLimit),
+            separated = isNotEmpty(),
+        ),
+    )
     val count = if (compact) minOf(rows.size, GroupedSearchResultLimit) else rows.size
     for (index in 0 until count) add(item(rows[index]))
 }
@@ -417,7 +421,6 @@ private fun SearchResults(
     refreshChats: () -> Unit,
     restoreResultFocus: Boolean,
     onSelectType: (WorkspaceSearchType) -> Unit,
-    onBroaden: () -> Unit,
 ) {
     val keyword = search.keyword
     val type = search.type
@@ -712,14 +715,7 @@ private fun SearchResults(
             items(visibleItems, key = { it.key }, contentType = { it.isResult }) { row ->
                 when (row) {
                     is SearchItem.Notice ->
-                        Text(
-                            stringResource(row.message),
-                            Modifier.padding(12.dp).semantics {
-                                liveRegion = LiveRegionMode.Polite
-                            },
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = searchSecondaryStyle(),
-                        )
+                        ContentReadFeedback(row.message, Modifier.padding(12.dp))
                     is SearchItem.Group -> SearchGroup(row) { onSelectType(row.type) }
                     is SearchItem.Chat -> {
                         val chat = row.chat
@@ -823,23 +819,12 @@ private fun SearchResults(
                             style = searchSecondaryStyle(),
                         )
                     } else {
-                        SearchEmpty(
-                            type.emptyLabel,
-                            onBroaden.takeIf { type != WorkspaceSearchType.All },
-                        )
+                        SearchEmpty(type, onSelectType)
                     }
                 }
             }
         }
-        if (showProgress) {
-            val colors = MaterialTheme.colorScheme
-            val label = stringResource(R.string.chat_search_loading)
-            LinearProgressIndicator(
-                modifier =
-                    Modifier.fillMaxWidth().height(4.dp).semantics { contentDescription = label },
-                trackColor = lerp(colors.background, colors.primary, 0.18f),
-            )
-        }
+        if (showProgress) ChatReadProgress(R.string.chat_search_loading)
     }
 }
 
@@ -852,7 +837,7 @@ private fun SearchGroup(group: SearchItem.Group, onMore: () -> Unit) {
             .padding(
                 start = 12.dp,
                 end = 12.dp,
-                top = if (group.type == WorkspaceSearchType.Chats) 0.dp else 16.dp,
+                top = if (group.separated) 16.dp else 0.dp,
             ),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
@@ -860,13 +845,14 @@ private fun SearchGroup(group: SearchItem.Group, onMore: () -> Unit) {
         Text(
             label,
             modifier =
-                Modifier.weight(1f).padding(top = 8.dp, bottom = 4.dp).semantics { heading() },
+                Modifier.weight(1f).padding(top = 10.dp, bottom = 4.dp).semantics { heading() },
             style = searchSecondaryStyle().copy(fontWeight = FontWeight.SemiBold),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (group.more) {
             Box(
-                Modifier.heightIn(min = 48.dp)
+                Modifier.widthIn(min = 48.dp)
+                    .heightIn(min = 48.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .clickable(role = Role.Button, onClick = onMore)
                     .semantics { contentDescription = moreLabel }
@@ -935,30 +921,24 @@ private fun SearchResult(
 
 @Composable
 private fun SearchEmpty(
-    @StringRes title: Int,
-    onAction: (() -> Unit)?,
+    type: WorkspaceSearchType,
+    onSelectType: (WorkspaceSearchType) -> Unit,
 ) {
     Column(
         Modifier.padding(top = 24.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
-            stringResource(title),
-            Modifier.padding(horizontal = 12.dp),
+            stringResource(type.emptyLabel),
+            Modifier.padding(horizontal = 12.dp).semantics {
+                heading()
+                liveRegion = LiveRegionMode.Polite
+            },
             style = chatListTitleStyle().copy(fontWeight = FontWeight.SemiBold),
         )
-        if (onAction != null) {
-            Box(
-                Modifier.heightIn(min = 48.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .clickable(role = Role.Button, onClick = onAction)
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                contentAlignment = Alignment.CenterStart,
-            ) {
-                Text(
-                    stringResource(R.string.chat_search_all_types),
-                    style = searchSecondaryStyle().copy(fontWeight = FontWeight.SemiBold),
-                )
+        if (type != WorkspaceSearchType.All) {
+            ChatListTextAction(R.string.chat_search_all_types) {
+                onSelectType(WorkspaceSearchType.All)
             }
         }
     }
@@ -966,7 +946,11 @@ private fun SearchEmpty(
 
 @Composable
 private fun searchSecondaryStyle() =
-    MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp, lineHeight = 20.sp)
+    MaterialTheme.typography.bodyMedium.copy(
+        fontSize = 13.sp,
+        lineHeight = 20.sp,
+        letterSpacing = 0.sp,
+    )
 
 @get:StringRes
 private val WorkspaceSearchType.label: Int

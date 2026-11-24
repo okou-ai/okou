@@ -1665,6 +1665,7 @@ internal class ChatSearchRootTest : ChatListRootTestFixture() {
         compose.onNodeWithText("Project chat").assertExists()
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithTag("chat_list").assertExists()
+        entry.assertIsFocused()
         compose.onNodeWithText("Project chat").assertDoesNotExist()
     }
 

@@ -221,6 +221,7 @@ internal fun WorkspaceListToolbar(
                 WorkspaceSearchField(
                     Modifier.fillMaxWidth()
                         .focusRequester(searchFocus)
+                        .focusProperties { canFocus = openSearch != null }
                         .onFocusChanged { onSearchFocusChanged(it.isFocused) }
                         .testTag("workspace_search_entry")
                         .semantics { if (openSearch != null) contentDescription = label },
