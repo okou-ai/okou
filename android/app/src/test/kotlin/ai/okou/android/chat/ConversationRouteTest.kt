@@ -837,6 +837,34 @@ class ConversationRouteTest {
         compose.waitUntil(10_000) { fixture.readRequests.get() == readCount + 1 }
     }
 
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h320dp")
+    fun losingConversationAccessClearsAnActivelyDraggedTimeline() {
+        val model = openScrollHistory(AtomicInteger(12))
+        val conversation = compose.onNodeWithTag("conversation")
+        val working =
+            compose.onNodeWithText(compose.activity.getString(R.string.conversation_processing))
+        conversation.performScrollToIndex(1)
+        conversation.performTouchInput {
+            down(center)
+            moveBy(Offset(x = 0f, y = 22.dp.toPx()))
+        }
+        try {
+            working.assertIsDisplayed()
+            fixture.historyDetail = { MockResponse().setResponseCode(403) }
+            compose.runOnIdle { model.history.invalidateDetail(CHAT_IN_PROJECT) }
+            compose.waitUntil(5_000) {
+                compose.runOnIdle { model.history.uiState.value.phase == HistoryPhase.Missing }
+            }
+            compose
+                .onNodeWithText(compose.activity.getString(R.string.history_missing))
+                .assertIsDisplayed()
+            working.assertDoesNotExist()
+        } finally {
+            conversation.performTouchInput { cancel() }
+        }
+    }
+
     private fun scrollEventId(sequence: Int) =
         "aaaaaaaa-aaaa-4aaa-8aaa-${sequence.toString().padStart(12, '0')}"
 

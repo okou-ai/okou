@@ -43,6 +43,15 @@ class PaletteColorsTest {
                         "$palette/$dark selection",
                         contrast(colors.onSurface, resolved.selection) >= 4.5f,
                     )
+                    val status = activityStatusColor(palette, dark)
+                    assertTrue(
+                        "$palette/$dark page refresh indicator",
+                        contrast(status, contentReadTrackColor(status, colors.background)) >= 3f,
+                    )
+                    assertTrue(
+                        "$palette/$dark panel refresh indicator",
+                        contrast(status, contentReadTrackColor(status, colors.surface)) >= 3f,
+                    )
                     assertEquals(dark, colors.background.luminance() < 0.5f)
                     colors.primary
                 }
