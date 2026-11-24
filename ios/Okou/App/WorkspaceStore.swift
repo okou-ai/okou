@@ -94,12 +94,12 @@ final class WorkspaceStore {
   private(set) var newChatProjectID: String?
   private(set) var newComposer: ComposerDraftStore
   private let draftStorage: ChatDraftStorage?
-  private var unverifiedDraftThreads = Set<String>()
   private let voiceCapture: (@MainActor () -> any VoiceAudioCapture)?
   private let measurementScope: ChatCacheScope?
   private let draftRepository: ChatDraftRepository?
   private var workspaceComposerReady = false
   private var composerSyncTask: Task<Void, Never>?
+  private var unverifiedDraftThreads = Set<String>()
   @ObservationIgnored private lazy var sidebarDrafts = SidebarDraftStore(
     resources: resources, lifecycleTasks: lifecycleTasks,
     didFail: { [weak self] in self?.handle($0) })
