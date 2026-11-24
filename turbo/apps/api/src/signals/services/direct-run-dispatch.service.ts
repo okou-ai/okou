@@ -380,6 +380,35 @@ interface PreparedRunDelivery {
   >;
 }
 
+// A member can disable the pilot while their selected turn is queued.
+const enforceAntigravityMemberAccess$ = command(
+  async (
+    { set },
+    input: AdmittedRunLaunch,
+    signal: AbortSignal,
+  ): Promise<DirectRunDispatchResult | undefined> => {
+    const { orgId, userId } = input.run;
+    if (
+      isStaffOrg(orgId) &&
+      isFeatureEnabled(
+        FeatureSwitchKey.GeminiAntigravity,
+        await set(loadUserFeatureSwitchContext$, orgId, userId, signal),
+      )
+    ) {
+      return;
+    }
+    const terminal = await set(
+      failUnacceptedRun$,
+      {
+        ...failureInput(input, null),
+        failureReason: "provider_model_restricted",
+      },
+      signal,
+    );
+    return { kind: "failed", terminal, failure: undefined };
+  },
+);
+
 export const dispatchPreparedRun$ = command(
   async ({ get, set }, args: PreparedRunDelivery, signal: AbortSignal) => {
     signal.throwIfAborted();
@@ -389,24 +418,13 @@ export const dispatchPreparedRun$ = command(
     const outcome = await settleIncludingAbort(async () => {
       const { executionContext, candidates } = args;
       if (executionContext.cliAgentType === "antigravity") {
-        // A member can disable the pilot while their selected turn is queued.
-        const { orgId, userId } = input.run;
-        const enabled =
-          isStaffOrg(orgId) &&
-          isFeatureEnabled(
-            FeatureSwitchKey.GeminiAntigravity,
-            await set(loadUserFeatureSwitchContext$, orgId, userId, signal),
-          );
-        if (!enabled) {
-          const terminal = await set(
-            failUnacceptedRun$,
-            {
-              ...failureInput(input, null),
-              failureReason: "provider_model_restricted",
-            },
-            signal,
-          );
-          return { kind: "failed" as const, terminal, failure: undefined };
+        const denied = await set(
+          enforceAntigravityMemberAccess$,
+          input,
+          signal,
+        );
+        if (denied) {
+          return denied;
         }
       }
       const window = createDeliveryWindow(get(apiStartTime$));
@@ -479,16 +497,9 @@ export const dispatchPreparedRun$ = command(
           signal,
         );
         uncertain = delivery === "uncertain";
-        if (delivery === "accepted") {
+        if (delivery === "accepted" || delivery === "uncertain") {
           return {
-            kind: "accepted" as const,
-            terminal: null,
-            failure: undefined,
-          };
-        }
-        if (uncertain) {
-          return {
-            kind: "uncertain" as const,
+            kind: delivery,
             terminal: null,
             failure: undefined,
           };

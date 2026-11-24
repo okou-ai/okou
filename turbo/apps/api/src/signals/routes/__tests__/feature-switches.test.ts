@@ -35,24 +35,24 @@ describe("/api/feature-switches", () => {
     const key = FeatureSwitchKey.GeminiAntigravity;
     clerk.session(userId, orgId, "org:member");
     const initial = await accept(api.get({ headers }), [200]);
-    expect(initial.body.effectiveSwitches[key]).toBe(false);
+    expect(initial.body.effectiveSwitches).toMatchObject({ [key]: false });
     const enabled = await accept(
       api.update({ headers, body: { switches: { [key]: true } } }),
       [200],
     );
-    expect(enabled.body.effectiveSwitches[key]).toBe(true);
+    expect(enabled.body.effectiveSwitches).toMatchObject({ [key]: true });
 
     clerk.session(`user_${randomUUID()}`, orgId, "org:member");
     const peer = await accept(api.get({ headers }), [200]);
-    expect(peer.body.effectiveSwitches[key]).toBe(false);
+    expect(peer.body.effectiveSwitches).toMatchObject({ [key]: false });
     clerk.session(userId, orgId, "org:member");
     const persisted = await accept(api.get({ headers }), [200]);
-    expect(persisted.body.effectiveSwitches[key]).toBe(true);
+    expect(persisted.body.effectiveSwitches).toMatchObject({ [key]: true });
     const disabled = await accept(
       api.update({ headers, body: { switches: { [key]: false } } }),
       [200],
     );
-    expect(disabled.body.effectiveSwitches[key]).toBe(false);
+    expect(disabled.body.effectiveSwitches).toMatchObject({ [key]: false });
   });
 
   it("rejects a direct external Antigravity opt-in before writing any overrides", async () => {
@@ -71,7 +71,7 @@ describe("/api/feature-switches", () => {
     const current = await accept(api.get({ headers }), [200]);
     expect(current.body.switches).not.toHaveProperty(key);
     expect(current.body.switches).not.toHaveProperty(FeatureSwitchKey.Dummy);
-    expect(current.body.effectiveSwitches[key]).toBe(false);
+    expect(current.body.effectiveSwitches).toMatchObject({ [key]: false });
   });
 
   it("enables presentation format for staff with personal opt-out overrides", async () => {
