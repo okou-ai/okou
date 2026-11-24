@@ -270,7 +270,10 @@ function createBoundMockApi(context?: SignalContextLike) {
         ),
         signal,
       );
-      if (result.body === null || result.body === undefined) {
+      if (
+        result.body === undefined ||
+        [204, 205, 304].includes(result.status)
+      ) {
         return new HttpResponse(null, { status: result.status });
       }
       return HttpResponse.json(result.body, { status: result.status });

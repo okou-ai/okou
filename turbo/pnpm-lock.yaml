@@ -273,6 +273,9 @@ importers:
       tar:
         specifier: '>=7.5.21'
         version: 7.5.22
+      tldts:
+        specifier: 7.0.28
+        version: 7.0.28
       undici:
         specifier: 7.30.2
         version: 7.30.2

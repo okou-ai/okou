@@ -64,28 +64,61 @@ test.each([
   },
 );
 
-test("An invited website viewer without an organization reaches the signed site callback", async () => {
-  const origin = "https://archive.okou.app";
-  const path = verificationPath(origin, "/annual-report");
-  const callback = new URL("/.okou/auth/callback", origin);
-  callback.searchParams.set("code", "d".repeat(64));
-  callback.searchParams.set(
-    "state",
-    new URL(path, origin).searchParams.get("state")!,
-  );
+test.each(["https://archive.okou.app", "https://journal.example.net"])(
+  "An invited website viewer without an organization reaches the signed callback at %s",
+  async (origin) => {
+    const path = verificationPath(origin, "/annual-report");
+    const callback = new URL("/.okou/auth/callback", origin);
+    callback.searchParams.set("code", "d".repeat(64));
+    callback.searchParams.set(
+      "state",
+      new URL(path, origin).searchParams.get("state")!,
+    );
+    context.mocks.api(
+      hostContract.authorizeSiteSession,
+      ({ params, body, respond }) => {
+        expect(params.siteId).toBe("9d8fc853-d2b7-489c-b63e-6edb41c52029");
+        expect(body).toStrictEqual({
+          origin,
+          state: "s".repeat(43),
+          codeChallenge: "p".repeat(43),
+        });
+        return respond(200, { callbackUrl: callback.href });
+      },
+    );
+    await startPage({
+      context,
+      host: "app.okou.ai",
+      path,
+      auth: {
+        user: { id: "invited-reader", fullName: "Invited Reader" },
+        organization: { activeOrg: null, memberships: [] },
+      },
+    });
+    await waitFor(() => {
+      expect(location.href).toBe(callback.href);
+    });
+  },
+);
+
+test("A custom-domain grant denial keeps the original path for recovery", async () => {
+  const site = "https://journal.example.net";
   context.mocks.api(hostContract.authorizeSiteSession, ({ respond }) => {
-    return respond(200, { callbackUrl: callback.href });
+    return respond(403, {
+      error: { code: "FORBIDDEN", message: "This invitation has expired" },
+    });
   });
   await startPage({
     context,
     host: "app.okou.ai",
-    path,
-    auth: {
-      user: { id: "invited-reader", fullName: "Invited Reader" },
-      organization: { activeOrg: null, memberships: [] },
-    },
+    path: verificationPath(site, "/issue?edition=7"),
   });
   await waitFor(() => {
-    expect(location.href).toBe(callback.href);
+    const dest = new URL(location.href);
+    expect(dest.pathname).toBe("/hosted-site-access");
+    expect(Object.fromEntries(dest.searchParams)).toStrictEqual({
+      url: site + "/issue?edition=7",
+      reason: "denied",
+    });
   });
 });

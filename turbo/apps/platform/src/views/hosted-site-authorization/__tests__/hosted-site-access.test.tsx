@@ -1,6 +1,10 @@
+import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { screen, within } from "@testing-library/react";
 import { test, expect } from "vitest";
-import { setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
@@ -11,8 +15,9 @@ async function openNotice(
   title: string,
   path: string,
   signedOut = false,
+  origin = site,
 ) {
-  const query = new URLSearchParams({ reason, url: site + path });
+  const query = new URLSearchParams({ reason, url: origin + path });
   await setupPage({
     context,
     host: "app.okou.ai",
@@ -101,3 +106,53 @@ test("hosted-site-access-005 describes temporary unavailability in both the noti
   await openNotice("unavailable", title, "/journals");
   expect(document.title).toBe(title + " | Okou");
 });
+
+test.each([
+  [
+    "active",
+    "https://journal.example.net",
+    "https://journal.example.net/.okou/auth/start?returnTo=%2Fissue%3Fedition%3D7",
+  ],
+  ["removed", "https://former.example.net", null],
+] as const)(
+  "The expired %s custom domain offers its resolved destination",
+  async (state, origin, expected) => {
+    context.mocks.api(
+      hostContract.resolveCustomDomain,
+      ({ params, respond }) => {
+        expect(params.hostname).toBe(new URL(origin).hostname);
+        return respond(
+          200,
+          state === "active"
+            ? {
+                siteId: "debc91b1-686e-422c-bbaa-3099e9c6a05f",
+                publicSlug: "journal",
+                revision: "60f39550-ea37-4968-be5f-71897d3702a0",
+              }
+            : null,
+        );
+      },
+    );
+    const card = await openNotice(
+      "expired",
+      "Verify your access again",
+      "/issue?edition=7",
+      true,
+      origin,
+    );
+    const signIn = card.queryByText("Sign in", { selector: "a[href]" });
+    expect(signIn?.getAttribute("href") ?? null).toBe(expected);
+    expect(screen.getByText("Back to Okou", { selector: "a" })).toHaveAttribute(
+      "href",
+      "/",
+    );
+    const destinations = queryAllByRoleFast("link").map((link) => {
+      return link.getAttribute("href");
+    });
+    expect(
+      destinations.filter((href) => {
+        return href !== "/";
+      }),
+    ).toStrictEqual(expected ? [expected] : []);
+  },
+);

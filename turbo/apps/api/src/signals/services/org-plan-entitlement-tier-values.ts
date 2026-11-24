@@ -2,6 +2,7 @@ import type { OrgTier } from "@okouai/api-contracts/contracts/orgs";
 
 interface OrgTierLimits {
   readonly planRank: number;
+  readonly hostedSiteCustomDomainsAllowed: boolean;
   readonly baseConcurrencyLimit: number;
   readonly canBuyConcurrency: boolean;
   readonly canBuyCredits: boolean;
@@ -21,6 +22,7 @@ export const ORG_PLAN_ENTITLEMENT_TIER_VALUES: Readonly<
 > = {
   "limited-free-1": {
     planRank: 0,
+    hostedSiteCustomDomainsAllowed: false,
     baseConcurrencyLimit: 2,
     canBuyConcurrency: false,
     canBuyCredits: true,
@@ -33,6 +35,7 @@ export const ORG_PLAN_ENTITLEMENT_TIER_VALUES: Readonly<
   },
   pro: {
     planRank: 1,
+    hostedSiteCustomDomainsAllowed: true,
     baseConcurrencyLimit: 3,
     canBuyConcurrency: false,
     canBuyCredits: true,
@@ -45,6 +48,7 @@ export const ORG_PLAN_ENTITLEMENT_TIER_VALUES: Readonly<
   },
   team: {
     planRank: 2,
+    hostedSiteCustomDomainsAllowed: true,
     baseConcurrencyLimit: 10,
     canBuyConcurrency: true,
     canBuyCredits: true,
