@@ -120,9 +120,10 @@ def validate(directory, cases=CASES, policy_key="native_batch_replacement_policy
         if not status_evidence.status_wait_advanced(before, after):
             raise ValueError("replacement final status wait not observed")
         second = foreground.heartbeat(waiting.get("heartbeat"),2,polled,events[5]["monotonic_ns"])
-        if first != second or first in runners:
-            raise ValueError("replacement heartbeat runner replayed")
-        runners.add(first)
+        foreground.claim_heartbeat_identity(
+            first, (second,), runners,
+            "replacement heartbeat runner replayed",
+        )
         samples = waiting.get("samples")
         observation_report.paired_fresh_reads(
             samples, policy, events[0]["monotonic_ns"], events[5]["monotonic_ns"]
