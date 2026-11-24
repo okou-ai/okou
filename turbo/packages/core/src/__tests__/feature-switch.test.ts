@@ -24,6 +24,7 @@ describe("FeatureSwitchKey", () => {
 describe("isFeatureEnabled", () => {
   it.each([
     FeatureSwitchKey.IosConnectorManagement,
+    FeatureSwitchKey.ComposerVoiceMessages,
     FeatureSwitchKey.ZipArtifactPreview,
     FeatureSwitchKey.FollowupPlaceholder,
     FeatureSwitchKey.WorkflowRecencySync,
@@ -471,6 +472,9 @@ describe("getFeatureSwitchMetadata", () => {
     const metadata = getFeatureSwitchMetadata();
 
     expect(metadata[FeatureSwitchKey.Banking].rolloutStage).toBe("alpha");
+    expect(metadata[FeatureSwitchKey.ComposerVoiceMessages].rolloutStage).toBe(
+      "beta",
+    );
     expect(metadata[FeatureSwitchKey.PresentationConvert].rolloutStage).toBe(
       "alpha",
     );

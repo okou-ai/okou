@@ -7,15 +7,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
-enum class RunControlPersistence {
-    Loading,
-    Pending,
-    Durable,
-    Failed,
-}
-
 enum class RunControlPhase {
-    Preparing,
     Sending,
     Accepted,
     Unknown,
@@ -24,12 +16,10 @@ enum class RunControlPhase {
 }
 
 data class RunControlsState(
-    val journal: RunControlJournal? = null,
-    val persistence: RunControlPersistence = RunControlPersistence.Loading,
+    val pending: List<RunControlIntent> = emptyList(),
     val phases: Map<String, RunControlPhase> = emptyMap(),
     internal val settledQueueInputs: Map<String, Set<String>> = emptyMap(),
     internal val settledRuns: Map<String, Set<String>> = emptyMap(),
-    internal val optimistic: Set<String> = emptySet(),
     internal val actionFailures: List<RunControlIntent> = emptyList(),
 )
 
@@ -62,7 +52,7 @@ internal fun ConversationUiState?.canWithdrawInput(
 /** Presentation connection to shared commands and the existing independent conversation detail. */
 class RunControlsModel(
     service: RunControlService,
-    private val store: RunControlJournalStore,
+    private val owners: RunControlOwners,
     private val identity: WorkspaceIdentity,
     private val history: ConversationHistoryModel,
     authorized: () -> Boolean,
@@ -78,7 +68,7 @@ class RunControlsModel(
             onFailure,
             dispatcher,
         )
-    private val owner = store.attach(identity, connection)
+    private val owner = owners.attach(identity, connection)
     val uiState = owner.uiState
 
     init {
@@ -90,8 +80,6 @@ class RunControlsModel(
             }
         }
     }
-
-    fun retryLocal() = owner.retryLocal(connection)
 
     fun stop(threadId: String, displayedRunIds: List<String>) =
         owner.stop(connection, threadId, displayedRunIds)
@@ -120,6 +108,6 @@ class RunControlsModel(
 
     override fun onCleared() {
         connection.retired = true
-        store.detach(identity, connection, owner)
+        owners.detach(identity, connection, owner)
     }
 }

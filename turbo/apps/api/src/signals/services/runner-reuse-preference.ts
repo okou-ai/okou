@@ -424,8 +424,8 @@ function runnerReuseLookupExpired(
   );
 }
 
-/** Rank dispatchable processes using the reuse inventory in the same snapshot. */
-export const readDirectRunCandidates$ = command(
+/** Read dispatchable processes and their reuse evidence in one snapshot. */
+export const readDirectRunCandidateSnapshot$ = command(
   async (
     { get },
     input: {
@@ -433,8 +433,8 @@ export const readDirectRunCandidates$ = command(
       readonly profile: string;
       readonly reuseKey: string;
       readonly predecessorRunId: string | null;
-      readonly createdAt: Date;
     },
+    createdAt: Date | null,
     signal: AbortSignal,
   ) => {
     signal.throwIfAborted();
@@ -444,7 +444,7 @@ export const readDirectRunCandidates$ = command(
     const currentDate = nowDate();
     const plan = runnerReuseCandidatePlan({
       ...input,
-      ...runnerReuseLookupStages({ admittedAt: input.createdAt }, currentDate),
+      ...runnerReuseLookupStages({ admittedAt: createdAt }, currentDate),
       freshAfter: runnerReuseStateFreshAfter(currentDate),
       finalizingCompletedAfter: new Date(
         currentDate.getTime() - RUNNER_FINALIZING_COMPLETION_BRIDGE_MS,
@@ -470,70 +470,79 @@ export const readDirectRunCandidates$ = command(
       .where(plan.where)
       .orderBy(...plan.orderBy);
     signal.throwIfAborted();
-    const evaluatedAt = nowDate();
-    let preferred = false;
-    const candidates = rows.flatMap((row) => {
-      if (
-        row.hostname === null ||
-        !isCanonicalRunnerHostname(row.hostname) ||
-        row.totalVcpu < DEFAULT_RUNNER_PROFILE_VCPU ||
-        row.totalMemoryMb < DEFAULT_RUNNER_PROFILE_MEMORY_MB
-      ) {
-        return [];
-      }
-      const runnerIdentity = {
-        runnerId: row.runnerId,
-        heartbeatGeneration: row.heartbeatGeneration,
-      };
-      const reuse = preferred
-        ? undefined
-        : runnerReusePreferenceResult({
-            candidate: {
-              ...row,
-              runnerIdentity,
-              predecessorRunId: input.predecessorRunId,
-            },
-            admittedAt: input.createdAt,
-            currentDate: evaluatedAt,
-          });
-      const preference = reuse?.kind === "preference" ? reuse : undefined;
-      preferred ||= preference !== undefined;
-      return [
-        {
-          ...runnerIdentity,
-          hostname: row.hostname,
-          preference,
-          score: Math.max(
-            0,
-            Math.min(
-              (row.totalVcpu - row.allocatedVcpu) / DEFAULT_RUNNER_PROFILE_VCPU,
-              (row.totalMemoryMb - row.allocatedMemoryMb) /
-                DEFAULT_RUNNER_PROFILE_MEMORY_MB,
-              row.maxConcurrent === 0
-                ? Infinity
-                : row.maxConcurrent - row.runningCount,
-            ),
-          ),
-        },
-      ];
-    });
-    // Shuffle first so equal-headroom candidates retain randomized tie breaks.
-    for (let i = candidates.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      const a = candidates[i];
-      const b = candidates[j];
-      if (a && b) {
-        candidates[i] = b;
-        candidates[j] = a;
-      }
-    }
-    return candidates.sort((a, b) => {
-      const priority =
-        Number(b.preference !== undefined) - Number(a.preference !== undefined);
-      return priority || b.score - a.score;
-    });
+    return { rows, observedAt: nowDate() };
   },
 );
+
+export function rankDirectRunCandidates(
+  {
+    rows,
+  }: Awaited<ReturnType<(typeof readDirectRunCandidateSnapshot$)["write"]>>,
+  input: { readonly predecessorRunId: string | null; readonly createdAt: Date },
+  evaluatedAt: Date,
+) {
+  let preferred = false;
+  const candidates = rows.flatMap((row) => {
+    if (
+      row.hostname === null ||
+      !isCanonicalRunnerHostname(row.hostname) ||
+      row.totalVcpu < DEFAULT_RUNNER_PROFILE_VCPU ||
+      row.totalMemoryMb < DEFAULT_RUNNER_PROFILE_MEMORY_MB
+    ) {
+      return [];
+    }
+    const runnerIdentity = {
+      runnerId: row.runnerId,
+      heartbeatGeneration: row.heartbeatGeneration,
+    };
+    const reuse = preferred
+      ? undefined
+      : runnerReusePreferenceResult({
+          candidate: {
+            ...row,
+            runnerIdentity,
+            predecessorRunId: input.predecessorRunId,
+          },
+          admittedAt: input.createdAt,
+          currentDate: evaluatedAt,
+        });
+    const preference = reuse?.kind === "preference" ? reuse : undefined;
+    preferred ||= preference !== undefined;
+    return [
+      {
+        ...runnerIdentity,
+        hostname: row.hostname,
+        preference,
+        score: Math.max(
+          0,
+          Math.min(
+            (row.totalVcpu - row.allocatedVcpu) / DEFAULT_RUNNER_PROFILE_VCPU,
+            (row.totalMemoryMb - row.allocatedMemoryMb) /
+              DEFAULT_RUNNER_PROFILE_MEMORY_MB,
+            row.maxConcurrent === 0
+              ? Infinity
+              : row.maxConcurrent - row.runningCount,
+          ),
+        ),
+      },
+    ];
+  });
+  // Shuffle first so equal-headroom candidates retain randomized tie breaks.
+  for (let i = candidates.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const a = candidates[i];
+    const b = candidates[j];
+    if (a && b) {
+      candidates[i] = b;
+      candidates[j] = a;
+    }
+  }
+  return candidates.sort((a, b) => {
+    const priority =
+      Number(b.preference !== undefined) - Number(a.preference !== undefined);
+    return priority || b.score - a.score;
+  });
+}
 
 function runnerReusePreferenceResult(args: {
   readonly candidate: RunnerReuseCandidate;

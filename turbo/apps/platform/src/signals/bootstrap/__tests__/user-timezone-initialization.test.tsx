@@ -92,6 +92,21 @@ function setBrowserTimezone(timezone: string): void {
   });
 }
 
+test("A preference read failure still fails startup", async () => {
+  context.mocks.api(userPreferencesContract.get, ({ respond }) => {
+    return respond(500, {
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Preference read failed",
+      },
+    });
+  });
+
+  await expect(
+    setupPage({ context, path: "/workflows", host: "app.okou.ai" }),
+  ).rejects.toThrow("Preference read failed");
+});
+
 test("A member's first organization visit stores the browser timezone", async () => {
   const requests = mockTimezonePreferences(null);
   setBrowserTimezone("Asia/Shanghai");

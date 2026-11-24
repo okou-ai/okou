@@ -16,7 +16,7 @@ import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.chat.HistoryPhase
 import ai.okou.android.chat.ProjectExpansionModel
 import ai.okou.android.chat.ProjectExpansionStore
-import ai.okou.android.chat.RunControlJournalStore
+import ai.okou.android.chat.RunControlOwners
 import ai.okou.android.chat.RunControlsModel
 import ai.okou.android.chat.SearchRecentChatsStore
 import ai.okou.android.chat.WorkspaceSearchModel
@@ -27,7 +27,6 @@ import ai.okou.android.preferences.MemberAppearance
 import ai.okou.android.preferences.MemberAppearanceCache
 import ai.okou.android.preferences.MemberPreferencesModel
 import ai.okou.android.preferences.PreferenceChange
-import ai.okou.android.preferences.appearance
 import ai.okou.android.settings.DefaultModelStore
 import ai.okou.android.settings.WorkspaceSettingsCache
 import ai.okou.android.settings.WorkspaceSettingsModel
@@ -153,7 +152,7 @@ class SessionModel(
     private val chatCache: ChatCacheStore,
     private val instructionsDrafts: PersonalInstructionsDraftStore,
     private val composerJournal: ComposerJournalStore,
-    private val runControlJournal: RunControlJournalStore,
+    private val runControlOwners: RunControlOwners,
     private val appearanceCache: MemberAppearanceCache,
     private val projectExpansionStore: ProjectExpansionStore,
     private val defaultModelStore: DefaultModelStore,
@@ -203,7 +202,7 @@ class SessionModel(
             val filter = (ready?.chats ?: opened?.chats)?.uiState?.value?.filter
             if (filter != null) workspaceFilters[key] = filter
             if (ready != null) {
-                val intent = ready.preferences.uiState.value.pending
+                val intent = ready.preferences.pendingForWorkspaceRestore()
                 if (intent == null) pendingPreferences.remove(key)
                 else pendingPreferences[key] = intent
             }
@@ -230,8 +229,7 @@ class SessionModel(
     private fun enterRequiredUpdate() {
         val state = mutable.value
         val appearance =
-            state.ready?.preferences?.uiState?.value?.confirmed?.appearance
-                ?: state.cachedAppearance
+            state.ready?.preferences?.uiState?.value?.appearance ?: state.cachedAppearance
         requiredUpdate = true
         retire()
         mutable.value =
@@ -428,7 +426,7 @@ class SessionModel(
                 val controls = store.workspaceModel {
                     RunControlsModel(
                         owner,
-                        runControlJournal,
+                        runControlOwners,
                         identity,
                         chats.history,
                         { current(ticket, snapshot) },
@@ -771,7 +769,7 @@ class SessionModel(
                 opening = null,
             )
         preferences.uiState
-            .map { it.confirmed.appearance }
+            .map { it.appearance }
             .distinctUntilChanged()
             .collect { appearanceCache.save(opened.identity, it) }
     }

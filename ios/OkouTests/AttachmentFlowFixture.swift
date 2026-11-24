@@ -231,7 +231,9 @@ final class AttachmentFlowFixture: Sendable {
       thread: ChatThread(
         id: Self.threadID, title: "Attachments",
         createdAt: .now, updatedAt: .now, sortAt: .now),
-      sync: sync, commands: ChatCommands(client: http.client, sync: sync), webURL: http.baseURL,
+      sync: sync, commands: ChatCommands(client: http.client, sync: sync),
+      graph: makeTestWorkspaceGraph(),
+      webURL: http.baseURL,
       messageMarkdown: MessageMarkdownCache(baseURL: http.baseURL),
       isVisible: { false }, didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {},
       workflowSource: workflowSource,

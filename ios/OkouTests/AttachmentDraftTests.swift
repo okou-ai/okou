@@ -18,7 +18,7 @@ final class AttachmentDraftTests: XCTestCase {
     let source = try makeFile()
     defer { try? FileManager.default.removeItem(at: source.deletingLastPathComponent()) }
     conversation.attachmentDraft.importFiles([source])
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: conversation.composer) {
       conversation.attachmentDraft.items.contains {
         if case .failed = $0.state { true } else { false }
       }
@@ -29,7 +29,9 @@ final class AttachmentDraftTests: XCTestCase {
     XCTAssertNotEqual(item.file.url, source)
     XCTAssertTrue(FileManager.default.fileExists(atPath: item.file.url.path))
     conversation.attachmentDraft.retry(item.id)
-    try await waitForBusinessResult { conversation.attachmentDraft.isReady }
+    try await waitForBusinessResult(watching: conversation.composer) {
+      conversation.attachmentDraft.isReady
+    }
     await conversation.send()
     let pending = try XCTUnwrap(conversation.pending.first)
     XCTAssertTrue(pending.needsRetry)
@@ -107,7 +109,7 @@ final class AttachmentDraftTests: XCTestCase {
     let source = try makeFile(filename: "Screenshot.png", content: image)
     defer { try? FileManager.default.removeItem(at: source.deletingLastPathComponent()) }
     store.newAttachmentDraft.importFiles([source])
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: store.newComposer) {
       store.newAttachmentDraft.hasAttachments && store.newAttachmentDraft.isReady
     }
     let refresh = Task { await store.refresh([.threadList]) }
@@ -182,7 +184,7 @@ final class AttachmentDraftTests: XCTestCase {
       let source = try makeFile()
       defer { try? FileManager.default.removeItem(at: source.deletingLastPathComponent()) }
       first.attachmentDraft.importFiles([source])
-      try await waitForBusinessResult {
+      try await waitForBusinessResult(watching: first.composer) {
         first.attachmentDraft.hasAttachments && first.attachmentDraft.isReady
       }
       await first.send()
@@ -235,7 +237,7 @@ final class AttachmentDraftTests: XCTestCase {
     let source = try makeFile()
     defer { try? FileManager.default.removeItem(at: source.deletingLastPathComponent()) }
     store.newAttachmentDraft.importFiles([source])
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: store.newComposer) {
       store.newAttachmentDraft.hasAttachments && store.newAttachmentDraft.isReady
     }
     store.startNewChat()
@@ -289,7 +291,7 @@ final class NewChatAttachmentTests: XCTestCase {
     let source = try makeFile(filename: "Screenshot.png", content: bytes)
     defer { try? FileManager.default.removeItem(at: source.deletingLastPathComponent()) }
     store.newAttachmentDraft.importFiles([source])
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: store.newComposer) {
       store.newAttachmentDraft.hasAttachments && store.newAttachmentDraft.isReady
     }
     let draftURL = try XCTUnwrap(store.newAttachmentDraft.items.first?.file.url)
@@ -329,7 +331,7 @@ final class NewChatAttachmentTests: XCTestCase {
     conversation.artifacts.dismiss()
 
     conversation.attachmentDraft.importFiles([source])
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: conversation.composer) {
       conversation.attachmentDraft.hasAttachments && conversation.attachmentDraft.isReady
     }
     await conversation.send()
@@ -349,7 +351,7 @@ final class NewChatAttachmentTests: XCTestCase {
     let source = try makeFile()
     defer { try? FileManager.default.removeItem(at: source.deletingLastPathComponent()) }
     store.newAttachmentDraft.importFiles([source])
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: store.newComposer) {
       !store.newAttachmentDraft.items.isEmpty && store.newAttachmentDraft.isReady
     }
     let first = try XCTUnwrap(store.newAttachmentDraft.items.first)
@@ -357,7 +359,7 @@ final class NewChatAttachmentTests: XCTestCase {
     XCTAssertFalse(FileManager.default.fileExists(atPath: first.file.url.path))
     XCTAssertTrue(FileManager.default.fileExists(atPath: source.path))
     store.newAttachmentDraft.importFiles([source])
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: store.newComposer) {
       !store.newAttachmentDraft.items.isEmpty && store.newAttachmentDraft.isReady
     }
     await store.sendNewChat()
@@ -390,7 +392,7 @@ final class NewChatAttachmentTests: XCTestCase {
     let source = try makeFile()
     defer { try? FileManager.default.removeItem(at: source.deletingLastPathComponent()) }
     store.newAttachmentDraft.importFiles([source])
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: store.newComposer) {
       store.newAttachmentDraft.hasAttachments && store.newAttachmentDraft.isReady
     }
 
@@ -624,7 +626,7 @@ final class NewChatAttachmentTests: XCTestCase {
     let source = try makeFile()
     defer { try? FileManager.default.removeItem(at: source.deletingLastPathComponent()) }
     store.newAttachmentDraft.importFiles([source])
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: store.newComposer) {
       store.newAttachmentDraft.hasAttachments && store.newAttachmentDraft.isReady
     }
     let connectors = store.newModelSelection.connectors
@@ -677,7 +679,7 @@ final class NewChatAttachmentTests: XCTestCase {
     let source = try makeFile()
     defer { try? FileManager.default.removeItem(at: source.deletingLastPathComponent()) }
     store.newAttachmentDraft.importFiles([source])
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: store.newComposer) {
       !store.newAttachmentDraft.items.isEmpty && store.newAttachmentDraft.isReady
     }
     let operation = Task { await store.sendNewChat() }

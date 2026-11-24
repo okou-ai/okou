@@ -311,7 +311,7 @@ private fun PreviewContent(preview: ArtifactPreviewState?, offline: Boolean) {
             .testTag("artifact_preview_surface"),
         shape = RoundedCornerShape(16.dp),
         color = if (hosted) colors.surfaceVariant else colors.surface,
-        border = BorderStroke(1.dp, colors.outline),
+        border = BorderStroke(1.dp, colors.outlineVariant),
     ) {
         if (hosted) {
             HostedPreviewContent(content, problem, offline, showLoading)

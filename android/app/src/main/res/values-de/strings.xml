@@ -5,7 +5,6 @@
     <string name="auth_selection_failed">Arbeitsbereich konnte nicht geöffnet werden.</string>
     <string name="auth_sign_out_failed">Abmeldung fehlgeschlagen.</string>
     <string name="composer_restore_draft">Behaltenen Entwurf wiederherstellen</string>
-    <string name="controls_storage_failed">Ausstehende Steuerbefehle können nicht gespeichert werden.</string>
     <string name="controls_stop">Laufende Arbeit stoppen</string>
     <string name="controls_stop_failed">Die Aufgabe konnte nicht gestoppt werden.</string>
     <string name="settings">Einstellungen</string>
@@ -33,8 +32,6 @@
     <string name="auth_workspace">Aktueller Arbeitsbereich</string>
     <string name="auth_switch_workspace">Arbeitsbereich wechseln</string>
     <string name="auth_browser_unavailable">Installiere einen Browser, um den Arbeitsbereich einzurichten.</string>
-    <string name="preference_save_failed">Deine Einstellungen konnten nicht gespeichert werden. Deine Auswahl bleibt aktiv.</string>
-    <string name="preference_refresh_failed">Einstellungen konnten nicht aktualisiert werden. Versuche es erneut.</string>
     <string name="preference_color_theme">Farbthema</string>
     <string name="preference_language">Sprache</string>
     <string name="palette_default">Standard</string>
@@ -135,7 +132,6 @@
     <string name="instructions_placeholder">Was soll Okou berücksichtigen?</string>
     <string name="instructions_save_when_online">Stelle eine Verbindung her, um Änderungen zu speichern.</string>
     <string name="settings_timezone">Zeitzone</string>
-    <string name="settings_timezone_hint">Standardzeitzone für neue geplante Aufgaben.</string>
     <string name="settings_timezone_utc">Koordinierte Weltzeit</string>
     <string name="settings_timezone_format">%1$s (UTC%2$s)</string>
 </resources>

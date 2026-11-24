@@ -224,7 +224,6 @@ const creditCheckoutAuthed$ = command(
       createCreditCheckoutSession$,
       {
         orgId: auth.orgId,
-        userId: auth.userId,
         credits,
         successUrl,
         cancelUrl,
@@ -280,7 +279,6 @@ const creditPurchaseConfirmAuthed$ = command(
     const result = await set(
       confirmExistingBillingCreditPurchase$,
       auth.orgId,
-      auth.userId,
       bodyResult.data.previewToken,
       signal,
     );

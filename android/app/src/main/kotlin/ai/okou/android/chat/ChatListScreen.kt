@@ -272,7 +272,7 @@ internal fun ChatListScreen(
     val widthDp = currentWindowSizeDp().width
     val largeCompact = widthDp >= 600
     val listInset = if (wide) 12.dp else if (largeCompact) 24.dp else 16.dp
-    val outline = MaterialTheme.colorScheme.outline
+    val outline = MaterialTheme.colorScheme.outlineVariant
     val missingUnread = state.confirmedAt != null && state.waitingForUnreadIndicators
     val firstLoadFailed =
         !state.offline &&
@@ -1268,7 +1268,7 @@ private fun ChatAction(label: Int, action: () -> Unit, enabled: Boolean = true) 
 }
 
 @Composable
-private fun ChatListTextAction(
+internal fun ChatListTextAction(
     @StringRes label: Int,
     @DrawableRes icon: Int? = null,
     enabled: Boolean = true,

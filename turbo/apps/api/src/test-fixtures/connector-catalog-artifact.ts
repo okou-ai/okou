@@ -1275,6 +1275,20 @@ const connectors = [
     ]),
   }),
   connector({
+    connectorSlug: "google-docs",
+    label: "Google Docs",
+    authMethods: [
+      standardOauthMethod({
+        connectorSlug: "google-docs",
+        prefix: "GOOGLE_DOCS",
+        tokenEnvironmentNames: ["GOOGLE_DOCS_TOKEN"],
+      }),
+    ],
+    firewall: generatedFirewall([
+      bearerApi("https://docs.googleapis.com", "GOOGLE_DOCS_TOKEN"),
+    ]),
+  }),
+  connector({
     connectorSlug: "google-drive",
     label: "Google Drive",
     authMethods: [

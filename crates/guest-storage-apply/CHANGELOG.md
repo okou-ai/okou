@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.32.47](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.46...guest-storage-apply-v0.32.47) (2026-11-24)
+
+
+### Performance Improvements
+
+* **guest-storage-apply:** overlap artifact inflation with a small companion ([#50455](https://github.com/okou-ai/okou/issues/50455)) ([590f4e5](https://github.com/okou-ai/okou/commit/590f4e5d93fa0373909c00c87696fc832c167b23))
+
+## [0.32.46](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.45...guest-storage-apply-v0.32.46) (2026-11-24)
+
+
+### Performance Improvements
+
+* **guest-storage-apply:** read ahead for highly compressed artifacts ([#50429](https://github.com/okou-ai/okou/issues/50429)) ([81d7680](https://github.com/okou-ai/okou/commit/81d76808921cce43aeee21e52924c335a69def79))
+
 ## [0.32.45](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.44...guest-storage-apply-v0.32.45) (2026-11-24)
 
 

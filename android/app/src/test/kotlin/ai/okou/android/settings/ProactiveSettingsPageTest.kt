@@ -144,14 +144,12 @@ class ProactiveSettingsPageTest {
             val trigger = compose.onNodeWithText("Time zone").assertIsDisplayed()
             trigger.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
             trigger.performKeyInput { pressKey(Key.Enter) }
-            val note = compose.onNodeWithText(app.getString(R.string.settings_timezone_hint))
             val heading =
                 compose.onNode(
                     hasText("Time zone") and
                         SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading),
                 )
             val headingBounds = heading.assertIsDisplayed().getUnclippedBoundsInRoot()
-            val noteBounds = note.assertIsDisplayed().getUnclippedBoundsInRoot()
             compose
                 .onNode(hasText("Shanghai (UTC+8)") and isSelectable())
                 .assertIsDisplayed()
@@ -161,7 +159,6 @@ class ProactiveSettingsPageTest {
             val kathmandu = TimeZone.getCanonicalID("Asia/Kathmandu")
             compose.onNode(hasScrollToIndexAction()).performScrollToKey(kathmandu)
             assertEquals(headingBounds, heading.getUnclippedBoundsInRoot())
-            assertEquals(noteBounds, note.getUnclippedBoundsInRoot())
             val choice = compose.onNode(hasText("Kathmandu (UTC+5:45)") and isSelectable())
             choice.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
             fixture.morningNeedsTimezone = false

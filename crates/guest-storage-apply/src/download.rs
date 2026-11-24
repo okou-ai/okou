@@ -166,10 +166,16 @@ struct StartedDownload<'input> {
     remote_metrics: Option<RemoteArchiveTaskMetrics>,
     local_metrics: Option<LocalArchiveTaskMetrics>,
     concurrency: usize,
+    #[cfg(target_os = "linux")]
+    parallel_inflate: bool,
 }
 
 impl<'input> StartedDownload<'input> {
-    fn new(download: PendingDownload<'input>, concurrency: usize) -> Self {
+    fn new(
+        download: PendingDownload<'input>,
+        concurrency: usize,
+        #[cfg(target_os = "linux")] paired_inflater: Option<usize>,
+    ) -> Self {
         let start = Instant::now();
         log_info!(
             LOG_TAG,
@@ -185,6 +191,8 @@ impl<'input> StartedDownload<'input> {
             start,
             opened_file_compressed_bytes: None,
             concurrency,
+            #[cfg(target_os = "linux")]
+            parallel_inflate: concurrency == 1 || paired_inflater == Some(download.id),
         }
     }
 
@@ -271,6 +279,8 @@ struct DownloadScheduler<'input> {
     all_success: bool,
     prioritize_large: bool,
     prioritize_artifact: bool,
+    #[cfg(target_os = "linux")]
+    paired_inflater: Option<usize>,
 }
 
 impl<'input> DownloadScheduler<'input> {
@@ -283,6 +293,12 @@ impl<'input> DownloadScheduler<'input> {
         let prioritize_artifact = allow_artifact_priority
             && pending.len() > concurrency
             && pending.iter().any(PendingDownload::is_large_local_artifact);
+        #[cfg(target_os = "linux")]
+        let paired_inflater = if allow_artifact_priority && concurrency == 2 {
+            paired_inflater(&pending)
+        } else {
+            None
+        };
         Self {
             pending,
             reservations: Vec::new(),
@@ -291,6 +307,8 @@ impl<'input> DownloadScheduler<'input> {
             all_success: true,
             prioritize_large,
             prioritize_artifact,
+            #[cfg(target_os = "linux")]
+            paired_inflater,
         }
     }
 
@@ -337,7 +355,12 @@ impl<'input> DownloadScheduler<'input> {
                     self.prioritize_artifact = false;
                 }
             }
-            let download = StartedDownload::new(download, self.concurrency);
+            let download = StartedDownload::new(
+                download,
+                self.concurrency,
+                #[cfg(target_os = "linux")]
+                self.paired_inflater,
+            );
             self.reservations.push(DownloadReservation::new(&download));
 
             if work_tx.send(download).is_err() {
@@ -368,6 +391,36 @@ impl<'input> DownloadScheduler<'input> {
             }
         }
     }
+}
+
+#[cfg(target_os = "linux")]
+fn paired_inflater(pending: &VecDeque<PendingDownload<'_>>) -> Option<usize> {
+    if pending.len() != 2 {
+        return None;
+    }
+    let first = pending.front()?;
+    let second = pending.back()?;
+    let (artifact, companion) = if first.task.task.telemetry.is_artifact() {
+        (first, second)
+    } else {
+        (second, first)
+    };
+    if !artifact.is_large_local_artifact() || companion.task.task.telemetry.is_artifact() {
+        return None;
+    }
+
+    // A short companion can finish while the inflater and tar writer overlap.
+    // Use the existing archive size estimate or bounded decoded input metadata.
+    const COMPANION_BYTES: usize = 64 * 1024;
+    const COMPANION_FILES: usize = 16;
+    let small = match &companion.task.task.files {
+        Some(files) => {
+            files.len() <= COMPANION_FILES
+                && files.iter().map(|file| file.content.len()).sum::<usize>() <= COMPANION_BYTES
+        }
+        None => (1..COMPANION_BYTES as u64).contains(&companion.estimated_work),
+    };
+    small.then_some(artifact.id)
 }
 
 /// Prepare download targets before any archive worker can start.
@@ -705,7 +758,7 @@ fn download_and_extract(download: &mut StartedDownload<'_>) -> Result<(), Downlo
         .is_some()
         .then(source::LocalArchiveAttemptMetrics::default);
     #[cfg(target_os = "linux")]
-    if download.concurrency == 1
+    if download.parallel_inflate
         && task.telemetry.is_artifact()
         && task.template_guidance.is_none()
         && let Some(path) = task.url.strip_prefix("file://")

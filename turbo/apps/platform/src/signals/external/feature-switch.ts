@@ -89,6 +89,12 @@ export const featureSwitches$ = computed(async (get) => {
   return getAllFeatureStates({ ...identity, overrides: combined });
 });
 
+export const memberConnectorAccountAccess$ = computed(async (get) => {
+  return (await get(featureSwitches$))[
+    FeatureSwitchKey.MemberConnectorAccountAccess
+  ];
+});
+
 const reloadFeatureSwitch$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();

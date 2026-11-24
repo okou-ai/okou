@@ -270,7 +270,10 @@ final class ChatConnectorTests: XCTestCase {
             "account": ["intent": "reconnect", "connectionId": FixtureData.accountID],
             "authMethod": "oauth"
           ]
-          if kind == "auth-code" { expected["callbackTarget"] = "app" }
+          if kind == "auth-code" {
+            expected["callbackTarget"] = "app"
+            expected["nativeCallback"] = "ios-https"
+          }
           if kind == "manual" { expected["values"] = ["key": "synthetic-key"] }
           XCTAssertEqual(body as NSDictionary, expected as NSDictionary, kind)
           return ChatHTTPResponse(body: "{\"connectionId\":\"\(FixtureData.accountID)\"}")

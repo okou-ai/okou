@@ -5,7 +5,6 @@
     <string name="auth_selection_failed">Impossible d’ouvrir cet espace de travail.</string>
     <string name="auth_sign_out_failed">Impossible de se déconnecter.</string>
     <string name="composer_restore_draft">Restaurer le brouillon conservé</string>
-    <string name="controls_storage_failed">Impossible de conserver les commandes en attente.</string>
     <string name="controls_stop">Arrêter le travail en cours</string>
     <string name="controls_stop_failed">Impossible d’arrêter la tâche.</string>
     <string name="settings">Paramètres</string>
@@ -33,8 +32,6 @@
     <string name="auth_workspace">Espace de travail actuel</string>
     <string name="auth_switch_workspace">Changer d’espace de travail</string>
     <string name="auth_browser_unavailable">Installez un navigateur pour configurer votre espace de travail.</string>
-    <string name="preference_save_failed">Vos préférences n’ont pas pu être enregistrées. Vos choix restent actifs.</string>
-    <string name="preference_refresh_failed">Impossible d’actualiser les préférences. Réessayez.</string>
     <string name="preference_color_theme">Thème de couleur</string>
     <string name="preference_language">Langue</string>
     <string name="palette_default">Par défaut</string>
@@ -135,7 +132,6 @@
     <string name="instructions_placeholder">Que souhaitez-vous qu’Okou garde à l’esprit ?</string>
     <string name="instructions_save_when_online">Connectez-vous pour enregistrer les modifications.</string>
     <string name="settings_timezone">Fuseau horaire</string>
-    <string name="settings_timezone_hint">Fuseau horaire par défaut des nouvelles tâches planifiées.</string>
     <string name="settings_timezone_utc">Temps universel coordonné</string>
     <string name="settings_timezone_format">%1$s (UTC%2$s)</string>
 </resources>

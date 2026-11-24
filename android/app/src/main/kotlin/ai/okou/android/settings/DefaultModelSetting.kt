@@ -302,7 +302,7 @@ private fun ModelOption(
 ) {
     val colors = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(12.dp)
-    val focusColor = LocalActivityStatusColor.current
+    val radioColor = LocalActivityStatusColor.current
     val disabledColor = colors.onSurface.copy(alpha = 0.38f)
     val foreground = if (selected) colors.onSecondaryContainer else colors.onSurface
     Row(
@@ -310,7 +310,7 @@ private fun ModelOption(
             .fillMaxWidth()
             .heightIn(min = if (supportingText == null) 56.dp else 72.dp)
             .clip(shape)
-            .updateFocusOutline(shape, focusColor)
+            .updateFocusOutline(shape, foreground)
             .then(if (selected) Modifier.background(colors.secondaryContainer) else Modifier)
             .selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
@@ -338,7 +338,7 @@ private fun ModelOption(
             enabled = enabled,
             colors =
                 RadioButtonDefaults.colors(
-                    selectedColor = focusColor,
+                    selectedColor = radioColor,
                     unselectedColor = colors.onSurfaceVariant,
                     disabledSelectedColor = disabledColor,
                     disabledUnselectedColor = disabledColor,

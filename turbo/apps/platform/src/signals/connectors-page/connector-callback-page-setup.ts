@@ -117,6 +117,7 @@ function resultFromPath(
   const nativeReturn = connectorNativeAppReturnSchema.safeParse({
     platform: "ios",
     attemptId: searchParams.get("nativeAppAttemptId"),
+    httpsHost: searchParams.get("nativeAppHttpsHost") ?? undefined,
   });
   const nativeAppReturn = nativeReturn.success ? nativeReturn.data : undefined;
   if (status === "success") {
@@ -292,6 +293,12 @@ const showConnectorCallbackResult$ = command(
         "nativeAppAttemptId",
         result.nativeAppReturn.attemptId,
       );
+      if (result.nativeAppReturn.httpsHost) {
+        resultSearchParams.set(
+          "nativeAppHttpsHost",
+          result.nativeAppReturn.httpsHost,
+        );
+      }
     }
     if (result.status === "success" && result.username) {
       resultSearchParams.set("username", result.username);

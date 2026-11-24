@@ -65,7 +65,6 @@ import {
 
 interface CreateCheckoutSessionArgs {
   readonly orgId: string;
-  readonly userId: string;
   readonly tier: SubscriptionCheckoutTier;
   readonly priceId: string;
   readonly trialDays?: 7;
@@ -120,7 +119,6 @@ type CheckoutCompletionResult =
 
 interface CreateCreditCheckoutSessionArgs {
   readonly orgId: string;
-  readonly userId: string;
   readonly credits: number;
   readonly successUrl: string;
   readonly cancelUrl: string;
@@ -678,7 +676,6 @@ export const confirmExistingBillingCreditPurchase$ = command(
   async (
     { set },
     orgId: string,
-    userId: string,
     previewToken: string,
     signal: AbortSignal,
   ): Promise<ConfirmExistingBillingCreditPurchaseResult> => {
@@ -715,7 +712,6 @@ export const confirmExistingBillingCreditPurchase$ = command(
         createCreditCheckoutSession$,
         {
           orgId,
-          userId,
           credits: preview.credits,
           successUrl: preview.successUrl,
           cancelUrl: preview.cancelUrl,
@@ -1334,7 +1330,6 @@ type ClaimedPlanPurchaseAdmission =
 async function admitClaimedPlanPurchase(
   stripe: StripeClient,
   orgId: string,
-  userId: string,
   preview: PlanPurchasePreviewToken,
   signal: AbortSignal,
 ): Promise<ClaimedPlanPurchaseAdmission> {
@@ -1374,7 +1369,6 @@ async function admitClaimedPlanPurchase(
       preview.customerId,
       {
         orgId,
-        userId,
         tier: preview.tier,
         priceId: preview.priceId,
         trialDays: preview.trialDays,
@@ -1407,7 +1401,6 @@ async function admitClaimedPlanPurchase(
 interface ClaimedPlanPurchaseArgs {
   readonly stripe: StripeClient;
   readonly orgId: string;
-  readonly userId: string;
   readonly preview: PlanPurchasePreviewToken;
   readonly previousStatus: string | null;
 }
@@ -1421,7 +1414,6 @@ const prepareClaimedPlanPurchaseAdmission$ = command(
     const admission = await admitClaimedPlanPurchase(
       args.stripe,
       args.orgId,
-      args.userId,
       args.preview,
       signal,
     );
@@ -1476,7 +1468,6 @@ export const confirmPlanPurchase$ = command(
   async (
     { get, set },
     orgId: string,
-    userId: string,
     previewToken: string,
     signal: AbortSignal,
   ): Promise<ConfirmPlanPurchaseResult> => {
@@ -1565,7 +1556,7 @@ export const confirmPlanPurchase$ = command(
     // (or paid-invoice reconciliation) binds the organization to it.
     const admission = await set(
       admitClaimedPlanPurchase$,
-      { stripe, orgId, userId, preview, previousStatus },
+      { stripe, orgId, preview, previousStatus },
       signal,
     );
     signal.throwIfAborted();
@@ -1610,7 +1601,7 @@ async function createPlanCheckoutSession(
     allow_promotion_codes: true,
     success_url: args.successUrl,
     cancel_url: args.cancelUrl,
-    metadata: { ...metadata, billingSurveyUserId: args.userId },
+    metadata,
     subscription_data: {
       metadata,
       ...(args.trialDays === undefined
@@ -1815,7 +1806,7 @@ export const createCreditCheckoutSession$ = command(
           ...metadata,
         },
       },
-      metadata: { ...metadata, billingSurveyUserId: args.userId },
+      metadata,
     };
     const session = args.checkoutIdempotencyKey
       ? await stripe.checkout.sessions.create(params, {

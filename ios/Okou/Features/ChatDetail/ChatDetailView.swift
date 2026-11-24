@@ -205,13 +205,11 @@ struct ChatDetailView: View {
             .chatFeedbackContentAnchor()
         } else {
           ChatComposerView(
-            draft: $conversation.draft,
             isBusy: conversation.isSending || conversation.isStopping
               || conversation.isRecoveringFailure,
             showsProgress: false, canStop: history.canStop, needsUpgrade: conversation.needsUpgrade,
             error: conversation.error,
             attachmentURL: conversation.webURL.appending(path: "chats/\(thread.id)"),
-            attachments: conversation.attachmentDraft,
             draftState: conversation.composer,
             submit: {
               if history.canStop && !conversation.composer.hasContent {
@@ -237,9 +235,10 @@ struct ChatDetailView: View {
       }
       .chatFeedbackAnchor()
     }
-    .animation(
-      reduceMotion ? nil : .easeInOut(duration: 0.22),
-      value: conversation.composer.voice?.phase
+    .modifier(
+      ComposerVoiceAnimation(
+        voice: conversation.composer.voice,
+        animation: reduceMotion ? nil : .easeInOut(duration: 0.22))
     )
     .task(id: thread.id) { await conversation.refresh() }
   }

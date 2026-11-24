@@ -221,7 +221,8 @@ final class ChatModelCommandTests: XCTestCase {
     let sync = ChatSync(client: fixture.client)
     let conversation = ConversationStore(
       thread: thread(), sync: sync,
-      commands: ChatCommands(client: fixture.client, sync: sync), webURL: fixture.baseURL,
+      commands: ChatCommands(client: fixture.client, sync: sync), graph: makeTestWorkspaceGraph(),
+      webURL: fixture.baseURL,
       messageMarkdown: MessageMarkdownCache(baseURL: fixture.baseURL), isVisible: { false },
       didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {},
       modelSelection: selection)
@@ -344,6 +345,7 @@ final class ChatModelCommandTests: XCTestCase {
       let sync = ChatSync(client: fixture.client)
       return ConversationStore(
         thread: thread(), sync: sync, commands: ChatCommands(client: fixture.client, sync: sync),
+        graph: makeTestWorkspaceGraph(),
         webURL: fixture.baseURL, messageMarkdown: MessageMarkdownCache(baseURL: fixture.baseURL),
         isVisible: { false }, didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {},
         modelSelection: selection, draftRepository: ChatDraftRepository(client: fixture.client),

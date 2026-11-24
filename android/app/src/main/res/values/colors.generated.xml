@@ -34,7 +34,7 @@
         <item name="okou_palette_swatch_companion">@color/okou_swatch_companion</item>
     </style>
     <color name="okou_golden_hour_primary">#FFBB731B</color>
-    <color name="okou_golden_hour_primary_foreground">#FFFFFFFF</color>
+    <color name="okou_golden_hour_primary_foreground">#FF000000</color>
     <color name="okou_golden_hour_background">#FFFDFCFB</color>
     <color name="okou_golden_hour_foreground">#FF242424</color>
     <color name="okou_golden_hour_card">#FFFEFEFD</color>

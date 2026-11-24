@@ -5,7 +5,7 @@ import {
 import { array } from "zod";
 import { computed, type Computed } from "ccstate";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
-import { and, asc, eq, gt } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { feedItems } from "@okouai/db/schema/feed-item";
 import {
   suggestionFeedbackSchema,
@@ -14,8 +14,7 @@ import {
 import { nowDate } from "../../lib/time";
 import { db$ } from "../external/db";
 
-const PAGE_SIZE = 100;
-const MAX_PAGES = 10;
+const MAX_FEEDBACK_ROWS = 1000;
 const MAX_CONTEXT_BYTES = 65_536;
 const DAY = 86_400_000;
 
@@ -95,42 +94,31 @@ export function createSuggestionFeedbackContext(
     // A bootstrap can prepare several queued inputs; each needs fresh feedback.
     await get(pickedEvent$);
     const at = nowDate();
-    const feedbacks: SuggestionFeedback[] = [];
-    let after: string | undefined;
-    let complete = false;
-    for (let page = 0; page < MAX_PAGES; page++) {
-      const rows = await get(db$)
-        .select({
-          id: feedItems.id,
-          feedbacks: suggestionFeedbackEvents,
-        })
-        .from(feedItems)
-        .where(
-          and(
-            eq(feedItems.orgId, owner.orgId),
-            eq(feedItems.userId, owner.userId),
-            eq(feedItems.type, "suggestion"),
-            retainedSuggestionFeedback(at),
-            after ? gt(feedItems.id, after) : undefined,
-          ),
-        )
-        .orderBy(asc(feedItems.id))
-        .limit(PAGE_SIZE + 1);
-      const selected = rows.slice(0, PAGE_SIZE);
-      for (const row of selected) {
-        feedbacks.push(
+    // One ordered statement captures all retained rows and an overflow probe.
+    const rows = await get(db$)
+      .select({ feedbacks: suggestionFeedbackEvents })
+      .from(feedItems)
+      .where(
+        and(
+          eq(feedItems.orgId, owner.orgId),
+          eq(feedItems.userId, owner.userId),
+          eq(feedItems.type, "suggestion"),
+          retainedSuggestionFeedback(at),
+        ),
+      )
+      .orderBy(asc(feedItems.id))
+      .limit(MAX_FEEDBACK_ROWS + 1);
+    const feedbackSchema = array(suggestionFeedbackSchema).max(100);
+    const feedbacks = rows
+      .slice(0, MAX_FEEDBACK_ROWS)
+      .flatMap(({ feedbacks }) => {
+        return [
           ...effectiveCardFeedback(
-            array(suggestionFeedbackSchema).max(100).parse(row.feedbacks),
+            feedbackSchema.parse(feedbacks),
             at.getTime(),
           ),
-        );
-      }
-      if (rows.length <= PAGE_SIZE) {
-        complete = true;
-        break;
-      }
-      after = selected.at(-1)?.id;
-    }
+        ];
+      });
     const all = feedbacks
       .sort((a, b) => {
         return (
@@ -142,7 +130,7 @@ export function createSuggestionFeedbackContext(
       });
     const context = {
       asOf: at.toISOString(),
-      complete: complete && all.length <= 100,
+      complete: rows.length <= MAX_FEEDBACK_ROWS && all.length <= 100,
       feedback: all.slice(0, 100),
     };
     while (

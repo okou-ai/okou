@@ -493,6 +493,7 @@ internal fun OkouApp(
     fun closeSearch() {
         searchWorkflowId = null
         releaseSearchFocus()
+        restoreSearchFocus = true
         searchState.reset()
         navigation = navigation.copy(search = SearchRoute.Closed)
     }
@@ -1583,7 +1584,7 @@ internal fun OkouApp(
                 if (settings == null)
                     HorizontalDivider(
                         Modifier.align(Alignment.BottomCenter),
-                        color = MaterialTheme.colorScheme.outline,
+                        color = MaterialTheme.colorScheme.outlineVariant,
                     )
             }
         }
@@ -1594,7 +1595,10 @@ internal fun OkouApp(
         contentWindowInsets = WindowInsets.safeDrawing,
         snackbarHost = {
             if (!feedbackInOverlay && !showChatList && !showConversationFeedback) {
-                WorkspaceFeedbackHost(snackbar, Modifier.padding(bottom = 16.dp))
+                WorkspaceFeedbackHost(
+                    snackbar,
+                    Modifier.padding(bottom = if (settings != null) 8.dp else 16.dp),
+                )
             }
         },
         topBar = {

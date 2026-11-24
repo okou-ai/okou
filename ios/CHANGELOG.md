@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.62.2](https://github.com/okou-ai/okou/compare/ios-v0.62.1...ios-v0.62.2) (2026-11-24)
+
+
+### Refactoring
+
+* **ios:** keep the composer's state in the workspace graph ([#50406](https://github.com/okou-ai/okou/issues/50406)) ([accb5df](https://github.com/okou-ai/okou/commit/accb5df191d2eae42ebbadd7b392e23883744ebf))
+
+## [0.62.1](https://github.com/okou-ai/okou/compare/ios-v0.62.0...ios-v0.62.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* **ios:** avoid document cover flashes on preview open ([#50426](https://github.com/okou-ai/okou/issues/50426)) ([21678e5](https://github.com/okou-ai/okou/commit/21678e5b1400ed8d4f5770148b2e38cb6f5a44d9))
+
 ## [0.62.0](https://github.com/okou-ai/okou/compare/ios-v0.61.1...ios-v0.62.0) (2026-11-24)
 
 
