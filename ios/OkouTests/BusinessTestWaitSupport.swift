@@ -6,9 +6,6 @@ import XCTest
 
 @testable import Okou
 
-/// Subscribes a waiter's check to one graph value.
-private typealias GraphWatcher = @MainActor (@escaping @MainActor () -> Void) throws -> Subscription
-
 @MainActor
 extension XCTestCase {
   func waitForBusinessResult(
@@ -49,17 +46,6 @@ extension XCTestCase {
     message: @autoclosure () -> String = "",
     _ predicate: @escaping @MainActor () -> Bool
   ) async throws {
-    try await waitForGraphResult(
-      watching: [{ check in try store.watch(signal) { check() } }], timeout: timeout,
-      file: file, line: line, message: message(), predicate)
-  }
-
-  /// Checks the predicate whenever any watched graph value or Observation-tracked value changes.
-  private func waitForGraphResult(
-    watching watchers: [GraphWatcher],
-    timeout: TimeInterval, file: StaticString, line: UInt, message: String,
-    _ predicate: @escaping @MainActor () -> Bool
-  ) async throws {
     if predicate() { return }
     let started = ContinuousClock.now
     var observed: Duration?
@@ -70,11 +56,9 @@ extension XCTestCase {
       observed = started.duration(to: .now)
       ready.fulfill()
     }
-    let subscriptions = try watchers.map { try $0(check) }
+    let subscription = try store.watch(signal) { check() }
     defer {
-      for subscription in subscriptions {
-        do { try subscription.cancel() } catch { XCTFail("Graph waiter cleanup: \(error)") }
-      }
+      do { try subscription.cancel() } catch { XCTFail("Graph waiter cleanup: \(error)") }
     }
     let observation = Task {
       for await result in Observations({ predicate() }) where result {
@@ -90,7 +74,7 @@ extension XCTestCase {
     await observation.value
     _ = try XCTUnwrap(
       result == .completed && predicate() ? true : nil,
-      message + "; graph waiter=\(result); observed=\(String(describing: observed)); "
+      message() + "; graph waiter=\(result); observed=\(String(describing: observed)); "
         + "resumed=\(resumed)",
       file: file, line: line)
   }
@@ -115,14 +99,9 @@ extension XCTestCase {
     message: @autoclosure () -> String = "",
     _ predicate: @escaping @MainActor () -> Bool
   ) async throws {
-    let store = conversation.graph
-    let transcript = conversation.transcript
-    let draft = conversation.composer.presentation
-    let watchTranscript: GraphWatcher = { check in try store.watch(transcript) { check() } }
-    let watchDraft: GraphWatcher = { check in try store.watch(draft) { check() } }
-    try await waitForGraphResult(
-      watching: [watchTranscript, watchDraft], timeout: timeout, file: file, line: line,
-      message: message(), predicate)
+    try await waitForBusinessResult(
+      watching: waitSignal(conversation), in: conversation.graph, timeout: timeout, file: file,
+      line: line, message: message(), predicate)
   }
 
   func waitForFileRemoval(
@@ -150,5 +129,21 @@ extension XCTestCase {
     source.cancel()
     await fulfillment(of: [stopped], timeout: 3)
     XCTAssertFalse(FileManager.default.fileExists(atPath: url.path), file: file, line: line)
+  }
+}
+
+/// Both graph values a conversation owns, so one waiter wakes for either.
+private struct ConversationWait: Equatable {
+  let transcript: ConversationProjection.Value
+  let draft: ComposerDraftPresentation
+}
+
+/// One signal over a conversation's transcript and its composer's draft.
+@MainActor
+private func waitSignal(_ conversation: ConversationStore) -> Computed<ConversationWait> {
+  let transcript = conversation.transcript
+  let draft = conversation.composer.presentation
+  return Computed { get in
+    ConversationWait(transcript: try get(transcript), draft: try get(draft))
   }
 }
