@@ -254,7 +254,7 @@ final class ConversationStore {
     self.didSettle = didSettle
     do {
       var restored =
-        try draftStorage?.load(draftTarget.key + "/pending", as: [PendingMessage].self) ?? []
+        try draftStorage?.load(draftTarget.pendingKey, as: [PendingMessage].self) ?? []
       for index in restored.indices { restored[index].needsRetry = true }
       projection.replacePending(restored)
       // Recovery inputs do not consume the composer; two absent documents are not an identity.
@@ -462,7 +462,7 @@ final class ConversationStore {
       || history?.messages.contains(where: { $0.id.lowercased() == eventID }) == true
   }
 
-  func close() {
+  func close(discardingDraft: Bool = false) {
     quickShare?.task.cancel()
     sharing.close()
     closed = true
@@ -472,13 +472,14 @@ final class ConversationStore {
     modelSelection?.close()
     cancelRefresh()
     readResources.close()
+    if discardingDraft { projection.replacePending([]) }
     projection.close()
     sendTask?.cancel()
     stopTask?.cancel()
     reading.close()
     failureRecovery.close()
     measurements.clear()
-    composer.close()
+    composer.close(discardingDraft: discardingDraft)
     attachmentViewer.close()
     artifacts.close()
     connectorActions.close()
@@ -541,7 +542,8 @@ final class ConversationStore {
   }
 
   private func persistPending() {
-    do { try draftStorage?.save(pending, key: draftTarget.key + "/pending") } catch { show(error) }
+    guard !closed else { return }
+    do { try draftStorage?.save(pending, key: draftTarget.pendingKey) } catch { show(error) }
   }
 
   private func show(_ failure: Error) {

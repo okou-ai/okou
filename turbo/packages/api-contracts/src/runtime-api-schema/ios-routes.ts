@@ -258,6 +258,14 @@ export const iosClientContracts: readonly {
   },
   { id: "ios.chatThreadDraftContract.get", route: chatThreadDraftContract.get },
   {
+    id: "ios.chatThreadDraftContract.readComposer",
+    route: chatThreadDraftContract.readComposer,
+  },
+  {
+    id: "ios.chatThreadDraftContract.saveComposer",
+    route: chatThreadDraftContract.saveComposer,
+  },
+  {
     id: "ios.chatThreadEventsContract.catchUp",
     route: chatThreadEventsContract.catchUp,
   },
@@ -506,6 +514,10 @@ export const iosClientContracts: readonly {
   {
     id: "ios.runConnectorAccountsContract.approve",
     route: runConnectorAccountsContract.approve,
+  },
+  {
+    id: "ios.runConnectorAccountsContract.approveMember",
+    route: runConnectorAccountsContract.approveMember,
   },
   {
     id: "ios.thirdPartySubscriptionsMainContract.list",

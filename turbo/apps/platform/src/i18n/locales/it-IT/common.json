@@ -2031,8 +2031,10 @@
     "connectorAccountSwitch": {
       "accountFallback": "Account del connettore",
       "actionFailed": "Impossibile cambiare account.",
+      "allowForHour": "Consenti per 1 ora",
       "customConnector": "Connettore personalizzato",
       "loadFailed": "Impossibile caricare questo account del connettore.",
+      "memberScope": "Consenti in tutte le tue chat. Seleziona questo account qui.",
       "reconnectRequired": "È necessario riconnettersi. Le esecuzioni successive potrebbero usare l'alternativa esistente.",
       "selected": "Passaggio a {{account}} completato",
       "switch": "Cambia",

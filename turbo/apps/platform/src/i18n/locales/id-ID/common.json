@@ -1995,8 +1995,10 @@
     "connectorAccountSwitch": {
       "accountFallback": "Akun konektor",
       "actionFailed": "Tidak dapat beralih akun.",
+      "allowForHour": "Izinkan selama 1 jam",
       "customConnector": "Konektor khusus",
       "loadFailed": "Akun konektor ini tidak dapat dimuat.",
+      "memberScope": "Izinkan di semua chat Anda. Pilih akun ini di sini.",
       "reconnectRequired": "Perlu menghubungkan kembali. Proses berikutnya mungkin menggunakan cadangan yang ada.",
       "selected": "Beralih ke {{account}}",
       "switch": "Beralih",

@@ -150,12 +150,13 @@ Mark read, Mark unread, and Mark all as read immediately update chat list
 unread markers, filters, and collapsed Project counts. A pending read hides
 unread activity through its observed server watermark. A pending read on a
 locally marked unread chat without a server watermark displays as read until
-its own readback. The existing read
-endpoint still chooses the receipt watermark. Definitive write failures remove
-the local intent. A successful indicators read started after the write settles
-the current intent, including when the write response was lost. If both fail,
-the list keeps the projection until the next successful refresh. Bulk feedback
-counts receipts that cover the captured unread watermarks.
+its own readback. The read endpoint chooses the receipt watermark. A definitive
+rejection removes the failed intent. An indicators refresh reconciles unread
+activity after the write, and an ambiguous receipt can require the thread's
+authoritative read cursor. Bulk feedback distinguishes confirmed, rejected and
+unconfirmed targets. When the writes settle the outcome, feedback can appear
+while indicators continue refreshing. If the batch cannot confirm a target,
+the list returns that target to its latest indicator state.
 
 Conversation history shares this cache and its workspace authorization lease.
 The workspace retains the confirmed checkpoint and projected timeline for the

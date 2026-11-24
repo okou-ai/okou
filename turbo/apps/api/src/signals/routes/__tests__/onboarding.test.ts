@@ -349,7 +349,7 @@ describe("POST /api/onboarding/complete", () => {
       status: "active",
       concurrencyLimit: 2,
       canBuyConcurrency: false,
-      canBuyCredits: false,
+      canBuyCredits: true,
       showUsagePack: false,
       autoRechargeAllowed: false,
       restrictedBuiltInModels: true,
@@ -408,7 +408,7 @@ describe("POST /api/onboarding/complete", () => {
       status: "active",
       concurrencyLimit: 2,
       restrictedBuiltInModels: true,
-      canBuyCredits: false,
+      canBuyCredits: true,
       credits: 0,
     });
     await expect(completeAs(actor)).resolves.toStrictEqual({

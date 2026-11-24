@@ -25,7 +25,7 @@ export const ORG_PLAN_ENTITLEMENT_TIER_VALUES: Readonly<
     hostedSiteCustomDomainsAllowed: false,
     baseConcurrencyLimit: 2,
     canBuyConcurrency: false,
-    canBuyCredits: false,
+    canBuyCredits: true,
     autoRechargeAllowed: false,
     restrictedBuiltInModels: true,
     workflowWebhookAutomationAllowed: false,

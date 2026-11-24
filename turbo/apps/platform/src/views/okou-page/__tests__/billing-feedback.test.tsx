@@ -182,8 +182,11 @@ test("a restored upgrade dialog defers checkout feedback until closing completes
   expect(plans).not.toBeInTheDocument();
 });
 
-test("an exhaustion card requests the reward questionnaire with the server-issued offer", async () => {
+test("an upgrade-required exhaustion card requests the reward questionnaire with the server-issued offer", async () => {
   const telemetry = prepareBilling();
+  context.mocks.api(billingStatusContract.get, ({ respond }) => {
+    return respond(200, { ...freeBilling(), canBuyCredits: false });
+  });
   context.mocks.api(billingFeedbackRewardContract.get, ({ respond }) => {
     return respond(200, { rewardCredits: 200, token: "signed-offer-from-api" });
   });

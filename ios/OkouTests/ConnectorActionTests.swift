@@ -101,10 +101,22 @@ final class ConnectorActionTests: XCTestCase {
     XCTAssertEqual(eventIDs.withLock { $0.count }, 2)
   }
   func testAccountConfirmationSavesTheChatsCurrentAccountBeforeContinuing() async throws {
+    try await verifyAccountConfirmation(
+      "select", endpoint: "connector-account-approval", memberWide: false)
+  }
+
+  func testMemberApprovalUsesTheDistinctEndpointBeforeContinuing() async throws {
+    try await verifyAccountConfirmation(
+      "member-approval", endpoint: "member-connector-account-approval", memberWide: true)
+  }
+
+  private func verifyAccountConfirmation(_ actionPath: String, endpoint: String, memberWide: Bool)
+    async throws
+  {
     let selected = Mutex(false)
     let callbacks = Mutex(0)
     let fixture = ChatHTTPFixture { request in
-      if request.url!.path.hasSuffix("/connector-account-approval") {
+      if request.url!.path == "/api/chat-threads/\(FixtureData.threadID)/\(endpoint)" {
         XCTAssertEqual(request.httpMethod, "POST")
         let body = try JSONDecoder().decode(
           ChatConnectorSelection.self, from: chatRequestBody(request))
@@ -127,10 +139,13 @@ final class ConnectorActionTests: XCTestCase {
     }
     let store = store(fixture)
     defer { store.close() }
+    let actionURL =
+      "/connectors/accounts/\(FixtureData.accountID)/\(actionPath)?kind=builtin&connectorSlug=slack&threadId=\(FixtureData.threadID)&callbackPrompt=Continue"
     let action = try XCTUnwrap(
       ChatConnectorAction.parse(
-        "/connectors/accounts/\(FixtureData.accountID)/select?kind=builtin&connectorSlug=slack&threadId=\(FixtureData.threadID)&callbackPrompt=Continue",
+        memberWide ? actionURL + "&requestId=\(FixtureData.attemptID)" : actionURL,
         webURL: fixture.baseURL, threadID: FixtureData.threadID))
+    XCTAssertEqual(action.isMemberApproval, memberWide)
     store.activate(action)
     try await waitForBusinessResult { store.active != nil }
     store.submit()
@@ -139,6 +154,15 @@ final class ConnectorActionTests: XCTestCase {
     let loaded = try await store.resources.read(action).load()
     let status = try XCTUnwrap(loaded)
     XCTAssertTrue(status.selected)
+    if memberWide {
+      selected.withLock { $0 = false }
+      let fresh = try XCTUnwrap(
+        ChatConnectorAction.parse(
+          actionURL + "&requestId=\(FixtureData.siblingID)", webURL: fixture.baseURL,
+          threadID: FixtureData.threadID))
+      let latest = try await store.resources.read(fresh).load()
+      XCTAssertFalse(try XCTUnwrap(latest).selected)
+    }
   }
 
 }

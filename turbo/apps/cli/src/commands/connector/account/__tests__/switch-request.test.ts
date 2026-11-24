@@ -54,20 +54,32 @@ function stubCatalog(): ReturnType<typeof http.get> {
   ]);
 }
 
-function stubSwitchInventory(target: ConnectorAccountTarget) {
-  return stubRunConnectorAccountInventory({
-    chatThreadId: THREAD_ID,
-    accounts: [
-      {
-        target,
-        connectionId: CONNECTION_ID,
-        displayName: "Work",
-        enabled: false,
-        isCurrent: false,
-        isDefault: false,
-      },
-    ],
-  });
+function stubSwitchInventory(
+  target: ConnectorAccountTarget,
+  approvalScope?: "member",
+) {
+  return stubRunConnectorAccountInventory(
+    {
+      chatThreadId: THREAD_ID,
+      approvalScope,
+      accounts: [
+        {
+          target,
+          connectionId: CONNECTION_ID,
+          displayName: "Work",
+          enabled: false,
+          isCurrent: false,
+          isDefault: false,
+        },
+      ],
+    },
+    undefined,
+    (request) => {
+      expect(
+        new URL(request.url).searchParams.get("includeApprovalScope"),
+      ).toBe("true");
+    },
+  );
 }
 
 function stubInspection(
@@ -85,7 +97,9 @@ function stubInspection(
 }
 
 function actionUrlFromOutput(output: string): URL {
-  const href = output.match(/\[Confirm account switch\]\(([^)]+)\)/)?.[1];
+  const href = output.match(
+    /\[(?:Confirm account switch|Review account access)\]\(([^)]+)\)/,
+  )?.[1];
   if (!href) {
     throw new Error("Expected connector account switch action URL");
   }
@@ -166,6 +180,41 @@ describe("okou connector account switch-request command", () => {
       ["kind", "builtin"],
       ["connectorSlug", "github"],
       ["callbackPrompt", "Continue with the selected account & finish"],
+      ["threadId", THREAD_ID],
+    ]);
+  });
+
+  it("requests a distinct approval when inventory reports member-wide access", async () => {
+    server.use(
+      stubSwitchInventory(
+        { kind: "builtin", connectorSlug: "github" },
+        "member",
+      ),
+    );
+    await switchConnectorAccountRequestCommand.parseAsync([
+      "node",
+      "okou",
+      "github",
+      "--connection-id",
+      CONNECTION_ID,
+      "--callback-prompt",
+      "Continue with Work",
+    ]);
+
+    const output = mockConsoleLog.mock.calls.flat().join("\n");
+    expect(output).toContain(
+      "Allow Work for GitHub across your Chats for 1 hour and select it in this Chat",
+    );
+    const url = actionUrlFromOutput(output);
+    expect(url.pathname).toBe(
+      `/connectors/accounts/${CONNECTION_ID}/member-approval`,
+    );
+    expect(url.searchParams.get("requestId")).toMatch(/^[0-9a-f-]{36}$/u);
+    expect(Array.from(url.searchParams.entries())).toStrictEqual([
+      ["kind", "builtin"],
+      ["connectorSlug", "github"],
+      ["requestId", expect.any(String)],
+      ["callbackPrompt", "Continue with Work"],
       ["threadId", THREAD_ID],
     ]);
   });

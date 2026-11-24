@@ -31,6 +31,8 @@
     <string name="auth_signing_out">साइन आउट हो रहा है…</string>
     <string name="auth_workspace">मौजूदा वर्कस्पेस</string>
     <string name="auth_switch_workspace">कार्यक्षेत्र बदलें</string>
+    <string name="auth_switch_workspace_pending">कार्यक्षेत्र बदला जा रहा है</string>
+    <string name="auth_switch_workspace_failed">इस कार्यक्षेत्र पर स्विच नहीं किया जा सका।</string>
     <string name="auth_browser_unavailable">कार्यक्षेत्र सेट अप करने के लिए ब्राउज़र इंस्टॉल करें।</string>
     <string name="preference_color_theme">कलर थीम</string>
     <string name="preference_language">भाषा</string>

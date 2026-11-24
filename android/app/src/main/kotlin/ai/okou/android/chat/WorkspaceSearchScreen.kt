@@ -7,6 +7,7 @@ import ai.okou.android.WorkspaceSearchToolbar
 import ai.okou.android.artifacts.label
 import ai.okou.android.state.ChatSearchState
 import ai.okou.android.workspaceSearchControlHeight
+import ai.okou.android.workspaceSearchFocusOutline
 import ai.okou.android.workspaceSearchTextStyle
 import androidx.annotation.StringRes
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -36,6 +37,7 @@ import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -66,6 +68,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalDensity
@@ -172,7 +175,9 @@ internal fun WorkspaceSearchScreen(
             leading = {
                 IconButton(
                     onClick = onClose,
-                    modifier = Modifier.size(workspaceSearchControlHeight()),
+                    modifier =
+                        Modifier.size(workspaceSearchControlHeight())
+                            .workspaceSearchFocusOutline(CircleShape),
                 ) {
                     Icon(
                         painterResource(R.drawable.ic_arrow_back),
@@ -219,6 +224,7 @@ internal fun WorkspaceSearchScreen(
                             }
                             if (query.text.isNotEmpty()) {
                                 IconButton(
+                                    modifier = Modifier.workspaceSearchFocusOutline(CircleShape),
                                     onClick = {
                                         search.clearQuery()
                                         inputFocus.requestFocus()
@@ -745,6 +751,7 @@ private fun SearchResults(
         LazyColumn(
             Modifier.fillMaxSize()
                 .focusRequester(resultFocus)
+                .workspaceSearchFocusOutline(RectangleShape)
                 .focusable()
                 .testTag("chat_search_results"),
             state = search.position,
@@ -894,6 +901,7 @@ private fun SearchGroup(group: SearchItem.Group, onMore: () -> Unit) {
                 Modifier.widthIn(min = 48.dp)
                     .heightIn(min = 48.dp)
                     .clip(RoundedCornerShape(12.dp))
+                    .workspaceSearchFocusOutline(RoundedCornerShape(12.dp))
                     .clickable(role = Role.Button, onClick = onMore)
                     .semantics { contentDescription = moreLabel }
                     .padding(horizontal = 8.dp, vertical = 4.dp),
@@ -933,6 +941,7 @@ private fun SearchResult(
             .clip(ChatListRowShape)
             .focusRequester(rowFocus)
             .focusProperties { canFocus = true }
+            .workspaceSearchFocusOutline(ChatListRowShape)
             .clickable(role = Role.Button, onClick = onOpen)
             .padding(ChatListRowPadding),
         verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
@@ -977,7 +986,10 @@ private fun SearchEmpty(
             style = chatListTitleStyle().copy(fontWeight = FontWeight.SemiBold),
         )
         if (type != WorkspaceSearchType.All) {
-            ChatListTextAction(R.string.chat_search_all_types) {
+            ChatListTextAction(
+                R.string.chat_search_all_types,
+                modifier = Modifier.workspaceSearchFocusOutline(RoundedCornerShape(12.dp)),
+            ) {
                 onSelectType(WorkspaceSearchType.All)
             }
         }

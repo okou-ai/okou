@@ -143,3 +143,36 @@ export function saveChatConnectorCurrentSql(
     ON CONFLICT ${selectionConflictTarget(owner.target)} DO UPDATE SET connector_id = excluded.connector_id
     RETURNING connector_id`;
 }
+
+/** The approval and the requesting Chat's selection commit together. */
+export function approveMemberConnectorAccountSql(
+  owner: ChatConnectorAccessOwner,
+  connectionId: string,
+  at: Date,
+  expiresAt: Date,
+) {
+  return sql`WITH approved AS (
+    UPDATE ${connectors}
+    SET chat_access_allowed = CASE
+          WHEN chat_access_allowed IS NULL AND default_enabled_for_chats THEN NULL
+          ELSE true
+        END,
+        chat_access_expires_at = CASE
+          WHEN coalesce(chat_access_allowed, default_enabled_for_chats)
+            THEN CASE WHEN chat_access_expires_at IS NULL THEN NULL
+              ELSE greatest(chat_access_expires_at, ${sql.param(expiresAt, connectors.chatAccessExpiresAt)}) END
+          ELSE ${sql.param(expiresAt, connectors.chatAccessExpiresAt)}
+        END,
+        updated_at = ${sql.param(at, connectors.updatedAt)}
+    FROM ${chatThreads}
+    WHERE ${connectorAccessThreadOwner(owner)}
+      AND ${connectorAccessAccountOwner(owner)}
+      AND ${eq(connectors.id, connectionId)}
+      AND ${memberConnectorAccountAccessEnabledSql(owner)}
+    RETURNING ${chatThreads.id} AS thread_id, ${connectors.id} AS account_id,
+      ${connectors.connectorSlug}, ${connectors.customConnectorId}
+  ) INSERT INTO ${chatThreadConnectorSelections} (chat_thread_id, connector_id, connector_slug, custom_connector_id)
+    SELECT thread_id, account_id, connector_slug, custom_connector_id FROM approved
+    ON CONFLICT ${selectionConflictTarget(owner.target)} DO UPDATE SET connector_id = excluded.connector_id
+    RETURNING connector_id`;
+}

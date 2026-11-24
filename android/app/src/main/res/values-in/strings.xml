@@ -31,6 +31,8 @@
     <string name="auth_signing_out">Sedang keluar…</string>
     <string name="auth_workspace">Ruang kerja saat ini</string>
     <string name="auth_switch_workspace">Ganti ruang kerja</string>
+    <string name="auth_switch_workspace_pending">Beralih ruang kerja</string>
+    <string name="auth_switch_workspace_failed">Tidak dapat beralih ke ruang kerja ini.</string>
     <string name="auth_browser_unavailable">Instal browser untuk membuka pengaturan ruang kerja.</string>
     <string name="preference_color_theme">Tema warna</string>
     <string name="preference_language">Bahasa</string>

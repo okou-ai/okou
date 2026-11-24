@@ -69,6 +69,11 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
+private val ChatListUiState.failedRowAction
+    get() = rowActionFailures.lastOrNull()
+private val ChatListUiState.markAllReadResult
+    get() = markAllReadResults.lastOrNull()
+
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 internal abstract class ChatListModelTestFixture {
     @get:Rule val temporary = TemporaryFolder()
@@ -1169,7 +1174,8 @@ internal class ChatListUnreadModelTest : ChatListModelTestFixture() {
                 runCurrent()
                 val settled = model.uiState.value
                 assertEquals(ChatReadPhase.Loading, settled.indicatorsPhase)
-                assertEquals(if (rejected) ChatUndoPhase.Failed else null, settled.rowUndo?.phase)
+                assertNull(settled.rowUndo)
+                assertEquals(rejected, settled.rowActionFailures.singleOrNull()?.fromUndo == true)
                 assertFalse(CHAT_PERSONAL in settled.pendingRowActions)
                 assertEquals(!rejected, settled.isUnread(CHAT_PERSONAL))
 
@@ -1296,9 +1302,10 @@ internal class ChatListUnreadModelTest : ChatListModelTestFixture() {
     }
 
     @Test
-    fun bulkReadShowsNewerUnreadActivityWhileWriteAndReadbackArePending() = runTest {
+    fun bulkReadCompletesWhileIndicatorsRefreshAndKeepsNewerUnreadActivity() = runTest {
         val write = CompletableDeferred<ReadState>()
         val readback = CompletableDeferred<Indicators>()
+        val readbackStarted = CompletableDeferred<Unit>()
         fun unread(time: String) =
             Indicators(
                 mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
@@ -1315,18 +1322,28 @@ internal class ChatListUnreadModelTest : ChatListModelTestFixture() {
             advanceUntilIdle()
             model.markAllRead()
             runCurrent()
-            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
 
             source.statusRead = { newer }
             model.refreshIndicators()
             runCurrent()
             assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
 
-            source.statusRead = { readback.await() }
+            source.statusRead = { throw ApiFailure.Http(503, null, null, null) }
+            model.refreshIndicators()
+            runCurrent()
+            source.statusRead = {
+                readbackStarted.complete(Unit)
+                readback.await()
+            }
             write.complete(ReadState(CHAT_DATE))
             runCurrent()
-            assertTrue(model.uiState.value.markingAllRead)
-            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+            val settled = model.uiState.value
+            assertTrue(readbackStarted.isCompleted)
+            assertEquals(ChatReadPhase.Loading, settled.indicatorsPhase)
+            assertFalse(settled.markingAllRead)
+            assertEquals(ChatMarkAllReadResult(1, 1), settled.markAllReadResult)
+            assertTrue(settled.isUnread(CHAT_PERSONAL))
 
             readback.complete(newer)
             advanceUntilIdle()
@@ -1378,20 +1395,80 @@ internal class ChatListUnreadModelTest : ChatListModelTestFixture() {
             model.selectFilter(ChatListFilter.Unread)
             model.markAllRead()
             runCurrent()
-            assertEquals(unreadBefore.unreadAt.keys, model.uiState.value.unreadChatIds())
+            assertTrue(model.uiState.value.unreadChatIds().isEmpty())
 
             personal.complete(ReadState(CHAT_DATE))
             runCurrent()
             val partial = model.uiState.value
             assertTrue(partial.markingAllRead)
-            assertEquals(setOf(CHAT_IN_PROJECT), partial.unreadChatIds())
+            assertTrue(partial.unreadChatIds().isEmpty())
 
             source.statusRead = { unreadAfter }
             other.completeExceptionally(ApiFailure.Http(409, null, null, null))
             advanceUntilIdle()
             val settled = model.uiState.value
             assertEquals(setOf(CHAT_IN_PROJECT), settled.unreadChatIds())
-            assertEquals(ChatMarkAllReadResult(1, 2), settled.markAllReadResult)
+            assertEquals(ChatMarkAllReadResult(1, 2, rejected = 1), settled.markAllReadResult)
+        }
+    }
+
+    @Test
+    fun bulkReadRetainsAmbiguousWriteThroughAnInterveningRefresh() = runTest {
+        val otherWrite = CompletableDeferred<ReadState>()
+        val lookedUp = mutableListOf<String>()
+        val source =
+            object : Service() {
+                    override suspend fun markRead(threadId: String): ReadState {
+                        if (threadId == CHAT_PERSONAL)
+                            throw ApiFailure.Network(IOException("response lost"))
+                        return otherWrite.await()
+                    }
+
+                    override suspend fun threadDetail(threadId: String): ThreadDetail {
+                        lookedUp.add(threadId)
+                        return ThreadDetail(CHAT_DATE, false)
+                    }
+                }
+                .apply {
+                    statusRead = {
+                        Indicators(
+                            mapOf(
+                                CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD,
+                                CHAT_IN_PROJECT to IndicatorsThreadsValue.UNREAD,
+                            ),
+                            mapOf(CHAT_PERSONAL to CHAT_DATE, CHAT_IN_PROJECT to CHAT_DATE),
+                        )
+                    }
+                    listRead = {
+                        page(
+                            listOf(
+                                chatEventWire(),
+                                chatEventWire(
+                                    id = "77777777-7777-4777-8777-777777777777",
+                                    seq = 18,
+                                    thread = CHAT_IN_PROJECT,
+                                ),
+                            ),
+                        )
+                    }
+                }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            model.markAllRead()
+            runCurrent()
+
+            model.refreshIndicators()
+            runCurrent()
+            assertTrue(model.uiState.value.markingAllRead)
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+            assertTrue(lookedUp.isEmpty())
+
+            source.statusRead = { Indicators(emptyMap(), emptyMap()) }
+            otherWrite.complete(ReadState(CHAT_DATE))
+            advanceUntilIdle()
+            assertEquals(listOf(CHAT_PERSONAL), lookedUp)
+            assertEquals(ChatMarkAllReadResult(2, 2), model.uiState.value.markAllReadResult)
         }
     }
 
@@ -1421,8 +1498,44 @@ internal class ChatListUnreadModelTest : ChatListModelTestFixture() {
                 advanceUntilIdle()
                 val state = model.uiState.value
                 assertEquals(connectionFailed, state.isUnread(CHAT_PERSONAL))
-                assertEquals(ChatMarkAllReadResult(0, 1, connectionFailed), state.markAllReadResult)
+                assertEquals(
+                    ChatMarkAllReadResult(0, 1, rejected = if (connectionFailed) 1 else 0),
+                    state.markAllReadResult,
+                )
             }
+        }
+    }
+
+    @Test
+    fun bulkReadCountsAnAmbiguousWriteWhenTheServerCursorConfirmsIt() = runTest {
+        val lookedUp = mutableListOf<String>()
+        val source =
+            object : Service() {
+                    override suspend fun markRead(threadId: String): ReadState {
+                        throw ApiFailure.Network(IOException("response lost"))
+                    }
+
+                    override suspend fun threadDetail(threadId: String): ThreadDetail {
+                        lookedUp.add(threadId)
+                        return ThreadDetail(CHAT_DATE, false)
+                    }
+                }
+                .apply {
+                    statusRead = {
+                        Indicators(
+                            mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
+                            mapOf(CHAT_PERSONAL to CHAT_DATE),
+                        )
+                    }
+                }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            model.markAllRead()
+            advanceUntilIdle()
+            assertEquals(listOf(CHAT_PERSONAL), lookedUp)
+            assertEquals(ChatMarkAllReadResult(1, 1), model.uiState.value.markAllReadResult)
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
         }
     }
 
@@ -1456,7 +1569,10 @@ internal class ChatListUnreadModelTest : ChatListModelTestFixture() {
             model.markAllRead()
             advanceUntilIdle()
             assertEquals(2, attempts)
-            assertEquals(ChatMarkAllReadResult(0, 1, true), model.uiState.value.markAllReadResult)
+            assertEquals(
+                ChatMarkAllReadResult(0, 1, rejected = 1),
+                model.uiState.value.markAllReadResult,
+            )
             assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
         }
     }
@@ -1630,7 +1746,8 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
                 if (rejected) {
                     runCurrent()
                     val state = model.uiState.value
-                    assertEquals(ChatUndoPhase.Failed, state.rowUndo?.phase)
+                    assertNull(state.rowUndo)
+                    assertTrue(state.rowActionFailures.single().fromUndo)
                     assertTrue(state.threads.single { it.id == CHAT_PERSONAL }.archived)
                     assertTrue(state.pendingRowActions.isEmpty())
                     readback.complete(Unit)
@@ -1638,11 +1755,11 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
                 advanceUntilIdle()
                 val state = model.uiState.value
                 assertEquals(
-                    if (rejected) ChatUndoPhase.Failed else ChatUndoPhase.Unconfirmed,
+                    if (rejected) null else ChatUndoPhase.Unconfirmed,
                     state.rowUndo?.phase,
                 )
                 assertTrue(state.threads.single { it.id == CHAT_PERSONAL }.archived)
-                assertNull(state.failedRowAction)
+                assertEquals(rejected, state.rowActionFailures.singleOrNull()?.fromUndo == true)
                 assertTrue(state.pendingRowActions.isEmpty())
                 assertEquals(1, inverseWrites)
             }
@@ -1669,15 +1786,15 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
             val offer = checkNotNull(model.uiState.value.rowUndo)
             model.undoRowAction(offer)
             advanceUntilIdle()
-            val failed = checkNotNull(model.uiState.value.rowUndo)
-            assertEquals(ChatUndoPhase.Failed, failed.phase)
+            val failed = model.uiState.value.rowActionFailures.single()
+            assertTrue(failed.fromUndo)
+            assertNull(model.uiState.value.rowUndo)
             assertTrue(model.uiState.value.threads.first { it.id == CHAT_PERSONAL }.archived)
             assertEquals(1, inverseWrites)
 
             connectivity.value = true
             advanceUntilIdle()
-            assertSame(failed, model.uiState.value.rowUndo)
-            model.undoRowAction(failed)
+            assertSame(failed, model.uiState.value.rowActionFailures.single())
             model.undoRowAction(offer)
             advanceUntilIdle()
             assertEquals(1, inverseWrites)
@@ -1711,6 +1828,40 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
             assertNull(model.uiState.value.rowUndo)
             assertFalse(model.uiState.value.threads.first { it.id == CHAT_PERSONAL }.archived)
             assertEquals(1, inverseWrites)
+        }
+    }
+
+    @Test
+    fun aRejectedUndoKeepsItsFeedbackAfterANewerArchiveConfirms() = runTest {
+        val releaseInverse = CompletableDeferred<Unit>()
+        val source = ArchiveService()
+        source.beforeUnarchive = {
+            releaseInverse.await()
+            throw ApiFailure.Http(403, null, null, null)
+        }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.Archive))
+            advanceUntilIdle()
+            val firstUndo = checkNotNull(model.uiState.value.rowUndo)
+            model.undoRowAction(firstUndo)
+            runCurrent()
+            assertEquals(ChatUndoPhase.Checking, model.uiState.value.rowUndo?.phase)
+
+            assertTrue(model.performRowAction(CHAT_IN_PROJECT, ChatRowAction.Archive))
+            advanceUntilIdle()
+            val newerUndo = checkNotNull(model.uiState.value.rowUndo)
+            assertEquals(CHAT_IN_PROJECT, newerUndo.threadId)
+
+            releaseInverse.complete(Unit)
+            advanceUntilIdle()
+            val state = model.uiState.value
+            assertSame(newerUndo, state.rowUndo)
+            assertTrue(state.threads.single { it.id == CHAT_PERSONAL }.archived)
+            val failure = state.rowActionFailures.single()
+            assertTrue(failure.rejected && failure.fromUndo)
+            assertEquals(ChatRowAction.Unarchive, failure.action)
         }
     }
 
@@ -2835,7 +2986,7 @@ internal class ChatListProjectMembershipModelTest : ChatListModelTestFixture() {
                 val original = model.uiState.value.threads.associateBy { it.id }
                 model.deleteProject(CHAT_PROJECT)
                 runCurrent()
-                val feedback = checkNotNull(model.uiState.value.projectList.deleteFeedback)
+                val feedback = model.uiState.value.projectList.deleteFeedback.single()
                 assertEquals(ProjectDeleteStatus.Unconfirmed, feedback.status)
                 assertEquals(7, UUID.fromString(source.deleteIds.single()).version())
                 assertEquals(listOf("Research"), model.uiState.value.projects.map { it.name })
@@ -2861,7 +3012,7 @@ internal class ChatListProjectMembershipModelTest : ChatListModelTestFixture() {
                 assertNull(confirmed.projectList.deletingId)
                 assertEquals(
                     ProjectDeleteStatus.Confirmed,
-                    confirmed.projectList.deleteFeedback?.status,
+                    confirmed.projectList.deleteFeedback.single().status,
                 )
                 assertEquals(
                     listOf(CHAT_PERSONAL, CHAT_IN_PROJECT),
@@ -2900,7 +3051,10 @@ internal class ChatListProjectMembershipModelTest : ChatListModelTestFixture() {
             runCurrent()
 
             val deleted = model.uiState.value
-            assertEquals(ProjectDeleteStatus.Confirmed, deleted.projectList.deleteFeedback?.status)
+            assertEquals(
+                ProjectDeleteStatus.Confirmed,
+                deleted.projectList.deleteFeedback.single().status,
+            )
             assertEquals(original, deleted.threads.single { it.id == CHAT_PERSONAL })
             assertEquals(
                 listOf(CHAT_PERSONAL, CHAT_IN_PROJECT),
@@ -2937,8 +3091,11 @@ internal class ChatListProjectMembershipModelTest : ChatListModelTestFixture() {
             runCurrent()
             val waiting = model.uiState.value
             assertEquals(listOf(destination), waiting.projects.map { it.id })
-            assertEquals(ProjectDeleteStatus.Confirmed, waiting.projectList.deleteFeedback?.status)
-            assertNull(waiting.projectDeleteFeedback)
+            assertEquals(
+                ProjectDeleteStatus.Confirmed,
+                waiting.projectList.deleteFeedback.single().status,
+            )
+            assertTrue(waiting.projectDeleteFeedback.isEmpty())
 
             source.chatReadUnavailable = false
             connectivity.value = false
@@ -2949,7 +3106,10 @@ internal class ChatListProjectMembershipModelTest : ChatListModelTestFixture() {
             val outside = chatListGroups(regrouped).single { it.projectId == null }
             assertEquals(listOf(CHAT_PERSONAL, CHAT_IN_PROJECT), outside.threads.map { it.id })
             assertEquals("a2", outside.threads.single { it.id == CHAT_IN_PROJECT }.pinOrder)
-            assertEquals(ProjectDeleteStatus.Confirmed, regrouped.projectDeleteFeedback?.status)
+            assertEquals(
+                ProjectDeleteStatus.Confirmed,
+                regrouped.projectDeleteFeedback.single().status,
+            )
             assertSame(failure, regrouped.failedRowAction)
             assertNull(regrouped.chatMoveNotice)
 
@@ -3148,7 +3308,10 @@ internal class ChatListProjectMembershipModelTest : ChatListModelTestFixture() {
             advanceUntilIdle()
             val failed = model.uiState.value
             assertEquals(1, source.deleteIds.size)
-            assertEquals(ProjectDeleteStatus.ConnectionFailed, failed.projectDeleteFeedback?.status)
+            assertEquals(
+                ProjectDeleteStatus.ConnectionFailed,
+                failed.projectDeleteFeedback.single().status,
+            )
             assertEquals(CHAT_PROJECT, failed.projects.single().id)
             assertTrue(failed.canDeleteProject)
 
@@ -3159,7 +3322,7 @@ internal class ChatListProjectMembershipModelTest : ChatListModelTestFixture() {
             assertTrue(model.uiState.value.projects.isEmpty())
             assertEquals(
                 ProjectDeleteStatus.Confirmed,
-                model.uiState.value.projectDeleteFeedback?.status,
+                model.uiState.value.projectDeleteFeedback.single().status,
             )
         }
     }

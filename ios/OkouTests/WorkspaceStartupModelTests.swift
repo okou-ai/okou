@@ -186,7 +186,7 @@ final class WorkspaceStartupFixture: Sendable {
           try await beforeIndicatorsRead?()
           return ChatHTTPResponse(body: #"{"unreadAt":{},"threads":{}}"#)
         case "/api/chat-drafts/composer",
-          "/api/chat-threads/\(ConversationHistoryFixture.threadID)/draft":
+          "/api/chat-threads/\(ConversationHistoryFixture.threadID)/composer-draft":
           return ChatHTTPResponse(
             body: #"{"revision":"0","document":null,"clientMutationId":null}"#)
         case "/api/realtime/token":

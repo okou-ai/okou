@@ -101,7 +101,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
     }
     view.followup = followup
     view.placeholder.text = followup ?? placeholder
-    view.placeholder.numberOfLines = followup == nil ? 1 : 2
+    view.placeholder.numberOfLines = expanded && followup != nil ? 2 : 1
     view.accessibilityLabel = placeholder.isEmpty ? String(localized: "Message Okou") : placeholder
     view.accessibilityIdentifier = identifier
     view.isEditable = isEnabled
