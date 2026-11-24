@@ -136,6 +136,8 @@ jobs:
         node-version: 22.23.4
     - name: Verify CI change detection and promotion contracts
       run: |
+        # Local provenance checks must identify the verified checkout being replayed.
+        export GITHUB_SHA="$IOS_QUEUE_SOURCE"
         bash -n ios/scripts/*.sh
         shellcheck ios/scripts/*.sh
         bash ios/scripts/test-ci.sh
