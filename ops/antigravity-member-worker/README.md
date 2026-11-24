@@ -6,7 +6,7 @@ The internal sign-in worker associates a member's Okou account with an official 
 
 1. Assign one dedicated Linux user, private home and persistent Secret Service login keyring to the member. Give the worker its own D-Bus user session and unlock its keyring using the deployment's secret manager or PAM. Keep the home, keyring and D-Bus socket outside every job sandbox. On Linux, changing only `HOME` does not isolate an existing desktop keyring.
 2. Install the pinned `/usr/local/bin/agy` using the same release and SHA-512 verification as the [Runner template](../../crates/runner/scripts/build-template.sh). Install Python 3.11 or newer. Install [the worker entry point](../../scripts/connect-antigravity-subscription.py) and [its companion module](../../scripts/antigravity_personal.py) together in the root-owned directory `/opt/okou/antigravity`. Start with a new native login profile. Assign a new OS account and keyring when reassigning a machine to another person.
-3. Allocate an individual Clerk machine identity and authorize it to call the environment's receiving Okou machine. Configure the API's existing `OKOU_MACHINE_SECRET_KEY` and set `ANTIGRAVITY_SUBSCRIPTION_WORKERS` to a JSON array. Each entry is unique by both member and machine.
+3. Allocate an individual Clerk machine identity and authorize it to call the environment's receiving Okou machine. Configure the API's existing `OKOU_MACHINE_SECRET_KEY`. Set the `ANTIGRAVITY_SUBSCRIPTION_WORKERS` GitHub Actions variable to a JSON array in the deployment's environment. Use the `production` GitHub Environment for production assignments. The next API deployment picks up that environment's assignments. Each entry is unique by both member and machine.
 
    ```json
    [
