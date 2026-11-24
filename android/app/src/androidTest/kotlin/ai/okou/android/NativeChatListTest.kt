@@ -439,9 +439,12 @@ class NativeChatListTest {
             text(app.getString(R.string.conversation_find))
             assertFalse(device.hasObject(By.text(app.getString(R.string.settings))))
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
-            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            assertTrue(
+                device.wait(Until.gone(By.text(app.getString(R.string.conversation_find))), 10_000),
+            )
+            click(UiSelector().description(app.getString(R.string.back)))
             device.awaitChatList(app)
-            click(UiSelector().description(app.getString(R.string.settings)))
+            device.openChatListSettings(app)
             text(app.getString(R.string.appearance))
             scenario.recreate()
             text(app.getString(R.string.appearance))

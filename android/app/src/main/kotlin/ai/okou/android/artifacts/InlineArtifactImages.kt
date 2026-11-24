@@ -48,12 +48,18 @@ internal class InlineArtifactImages(
 
     fun get(request: InlineImageRequest): InlineImageState? = entries.value[request]
 
-    fun names(threadId: String): Map<String, String> =
-        entries.value
-            .asSequence()
-            .filter { it.key.threadId == threadId }
-            .mapNotNull { (request, state) -> state.grant?.filename?.let { request.source to it } }
-            .toMap()
+    fun names(threadId: String) =
+        entries
+            .map { images ->
+                images
+                    .asSequence()
+                    .filter { it.key.threadId == threadId }
+                    .mapNotNull { (request, state) ->
+                        state.grant?.filename?.let { request.source to it }
+                    }
+                    .toMap()
+            }
+            .distinctUntilChanged()
 
     fun request(request: InlineImageRequest) {
         if (request in entries.value) return
