@@ -10,6 +10,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
@@ -101,26 +102,34 @@ class ChatListApiFixture : Closeable {
 
     @Volatile var historyReply = "**Native history** reply"
 
-    private fun defaultHistory(thread: String, after: Long): List<String> =
-        listOf(
-                historyEventWire(
-                    "input",
-                    17,
-                    thread,
-                    "input.prompt",
-                    """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Hello history"}]}}""",
-                ),
-                historyEventWire(
-                    "output",
-                    23,
-                    thread,
-                    payload = """{"content":${JsonPrimitive(historyReply)}}""",
-                ),
-                historyEventWire(HISTORY_LAST_EVENT, 37, thread, "run.completed", "null"),
-            )
-            .filter {
-                Json.parseToJsonElement(it).jsonObject.getValue("seqId").jsonPrimitive.long > after
-            }
+    private val historyByThread = ConcurrentHashMap<String, List<JsonObject>>()
+
+    internal fun setHistoryEvents(thread: String, rows: List<String>) {
+        historyByThread[thread] = rows.map { Json.parseToJsonElement(it).jsonObject }
+    }
+
+    private fun historyEvents(thread: String): List<JsonObject> =
+        historyByThread[thread]
+            ?: listOf(
+                    historyEventWire(
+                        "input",
+                        17,
+                        thread,
+                        "input.prompt",
+                        """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Hello history"}]}}""",
+                    ),
+                    historyEventWire(
+                        "output",
+                        23,
+                        thread,
+                        payload = """{"content":${JsonPrimitive(historyReply)}}""",
+                    ),
+                    historyEventWire(HISTORY_LAST_EVENT, 37, thread, "run.completed", "null"),
+                )
+                .map { Json.parseToJsonElement(it).jsonObject }
+
+    private fun historyAfter(rows: List<JsonObject>, sequence: Long) =
+        JsonArray(rows.filter { it.getValue("seqId").jsonPrimitive.long > sequence })
 
     @Volatile
     var historyCatchUp: (RecordedRequest) -> MockResponse = { request ->
@@ -128,12 +137,7 @@ class ChatListApiFixture : Closeable {
             Json.parseToJsonElement(request.body.clone().readUtf8()).jsonArray.associate { tuple ->
                 val items = tuple.jsonArray
                 val id = items[0].jsonPrimitive.content
-                id to
-                    JsonArray(
-                        defaultHistory(id, items[1].jsonPrimitive.long).map {
-                            Json.parseToJsonElement(it)
-                        },
-                    )
+                id to historyAfter(historyEvents(id), items[1].jsonPrimitive.long)
             }
         jsonResponse(
             JsonObject(
@@ -167,11 +171,14 @@ class ChatListApiFixture : Closeable {
     @Volatile var historyArchive: () -> MockResponse = { MockResponse().setBody("") }
     @Volatile
     var historyRows: (RecordedRequest) -> MockResponse = { request ->
-        val thread = checkNotNull(request.requestUrl).pathSegments[2]
-        val rows =
-            defaultHistory(thread, request.requestUrl?.queryParameter("sinceSeqId")?.toLong() ?: 0)
+        val url = checkNotNull(request.requestUrl)
+        val history = historyEvents(url.pathSegments[2])
+        val rows = historyAfter(history, url.queryParameter("sinceSeqId")?.toLong() ?: 0)
+        val last = history.lastOrNull()
+        val lastEventId = last?.getValue("id") ?: JsonNull
+        val lastSequence = last?.getValue("seqId") ?: JsonPrimitive(0)
         jsonResponse(
-            """{"rows":[${rows.joinToString(",")}],"cursor":{"lastEventId":"$HISTORY_LAST_EVENT","lastSeqId":37},"hasMore":false}""",
+            """{"rows":$rows,"cursor":{"lastEventId":$lastEventId,"lastSeqId":$lastSequence},"hasMore":false}""",
         )
     }
     @Volatile
