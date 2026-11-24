@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.872.0](https://github.com/okou-ai/okou/compare/core-v8.871.0...core-v8.872.0) (2026-11-24)
+
+
+### Features
+
+* add subscription-gated custom domains for hosted sites ([#50462](https://github.com/okou-ai/okou/issues/50462)) ([a898459](https://github.com/okou-ai/okou/commit/a8984599f91d9596a3721b0c6d8fa67274c9f985))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.124.0
+
 ## [8.871.0](https://github.com/okou-ai/okou/compare/core-v8.870.2...core-v8.871.0) (2026-11-24)
 
 

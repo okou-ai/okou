@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.10.0](https://github.com/okou-ai/okou/compare/host-worker-v1.9.215...host-worker-v1.10.0) (2026-11-24)
+
+
+### Features
+
+* add subscription-gated custom domains for hosted sites ([#50462](https://github.com/okou-ai/okou/issues/50462)) ([a898459](https://github.com/okou-ai/okou/commit/a8984599f91d9596a3721b0c6d8fa67274c9f985))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.124.0
+    * @okouai/core bumped to 8.872.0
+    * @okouai/ui bumped to 1.22.11
+
 ## [1.9.215](https://github.com/okou-ai/okou/compare/host-worker-v1.9.214...host-worker-v1.9.215) (2026-11-24)
 
 
