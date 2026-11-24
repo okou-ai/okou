@@ -1,5 +1,9 @@
 package ai.okou.android.updates
 
+import ai.okou.android.EntryBrand
+import ai.okou.android.EntryCompactHeight
+import ai.okou.android.EntryContentGutter
+import ai.okou.android.EntryContentWidth
 import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
 import ai.okou.android.SettingsIcon
@@ -7,6 +11,10 @@ import ai.okou.android.SettingsModal
 import ai.okou.android.SettingsRow
 import ai.okou.android.api.generated.AndroidUpdatesRelease
 import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.entrySpacing
+import ai.okou.android.entryTitleStyle
+import ai.okou.android.entryTopPadding
+import ai.okou.android.measureEntryBrandHeight
 import ai.okou.android.state.rememberUpdateWorkspaceState
 import android.text.format.Formatter
 import androidx.annotation.StringRes
@@ -483,7 +491,9 @@ private fun RequiredUpdateScreen(
     install: (AndroidUpdatesRelease) -> Unit,
     @StringRes installProgress: Int?,
 ) {
-    val window = currentWindowSizeDp()
+    val windowHeight = currentWindowSizeDp().height
+    val compact = windowHeight < EntryCompactHeight
+    val groupSpacing = entrySpacing(compact)
     val base = with(LocalDensity.current) { 16.sp.toDp() }
     val requiresNewerAndroid = state.requiresNewerAndroid
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -491,69 +501,29 @@ private fun RequiredUpdateScreen(
             Modifier.fillMaxSize().safeDrawingPadding(),
             contentAlignment = Alignment.TopCenter,
         ) {
-            val compact = maxHeight < base * 13
+            val shortTitle = maxHeight < base * 13
             Column(
-                Modifier.widthIn(max = 560.dp)
+                Modifier.padding(horizontal = EntryContentGutter)
+                    .widthIn(max = EntryContentWidth)
                     .fillMaxSize()
-                    .padding(horizontal = if (compact) 16.dp else 24.dp)
                     .padding(
-                        top =
-                            if (compact) 8.dp
-                            else (window.height.dp * 0.08f).coerceIn(24.dp, 72.dp),
-                        bottom = if (compact) 12.dp else 24.dp,
+                        top = entryTopPadding(windowHeight),
+                        bottom = groupSpacing,
                     ),
             ) {
-                if (!compact) {
-                    Icon(
-                        painterResource(R.drawable.okou_wordmark),
-                        contentDescription = null,
-                        modifier = Modifier.size(80.dp, 24.dp),
-                        tint = MaterialTheme.colorScheme.onBackground,
-                    )
-                    Spacer(Modifier.height(24.dp))
-                }
-                Text(
-                    stringResource(
-                        when {
-                            requiresNewerAndroid -> R.string.updates_required_incompatible
-                            compact -> R.string.updates_required_short
-                            else -> R.string.updates_required
-                        },
-                    ),
-                    style =
-                        MaterialTheme.typography.headlineSmall.copy(
-                            fontSize = if (compact) 22.sp else 28.sp,
-                            lineHeight = if (compact) 28.sp else 36.sp,
-                            fontWeight = FontWeight(650),
+                RequiredUpdateContent(
+                    state,
+                    title =
+                        stringResource(
+                            when {
+                                requiresNewerAndroid -> R.string.updates_required_incompatible
+                                shortTitle -> R.string.updates_required_short
+                                else -> R.string.updates_required
+                            },
                         ),
-                    modifier = Modifier.semantics { heading() },
+                    compact = compact,
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
                 )
-                Spacer(Modifier.height(if (compact) 8.dp else 12.dp))
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                    UpdateProblemText(
-                        requiresNewerAndroid,
-                        state.updateProblemMessage(requiresNewerAndroid),
-                        Modifier.padding(bottom = 8.dp),
-                    )
-                    if (!requiresNewerAndroid) {
-                        Text(
-                            stringResource(R.string.updates_required_description),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                    }
-                    Spacer(Modifier.height(16.dp))
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        UpdateCopy(
-                            stringResource(R.string.updates_installed, state.installedVersion),
-                            muted = true,
-                        )
-                        state.displayedRelease?.let { UpdateMetadata(it) }
-                    }
-                }
                 Spacer(Modifier.height(if (compact) 8.dp else 16.dp))
                 UpdateAction(
                     state,
@@ -563,6 +533,89 @@ private fun RequiredUpdateScreen(
                     installProgress,
                     Modifier.fillMaxWidth(),
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RequiredUpdateContent(
+    state: UpdateUiState,
+    title: String,
+    compact: Boolean,
+    modifier: Modifier,
+) {
+    val groupSpacing = entrySpacing(compact)
+    val titleGap = 8.dp
+    val titleStyle = entryTitleStyle(compact)
+    val bodyStyle = MaterialTheme.typography.bodyMedium
+    // The details and the complete page have different scroll origins.
+    val detailsScroll = rememberScrollState()
+    val pageScroll = rememberScrollState()
+    BoxWithConstraints(modifier) {
+        val measurer = rememberTextMeasurer()
+        val brandHeight = measureEntryBrandHeight(compact, maxWidth, measurer)
+        val (titleHeight, bodyLineHeight) =
+            with(LocalDensity.current) {
+                measurer
+                    .measure(
+                        title,
+                        titleStyle,
+                        constraints = Constraints(maxWidth = maxWidth.roundToPx()),
+                    )
+                    .size
+                    .height
+                    .toDp() to bodyStyle.lineHeight.toDp()
+            }
+        // In the shortest windows, let the heading scroll so there is room to read the details.
+        val scrollHeading =
+            maxHeight < brandHeight + groupSpacing + titleHeight + titleGap + bodyLineHeight
+        Column(
+            Modifier.fillMaxWidth()
+                .then(if (scrollHeading) Modifier.verticalScroll(pageScroll) else Modifier),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            EntryBrand(compact)
+            Spacer(Modifier.height(groupSpacing))
+            Text(
+                title,
+                style = titleStyle,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.semantics { heading() },
+            )
+            Spacer(Modifier.height(titleGap))
+            val details = Modifier.fillMaxWidth()
+            Column(
+                if (scrollHeading) details else details.weight(1f).verticalScroll(detailsScroll),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                val requiresNewerAndroid = state.requiresNewerAndroid
+                UpdateProblemText(
+                    requiresNewerAndroid,
+                    state.updateProblemMessage(requiresNewerAndroid),
+                    Modifier.padding(bottom = 8.dp),
+                    textAlign = TextAlign.Center,
+                )
+                if (!requiresNewerAndroid) {
+                    Text(
+                        stringResource(R.string.updates_required_description),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = bodyStyle,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+                Spacer(Modifier.height(16.dp))
+                FlowRow(
+                    horizontalArrangement =
+                        Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    UpdateCopy(
+                        stringResource(R.string.updates_installed, state.installedVersion),
+                        muted = true,
+                    )
+                    state.displayedRelease?.let { UpdateMetadata(it) }
+                }
             }
         }
     }
@@ -619,6 +672,7 @@ private fun UpdateProblemText(
     @StringRes message: Int?,
     modifier: Modifier = Modifier,
     revealResult: Boolean = false,
+    textAlign: TextAlign = TextAlign.Unspecified,
 ) {
     if (requiresNewerAndroid) {
         val unsupported = R.string.updates_android_unsupported
@@ -626,6 +680,7 @@ private fun UpdateProblemText(
             stringResource(unsupported),
             color = MaterialTheme.colorScheme.error,
             style = MaterialTheme.typography.bodyMedium,
+            textAlign = textAlign,
             modifier =
                 modifier
                     .revealUpdateResult(unsupported, revealResult && message == null)
@@ -646,6 +701,7 @@ private fun UpdateProblemText(
                 else -> MaterialTheme.colorScheme.onSurfaceVariant
             },
         style = MaterialTheme.typography.bodyMedium,
+        textAlign = textAlign,
         modifier =
             modifier.revealUpdateResult(message, revealResult).semantics {
                 liveRegion = LiveRegionMode.Polite
@@ -688,7 +744,9 @@ private fun UpdateAction(
 ) {
     val transfer = state.transfer
     val colors = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(12.dp)
+    val shape = if (state.required) ButtonDefaults.shape else RoundedCornerShape(12.dp)
+    val foreground = if (state.required) colors.onPrimary else colors.inverseOnSurface
+    val background = if (state.required) colors.primary else colors.inverseSurface
     val focus = rememberInstallControlFocus(inProgress = installProgress != null)
     val waitingForCheck =
         state.check == UpdateCheck.Waiting && !state.canInstall && !state.canDownload
@@ -723,7 +781,7 @@ private fun UpdateAction(
             .then(focus.modifier)
             .updateFocusOutline(
                 shape,
-                if (enabled) colors.inverseOnSurface else LocalActivityStatusColor.current,
+                if (enabled) foreground else LocalActivityStatusColor.current,
             )
     if (progress != null) {
         val fraction = (transfer as? UpdateTransfer.Downloading)?.fraction()
@@ -796,13 +854,19 @@ private fun UpdateAction(
         contentPadding = updateActionPadding,
         colors =
             ButtonDefaults.buttonColors(
-                containerColor = colors.inverseSurface,
-                contentColor = colors.inverseOnSurface,
+                containerColor = background,
+                contentColor = foreground,
                 disabledContainerColor = colors.surfaceVariant,
                 disabledContentColor = colors.onSurfaceVariant,
             ),
     ) {
-        Text(stringResource(label), style = updateActionLabelStyle(), textAlign = TextAlign.Center)
+        Text(
+            stringResource(label),
+            style =
+                if (state.required) MaterialTheme.typography.labelLarge
+                else updateActionLabelStyle(),
+            textAlign = TextAlign.Center,
+        )
     }
 }
 

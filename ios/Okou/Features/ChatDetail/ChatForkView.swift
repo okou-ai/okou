@@ -1,3 +1,4 @@
+import CCStateSwiftUI
 import ChatData
 import ChatDomain
 import SwiftUI
@@ -54,11 +55,11 @@ struct ChatForkView: View {
           .accessibilityIdentifier("fork-send-error")
           .padding(.horizontal, OkouControl.pageInset)
         }
-        @Bindable var composer = flow.composer
+        let composer = flow.composer
         ChatComposerView(
-          draft: $composer.text, isBusy: flow.isSending, showsProgress: flow.isSending,
+          isBusy: flow.isSending, showsProgress: flow.isSending,
           canStop: false, needsUpgrade: needsUpgrade, error: nil,
-          attachmentURL: webURL, attachments: composer.attachments, draftState: composer,
+          attachmentURL: webURL, draftState: composer,
           submit: { await flow.send() }, refresh: nil,
           modelSelection: flow.modelSelection,
           connectorSelection: flow.modelSelection.connectors,
@@ -105,7 +106,7 @@ struct ChatForkView: View {
         }
       }
     }
-    .interactiveDismissDisabled(flow.isSending || flow.hasEdits)
+    .modifier(ForkDismissGuard(flow: flow))
     .background {
       ForkDismissObserver(onAttempt: requestDismiss, onPresented: finishPresenting)
     }
@@ -206,5 +207,22 @@ private struct ForkDismissObserver: UIViewControllerRepresentable {
       previous?.presentationControllerDidAttemptToDismiss?(presentationController)
       onAttempt()
     }
+  }
+}
+
+/// Swipe-dismiss is blocked while the fork is sending or holds typed text, files or a pending
+/// attempt. The composer's edits are read from the session graph.
+private struct ForkDismissGuard: ViewModifier {
+  let flow: ChatForkStore
+  @ResolvedValue private var composerEdits: Bool?
+
+  init(flow: ChatForkStore) {
+    self.flow = flow
+    _composerEdits = ResolvedValue(flow.composerEdits)
+  }
+
+  func body(content: Content) -> some View {
+    content.interactiveDismissDisabled(
+      flow.isSending || flow.hasPendingAttempt || composerEdits == true)
   }
 }

@@ -365,6 +365,34 @@ class UpdateRootTest {
     }
 
     @Test
+    @Config(qualifiers = "en-rUS-w240dp-h200dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun requiredUpdateDetailsRemainReachableWithLargeTextInAShortWindow() {
+        val originalFontScale = RuntimeEnvironment.getFontScale()
+        try {
+            RuntimeEnvironment.setFontScale(2f)
+            compose.activityRule.scenario.recreate()
+            checkNotNull(app.fixture.heldCheck).complete(Unit)
+            app.updates.requireUpdate(RequiredUpdate("99.0.0"))
+            compose.waitUntil(10_000) {
+                val state = app.updates.state.value
+                state.required && state.canDownload
+            }
+
+            val action = compose.onNodeWithText(app.getString(R.string.updates_download))
+            val bounds = action.assertIsDisplayed().getUnclippedBoundsInRoot()
+            val installed =
+                compose.onNodeWithText(
+                    app.getString(R.string.updates_installed, BuildConfig.VERSION_NAME),
+                )
+            installed.performScrollTo().assertIsDisplayed()
+            assertEquals(bounds, action.assertIsDisplayed().getUnclippedBoundsInRoot())
+        } finally {
+            RuntimeEnvironment.setFontScale(originalFontScale)
+        }
+    }
+
+    @Test
     fun offlineRequiredPageShowsTheInstalledVersionDuringDiscovery() {
         val discovery = checkNotNull(app.fixture.heldCheck)
         try {
