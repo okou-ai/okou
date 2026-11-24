@@ -19,6 +19,7 @@ export enum FeatureSwitchKey {
   OkouAnimatedAvatar = "okouAnimatedAvatar",
   DesktopShell = "desktopShell",
   Dummy = "_dummy",
+  AppStoreConnect = "appStoreConnect",
   TikTokOAuthConnector = "tiktokOAuthConnector",
   DocuSignConnector = "docusignConnector",
   PayPalConnector = "payPalConnector",

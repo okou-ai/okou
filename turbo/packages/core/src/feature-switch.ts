@@ -327,6 +327,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the DocuSign e-signature connector",
     enabled: false,
   },
+  [FeatureSwitchKey.AppStoreConnect]: {
+    maintainer: "lancy@okou.ai",
+    displayName: "App Store Connect",
+    description:
+      "Manage Apple app listings, TestFlight builds, reviews and releases.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.PayPalConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the PayPal payments connector",
