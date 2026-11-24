@@ -939,6 +939,45 @@ class SessionModelTest : SessionModelTestFixture() {
     }
 
     @Test
+    fun signOutFailureKeepsTheCachedOwnerAndItsPendingVerification() {
+        val auth =
+            TestAuthentication(
+                testAuthenticationState()
+                    .copy(
+                        membershipAccess =
+                            listOf(MembershipAccess("org-a", "org:member", emptyList())),
+                    ),
+            )
+        val verification = CompletableDeferred<Unit>()
+        auth.refreshAction = { verification.await() }
+        val reply = CompletableDeferred<Unit>()
+        auth.signOutAction = {
+            reply.await()
+            error("sign-out rejected")
+        }
+        check(auth) { model, resources ->
+            runCurrent()
+            val original = model.uiState.value
+            val cached = original.opening as OpeningWorkspace.Cached
+            model.signOut(original.generation)
+            runCurrent()
+            assertTrue(model.uiState.value.signingOut)
+
+            reply.complete(Unit)
+            runCurrent()
+            assertEquals(
+                original.copy(entryFailure = SessionEntryFailure.SignOut),
+                model.uiState.value,
+            )
+            assertFalse(resources.single().closed)
+
+            verification.complete(Unit)
+            runCurrent()
+            assertSame(cached.chats, model.uiState.value.ready?.chats)
+        }
+    }
+
+    @Test
     fun signOutFailureKeepsTheAuthorizedOwnerAndAllowsAnExplicitRetry() {
         val auth = TestAuthentication()
         val reply = CompletableDeferred<Unit>()

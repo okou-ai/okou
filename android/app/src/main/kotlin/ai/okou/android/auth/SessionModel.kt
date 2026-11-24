@@ -1109,9 +1109,14 @@ class SessionModel(
         val previous = mutable.value
         if (previous.signingOut || previous.workspaceSwitch?.failed == false) return
         val session = observed?.session
-        // Keep the authorized workspace available for a failed request. Entry checks can be
-        // retired before the request because they have no workspace presentation to restore.
-        if (previous.ready == null && previous.opening !is OpeningWorkspace.Authorized) retire()
+        // Preserve workspace presentation and its pending work in case sign-out fails.
+        if (
+            previous.ready == null &&
+                previous.opening !is OpeningWorkspace.Authorized &&
+                previous.opening !is OpeningWorkspace.Cached
+        ) {
+            retire()
+        }
         val request =
             viewModelScope.launch(start = CoroutineStart.LAZY) {
                 val before = authentication.state.value
