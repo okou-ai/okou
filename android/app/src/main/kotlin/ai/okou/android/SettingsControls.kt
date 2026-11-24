@@ -217,9 +217,13 @@ internal fun SettingsSwitchRow(
         if (checked == null) {
             Modifier.semantics(mergeDescendants = true) { disabled() }
         } else {
-            Modifier.toggleable(checked, enabled = onCheckedChange != null, role = Role.Switch) {
-                onCheckedChange?.invoke(it)
-            }
+            Modifier.updateFocusOutline(
+                    RoundedCornerShape(12.dp),
+                    MaterialTheme.colorScheme.onSurface,
+                )
+                .toggleable(checked, enabled = onCheckedChange != null, role = Role.Switch) {
+                    onCheckedChange?.invoke(it)
+                }
         }
     Row(
         modifier

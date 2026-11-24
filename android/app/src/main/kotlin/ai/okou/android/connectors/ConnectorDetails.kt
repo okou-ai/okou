@@ -10,6 +10,7 @@ import ai.okou.android.chat.ChatSkeletonBlock
 import ai.okou.android.chat.rememberChatWaitIndicator
 import ai.okou.android.isShortSettingsPanelWindow
 import ai.okou.android.settingsPanelContentPadding
+import ai.okou.android.updates.updateFocusOutline
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -724,10 +725,12 @@ private fun ConnectorDefaultSwitch(
     onCheckedChange: (Boolean) -> Unit,
 ) {
     val color = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(12.dp)
     Row(
         Modifier.fillMaxWidth()
             .heightIn(min = 56.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(shape)
+            .updateFocusOutline(shape, color.onSurface)
             .toggleable(
                 checked,
                 enabled = enabled,
