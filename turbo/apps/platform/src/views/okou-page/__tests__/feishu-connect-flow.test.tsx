@@ -5,7 +5,6 @@ import { feishuOauthContract } from "@okouai/api-contracts/contracts/feishu-oaut
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { setupPage, startPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { createDeferredPromise } from "../../../signals/utils.ts";
 import { findAction } from "./connector-integrations-test-helpers.ts";
 
 const context = testContext();
@@ -126,34 +125,3 @@ test.each([
     ).resolves.toHaveAttribute("href", "/works");
   },
 );
-
-test("feishu-connect-flow-007 the logged-out callback shows its provider until the bot destination arrives", async () => {
-  const reply = createDeferredPromise<void>(context.signal);
-  const browser = context.mocks.browser.locationAssign();
-  const target = "https://applink.feishu.cn/client/chat/open?id=survey";
-  context.mocks.api(
-    feishuOauthContract.callback,
-    async ({ query, respond }) => {
-      expect(query).toMatchObject({
-        code: "ticket-29",
-        state: "signed+return",
-        responseMode: "json",
-      });
-      await reply.promise;
-      return respond(200, { redirectUrl: target });
-    },
-  );
-  const page = await startPage({
-    context,
-    auth: null,
-    path: "/connectors/feishu/callback?state=signed%2Breturn&code=ticket-29",
-  });
-  await expect(
-    screen.findByText("Connecting Feishu…"),
-  ).resolves.toBeInTheDocument();
-  reply.resolve();
-  await waitFor(() => {
-    return expect(browser.calls).toContain(target);
-  });
-  await page.ready;
-});

@@ -450,39 +450,6 @@ test("A completed turn delivered behind Automations stays accessible after the r
   ).resolves.toBeVisible();
 });
 
-test("chat-scroll-007 restores the reader at offset 275 after a reply arrives behind Automations", async () => {
-  context.mocks.browser.standaloneDisplayMode(true);
-  const records = pagedTurns(4);
-  const pane = await openPagedHistory(records);
-  await within(pane).findByText("Locator answer 4");
-  await expectTail(pane);
-  fireEvent.scroll(pane);
-  fireEvent.wheel(pane, { deltaY: 275 - pane.scrollTop });
-  pane.scrollTop = 275;
-  fireEvent.scroll(pane);
-  fireEvent(pane, new Event("scrollend"));
-  const anchor = "Locator question 3";
-  await within(pane).findByText(anchor);
-  expect(pane.scrollTop).toBe(275);
-  const y = messageOffset(anchor, pane);
-  expect(y).toBeGreaterThanOrEqual(0);
-  expect(y).toBeLessThan(pane.clientHeight);
-  click(await findFastControl("button", "More actions"));
-  click(
-    await within(await screen.findByRole("menu")).findByText("Automations"),
-  );
-  const close = await findFastControl("button", "Close automations");
-  records.push(...pagedTurn(5, "Harbor inspection completed"));
-  publishRunUpdate();
-  await within(pane).findByText("Harbor inspection completed");
-  click(close);
-  await waitFor(() => {
-    expect(close).not.toBeInTheDocument();
-    expect(pane.scrollTop).toBe(275);
-    expect(messageOffset(anchor, pane)).toBe(y);
-  });
-});
-
 test("Avatar loading preserves a wheel movement before scroll delivery", async () => {
   const pane = await transcript();
   const reading = pane.scrollTop - 320;

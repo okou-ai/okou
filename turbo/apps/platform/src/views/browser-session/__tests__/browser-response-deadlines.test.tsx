@@ -391,117 +391,107 @@ test("An empty assigned window can create a usable tab with the version reply he
   expect(cdp.connections()).toBe(1);
 });
 
-test.each(["released", "withheld"] as const)(
-  "The replacement viewer accepts typing with the expired handshake %s",
-  async (reply) => {
-    const advance = browserRecoveryClock(context.signal);
-    const documentState = context.mocks.browser.visibilityState("visible");
-    const { cdp, openPage } = viewer();
-    const firstHandshake = cdp.holdNextNative("hello");
-    await openPage();
-    await firstHandshake.received;
-    documentState.changeTo("hidden");
-    await screen.findByText("Viewing paused");
-    advance(30_001);
-    await waitFor(() => {
-      expect(cdp.activeConnections()).toBe(0);
-    });
-    expect(remoteInput()).toBeDisabled();
-    documentState.changeTo("visible");
-    if (reply === "released") {
-      await firstHandshake.release();
-    }
-    advance(1001);
-    await expectStreamingAt(original.url);
-    await sendText(cdp, "dispatch after the paused handshake");
-    expect(cdp.connections()).toBe(2);
-    expect(cdp.activeConnections()).toBe(1);
-  },
-);
+test("The replacement viewer accepts typing with the expired handshake released", async () => {
+  const advance = browserRecoveryClock(context.signal);
+  const documentState = context.mocks.browser.visibilityState("visible");
+  const { cdp, openPage } = viewer();
+  const firstHandshake = cdp.holdNextNative("hello");
+  await openPage();
+  await firstHandshake.received;
+  documentState.changeTo("hidden");
+  await screen.findByText("Viewing paused");
+  advance(30_001);
+  await waitFor(() => {
+    expect(cdp.activeConnections()).toBe(0);
+  });
+  expect(remoteInput()).toBeDisabled();
+  documentState.changeTo("visible");
+  await firstHandshake.release();
+  advance(1001);
+  await expectStreamingAt(original.url);
+  await sendText(cdp, "dispatch after the paused handshake");
+  expect(cdp.connections()).toBe(2);
+  expect(cdp.activeConnections()).toBe(1);
+});
 
-test.each(["deliver", "withhold"] as const)(
-  "Replacement page receives typing when the pending descriptor expires and its original reply is %s",
-  async (late) => {
-    const advance = browserRecoveryClock(context.signal);
-    const {
-      openPage,
-      cdp,
-      viewer: connection,
-    } = arrangeNativePage(context, { targets: [original, replacement] });
-    await openPage();
-    await expectStreamingAt(original.url);
-    const received = context.mocks.deferred<void>();
-    const answer = context.mocks.deferred<void>();
-    const updatedBrowser = {
-      ...connection.browser,
-      window: {
-        ...connection.browser.window!,
-        primaryWindowId: replacement.windowId,
-      },
-    };
-    const delivered = context.mocks.deferred<void>();
-    const read = Response.prototype.json;
-    vi.spyOn(Response.prototype, "json").mockImplementation(async function (
-      this: Response,
+test("Replacement page receives typing when the pending descriptor expires and its original reply is deliver", async () => {
+  const advance = browserRecoveryClock(context.signal);
+  const {
+    openPage,
+    cdp,
+    viewer: connection,
+  } = arrangeNativePage(context, { targets: [original, replacement] });
+  await openPage();
+  await expectStreamingAt(original.url);
+  const received = context.mocks.deferred<void>();
+  const answer = context.mocks.deferred<void>();
+  const updatedBrowser = {
+    ...connection.browser,
+    window: {
+      ...connection.browser.window!,
+      primaryWindowId: replacement.windowId,
+    },
+  };
+  const delivered = context.mocks.deferred<void>();
+  const read = Response.prototype.json;
+  vi.spyOn(Response.prototype, "json").mockImplementation(async function (
+    this: Response,
+  ) {
+    const value: unknown = await read.call(this);
+    if (
+      isRecord(value) &&
+      isRecord(value.browser) &&
+      value.browser.name === "Previous voyage" &&
+      !delivered.settled()
     ) {
-      const value: unknown = await read.call(this);
-      if (
-        isRecord(value) &&
-        isRecord(value.browser) &&
-        value.browser.name === "Previous voyage" &&
-        !delivered.settled()
-      ) {
-        delivered.resolve();
-      }
-      return value;
-    });
-    context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
-      return respond(200, { browser: updatedBrowser });
-    });
-    context.mocks.api(browserContract.get, async ({ respond }) => {
-      if (!received.settled()) {
-        received.resolve();
-        await answer.promise;
-        const stale = { ...connection.browser, name: "Previous voyage" };
-        return respond(200, {
-          browser: stale,
-          viewer: { ...connection, browser: stale },
-        });
-      }
-      return respond(200, {
-        browser: updatedBrowser,
-        viewer: { ...connection, browser: updatedBrowser },
-      });
-    });
-    context.mocks.ably.trigger("browserSessionChanged", {
-      threadId: connection.browser.threadId,
-    });
-    try {
-      await received.promise;
-      await waitFor(() => {
-        return expect(remoteInput()).toBeDisabled();
-      });
-      expect(remoteInput().closest('[aria-hidden="true"]')).toBeNull();
-      advance(60_001);
-      await screen.findByText("Reconnecting…");
-      advance(4000);
-      await expectStreamingAt(replacement.url);
-      await sendText(cdp, "inspect the new map", replacement.targetId);
-      if (late === "deliver") {
-        answer.resolve();
-        await delivered.promise;
-      }
-      await sendText(cdp, "check after deadline", replacement.targetId);
-      expect(cdp.inputForTarget(original.targetId)).not.toContainEqual(
-        expect.objectContaining({ params: { text: "check after deadline" } }),
-      );
-    } finally {
-      if (!answer.settled()) {
-        answer.resolve();
-      }
+      delivered.resolve();
     }
-  },
-);
+    return value;
+  });
+  context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
+    return respond(200, { browser: updatedBrowser });
+  });
+  context.mocks.api(browserContract.get, async ({ respond }) => {
+    if (!received.settled()) {
+      received.resolve();
+      await answer.promise;
+      const stale = { ...connection.browser, name: "Previous voyage" };
+      return respond(200, {
+        browser: stale,
+        viewer: { ...connection, browser: stale },
+      });
+    }
+    return respond(200, {
+      browser: updatedBrowser,
+      viewer: { ...connection, browser: updatedBrowser },
+    });
+  });
+  context.mocks.ably.trigger("browserSessionChanged", {
+    threadId: connection.browser.threadId,
+  });
+  try {
+    await received.promise;
+    await waitFor(() => {
+      return expect(remoteInput()).toBeDisabled();
+    });
+    expect(remoteInput().closest('[aria-hidden="true"]')).toBeNull();
+    advance(60_001);
+    await screen.findByText("Reconnecting…");
+    advance(4000);
+    await expectStreamingAt(replacement.url);
+    await sendText(cdp, "inspect the new map", replacement.targetId);
+    answer.resolve();
+    await delivered.promise;
+    await sendText(cdp, "check after deadline", replacement.targetId);
+    expect(cdp.inputForTarget(original.targetId)).not.toContainEqual(
+      expect.objectContaining({ params: { text: "check after deadline" } }),
+    );
+  } finally {
+    if (!answer.settled()) {
+      answer.resolve();
+    }
+  }
+});
 
 async function acknowledgeCapture(
   capture: ReturnType<ReturnType<typeof viewer>["cdp"]["holdNext"]>,

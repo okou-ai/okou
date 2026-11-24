@@ -254,7 +254,11 @@ describe("Thread notifications at the external provider and original native port
   });
 
   test("message-port-038 Both waiting ports receive the attach failure and the reacquired subscription delivers to its new owner", async () => {
-    const { ports, receivers } = await load("verified-route038.json");
+    const { ports, receivers, stages } = await load("verified-route038.json");
+    assert.ok(receivers.some((event) =>
+      event.op === "settled" && event.alias === "userAttach" && event.status === 503
+    ));
+    assert.equal(stages.at(-1).label, "Reacquired on B; new publication visible");
     const subscriptions = automationSubscriptions(ports);
     const original = subscriptions.filter((p) => p.step === 0);
     assert.deepEqual(original.map((p) => p.alias).sort(), ["A", "B"]);

@@ -49,7 +49,17 @@ test("An image prompt reaches the new conversation after the disabled tool is en
     await confirm.promise;
   });
   const user = userEvent.setup();
-  const chat = createTemplateGalleryHelpers(context).mockTemplateChat();
+  const submissions = new Set<string>();
+  const chat = createTemplateGalleryHelpers(context).mockTemplateChat({
+    onSendRequest({ clientThreadId, threadId, clientEventId }) {
+      if (!clientEventId) {
+        throw new Error("Missing image prompt identity");
+      }
+      submissions.add(
+        JSON.stringify([clientThreadId ?? threadId, clientEventId]),
+      );
+    },
+  });
   await setupPage({ context, path: "/" });
   click(await findFastControl("button", "Image"));
   await screen.findByText("Image generation is off for you");
@@ -87,4 +97,7 @@ test("An image prompt reaches the new conversation after the disabled tool is en
   await expect(
     screen.findByText(prompt, { selector: "[data-role=user] *" }),
   ).resolves.toBeVisible();
+  chat.lifecycle.completeRun("Observatory illustration ready");
+  await screen.findByText("Observatory illustration ready");
+  expect(submissions.size).toBe(1);
 });

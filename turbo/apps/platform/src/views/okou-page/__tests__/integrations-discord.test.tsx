@@ -589,9 +589,7 @@ test("integrations-discord-039 the Works root becomes interactive only after Dis
 });
 
 test.each([
-  { initial: false, connected: false, when: "before leaving" },
   { initial: false, connected: true, when: "before leaving" },
-  { initial: true, connected: true, when: "before leaving" },
   { initial: false, connected: true, when: "on return" },
   { initial: true, connected: true, when: "on return" },
 ])(

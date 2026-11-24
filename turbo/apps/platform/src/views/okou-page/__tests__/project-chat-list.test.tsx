@@ -1,6 +1,9 @@
 import type { ProjectEvent } from "@okouai/api-contracts/validators/projects";
 import { mockNow } from "../../../lib/time.ts";
-import { continuityThread, installContinuityWorkspace } from "./chat-continuity-test-helpers.ts";
+import {
+  continuityThread,
+  installContinuityWorkspace,
+} from "./chat-continuity-test-helpers.ts";
 import { menuItemByText } from "./sidebar-test-helpers.tsx";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
@@ -325,7 +328,8 @@ test.each([
     context.mocks.browser.matchMedia((query) => {
       return query === "(min-width: 48rem)" && !mobile;
     });
-    const toggle = (name: string) => queryFastControl("button", "Show or hide chats in " + name);
+    const toggle = (name: string) =>
+      queryFastControl("button", "Show or hide chats in " + name);
     const archiveResponse = context.mocks.deferred<void>();
     const restoreResponse = context.mocks.deferred<void>();
     const ordinary = continuityThread(328, 1, "Ordinary chat");
@@ -344,7 +348,11 @@ test.each([
       updatedAt: at,
     };
     context.mocks.api(projectsContract.snapshot, ({ respond }) => {
-      return respond(200, { projects: [project], latestEventId: null, latestSeqId: 1 });
+      return respond(200, {
+        projects: [project],
+        latestEventId: null,
+        latestSeqId: 1,
+      });
     });
     context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
       return respond(200, {
@@ -419,12 +427,11 @@ test.each([
     });
     expect(titles(project)).toStrictEqual(["Launch planning"]);
     archiveResponse.resolve();
-    const archiveResult = await waitFor(() => {
-      return rejected
-        ? screen.getByText("Archive confirmation unavailable")
-        : toggle("Launch saved");
-    });
-    expect(archiveResult).toBeInTheDocument();
+    if (rejected) {
+      await screen.findByText("Archive confirmation unavailable");
+    } else {
+      await handle("Launch saved");
+    }
     const archivedName = rejected ? "Launch" : "Launch saved";
     click(await findFastControl("button", `Options for ${archivedName}`));
     await screen.findByRole("menu");

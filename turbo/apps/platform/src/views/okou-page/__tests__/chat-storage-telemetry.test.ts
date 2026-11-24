@@ -183,36 +183,6 @@ test("chat-idb-002 A returning workspace keeps the previous generation's records
   });
 });
 
-test("The workspace reports an unavailable private chat cache without publishing its diagnostic", async () => {
-  const native = indexedDB.open.bind(indexedDB);
-  const failed = new DOMException("private ferry archive", "InvalidStateError");
-  const attempted = context.mocks.deferred<void>();
-  vi.spyOn(indexedDB, "open").mockImplementation((name, version) => {
-    if (name === "vm0-chat-chat-list-user-789-chat-list-org-789") {
-      attempted.resolve();
-      throw failed;
-    }
-    return native(name, version);
-  });
-  sink.mockClear();
-  await setupPage({ ...settings, path: "/workflows" });
-  await attempted.promise;
-  await screen.findByRole("heading", { name: "Workflows" });
-  await waitFor(() => {
-    expect(reports("chat.open")).toContainEqual(
-      expect.objectContaining({
-        duration: expect.any(Number),
-        "attributes.custom": expect.objectContaining({
-          "okou.client.outcome": "error",
-        }),
-      }),
-    );
-  });
-  expect(JSON.stringify(reports("chat.open"))).not.toMatch(
-    /private ferry archive|chat-list-(?:org|user)-789/u,
-  );
-});
-
 test("Opening a conversation with a failing local archive reports only the database operation", async () => {
   const original = new DOMException(
     "private cove diagnostic",

@@ -1,4 +1,10 @@
-import { voiceIoPolishSegmentsContract } from "@okouai/api-contracts/contracts/voice-io-polish";
+import { openDB } from "idb";
+import { VOICE_IO_POLISH_MAX_SEGMENTS } from "@okouai/api-contracts/validators/voice-io-polish";
+import { chatListAuth } from "./chat-list-test-helpers.ts";
+import {
+  voiceIoPolishSegmentsRequestSchema,
+  voiceIoPolishSegmentsContract,
+} from "@okouai/api-contracts/contracts/voice-io-polish";
 import { voiceIoTranscribeContract } from "@okouai/api-contracts/contracts/voice-io-transcribe";
 import { act, cleanup, screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
@@ -219,4 +225,63 @@ test("A reopened recording that lacks a completed transcript uses the recovered 
   await expect(
     screen.findByText("Recovered from audio"),
   ).resolves.toBeInTheDocument();
+});
+
+test("A saved recording longer than one polish request restores the entire transcript to the message editor", async () => {
+  context.mocks.browser.voiceInput({ rms: 0.2 });
+  const words = Array.from({ length: VOICE_IO_POLISH_MAX_SEGMENTS }, (_, i) => {
+    return "observation-" + String(i + 1);
+  });
+  words.push("end of the field notes");
+  const database = await openDB("okou-voice-drafts", 2, {
+    upgrade(db) {
+      db.createObjectStore("drafts");
+      db.createObjectStore("chunks");
+    },
+  });
+  const key = JSON.stringify([
+    "chat-list-user-917",
+    "chat-list-org-917",
+    "new-chat",
+  ]);
+  const id = crypto.randomUUID();
+  const segments = words.map((transcript, index) => {
+    return {
+      startSample: index * 32,
+      endSample: (index + 1) * 32,
+      final: index + 1 === words.length,
+      transcript,
+    };
+  });
+  try {
+    const samples = new Float32Array(words.length * 32);
+    const tx = database.transaction(["drafts", "chunks"], "readwrite");
+    await tx.objectStore("chunks").put(samples.buffer, [key, id, 0]);
+    await tx.objectStore("drafts").put(
+      {
+        id,
+        sampleCount: samples.length,
+        chunkCount: 1,
+        progress: { revision: 1, context: {}, segments },
+      },
+      key,
+    );
+    await tx.done;
+  } finally {
+    database.close();
+  }
+  const polish = context.mocks.deferred<void>();
+  context.mocks.api(voiceIoPolishSegmentsContract.post, ({ body, respond }) => {
+    const { segments } = voiceIoPolishSegmentsRequestSchema.parse(body);
+    polish.resolve();
+    return respond(200, { text: segments.join(" ") });
+  });
+  await setupPage({ context, auth: chatListAuth(917), path: "/" });
+  click(await findEnabledControl("Use recording"));
+  await polish.promise;
+  await waitFor(() => {
+    expect(screen.getByRole("textbox", { name: "Message" }).textContent).toBe(
+      words.join(" "),
+    );
+  });
 });

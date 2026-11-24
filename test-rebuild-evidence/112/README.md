@@ -1,8 +1,29 @@
 # App test rebuild, batch 112
 
-The starting register contained 83 cases. All 20 assigned IDs were open and were processed. 9 original GWTs passed for the first time, leaving 74 open. Historical restorations, revisions and retirements each total zero. The six product decisions remain with their original owners. The independent upstream register retains all 68 scenarios.
+Reviewed **83 distinct IDs**, including all six pending product decisions, against the nine first-pass results at `22e8f669faa30cd014c7cbbcbcfa54b58b04f500`. The opening PR was `c008af36dbb8ad20ac2cac6aa0e9752eaaaa8276`. **9 complete original first acceptances, 68 deduplicated or overspecified, 6 retained.** Net reduction 77. Historical restorations 0, original GWT revisions accepted 0, sourced upstream retirements 0. The 68 upstream scenarios have their own register. The five IDs with strengthened or merged business representatives are included in deduplication. All six product decisions are resolved under Ethan’s user-outcome criterion.
 
-[Case ledger](../../turbo/apps/platform/test-rebuild-batch-112.tsv) · [Set difference](reconciliation.json) · [Source comparison](comparison.json) · [Checks and replay](checks.md)
+[83-row audit, frozen source, full representative titles and decisions](../../turbo/apps/platform/test-rebuild-batch-112.tsv) · [Active cases](../../turbo/apps/platform/test-rebuild-pending.bdd.md) · [Set difference and product decisions](reconciliation.json) · [Exact deleted, retained and retitled registrations](registrations.json) · [Source comparison](comparison.json) · [Verification](checks.md) · [Manager’s independent opening review](https://app.okou.ai/artifacts/6cgn4bpgxl.tsv)
+
+## Decisions that changed during review
+
+The manager’s opening review proposed removing 67 and considering 16 for retention. Nine original GWTs already had new evidence, including the healthy registered tab while its sibling stalls, same-document re-entry after a shared attach error, and isolated native events on two distinct connections. The private pre-registration query is unreachable on a normal App page. The original constructor-failure assertions compare two consumers’ error objects. A cross-account private-body experiment and a new worker recovery UI would be separate proposals. No new product contract was inferred from either.
+
+The frozen picker only selected files. The MOV sender never opened a catalog preview. Both Discord cases left Works before starting refresh. The remaining scroll protection compares a history reader during keyboard use; both the PR paging regression and main’s third-question test already protect reading position after older history arrives. Cross-chat late paint is tracked once, with the exposed receiver identified. A denied lease removes the actual remote-input control and live image.
+
+The private IndexedDB error representative waits for route readiness and the composer and excludes diagnostic text and member/workspace IDs. Other registrations independently exclude tokens, cursors and thread IDs on real reads. The voice representative restores a prepared transcript exceeding the public polish cap to the actual message editor. The paid-tool representative distinguishes different business input keys for one gesture through completion, alongside API idempotency for retries of the same key. The unread representative puts the initial read watermark between the older sidebar update and newer local run terminal.
+
+## Remaining original outcomes
+
+- **client-003** The child is released by the correct parent and the original connection remains usable. Observe the late detach on its original, still-surviving parent, with a working sibling or connection. Cancellation text, version sampling counts and hypothetical cross-member leaks are outside this judgment.
+- **browser-response-deadlines-006** The replacement page accepts input in its own session. The concealed control remained locked until the old response was released. A visible pending descriptor has a passing control. No particular background banner, reconnect count or consumed stale reply is required.
+- **browser-response-deadlines-023** The new chat retains its own picture and accepts input on the new page. The registered cross-chat case uses a held handshake; the tab-paint case stays in one viewer. Exercise this outcome across the two chats. Separate ACK counts and disposal notifications have no independent user result.
+- **browser-response-deadlines-039** Input stays blocked until reconnect, then one new tab opens in the original window. The native observation reached the right window. Preserve a repeatable registration for this visible timeout and deliberate recovery. Whether the discarded socket receives a late packet is irrelevant.
+- **chat-scroll-017** The original message remains readable and the draft is retained. The historical reading anchor left the viewport in the standalone control. The regular tail/draft test does not read history. No exact pixel delta, specific device, or prescribed series of three cycles.
+- **connector-directory-010** One provider window opens and it closes when the directory is dismissed. The Router popup double closes. Native Escape left the external window alive; repeat with the original Close action. Late callback behavior after dismissal is adjacent and is not an extra acceptance condition.
+
+## Original 20-case investigation
+
+The following dated observations record the initial 20-ID work at the first-pass commit. Their proposed next probes predate the full review. Current decisions and entry criteria are in the 83-row ledger above.
 
 ## message-port-023
 

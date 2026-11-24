@@ -1,3 +1,5 @@
+import { threadLinkByTitle } from "./sidebar-test-helpers.tsx";
+import { mockNow } from "../../../lib/time.ts";
 import { changeChatIndicators } from "../../../mocks/mock-helpers.ts";
 import {
   chatThreadMarkReadContract,
@@ -148,3 +150,61 @@ test.each([
     await screen.findByText(follow, { selector: "[data-role=user] *" });
   },
 );
+
+test("Reading a newer completed run clears its unread state even while the sidebar has an older update", async () => {
+  const thread = "Harbor review";
+  const follow = crypto.randomUUID();
+  const listStamp = "2026-03-10T00:06:00.000Z";
+  const initialRead = "2026-03-10T00:06:30.000Z";
+  const finished = "2026-03-10T00:07:00.000Z";
+  let terminal = initialRead;
+  let read: string | null = null;
+  let published = listStamp;
+  mockNow(new Date(finished), context.signal);
+  const service = mockChatLifecycle(context, {
+    threadId: RUN_THREAD_ID,
+    threadTitle: thread,
+    activeRunIds: [follow],
+    chatEvents: [
+      {
+        role: "user",
+        content: "Review the harbor",
+        runId: follow,
+        createdAt: listStamp,
+      },
+    ],
+  });
+  const first = context.mocks.deferred<void>();
+  const caughtUp = context.mocks.deferred<void>();
+  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
+    const unread = read === null || read < published;
+    return respond(200, {
+      threads: unread ? { [RUN_THREAD_ID]: "unread" } : {},
+      unreadAt: { [RUN_THREAD_ID]: published },
+    });
+  });
+  context.mocks.api(chatThreadMarkReadContract.markRead, ({ respond }) => {
+    read = terminal;
+    if (!first.settled()) {
+      first.resolve();
+    }
+    if (read === finished && !caughtUp.settled()) {
+      caughtUp.resolve();
+    }
+    return respond(200, { lastReadAt: read });
+  });
+  await setupPage({ context, path: RUN_PATH });
+  await screen.findByText("Review the harbor", {
+    selector: "[data-role=user] *",
+  });
+  await first.promise;
+  terminal = finished;
+  service.completeRun("Harbor inspection complete");
+  await screen.findByText("Harbor inspection complete");
+  await caughtUp.promise;
+  published = finished;
+  changeChatIndicators();
+  await waitFor(() => {
+    expect(threadLinkByTitle(thread)).toHaveAccessibleName(thread);
+  });
+});

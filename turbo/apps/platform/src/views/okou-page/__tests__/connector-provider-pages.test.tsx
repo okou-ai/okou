@@ -195,7 +195,7 @@ test("The signed-out Feishu callback renders its catalog mark before opening the
     async ({ query, respond }) => {
       await allow.promise;
       return query.code === "oauth-code" &&
-        query.state === "oauth-state" &&
+        query.state === "signed+return" &&
         query.responseMode === "json"
         ? respond(200, { redirectUrl: destination })
         : respond(400, {
@@ -206,7 +206,7 @@ test("The signed-out Feishu callback renders its catalog mark before opening the
   const page = await startPage({
     context,
     auth: null,
-    path: "/connectors/feishu/callback?code=oauth-code&state=oauth-state",
+    path: "/connectors/feishu/callback?code=oauth-code&state=signed%2Breturn",
   });
   await page.content;
   await screen.findByText("Connecting Feishu…");

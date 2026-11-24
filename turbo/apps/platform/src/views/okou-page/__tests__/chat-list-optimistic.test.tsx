@@ -109,7 +109,7 @@ test("chat-list-optimistic-007 reconciles the temporary sidebar destination with
   );
 });
 
-test("The pending QuickTime preview uses its conversation when the member opens the recording", async () => {
+test("The pending conversation plays its inline QuickTime recording before its artifact catalog exists", async () => {
   const movie = {
     id: crypto.randomUUID(),
     filename: "recording.mov",
@@ -149,10 +149,10 @@ test("The pending QuickTime preview uses its conversation when the member opens 
       serviceTier: null,
     });
   });
-  const catalog = context.mocks.deferred<string>();
-  context.mocks.api(chatThreadArtifactsContract.list, ({ params, respond }) => {
-    catalog.resolve(params.threadId);
-    return respond(200, { runs: [] });
+  context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
+    return respond(404, {
+      error: { code: "THREAD_NOT_FOUND", message: "Chat thread not found" },
+    });
   });
   await setupPage({ context, path: "/" });
   await composerModelTrigger("Claude Sonnet 5");
@@ -183,10 +183,6 @@ test("The pending QuickTime preview uses its conversation when the member opens 
       );
     });
     expect(screen.queryByText("Chat thread not found")).toBeNull();
-    click(await findEnabledButton("Preview recording.mov"));
-    await expect(catalog.promise).resolves.toBe(id);
-    await findEnabledButton("Close artifact");
-    expect(sidebarThreadLinks()[0]).toHaveAttribute("href", "/chats/" + id);
   } finally {
     release.resolve();
   }

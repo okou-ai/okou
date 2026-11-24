@@ -1259,3 +1259,30 @@ test("agent-suggestions-015 a member with only built-in Auto can send the first 
   expect(screen.queryByText("The selected model is not available")).toBeNull();
   await expect(activeCard(second)).resolves.toBeVisible();
 });
+
+test("A member opens the preloaded unread suggestion without waiting for the details service", async () => {
+  const card = proposal("Visit the eastern breakwater");
+  const first = context.mocks.deferred<void>();
+  const offline = context.mocks.deferred<void>();
+  context.mocks.api(feedContract.summary, ({ respond }) => {
+    return respond(200, { hasUnread: true });
+  });
+  context.mocks.api(feedContract.list, async ({ respond }) => {
+    if (first.settled()) {
+      await offline.promise;
+    } else {
+      first.resolve();
+    }
+    return respond(200, { items: [card] });
+  });
+  try {
+    await openDeck("/");
+    const feed = await findFastControl("link", /For you/);
+    await within(feed).findByText("Unread");
+    await first.promise;
+    click(feed);
+    await expect(activeCard(card)).resolves.toBeVisible();
+  } finally {
+    offline.resolve();
+  }
+});

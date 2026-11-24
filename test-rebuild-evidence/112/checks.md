@@ -18,4 +18,8 @@ The Platform suite list includes the changed cases and their adjacent account, v
 
 ## Independent implementation and reconciliation
 
-The [comparison](comparison.json) checks the authored callbacks across frozen source, the two pre-withdrawal trees, the opening branch and main. It includes all Platform JS/TS paths, exported browser-client sources, the in-repository replay evidence and the helper blob identities. Historical fixture transcripts, browser startup and provider adapters supply the external infrastructure. The new assertions bind the initiating request or subscriber to its actual result. All surviving original Given/When/Then and owner pairs are preserved, with one live ledger anchor per ID. [Set reconciliation](reconciliation.json)
+The [comparison](comparison.json) checks the authored callbacks across frozen source, the two pre-withdrawal trees, the opening branch and main. It includes all Platform JS/TS paths, exported browser-client sources, the in-repository replay evidence and the helper blob identities. Historical fixture transcripts, browser startup and provider adapters supply the external infrastructure. The new assertions bind the initiating request or subscriber to its actual result. The full ledger preserves all 83 opening Given/When/Then and frozen registrations. The simplified active register and first-pass ledger reference precisely the surviving IDs, each once. [Set reconciliation](reconciliation.json)
+
+## Main integration and scope
+
+The rebuilt project chat list includes all three Project archive and restore cases from #50475, including mobile and rejected confirmation, in addition to the existing branch registrations. The post-merge iOS SSH state change did not touch Platform. The final PR summary records the exact-head shard and protected-gate results.
