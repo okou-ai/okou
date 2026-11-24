@@ -1,10 +1,31 @@
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
+import { antigravityPersonalSubscriptionContract } from "@okouai/api-contracts/contracts/antigravity-personal-subscription";
 import {
   personalModelProvidersMainContract,
   personalModelProviderAccountsByIdContract,
   personalSubscriptionsContract,
 } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { getClientConfig, handleError } from "../core/client-factory";
+
+export async function antigravitySubscription(
+  action: "connect" | "status" | { disconnect: string },
+) {
+  const client = initClient(
+    antigravityPersonalSubscriptionContract,
+    await getClientConfig(),
+  );
+  const result =
+    action === "connect"
+      ? await client.start({ headers: {}, body: {} })
+      : action === "status"
+        ? await client.get({ headers: {} })
+        : await client.disconnect({
+            params: { bindingId: action.disconnect },
+            headers: {},
+          });
+  if (result.status === 200) return result.body;
+  handleError(result, "Could not access your Antigravity subscription");
+}
 
 export async function listSubscriptions() {
   const client = initClient(

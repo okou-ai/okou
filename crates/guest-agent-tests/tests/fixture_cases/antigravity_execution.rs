@@ -65,6 +65,7 @@ fn runtime(
         ("OKOU_REASONING_EFFORT".into(), "high".into()),
         ("OKOU_CHAT_THREAD_ID".into(), THREAD.into()),
         ("GEMINI_API_KEY".into(), "must-not-reach-the-peer".into()),
+        ("AGY_ADC_AUTH".into(), "true".into()),
         ("AGY_TEST_CASE".into(), mode.into()),
         ("AGY_TEST_DIR".into(), dir.display().to_string()),
     ]);

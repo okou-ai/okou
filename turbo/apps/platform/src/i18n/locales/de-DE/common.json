@@ -5745,6 +5745,15 @@
       "actions": {
         "resetUsage": "Nutzung zurücksetzen"
       },
+      "antigravity": {
+        "check": "Anmeldung prüfen",
+        "error": "Prüfe die dir zugewiesene Anmeldeumgebung und versuche es erneut.",
+        "expired": "Die Anmeldung ist abgelaufen. Verbinde dich erneut.",
+        "terminal": "Führe diesen Befehl im Terminal aus und melde dich mit deinem persönlichen Google AI-Konto an.",
+        "title": "Google AI (Antigravity)",
+        "unassigned": "Bitte einen Administrator, dir ein Anmeldeterminal zuzuweisen.",
+        "verify": "Dieser Befehl verwendet dein Abo, um je eine Anfrage an Neon, Carbon und Hydrogen zu senden."
+      },
       "deviceAuth": {
         "claude": {
           "authorizationCode": "Autorisierungscode",

@@ -32,6 +32,7 @@ assert "/home/user/workspace" in args and "--dangerously-skip-permissions" not i
 settings = json.loads(arg("--settings"))
 assert settings["modelProvider"] == "" and settings["useG1Credits"] is False
 assert "GEMINI_API_KEY" not in os.environ
+assert "AGY_ADC_AUTH" not in os.environ
 assert os.environ["AGY_CLI_DISABLE_AUTO_UPDATE"] == "true"
 rule_text = (rules / "AGENTS.md").read_text()
 assert rule_text.startswith("Use the run-specific system rule.")
