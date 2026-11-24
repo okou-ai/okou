@@ -50,7 +50,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "ethan@okou.ai",
     displayName: "Voice recordings in the composer",
     description:
-      "Attach recordings to chat messages instead of dictating text.",
+      "Use recordings as chat attachments instead of dictation for everyone in this workspace.",
     enabled: false,
   },
   [FeatureSwitchKey.ChatShareRefresh]: {
