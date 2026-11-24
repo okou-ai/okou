@@ -28,7 +28,9 @@ function show(
       `The assigned worker is unavailable. Disconnect binding ${profile.bindingId} and request a new assignment.`,
     );
   } else if (profile.status === "connected") {
-    console.log(`Google sign-in connected. Binding ID: ${profile.bindingId}`);
+    console.log(`Google sign-in connected. Binding ID: ${profile.bindingId}
+Test Neon, Carbon and Hydrogen with one subscription request each:
+ssh -t -- ${profile.loginHost} verify ${profile.bindingId}`);
   } else {
     console.log("Google sign-in disconnected.");
   }

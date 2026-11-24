@@ -230,7 +230,11 @@ describe("internal Antigravity subscription", () => {
         });
       }),
       http.get(profileUrl, () => {
-        return HttpResponse.json({ status: "connected", bindingId });
+        return HttpResponse.json({
+          status: "connected",
+          bindingId,
+          loginHost: "tester@agy.example.com",
+        });
       }),
       http.delete(`${profileUrl}/${bindingId}`, () => {
         return HttpResponse.json({ status: "disconnected" });
@@ -241,10 +245,21 @@ describe("internal Antigravity subscription", () => {
     });
     expect(output()).toContain(`ssh -t -- tester@agy.example.com ${bindingId}`);
     log.mockClear();
+    await subscriptionCommand.parseAsync(["antigravity", "status"], {
+      from: "user",
+    });
+    expect(output()).toContain(
+      `ssh -t -- tester@agy.example.com verify ${bindingId}`,
+    );
+    log.mockClear();
     await subscriptionCommand.parseAsync(["antigravity", "status", "--json"], {
       from: "user",
     });
-    expect(JSON.parse(output())).toEqual({ status: "connected", bindingId });
+    expect(JSON.parse(output())).toEqual({
+      status: "connected",
+      bindingId,
+      loginHost: "tester@agy.example.com",
+    });
     log.mockClear();
     await subscriptionCommand.parseAsync(
       ["antigravity", "disconnect", bindingId],

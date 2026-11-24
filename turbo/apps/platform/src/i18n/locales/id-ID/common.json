@@ -5726,7 +5726,8 @@
         "expired": "Sesi login telah berakhir. Hubungkan kembali akun Anda.",
         "terminal": "Jalankan perintah ini di terminal Anda dan login dengan akun Google AI pribadi Anda.",
         "title": "Google AI (Antigravity)",
-        "unassigned": "Minta administrator menetapkan terminal login untuk Anda."
+        "unassigned": "Minta administrator menetapkan terminal login untuk Anda.",
+        "verify": "Perintah ini menggunakan kuota langganan Anda untuk mengirim masing-masing satu permintaan ke Neon, Carbon, dan Hydrogen."
       },
       "deviceAuth": {
         "claude": {

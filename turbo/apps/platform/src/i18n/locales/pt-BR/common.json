@@ -5817,7 +5817,8 @@
         "expired": "O login expirou. Conecte a conta novamente.",
         "terminal": "Execute este comando no terminal e faça login com sua conta pessoal do Google AI.",
         "title": "Google AI (Antigravity)",
-        "unassigned": "Peça a um administrador para atribuir um terminal de login a você."
+        "unassigned": "Peça a um administrador para atribuir um terminal de login a você.",
+        "verify": "Este comando usa sua assinatura para enviar uma solicitação a cada um dos modelos Neon, Carbon e Hydrogen."
       },
       "deviceAuth": {
         "claude": {

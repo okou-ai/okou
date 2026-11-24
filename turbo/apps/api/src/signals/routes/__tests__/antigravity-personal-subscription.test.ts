@@ -68,6 +68,7 @@ describe("member-owned Antigravity login", () => {
   it("requires staff opt-in and assignment to an individual worker", async () => {
     const owner = makeOwner();
     clerk.session(owner.userId, owner.orgId);
+    await accept(client().get({ headers }), [404]);
     await accept(client().start({ headers, body: {} }), [404]);
     await updateFeatureSwitchesForUser(context, owner, { [key]: true });
     configure();
@@ -97,7 +98,11 @@ describe("member-owned Antigravity login", () => {
     await accept(confirm(bindingId), [404]);
     asMachine(a);
     const confirmed = await accept(confirm(bindingId), [200]);
-    expect(confirmed.body).toStrictEqual({ status: "connected", bindingId });
+    expect(confirmed.body).toStrictEqual({
+      status: "connected",
+      bindingId,
+      loginHost: a.loginHost,
+    });
     expect((await accept(confirm(bindingId), [200])).body).toStrictEqual(
       confirmed.body,
     );

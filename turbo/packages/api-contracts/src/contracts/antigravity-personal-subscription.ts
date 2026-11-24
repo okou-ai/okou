@@ -24,7 +24,10 @@ const profile = discriminatedUnion("status", [
   }),
   binding.extend({ status: literal("expired") }),
   binding.extend({ status: literal("unavailable") }),
-  binding.extend({ status: literal("connected") }),
+  binding.extend({
+    status: literal("connected"),
+    loginHost: antigravityLoginHost,
+  }),
 ]);
 const responses = {
   200: profile,

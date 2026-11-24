@@ -5726,7 +5726,8 @@
         "expired": "ログインの有効期限が切れました。もう一度接続してください。",
         "terminal": "ターミナルで次のコマンドを実行し、個人の Google AI アカウントでログインしてください。",
         "title": "Google AI（Antigravity）",
-        "unassigned": "ログイン用のターミナルを管理者に割り当ててもらってください。"
+        "unassigned": "ログイン用のターミナルを管理者に割り当ててもらってください。",
+        "verify": "このコマンドはサブスクリプションの利用枠を使い、Neon、Carbon、Hydrogen にそれぞれ 1 件のリクエストを送信します。"
       },
       "deviceAuth": {
         "claude": {

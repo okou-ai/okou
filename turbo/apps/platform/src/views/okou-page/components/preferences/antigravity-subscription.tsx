@@ -47,16 +47,25 @@ export function AntigravitySubscription() {
           })}
         </p>
       )}
-      {enabled && profile.status === "pending" && (
-        <>
-          <p className="text-sm text-muted-foreground">
-            {t(($) => {
-              return $.settings.models.antigravity.terminal;
-            })}
-          </p>
-          <code className="max-w-full select-all break-all rounded-md bg-muted px-2 py-1 text-xs">{`ssh -t -- ${profile.loginHost} ${profile.bindingId}`}</code>
-        </>
-      )}
+      {enabled &&
+        (profile.status === "pending" || profile.status === "connected") && (
+          <>
+            <p className="text-sm text-muted-foreground">
+              {profile.status === "pending"
+                ? t(($) => {
+                    return $.settings.models.antigravity.terminal;
+                  })
+                : t(($) => {
+                    return $.settings.models.antigravity.verify;
+                  })}
+            </p>
+            <code className="max-w-full select-all break-all rounded-md bg-muted px-2 py-1 text-xs">
+              {profile.status === "pending"
+                ? `ssh -t -- ${profile.loginHost} ${profile.bindingId}`
+                : `ssh -t -- ${profile.loginHost} verify ${profile.bindingId}`}
+            </code>
+          </>
+        )}
       {profile.status === "expired" && (
         <p role="status" className="text-sm text-muted-foreground">
           {t(($) => {

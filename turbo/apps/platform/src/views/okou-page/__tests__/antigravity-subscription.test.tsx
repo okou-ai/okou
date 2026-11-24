@@ -31,7 +31,7 @@ test("link, verify and disconnect a personal Google sign-in from Models settings
       return respond(200, pending);
     }
     if (status === "connected") {
-      return respond(200, { status, bindingId });
+      return respond(200, { status, bindingId, loginHost: pending.loginHost });
     }
     return respond(200, { status });
   });
@@ -65,6 +65,9 @@ test("link, verify and disconnect a personal Google sign-in from Models settings
   await waitFor(() => {
     return expect(card().getByText("Connected")).toBeInTheDocument();
   });
+  expect(
+    card().getByText(`ssh -t -- ${pending.loginHost} verify ${bindingId}`),
+  ).toBeInTheDocument();
   click(card().getByText("Disconnect account", { selector: "button" }));
   await waitFor(() => {
     return expect(status).toBe("disconnected");

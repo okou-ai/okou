@@ -49,7 +49,11 @@ function profileResponse(row: typeof profiles.$inferSelect) {
   if (row.confirmedAt) {
     return {
       status: 200 as const,
-      body: { status: "connected" as const, bindingId },
+      body: {
+        status: "connected" as const,
+        bindingId,
+        loginHost: worker.loginHost,
+      },
     };
   }
   return {
@@ -76,6 +80,16 @@ const getProfile$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   if (row) {
     return profileResponse(row);
+  }
+  if (
+    !(await set(
+      isAntigravityEnabledForMember$,
+      owner.orgId,
+      owner.userId,
+      signal,
+    ))
+  ) {
+    return notFound("Resource not found");
   }
   return memberAntigravityWorker(owner) &&
     optionalEnv("OKOU_MACHINE_SECRET_KEY")

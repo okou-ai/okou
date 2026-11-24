@@ -5726,7 +5726,8 @@
         "expired": "로그인이 만료되었습니다. 계정을 다시 연결하세요.",
         "terminal": "터미널에서 이 명령을 실행한 후 개인 Google AI 계정으로 로그인하세요.",
         "title": "Google AI (Antigravity)",
-        "unassigned": "관리자에게 로그인 터미널 할당을 요청하세요."
+        "unassigned": "관리자에게 로그인 터미널 할당을 요청하세요.",
+        "verify": "이 명령은 구독 할당량을 사용해 Neon, Carbon, Hydrogen에 각각 한 번씩 요청을 보냅니다."
       },
       "deviceAuth": {
         "claude": {

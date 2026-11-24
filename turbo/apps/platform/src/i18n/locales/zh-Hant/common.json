@@ -5726,7 +5726,8 @@
         "expired": "登入已過期，請重新連線。",
         "terminal": "在終端機執行以下指令，然後使用你的個人 Google AI 帳戶登入。",
         "title": "Google AI（Antigravity）",
-        "unassigned": "請管理員為你分配登入終端機。"
+        "unassigned": "請管理員為你分配登入終端機。",
+        "verify": "執行此命令會使用你的訂閱額度，分別向 Neon、Carbon 和 Hydrogen 傳送一次請求。"
       },
       "deviceAuth": {
         "claude": {

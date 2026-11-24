@@ -5817,7 +5817,8 @@
         "expired": "El inicio de sesión ha caducado. Vuelve a conectar la cuenta.",
         "terminal": "Ejecuta este comando en tu terminal e inicia sesión con tu cuenta personal de Google AI.",
         "title": "Google AI (Antigravity)",
-        "unassigned": "Pide a un administrador que te asigne un terminal de inicio de sesión."
+        "unassigned": "Pide a un administrador que te asigne un terminal de inicio de sesión.",
+        "verify": "Este comando usa tu suscripción para enviar una solicitud a cada uno de los modelos Neon, Carbon y Hydrogen."
       },
       "deviceAuth": {
         "claude": {

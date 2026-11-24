@@ -5726,7 +5726,8 @@
         "expired": "登录已过期，请重新连接。",
         "terminal": "在终端运行以下命令，然后使用你的个人 Google AI 账号登录。",
         "title": "Google AI（Antigravity）",
-        "unassigned": "请管理员为你分配登录终端。"
+        "unassigned": "请管理员为你分配登录终端。",
+        "verify": "运行此命令会使用你的订阅额度，分别向 Neon、Carbon 和 Hydrogen 发送一次请求。"
       },
       "deviceAuth": {
         "claude": {
