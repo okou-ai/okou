@@ -1077,3 +1077,41 @@ test("Leaving the viewer retires two outstanding requests without closing its re
   expect(cdp.targets).toContainEqual(original);
   expect(screen.queryByLabelText("Remote browser input")).toBeNull();
 });
+
+test("browser-response-deadlines-039 A manual reconnect after a silent hello opens a writable tab in the member's window", async () => {
+  const advance = browserRecoveryClock(context.signal);
+  const { cdp, openPage } = viewer();
+  const silent = cdp.holdNextNative("hello");
+  await openPage();
+  await silent.received;
+  advance(31_000);
+  await screen.findByText("Browser view unavailable");
+  expect(remoteInput()).toBeDisabled();
+
+  click(await screen.findByText("Reconnect", { selector: "button" }));
+  await expectStreamingAt(original.url);
+  await silent.release();
+  click(
+    screen.getByLabelText("New tab", {
+      selector: "button[data-browser-new-tab]",
+    }),
+  );
+  await expectStreamingAt("");
+  const created = cdp.targets.filter((target) => {
+    return target.targetId !== original.targetId;
+  });
+  expect(created).toHaveLength(1);
+  const [tab] = created;
+  if (!tab) {
+    throw new Error("The recovered window did not create a tab");
+  }
+  expect(tab).toMatchObject({
+    url: "about:blank",
+    windowId: original.windowId,
+  });
+  const text = "Draft the inspection report";
+  await sendText(cdp, text, tab.targetId);
+  expect(cdp.inputForTarget(original.targetId)).not.toContainEqual(
+    expect.objectContaining({ params: expect.objectContaining({ text }) }),
+  );
+});

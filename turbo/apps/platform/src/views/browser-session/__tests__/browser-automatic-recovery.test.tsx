@@ -965,3 +965,68 @@ test("The descriptor conflict is consumed before the terminal protocol report re
   await write(live, "o");
   expect(live.errors.reports).toStrictEqual(reports);
 });
+
+test("browser-response-deadlines-023 Returning to another chat keeps its picture and sends typing to its own page after the former picture is released", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const live = await online();
+  const priorPicture = live.cdp.holdTargetFrames(primary.targetId);
+  live.cdp.disconnect({ code: 1006 });
+  await screen.findByText("Reconnecting…");
+  live.time(0, 32);
+  await priorPicture.received;
+  visibility.changeTo("hidden");
+  await screen.findByText("Viewing paused");
+  const threadId = "64000000-0000-4000-a000-000000000113";
+  const browser = {
+    ...live.viewer.browser,
+    threadId,
+    window: {
+      instanceId: "64200000-0000-4000-a000-000000000113",
+      primaryWindowId: foreign.windowId,
+    },
+  };
+  const opened = context.mocks.deferred<void>();
+  context.mocks.api(browserContract.get, ({ params, respond }) => {
+    expect(params.threadId).toBe(threadId);
+    if (!opened.settled()) {
+      opened.resolve();
+    }
+    return respond(200, {
+      browser,
+      viewer: { ...live.viewer, browser, cdpUrl: endpoint },
+    });
+  });
+  context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
+    return respond(200, { browser });
+  });
+  history.pushState({}, "", "/browsers/" + threadId);
+  window.dispatchEvent(new PopStateEvent("popstate"));
+  await opened.promise;
+  await screen.findByText("Viewing paused");
+  visibility.changeTo("visible");
+  await expectStreamingAt(foreign.url);
+
+  const canvas = screen.getByRole<HTMLCanvasElement>("img", {
+    name: "Live browser view",
+  });
+  const surface = canvas.getContext("2d");
+  if (!surface) {
+    throw new Error("The destination viewer has no canvas");
+  }
+  let displayed = 0;
+  vi.spyOn(surface, "drawImage").mockImplementation((source) => {
+    displayed = (source as ImageBitmap).width;
+  });
+  vi.spyOn(surface, "clearRect").mockImplementation(() => {
+    displayed = 0;
+  });
+  live.cdp.frame("AAAA", live.cdp.pageSession(foreign.targetId), 1263);
+  await waitFor(() => {
+    expect(displayed).toBe(1263);
+  });
+  priorPicture.release("AAAA", 2, 1171);
+  await write(live, "b", foreign.targetId);
+  expect(canvas).toBeInTheDocument();
+  expect(displayed).toBe(1263);
+  expect(pageTab(foreign.title)).toHaveAttribute("aria-selected", "true");
+});

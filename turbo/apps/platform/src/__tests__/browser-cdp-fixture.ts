@@ -878,12 +878,12 @@ export function mockBrowserCdp(
     });
     return {
       received: requested.promise,
-      release(data = "AAAA", frameNumber = 1) {
+      release(data = "AAAA", frameNumber = 1, rasterWidth?: number) {
         if (!receivedSession) {
           throw new Error("No screencast request received for the held frame");
         }
         heldFrames.delete(key);
-        frame(data, receivedSession, undefined, frameNumber);
+        frame(data, receivedSession, rasterWidth, frameNumber);
         return receivedSession;
       },
     };
