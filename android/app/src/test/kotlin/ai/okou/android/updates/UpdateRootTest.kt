@@ -191,7 +191,7 @@ class UpdateRootTest {
             close.assertIsFocused()
             app.fixture.transfer.completeExceptionally(IOException("download failed"))
             compose.waitUntil(10_000) { app.updates.state.value.transfer is UpdateTransfer.Failed }
-            download.assertIsEnabled()
+            updateDetailText("Retry download").assertIsEnabled()
             close.assertIsFocused()
         } finally {
             instrumentation.resetInTouchMode()
@@ -267,6 +267,7 @@ class UpdateRootTest {
                 compose
                     .onNodeWithText(app.getString(R.string.updates_error_check))
                     .assertIsDisplayed()
+            updateDetailText("Retry check").assertIsEnabled()
             assertTrue(error.getUnclippedBoundsInRoot().bottom <= closeBounds.top)
             assertEquals(headingBounds, heading.getUnclippedBoundsInRoot())
             assertEquals(closeBounds, close.getUnclippedBoundsInRoot())

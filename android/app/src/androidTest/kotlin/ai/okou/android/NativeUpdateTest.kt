@@ -197,6 +197,7 @@ class NativeUpdateTest {
             val initialDetailsBounds = detailsBounds()
             gate.complete(Unit)
             exists(R.string.updates_error_check)
+            button(By.pkg(app.packageName).text(app.getString(R.string.updates_retry_check)))
             captureState("details-check-failed")
             assertEquals(initialDetailsBounds, detailsBounds())
             closeDetails()
@@ -341,16 +342,16 @@ class NativeUpdateTest {
             captureState("details-download-failed")
             assertEquals(initialDetailsBounds, detailsBounds())
             download.set(CompletableDeferred())
-            click(R.string.updates_download)
+            click(R.string.updates_retry_download)
             assertNotNull(text(progressLabel))
             val timedOut = download.getAndSet(CompletableDeferred())
             online.value = false
             timedOut.completeExceptionally(SocketTimeoutException("fixture download timed out"))
-            val waiting = checkNotNull(text(app.getString(R.string.updates_waiting_to_recover)))
+            val waiting = checkNotNull(text(app.getString(R.string.updates_retry_download)))
             assertFalse(
                 generateSequence(waiting) { it.parent }.any { it.isClickable && it.isEnabled },
             )
-            captureState("details-waiting-to-recover")
+            captureState("details-retry-offline")
             assertEquals(initialDetailsBounds, detailsBounds())
             val originalSize =
                 device.executeShellCommand("wm size").substringAfter("Override size: ", "").trim()
@@ -365,8 +366,8 @@ class NativeUpdateTest {
                                 app.resources.configuration.fontScale >= 2f
                     }
                 assertTrue(device.wait(resized, 10_000) == true)
-                exists(R.string.updates_waiting_to_recover)
-                captureState("details-short-waiting-to-recover")
+                exists(R.string.updates_retry_download)
+                captureState("details-short-retry-offline")
             } finally {
                 if (fontScale.toFloatOrNull() == null)
                     device.executeShellCommand("settings delete system font_scale")

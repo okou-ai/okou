@@ -149,7 +149,9 @@
     <string name="settings_sign_out_body">Pour utiliser à nouveau Okou sur cet appareil, reconnectez-vous. Les brouillons restent associés à ce compte.</string>
     <string name="updates_waiting_to_check">Vérification en attente</string>
     <string name="updates_waiting_to_install">En attente d’installation</string>
-    <string name="updates_waiting_to_recover">En attente de reprise</string>
+    <string name="updates_retry_download">Relancer le téléchargement</string>
+    <string name="updates_retry_check">Relancer la vérification</string>
+    <string name="updates_waiting_to_download">Téléchargement en attente</string>
     <string name="instructions_placeholder">Que souhaitez-vous qu’Okou garde à l’esprit ?</string>
     <string name="instructions_save_when_online">Connectez-vous pour enregistrer les modifications.</string>
     <string name="settings_timezone">Fuseau horaire</string>

@@ -220,6 +220,8 @@ internal fun UpdateHost(
     install: (AndroidUpdatesRelease) -> Unit,
     @StringRes installProgress: Int?,
     detailsOpen: MutableState<Boolean>,
+    checkFromDetails: () -> Unit,
+    downloadFromDetails: (AndroidUpdatesRelease) -> Unit,
     content: @Composable (openUpdates: () -> Unit) -> Unit,
 ) {
     var details by detailsOpen
@@ -246,7 +248,7 @@ internal fun UpdateHost(
                     details = true
                     if (
                         state.check == UpdateCheck.Failed &&
-                            (!state.available || state.requiresNewerAndroid)
+                            state.displayedRelease?.let(state::isEligible) != true
                     )
                         check()
                 }
@@ -257,8 +259,8 @@ internal fun UpdateHost(
         savedUi.SaveableStateProvider("update-details") {
             UpdateSheet(
                 state,
-                check,
-                download,
+                checkFromDetails,
+                downloadFromDetails,
                 install,
                 installProgress,
                 restoreInstallFocus = returningToDetails && installProgress == null,
@@ -460,6 +462,7 @@ private fun UpdateSheet(
                         Modifier.weight(1f)
                             .heightIn(min = actions.height)
                             .focusRequester(installFocus),
+                        allowRetry = true,
                     )
                 }
             }
@@ -663,18 +666,21 @@ private fun UpdateAction(
     install: (AndroidUpdatesRelease) -> Unit,
     @StringRes installProgress: Int?,
     modifier: Modifier,
+    allowRetry: Boolean = false,
 ) {
     val transfer = state.transfer
     val colors = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(12.dp)
     val focus = rememberInstallControlFocus(inProgress = installProgress != null)
-    val waitingForRecovery =
-        transfer is UpdateTransfer.Waiting ||
-            state.check == UpdateCheck.Waiting && !state.canInstall && !state.canDownload
+    val waitingForCheck =
+        state.check == UpdateCheck.Waiting && !state.canInstall && !state.canDownload
+    val waiting = transfer is UpdateTransfer.Waiting || waitingForCheck
     val checking =
         state.check == UpdateCheck.Checking &&
             !state.offline &&
-            !waitingForRecovery &&
+            transfer !is UpdateTransfer.Downloading &&
+            !state.preparing &&
+            !waiting &&
             !state.canInstall &&
             !state.canDownload
     val progress =
@@ -685,7 +691,8 @@ private fun UpdateAction(
             checking -> stringResource(R.string.updates_check_in_progress)
             else -> null
         }
-    val enabled = progress == null && (state.canInstall || !state.offline && !waitingForRecovery)
+    val enabled =
+        progress == null && (state.canInstall || !state.offline && (!waiting || allowRetry))
     val showingProgress = progress != null
     // Capture focus before the action target is replaced by a progress or waiting target.
     val retainFocus = remember(showingProgress, enabled) { focus.isFocused }
@@ -736,9 +743,30 @@ private fun UpdateAction(
         when {
             transfer is UpdateTransfer.Ready && state.canInstall ->
                 R.string.updates_ready to { install(transfer.release) }
-            waitingForRecovery -> R.string.updates_waiting_to_recover to {}
-            state.canDownload ->
-                R.string.updates_download to { download(checkNotNull(state.candidate)) }
+            transfer is UpdateTransfer.Waiting -> {
+                val label =
+                    if (allowRetry) R.string.updates_retry_download
+                    else R.string.updates_waiting_to_download
+                label to { download(transfer.release) }
+            }
+            waitingForCheck -> {
+                val label =
+                    if (allowRetry) R.string.updates_retry_check
+                    else R.string.updates_waiting_to_check
+                label to check
+            }
+            state.canDownload -> {
+                val label =
+                    if (
+                        allowRetry &&
+                            (transfer == UpdateTransfer.Failed ||
+                                transfer == UpdateTransfer.Interrupted)
+                    )
+                        R.string.updates_retry_download
+                    else R.string.updates_download
+                label to { download(checkNotNull(state.candidate)) }
+            }
+            allowRetry && state.check == UpdateCheck.Failed -> R.string.updates_retry_check to check
             state.offline -> R.string.updates_waiting_to_check to {}
             state.required || state.requiresNewerAndroid ->
                 R.string.updates_check_compatible to check
@@ -841,7 +869,8 @@ private fun measureUpdateSheetActions(width: Dp): UpdateSheetActionSize {
             stringResource(R.string.updates_check),
             stringResource(R.string.updates_check_compatible),
             stringResource(R.string.updates_waiting_to_check),
-            stringResource(R.string.updates_waiting_to_recover),
+            stringResource(R.string.updates_retry_check),
+            stringResource(R.string.updates_retry_download),
             stringResource(R.string.updates_ready),
         )
     val progressLabels =
