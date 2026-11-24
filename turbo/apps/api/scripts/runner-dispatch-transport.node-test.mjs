@@ -344,9 +344,9 @@ test(
         async ({ transport, origin, bodyPorts, releaseHandshake }) => {
           releaseHandshake();
           const sends = Promise.all(
-            Array.from({ length: 5 }, (_, i) =>
-              send(transport, origin + "/" + i),
-            ),
+            Array.from({ length: 5 }, (_, i) => {
+              return send(transport, origin + "/" + i);
+            }),
           );
           await Promise.race([received.promise, sends]);
           assert.equal(new Set(bodyPorts).size, 5);
