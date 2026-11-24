@@ -1,6 +1,6 @@
 import type { ChatThreadRowSignals } from "./chat-thread-rows.ts";
-import { command, computed, state, type Computed } from "ccstate";
-import { onRef } from "../utils.ts";
+import { command, computed, state, type Command, type Computed } from "ccstate";
+import { onRef, waitForAnimationFrame } from "../utils.ts";
 import type { ChatEventGroup } from "./chat-event.ts";
 import { isRenderableAssistantEvent } from "./chat-event-display.ts";
 import type { ThreadScrollPosition } from "./chat-thread-scroll.ts";
@@ -314,9 +314,53 @@ export function createTranscriptWindow(
   return { index$, range$, fillViewport$, measurements };
 }
 
+// The browser normally absorbs changes in the height above a reader. On
+// engines without scroll anchoring, preserve only the page's layout shift.
+// Document coordinates let any intervening wheel or touch motion stand.
+function anchorInPageWindow(
+  container: HTMLElement | null,
+  position: ThreadScrollPosition | null,
+) {
+  if (
+    !position ||
+    !container ||
+    globalThis.CSS?.supports?.("overflow-anchor", "auto")
+  ) {
+    return null;
+  }
+  const viewport = container.closest<HTMLElement>("[data-scroll-container]");
+  const anchor = Array.from(
+    container.querySelectorAll<HTMLElement>(
+      "[data-chat-scroll-anchor-event-id]",
+    ),
+  ).find((node) => {
+    return node.dataset.chatScrollAnchorEventId === position.targetEventId;
+  });
+  if (!viewport || !anchor || !viewport.clientHeight) {
+    return null;
+  }
+  const contentOffset = () => {
+    return (
+      anchor.getBoundingClientRect().top -
+      viewport.getBoundingClientRect().top +
+      viewport.scrollTop
+    );
+  };
+  const previous = contentOffset();
+  return () => {
+    if (viewport.contains(anchor) && viewport.clientHeight) {
+      const delta = contentOffset() - previous;
+      if (Math.abs(delta) >= 1) {
+        viewport.scrollTop += delta;
+      }
+    }
+  };
+}
+
 export function createTranscriptPages(
   window: ReturnType<typeof createTranscriptWindow>,
   visibleRows$: Computed<readonly ChatThreadRowSignals[]>,
+  syncVisibleRows$: Command<void, []>,
   position$: Computed<ThreadScrollPosition | null>,
 ) {
   const { index$, range$, fillViewport$, measurements } = window;
@@ -380,9 +424,47 @@ export function createTranscriptPages(
     mounted$,
     measurements.sizes$,
   );
+  const publishRows$ = command(async ({ get, set }, signal: AbortSignal) => {
+    const previous = get(mounted$);
+    const next = get(range$);
+    const container = get(measurements.container$);
+    const position = get(position$);
+    const restore =
+      previous && next && previous.first !== next.first
+        ? anchorInPageWindow(container, position)
+        : null;
+    set(syncVisibleRows$);
+    if (!restore || !container) {
+      return;
+    }
+    const first = get(layout$)?.pages[0]?.key;
+    if (!first || first === previous?.index.pages[previous.first]?.key) {
+      return;
+    }
+    for (let frame = 0; frame <= 2; frame++) {
+      signal.throwIfAborted();
+      if (
+        get(position$)?.targetEventId !== position?.targetEventId ||
+        get(measurements.container$) !== container
+      ) {
+        return;
+      }
+      if (
+        container.querySelector<HTMLElement>("[data-transcript-page]")?.dataset
+          .transcriptPage === first
+      ) {
+        restore();
+        return;
+      }
+      if (frame < 2) {
+        await waitForAnimationFrame(signal);
+      }
+    }
+  });
   return {
     range$,
     rangePrepared$,
+    publishRows$,
     awaitingAnchor$,
     tailMounted$,
     fillViewport$,

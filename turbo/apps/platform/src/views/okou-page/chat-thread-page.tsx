@@ -129,7 +129,6 @@ import {
   useMediaQuery,
   buttonVariants,
   surfaceVariants,
-  PreserveScrollAnchor,
 } from "@okouai/ui";
 import { RUN_ERROR_GUIDANCE } from "@okouai/api-contracts/contracts/errors";
 import {
@@ -2819,7 +2818,6 @@ function ChatThreadRenderedEventGroups({
 }) {
   const rows = useGet(thread.visibleRows$);
   const layout = useGet(thread.transcriptPages.layout$);
-  const viewport = useGet(thread.scrollContainer$);
   const bindPages = useSet(thread.transcriptPages.containerOnRef$);
   const bindPage = useSet(thread.transcriptPages.pageOnRef$);
   const renderRow = (row: ChatThreadRowSignals) => {
@@ -2830,43 +2828,34 @@ function ChatThreadRenderedEventGroups({
   return (
     <>
       {layout ? (
-        <PreserveScrollAnchor
-          layoutKey={`${layout.pages[0]!.key}:${layout.before}`}
-          anchor={{
-            viewport,
-            anchorSelector: "[data-chat-scroll-anchor-event-id]",
-            preserveNativeAnchoring: true,
-          }}
-        >
-          <div ref={bindPages}>
-            <div
-              aria-hidden
-              data-transcript-spacer="before"
-              style={{ height: layout.before }}
-            />
-            {layout.pages.map((page, i) => {
-              return (
-                <div
-                  key={page.key}
-                  ref={bindPage}
-                  data-transcript-page={page.key}
-                  className={cn(
-                    "flex flex-col",
-                    CHAT_THREAD_MESSAGE_ROW_GAP_CLASS,
-                    (i < layout.pages.length - 1 || layout.after > 0) && "pb-6",
-                  )}
-                >
-                  {layout.rows[i]!.map(renderRow)}
-                </div>
-              );
-            })}
-            <div
-              aria-hidden
-              data-transcript-spacer="after"
-              style={{ height: layout.after }}
-            />
-          </div>
-        </PreserveScrollAnchor>
+        <div ref={bindPages}>
+          <div
+            aria-hidden
+            data-transcript-spacer="before"
+            style={{ height: layout.before }}
+          />
+          {layout.pages.map((page, i) => {
+            return (
+              <div
+                key={page.key}
+                ref={bindPage}
+                data-transcript-page={page.key}
+                className={cn(
+                  "flex flex-col",
+                  CHAT_THREAD_MESSAGE_ROW_GAP_CLASS,
+                  (i < layout.pages.length - 1 || layout.after > 0) && "pb-6",
+                )}
+              >
+                {layout.rows[i]!.map(renderRow)}
+              </div>
+            );
+          })}
+          <div
+            aria-hidden
+            data-transcript-spacer="after"
+            style={{ height: layout.after }}
+          />
+        </div>
       ) : (
         rows.map(renderRow)
       )}
