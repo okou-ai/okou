@@ -21,9 +21,9 @@ struct ForYouSuggestionView: View {
   /// The card is a reading surface: a Title 3 heading over Body text, with Subheadline for
   /// secondary lines (docs/ios/mobile-design-system.md#type-roles).
   private static let labelFont = Font.okou(.body).weight(.medium)
-  /// The room between directions: enough that each reads as its own button and the mark on a
-  /// direction's corner stays clear of the one above.
-  private static let directionGap = OkouSpace.lg
+  /// The room between directions: enough that each reads as its own button, little enough that
+  /// the card keeps its room for the reason.
+  private static let directionGap = OkouSpace.sm
 
   private var source: (id: String, title: String)? {
     let target = suggestion.options.compactMap(\.threadId).first
@@ -85,13 +85,12 @@ struct ForYouSuggestionView: View {
       .fixedSize(horizontal: false, vertical: true)
   }
 
-  /// A direction says what choosing it does before it is chosen: one that sends carries the
-  /// composer's amber send mark, one that only prepares a draft leads on to its chat (the
-  /// outcome is the mark's meaning and VoiceOver's hint). Its mark sits on the button's top-right
-  /// corner, half outside its border, so the label and description keep the button's whole width
-  /// and every direction keeps its mark in the same place. Each is a raised button on the card, as the
-  /// web draws its options, and the one being chosen turns its mark into progress until the
-  /// choice settles.
+  /// A direction says what choosing it does before it is chosen, in a short line above its label:
+  /// one that sends says so in amber, one that only prepares a draft names the chat it drafts in.
+  /// There is no mark beside the text, so the label and description keep the button's whole
+  /// width. Each is a white button on the card's grey ground, as the web draws its options, and
+  /// the one being chosen shows its progress in that line and along its foot until the choice
+  /// settles.
   private func optionButton(_ option: ForYouOption) -> some View {
     let sends = option.threadId == nil
     let isPending = pendingOptionID == option.id
@@ -99,6 +98,8 @@ struct ForYouSuggestionView: View {
       choose(option)
     } label: {
       VStack(alignment: .leading, spacing: OkouSpace.six) {
+        ForYouOptionAction(
+          sends: sends, chat: option.threadId.flatMap(threadTitle), isPending: isPending)
         Text(option.label).font(Self.labelFont)
         // A long description keeps its first lines so a dense card leaves its heading room;
         // VoiceOver reads all of it.
@@ -112,10 +113,11 @@ struct ForYouSuggestionView: View {
       .multilineTextAlignment(.leading)
       .padding(OkouSpace.lg)
       .frame(minHeight: OkouControl.minimumTarget)
-      .overlay(alignment: .topTrailing) {
-        ForYouOptionMark(sends: sends, isPending: isPending)
-          .offset(x: ForYouOptionMark.overhang, y: -ForYouOptionMark.overhang)
+      .overlay(alignment: .bottom) {
+        if isPending { ForYouOptionProgress(sends: sends).transition(.opacity) }
       }
+      // The progress line follows the button's rounded foot.
+      .clipShape(RoundedRectangle(cornerRadius: OkouRadius.control, style: .continuous))
     }
     .buttonStyle(ForYouOptionButtonStyle(isPending: isPending))
     .accessibilityHint(
@@ -368,40 +370,79 @@ struct ForYouCardLayout<Heading: View, Actions: View>: View {
   }
 }
 
-/// The mark on a direction's corner: the composer's amber send for one that sends now, a quiet
-/// arrow for one that opens a draft, and progress while the choice is under way. A ring of the
-/// card's colour cuts it out of the button's border, so it reads as sitting on the corner.
-private struct ForYouOptionMark: View {
+/// What choosing a direction does, as a short line above its label: an amber dot and "Send to
+/// a new chat" for one that sends now, a quiet dot and the chat's name for one that drafts, and
+/// progress with "Sending…" while the choice is under way. VoiceOver hears it as the button's
+/// hint instead.
+private struct ForYouOptionAction: View {
   let sends: Bool
+  /// The chat a draft opens in, when its title is known.
+  let chat: String?
   let isPending: Bool
-  /// How far the mark reaches past the button's top and trailing edges.
-  static let overhang: CGFloat = 9
-  private static let size: CGFloat = OkouSpace.xxl
-  private static let ring: CGFloat = OkouSpace.three
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  private static let dot: CGFloat = 6
+
+  /// Amber that reads as text: a deep stop on white, a light one at night.
+  static let sendInk = Color(
+    uiColor: UIColor { traits in
+      UIColor(traits.userInterfaceStyle == .dark ? OkouColor.primary200 : OkouColor.primary700)
+        .resolvedColor(with: traits)
+    })
+
+  private var text: LocalizedStringKey {
+    if isPending { return sends ? "Sending…" : "Opening draft…" }
+    if sends { return "Send to a new chat" }
+    if let chat { return "Draft in \(chat)" }
+    return "Draft in the existing chat"
+  }
 
   var body: some View {
-    ZStack {
-      if isPending {
-        ProgressView().controlSize(.mini)
-          .tint(sends ? OkouColor.primaryForeground : OkouColor.mutedForeground)
-      } else {
-        OkouIcon(sends ? "arrow-up" : "arrow-right", size: OkouIconSize.badge)
+    HStack(spacing: OkouSpace.six) {
+      ZStack {
+        if isPending {
+          ProgressView().controlSize(.mini).scaleEffect(0.7).transition(.opacity)
+        } else {
+          Circle().frame(width: Self.dot, height: Self.dot).transition(.opacity)
+        }
       }
+      .frame(width: OkouSpace.ten, height: OkouSpace.ten)
+      .animation(reduceMotion ? nil : OkouMotion.press, value: isPending)
+      // The words switch at once; fading one phrase into the other overlaps them.
+      Text(text).lineLimit(1)
     }
-    .transition(.opacity)
-    .foregroundStyle(sends ? OkouColor.primaryForeground : OkouColor.foreground)
-    .frame(width: Self.size, height: Self.size)
-    .background {
-      if sends {
-        Circle().fill(OkouColor.primary)
-      } else {
-        Circle().fill(OkouColor.card)
-          .overlay { Circle().strokeBorder(OkouColor.controlBorder, lineWidth: OkouSpace.hairline) }
-      }
+    .font(.okou(.caption).weight(.semibold))
+    .textCase(.uppercase)
+    .tracking(0.5)
+    .foregroundStyle(sends ? Self.sendInk : OkouColor.mutedForeground)
+    .tint(sends ? Self.sendInk : OkouColor.mutedForeground)
+    .accessibilityHidden(true)
+  }
+}
+
+/// A thin line that runs along a chosen direction's foot while its choice is under way: amber
+/// for one that sends, grey for one that drafts. Under Reduce Motion it holds still.
+private struct ForYouOptionProgress: View {
+  let sends: Bool
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var travels = false
+  private static let height: CGFloat = 2
+  private static let share: CGFloat = 0.4
+
+  var body: some View {
+    GeometryReader { proxy in
+      let width = proxy.size.width * Self.share
+      Capsule()
+        .fill(sends ? OkouColor.primary : OkouColor.controlBorder)
+        .frame(width: reduceMotion ? proxy.size.width : width, height: Self.height)
+        .offset(x: reduceMotion ? 0 : (travels ? proxy.size.width : -width))
+        .opacity(reduceMotion ? 0.6 : 1)
     }
-    .padding(Self.ring)
-    .background(OkouColor.card, in: Circle())
-    .animation(OkouMotion.press, value: isPending)
+    .frame(height: Self.height)
+    .clipShape(Rectangle())
+    .onAppear {
+      guard !reduceMotion else { return }
+      withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: false)) { travels = true }
+    }
     .accessibilityHidden(true)
   }
 }
