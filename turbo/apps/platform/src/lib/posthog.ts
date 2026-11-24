@@ -688,22 +688,32 @@ export function displayBillingFeedbackSurvey(
             : language,
     });
     let requested = false;
+    let queryInFlight = false;
     let surveysReady = false;
     let flagsReady = false;
     const requestWhenReady = () => {
-      if (signal.aborted || requested || !surveysReady || !flagsReady) {
+      if (
+        signal.aborted ||
+        requested ||
+        queryInFlight ||
+        !surveysReady ||
+        !flagsReady
+      ) {
         return;
       }
-      requested = true;
+      queryInFlight = true;
       posthog.getActiveMatchingSurveys((surveys) => {
+        queryInFlight = false;
         if (
           signal.aborted ||
+          requested ||
           !surveys.some((survey) => {
             return survey.id === surveyId;
           })
         ) {
           return;
         }
+        requested = true;
         posthog.displaySurvey(surveyId, {
           displayType: "popover",
           ignoreConditions: false,
@@ -716,7 +726,7 @@ export function displayBillingFeedbackSurvey(
       surveysReady = context?.isLoaded === true;
       requestWhenReady();
     });
-    // The survey list can arrive before the targeting flags on a Stripe return.
+    // A Stripe return can first see cached anonymous flags, then identified flags.
     const unsubscribeFlags = posthog.onFeatureFlags(
       (_flags, _variants, context) => {
         flagsReady = context?.errorsLoading !== true;

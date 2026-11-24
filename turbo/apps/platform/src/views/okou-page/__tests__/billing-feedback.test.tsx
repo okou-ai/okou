@@ -289,3 +289,24 @@ test("a Stripe return waits for PostHog targeting flags before asking the questi
     ).toStrictEqual([BILLING_FEEDBACK_SURVEYS.checkout_canceled]);
   });
 });
+
+test("a cached targeting result is retried when identified-user flags arrive", async () => {
+  const telemetry = prepareBilling();
+  telemetry.setActiveSurveyIds([]);
+  await setupPage({ context, path: "/?billing=canceled", host: "app.okou.ai" });
+  await waitFor(() => {
+    expect(telemetry.surveyQueries).toStrictEqual([true]);
+  });
+  expect(telemetry.surveyDisplays).toStrictEqual([]);
+  telemetry.setActiveSurveyIds([BILLING_FEEDBACK_SURVEYS.checkout_canceled]);
+  telemetry.refreshFeatureFlags();
+  await waitFor(() => {
+    expect(
+      telemetry.surveyDisplays.map((display) => {
+        return display.id;
+      }),
+    ).toStrictEqual([BILLING_FEEDBACK_SURVEYS.checkout_canceled]);
+  });
+  telemetry.refreshFeatureFlags();
+  expect(telemetry.surveyDisplays).toHaveLength(1);
+});

@@ -229,6 +229,7 @@ interface PostHogIdentification {
 }
 
 interface PostHogMock {
+  readonly refreshFeatureFlags: () => void;
   readonly deferFeatureFlags: () => {
     readonly subscribed: Promise<void>;
     readonly resolve: () => void;
@@ -990,7 +991,15 @@ function mockPostHog(signal: AbortSignal): PostHogMock {
     unregister.mockRestore();
   });
 
+  const refreshFeatureFlags = () => {
+    featureFlagsReady = true;
+    for (const callback of flagCallbacks) {
+      callback([], {}, { errorsLoading: false });
+    }
+  };
+
   return {
+    refreshFeatureFlags,
     events,
     identifications,
     initializations,
@@ -1004,12 +1013,7 @@ function mockPostHog(signal: AbortSignal): PostHogMock {
       };
       return {
         subscribed: observed.promise,
-        resolve: () => {
-          featureFlagsReady = true;
-          for (const callback of flagCallbacks) {
-            callback([], {}, { errorsLoading: false });
-          }
-        },
+        resolve: refreshFeatureFlags,
       };
     },
     setActiveSurveyIds: (ids) => {
