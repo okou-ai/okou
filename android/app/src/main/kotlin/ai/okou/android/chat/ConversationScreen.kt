@@ -152,8 +152,6 @@ internal fun ConversationRoute(
     val hasContent = transcript != null || content.isNotEmpty() || queue.isNotEmpty()
     val firstReadFailed = !hasContent && thread != null && state.initialReadFailed
     val waitingForHistory = historyAvailable && !hasContent && !firstReadFailed && !missing
-    val showSkeleton =
-        key(threadId) { rememberChatWaitIndicator(waitingForHistory, HistoryFeedbackDelayMillis) }
     val visit =
         rememberConversationReadVisit(
             model,
@@ -419,38 +417,53 @@ internal fun ConversationRoute(
                 restoredAnchor != null && restoredIndex < 0) &&
                 state.phase == HistoryPhase.Loading &&
                 !list.offline
+        val canPosition =
+            restored != null &&
+                !positioned &&
+                !waitingForAnchor &&
+                !waitingForSearch &&
+                (hasContent || missing)
+        val positionOnFirstMeasure =
+            canPosition && hasContent && !missing && !transcriptShown && pendingFind == null
         val showTimeline =
             !hasContent ||
                 missing ||
                 pendingFind != null ||
                 transcriptShown ||
                 positioned ||
+                positionOnFirstMeasure ||
                 restored != null && (waitingForAnchor || waitingForSearch)
+        val visibleTimeline = if (showTimeline) timeline else emptyList()
+        val waitingForTimeline = waitingForHistory || !showTimeline
+        val showSkeleton = rememberChatWaitIndicator(waitingForTimeline, HistoryFeedbackDelayMillis)
+        val jumpIndex = if (pendingFind == null) -1 else foundIndex
+        val row = (if (jumpIndex >= 0) jumpIndex else restoredIndex) + 1
+        val offset =
+            if (jumpIndex < 0 && restoredIndex >= 0 && restoredAnchor != null)
+                with(density) { restoredAnchor.offsetDp.dp.roundToPx() }
+            else 0
         if (showTimeline && hasContent && !missing && !transcriptShown) {
-            SideEffect { transcriptShown = true }
+            SideEffect {
+                if (positionOnFirstMeasure) {
+                    // Set the scroll request as the transcript replaces the loading rows.
+                    position.requestScrollToItem(row, offset)
+                    positioned = true
+                }
+                transcriptShown = true
+            }
         }
         LaunchedEffect(
-            restored,
-            positioned,
-            timeline,
-            state.phase,
-            list.offline,
-            readingTarget,
-            waitingForSearch,
+            linkPosition,
+            searchTarget,
+            canPosition,
+            positionOnFirstMeasure,
+            pendingFind,
+            jumpIndex,
+            row,
+            offset,
         ) {
-            if (restored == null || positioned || waitingForSearch || (!hasContent && !missing))
-                return@LaunchedEffect
-            val jumpIndex = if (pendingFind == null) -1 else foundIndex
-            if (waitingForAnchor) return@LaunchedEffect
-            val row = (if (jumpIndex >= 0) jumpIndex else restoredIndex) + 1
-            val offset =
-                if (jumpIndex < 0 && restoredIndex >= 0 && restoredAnchor != null)
-                    with(density) { restoredAnchor.offsetDp.dp.roundToPx() }
-                else 0
-            if (!showTimeline) {
-                // Apply the reading position on the transcript's first measure.
-                position.requestScrollToItem(row, offset)
-            } else if (pendingFind == null) {
+            if (!canPosition || positionOnFirstMeasure) return@LaunchedEffect
+            if (pendingFind == null) {
                 position.scrollToItem(row, offset)
             } else {
                 // A reader's gesture can cancel the scroll without cancelling this entry.
@@ -612,7 +625,6 @@ internal fun ConversationRoute(
         val contentWidth = Modifier.widthIn(max = ConversationContentMaxWidth)
         Column(modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-                if (!showTimeline) return@Box
                 LazyColumn(
                     contentWidth
                         .fillMaxSize()
@@ -644,7 +656,7 @@ internal fun ConversationRoute(
                             },
                         )
                     }
-                    itemsIndexed(timeline, key = { _, entry -> entry.key }) { index, entry ->
+                    itemsIndexed(visibleTimeline, key = { _, entry -> entry.key }) { index, entry ->
                         val trackSize =
                             if (index < 4)
                                 Modifier.onSizeChanged { recentSizes[entry.key] = it.height }
@@ -707,8 +719,12 @@ internal fun ConversationRoute(
                                         artifactActions = artifactActions,
                                         findHighlight = highlight,
                                         links = links,
-                                        beforeToggleEarlierReplies = {
-                                            position.keepReplyTop(entry.key)
+                                        beforeEarlierRepliesResize = {
+                                            if (
+                                                !awaitingFindPosition &&
+                                                    !position.isScrollInProgress
+                                            )
+                                                position.keepReplyTop(entry.key)
                                         },
                                         failureContent = recovery,
                                     )
@@ -716,11 +732,11 @@ internal fun ConversationRoute(
                             }
                         }
                     }
-                    if (timeline.isEmpty()) {
+                    if (visibleTimeline.isEmpty()) {
                         item(key = TimelineInitial) {
                             when {
                                 missing -> ContentReadFeedback(R.string.history_missing)
-                                waitingForHistory -> if (showSkeleton) ConversationSkeleton()
+                                waitingForTimeline -> if (showSkeleton) ConversationSkeleton()
                                 firstReadFailed -> ContentReadFeedback(R.string.history_failed)
                                 transcript != null && queue.isEmpty() ->
                                     Text(stringResource(R.string.history_empty))
@@ -806,7 +822,7 @@ internal fun ConversationRoute(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
-                if (showHistoryProgress) {
+                if (showTimeline && showHistoryProgress) {
                     Box(Modifier.fillMaxWidth().testTag("history_sync_progress")) {
                         ContentReadProgress(R.string.history_syncing)
                     }

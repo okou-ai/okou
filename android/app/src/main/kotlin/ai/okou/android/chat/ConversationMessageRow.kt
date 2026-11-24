@@ -105,7 +105,7 @@ internal fun ConversationMessageRow(
     artifactActions: ChatArtifactActions? = null,
     findHighlight: ConversationFindHighlight? = null,
     links: ConversationLinkActions? = null,
-    beforeToggleEarlierReplies: () -> Unit = {},
+    beforeEarlierRepliesResize: () -> Unit = {},
     failureContent: @Composable (HistoryMessage) -> Unit = {
         AssistantFailureText(it.failureReason)
     },
@@ -157,7 +157,7 @@ internal fun ConversationMessageRow(
                         }
                     }
                     ConversationReplySummary(entry.summary, entry.earlier.size, expanded) {
-                        beforeToggleEarlierReplies()
+                        beforeEarlierRepliesResize()
                         expanded = !expanded
                     }
                     if (expanded && entry.earlier.isNotEmpty()) {
@@ -174,6 +174,7 @@ internal fun ConversationMessageRow(
                                                     it.messageId == earlier.id
                                                 },
                                             links = links,
+                                            beforeParsedLayout = beforeEarlierRepliesResize,
                                         )
                                     }
                                 }
@@ -429,6 +430,7 @@ private fun MessageBody(
     artifactTurnKey: String = message.id,
     findHighlight: ConversationFindHighlight? = null,
     links: ConversationLinkActions? = null,
+    beforeParsedLayout: (() -> Unit)? = null,
 ) {
     val typography = MaterialTheme.typography
     val colors = MaterialTheme.colorScheme
@@ -477,6 +479,7 @@ private fun MessageBody(
                                 markdownHighlight,
                                 links,
                                 compactReply = earlierReply,
+                                beforeParsedLayout = beforeParsedLayout,
                             )
                         else Text(block.text, style = style, color = foreground)
                 }

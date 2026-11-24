@@ -282,7 +282,7 @@ class ChatComposerRootTest {
             historyEventWire(id(seq), seq, payload = """{"content":${JsonPrimitive(text)}}""")
         val rows =
             listOf(
-                reply(1, earlier),
+                reply(1, "$earlier\n\nUse the approved release links."),
                 reply(2, "The email draft is checked."),
                 reply(3, latest),
                 historyEventWire(id(4), 4, type = "run.completed", payload = "null"),

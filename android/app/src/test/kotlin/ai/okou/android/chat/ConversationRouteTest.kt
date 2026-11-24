@@ -797,9 +797,25 @@ class ConversationRouteTest {
         compose.onNode(skeleton).assertIsDisplayed()
         assertEquals(bounds, compose.onNode(skeleton).getUnclippedBoundsInRoot())
         compose.onNodeWithText(retryLabel).assertDoesNotExist()
-        fixture.historyRows = historyRows
-        compose.waitUntilDoesNotExist(skeleton, 10_000)
-        compose.onNodeWithText("Hello history").assertExists()
+        compose.mainClock.autoAdvance = false
+        try {
+            fixture.historyRows = historyRows
+            compose.waitUntil(10_000) {
+                compose.runOnIdle { model.history.uiState.value.phase == HistoryPhase.Ready }
+            }
+            val message = hasText("Hello history")
+            compose.mainClock.advanceTimeUntil(1_000) {
+                if (compose.onAllNodes(message).fetchSemanticsNodes().isNotEmpty()) true
+                else {
+                    compose.onNode(skeleton).assertIsDisplayed()
+                    false
+                }
+            }
+            compose.onNode(message).assertIsDisplayed()
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+        compose.onNode(skeleton).assertDoesNotExist()
     }
 
     @Test
