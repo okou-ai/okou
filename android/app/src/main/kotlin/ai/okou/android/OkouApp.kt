@@ -1594,7 +1594,10 @@ internal fun OkouApp(
         contentWindowInsets = WindowInsets.safeDrawing,
         snackbarHost = {
             if (!feedbackInOverlay && !showChatList && !showConversationFeedback) {
-                WorkspaceFeedbackHost(snackbar, Modifier.padding(bottom = 16.dp))
+                WorkspaceFeedbackHost(
+                    snackbar,
+                    Modifier.padding(bottom = if (settings != null) 8.dp else 16.dp),
+                )
             }
         },
         topBar = {

@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="settings_preferences_save_rolled_back">Impossible d’enregistrer les réglages. Les valeurs précédentes ont été rétablies.</string>
+    <string name="settings_appearance_sync_failed">Impossible de synchroniser l’apparence. Elle a été appliquée à cet appareil.</string>
     <string name="settings_email_updates">Actualités par e-mail</string>
     <string name="settings_email_scope">Recevez les résumés, rappels et actualités de tous vos espaces de travail.</string>
     <string name="settings_email_receive">Recevoir les e-mails</string>
