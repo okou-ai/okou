@@ -3,6 +3,7 @@
 import asyncio
 import json
 import os
+import stat
 import subprocess
 import tempfile
 from pathlib import Path
@@ -28,10 +29,51 @@ SESSION_ENV = (
     "SSH_TTY",
     "SSH_CONNECTION",
 )
+NATIVE_LOGIN_FILE = Path(".gemini/antigravity-cli/antigravity-oauth-token")
 
 
 def personal_environment():
-    env = {key: os.environ[key] for key in SESSION_ENV if key in os.environ}
+    """Select the provisioned file profile or the existing native OS session."""
+    profile = os.environ.get("OKOU_ANTIGRAVITY_FILE_HOME")
+    if profile is None:
+        env = {key: os.environ[key] for key in SESSION_ENV if key in os.environ}
+    else:
+        home = Path(profile)
+        if not home.is_absolute() or home.resolve() != home:
+            raise ValueError("Configure a private absolute Antigravity file home.")
+        metadata = home.lstat()
+        if (
+            not stat.S_ISDIR(metadata.st_mode)
+            or metadata.st_uid != os.geteuid()
+            or metadata.st_mode & 0o077
+        ):
+            raise ValueError("The Antigravity file home must be private to its owner.")
+        # Only the trusted launcher chooses this mount. A clean headless session
+        # keeps auth in agy's private home instead of another user's desktop bus.
+        env = {
+            "HOME": str(home),
+            "PATH": "/usr/local/bin:/usr/bin:/bin",
+            "LANG": "C.UTF-8",
+            "TERM": os.environ.get("TERM", "dumb"),
+            "XDG_CONFIG_HOME": str(home / ".config"),
+            "XDG_DATA_HOME": str(home / ".local/share"),
+            "XDG_STATE_HOME": str(home / ".local/state"),
+            "XDG_CACHE_HOME": str(home / ".cache"),
+            "XDG_RUNTIME_DIR": str(home / ".run"),
+        }
+        runtime = home / ".run"
+        runtime.mkdir(mode=0o700, exist_ok=True)
+        runtime_stat = runtime.lstat()
+        if (
+            not stat.S_ISDIR(runtime_stat.st_mode)
+            or runtime_stat.st_uid != os.geteuid()
+            or runtime_stat.st_mode & 0o077
+            or os.path.lexists(runtime / "bus")
+        ):
+            raise ValueError(
+                "The Antigravity file profile must not share a session bus."
+            )
+        check_native_login_file(home, required=False)
     env["AGY_CLI_DISABLE_AUTO_UPDATE"] = "true"
     return env
 
@@ -136,11 +178,41 @@ async def _probe(binary, env, directory, logout):
             await process.wait()
 
 
+def check_native_login_file(home, *, required):
+    """Check metadata only; agy is the only component that handles the contents."""
+    profile = home / NATIVE_LOGIN_FILE
+    if profile.resolve() != profile:
+        raise ValueError("The native Antigravity login file must stay in its profile.")
+    try:
+        metadata = profile.lstat()
+    except FileNotFoundError:
+        if required:
+            raise
+        return
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or metadata.st_uid != os.geteuid()
+        or metadata.st_mode & 0o077
+        or metadata.st_nlink != 1
+        or not metadata.st_size
+    ):
+        raise ValueError(
+            "The native Antigravity login file must be private and nonempty."
+        )
+
+
 def signed_in(binary, env, *, logout=False):
     """Open and close an empty native session without sending an inference prompt."""
     with tempfile.TemporaryDirectory(prefix="agy-personal-session-") as directory:
         try:
-            return asyncio.run(_probe(binary, env, directory, logout))
+            active = asyncio.run(_probe(binary, env, directory, logout))
+            if os.environ.get("OKOU_ANTIGRAVITY_FILE_HOME") is not None:
+                home = Path(env["HOME"])
+                if active:
+                    check_native_login_file(home, required=True)
+                elif logout and os.path.lexists(home / NATIVE_LOGIN_FILE):
+                    raise ValueError("Native logout left a login file on the worker.")
+            return active
         except (
             TimeoutError,
             OSError,

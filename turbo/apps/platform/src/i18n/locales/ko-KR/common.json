@@ -5768,6 +5768,7 @@
         "check": "로그인 확인",
         "error": "할당된 로그인 환경을 확인한 후 다시 시도하세요.",
         "expired": "로그인이 만료되었습니다. 계정을 다시 연결하세요.",
+        "openTerminal": "Google 로그인 터미널 열기",
         "terminal": "터미널에서 이 명령을 실행한 후 개인 Google AI 계정으로 로그인하세요.",
         "title": "Google AI (Antigravity)",
         "unassigned": "관리자에게 로그인 터미널 할당을 요청하세요.",

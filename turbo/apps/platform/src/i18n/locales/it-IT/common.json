@@ -5859,6 +5859,7 @@
         "check": "Verifica accesso",
         "error": "Controlla l’ambiente di accesso che ti è stato assegnato e riprova.",
         "expired": "La sessione di accesso è scaduta. Ricollega il tuo account.",
+        "openTerminal": "Apri il terminale di accesso a Google",
         "terminal": "Esegui questo comando nel terminale e accedi con il tuo account Google AI personale.",
         "title": "Google AI (Antigravity)",
         "unassigned": "Chiedi a un amministratore di assegnarti un terminale di accesso.",

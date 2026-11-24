@@ -2,12 +2,14 @@
 """Run one fixed, quota-consuming agy prompt per pilot model on the member's own signed-in machine."""
 
 import argparse
+import os
 import shutil
 
 from antigravity_personal import personal_environment, signed_in, verify_models
 
 
 def main():
+    os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--check-login",
@@ -20,7 +22,12 @@ def main():
         parser.exit(
             1, "Install the official agy CLI and sign in interactively first.\n"
         )
-    environment = personal_environment()
+    try:
+        environment = personal_environment()
+    except (OSError, ValueError):
+        parser.exit(
+            1, "The configured native Google profile is unavailable or unsafe.\n"
+        )
     if options.check_login:
         try:
             active = signed_in(agy, environment)

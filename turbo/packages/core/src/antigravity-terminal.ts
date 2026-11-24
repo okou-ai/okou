@@ -11,3 +11,13 @@ export function antigravityTerminalCommand(profile: {
   command.push(profile.bindingId);
   return command.join(" ");
 }
+
+/** The binding is an identifier. The terminal's gateway authenticates its owner. */
+export function antigravityBrowserTerminalUrl(profile: {
+  readonly loginOrigin: string;
+  readonly bindingId: string;
+}): string {
+  const terminal = new URL(profile.loginOrigin);
+  terminal.searchParams.set("arg", profile.bindingId);
+  return terminal.href;
+}

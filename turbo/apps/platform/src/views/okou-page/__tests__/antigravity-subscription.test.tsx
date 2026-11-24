@@ -94,3 +94,27 @@ test("explains how to obtain a sign-in terminal before enrollment is available",
     region.queryByText("Connect account", { selector: "button" }),
   ).toBeNull();
 });
+
+test("opens the assigned browser terminal without SSH, Google credentials or a model request", async () => {
+  const loginOrigin = "https://alice.agy.example.com";
+  context.mocks.api(contract.get, ({ respond }) => {
+    return respond(200, {
+      status: "pending",
+      bindingId,
+      expiresAt: "2030-11-25T12:00:00.000Z",
+      loginOrigin,
+    });
+  });
+  await setupPage({
+    context,
+    path: "/?settings=model",
+    featureSwitches: { [FeatureSwitchKey.GeminiAntigravity]: true },
+    auth: pilotAuth(),
+  });
+  const link = await screen.findByRole("link", {
+    name: "Open Google sign-in terminal",
+  });
+  expect(link).toHaveAttribute("href", `${loginOrigin}/?arg=${bindingId}`);
+  expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  expect(screen.queryByText(/^ssh -t/)).toBeNull();
+});
