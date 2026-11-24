@@ -4,7 +4,7 @@ This is the active register of original frozen cases. Remove an entry after its 
 
 At migration, the [case snapshot](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/test-rebuild-evidence/101/pending-before-migration.tsv) contained 146 open IDs across 47 frozen owners. Batch 101 had already accepted three of the 149 IDs open at `6d74f80019`. The migration recorded zero acceptances. The six product decisions remain open.
 
-## src/shared-database/__tests__/message-port.test.ts
+## `src/shared-database/__tests__/message-port.test.ts`
 
 ### message-port-011
 
@@ -176,7 +176,7 @@ Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/message-port.te
 
 **Unverified clauses.** Independent child worker domains are available. The Router assigns its own subscription identifiers and does not expose identical IDs or listener counts across worker stores. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
 
-## src/shared-database/__tests__/platform-direct-bridge.test.ts
+## `src/shared-database/__tests__/platform-direct-bridge.test.ts`
 
 ### platform-direct-bridge-002
 
@@ -188,7 +188,7 @@ Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/platform-direct
 
 **Pending product decision and unverified clauses.** 离开聊天后的幂等读取可以不改变下一页，飞书回调成功也不能排除额外的目录读取。产品是否要求离页后零读取、回调只读取对应目录项？如需保证，哪项公开诊断能区分两种行为？ 直接连接与 message-port 对照均从同一已保存事件开始，扣住再放行两次增量，三条消息按序可读，离开后新会话可用。重复游标和生命周期结束后的无效读取可以不改变聊天内容。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-94.tsv).
 
-## src/shared-database/__tests__/single-connection-client.test.ts
+## `src/shared-database/__tests__/single-connection-client.test.ts`
 
 ### single-connection-client-001
 
@@ -200,7 +200,7 @@ Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/single-connecti
 
 **Unverified clauses.** 生产域收到带 duration 的 cache-only 成功遥测并隐藏私有实体信息，预览域作对照。真实页面先查询空会话，但没有证据显示以指定 afterSeqId=42 发出此查询。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
 
-## src/shared-database/__tests__/worker-runtime.test.ts
+## `src/shared-database/__tests__/worker-runtime.test.ts`
 
 ### worker-runtime-005
 
@@ -222,7 +222,7 @@ Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/worker-runtime.
 
 **Unverified clauses.** 只给一个线程交付新行，再重开两个会话核对其不同内容。缓存返回的失效 ID 全集及两个列表未通过业务界面公开。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
 
-## src/signals/__tests__/api-client-bootstrap.test.ts
+## `src/signals/__tests__/api-client-bootstrap.test.ts`
 
 ### api-client-bootstrap-001
 
@@ -234,7 +234,7 @@ Frozen owner: `turbo/apps/platform/src/signals/__tests__/api-client-bootstrap.te
 
 **Unverified clauses.** Lab 从嵌入响应读出初始设置并展示服务器后续变化。三次底层请求的逐次 token、signal 归属及首次零网络调用缺可区分结果。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-99.tsv).
 
-## src/signals/__tests__/clerk-user.test.ts
+## `src/signals/__tests__/clerk-user.test.ts`
 
 ### clerk-user-003
 
@@ -276,7 +276,7 @@ Frozen owner: `turbo/apps/platform/src/signals/__tests__/clerk-user.test.ts` · 
 
 **Unverified clauses.** A Clerk session switch cancels the previous real page owner. The fixture has no public read of the prior settled promise under the replacement owner or listener-observation identity. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-99.tsv).
 
-## src/signals/__tests__/command-scheduling.test.ts
+## `src/signals/__tests__/command-scheduling.test.ts`
 
 ### command-scheduling-001
 
@@ -328,7 +328,7 @@ Frozen owner: `turbo/apps/platform/src/signals/__tests__/command-scheduling.test
 
 **Unverified clauses.** Separate runtime domains were exercised on real pages. The generic debounced command invocation, private store identity and its two completion values have no production user operation. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-99.tsv).
 
-## src/signals/__tests__/realtime.test.ts
+## `src/signals/__tests__/realtime.test.ts`
 
 ### realtime-002
 
@@ -420,7 +420,7 @@ Frozen owner: `turbo/apps/platform/src/signals/__tests__/realtime.test.ts` · [O
 
 **Unverified clauses.** The live automation subscription exists. No public component accepts a failing initialization callback and returns its rejection while keeping that exact subscription active. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
 
-## src/signals/__tests__/shared-database-browser.test.ts
+## `src/signals/__tests__/shared-database-browser.test.ts`
 
 ### shared-database-browser-006
 
@@ -432,7 +432,7 @@ Frozen owner: `turbo/apps/platform/src/signals/__tests__/shared-database-browser
 
 **Pending product decision and unverified clauses.** 两名等待者是否都必须收到同一个异常实例？本地选择的已读 UTC 是否需要对外可查？这两项当前分别只能看到页面可用性和已读外观，请分别确认要保留的行为。 Chromium shows the PDF chat and composer with a working SharedWorker and loses them when its constructor throws. The browser outcome does not expose the two original rejected operations or their exception identities. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-95.tsv).
 
-## src/signals/browser/__tests__/client.test.ts
+## `src/signals/browser/__tests__/client.test.ts`
 
 ### client-001
 
@@ -504,7 +504,7 @@ Frozen owner: `turbo/apps/platform/src/signals/browser/__tests__/client.test.ts`
 
 **Unverified clauses.** The public close path cancelled attachment by closing the connection. The late cleanup on the original target/connection and later successful Browser.getVersion remain unproved. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-99.tsv).
 
-## src/signals/chat-page/__tests__/unread-through-at.test.ts
+## `src/signals/chat-page/__tests__/unread-through-at.test.ts`
 
 ### unread-through-at-001
 
@@ -516,7 +516,7 @@ Frozen owner: `turbo/apps/platform/src/signals/chat-page/__tests__/unread-throug
 
 **Pending product decision and unverified clauses.** 两名等待者是否都必须收到同一个异常实例？本地选择的已读 UTC 是否需要对外可查？这两项当前分别只能看到页面可用性和已读外观，请分别确认要保留的行为。 Mark-read takes the thread ID and returns a server timestamp. The page cannot reveal whether the local comparison selected 00:07 over 00:06. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-95.tsv).
 
-## src/signals/external/__tests__/indexeddb-client.test.ts
+## `src/signals/external/__tests__/indexeddb-client.test.ts`
 
 ### indexeddb-client-002
 
@@ -538,7 +538,7 @@ Frozen owner: `turbo/apps/platform/src/signals/external/__tests__/indexeddb-clie
 
 **Unverified clauses.** 迁移后的值与两种事务遥测有各自路由对照。仍未在同一共享 worker 操作里配对特定写后读值、创建与执行两类事件及 request_count=2。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
 
-## src/signals/voice-io/__tests__/voice-draft-audio.test.ts
+## `src/signals/voice-io/__tests__/voice-draft-audio.test.ts`
 
 ### voice-draft-audio-010
 
@@ -560,7 +560,7 @@ Frozen owner: `turbo/apps/platform/src/signals/voice-io/__tests__/voice-draft-au
 
 **Unverified clauses.** 持续录至 73 秒，实际整段 WAV 与停止尾段分别覆盖 52–67 与 65–73 秒。录制者可区分两种交付，却未在真实页面构造 60 秒检查点恢复得到 58–73 的输出。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
 
-## src/views/artifacts-page/__tests__/artifact-sharing.test.tsx
+## `src/views/artifacts-page/__tests__/artifact-sharing.test.tsx`
 
 ### artifact-sharing-002
 
@@ -572,7 +572,7 @@ Frozen owner: `turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-s
 
 **Unverified clauses.** 三档访问级别按次序变更，三次复制读到同一规范链接。权限详情决定勾选，重复读取同一版本不改变 UI，未取得唯一读取凭据。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-98.tsv).
 
-## src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx
+## `src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx`
 
 ### browser-automatic-recovery-004
 
@@ -614,7 +614,7 @@ Frozen owner: `turbo/apps/platform/src/views/browser-session/__tests__/browser-a
 
 **Unverified clauses.** Holding the replacement version response through the 180s boundary did not produce a confirmed exhausted episode. Previous ready/input evidence cannot discriminate a newly allocated budget. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-82.tsv).
 
-## src/views/browser-session/__tests__/browser-frame-rate.test.tsx
+## `src/views/browser-session/__tests__/browser-frame-rate.test.tsx`
 
 ### browser-frame-rate-001
 
@@ -626,7 +626,7 @@ Frozen owner: `turbo/apps/platform/src/views/browser-session/__tests__/browser-f
 
 **Unverified clauses.** 原生浏览器输入仍未获远端确认时，FPS 本地设置可切换并重新打开。128×48、radio 选中、移除与 Escape 归焦均由页面验证，精确零远端请求没有业务回执。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
 
-## src/views/browser-session/__tests__/browser-response-deadlines.test.tsx
+## `src/views/browser-session/__tests__/browser-response-deadlines.test.tsx`
 
 ### browser-response-deadlines-006
 
@@ -798,7 +798,7 @@ Frozen owner: `turbo/apps/platform/src/views/browser-session/__tests__/browser-r
 
 **Unverified clauses.** Switching chats shows the replacement address and delivers text with the old proof still withheld. The missing acknowledgement remains with this ID. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
 
-## src/views/browser-session/__tests__/browser-session-page.test.tsx
+## `src/views/browser-session/__tests__/browser-session-page.test.tsx`
 
 ### browser-session-page-025
 
@@ -840,7 +840,7 @@ Frozen owner: `turbo/apps/platform/src/views/browser-session/__tests__/browser-s
 
 **Unverified clauses.** Batch 71. The permission change disabled input during the held grant revalidation. The original lease request signal was already aborted before a late denial could be delivered to the viewer. Reauthorization mounts a fresh owner. The old transport is cancelled and throwIfAborted runs before applying the lease. Batch 71 verified the temporary input lock but could not deliver the old denial. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
 
-## src/views/browser-session/__tests__/browser-viewer-binding.test.tsx
+## `src/views/browser-session/__tests__/browser-viewer-binding.test.tsx`
 
 ### browser-viewer-binding-002
 
@@ -852,7 +852,7 @@ Frozen owner: `turbo/apps/platform/src/views/browser-session/__tests__/browser-v
 
 **Unverified clauses.** The independent Chrome admissions identify transport connections. The provider still supplies the existing viewer binding; the per-acquisition allocation receipt in the original is missing. browserPresent reads the current provider session. confirmBrowserViewer rechecks the existing window binding. Distinct window actions show the destination, but these reads expose no distinct allocation receipt. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-101.tsv).
 
-## src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx
+## `src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx`
 
 ### browser-viewer-interaction-006
 
@@ -954,7 +954,7 @@ Frozen owner: `turbo/apps/platform/src/views/browser-session/__tests__/browser-v
 
 **Unverified clauses.** Disconnecting with a pending target-loss confirmation shows Reconnecting and disables both controls. Attempted delivery on the closed peer and withholding the reply yield identical assertions; actual consumption after disconnect remains unproven. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
 
-## src/views/okou-page/__tests__/agent-suggestions.test.tsx
+## `src/views/okou-page/__tests__/agent-suggestions.test.tsx`
 
 ### agent-suggestions-004
 
@@ -1016,7 +1016,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestio
 
 **Unverified clauses.** 原对话框由内联编辑替代；失败后保留编辑器和身份的回归不能证明没有普通 consume。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
 
-## src/views/okou-page/__tests__/chat-attachment-annotation.test.tsx
+## `src/views/okou-page/__tests__/chat-attachment-annotation.test.tsx`
 
 ### chat-attachment-annotation-018
 
@@ -1028,7 +1028,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment
 
 **Unverified clauses.** 持久化单标记重新打开；未取得原图时禁止发送，读取完成后仍一标记且可发送。多次取得相同图像无法由显示结果区分。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-98.tsv).
 
-## src/views/okou-page/__tests__/chat-capability-voice-recording.test.tsx
+## `src/views/okou-page/__tests__/chat-capability-voice-recording.test.tsx`
 
 ### chat-capability-voice-recording-004
 
@@ -1050,7 +1050,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-capability
 
 **Unverified clauses.** 同一真实录音链路构造 129 段，重开后读出 64 个双段及最后一个单段；另有缺转写时重新读取的对照。常规 App 套件仍保留规模缺口。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
 
-## src/views/okou-page/__tests__/chat-composer-connector-overview.test.tsx
+## `src/views/okou-page/__tests__/chat-composer-connector-overview.test.tsx`
 
 ### chat-composer-connector-overview-001
 
@@ -1082,7 +1082,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-c
 
 **Unverified clauses.** The New chat link reached / and history returned to the original thread with the connector visible. Releasing the subscription while away and the exact request mix on return were not established. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
 
-## src/views/okou-page/__tests__/chat-composer-connector-status.test.tsx
+## `src/views/okou-page/__tests__/chat-composer-connector-status.test.tsx`
 
 ### chat-composer-connector-status-001
 
@@ -1094,7 +1094,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-c
 
 **Unverified clauses.** GitHub 详情和 Acme Search 在两个目录可达，进入配置才见密钥输入。#49268 已删除冻结 helper 监测的 Agent 授权 PUT；另两项账户值读取和手工连接仍无充分的公开反证。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-98.tsv).
 
-## src/views/okou-page/__tests__/chat-continuity-uploads.test.tsx
+## `src/views/okou-page/__tests__/chat-continuity-uploads.test.tsx`
 
 ### chat-continuity-uploads-003
 
@@ -1116,7 +1116,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity
 
 **Unverified clauses.** The multipart finalization message appears once without the generic error. Its frequency cannot establish the frequency of failed completion attempts. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-95.tsv).
 
-## src/views/okou-page/__tests__/chat-conversation-locator.test.tsx
+## `src/views/okou-page/__tests__/chat-conversation-locator.test.tsx`
 
 ### chat-conversation-locator-002
 
@@ -1128,7 +1128,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-conversati
 
 **Unverified clauses.** 96e318f041 恢复的 Vitest 30 轮注册在几何替身上覆盖顶边、落点、卸载。原生 Chromium 已证 24 个标记、点击第一问、落点、24/30 卸载，但稳定布局中首问锚点距视口顶边 60px。 #49915 撤回分页，#50032 恢复分页；#50327 是 staff scroll-room 开关，未提供修改精确顶边子句的依据。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
 
-## src/views/okou-page/__tests__/chat-list-cache.test.tsx
+## `src/views/okou-page/__tests__/chat-list-cache.test.tsx`
 
 ### chat-list-cache-004
 
@@ -1140,7 +1140,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-list-cache
 
 **Unverified clauses.** 两种登录状态过渡均保持 /sign-in 且私聊内容不可见。Agent-list 读曾退役，当前证据不能确定另外三类私有读取均未发生。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
 
-## src/views/okou-page/__tests__/chat-list-optimistic.test.tsx
+## `src/views/okou-page/__tests__/chat-list-optimistic.test.tsx`
 
 ### chat-list-optimistic-001
 
@@ -1172,7 +1172,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-list-optim
 
 **Unverified clauses.** 未确认的创建可显示所选 Claude Sonnet 5，冻结要求的零次草稿请求缺少独立可见证据。 #50334 changes the voice attachment upload and composer document. The optimistic QuickTime path still renders its resolved video URL independently of thread-artifacts. The 404 read and pending draft lookup retain their previous evidence. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
 
-## src/views/okou-page/__tests__/chat-metadata.test.tsx
+## `src/views/okou-page/__tests__/chat-metadata.test.tsx`
 
 ### chat-metadata-003
 
@@ -1184,7 +1184,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-metadata.t
 
 **Unverified clauses.** 第 77–79 批迟交与扣留对照已有旧标题和 Workflows 标题的结果。回到 404 会话仍有 chat region；没有支持删除该 Then 的上游。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
 
-## src/views/okou-page/__tests__/chat-navigation-browser.test.tsx
+## `src/views/okou-page/__tests__/chat-navigation-browser.test.tsx`
 
 ### chat-navigation-browser-011
 
@@ -1196,7 +1196,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation
 
 **Unverified clauses.** The extension's active tab field and native tab-activated event remain different from BrowserUse.activeTargetChanged. No new production change or ordinary re-entry provider delivery of Page 12 was identified. The existing two motion orders and manual re-selection controls stand. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-101.tsv).
 
-## src/views/okou-page/__tests__/chat-scroll.test.tsx
+## `src/views/okou-page/__tests__/chat-scroll.test.tsx`
 
 ### chat-scroll-001
 
@@ -1318,7 +1318,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.tes
 
 **Unverified clauses.** The sixth question did not render at the target position. Scroll capture uses the visible event anchor and hands reflow to native anchoring. #50334 changes voice-chip rendering, not the anchor or tray geometry in this Given. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
 
-## src/views/okou-page/__tests__/composer-custom-template-recommendations.test.tsx
+## `src/views/okou-page/__tests__/composer-custom-template-recommendations.test.tsx`
 
 ### composer-custom-template-recommendations-009
 
@@ -1330,7 +1330,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/composer-custom
 
 **Unverified clauses.** 实际粘贴 PDF 会加入编辑器，选择器过滤同一 PDF；两臂都能继续把 WEBP 导入模板。#50326 只改从 Create 卡进入，未更改粘贴契约。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
 
-## src/views/okou-page/__tests__/connector-directory.test.tsx
+## `src/views/okou-page/__tests__/connector-directory.test.tsx`
 
 ### connector-directory-010
 
@@ -1342,7 +1342,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/connector-direc
 
 **Unverified clauses.** Tab and Enter issued one real API attempt. The digest of its state matched the single cross-origin Gmail popup. With OAuth completion still pending (404), Escape removed the directory but the provider page remained open at the six-second check. Closing before releasing the start response did close the popup. Closure after the provider destination loads remains unproved. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-101.tsv).
 
-## src/views/okou-page/__tests__/connector-provider-pages.test.tsx
+## `src/views/okou-page/__tests__/connector-provider-pages.test.tsx`
 
 ### connector-provider-pages-013
 
@@ -1354,7 +1354,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/connector-provi
 
 **Pending product decision and unverified clauses.** 离开聊天后的幂等读取可以不改变下一页，飞书回调成功也不能排除额外的目录读取。产品是否要求离页后零读取、回调只读取对应目录项？如需保证，哪项公开诊断能区分两种行为？ Feishu branding, icon, callback code, state and JSON mode precede navigation to the bot URL. These outcomes cannot exclude reads for other catalog entries. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-95.tsv).
 
-## src/views/okou-page/__tests__/connectors-account-rename-focus.test.tsx
+## `src/views/okou-page/__tests__/connectors-account-rename-focus.test.tsx`
 
 ### connectors-account-rename-focus-011
 
@@ -1376,7 +1376,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/connectors-acco
 
 **Unverified clauses.** 同一持久 Work 1 变更与 Work 2 分开。重开后 Work 2 new 在原处理完成后仍有焦点，追加文字保存，焦点回到 Work 2 new draft 的 Actions，Work 1 同时可查。旧 HTTP 信号已被关闭取消。#37939 引入原注册和生命周期规则，未明文废除旧响应到达条件。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
 
-## src/views/okou-page/__tests__/debug-morning-brief.test.tsx
+## `src/views/okou-page/__tests__/debug-morning-brief.test.tsx`
 
 ### debug-morning-brief-005
 
@@ -1388,7 +1388,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/debug-morning-b
 
 **Unverified clauses.** 只用 Enter 启动简报，忙碌时没有完成文案，回执放行后可打开对应会话。生产 API 用请求 ID 查找已有的 durable receipt，返回同一会话结果不能证明恰好一次提交。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-99.tsv).
 
-## src/views/okou-page/__tests__/directed-connect-page.test.tsx
+## `src/views/okou-page/__tests__/directed-connect-page.test.tsx`
 
 ### directed-connect-page-008
 
@@ -1400,7 +1400,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/directed-connec
 
 **Unverified clauses.** Stripe 带聊天返回参数进入现有授权页面。无凭证 Stripe 的前提、该分支成功回调及准确一次连接在当前公开目录均未取得证明。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-98.tsv).
 
-## src/views/okou-page/__tests__/discord-oauth-compatibility.test.tsx
+## `src/views/okou-page/__tests__/discord-oauth-compatibility.test.tsx`
 
 ### discord-oauth-compatibility-007
 
@@ -1412,7 +1412,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/discord-oauth-c
 
 **Unverified clauses.** 原生 opener 丢失后，Discord 的 proof 从 URL 移除，显示中断提示且无打开 Discord 链接。相同审批重复抵达能否产生不同业务回执仍缺证。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-98.tsv).
 
-## src/views/okou-page/__tests__/get-started-entry.test.tsx
+## `src/views/okou-page/__tests__/get-started-entry.test.tsx`
 
 ### get-started-entry-042
 
@@ -1424,7 +1424,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/get-started-ent
 
 **Unverified clauses.** 从奖励步骤选中 Choice connector，扣住目录详情和放行后出现的两种 OAuth 选项可区分。重复详情读取可能显示完全相同的 Workspace OAuth，缺少单次读取回执。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-98.tsv).
 
-## src/views/okou-page/__tests__/integrations-discord.test.tsx
+## `src/views/okou-page/__tests__/integrations-discord.test.tsx`
 
 ### integrations-discord-016
 
@@ -1466,7 +1466,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/integrations-di
 
 **Unverified clauses.** Connected was visible. After the 403 refresh, the requested Discord access denied text did not appear. Recovery after the denied card remains unproved. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
 
-## src/views/okou-page/__tests__/paid-media-creation.test.tsx
+## `src/views/okou-page/__tests__/paid-media-creation.test.tsx`
 
 ### paid-media-creation-002
 
@@ -1478,7 +1478,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/paid-media-crea
 
 **Pending product decision and unverified clauses.** 相同 clientEventId 返回同一已准入 run；同一完成上传产生同一文件。验收是否以只产生一个业务产物为准？若需要证明只有一次传输，需要哪种对用户或业务可核验的回执？ The image tool can be enabled and its prompt reaches the chat. Replaying an identical threadId/clientEventId at the production API preserves the public input and admitted run. The business record cannot distinguish one submission from two. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-95.tsv).
 
-## src/views/okou-page/__tests__/settings-model-loading.test.tsx
+## `src/views/okou-page/__tests__/settings-model-loading.test.tsx`
 
 ### settings-model-loading-001
 
@@ -1490,7 +1490,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/settings-model-
 
 **Unverified clauses.** 只扣住账单刷新，空账户与 Connect account 均可用。另一路先加载空账户，再从账户菜单发起订阅读取并扣住账单与订阅，重开 Models 时标题 Use more models 仍在，内容显示 Loading accounts…，未显示空账户文案或连接控件。放行订阅后出现 member4@example.test。#37519 解释标题替换，不能证明两项读取均待决时控件可用。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
 
-## src/views/okou-page/__tests__/settings-wallet-cards.test.tsx
+## `src/views/okou-page/__tests__/settings-wallet-cards.test.tsx`
 
 ### settings-wallet-cards-005
 
@@ -1502,7 +1502,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/settings-wallet
 
 **Unverified clauses.** 回到 Tab 后检查原卡与原购买；两条对照分别先放行卡和交易。已交付的一栏更新，另一栏保留此前业务数据，全部放行后只有 Business 标为默认且交易已替换。相同回复的冗余读取仍无法由两栏页面区分。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
 
-## src/views/okou-page/__tests__/vnc-settings.test.tsx
+## `src/views/okou-page/__tests__/vnc-settings.test.tsx`
 
 ### vnc-settings-054
 
@@ -1514,7 +1514,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.te
 
 **Unverified clauses.** 旧身份令牌待决时切换成员，随后放行或继续扣住旧凭据。旧草稿关闭，新成员看不到密码。主机列表没有创建回执，不能排除被拒绝的旧身份写入。 The create command at vnc.ts:1712 validates the current editor and awaits the connection or credential API. A new owner can observe accepted writes; their host list cannot expose an old rejected attempt. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
 
-## src/views/onboarding-sources-first/__tests__/onboarding-sources-first-flow.test.tsx
+## `src/views/onboarding-sources-first/__tests__/onboarding-sources-first-flow.test.tsx`
 
 ### onboarding-sources-first-flow-012
 
@@ -1546,7 +1546,7 @@ Frozen owner: `turbo/apps/platform/src/views/onboarding-sources-first/__tests__/
 
 **Unverified clauses.** The edited EU launch prompt stayed at onboarding until the completion response was released, then reached chat with the document instructions. The frozen single-completion clause cannot be credited under the request-count rule. The complete route returns the service result and deletes the saved draft. Batch 98 compared two actual API completions; the identical result and readback cannot distinguish duplicate delivery. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
 
-## src/views/onboarding/__tests__/onboarding-start.test.tsx
+## `src/views/onboarding/__tests__/onboarding-start.test.tsx`
 
 ### onboarding-start-001
 
