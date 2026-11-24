@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.65.1](https://github.com/okou-ai/okou/compare/ios-v0.65.0...ios-v0.65.1) (2026-11-24)
+
+
+### Refactoring
+
+* **ios:** keep message attachment and artifact reads in the session store ([#50569](https://github.com/okou-ai/okou/issues/50569)) ([4a6e96a](https://github.com/okou-ai/okou/commit/4a6e96a6132f20fbf567f21e3788d5f208e3add7))
+* **ios:** keep permission card reads in the session store ([#50581](https://github.com/okou-ai/okou/issues/50581)) ([df3660c](https://github.com/okou-ai/okou/commit/df3660c158d67eba3b2d72261794679cde347491))
+
 ## [0.65.0](https://github.com/okou-ai/okou/compare/ios-v0.64.0...ios-v0.65.0) (2026-11-24)
 
 

@@ -10,6 +10,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.120.0](https://github.com/okou-ai/okou/compare/api-v2.119.1...api-v2.120.0) (2026-11-24)
+
+
+### Features
+
+* bind internal antigravity sign-in to member profiles ([#50523](https://github.com/okou-ai/okou/issues/50523)) ([ab93ff8](https://github.com/okou-ai/okou/commit/ab93ff8c008746117d5d90211f58425c1f6a0ae8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.123.0
+    * @okouai/core bumped to 8.871.0
+    * @okouai/db bumped to 2.66.0
+    * @okouai/pi-agent-runtime bumped to 1.52.65
+
 ## [2.119.1](https://github.com/okou-ai/okou/compare/api-v2.119.0...api-v2.119.1) (2026-11-24)
 
 

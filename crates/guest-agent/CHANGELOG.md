@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.112.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.111.2...guest-agent-v0.112.0) (2026-11-24)
+
+
+### Features
+
+* bind internal antigravity sign-in to member profiles ([#50523](https://github.com/okou-ai/okou/issues/50523)) ([ab93ff8](https://github.com/okou-ai/okou/commit/ab93ff8c008746117d5d90211f58425c1f6a0ae8))
+
 ## [0.111.2](https://github.com/okou-ai/okou/compare/guest-agent-v0.111.1...guest-agent-v0.111.2) (2026-11-24)
 
 ## [0.111.1](https://github.com/okou-ai/okou/compare/guest-agent-v0.111.0...guest-agent-v0.111.1) (2026-11-24)
