@@ -498,6 +498,7 @@ internal interface CanonicalApi {
     suspend fun `indicators`(
         @Header("Authorization") token: String,
         @Query("includeActiveUnread") `queryIncludeActiveUnread`: String? = null,
+        @Query("includeTaskStates") `queryIncludeTaskStates`: String? = null,
     ): Response<Indicators>
 
     @GET("/api/chat-thread-drafts")

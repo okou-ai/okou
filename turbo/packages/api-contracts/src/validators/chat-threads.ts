@@ -195,6 +195,8 @@ export const indicatorsSchema = object({
   threads: record(uuid(), indicatorSchema),
   /** Latest unread terminal marker. With includeActiveUnread, threads can also be active. */
   unreadAt: record(uuid(), iso.datetime()),
+  /** Opt-in task states from the bounded active and waiting-input windows. */
+  taskStates: record(uuid(), zEnum(["running", "queued"])).optional(),
 });
 
 export const chatThreadEventIdSchema = uuid();

@@ -35,6 +35,8 @@ import {
   hostedArtifactKindSchema,
 } from "@okouai/api-contracts/contracts/host";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
+import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import {
   chatEventTerminalPredicate,
   chatEvents,
@@ -50,6 +52,7 @@ import {
   asc,
   desc,
   eq,
+  exists,
   gt,
   gte,
   inArray,
@@ -83,6 +86,7 @@ import {
   createdChatThreadFromRow,
 } from "./chat-thread-create.service";
 import { initialRemoteAccessOwnershipPredicate } from "./chat-remote-access.service";
+import { queuedThreadInputCondition } from "./chat-queued-event.service";
 
 type ChatThreadRow = {
   readonly id: string;
@@ -334,6 +338,7 @@ type IndicatorScope = {
   readonly userId: string;
   readonly orgId: string;
   readonly includeActiveUnread: boolean;
+  readonly includeTaskStates: boolean;
 };
 type IndicatorThreadRow = {
   readonly threadId: string;
@@ -354,28 +359,35 @@ function newestUnreadIndicators(rows: UnreadIndicatorRow[]) {
 }
 
 function createIndicatorRows(args: IndicatorScope) {
-  const activeRows$ = computed(
-    async (get): Promise<readonly IndicatorThreadRow[]> => {
-      return await get(db$)
-        .select({ threadId: chatThreads.id })
-        .from(agentRuns)
-        .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
-        .where(
-          and(
-            eq(agentRuns.userId, args.userId),
-            eq(agentRuns.orgId, args.orgId),
-            inArray(agentRuns.status, [...ACTIVE_RUN_STATUSES]),
-            isNotNull(agentRuns.triggerSource),
-            eq(chatThreads.userId, args.userId),
-            eq(chatThreads.hidden, false),
-            eq(chatThreads.orgId, args.orgId),
-          ),
-        )
-        .groupBy(chatThreads.id)
-        .orderBy(desc(max(agentRuns.createdAt)))
-        .limit(INDICATOR_ACTIVE_LIMIT);
-    },
-  );
+  const activeRows$ = computed(async (get) => {
+    return await get(db$)
+      .select({
+        threadId: chatThreads.id,
+        ...(args.includeTaskStates
+          ? {
+              running: sql`bool_or(${eq(agentRuns.status, "running")})`.mapWith(
+                pgBooleanDecoder,
+              ),
+            }
+          : {}),
+      })
+      .from(agentRuns)
+      .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
+      .where(
+        and(
+          eq(agentRuns.userId, args.userId),
+          eq(agentRuns.orgId, args.orgId),
+          inArray(agentRuns.status, [...ACTIVE_RUN_STATUSES]),
+          isNotNull(agentRuns.triggerSource),
+          eq(chatThreads.userId, args.userId),
+          eq(chatThreads.hidden, false),
+          eq(chatThreads.orgId, args.orgId),
+        ),
+      )
+      .groupBy(chatThreads.id)
+      .orderBy(desc(max(agentRuns.createdAt)))
+      .limit(INDICATOR_ACTIVE_LIMIT);
+  });
   const unreadRows$ = computed(
     async (get): Promise<readonly UnreadIndicatorRow[]> => {
       const db = get(db$);
@@ -476,6 +488,54 @@ function createIndicatorRows(args: IndicatorScope) {
   return { activeRows$, unreadRows$ };
 }
 
+function createWaitingIndicatorRows(args: IndicatorScope) {
+  return computed(async (get) => {
+    const db = get(db$);
+    return await db
+      .select({ threadId: queuedChatThreads.chatThreadId })
+      .from(queuedChatThreads)
+      .innerJoin(
+        chatThreads,
+        eq(chatThreads.id, queuedChatThreads.chatThreadId),
+      )
+      .leftJoin(
+        activeAgentRuns,
+        eq(activeAgentRuns.chatThreadId, queuedChatThreads.chatThreadId),
+      )
+      .leftJoin(
+        agentRuns,
+        and(
+          eq(agentRuns.id, activeAgentRuns.runId),
+          eq(agentRuns.status, "running"),
+          isNotNull(agentRuns.triggerSource),
+        ),
+      )
+      .where(
+        and(
+          eq(queuedChatThreads.orgId, args.orgId),
+          eq(chatThreads.orgId, args.orgId),
+          eq(chatThreads.userId, args.userId),
+          eq(chatThreads.hidden, false),
+          isNull(agentRuns.id),
+          // The picker can still hold the queue index row after the last revocation.
+          exists(
+            db
+              .select({ id: chatEvents.id })
+              .from(chatEvents)
+              .where(
+                queuedThreadInputCondition(queuedChatThreads.chatThreadId),
+              ),
+          ),
+        ),
+      )
+      .orderBy(
+        desc(queuedChatThreads.queuedAt),
+        desc(queuedChatThreads.chatThreadId),
+      )
+      .limit(INDICATOR_ACTIVE_LIMIT);
+  });
+}
+
 /**
  * Bounded, non-atomic presentation indicators, not per-Run lifecycle status.
  * Active reflects eligible pending/running Runs; unread reflects unread terminal
@@ -492,10 +552,14 @@ export function chatIndicators(
   args: IndicatorScope,
 ): Computed<Promise<Indicators>> {
   const { activeRows$, unreadRows$ } = createIndicatorRows(args);
+  const waitingRows$ = args.includeTaskStates
+    ? createWaitingIndicatorRows(args)
+    : undefined;
   return computed(async (get): Promise<Indicators> => {
-    const [activeRows, unreadRows] = await Promise.all([
+    const [activeRows, unreadRows, waitingRows] = await Promise.all([
       get(activeRows$),
       get(unreadRows$),
+      waitingRows$ ? get(waitingRows$) : undefined,
     ]);
 
     const threads: Record<string, Indicator> = {};
@@ -514,7 +578,15 @@ export function chatIndicators(
       }
       threads[row.threadId] = "unread";
     }
-    return { threads, unreadAt };
+    if (!waitingRows) return { threads, unreadAt };
+    const taskStates: NonNullable<Indicators["taskStates"]> = {};
+    for (const row of waitingRows) {
+      taskStates[row.threadId] = "queued";
+    }
+    for (const row of activeRows) {
+      taskStates[row.threadId] = row.running ? "running" : "queued";
+    }
+    return { threads, unreadAt, taskStates };
   });
 }
 

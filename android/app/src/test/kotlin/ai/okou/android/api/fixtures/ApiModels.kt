@@ -323,9 +323,16 @@ enum class IndicatorsThreadsValue {
 }
 
 @Serializable
+enum class IndicatorsTaskStatesValue {
+    @SerialName("running") RUNNING,
+    @SerialName("queued") QUEUED,
+}
+
+@Serializable
 data class Indicators(
     val `threads`: Map<String, IndicatorsThreadsValue>,
     val `unreadAt`: Map<String, String>,
+    val `taskStates`: Map<String, IndicatorsTaskStatesValue>? = null,
 )
 
 @Serializable

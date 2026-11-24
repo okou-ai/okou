@@ -553,7 +553,13 @@ class ChatListModel(
                     refreshList()
                     projectOwner.invalidate()
                 }
-                if (changes.resync || changes.indicators || changes.readCursor)
+                // Queue input and consumption notices can change task state without an unread edge.
+                if (
+                    changes.resync ||
+                        changes.indicators ||
+                        changes.readCursor ||
+                        changes.messageThreads.isNotEmpty()
+                )
                     requestIndicators(
                         immediate = changes.resync || changes.readCursor,
                         verifyReadCursors = changes.resync || changes.readCursor,

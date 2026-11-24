@@ -554,6 +554,46 @@ internal class ChatListDraftRootTest : ChatListRootTestFixture() {
 internal class ChatListRootTest : ChatListRootTestFixture() {
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun queuedListRowsKeepUnreadAndRefreshWhenTheTaskStarts() {
+        val app = compose.activity.application as ChatListApplication
+        val running = AtomicBoolean(false)
+        app.fixture.indicators = {
+            val personal = if (running.get()) "running" else "queued"
+            jsonResponse(
+                """{
+                    "threads":{"$CHAT_PERSONAL":"active"},
+                    "unreadAt":{"$CHAT_PERSONAL":"$CHAT_DATE"},
+                    "taskStates":{"$CHAT_PERSONAL":"$personal","$CHAT_IN_PROJECT":"queued"}
+                }""",
+            )
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        val task = compose.onNodeWithTag("chat_$CHAT_PERSONAL")
+        fun hasStatus(status: String) =
+            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, status)
+        fun awaitStatus(status: String) {
+            compose.waitUntilExactlyOneExists(
+                hasTestTag("chat_$CHAT_PERSONAL").and(hasStatus(status)),
+                5_000,
+            )
+        }
+        awaitStatus("Waiting to start, Unread")
+        compose.onNodeWithText("Research").assert(hasStatus("Waiting to start 1"))
+        setResearchExpanded(true)
+        compose.onNodeWithTag("chat_$CHAT_IN_PROJECT").assert(hasStatus("Waiting to start"))
+        val before = task.getUnclippedBoundsInRoot()
+        assertEquals(52f, (before.bottom - before.top).value, 1f)
+
+        running.set(true)
+        val realtime = app.realtimeService as TestRealtimeService
+        realtime.invalidate(ChatChanges(messageThreads = setOf(CHAT_PERSONAL)))
+        awaitStatus("Active, Unread")
+        assertEquals(before, task.getUnclippedBoundsInRoot())
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
     fun inPlaceRowMenuActionReturnsFocusToItsKeyboardTrigger() {
         InstrumentationRegistry.getInstrumentation().setInTouchMode(false)
         compose.activityRule.scenario.recreate()

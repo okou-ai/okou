@@ -471,6 +471,9 @@ export const chatThreadsContract = c.router({
           'Set to "true" to include unread watermarks independently of activity.',
         )
         .optional(),
+      includeTaskStates: string()
+        .describe('Set to "true" to distinguish running and queued chat tasks.')
+        .optional(),
     }),
     responses: {
       200: indicatorsSchema,

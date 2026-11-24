@@ -6,6 +6,7 @@ import ai.okou.android.CHAT_PROJECT
 import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.ChatEvents
 import ai.okou.android.api.generated.Indicators
+import ai.okou.android.api.generated.IndicatorsTaskStatesValue
 import ai.okou.android.api.generated.IndicatorsThreadsValue
 import ai.okou.android.chatEventWire
 import kotlinx.serialization.json.Json
@@ -283,7 +284,7 @@ class ChatReplayTest {
     }
 
     @Test
-    fun mutedChatsSuppressActivityAndCollapsedProjectsPreferVisibleUnread() {
+    fun taskStatePreservesUnreadAndFoldedProjectsPreferUnreadThenRunningThenQueued() {
         val rows =
             replay(
                 event(1, "created"),
@@ -291,40 +292,39 @@ class ChatReplayTest {
                 event(3, "sort_touched", extra = ",\"muted\":true"),
             )
         val running = rows.single { it.id == CHAT_PERSONAL }
-        val unread = rows.single { it.id == CHAT_IN_PROJECT }
+        val queued = rows.single { it.id == CHAT_IN_PROJECT }
+        val legacy = Indicators(mapOf(running.id to IndicatorsThreadsValue.ACTIVE), emptyMap())
         val indicators =
-            mapOf(
-                running.id to IndicatorsThreadsValue.ACTIVE,
-                unread.id to IndicatorsThreadsValue.UNREAD,
+            legacy.copy(
+                taskStates =
+                    mapOf(
+                        running.id to IndicatorsTaskStatesValue.RUNNING,
+                        queued.id to IndicatorsTaskStatesValue.QUEUED,
+                    ),
             )
-        val unreadIds = setOf(running.id, unread.id)
+        assertEquals(IndicatorsTaskStatesValue.RUNNING, legacy.taskState(running.id))
+        assertNull(legacy.copy(taskStates = emptyMap()).taskState(running.id))
         assertEquals(
             ChatRowStatus.Muted,
-            chatRowStatus(indicators[running.id], running.muted == true, unread = false),
+            chatRowStatus(indicators.taskState(running.id), running.muted == true, unread = false),
         )
         assertEquals(
-            ChatRowStatus.Muted,
-            chatRowStatus(indicators[unread.id], muted = true, unread = true),
+            ChatRowStatus.Queued,
+            chatRowStatus(indicators.taskState(queued.id), muted = false, unread = true),
         )
-        assertEquals(
-            ProjectActivity(unread = 1, running = 0),
-            collapsedProjectActivity(listOf(running, unread), indicators, unreadIds),
-        )
-        assertEquals(
-            ProjectActivity(unread = 1, running = 1),
+        val folded =
             collapsedProjectActivity(
-                listOf(running.copy(muted = false), unread.copy(muted = true)),
+                listOf(running.copy(muted = false), queued),
                 indicators,
-                unreadIds,
-            ),
-        )
+                setOf(queued.id),
+            )
+        assertEquals(ProjectActivity(unread = 1, running = 1, queued = 1), folded)
+        assertEquals(ChatRowStatus.Unread, folded.status)
+        assertEquals(ChatRowStatus.Running, folded.copy(unread = 0).status)
+        assertEquals(ChatRowStatus.Queued, folded.copy(unread = 0, running = 0).status)
         assertEquals(
-            ProjectActivity(unread = 0, running = 0),
-            collapsedProjectActivity(
-                listOf(running, unread.copy(muted = true)),
-                indicators,
-                unreadIds,
-            ),
+            ProjectActivity(unread = 0, running = 0, queued = 1),
+            collapsedProjectActivity(listOf(running, queued), indicators, setOf(running.id)),
         )
     }
 

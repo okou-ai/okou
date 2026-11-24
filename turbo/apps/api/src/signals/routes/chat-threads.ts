@@ -191,6 +191,7 @@ const listChatIndicatorsInner$ = computed(async (get) => {
       userId: auth.userId,
       orgId: auth.orgId,
       includeActiveUnread: query.includeActiveUnread === "true",
+      includeTaskStates: query.includeTaskStates === "true",
     }),
   );
 

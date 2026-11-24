@@ -5,7 +5,7 @@ import ai.okou.android.OkouConfirmationDialog
 import ai.okou.android.R
 import ai.okou.android.WorkspaceMenu
 import ai.okou.android.WorkspaceMenuItem
-import ai.okou.android.api.generated.IndicatorsThreadsValue
+import ai.okou.android.api.generated.IndicatorsTaskStatesValue
 import ai.okou.android.currentWindowSizeDp
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
@@ -171,7 +171,7 @@ internal fun ChatListScreen(
                 provisionalChats.filterNot { it.threadId in confirmedIds }.groupBy { it.projectId }
             }
         }
-    val indicators = state.indicators?.threads.orEmpty()
+    val indicators = state.indicators
     val unreadChatIds = remember(unreadAt, state.readIntents) { state.unreadChatIds() }
     val groups =
         rememberChatListGroups(
@@ -257,7 +257,8 @@ internal fun ChatListScreen(
                         for (thread in section.group.threads) {
                             if (
                                 thread.muted != true &&
-                                    indicators[thread.id] == IndicatorsThreadsValue.ACTIVE
+                                    indicators.taskState(thread.id) ==
+                                        IndicatorsTaskStatesValue.RUNNING
                             ) {
                                 add(thread.id)
                             }
@@ -592,13 +593,11 @@ internal fun ChatListScreen(
                                     thread?.title,
                                     pinned = thread?.pinnedAt != null,
                                     status =
-                                        if (thread == null) ChatRowStatus.None
-                                        else
-                                            chatRowStatus(
-                                                indicators[id],
-                                                thread.muted == true,
-                                                unread,
-                                            ),
+                                        chatRowStatus(
+                                            thread?.let { indicators.taskState(id) },
+                                            thread?.muted == true,
+                                            unread,
+                                        ),
                                     unread = unread,
                                     hasDraft = thread != null && id in draftIds,
                                     isSelected = id == selectedChatId,
@@ -883,10 +882,12 @@ private fun ProjectRow(
     val number = remember(locale) { NumberFormat.getIntegerInstance(locale) }
     val unread = stringResource(R.string.chat_unread)
     val running = stringResource(R.string.chat_active)
+    val queued = stringResource(R.string.conversation_run_queued)
     val label =
         listOfNotNull(
                 activity?.unread?.takeIf { it > 0 }?.let { "$unread ${number.format(it)}" },
                 activity?.running?.takeIf { it > 0 }?.let { "$running ${number.format(it)}" },
+                activity?.queued?.takeIf { it > 0 }?.let { "$queued ${number.format(it)}" },
                 if (renaming) stringResource(R.string.chat_project_rename_pending) else null,
             )
             .joinToString()
@@ -977,10 +978,8 @@ private fun ProjectRow(
                     modifier = Modifier.size(16.dp),
                 )
             }
-            if (status != ChatRowStatus.None) {
-                Spacer(Modifier.width(8.dp))
-                ChatStatusGlyph(status, runningFrame, row)
-            }
+            Spacer(Modifier.width(8.dp))
+            ChatStatusGlyph(status, runningFrame, row)
         }
         if (menuOpen && openMenu != null) {
             val items = buildList {
@@ -1092,7 +1091,8 @@ private fun ChatRow(
     val labels =
         listOfNotNull(
             status.label(),
-            if (status == ChatRowStatus.Running && unread) stringResource(R.string.chat_unread)
+            if (unread && (status == ChatRowStatus.Running || status == ChatRowStatus.Queued))
+                stringResource(R.string.chat_unread)
             else null,
             if (hasDraft) stringResource(R.string.chat_has_draft) else null,
             if (pinned) stringResource(R.string.chat_pinned) else null,
@@ -1230,6 +1230,7 @@ internal fun ChatRowAction.icon(): Int =
 private fun ChatRowStatus.label(): String? =
     when (this) {
         ChatRowStatus.Running -> stringResource(R.string.chat_active)
+        ChatRowStatus.Queued -> stringResource(R.string.conversation_run_queued)
         ChatRowStatus.Unread -> stringResource(R.string.chat_unread)
         ChatRowStatus.Muted -> stringResource(R.string.chat_muted)
         ChatRowStatus.None -> null
@@ -1243,9 +1244,13 @@ private fun ChatStatusGlyph(status: ChatRowStatus, runningFrame: LongState, row:
             ChatRowStatus.Unread -> Canvas(Modifier.size(8.dp)) { drawCircle(color) }
             ChatRowStatus.Running ->
                 Canvas(Modifier.size(14.dp)) { drawRunningWave(color, runningFrame.longValue, row) }
-            ChatRowStatus.Muted ->
+            ChatRowStatus.Muted,
+            ChatRowStatus.Queued ->
                 Icon(
-                    painterResource(R.drawable.ic_notifications_off),
+                    painterResource(
+                        if (status == ChatRowStatus.Queued) R.drawable.ic_schedule
+                        else R.drawable.ic_notifications_off,
+                    ),
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(16.dp),

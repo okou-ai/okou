@@ -1,6 +1,7 @@
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { captureConnectorExternalState } from "./helpers/public-connector-actor";
 import { publicRunOwner } from "./helpers/public-run-owner";
+import { randomUUID } from "node:crypto";
 
 import {
   chatThreadsContract,
@@ -162,6 +163,65 @@ function client() {
 }
 
 describe("GET /api/indicators", () => {
+  it("distinguishes waits from running chats and preserves the legacy indicator response", async () => {
+    await prepareChatRuntime();
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+    const actor = bdd.user();
+    const peer = bdd.user({ orgId: orgIdOf(actor) });
+    await prepareEntitledMember(actor);
+    await prepareEntitledMember(peer);
+    const running = await chat.sendAndLaunch(actor, { prompt: "Running chat" });
+    await indicatorCredentials.executionInput(actor, running.runId);
+    const authorization = `Bearer ${indicatorCredentials.token(actor)}`;
+    await seedMembership(actor);
+    const queuedId = randomUUID();
+    const waiting = await chat.requestSendEvent(
+      actor,
+      { clientEventId: queuedId, prompt: "Waiting in another chat" },
+      [201],
+    );
+    await chat.requestSendEvent(
+      actor,
+      { threadId: running.threadId, prompt: "Waiting behind a running task" },
+      [201],
+    );
+    await chat.requestSendEvent(
+      peer,
+      { prompt: "Another member's queue" },
+      [201],
+    );
+    const waitingThread = waiting.body.threadId;
+    const legacy = { threads: { [running.threadId]: "active" }, unreadAt: {} };
+    const headers = { authorization };
+    const read = async () =>
+      (
+        await accept(
+          client().indicators({
+            headers,
+            query: { includeTaskStates: "true" },
+          }),
+          [200],
+        )
+      ).body;
+    expect(
+      (await accept(client().indicators({ headers }), [200])).body,
+    ).toStrictEqual(legacy);
+    expect(await read()).toStrictEqual({
+      ...legacy,
+      taskStates: { [running.threadId]: "running", [waitingThread]: "queued" },
+    });
+
+    await chat.requestSendEvent(
+      actor,
+      { threadId: waitingThread, revokesEventId: queuedId },
+      [201],
+    );
+    expect(await read()).toStrictEqual({
+      ...legacy,
+      taskStates: { [running.threadId]: "running" },
+    });
+  });
+
   it("reports unread timestamps for an Okou token without changing read state", async () => {
     await prepareChatRuntime();
     const actor = bdd.user();

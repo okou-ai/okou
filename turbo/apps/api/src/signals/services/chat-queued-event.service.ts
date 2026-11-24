@@ -11,6 +11,7 @@ import {
   isNull,
   notExists,
   type SQL,
+  type SQLWrapper,
 } from "drizzle-orm";
 import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import type { ChildAutonomyBudget } from "./autonomy-budget.service";
@@ -48,7 +49,7 @@ export interface QueuedUserMessage {
 const queuedChatEvent = alias(chatEvents, "queued_chat_event");
 const queuedChatEventRevoker = alias(chatEvents, "queued_chat_event_revoker");
 
-export function queuedThreadInputCondition(threadId: string) {
+export function queuedThreadInputCondition(threadId: string | SQLWrapper) {
   return and(
     eq(chatEvents.chatThreadId, threadId),
     chatEventRunlessInputPredicate(chatEvents.runId, chatEvents.eventType),

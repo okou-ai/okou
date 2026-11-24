@@ -238,7 +238,7 @@ class ApiClient(
     suspend fun chatEvents(since: Long?): ChatEvents = read { chatEvents(it, since) }
 
     suspend fun indicators(): Indicators = read {
-        indicators(it, queryIncludeActiveUnread = "true")
+        indicators(it, queryIncludeActiveUnread = "true", queryIncludeTaskStates = "true")
     }
 
     suspend fun draftThreadIds(): List<String> = read { chatDraftIndex(it) }.draftThreadIds

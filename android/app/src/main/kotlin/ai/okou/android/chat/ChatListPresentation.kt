@@ -1,5 +1,7 @@
 package ai.okou.android.chat
 
+import ai.okou.android.api.generated.Indicators
+import ai.okou.android.api.generated.IndicatorsTaskStatesValue
 import ai.okou.android.api.generated.IndicatorsThreadsValue
 
 data class ChatListGroup(
@@ -12,46 +14,62 @@ data class ProvisionalChat(val threadId: String, val projectId: String?)
 
 internal enum class ChatRowStatus {
     Running,
+    Queued,
     Unread,
     Muted,
     None,
 }
 
+internal fun Indicators?.taskState(threadId: String): IndicatorsTaskStatesValue? {
+    val tasks = this?.taskStates
+    if (tasks != null) return tasks[threadId]
+    return IndicatorsTaskStatesValue.RUNNING.takeIf {
+        this?.threads?.get(threadId) == IndicatorsThreadsValue.ACTIVE
+    }
+}
+
 internal fun chatRowStatus(
-    indicator: IndicatorsThreadsValue?,
+    task: IndicatorsTaskStatesValue?,
     muted: Boolean,
     unread: Boolean,
 ): ChatRowStatus =
     when {
         muted -> ChatRowStatus.Muted
-        indicator == IndicatorsThreadsValue.ACTIVE -> ChatRowStatus.Running
+        task == IndicatorsTaskStatesValue.RUNNING -> ChatRowStatus.Running
+        task == IndicatorsTaskStatesValue.QUEUED -> ChatRowStatus.Queued
         unread -> ChatRowStatus.Unread
         else -> ChatRowStatus.None
     }
 
-internal data class ProjectActivity(val unread: Int, val running: Int) {
+internal data class ProjectActivity(val unread: Int, val running: Int, val queued: Int) {
     val status: ChatRowStatus
         get() =
             when {
                 unread > 0 -> ChatRowStatus.Unread
                 running > 0 -> ChatRowStatus.Running
+                queued > 0 -> ChatRowStatus.Queued
                 else -> ChatRowStatus.None
             }
 }
 
 internal fun collapsedProjectActivity(
     threads: List<ConfirmedChat>,
-    indicators: Map<String, IndicatorsThreadsValue>,
+    indicators: Indicators?,
     unreadChatIds: Set<String>,
 ): ProjectActivity {
     var unread = 0
     var running = 0
+    var queued = 0
     for (thread in threads) {
         if (thread.muted == true) continue
         if (thread.id in unreadChatIds) unread++
-        if (indicators[thread.id] == IndicatorsThreadsValue.ACTIVE) running++
+        when (indicators.taskState(thread.id)) {
+            IndicatorsTaskStatesValue.RUNNING -> running++
+            IndicatorsTaskStatesValue.QUEUED -> queued++
+            null -> Unit
+        }
     }
-    return ProjectActivity(unread, running)
+    return ProjectActivity(unread, running, queued)
 }
 
 /** Replay already orders the pins first. Render a boundary only within the visible scope. */
