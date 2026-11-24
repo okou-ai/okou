@@ -2,11 +2,15 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import type { Project } from "@okouai/api-contracts/validators/projects";
+import type {
+  Project,
+  ProjectEvent,
+} from "@okouai/api-contracts/validators/projects";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import {
   chatThreadByIdContract,
   chatThreadDraftContract,
+  chatThreadsContract,
   chatThreadPinOrderContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { composerDraftContract } from "@okouai/api-contracts/contracts/composer-draft";
@@ -16,6 +20,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { mockNow } from "../../../lib/time.ts";
 import {
   continuityThread,
   installContinuityWorkspace,
@@ -259,6 +264,163 @@ test.each([false, true])(
     );
     expect(menuItemByText("Rename")).toBeVisible();
     expect(queryMenuItemByText("Archive") !== null).toBe(enabled);
+  },
+);
+
+test.each([
+  { mobile: false, rejected: false },
+  { mobile: true, rejected: false },
+  { mobile: false, rejected: true },
+])(
+  "Project archive and restore update before confirmation and reconcile later events (mobile: $mobile, rejected: $rejected)",
+  async ({ mobile, rejected }) => {
+    mockNow(new Date("2026-11-03T00:00:00.000Z"), context.signal);
+    context.mocks.browser.matchMedia((query) => {
+      return query === "(min-width: 48rem)" && !mobile;
+    });
+    const archiveResponse = context.mocks.deferred<void>();
+    const restoreResponse = context.mocks.deferred<void>();
+    const ordinary = continuityThread(328, 1, "Ordinary chat");
+    const planning = {
+      ...continuityThread(328, 2, "Launch planning"),
+      projectId: launchId,
+    };
+    const workspace = installContinuityWorkspace(context, {
+      caseId: 328,
+      threads: [ordinary, planning],
+    });
+    const project = {
+      id: launchId,
+      name: "Launch",
+      createdAt: at,
+      updatedAt: at,
+    };
+    installProjects([project]);
+    context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
+      return respond(200, {
+        threads: { [planning.id]: "unread" },
+        unreadAt: { [planning.id]: at },
+      });
+    });
+    const events: ProjectEvent[] = [];
+    context.mocks.api(projectsContract.events, ({ query, respond }) => {
+      return respond(200, {
+        events: events.filter((event) => {
+          return event.seqId > query.sinceSeqId;
+        }),
+        hasMore: false,
+      });
+    });
+    context.mocks.api(projectsContract.update, async ({ body, respond }) => {
+      const { archived } = body;
+      if (archived === undefined) {
+        throw new Error("Expected a Project archive or restore");
+      }
+      await (archived ? archiveResponse.promise : restoreResponse.promise);
+      if (archived && rejected) {
+        return respond(409, {
+          error: {
+            code: "CONFLICT",
+            message: "Archive confirmation unavailable",
+          },
+        });
+      }
+      const name = archived ? "Launch saved" : "Launch restored";
+      events.push({
+        id: body.eventId,
+        seqId: events.length + 2,
+        projectId: launchId,
+        kind: "renamed",
+        name,
+        archived,
+        lastArchivedAt: at,
+        createdAt: at,
+      });
+      return respond(200, { ...project, name, archived, lastArchivedAt: at });
+    });
+    await setupPage({
+      context,
+      path: mobile ? "/" : `/chats/${ordinary.id}`,
+      ...workspace.pageOptions,
+      featureSwitches: { [FeatureSwitchKey.ProjectArchive]: true },
+    });
+    await waitFor(() => {
+      expect(projectToggle("Launch")).toHaveAccessibleDescription("Unread");
+    });
+    click(projectToggle("Launch"));
+    await waitFor(() => {
+      expect(threadLink(planning.id)).toHaveAccessibleName(
+        "Launch planning Unread",
+      );
+    });
+    click(button("Options for Launch", projectRows()));
+    await screen.findByRole("menu");
+    click(menuItemByText("Archive"));
+    await waitFor(() => {
+      expect(projectRows()).toHaveLength(0);
+    });
+    expect(archiveResponse.settled()).toBeFalsy();
+
+    click(button("Open chat list menu"));
+    await screen.findByRole("menu");
+    click(menuItemByText("Archived"));
+    await waitFor(() => {
+      expect(projectToggle("Launch")).toBeInTheDocument();
+    });
+    expect(projectChatTitles()).toStrictEqual(["Launch planning"]);
+    archiveResponse.resolve();
+    const archiveResult = await waitFor(() => {
+      return rejected
+        ? screen.getByText("Archive confirmation unavailable")
+        : projectToggle("Launch saved");
+    });
+    expect(archiveResult).toBeInTheDocument();
+    const archivedName = rejected ? "Launch" : "Launch saved";
+    click(button(`Options for ${archivedName}`, projectRows()));
+    await screen.findByRole("menu");
+    click(menuItemByText("Restore project"));
+    await waitFor(() => {
+      expect(projectRows()).toHaveLength(0);
+    });
+    expect(restoreResponse.settled()).toBeFalsy();
+
+    click(button("Open chat list menu"));
+    await screen.findByRole("menu");
+    click(menuItemByText("Inbox"));
+    await waitFor(() => {
+      expect(projectToggle(archivedName)).toBeInTheDocument();
+    });
+    expect(projectChatTitles()).toStrictEqual(["Launch planning"]);
+    // Restoring retains the archive cutoff instead of reviving old unread state.
+    expect(threadLink(planning.id)).toHaveAccessibleName("Launch planning");
+    restoreResponse.resolve();
+    await waitFor(() => {
+      expect(projectToggle("Launch restored")).toBeInTheDocument();
+    });
+
+    // The restore receipt also settles a rejected archive. Once settled,
+    // neither local edit can hide a later archive from another client.
+    events.push({
+      id: crypto.randomUUID(),
+      seqId: events.length + 2,
+      projectId: launchId,
+      kind: "renamed",
+      name: "Launch remote",
+      archived: true,
+      lastArchivedAt: at,
+      createdAt: at,
+    });
+    context.mocks.ably.trigger("threadListChanged");
+    await waitFor(() => {
+      expect(projectRows()).toHaveLength(0);
+    });
+    click(button("Open chat list menu"));
+    await screen.findByRole("menu");
+    click(menuItemByText("Archived"));
+    await waitFor(() => {
+      expect(projectToggle("Launch remote")).toBeInTheDocument();
+    });
+    expect(projectChatTitles()).toStrictEqual(["Launch planning"]);
   },
 );
 
