@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.249.119](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.118...runner-rs-v0.249.119) (2026-11-24)
+
+
+### Refactoring
+
+* **runner:** share native test witness phase lookup ([#50337](https://github.com/okou-ai/okou/issues/50337)) ([d467cac](https://github.com/okou-ai/okou/commit/d467cac852e2b8b3d421182e3e9d01e5221a62a2))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.118](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.117...runner-rs-v0.249.118) (2026-11-24)
 
 ## [0.249.117](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.116...runner-rs-v0.249.117) (2026-11-23)
