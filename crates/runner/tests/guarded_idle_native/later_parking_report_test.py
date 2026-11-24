@@ -92,7 +92,7 @@ class LaterParkingReportTests(unittest.TestCase):
                 ))
 
     def event(self, phase, case=None):
-        return next(e for e in self.witnesses if e["phase"] == phase and (case is None or e["case"] == case))
+        return report_test.witness_for_phase(self.witnesses, phase, case=case)
 
     def write(self):
         report_test.write_report_fixture(self.root, self.collector, self.samples,
