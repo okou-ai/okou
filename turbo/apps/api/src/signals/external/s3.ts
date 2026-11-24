@@ -437,12 +437,14 @@ export function listS3Objects(
   bucket: string,
   prefix: string,
   counts?: S3ObjectReadCounts,
+  signal?: AbortSignal,
 ): Computed<Promise<readonly S3Object[]>> {
   return listS3ObjectsWithClient(
     s3ClientForBucket(bucket),
     bucket,
     prefix,
     counts,
+    signal,
   );
 }
 
@@ -451,6 +453,7 @@ function listS3ObjectsWithClient(
   bucket: string,
   prefix: string,
   counts?: S3ObjectReadCounts,
+  signal?: AbortSignal,
 ): Computed<Promise<readonly S3Object[]>> {
   return computed(async (get): Promise<readonly S3Object[]> => {
     const client = get(client$);
@@ -458,6 +461,7 @@ function listS3ObjectsWithClient(
     let continuationToken: string | undefined;
 
     do {
+      signal?.throwIfAborted();
       if (counts) {
         counts.list += 1;
       }
@@ -467,7 +471,9 @@ function listS3ObjectsWithClient(
           Prefix: prefix,
           ContinuationToken: continuationToken,
         }),
+        signal ? { abortSignal: signal } : undefined,
       );
+      signal?.throwIfAborted();
 
       for (const item of response.Contents ?? []) {
         if (item.Key && item.Size !== undefined && item.LastModified) {
