@@ -3,8 +3,11 @@
 from collections.abc import Callable
 
 from .json_selective import JsonExtractionResult, JsonSelectiveExtractor, ScalarField
-from .model_tokens import ANTHROPIC_USAGE_FIELD_CATEGORIES, update_model_usage_quantity
-from .quantities import MAX_USAGE_QUANTITY
+from .model_tokens import (
+    ANTHROPIC_USAGE_FIELD_CATEGORIES,
+    MODEL_USAGE_QUANTITY_FIELD,
+    update_model_usage_quantity,
+)
 from .sse import SseUsageScanner
 
 _ANTHROPIC_MESSAGES_USAGE_EVENTS = frozenset(("message_start", "message_delta"))
@@ -20,14 +23,7 @@ AnthropicMessagesAccountingEventCallback = Callable[[str], None]
 _MODEL_JSON_SCALAR_FIELDS = {
     ("id",): ScalarField("string", max_bytes=1024),
     ("model",): ScalarField("string", max_bytes=1024),
-    **{
-        ("usage", field): ScalarField(
-            "int",
-            max_bytes=64,
-            max_int_value=MAX_USAGE_QUANTITY,
-        )
-        for field in ANTHROPIC_USAGE_FIELD_CATEGORIES
-    },
+    **{("usage", field): MODEL_USAGE_QUANTITY_FIELD for field in ANTHROPIC_USAGE_FIELD_CATEGORIES},
 }
 
 _ANTHROPIC_SSE_SCALAR_FIELDS = {
@@ -35,21 +31,10 @@ _ANTHROPIC_SSE_SCALAR_FIELDS = {
     ("message", "id"): ScalarField("string", max_bytes=1024),
     ("message", "model"): ScalarField("string", max_bytes=1024),
     **{
-        ("message", "usage", field): ScalarField(
-            "int",
-            max_bytes=64,
-            max_int_value=MAX_USAGE_QUANTITY,
-        )
+        ("message", "usage", field): MODEL_USAGE_QUANTITY_FIELD
         for field in ANTHROPIC_USAGE_FIELD_CATEGORIES
     },
-    **{
-        ("usage", field): ScalarField(
-            "int",
-            max_bytes=64,
-            max_int_value=MAX_USAGE_QUANTITY,
-        )
-        for field in ANTHROPIC_USAGE_FIELD_CATEGORIES
-    },
+    **{("usage", field): MODEL_USAGE_QUANTITY_FIELD for field in ANTHROPIC_USAGE_FIELD_CATEGORIES},
 }
 
 
