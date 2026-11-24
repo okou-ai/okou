@@ -7,7 +7,10 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use futures_util::FutureExt;
-use sandbox::{Sandbox, SandboxConfig, SandboxId, SandboxParkOutcome};
+use sandbox::{
+    Sandbox, SandboxConfig, SandboxError, SandboxId, SandboxParkNonReusableReason,
+    SandboxParkOutcome,
+};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
@@ -19,7 +22,7 @@ use crate::idle_lifecycle::{
 };
 use runner_executor::executor::{BlankPoolSelection, BlankPoolSelectionReason};
 use runner_executor::pre_spawn_admission::{BackgroundPreSpawnAdmissionLease, PreSpawnAdmission};
-use runner_lifecycle::home_mount::ensure_home_drive_mounted;
+use runner_lifecycle::home_mount::{HomeDriveMountError, ensure_home_drive_mounted};
 use runner_lifecycle::idle_pool::{
     BlankIdleReservationMiss, DestroyOutcome, IdlePool, ParkResult, ParkedIdleCandidate,
     ReservedIdleSandbox, RetainedIdleDestroyResult,
@@ -254,11 +257,59 @@ impl BlankRefillSuppression {
     }
 }
 
-enum BackgroundStageResult<T, E> {
-    Completed(Result<T, E>),
-    CancelledBeforeStart,
-    CancelledAfterStart(Result<T, E>),
+enum BackgroundStageFailure<T, E> {
+    Operation(E),
+    // Keep the result of an entered stage until the sandbox has been retired.
+    Cancelled(Option<Result<T, E>>),
     Panicked,
+}
+
+impl<T, E> BackgroundStageFailure<T, E> {
+    fn into_report(
+        self,
+        stage: &'static str,
+        panic_message: &'static str,
+        format_error: impl FnOnce(&E) -> String,
+    ) -> BlankPrepareFailure {
+        let error = match self {
+            Self::Operation(error) => Some(format_error(&error)),
+            Self::Cancelled(completed) => {
+                drop(completed);
+                None
+            }
+            Self::Panicked => Some(panic_message.into()),
+        };
+        BlankPrepareFailure { stage, error }
+    }
+}
+
+enum BlankStageFailure {
+    Start(BackgroundStageFailure<(), SandboxError>),
+    HomeMount(BackgroundStageFailure<Option<Duration>, HomeDriveMountError>),
+    Park(BackgroundStageFailure<SandboxParkOutcome, SandboxError>),
+    ParkNonReusable(SandboxParkNonReusableReason),
+}
+
+impl BlankStageFailure {
+    fn into_report(self) -> BlankPrepareFailure {
+        match self {
+            Self::Start(failure) => {
+                failure.into_report("start", "sandbox start panicked", ToString::to_string)
+            }
+            Self::HomeMount(failure) => {
+                failure.into_report("home_mount", "home drive mount panicked", |error| {
+                    error.error.to_string()
+                })
+            }
+            Self::Park(failure) => {
+                failure.into_report("park", "sandbox park panicked", ToString::to_string)
+            }
+            Self::ParkNonReusable(reason) => BlankPrepareFailure {
+                stage: "park_non_reusable",
+                error: Some(reason.as_str().to_owned()),
+            },
+        }
+    }
 }
 
 pub enum BlankPrepareResult {
@@ -787,116 +838,51 @@ async fn prepare_blank_sandbox(
         }
     };
 
-    match run_background_stage(sandbox.start(), &cancel, &mut pre_spawn_lease).await {
-        BackgroundStageResult::Completed(Ok(())) => {}
-        BackgroundStageResult::Completed(Err(error)) => {
-            drop(pre_spawn_lease.take());
-            destroy_sandbox(&factory, sandbox).await;
-            return BlankPrepareResult::Failed(BlankPrepareFailure {
-                stage: "start",
-                error: Some(error.to_string()),
-            });
-        }
-        BackgroundStageResult::CancelledBeforeStart
-        | BackgroundStageResult::CancelledAfterStart(_) => {
-            destroy_sandbox(&factory, sandbox).await;
-            return BlankPrepareResult::Failed(BlankPrepareFailure {
-                stage: "start",
-                error: None,
-            });
-        }
-        BackgroundStageResult::Panicked => {
-            drop(pre_spawn_lease.take());
-            destroy_sandbox(&factory, sandbox).await;
-            return BlankPrepareResult::Failed(BlankPrepareFailure {
-                stage: "start",
-                error: Some("sandbox start panicked".into()),
-            });
-        }
+    let result =
+        prepare_created_blank(sandbox.as_mut(), sandbox_id, &cancel, &mut pre_spawn_lease).await;
+    drop(pre_spawn_lease.take());
+    if let Err(failure) = result {
+        // The resource-budget lease still backs the sandbox during retirement.
+        destroy_sandbox(&factory, sandbox).await;
+        return BlankPrepareResult::Failed(failure.into_report());
     }
 
-    match run_background_stage(
-        ensure_home_drive_mounted(sandbox.as_ref(), sandbox_id),
-        &cancel,
-        &mut pre_spawn_lease,
+    BlankPrepareResult::Ready {
+        candidate: Box::new(ParkedIdleCandidate::blank(
+            sandbox,
+            factory,
+            budget_lease,
+            sandbox_id,
+            profile_name,
+            profile.rootfs_hash,
+            device_rate_limits,
+        )),
+        retired_exact,
+    }
+}
+
+async fn prepare_created_blank(
+    sandbox: &mut dyn Sandbox,
+    sandbox_id: SandboxId,
+    cancel: &CancellationToken,
+    pre_spawn_lease: &mut Option<BackgroundPreSpawnAdmissionLease>,
+) -> Result<(), BlankStageFailure> {
+    run_background_stage(sandbox.start(), cancel, pre_spawn_lease)
+        .await
+        .map_err(BlankStageFailure::Start)?;
+    run_background_stage(
+        ensure_home_drive_mounted(sandbox, sandbox_id),
+        cancel,
+        pre_spawn_lease,
     )
     .await
+    .map_err(BlankStageFailure::HomeMount)?;
+    match run_background_stage(sandbox.park_for_blank_pool(), cancel, pre_spawn_lease)
+        .await
+        .map_err(BlankStageFailure::Park)?
     {
-        BackgroundStageResult::Completed(Ok(_)) => {}
-        BackgroundStageResult::Completed(Err(error)) => {
-            drop(pre_spawn_lease.take());
-            destroy_sandbox(&factory, sandbox).await;
-            return BlankPrepareResult::Failed(BlankPrepareFailure {
-                stage: "home_mount",
-                error: Some(error.error.to_string()),
-            });
-        }
-        BackgroundStageResult::CancelledBeforeStart
-        | BackgroundStageResult::CancelledAfterStart(_) => {
-            destroy_sandbox(&factory, sandbox).await;
-            return BlankPrepareResult::Failed(BlankPrepareFailure {
-                stage: "home_mount",
-                error: None,
-            });
-        }
-        BackgroundStageResult::Panicked => {
-            drop(pre_spawn_lease.take());
-            destroy_sandbox(&factory, sandbox).await;
-            return BlankPrepareResult::Failed(BlankPrepareFailure {
-                stage: "home_mount",
-                error: Some("home drive mount panicked".into()),
-            });
-        }
-    }
-
-    match run_background_stage(sandbox.park_for_blank_pool(), &cancel, &mut pre_spawn_lease).await {
-        BackgroundStageResult::Completed(Ok(SandboxParkOutcome::Reusable)) => {
-            drop(pre_spawn_lease.take());
-            BlankPrepareResult::Ready {
-                candidate: Box::new(ParkedIdleCandidate::blank(
-                    sandbox,
-                    factory,
-                    budget_lease,
-                    sandbox_id,
-                    profile_name,
-                    profile.rootfs_hash,
-                    device_rate_limits,
-                )),
-                retired_exact,
-            }
-        }
-        BackgroundStageResult::Completed(Ok(SandboxParkOutcome::NonReusable(reason))) => {
-            drop(pre_spawn_lease.take());
-            destroy_sandbox(&factory, sandbox).await;
-            BlankPrepareResult::Failed(BlankPrepareFailure {
-                stage: "park_non_reusable",
-                error: Some(reason.as_str().to_owned()),
-            })
-        }
-        BackgroundStageResult::Completed(Err(error)) => {
-            drop(pre_spawn_lease.take());
-            destroy_sandbox(&factory, sandbox).await;
-            BlankPrepareResult::Failed(BlankPrepareFailure {
-                stage: "park",
-                error: Some(error.to_string()),
-            })
-        }
-        BackgroundStageResult::CancelledBeforeStart
-        | BackgroundStageResult::CancelledAfterStart(_) => {
-            destroy_sandbox(&factory, sandbox).await;
-            BlankPrepareResult::Failed(BlankPrepareFailure {
-                stage: "park",
-                error: None,
-            })
-        }
-        BackgroundStageResult::Panicked => {
-            drop(pre_spawn_lease.take());
-            destroy_sandbox(&factory, sandbox).await;
-            BlankPrepareResult::Failed(BlankPrepareFailure {
-                stage: "park",
-                error: Some("sandbox park panicked".into()),
-            })
-        }
+        SandboxParkOutcome::Reusable => Ok(()),
+        SandboxParkOutcome::NonReusable(reason) => Err(BlankStageFailure::ParkNonReusable(reason)),
     }
 }
 
@@ -963,10 +949,10 @@ async fn run_background_stage<T, E>(
     stage: impl Future<Output = Result<T, E>>,
     cancel: &CancellationToken,
     pre_spawn_lease: &mut Option<BackgroundPreSpawnAdmissionLease>,
-) -> BackgroundStageResult<T, E> {
+) -> Result<T, BackgroundStageFailure<T, E>> {
     if cancel.is_cancelled() {
         drop(pre_spawn_lease.take());
-        return BackgroundStageResult::CancelledBeforeStart;
+        return Err(BackgroundStageFailure::Cancelled(None));
     }
     let stage = AssertUnwindSafe(stage).catch_unwind();
     tokio::pin!(stage);
@@ -976,17 +962,17 @@ async fn run_background_stage<T, E>(
             match result {
                 Ok(result) if cancel.is_cancelled() => {
                     drop(pre_spawn_lease.take());
-                    BackgroundStageResult::CancelledAfterStart(result)
+                    Err(BackgroundStageFailure::Cancelled(Some(result)))
                 }
-                Ok(result) => BackgroundStageResult::Completed(result),
-                Err(_) => BackgroundStageResult::Panicked,
+                Ok(result) => result.map_err(BackgroundStageFailure::Operation),
+                Err(_) => Err(BackgroundStageFailure::Panicked),
             }
         }
         _ = cancel.cancelled() => {
             drop(pre_spawn_lease.take());
             match stage.await {
-                Ok(result) => BackgroundStageResult::CancelledAfterStart(result),
-                Err(_) => BackgroundStageResult::Panicked,
+                Ok(result) => Err(BackgroundStageFailure::Cancelled(Some(result))),
+                Err(_) => Err(BackgroundStageFailure::Panicked),
             }
         }
     }
