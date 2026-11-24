@@ -109,19 +109,16 @@ class ScreenshotScenario {
         fun pendingState(label: String): Rect {
             val observed = mutableListOf<String>()
             fun find(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-                if (
-                    node.packageName?.toString() == app.packageName &&
-                        (node.stateDescription != null ||
-                            node.contentDescription?.toString() == "暂停")
+                if (node.packageName?.toString() == app.packageName &&
+                    node.contentDescription?.toString() == "暂停"
                 ) {
+                    val cachedState = node.stateDescription
+                    val refreshed = node.refresh()
                     observed +=
-                        "name=${node.contentDescription}, state=${node.stateDescription}, enabled=${node.isEnabled}"
+                        "cached=$cachedState, refreshed=$refreshed, state=${node.stateDescription}, " +
+                        "enabled=${node.isEnabled}"
+                    if (refreshed && node.stateDescription?.toString() == label) return node
                 }
-                if (
-                    node.packageName?.toString() == app.packageName &&
-                        node.stateDescription?.toString() == label
-                )
-                    return node
                 for (index in 0 until node.childCount) {
                     val child = node.getChild(index) ?: continue
                     find(child)?.let {
@@ -308,6 +305,7 @@ class ScreenshotScenario {
                     text("已启用")
                     releaseToggle.countDown()
                     assertTrue(readbackEntered.await(10, TimeUnit.SECONDS))
+                    instrumentation.waitForIdleSync()
                     assertEquals(original, pendingState("正在核对结果…"))
                     text("已启用")
                     ScreenshotCapture.capture("wide-toggle-readback.png")
