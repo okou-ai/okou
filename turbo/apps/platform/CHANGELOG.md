@@ -13,6 +13,23 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1176.0](https://github.com/okou-ai/okou/compare/app-v0.1175.2...app-v0.1176.0) (2026-11-24)
+
+
+### Features
+
+* add member-wide connector account approval ([#50516](https://github.com/okou-ai/okou/issues/50516)) ([ff76d52](https://github.com/okou-ai/okou/commit/ff76d52e21a55cd8f3e34a513e7e5fcfd8ab1e1b))
+* **billing:** allow free workspaces to buy credits ([#50532](https://github.com/okou-ai/okou/issues/50532)) ([f79cdfd](https://github.com/okou-ai/okou/commit/f79cdfde1673397bf7716c1411dd68e8c3020875))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.121.0
+    * @okouai/core bumped to 8.870.1
+    * @okouai/ui bumped to 1.22.8
+
 ## [0.1175.2](https://github.com/okou-ai/okou/compare/app-v0.1175.1...app-v0.1175.2) (2026-11-24)
 
 
