@@ -98,7 +98,7 @@ class BatchAbaReportTests(unittest.TestCase):
                 ))
 
     def event(self, phase):
-        return next(e for e in self.witnesses if e["phase"] == phase)
+        return report_test.witness_for_phase(self.witnesses, phase)
 
     def write(self):
         report_test.write_report_fixture(self.root, self.collector, self.samples,
