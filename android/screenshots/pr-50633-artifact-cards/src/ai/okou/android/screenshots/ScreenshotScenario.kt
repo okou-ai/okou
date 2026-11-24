@@ -166,7 +166,7 @@ class ScreenshotScenario {
         verifyPreview()
         assertEquals(1, artifacts.requestedReferences.size)
         ScreenshotCapture.capture("preview-phone.png")
-        assertTrue(device.pressBack())
+        assertTrue("Could not inject Back", device.pressKeyCode(KeyEvent.KEYCODE_BACK))
         cardBounds(artifacts.summary.title)
     }
 
@@ -185,7 +185,7 @@ class ScreenshotScenario {
         assertFalse(device.hasObject(By.text(artifacts.checklist.title).pkg(app.packageName)))
         assertEquals(2, artifacts.requestedReferences.size)
         ScreenshotCapture.capture("preview-wide.png")
-        assertTrue(device.pressBack())
+        assertTrue("Could not inject Back", device.pressKeyCode(KeyEvent.KEYCODE_BACK))
         awaitCardFocus(title)
     }
 
