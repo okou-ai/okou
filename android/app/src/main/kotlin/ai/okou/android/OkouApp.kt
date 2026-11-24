@@ -128,7 +128,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Alignment
@@ -213,7 +212,6 @@ internal fun OkouApp(
             (connectorsOpen || workflowConnectorVisit != null || chatConnectorVisit != null)
     var workflowOrigin by rememberWorkspaceNavigation()
     var workflowRoute by rememberWorkflowsRoute()
-    var workflowResourceReturn by rememberSaveable { mutableStateOf<String?>(null) }
     var workflowHistoryReturnRunId by
         remember(workflows, workflowRoute.id, workflowRoute.tab) { mutableStateOf<String?>(null) }
     val workflowQuery = rememberChatSearchState()
@@ -520,11 +518,17 @@ internal fun OkouApp(
         focus.clearFocus()
         keyboard?.hide()
         workflowOrigin = navigation
-        workflowResourceReturn = resourceRow
         workflowQuery.reset()
         workflowDraftError = null
         workflowHandoffFailed = false
-        changeWorkflowRoute(WorkflowsRoute(mode = WorkflowsMode.Directory, id = id, tab = tab))
+        changeWorkflowRoute(
+            WorkflowsRoute(
+                mode = WorkflowsMode.Directory,
+                id = id,
+                tab = tab,
+                resourceReturnRow = resourceRow,
+            ),
+        )
     }
 
     fun closeWorkflows() {
@@ -532,9 +536,9 @@ internal fun OkouApp(
         handoff = null
         workflowConnectionReturn = null
         workflowPageState.removeState("workflow")
+        if (navigation.chatResourcesId != null)
+            workflowRoute.resourceReturnRow?.let { linkFocusKey = it }
         changeWorkflowRoute(WorkflowsRoute())
-        if (navigation.chatResourcesId != null) workflowResourceReturn?.let { linkFocusKey = it }
-        workflowResourceReturn = null
     }
 
     fun leaveWorkflowChat() {
@@ -1084,7 +1088,8 @@ internal fun OkouApp(
                     workflowDraftError?.takeIf { it.workflowId == workflowRoute.id }?.message,
                 feedback = { WorkspaceFeedbackHost(snackbar, Modifier.padding(vertical = 8.dp)) },
                 onClose = ::closeWorkflows,
-                directEntry = workflowOrigin.search.isOpen || workflowResourceReturn != null,
+                directEntry =
+                    workflowOrigin.search.isOpen || workflowRoute.resourceReturnRow != null,
                 onCreate = { focused ->
                     workflowDraft(
                         "$creation\n\n",
