@@ -54,15 +54,19 @@ public struct ChatUserMessage: Decodable, Equatable, Sendable {
   }
 
   public func attachments() throws -> [ChatMessageAttachment] {
-    try parts.filter { $0.type == "file" }.map { part in
+    try parts.flatMap { part -> [ChatMessageAttachment] in
+      if part.type == "voice" { return part.voiceAttachments }
+      guard part.type == "file" else { return [] }
       guard let id = part.fileId, !id.isEmpty,
         let filename = part.filenameSnapshot, !filename.isEmpty,
         let contentType = part.contentType, !contentType.isEmpty
       else { throw ChatError.invalidContract("Attachment identity or metadata is missing.") }
-      return ChatMessageAttachment(
-        id: id, filename: filename,
-        contentType: part.annotatedFileId == nil ? contentType : "image/png",
-        renderedFileID: part.annotatedFileId)
+      return [
+        ChatMessageAttachment(
+          id: id, filename: filename,
+          contentType: part.annotatedFileId == nil ? contentType : "image/png",
+          renderedFileID: part.annotatedFileId)
+      ]
     }
   }
 
@@ -103,9 +107,18 @@ public struct ChatUserMessage: Decodable, Equatable, Sendable {
     public let selectedModel: String?
     public let serviceTier: String?
     public let annotatedFileId: String?
+    public struct VoiceClip: Decodable, Equatable, Sendable {
+      public let fileId: String
+    }
+    public let clips: [VoiceClip]?
+    public var voiceAttachments: [ChatMessageAttachment] {
+      (clips ?? []).map {
+        ChatMessageAttachment(id: $0.fileId, filename: "Voice recording", contentType: "audio/*")
+      }
+    }
 
     private enum CodingKeys: String, CodingKey {
-      case type, text, titleSnapshot, nameSnapshot, fileId, contentType, filenameSnapshot
+      case type, text, clips, titleSnapshot, nameSnapshot, fileId, contentType, filenameSnapshot
       case workflowName, kind, href, clientName, threadId, projectId, runId, workflowId
       case automationBrief, eventId, range, quote, source, selectedModel, serviceTier,
         annotatedFileId
@@ -151,6 +164,7 @@ public struct ChatUserMessage: Decodable, Equatable, Sendable {
       eventId: String? = nil, range: FeedbackRange? = nil,
       selectedModel: String? = nil, serviceTier: String? = nil, annotatedFileId: String? = nil
     ) {
+      self.clips = nil
       self.type = type
       self.text = text
       self.titleSnapshot = titleSnapshot

@@ -2865,6 +2865,7 @@
       "storageFailed": "音訊未能儲存。只能使用已儲存在此裝置上的音訊。",
       "textTakingShape": "文字正在成形",
       "transcribing": "正在轉寫",
+      "uploadingRecording": "正在上傳錄音…",
       "useRecording": "使用錄音"
     },
     "walletAction": {

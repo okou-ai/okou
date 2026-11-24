@@ -2,7 +2,10 @@ import { enum as zEnum } from "zod";
 import { command } from "ccstate";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
-import { MAX_VOICE_CLIPS } from "@okouai/api-contracts/contracts/voice-clips";
+import {
+  MAX_TOTAL_AUDIO_BYTES,
+  MAX_VOICE_CLIPS,
+} from "@okouai/api-contracts/contracts/voice-clips";
 import { badRequestMessage, notFound } from "../../lib/error";
 import { db$ } from "../external/db";
 import {
@@ -11,7 +14,6 @@ import {
   type PrivateAttachmentRow,
 } from "./private-artifact-storage.service";
 
-export const MAX_TOTAL_AUDIO_BYTES = 25 * 1024 * 1024;
 const audioTypes = zEnum([
   "audio/wav",
   "audio/mpeg",

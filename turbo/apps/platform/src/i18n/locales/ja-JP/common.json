@@ -2865,6 +2865,7 @@
       "storageFailed": "音声を保存できませんでした。この端末に保存済みの音声のみ利用できます。",
       "textTakingShape": "テキストを作成中",
       "transcribing": "文字起こし",
+      "uploadingRecording": "録音をアップロード中…",
       "useRecording": "録音を使う"
     },
     "walletAction": {

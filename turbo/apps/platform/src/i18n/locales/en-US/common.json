@@ -2880,6 +2880,7 @@
       "storageFailed": "Audio could not be saved. Only audio already saved on this device is available.",
       "textTakingShape": "Text is taking shape",
       "transcribing": "Transcribing",
+      "uploadingRecording": "Uploading recording…",
       "useRecording": "Use recording"
     },
     "walletAction": {
