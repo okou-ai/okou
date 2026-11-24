@@ -55,10 +55,8 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -230,21 +228,12 @@ internal fun WorkflowEditorAction(
     onFocusRestored: () -> Unit,
     onEdit: (Boolean) -> Unit,
 ) {
-    val requester = remember { FocusRequester() }
-    var focused by remember { mutableStateOf(false) }
-    val input = LocalInputModeManager.current
-    LaunchedEffect(restoreFocus, enabled) {
-        if (restoreFocus && enabled) {
-            if (input.inputMode == InputMode.Keyboard) requester.requestFocus()
-            onFocusRestored()
-        }
-    }
+    val actionFocus = rememberWorkflowReturnFocus(restoreFocus, enabled, onFocusRestored)
     WorkflowAction(
         stringResource(label),
-        { onEdit(focused && input.inputMode == InputMode.Keyboard) },
-        Modifier.focusRequester(requester).onFocusChanged { focused = it.isFocused },
+        { onEdit(actionFocus.keyboardFocused) },
+        actionFocus.modifier,
         enabled = enabled,
-        keyboardFocused = focused && input.inputMode == InputMode.Keyboard,
     )
 }
 
