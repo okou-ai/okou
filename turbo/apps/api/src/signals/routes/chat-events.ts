@@ -21,7 +21,6 @@ import { measureChatEnqueue } from "../services/chat-enqueue-timing.service";
 import {
   handleSendChatEvent$,
   chatEnqueueTiming$,
-  retainNormalSendAttachments,
   startNormalSendBootstrap$,
 } from "../services/chat-events.command";
 import { captureProjectReferences } from "../services/project-reference.service";
@@ -189,10 +188,9 @@ export const sendValidatedChatEvent$ = command(
       }
       return result;
     })();
-    return await (bootstrap?.attachments
-      ? response.finally(() => {
-          retainNormalSendAttachments(bootstrap);
-        })
+    const attachments = bootstrap?.attachments;
+    return await (attachments
+      ? response.finally(attachments.finish)
       : response);
   },
 );

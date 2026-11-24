@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { HeadObjectCommand } from "@aws-sdk/client-s3";
+import { HeadObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { describe, expect, it } from "vitest";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import type { UserMessageInputDocument } from "@okouai/api-contracts/contracts/chat-threads";
@@ -7,6 +7,10 @@ import { createProjectOperationId } from "@okouai/core/project-operation-id";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
+import {
+  buildArtifactKeyV2,
+  buildArtifactPrefixV2,
+} from "../../../lib/file-url";
 import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
@@ -179,33 +183,31 @@ describe("project reference admission through chat send", () => {
     await fixture.cancelChatRun(actor, run.runId);
   });
 
-  it("returns the Project rejection without waiting for attachment preparation", async () => {
+  it("stops attachment preparation when rejecting an unavailable Project", async () => {
     const { actor } = await fixture.entitledNativeChatActor();
     const thread = await fixture.chat.createThread(actor, {});
-    const storage = installS3Fixture(context);
+    installS3Fixture(context);
+    const fileId = randomUUID();
     const filename = "attachment.txt";
     const contentType = "text/plain";
-    const bytes = Buffer.from("attachment");
-    const upload = await fixture.chat.prepareUpload(actor, {
-      filename,
-      contentType,
-      size: bytes.length,
-    });
-    if (!("uploadUrl" in upload)) {
-      throw new Error("Expected a single-part upload");
-    }
-    storage.put(upload.uploadUrl, bytes, contentType);
-    const key = storage.signedKey(upload.uploadUrl);
+    const key = buildArtifactKeyV2(fileId, filename);
+    const prefix = buildArtifactPrefixV2(fileId);
     const send = context.mocks.s3.send.getMockImplementation();
-    if (!key || !send) {
-      throw new Error("Expected an attachment object and storage transport");
+    if (!send) {
+      throw new Error("Expected an object storage transport");
     }
-    let started = 0;
+    let listedAttachment = false;
     const release = createDeferredPromise<void>(context.signal);
     context.mocks.s3.send.mockImplementation(async (command: unknown) => {
       if (command instanceof HeadObjectCommand && command.input.Key === key) {
-        started += 1;
+        // A miss can only trigger a LIST after the Project rejection returns.
         await release.promise;
+      }
+      if (
+        command instanceof ListObjectsV2Command &&
+        command.input.Prefix === prefix
+      ) {
+        listedAttachment = true;
       }
       return await send(command);
     });
@@ -223,7 +225,7 @@ describe("project reference admission through chat send", () => {
               mention(randomUUID()),
               {
                 type: "file",
-                fileId: upload.id,
+                fileId,
                 filenameSnapshot: filename,
                 contentType,
               },
@@ -237,7 +239,7 @@ describe("project reference admission through chat send", () => {
       });
     expect(response.body).toMatchObject({ error: { code: "NOT_FOUND" } });
     await flushWaitUntilForTest();
-    expect(started).toBe(1);
+    expect(listedAttachment).toBeFalsy();
     const { events } = await fixture.chat.listThreadEvents(actor, thread.id);
     expect(
       events.some(({ id }) => {

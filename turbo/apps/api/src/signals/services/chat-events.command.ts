@@ -2340,6 +2340,11 @@ type NormalSendAttachmentRead = ReturnType<
   (typeof readNormalSendAttachments$)["write"]
 >;
 
+interface NormalSendAttachmentPreparation {
+  readonly result: NormalSendAttachmentRead;
+  readonly finish: () => void;
+}
+
 const prepareNormalSendInput$ = command(
   async (
     { set },
@@ -2549,20 +2554,11 @@ interface NormalSendBootstrap {
   readonly authorize: ReturnType<
     (typeof prepareNormalSendAuthorization$)["write"]
   >;
-  readonly attachments?: NormalSendAttachmentRead;
+  readonly attachments?: NormalSendAttachmentPreparation;
   readonly host?: Parameters<typeof readCapturedComputerAccess>[0];
   readonly revocation?: ReturnType<
     (typeof startNormalSendRevocation$)["write"]
   >;
-}
-
-/** Keep any unfinished attachment read alive after its foreground owner exits. */
-export function retainNormalSendAttachments(
-  bootstrap: NormalSendBootstrap | undefined,
-): void {
-  if (bootstrap?.attachments) {
-    waitUntil(bootstrap.attachments);
-  }
 }
 
 const prepareNormalSendAuthorization$ = command(
@@ -2644,29 +2640,44 @@ const startNormalSendAttachmentPreparation$ = command(
       args.auth,
       signal,
     );
-    if (attachmentRecords) {
-      waitUntil(attachmentRecords.rows);
-    }
     const authorize = set(
       prepareNormalSendAuthorization$,
       { ...args, attachmentRecords },
       signal,
     );
     waitUntil(authorize);
-    const attachments = attachmentRecords
-      ? set(
-          readNormalSendAttachments$,
-          {
-            orgId: args.auth.orgId,
-            userId: args.auth.userId,
-            context: args.context,
-            enqueueTiming: args.enqueueTiming,
-          },
-          { authorize, records: attachmentRecords },
-          signal,
-        )
-      : undefined;
-    return { authorize, attachments };
+    if (!attachmentRecords) {
+      return { authorize, attachments: undefined };
+    }
+    waitUntil(attachmentRecords.rows);
+    const stop = new AbortController();
+    let finished = false;
+    const result = set(
+      readNormalSendAttachments$,
+      {
+        orgId: args.auth.orgId,
+        userId: args.auth.userId,
+        context: args.context,
+        enqueueTiming: args.enqueueTiming,
+      },
+      { authorize, records: attachmentRecords },
+      AbortSignal.any([signal, stop.signal]),
+    ).finally(() => {
+      finished = true;
+    });
+    return {
+      authorize,
+      attachments: {
+        result,
+        finish() {
+          if (!finished) {
+            // An early exit cancels speculative I/O and retains its cleanup.
+            stop.abort();
+            waitUntil(result);
+          }
+        },
+      },
+    };
   },
 );
 
@@ -2853,7 +2864,7 @@ const prepareNormalSendContext$ = command(
       context,
       existing,
       inputId,
-      attachments,
+      attachments: attachments?.result,
       revocation,
       host,
     };
@@ -3096,7 +3107,7 @@ const prepareNormalSendPublicationInput$ = command(
     const result = await (request.bootstrap
       ? preparation
       : preparation.finally(() => {
-          retainNormalSendAttachments(bootstrap);
+          bootstrap?.attachments?.finish();
         }));
     signal.throwIfAborted();
     if (!result.ok) {
