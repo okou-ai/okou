@@ -9,6 +9,52 @@ import XCTest
 
 @MainActor
 final class ComposerConnectorPermissionTests: XCTestCase {
+  func testSettingsPermissionSaveDoesNotDependOnRemoteOverview() async throws {
+    let server = PermissionEditorFixture()
+    let composer = ComposerConnectorStore(
+      service: ChatComposerAccess(client: server.http.client),
+      authorizationService: ChatConnectorService(client: server.http.client),
+      webURL: server.http.baseURL, includesRemote: false, didFail: { _ in })
+    defer { composer.close() }
+    await composer.refresh()
+    let resources = try open(composer)
+    await resources.apply(.allow("mail.send"))
+    let saved = await resources.save()
+    XCTAssertTrue(saved)
+    XCTAssertTrue(composer.canSend)
+    XCTAssertTrue(server.requests(path: "/api/remotes/overview").isEmpty)
+    let reopened = try open(composer)
+    let confirmed = try await reopened.store.get(reopened.page).value
+    XCTAssertEqual(confirmed.state.grants.first?.permission, "mail.send")
+  }
+
+  func testEditsAndResetStayLocalUntilApplyAndClosingDiscardsThem() async throws {
+    let server = PermissionEditorFixture()
+    let composer = makeComposer(server.http)
+    defer { composer.close() }
+    let resources = try open(composer)
+    await resources.apply(.allow("mail.send"))
+    let staged = try await resources.store.get(resources.page).value
+    XCTAssertEqual(staged.policy(for: "mail.send"), .allow)
+    XCTAssertTrue(staged.state.grants.isEmpty)
+    XCTAssertTrue(server.writes.isEmpty)
+    await resources.apply(.reset)
+    let reset = try await resources.store.get(resources.page).value
+    XCTAssertEqual(reset.policy(for: "mail.send"), .ask)
+    XCTAssertTrue(server.writes.isEmpty)
+    composer.closePermissions()
+    let reopened = try open(composer)
+    XCTAssertFalse(try reopened.store.get(reopened.controls).hasChanges)
+    await reopened.apply(.denyGroup(["mail.read", "mail.send"]))
+    XCTAssertTrue(server.writes.isEmpty)
+    let saved = await reopened.save()
+    XCTAssertTrue(saved)
+    XCTAssertEqual(server.writes.count, 1)
+    let confirmed = try await reopened.store.get(reopened.page).value
+    XCTAssertEqual(confirmed.state.grants.map(\.permission).sorted(), ["mail.read", "mail.send"])
+    XCTAssertFalse(try reopened.store.get(reopened.controls).hasChanges)
+  }
+
   func testConsumersSharePermissionsAndFilterLocallyWithoutRefetching() async throws {
     let server = PermissionEditorFixture()
     let composer = makeComposer(server.http)
@@ -40,6 +86,7 @@ final class ComposerConnectorPermissionTests: XCTestCase {
     let resources = try open(composer)
     resources.update(category: "Mail", duration: "24h")
     await resources.apply(.allowListed)
+    _ = await resources.save()
     let allowed = try await resources.store.get(resources.page).value
     XCTAssertEqual(allowed.state.grants.map(\.permission).sorted(), ["mail.read", "mail.send"])
     XCTAssertTrue(
@@ -52,11 +99,13 @@ final class ComposerConnectorPermissionTests: XCTestCase {
     XCTAssertEqual(body.mode, "patch")
     XCTAssertEqual(body.grants.map(\.expiresIn), ["24h", "24h"])
     await resources.apply(.deny("__unknown__"))
+    _ = await resources.save()
     let denied = try await resources.store.get(resources.page).value
     XCTAssertEqual(
       denied.state.metadata.policy(for: "__unknown__", grants: denied.state.grants, at: .now), .deny
     )
     await resources.apply(.reset)
+    _ = await resources.save()
     let reset = try await resources.store.get(resources.page).value
     XCTAssertTrue(reset.state.grants.isEmpty)
     XCTAssertEqual(
@@ -94,6 +143,7 @@ final class ComposerConnectorPermissionTests: XCTestCase {
     let resources = try open(composer)
     resources.update(duration: "always")
     await resources.apply(.allow("mail.send"))
+    _ = await resources.save()
     let value = try await resources.store.get(resources.page).value
     XCTAssertEqual(value.state.grants.first?.permission, "mail.send")
     XCTAssertNil(value.state.grants.first?.expiresAt)
@@ -132,16 +182,19 @@ final class ComposerConnectorPermissionTests: XCTestCase {
     defer { composer.close() }
     let resources = try open(composer)
     await resources.apply(.allow("mail.send"))
+    _ = await resources.save()
     XCTAssertFalse(composer.canSend)
     let controls = try resources.store.get(resources.controls)
     XCTAssertTrue(controls.confirmationFailure?.contains("Permission change rejected") == true)
     await resources.apply(.allow("mail.send"))
+    _ = await resources.save()
     XCTAssertEqual(server.writes.count, 1)
     server.state.withLock { $0.writeStatus = 200 }
     await resources.retry()
     XCTAssertTrue(composer.canSend)
     XCTAssertNil(try resources.store.get(resources.controls).confirmationFailure)
     await resources.apply(.allow("mail.send"))
+    _ = await resources.save()
     let value = try await resources.store.get(resources.page).value
     XCTAssertEqual(value.state.grants.first?.action.rawValue, "allow")
     XCTAssertEqual(server.writes.count, 2)
@@ -154,6 +207,7 @@ final class ComposerConnectorPermissionTests: XCTestCase {
     defer { composer.close() }
     let resources = try open(composer)
     await resources.apply(.deny("mail.send"))
+    _ = await resources.save()
     let value = try await resources.store.get(resources.page).value
     XCTAssertEqual(value.state.grants.first?.action.rawValue, "deny")
     XCTAssertTrue(composer.canSend)
@@ -196,10 +250,12 @@ final class ComposerConnectorPermissionTests: XCTestCase {
       XCTFail("A retired editor published old permissions")
     }
     await resources.apply(.allow("mail.send"))
+    _ = await resources.save()
     XCTAssertTrue(server.writes.isEmpty)
     composer.openPermissions(slug: "gmail", label: "Gmail")
     let next = try XCTUnwrap(composer.permissions)
     await next.apply(.deny("mail.read"))
+    _ = await next.save()
     let request = try XCTUnwrap(server.writes.first)
     let body = try JSONDecoder().decode(
       PermissionEditorFixture.Write.self, from: chatRequestBody(request))
@@ -219,7 +275,8 @@ final class ComposerConnectorPermissionTests: XCTestCase {
     }
     let composer = makeComposer(server.http)
     let resources = try open(composer)
-    let write = Task { await resources.apply(.allow("mail.send")) }
+    await resources.apply(.allow("mail.send"))
+    let write = Task { _ = await resources.save() }
     addTeardownBlock {
       write.cancel()
       gate.open()

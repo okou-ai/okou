@@ -10,6 +10,8 @@ final class ComposerConnectorAccountResources {
     case access(String, Bool?)
     case defaultAccount(String)
     case defaultEnabled(String, Bool)
+    case rename(String, String?)
+    case disconnect(String)
   }
 
   struct Page: Sendable {
@@ -31,6 +33,8 @@ final class ComposerConnectorAccountResources {
   let store = CCState.Store()
   let search: Computed<String>
   let pagination: Computed<Task<Void, Error>>
+  private let deletionID = CCState.State<String?>(nil)
+  private let selectDeletion: Command<Void, String?>
   private let keyword = CCState.State("")
   private let revision = CCState.State(0)
   private let contextRevision = CCState.State(0)
@@ -61,6 +65,8 @@ final class ComposerConnectorAccountResources {
     self.managesDefaults = managesDefaults
     service = composer.service
     self.didFail = didFail
+    let deletionID = deletionID
+    selectDeletion = Command { context, value in try context.set(deletionID, value) }
     let keyword = keyword
     let revision = revision
     let contextRevision = contextRevision
@@ -84,6 +90,16 @@ final class ComposerConnectorAccountResources {
     append = Command { context, value in try context.set(tail, value) }
     setPagination = Command { context, value in try context.set(more, value) }
   }
+
+  @ObservationIgnored lazy var catalog: Computed<Task<ChatCatalogConnector, Error>> =
+    computedTask { [weak self] get, options in
+      guard let self, !isClosed, try get(lifetime),
+        let slug = connector.target.connectorSlug
+      else { throw CancellationError() }
+      let result = try await service.catalogConnector(slug: slug)
+      try options.signal.checkCancellation()
+      return result
+    }
 
   @ObservationIgnored private lazy var first = makeFirst()
 
@@ -151,23 +167,46 @@ final class ComposerConnectorAccountResources {
       let tail = try get(tail)
       let first = try get(first)
       let details = managesDefaults ? try get(details) : nil
-      guard let current = composer.connectors.first(where: { $0.target == connector.target }) else {
+      let current = composer.connectors.first(where: { $0.target == connector.target })
+      guard managesDefaults || current != nil else {
         throw APIClientError.http(status: 404, message: "Connector unavailable.")
       }
       let (result, defaults) = try await (first.value, details?.value)
       try Task.checkCancellation()
       try options.signal.checkCancellation()
       var accounts = result.connections + (tail?.accounts ?? [])
-      if !managesDefaults, search.isEmpty, let pinned = current.currentAccount,
+      if !managesDefaults, search.isEmpty, let pinned = current?.currentAccount,
         !accounts.contains(where: { $0.id == pinned.id })
       {
         accounts.insert(pinned, at: 0)
       }
       let cursor: String?
       if let tail { cursor = tail.nextCursor } else { cursor = result.nextCursor }
+      let access: ChatConnectorAccess
+      if let current {
+        access = current.access
+      } else {
+        access = try await service.connectorAccess(target: connector.target, threadID: nil)
+        try Task.checkCancellation()
+        try options.signal.checkCancellation()
+      }
       return Page(
-        accounts: accounts, nextCursor: cursor, access: current.access, defaults: defaults ?? [])
+        accounts: accounts, nextCursor: cursor, access: access, defaults: defaults ?? [])
     }
+  }
+
+  @ObservationIgnored lazy var deletionImpact: Computed<Task<ChatConnectorDeletionImpact?, Error>> =
+    computedTask { [weak self] get, options in
+      guard let self, !isClosed, try get(lifetime) else { throw CancellationError() }
+      guard let id = try get(deletionID) else { return nil }
+      let result = try await service.deletionImpact(target: connector.target, connectionID: id)
+      try options.signal.checkCancellation()
+      return result
+    }
+
+  func prepareDisconnect(_ id: String?) {
+    guard !isClosed else { return }
+    do { try store.set(selectDeletion, id) } catch { didFail(error) }
   }
 
   func update(search: String) {

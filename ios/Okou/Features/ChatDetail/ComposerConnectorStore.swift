@@ -9,6 +9,7 @@ final class ComposerConnectorStore {
   let service: ChatComposerAccess
   let webURL: URL
   let threadID: String?
+  let includesRemote: Bool
 
   private(set) var connectors: [ChatComposerConnector] = []
   private(set) var remotes: ChatRemotesOverview?
@@ -37,7 +38,7 @@ final class ComposerConnectorStore {
   var webDestination: WebDestination?
   private(set) var directory: ComposerConnectorDirectoryResources?
   private(set) var permissions: ComposerConnectorPermissionResources?
-  private var permissionWrite: Task<Void, Never>?
+  private var permissionWrite: Task<Bool, Never>?
   private var accountPages: [ComposerConnectorAccountResources] = []
   private var accountWrite: Task<Void, Never>?
   @ObservationIgnored lazy var authorization = ConnectorActionStore(
@@ -46,7 +47,7 @@ final class ComposerConnectorStore {
 
   init(
     service: ChatComposerAccess, authorizationService: ChatConnectorService, webURL: URL,
-    threadID: String? = nil,
+    threadID: String? = nil, includesRemote: Bool = true,
     readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
     },
@@ -57,6 +58,7 @@ final class ComposerConnectorStore {
     self.authorizationService = authorizationService
     self.webURL = webURL
     self.threadID = threadID
+    self.includesRemote = includesRemote
     self.didFail = didFail
     resources = makeResources()
   }
@@ -90,15 +92,24 @@ final class ComposerConnectorStore {
         let readRevision = confirmationRevision
         do {
           try resources.invalidate(options: pendingOptions)
-          let pending = try resources.requests()
-          let (connected, remote) = await (pending.connected.result, pending.remote.result)
+          let connected: Result<[ChatComposerConnector], Error>
+          let remoteConfirmed: Bool
+          if includesRemote {
+            let pending = try resources.requests()
+            let results = await (pending.connected.result, pending.remote.result)
+            connected = results.0
+            if case .success = results.1 { remoteConfirmed = true } else { remoteConfirmed = false }
+          } else {
+            connected = await (try resources.store.get(resources.connected)).result
+            remoteConfirmed = true
+          }
           guard !closed, !Task.isCancelled, request == generation else { return }
           if refreshAgain {
             continue
           }
           // A pre-write read can publish data, but it cannot confirm a newer mutation.
           guard readRevision == confirmationRevision else { return }
-          if case .success = connected, case .success = remote {
+          if case .success = connected, remoteConfirmed {
             uncertain = false
             error = nil
           }
@@ -116,6 +127,7 @@ final class ComposerConnectorStore {
     let request = generation
     return ComposerConnectorResources(
       service: service, threadID: threadID, options: pendingOptions,
+      includesRemote: includesRemote,
       sleep: readRetrySleep,
       didLoadConnected: { [weak self] entries in
         guard let self, !closed, request == generation else { return }
@@ -267,6 +279,14 @@ final class ComposerConnectorStore {
       connectors[index].currentAccount = nil
     }
   }
+  func connect(_ connector: ChatCatalogConnector) {
+    if connector.authMethods.contains(where: { $0.grantKind != "managed" }) {
+      connect(target: .builtin(connector.slug))
+    } else {
+      openWeb(path: "connectors/\(connector.slug)/connect")
+    }
+  }
+
   func connect(target: ChatConnectorTarget, accountID: String? = nil) {
     guard !closed else { return }
     authorization.activate(
@@ -315,12 +335,13 @@ final class ComposerConnectorStore {
     permissions = nil
   }
 
+  @discardableResult
   func applyPermissions(
     owner: ComposerConnectorPermissionResources, edits: [ChatPermissionEdit], reset: Bool
-  ) async {
+  ) async -> Bool {
     guard !closed, permissions === owner,
       permissionWrite == nil, !isSaving, !uncertain
-    else { return }
+    else { return false }
     let request = generation
     // Dismissing the read surface is not a rollback of a committed permission change.
     let task = Task { @MainActor [self] in
@@ -328,15 +349,16 @@ final class ComposerConnectorStore {
       await perform {
         try await service.savePermissions(slug: owner.slug, edits: edits, reset: reset)
       }
-      guard !closed, !Task.isCancelled, request == generation else { return }
+      guard !closed, !Task.isCancelled, request == generation else { return false }
       if let presented = permissions,
         presented.slug == owner.slug
       {
         await presented.refresh()
       }
+      return !uncertain && error == nil && notice == nil
     }
     permissionWrite = task
-    await task.value
+    return await task.value
   }
 
   func openAccounts(
@@ -376,6 +398,12 @@ final class ComposerConnectorStore {
         await setAccountAccess(target: target, connectionID: id, enabled: enabled)
       case .defaultAccount(let id):
         await perform { try await service.setDefaultAccount(target: target, connectionID: id) }
+      case .rename(let id, let name):
+        await perform {
+          try await service.renameAccount(target: target, connectionID: id, displayName: name)
+        }
+      case .disconnect(let id):
+        await perform { try await service.disconnectAccount(target: target, connectionID: id) }
       case .defaultEnabled(let id, let enabled):
         await perform {
           try await service.setDefaultEnabled(target: target, connectionID: id, enabled: enabled)

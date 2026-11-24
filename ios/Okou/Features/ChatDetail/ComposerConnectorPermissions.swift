@@ -53,6 +53,7 @@ private struct ComposerConnectorPermissionsContent: View {
   @LoadableValue private var page: Loadable<ComposerConnectorPermissionResources.Page>
   @LoadableValue private var controls: Loadable<ComposerConnectorPermissionResources.Controls>
   @LoadableStatus<ComposerConnectorPermissionResources.Page> private var status: LoadableState
+  @Environment(\.dismiss) private var dismiss
   @State private var confirmsReset = false
 
   init(store: ComposerConnectorStore, resources: ComposerConnectorPermissionResources) {
@@ -63,148 +64,222 @@ private struct ComposerConnectorPermissionsContent: View {
     _controls = LoadableValue(resources.controls)
   }
 
-  private var loading: Bool { status == .loading || store.isSaving }
-  private var busy: Bool { loading || store.uncertain }
+  private var busy: Bool { status == .loading || store.isSaving || store.uncertain }
 
   var body: some View {
-    switch controls {
-    case .hasData(let value): content(value)
-    case .loading: OkouLoadingRow("Loading permissions…")
-    case .hasError(let error):
-      ConnectorLoadError(error: ChatRequestFailure.message(for: error)) { await resources.retry() }
-    }
-  }
-
-  private func content(_ controls: ComposerConnectorPermissionResources.Controls) -> some View {
-    let selection = controls.selection
-    return List {
-      if let failure = controls.confirmationFailure {
-        ConnectorLoadError(error: failure, isLoading: loading || store.isRefreshing) {
+    List {
+      Section {
+        HStack(spacing: OkouSpace.sm) {
+          Text("\(resources.label) · All chats and accounts")
+            .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
+          Spacer(minLength: 0)
+          Button("Reset") { confirmsReset = true }
+            .frame(minHeight: OkouControl.minimumTarget).disabled(busy)
+        }
+      }
+      ComposerConnectorReadError(store: store) { await resources.retry() }
+      if case .hasData(let controls) = controls,
+        let failure = controls.confirmationFailure, store.error == nil
+      {
+        ConnectorLoadError(error: failure, isLoading: store.isRefreshing) {
           await resources.retry()
         }
       }
-      if case .hasError(let error) = page {
-        ConnectorLoadError(
-          error: ChatRequestFailure.message(for: error), isLoading: loading || store.isRefreshing
-        ) {
+      switch page {
+      case .loading: OkouLoadingRow("Loading permissions…")
+      case .hasError(let error):
+        ConnectorLoadError(error: ChatRequestFailure.message(for: error)) {
           await resources.retry()
         }
-      }
-      if case .hasData(let value) = page {
-        let state = value.state
-        Section {
-          Picker(
-            "Allow for",
-            selection: Binding(
-              get: { selection.duration }, set: { resources.update(duration: $0) })
-          ) {
-            Text("1 hour").tag("1h")
-            Text("24 hours").tag("24h")
-            Text("7 days").tag("7d")
-            Text("Always").tag("always")
-          }
-          .okouValuePicker()
-          if let categories = state.metadata.categories {
-            Picker(
-              "Category",
-              selection: Binding(
-                get: { selection.category }, set: { resources.update(category: $0) })
-            ) {
-              Text("All categories").tag("")
-              ForEach(categories.displayOrder, id: \.self) { Text($0).tag($0) }
-            }
-            .okouValuePicker()
-          }
-          Menu("Set listed permissions") {
-            Button("Allow all") {
-              Task { await resources.apply(.allowListed) }
-            }
-            Button("Deny all") {
-              Task { await resources.apply(.denyListed) }
-            }
-          }.disabled(
-            busy || value.permissions.isEmpty)
-        } footer: {
-          Text("These permissions apply to this connector across your chats and accounts.")
-            .okouSectionNote()
+      case .hasData(let value):
+        if case .hasData(let controls) = controls {
+          permissionControls(controls.selection)
         }
         Section {
-          ForEach(value.permissions, id: \.name) { permission in
-            permissionRow(permission.name, description: permission.description, state: state)
+          ForEach(categories(value), id: \.self) { category in
+            let names = permissions(value, category: category).map(\.name)
+            NavigationLink {
+              ComposerPermissionGroup(
+                composer: store, resources: resources, category: category)
+            } label: {
+              OkouValueRow(value: Text(value.summary(for: names))) {
+                Text(category)
+              }
+            }
           }
         } header: {
           Text("Permissions").okouSectionHeader()
         }
         Section {
-          permissionRow(
-            "__unknown__", description: "Requests not recognized by the connector", state: state)
+          ComposerPermissionRow(
+            name: "__unknown__", description: nil, page: value, resources: resources, busy: busy)
         } header: {
           Text("Unknown operations").okouSectionHeader()
         }
-        resetSection()
       }
     }
     .okouGroupedBackground()
     .listSectionSpacing(OkouSpace.lg)
-    .overlay {
-      if case .loading = page {
-        ChatSettingsLoadingView(title: "Loading permissions…")
-      }
-    }
-    .navigationTitle(resources.label + " permissions")
+    .navigationTitle("Permissions")
     .navigationBarTitleDisplayMode(.inline)
-    .searchable(
-      text: Binding(get: { selection.search }, set: { resources.update(search: $0) }),
-      prompt: "Find permissions"
-    )
-    .confirmationDialog("Reset this connector's permissions?", isPresented: $confirmsReset) {
-      Button("Reset to defaults", role: .destructive) { Task { await resources.apply(.reset) } }
-        .disabled(busy)
-    }
-  }
-  private func resetSection() -> some View {
-    Section {
-      Button("Reset to defaults", role: .destructive) { confirmsReset = true }.disabled(
-        busy)
-    } footer: {
-      Group {
-        Text(
-          "Reset removes this connector's explicit grants and restores its default allow, ask, or deny rules."
-        )
-
-      }
-      .okouSectionNote()
+    .searchable(text: search, prompt: "Find permissions")
+    .safeAreaInset(edge: .bottom) { actions }
+    .alert("Reset permissions?", isPresented: $confirmsReset) {
+      Button("Cancel", role: .cancel) {}
+      Button("Reset", role: .destructive) { Task { await resources.apply(.reset) } }
+    } message: {
+      Text("Apply to save.")
     }
   }
 
-  private func permissionRow(
-    _ name: String, description: String?, state: ChatConnectorPermissionState
+  private func categories(_ page: ComposerConnectorPermissionResources.Page) -> [String] {
+    let names = Set(
+      page.permissions.map {
+        page.state.metadata.categories?.categories[$0.name] ?? String(localized: "Other")
+      })
+    let ordered = page.state.metadata.categories?.displayOrder ?? []
+    return ordered.filter { names.contains($0) } + names.subtracting(ordered).sorted()
+  }
+
+  private func permissions(
+    _ page: ComposerConnectorPermissionResources.Page, category: String
+  ) -> [ChatPermissionMetadata.Permission] {
+    page.permissions.filter {
+      (page.state.metadata.categories?.categories[$0.name] ?? String(localized: "Other"))
+        == category
+    }
+  }
+
+  private func permissionControls(
+    _ selection: ComposerConnectorPermissionResources.Selection
   ) -> some View {
-    let policy = state.metadata.policy(for: name, grants: state.grants, at: .now)
-    return HStack(alignment: .top) {
-      VStack(alignment: .leading, spacing: 5) {
-        Text(name == "__unknown__" ? "Unknown operations" : name).font(.okou(.callout))
+    Section {
+      Picker(
+        "Allow for",
+        selection: Binding(
+          get: { selection.duration }, set: { resources.update(duration: $0) })
+      ) {
+        Text("1 hour").tag("1h")
+        Text("24 hours").tag("24h")
+        Text("7 days").tag("7d")
+        Text("Always").tag("always")
+      }.okouValuePicker().disabled(busy)
+      Menu("Set all permissions") {
+        Button("Allow all") { Task { await resources.apply(.allowListed) } }
+        Button("Deny all") { Task { await resources.apply(.denyListed) } }
+      }.disabled(busy)
+    }
+  }
+
+  private var actions: some View {
+    HStack(spacing: OkouSpace.md) {
+      Button("Cancel") { dismiss() }
+        .buttonStyle(OkouButtonStyle(isPrimary: false))
+        .disabled(store.isSaving)
+      Button {
+        Task { if await resources.save() { dismiss() } }
+      } label: {
+        HStack {
+          if store.isSaving { ProgressView() }
+          Text("Apply")
+        }.frame(maxWidth: .infinity)
+      }
+      .buttonStyle(OkouButtonStyle(isPrimary: true))
+      .disabled(busy || !hasChanges)
+    }
+    .padding(.horizontal, OkouSpace.lg).padding(.vertical, OkouSpace.sm)
+    .background(OkouColor.background)
+  }
+
+  private var hasChanges: Bool {
+    if case .hasData(let value) = controls { return value.hasChanges }
+    return false
+  }
+
+  private var search: Binding<String> {
+    Binding(
+      get: {
+        if case .hasData(let value) = controls { return value.selection.search }
+        return ""
+      },
+      set: { resources.update(search: $0) })
+  }
+}
+
+private struct ComposerPermissionGroup: View {
+  let composer: ComposerConnectorStore
+  let resources: ComposerConnectorPermissionResources
+  let category: String
+  @LoadableValue private var page: Loadable<ComposerConnectorPermissionResources.Page>
+
+  init(
+    composer: ComposerConnectorStore, resources: ComposerConnectorPermissionResources,
+    category: String
+  ) {
+    self.composer = composer
+    self.resources = resources
+    self.category = category
+    _page = LoadableValue(task: resources.page, keepLast: true)
+  }
+
+  var body: some View {
+    List {
+      if case .hasData(let value) = page {
+        let permissions = value.permissions.filter {
+          (value.state.metadata.categories?.categories[$0.name] ?? String(localized: "Other"))
+            == category
+        }
+        Section {
+          Menu("Set category") {
+            Button("Allow all") {
+              Task { await resources.apply(.allowGroup(permissions.map(\.name))) }
+            }
+            Button("Deny all") {
+              Task { await resources.apply(.denyGroup(permissions.map(\.name))) }
+            }
+          }.disabled(composer.isSaving || composer.uncertain)
+        } footer: {
+          Text("Apply on the Permissions page to save.").okouSectionNote()
+        }
+        Section {
+          ForEach(permissions, id: \.name) { permission in
+            ComposerPermissionRow(
+              name: permission.name, description: permission.description, page: value,
+              resources: resources, busy: composer.isSaving || composer.uncertain)
+          }
+        }
+      }
+    }
+    .okouGroupedBackground().navigationTitle(category).navigationBarTitleDisplayMode(.inline)
+  }
+}
+
+private struct ComposerPermissionRow: View {
+  let name: String
+  let description: String?
+  let page: ComposerConnectorPermissionResources.Page
+  let resources: ComposerConnectorPermissionResources
+  let busy: Bool
+
+  var body: some View {
+    HStack(spacing: OkouSpace.md) {
+      VStack(alignment: .leading, spacing: OkouSpace.xs) {
+        Text(name == "__unknown__" ? String(localized: "Unknown operations") : name)
+          .font(.okou(.callout))
         if let description {
           Text(description).font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground)
         }
-        if let expiry = state.grants.last(where: { $0.permission == name && $0.isActive(at: .now) }
-        )?.expiresAt {
-          Text("Expires \(expiry.formatted(date: .abbreviated, time: .shortened))").font(
-            .okou(.caption)
-          )
-          .foregroundStyle(OkouColor.mutedForeground)
+        if let expiry = page.expiry(for: name) {
+          Text(expiry).font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground)
         }
       }
-      Spacer()
+      Spacer(minLength: 0)
       Menu {
-        Button("Allow") {
-          Task { await resources.apply(.allow(name)) }
-        }
-        Button("Deny") {
-          Task { await resources.apply(.deny(name)) }
-        }
+        Button("Allow") { Task { await resources.apply(.allow(name)) } }
+        Button("Deny") { Task { await resources.apply(.deny(name)) } }
       } label: {
-        Text(policy.rawValue.capitalized).frame(minHeight: OkouControl.minimumTarget)
+        Text(page.policy(for: name).rawValue.capitalized)
+          .frame(minHeight: OkouControl.minimumTarget)
       }.disabled(busy)
     }
   }
