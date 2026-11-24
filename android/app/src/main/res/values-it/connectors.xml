@@ -122,4 +122,17 @@
     <string name="connector_device_denied">Il fornitore ha negato l’autorizzazione.</string>
     <string name="connector_device_expired">Il codice dispositivo è scaduto. Avvia di nuovo l’autorizzazione.</string>
     <string name="connector_device_failed">Impossibile completare l’autorizzazione del dispositivo.</string>
+    <string name="connector_access_scope">Si applica a tutte le tue chat.</string>
+    <string name="connector_access_label">Accesso per %1$s, %2$s</string>
+    <string name="connector_access_allow">Consenti</string>
+    <string name="connector_access_deny">Nega</string>
+    <string name="connector_access_always">Sempre</string>
+    <string name="connector_access_expired">Scaduto</string>
+    <string name="connector_access_under_hour">&lt;1 h</string>
+    <string name="connector_access_hours">%d h</string>
+    <string name="connector_access_days">%d g</string>
+    <string name="connector_access_allow_always">Consenti sempre</string>
+    <string name="connector_access_allow_hour">Consenti per 1 ora</string>
+    <string name="connector_access_allow_day">Consenti per 24 ore</string>
+    <string name="connector_access_allow_week">Consenti per 7 giorni</string>
 </resources>

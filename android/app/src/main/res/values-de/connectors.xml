@@ -118,4 +118,17 @@
     <string name="connector_device_denied">Der Anbieter hat die Autorisierung abgelehnt.</string>
     <string name="connector_device_expired">Der Gerätecode ist abgelaufen. Starte die Autorisierung erneut.</string>
     <string name="connector_device_failed">Die Geräteautorisierung konnte nicht abgeschlossen werden.</string>
+    <string name="connector_access_scope">Gilt für alle deine Chats.</string>
+    <string name="connector_access_label">Zugriff für %1$s, %2$s</string>
+    <string name="connector_access_allow">Zulassen</string>
+    <string name="connector_access_deny">Ablehnen</string>
+    <string name="connector_access_always">Immer</string>
+    <string name="connector_access_expired">Abgelaufen</string>
+    <string name="connector_access_under_hour">&lt;1 Std.</string>
+    <string name="connector_access_hours">%d Std.</string>
+    <string name="connector_access_days">%d T.</string>
+    <string name="connector_access_allow_always">Immer zulassen</string>
+    <string name="connector_access_allow_hour">1 Stunde zulassen</string>
+    <string name="connector_access_allow_day">24 Stunden zulassen</string>
+    <string name="connector_access_allow_week">7 Tage zulassen</string>
 </resources>

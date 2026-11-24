@@ -36,6 +36,8 @@ public final class ConnectorAccessHTTPFixture: Sendable {
     public var grants: [Grant] = []
     public var rejectCurrentOnce = false
     public var rejectOverrideOnce = false
+    public var memberAccess = false
+    var policies: [String: Policy] = [:]
     public var requests: [URLRequest] = []
     public init() {}
   }
@@ -71,6 +73,55 @@ public final class ConnectorAccessHTTPFixture: Sendable {
     let target: Target
     let connectionId: String?
     let enabled: Bool?
+  }
+  struct Policy: Encodable, Sendable {
+    let connectionId: String
+    let allowed: Bool
+    let enabled: Bool
+    let expiresAt: String?
+  }
+
+  private static func policy(_ id: String, state: State) -> Policy {
+    let enabled = state.enabled[id] == true
+    return state.policies[id]
+      ?? Policy(connectionId: id, allowed: enabled, enabled: enabled, expiresAt: nil)
+  }
+
+  private static func updatePolicy(
+    _ request: URLRequest, id: String, state: inout State
+  ) throws -> ChatHTTPResponse {
+    struct Body: Decodable {
+      let target: Target
+      let policy: String
+    }
+    let choice = try JSONDecoder().decode(Body.self, from: chatRequestBody(request))
+    guard state.memberAccess, choice.target == target(state), state.accountIDs.contains(id) else {
+      return error(403, "Policy unavailable")
+    }
+    let allowed = choice.policy != "deny"
+    let expiry: String?
+    switch choice.policy {
+    case "allow-1h", "allow-24h", "allow-7d": expiry = "2099-01-01T00:00:00.000Z"
+    case "allow-always", "deny": expiry = nil
+    default: return error(400, "Unknown policy")
+    }
+    let result = Policy(connectionId: id, allowed: allowed, enabled: allowed, expiresAt: expiry)
+    state.policies[id] = result
+    return ChatHTTPResponse(body: try json(result))
+  }
+
+  private static func memberOverview(_ state: State) throws -> ChatHTTPResponse {
+    let rows = state.accountIDs.map { id in
+      """
+      {"connectionId":"\(id)","displayName":"Account","defaultEnabled":\(state.enabled[id] == true),"isDefault":\(state.defaultID == id),"overrideEnabled":null,"enabled":\(policy(id, state: state).enabled)}
+      """
+    }.joined(separator: ",")
+    let eligible = state.accountIDs.filter { policy($0, state: state).enabled }
+    let current = eligible.first { $0 == state.defaultID } ?? eligible.first
+    return ChatHTTPResponse(
+      body: """
+        {"connector":{"target":\(try json(target(state))),"accounts":[\(rows)],"currentConnectionId":\(try json(current))}}
+        """)
   }
   private static func target(_ state: State) -> Target {
     state.custom
@@ -331,6 +382,23 @@ public final class ConnectorAccessHTTPFixture: Sendable {
     if path == "/api/connector-account-access/defaults" {
       guard queriedTarget == target(state) else { return error(403, "Wrong connector") }
       return ChatHTTPResponse(body: defaults(state))
+    }
+    if path == "/api/chat-connector-overview/target" {
+      guard state.memberAccess, queriedTarget == target(state) else {
+        return error(403, "Policy unavailable")
+      }
+      return try memberOverview(state)
+    }
+    if path == "/api/connector-account-access/policies" {
+      guard state.memberAccess, queriedTarget == target(state) else {
+        return error(403, "Policy unavailable")
+      }
+      return ChatHTTPResponse(body: try json(state.accountIDs.map { policy($0, state: state) }))
+    }
+    if method == "PUT", parts.count == 4, parts[1] == "connector-account-access",
+      parts[3] == "policy"
+    {
+      return try updatePolicy(request, id: parts[2], state: &state)
     }
     if parts.count == 4, parts[1] == "connector-account-access", parts[3] == "default-enabled" {
       return try setEnabledResponse(request, parts: parts, state: &state)

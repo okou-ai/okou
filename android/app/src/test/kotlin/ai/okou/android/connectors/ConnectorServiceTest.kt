@@ -10,6 +10,7 @@ import ai.okou.android.CONNECTOR_SLACK_ACCOUNT
 import ai.okou.android.ConnectorApiFixture
 import ai.okou.android.FixtureConnectorIcon
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.generated.ConnectorAccountPolicyRequestPolicy
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -19,6 +20,41 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ConnectorServiceTest {
+    @Test
+    fun memberPolicyUsesTheSameAccountAcrossSettingsAndComposer() = runBlocking {
+        ConnectorApiFixture().use { fixture ->
+            val service = fixture.service
+            fixture.memberAccess = true
+            val saved =
+                service.setAccountPolicy(
+                    CONNECTOR_CALENDAR,
+                    CONNECTOR_CALENDAR_SECONDARY,
+                    ConnectorAccountPolicyRequestPolicy.ALLOW_24H,
+                )
+            assertTrue(saved.enabled)
+            assertTrue(saved.expiresAt != null)
+
+            val accounts = service.accounts(CONNECTOR_CALENDAR)
+            assertEquals(saved, accounts.first { it.id == CONNECTOR_CALENDAR_SECONDARY }.policy)
+            val group = service.chatAccounts(null).single { it.entry.slug == CONNECTOR_CALENDAR }
+            assertTrue(group.memberAccess)
+            assertEquals(
+                saved,
+                group.accounts
+                    .first { it.account.id == CONNECTOR_CALENDAR_SECONDARY }
+                    .account
+                    .policy,
+            )
+            assertTrue(fixture.chatOverrideRequests.isEmpty())
+
+            fixture.memberAccess = false
+            val legacy =
+                service.accounts(CONNECTOR_CALENDAR).first { it.id == CONNECTOR_CALENDAR_SECONDARY }
+            assertNull(legacy.policy)
+            assertEquals(false, legacy.defaultEnabled)
+        }
+    }
+
     @Test
     fun recommendationsAndCategoryBrowsesUseTheCanonicalDirectory() = runBlocking {
         ConnectorApiFixture().use { fixture ->

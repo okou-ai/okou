@@ -247,6 +247,9 @@ struct ChatSettingsView: View {
       service: models.connectorAccess, authorizationService: models.connectorAuthorization,
       webURL: store.webURL, includesRemote: false,
       managementEnabled: { true },
+      memberAccessEnabled: { [weak models] in
+        models?.lastKnownFeatureSwitches?.usesMemberConnectorAccess == true
+      },
       didFail: { [weak models] in models?.report($0) })
   }
 

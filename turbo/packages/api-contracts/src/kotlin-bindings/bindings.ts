@@ -197,6 +197,17 @@ const connectorBindings = [
     route: chatConnectorAccessContract.accountDefaults,
   },
   {
+    name: "connectorAccountPolicies",
+    response: "ConnectorAccountPolicies",
+    route: chatConnectorAccessContract.accountPolicies,
+  },
+  {
+    name: "connectorAccountPolicyUpdate",
+    response: "ConnectorAccountPolicy",
+    request: "ConnectorAccountPolicyRequest",
+    route: chatConnectorAccessContract.updateAccountPolicy,
+  },
+  {
     name: "connectorAccountDefaultUpdate",
     response: "ConnectorAccountDefault",
     request: "ConnectorAccountDefaultRequest",

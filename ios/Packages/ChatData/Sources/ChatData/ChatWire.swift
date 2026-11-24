@@ -212,6 +212,9 @@ public struct SidebarFeatureSwitches: Codable, Sendable {
 
   public var canLinkSubscriptions: Bool { effectiveSwitches["subscriptionLinkingEntry"] == true }
   public var canManageConnectors: Bool { effectiveSwitches["iosConnectorManagement"] == true }
+  public var usesMemberConnectorAccess: Bool {
+    effectiveSwitches["memberConnectorAccountAccess"] == true
+  }
 }
 
 struct CreatedThread: Decodable, Sendable {

@@ -1,10 +1,12 @@
 package ai.okou.android.chat
 
 import ai.okou.android.R
+import ai.okou.android.api.generated.ConnectorAccountPolicyRequestPolicy
 import ai.okou.android.connectors.ChatConnectorAccount
 import ai.okou.android.connectors.ChatConnectorOptions
 import ai.okou.android.connectors.ChatConnectorOverride
 import ai.okou.android.connectors.ChatConnectorSavePhase
+import ai.okou.android.connectors.ConnectorAccountPolicyMenu
 import ai.okou.android.connectors.ConnectorAccountStatus
 import ai.okou.android.connectors.ConnectorAccountTarget
 import ai.okou.android.connectors.ConnectorButton
@@ -228,16 +230,20 @@ internal fun ChatConnectorOptionsButton(
                 }
             } else {
                 val newChat = target.threadId == null
+                val memberAccess = groups.any { it.memberAccess }
                 val draftChoices =
                     composerState.connectorOverrides(target).associateBy { it.connectionId }
                 val canEdit =
                     !saving &&
-                        if (newChat) composerState.canEditDraftConnectors(target) else !offline
-                Text(
-                    stringResource(R.string.chat_connector_scope),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = connectorSmallType(),
-                )
+                        if (memberAccess || !newChat) !offline
+                        else composerState.canEditDraftConnectors(target)
+                if (!memberAccess) {
+                    Text(
+                        stringResource(R.string.chat_connector_scope),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = connectorSmallType(),
+                    )
+                }
                 if (groups.isEmpty()) ConnectorOptionFeedback(R.string.chat_connector_empty)
                 for (group in groups) {
                     Column {
@@ -272,6 +278,7 @@ internal fun ChatConnectorOptionsButton(
                                     enabled,
                                     canEdit,
                                     canManage = !saving,
+                                    memberAccess = group.memberAccess,
                                     modifier =
                                         if (id == focusAccount)
                                             Modifier.focusRequester(accountFocus)
@@ -280,11 +287,14 @@ internal fun ChatConnectorOptionsButton(
                                         if (newChat) composer.editConnectorOverride(target, choice)
                                         else options.save(target, listOf(choice))
                                     },
+                                    onPolicy = {
+                                        options.savePolicy(target, group.entry.slug, id, it)
+                                    },
                                     onRepair = {
                                         openDirectory(ConnectorAccountTarget(group.entry.slug, id))
                                     },
                                 )
-                                if (save != null && save.choice.connectionId == id) {
+                                if (save?.connectionId == id) {
                                     ConnectorOptionFeedback(
                                         when (save.phase) {
                                             ChatConnectorSavePhase.Saving ->
@@ -315,8 +325,9 @@ internal fun ChatConnectorOptionsButton(
                         }
                 }
                 if (
-                    if (newChat) draftChoices.values.any { it.enabled != null }
-                    else resets.isNotEmpty()
+                    !memberAccess &&
+                        (if (newChat) draftChoices.values.any { it.enabled != null }
+                        else resets.isNotEmpty())
                 ) {
                     ConnectorButton(
                         stringResource(R.string.chat_connector_restore_defaults),
@@ -350,8 +361,10 @@ private fun ChatConnectorRow(
     enabled: Boolean,
     canEdit: Boolean,
     canManage: Boolean,
+    memberAccess: Boolean,
     modifier: Modifier,
     onToggle: () -> Unit,
+    onPolicy: (ConnectorAccountPolicyRequestPolicy) -> Unit,
     onRepair: () -> Unit,
 ) {
     val account = row.account
@@ -364,6 +377,7 @@ private fun ChatConnectorRow(
                     role = Role.Button,
                     onClick = onRepair,
                 )
+        else if (memberAccess) Modifier
         else
             Modifier.testTag("chat-connector-selection-${account.id}")
                 .toggleable(
@@ -401,8 +415,12 @@ private fun ChatConnectorRow(
                 )
             }
         }
+        if (memberAccess) {
+            account.policy?.let { ConnectorAccountPolicyMenu(account, it, canEdit, onPolicy) }
+        }
         if (account.status.needsAttention) ConnectorChevron()
-        else Checkbox(checked = enabled, onCheckedChange = null, enabled = canToggle)
+        else if (!memberAccess)
+            Checkbox(checked = enabled, onCheckedChange = null, enabled = canToggle)
     }
 }
 

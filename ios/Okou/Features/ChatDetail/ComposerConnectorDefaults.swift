@@ -56,7 +56,14 @@ struct ComposerConnectorDefaults: View {
             }.disabled(busy)
           }
         }
-        if let choice = page.defaults.first(where: { $0.connectionId == account.id }) {
+        if let policies = page.policies {
+          if let policy = policies.first(where: { $0.connectionId == account.id }) {
+            ConnectorAccountPolicyMenu(account: account, policy: policy) { choice in
+              Task { await resources.apply(.policy(account.id, choice)) }
+            }
+            .disabled(busy)
+          }
+        } else if let choice = page.defaults.first(where: { $0.connectionId == account.id }) {
           Toggle(
             "Use by default",
             isOn: Binding(
@@ -77,7 +84,11 @@ struct ComposerConnectorDefaults: View {
       }
       .disabled(busy)
     } footer: {
-      Text("Used unless a chat chooses otherwise.").okouSectionNote()
+      if page.policies == nil {
+        Text("Used unless a chat chooses otherwise.").okouSectionNote()
+      } else {
+        Text("Applies across your chats.").okouSectionNote()
+      }
     }
     .alert(
       "Rename account",

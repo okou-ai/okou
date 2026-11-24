@@ -8,6 +8,20 @@ public struct ChatConnectorAccountDefault: Decodable, Identifiable, Sendable {
   public var id: String { connectionId }
 }
 
+public struct ChatConnectorAccountPolicy: Decodable, Sendable {
+  public let connectionId: String
+  public let enabled: Bool
+  public let expiresAt: Date?
+}
+
+public enum ChatConnectorAccountPolicyChoice: String, Encodable, Sendable {
+  case allowAlways = "allow-always"
+  case allowHour = "allow-1h"
+  case allowDay = "allow-24h"
+  case allowWeek = "allow-7d"
+  case deny
+}
+
 public struct ChatConnectorAccess: Decodable, Sendable {
   public struct Account: Decodable, Identifiable, Sendable {
     public let connectionId: String
@@ -58,6 +72,25 @@ public struct ChatConnectorAccessOverride: Codable, Equatable, Sendable {
 }
 
 extension ChatComposerAccess {
+  public func accountPolicies(target: ChatConnectorTarget) async throws
+    -> [ChatConnectorAccountPolicy]
+  {
+    try await client.request("/api/connector-account-access/policies", query: target.query)
+  }
+
+  public func setAccountPolicy(
+    target: ChatConnectorTarget, connectionID: String, policy: ChatConnectorAccountPolicyChoice
+  ) async throws {
+    struct Body: Encodable {
+      let target: ChatConnectorTarget
+      let policy: ChatConnectorAccountPolicyChoice
+    }
+    let result: ChatConnectorAccountPolicy = try await client.request(
+      "/api/connector-account-access/\(connectionID)/policy", method: "PUT",
+      body: JSONEncoder().encode(Body(target: target, policy: policy)))
+    guard result.connectionId == connectionID else { throw APIClientError.invalidResponse }
+  }
+
   public func accountDefaults(target: ChatConnectorTarget) async throws
     -> [ChatConnectorAccountDefault]
   {
@@ -65,13 +98,17 @@ extension ChatComposerAccess {
   }
 
   public func connectorAccess(
-    target: ChatConnectorTarget, threadID: String?, options: ChatComposerOptions = .init()
+    target: ChatConnectorTarget, threadID: String?, options: ChatComposerOptions = .init(),
+    memberAccess: Bool = false
   ) async throws -> ChatConnectorAccess {
     if let threadID {
       let value: ChatConnectorAccess = try await client.request(
         "/api/chat-threads/\(threadID)/connector-access", query: target.query)
       guard value.target == target else { throw APIClientError.invalidResponse }
       return value
+    }
+    if memberAccess {
+      return try await memberAccessOverview(target: target)
     }
     let defaults = try await accountDefaults(target: target)
     return ChatConnectorAccess(
@@ -84,6 +121,26 @@ extension ChatComposerAccess {
       }, currentConnectionId: nil, available: false
     ).pending(
       overrides: options.initialConnectorAccessOverrides, selections: options.connectorSelections)
+  }
+
+  private func memberAccessOverview(target: ChatConnectorTarget) async throws -> ChatConnectorAccess
+  {
+    struct Entry: Decodable, Sendable {
+      let target: ChatConnectorTarget
+      let accounts: [ChatConnectorAccess.Account]
+      let currentConnectionId: String?
+    }
+    struct Response: Decodable, Sendable { let connector: Entry? }
+    let response: Response = try await client.request(
+      "/api/chat-connector-overview/target", query: target.query)
+    if let entry = response.connector {
+      guard entry.target == target else { throw APIClientError.invalidResponse }
+      return ChatConnectorAccess(
+        target: target, accounts: entry.accounts, currentConnectionId: entry.currentConnectionId,
+        available: entry.currentConnectionId != nil)
+    }
+    return ChatConnectorAccess(
+      target: target, accounts: [], currentConnectionId: nil, available: false)
   }
 
   public func setConnectorAccess(

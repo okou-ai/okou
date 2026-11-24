@@ -95,7 +95,7 @@ final class ChatForkStore: Identifiable {
         model: modelSelection.models.configuration.map { _ in
           modelSelection.captureNewChatSelection()
         }, effort: modelSelection.requestedEffort,
-        options: modelSelection.connectors.pendingOptions,
+        options: modelSelection.connectors.submissionOptions,
         computerAccess: modelSelection.connectors.computerAccess,
         sourceRunID: hasSourceQuote ? sourceRunID : nil)
     }
