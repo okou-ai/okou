@@ -16,6 +16,7 @@ type GoogleOAuthConnectorSlug =
   | "google-forms"
   | "google-maps"
   | "google-meet"
+  | "google-play"
   | "google-search-console"
   | "google-sheets"
   | "youtube";
