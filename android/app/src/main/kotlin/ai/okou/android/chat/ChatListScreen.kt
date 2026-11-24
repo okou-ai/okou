@@ -311,7 +311,6 @@ internal fun ChatListScreen(
     val awaitingFirstList =
         (state.confirmedAt == null || missingUnread) &&
             pendingByProject.isEmpty() &&
-            !(missingUnread && state.offline) &&
             !firstLoadFailed &&
             (startupRecovery == null || state.listPhase != ChatReadPhase.Idle)
     val skeletonVisible = rememberChatWaitIndicator(awaitingFirstList, ChatListSkeletonDelayMillis)
@@ -405,10 +404,6 @@ internal fun ChatListScreen(
                 }
                 if (state.confirmedAt == null || missingUnread) {
                     when {
-                        missingUnread && state.offline ->
-                            row("list_offline") {
-                                ChatContentLoadNotice(R.string.chat_list_load_when_online)
-                            }
                         firstLoadFailed ->
                             row("list_first_read") {
                                 ContentReadFeedback(
@@ -427,7 +422,7 @@ internal fun ChatListScreen(
                         !missingUnread &&
                         !state.offline &&
                         state.indicatorsPhase == ChatReadPhase.Failed &&
-                        (!unreadFilter || state.indicatorsNonRetryableFailure)
+                        state.indicatorsNonRetryableFailure
                 ) {
                     row("list_indicators_unavailable") {
                         ChatListDependencyNotice(R.string.chat_refresh_failed)
@@ -1358,16 +1353,6 @@ internal fun ChatListTextAction(
                     fontWeight = FontWeight(550),
                 ),
         )
-    }
-}
-
-@Composable
-private fun ChatContentLoadNotice(@StringRes message: Int) {
-    Box(
-        Modifier.heightIn(min = 48.dp).padding(horizontal = 12.dp),
-        contentAlignment = Alignment.CenterStart,
-    ) {
-        ContentReadFeedback(message)
     }
 }
 

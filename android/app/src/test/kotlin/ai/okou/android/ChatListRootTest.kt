@@ -769,7 +769,8 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
                 .onNodeWithTag("conversation")
                 .performScrollToNode(hasText("Native history", substring = true))
             compose.onNodeWithText("Native history", substring = true).assertExists()
-            compose.onNodeWithContentDescription("Settings").assertIsDisplayed().performClick()
+            compose.onNodeWithContentDescription("More actions").performClick()
+            compose.onNodeWithText("Settings").assertIsDisplayed().performClick()
             compose.onNodeWithText("Display mode").assertExists()
             release.countDown()
             compose.waitUntil(10_000) {
@@ -835,7 +836,8 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
             val loadingLabel = app.getString(R.string.history_loading)
             compose.mainClock.advanceTimeBy(160)
             compose.waitUntilExactlyOneExists(hasContentDescription(loadingLabel), 5_000)
-            compose.onNodeWithContentDescription("Settings").assertIsDisplayed().performClick()
+            compose.onNodeWithContentDescription("More actions").performClick()
+            compose.onNodeWithText("Settings").assertIsDisplayed().performClick()
             compose.onNodeWithText("Display mode").assertExists()
             gate.countDown()
             val chats = compose.runOnIdle {
@@ -1271,6 +1273,35 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
         } finally {
             firstRead.countDown()
         }
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun recoverableIndicatorFailuresKeepInboxAndArchivedQuiet() {
+        val app = compose.activity.application as ChatListApplication
+        app.responseGate.countDown()
+        awaitListAndNames()
+        app.fixture.indicators = { MockResponse().setResponseCode(503) }
+        (app.realtimeService as TestRealtimeService).invalidate(ChatChanges(indicators = true))
+        compose.waitUntil(10_000) {
+            val state = currentList()
+            state?.indicatorsPhase == ai.okou.android.chat.ChatReadPhase.Failed ||
+                state?.indicatorsRetryProgressVisible == true
+        }
+
+        val refreshFailure =
+            compose.onNodeWithText(compose.activity.getString(R.string.chat_refresh_failed))
+        val syncBar =
+            compose.onNodeWithContentDescription(compose.activity.getString(R.string.chat_syncing))
+        compose.onNodeWithText("Personal chat").assertIsDisplayed()
+        refreshFailure.assertDoesNotExist()
+        syncBar.assertDoesNotExist()
+
+        compose.onNodeWithContentDescription("Filter").performClick()
+        compose.onNodeWithText("Archived").performClick()
+        compose.onNodeWithText("No archived chats").assertIsDisplayed()
+        refreshFailure.assertDoesNotExist()
+        syncBar.assertDoesNotExist()
     }
 
     @Test

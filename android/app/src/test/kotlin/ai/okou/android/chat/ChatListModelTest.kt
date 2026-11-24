@@ -1063,7 +1063,7 @@ internal class ChatListUnreadModelTest : ChatListModelTestFixture() {
     }
 
     @Test
-    fun unreadSnapshotExpiresDuringFailedRefreshAndIsUnknownOnTheNextLaunch() = runTest {
+    fun anOldUnreadSnapshotSurvivesRelaunchAndAConfirmedEmptySnapshotReplacesIt() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
         val cache = cache(temporary.newFolder(), dispatcher)
@@ -1072,7 +1072,7 @@ internal class ChatListUnreadModelTest : ChatListModelTestFixture() {
         val confirmedAt = 1_000_000L
         val unread = mapOf(CHAT_PERSONAL to CHAT_DATE)
         val service = Service().apply { statusRead = { throw IOException("offline") } }
-        val wallMillis = { confirmedAt + 119_990L + testScheduler.currentTime }
+        val wallMillis = { confirmedAt + 86_400_000L + testScheduler.currentTime }
         try {
             cache
                 .open(identity) { true }
@@ -1083,21 +1083,22 @@ internal class ChatListUnreadModelTest : ChatListModelTestFixture() {
             assertEquals(ChatReadPhase.Failed, model.uiState.value.indicatorsPhase)
             assertEquals(unread, model.uiState.value.displayUnreadAt)
 
-            advanceTimeBy(10)
-            runCurrent()
-            assertNull(model.uiState.value.displayUnreadAt)
             first.clear()
             val relaunched = unreadModel(next, cache, service, dispatcher, wallMillis)
             relaunched.refresh()
             runCurrent()
             assertEquals(ChatReadPhase.Failed, relaunched.uiState.value.indicatorsPhase)
-            assertNull(relaunched.uiState.value.displayUnreadAt)
+            assertEquals(unread, relaunched.uiState.value.displayUnreadAt)
 
             service.statusRead = { Indicators(emptyMap(), emptyMap()) }
             relaunched.refreshIndicators()
             runCurrent()
             assertEquals(ChatReadPhase.Ready, relaunched.uiState.value.indicatorsPhase)
-            assertEquals(emptyMap<String, String>(), relaunched.uiState.value.displayUnreadAt)
+            val emptyUnread = emptyMap<String, String>()
+            assertEquals(emptyUnread, relaunched.uiState.value.displayUnreadAt)
+            cache
+                .open(identity) { true }
+                .use { assertEquals(emptyUnread, it.loadUnread()?.unreadAt) }
         } finally {
             first.clear()
             next.clear()
@@ -1107,7 +1108,7 @@ internal class ChatListUnreadModelTest : ChatListModelTestFixture() {
     }
 
     @Test
-    fun refreshDropsExpiredUnreadWhenOnlyWallTimeHasAdvanced() = runTest {
+    fun wallClockJumpDuringRefreshKeepsTheUnreadSnapshot() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
         val cache = cache(temporary.newFolder(), dispatcher)
@@ -1130,7 +1131,7 @@ internal class ChatListUnreadModelTest : ChatListModelTestFixture() {
             model.refresh()
             runCurrent()
             assertEquals(ChatReadPhase.Loading, model.uiState.value.indicatorsPhase)
-            assertNull(model.uiState.value.displayUnreadAt)
+            assertEquals(unread, model.uiState.value.displayUnreadAt)
         } finally {
             store.clear()
             runCurrent()

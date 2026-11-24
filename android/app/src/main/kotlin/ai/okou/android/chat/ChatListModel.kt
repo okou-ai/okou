@@ -36,18 +36,10 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 private const val chatSyncNoticeAgeMillis = 10 * 60 * 1_000L
 private const val listRetryProgressThreshold = 3
-private const val unreadSnapshotLifetimeMillis = 120_000L
 private const val unreadSnapshotRenewalMillis = 30_000L
 private val chatFeedbackOrder = AtomicLong()
 
 internal fun nextChatFeedbackOrder(): Long = chatFeedbackOrder.incrementAndGet()
-
-private fun CachedUnread.remainingMillis(now: Long): Long {
-    val age = now - confirmedAt
-    return if (confirmedAt > 0 && age in 0 until unreadSnapshotLifetimeMillis) {
-        unreadSnapshotLifetimeMillis - age
-    } else 0
-}
 
 internal fun chatSyncNoticeDelayMillis(confirmedAt: Long, now: Long): Long {
     val age = (now - confirmedAt).coerceAtLeast(0)
@@ -1576,7 +1568,6 @@ class ChatListModel(
     fun refresh() {
         if (!current() || !networkEnabled()) return
         // Activity resume refreshes this owner even while workspace preferences are loading.
-        expireCachedUnread()
         restoreCache()
         if (mutable.value.offline) return
         requestListRead(resetCompletedActivity = true)
@@ -1664,21 +1655,8 @@ class ChatListModel(
     private suspend fun restoreUnread() {
         val saved = cache.loadUnread() ?: return
         requireCurrent()
-        val remaining = saved.remainingMillis(wallMillis())
         val state = mutable.value
-        if (remaining == 0L || state.indicators != null) return
-        mutable.value = state.copy(cachedUnread = saved)
-        if (withTimeoutOrNull(remaining) { mutable.first { it.cachedUnread == null } } == null) {
-            requireCurrent()
-            mutable.value = mutable.value.copy(cachedUnread = null)
-        }
-    }
-
-    private fun expireCachedUnread() {
-        val state = mutable.value
-        if (state.cachedUnread?.remainingMillis(wallMillis()) == 0L) {
-            mutable.value = state.copy(cachedUnread = null)
-        }
+        if (state.indicators == null) mutable.value = state.copy(cachedUnread = saved)
     }
 
     private fun listReadBatch(): ListReadBatch =
