@@ -186,10 +186,10 @@ private fun ImageModelPicker(state: BuiltInToolsState, model: BuiltInToolsSettin
                                     positioned = true
                                 }
                             else Modifier,
-                        trailing = {
+                        trailing = { foreground ->
                             Text(
                                 option.price,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = foreground,
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                         },
