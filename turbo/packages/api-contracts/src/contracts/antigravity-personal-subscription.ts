@@ -1,10 +1,13 @@
 import {
+  type infer as zInfer,
   discriminatedUnion,
   iso,
   literal,
   object,
   strictObject,
   string,
+  union,
+  url,
   uuid,
 } from "zod";
 import { authHeadersSchema, initContract } from "./base";
@@ -14,21 +17,27 @@ const binding = object({ bindingId: uuid() });
 export const antigravityLoginHost = string()
   .regex(/^(?:[a-z0-9][a-z0-9_-]*@)?[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/i)
   .max(255);
-const profile = discriminatedUnion("status", [
-  object({ status: literal("disconnected") }),
-  object({ status: literal("unassigned") }),
-  binding.extend({
-    status: literal("pending"),
-    expiresAt: iso.datetime(),
-    loginHost: antigravityLoginHost,
-  }),
-  binding.extend({ status: literal("expired") }),
-  binding.extend({ status: literal("unavailable") }),
-  binding.extend({
-    status: literal("connected"),
-    loginHost: antigravityLoginHost,
-  }),
+const loginOrigin = url({ protocol: /^https$/u }).refine((value) => {
+  return URL.canParse(value) && new URL(value).origin === value;
+});
+export const antigravityTerminal = union([
+  object({ loginOrigin }),
+  object({ loginHost: antigravityLoginHost }),
 ]);
+const profile = union([
+  discriminatedUnion("status", [
+    object({ status: literal("disconnected") }),
+    object({ status: literal("unassigned") }),
+    binding.extend({ status: literal("expired") }),
+    binding.extend({ status: literal("unavailable") }),
+  ]),
+  binding
+    .extend({ status: literal("pending"), expiresAt: iso.datetime() })
+    .and(antigravityTerminal),
+  binding.extend({ status: literal("connected") }).and(antigravityTerminal),
+]);
+export type AntigravitySubscriptionProfile = zInfer<typeof profile>;
+
 const responses = {
   200: profile,
   400: apiErrorSchema,

@@ -1,4 +1,7 @@
-import { antigravityTerminalCommand } from "@okouai/core/antigravity-terminal";
+import {
+  antigravityBrowserTerminalUrl,
+  antigravityTerminalCommand,
+} from "@okouai/core/antigravity-terminal";
 import { Command, InvalidArgumentError } from "commander";
 import { uuid } from "zod";
 import { antigravitySubscription } from "../../lib/api/domains/subscriptions";
@@ -12,9 +15,15 @@ function show(
     console.log(JSON.stringify(profile, null, 2));
     return;
   }
-  if (profile.status === "pending") {
+  if (profile.status === "pending" || profile.status === "connected") {
+    const terminal =
+      "loginOrigin" in profile
+        ? antigravityBrowserTerminalUrl(profile)
+        : antigravityTerminalCommand(profile);
     console.log(
-      `Open your assigned Google sign-in terminal by ${profile.expiresAt}:\n${antigravityTerminalCommand(profile)}`,
+      profile.status === "pending"
+        ? `Open your assigned Google sign-in terminal by ${profile.expiresAt}:\n${terminal}`
+        : `Google sign-in connected. Binding ID: ${profile.bindingId}\nTest Neon, Carbon and Hydrogen with one subscription request each:\n${terminal}`,
     );
   } else if (profile.status === "expired") {
     console.log(
@@ -28,10 +37,6 @@ function show(
     console.log(
       `The assigned worker is unavailable. Disconnect binding ${profile.bindingId} and request a new assignment.`,
     );
-  } else if (profile.status === "connected") {
-    console.log(`Google sign-in connected. Binding ID: ${profile.bindingId}
-Test Neon, Carbon and Hydrogen with one subscription request each:
-${antigravityTerminalCommand(profile)}`);
   } else {
     console.log("Google sign-in disconnected.");
   }

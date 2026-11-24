@@ -31,7 +31,10 @@ function makeOwner(orgId = createUniqueStaffOrgIdFixture()) {
     loginHost: "tester@agy.internal.example",
   };
 }
-function configure(...workers: ReturnType<typeof makeOwner>[]) {
+function configure(
+  ...workers: (Omit<ReturnType<typeof makeOwner>, "loginHost"> &
+    ({ loginHost: string } | { loginOrigin: string }))[]
+) {
   mockOptionalEnv("OKOU_MACHINE_SECRET_KEY", "msk_test_receiver");
   mockOptionalEnv("ANTIGRAVITY_SUBSCRIPTION_WORKERS", JSON.stringify(workers));
 }
@@ -91,7 +94,7 @@ describe("member-owned Antigravity login", () => {
     await updateFeatureSwitchesForUser(context, a, { [key]: true });
     const [first, again] = await Promise.all([start(), start()]);
     expect(again).toStrictEqual(first);
-    expect(first.loginHost).toBe(a.loginHost);
+    expect(first).toMatchObject({ loginHost: a.loginHost });
     const bindingId = first.bindingId;
     await accept(confirm(bindingId), [403]);
     asMachine(b);
@@ -120,6 +123,36 @@ describe("member-owned Antigravity login", () => {
     expect((await accept(client().get({ headers }), [200])).body).toStrictEqual(
       confirmed.body,
     );
+  });
+
+  it("returns only the member's HTTPS terminal and refuses to share it between members", async () => {
+    const a = makeOwner();
+    const b = makeOwner(a.orgId);
+    const terminal = {
+      orgId: a.orgId,
+      userId: a.userId,
+      machineId: a.machineId,
+      loginOrigin: "https://alice.agy.example.com",
+    };
+    await updateFeatureSwitchesForUser(context, a, { [key]: true });
+    configure(terminal);
+    const first = await start();
+    expect(first).toHaveProperty("loginOrigin", terminal.loginOrigin);
+    expect(first).not.toHaveProperty("loginHost");
+    asMachine(a);
+    expect((await accept(confirm(first.bindingId), [200])).body).toStrictEqual({
+      status: "connected",
+      bindingId: first.bindingId,
+      loginOrigin: terminal.loginOrigin,
+    });
+    clerk.session(b.userId, b.orgId);
+    await updateFeatureSwitchesForUser(context, b, { [key]: true });
+    configure(terminal, {
+      ...terminal,
+      userId: b.userId,
+      machineId: b.machineId,
+    });
+    await accept(client().start({ headers, body: {} }), [503]);
   });
 
   it("rejects a worker whose owner left the organization and still allows cleanup", async () => {
