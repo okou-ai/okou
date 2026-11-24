@@ -1085,7 +1085,11 @@ async function authorizeHostedSiteDelivery(
     url.searchParams.set("hostname", customBinding.hostname);
     url.searchParams.set("bindingRevision", customBinding.revision);
   }
-  return authorizeSiteRequest(request, env, url);
+  return authorizeSiteRequest(
+    request,
+    customBinding ? { ...env, customHostname: customBinding.hostname } : env,
+    url,
+  );
 }
 
 async function serveHostedDownload(

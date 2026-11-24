@@ -1113,66 +1113,128 @@ it.each(["disabled", "unavailable"])(
   },
 );
 
-it("authorizes a private Site before showing its HTML on the first visit", async () => {
-  const token = `okou_site_${"a".repeat(64)}`;
-  server.use(
-    http.get(endpoint, ({ request }) => {
-      return HttpResponse.json(
-        request.headers.get("Authorization") === `Bearer ${token}`
-          ? { allowed: true, decision: "allow" }
-          : { allowed: false, decision: "authenticate" },
-      );
-    }),
-  );
-  const env = {
-    ...environment(),
-    HOSTED_SITE_AUTH_URL: "https://app.okou.ai/hosted-site-authorize",
-  };
-  const initial = await fetchWorker(
-    new Request("https://demo.okou.app/", { headers: { Accept: "text/html" } }),
-    env,
-  );
-  expect(initial.status).toBe(302);
-  const bridge = new URL(initial.headers.get("Location")!);
-  expect(bridge.pathname).toBe("/hosted-site-authorize");
-  expect(bridge.searchParams.get("siteId")).toBe(siteId);
-  const pending = initial.headers.getSetCookie()[0]!.split(";")[0]!;
-  server.use(
-    http.post(
-      `https://authority.test/api/host/sites/${siteId}/sessions`,
-      () => {
+it.each(["https://demo.okou.app", "https://www.customer-example.net"])(
+  "authorizes a private Site at %s before showing its HTML on the first visit",
+  async (origin) => {
+    const token = `okou_site_${"a".repeat(64)}`;
+    let viewerAllowed = true;
+    const hostname = new URL(origin).hostname;
+    const revision = "00000000-0000-4000-8000-000000000031";
+    server.use(
+      http.get(
+        "https://authority.test/api/host/custom-domains/:hostname",
+        ({ params }) => {
+          return HttpResponse.json(
+            params.hostname === hostname
+              ? { siteId, publicSlug: "demo", revision }
+              : null,
+          );
+        },
+      ),
+      http.get("https://authority.test/api/host/aliases/:publicSlug", () => {
         return HttpResponse.json({
-          sessionToken: token,
-          expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+          pointer: {
+            version: 1,
+            publicBrand: "okou",
+            siteId,
+            deploymentId,
+            publicSlug: "demo",
+            prefix,
+            manifestKey: `${prefix}/manifest.json`,
+            spaFallback: false,
+            updatedAt: "2026-10-08T00:00:00Z",
+          },
         });
-      },
-    ),
-  );
-  const response = await fetchWorker(
-    new Request(
-      `https://demo.okou.app/.okou/auth/callback?code=${"b".repeat(64)}&state=${bridge.searchParams.get("state")}`,
-      { headers: { Cookie: pending } },
-    ),
-    env,
-  );
-  expect(response.status).toBe(303);
-  expect(response.headers.get("Location")).toBe("https://demo.okou.app/");
-  expect(response.headers.getSetCookie().join(";")).toContain(
-    "__Host-okou-site-session=",
-  );
-  expect(await response.text()).toBe("");
-  const document = await fetchWorker(
-    new Request("https://demo.okou.app/", {
-      headers: {
-        Cookie: `__Host-okou-site-session=${token}`,
-        "Sec-Fetch-Dest": "document",
-      },
-    }),
-    env,
-  );
-  expect(document.status).toBe(200);
-  expect(await document.text()).toBe("<p>ok</p>");
-});
+      }),
+      http.get(endpoint, ({ request }) => {
+        return HttpResponse.json(
+          request.headers.get("Authorization") === `Bearer ${token}`
+            ? viewerAllowed
+              ? { allowed: true, decision: "allow" }
+              : { allowed: false, decision: "deny" }
+            : { allowed: false, decision: "authenticate" },
+        );
+      }),
+    );
+    const env = {
+      ...environment(),
+      HOSTED_SITE_AUTH_URL: "https://app.okou.ai/hosted-site-authorize",
+    };
+    const initial = await fetchWorker(
+      new Request(`${origin}/`, { headers: { Accept: "text/html" } }),
+      env,
+    );
+    expect(initial.status).toBe(302);
+    const bridge = new URL(initial.headers.get("Location")!);
+    expect(bridge.pathname).toBe("/hosted-site-authorize");
+    expect(bridge.searchParams.get("siteId")).toBe(siteId);
+    expect(bridge.searchParams.get("origin")).toBe(origin);
+    const pending = initial.headers.getSetCookie()[0]!.split(";")[0]!;
+    server.use(
+      http.post(
+        `https://authority.test/api/host/sites/${siteId}/sessions`,
+        () => {
+          return HttpResponse.json({
+            sessionToken: token,
+            expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+          });
+        },
+      ),
+    );
+    const response = await fetchWorker(
+      new Request(
+        `${origin}/.okou/auth/callback?code=${"b".repeat(64)}&state=${bridge.searchParams.get("state")}`,
+        { headers: { Cookie: pending } },
+      ),
+      env,
+    );
+    expect(response.status).toBe(303);
+    expect(response.headers.get("Location")).toBe(`${origin}/`);
+    expect(response.headers.getSetCookie().join(";")).toContain(
+      "__Host-okou-site-session=",
+    );
+    expect(await response.text()).toBe("");
+    const document = await fetchWorker(
+      new Request(`${origin}/`, {
+        headers: {
+          Cookie: `__Host-okou-site-session=${token}`,
+          "Sec-Fetch-Dest": "document",
+        },
+      }),
+      env,
+    );
+    expect(document.status).toBe(200);
+    expect(await document.text()).toBe("<p>ok</p>");
+    viewerAllowed = false;
+    const denied = await fetchWorker(
+      new Request(`${origin}/`, {
+        headers: {
+          Cookie: `__Host-okou-site-session=${token}`,
+          Accept: "text/html",
+        },
+      }),
+      env,
+    );
+    expect(denied.status).toBe(302);
+    const recovery = new URL(denied.headers.get("Location")!);
+    expect(recovery.origin).toBe("https://app.okou.ai");
+    expect(recovery.searchParams.get("reason")).toBe("denied");
+    expect(recovery.searchParams.get("url")).toBe(`${origin}/`);
+    const expired = await fetchWorker(
+      new Request(
+        `${origin}/.okou/auth/callback?code=${"b".repeat(64)}&state=${"a".repeat(43)}`,
+        {
+          headers: { Accept: "text/html" },
+        },
+      ),
+      env,
+    );
+    expect(expired.status).toBe(302);
+    const restart = new URL(expired.headers.get("Location")!);
+    expect(restart.searchParams.get("reason")).toBe("expired");
+    expect(restart.searchParams.get("url")).toBe(`${origin}/`);
+  },
+);
 
 it("routes exact custom hostnames through live delivery authority before reading cached website files", async () => {
   const hostname = "www.customer-example.net";
