@@ -111,6 +111,29 @@ scenarios. Measure time to usable content, time to visible action feedback,
 and time to canonical confirmation separately when quantifying a latency
 change. See [Android testing](android-testing.md#first-display-with-pending-api-requests).
 
+## Heap and Interactive Performance
+
+For reads with variable payload sizes, account for what stays live across
+download, decode, persistence, and presentation. Streaming the transport
+reduces input buffering. Collecting all decoded rows, building serialized write
+records, or projecting a second full model can still make heap usage grow with
+the dataset. Measure a large individual record and a large collection
+independently. Use bounded batches and windowed reads when the measured
+working set requires them, while preserving complete data and atomic publication.
+
+Limit concurrent background work that retains large payloads. Acquire a slot
+before loading a payload and hold it through persistence or cleanup. Keep
+selected-screen reads and usable cached content independent of background
+slots. Preserve efficient incremental reads and immediate cache hits.
+A concurrency limit controls overlapping work. Measure the largest single
+operation separately when checking that it fits the heap budget.
+
+Measure on a device with a representative app heap limit. On the same build
+configuration and fixtures, compare Java heap peak and GC time alongside
+time to cached or first usable content and total synchronization time. Exercise
+cold reads, cache reopen, and foreground work during prefetch. Keep process
+memory metrics distinct from Java heap measurements.
+
 ## Native Presentation
 
 Use Kotlin and Compose for application UI and native APIs for OS interactions.
