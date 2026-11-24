@@ -50,7 +50,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "ethan@okou.ai",
     displayName: "Voice recordings in the composer",
     description:
-      "Attach recordings to chat messages instead of dictating text.",
+      "Use recordings as chat attachments instead of dictation for everyone in this workspace.",
     enabled: false,
   },
   [FeatureSwitchKey.ChatShareRefresh]: {
@@ -188,6 +188,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Browse and preview files inside ZIP artifacts up to 5 MiB.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.ArtifactLibrary]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Artifact library list",
+    description:
+      "Browse artifacts in a searchable list with type filters, creation and name sorting, and the existing sidebar previews.",
+    enabled: false,
   },
   [FeatureSwitchKey.SlashActions]: {
     maintainer: "tongx@okou.ai",

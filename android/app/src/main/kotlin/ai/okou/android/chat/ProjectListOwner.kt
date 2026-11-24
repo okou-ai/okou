@@ -12,6 +12,8 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+internal const val ProjectNameLimit = 120
+
 data class ProjectRenameRejection internal constructor(val projectId: String, val eventId: String)
 
 enum class ProjectDeleteStatus {
@@ -150,15 +152,23 @@ internal class ProjectListOwner(
             checkpoint
         }
 
-    internal fun renameProject(id: String, input: String) {
+    internal fun renameProject(id: String, input: String): Boolean {
         val name = input.trim()
-        if (name.length !in 1..120 || confirmedRows().none { it.id == id && it.name != name })
-            return
-        submitProjectRename(ProjectRename(id, name, newProjectOperationId(wallMillis())))
+        if (
+            name.length !in 1..ProjectNameLimit ||
+                confirmedRows().none { it.id == id && it.name.trim() != name }
+        )
+            return false
+        if (retryableProjectRenames[id]?.connectionFailed == false) return false
+        return submitProjectRename(ProjectRename(id, name, newProjectOperationId(wallMillis())))
     }
 
     internal fun retryProjectRename(id: String) {
         retryableProjectRenames[id]?.let(::submitProjectRename)
+    }
+
+    internal fun checkProjectRename(id: String) {
+        if (retryableProjectRenames[id]?.connectionFailed == false) refresh(verifyWrite = true)
     }
 
     internal fun dismissProjectRenameRejection(rejection: ProjectRenameRejection) {
@@ -272,9 +282,10 @@ internal class ProjectListOwner(
             )
     }
 
-    private fun submitProjectRename(rename: ProjectRename) {
+    private fun submitProjectRename(rename: ProjectRename): Boolean {
         val snapshot = state
-        if (!current() || !snapshot.canRename || confirmedRows().none { it.id == rename.id }) return
+        if (!current() || !snapshot.canRename || confirmedRows().none { it.id == rename.id })
+            return false
         val uncertainAttempt =
             retryableProjectRenames[rename.id]?.let {
                 it.eventId == rename.eventId && !it.connectionFailed
@@ -332,6 +343,7 @@ internal class ProjectListOwner(
                 }
             }
         }
+        return true
     }
 
     private suspend fun refreshAfterWrite(): Boolean {

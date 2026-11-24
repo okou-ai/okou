@@ -1172,7 +1172,7 @@ internal class WorkflowHistoryRootTest : WorkflowRootTestFixture() {
 
             compose.onNodeWithContentDescription("Chat actions").performClick()
             compose.onNodeWithText("Delete chat").performClick()
-            compose.onNodeWithText("Delete").performClick()
+            compose.onNodeWithText("Delete chat").performClick()
 
             compose.waitUntil(10_000) { requested.count == 0L }
             compose.onNodeWithTag("workflow_tab_history").assertIsSelected()

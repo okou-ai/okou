@@ -570,6 +570,23 @@
       "text": "Text",
       "video": "Video"
     },
+    "library": {
+      "allArtifacts": "All artifacts",
+      "allTypes": "All types",
+      "clearFilters": "Clear filters",
+      "clearSearch": "Clear search",
+      "created": "Created",
+      "emptyDescription": "Try another name or type.",
+      "emptyTitle": "No artifacts found",
+      "loadMore": "Load more",
+      "name": "Name",
+      "retry": "Try again",
+      "search": "Search artifacts",
+      "sort": "Sort artifacts",
+      "sortAscending": "Sort ascending",
+      "sortDescending": "Sort descending",
+      "type": "Type"
+    },
     "metadata": {
       "generated": "Generated {{date}}",
       "updated": "Updated at {{date}}"

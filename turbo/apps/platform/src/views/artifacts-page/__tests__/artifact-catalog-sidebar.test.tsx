@@ -6,6 +6,7 @@ import {
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { strToU8, zipSync } from "fflate";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
@@ -308,12 +309,22 @@ test("Opening entries in a catalog ZIP changes the document shown in its sidebar
   await expect(
     panel.findByText("The ferry left at noon."),
   ).resolves.toBeVisible();
-  click(panel.getByText("logs/arrival.md"));
+  const user = userEvent.setup();
+  const arrival = getButtonByName("logs/arrival.md");
+  await user.click(arrival);
   await expect(
     panel.findByRole("heading", { name: "Arrival manifest" }),
   ).resolves.toBeVisible();
   expect(panel.queryByText("The ferry left at noon.")).toBeNull();
   expect(getButtonByName("Download artifact")).toBeEnabled();
+  await user.click(arrival);
+  expect(arrival).toHaveFocus();
+  expect(arrival).toHaveAttribute("aria-pressed", "false");
+  expect(panel.queryByRole("heading", { name: "Arrival manifest" })).toBeNull();
+  await user.keyboard("{Enter}");
+  await expect(
+    panel.findByRole("heading", { name: "Arrival manifest" }),
+  ).resolves.toBeInTheDocument();
 });
 
 test("The catalog offers the download fallback for a ZIP whose declared size exceeds the preview limit", async () => {
