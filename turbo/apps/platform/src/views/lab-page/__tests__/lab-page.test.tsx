@@ -1,5 +1,8 @@
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import { getFeatureSwitchMetadata } from "@okouai/core/feature-switch";
+import {
+  getAllFeatureStates,
+  getFeatureSwitchMetadata,
+} from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -107,11 +110,18 @@ test.each([
   FeatureSwitchKey.MarkdownFirstOutput,
 ])("Staff see %s enabled by default in Beta", async (featureKey) => {
   const orgId = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
+  const userId = "presentation-format-peer";
+  context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
+    return respond(200, {
+      switches: {},
+      effectiveSwitches: getAllFeatureStates({ userId, orgId }),
+    });
+  });
   await setupPage({
     context,
     path: "/_/lab",
     auth: {
-      user: { id: "presentation-format-peer", fullName: "Peer" },
+      user: { id: userId, fullName: "Peer" },
       organization: {
         activeOrg: { id: orgId, name: "Staff" },
         memberships: [{ id: orgId }],
