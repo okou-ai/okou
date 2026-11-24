@@ -17,6 +17,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.LocaleList
 import android.provider.Settings
+import android.text.format.Formatter
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.SemanticsActions
@@ -40,6 +41,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.Lifecycle
 import androidx.test.platform.app.InstrumentationRegistry
@@ -271,6 +273,59 @@ class UpdateRootTest {
             assertTrue(error.getUnclippedBoundsInRoot().bottom <= closeBounds.top)
             assertEquals(headingBounds, heading.getUnclippedBoundsInRoot())
             assertEquals(closeBounds, close.getUnclippedBoundsInRoot())
+        } finally {
+            RuntimeEnvironment.setFontScale(originalFontScale)
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w340dp-h200dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun shortUpdateDetailsRevealTheDiscoveredVersionWithoutMovingTheActions() {
+        val originalFontScale = RuntimeEnvironment.getFontScale()
+        try {
+            RuntimeEnvironment.setFontScale(1.5f)
+            compose.activityRule.scenario.recreate()
+            val release = updateRelease("99.1234.5678").copy(size = 123_456_789)
+            compose.runOnIdle { app.fixture.response = AndroidUpdates(null, release) }
+            openUpdateSettings()
+            updateSettingsRow().performScrollTo().performClick()
+            val heading = updateDetailsHeading()
+            val close = updateDetailText("Close")
+            val installed =
+                updateDetailText(
+                    app.getString(R.string.updates_installed, BuildConfig.VERSION_NAME),
+                )
+            val headingBounds = heading.assertIsDisplayed().getUnclippedBoundsInRoot()
+            val closeBounds = close.assertIsDisplayed().getUnclippedBoundsInRoot()
+            val installedTop = installed.assertIsDisplayed().getUnclippedBoundsInRoot().top
+            val actionBounds =
+                updateDetailText("Checking…").assertIsDisplayed().getUnclippedBoundsInRoot()
+
+            checkNotNull(app.fixture.heldCheck).complete(Unit)
+            compose.waitUntil(10_000) { app.updates.state.value.canDownload }
+            val version = updateDetailText(app.getString(R.string.updates_version, release.version))
+            val size =
+                compose.onNodeWithContentDescription(
+                    app.getString(
+                        R.string.updates_package_size,
+                        Formatter.formatShortFileSize(app, release.size),
+                    ),
+                )
+            assertTrue(
+                version.assertIsDisplayed().getUnclippedBoundsInRoot().top >= headingBounds.bottom,
+            )
+            assertTrue(
+                size.assertIsDisplayed().getUnclippedBoundsInRoot().bottom <=
+                    closeBounds.top - 8.dp,
+            )
+            assertTrue(installed.getUnclippedBoundsInRoot().top < installedTop)
+            assertEquals(headingBounds, heading.getUnclippedBoundsInRoot())
+            assertEquals(closeBounds, close.getUnclippedBoundsInRoot())
+            assertEquals(
+                actionBounds,
+                updateDetailText("Download update").getUnclippedBoundsInRoot(),
+            )
         } finally {
             RuntimeEnvironment.setFontScale(originalFontScale)
         }

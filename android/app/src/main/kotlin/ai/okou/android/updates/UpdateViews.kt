@@ -393,6 +393,10 @@ private fun UpdateSheet(
             val scrollWholePanel =
                 maxHeight <
                     actions.height + headingGap + contentSpacing + titleLineHeight + bodyLineHeight
+            val revealResult = short && !scrollWholePanel
+            val requiresNewerAndroid = state.requiresNewerAndroid
+            val problemMessage = state.updateProblemMessage(requiresNewerAndroid)
+            val revealCheckResult = revealResult && !requiresNewerAndroid && problemMessage == null
             Column(
                 if (scrollWholePanel) Modifier.fillMaxWidth().verticalScroll(scroll)
                 else Modifier.fillMaxWidth(),
@@ -422,6 +426,7 @@ private fun UpdateSheet(
                     ) {
                         if (release != null) {
                             FlowRow(
+                                modifier = Modifier.revealUpdateResult(release, revealCheckResult),
                                 horizontalArrangement =
                                     Arrangement.spacedBy(if (compact) 12.dp else 16.dp),
                                 verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -432,14 +437,14 @@ private fun UpdateSheet(
                             val current = stringResource(R.string.updates_current)
                             UpdateCopy(
                                 current,
-                                modifier =
-                                    Modifier.revealUpdateResult(
-                                        current,
-                                        short && !scrollWholePanel,
-                                    ),
+                                modifier = Modifier.revealUpdateResult(current, revealCheckResult),
                             )
                         }
-                        UpdateProblemText(state, revealResult = short && !scrollWholePanel)
+                        UpdateProblemText(
+                            requiresNewerAndroid,
+                            problemMessage,
+                            revealResult = revealResult,
+                        )
                     }
                 }
                 Spacer(Modifier.height(contentSpacing))
@@ -480,6 +485,7 @@ private fun RequiredUpdateScreen(
 ) {
     val window = currentWindowSizeDp()
     val base = with(LocalDensity.current) { 16.sp.toDp() }
+    val requiresNewerAndroid = state.requiresNewerAndroid
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         BoxWithConstraints(
             Modifier.fillMaxSize().safeDrawingPadding(),
@@ -509,7 +515,7 @@ private fun RequiredUpdateScreen(
                 Text(
                     stringResource(
                         when {
-                            state.requiresNewerAndroid -> R.string.updates_required_incompatible
+                            requiresNewerAndroid -> R.string.updates_required_incompatible
                             compact -> R.string.updates_required_short
                             else -> R.string.updates_required
                         },
@@ -524,8 +530,12 @@ private fun RequiredUpdateScreen(
                 )
                 Spacer(Modifier.height(if (compact) 8.dp else 12.dp))
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                    UpdateProblemText(state, Modifier.padding(bottom = 8.dp))
-                    if (!state.requiresNewerAndroid) {
+                    UpdateProblemText(
+                        requiresNewerAndroid,
+                        state.updateProblemMessage(requiresNewerAndroid),
+                        Modifier.padding(bottom = 8.dp),
+                    )
+                    if (!requiresNewerAndroid) {
                         Text(
                             stringResource(R.string.updates_required_description),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -572,17 +582,11 @@ private fun UpdateMetadata(release: AndroidUpdatesRelease, compact: Boolean = fa
     )
 }
 
-@Composable
-private fun UpdateProblemText(
-    state: UpdateUiState,
-    modifier: Modifier = Modifier,
-    revealResult: Boolean = false,
-) {
-    val offline =
-        state.offline && !state.canInstall && state.transfer !is UpdateTransfer.Downloading
-    val requiresNewerAndroid = state.requiresNewerAndroid
+@StringRes
+private fun UpdateUiState.updateProblemMessage(requiresNewerAndroid: Boolean): Int? {
+    val disconnected = offline && !canInstall && transfer !is UpdateTransfer.Downloading
     val latestProblem =
-        when (state.problem) {
+        when (problem) {
             UpdateProblem.Check -> R.string.updates_error_check
             UpdateProblem.Download -> R.string.updates_error_download
             UpdateProblem.Integrity -> R.string.updates_error_integrity
@@ -592,31 +596,45 @@ private fun UpdateProblemText(
             UpdateProblem.Install -> R.string.updates_error_install
             null -> null
         }
+    return when {
+        disconnected && (canDownload || transfer is UpdateTransfer.Waiting) ->
+            R.string.updates_connect_to_download
+        disconnected -> R.string.updates_connect_to_check
+        latestProblem != null -> latestProblem
+        (check == UpdateCheck.Failed || check == UpdateCheck.Waiting) &&
+            !canDownload &&
+            !canInstall &&
+            transfer !is UpdateTransfer.Downloading -> R.string.updates_error_check
+        !requiresNewerAndroid &&
+            check != UpdateCheck.Checking &&
+            (required || available) &&
+            displayedRelease?.let(::isEligible) != true -> R.string.updates_unavailable
+        else -> null
+    }
+}
+
+@Composable
+private fun UpdateProblemText(
+    requiresNewerAndroid: Boolean,
+    @StringRes message: Int?,
+    modifier: Modifier = Modifier,
+    revealResult: Boolean = false,
+) {
     if (requiresNewerAndroid) {
+        val unsupported = R.string.updates_android_unsupported
         Text(
-            stringResource(R.string.updates_android_unsupported),
+            stringResource(unsupported),
             color = MaterialTheme.colorScheme.error,
             style = MaterialTheme.typography.bodyMedium,
-            modifier = modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            modifier =
+                modifier
+                    .revealUpdateResult(unsupported, revealResult && message == null)
+                    .semantics {
+                        liveRegion = LiveRegionMode.Polite
+                    },
         )
     }
-    val message =
-        when {
-            offline && (state.canDownload || state.transfer is UpdateTransfer.Waiting) ->
-                R.string.updates_connect_to_download
-            offline -> R.string.updates_connect_to_check
-            latestProblem != null -> latestProblem
-            (state.check == UpdateCheck.Failed || state.check == UpdateCheck.Waiting) &&
-                !state.canDownload &&
-                !state.canInstall &&
-                state.transfer !is UpdateTransfer.Downloading -> R.string.updates_error_check
-            !requiresNewerAndroid &&
-                state.check != UpdateCheck.Checking &&
-                (state.required || state.available) &&
-                state.displayedRelease?.let(state::isEligible) != true ->
-                R.string.updates_unavailable
-            else -> return
-        }
+    if (message == null) return
     Text(
         stringResource(message),
         color =
@@ -757,12 +775,7 @@ private fun UpdateAction(
             }
             state.canDownload -> {
                 val label =
-                    if (
-                        allowRetry &&
-                            (transfer == UpdateTransfer.Failed ||
-                                transfer == UpdateTransfer.Interrupted)
-                    )
-                        R.string.updates_retry_download
+                    if (allowRetry && state.interrupted) R.string.updates_retry_download
                     else R.string.updates_download
                 label to { download(checkNotNull(state.candidate)) }
             }
