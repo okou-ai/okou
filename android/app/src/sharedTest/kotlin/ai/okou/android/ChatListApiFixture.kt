@@ -79,8 +79,9 @@ fun historyEventWire(
     payload: String = "{\"content\":\"**Native history** reply\"}",
     run: String? = HISTORY_RUN,
     revoke: String? = null,
+    createdAt: String = CHAT_DATE,
 ): String =
-    """{"id":"$id","chatThreadId":"$thread","runId":${run?.let { "\"$it\"" } ?: "null"},"revokesEventId":${revoke?.let { "\"$it\"" } ?: "null"},"contextType":"web","contextId":null,"runEventSequenceNumber":null,"runEventId":null,"seqId":$seq,"createdAt":"$CHAT_DATE","eventType":"$type","payload":$payload}"""
+    """{"id":"$id","chatThreadId":"$thread","runId":${run?.let { "\"$it\"" } ?: "null"},"revokesEventId":${revoke?.let { "\"$it\"" } ?: "null"},"contextType":"web","contextId":null,"runEventSequenceNumber":null,"runEventId":null,"seqId":$seq,"createdAt":"$createdAt","eventType":"$type","payload":$payload}"""
 
 /** Only the external HTTP boundary is substituted; native owners/codec/cache/transport are real. */
 class ChatListApiFixture : Closeable {
@@ -150,6 +151,11 @@ class ChatListApiFixture : Closeable {
     @Volatile
     var historyDetail: () -> MockResponse = {
         jsonResponse("""{"lastReadAt":null,"cancellationRecoveryPending":false}""")
+    }
+    @Volatile
+    var runActivity: (RecordedRequest) -> MockResponse = { request ->
+        val body = Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
+        jsonResponse("""{"runId":${body.getValue("runId")},"status":"unavailable","messages":[]}""")
     }
     @Volatile
     var historySnapshot: () -> MockResponse = {
@@ -251,6 +257,7 @@ class ChatListApiFixture : Closeable {
                         return when (segments.getOrNull(3)) {
                             "event-snapshot" -> historySnapshot()
                             "event-rows" -> historyRows(request)
+                            "activity-summary" -> runActivity(request)
                             "relations" ->
                                 if (segments.getOrNull(4) in setOf("children", "communications")) {
                                     jsonResponse("""{"items":[]}""")

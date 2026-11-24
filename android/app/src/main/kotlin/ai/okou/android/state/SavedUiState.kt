@@ -75,6 +75,10 @@ internal fun rememberWorkspaceSwitchTarget(): MutableState<String?> = rememberSa
 }
 
 @Composable
+internal fun rememberWorkspacePresentationState(): SaveableStateHolder =
+    rememberSaveableStateHolder()
+
+@Composable
 internal fun rememberConnectorsOpen(): MutableState<Boolean> = rememberSaveable {
     mutableStateOf(false)
 }

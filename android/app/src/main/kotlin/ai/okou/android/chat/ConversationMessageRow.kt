@@ -8,7 +8,6 @@ import ai.okou.android.state.rememberEarlierRepliesExpanded
 import android.content.ClipData
 import android.os.Build
 import android.widget.Toast
-import androidx.annotation.StringRes
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -20,28 +19,30 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.LongState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -88,37 +89,13 @@ internal data class ConversationMessage(
     val message: HistoryMessage,
     val earlier: List<HistoryMessage> = emptyList(),
     val preview: ComposerMessagePreview? = null,
+    val summary: ReplySummary? = null,
 ) : ConversationTimelineRow {
     override val key: String
         get() = earlier.firstOrNull()?.id ?: message.id
 
     fun includes(id: String?) = message.id == id || earlier.any { it.id == id }
 }
-
-internal fun conversationMessages(messages: List<HistoryMessage>): List<ConversationMessage> =
-    buildList {
-        var previous: HistoryMessage? = null
-        val earlier = mutableListOf<HistoryMessage>()
-        for (message in messages) {
-            if (!message.visibleInConversation()) continue
-            val preceding = previous
-            if (preceding != null) {
-                if (
-                    message.isReply() &&
-                        preceding.isReply() &&
-                        message.runId != null &&
-                        message.runId == preceding.runId
-                ) {
-                    earlier += preceding
-                } else {
-                    add(ConversationMessage(preceding, earlier.toList()))
-                    earlier.clear()
-                }
-            }
-            previous = message
-        }
-        previous?.let { add(ConversationMessage(it, earlier.toList())) }
-    }
 
 private fun HistoryMessage.isReply() = role == HistoryRole.Assistant && blocks.isNotEmpty()
 
@@ -170,7 +147,7 @@ internal fun ConversationMessageRow(
         message.isReply() ->
             Column(Modifier.fillMaxWidth().testTag("message_${message.id}")) {
                 ConversationReplyHeader(message)
-                if (entry.earlier.isNotEmpty()) {
+                if (entry.summary != null) {
                     var expanded by rememberEarlierRepliesExpanded()
                     if (findHighlight?.reveal != null) {
                         val targetId = findHighlight.messageId
@@ -178,48 +155,42 @@ internal fun ConversationMessageRow(
                             if (entry.earlier.any { it.id == targetId }) expanded = true
                         }
                     }
-                    TextButton(
-                        onClick = { expanded = !expanded },
-                        colors =
-                            ButtonDefaults.textButtonColors(contentColor = colors.onSurfaceVariant),
-                    ) {
-                        Icon(
-                            painterResource(
-                                if (expanded) R.drawable.ic_expand_less
-                                else R.drawable.ic_expand_more,
-                            ),
-                            null,
-                            Modifier.size(16.dp),
-                        )
-                        Text(
-                            stringResource(R.string.conversation_work),
-                            Modifier.padding(start = 8.dp),
-                        )
+                    ConversationReplySummary(entry.summary, entry.earlier.size, expanded) {
+                        expanded = !expanded
                     }
-                    if (expanded)
-                        Column(
-                            Modifier.padding(bottom = 12.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
+                    if (expanded && entry.earlier.isNotEmpty()) {
+                        ConversationReplyTimeline {
                             for (earlier in entry.earlier) {
-                                Column(Modifier.testTag("message_${earlier.id}")) {
-                                    MessageBody(
-                                        earlier,
-                                        artifactActions = artifactActions,
-                                        findHighlight =
-                                            findHighlight?.takeIf { it.messageId == earlier.id },
-                                        links = links,
-                                    )
+                                key(earlier.id) {
+                                    Column(Modifier.testTag("message_${earlier.id}")) {
+                                        MessageBody(
+                                            earlier,
+                                            earlierReply = true,
+                                            artifactActions = artifactActions,
+                                            findHighlight =
+                                                findHighlight?.takeIf {
+                                                    it.messageId == earlier.id
+                                                },
+                                            links = links,
+                                        )
+                                    }
                                 }
                             }
                         }
+                    } else {
+                        Spacer(Modifier.height(8.dp))
+                    }
                 }
                 MessageBody(
                     message,
                     artifactActions = artifactActions,
+                    artifactTurnKey = entry.key,
                     findHighlight = findHighlight?.takeIf { it.messageId == message.id },
                     links = links,
                 )
+                if (entry.earlier.isNotEmpty() && artifactActions != null) {
+                    EarlierReplyArtifacts(entry, artifactActions)
+                }
             }
         else ->
             Column(Modifier.fillMaxWidth().testTag("message_${message.id}")) {
@@ -231,6 +202,42 @@ internal fun ConversationMessageRow(
                     MessageBody(message, compact = true)
                 }
             }
+    }
+}
+
+@Composable
+private fun EarlierReplyArtifacts(entry: ConversationMessage, actions: ChatArtifactActions) {
+    // Reuse the earlier replies' parsed results across chunks of the latest reply.
+    val candidates =
+        key(entry.earlier) {
+                produceState<List<ReplyArtifact>?>(null) {
+                    value =
+                        withContext(Dispatchers.Default) { earlierReplyArtifacts(entry.earlier) }
+                }
+            }
+            .value
+    // Keep the previous cards laid out while fresh text is being parsed.
+    val cards by
+        produceState(emptyList<ReplyArtifact>(), candidates, entry.message.blocks) {
+            val earlier = candidates ?: return@produceState
+            value =
+                if (earlier.isEmpty()) earlier
+                else
+                    withContext(Dispatchers.Default) {
+                        earlier.excludingArtifacts(entry.message.blocks)
+                    }
+        }
+    if (cards.isNotEmpty()) {
+        Column(
+            Modifier.padding(top = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            for (card in cards) {
+                key(card.link) {
+                    MessageArtifactCard(card.title, card.link, entry.key, actions)
+                }
+            }
+        }
     }
 }
 
@@ -341,26 +348,37 @@ internal fun ConversationReplyHeader(message: HistoryMessage? = null) {
 
 @Composable
 internal fun ConversationActivity(
-    @StringRes label: Int,
+    label: String,
     modifier: Modifier = Modifier,
+    queued: Boolean = false,
+    stopped: Boolean = false,
     runningFrame: LongState? = null,
     controls: ConversationRunControls? = null,
     stopPlacement: ConversationStopPlacement? = null,
 ) {
     val color = LocalActivityStatusColor.current
     Row(
-        modifier.fillMaxWidth().heightIn(min = ConversationStopTouchSize),
+        modifier.fillMaxWidth().heightIn(min = if (stopped) 24.dp else ConversationStopTouchSize),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (label == R.string.conversation_run_queued) {
-            Icon(painterResource(R.drawable.ic_schedule), null, Modifier.size(16.dp), tint = color)
-        } else if (runningFrame != null) {
-            Canvas(Modifier.size(14.dp)) { drawRunningWave(color, runningFrame.longValue, row = 0) }
-        } else {
-            Box(Modifier.size(8.dp).background(color, CircleShape))
+        Box(Modifier.size(16.dp), contentAlignment = Alignment.Center) {
+            if (queued || stopped) {
+                Icon(
+                    painterResource(if (queued) R.drawable.ic_schedule else R.drawable.ic_stop),
+                    null,
+                    Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else if (runningFrame != null) {
+                Canvas(Modifier.size(14.dp)) {
+                    drawRunningWave(color, runningFrame.longValue, row = 0)
+                }
+            } else {
+                Box(Modifier.size(8.dp).background(color, CircleShape))
+            }
         }
-        ConversationMeta(stringResource(label), Modifier.weight(1f), maxLines = 1)
+        ConversationMeta(label, Modifier.weight(1f), maxLines = 2)
         if (controls?.currentRunId != null && stopPlacement != null) {
             DisposableEffect(stopPlacement) {
                 onDispose { stopPlacement.reportInlineSlot(null) }
@@ -369,7 +387,7 @@ internal fun ConversationActivity(
                 Modifier.size(ConversationStopTouchSize).onGloballyPositioned { slot ->
                     val bounds = slot.boundsInRoot()
                     stopPlacement.reportInlineSlot(
-                        bounds.bottom.takeIf {
+                        bounds.takeIf {
                             bounds.width >= slot.size.width - 0.5f &&
                                 bounds.height >= slot.size.height - 0.5f
                         },
@@ -379,7 +397,7 @@ internal fun ConversationActivity(
                 if (stopPlacement.inline) ConversationStopButton(controls, stopPlacement, true)
             }
         } else {
-            Spacer(Modifier.size(ConversationStopTouchSize))
+            Spacer(Modifier.width(ConversationStopTouchSize))
         }
     }
 }
@@ -404,7 +422,9 @@ private fun ConversationMeta(
 private fun MessageBody(
     message: HistoryMessage,
     compact: Boolean = false,
+    earlierReply: Boolean = false,
     artifactActions: ChatArtifactActions? = null,
+    artifactTurnKey: String = message.id,
     findHighlight: ConversationFindHighlight? = null,
     links: ConversationLinkActions? = null,
 ) {
@@ -416,8 +436,22 @@ private fun MessageBody(
         if (bodyHighlight?.target?.highlighted == true) colors.onSecondaryContainer
         else colors.onSurface
     val style =
-        if (compact) typography.bodyMedium
-        else typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 28.sp, letterSpacing = 0.sp)
+        when {
+            earlierReply ->
+                typography.bodyMedium.copy(
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                    letterSpacing = 0.sp,
+                    color = colors.onSurfaceVariant,
+                )
+            compact -> typography.bodyMedium
+            else ->
+                typography.bodyLarge.copy(
+                    fontSize = 16.sp,
+                    lineHeight = 28.sp,
+                    letterSpacing = 0.sp,
+                )
+        }
     SelectionContainer {
         Column(
             Modifier.conversationFindHighlight(bodyHighlight),
@@ -437,8 +471,10 @@ private fun MessageBody(
                                 style,
                                 artifactActions,
                                 "${message.id}/$index",
+                                artifactTurnKey,
                                 markdownHighlight,
                                 links,
+                                compactReply = earlierReply,
                             )
                         else Text(block.text, style = style, color = foreground)
                 }
@@ -494,7 +530,11 @@ private fun MessageStatus(message: HistoryMessage) {
     if (message.rejected) ConversationMeta(stringResource(R.string.history_rejected))
     when (message.status) {
         "run.failed" -> AssistantFailureText(message.failureReason)
-        "run.cancelled" -> ConversationMeta(stringResource(R.string.history_cancelled))
+        "run.cancelled" ->
+            ConversationActivity(
+                stringResource(R.string.history_cancelled),
+                stopped = true,
+            )
         "output.error" -> ConversationMeta(stringResource(R.string.history_run_failed))
     }
 }
@@ -513,6 +553,7 @@ internal fun AssistantFailureText(reason: String?) {
     )
     Text(
         stringResource(copy.description),
+        modifier = Modifier.padding(top = 4.dp),
         style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp),
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )

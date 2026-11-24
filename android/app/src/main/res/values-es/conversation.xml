@@ -16,7 +16,31 @@
     <string name="conversation_view_progress">Ver progreso</string>
     <string name="conversation_processing">Procesando…</string>
     <string name="conversation_offline_send">Conéctate para enviar. Tu borrador se conserva aquí.</string>
-    <string name="conversation_work">Proceso de trabajo</string>
+    <string name="conversation_reply_summary">Resumen de la respuesta</string>
+    <string name="conversation_turn_continued">Continuado en el siguiente turno</string>
+    <string name="conversation_replying">Respondiendo…</string>
+    <string name="conversation_turn_done">Completado</string>
+    <string name="conversation_replies_expanded">Expandido</string>
+    <string name="conversation_replies_collapsed">Contraído</string>
+    <string name="conversation_work_elapsed">Trabajando desde hace %1$s</string>
+    <string name="conversation_work_total">Tiempo de trabajo de %1$s</string>
+    <string name="conversation_followup_continue">Sigue</string>
+    <string name="conversation_feedback_pair">%1$s · %2$s</string>
+    <plurals name="conversation_reply_steps">
+        <item quantity="one">%d paso</item>
+        <item quantity="many">%d de pasos</item>
+        <item quantity="other">%d pasos</item>
+    </plurals>
+    <string-array name="conversation_completion_phrases">
+        <item>Terminado</item>
+        <item>Todo hecho</item>
+        <item>Entregado</item>
+        <item>Terminado, a tu servicio</item>
+        <item>Eso fue todo</item>
+        <item>Misión cumplida</item>
+        <item>Firmado</item>
+        <item>Hecho y listo</item>
+    </string-array>
     <string name="conversation_reply_actions">Acciones de respuesta</string>
     <string name="conversation_copy_reply">Copiar respuesta</string>
     <string name="conversation_reply_copied">Respuesta copiada</string>

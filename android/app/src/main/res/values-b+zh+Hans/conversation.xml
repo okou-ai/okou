@@ -14,7 +14,29 @@
     <string name="conversation_view_progress">查看进度</string>
     <string name="conversation_processing">正在处理</string>
     <string name="conversation_offline_send">草稿已保留，请联网后再发送。</string>
-    <string name="conversation_work">工作过程</string>
+    <string name="conversation_reply_summary">回复摘要</string>
+    <string name="conversation_turn_continued">已由下一轮接续</string>
+    <string name="conversation_replying">正在回复</string>
+    <string name="conversation_turn_done">已完成</string>
+    <string name="conversation_replies_expanded">已展开</string>
+    <string name="conversation_replies_collapsed">已折叠</string>
+    <string name="conversation_work_elapsed">已工作 %1$s</string>
+    <string name="conversation_work_total">共工作 %1$s</string>
+    <string name="conversation_followup_continue">继续</string>
+    <string name="conversation_feedback_pair">%1$s · %2$s</string>
+    <plurals name="conversation_reply_steps">
+        <item quantity="other">%d 个步骤</item>
+    </plurals>
+    <string-array name="conversation_completion_phrases">
+        <item>已收尾</item>
+        <item>全部搞定</item>
+        <item>交付完成</item>
+        <item>已完工，随时待命</item>
+        <item>顺利收官</item>
+        <item>任务完成</item>
+        <item>收工</item>
+        <item>大功告成</item>
+    </string-array>
     <string name="conversation_reply_actions">回复操作</string>
     <string name="conversation_copy_reply">复制回复</string>
     <string name="conversation_reply_copied">已复制回复</string>

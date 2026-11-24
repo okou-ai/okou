@@ -22,6 +22,7 @@ import ai.okou.android.api.generated.InputStatusVariant3Status
 import ai.okou.android.api.generated.Organization
 import ai.okou.android.api.generated.PersonalInstructions
 import ai.okou.android.api.generated.ProjectArchive
+import ai.okou.android.api.generated.RunActivitySummaryStatus
 import ai.okou.android.api.generated.SendRequest
 import ai.okou.android.api.generated.SendRequestVariant1
 import ai.okou.android.api.generated.UpdateDefaultModelPreference
@@ -371,6 +372,15 @@ class CanonicalWorkspaceSession(
         }
 
     override suspend fun threadDetail(threadId: String) = api.threadDetail(threadId)
+
+    override suspend fun summarizeRunActivity(threadId: String, runId: String): String? {
+        val summary = api.summarizeRunActivity(threadId, runId)
+        if (summary.runId != runId) throw ApiFailure.IncompatibleResponse()
+        return summary.messages
+            .firstOrNull { it.text.isNotBlank() }
+            ?.text
+            .takeIf { summary.status == RunActivitySummaryStatus.AVAILABLE }
+    }
 
     override suspend fun markRead(threadId: String) = api.markRead(threadId)
 

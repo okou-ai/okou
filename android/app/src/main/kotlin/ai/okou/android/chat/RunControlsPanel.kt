@@ -1,10 +1,13 @@
 package ai.okou.android.chat
 
 import ai.okou.android.R
+import ai.okou.android.updates.updateFocusOutline
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -17,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -146,21 +150,21 @@ internal class ConversationStopPlacement {
         private set
 
     private var focusedInline: Boolean? = null
-    private var slotBottom: Float? = null
-    private var feedbackTop: Float? = null
+    private var slotBounds: Rect? = null
+    private var feedbackBounds: Rect? = null
 
-    fun reportInlineSlot(bottom: Float?) {
-        slotBottom = bottom
+    fun reportInlineSlot(bounds: Rect?) {
+        slotBounds = bounds
         updatePlacement()
     }
 
-    fun reportFeedbackTop(top: Float?) {
-        feedbackTop = top
+    fun reportFeedbackBounds(bounds: Rect?) {
+        feedbackBounds = bounds
         updatePlacement()
     }
 
     private fun updatePlacement() {
-        val visible = slotBottom?.let { it <= (feedbackTop ?: Float.POSITIVE_INFINITY) } == true
+        val visible = slotBounds?.let { feedbackBounds?.overlaps(it) != true } == true
         if (inline == visible) return
         transferFocusToInline = visible.takeIf { focusedInline == inline }
         inline = visible
@@ -200,8 +204,9 @@ internal fun ConversationStopButton(
             Modifier.size(ConversationStopTouchSize)
                 .focusRequester(focus)
                 .onFocusChanged { placement.onFocusChanged(inline, it.isFocused) }
+                .updateFocusOutline(CircleShape, MaterialTheme.colorScheme.onSurface)
                 .semantics { contentDescription = label },
     ) {
-        Icon(painterResource(R.drawable.ic_stop), null, Modifier.size(20.dp))
+        Icon(painterResource(R.drawable.ic_stop_circle), null, Modifier.size(20.dp))
     }
 }

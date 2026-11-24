@@ -16,7 +16,31 @@
     <string name="conversation_view_progress">Mostra avanzamento</string>
     <string name="conversation_processing">Elaborazione…</string>
     <string name="conversation_offline_send">Connettiti per inviare. La tua bozza rimane qui.</string>
-    <string name="conversation_work">Fasi del lavoro</string>
+    <string name="conversation_reply_summary">Riepilogo della risposta</string>
+    <string name="conversation_turn_continued">Prosegue nel turno successivo</string>
+    <string name="conversation_replying">Risposta in corso…</string>
+    <string name="conversation_turn_done">Completato</string>
+    <string name="conversation_replies_expanded">Espanso</string>
+    <string name="conversation_replies_collapsed">Compresso</string>
+    <string name="conversation_work_elapsed">Al lavoro da %1$s</string>
+    <string name="conversation_work_total">Ha lavorato per %1$s</string>
+    <string name="conversation_followup_continue">Continua così</string>
+    <string name="conversation_feedback_pair">%1$s · %2$s</string>
+    <plurals name="conversation_reply_steps">
+        <item quantity="one">%d passaggio</item>
+        <item quantity="many">%d di passaggi</item>
+        <item quantity="other">%d passaggi</item>
+    </plurals>
+    <string-array name="conversation_completion_phrases">
+        <item>Concluso</item>
+        <item>Tutto fatto</item>
+        <item>Consegnato</item>
+        <item>Terminato, al tuo servizio</item>
+        <item>Lavoro concluso</item>
+        <item>Missione completata</item>
+        <item>Uscita effettuata</item>
+        <item>Fatto e finito</item>
+    </string-array>
     <string name="conversation_reply_actions">Azioni della risposta</string>
     <string name="conversation_copy_reply">Copia risposta</string>
     <string name="conversation_reply_copied">Risposta copiata</string>

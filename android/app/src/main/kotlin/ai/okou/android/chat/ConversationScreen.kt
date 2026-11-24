@@ -89,8 +89,11 @@ private const val TimelineInitial = "conversation_initial"
 private const val TimelineActivity = "conversation_activity"
 private val TimelineEndPadding = 16.dp
 
-private data class ConversationActivityRow(@StringRes val label: Int, val showHeader: Boolean) :
-    ConversationTimelineRow {
+private data class ConversationActivityRow(
+    @StringRes val label: Int,
+    val showHeader: Boolean,
+    val runId: String?,
+) : ConversationTimelineRow {
     override val key = TimelineActivity
 }
 
@@ -124,6 +127,7 @@ internal fun ConversationRoute(
     onLinkUnavailable: (() -> Unit)? = null,
     messageSequence: Long? = null,
     onSearchMessageResolved: (Long, Boolean) -> Unit = { _, _ -> },
+    onFollowup: ((String) -> Unit)? = null,
     recovery: @Composable (HistoryMessage) -> Unit = { AssistantFailureText(it.failureReason) },
 ) {
     // Deferred work must acknowledge this composition's confirmation, never a newer State.value.
@@ -158,27 +162,42 @@ internal fun ConversationRoute(
         )
     val activeRun = controls?.currentRunId ?: transcript?.activeRunId
     val execution = transcript?.execution
-    val activity =
-        when (execution) {
-            HistoryExecution.Running -> R.string.conversation_processing
-            HistoryExecution.Queued -> R.string.conversation_run_queued
-            else -> null
-        }
     val activeMessage =
         remember(content, activeRun) {
             activeRun?.let { runId ->
                 content.lastOrNull {
-                    it.message.runId == runId && it.message.role == HistoryRole.Assistant
-                } ?: content.lastOrNull { it.message.runId == runId }
+                    it.message.runId == runId &&
+                        (it.message.isOutputReply() || it.message.role == HistoryRole.User)
+                }
             }
         }
+    val replying = activeMessage?.message?.isOutputReply() == true
+    val activity =
+        when (execution) {
+            HistoryExecution.Running ->
+                if (replying) R.string.conversation_replying else R.string.conversation_processing
+            HistoryExecution.Queued -> R.string.conversation_run_queued
+            else -> null
+        }
+    val summarizeRun = activeRun.takeIf {
+        execution == HistoryExecution.Running && !missing && !list.offline
+    }
+    SideEffect { visit?.showRunActivity(summarizeRun) }
+    val activityText =
+        visit?.activityText?.collectAsStateWithLifecycle()?.value?.takeIf {
+            it.runId == summarizeRun
+        }
+    val completion = presentation.completion.takeIf { !missing && activity == null }
     val incomingTimeline =
-        remember(content, activity, activeMessage) {
+        remember(content, activity, activeMessage, completion, activeRun) {
             val messages = content.asReversed()
-            if (activity == null) messages
-            else
-                buildList<ConversationTimelineRow> {
-                    addAll(messages)
+            buildList<ConversationTimelineRow> {
+                addAll(messages)
+                if (completion != null) {
+                    val index = messages.indexOfFirst { it.key == completion.anchorKey }
+                    add(index.coerceAtLeast(0), completion)
+                }
+                if (activity != null) {
                     // Reverse layout places the status below its owning message.
                     val index =
                         messages.indexOfFirst { it.key == activeMessage?.key }.coerceAtLeast(0)
@@ -186,10 +205,12 @@ internal fun ConversationRoute(
                         index,
                         ConversationActivityRow(
                             activity,
-                            activeMessage?.message?.role != HistoryRole.Assistant,
+                            !replying,
+                            activeRun,
                         ),
                     )
                 }
+            }
         }
     val syncDelay = state.syncProgressDelayMillis.takeIf { transcript != null }
     val syncDelayReached =
@@ -281,8 +302,7 @@ internal fun ConversationRoute(
         val timeline = if (holdTimeline && !missing) presentedTimeline else incomingTimeline
         SideEffect { presentedTimeline = timeline }
         val runningRows =
-            if (activity == R.string.conversation_processing) setOf(TimelineActivity)
-            else emptySet()
+            if (execution == HistoryExecution.Running) setOf(TimelineActivity) else emptySet()
         val runningFrame = rememberRunningWaveFrame(position, runningRows)
         val scope = rememberCoroutineScope()
         val controlSnackbar = remember { SnackbarHostState() }
@@ -296,10 +316,10 @@ internal fun ConversationRoute(
         val stopFeedbackBounds =
             if (stopPlacement != null && feedbackInConversation) {
                 DisposableEffect(stopPlacement) {
-                    onDispose { stopPlacement.reportFeedbackTop(null) }
+                    onDispose { stopPlacement.reportFeedbackBounds(null) }
                 }
                 Modifier.onGloballyPositioned {
-                    stopPlacement.reportFeedbackTop(it.boundsInRoot().top)
+                    stopPlacement.reportFeedbackBounds(it.boundsInRoot())
                 }
             } else Modifier
         val failure = controls?.state?.actionFailures?.firstOrNull { it.threadId == threadId }
@@ -484,27 +504,37 @@ internal fun ConversationRoute(
                         ?.id
                 content.lastOrNull { it.includes(id) }?.key
             }
-        val latestDisplayed by
-            remember(position, latestConfirmed) {
+        val completionAnchor = completion?.anchorKey
+        val latestAtReadingEdge by
+            remember(position, latestConfirmed, completionAnchor) {
                 derivedStateOf {
                     val laidOut = position.layoutInfo.visibleItemsInfo
-                    laidOut.any { it.key == TimelineEnd } &&
-                        (latestConfirmed == null || laidOut.any { it.key == latestConfirmed })
+                    val latest = laidOut.firstOrNull { it.key == latestConfirmed }
+                    when {
+                        latest == null && latestConfirmed != null -> false
+                        atEnd -> laidOut.any { it.key == TimelineEnd }
+                        latest != null && latest.key == completionAnchor ->
+                            // Suggestions can fill a short viewport below the newest reply.
+                            position.firstVisibleItemIndex < latest.index ||
+                                position.firstVisibleItemIndex == latest.index &&
+                                    position.firstVisibleItemScrollOffset == 0
+                        else -> false
+                    }
                 }
             }
         val displayedConfirmation =
-            state.confirmation.takeIf { readingReady && atEnd && latestDisplayed && !list.offline }
+            state.confirmation.takeIf { readingReady && latestAtReadingEdge && !list.offline }
         LaunchedEffect(visit, displayedConfirmation) {
             displayedConfirmation?.let { visit?.confirmDisplayed(it) }
         }
         SideEffect {
             if (readingReady) {
-                if (atEnd && visible && latestDisplayed) {
+                if (!atEnd) position.keepMessageWhenStatusMoves(timeline)
+                if (visible && latestAtReadingEdge) {
                     hasSeenLatest = true
                     newReply = false
-                } else if (!atEnd) {
-                    position.keepMessageWhenStatusMoves(timeline)
-                    if (newestReply != null && newestReply != lastReply) newReply = true
+                } else if (!atEnd && newestReply != null && newestReply != lastReply) {
+                    newReply = true
                 }
             }
             lastReply = newestReply
@@ -587,6 +617,12 @@ internal fun ConversationRoute(
                                 Modifier.onSizeChanged { recentSizes[entry.key] = it.height }
                             else Modifier
                         when (entry) {
+                            is ConversationCompletion ->
+                                ConversationCompletionRow(
+                                    entry,
+                                    trackSize.padding(top = 20.dp),
+                                    onFollowup.takeIf { entry.eventId == completion?.eventId },
+                                )
                             is ConversationActivityRow ->
                                 Column(
                                     trackSize
@@ -595,9 +631,12 @@ internal fun ConversationRoute(
                                 ) {
                                     if (entry.showHeader) ConversationReplyHeader()
                                     ConversationActivity(
-                                        entry.label,
+                                        activityText?.takeIf { it.runId == entry.runId }?.text
+                                            ?: stringResource(entry.label),
+                                        queued = entry.label == R.string.conversation_run_queued,
                                         runningFrame = runningFrame,
-                                        controls = controls,
+                                        controls =
+                                            controls.takeIf { it?.currentRunId == entry.runId },
                                         stopPlacement = stopPlacement.takeUnless { list.offline },
                                     )
                                 }
@@ -612,10 +651,22 @@ internal fun ConversationRoute(
                                                 checkNotNull(targetMessageId),
                                             )
                                         }
+                                val previous = timeline.getOrNull(index + 1) as? ConversationMessage
+                                val statusWithReply =
+                                    entry.message.runId != null &&
+                                        entry.message.runId == previous?.message?.runId &&
+                                        previous.message.isOutputReply() &&
+                                        entry.message.status in
+                                            listOf("run.failed", "run.cancelled")
                                 // Keep a message's lower edge independent of a new reply below it.
                                 Column(
                                     trackSize.padding(
-                                        top = if (index == timeline.lastIndex) 0.dp else 20.dp,
+                                        top =
+                                            when {
+                                                index == timeline.lastIndex -> 0.dp
+                                                statusWithReply -> 8.dp
+                                                else -> 20.dp
+                                            },
                                     ),
                                 ) {
                                     ConversationMessageRow(
@@ -716,7 +767,8 @@ internal fun ConversationRoute(
     }
 }
 
-private val TimelineFixedKeys = setOf(TimelineEnd, TimelineInitial, TimelineActivity)
+private val TimelineFixedKeys =
+    setOf(TimelineEnd, TimelineInitial, TimelineActivity, ConversationCompletionKey)
 
 private data class ReadingPosition(val anchor: ConversationAnchor?)
 
