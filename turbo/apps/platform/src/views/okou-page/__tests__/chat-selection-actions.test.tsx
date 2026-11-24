@@ -4,18 +4,26 @@ import { test, expect } from "vitest";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { setupPage, fill, click } from "../../../__tests__/page-helper.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
-import { RUN_THREAD_ID, RUN_PATH } from "./chat-run-test-fixtures.ts";
+import {
+  RUN_THREAD_ID,
+  RUN_PATH,
+  createChatRunFixtures,
+  findButton,
+  findEnabledButton,
+} from "./chat-run-test-fixtures.ts";
 import {
   completedConversation,
   feedbackItems,
-  findButton,
   selectPassage,
   clearPassageSelection,
 } from "./chat-capability-test-helpers.ts";
-
 import { findComposerEditor } from "./chat-composer-test-helpers.ts";
+import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
+
 const context = testContext();
+
 const passage = "The launch plan has three careful stages.";
+
 async function conversation() {
   mockChatLifecycle(context, {
     threadId: RUN_THREAD_ID,
@@ -24,6 +32,7 @@ async function conversation() {
   await setupPage({ context, path: RUN_PATH });
   await screen.findByText(passage);
 }
+
 test("chat-selection-actions-001 quoting after a rename preserves the unfinished draft", async () => {
   await conversation();
   const editor = await findComposerEditor();
@@ -48,6 +57,7 @@ test("chat-selection-actions-001 quoting after a rename preserves the unfinished
   expect(feedbackItems()).toHaveLength(1);
   expect(feedbackItems()[0]).toHaveTextContent(passage);
 });
+
 async function releaseSelection(name: string) {
   await selectPassage(passage);
   const action = await findButton(name);
@@ -66,6 +76,7 @@ async function releaseSelection(name: string) {
   });
   click(action);
 }
+
 test("chat-selection-actions-002 Copy keeps the selected passage through native selection collapse", async () => {
   const clipboard = context.mocks.browser.clipboardWriteText();
   await conversation();
@@ -74,10 +85,48 @@ test("chat-selection-actions-002 Copy keeps the selected passage through native 
   expect(clipboard.writes).toContain(passage);
   expect(document.querySelector("[aria-keyshortcuts=q]")).toBeNull();
 });
+
 test("chat-selection-actions-004 Fork carries the original passage after pointer release clears selection", async () => {
   await conversation();
   await releaseSelection("Fork");
   const dialog = await screen.findByRole("dialog", { name: "Okou" });
   expect(within(dialog).getByText(passage)).toBeInTheDocument();
   expect(document.querySelector("[aria-keyshortcuts=q]")).toBeNull();
+});
+
+test("chat-composer-feedback-selection-001 ArrowDown at the end keeps the next character in the quote note", async () => {
+  const passage = "The launch plan has three careful stages.",
+    comment = "Keep this review in the quote.";
+  const sent = context.mocks.deferred<UserMessageDocument | undefined>();
+  createChatRunFixtures(context).installRunChat({
+    chatEvents: completedConversation(passage),
+    onSendRequest(body) {
+      sent.resolve(body.userMessage);
+    },
+  });
+  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
+  await screen.findByText(passage);
+  await selectPassage(passage);
+  click(await findButton("Quote"));
+  const editor = await screen.findByRole("textbox", {
+    name: "Ask or comment on this quote",
+  });
+  const user = userEvent.setup({ delay: null });
+  await user.type(editor, comment);
+  await user.keyboard("{ArrowDown}");
+  const caret = window.getSelection();
+  expect(caret?.isCollapsed).toBeTruthy();
+  expect(editor.contains(caret?.focusNode ?? null)).toBeTruthy();
+  expect(caret?.focusNode?.textContent).toBe(comment);
+  expect(caret?.focusOffset).toBe(comment.length);
+  await user.keyboard("!");
+  expect(editor).toHaveTextContent(comment + "!");
+  click(await findEnabledButton("Send"));
+  expect((await sent.promise)?.parts).toContainEqual(
+    expect.objectContaining({
+      type: "feedback",
+      quote: passage,
+      note: [{ type: "text", text: comment + "!" }],
+    }),
+  );
 });
