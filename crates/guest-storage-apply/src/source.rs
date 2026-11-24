@@ -3,6 +3,7 @@ use crate::connection_observation::{self, CallObservation};
 use crate::error::DownloadError;
 use guest_telemetry::log_info;
 use std::cell::Cell;
+use std::fs::File;
 use std::io;
 use std::io::Read;
 use std::rc::Rc;
@@ -41,20 +42,7 @@ pub(crate) fn open_archive(
     local_metrics: Option<&LocalArchiveAttemptMetrics>,
 ) -> Result<ArchiveSource, DownloadError> {
     if let Some(path) = url.strip_prefix("file://") {
-        log_info!(LOG_TAG, "Reading local archive");
-        let file = std::fs::File::open(path)
-            .map_err(|e| DownloadError::new(format!("Failed to open local archive: {e}")))?;
-        let compressed_bytes = file
-            .metadata()
-            .ok()
-            .filter(|metadata| metadata.is_file())
-            .map(|metadata| metadata.len());
-        return Ok(match local_metrics {
-            Some(metrics) => {
-                ArchiveSource::local_with_metrics(file, compressed_bytes, metrics.clone())
-            }
-            None => ArchiveSource::local(file, compressed_bytes),
-        });
+        return Ok(LocalArchive::open(path)?.into_source(local_metrics));
     }
 
     let metrics = remote_metrics.cloned().unwrap_or_default();
@@ -139,6 +127,38 @@ fn timeout_phase(timeout: ureq::Timeout) -> &'static str {
     }
 }
 
+pub(crate) struct LocalArchive {
+    pub(crate) file: File,
+    pub(crate) compressed_bytes: Option<u64>,
+}
+
+impl LocalArchive {
+    pub(crate) fn open(path: &str) -> Result<Self, DownloadError> {
+        log_info!(LOG_TAG, "Reading local archive");
+        let file = File::open(path)
+            .map_err(|e| DownloadError::new(format!("Failed to open local archive: {e}")))?;
+        let compressed_bytes = file
+            .metadata()
+            .ok()
+            .filter(|metadata| metadata.is_file())
+            .map(|metadata| metadata.len());
+        Ok(Self {
+            file,
+            compressed_bytes,
+        })
+    }
+
+    pub(crate) fn into_source(self, metrics: Option<&LocalArchiveAttemptMetrics>) -> ArchiveSource {
+        match metrics {
+            Some(metrics) => ArchiveSource::local(
+                measure_local_body(self.file, metrics),
+                self.compressed_bytes,
+            ),
+            None => ArchiveSource::local(self.file, self.compressed_bytes),
+        }
+    }
+}
+
 pub(crate) struct ArchiveSource {
     reader: Box<dyn Read>,
     http_body_read_failure: HttpBodyReadFailure,
@@ -149,18 +169,6 @@ impl ArchiveSource {
     pub(crate) fn local(reader: impl Read + 'static, compressed_bytes: Option<u64>) -> Self {
         Self {
             reader: Box::new(reader),
-            http_body_read_failure: HttpBodyReadFailure::disabled(),
-            compressed_bytes,
-        }
-    }
-
-    fn local_with_metrics(
-        reader: impl Read + 'static,
-        compressed_bytes: Option<u64>,
-        metrics: LocalArchiveAttemptMetrics,
-    ) -> Self {
-        Self {
-            reader: Box::new(LocalBodyReader { reader, metrics }),
             http_body_read_failure: HttpBodyReadFailure::disabled(),
             compressed_bytes,
         }
@@ -202,6 +210,21 @@ impl LocalArchiveAttemptMetrics {
     pub(crate) fn body_read(&self) -> Duration {
         self.body_read.get()
     }
+
+    pub(crate) fn record_body_read(&self, elapsed: Duration) {
+        self.body_read
+            .set(self.body_read.get().saturating_add(elapsed));
+    }
+}
+
+pub(crate) fn measure_local_body<R: Read>(
+    reader: R,
+    metrics: &LocalArchiveAttemptMetrics,
+) -> impl Read + use<R> {
+    LocalBodyReader {
+        reader,
+        metrics: metrics.clone(),
+    }
 }
 
 struct LocalBodyReader<R> {
@@ -213,9 +236,7 @@ impl<R: Read> Read for LocalBodyReader<R> {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
         let start = Instant::now();
         let result = self.reader.read(buffer);
-        self.metrics
-            .body_read
-            .set(self.metrics.body_read.get().saturating_add(start.elapsed()));
+        self.metrics.record_body_read(start.elapsed());
         result
     }
 }
@@ -283,7 +304,7 @@ impl HttpBodyReadFailure {
         }
     }
 
-    fn disabled() -> Self {
+    pub(crate) fn disabled() -> Self {
         Self { failed: None }
     }
 

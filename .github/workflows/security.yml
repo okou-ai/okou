@@ -398,6 +398,7 @@ jobs:
           shellcheck -x -P .github/scripts:.github/scripts/runner .github/scripts/runner/prepare-runner-image.sh .github/scripts/tests/prepare-runner-image-test.sh
           shellcheck -x -P .github/scripts/runner .github/scripts/runner/prune-runner-idle.sh .github/scripts/runner/reconcile-runner-binary-groups.sh
           shellcheck -x -P .github/scripts/runner .github/scripts/runner/wait-runner-image.sh
+          shellcheck -x -P .github/scripts/runner .github/scripts/tests/runner-release-staging-ansible-test.sh
           shellcheck -x -P crates/runner/tests/behavior/exec crates/runner/tests/behavior/exec/*.sh
           # actionlint assumes Bash when shell is omitted and does not model the
           # sh default used by container jobs.
