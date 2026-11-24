@@ -208,12 +208,12 @@ class ChatComposerRootTest {
                 )
                 .chats
         }
-        // Finish the real HTTP warm and cache write before opening the unselected conversation.
+        compose.onNodeWithContentDescription("Back").performClick()
+        // Let the visible list load the resources used to warm the unselected conversation.
         compose.waitUntil(10_000) {
             compose.runOnIdle { chats.warming.state.value.phase == ChatReadPhase.Ready }
         }
         assertEquals(0, app.fixture.chats.readRequests.get())
-        compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithText("Personal chat").performClick()
         compose.waitUntil(10_000) {
             compose.onAllNodesWithText("No messages yet.").fetchSemanticsNodes().isNotEmpty()
@@ -681,39 +681,42 @@ class ChatComposerRootTest {
         compose.onNodeWithText("New chat").performClick()
         compose.onNodeWithTag("message_input").assertTextContains("Original **message** 👋")
         app.fixture.disconnectSend = true
-        compose.onNodeWithContentDescription("Send").assertIsEnabled().performClick()
-        compose.waitUntil(10_000) {
-            // Drain the actual native owner as journal/HTTP completions return to Main.
-            compose.onNodeWithTag("message_input").fetchSemanticsNode()
-            app.fixture.inputs.size == 1 ||
-                editor?.uiState?.value?.failed?.isNotEmpty() == true ||
-                editor?.uiState?.value?.persistence ==
-                    ai.okou.android.chat.ComposerPersistence.Failed
-        }
-        assertEquals(
-            "${editor?.uiState?.value}; requests=${app.fixture.requests.map { it.path }}",
-            1,
-            app.fixture.inputs.size,
-        )
-        app.contextGate.countDown()
-        val event = app.fixture.inputs.keys.single()
-        messageText(event, "Original **message** 👋").assertIsDisplayed()
-        compose.onNodeWithTag("message_input").performTextInput("Newer draft 你好")
         val checkStarted = CountDownLatch(1)
         val checkResponse = CountDownLatch(1)
+        // Hold discovery of the created chat so its history cannot confirm delivery early.
+        app.fixture.beforeListReturn = { containsCreatedChat ->
+            if (containsCreatedChat) checkResponse.await()
+        }
         app.fixture.beforeInputStatusReturn = {
             checkStarted.countDown()
             checkResponse.await()
         }
-        try {
-            app.sendGate.countDown()
-            awaitConversation { checkStarted.count == 0L }
-            messageDelivery(event, "Sending…").assertIsDisplayed()
-            compose.onNodeWithText("Check delivery").assertDoesNotExist()
-            messageText(event, "Original **message** 👋").assertIsDisplayed()
-        } finally {
-            checkResponse.countDown()
-        }
+        val event =
+            try {
+                compose.onNodeWithContentDescription("Send").assertIsEnabled().performClick()
+                awaitConversation {
+                    app.fixture.inputs.size == 1 ||
+                        editor?.uiState?.value?.failed?.isNotEmpty() == true ||
+                        editor?.uiState?.value?.persistence == ComposerPersistence.Failed
+                }
+                assertEquals(
+                    "${editor?.uiState?.value}; requests=${app.fixture.requests.map { it.path }}",
+                    1,
+                    app.fixture.inputs.size,
+                )
+                app.contextGate.countDown()
+                val eventId = app.fixture.inputs.keys.single()
+                messageText(eventId, "Original **message** 👋").assertIsDisplayed()
+                compose.onNodeWithTag("message_input").performTextInput("Newer draft 你好")
+                app.sendGate.countDown()
+                awaitConversation { checkStarted.count == 0L }
+                messageDelivery(eventId, "Sending…").assertIsDisplayed()
+                compose.onNodeWithText("Check delivery").assertDoesNotExist()
+                messageText(eventId, "Original **message** 👋").assertIsDisplayed()
+                eventId
+            } finally {
+                checkResponse.countDown()
+            }
         val thread = app.fixture.created.single().getValue("clientThreadId").jsonPrimitive.content
         awaitConversation {
             editor?.uiState?.value?.entry(ComposerTarget(thread))?.receipt?.eventId == event &&
