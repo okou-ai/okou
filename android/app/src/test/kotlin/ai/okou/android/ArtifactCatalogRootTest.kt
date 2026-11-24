@@ -24,6 +24,7 @@ import android.webkit.WebView
 import android.widget.VideoView
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
@@ -75,6 +76,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.abs
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.JsonPrimitive
 import okhttp3.mockwebserver.MockResponse
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -1127,23 +1129,111 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
 
     @Test
     fun conversationCardOpensAnAuthorizedPreviewWithoutReadingTheCatalog() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            compose.activityRule.scenario.recreate()
+            val fixture = ArtifactApiFixture(app.fixture)
+            fixture.install()
+            fixture.installInlineHistory()
+            app.fixture.historyReply +=
+                "\n\n[${fixture.checklist.title}](/artifacts/checklist1.md) " +
+                    "[${fixture.image.title}](/artifacts/thumbnail1.png)"
+            app.responseGate.countDown()
+            awaitText(fixture.sourceTitle)
+            compose.onNodeWithText(fixture.sourceTitle).performClick()
+            awaitText(fixture.image.title)
+
+            val button = SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button)
+            val summary = compose.onNode(hasText(fixture.summary.title) and button)
+            val checklist = compose.onNode(hasText(fixture.checklist.title) and button)
+            val image = compose.onNode(hasText(fixture.image.title) and button)
+            val intro = compose.onNodeWithText("The release summary is ready.")
+            val summaryBounds = summary.assertHeightIsAtLeast(60.dp).getUnclippedBoundsInRoot()
+            val checklistBounds = checklist.getUnclippedBoundsInRoot()
+            assertEquals(12.dp, summaryBounds.top - intro.getUnclippedBoundsInRoot().bottom)
+            assertEquals(8.dp, checklistBounds.top - summaryBounds.bottom)
+            assertEquals(8.dp, image.getUnclippedBoundsInRoot().top - checklistBounds.bottom)
+            assertTrue(fixture.requestedReferences.isEmpty())
+            summary.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
+            summary.assertIsFocused().performKeyInput { pressKey(Key.Enter) }
+
+            awaitText("Preview only", partial = true)
+            compose.onNodeWithText("Artifact preview").assertIsDisplayed()
+            compose.onNodeWithText("Save file").assertDoesNotExist()
+            assertEquals(
+                listOf("/api/artifact-references/artifacts2.md"),
+                fixture.requestedReferences,
+            )
+            assertTrue(fixture.catalogScopes.isEmpty())
+            compose.onNodeWithContentDescription("Back").performClick()
+            awaitText(fixture.image.title)
+            summary.assertIsFocused()
+        } finally {
+            instrumentation.resetInTouchMode()
+        }
+    }
+
+    @Test
+    fun adjacentArtifactCardsUseEightDpThroughMarkdownListsAndEarlierReplies() {
         val fixture = ArtifactApiFixture(app.fixture)
         fixture.install()
         fixture.installInlineHistory()
+        val note = "Additional material for the handoff."
+        val handoff = "Release handoff notes"
+        val latest =
+            app.fixture.historyReply +
+                "\n\n- [${fixture.checklist.title}](/artifacts/checklist1.md)" +
+                "\n- [${fixture.image.title}](/artifacts/thumbnail1.png)" +
+                "\n- $note\n- [$handoff](/artifacts/part000001.md)"
+        val earlier =
+            "[${fixture.site.title}](https://fixture.okou.app/)" +
+                "\n\n[${fixture.slides.title}](/artifacts/launchdeck.pptx)"
+        app.fixture.setHistoryEvents(
+            CHAT_PERSONAL,
+            listOf(
+                historyEventWire(
+                    "input",
+                    17,
+                    type = "input.prompt",
+                    payload =
+                        """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Review the release files"}]}}""",
+                ),
+                historyEventWire(
+                    "earlier-output",
+                    19,
+                    payload = """{"content":${JsonPrimitive(earlier)}}""",
+                ),
+                historyEventWire(
+                    "output",
+                    23,
+                    payload = """{"content":${JsonPrimitive(latest)}}""",
+                ),
+                historyEventWire(type = "run.completed", payload = "null"),
+            ),
+        )
         app.responseGate.countDown()
         awaitText(fixture.sourceTitle)
         compose.onNodeWithText(fixture.sourceTitle).performClick()
-        awaitText(fixture.summary.title)
-        assertTrue(fixture.requestedReferences.isEmpty())
-        compose.onNodeWithText(fixture.summary.title).assertHeightIsAtLeast(60.dp).performClick()
-        awaitText("Preview only", partial = true)
-        compose.onNodeWithText("Artifact preview").assertIsDisplayed()
-        compose.onNodeWithText("Save file").assertDoesNotExist()
-        assertEquals(1, fixture.requestedReferences.size)
-        assertTrue(fixture.catalogScopes.isEmpty())
-        compose.onNodeWithContentDescription("Back").performClick()
-        awaitText(fixture.summary.title)
-        compose.onNodeWithText(fixture.summary.title).assertIsFocused()
+        awaitText(fixture.slides.title)
+
+        val labels =
+            listOf(
+                fixture.summary.title,
+                fixture.checklist.title,
+                fixture.image.title,
+                note,
+                handoff,
+                fixture.site.title,
+                fixture.slides.title,
+            )
+        val bounds = labels.map { label ->
+            compose.onNodeWithText(label).getUnclippedBoundsInRoot()
+        }
+        assertEquals(
+            listOf(8.dp, 8.dp, 12.dp, 12.dp, 8.dp, 8.dp),
+            bounds.zipWithNext { above, below -> below.top - above.bottom },
+        )
     }
 
     @Test
