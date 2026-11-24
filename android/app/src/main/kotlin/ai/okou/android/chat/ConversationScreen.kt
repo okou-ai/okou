@@ -505,6 +505,7 @@ internal fun ConversationRoute(
                 content.lastOrNull { it.includes(id) }?.key
             }
         val completionAnchor = completion?.anchorKey
+        val completingReply = latestConfirmed?.takeIf { it == completionAnchor }
         val latestAtReadingEdge by
             remember(position, latestConfirmed, completionAnchor) {
                 derivedStateOf {
@@ -533,7 +534,11 @@ internal fun ConversationRoute(
                 if (visible && latestAtReadingEdge) {
                     hasSeenLatest = true
                     newReply = false
-                } else if (!atEnd && newestReply != null && newestReply != lastReply) {
+                } else if (
+                    (!atEnd || completingReply != null) &&
+                        newestReply != null &&
+                        newestReply != lastReply
+                ) {
                     newReply = true
                 }
             }
@@ -554,11 +559,14 @@ internal fun ConversationRoute(
                 .filterNotNull()
                 .collect { model.rememberReadingAnchor(threadId, it.anchor) }
         }
+        val revealHiddenReply = atEnd && completingReply != null && !latestAtReadingEdge
+        val newReplyUnseen = newReply || (!hasSeenLatest && list.isUnread(threadId))
         val jump =
             when {
-                missing || !readingReady || atEnd || !position.canScrollBackward -> null
-                newReply || (!hasSeenLatest && list.isUnread(threadId)) ->
+                missing || !readingReady -> null
+                newReplyUnseen && (position.canScrollBackward || revealHiddenReply) ->
                     R.string.conversation_new_reply
+                atEnd || !position.canScrollBackward -> null
                 !pastJumpThreshold -> null
                 activity != null -> R.string.conversation_view_progress
                 else -> R.string.conversation_jump_latest
@@ -725,7 +733,24 @@ internal fun ConversationRoute(
                                                 else 4.dp,
                                             end = if (window.height < 480) 12.dp else 0.dp,
                                         ),
-                                onClick = { scope.launch { position.scrollToItem(0) } },
+                                onClick = {
+                                    scope.launch {
+                                        position.scrollToItem(0)
+                                        if (
+                                            jump == R.string.conversation_new_reply &&
+                                                completingReply != null &&
+                                                position.layoutInfo.visibleItemsInfo.none {
+                                                    it.key == completingReply
+                                                }
+                                        ) {
+                                            val replyIndex = timeline.indexOfFirst {
+                                                it.key == completingReply
+                                            }
+                                            if (replyIndex >= 0)
+                                                position.scrollToItem(replyIndex + 1)
+                                        }
+                                    }
+                                },
                             )
                         }
                     }
