@@ -48,14 +48,16 @@ const TOPIC = chatArtifactCatalogChangedEvent(NAVIGATION_ARTIFACT_THREAD_ID);
 
 async function setupPublication(
   entry: "message" | "raw" | "catalog",
-  source: "authenticated" | "reference" = "authenticated",
+  source: "authenticated" | "reference" | "public" = "authenticated",
   initialGrant:
     "healthy" | "unavailable" | "expired" | "body-unavailable" = "healthy",
 ) {
   const url =
     source === "authenticated"
       ? `${privateAttachmentUrl(FILE_ID)}&filename=${FILENAME}`
-      : artifactReferencePath(FILE_ID, FILENAME);
+      : source === "reference"
+        ? artifactReferencePath(FILE_ID, FILENAME)
+        : BODY_URL;
   const messageFilename =
     source === "authenticated" ? FILENAME : url.split("/").at(-1)!;
   const original = artifactFile(FILENAME, {
@@ -348,6 +350,26 @@ test.each([
     );
   },
 );
+
+test("Reopening a failed public catalog preview retries the same immutable file", async () => {
+  const publication = await setupPublication(
+    "catalog",
+    "public",
+    "body-unavailable",
+  );
+  await openResourceArtifact(TITLE);
+  const sidebar = await screen.findByTestId("artifact-sidebar");
+  await expect(
+    within(sidebar).findByText(/preview unavailable\./i),
+  ).resolves.toBeInTheDocument();
+  await closeResources();
+
+  publication.restoreTransport();
+  await closePreview();
+  await publication.open();
+  await quoteAndSend(PASSAGE);
+  expectQuotedFile(await publication.sent.promise, PASSAGE, FILE_ID, FILENAME);
+});
 
 test("Catalog Markdown retains its body across unrelated catalog and global notifications while metadata reloads", async () => {
   const publication = await setupPublication("catalog");

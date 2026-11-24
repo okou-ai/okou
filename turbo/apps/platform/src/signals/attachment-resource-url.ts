@@ -268,6 +268,7 @@ export function createAttachmentPreviewSignals(
     },
   );
   const resourceUrl$ = computed(async (get) => {
+    get(refreshVersion$);
     return currentHostedSiteUrl(
       (await get(presignedToken$))?.token ?? url,
       get(hostedSiteUrlChanges$),
