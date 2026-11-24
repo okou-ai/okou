@@ -83,7 +83,7 @@ fun AssistantRecoveryPanel(
         Modifier.fillMaxWidth().padding(top = 8.dp),
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
             AssistantFailureText(reason)
@@ -177,7 +177,11 @@ fun AssistantRecoveryPanel(
                         ) {
                             Text(stringResource(R.string.recovery_continue))
                         }
-                        if (data.resetAccount != null && !confirmedReset || unknownReset)
+                        if (data.resetAccount != null && !confirmedReset || unknownReset) {
+                            val resetEnabled =
+                                !busy &&
+                                    !unresolvedOther &&
+                                    (!unknownReset || attempt.reset.accountId == data.account?.id)
                             OutlinedButton(
                                 onClick = {
                                     if (unknownReset)
@@ -189,12 +193,12 @@ fun AssistantRecoveryPanel(
                                     else confirmReset = true
                                 },
                                 modifier = Modifier.heightIn(min = 48.dp),
-                                enabled =
-                                    !busy &&
-                                        !unresolvedOther &&
-                                        (!unknownReset ||
-                                            attempt.reset.accountId == data.account?.id),
+                                enabled = resetEnabled,
                                 shape = RoundedCornerShape(12.dp),
+                                border =
+                                    if (resetEnabled)
+                                        BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                                    else ButtonDefaults.outlinedButtonBorder(enabled = false),
                             ) {
                                 Text(
                                     stringResource(
@@ -203,6 +207,7 @@ fun AssistantRecoveryPanel(
                                     ),
                                 )
                             }
+                        }
                     }
             }
         }

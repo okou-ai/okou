@@ -54,6 +54,24 @@ def android_color(expression, variables):
     return "#" + "".join(f"{round(component * 255):02X}" for component in (alpha, red, green, blue))
 
 
+def relative_luminance(argb):
+    def linear(channel):
+        return channel / 12.92 if channel <= 0.04045 else ((channel + 0.055) / 1.055) ** 2.4
+
+    red, green, blue = (linear(int(argb[i : i + 2], 16) / 255) for i in (3, 5, 7))
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+
+
+def android_primary_foreground(primary, foreground):
+    # Android uses the same foreground for small text and for icons on primary fills.
+    # Web chooses labels by APCA. Check the emitted Android colors against WCAG 2.
+    fill = relative_luminance(primary) + 0.05
+    text = relative_luminance(foreground) + 0.05
+    if max(fill, text) / min(fill, text) >= 4.5:
+        return foreground
+    return "#FF000000" if fill / 0.05 >= 1.05 / fill else "#FFFFFFFF"
+
+
 def outputs():
     css = re.sub(r"/\*.*?\*/", "", SOURCE.read_text(), flags=re.S)
     light = colors.block(css, "  :root {")
@@ -83,11 +101,17 @@ def outputs():
             prefix = "okou_" + (name.replace("-", "_") + "_" if name != "default" else "")
             expressions = {role: bindings[f"color-{role}"] for role in ROLES}
             expressions[SWATCH_COMPANION] = variables["okou-color-theme-companion"]
-            for role, expression in expressions.items():
-                value = android_color(expression, resolved)
+            values = {
+                role: android_color(expression, resolved)
+                for role, expression in expressions.items()
+            }
+            values["primary-foreground"] = android_primary_foreground(
+                values["primary"], values["primary-foreground"]
+            )
+            for role, value in values.items():
                 lines.append(f'    <color name="{prefix}{role.replace("-", "_")}">{value}</color>')
             lines.append(f'    <style name="OkouPalette_{name.replace("-", "_")}">')
-            for role in expressions:
+            for role in values:
                 key = role.replace("-", "_")
                 lines.append(f'        <item name="okou_palette_{key}">@color/{prefix}{key}</item>')
             lines.append('    </style>')

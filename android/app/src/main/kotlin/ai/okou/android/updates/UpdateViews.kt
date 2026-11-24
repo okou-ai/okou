@@ -316,7 +316,7 @@ internal fun AppUpdateSettings(
                     .onFocusChanged { focused = it.isFocused }
                     .updateFocusOutline(
                         RoundedCornerShape(12.dp),
-                        LocalActivityStatusColor.current,
+                        MaterialTheme.colorScheme.onSurface,
                     ),
             value = stringResource(status),
             valueMaxLines = 1,
@@ -419,7 +419,7 @@ private fun UpdateSheet(
                     if (scrollWholePanel) Modifier
                     else
                         Modifier.weight(1f, fill = false)
-                            .updateFocusOutline(RectangleShape, LocalActivityStatusColor.current)
+                            .updateFocusOutline(RectangleShape, MaterialTheme.colorScheme.onSurface)
                             .verticalScroll(scroll)
                             .focusable(scroll.canScrollForward || scroll.canScrollBackward),
                 ) {
@@ -781,7 +781,7 @@ private fun UpdateAction(
             .then(focus.modifier)
             .updateFocusOutline(
                 shape,
-                if (enabled) foreground else LocalActivityStatusColor.current,
+                if (enabled) foreground else colors.onSurface,
             )
     if (progress != null) {
         val fraction = (transfer as? UpdateTransfer.Downloading)?.fraction()
@@ -909,7 +909,7 @@ private fun ActionText(label: String, action: () -> Unit, modifier: Modifier = M
         modifier =
             modifier
                 .heightIn(min = updateActionMinHeight)
-                .updateFocusOutline(ButtonDefaults.shape, LocalActivityStatusColor.current),
+                .updateFocusOutline(ButtonDefaults.shape, MaterialTheme.colorScheme.onSurface),
         contentPadding = updateActionPadding,
         colors =
             ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),

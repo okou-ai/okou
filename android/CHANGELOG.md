@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.52.2](https://github.com/okou-ai/okou/compare/android-v0.52.1...android-v0.52.2) (2026-11-24)
+
+
+### Bug Fixes
+
+* **android:** align shared settings saves with native feedback ([#50454](https://github.com/okou-ai/okou/issues/50454)) ([90d2208](https://github.com/okou-ai/okou/commit/90d2208b245fefaea7da9abb9d7ae9272e6a9ff2))
+* **android:** align sign-in and entry screens with design ([#50425](https://github.com/okou-ai/okou/issues/50425)) ([0ae68ee](https://github.com/okou-ai/okou/commit/0ae68eebe6c97b8f269536fcdd5bd4b046c449b6))
+* **android:** align stop and queue operation states ([#50482](https://github.com/okou-ai/okou/issues/50482)) ([d200d87](https://github.com/okou-ai/okou/commit/d200d87a95324561feadd6ff91846a374625b2ce))
+* **android:** align workspace search presentation with design ([#50419](https://github.com/okou-ai/okou/issues/50419)) ([dc8a902](https://github.com/okou-ai/okou/commit/dc8a902b0c14fe21497527ffc84dcf8ec6c13a0d))
+
 ## [0.52.1](https://github.com/okou-ai/okou/compare/android-v0.52.0...android-v0.52.1) (2026-11-24)
 
 

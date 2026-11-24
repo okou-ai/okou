@@ -4,7 +4,6 @@ import ai.okou.android.EntryBrand
 import ai.okou.android.EntryCompactHeight
 import ai.okou.android.EntryContentGutter
 import ai.okou.android.EntryContentWidth
-import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.OkouConfirmationDialog
 import ai.okou.android.R
 import ai.okou.android.SettingsGroup
@@ -286,7 +285,7 @@ private fun SessionWorkspaceRow(
         modifier
             .fillMaxWidth()
             .onFocusChanged { focused = it.isFocused }
-            .updateFocusOutline(shape, LocalActivityStatusColor.current)
+            .updateFocusOutline(shape, MaterialTheme.colorScheme.onSurface)
             .clickable(role = Role.Button) { onClick(focused) }
             .heightIn(min = 64.dp)
             .padding(horizontal = 16.dp, vertical = 8.dp),
@@ -385,7 +384,7 @@ private fun SessionPrimaryAction(
 ) {
     val colors = MaterialTheme.colorScheme
     val foreground = if (enabled) colors.onPrimary else colors.onSurfaceVariant
-    WithButtonFocusOutline(if (enabled) foreground else LocalActivityStatusColor.current) {
+    WithButtonFocusOutline(if (enabled) foreground else colors.onSurface) {
         Button(
             onClick = { if (enabled) onClick() },
             modifier =
@@ -415,7 +414,7 @@ private fun SessionTextAction(
         modifier =
             modifier
                 .heightIn(min = 48.dp)
-                .updateFocusOutline(shape, LocalActivityStatusColor.current)
+                .updateFocusOutline(shape, colors.onSurface)
                 .sessionActionAvailability(enabled),
         shape = shape,
         colors =

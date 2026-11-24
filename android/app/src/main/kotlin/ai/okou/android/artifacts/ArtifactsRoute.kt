@@ -142,7 +142,7 @@ internal fun ArtifactsRoute(
                     else Modifier.width((listWidth - 1).dp),
             )
         }
-        if (wide) VerticalDivider(color = MaterialTheme.colorScheme.outline)
+        if (wide) VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         if (selectedId != null) {
             Column(Modifier.weight(1f)) {
                 if (!wide)
