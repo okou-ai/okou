@@ -20,6 +20,7 @@ const {
   createOrgFixture,
   createSubscriptionOrg,
   createPublicBillingOrg,
+  readBillingStatus,
 } = createBillingCheckoutFixture();
 
 describe("POST /api/billing/credit-checkout", () => {
@@ -973,10 +974,23 @@ describe("POST /api/billing/credit-checkout", () => {
     );
   });
 
-  it("rejects credit checkout when the plan capability is disabled", async () => {
+  it("lets a Free workspace buy credits without upgrading its plan", async () => {
     const fixture = await createPublicBillingOrg();
     await fixture.run(async () => {
       mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+      const checkoutUrl = "https://checkout.stripe.com/session/free-credit";
+      context.mocks.stripe.customers.create.mockResolvedValue({
+        id: fixture.customerId,
+      });
+      context.mocks.stripe.checkout.sessions.create.mockResolvedValue({
+        url: checkoutUrl,
+      });
+
+      await expect(readBillingStatus(fixture)).resolves.toMatchObject({
+        tier: "limited-free-1",
+        canBuyCredits: true,
+        hasSubscription: false,
+      });
 
       const response = await accept(
         setupApp({ context, routes: billingCreditCheckoutRoutes })(
@@ -989,16 +1003,28 @@ describe("POST /api/billing/credit-checkout", () => {
           },
           headers: { authorization: "Bearer clerk-session" },
         }),
-        [400],
+        [200],
       );
 
-      expect(response.body.error).toStrictEqual({
-        message: "Credit purchases are not available for this workspace",
-        code: "BAD_REQUEST",
-      });
+      expect(response.body).toStrictEqual({ url: checkoutUrl });
       expect(
         context.mocks.stripe.checkout.sessions.create,
-      ).not.toHaveBeenCalled();
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mode: "payment",
+          line_items: [{ price: TEST_PRICE_CUSTOM_CREDIT_UNIT, quantity: 20 }],
+          metadata: expect.objectContaining({
+            purpose: "credit_purchase",
+            orgId: fixture.orgId,
+          }),
+        }),
+      );
+      await expect(readBillingStatus(fixture)).resolves.toMatchObject({
+        tier: "limited-free-1",
+        hasSubscription: false,
+        autoRechargeAllowed: false,
+        restrictedBuiltInModels: true,
+      });
     });
   });
 

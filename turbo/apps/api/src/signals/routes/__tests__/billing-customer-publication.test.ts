@@ -73,7 +73,7 @@ test("initializes the default Plan through a fresh payment-method portal and reu
     status: "active",
     credits: 0,
     concurrencyLimit: 2,
-    canBuyCredits: false,
+    canBuyCredits: true,
     canBuyConcurrency: false,
     showUsagePack: false,
     autoRechargeAllowed: false,
