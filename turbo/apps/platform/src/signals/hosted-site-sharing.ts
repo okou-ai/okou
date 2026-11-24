@@ -18,7 +18,6 @@ import {
   recordHostedSiteUrlChange$,
 } from "./hosted-site-url-changes.ts";
 import { createShareLinkCopy } from "./share-link-copy.ts";
-import { recordHostedSiteVisibilityChange$ } from "./hosted-site-visibility-changes.ts";
 import {
   debounceCommand,
   onRef,
@@ -27,16 +26,13 @@ import {
 } from "./utils.ts";
 import { createHostedSiteBannerSignals } from "./hosted-site-banner.ts";
 import { passArtifactPaywall$ } from "./okou-page/artifact-paywall.ts";
-import { createHostedSitePeopleSignals } from "./hosted-site-people.ts";
+import { createSharePeopleSignals } from "./share-people.ts";
 
 type SiteUrl = zInfer<typeof hostedSiteUrlSchema>;
 type Validation = "unchanged" | "invalid" | "available" | "taken";
 type Visibility = zInfer<typeof hostedSiteVisibilitySchema>;
 
-function createSiteVisibilitySignals(
-  sourceUrl: string,
-  site$: Computed<Promise<SiteUrl | null>>,
-) {
+function createSiteVisibilitySignals(site$: Computed<Promise<SiteUrl | null>>) {
   const reload$ = state(0);
   const details$ = computed(async (get) => {
     const site = await get(site$);
@@ -65,7 +61,7 @@ function createSiteVisibilitySignals(
       if (!details || details.visibility === visibility) {
         return false;
       }
-      const updated = await accept(
+      await accept(
         get(apiClient$)(hostContract).updateSiteVisibility({
           params: { siteId: details.siteId },
           body: { visibility, expectedRevision: details.revision },
@@ -77,10 +73,6 @@ function createSiteVisibilitySignals(
       signal.throwIfAborted();
       set(reload$, (value) => {
         return value + 1;
-      });
-      set(recordHostedSiteVisibilityChange$, {
-        url: sourceUrl,
-        revision: updated.body.revision,
       });
       await get(details$);
       signal.throwIfAborted();
@@ -292,8 +284,12 @@ function createHostedSiteShareSession(sourceUrl: string) {
     set(domains.back$);
     set(editor.cancel$);
   });
-  const visibility = createSiteVisibilitySignals(sourceUrl, details$);
-  const people = createHostedSitePeopleSignals(visibility.visibility$, open$);
+  const visibility = createSiteVisibilitySignals(details$);
+  const peopleTarget$ = computed(async (get) => {
+    const site = await get(visibility.visibility$);
+    return site ? { kind: "site" as const, id: site.siteId } : null;
+  });
+  const people = createSharePeopleSignals(peopleTarget$, open$);
   const banner = createHostedSiteBannerSignals(visibility.visibility$);
   const hasSettings$ = computed(async (get) => {
     const [details, permissions] = await Promise.all([

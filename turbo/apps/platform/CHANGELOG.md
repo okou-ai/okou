@@ -13,6 +13,51 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1175.2](https://github.com/okou-ai/okou/compare/app-v0.1175.1...app-v0.1175.2) (2026-11-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.120.0
+    * @okouai/core bumped to 8.870.0
+    * @okouai/ui bumped to 1.22.7
+
+## [0.1175.1](https://github.com/okou-ai/okou/compare/app-v0.1175.0...app-v0.1175.1) (2026-11-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.119.0
+    * @okouai/core bumped to 8.869.1
+    * @okouai/ui bumped to 1.22.6
+
+## [0.1175.0](https://github.com/okou-ai/okou/compare/app-v0.1174.0...app-v0.1175.0) (2026-11-24)
+
+
+### Features
+
+* migrate billing feedback to posthog surveys ([#50412](https://github.com/okou-ai/okou/issues/50412)) ([b3c517c](https://github.com/okou-ai/okou/commit/b3c517cd416a26bda272000095c0aa1deafc332e))
+* **platform:** manage member-wide connector account access ([#50442](https://github.com/okou-ai/okou/issues/50442)) ([550aab4](https://github.com/okou-ai/okou/commit/550aab4ff22583731225eaaa1e3b77c64fc2c341))
+* use saved presentation format for generation ([#50260](https://github.com/okou-ai/okou/issues/50260)) ([ad98aaa](https://github.com/okou-ai/okou/commit/ad98aaa608c934f8eac3325ab079b3ee8fc50dd1))
+
+
+### Bug Fixes
+
+* **app:** reconnect chat oauth accounts in one click ([#50439](https://github.com/okou-ai/okou/issues/50439)) ([6e90467](https://github.com/okou-ai/okou/commit/6e90467f2cb87b13feff299b70d4cde5a5935bdf))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.118.0
+    * @okouai/core bumped to 8.869.0
+    * @okouai/ui bumped to 1.22.5
+
 ## [0.1174.0](https://github.com/okou-ai/okou/compare/app-v0.1173.2...app-v0.1174.0) (2026-11-24)
 
 

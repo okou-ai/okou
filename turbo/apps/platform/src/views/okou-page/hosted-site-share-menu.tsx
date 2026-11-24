@@ -36,8 +36,8 @@ import {
 import { useTranslation } from "react-i18next";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { Switch } from "@okouai/ui/components/ui/switch";
-import { HostedSitePeople } from "./hosted-site-people.tsx";
-import { HostedSiteAudienceChoices } from "./hosted-site-audience-choices.tsx";
+import { SharePeople } from "./share-people.tsx";
+import { ShareAudienceChoices } from "./share-audience-choices.tsx";
 import { ProBadge } from "./components/model-provider-picker.tsx";
 import { resolveEditableHostedSiteDomain } from "../../lib/platform-host.ts";
 import { captureArtifactAction } from "../../lib/posthog.ts";
@@ -186,7 +186,7 @@ function HostedSitePermissions({
         )
       ) : emailSharing ? (
         <>
-          <HostedSiteAudienceChoices
+          <ShareAudienceChoices
             selected={current?.visibility}
             organizationName={organization?.name ?? null}
             saving={saving}
@@ -196,7 +196,7 @@ function HostedSitePermissions({
             }}
           >
             {children}
-          </HostedSiteAudienceChoices>
+          </ShareAudienceChoices>
           {failed && <ShareLoadError />}
         </>
       ) : (
@@ -1106,7 +1106,7 @@ function HostedSiteShareSessionMenu({
           session={session}
           permissions={
             <HostedSitePermissions session={session}>
-              <HostedSitePeople
+              <SharePeople
                 session={session}
                 busy={
                   sharing.state === "loading" || removing.state === "loading"

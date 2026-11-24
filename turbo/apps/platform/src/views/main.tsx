@@ -15,7 +15,7 @@ import { rootSignal$ } from "../signals/root-signal.ts";
 import { theme$ } from "../signals/theme.ts";
 import { handleInvitationRedirect$ } from "../signals/invitation-redirect.ts";
 import { pollInstatusIssues$ } from "../signals/instatus-status.ts";
-import { handleBillingRedirect$ } from "../signals/okou-page/billing.ts";
+import { handleBillingFeedbackRedirect$ } from "../signals/billing-feedback.ts";
 import { detach, Reason } from "../signals/utils.ts";
 import {
   isStandalonePwa,
@@ -63,7 +63,7 @@ function GlobalKeyboardShortcuts() {
 function AppToaster() {
   const signal = useGet(rootSignal$);
   const theme = useGet(theme$);
-  const handleBillingRedirect = useSet(handleBillingRedirect$);
+  const handleBillingRedirect = useSet(handleBillingFeedbackRedirect$);
   const handleInvitationRedirect = useSet(handleInvitationRedirect$);
 
   const handleReady = () => {

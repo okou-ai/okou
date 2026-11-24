@@ -214,6 +214,9 @@ final class ChatModelSelectionStore {
       webURL: models.webURL, threadID: threadID,
       managementEnabled: { [weak models] in
         models?.configuration?.switches["iosConnectorManagement"] == true
+      },
+      memberAccessEnabled: { [weak models] in
+        models?.lastKnownFeatureSwitches?.usesMemberConnectorAccess == true
       }, readRetrySleep: models.readRetrySleep,
       didFail: models.report)
     self.threadID = threadID

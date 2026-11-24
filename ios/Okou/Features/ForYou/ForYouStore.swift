@@ -288,7 +288,7 @@ final class ForYouStore {
     let attempt = Selection(
       cardID: card.id, optionID: optionID, direction: direction,
       model: models.flatMap { $0.models.configuration == nil ? nil : $0.selection },
-      effort: models?.requestedEffort, options: models?.connectors.pendingOptions,
+      effort: models?.requestedEffort, options: models?.connectors.submissionOptions,
       computerAccess: models?.connectors.currentComputerAccess)
     selections[card.id] = attempt
     return attempt

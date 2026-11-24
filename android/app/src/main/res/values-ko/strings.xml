@@ -5,7 +5,6 @@
     <string name="auth_selection_failed">이 워크스페이스를 열지 못했습니다.</string>
     <string name="auth_sign_out_failed">로그아웃하지 못했습니다.</string>
     <string name="composer_restore_draft">보관된 초안 복원</string>
-    <string name="controls_storage_failed">대기 중인 제어 요청을 저장할 수 없습니다.</string>
     <string name="controls_stop">실행 중인 작업 중지</string>
     <string name="controls_stop_failed">작업을 중지하지 못했습니다.</string>
     <string name="settings">설정</string>

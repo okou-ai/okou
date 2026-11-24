@@ -68,7 +68,7 @@ final class ComposerDraftTests: XCTestCase {
     let composer = server.composer()
     defer { composer.close() }
     await composer.synchronize()
-    try await waitForBusinessResult { composer.attachments.isReady }
+    try await waitForBusinessResult(watching: composer) { composer.attachments.isReady }
 
     composer.text = " \n\t"
     await composer.synchronize()
@@ -111,7 +111,7 @@ final class ComposerDraftTests: XCTestCase {
     let composer = server.composer()
     defer { composer.close() }
     await composer.synchronize()
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: composer) {
       composer.attachments.items.contains { if case .failed = $0.state { true } else { false } }
     }
     XCTAssertFalse(composer.canSend)
@@ -157,7 +157,7 @@ final class ComposerDraftTests: XCTestCase {
     let composer = server.composer(storage: storage)
     defer { composer.close() }
     composer.attachments.importFiles([source])
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: composer) {
       composer.attachments.items.contains { if case .failed = $0.state { true } else { false } }
     }
     let copied = try XCTUnwrap(composer.attachments.items.first?.file.url)
@@ -173,7 +173,7 @@ final class ComposerDraftTests: XCTestCase {
     XCTAssertFalse(reopened.attachments.isReady)
     let item = try XCTUnwrap(reopened.attachments.items.first)
     reopened.attachments.retry(item.id)
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: reopened) {
       reopened.attachments.items.contains { if case .failed = $0.state { true } else { false } }
     }
     XCTAssertTrue(reopened.attachments.uploaded.isEmpty)
@@ -185,7 +185,7 @@ final class ComposerDraftTests: XCTestCase {
     let first = server.composer(storage: storage)
     defer { first.close() }
     await first.synchronize()
-    try await waitForBusinessResult { first.attachments.isReady }
+    try await waitForBusinessResult(watching: first) { first.attachments.isReady }
     XCTAssertEqual(first.text, "Review this ")
     XCTAssertEqual(first.contextLabels, ["Plan"])
     first.text = "Review this carefully"
@@ -198,7 +198,7 @@ final class ComposerDraftTests: XCTestCase {
     let reopened = server.composer(storage: storage)
     defer { reopened.close() }
     XCTAssertEqual(reopened.text, "Review this carefully")
-    try await waitForBusinessResult { reopened.attachments.isReady }
+    try await waitForBusinessResult(watching: reopened) { reopened.attachments.isReady }
     XCTAssertEqual(reopened.attachments.uploaded.first?.id, "file")
     XCTAssertEqual(reopened.value, saved)
     XCTAssertTrue(server.state.value.withLock { $0.paths.allSatisfy { !$0.contains("POST") } })
@@ -428,12 +428,12 @@ final class ComposerDraftTests: XCTestCase {
     }
     let opening = Task { await composer.synchronize() }
     await fulfillment(of: [started], timeout: 2)
-    composer.setForeground(false)
+    composer.setScenePhase(.background)
     composer.text = "Edit retained while synchronization is paused"
     await composer.synchronize()
     XCTAssertEqual(server.state.value.withLock { $0.remote }, ComposerDraft())
 
-    composer.setForeground(true)
+    composer.setScenePhase(.active)
     await composer.synchronize()
     gate.open()
     await opening.value
@@ -499,7 +499,7 @@ final class ComposerRichDraftTests: XCTestCase {
     let composer = server.composer()
     defer { composer.close() }
     await composer.synchronize()
-    try await waitForBusinessResult { composer.attachments.isReady }
+    try await waitForBusinessResult(watching: composer) { composer.attachments.isReady }
     let navigation = MentionNavigationFixture()
     let workspace = try await navigation.workspace()
     defer { workspace.close() }
@@ -513,7 +513,7 @@ final class ComposerRichDraftTests: XCTestCase {
     try await focusMentionInput(input)
     input.selectedRange = NSRange(location: 7, length: 0)
     input.insertText("🌷 new ")
-    try await waitForBusinessResult { composer.text == "Review 🌷 new this " }
+    try await waitForBusinessResult(watching: composer) { composer.text == "Review 🌷 new this " }
     let note = try XCTUnwrap(
       mentionInputs(in: host.view).first { $0.accessibilityLabel == "Ask or comment on this quote" }
     )
@@ -523,7 +523,7 @@ final class ComposerRichDraftTests: XCTestCase {
     let reference = try XCTUnwrap(source.suggestions(for: "project").first)
     try await waitForBusinessResult { composer.editor.mentionSuggestions.contains(reference) }
     composer.editor.insertMention(reference)
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: composer) {
       composer.editorBlocks.first(where: \.isFeedback)?.content.parts.contains(reference.part)
         == true
     }
@@ -537,14 +537,14 @@ final class ComposerRichDraftTests: XCTestCase {
       composer.document.parts.last?["range"], remote.draftUserMessage?.parts.last?["range"])
     let saved = composer.value
     // Let the host consume the reference edit's focus request before changing its target.
-    try await waitForBusinessResult { composer.focusRequest == nil }
+    try await waitForBusinessResult(watching: composer) { composer.focusRequest == nil }
     try await focusMentionInput(input)
     input.selectedRange = NSRange(location: 0, length: input.text.utf16.count)
     input.cut(nil)
-    try await waitForBusinessResult { composer.text.isEmpty }
+    try await waitForBusinessResult(watching: composer) { composer.text.isEmpty }
     try await eventually { input.undoManager?.groupingLevel == 0 }
     input.undoManager?.undo()
-    try await waitForBusinessResult { composer.value == saved }
+    try await waitForBusinessResult(watching: composer) { composer.value == saved }
   }
 
   func testRichQuoteAndAttachmentsRoundTripRestartAndRemoteConflictChoice() async throws {
@@ -554,7 +554,7 @@ final class ComposerRichDraftTests: XCTestCase {
     let composer = server.composer(storage: storage)
     defer { composer.close() }
     await composer.synchronize()
-    try await waitForBusinessResult { composer.attachments.isReady }
+    try await waitForBusinessResult(watching: composer) { composer.attachments.isReady }
     composer.text = "Review 🌷 new this "
     let note = try XCTUnwrap(composer.editorBlocks.first(where: \.isFeedback))
     var content = note.content
@@ -622,19 +622,19 @@ final class ComposerRichDraftTests: XCTestCase {
     try await focusMentionInput(restoredNote)
     restoredNote.selectedRange = (restoredNote.text as NSString).range(of: "\u{fffc}")
     restoredNote.deleteBackward()
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: reopened) {
       reopened.editorBlocks.first(where: \.isFeedback)?.content.parts.contains {
         $0["threadId"]?.string == "74000000-0000-4000-8000-000000000001"
       } == false
     }
     restoredNote.undoManager?.undo()
-    try await waitForBusinessResult { reopened.value == saved }
+    try await waitForBusinessResult(watching: reopened) { reopened.value == saved }
     restoredNote.insertText(" Local")
     server.state.value.withLock { $0.remote = remote }
     await reopened.synchronize()
     XCTAssertNotNil(reopened.conflictingRemote)
     reopened.useRemote()
-    try await waitForBusinessResult { reopened.value == remote }
+    try await waitForBusinessResult(watching: reopened) { reopened.value == remote }
     try await eventually {
       mentionInputs(in: host.view).contains {
         $0 !== restoredNote && $0.text == "Compare \u{fffc}now"
@@ -712,7 +712,7 @@ final class ComposerRichDraftTests: XCTestCase {
     let window = try await mountMentionHost(host)
     defer { unmount(window) }
     composer.editor.selectOrAppendText("Existing question")
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: composer) {
       composer.editorBlocks.first(where: { $0.id == notes[1].id })?.content.text
         == "Existing question"
     }
@@ -728,14 +728,15 @@ final class ComposerRichDraftTests: XCTestCase {
     let composer = server.composer()
     defer { composer.close() }
     await composer.synchronize()
-    try await waitForBusinessResult { composer.attachments.isReady }
+    try await waitForBusinessResult(watching: composer) { composer.attachments.isReady }
     let parts = composer.document.parts.filter { $0["type"]?.string != "text" }
     let attachments = composer.attachments.savedItems
     let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
     let window = try await mountMentionHost(host)
     defer { unmount(window) }
     composer.editor.selectOrAppendText("Compare the alternatives")
-    try await waitForBusinessResult { composer.text.hasSuffix("\nCompare the alternatives") }
+    let appended = "\nCompare the alternatives"
+    try await waitForBusinessResult(watching: composer) { composer.text.hasSuffix(appended) }
     XCTAssertEqual(composer.document.parts.filter { $0["type"]?.string != "text" }, parts)
     XCTAssertEqual(composer.attachments.savedItems, attachments)
   }
@@ -747,7 +748,7 @@ final class ComposerRichDraftTests: XCTestCase {
     let composer = server.composer(storage: storage)
     defer { composer.close() }
     await composer.synchronize()
-    try await waitForBusinessResult { composer.attachments.isReady }
+    try await waitForBusinessResult(watching: composer) { composer.attachments.isReady }
     composer.text += "\nCompare the alternatives"
     let local = composer.value
     server.state.value.withLock { $0.remote = textDraft("Edited on another device") }

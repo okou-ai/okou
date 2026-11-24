@@ -293,12 +293,11 @@ final class ConversationPresentation {
       conversation.permissionActions.deactivate()
       conversation.approvals.deactivate()
     }
-    reconcileVisibility()
+    conversation.reconcileVisibility()
   }
 
   func reconcileVisibility() {
     guard let conversation else { return }
-    if !isVisible() { composer.voice?.suspend() }
     reconcileActivitySummary()
     if detailOwner != nil && isVisible() {
       conversation.failureRecoveryActions.requestFailureAccounts()

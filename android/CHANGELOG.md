@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.54.0](https://github.com/okou-ai/okou/compare/android-v0.53.0...android-v0.54.0) (2026-11-24)
+
+
+### Features
+
+* **android:** add built-in tool settings ([#50488](https://github.com/okou-ai/okou/issues/50488)) ([728e8ce](https://github.com/okou-ai/okou/commit/728e8ce2a260f26018932353d8c973a552fd6cf7))
+
+
+### Bug Fixes
+
+* **android:** use neutral focus color in confirmation dialogs ([#50515](https://github.com/okou-ai/okou/issues/50515)) ([115553a](https://github.com/okou-ai/okou/commit/115553a8f2105d71357e178a585992814a1b574e))
+
+## [0.53.0](https://github.com/okou-ai/okou/compare/android-v0.52.2...android-v0.53.0) (2026-11-24)
+
+
+### Features
+
+* **native:** manage member-wide connector account access ([#50496](https://github.com/okou-ai/okou/issues/50496)) ([eda9b10](https://github.com/okou-ai/okou/commit/eda9b103a4531c6c23058180f5150e11a3a986e9))
+
+## [0.52.2](https://github.com/okou-ai/okou/compare/android-v0.52.1...android-v0.52.2) (2026-11-24)
+
+
+### Bug Fixes
+
+* **android:** align shared settings saves with native feedback ([#50454](https://github.com/okou-ai/okou/issues/50454)) ([90d2208](https://github.com/okou-ai/okou/commit/90d2208b245fefaea7da9abb9d7ae9272e6a9ff2))
+* **android:** align sign-in and entry screens with design ([#50425](https://github.com/okou-ai/okou/issues/50425)) ([0ae68ee](https://github.com/okou-ai/okou/commit/0ae68eebe6c97b8f269536fcdd5bd4b046c449b6))
+* **android:** align stop and queue operation states ([#50482](https://github.com/okou-ai/okou/issues/50482)) ([d200d87](https://github.com/okou-ai/okou/commit/d200d87a95324561feadd6ff91846a374625b2ce))
+* **android:** align workspace search presentation with design ([#50419](https://github.com/okou-ai/okou/issues/50419)) ([dc8a902](https://github.com/okou-ai/okou/commit/dc8a902b0c14fe21497527ffc84dcf8ec6c13a0d))
+
 ## [0.52.1](https://github.com/okou-ai/okou/compare/android-v0.52.0...android-v0.52.1) (2026-11-24)
 
 

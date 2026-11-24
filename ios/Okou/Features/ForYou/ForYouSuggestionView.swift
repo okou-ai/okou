@@ -7,8 +7,6 @@ struct ForYouSuggestionView: View {
   let suggestion: ForYouSuggestion
   /// The height the deck gives the card's content, or none to take its own (`ForYouCardLayout`).
   var height: CGFloat?
-  /// Hears the card's own content height, for the deck to size itself.
-  var report: ((CGFloat) -> Void)?
   /// The direction whose choice is under way, which shows its progress in place of its arrow.
   var pendingOptionID: String?
   /// While the member writes a direction of their own, the card stands above the input as its
@@ -20,11 +18,20 @@ struct ForYouSuggestionView: View {
   @State private var showsWholeReason = false
   @State private var wholeReasonHeight: CGFloat = 0
   @State private var shownReasonHeight: CGFloat = 0
+  /// The source and title above the reason.
+  @State private var leadHeight: CGFloat = 0
+  /// One line of the reason's type, and two, for how tall each further line is.
+  @State private var oneLine: CGFloat = 0
+  @State private var twoLines: CGFloat = 0
   /// A long reason shows its first lines until it is opened, so a dense card keeps its
-  /// directions in view.
+  /// directions in view: as many as the card has room for, or these when the room isn't known.
   private static let reasonLines = 3
-  private static let descriptionLines = 3
-  private static let labelFont = Font.okou(.subheadline).weight(.medium)
+  /// A direction's description keeps two lines, so two directions stay in view under a dense
+  /// reason on a smaller phone.
+  private static let descriptionLines = 2
+  /// The card is a reading surface: a Title 3 heading over Body text, with Subheadline for
+  /// secondary lines (docs/ios/mobile-design-system.md#type-roles).
+  private static let labelFont = Font.okou(.body).weight(.medium)
   /// The room between directions: enough that each reads as its own button.
   private static let directionGap = OkouSpace.ten
 
@@ -38,31 +45,17 @@ struct ForYouSuggestionView: View {
   }
 
   var body: some View {
-    ForYouCardLayout(
-      height: height, spacing: OkouSpace.xl, showsActions: !isContext, report: report
-    ) {
+    ForYouCardLayout(height: height, spacing: OkouSpace.xl, showsActions: !isContext) { room in
       VStack(alignment: .leading, spacing: OkouSpace.sm) {
-        if let source, !isContext {
-          Button {
-            openSource(source.id)
-          } label: {
-            HStack(spacing: OkouSpace.six) {
-              OkouIcon("message-circle", size: OkouIconSize.inline)
-              Text(source.title).lineLimit(1)
-              OkouIcon("chevron-right", size: OkouIconSize.accessory)
-                .foregroundStyle(OkouColor.quietMark)
-            }
-            .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
-            .padding(.horizontal, OkouSpace.ten)
-            .frame(minHeight: OkouControl.inlineActionHeight)
+        lead
+          .onGeometryChange(for: CGFloat.self) {
+            $0.size.height
+          } action: {
+            leadHeight = $0
           }
-          .buttonStyle(ForYouChipButtonStyle()).accessibilityHint("View source")
-          .padding(.bottom, OkouSpace.xs)
-          .transition(.opacity)
-        }
-        Text(suggestion.title).font(.okou(.title3).weight(.semibold))
-          .accessibilityAddTraits(.isHeader).fixedSize(horizontal: false, vertical: true)
-        if !suggestion.rationale.isEmpty { reason }
+        // While a direction is written the room moves with the keyboard, so the reason keeps
+        // its first lines rather than reflowing as the keyboard rises.
+        if !suggestion.rationale.isEmpty { reason(lines: reasonLines(in: isContext ? nil : room)) }
       }
     } actions: {
       VStack(spacing: Self.directionGap) {
@@ -74,15 +67,52 @@ struct ForYouSuggestionView: View {
     .foregroundStyle(OkouColor.foreground)
   }
 
+  /// Where the suggestion came from, and what it proposes.
+  private var lead: some View {
+    VStack(alignment: .leading, spacing: OkouSpace.sm) {
+      if let source, !isContext {
+        Button {
+          openSource(source.id)
+        } label: {
+          HStack(spacing: OkouSpace.six) {
+            OkouIcon("message-circle", size: OkouIconSize.inline)
+            Text(source.title).lineLimit(1)
+            OkouIcon("chevron-right", size: OkouIconSize.accessory)
+              .foregroundStyle(OkouColor.quietMark)
+          }
+          .font(.okou(.subheadline)).foregroundStyle(OkouColor.mutedForeground)
+          .padding(.horizontal, OkouSpace.ten)
+          .frame(minHeight: OkouControl.inlineActionHeight)
+        }
+        .buttonStyle(ForYouChipButtonStyle()).accessibilityHint("View source")
+        .padding(.bottom, OkouSpace.xs)
+        .transition(.opacity)
+      }
+      Text(suggestion.title).font(.okou(.title3).weight(.semibold))
+        .accessibilityAddTraits(.isHeader).fixedSize(horizontal: false, vertical: true)
+    }
+  }
+
+  /// As many lines of the reason as fit in the heading's room under the source and title, and at
+  /// least one, so the closed card never has to scroll and its Show more always shows; three when
+  /// the room isn't known. Only an opened reason scrolls, above the directions.
+  private func reasonLines(in room: CGFloat?) -> Int {
+    let nextLine = twoLines - oneLine
+    guard let room, leadHeight > 0, oneLine > 0, nextLine > 0 else { return Self.reasonLines }
+    let space = room - leadHeight - OkouSpace.sm - oneLine
+    guard space > 0 else { return 1 }
+    return 1 + Int((space / nextLine).rounded(.down))
+  }
+
   /// Why Okou suggests it: its first lines, ending in Show more when they do not hold all of it,
   /// so a long reason costs no extra row; the reason itself opens too. Once open, Show less
   /// follows it. VoiceOver always reads the whole reason.
-  private var reason: some View {
+  private func reason(lines: Int) -> some View {
     let clipped = wholeReasonHeight > shownReasonHeight + OkouSpace.one
     return VStack(alignment: .leading, spacing: 0) {
-      Text(suggestion.rationale).font(.okou(.subheadline))
+      Text(suggestion.rationale).font(.okou(.body))
         .foregroundStyle(OkouColor.mutedForeground)
-        .lineLimit(showsWholeReason ? nil : Self.reasonLines)
+        .lineLimit(showsWholeReason ? nil : lines)
         .fixedSize(horizontal: false, vertical: true)
         .onGeometryChange(for: CGFloat.self) {
           $0.size.height
@@ -90,16 +120,30 @@ struct ForYouSuggestionView: View {
           shownReasonHeight = $0
         }
         // The whole reason, laid out unseen at the same width, tells whether the lines shown
-        // hold all of it.
+        // hold all of it; one line and two tell how many lines the room holds.
         .background(alignment: .top) {
-          Text(suggestion.rationale).font(.okou(.subheadline))
-            .fixedSize(horizontal: false, vertical: true)
-            .hidden()
-            .onGeometryChange(for: CGFloat.self) {
-              $0.size.height
-            } action: {
-              wholeReasonHeight = $0
-            }
+          ZStack(alignment: .top) {
+            Text(suggestion.rationale).font(.okou(.body))
+              .fixedSize(horizontal: false, vertical: true)
+              .onGeometryChange(for: CGFloat.self) {
+                $0.size.height
+              } action: {
+                wholeReasonHeight = $0
+              }
+            Text(verbatim: "A").font(.okou(.body))
+              .onGeometryChange(for: CGFloat.self) {
+                $0.size.height
+              } action: {
+                oneLine = $0
+              }
+            Text(verbatim: "A\nA").font(.okou(.body)).fixedSize()
+              .onGeometryChange(for: CGFloat.self) {
+                $0.size.height
+              } action: {
+                twoLines = $0
+              }
+          }
+          .hidden()
         }
         .overlay(alignment: .bottomTrailing) {
           if clipped && !showsWholeReason {
@@ -129,7 +173,7 @@ struct ForYouSuggestionView: View {
   private func reasonToggle(_ title: LocalizedStringKey) -> some View {
     Button(title, action: toggleReason)
       .buttonStyle(.plain)
-      .font(.okou(.subheadline).weight(.semibold)).foregroundStyle(OkouColor.foreground)
+      .font(.okou(.body).weight(.semibold)).foregroundStyle(OkouColor.foreground)
       .contentShape(Rectangle().inset(by: -OkouSpace.ten))
       .accessibilityHidden(true)
   }
@@ -164,7 +208,7 @@ struct ForYouSuggestionView: View {
         // A long description keeps its first lines so a dense card leaves its heading room;
         // VoiceOver reads all of it.
         if !option.description.isEmpty {
-          Text(option.description).font(.okou(.footnote))
+          Text(option.description).font(.okou(.subheadline))
             .foregroundStyle(OkouColor.mutedForeground)
             .lineLimit(Self.descriptionLines)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -194,8 +238,6 @@ struct ForYouAutomationView: View {
   let event: ForYouAutomation
   /// The height the deck gives the card's content, or none to take its own.
   var height: CGFloat?
-  /// Hears the card's own content height, for the deck to size itself.
-  var report: ((CGFloat) -> Void)?
   let enable: () -> Void
   let dismiss: () -> Void
 
@@ -208,7 +250,7 @@ struct ForYouAutomationView: View {
   }
 
   var body: some View {
-    ForYouCardLayout(height: height, spacing: OkouSpace.lg, report: report) {
+    ForYouCardLayout(height: height, spacing: OkouSpace.lg) { _ in
       heading
     } actions: {
       // A card's actions are compact, side by side; Enable is its one commitment.
@@ -227,7 +269,7 @@ struct ForYouAutomationView: View {
   private var heading: some View {
     VStack(alignment: .leading, spacing: OkouSpace.md) {
       Label("System update", okouSymbol: "workflow", iconSize: OkouIconSize.inline)
-        .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
+        .font(.okou(.subheadline)).foregroundStyle(OkouColor.mutedForeground)
         .padding(.horizontal, OkouSpace.ten)
         .frame(minHeight: OkouControl.inlineActionHeight)
         .background(
@@ -242,12 +284,12 @@ struct ForYouAutomationView: View {
         runs again.
         """
       )
-      .font(.okou(.subheadline)).foregroundStyle(OkouColor.mutedForeground)
+      .font(.okou(.body)).foregroundStyle(OkouColor.mutedForeground)
       .fixedSize(horizontal: false, vertical: true)
       VStack(alignment: .leading, spacing: OkouSpace.two) {
-        Text(verbatim: event.automationName).font(.okou(.subheadline).weight(.medium))
+        Text(verbatim: event.automationName).font(.okou(.body).weight(.medium))
         if let description = event.automationDescription, !description.isEmpty {
-          Text(verbatim: description).font(.okou(.footnote))
+          Text(verbatim: description).font(.okou(.subheadline))
             .foregroundStyle(OkouColor.mutedForeground)
         }
       }
@@ -264,7 +306,7 @@ struct ForYouAutomationView: View {
             Text("Paused on \(pausedOn)")
           }
         }
-        .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
+        .font(.okou(.subheadline)).foregroundStyle(OkouColor.mutedForeground)
       }
     }
   }
@@ -291,14 +333,13 @@ enum ForYouCardInset {
 /// heading less than a third of the card, as at the largest text sizes, heading and actions
 /// scroll as one from the title. Without its actions, as while a direction is written, the
 /// heading takes its own height up to the one given and runs out through the card's bottom edge
-/// past it. Without a height the card takes its own. Either way it reports its own height
-/// (heading, gap and actions), which never depends on the height it is given.
+/// past it. Without a height the card takes its own. The heading hears the room it has for
+/// itself, when it is known, so a reason can show as much of itself as fits.
 struct ForYouCardLayout<Heading: View, Actions: View>: View {
   let height: CGFloat?
   let spacing: CGFloat
   let showsActions: Bool
-  let report: ((CGFloat) -> Void)?
-  let heading: Heading
+  let heading: (CGFloat?) -> Heading
   let actions: Actions
   @State private var headingHeight: CGFloat = 0
   @State private var actionsHeight: CGFloat = 0
@@ -311,14 +352,13 @@ struct ForYouCardLayout<Heading: View, Actions: View>: View {
   private var headingShare: CGFloat { 1 / 3 }
 
   init(
-    height: CGFloat?, spacing: CGFloat, showsActions: Bool = true, report: ((CGFloat) -> Void)?,
-    @ViewBuilder heading: () -> Heading, @ViewBuilder actions: () -> Actions
+    height: CGFloat?, spacing: CGFloat, showsActions: Bool = true,
+    @ViewBuilder heading: @escaping (CGFloat?) -> Heading, @ViewBuilder actions: () -> Actions
   ) {
     self.height = height
     self.spacing = spacing
     self.showsActions = showsActions
-    self.report = report
-    self.heading = heading()
+    self.heading = heading
     self.actions = actions()
   }
 
@@ -330,7 +370,7 @@ struct ForYouCardLayout<Heading: View, Actions: View>: View {
           below: pinsActions
             ? 0 : showsActions ? ForYouCardInset.bottom : ForYouCardInset.textBottom
         ) {
-          measuredHeading
+          measuredHeading(headingRoom(within: height, pinsActions: pinsActions))
           if showsActions && !pinsActions {
             measuredActions.padding(.top, spacing).transition(.opacity)
           }
@@ -338,12 +378,25 @@ struct ForYouCardLayout<Heading: View, Actions: View>: View {
         if pinsActions { measuredActions.transition(.opacity) }
       }
       .frame(height: contentRoom(within: height), alignment: .top)
+      // The heading's own height arrives a moment after the change that moved its text (the
+      // source leaving as a direction opens), so the card eases to it rather than cutting the
+      // text still on its way up.
+      .animation(reduceMotion ? nil : OkouMotion.transition, value: headingHeight)
     } else {
       VStack(alignment: .leading, spacing: spacing) {
-        measuredHeading
+        measuredHeading(nil)
         if showsActions { measuredActions.transition(.opacity) }
       }
     }
+  }
+
+  /// The room the heading has for itself: the height given less the actions that stay put under
+  /// it, or all of it without them. Unknown until the actions are measured, and when heading
+  /// and actions scroll as one.
+  private func headingRoom(within height: CGFloat, pinsActions: Bool) -> CGFloat? {
+    guard showsActions else { return height }
+    guard pinsActions, actionsHeight > 0 else { return nil }
+    return height - actionsHeight - spacing
   }
 
   /// Scrolls its content within the card. It reaches past the content by the card's insets on
@@ -368,6 +421,9 @@ struct ForYouCardLayout<Heading: View, Actions: View>: View {
     .defaultScrollAnchor(.top, for: .sizeChanges)
     .scrollBounceBehavior(.basedOnSize, axes: .vertical)
     .scrollIndicatorsFlash(onAppear: true)
+    // An opened reason that now runs past the room flashes the indicator too, so it reads as
+    // something to scroll rather than as cut text.
+    .scrollIndicatorsFlash(trigger: hasMoreBelow)
     .onScrollGeometryChange(for: Bool.self) { geometry in
       geometry.contentOffset.y + geometry.containerSize.height
         < geometry.contentSize.height - OkouSpace.one
@@ -405,12 +461,12 @@ struct ForYouCardLayout<Heading: View, Actions: View>: View {
     showsActions || headingHeight == 0 ? height : min(height, headingHeight)
   }
 
-  private var measuredHeading: some View {
-    heading.frame(maxWidth: .infinity, alignment: .leading)
+  private func measuredHeading(_ room: CGFloat?) -> some View {
+    heading(room).frame(maxWidth: .infinity, alignment: .leading)
       .onGeometryChange(for: CGFloat.self) {
         $0.size.height
       } action: {
-        noteHeading($0)
+        headingHeight = $0
       }
   }
 
@@ -419,23 +475,8 @@ struct ForYouCardLayout<Heading: View, Actions: View>: View {
     actions.fixedSize(horizontal: false, vertical: true).onGeometryChange(for: CGFloat.self) {
       $0.size.height
     } action: {
-      noteActions($0)
+      actionsHeight = $0
     }
-  }
-
-  private func noteHeading(_ height: CGFloat) {
-    headingHeight = height
-    send()
-  }
-
-  private func noteActions(_ height: CGFloat) {
-    actionsHeight = height
-    send()
-  }
-
-  private func send() {
-    guard headingHeight > 0, actionsHeight > 0 else { return }
-    report?(headingHeight + spacing + actionsHeight)
   }
 }
 

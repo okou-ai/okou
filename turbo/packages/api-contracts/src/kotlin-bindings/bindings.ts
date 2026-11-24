@@ -1,4 +1,4 @@
-import type { ZodType } from "zod";
+import { string, type ZodType } from "zod";
 import type { NoBodyMarker } from "../contracts/trpc-contract";
 import { orgContract } from "../contracts/org-routes";
 import { userPreferencesContract } from "../contracts/user-preferences";
@@ -34,7 +34,11 @@ import { platformRealtimeTokenContract } from "../contracts/realtime";
 import { sessionOutputDeltaSchema } from "../validators/realtime";
 import { modelCatalogContract } from "../contracts/model-catalog";
 import { runModelsMainContract } from "../contracts/run-models";
-import { userModelPreferenceContract } from "../contracts/user-model-preference";
+import {
+  imageModelPreferenceSchema,
+  userModelPreferenceContract,
+} from "../contracts/user-model-preference";
+import { paidToolsContract } from "../contracts/paid-tools";
 import { featureSwitchesContract } from "../contracts/feature-switches";
 import { feedContract } from "../contracts/feed";
 import { morningBriefPreferenceContract } from "../contracts/morning-brief-preference";
@@ -195,6 +199,17 @@ const connectorBindings = [
     name: "connectorAccountDefaults",
     response: "ConnectorAccountDefaults",
     route: chatConnectorAccessContract.accountDefaults,
+  },
+  {
+    name: "connectorAccountPolicies",
+    response: "ConnectorAccountPolicies",
+    route: chatConnectorAccessContract.accountPolicies,
+  },
+  {
+    name: "connectorAccountPolicyUpdate",
+    response: "ConnectorAccountPolicy",
+    request: "ConnectorAccountPolicyRequest",
+    route: chatConnectorAccessContract.updateAccountPolicy,
   },
   {
     name: "connectorAccountDefaultUpdate",
@@ -424,6 +439,23 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     request: "UpdateDefaultModelPreference",
     response: "DefaultModelPreference",
     route: userModelPreferenceContract.update,
+  },
+  {
+    name: "updateImageModelPreference",
+    request: "UpdateImageModelPreference",
+    response: "DefaultModelPreference",
+    route: userModelPreferenceContract.updateImageModel,
+  },
+  {
+    name: "paidToolPreferences",
+    response: "PaidToolPreferences",
+    route: paidToolsContract.get,
+  },
+  {
+    name: "updatePaidTool",
+    request: "UpdatePaidTool",
+    response: "PaidToolUpdate",
+    route: paidToolsContract.update,
   },
   {
     name: "emailSubscription",
@@ -846,17 +878,36 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
   {
     name: "DefaultModelPreference",
     schema: userModelPreferenceContract.get.responses[200],
-    readSchema: userModelPreferenceContract.get.responses[200].pick({
-      selectedModel: true,
-      serviceTier: true,
-      modelSettings: true,
-    }),
+    readSchema: userModelPreferenceContract.get.responses[200]
+      .pick({ selectedModel: true, serviceTier: true, modelSettings: true })
+      // Image catalog changes must remain decodable by the chat-model picker.
+      .extend({ selectedImageModel: string().nullish() }),
     direction: "output",
   },
   {
     name: "UpdateDefaultModelPreference",
     schema: userModelPreferenceContract.update.body,
     direction: "input",
+  },
+  {
+    name: "UpdateImageModelPreference",
+    schema: imageModelPreferenceSchema,
+    direction: "input",
+  },
+  {
+    name: "PaidToolPreferences",
+    schema: paidToolsContract.get.responses[200],
+    direction: "output",
+  },
+  {
+    name: "UpdatePaidTool",
+    schema: paidToolsContract.update.body,
+    direction: "input",
+  },
+  {
+    name: "PaidToolUpdate",
+    schema: paidToolsContract.update.responses[200],
+    direction: "output",
   },
   {
     name: "EmailSubscription",

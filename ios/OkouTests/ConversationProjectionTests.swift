@@ -89,7 +89,9 @@ final class ConversationProjectionTests: XCTestCase {
       .init(
         threadID: ConversationHistoryFixture.threadID, runID: Self.runID,
         eventID: eventID, chunkIndex: 0, delta: "Live answer"))
-    try await waitForBusinessResult { conversation.streamedOutputs.first?.text == "Live answer" }
+    try await waitForBusinessResult(watching: conversation) {
+      conversation.streamedOutputs.first?.text == "Live answer"
+    }
     conversation.draft = "An unsent draft"
     fixture.append(try row(2, text: "Durable answer", eventID: eventID))
 
@@ -120,7 +122,9 @@ final class ConversationProjectionTests: XCTestCase {
       .init(
         threadID: ConversationHistoryFixture.threadID, runID: Self.runID,
         eventID: ConversationHistoryFixture.id(10), chunkIndex: 0, delta: "Old run"))
-    try await waitForBusinessResult { conversation.streamedOutputs.first?.text == "Old run" }
+    try await waitForBusinessResult(watching: conversation) {
+      conversation.streamedOutputs.first?.text == "Old run"
+    }
     let newer = "60000000-0000-4000-8000-000000000004"
     fixture.append(try row(2, type: "input.prompt", text: "New request", runID: newer))
 
@@ -137,7 +141,9 @@ final class ConversationProjectionTests: XCTestCase {
       .init(
         threadID: ConversationHistoryFixture.threadID, runID: newer,
         eventID: ConversationHistoryFixture.id(11), chunkIndex: 0, delta: "New run"))
-    try await waitForBusinessResult { conversation.streamedOutputs.first?.text == "New run" }
+    try await waitForBusinessResult(watching: conversation) {
+      conversation.streamedOutputs.first?.text == "New run"
+    }
     XCTAssertEqual(conversation.streamedOutputs.map(\.text), ["New run"])
   }
 
@@ -155,7 +161,7 @@ final class ConversationProjectionTests: XCTestCase {
       .init(
         threadID: ConversationHistoryFixture.threadID, runID: Self.runID,
         eventID: ConversationHistoryFixture.id(2), chunkIndex: 0, delta: "Visible before close"))
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: conversation) {
       conversation.streamedOutputs.first?.text == "Visible before close"
     }
     let visible = conversation.visibleItems

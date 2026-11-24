@@ -42,6 +42,7 @@ export interface DirectRunInput {
   readonly profile: string;
   readonly reuseKey: string;
   readonly predecessorRunId: string | null;
+  readonly antigravityEnabled: boolean;
 }
 
 /** Receipt from durable Thread Run admission. */

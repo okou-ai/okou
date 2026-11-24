@@ -41,6 +41,7 @@ internal enum class SettingsDestination {
     CreditBalance,
     Account,
     ProactiveServices,
+    BuiltInTools,
 }
 
 internal enum class SearchRoute {

@@ -1201,6 +1201,9 @@
       "teamWarning": "你的 Team 權益會持續到當前帳單週期結束，之後這個工作區會變成{{plan}}。",
       "title": "降級套餐"
     },
+    "feedback": {
+      "shareFeedback": "分享意見"
+    },
     "invoices": {
       "amount": "金額",
       "date": "日期",
@@ -1344,40 +1347,6 @@
     "sidebar": {
       "description": "更多積分和併發執行",
       "getPlan": "獲取{{plan}}"
-    },
-    "survey": {
-      "checkoutAbandoned": {
-        "answers": {
-          "just_checking_price": "只是看看價格",
-          "needs_approval": "需要其他人核准",
-          "not_ready_yet": "還沒準備好付費",
-          "not_seeing_value": "還沒看到它的價值",
-          "other": "其他原因",
-          "payment_issue": "付款時遇到問題",
-          "price_higher_than_expected": "價格比預期高",
-          "results_not_good_enough": "對產出結果不滿意"
-        },
-        "description": "只有一個問題，你的回答會幫助我們改進。",
-        "question": "是什麼讓你沒有完成購買？"
-      },
-      "creditsExhausted": {
-        "answers": {
-          "no_need_now": "目前用不到更多",
-          "not_sure_worth_it": "還不確定是否值得",
-          "other": "其他原因",
-          "still_trying": "想再多試用一下",
-          "too_expensive": "價格太高"
-        },
-        "question": "是什麼讓你今天還沒有升級？",
-        "reward": "此工作區首個符合條件的回答可獲得 {{credits}} 獎勵 credits，有效期 30 天。",
-        "thanksWithCredits": "感謝！已為你新增 {{credits}} credits，可以繼續使用了。"
-      },
-      "error": "送出失敗，請再試一次。",
-      "notNow": "暫不回答",
-      "otherLabel": "你的回答",
-      "otherPlaceholder": "補充說明（選填）",
-      "submit": "送出",
-      "thanks": "感謝你的回饋。"
     },
     "toasts": {
       "autoRechargeUpdated": "自動充值已更新",
@@ -2620,11 +2589,6 @@
       "unsupported": "不支援手動重設；用量將自然恢復。"
     },
     "taskChips": {
-      "presentationFormat": "簡報格式",
-      "presentationFormats": {
-        "html": "HTML",
-        "pptx": "PPTX"
-      },
       "presentationTemplates": "簡報模板",
       "removeTask": "移除{{task}}",
       "shelf": {

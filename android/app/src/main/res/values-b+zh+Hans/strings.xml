@@ -5,7 +5,6 @@
     <string name="auth_selection_failed">暂时无法进入这个工作区。</string>
     <string name="auth_sign_out_failed">暂时无法退出登录。</string>
     <string name="composer_restore_draft">恢复保留的草稿</string>
-    <string name="controls_storage_failed">待处理控制请求暂时无法保存。</string>
     <string name="controls_stop">停止任务</string>
     <string name="controls_stop_failed">未能停止任务</string>
     <string name="settings">设置</string>

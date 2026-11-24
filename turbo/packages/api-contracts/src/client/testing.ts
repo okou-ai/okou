@@ -19,6 +19,8 @@ import { artifactReferencesContract as OriginalArtifactReferencesContract } from
 import { artifactReferencesContract } from "./artifact-references";
 import { artifactSharesContract as OriginalArtifactSharesContract } from "../contracts/artifact-shares";
 import { artifactSharesContract } from "./artifact-shares";
+import { artifactSharingContract as OriginalArtifactSharingContract } from "../contracts/artifact-sharing";
+import { artifactSharingContract } from "./artifact-sharing";
 import { atomSubscriptionGrantsContract as OriginalAtomSubscriptionGrantsContract } from "../contracts/atom-subscription-grants";
 import { atomSubscriptionGrantsContract } from "./atom-subscription-grants";
 import { authContract as OriginalAuthContract } from "../contracts/auth";
@@ -40,13 +42,13 @@ import {
   billingConcurrencySubscriptionContract as OriginalBillingConcurrencySubscriptionContract,
   billingCreditCheckoutContract as OriginalBillingCreditCheckoutContract,
   billingDowngradeContract as OriginalBillingDowngradeContract,
+  billingFeedbackRewardContract as OriginalBillingFeedbackRewardContract,
   billingInvoicesContract as OriginalBillingInvoicesContract,
   billingPortalContract as OriginalBillingPortalContract,
   billingRedeemCodeContract as OriginalBillingRedeemCodeContract,
   billingRedeemContract as OriginalBillingRedeemContract,
   billingRestoreContract as OriginalBillingRestoreContract,
   billingStatusContract as OriginalBillingStatusContract,
-  billingSurveyContract as OriginalBillingSurveyContract,
   billingUsagePackCatalogContract as OriginalBillingUsagePackCatalogContract,
   billingUsagePackCheckoutContract as OriginalBillingUsagePackCheckoutContract,
   billingUsagePackCreditsContract as OriginalBillingUsagePackCreditsContract,
@@ -60,13 +62,13 @@ import {
   billingConcurrencySubscriptionContract,
   billingCreditCheckoutContract,
   billingDowngradeContract,
+  billingFeedbackRewardContract,
   billingInvoicesContract,
   billingPortalContract,
   billingRedeemCodeContract,
   billingRedeemContract,
   billingRestoreContract,
   billingStatusContract,
-  billingSurveyContract,
   billingUsagePackCatalogContract,
   billingUsagePackCheckoutContract,
   billingUsagePackCreditsContract,
@@ -571,6 +573,8 @@ import {
 } from "./personal-model-providers";
 import { phoneUseContract as OriginalPhoneUseContract } from "../contracts/phone-use";
 import { phoneUseContract } from "./phone-use";
+import { posthogSurveysContract as OriginalPosthogSurveysContract } from "../contracts/posthog-surveys";
+import { posthogSurveysContract } from "./posthog-surveys";
 import { presentationTemplatesContract as OriginalPresentationTemplatesContract } from "../contracts/presentation-templates";
 import { presentationTemplatesContract } from "./presentation-templates";
 import { proactiveSuggestionsContract as OriginalProactiveSuggestionsContract } from "../contracts/proactive-suggestions";
@@ -801,6 +805,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [artifactOgContract, OriginalArtifactOgContract],
   [artifactReferencesContract, OriginalArtifactReferencesContract],
   [artifactSharesContract, OriginalArtifactSharesContract],
+  [artifactSharingContract, OriginalArtifactSharingContract],
   [atomSubscriptionGrantsContract, OriginalAtomSubscriptionGrantsContract],
   [authContract, OriginalAuthContract],
   [bankingContract, OriginalBankingContract],
@@ -818,13 +823,13 @@ export const clientDescriptorContracts: readonly (readonly [
   ],
   [billingCreditCheckoutContract, OriginalBillingCreditCheckoutContract],
   [billingDowngradeContract, OriginalBillingDowngradeContract],
+  [billingFeedbackRewardContract, OriginalBillingFeedbackRewardContract],
   [billingInvoicesContract, OriginalBillingInvoicesContract],
   [billingPortalContract, OriginalBillingPortalContract],
   [billingRedeemCodeContract, OriginalBillingRedeemCodeContract],
   [billingRedeemContract, OriginalBillingRedeemContract],
   [billingRestoreContract, OriginalBillingRestoreContract],
   [billingStatusContract, OriginalBillingStatusContract],
-  [billingSurveyContract, OriginalBillingSurveyContract],
   [billingUsagePackCatalogContract, OriginalBillingUsagePackCatalogContract],
   [billingUsagePackCheckoutContract, OriginalBillingUsagePackCheckoutContract],
   [billingUsagePackCreditsContract, OriginalBillingUsagePackCreditsContract],
@@ -1257,6 +1262,7 @@ export const clientDescriptorContracts: readonly (readonly [
   ],
   [personalSubscriptionsContract, OriginalPersonalSubscriptionsContract],
   [phoneUseContract, OriginalPhoneUseContract],
+  [posthogSurveysContract, OriginalPosthogSurveysContract],
   [presentationTemplatesContract, OriginalPresentationTemplatesContract],
   [proactiveSuggestionsContract, OriginalProactiveSuggestionsContract],
   [projectChatContract, OriginalProjectChatContract],

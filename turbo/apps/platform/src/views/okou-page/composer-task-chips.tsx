@@ -28,7 +28,6 @@ import {
 } from "./composer-template-catalog.ts";
 import { useCustomTemplateRecommendations } from "./use-custom-template-recommendations.ts";
 import { ComposerVisualizationOptions } from "./composer-visualization-options.tsx";
-import { ComposerPresentationOutputPicker } from "./composer-presentation-output-picker.tsx";
 import { ComposerTemplateSuggestion } from "./composer-template-suggestion.tsx";
 
 /**
@@ -348,12 +347,7 @@ export function ComposerTaskTemplates({
   readonly selected: Exclude<ComposerTask, "workflow">;
 }) {
   if (selected === "presentation") {
-    return (
-      <div className="flex min-w-0 snap-start flex-col gap-6">
-        <ComposerPresentationOutputPicker />
-        <ComposerPresentationRecommendations signals={signals} />
-      </div>
-    );
+    return <ComposerPresentationRecommendations signals={signals} />;
   }
   if (selected === "document") {
     return <ComposerDocumentRecommendations signals={signals} />;

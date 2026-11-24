@@ -31,6 +31,10 @@ export const clientDescriptorManifest = [
     contracts: ["artifactSharesContract"],
   },
   {
+    module: "artifact-sharing",
+    contracts: ["artifactSharingContract"],
+  },
+  {
     module: "atom-subscription-grants",
     contracts: ["atomSubscriptionGrantsContract"],
   },
@@ -55,13 +59,13 @@ export const clientDescriptorManifest = [
       "billingConcurrencySubscriptionContract",
       "billingCreditCheckoutContract",
       "billingDowngradeContract",
+      "billingFeedbackRewardContract",
       "billingInvoicesContract",
       "billingPortalContract",
       "billingRedeemCodeContract",
       "billingRedeemContract",
       "billingRestoreContract",
       "billingStatusContract",
-      "billingSurveyContract",
       "billingUsagePackCatalogContract",
       "billingUsagePackCheckoutContract",
       "billingUsagePackCreditsContract",
@@ -591,6 +595,10 @@ export const clientDescriptorManifest = [
   {
     module: "phone-use",
     contracts: ["phoneUseContract"],
+  },
+  {
+    module: "posthog-surveys",
+    contracts: ["posthogSurveysContract"],
   },
   {
     module: "presentation-templates",

@@ -1,6 +1,9 @@
 package ai.okou.android.auth
 
-import ai.okou.android.LocalActivityStatusColor
+import ai.okou.android.EntryBrand
+import ai.okou.android.EntryCompactHeight
+import ai.okou.android.EntryContentGutter
+import ai.okou.android.EntryContentWidth
 import ai.okou.android.OkouApp
 import ai.okou.android.OkouConfirmationDialog
 import ai.okou.android.R
@@ -14,9 +17,14 @@ import ai.okou.android.SettingsSheet
 import ai.okou.android.SettingsSwitchRow
 import ai.okou.android.SettingsTrigger
 import ai.okou.android.chat.WorkspaceRealtimeLifecycle
+import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.entryBrandNameStyle
+import ai.okou.android.entrySpacing
+import ai.okou.android.entryTopPadding
 import ai.okou.android.instructions.PersonalInstructionsSettings
 import ai.okou.android.preferences.MemberPreferenceSaveFeedback
 import ai.okou.android.preferences.MemberPreferencesSettings
+import ai.okou.android.settings.BuiltInToolsPage
 import ai.okou.android.settings.DefaultModelFeedback
 import ai.okou.android.settings.DefaultModelSetting
 import ai.okou.android.settings.EmailSubscriptionSetting
@@ -34,12 +42,14 @@ import ai.okou.android.updates.updateFocusOutline
 import ai.okou.android.workspaceSearchControlHeight
 import androidx.annotation.StringRes
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.selection.selectableGroup
@@ -53,6 +63,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -183,6 +194,15 @@ internal fun SessionRoot(
 
 @Composable
 private fun NativeAuthentication() {
+    val windowHeight = currentWindowSizeDp().height
+    val compact = windowHeight < EntryCompactHeight
+    // Clerk 1.5 supplies 8dp above and below the logo and 18dp on each side of the form.
+    val clerkAppBarPadding = 8.dp
+    val hostTop = entryTopPadding(windowHeight) - clerkAppBarPadding
+    val logoBottom = entrySpacing(compact) - clerkAppBarPadding
+    val maxHostWidth = EntryContentWidth + EntryContentGutter * 2
+    // Resolve the app-owned brand style above Clerk's theme, which has no titleLarge override.
+    val brandNameStyle = entryBrandNameStyle(compact)
     val colors = MaterialTheme.colorScheme
     val type = MaterialTheme.typography
     val theme =
@@ -198,7 +218,7 @@ private fun NativeAuthentication() {
                     muted = colors.surfaceVariant,
                     mutedForeground = colors.onSurfaceVariant,
                     border = colors.outline,
-                    ring = colors.primary,
+                    ring = colors.onSurface,
                     danger = colors.error,
                     secondaryButtonBackground = colors.surface,
                     secondaryButtonForeground = colors.onSurface,
@@ -218,28 +238,26 @@ private fun NativeAuthentication() {
                     labelSmall = type.labelSmall,
                 ),
         )
-    AuthView(
-        modifier = Modifier.safeDrawingPadding(),
-        clerkTheme = theme,
-        logo = { OkouAuthLogo() },
-        isDismissible = false,
-        persistIdentifiers = false,
-        preferGoogleOneTap = false,
-    )
-}
-
-@Composable
-internal fun OkouAuthLogo() {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+    Box(
+        Modifier.fillMaxSize().safeDrawingPadding().padding(top = hostTop),
+        contentAlignment = Alignment.TopCenter,
     ) {
-        Image(
-            painterResource(R.drawable.okou_mark),
-            contentDescription = null,
-            modifier = Modifier.size(64.dp),
-        )
-        Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineLarge)
+        // AuthView fills its incoming constraints before applying its modifier.
+        Box(Modifier.widthIn(max = maxHostWidth).fillMaxSize()) {
+            AuthView(
+                clerkTheme = theme,
+                logo = {
+                    EntryBrand(
+                        compact,
+                        Modifier.padding(bottom = logoBottom),
+                        nameStyle = brandNameStyle,
+                    )
+                },
+                isDismissible = false,
+                persistIdentifiers = false,
+                preferGoogleOneTap = false,
+            )
+        }
     }
 }
 
@@ -262,6 +280,8 @@ private fun WorkspaceSettingsContent(
 ) {
     val ready = state.ready
     if (ready != null) {
+        val tools = ready.settings.builtInTools
+        DisposableEffect(tools) { onDispose { tools?.leaveSettings() } }
         WorkspaceSettingsFeedback(ready.settings, snackbar, destination, feedbackInOverlay)
         MemberPreferenceSaveFeedback(ready.preferences, snackbar)
     }
@@ -289,6 +309,11 @@ private fun WorkspaceSettingsContent(
             else WorkspaceSettingsDataPage(destination, ready.organization.name, ready.settings)
         }
         SettingsDestination.Account -> AccountSettings(account, signOut)
+        SettingsDestination.BuiltInTools -> {
+            val tools = ready?.settings?.builtInTools
+            if (ready != null && tools != null) BuiltInToolsPage(ready.organization.name, tools)
+            else WorkspaceSettingsPreparation(state, retry)
+        }
         SettingsDestination.ProactiveServices -> {
             val proactive = ready?.settings?.proactive
             if (ready != null && proactive != null) {
@@ -347,6 +372,15 @@ private fun WorkspaceSettingsContent(
                             supportingText = stringResource(R.string.settings_cloud_browser_detail),
                             onCheckedChange = preferenceModel?.let { it::setCloudBrowser },
                         )
+                        if (ready?.settings?.builtInTools != null) {
+                            HorizontalDivider()
+                            SettingsRow(
+                                stringResource(R.string.settings_built_in_tools),
+                                leading = { SettingsIcon(R.drawable.ic_build) },
+                                modifier = focusFor(SettingsDestination.BuiltInTools),
+                                onClick = { openPage(SettingsDestination.BuiltInTools) },
+                            )
+                        }
                     }
                 },
                 myOkou = {
@@ -569,7 +603,7 @@ private fun WorkspaceAvatar(
                 Modifier.focusRequester(destinationFocus)
                     .then(modifier)
                     .size(size)
-                    .updateFocusOutline(CircleShape, LocalActivityStatusColor.current)
+                    .updateFocusOutline(CircleShape, MaterialTheme.colorScheme.onSurface)
                     .semantics {
                         contentDescription = workspaceName?.let { "$label, $it" } ?: label
                     },

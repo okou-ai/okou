@@ -57,6 +57,8 @@ import ai.okou.android.chat.historyJson
 import ai.okou.android.chat.readHistoryNdjson
 import ai.okou.android.connectors.ConnectorService
 import ai.okou.android.instructions.PersonalInstructionsService
+import ai.okou.android.settings.BuiltInToolsService
+import ai.okou.android.settings.CanonicalBuiltInToolsService
 import ai.okou.android.settings.ProactivePreferencesService
 import ai.okou.android.workflows.WorkflowService
 import java.io.Closeable
@@ -101,6 +103,9 @@ interface WorkspaceSession :
         get() = null
 
     val proactivePreferences: ProactivePreferencesService?
+        get() = null
+
+    val builtInTools: BuiltInToolsService?
         get() = null
 
     suspend fun usagePackCredits(): ai.okou.android.api.generated.UsagePackCredits
@@ -151,6 +156,11 @@ class CanonicalWorkspaceSession(
     private val api =
         ApiClient(identity.apiOrigin.toHttpUrl(), tokens, onUpdateRequired = onUpdateRequired)
     override val proactivePreferences = ProactivePreferencesService(api)
+    private val builtInToolsService =
+        CanonicalBuiltInToolsService(api, identity.apiOrigin.toHttpUrl())
+    override val builtInTools: BuiltInToolsService
+        get() = builtInToolsService
+
     override val connectors = ConnectorService(api)
     private val transfers = SignedTransferClient()
     override val artifacts = ArtifactService(api, transfers, identity.apiOrigin)
@@ -473,7 +483,11 @@ class CanonicalWorkspaceSession(
         try {
             api.close()
         } finally {
-            transfers.close()
+            try {
+                transfers.close()
+            } finally {
+                builtInToolsService.close()
+            }
         }
     }
 }

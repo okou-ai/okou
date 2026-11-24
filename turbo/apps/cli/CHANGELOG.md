@@ -1,5 +1,43 @@
 # Changelog
 
+## [10.37.2](https://github.com/okou-ai/okou/compare/cli-v10.37.1...cli-v10.37.2) (2026-11-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.120.0
+    * @okouai/core bumped to 8.870.0
+    * @okouai/pi-agent-runtime bumped to 1.52.62
+
+## [10.37.1](https://github.com/okou-ai/okou/compare/cli-v10.37.0...cli-v10.37.1) (2026-11-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.119.0
+    * @okouai/core bumped to 8.869.1
+    * @okouai/pi-agent-runtime bumped to 1.52.61
+
+## [10.37.0](https://github.com/okou-ai/okou/compare/cli-v10.36.29...cli-v10.37.0) (2026-11-24)
+
+
+### Features
+
+* use saved presentation format for generation ([#50260](https://github.com/okou-ai/okou/issues/50260)) ([ad98aaa](https://github.com/okou-ai/okou/commit/ad98aaa608c934f8eac3325ab079b3ee8fc50dd1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.118.0
+    * @okouai/core bumped to 8.869.0
+    * @okouai/pi-agent-runtime bumped to 1.52.60
+
 ## [10.36.29](https://github.com/okou-ai/okou/compare/cli-v10.36.28...cli-v10.36.29) (2026-11-24)
 
 

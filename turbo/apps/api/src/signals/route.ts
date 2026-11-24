@@ -1,3 +1,4 @@
+import { artifactSharingRoutes } from "./routes/artifact-sharing";
 import { larkOfficialReadRoutes } from "./routes/lark-official-read";
 import { larkOfficialEventsRoutes } from "./routes/lark-official-events";
 import { larkOfficialRoutes } from "./routes/lark-official";
@@ -31,7 +32,7 @@ import { billingInvoicesRoutes } from "./routes/billing-invoices";
 import { billingPortalRoutes } from "./routes/billing-portal";
 import { billingRedeemRoutes } from "./routes/billing-redeem";
 import { billingRedeemCodeRoutes } from "./routes/billing-redeem-code";
-import { billingSurveyRoutes } from "./routes/billing-survey";
+import { billingFeedbackRoutes } from "./routes/billing-feedback";
 import { billingRestoreRoutes } from "./routes/billing-restore";
 import { billingStatusRoutes } from "./routes/billing-status";
 import { billingUsagePackCreditsRoutes } from "./routes/billing-usage-pack-credits";
@@ -337,7 +338,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...billingInvoicesRoutes,
   ...billingPortalRoutes,
   ...billingRedeemCodeRoutes,
-  ...billingSurveyRoutes,
+  ...billingFeedbackRoutes,
   ...billingRedeemRoutes,
   ...billingRestoreRoutes,
   ...billingStatusRoutes,
@@ -379,6 +380,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...featureGuidesRoutes,
   ...hostRoutes,
   ...artifactShareRoutes,
+  ...artifactSharingRoutes,
   ...artifactReferenceRoutes,
   ...artifactOgRoutes,
   ...artifactDownloadRoutes,

@@ -1,3 +1,7 @@
+import {
+  beginBillingUpgrade$,
+  finishBillingUpgrade$,
+} from "../../billing-feedback-flow.ts";
 import { command, computed, state } from "ccstate";
 import { animationFrame } from "signal-timers";
 import { onRef } from "../../utils.ts";
@@ -189,6 +193,11 @@ export const setBillingPlansStandalone$ = command(({ set }, value: boolean) => {
 });
 
 export const setBillingSubPage$ = command(({ set }, value: boolean) => {
+  if (value) {
+    set(beginBillingUpgrade$);
+  } else {
+    set(finishBillingUpgrade$);
+  }
   set(internalBillingSubPage$, value ? "plans" : null);
   if (!value) {
     // Leaving the plans sub-page ends the standalone upgrade flow it belonged to.

@@ -191,7 +191,7 @@ final class FailureRecoveryTests: XCTestCase {
       models.close()
     }
     original.attachmentDraft.importFiles([source])
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: original.composer) {
       original.attachmentDraft.items.contains { if case .failed = $0.state { true } else { false } }
     }
     let copy = try XCTUnwrap(original.attachmentDraft.items.first?.file.url)
@@ -240,7 +240,9 @@ final class FailureRecoveryTests: XCTestCase {
       conversation.close()
       models.close()
     }
-    try await waitForBusinessResult { conversation.attachmentDraft.isReady }
+    try await waitForBusinessResult(watching: conversation.composer) {
+      conversation.attachmentDraft.isReady
+    }
     let draft = conversation.composer.value
     // A different client's model change has synchronized before recovery.
     fixture.state.value.withLock { $0.model = "claude-model" }

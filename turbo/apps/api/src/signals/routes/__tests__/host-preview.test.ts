@@ -290,7 +290,8 @@ describe("sandbox hosted previews", () => {
     };
     mocks.clerk.session(actor.userId, actor.orgId);
     const first = await accept(api.sitePreview(request), [200]);
-    expect(first.body.expiresAt).toBeNull();
+    expect(first.body.expiresAt).not.toBeNull();
+    expect(first.body.url).toMatch(/^https:\/\/pv-/u);
     expect(first.body.previewImageUrl).toBeDefined();
     expect(
       new URL(first.body.previewImageUrl!).searchParams.get("object"),

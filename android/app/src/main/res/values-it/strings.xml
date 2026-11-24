@@ -5,7 +5,6 @@
     <string name="auth_selection_failed">Impossibile aprire questo spazio di lavoro.</string>
     <string name="auth_sign_out_failed">Impossibile uscire.</string>
     <string name="composer_restore_draft">Ripristina bozza conservata</string>
-    <string name="controls_storage_failed">Impossibile salvare i comandi in attesa.</string>
     <string name="controls_stop">Interrompi il lavoro in corso</string>
     <string name="controls_stop_failed">Impossibile arrestare l’attività.</string>
     <string name="settings">Impostazioni</string>

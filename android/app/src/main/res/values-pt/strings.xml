@@ -5,7 +5,6 @@
     <string name="auth_selection_failed">Não foi possível abrir este espaço de trabalho.</string>
     <string name="auth_sign_out_failed">Não foi possível sair.</string>
     <string name="composer_restore_draft">Restaurar rascunho preservado</string>
-    <string name="controls_storage_failed">Não foi possível salvar os controles pendentes.</string>
     <string name="controls_stop">Parar o trabalho em andamento</string>
     <string name="controls_stop_failed">Não foi possível interromper a tarefa.</string>
     <string name="settings">Configurações</string>

@@ -221,6 +221,21 @@ class ChatConnectorOptionsTest {
     }
 
     @Test
+    fun firstSendSkipsDraftOverridesAfterMemberAccessIsEnabled() {
+        openNewChat()
+        compose.onNodeWithTag("message_input").performTextReplacement("Read the calendar")
+        openPicker()
+        compose.onNodeWithTag(primaryTag).assertIsOn().performClick()
+        closeOptions()
+
+        app.connectors.memberAccess = true
+        compose.onNodeWithContentDescription("Send").assertIsEnabled().performClick()
+        compose.waitUntil(10_000) { app.chats.inputs.size == 1 }
+        assertEquals(1, app.chats.created.size)
+        assertTrue(app.connectors.chatOverrideRequests.isEmpty())
+    }
+
+    @Test
     fun failedFirstSendSetupCanBeRevisedBeforeRetryingTheSameInput() {
         openNewChat()
         val input = compose.onNodeWithTag("message_input")

@@ -35,7 +35,7 @@ final class ConversationActivitySummaryTests: XCTestCase {
     -> ConversationActivitySummaryValue?
   {
     let summary = conversation.activitySummary
-    return try await summary.stateStore.get(summary.value).value
+    return try await summary.store.get(summary.value).value
   }
 
   private func assertHidden(
@@ -90,7 +90,7 @@ final class ConversationActivitySummaryTests: XCTestCase {
         $0 = ChatHTTPResponse(status: status, body: #"{"error":{"message":"Unavailable"}}"#)
       }
       conversation.activitySummary.retry()
-      let original = try conversation.activitySummary.stateStore.get(
+      let original = try conversation.activitySummary.store.get(
         conversation.activitySummary.value)
       guard case .failure(let error) = await original.result else {
         return XCTFail("The original resource must retain its HTTP failure")
@@ -162,7 +162,7 @@ final class ConversationActivitySummaryTests: XCTestCase {
     conversation.setDetailVisible(true, owner: ActivityScenario.detailOwner)
     assertHidden(conversation, batch: reopened)
     XCTAssertThrowsError(
-      try conversation.activitySummary.stateStore.get(conversation.activitySummary.value))
+      try conversation.activitySummary.store.get(conversation.activitySummary.value))
   }
 
   func testRunReplacementCancelsOldHTTPAndStoppedStateKeepsItsLabel() async throws {
@@ -183,7 +183,7 @@ final class ConversationActivitySummaryTests: XCTestCase {
       }
     }
     conversation.activitySummary.retry()
-    let old = try conversation.activitySummary.stateStore.get(conversation.activitySummary.value)
+    let old = try conversation.activitySummary.store.get(conversation.activitySummary.value)
     await fulfillment(of: [started], timeout: 3)
     try await waitForSleep(release, .seconds(1))
     scenario.state.hold.withLock { $0 = nil }
@@ -225,7 +225,7 @@ final class ConversationActivitySummaryTests: XCTestCase {
       defer { conversation.close() }
       await conversation.refresh()
       conversation.setDetailVisible(true, owner: ActivityScenario.detailOwner)
-      let original = try conversation.activitySummary.stateStore.get(
+      let original = try conversation.activitySummary.store.get(
         conversation.activitySummary.value)
       await fulfillment(of: [started], timeout: 3)
       try await waitForSleep(release, .seconds(1))
@@ -242,7 +242,7 @@ final class ConversationActivitySummaryTests: XCTestCase {
       if closesScope {
         conversation.activitySummary.demand(ActivityScenario.run)
         XCTAssertThrowsError(
-          try conversation.activitySummary.stateStore.get(conversation.activitySummary.value))
+          try conversation.activitySummary.store.get(conversation.activitySummary.value))
       } else {
         let hidden = try await read(conversation)
         XCTAssertNil(hidden)
@@ -274,7 +274,7 @@ final class ConversationActivitySummaryTests: XCTestCase {
       $0 = ChatHTTPResponse(status: 426, body: #"{"error":{"message":"Upgrade required"}}"#)
     }
     conversation.setDetailVisible(true, owner: ActivityScenario.detailOwner)
-    let original = try conversation.activitySummary.stateStore.get(
+    let original = try conversation.activitySummary.store.get(
       conversation.activitySummary.value)
     await fulfillment(of: [started], timeout: 3)
     try await waitForSleep(release, .seconds(1))
@@ -286,7 +286,7 @@ final class ConversationActivitySummaryTests: XCTestCase {
     try await waitForBusinessResult { workspace.needsUpgrade }
     XCTAssertEqual(conversation.messages, messages)
     XCTAssertThrowsError(
-      try conversation.activitySummary.stateStore.get(conversation.activitySummary.value))
+      try conversation.activitySummary.store.get(conversation.activitySummary.value))
     XCTAssertNil(workspace.conversation(for: ActivityScenario.thread))
   }
 
@@ -307,7 +307,7 @@ final class ConversationActivitySummaryTests: XCTestCase {
       }
       var summary: ConversationActivitySummary? = scenario.summary(clock: clock)
       weak var owner = summary
-      let store = try XCTUnwrap(summary?.stateStore)
+      let store = try XCTUnwrap(summary?.store)
       let resource = try XCTUnwrap(summary?.value)
       summary?.demand(ActivityScenario.run)
       let original = try store.get(resource)
@@ -491,7 +491,8 @@ private final class ActivityScenario: Sendable {
 
   @MainActor func summary(clock: ActivityClock) -> ConversationActivitySummary {
     ConversationActivitySummary(
-      sync: ChatSync(client: fixture.client), threadID: Self.thread, didRequireUpgrade: { _ in },
+      sync: ChatSync(client: fixture.client), threadID: Self.thread,
+      graph: makeTestWorkspaceGraph(), didRequireUpgrade: { _ in },
       sleep: { try await clock.sleep($0) })
   }
 
@@ -504,6 +505,7 @@ private final class ActivityScenario: Sendable {
         id: Self.thread, title: "Activity summary", createdAt: .now,
         updatedAt: .now, sortAt: .now),
       sync: sync, commands: ChatCommands(client: fixture.client, sync: sync),
+      graph: makeTestWorkspaceGraph(),
       webURL: fixture.baseURL,
       messageMarkdown: MessageMarkdownCache(baseURL: fixture.baseURL), isVisible: visible,
       didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {},

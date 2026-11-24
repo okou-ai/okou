@@ -360,6 +360,7 @@ integration_doppler_json="$(
   jq -cn --argjson keys "$integration_config_keys" --argjson gateway_keys "$gateway_config_keys" '
     reduce ($keys + $gateway_keys)[] as $key ({}; .[$key] = ("doppler-integration-" + $key)) |
     . + {
+      BILLING_FEEDBACK_WEBHOOK_SECRET: "doppler-billing-feedback-secret",
       DISCORD_APPLICATION_ID: "123456789012345678",
       DISCORD_PUBLIC_KEY: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       GITHUB_APP_SLUG: " doppler-integration-slug ",
@@ -425,6 +426,8 @@ for integration_app in api web; do
       assert_env_key_absent "$integration_env_file" "$integration_key"
       assert_env_absent_value "$integration_env_file" "$integration_value"
     done <<< "$integration_rows"
+    assert_env_key_absent "$integration_env_file" BILLING_FEEDBACK_WEBHOOK_SECRET
+    assert_env_absent_value "$integration_env_file" "doppler-billing-feedback-secret"
     assert_env_key_absent "$integration_env_file" MARKETING_REWARDS_EVENTS_SECRET
     assert_env_key_absent "$integration_env_file" MARKETING_REWARDS_EVENTS_ORIGIN
     assert_env_key_absent "$integration_env_file" WHATSAPP_ALLOWED_COUNTRY_PREFIXES
@@ -585,7 +588,8 @@ assert_env_absent_value "$production_web_env_file" "github-artifact-preview-waf-
 
 production_api_dir="$(mktemp -d)"
 TEMP_DIRS+=("$production_api_dir")
-production_api_output="$(run_action "$(build_doppler_secrets_json)" "$production_api_dir" api production '{"GCP_LLM_SERVICE_ACCOUNT_EMAIL":"llm-prod@vm0-ai-488909.iam.gserviceaccount.com"}' '{"PREVIEW_KMS_KEY_ID":null,"PREVIEW_KMS_ACCESS_KEY_ID":null,"PREVIEW_KMS_SECRET_ACCESS_KEY":null}' 2>&1)"
+production_api_doppler_json="$(build_doppler_secrets_json | jq -c '. + {BILLING_FEEDBACK_WEBHOOK_SECRET: "doppler-billing-feedback-secret"}')"
+production_api_output="$(run_action "$production_api_doppler_json" "$production_api_dir" api production '{"GCP_LLM_SERVICE_ACCOUNT_EMAIL":"llm-prod@vm0-ai-488909.iam.gserviceaccount.com"}' '{"PREVIEW_KMS_KEY_ID":null,"PREVIEW_KMS_ACCESS_KEY_ID":null,"PREVIEW_KMS_SECRET_ACCESS_KEY":null}' 2>&1)"
 production_api_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${production_api_dir}/github-output")"
 assert_no_fixture_secret_values "$production_api_output"
 assert_env_value "$production_api_env_file" APNS_PRIVATE_KEY_BASE64 "github-apns-test-key"
@@ -631,6 +635,7 @@ assert_env_value "$production_api_env_file" OKOU_BROWSER_USE_API_KEY "github-bro
 assert_env_value "$production_api_env_file" OKOU_BROWSER_USE_EXTENSION_ID "$BROWSER_EXTENSION_ID"
 assert_env_value "$production_api_env_file" STRIPE_WEBHOOK_SECRET "github-stripe-billing-webhook-secret"
 assert_env_value "$production_api_env_file" STRIPE_AUTOMATION_WEBHOOK_SECRET "doppler-stripe-automation-webhook-secret"
+assert_env_value "$production_api_env_file" BILLING_FEEDBACK_WEBHOOK_SECRET "doppler-billing-feedback-secret"
 assert_env_absent_value "$production_api_env_file" "doppler-stripe-billing-webhook-secret"
 assert_preview_job_ref_absent "$production_api_env_file"
 

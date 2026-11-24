@@ -117,6 +117,7 @@ import {
   type PreparedChatEventRow,
 } from "./chat-event-append.service";
 import { recordThreadRunActivationMarkers } from "./chat-first-assistant-event-metric.service";
+import { isAntigravityEnabled } from "./feature-switches.service";
 import {
   queuedThreadInputCondition,
   type QueuedUserMessage,
@@ -733,23 +734,6 @@ function claimCommitInput(input: RunPlan): ThreadRunContext["input"] {
   };
 }
 
-/**
- * Generation writes a title only over NULL title and renamed_at, and a rename
- * sets both, so a titled or renamed claim snapshot never needs another read.
- */
-function threadTitled(
-  thread:
-    | { readonly title: string | null; readonly renamedAt: Date | null }
-    | null
-    | undefined,
-) {
-  return (
-    thread !== null &&
-    thread !== undefined &&
-    (thread.title !== null || thread.renamedAt !== null)
-  );
-}
-
 function claimLaunchRecord(
   record: ClaimLaunchRecord,
   integrationContext: string | undefined,
@@ -1300,7 +1284,7 @@ export function createThreadClaimRunObjects(
             triggerSource,
             discordDelivery: delivery.discordDelivery,
             wechatDelivery: delivery.wechatDelivery,
-            titled: threadTitled((await get(pickedEvent$))?.thread),
+            titled: (await get(pickedEvent$))?.thread.titled ?? false,
           },
         },
       };
@@ -1714,6 +1698,7 @@ export function createThreadClaimRunObjects(
         await Promise.allSettled([
           get(automationModel$),
           get(connectorAdmission$),
+          get(promptResources.suggestionsPrompt$),
         ]);
       }
       return;
@@ -2863,6 +2848,7 @@ interface PersistedAtomicLaunchRows {
 }
 
 interface PreparedRunnerLaunch {
+  readonly antigravityEnabled: boolean;
   readonly runnerGroup: string;
   readonly profile: string;
   readonly reuseKey: string;
@@ -3378,6 +3364,7 @@ function prepareRunnerLaunch(input: {
   };
   return {
     runnerGroup: preparedRunnerGroup(),
+    antigravityEnabled: isAntigravityEnabled(args.featureSwitchContext),
     profile: args.profile,
     reuseKey: runnerReuseKey(args.chatThreadId),
     facts,
@@ -3613,6 +3600,7 @@ function threadDispatchInput(args: ThreadRunContext): DirectRunInput {
     runnerGroup: args.launch.runnerGroup,
     profile: args.launch.profile,
     reuseKey: args.launch.reuseKey,
+    antigravityEnabled: args.launch.antigravityEnabled,
     predecessorRunId:
       args.input.args.threadContinuation.expected.frameworkSessionRunId,
   };
