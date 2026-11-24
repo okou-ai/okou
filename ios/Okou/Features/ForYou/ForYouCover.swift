@@ -8,23 +8,37 @@ import UIKit
 struct ForYouCover: View {
   /// How far the scene has drifted sideways behind the cards, in points.
   let drift: CGFloat
+  /// Hears where the train's lower edge is on screen, so the cards can stay below it.
+  var onHorizon: (CGFloat) -> Void = { _ in }
   @Environment(\.colorScheme) private var colorScheme
 
   private static let aspect: CGFloat = 1024 / 410
   /// The picture takes this share of the page's height (never less than the screen's width),
-  /// which keeps the train above a resting card on every screen.
-  private static let share: CGFloat = 0.48
+  /// which sets the train just under the header.
+  private static let share: CGFloat = 0.4
+  /// The train's lower edge, as a share of the picture's height.
+  private static let trainEdgeShare: CGFloat = 0.7
+
+  private static func pictureHeight(_ size: CGSize) -> CGFloat {
+    max(size.width / aspect, size.height * share)
+  }
   /// The cover dims at night so the page's light header and status bar read on it.
   private static let nightDim: Double = 0.4
 
   var body: some View {
     GeometryReader { geometry in
-      let height = max(geometry.size.width / Self.aspect, geometry.size.height * Self.share)
+      let height = Self.pictureHeight(geometry.size)
       let width = height * Self.aspect
       let travel = max(0, width - geometry.size.width)
       VStack(spacing: 0) {
         Image("ForYouCover").resizable().scaledToFill()
           .frame(width: width, height: height)
+          .onGeometryChange(for: CGFloat.self) { proxy in
+            let frame = proxy.frame(in: .global)
+            return frame.minY + frame.height * Self.trainEdgeShare
+          } action: { line in
+            onHorizon(line)
+          }
           .offset(x: -min(travel, drift))
           .frame(width: geometry.size.width, height: height, alignment: .leading)
           .clipped()

@@ -31,8 +31,10 @@ struct ForYouView: View {
   /// Whether the pager has been put on the card in front since it appeared. Until then it rests
   /// on its first page, the copy of the last card, and what it reports is not the reader's.
   @State private var pagerPlaced = false
-  /// Each card's own height, without the room it is given to match the deck.
+  /// Each card's own content height, whatever height the deck gives it.
   @State private var naturalHeights: [String: CGFloat] = [:]
+  /// The train's lower edge on screen; a card never rises above it.
+  @State private var horizon: CGFloat = 0
   private var store: ForYouStore { workspace.forYou }
 
   /// The deck's layers peek this far below one another under the front card, as on the web.
@@ -50,6 +52,10 @@ struct ForYouView: View {
   /// Each deeper layer of the deck is shaded by this much more, so the stack recedes while every
   /// layer stays a solid card on the scene.
   private static let layerShade: Double = 0.06
+  /// The card's padding above and below its content (`surface`).
+  private static let cardPadding = OkouSpace.xxl + OkouSpace.xl
+  /// However low the ground lies, a card may always take this much of the page.
+  private static let minimumRoomShare: CGFloat = 0.6
   /// How far the cover drifts for each card, so it moves well behind the cards.
   private static let coverDrift: CGFloat = 36
 
@@ -98,7 +104,9 @@ struct ForYouView: View {
     // spring instead of jumping it.
     .animation(dockMotion, value: layoutKey)
     .background {
-      ForYouCover(drift: reduceMotion ? 0 : loop.unwrapped(pagePosition) * Self.coverDrift)
+      ForYouCover(
+        drift: reduceMotion ? 0 : loop.unwrapped(pagePosition) * Self.coverDrift,
+        onHorizon: noteHorizon)
     }
     .background(OkouColor.background)
     .composerSuggestionOverlay()
@@ -339,7 +347,13 @@ struct ForYouView: View {
     let depth = !reduceMotion
     return ScrollView {
       surface(placementOf: page.id) {
-        cardView(page.card, extra: extraHeight(for: page.card.id)).disabled(store.busy)
+        cardView(
+          page.card, height: cardHeight(for: page.card.id),
+          // Only the card itself reports, not its copy at an end of the loop.
+          report: ForYouLoop.cardID(page.id) == page.id
+            ? { noteNatural(page.card.id, $0) } : nil
+        )
+        .disabled(store.busy)
       }
       .padding(.top, OkouSpace.xxl)
       .padding(.bottom, Self.layerDrop * CGFloat(Self.layerCount) + OkouSpace.sm)
@@ -421,45 +435,47 @@ struct ForYouView: View {
         }
         cardPlacements[id] = placement
       }
-      // A card's own height, read from its size rather than its place on screen: a card rising
-      // or leaving is drawn scaled, and only the card itself (not its copy at an end of the
-      // loop) reports, so the deck's height settles on one value.
-      .onGeometryChange(for: CGFloat.self) {
-        $0.size.height
-      } action: { height in
-        guard let id, ForYouLoop.cardID(id) == id else { return }
-        let natural = height - extraHeight(for: id)
-        if abs((naturalHeights[id] ?? 0) - natural) > OkouSpace.hairline {
-          naturalHeights[id] = natural
-        }
-      }
       .frame(maxWidth: OkouControl.readableWidth)
       .padding(.horizontal, OkouSpace.lg)
   }
 
-  /// Every card in the deck is as tall as its tallest, within the room above the dock, so the
-  /// deck keeps one shape as it pages: the card's top edge holds still and the layers under it
-  /// never change size. While a direction is written the card keeps its own height above the
-  /// input.
-  private var deckHeight: CGFloat {
+  /// The content height a card may take: from the train's lower edge, so the train stays in view
+  /// (the rails and the sea may be covered), down to the deck's place above the dock, and never
+  /// less than most of the page.
+  private var cardRoom: CGFloat? {
+    guard pagerFrame.height > 0 else { return nil }
+    let bottom = pagerFrame.maxY - Self.layerDrop * CGFloat(Self.layerCount) - OkouSpace.sm
+    let top = max(pagerFrame.minY + OkouSpace.xxl, horizon)
+    let room = max(bottom - top, pagerFrame.height * Self.minimumRoomShare)
+    return room - Self.cardPadding
+  }
+
+  /// Every card in the deck is as tall as its tallest, within the room, so the deck keeps one
+  /// shape as it pages; a card longer than the room scrolls its heading while its actions stay at
+  /// the bottom. While a direction is written the card takes its own height above the input.
+  private func cardHeight(for cardID: String) -> CGFloat? {
+    guard !isComposing, naturalHeights[cardID] != nil else { return nil }
     let tallest = store.cards.compactMap { naturalHeights[$0.id] }.max() ?? 0
-    let room =
-      pagerFrame.height - OkouSpace.xxl - Self.layerDrop * CGFloat(Self.layerCount)
-      - OkouSpace.sm
-    return room > 0 ? min(tallest, room) : tallest
+    return cardRoom.map { min(tallest, $0) } ?? tallest
   }
 
-  /// The room a card is given to match the deck, laid between its heading and its actions.
-  private func extraHeight(for cardID: String) -> CGFloat {
-    guard !isComposing, let natural = naturalHeights[cardID] else { return 0 }
-    return max(0, deckHeight - natural)
+  private func noteNatural(_ cardID: String, _ height: CGFloat) {
+    if abs((naturalHeights[cardID] ?? 0) - height) > OkouSpace.hairline {
+      naturalHeights[cardID] = height
+    }
   }
 
-  @ViewBuilder private func cardView(_ card: ForYouCard, extra: CGFloat) -> some View {
+  private func noteHorizon(_ line: CGFloat) {
+    if abs(horizon - line) > OkouSpace.hairline { horizon = line }
+  }
+
+  @ViewBuilder private func cardView(
+    _ card: ForYouCard, height: CGFloat?, report: ((CGFloat) -> Void)?
+  ) -> some View {
     switch card.content {
     case .suggestion(let suggestion):
       ForYouSuggestionView(
-        suggestion: suggestion, extra: extra,
+        suggestion: suggestion, height: height, report: report,
         pendingOptionID: pendingOptionID,
         openSource: { id in run { if await store.open(id) { showChat() } } },
         choose: { option in
@@ -472,7 +488,7 @@ struct ForYouView: View {
         })
     case .automation(let event):
       ForYouAutomationView(
-        event: event, extra: extra,
+        event: event, height: height, report: report,
         enable: { run { await store.resolve(card, event: event, enable: true) } },
         dismiss: { run { await store.resolve(card, event: event, enable: false) } })
     case .unsupported: EmptyView()

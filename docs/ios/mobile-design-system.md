@@ -891,17 +891,25 @@ feature; the catalog shows each one.
 - **Cards** are white `OkouSurfaceStyle` cards at sheet radius with 24 pt above the heading and
   20 pt elsewhere. A direction is a raised button (card fill, hairline, `state-pressed` while
   pressed); one that sends carries the composer's amber send mark, one that drafts a quiet arrow,
-  and the chosen one shows progress in its mark until the choice settles. One card uses at most
-  three sizes: title2, subheadline and footnote.
+  and the chosen one shows progress in its mark until the choice settles. The mark sits beside
+  the direction's label, so its description takes the full width (at most three lines; the mark
+  and VoiceOver's hint say what choosing it does). One card uses at most three sizes: title3,
+  subheadline and footnote.
+- **Dense text stays readable.** A reason shows three lines ending in an inline Show more (the
+  reason itself opens too), and Show less follows it once open. A card's actions stay at its
+  bottom (`ForYouCardLayout`); when the heading is longer than the room it scrolls above them,
+  fading out at the edge where more lies and flashing its scroll indicator, so the reader can
+  tell there is more.
 - **The deck pages round.** A sideways swipe carries the front card with the finger; it settles
   back a little but never tilts, since paging throws nothing away, and the next card rises out
   of the deck, solid within the first third of the swipe. Past the last card the deck carries on
   to the first, and back from the first to the last, as the web's stack turns. The counter rolls
   and the lit progress segment follows the finger. A handled card sinks away while the next one
   rises into its place. Under Reduce Motion the cards page side by side and the cover holds still.
-  Every card in the deck is as tall as its tallest (within the room above the dock), with the
-  room laid between its heading and its actions so the actions stay at the bottom; the dock's
-  room is held on a paused automation too, so the deck's top edge never moves as it pages.
+  Every card in the deck is as tall as its tallest, never rising above the train's lower edge (the
+  rails and sea may be covered, the train never is), with the room laid between its heading and
+  its actions so the actions stay at the bottom; the dock's room is held on a paused automation
+  too, so the deck's top edge never moves as it pages.
   A card that fits never moves vertically; only one taller than the room scrolls, and only the
   caught-up panel pulls to refresh. The layers under the front card are solid cards, each a little
   more shaded than the one above it.

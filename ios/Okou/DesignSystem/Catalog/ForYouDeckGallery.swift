@@ -155,6 +155,26 @@
     }
 
     private static let cards: [Card] = [
+      // As dense as real suggestions get: a long title, a three-line reason and two long
+      // directions into a chat whose title is not known.
+      suggestion(
+        id: "73000000-0000-4000-8000-000000000005",
+        title:
+          "iOS provisioning profile, three steps: write a handover note you can forward to a teammate",
+        rationale:
+          "#50222 added applinks to the production and staging entitlements, and the release script now rejects any profile without Associated Domains. These three steps are the hard gate for merging it — the handover note you asked for was interrupted and never produced.",
+        options: [
+          option(
+            id: "handover", label: "Write the forwardable handover note",
+            description:
+              "Explain who does what in which screen for each step, how to confirm it is done, which curl command verifies the AASA file after deploy, and whether staging needs the same. Write only, don’t send.",
+            thread: ("73000000-0000-4000-8000-0000000000a2", nil)),
+          option(
+            id: "coverage", label: "First check what the profiles need to cover",
+            description:
+              "Read the entitlements, the release script and the release workflow; work out what production and staging each need and where a missing step fails, then give the order to do them in.",
+            thread: ("73000000-0000-4000-8000-0000000000a2", nil))
+        ]),
       suggestion(
         id: "73000000-0000-4000-8000-000000000001",
         title: "Reply to Maya on the Q4 pricing review",
@@ -210,11 +230,12 @@
     }
 
     private static func option(
-      id: String, label: String, description: String, thread: (id: String, title: String)? = nil
+      id: String, label: String, description: String, thread: (id: String, title: String?)? = nil
     ) -> String {
       let reference =
-        thread.map {
-          ",{\"type\":\"chat_thread\",\"threadId\":\"\($0.id)\",\"titleSnapshot\":\"\($0.title)\"}"
+        thread.map { thread in
+          let title = thread.title.map { ",\"titleSnapshot\":\"\($0)\"" } ?? ""
+          return ",{\"type\":\"chat_thread\",\"threadId\":\"\(thread.id)\"\(title)}"
         } ?? ""
       let threadID = thread.map { "\"\($0.id)\"" } ?? "null"
       return """
