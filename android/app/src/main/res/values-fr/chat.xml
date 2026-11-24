@@ -77,7 +77,6 @@
     <string name="chat_delete_rejected">Impossible de supprimer la discussion.</string>
     <string name="chat_delete_title">Supprimer la discussion ?</string>
     <string name="chat_delete_description">Les messages et brouillons de « %1$s » seront définitivement supprimés. Les tâches en cours seront arrêtées et les automatisations liées seront mises en pause.</string>
-    <string name="chat_delete_confirm">Supprimer</string>
     <string name="chat_rename_project">Renommer le projet</string>
     <string name="chat_project_name">Nom du projet</string>
     <string name="chat_project_rename_unconfirmed">Impossible de confirmer le nom du projet.</string>
@@ -99,4 +98,12 @@
     <string name="chat_project_delete_unconfirmed">Impossible de confirmer la suppression du projet.</string>
     <string name="chat_row_action_rejected_named">Impossible de terminer « %1$s ».</string>
     <string name="chat_row_action_offline_named">Impossible de terminer « %1$s ». Vérifiez votre connexion, puis réessayez.</string>
+    <string name="chat_rename_save_failed">Impossible d’enregistrer. Vos modifications sont conservées.</string>
+    <string name="chat_rename_check_result">Vérifier le résultat</string>
+    <string name="chat_rename_trim_hint">Les espaces au début et à la fin sont supprimés.</string>
+    <string name="chat_rename_required">Saisissez un nom.</string>
+    <string name="chat_rename_checking_result">Vérification du résultat…</string>
+    <string name="chat_rename_save_unconfirmed">Le résultat de l’enregistrement reste à confirmer.</string>
+    <string name="chat_title_saved">Titre de la discussion enregistré</string>
+    <string name="chat_project_name_saved">Nom du projet enregistré</string>
 </resources>

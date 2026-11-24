@@ -80,6 +80,10 @@ internal class ChatListProjection {
 
     fun hasUnsettledEdits(edits: List<ChatRowEdit>) = rowEdits.any { it.edit in edits }
 
+    fun unsettledRenames(renames: Map<String, String>): Map<String, String> =
+        if (renames.isEmpty()) renames
+        else renames.filterValues { eventId -> rowEdits.any { it.edit.eventId == eventId } }
+
     fun settleConfirmedTargets(edits: List<ChatRowEdit>): Boolean {
         if (edits.isEmpty() || rowEdits.isEmpty()) return false
         val matched = buildSet {
