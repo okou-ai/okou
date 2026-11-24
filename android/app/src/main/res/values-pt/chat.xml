@@ -26,6 +26,7 @@
     <string name="chat_mark_all_read_unconfirmed">Algumas conversas ainda podem estar por ler.</string>
     <string name="chat_mark_all_read_failed">Não foi possível marcar as conversas como lidas.</string>
     <string name="chat_mark_all_read_partial_failed">Marcadas como lidas: %1$d. Falhas: %2$d.</string>
+    <string name="chat_mark_all_read_mixed">Marcadas como lidas: %1$d. Falhas: %2$d. Não confirmadas: %3$d.</string>
     <plurals name="chat_mark_all_read_partial">
         <item quantity="one">%1$d de %2$d conversas foi marcada como lida.</item>
         <item quantity="many">%1$d de %2$d conversas foram marcadas como lidas.</item>

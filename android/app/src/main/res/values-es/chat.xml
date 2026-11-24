@@ -26,6 +26,7 @@
     <string name="chat_mark_all_read_unconfirmed">Es posible que algunos chats sigan sin leer.</string>
     <string name="chat_mark_all_read_failed">No se pudieron marcar los chats como leídos.</string>
     <string name="chat_mark_all_read_partial_failed">Marcados como leídos: %1$d. Fallidos: %2$d.</string>
+    <string name="chat_mark_all_read_mixed">Marcados como leídos: %1$d. Fallidos: %2$d. Sin confirmar: %3$d.</string>
     <plurals name="chat_mark_all_read_partial">
         <item quantity="one">Se marcó como leído %1$d de %2$d chats.</item>
         <item quantity="many">Se marcaron como leídos %1$d de %2$d chats.</item>

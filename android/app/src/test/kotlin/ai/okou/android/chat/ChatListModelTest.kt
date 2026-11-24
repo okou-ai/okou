@@ -69,6 +69,11 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
+private val ChatListUiState.failedRowAction
+    get() = rowActionFailures.lastOrNull()
+private val ChatListUiState.markAllReadResult
+    get() = markAllReadResults.lastOrNull()
+
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 internal abstract class ChatListModelTestFixture {
     @get:Rule val temporary = TemporaryFolder()
@@ -1426,6 +1431,39 @@ internal class ChatListUnreadModelTest : ChatListModelTestFixture() {
                     state.markAllReadResult,
                 )
             }
+        }
+    }
+
+    @Test
+    fun bulkReadCountsAnAmbiguousWriteWhenTheServerCursorConfirmsIt() = runTest {
+        val lookedUp = mutableListOf<String>()
+        val source =
+            object : Service() {
+                    override suspend fun markRead(threadId: String): ReadState {
+                        throw ApiFailure.Network(IOException("response lost"))
+                    }
+
+                    override suspend fun threadDetail(threadId: String): ThreadDetail {
+                        lookedUp.add(threadId)
+                        return ThreadDetail(CHAT_DATE, false)
+                    }
+                }
+                .apply {
+                    statusRead = {
+                        Indicators(
+                            mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
+                            mapOf(CHAT_PERSONAL to CHAT_DATE),
+                        )
+                    }
+                }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            model.markAllRead()
+            advanceUntilIdle()
+            assertEquals(listOf(CHAT_PERSONAL), lookedUp)
+            assertEquals(ChatMarkAllReadResult(1, 1), model.uiState.value.markAllReadResult)
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
         }
     }
 

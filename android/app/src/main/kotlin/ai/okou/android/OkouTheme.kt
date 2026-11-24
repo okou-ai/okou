@@ -19,16 +19,20 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
-import androidx.core.graphics.ColorUtils
 
 internal val LocalActivityStatusColor = staticCompositionLocalOf { Color(0xFFB5790C) }
-internal val LocalUndoActionColor = staticCompositionLocalOf { Color.Unspecified }
 internal val LocalOkouDarkMode = staticCompositionLocalOf { false }
+
+internal fun mixPaletteColors(background: Color, foreground: Color, fraction: Float): Color =
+    Color(
+        red = background.red * (1 - fraction) + foreground.red * fraction,
+        green = background.green * (1 - fraction) + foreground.green * fraction,
+        blue = background.blue * (1 - fraction) + foreground.blue * fraction,
+    )
 
 private fun activityStatusColor(palette: UserPreferencesColorTheme, dark: Boolean): Color =
     when (palette) {
@@ -61,14 +65,6 @@ fun OkouTheme(
     val resolved =
         remember(context, configuration, dark, palette) { resolvePalette(context, dark, palette) }
     val colors = resolved.scheme
-    val undoAction =
-        Color(
-            ColorUtils.blendARGB(
-                colors.background.toArgb(),
-                activityStatusColor(palette, !dark).toArgb(),
-                0.5f,
-            ),
-        )
     val font = remember { FontFamily(Font(R.font.geist)) }
     val typography = remember { Typography() }
     MaterialTheme(
@@ -94,7 +90,6 @@ fun OkouTheme(
         content = {
             CompositionLocalProvider(
                 LocalActivityStatusColor provides activityStatusColor(palette, dark),
-                LocalUndoActionColor provides undoAction,
                 LocalOkouDarkMode provides dark,
                 LocalTextSelectionColors provides
                     TextSelectionColors(
@@ -177,7 +172,12 @@ internal fun resolvePalette(
             onErrorContainer = role(R.attr.okou_palette_destructive),
             inverseSurface = role(R.attr.okou_palette_foreground),
             inverseOnSurface = role(R.attr.okou_palette_background),
-            inversePrimary = role(R.attr.okou_palette_primary),
+            inversePrimary =
+                mixPaletteColors(
+                    role(R.attr.okou_palette_background),
+                    activityStatusColor(palette, !dark),
+                    0.5f,
+                ),
         )
     return PaletteColors(
         colors,

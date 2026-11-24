@@ -26,6 +26,7 @@
     <string name="chat_mark_all_read_unconfirmed">Beberapa chat mungkin masih belum dibaca.</string>
     <string name="chat_mark_all_read_failed">Chat tidak dapat ditandai sudah dibaca.</string>
     <string name="chat_mark_all_read_partial_failed">Ditandai sudah dibaca: %1$d. Gagal: %2$d.</string>
+    <string name="chat_mark_all_read_mixed">Ditandai sudah dibaca: %1$d. Gagal: %2$d. Belum dikonfirmasi: %3$d.</string>
     <plurals name="chat_mark_all_read_partial">
         <item quantity="other">%1$d dari %2$d chat ditandai sudah dibaca.</item>
     </plurals>
