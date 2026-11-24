@@ -23,6 +23,8 @@ internal enum class ChatRowStatus {
 internal fun Indicators?.taskState(threadId: String): IndicatorsTaskStatesValue? {
     val tasks = this?.taskStates
     if (tasks != null) return tasks[threadId]
+    // Keep the installed Android display while an API predating taskStates can serve or be
+    // restored in production. Remove once both rollout and rollback targets are updated (#50576).
     return IndicatorsTaskStatesValue.RUNNING.takeIf {
         this?.threads?.get(threadId) == IndicatorsThreadsValue.ACTIVE
     }
