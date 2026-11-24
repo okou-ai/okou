@@ -213,7 +213,7 @@ test("The speech detector receives full-scale microphone samples before the tran
     expect(editor).toHaveTextContent("Window 1");
   });
   const decoded = await observed.promise;
-  expect(decoded).toEqual([
+  expect(decoded).toStrictEqual([
     expect.closeTo(1, 4),
     expect.closeTo(-1, 4),
     expect.closeTo(0.25, 4),
