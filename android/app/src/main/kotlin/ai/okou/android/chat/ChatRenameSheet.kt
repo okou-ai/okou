@@ -308,7 +308,14 @@ private fun WorkspaceNameFormBody(
             if (input.selection != retainedSelection) input.edit { selection = retainedSelection }
             snapshotFlow { input.selection.takeIf { fieldFocused } }
                 .filterNotNull()
-                .collect { field.focusedSelection = it }
+                .collect {
+                    field.focusedSelection = it
+                }
+        }
+        if (field.overlongSubmission != null) {
+            LaunchedEffect(field) {
+                snapshotFlow { input.text }.collect { field.clearLengthErrorOnEdit() }
+            }
         }
         val supportingText = validation ?: hint
         if (supportingText != null) {

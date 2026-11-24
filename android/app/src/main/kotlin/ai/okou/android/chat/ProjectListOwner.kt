@@ -210,6 +210,8 @@ internal class ProjectListOwner(
             while (true) {
                 try {
                     val observed = if (uncertain) lookupCreatedProject(request.id) else null
+                    requireCurrent()
+                    if (createRequest !== request) return@launch
                     val project =
                         observed
                             ?: try {

@@ -1,5 +1,6 @@
 package ai.okou.android.chat
 
+import ai.okou.android.normalizedRenameName
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,6 +37,11 @@ internal class WorkspaceNameField(initialName: String = "") {
         val name = input.text.toString().trim()
         overlongSubmission = name.takeIf { it.length > ProjectNameLimit }
         return name.takeIf { it.length in 1..ProjectNameLimit }
+    }
+
+    fun clearLengthErrorOnEdit() {
+        val rejected = overlongSubmission ?: return
+        if (normalizedRenameName(input.text) != rejected) overlongSubmission = null
     }
 }
 

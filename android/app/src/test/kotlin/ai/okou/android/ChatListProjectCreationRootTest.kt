@@ -129,6 +129,9 @@ internal class ChatListProjectCreationRootTest : ChatListRootTestFixture() {
             assertEquals(0, writes.get())
             field.performTextReplacement("Field notes")
             compose.onNodeWithText(warning).assertDoesNotExist()
+            field.performTextReplacement(overlong)
+            compose.onNodeWithText(warning).assertDoesNotExist()
+            field.performTextReplacement("Field notes")
             confirm().performClick()
             val failure = "Couldn’t create the project. The name has been kept."
             compose.waitUntilExactlyOneExists(hasText(failure), 10_000)
