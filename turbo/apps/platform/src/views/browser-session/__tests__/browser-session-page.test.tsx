@@ -991,3 +991,87 @@ test("Changing the display during handover fits the newly assigned window", asyn
     return fit(late.windowId, 720, 480);
   });
 });
+
+test("browser-session-page-014 The replacement browser endpoint fits its own window after the display changes during its handshake", async () => {
+  const destination = "wss://second.example.test/devtools/browser/session";
+  const pending = context.mocks.deferred<{ open(): void }>();
+  const page = {
+    targetId: "replacement-invoice",
+    title: "Review",
+    url: "https://review.example.test/",
+    windowId: 280,
+  };
+  const primary = {
+    targetId: "original-order",
+    title: "Order",
+    url: "https://order.example.test/",
+    windowId: 101,
+  };
+  const size = vi.spyOn(HTMLCanvasElement.prototype, "getBoundingClientRect");
+  size.mockReturnValue(new DOMRect(0, 0, 900, 600));
+  const { cdp, viewer, openPage } = arrangeNativePage(context, {
+    targets: [primary, page],
+    endpointAliases: [destination],
+    onConnecting: (url, socket) => {
+      if (url === destination && !pending.settled()) {
+        pending.resolve(socket);
+      }
+    },
+  });
+  let current = viewer;
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return respond(200, { browser: current.browser, viewer: current });
+  });
+  await openPage();
+  await expectStreamingAt(primary.url);
+  function fitted(
+    endpoint: string,
+    windowId: number,
+    width: number,
+    height: number,
+  ) {
+    expect(cdp.requestsAt(endpoint)).toContainEqual(
+      expect.objectContaining({
+        method: "Browser.setContentsSize",
+        params: expect.objectContaining({ windowId, width, height }),
+      }),
+    );
+  }
+  await waitFor(() => {
+    return fitted(viewer.cdpUrl, 101, 900, 600);
+  });
+  cdp.setAutoOpen(false);
+  current = {
+    ...viewer,
+    cdpUrl: destination,
+    browser: {
+      ...viewer.browser,
+      window: {
+        instanceId: "e61840c0-02ce-400c-9a38-4efb80e9f824",
+        primaryWindowId: page.windowId,
+      },
+    },
+  };
+  context.mocks.ably.trigger("browserSessionChanged", {
+    threadId: viewer.browser.threadId,
+  });
+  const transport = await pending.promise;
+  expect(screen.getByText("Connecting to browser…")).toBeVisible();
+  expect(screen.queryByRole("img", { name: "Live browser view" })).toBeNull();
+  const measured = context.mocks.deferred<string | null>();
+  size.mockImplementation(function (this: HTMLCanvasElement) {
+    if (!measured.settled()) {
+      measured.resolve(this.getAttribute("aria-hidden"));
+    }
+    return new DOMRect(0, 0, 720, 480);
+  });
+  fireEvent.resize(window);
+  await expect(measured.promise).resolves.toBe("true");
+  cdp.setWindowState("minimized", page.windowId, { width: 1280, height: 800 });
+  cdp.setAutoOpen(true);
+  transport.open();
+  await expectStreamingAt(page.url);
+  await waitFor(() => {
+    return fitted(destination, page.windowId, 720, 480);
+  });
+});

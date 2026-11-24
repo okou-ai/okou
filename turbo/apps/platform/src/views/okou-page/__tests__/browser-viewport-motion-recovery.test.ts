@@ -228,3 +228,97 @@ test.each([
     await admission(12, "Page 12");
   },
 );
+
+test.each(["panel", "chat-list"] as const)(
+  "chat-navigation-browser-011 revised Page 12 is selected again before the %s motion finishes first",
+  async (first) => {
+    const setWidth = nativeGeometry(180);
+    const setMotion = nativeTransitions();
+    const chat = await openBrowserChat(context, "live", false, { many: true });
+    click(chat.open);
+    await remoteBrowserInput();
+    await selectLast();
+    await admission(2, "Page 12");
+
+    const workflows = await findFastControl("link", "Workflows");
+    const leaving = owner("panel");
+    leaving.style.flexGrow = "0";
+    click(await findFastControl("button", "Hide chat list"));
+    const showList = await findFastControl("button", "Show chat list");
+    const paintRequested = context.mocks.deferred<void>();
+    const paint = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementationOnce(() => {
+        paintRequested.resolve();
+        return 0;
+      });
+    click(showList);
+    await paintRequested.promise;
+    paint.mockRestore();
+    const list = owner("chat-list");
+    setMotion(leaving, true);
+    setMotion(list, true);
+    click(workflows);
+    await waitFor(() => {
+      expect(leaving).not.toBeInTheDocument();
+      expect(location.pathname).toBe("/workflows");
+    });
+    act(() => {
+      return history.back();
+    });
+    click(await findFastControl("button", /Open .*browser/i));
+    await remoteBrowserInput();
+    expect(owner("chat-list")).toBe(list);
+    const returning = owner("panel");
+    expect(returning).not.toBe(leaving);
+    setMotion(returning, true);
+    await selectLast();
+    setWidth(800);
+    await admission(2, "Page 12");
+    const owners =
+      first === "panel"
+        ? ([returning, list] as const)
+        : ([list, returning] as const);
+    setMotion(owners[0], false);
+    await admission(2, "Page 12");
+    setMotion(owners[1], false);
+    await admission(12, "Page 12");
+    expect(screen.getByLabelText("Address")).toHaveValue(
+      "https://page12.example",
+    );
+  },
+);
+
+test("Native tab activation and a provider active-target report have different selection authority after returning", async () => {
+  nativeGeometry(800);
+  const { open, cdp } = await openBrowserChat(context, "live", false, {
+    many: true,
+  });
+  click(open);
+  await remoteBrowserInput();
+  click(await findFastControl("tab", "Page 12"));
+  await admission(12, "Page 12");
+  click(await findFastControl("link", "Workflows"));
+  await waitFor(() => {
+    return expect(location.pathname).toBe("/workflows");
+  });
+  act(() => {
+    return history.back();
+  });
+  click(await findFastControl("button", /Open .*browser/i));
+  await remoteBrowserInput();
+  await admission(12, "Example");
+  const target = cdp.targets.find((row) => {
+    return row.targetId === "page-12";
+  });
+  if (!target) {
+    throw new Error("Page 12 was absent from the remote target inventory");
+  }
+  cdp.nativeEvent("tab-activated", target);
+  // A subsequent native inventory change marks a completed discovery cycle.
+  cdp.duplicate(target.targetId);
+  await admission(13, "Example");
+  cdp.event("BrowserUse.activeTargetChanged", { targetId: target.targetId });
+  await admission(13, "Page 12");
+  expect(screen.getByLabelText("Address")).toHaveValue(target.url);
+});
