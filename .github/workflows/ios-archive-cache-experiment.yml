@@ -239,7 +239,7 @@ jobs:
       DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
       IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
       IOS_BUILD_CACHE_ENABLED: 'true'
-      IOS_XCODE_STARTUP_SAMPLING: ${{ github.event_name == 'workflow_dispatch' && inputs.sample_xcode_startup && 'true' || 'false' }}
+      IOS_XCODE_STARTUP_SAMPLING: 'false'
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
@@ -260,13 +260,6 @@ jobs:
       run: |
         release_only=$(python3 ios/scripts/archive-promotion.py release-only --base "$MERGE_GROUP_BASE_SHA")
         echo "release_only=$release_only" >> "$GITHUB_OUTPUT"
-    - name: Install AWS CLI
-      if: ${{ false }}
-      run: |
-        if ! command -v aws >/dev/null; then
-          HOMEBREW_NO_AUTO_UPDATE=1 brew install awscli
-        fi
-        aws --version
     - name: Resolve exact-input test evidence
       id: evidence
       env:
@@ -274,7 +267,7 @@ jobs:
         GH_TOKEN: ${{ github.token }}
       run: |-
         test "${{ steps.release-only.outputs.release_only }}" = false
-        python3 ios/scripts/archive-promotion.py resolve-tests "$IOS_ARCHIVE_DIR"
+        GITHUB_EVENT_NAME=merge_group python3 ios/scripts/archive-promotion.py resolve-tests "$IOS_ARCHIVE_DIR"
     - name: Restore native build caches
       id: build-cache
       if: env.IOS_PARALLEL_PR_TESTS != 'true' && (steps.evidence.outputs.run_tests == 'true')
@@ -318,14 +311,6 @@ jobs:
         else
           bash ios/scripts/run-ci-tests.sh
         fi
-    - name: Upload Xcode startup observations
-      if: always() && github.event_name == 'workflow_dispatch' && inputs.sample_xcode_startup
-      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-      with:
-        name: ios-xcode-startup-${{ github.run_id }}-${{ github.run_attempt }}
-        path: ${{ runner.temp }}/okou-ios-ci/startup-samples
-        if-no-files-found: ignore
-        retention-days: 7
     - name: Record simulator inputs and test decision
       run: |
         python3 ios/scripts/archive-promotion.py inputs --toolchain "$IOS_ARCHIVE_DIR/toolchain.json" --output "$IOS_ARCHIVE_DIR/test-inputs.json"
@@ -387,10 +372,14 @@ jobs:
         if-no-files-found: error
         retention-days: 7
   resolve-release:
-    if: ${{ false }}
+    needs: detect
+    if: github.event_name == 'merge_group' && needs.detect.outputs.release == 'true'
+    outputs:
+      reuse: ${{ steps.classify.outputs.reuse }}
     runs-on: ubuntu-latest
     steps:
-    - run: 'true'
+    - id: classify
+      run: echo 'reuse=false' >> "$GITHUB_OUTPUT"
   verify-archive:
     needs:
     - detect
@@ -399,7 +388,10 @@ jobs:
     - test-packages
     - build-test
     - build-archive
-    if: success()
+    if: >-
+      !cancelled() && needs.detect.result == 'success' && needs.script-checks.result == 'success' &&
+      needs.swiftlint.result == 'success' && needs.test-packages.result == 'success' &&
+      needs.build-test.result == 'success' && needs.build-archive.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
