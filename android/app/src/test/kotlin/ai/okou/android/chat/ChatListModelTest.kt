@@ -2554,14 +2554,33 @@ internal class ChatListProjectCreationModelTest : ChatListModelTestFixture() {
     }
 
     @Test
-    fun matchingProjectEventConfirmsWhileTheHttpReceiptIsStillPending() = runTest {
+    fun matchingProjectEventConfirmsWhileTheHttpReceiptIsStillPending() =
+        confirmFromEventWhileRequestIsHeld(lookupPending = false)
+
+    @Test
+    fun matchingProjectEventPreventsReplayAfterAnEarlierLookupCompletes() =
+        confirmFromEventWhileRequestIsHeld(lookupPending = true)
+
+    private fun confirmFromEventWhileRequestIsHeld(lookupPending: Boolean) = runTest {
         val pendingReceipt = CompletableDeferred<ConfirmedProject>()
         val realtime = TestRealtimeService()
+        val calls = mutableListOf<String>()
         var receipt: ProjectEventsEventsItem? = null
         val service =
             object : TestChatService() {
-                override suspend fun createProject(projectId: String, name: String) =
-                    pendingReceipt.await()
+                override suspend fun createProject(
+                    projectId: String,
+                    name: String,
+                ): ConfirmedProject {
+                    calls += "POST"
+                    if (lookupPending) throw ApiFailure.Http(503, null, null, null)
+                    return pendingReceipt.await()
+                }
+
+                override suspend fun projectDetail(projectId: String): ConfirmedProject {
+                    calls += "GET"
+                    return pendingReceipt.await()
+                }
 
                 override suspend fun projectEvents(since: Long) =
                     ProjectEvents(listOfNotNull(receipt).filter { it.seqId > since }, false)
@@ -2570,8 +2589,10 @@ internal class ChatListProjectCreationModelTest : ChatListModelTestFixture() {
             model.updates.foreground(true)
             advanceUntilIdle()
             model.createProject("Research")
-            runCurrent()
+            advanceUntilIdle()
             val attempt = checkNotNull(model.uiState.value.projectList.creation)
+            val expectedCalls = if (lookupPending) listOf("POST", "GET") else listOf("POST")
+            assertEquals(expectedCalls, calls)
             receipt =
                 ProjectEventsEventsItem(
                     id = attempt.id,
@@ -2591,12 +2612,17 @@ internal class ChatListProjectCreationModelTest : ChatListModelTestFixture() {
             assertEquals("Research", model.uiState.value.projects.single().name)
 
             model.dismissProjectCreation()
-            pendingReceipt.complete(
-                ConfirmedProject(attempt.id, "Research", CHAT_DATE, CHAT_DATE, "a0"),
-            )
+            if (lookupPending) {
+                pendingReceipt.completeExceptionally(ApiFailure.Http(404, null, null, null))
+            } else {
+                pendingReceipt.complete(
+                    ConfirmedProject(attempt.id, "Research", CHAT_DATE, CHAT_DATE, "a0"),
+                )
+            }
             advanceUntilIdle()
             assertNull(model.uiState.value.projectList.creation)
             assertEquals(attempt.id, model.uiState.value.projects.single().id)
+            assertEquals(expectedCalls, calls)
         }
     }
 }
