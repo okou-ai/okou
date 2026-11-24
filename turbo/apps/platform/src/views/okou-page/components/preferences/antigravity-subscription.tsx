@@ -1,3 +1,4 @@
+import { antigravityTerminalCommand } from "@okouai/core/antigravity-terminal";
 import { Button } from "@okouai/ui";
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
@@ -60,9 +61,7 @@ export function AntigravitySubscription() {
                   })}
             </p>
             <code className="max-w-full select-all break-all rounded-md bg-muted px-2 py-1 text-xs">
-              {profile.status === "pending"
-                ? `ssh -t -- ${profile.loginHost} ${profile.bindingId}`
-                : `ssh -t -- ${profile.loginHost} verify ${profile.bindingId}`}
+              {antigravityTerminalCommand(profile)}
             </code>
           </>
         )}

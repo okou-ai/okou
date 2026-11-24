@@ -1,3 +1,4 @@
+import { antigravityTerminalCommand } from "@okouai/core/antigravity-terminal";
 import { Command, InvalidArgumentError } from "commander";
 import { uuid } from "zod";
 import { antigravitySubscription } from "../../lib/api/domains/subscriptions";
@@ -13,7 +14,7 @@ function show(
   }
   if (profile.status === "pending") {
     console.log(
-      `Open your assigned Google sign-in terminal by ${profile.expiresAt}:\nssh -t -- ${profile.loginHost} ${profile.bindingId}`,
+      `Open your assigned Google sign-in terminal by ${profile.expiresAt}:\n${antigravityTerminalCommand(profile)}`,
     );
   } else if (profile.status === "expired") {
     console.log(
@@ -30,7 +31,7 @@ function show(
   } else if (profile.status === "connected") {
     console.log(`Google sign-in connected. Binding ID: ${profile.bindingId}
 Test Neon, Carbon and Hydrogen with one subscription request each:
-ssh -t -- ${profile.loginHost} verify ${profile.bindingId}`);
+${antigravityTerminalCommand(profile)}`);
   } else {
     console.log("Google sign-in disconnected.");
   }
