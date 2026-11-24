@@ -1168,9 +1168,6 @@
       "teamWarning": "Akses Team Anda tetap aktif hingga akhir periode tagihan saat ini. Setelah itu, ruang kerja ini akan berpindah ke {{plan}}.",
       "title": "Turunkan paket"
     },
-    "feedback": {
-      "earnExtraCredits": "Dapatkan kredit tambahan"
-    },
     "invoices": {
       "amount": "Jumlah",
       "date": "Tanggal",
@@ -1703,6 +1700,7 @@
       "waiting": "Menunggu Mastercard Data Connect. Selesaikan proses di sana, lalu kembali ke Chat."
     },
     "billing": {
+      "addCreditsOrUpgrade": "Isi ulang kredit mulai $5 untuk melanjutkan, atau upgrade ke Pro untuk membuka fitur eksklusif.",
       "addCreditsToContinue": "Tambahkan kredit untuk terus mengobrol dengan {{assistantName}}.",
       "askAdminCredits": "Minta admin ruang kerja untuk menambahkan kredit agar Anda bisa terus mengobrol dengan {{assistantName}}.",
       "askAdminUpgrade": "Minta admin ruang kerja untuk upgrade ke Pro agar Anda bisa terus mengobrol dengan {{assistantName}}.",

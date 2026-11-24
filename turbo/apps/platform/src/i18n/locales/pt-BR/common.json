@@ -1196,9 +1196,6 @@
       "teamWarning": "Seu acesso Team permanece ativo até o fim do período de cobrança atual. Depois disso, este workspace passará para {{plan}}.",
       "title": "Fazer downgrade do plano"
     },
-    "feedback": {
-      "earnExtraCredits": "Ganhar créditos extras"
-    },
     "invoices": {
       "amount": "Valor",
       "date": "Data",
@@ -1739,6 +1736,7 @@
       "waiting": "Aguardando o Mastercard Data Connect. Conclua o processo lá e depois volte ao Chat."
     },
     "billing": {
+      "addCreditsOrUpgrade": "Adicione créditos a partir de $5 para continuar ou faça upgrade para o Pro e desbloqueie recursos exclusivos.",
       "addCreditsToContinue": "Adicione créditos para continuar conversando com o {{assistantName}}.",
       "askAdminCredits": "Peça a um administrador do workspace para adicionar créditos e continuar conversando com o {{assistantName}}.",
       "askAdminUpgrade": "Peça a um administrador do workspace para fazer upgrade para o Pro e continuar conversando com o {{assistantName}}.",

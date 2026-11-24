@@ -1168,9 +1168,6 @@
       "teamWarning": "チームのアクセスは、現在の請求期間が終了するまで有効のままです。その後、このワークスペースは {{plan}} に移動します。",
       "title": "ダウングレード計画"
     },
-    "feedback": {
-      "earnExtraCredits": "追加クレジットを獲得"
-    },
     "invoices": {
       "amount": "金額",
       "date": "日付",
@@ -1703,6 +1700,7 @@
       "waiting": "Mastercard Data Connectでの操作を待っています。そこで完了してから、チャットに戻ってください。"
     },
     "billing": {
+      "addCreditsOrUpgrade": "$5からクレジットを追加して続けるか、Proにアップグレードして限定機能を利用できます。",
       "addCreditsToContinue": "クレジットを追加すると、{{assistantName}} とのチャットを続けることができます。",
       "askAdminCredits": "{{assistantName}} とチャットを続けることができるように、ワークスペース管理者にクレジットを追加するように依頼してください。",
       "askAdminUpgrade": "{{assistantName}} とのチャットを継続できるように、ワークスペース管理者に Pro にアップグレードするよう依頼してください。",

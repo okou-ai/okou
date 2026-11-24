@@ -1196,9 +1196,6 @@
       "teamWarning": "L'accesso al team rimane attivo fino al termine del periodo di fatturazione corrente. Successivamente, questa area di lavoro verrà spostata in {{plan}}.",
       "title": "Piano di downgrade"
     },
-    "feedback": {
-      "earnExtraCredits": "Ottieni crediti extra"
-    },
     "invoices": {
       "amount": "Importo",
       "date": "Data",
@@ -1739,6 +1736,7 @@
       "waiting": "In attesa di Mastercard Data Connect. Completa la procedura lì, quindi torna alla Chat."
     },
     "billing": {
+      "addCreditsOrUpgrade": "Aggiungi crediti a partire da 5 $ per continuare, oppure passa a Pro per sbloccare funzionalità esclusive.",
       "addCreditsToContinue": "Aggiungi crediti per continuare a chattare con {{assistantName}}.",
       "askAdminCredits": "Chiedi a un amministratore dell'area di lavoro di aggiungere crediti in modo da poter continuare a chattare con {{assistantName}}.",
       "askAdminUpgrade": "Chiedi a un amministratore dell'area di lavoro di passare a Pro per continuare a chattare con {{assistantName}}.",

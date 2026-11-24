@@ -1172,9 +1172,6 @@
       "teamWarning": "Ihr Team-Zugang bleibt bis zum Ende des aktuellen Abrechnungszeitraums aktiv. Danach wird dieser Arbeitsbereich nach {{plan}} verschoben.",
       "title": "Downgrade-Plan"
     },
-    "feedback": {
-      "earnExtraCredits": "Zusätzliche Credits verdienen"
-    },
     "invoices": {
       "amount": "Betrag",
       "date": "Datum",
@@ -1709,6 +1706,7 @@
       "waiting": "Warten auf Mastercard Data Connect. Schließen Sie den Vorgang dort ab und kehren Sie dann zum Chat zurück."
     },
     "billing": {
+      "addCreditsOrUpgrade": "Lade ab 5 $ Guthaben auf, um weiterzumachen, oder wechsle zu Pro, um exklusive Funktionen freizuschalten.",
       "addCreditsToContinue": "Fügen Sie Credits hinzu, um weiterhin mit {{assistantName}} zu chatten.",
       "askAdminCredits": "Bitten Sie einen Arbeitsbereichsadministrator, Credits hinzuzufügen, damit Sie weiterhin mit {{assistantName}} chatten können.",
       "askAdminUpgrade": "Bitten Sie einen Arbeitsbereichsadministrator um ein Upgrade auf Pro, damit Sie weiterhin mit {{assistantName}} chatten können.",

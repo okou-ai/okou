@@ -9,7 +9,6 @@ import { authenticatedIdentity$ } from "./auth.ts";
 import {
   consumeBillingFeedback$,
   pendingBillingFeedback$,
-  requestBillingFeedback$,
 } from "./billing-feedback-flow.ts";
 import {
   billingStatusAsync$,
@@ -20,7 +19,7 @@ import { isOrgAdmin$ } from "./org.ts";
 import { searchParams$ } from "./route.ts";
 import { resetSignal } from "./utils.ts";
 
-export const creditsFeedbackOffer$ = computed(async (get) => {
+const creditsFeedbackOffer$ = computed(async (get) => {
   const status = await get(billingStatusAsync$);
   if (
     status.hasSubscription ||
@@ -98,13 +97,6 @@ export const handleBillingFeedbackRedirect$ = command(
     await set(handleBillingRedirect$, signal);
     signal.throwIfAborted();
     // The initial Stripe return precedes page setup and belongs to app startup.
-    await set(showPendingBillingFeedback$, signal);
-  },
-);
-
-export const requestCreditsFeedback$ = command(
-  async ({ set }, signal: AbortSignal) => {
-    set(requestBillingFeedback$, "credits_exhausted");
     await set(showPendingBillingFeedback$, signal);
   },
 );

@@ -227,6 +227,16 @@ test("Let a free workspace admin choose a small top-up or the Pro plans flow", a
     screen.findByText("You're out of credits"),
   ).resolves.toBeInTheDocument();
   const frame = screen.getByTestId("assistant-error-card-shell");
+  expect(
+    within(frame).getByText(
+      "Add credits from $5 to keep going, or upgrade to Pro to unlock exclusive features.",
+    ),
+  ).toBeInTheDocument();
+  expect(
+    queryAllByRoleFast("button", frame).map((element) => {
+      return element.textContent?.trim();
+    }),
+  ).toStrictEqual(["$5", "$10", "Upgrade to Pro"]);
   for (const dollars of [5, 10]) {
     click(button(`$${String(dollars)}`, frame));
     const review = await screen.findByRole("dialog", {
@@ -299,6 +309,9 @@ test("Let a paid workspace admin buy more credits", async () => {
     screen.findByText("You're out of credits"),
   ).resolves.toBeVisible();
   const frame = screen.getByTestId("assistant-error-card-shell");
+  expect(
+    within(frame).getByText("Add credits to keep chatting with Okou."),
+  ).toBeInTheDocument();
   for (const amount of ["$100", "$200", "$300"]) {
     expect(button(amount, frame)).toBeVisible();
   }

@@ -173,7 +173,6 @@ import { hasChatEventBodyContent } from "../../signals/chat-page/chat-event-body
 import { i18n } from "../../i18n/index.ts";
 import { artifactFallbackSubtitle } from "./artifact-display.ts";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { CreditsFeedbackButton } from "./components/billing-feedback.tsx";
 import {
   CHAT_INLINE_IMAGE_PREVIEW_CLASS,
   CHAT_INLINE_VIDEO_ATTACHMENT_PREVIEW_CLASS,
@@ -4504,6 +4503,7 @@ function creditsAvailableCopy(): {
 
 function insufficientCreditsCopy(params: {
   readonly canBuyCredits: boolean;
+  readonly freePlan: boolean;
   readonly roleResolved: boolean;
   readonly canManageBilling: boolean;
 }): { readonly headline: string; readonly helper: string } {
@@ -4532,6 +4532,14 @@ function insufficientCreditsCopy(params: {
         : i18n.t(($) => {
             return $.chat.billing.askAdminCredits;
           }),
+    };
+  }
+  if (params.canBuyCredits && params.freePlan) {
+    return {
+      headline,
+      helper: i18n.t(($) => {
+        return $.chat.billing.addCreditsOrUpgrade;
+      }),
     };
   }
   return {
@@ -4676,24 +4684,14 @@ function CreditCheckoutActions({
   );
 }
 
-function hasExhaustedCredits(error: string, credits: number | null): boolean {
-  return (
-    error.trim().toLowerCase() === "insufficient_credits" &&
-    credits !== null &&
-    credits <= 0
-  );
-}
-
 function CreditRecoveryActions({
   freePlan,
   canTopUp,
   showProUpgrade,
-  showCreditsFeedback,
 }: {
   readonly freePlan: boolean;
   readonly canTopUp: boolean;
   readonly showProUpgrade: boolean;
-  readonly showCreditsFeedback: boolean;
 }) {
   const { t } = useTranslation();
   const [creditCheckoutLoadable, creditCheckout] =
@@ -4742,7 +4740,6 @@ function CreditRecoveryActions({
           })}
         </Button>
       )}
-      <CreditsFeedbackButton eligible={showCreditsFeedback} />
     </>
   );
 }
@@ -4778,6 +4775,7 @@ function InsufficientCreditsCard({ error }: { readonly error: string }) {
     : {
         ...insufficientCreditsCopy({
           canBuyCredits: canTopUp,
+          freePlan,
           roleResolved: billingResolved && roleResolved,
           canManageBilling: billingResolved && canManageBilling,
         }),
@@ -4789,12 +4787,6 @@ function InsufficientCreditsCard({ error }: { readonly error: string }) {
           />
         ),
       };
-
-  // Free admins retain their reward offer when one-time top-ups are available.
-  const showCreditsFeedback =
-    hasExhaustedCredits(error, credits) &&
-    canShowBillingAction &&
-    showProUpgrade;
 
   return (
     <>
@@ -4815,7 +4807,12 @@ function InsufficientCreditsCard({ error }: { readonly error: string }) {
             </p>
             <p
               title={helper}
-              className="mt-0.5 h-5 truncate text-sm leading-5 text-muted-foreground"
+              className={cn(
+                "mt-0.5 text-sm text-muted-foreground",
+                freePlan
+                  ? "line-clamp-2 h-9 leading-tight"
+                  : "h-5 truncate leading-5",
+              )}
             >
               {helper}
             </p>
@@ -4827,7 +4824,6 @@ function InsufficientCreditsCard({ error }: { readonly error: string }) {
               freePlan={freePlan}
               canTopUp={canTopUp}
               showProUpgrade={showProUpgrade}
-              showCreditsFeedback={showCreditsFeedback}
             />
           )}
         </div>

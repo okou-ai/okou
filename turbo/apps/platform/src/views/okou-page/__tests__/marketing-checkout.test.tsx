@@ -1,7 +1,9 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  billingCheckoutContract,
   billingStatusContract,
+  billingUsagePackCatalogContract,
+  billingUsagePackCheckoutContract,
+  billingUsagePackManagementContract,
 } from "@okouai/api-contracts/contracts/billing";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
@@ -75,7 +77,26 @@ function prepareCheckout() {
       },
     ],
   });
-  context.mocks.api(billingCheckoutContract.create, ({ respond }) => {
+  context.mocks.api(billingUsagePackCatalogContract.get, ({ respond }) => {
+    return respond(200, {
+      supportsFreeMembers: true,
+      usagePacks: [
+        {
+          usagePackUsd: 20,
+          priceUsd: 20,
+          purchasedCredits: 20_000,
+          bonusCredits: 2000,
+          totalCredits: 22_000,
+        },
+      ],
+    });
+  });
+  context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "No usage-pack subscription" },
+    });
+  });
+  context.mocks.api(billingUsagePackCheckoutContract.create, ({ respond }) => {
     return respond(200, { url: STRIPE_URL });
   });
   mockNow(new Date(OCCURRED_AT), context.signal);
@@ -87,20 +108,44 @@ async function openCheckout() {
   await expect(
     screen.findByText(/Upgrade to Pro to keep chatting/u),
   ).resolves.toBeInTheDocument();
+  click(await findButton("Upgrade to Pro"));
+  const plans = await screen.findByRole("dialog", { name: "Choose a plan" });
+  click(await within(plans).findByText("Start with Pro"));
+  return await screen.findByRole("dialog", {
+    name: "Configure member packages",
+  });
 }
 
-function confirmButton(dialog: HTMLElement) {
+function button(name: string, dialog: HTMLElement) {
   const button = queryAllByRoleFast("button", dialog).find((candidate) => {
-    return candidate.textContent?.trim() === "Upgrade to Pro";
+    return candidate.textContent?.trim() === name;
   });
   if (!button) {
-    throw new Error("Expected the upgrade confirmation button");
+    throw new Error(`Expected the ${name} button`);
   }
   return button;
 }
 
-test("A checkout action sends a Marketing event without waiting for it", async () => {
+test("A confirmed checkout sends a Marketing event without waiting for it", async () => {
   prepareCheckout();
+  context.mocks.api(
+    billingUsagePackCheckoutContract.create,
+    ({ body, respond }) => {
+      if (body.previewToken) {
+        return respond(200, { url: STRIPE_URL });
+      }
+      return respond(200, {
+        status: "preview",
+        purchaseType: "usage_pack",
+        tier: "pro",
+        immediateAmountCents: 2000,
+        nextRecurringAmountCents: 2000,
+        currency: "usd",
+        expiresAt: "2026-09-17T08:40:00.000Z",
+        previewToken: "marketing-upgrade-preview",
+      });
+    },
+  );
   const received = context.mocks.deferred<Request>();
   const complete = context.mocks.deferred<void>();
   context.mocks.http.post(ENDPOINT, async ({ request }) => {
@@ -109,9 +154,11 @@ test("A checkout action sends a Marketing event without waiting for it", async (
     return new Response(null, { status: 204 });
   });
   const open = vi.spyOn(window, "open").mockReturnValue(null);
-  await openCheckout();
+  const packages = await openCheckout();
 
-  fireEvent.click(await findButton("Upgrade to Pro"), { ctrlKey: true });
+  fireEvent.click(button("Upgrade to Pro", packages), { ctrlKey: true });
+  const review = await screen.findByRole("dialog", { name: "Order summary" });
+  click(button("Confirm", review));
   const request = await received.promise;
   await waitFor(() => {
     expect(open).toHaveBeenCalledWith(STRIPE_URL, "_blank");
@@ -139,8 +186,8 @@ test("A Marketing failure does not prevent the Stripe redirect or start retries"
     received.resolve();
     return Response.error();
   });
-  await openCheckout();
-  click(await findButton("Upgrade to Pro"));
+  const packages = await openCheckout();
+  click(button("Upgrade to Pro", packages));
   await received.promise;
   await waitFor(() => {
     expect(window.location.href).toBe(STRIPE_URL);
@@ -150,30 +197,33 @@ test("A Marketing failure does not prevent the Stripe redirect or start retries"
   expect(requests).toBe(1);
 });
 
-test("An expired plan preview keeps the quoted amount visible with the confirmation error", async () => {
+test("An expired upgrade preview keeps the quoted amount visible with the confirmation error", async () => {
   prepareCheckout();
-  context.mocks.api(billingCheckoutContract.create, ({ body, respond }) => {
-    if (body.previewToken !== undefined) {
-      return respond(409, {
-        error: { code: "CONFLICT", message: "Preview expired" },
+  context.mocks.api(
+    billingUsagePackCheckoutContract.create,
+    ({ body, respond }) => {
+      if (body.previewToken !== undefined) {
+        return respond(409, {
+          error: { code: "CONFLICT", message: "Preview expired" },
+        });
+      }
+      return respond(200, {
+        status: "preview",
+        purchaseType: "usage_pack",
+        tier: "pro",
+        immediateAmountCents: 2000,
+        nextRecurringAmountCents: 2000,
+        currency: "usd",
+        expiresAt: "2026-09-17T08:40:00.000Z",
+        previewToken: "preview-plan",
       });
-    }
-    return respond(200, {
-      status: "preview",
-      purchaseType: "plan",
-      tier: "pro",
-      immediateAmountCents: 2000,
-      nextRecurringAmountCents: 2000,
-      currency: "usd",
-      expiresAt: "2026-09-17T08:40:00.000Z",
-      previewToken: "preview-plan",
-    });
-  });
-  await openCheckout();
-  click(await findButton("Upgrade to Pro"));
-  const dialog = await screen.findByRole("dialog", { name: "Upgrade to Pro" });
-  click(confirmButton(dialog));
+    },
+  );
+  const packages = await openCheckout();
+  click(button("Upgrade to Pro", packages));
+  const dialog = await screen.findByRole("dialog", { name: "Order summary" });
+  click(button("Confirm", dialog));
   await within(dialog).findByText(/Could not prepare the subscription change/u);
   expect(within(dialog).getAllByText("$20.00")).toHaveLength(2);
-  expect(confirmButton(dialog)).toBeEnabled();
+  expect(button("Confirm", dialog)).toBeEnabled();
 });

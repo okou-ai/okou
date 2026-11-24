@@ -1,6 +1,5 @@
 import {
   billingStatusContract,
-  billingFeedbackRewardContract,
   billingUsagePackCatalogContract,
   billingUsagePackCheckoutContract,
   billingUsagePackManagementContract,
@@ -18,12 +17,6 @@ import {
   billingPlanCapabilities,
   defaultBillingStatus,
 } from "../../../mocks/handlers/api-billing.ts";
-import {
-  createChatRunFixtures,
-  promptEvent,
-  readyChat,
-  RUN_PATH,
-} from "./chat-run-test-fixtures.ts";
 
 vi.hoisted(() => {
   window.location.href = "https://app.okou.ai/";
@@ -181,60 +174,6 @@ test("a restored upgrade dialog defers checkout feedback until closing completes
   });
   expect(plans).not.toBeInTheDocument();
 });
-
-test.each([false, true])(
-  "an exhaustion card requests its reward offer when credit purchases are %s",
-  async (canBuyCredits) => {
-    const telemetry = prepareBilling();
-    context.mocks.api(billingStatusContract.get, ({ respond }) => {
-      return respond(200, { ...freeBilling(), canBuyCredits });
-    });
-    context.mocks.api(billingFeedbackRewardContract.get, ({ respond }) => {
-      return respond(200, {
-        rewardCredits: 200,
-        token: "signed-offer-from-api",
-      });
-    });
-    const fixtures = createChatRunFixtures(context);
-    fixtures.installRunChat({
-      chatEvents: [
-        promptEvent({
-          id: "feedback-user-prompt",
-          runId: "d0000000-0000-4000-a000-000000001401",
-          seqId: 1,
-          text: "Draft the launch plan",
-        }),
-        {
-          id: "feedback-out-of-credits",
-          eventType: "output.error",
-          role: "assistant",
-          content: null,
-          error: "insufficient_credits",
-          runId: "d0000000-0000-4000-a000-000000001401",
-          seqId: 2,
-          createdAt: "2026-08-01T10:00:02.000Z",
-        },
-      ],
-    });
-    await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
-    await readyChat();
-    await waitFor(() => {
-      expect(button("Earn extra credits")).toBeInTheDocument();
-    });
-    click(button("Earn extra credits"));
-    await waitFor(() => {
-      expect(
-        telemetry.surveyDisplays.map((display) => {
-          return display.id;
-        }),
-      ).toStrictEqual([BILLING_FEEDBACK_SURVEYS.credits_exhausted]);
-    });
-    expect(telemetry.surveyDisplays[0]?.options?.properties).toMatchObject({
-      billing_feedback_kind: "credits_exhausted",
-      billing_feedback_reward_token: "signed-offer-from-api",
-    });
-  },
-);
 
 test("a completed in-app upgrade closes the funnel without an abandonment question", async () => {
   const telemetry = prepareBilling();

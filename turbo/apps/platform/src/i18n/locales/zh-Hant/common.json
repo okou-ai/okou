@@ -1168,9 +1168,6 @@
       "teamWarning": "你的 Team 權益會持續到當前帳單週期結束，之後這個工作區會變成{{plan}}。",
       "title": "降級套餐"
     },
-    "feedback": {
-      "earnExtraCredits": "賺取額外積分"
-    },
     "invoices": {
       "amount": "金額",
       "date": "日期",
@@ -1703,6 +1700,7 @@
       "waiting": "正在等待 Mastercard Data Connect。在那邊完成後，回到聊天繼續。"
     },
     "billing": {
+      "addCreditsOrUpgrade": "最低儲值 $5 即可繼續使用，或升級 Pro 解鎖專屬功能。",
       "addCreditsToContinue": "新增積分，繼續和 {{assistantName}} 對話。",
       "askAdminCredits": "請工作區管理員新增積分，你就能繼續和 {{assistantName}} 對話。",
       "askAdminUpgrade": "請工作區管理員升級到 Pro，你就能繼續和 {{assistantName}} 對話。",

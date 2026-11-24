@@ -1196,9 +1196,6 @@
       "teamWarning": "Votre accès Équipe reste actif jusqu'à la fin de la période de facturation en cours. Après cela, cet espace de travail passe à {{plan}}.",
       "title": "Rétrograder le plan"
     },
-    "feedback": {
-      "earnExtraCredits": "Gagner des crédits supplémentaires"
-    },
     "invoices": {
       "amount": "Montant",
       "date": "Date",
@@ -1739,6 +1736,7 @@
       "waiting": "En attente de Mastercard Data Connect. Terminez l'opération là-bas, puis revenez au Chat."
     },
     "billing": {
+      "addCreditsOrUpgrade": "Ajoutez des crédits à partir de 5 $ pour continuer, ou passez à Pro pour débloquer des fonctionnalités exclusives.",
       "addCreditsToContinue": "Ajoutez des crédits pour continuer à discuter avec {{assistantName}}.",
       "askAdminCredits": "Demandez à un administrateur de l'espace de travail d'ajouter des crédits afin que vous puissiez continuer à discuter avec {{assistantName}}.",
       "askAdminUpgrade": "Demandez à un administrateur de l'espace de travail de passer à Pro afin que vous puissiez continuer à discuter avec {{assistantName}}.",
