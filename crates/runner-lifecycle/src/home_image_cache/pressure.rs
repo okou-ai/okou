@@ -135,6 +135,16 @@ impl HomeImageCache {
         self
     }
 
+    /// Wait for the foreground collector result in tests of reclamation policy.
+    #[cfg(test)]
+    pub(super) async fn reclaim_foreground_for_test(
+        &self,
+        required: u64,
+    ) -> LifecycleResult<HomeCacheReclaimOutcome> {
+        let mut completion = self.accept_pressure(required, None);
+        Self::observe_pressure(&mut completion).await
+    }
+
     /// Observe reclamation until the caller's deadline; accepted work survives a
     /// timeout or cancellation, and only the destination's reread grants growth.
     pub async fn reclaim_home_image_headroom(
