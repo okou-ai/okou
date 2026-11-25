@@ -3675,7 +3675,7 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
 
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
-    fun titleAndPinsAppearBeforeWriteAndReadbackComplete() {
+    fun chatTitleWaitsForConfirmationWhilePinningAppearsImmediately() {
         val app = compose.activity.application as ChatListApplication
         val readback = CountDownLatch(1)
         val release = CountDownLatch(1)
@@ -3756,7 +3756,7 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
                 )
             }
             compose.waitUntil(10_000) { compose.runOnIdle { readback.count == 0L } }
-            row.assert(hasText("Weekly brief"))
+            row.assert(hasText("Personal chat"))
             assertEquals(1, commands.size)
             release.countDown()
             awaitRowActionSettled(CHAT_PERSONAL)
@@ -3970,7 +3970,7 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
                     .renameProject(CHAT_PROJECT, "Field notes")
             }
             compose.waitUntil(10_000) { renameStarted.get() }
-            compose.onNodeWithText("Field notes").assertIsDisplayed()
+            compose.onNodeWithText("Research").assertIsDisplayed()
 
             compose.onNodeWithTag("chat_list").performScrollToNode(hasTestTag(rowTag))
             chat.performTouchInput { swipe(center.copy(x = width * 0.8f), center) }

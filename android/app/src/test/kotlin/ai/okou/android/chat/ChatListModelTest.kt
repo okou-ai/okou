@@ -2042,6 +2042,18 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
             object : Service() {
                 override suspend fun chatEvents(since: Long?): ChatEvents {
                     if (since == null) return page()
+                    if (since < 18) {
+                        return page(
+                            listOf(
+                                chatEventWire(
+                                    id = "00000018-0000-4000-8000-000000000000",
+                                    seq = 18,
+                                    kind = "renamed",
+                                    title = "Earlier remote title",
+                                ),
+                            ),
+                        )
+                    }
                     read.await()
                     return tail
                 }
@@ -2061,6 +2073,9 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
             assertTrue(model.renameThread(CHAT_PERSONAL, "Receipt title"))
             runCurrent()
             assertEquals("Personal chat", model.uiState.value.threads.single().title)
+            model.refreshList()
+            runCurrent()
+            assertEquals("Earlier remote title", model.uiState.value.threads.single().title)
             write.complete(Unit)
             runCurrent()
             assertEquals(ChatReadPhase.Loading, model.uiState.value.listPhase)
@@ -2073,7 +2088,7 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
                     listOf(
                         chatEventWire(
                             id = writes.single(),
-                            seq = 18,
+                            seq = 19,
                             kind = "renamed",
                             title = "Receipt title",
                         ),
@@ -2088,7 +2103,7 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
                     listOf(
                         chatEventWire(
                             id = HISTORY_LAST_EVENT,
-                            seq = 19,
+                            seq = 20,
                             kind = "renamed",
                             title = "Remote title",
                         ),

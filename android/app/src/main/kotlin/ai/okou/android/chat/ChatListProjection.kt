@@ -14,6 +14,7 @@ internal class ChatListProjection {
         private val optimistic: Boolean,
         var waitingForTargetChange: Boolean,
         private var renameBaseline: Pair<String?, String?>?,
+        val renameSnapshotCursor: ChatCursor?,
     ) {
         var unconfirmed = false
         var confirmedMembershipChanged = false
@@ -93,14 +94,31 @@ internal class ChatListProjection {
                                     it.title to it.renamedAt
                                 }
                         else null
-                    PendingRowEdit(edit, optimistic, targetAlreadyMatches, renameBaseline)
+                    val renameSnapshotCursor =
+                        confirmedCheckpoint?.snapshotCursor.takeIf { renameBaseline != null }
+                    PendingRowEdit(
+                        edit,
+                        optimistic,
+                        targetAlreadyMatches,
+                        renameBaseline,
+                        renameSnapshotCursor,
+                    )
                 }
     }
 
     fun acknowledgeRename(edit: ChatRowEdit): Boolean {
         val pending = rowEdits.firstOrNull { it.edit == edit } ?: return false
-        val row = confirmedRows.threads.firstOrNull { it.id == edit.threadId }
-        if (!pending.keepsRenameBaseline(row)) return false
+        val row =
+            confirmedRows.threads.firstOrNull { it.id == edit.threadId && it.hidden != true }
+                ?: return false
+        // On the same snapshot, a later rename in the feed would already have settled
+        // this edit by ID. A replacement snapshot may have compacted that receipt.
+        if (
+            pending.renameSnapshotCursor != confirmedCheckpoint?.snapshotCursor &&
+                !pending.keepsRenameBaseline(row)
+        )
+            return false
+        pending.advanceRenameBaseline(row)
         pending.renameAcknowledged = true
         return true
     }
