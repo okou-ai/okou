@@ -1,6 +1,8 @@
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { command, computed } from "ccstate";
 import { constrainBrowserDisplay } from "@okouai/core/browser-display";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -9,6 +11,7 @@ import { setResHeader$ } from "../context/hono";
 import type { RouteEntry } from "../route-entry";
 import type { BrowserServiceError } from "../services/browser-error";
 import { createBrowserGraph } from "../services/browser.service";
+import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 
 function errorResponse(error: BrowserServiceError) {
   return {
@@ -93,6 +96,36 @@ const useBrowserInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     ? errorResponse(result)
     : { status: 200 as const, body: result.value };
 });
+
+const restartBody$ = bodyResultOf(browserContract.restart);
+const restartBrowserInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const body = await get(restartBody$);
+    signal.throwIfAborted();
+    if (!body.ok) {
+      return body.response;
+    }
+    const auth = get(organizationAuthContext$);
+    const context = await set(
+      loadUserFeatureSwitchContext$,
+      auth.orgId,
+      auth.userId,
+      signal,
+    );
+    if (!isFeatureEnabled(FeatureSwitchKey.CloudBrowserRestart, context)) {
+      return errorResponse({
+        kind: "error",
+        status: 403,
+        code: "BROWSER_RESTART_UNAVAILABLE",
+        message: "Browser restart is unavailable",
+      });
+    }
+    const result = await set(runBrowser.restart$, body.data.instanceId, signal);
+    return result.kind === "error"
+      ? errorResponse(result)
+      : { status: 200 as const, body: result.value };
+  },
+);
 
 const leaseBody$ = bodyResultOf(browserContract.lease);
 const leaseBrowserInner$ = command(
@@ -264,6 +297,10 @@ export const browserRoutes: readonly RouteEntry[] = [
   {
     route: browserContract.use,
     handler: authRoute(browserWriteAuth, useBrowserInner$),
+  },
+  {
+    route: browserContract.restart,
+    handler: authRoute(browserWriteAuth, restartBrowserInner$),
   },
   {
     route: browserContract.lease,

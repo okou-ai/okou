@@ -26,6 +26,7 @@ import {
   createBrowserUserAction,
   getCurrentBrowser,
   leaseBrowser,
+  restartBrowserInstance,
   type BrowserUserActionCreateResponse,
   useBrowser,
 } from "../../lib/api/domains/browser";
@@ -447,6 +448,38 @@ const leaseCommand = new Command()
     }),
   );
 
+const restartCommand = new Command()
+  .name("restart")
+  .description(
+    "Restart an unresponsive shared Browser instance and reconnect this chat. This interrupts all chats using your Browser in this workspace.",
+  )
+  .addOption(
+    new Option(
+      "--agent-session <name>",
+      "Named agent-browser session",
+    ).argParser(parseAgentSession),
+  )
+  .option("--json", "Print machine-readable output without connection secrets")
+  .action(
+    withErrorHandler(async (options: ConnectionOptions) => {
+      const current = await getCurrentBrowser();
+      if (current.status !== "active") {
+        throw new Error(
+          "No active Browser instance to restart. Run `okou browser use` to open it.",
+        );
+      }
+      await restartBrowserInstance(current.window.instanceId);
+      try {
+        await connectResponse(await useBrowser(), options, undefined);
+      } catch (error) {
+        const detail = error instanceof Error ? ` ${error.message}` : "";
+        throw new Error(
+          `The old Browser stopped. Run \`okou browser use\` to reconnect.${detail}`,
+        );
+      }
+    }),
+  );
+
 const newCommand = new Command()
   .name("new")
   .description("Open this chat's named Browser and attach it to agent-browser")
@@ -616,6 +649,7 @@ export const browserCommand = new Command()
   .name("browser")
   .description("Use a managed remote browser through agent-browser")
   .addCommand(useCommand)
+  .addCommand(restartCommand)
   .addCommand(leaseCommand)
   .addCommand(newCommand)
   .addCommand(statusCommand)
