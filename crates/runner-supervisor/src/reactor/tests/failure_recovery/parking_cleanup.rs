@@ -288,6 +288,44 @@ async fn non_reusable_park_keeps_budget_until_destroy_and_never_enters_idle_stat
 }
 
 #[tokio::test(start_paused = true)]
+async fn non_reusable_blank_park_keeps_budget_until_destroy() {
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    overrides.push_park_result(Ok(severe_memory_retention()));
+    let destroy_gate = MockLifecycleGate::new();
+    overrides.set_destroy_lifecycle_gate(destroy_gate.clone());
+
+    let calls = Arc::clone(&overrides);
+    let (config, env) = mock_run_config_with_overrides(test_profiles(), 16, 32_768, 8, overrides);
+    let budget = Arc::clone(&config.capacity.budget);
+    let idle_pool = Arc::clone(&config.shared.idle_pool);
+    let run_handle = tokio::spawn(run(config));
+
+    wait_lifecycle_gate_entered(
+        &destroy_gate,
+        "non-reusable blank sandbox should enter destroy",
+    )
+    .await;
+    assert_eq!(calls.blank_park_call_count(), 1);
+    assert_destroy_in_flight(
+        &calls,
+        &budget,
+        1,
+        "non-reusable blank sandbox should be destroyed once",
+        "non-reusable blank sandbox must retain budget during destroy",
+    );
+    assert_idle_pool_len(
+        &idle_pool,
+        0,
+        "a non-reusable blank must stay out of the idle pool",
+    )
+    .await;
+
+    destroy_gate.release_one();
+    shutdown(&env, run_handle).await;
+    wait_budget_count(&budget, 0, Duration::from_secs(5)).await;
+}
+
+#[tokio::test(start_paused = true)]
 async fn repeated_non_reusable_parks_use_fresh_sandboxes() {
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     overrides.push_park_result(Ok(severe_memory_retention()));

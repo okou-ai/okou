@@ -487,7 +487,8 @@ async function serveCustomDomainIngress(
     endpoint.search = new URLSearchParams({ hostname, proof }).toString();
     const response = await fetch(endpoint, {
       cache: "no-store",
-      redirect: "error",
+      // Workers support manual/follow only; the status check rejects redirects.
+      redirect: "manual",
       signal: AbortSignal.any([request.signal, AbortSignal.timeout(3000)]),
     });
     if (response.status !== 200)
@@ -508,7 +509,7 @@ async function serveCustomDomainIngress(
     );
     const response = await fetch(endpoint, {
       cache: "no-store",
-      redirect: "error",
+      redirect: "manual",
       signal: AbortSignal.any([request.signal, AbortSignal.timeout(3000)]),
     });
     if (response.status !== 200)

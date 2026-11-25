@@ -31,10 +31,8 @@ def validate(directory, *, cases=None, policy_key="native_batch_aba_policy_json"
     cases = CASES if cases is None else cases
     result, collector, terminals = report._validate_cases(directory, cases, report.PHASES)
     policy = supplied_policy(collector, result, policy_key)
-    witnesses = {case: [] for case in cases}
-    report.collect_witnesses(
-        directory / 'stdout.log', {PREFIX: witnesses},
-        case_matches=lambda value: value in cases,
+    witnesses = report.collect_case_witnesses(
+        directory / 'stdout.log', PREFIX, cases,
         invalid_message="invalid batch ABA witness",
     )
     runners, paths = set(), set()

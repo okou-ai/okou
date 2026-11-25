@@ -11,7 +11,7 @@ import ai.okou.android.api.generated.WorkflowSummary
 import ai.okou.android.api.generated.WorkflowSummaryVisibility
 import ai.okou.android.chat.ChatListTextAction
 import ai.okou.android.chat.ChatSkeletonBlock
-import ai.okou.android.chat.rememberChatWaitIndicator
+import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.state.ChatSearchState
 import ai.okou.android.state.WorkflowConnectorVisit
 import ai.okou.android.state.WorkflowDraftAction
@@ -132,7 +132,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 
-internal const val WORKFLOW_SKELETON_DELAY_MILLIS = 250L
 private const val SECTION_EDITOR_FOCUS = "section"
 
 @Composable
@@ -1348,7 +1347,7 @@ private fun WorkflowPlaceholder(label: Int) {
 
 @Composable
 private fun WorkflowSkeleton(directory: Boolean) {
-    if (rememberChatWaitIndicator(waiting = true, delayMillis = WORKFLOW_SKELETON_DELAY_MILLIS)) {
+    if (rememberContentReadSkeleton()) {
         val label = stringResource(R.string.workspace_workflows)
         Column(
             Modifier.fillMaxWidth().padding(16.dp).testTag("workflow_loading").semantics {

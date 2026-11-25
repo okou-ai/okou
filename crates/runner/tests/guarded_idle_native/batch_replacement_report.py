@@ -38,10 +38,8 @@ def validate(directory, cases=CASES, policy_key="native_batch_replacement_policy
     directory = pathlib.Path(directory)
     result, collector, terminals = report._validate_cases(directory, cases, report.PHASES)
     policy = supplied_policy(collector, result, policy_key)
-    witnesses = {case: [] for case in cases}
-    report.collect_witnesses(
-        directory / 'stdout.log', {PREFIX: witnesses},
-        case_matches=lambda value: value in cases,
+    witnesses = report.collect_case_witnesses(
+        directory / 'stdout.log', PREFIX, cases,
         invalid_message="invalid replacement witness",
     )
     identities = {e[1][k] for e in terminals.values() for k in ("sandbox_id", "backing_generation")}

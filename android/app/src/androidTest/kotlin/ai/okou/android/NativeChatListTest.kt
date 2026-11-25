@@ -436,12 +436,11 @@ class NativeChatListTest {
             text("Native history reply")
             text("Research")
             click(UiSelector().description(app.getString(R.string.chat_actions)))
-            text(app.getString(R.string.conversation_find))
+            val find = app.getString(R.string.conversation_find)
+            text(find)
             assertFalse(device.hasObject(By.text(app.getString(R.string.settings))))
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
-            assertTrue(
-                device.wait(Until.gone(By.text(app.getString(R.string.conversation_find))), 10_000),
-            )
+            assertTrue(device.wait(Until.gone(By.pkg(app.packageName).text(find)), 10_000))
             click(UiSelector().description(app.getString(R.string.back)))
             device.awaitChatList(app)
             device.openChatListSettings(app)

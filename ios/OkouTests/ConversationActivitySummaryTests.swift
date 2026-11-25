@@ -62,7 +62,9 @@ final class ConversationActivitySummaryTests: XCTestCase {
     let history = conversation.history
     try await waitForSleep(clock, .seconds(5))
     clock.advance(.seconds(5))
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(
+      watching: conversation.activitySummary.selection, in: conversation.activitySummary.store
+    ) {
       conversation.activitySummary.text(in: initial) == "Comparing the results"
     }
     try await waitForSleep(clock, .seconds(15))
@@ -117,7 +119,9 @@ final class ConversationActivitySummaryTests: XCTestCase {
     conversation.activitySummary.setRotates(true)
     try await waitForSleep(clock, .seconds(5))
     clock.advance(.seconds(5))
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(
+      watching: conversation.activitySummary.selection, in: conversation.activitySummary.store
+    ) {
       conversation.activitySummary.text(in: recovered) == "Comparing the results"
     }
   }

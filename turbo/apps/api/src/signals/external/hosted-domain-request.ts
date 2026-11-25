@@ -22,7 +22,8 @@ export async function fetchHostedDomainJson(
     const response = await fetch(url, {
       ...init,
       signal,
-      redirect: "error",
+      // Keep redirects rejected in both Node and the Cloudflare API runtime.
+      redirect: "manual",
       credentials: "omit",
       cache: "no-store",
     });

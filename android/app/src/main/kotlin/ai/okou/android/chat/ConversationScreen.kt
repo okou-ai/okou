@@ -5,6 +5,8 @@ import ai.okou.android.R
 import ai.okou.android.WorkspaceFeedbackHost
 import ai.okou.android.WorkspaceFeedbackTimeout
 import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.rememberContentReadFeedbackAfter
+import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.updates.updateFocusOutline
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
@@ -83,7 +85,6 @@ import kotlinx.coroutines.launch
 
 internal val ConversationContentMaxWidth = 768.dp
 
-private const val HistoryFeedbackDelayMillis = 250L
 private const val TimelineEnd = "conversation_end"
 private const val TimelineStart = "conversation_start"
 private const val TimelineInitial = "conversation_initial"
@@ -212,15 +213,12 @@ internal fun ConversationRoute(
             }
         }
     val syncDelay = state.syncProgressDelayMillis.takeIf { transcript != null }
-    val syncDelayReached =
-        key(threadId) {
-            rememberChatWaitIndicator(syncDelay != null && syncDelay > 0L, syncDelay ?: 0L)
-        }
+    val syncDelayReached = key(threadId) { rememberContentReadFeedbackAfter(syncDelay) }
     val showHistoryProgress =
         transcript != null &&
             state.phase == HistoryPhase.Loading &&
             (state.consecutiveReadFailures >= 3 ||
-                (syncDelay == 0L || syncDelayReached) &&
+                syncDelayReached &&
                     activity == null &&
                     queue.isEmpty() &&
                     content.none { it.preview?.pendingDelivery != null })
@@ -435,7 +433,7 @@ internal fun ConversationRoute(
                 restored != null && (waitingForAnchor || waitingForSearch)
         val visibleTimeline = if (showTimeline) timeline else emptyList()
         val waitingForTimeline = waitingForHistory || !showTimeline
-        val showSkeleton = rememberChatWaitIndicator(waitingForTimeline, HistoryFeedbackDelayMillis)
+        val showSkeleton = rememberContentReadSkeleton(awaitingRead = waitingForTimeline)
         val jumpIndex = if (pendingFind == null) -1 else foundIndex
         val row = (if (jumpIndex >= 0) jumpIndex else restoredIndex) + 1
         val offset =

@@ -4,6 +4,7 @@ import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.ResponseLimitExceeded
 import ai.okou.android.chat.ChatCacheStore
 import ai.okou.android.chat.ChatChanges
+import ai.okou.android.contentReadStaleDelayMillis
 import android.graphics.Bitmap
 import android.util.Log
 import android.util.LruCache
@@ -28,7 +29,6 @@ import kotlinx.coroutines.launch
 
 internal const val ArtifactRetryDelayMillis = 3_000L
 private const val ArtifactRetryLimit = 2
-private const val ChatArtifactFreshMillis = 10L * 60_000
 
 internal enum class ArtifactProblem {
     Denied,
@@ -363,8 +363,7 @@ internal constructor(
             val progress =
                 base?.oldestConfirmation?.let { confirmedAt ->
                     launch {
-                        val age = wallMillis() - confirmedAt
-                        delay((ChatArtifactFreshMillis - age + 1).coerceAtLeast(0L))
+                        delay(contentReadStaleDelayMillis(confirmedAt, wallMillis()))
                         mutable.update { it.copy(relatedChats = state.copy(syncingStale = true)) }
                     }
                 }
@@ -484,8 +483,7 @@ internal constructor(
         val progress =
             baseline?.confirmedAt?.let { confirmedAt ->
                 launch {
-                    val remaining = ChatArtifactFreshMillis - (wallMillis() - confirmedAt)
-                    delay((remaining + 1).coerceAtLeast(0L))
+                    delay(contentReadStaleDelayMillis(confirmedAt, wallMillis()))
                     mutable.update { it.copy(workflows = state.copy(syncingStale = true)) }
                 }
             }
@@ -563,8 +561,7 @@ internal constructor(
                     }
                     ?.let { snapshot ->
                         launch {
-                            val age = wallMillis() - snapshot.confirmedAt
-                            delay((ChatArtifactFreshMillis - age + 1).coerceAtLeast(0L))
+                            delay(contentReadStaleDelayMillis(snapshot.confirmedAt, wallMillis()))
                             mutable.update { it.copy(reading = ArtifactCatalogRead.SyncingStale) }
                         }
                     }
@@ -609,7 +606,7 @@ internal constructor(
             append -> ArtifactCatalogRead.More
             threadId != null &&
                 catalog != null &&
-                wallMillis() - catalog.confirmedAt > ChatArtifactFreshMillis ->
+                contentReadStaleDelayMillis(catalog.confirmedAt, wallMillis()) == 0L ->
                 ArtifactCatalogRead.SyncingStale
             else -> ArtifactCatalogRead.Refreshing
         }

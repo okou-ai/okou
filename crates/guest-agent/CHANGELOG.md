@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.112.2](https://github.com/okou-ai/okou/compare/guest-agent-v0.112.1...guest-agent-v0.112.2) (2026-11-24)
+
+
+### Refactoring
+
+* **guest-agent:** centralize codex app-server result projection ([#50671](https://github.com/okou-ai/okou/issues/50671)) ([80106e0](https://github.com/okou-ai/okou/commit/80106e091014d1ea5f8607be50edae2f62053037))
+
 ## [0.112.1](https://github.com/okou-ai/okou/compare/guest-agent-v0.112.0...guest-agent-v0.112.1) (2026-11-24)
 
 ## [0.112.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.111.2...guest-agent-v0.112.0) (2026-11-24)
