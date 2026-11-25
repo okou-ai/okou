@@ -482,9 +482,9 @@ artifacts	src/signals/routes/__tests__/uploads-multipart.test.ts	uploads-multipa
 artifacts	src/signals/routes/__tests__/uploads-multipart.test.ts	uploads-multipart-008	planned		extension after sandbox reset
 artifacts	src/signals/routes/__tests__/uploads-multipart.test.ts	uploads-multipart-009	planned		extension after sandbox reset
 artifacts	src/signals/routes/__tests__/uploads-multipart.test.ts	uploads-multipart-010	planned		extension after sandbox reset
-artifacts	src/signals/routes/__tests__/registry-resources-download.test.ts	registry-resources-download-002	planned		extension after sandbox reset
-artifacts	src/signals/routes/__tests__/registry-resources-download.test.ts	registry-resources-download-003	planned		extension after sandbox reset
-artifacts	src/signals/routes/__tests__/registry-resources-download.test.ts	registry-resources-download-005	planned		extension after sandbox reset
+artifacts	src/signals/routes/__tests__/registry-resources-download.test.ts	registry-resources-download-002	rewritten	41.7	extension after sandbox reset
+artifacts	src/signals/routes/__tests__/registry-resources-download.test.ts	registry-resources-download-003	rewritten	7.1	extension after sandbox reset
+artifacts	src/signals/routes/__tests__/registry-resources-download.test.ts	registry-resources-download-005	rewritten	5.3	extension after sandbox reset
 artifacts	src/signals/routes/__tests__/user-templates.test.ts	user-templates-001	planned		extension after sandbox reset
 artifacts	src/signals/routes/__tests__/user-templates.test.ts	user-templates-002	planned		extension after sandbox reset
 artifacts	src/signals/routes/__tests__/hosted-upload-immutability.test.ts	hosted-upload-immutability-003	rewritten	187.0	extension after sandbox reset
