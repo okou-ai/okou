@@ -216,10 +216,11 @@ interface ComposerComputerSignals {
   readonly setComputerUseDownloadDialogOpen$: Command<void, [boolean]>;
 }
 
-interface ComposerSubmissionSignals {
+interface ComposerSubmissionSignals extends ReturnType<
+  typeof createComposerPrimaryActionSignals
+> {
   readonly presentationFormatSetup: PresentationFormatSetupSignals;
   readonly sending$: Computed<Promise<boolean>>;
-  readonly primaryAction$: Computed<Promise<ComposerPrimaryAction>>;
   readonly hasCurrentInvocation$: Computed<boolean>;
   /**
    * Sends what the composer currently holds. The second argument is agent-only
@@ -826,10 +827,6 @@ function createComposerChatEventSignals(
   events: CreateComposerSignalsOptions["eventSignals"],
 ) {
   const { hasEvents$, sending$, runningModelSelection$ } = events;
-  const actionsLoading$ = computed(async (get): Promise<boolean> => {
-    await get(hasEvents$);
-    return false;
-  });
   // The thread owns queue selection and ordering; the composer formats labels.
   const pendingEvents$ = computed(
     (get): Promise<readonly ComposerPendingEvent[]> => {
@@ -853,7 +850,6 @@ function createComposerChatEventSignals(
     },
   );
   return {
-    actionsLoading$,
     sending$,
     runningModelSelection$,
     pendingEvents$,
@@ -861,48 +857,76 @@ function createComposerChatEventSignals(
   };
 }
 
-function createComposerPrimaryActionSignal(args: {
+// Reuse the same choices when a thread refresh leaves its actions unchanged.
+function composerActionsForRun(
+  submit: ComposerSubmissionAction,
+  unavailable: "disabled" | "stop",
+) {
+  const blocked = {
+    missingNote: unavailable,
+    withoutInput: unavailable,
+    withInput: unavailable,
+  } as const;
+  const withoutAttachments = { ...blocked, withInput: submit } as const;
+  const withAttachments = {
+    ...withoutAttachments,
+    withoutInput: submit,
+  } as const;
+  return { blocked, withoutAttachments, withAttachments };
+}
+
+const idleActions = composerActionsForRun("send", "disabled");
+const runningActions = composerActionsForRun("queue", "stop");
+
+function createComposerPrimaryActionSignals(args: {
   readonly options: CreateComposerSignalsOptions;
   readonly eventSignals: ReturnType<typeof createComposerChatEventSignals>;
   readonly workflowComposer: WorkflowComposerSignals;
   readonly voiceState$: ComposerVoiceInputSignals["state$"];
-}): Computed<Promise<ComposerPrimaryAction>> {
+}) {
   const { options, eventSignals, workflowComposer } = args;
   const draft = options.draft.signals;
-  return computed(async (get): Promise<ComposerPrimaryAction> => {
-    if (await get(eventSignals.actionsLoading$)) {
-      return "disabled";
-    }
-    if ((await get(args.voiceState$)).status !== "idle") {
-      return "disabled";
-    }
-    // A chat can start in a just-created Project once the server has it.
-    if (options.project && get(options.project.pending$)) {
-      return "disabled";
-    }
-
-    const uploadsReady = await get(draft.attachmentUploadsReady$);
-    const attachments = await get(draft.usableAttachments$);
-    const hasContent =
-      get(workflowComposer.hasInput$) || attachments.length > 0;
+  const inputState$ = computed((get) => {
     const needsSuggestionNote = get(workflowComposer.feedback.items$).some(
       (item) => {
         return item.suggestionContext && !item.note.trim();
       },
     );
-    const canSend = uploadsReady && hasContent && !needsSuggestionNote;
-    const sending = await get(eventSignals.sending$);
-    if (sending && !canSend) {
-      return "stop";
+    if (needsSuggestionNote) {
+      return "missingNote";
     }
-    if (!canSend) {
-      return "disabled";
-    }
-    if (!sending) {
-      return "send";
-    }
-    return "queue";
+    return get(workflowComposer.hasInput$) ? "withInput" : "withoutInput";
   });
+
+  // Resolve the actions before the next edit so the button and keyboard can
+  // select one as soon as the editor changes between empty and nonempty.
+  const runActions$ = computed(async (get) => {
+    await get(eventSignals.hasEvents$);
+    if ((await get(args.voiceState$)).status !== "idle") {
+      return idleActions.blocked;
+    }
+    const uploadsReady = await get(draft.attachmentUploadsReady$);
+    const attachments = await get(draft.usableAttachments$);
+    const sending = await get(eventSignals.sending$);
+    const actions = sending ? runningActions : idleActions;
+    if (!uploadsReady) {
+      return actions.blocked;
+    }
+    return attachments.length > 0
+      ? actions.withAttachments
+      : actions.withoutAttachments;
+  });
+  const actionsByInput$ = computed((get) => {
+    // A chat can start in a just-created Project once the server has it.
+    return options.project && get(options.project.pending$)
+      ? idleActions.blocked
+      : get(runActions$);
+  });
+  const primaryAction$ = computed(async (get) => {
+    const actions = await get(actionsByInput$);
+    return actions[get(inputState$)];
+  });
+  return { actionsByInput$, inputState$, primaryAction$ } as const;
 }
 
 /**
@@ -1125,7 +1149,7 @@ function createComposerSubmissionSignals(
     const invocation = get(invocation$);
     return invocation !== null && invocation.owner === get(owner$);
   });
-  const primaryAction$ = createComposerPrimaryActionSignal({
+  const primaryAction = createComposerPrimaryActionSignals({
     options,
     eventSignals,
     workflowComposer,
@@ -1133,7 +1157,7 @@ function createComposerSubmissionSignals(
   });
   const presentationFormatSetup = createPresentationFormatSetupSignals({
     task$: taskChips.task$,
-    primaryAction$,
+    primaryAction$: primaryAction.primaryAction$,
     submitCurrentInput$: createSubmitCurrentInput({
       options,
       workflowComposer,
@@ -1167,7 +1191,7 @@ function createComposerSubmissionSignals(
   return {
     presentationFormatSetup,
     hasCurrentInvocation$,
-    primaryAction$,
+    ...primaryAction,
     submitCurrentInput$,
     activatePrimaryAction$,
   };
