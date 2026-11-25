@@ -6,13 +6,11 @@ import {
   workflowVisibilityContract,
 } from "@okouai/api-contracts/contracts/workflows";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { workflowsRoutes } from "../workflows";
 import { userModelPreferenceRoutes } from "../user-model-preference";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 
@@ -35,11 +33,6 @@ function collection() {
   return setupApp({ context, routes: workflowsRoutes })(
     workflowsCollectionContract,
   );
-}
-async function enable(actor: Member, enabled = true) {
-  await updateFeatureSwitchesForUser(context, actor, {
-    [FeatureSwitchKey.WorkflowRecencySync]: enabled,
-  });
 }
 async function read(actor: Member) {
   return (await accept(collection().recent({ headers: headers(actor) }), [200]))
@@ -89,7 +82,6 @@ async function fixture() {
   const first = await createWorkflow(owner);
   const second = await createWorkflow(owner);
   const third = await createWorkflow(owner);
-  await enable(actor);
   return { owner, actor, first, second, third };
 }
 
@@ -215,7 +207,6 @@ describe("workspace member workflow recency", () => {
     const personal = await createWorkflow(alice, "private", slug);
     const bobsPrivate = await createWorkflow(bob, "private");
     const foreign = await createWorkflow(elsewhere);
-    await enable(alice);
     await expect(
       use(alice, [shared, personal, bobsPrivate, foreign]),
     ).resolves.toStrictEqual([shared, personal]);
@@ -232,13 +223,11 @@ describe("workspace member workflow recency", () => {
           return workflow.id;
         }),
     ).toStrictEqual([personal]);
-    await enable(bob);
     await expect(read(bob)).resolves.toBeNull();
     await expect(
       importRecent(bob, [personal, shared, bobsPrivate, foreign]),
     ).resolves.toStrictEqual([shared, bobsPrivate]);
     const aliceElsewhere = { ...elsewhere, userId: alice.userId };
-    await enable(aliceElsewhere);
     await expect(read(aliceElsewhere)).resolves.toBeNull();
     await expect(read(alice)).resolves.toStrictEqual([shared, personal]);
     await accept(
@@ -254,36 +243,15 @@ describe("workspace member workflow recency", () => {
     await expect(read(bob)).resolves.toStrictEqual([bobsPrivate]);
   });
 
-  it("requires organization member authentication and denies disabled operations before validating their bodies", async () => {
+  it("requires organization member authentication and returns private, uncached history", async () => {
     const actor = member();
     const api = collection();
-    await accept(api.recent({ headers: headers(actor) }), [403]);
-    const request = setupRawAppRequest({ context, routes: workflowsRoutes });
-    for (const operation of ["use", "import"]) {
-      for (const body of ["{", JSON.stringify({ workflowIds: ["invalid"] })]) {
-        const response = await request(`/api/workflows/recent/${operation}`, {
-          method: "POST",
-          headers: { ...headers(actor), "Content-Type": "application/json" },
-          body,
-        });
-        expect(response.status).toBe(403);
-      }
-    }
-    await enable(actor);
     const initial = await accept(
       api.recent({ headers: headers(actor) }),
       [200],
     );
     expect(initial.body.workflowIds).toBeNull();
     expect(initial.headers.get("cache-control")).toBe("private, no-store");
-    await enable(actor, false);
-    await accept(
-      api.recordRecentUse({
-        headers: headers(actor),
-        body: { workflowIds: [] },
-      }),
-      [403],
-    );
     mocks.clerk.session(actor.userId, null);
     const auth = { authorization: "Bearer clerk-session" };
     await accept(api.recent({ headers: auth }), [401]);
