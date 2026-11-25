@@ -79,8 +79,13 @@ function createSiteVisibilitySignals(site$: Computed<Promise<SiteUrl | null>>) {
       return true;
     },
   );
+  // The last submitted choice. Views read it only while the save is in
+  // flight, so the control keeps the new choice instead of clearing, and a
+  // failed save falls back to the server value.
+  const pending$ = state<Visibility | null>(null);
   const change$ = command(
     async ({ set }, visibility: Visibility, signal: AbortSignal) => {
+      set(pending$, visibility);
       const updated = await set(persist$, visibility, signal);
       signal.throwIfAborted();
       if (updated) {
@@ -94,6 +99,7 @@ function createSiteVisibilitySignals(site$: Computed<Promise<SiteUrl | null>>) {
   );
   return {
     visibility$: details$,
+    pendingVisibility$: pending$,
     changeVisibility$: change$,
   };
 }

@@ -631,11 +631,10 @@
     "people": {
       "accounts": "Anggota ruang kerja yang cocok",
       "anyone": "Siapa saja",
-      "empty": "Belum ada orang lain yang memiliki akses.",
-      "hint": "Di luar ruang kerja Anda? Gunakan alamat email lengkapnya.",
       "invitationProcessed": "Undangan berbagi telah diproses",
       "label": "Bagikan dengan orang",
       "noAccounts": "Tidak ada anggota yang cocok. Masukkan email lengkap untuk mengundang.",
+      "owner": "Pemilik",
       "placeholder": "Nama atau alamat email",
       "remove": "Hapus akses {{email}}",
       "removed": "Akses dihapus",
@@ -648,7 +647,8 @@
       "viewers": "Orang dengan akses",
       "workspace": "Ruang kerja",
       "workspaceDescription": "Anggota {{organization}} dan orang yang diundang",
-      "workspaceDescriptionUnnamed": "Anggota ruang kerja dan orang yang diundang"
+      "workspaceDescriptionUnnamed": "Anggota ruang kerja dan orang yang diundang",
+      "you": "{{name}} (Anda)"
     },
     "preview": {
       "audioLabel": "Pratinjau audio untuk {{filename}}",

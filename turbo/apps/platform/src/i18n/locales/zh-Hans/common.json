@@ -631,11 +631,10 @@
     "people": {
       "accounts": "匹配的工作区成员",
       "anyone": "任何人",
-      "empty": "尚未邀请其他人。",
-      "hint": "邀请工作区外的用户？请输入对方的完整邮箱。",
       "invitationProcessed": "分享邀请已处理",
       "label": "分享给指定用户",
       "noAccounts": "未找到匹配的工作区成员。请输入完整邮箱邀请。",
+      "owner": "所有者",
       "placeholder": "姓名或邮箱地址",
       "remove": "移除 {{email}} 的访问权限",
       "removed": "已移除访问权限",
@@ -648,7 +647,8 @@
       "viewers": "有权访问的用户",
       "workspace": "工作区",
       "workspaceDescription": "{{organization}} 成员和受邀人员",
-      "workspaceDescriptionUnnamed": "工作区成员和受邀人员"
+      "workspaceDescriptionUnnamed": "工作区成员和受邀人员",
+      "you": "{{name}}（你）"
     },
     "preview": {
       "audioLabel": "{{filename}} 的音频预览",

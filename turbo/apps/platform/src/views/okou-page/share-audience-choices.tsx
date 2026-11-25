@@ -1,8 +1,7 @@
 import type { ReactNode } from "react";
-import { Radio as RadioPrimitive } from "@base-ui/react/radio";
 import type { HostedSiteVisibility } from "@okouai/api-contracts/contracts/hosted-site-access";
-import { RadioGroup, cn } from "@okouai/ui";
-import { Building2, Globe, LockKeyhole } from "lucide-react";
+import { SegmentControl, SegmentControlItem } from "@okouai/ui";
+import { Building2, Globe, Loader2, LockKeyhole } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 function useAudienceOptions(organizationName: string | null) {
@@ -49,8 +48,18 @@ function useAudienceOptions(organizationName: string | null) {
   ] as const;
 }
 
+/**
+ * The audience is the DS segment control: its track and raised selection read
+ * in both themes, where a hand-drawn `bg-gray-50` slider did not. The segments
+ * size to their labels, so the longest label is not truncated in a third.
+ *
+ * Invitations grant access in every audience (the workspace description says
+ * so), so the people section stays mounted for all three; the popover keeps
+ * one height instead of collapsing when the audience widens.
+ */
 export function ShareAudienceChoices({
-  selected,
+  selected: saved,
+  pending,
   organizationName,
   saving,
   unavailable,
@@ -58,6 +67,8 @@ export function ShareAudienceChoices({
   children,
 }: {
   readonly selected: HostedSiteVisibility | undefined;
+  /** The last submitted choice; shown only while it is being saved. */
+  readonly pending: HostedSiteVisibility | null;
   readonly organizationName: string | null;
   readonly saving: boolean;
   readonly unavailable: boolean;
@@ -66,72 +77,57 @@ export function ShareAudienceChoices({
 }) {
   const { t } = useTranslation();
   const options = useAudienceOptions(organizationName);
-  const expanded = selected === "private";
+  // Keep the submitted choice selected while it saves rather than clearing
+  // the control; a failed save falls back to the saved value.
+  const selected = (saving ? pending : null) ?? saved;
+  const current = options.find((option) => {
+    return option.value === selected;
+  });
   return (
     <>
-      <div className="rounded-xl border border-border p-1">
-        <RadioGroup
-          aria-label={t(($) => {
-            return $.artifacts.sharing.accessLabel;
-          })}
-          aria-orientation="horizontal"
-          disabled={unavailable}
-          aria-busy={saving}
-          value={saving ? null : (selected ?? null)}
-          onValueChange={onChange}
-          className="relative grid grid-cols-3 gap-1"
-        >
-          <span
-            aria-hidden="true"
-            className={cn(
-              "pointer-events-none absolute inset-y-0 left-0 w-[calc((100%_-_0.5rem)/3)] rounded-lg bg-gray-50 motion-safe:transition-[translate,opacity] motion-safe:duration-[220ms] motion-safe:ease-[cubic-bezier(0.22,1,0.36,1)]",
-              selected === "organization" &&
-                "translate-x-[calc(100%_+_0.25rem)]",
-              selected === "public" && "translate-x-[calc(200%_+_0.5rem)]",
-              (!selected || saving) && "opacity-0",
-            )}
-          />
-          {options.map(({ value, Icon, label, description }) => {
-            return (
-              <RadioPrimitive.Root
-                key={value}
-                value={value}
-                nativeButton
-                render={<button type="button" />}
-                aria-label={label}
-                aria-description={description}
-                aria-busy={saving}
-                className="relative flex min-h-14 min-w-0 select-none flex-col items-center justify-center gap-1 rounded-lg px-1 py-2 text-center text-[13px] font-medium text-muted-foreground outline-none transition-colors hover:bg-state-hover data-checked:text-foreground data-disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <Icon size={16} aria-hidden="true" />
-                <span>{label}</span>
-              </RadioPrimitive.Root>
-            );
-          })}
-        </RadioGroup>
-      </div>
-      <p
-        key={selected}
-        className="mx-2 mt-3 text-xs leading-5 text-muted-foreground motion-safe:transition-opacity motion-safe:duration-[140ms] motion-safe:starting:opacity-35"
+      {/* `null` keeps the control controlled while the audience is unknown. */}
+      <SegmentControl<HostedSiteVisibility | null>
+        aria-label={t(($) => {
+          return $.artifacts.sharing.accessLabel;
+        })}
+        disabled={unavailable}
+        aria-busy={saving}
+        value={selected ?? null}
+        onValueChange={(visibility) => {
+          if (visibility) {
+            onChange(visibility);
+          }
+        }}
+        className="flex w-full"
       >
-        {
-          options.find((option) => {
-            return option.value === selected;
-          })?.description
-        }
-      </p>
-      <div
-        aria-hidden={!expanded}
-        inert={!expanded}
-        className={cn(
-          "grid motion-safe:transition-[grid-template-rows,opacity] motion-safe:duration-[220ms] motion-safe:ease-[cubic-bezier(0.22,1,0.36,1)]",
-          expanded
-            ? "grid-rows-[1fr] opacity-100"
-            : "grid-rows-[0fr] opacity-0",
-        )}
-      >
-        <div className="min-h-0 overflow-hidden">{children}</div>
-      </div>
+        {options.map(({ value, label, description }) => {
+          return (
+            <SegmentControlItem
+              key={value}
+              value={value}
+              aria-label={label}
+              aria-description={description}
+              className="min-w-0 flex-auto"
+            >
+              {label}
+            </SegmentControlItem>
+          );
+        })}
+      </SegmentControl>
+      {current && (
+        <p className="mt-2 flex items-center gap-1.5 text-xs leading-5 text-muted-foreground">
+          <current.Icon size={14} aria-hidden="true" className="shrink-0" />
+          <span className="min-w-0 truncate">{current.description}</span>
+          {saving && (
+            <Loader2
+              size={12}
+              aria-hidden="true"
+              className="shrink-0 animate-spin"
+            />
+          )}
+        </p>
+      )}
+      <div className="mt-4">{children}</div>
     </>
   );
 }

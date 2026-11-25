@@ -124,6 +124,10 @@ function createAudienceSignals(source: ShareSource) {
       ? Promise.resolve(saved.details)
       : initialRead;
   });
+  // The last submitted choice. Views read it only while the save is in
+  // flight, so the control keeps the new choice instead of clearing, and a
+  // failed save falls back to the server value.
+  const pending$ = state<Audience | null>(null);
   // Permission selection comes from server details, not submitted arguments.
   const persist$ = command(
     async ({ get, set }, audience: Audience, signal: AbortSignal) => {
@@ -164,13 +168,17 @@ function createAudienceSignals(source: ShareSource) {
       );
     },
   );
-  return { details$, change$: persist$ };
+  return { details$, pending$, change$: persist$ };
 }
 
 function createArtifactShareSession(source: ShareSource) {
   // The mount owner installs its live signal after this graph is constructed.
   const signal$ = state<AbortSignal | null>(null);
-  const { details$, change$: persist$ } = createAudienceSignals(source);
+  const {
+    details$,
+    pending$: pendingAudience$,
+    change$: persist$,
+  } = createAudienceSignals(source);
   const open$ = state(false);
   const peopleTarget$ = computed(async (get) => {
     const details = await get(details$);
@@ -209,6 +217,7 @@ function createArtifactShareSession(source: ShareSource) {
   const change$ = throttleCommand(
     command(({ set }, choice: Audience, signal: AbortSignal) => {
       set(linkCopy.clear$);
+      set(pendingAudience$, choice);
       return set(persist$, choice, signal);
     }),
     0,
@@ -217,6 +226,7 @@ function createArtifactShareSession(source: ShareSource) {
     source,
     signal$,
     details$,
+    pendingAudience$,
     open$,
     close$,
     show$,

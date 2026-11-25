@@ -197,16 +197,23 @@ test.each(["thread", "catalog", "viewer"] as const)(
       screen.findByText("Sharing invitation processed"),
     ).resolves.toBeInTheDocument();
     await within(menu).findByText(account.email);
+    expect(within(menu).getByText("Owner")).toBeInTheDocument();
     for (const name of ["Workspace", "Anyone", "Invited people"]) {
       click(permission(name));
       await waitFor(() => {
         return expect(permission(name)).toBeChecked();
       });
       expect(document.querySelector("video")).toHaveAttribute("src", signed);
+      // Invitations keep granting access in every audience, so the list stays.
+      expect(within(menu).getByText(account.email)).toBeVisible();
     }
-    expect(within(menu).getByText(account.email)).toBeInTheDocument();
     click(getButtonByName(`Remove access for ${account.email}`, menu));
-    await within(menu).findByText("No one else has access yet.");
+    await waitFor(() => {
+      return expect(
+        within(menu).queryByText(account.email),
+      ).not.toBeInTheDocument();
+    });
+    expect(within(menu).getByText("Owner")).toBeInTheDocument();
   },
 );
 
