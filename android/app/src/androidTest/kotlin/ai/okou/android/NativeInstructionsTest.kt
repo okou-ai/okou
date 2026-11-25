@@ -99,7 +99,9 @@ class NativeInstructionsTest {
                 reveal(label)
                 checkNotNull(
                         device.wait(
-                            Until.findObject(By.pkg(app.packageName).text(label).enabled(true)),
+                            Until.findObject(
+                                By.pkg(app.packageName).text(label).clickable(true).enabled(true),
+                            ),
                             10_000,
                         ),
                     )
