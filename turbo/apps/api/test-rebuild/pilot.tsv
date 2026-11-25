@@ -282,7 +282,7 @@ messaging	src/signals/routes/__tests__/feishu-shared-conversation.test.ts	feishu
 messaging	src/signals/routes/__tests__/feishu-shared-conversation.test.ts	feishu-shared-conversation-004	planned		
 messaging	src/signals/routes/__tests__/feishu-shared-conversation.test.ts	feishu-shared-conversation-005	planned		
 messaging	src/signals/routes/__tests__/feishu-shared-conversation.test.ts	feishu-shared-conversation-006	planned		
-messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-001	planned		
+messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-001	rewritten	23.5	
 messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-002	planned		
 messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-003	planned		
 messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-004	planned		
