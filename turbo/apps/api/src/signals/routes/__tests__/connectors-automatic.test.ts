@@ -1028,6 +1028,89 @@ describe("builtin MCP automatic authentication", () => {
     expect(completed.body.connectionId).toBe(saved.body.connections[0]?.id);
   });
 
+  it.each([false, true])(
+    "deduplicates repeated Automatic OAuth identity (overlap=%s)",
+    async (overlap) => {
+      const f = fixture();
+      const provider = mockAutomaticMcpOAuthProvider(context, {
+        registration: "cimd",
+        identity: {
+          subject: "same-mcp-account",
+          tokenEmail: "same@example.test",
+        },
+      });
+      const first = await beginOAuth(f);
+      expect((await callback(first.state, provider.issuer)).body.status).toBe(
+        "success",
+      );
+      const firstReceipt = await accept(
+        receipt(f, first.oauthAttemptId),
+        [200],
+      );
+      const one = await beginOAuth(f);
+      const two = await beginOAuth(f);
+      if (overlap) {
+        const completed = await Promise.all([
+          callback(one.state, provider.issuer),
+          callback(two.state, provider.issuer),
+        ]);
+        expect(
+          completed.map((response) => {
+            return response.body.status;
+          }),
+        ).toStrictEqual(["success", "success"]);
+      } else {
+        expect((await callback(one.state, provider.issuer)).body.status).toBe(
+          "success",
+        );
+        expect((await callback(two.state, provider.issuer)).body.status).toBe(
+          "success",
+        );
+      }
+      const saved = await accept(
+        accounts().connections({ headers, query: f.target }),
+        [200],
+      );
+      expect(saved.body.connections).toHaveLength(1);
+      expect(saved.body.connections[0]?.id).toBe(
+        firstReceipt.body.connectionId,
+      );
+      for (const attempt of [one, two]) {
+        expect(
+          (await accept(receipt(f, attempt.oauthAttemptId), [200])).body
+            .connectionId,
+        ).toBe(firstReceipt.body.connectionId);
+      }
+    },
+  );
+
+  it("keeps the same subject from different OAuth issuers as distinct accounts", async () => {
+    const f = fixture();
+    const firstProvider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "cimd",
+      endpoint: f.endpoint,
+      identity: { subject: "tenant-local-subject" },
+    });
+    const first = await beginOAuth(f);
+    expect(
+      (await callback(first.state, firstProvider.issuer)).body.status,
+    ).toBe("success");
+    const secondProvider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "cimd",
+      endpoint: f.endpoint,
+      issuer: "https://other-issuer.example.test",
+      identity: { subject: "tenant-local-subject" },
+    });
+    const second = await beginOAuth(f);
+    expect(
+      (await callback(second.state, secondProvider.issuer)).body.status,
+    ).toBe("success");
+    const saved = await accept(
+      accounts().connections({ headers, query: f.target }),
+      [200],
+    );
+    expect(saved.body.connections).toHaveLength(2);
+  });
   it("persists a verified OIDC identity without expanding scopes", async () => {
     const f = fixture();
     const provider = mockAutomaticMcpOAuthProvider(context, {

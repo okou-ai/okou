@@ -82,7 +82,7 @@ function tokenMetadataInsert(
               }),
             ),
           )}, updated_at = clock_timestamp()
-        WHERE ${eq(connectors.externalId, identity)}`;
+        WHERE ${and(eq(connectors.externalId, identity), eq(connectors.externalIssuer, write.insert?.matchExternalIssuer ?? ""))}`;
   }
   return sql`INSERT INTO ${connectors} (${sql.join(
     fields.map(({ column }) => {
@@ -109,6 +109,10 @@ export function tokenConnectionMetadataClauses(
   const names: string[] = [];
   let write = connectorConnectionMetadataWritePlan(args.metadata);
   const original = write;
+  const observedId =
+    args.metadata.resolution.kind === "update"
+      ? args.metadata.resolution.existing.id
+      : null;
   for (;;) {
     const name = "token_metadata_" + names.length;
     const earlier =
@@ -122,12 +126,17 @@ export function tokenConnectionMetadataClauses(
               sql` UNION ALL `,
             )})`,
           );
-    // A changed observed account is a conflict, never permission to overwrite
-    // it or to manufacture a sibling. An already absent matched account can
-    // still take the original insertion path.
+    // An explicit reconnect retains revision protection. Repeated Add for the
+    // same verified identity replaces credentials on the existing account.
+    // A vanished matched account may take the ordinary insertion path.
     const fallback =
-      original.kind === "update" && write.phase !== "existing"
-        ? notExists(sql`(SELECT 1 FROM ${connectors} WHERE ${original.where})`)
+      observedId !== null && write.phase !== "existing"
+        ? notExists(
+            sql`(SELECT 1 FROM ${connectors} WHERE ${and(
+              original.context.ownerCondition,
+              eq(connectors.id, observedId),
+            )})`,
+          )
         : sql`true`;
     const eligible = prerequisite
       ? sql`${earlier} AND ${fallback} AND ${prerequisite}`
@@ -149,7 +158,10 @@ export function tokenConnectionMetadataClauses(
             where: and(
               write.where,
               eligible,
-              write.phase === "existing" && args.accountRevision !== null
+              write.phase === "existing" &&
+                args.accountRevision !== null &&
+                args.metadata.resolution.kind === "update" &&
+                args.metadata.resolution.insertIfMissing === null
                 ? eq(sql`${connectors}.xmin::text`, args.accountRevision)
                 : undefined,
             ),

@@ -2086,16 +2086,6 @@ function isExplicitReconnectIdentityMismatch(
   );
 }
 
-function authorizedExternalIdForMutation(args: {
-  readonly mutation: ConnectorAccountMutationIntent;
-  readonly matchExistingExternalIdentity: boolean | undefined;
-  readonly externalId: string;
-}): string | undefined {
-  return args.matchExistingExternalIdentity && args.mutation.intent === "add"
-    ? args.externalId
-    : undefined;
-}
-
 export interface PreparedBuiltinConnectorTokenConnection {
   readonly calendarCleanup: readonly {
     readonly connectorId: string;
@@ -2113,7 +2103,6 @@ export interface PreparedBuiltinConnectorTokenConnection {
   readonly oauthGrantedScopes: readonly string[];
   readonly tokenExpiresAt: Date | null;
   readonly account: ConnectorAccountMutationIntent;
-  readonly matchExistingExternalIdentity?: boolean;
   readonly insertConnectionId?: string;
 }
 
@@ -2174,7 +2163,6 @@ interface BuiltinConnectorTokenConnectionArgs {
   readonly expiresIn?: number;
   readonly extraConnectorSecrets?: Readonly<Record<string, string>>;
   readonly account: ConnectorAccountMutationIntent;
-  readonly matchExistingExternalIdentity?: boolean;
   readonly insertConnectionId?: string;
 }
 
@@ -2216,12 +2204,7 @@ function tokenCleanupResult(
 export function builtinConnectorTokenMutationValues(
   args: Pick<
     PreparedBuiltinConnectorTokenConnection,
-    | "orgId"
-    | "userId"
-    | "runtimeMethod"
-    | "account"
-    | "matchExistingExternalIdentity"
-    | "userInfo"
+    "orgId" | "userId" | "runtimeMethod" | "account" | "userInfo"
   >,
 ): ConnectorConnectionMutationArgs {
   return {
@@ -2233,11 +2216,8 @@ export function builtinConnectorTokenMutationValues(
     },
     mutation: args.account,
     allowSiblings: true,
-    matchExternalId: authorizedExternalIdForMutation({
-      mutation: args.account,
-      matchExistingExternalIdentity: args.matchExistingExternalIdentity,
-      externalId: args.userInfo.id,
-    }),
+    matchExternalId:
+      args.account.intent === "add" ? args.userInfo.id : undefined,
   };
 }
 export const prepareBuiltinConnectorTokenConnection$ = command(
@@ -2331,7 +2311,6 @@ export const prepareBuiltinConnectorTokenConnection$ = command(
       oauthGrantedScopes: args.oauthGrantedScopes,
       tokenExpiresAt,
       account: args.account,
-      matchExistingExternalIdentity: args.matchExistingExternalIdentity,
       insertConnectionId: args.insertConnectionId,
     };
   },

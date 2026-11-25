@@ -11,6 +11,7 @@ import { logger } from "../../lib/log";
 
 import {
   connectorConnectionDefaultConflict,
+  connectorConnectionExternalConflict,
   connectorConnectionIdentityValues,
   connectorConnectionReplacementValues,
   connectorConnectionTargetValues,
@@ -61,6 +62,7 @@ type InsertConnectorConnectionMutation = {
    */
   readonly allowSiblings: boolean;
   readonly matchExternalId: string | null;
+  readonly matchExternalIssuer: string;
 };
 
 export type ReadyConnectorConnectionMutation =
@@ -182,6 +184,7 @@ export interface ConnectorConnectionMutationArgs {
   readonly mutation: ConnectorAccountMutationIntent;
   readonly allowSiblings: boolean;
   readonly matchExternalId?: string;
+  readonly matchExternalIssuer?: string;
 }
 
 function connectorConnectionTargetReadPlan(
@@ -221,7 +224,7 @@ export function connectorConnectionMutationReadPlan(
   }
   const displayName =
     args.mutation.intent === "add" ? (args.mutation.displayName ?? null) : null;
-  if (args.mutation.intent === "add" && args.matchExternalId !== undefined) {
+  if (args.mutation.intent === "add" && args.matchExternalId) {
     return {
       kind: "external" as const,
       displayName,
@@ -232,6 +235,7 @@ export function connectorConnectionMutationReadPlan(
         eq(connectors.userId, args.userId),
         targetCondition(args.target),
         eq(connectors.externalId, args.matchExternalId),
+        eq(connectors.externalIssuer, args.matchExternalIssuer ?? ""),
       ),
       orderBy: [connectors.id],
       limit: 2,
@@ -339,8 +343,9 @@ function connectorConnectionMutationResolution(
       displayName,
       isDefault,
       allowSiblings: args.allowSiblings,
+      matchExternalIssuer: args.matchExternalIssuer ?? "",
       matchExternalId:
-        args.mutation.intent === "add" ? (args.matchExternalId ?? null) : null,
+        args.mutation.intent === "add" ? args.matchExternalId || null : null,
     };
   };
   if (selection.kind === "external") {
@@ -425,9 +430,10 @@ type ConnectorConnectionMetadataWrite = {
       readonly kind: "insert";
       readonly phase: "default" | "sibling";
       readonly values: typeof connectors.$inferInsert;
-      readonly conflict: ReturnType<
-        typeof connectorConnectionDefaultConflict
-      > | null;
+      readonly conflict:
+        | ReturnType<typeof connectorConnectionDefaultConflict>
+        | ReturnType<typeof connectorConnectionExternalConflict>
+        | null;
     }
 );
 
@@ -453,7 +459,9 @@ function connectorConnectionMetadataInsert(
     },
     conflict: isDefault
       ? connectorConnectionDefaultConflict(args.target.kind)
-      : null,
+      : insert.matchExternalId !== null
+        ? connectorConnectionExternalConflict(args.target.kind)
+        : null,
   };
 }
 
@@ -463,6 +471,7 @@ export function connectorConnectionMetadataWritePlan(
 ): ConnectorConnectionMetadataWrite {
   const context = connectorConnectionMetadataValues(args);
   if (args.resolution.kind === "update") {
+    const identity = args.resolution.insertIfMissing;
     return {
       kind: "update",
       phase: "existing",
@@ -475,6 +484,12 @@ export function connectorConnectionMetadataWritePlan(
       where: and(
         context.ownerCondition,
         eq(connectors.id, args.resolution.existing.id),
+        identity?.matchExternalId
+          ? and(
+              eq(connectors.externalId, identity.matchExternalId),
+              eq(connectors.externalIssuer, identity.matchExternalIssuer),
+            )
+          : undefined,
       ),
     };
   }
@@ -489,6 +504,7 @@ function connectorConnectionIdentityWrite(
   const sameIdentity = and(
     context.ownerCondition,
     eq(connectors.externalId, matchExternalId),
+    eq(connectors.externalIssuer, insert.matchExternalIssuer),
   );
   return {
     kind: "update",

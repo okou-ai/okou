@@ -713,7 +713,6 @@ const finishSlackConnectorOAuth$ = command(
         oauthRequestedScopes: requestedScopes,
         oauthGrantedScopes: oauth.userScopes,
         account: { intent: "add" },
-        matchExistingExternalIdentity: true,
         insertConnectionId: storedId,
       },
       signal,
