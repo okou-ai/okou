@@ -533,11 +533,11 @@ billing	src/signals/routes/__tests__/billing-usage-pack-checkout.test.ts	billing
 billing	src/signals/routes/__tests__/billing-usage-pack-checkout.test.ts	billing-usage-pack-checkout-019	rewritten	28.9	extension after sandbox reset
 billing	src/signals/routes/__tests__/billing-usage-pack-checkout.test.ts	billing-usage-pack-checkout-022	rewritten	54.2	extension after sandbox reset
 billing	src/signals/routes/__tests__/billing-usage-pack-checkout.test.ts	billing-usage-pack-checkout-024	rewritten	5.6	extension after sandbox reset
-billing	src/signals/routes/__tests__/billing-portal.test.ts	billing-portal-003	planned		extension after sandbox reset
-billing	src/signals/routes/__tests__/billing-portal.test.ts	billing-portal-004	planned		extension after sandbox reset
-billing	src/signals/routes/__tests__/billing-portal.test.ts	billing-portal-005	planned		extension after sandbox reset
-billing	src/signals/routes/__tests__/billing-portal.test.ts	billing-portal-011	planned		extension after sandbox reset
-billing	src/signals/routes/__tests__/billing-portal.test.ts	billing-portal-012	planned		extension after sandbox reset
+billing	src/signals/routes/__tests__/billing-portal.test.ts	billing-portal-003	rewritten	27.4	extension after sandbox reset
+billing	src/signals/routes/__tests__/billing-portal.test.ts	billing-portal-004	rewritten	91.2	extension after sandbox reset
+billing	src/signals/routes/__tests__/billing-portal.test.ts	billing-portal-005	rewritten	73.4	extension after sandbox reset
+billing	src/signals/routes/__tests__/billing-portal.test.ts	billing-portal-011	rewritten	16.2	extension after sandbox reset
+billing	src/signals/routes/__tests__/billing-portal.test.ts	billing-portal-012	rewritten	34.0	extension after sandbox reset
 billing	src/signals/routes/__tests__/billing-portal.test.ts	billing-portal-013	planned		extension after sandbox reset
 billing	src/signals/routes/__tests__/billing-portal.test.ts	billing-portal-014	planned		extension after sandbox reset
 chat	src/signals/routes/__tests__/shared-thread-attachments.test.ts	shared-thread-attachments-001	planned		extension after sandbox reset
