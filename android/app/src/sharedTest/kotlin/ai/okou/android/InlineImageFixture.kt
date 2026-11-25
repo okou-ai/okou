@@ -28,7 +28,12 @@ internal class InlineImageFixture(private val api: ChatListApiFixture) {
     @Volatile var readyReferenceDenied = false
     @Volatile var deniedExternalFilename: String? = null
 
-    fun install(latest: String? = null, earlier: Boolean = true) {
+    fun install(
+        latest: String? = null,
+        earlier: Boolean = true,
+        earlierText: String =
+            "Here is the first measurement.\n\n![$earlierAlt](/artifacts/$earlierReference)",
+    ) {
         val image = chart()
         val previous = api.commandResponse
         api.commandResponse = { request ->
@@ -94,7 +99,7 @@ internal class InlineImageFixture(private val api: ChatListApiFixture) {
                     add(
                         reply(
                             2,
-                            "Here is the first measurement.\n\n![$earlierAlt](/artifacts/$earlierReference)",
+                            earlierText,
                         ),
                     )
                     add(reply(3, "I checked the rollout checklist."))

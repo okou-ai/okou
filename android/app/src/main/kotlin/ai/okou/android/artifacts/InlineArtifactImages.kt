@@ -107,7 +107,6 @@ internal class InlineArtifactImages(
                     val failure = onFailure(error)
                     if (
                         grant == null &&
-                            request.source.startsWith("/artifacts/") &&
                             (failure == ArtifactProblem.Denied ||
                                 failure == ArtifactProblem.Missing)
                     ) {

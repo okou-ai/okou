@@ -149,6 +149,40 @@ internal class ConversationInlineImageRootTest : ArtifactCatalogRootTestFixture(
     }
 
     @Test
+    fun aDeniedExternalThumbnailClearsOtherSizesOfTheSameImage() {
+        val fixture = InlineImageFixture(app.fixture)
+        val filename = "shared-evidence.png"
+        val url = app.fixture.server.url("/inline-thumbnail/$filename")
+        fixture.install(
+            latest = "![Full-width evidence](<$url>)",
+            earlierText =
+                "| Evidence | A | B | C | D |\n| --- | --- | --- | --- | --- |\n" +
+                    "| ![Table evidence](<$url>) | a | b | c | d |",
+        )
+        openConversation()
+        val full = hasContentDescription("Full-width evidence")
+        compose.waitUntil(8_000) {
+            compose.onAllNodes(full and hasClickAction()).fetchSemanticsNodes().isNotEmpty()
+        }
+        val fullWidth = compose.onNode(full).getUnclippedBoundsInRoot().width
+        assertEquals(listOf(filename), fixture.thumbnails.toList())
+
+        fixture.deniedExternalFilename = filename
+        compose.onNodeWithTag("conversation_reply_summary").performClick()
+        val table = hasContentDescription("Table evidence")
+        compose.waitUntil(8_000) { compose.onAllNodes(table).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(table).performScrollTo()
+        assertTrue(compose.onNode(table).getUnclippedBoundsInRoot().width < fullWidth)
+        val unavailable =
+            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Image unavailable")
+        compose.waitUntil(8_000) {
+            compose.onAllNodes(table and unavailable).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNode(full).assert(unavailable and !hasClickAction())
+        assertEquals(listOf(filename, filename), fixture.thumbnails.toList())
+    }
+
+    @Test
     fun restoresAnExternalPreviewAcrossRecreationWithoutSavingTheUrlInActivityState() {
         val fixture = InlineImageFixture(app.fixture)
         val filename = "external-preview.png"
