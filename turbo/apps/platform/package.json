@@ -35,7 +35,6 @@
     "@okouai/core": "workspace:*",
     "@okouai/mermaid-lite": "workspace:*",
     "@okouai/ui": "workspace:*",
-    "@posthog/core": "1.50.5",
     "@ricky0123/vad-web": "0.0.31",
     "@sentry/browser": "^10.73.0",
     "@sentry/react": "^10.73.0",

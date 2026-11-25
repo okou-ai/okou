@@ -1231,11 +1231,7 @@
       "title": "Cambiar a un plan inferior"
     },
     "feedback": {
-      "otherPlaceholder": "Cuéntanos más…",
-      "rewardTerms": "Una vez por espacio de trabajo · Los créditos caducan en 30 días",
-      "shareFeedback": "Compartir comentarios",
-      "submitFeedback": "Enviar comentarios",
-      "thanks": "Gracias por tus comentarios"
+      "shareFeedback": "Compartir comentarios"
     },
     "invoices": {
       "amount": "Cantidad",

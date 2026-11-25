@@ -1207,11 +1207,7 @@
       "title": "डाउनग्रेड योजना"
     },
     "feedback": {
-      "otherPlaceholder": "हमें और बताएँ…",
-      "rewardTerms": "हर कार्यक्षेत्र में एक बार · क्रेडिट 30 दिन तक मान्य हैं",
-      "shareFeedback": "प्रतिक्रिया साझा करें",
-      "submitFeedback": "फ़ीडबैक भेजें",
-      "thanks": "आपके फ़ीडबैक के लिए धन्यवाद"
+      "shareFeedback": "प्रतिक्रिया साझा करें"
     },
     "invoices": {
       "amount": "मात्रा",

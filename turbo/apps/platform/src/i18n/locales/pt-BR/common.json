@@ -1231,11 +1231,7 @@
       "title": "Fazer downgrade do plano"
     },
     "feedback": {
-      "otherPlaceholder": "Conte-nos mais…",
-      "rewardTerms": "Uma vez por espaço de trabalho · Créditos válidos por 30 dias",
-      "shareFeedback": "Enviar feedback",
-      "submitFeedback": "Enviar feedback",
-      "thanks": "Obrigado pelo feedback"
+      "shareFeedback": "Enviar feedback"
     },
     "invoices": {
       "amount": "Valor",
