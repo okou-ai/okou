@@ -55,6 +55,7 @@ class ScreenshotScenario {
 
         val instruction = "### 发布前确认\n![发布截图](<https://example.test/release.png>)"
         val displayNameError = "请输入显示名称。"
+        val displayNameLengthError = "最多输入 256 个字符。"
 
         fun text(label: String): UiObject2 =
             checkNotNull(
@@ -97,11 +98,15 @@ class ScreenshotScenario {
             input(fixture.releaseTitle)
         }
 
-        fun verifyWindow(width: Int, height: Int, verify: () -> Unit) {
+        fun verifyWindow(width: Int, height: Int, fontScale: Float = 1f, verify: () -> Unit) {
             device.executeShellCommand("wm size ${width}x${height}")
+            device.executeShellCommand("settings put system font_scale $fontScale")
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                 try {
-                    scenario.onActivity { assertEquals(width, it.resources.configuration.screenWidthDp) }
+                    scenario.onActivity {
+                        assertEquals(width, it.resources.configuration.screenWidthDp)
+                        assertEquals(fontScale, it.resources.configuration.fontScale, 0.001f)
+                    }
                     verify()
                 } catch (error: Throwable) {
                     runCatching {
@@ -133,7 +138,6 @@ class ScreenshotScenario {
                     session = "workflow-editor-${UUID.randomUUID()}",
                 )
             device.executeShellCommand("wm density 160")
-            device.executeShellCommand("settings put system font_scale 1.0")
 
             verifyWindow(412, 892) {
                 openInstructions()
@@ -158,6 +162,21 @@ class ScreenshotScenario {
                 action("事件").click()
                 input("primary")
                 ScreenshotCapture.capture("wide-calendar-automation.png")
+            }
+
+            verifyWindow(240, 892, fontScale = 2f) {
+                openInstructions()
+                val purposeTop = text("用途").visibleBounds.top
+                ScreenshotCapture.capture("narrow-workflow-instructions.png")
+                input(fixture.releaseTitle).text = "x".repeat(257)
+                text(displayNameLengthError)
+                device.waitForIdle()
+                assertTrue("The wrapped message expands the supporting area", text("用途").visibleBounds.top > purposeTop)
+                ScreenshotCapture.capture("narrow-wrapped-validation.png")
+                input("x".repeat(257)).text = fixture.releaseTitle
+                assertTrue(device.wait(Until.gone(By.pkg(app.packageName).text(displayNameLengthError)), 5_000))
+                device.waitForIdle()
+                assertEquals(purposeTop, text("用途").visibleBounds.top)
             }
         } finally {
             try {
