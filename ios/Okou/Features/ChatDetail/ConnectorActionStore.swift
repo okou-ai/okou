@@ -248,8 +248,7 @@ final class ConnectorActionStore {
       if let appURL {
         // A refused/canceled authorization is not a failed launch. Only a
         // definitive OS launch failure permits the same attempt's web fallback.
-        let opened = await providerApplication.open(
-          appURL, universalLinksOnly: appURL.scheme == "https")
+        let opened = await providerApplication.open(appURL)
         try check(flow)
         flow.usesProviderApplication = opened
         flow.browserURL = opened ? nil : webURL

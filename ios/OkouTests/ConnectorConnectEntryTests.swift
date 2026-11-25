@@ -8,7 +8,7 @@ import XCTest
 private typealias FixtureData = ConnectorHTTPFixtures
 
 private struct UnavailableProviderApplication: ConnectorProviderApplication {
-  func open(_ url: URL, universalLinksOnly: Bool) async -> Bool { false }
+  func open(_ url: URL) async -> Bool { false }
 }
 
 private let multipleMethodCatalog = """
