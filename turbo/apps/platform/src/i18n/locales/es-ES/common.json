@@ -522,6 +522,40 @@
       "kindIcon": "{{kind}} artefacto",
       "loading": "Cargando artefactos"
     },
+    "customDomain": {
+      "addressHint": "Choose the full address used when you share this website.",
+      "checks": {
+        "certificate": "HTTPS",
+        "dns": "DNS connection",
+        "ownership": "Ownership"
+      },
+      "connect": "Connect a domain",
+      "continue": "Continue",
+      "copied": "Copied",
+      "copyFailed": "Could not copy. Select the value to copy it.",
+      "copyRecord": "Copy {{type}} value",
+      "disconnectConfirm": "This domain will be disconnected from this website.",
+      "dnsHelp": "Add these records at your DNS provider, then click Verify",
+      "domain": "Domain",
+      "hostnameExample": "www.example.com",
+      "httpsReady": "HTTPS ready",
+      "lastChecked": "Last checked {{time}}",
+      "manage": "Manage {{hostname}}",
+      "needsSetup": "Finish setup",
+      "notChecked": "No verification yet",
+      "okouUrl": "Okou URL",
+      "ownDomain": "Enter a domain you own",
+      "remove": "Remove",
+      "removeConfirm": "Your sharing link will return to {{url}}.",
+      "removeHostname": "Remove {{hostname}}",
+      "removeTitle": "Remove custom domain?",
+      "removing": "This domain is disconnected. Click Remove to finish cleaning up its configuration.",
+      "title": "Custom domain",
+      "urlPreview": "https://{{hostname}}",
+      "verified": "Domain verified. Save to use this address.",
+      "verify": "Verify",
+      "yourDomains": "Connected domains"
+    },
     "deletion": {
       "cancel": "Cancelar",
       "delete": "Eliminar",
@@ -1195,6 +1229,12 @@
       "proWarning": "Tu acceso Pro seguirá activo hasta el final del período de facturación. Después, este espacio quedará sin plan y Okou no podrá trabajar hasta que vuelvas a suscribirte.",
       "teamWarning": "El acceso de tu equipo permanece activo hasta que termine el periodo de facturación actual. Después de eso, este espacio de trabajo se traslada a {{plan}}.",
       "title": "Cambiar a un plan inferior"
+    },
+    "feedback": {
+      "otherPlaceholder": "Cuéntanos más…",
+      "rewardTerms": "Una vez por espacio de trabajo · Los créditos caducan en 30 días",
+      "submitFeedback": "Enviar comentarios",
+      "thanks": "Gracias por tus comentarios"
     },
     "invoices": {
       "amount": "Cantidad",
@@ -1924,6 +1964,14 @@
       "message": "Mensaje",
       "modelForThisChat": "Modelo para este chat",
       "placeholder": "Pídeme que automatice flujos de trabajo, gestione tareas...",
+      "presentationFormatSetup": {
+        "description": "Guardaremos este valor predeterminado y generaremos tu presentación. Si tu solicitud especifica un formato, tendrá prioridad.",
+        "htmlDescription": "Ideal para compartir en el navegador",
+        "pptxDescription": "Diapositivas editables en PowerPoint",
+        "saveAndGenerate": "Guardar y generar",
+        "settingsHint": "Puedes cambiarlo en Configuración → Preferencias → Chat.",
+        "title": "Elige un formato de presentación predeterminado"
+      },
       "selectedModelUnavailable": "El modelo seleccionado no está disponible. Configúralo antes de enviar.",
       "selectedModelUnavailableToast": "El modelo seleccionado no está disponible",
       "selectModel": "Seleccionar modelo",
@@ -5810,6 +5858,16 @@
       "actions": {
         "resetUsage": "Restablecer uso"
       },
+      "antigravity": {
+        "check": "Comprobar inicio de sesión",
+        "error": "Comprueba el entorno de inicio de sesión asignado y vuelve a intentarlo.",
+        "expired": "El inicio de sesión ha caducado. Vuelve a conectar la cuenta.",
+        "openTerminal": "Abrir la terminal de acceso a Google",
+        "terminal": "Ejecuta este comando en tu terminal e inicia sesión con tu cuenta personal de Google AI.",
+        "title": "Google AI (Antigravity)",
+        "unassigned": "Pide a un administrador que te asigne un terminal de inicio de sesión.",
+        "verify": "Este comando usa tu suscripción para enviar una solicitud a cada uno de los modelos Neon, Carbon y Hydrogen."
+      },
       "deviceAuth": {
         "claude": {
           "authorizationCode": "Código de autorización",
@@ -6012,6 +6070,13 @@
           "title": "Modelo predeterminado"
         },
         "description": "Elige los valores predeterminados para los chats nuevos y cómo se envían los mensajes.",
+        "presentationFormat": {
+          "description": "Elige el formato predeterminado para nuevas presentaciones",
+          "saveFailed": "No se pudo guardar el formato predeterminado. Inténtalo de nuevo.",
+          "title": "Formato de presentación predeterminado",
+          "unavailable": "No disponible",
+          "unset": "Sin establecer"
+        },
         "sectionTitle": "Chat"
       },
       "debug": {

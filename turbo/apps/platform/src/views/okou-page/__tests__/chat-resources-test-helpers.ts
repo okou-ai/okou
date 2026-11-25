@@ -15,20 +15,6 @@ import {
   NAVIGATION_ARTIFACT_THREAD_ID,
 } from "./chat-navigation-artifact-test-helpers.ts";
 
-export function createChatResourcesHelpers(context: TestContext) {
-  return {
-    setupResources: (options?: Parameters<typeof setupResources>[1]) => {
-      return setupResources(context, options);
-    },
-    setupOverflowResources: (
-      count: number,
-      options?: Parameters<typeof setupOverflowResources>[2],
-    ) => {
-      return setupOverflowResources(context, count, options);
-    },
-  };
-}
-
 const REPORT_URL = "https://files.example.test/report.pdf";
 export const RESOURCE_ARTIFACT_ID = "e0000000-0000-4000-a000-000000000999";
 
@@ -111,25 +97,6 @@ export async function setupResources(
 
 export function resourceButton() {
   return buttonNamed("Artifacts and chats");
-}
-export function resourcePanel() {
-  return screen.queryByRole("dialog", { name: "Artifacts and chats" });
-}
-export function composer() {
-  const editor = document.querySelector<HTMLElement>(
-    '[data-slot="chat-composer-card"] [contenteditable="true"]',
-  );
-  if (!editor) {
-    throw new Error("Composer not mounted");
-  }
-  return editor;
-}
-
-export function resourceState() {
-  return {
-    open: resourceButton().getAttribute("aria-expanded") === "true",
-    visible: resourcePanel() !== null,
-  };
 }
 
 export async function setupOverflowResources(

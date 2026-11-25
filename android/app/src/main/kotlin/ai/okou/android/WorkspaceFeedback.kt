@@ -12,7 +12,6 @@ import ai.okou.android.chat.ChatUndoPhase
 import ai.okou.android.chat.DeleteProjectDialog
 import ai.okou.android.chat.ProjectDeleteFeedback
 import ai.okou.android.chat.ProjectDeleteStatus
-import ai.okou.android.chat.ProjectNameLimit
 import ai.okou.android.chat.RenameListItemSheet
 import ai.okou.android.chat.RenameStatus
 import ai.okou.android.chat.WorkspaceRenameTarget
@@ -484,7 +483,7 @@ private fun WorkspaceRenameForm(
                 confirmedName = project.name,
                 titleRes = R.string.chat_rename_project,
                 labelRes = R.string.chat_project_name,
-                maxLength = ProjectNameLimit,
+                projectName = true,
                 enabled = list.canRenameProject,
                 status = status,
                 check = { chats.checkProjectRename(id) },
@@ -584,6 +583,7 @@ internal fun WorkspaceFeedbackHost(
     state: SnackbarHostState,
     modifier: Modifier,
     manageTimeout: Boolean = true,
+    surfaceModifier: Modifier = Modifier,
     restorePaneFocus: (() -> Unit)? = null,
 ) {
     if (manageTimeout) WorkspaceFeedbackTimeout(state)
@@ -604,7 +604,12 @@ internal fun WorkspaceFeedbackHost(
         val visuals = data.visuals
         val style = MaterialTheme.typography.bodyMedium.copy(letterSpacing = 0.sp)
         Surface(
-            modifier = modifier.padding(horizontal = 12.dp).widthIn(max = 480.dp).fillMaxWidth(),
+            modifier =
+                modifier
+                    .padding(horizontal = 12.dp)
+                    .widthIn(max = 480.dp)
+                    .fillMaxWidth()
+                    .then(surfaceModifier),
             shape = RoundedCornerShape(12.dp),
             color = MaterialTheme.colorScheme.inverseSurface,
             contentColor = MaterialTheme.colorScheme.inverseOnSurface,

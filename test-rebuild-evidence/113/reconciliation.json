@@ -1,0 +1,51 @@
+{
+  "openingHead": "ba94a6d69d155584c69fbdc3ded478fc62b069ae",
+  "main": "7d5e1e2368cbb047f138882711115fe39e22551a",
+  "opening": [
+    "client-003",
+    "browser-response-deadlines-006",
+    "browser-response-deadlines-023",
+    "browser-response-deadlines-039",
+    "chat-scroll-017",
+    "connector-directory-010"
+  ],
+  "processed": {
+    "connector-directory-010": "open",
+    "browser-response-deadlines-039": "first acceptance",
+    "browser-response-deadlines-006": "open",
+    "browser-response-deadlines-023": "first acceptance",
+    "client-003": "first acceptance",
+    "chat-scroll-017": "open"
+  },
+  "removedFromBDD": [
+    "browser-response-deadlines-023",
+    "browser-response-deadlines-039",
+    "client-003"
+  ],
+  "remaining": [
+    "browser-response-deadlines-006",
+    "chat-scroll-017",
+    "connector-directory-010"
+  ],
+  "firstAcceptance": 3,
+  "deduplicated": 0,
+  "revised": 0,
+  "historicallyRestored": 0,
+  "upstreamTransfers": 0,
+  "retired": 0,
+  "separatelyOwnedUpstream": 68,
+  "batch112Deduplicated": 68,
+  "deletedTestRegistrations": [],
+  "expectedAppFileDelta": 0,
+  "batchAppRowDelta": 2,
+  "mainAppRowDelta": 1,
+  "expectedAppRowDelta": 3,
+  "separateNativeRegistrations": 1,
+  "protectedTestSourcesByteIdenticalToOpening": [
+    "turbo/apps/platform/src/signals/__tests__/command-scheduling.test.ts",
+    "turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-message-previews.test.tsx",
+    "turbo/apps/platform/src/views/okou-page/__tests__/chat-search-debounce.test.tsx",
+    "turbo/apps/platform/src/views/okou-page/__tests__/chat-send-read-status.test.tsx"
+  ],
+  "historyReview": "The unregistered batch 107 reconnect experiment ended at native tab creation. The new registration checks the text receiver too. The older cross-chat control held a handshake; the new one releases the old paint after B has rendered."
+}

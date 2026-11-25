@@ -236,10 +236,6 @@ interface PostHogMock {
   };
   readonly setActiveSurveyIds: (ids: readonly string[]) => void;
   readonly surveyQueries: boolean[];
-  readonly surveyDisplays: {
-    readonly id: string;
-    readonly options: Parameters<typeof posthog.displaySurvey>[1];
-  }[];
   readonly events: PostHogEvent[];
   readonly identifications: PostHogIdentification[];
   readonly initializations: PostHogInitialization[];
@@ -423,7 +419,7 @@ export function createTestMocks(getSignal: () => AbortSignal) {
           url: string,
           peer: BrowserWebSocketPeer,
         ) => string | null,
-        options?: { readonly autoOpen?: boolean },
+        options?: BrowserWebSocketOptions,
       ): ReturnType<typeof mockBrowserWebSocket> => {
         return mockBrowserWebSocket(getSignal(), respond, options);
       },
@@ -887,6 +883,8 @@ function mockClerk(
 }
 
 function mockPostHog(signal: AbortSignal): PostHogMock {
+  const superProperties: Record<string, unknown> = {};
+  let distinctId = "anonymous-posthog-test-user";
   let featureFlagsReady = true;
   const flagCallbacks = new Set<Parameters<typeof posthog.onFeatureFlags>[0]>();
   let observedFlagSubscription: (() => void) | undefined;
@@ -895,28 +893,47 @@ function mockPostHog(signal: AbortSignal): PostHogMock {
   );
   const surveyQueries: boolean[] = [];
   const events: PostHogEvent[] = [];
-  const surveyDisplays: {
-    readonly id: string;
-    readonly options: Parameters<typeof posthog.displaySurvey>[1];
-  }[] = [];
   const identifications: PostHogIdentification[] = [];
   const initializations: PostHogInitialization[] = [];
   const capture = vi
     .spyOn(posthog, "capture")
     .mockImplementation((name, properties, options) => {
+      const beforeSend = initializations.at(-1)?.config?.before_send;
+      if (typeof beforeSend === "function") {
+        beforeSend({
+          uuid: "posthog-test-event",
+          event: name,
+          properties: properties ?? {},
+        });
+      }
       events.push({ name, properties, options });
       return undefined;
     });
   const identify = vi
     .spyOn(posthog, "identify")
-    .mockImplementation((distinctId, properties, propertiesOnce) => {
-      identifications.push({ distinctId, properties, propertiesOnce });
+    .mockImplementation((id, properties, propertiesOnce) => {
+      distinctId = id ?? distinctId;
+      identifications.push({ distinctId: id, properties, propertiesOnce });
     });
   const init = vi.spyOn(posthog, "init").mockImplementation((key, config) => {
     initializations.push({ key, config });
     return posthog;
   });
-  const register = vi.spyOn(posthog, "register").mockImplementation(() => {});
+  const register = vi
+    .spyOn(posthog, "register")
+    .mockImplementation((properties) => {
+      Object.assign(superProperties, properties);
+    });
+  const getProperty = vi
+    .spyOn(posthog, "get_property")
+    .mockImplementation((key) => {
+      return superProperties[key];
+    });
+  const getDistinctId = vi
+    .spyOn(posthog, "get_distinct_id")
+    .mockImplementation(() => {
+      return distinctId;
+    });
   const reset = vi.spyOn(posthog, "reset").mockImplementation(() => {});
   const unregister = vi
     .spyOn(posthog, "unregister")
@@ -953,8 +970,37 @@ function mockPostHog(signal: AbortSignal): PostHogMock {
             id,
             name: id,
             type: "api",
-            questions: [],
-            appearance: null,
+            questions: [
+              {
+                id: `${id}-question`,
+                type: "single_choice",
+                question:
+                  id === BILLING_FEEDBACK_SURVEYS.credits_exhausted
+                    ? "What's stopping you from upgrading today?"
+                    : id === BILLING_FEEDBACK_SURVEYS.upgrade_dismissed
+                      ? "What stopped you from upgrading today?"
+                      : "What stopped you from completing your purchase?",
+                description:
+                  "Share your feedback to receive 200 credits, once per workspace.",
+                choices: [
+                  "It's too expensive",
+                  "I want to try it more first",
+                  "Something else",
+                ],
+                hasOpenChoice: true,
+                translations: {
+                  "zh-cn": {
+                    question: "是什么让你没有完成购买？",
+                    description: "完成反馈可获得 200 积分。",
+                    choices: ["价格太高", "想再多试用一下", "其他原因"],
+                  },
+                },
+              },
+            ],
+            appearance: {
+              thankYouMessageHeader: "Thank you for your feedback!",
+              thankYouMessageCloseButtonText: "Close",
+            },
             conditions: null,
             feature_flag_keys: null,
             linked_flag_key: null,
@@ -968,25 +1014,17 @@ function mockPostHog(signal: AbortSignal): PostHogMock {
         }),
       );
     });
-  const displaySurvey = vi
-    .spyOn(posthog, "displaySurvey")
-    .mockImplementation((id, options) => {
-      surveyDisplays.push({ id, options });
-    });
-  const cancelSurvey = vi
-    .spyOn(posthog, "cancelPendingSurvey")
-    .mockImplementation(() => {});
   restoreOnAbort(signal, () => {
     onFeatureFlags.mockRestore();
     setConfig.mockRestore();
     surveysLoaded.mockRestore();
     matchingSurveys.mockRestore();
-    displaySurvey.mockRestore();
-    cancelSurvey.mockRestore();
     capture.mockRestore();
     identify.mockRestore();
     init.mockRestore();
     register.mockRestore();
+    getProperty.mockRestore();
+    getDistinctId.mockRestore();
     reset.mockRestore();
     unregister.mockRestore();
   });
@@ -1003,7 +1041,6 @@ function mockPostHog(signal: AbortSignal): PostHogMock {
     events,
     identifications,
     initializations,
-    surveyDisplays,
     surveyQueries,
     deferFeatureFlags: () => {
       featureFlagsReady = false;
@@ -1628,7 +1665,12 @@ function mockImageDimensions(
 export interface BrowserWebSocketPeer {
   readonly id: number;
   readonly url: string;
-  receive(data: string): void;
+  receive(data: string, onRead?: () => void): void;
+}
+
+interface BrowserWebSocketOptions {
+  readonly autoOpen?: boolean;
+  readonly onConnecting?: (url: string, socket: { open(): void }) => void;
 }
 
 function mockBrowserWebSocket(
@@ -1638,7 +1680,7 @@ function mockBrowserWebSocket(
     url: string,
     peer: BrowserWebSocketPeer,
   ) => string | null,
-  options: { readonly autoOpen?: boolean } = {},
+  options: BrowserWebSocketOptions = {},
 ) {
   const sockets = new Set<TestWebSocket>();
   let connectionCount = 0;
@@ -1655,6 +1697,7 @@ function mockBrowserWebSocket(
       connectionCount += 1;
       this.id = connectionCount;
       sockets.add(this);
+      options.onConnecting?.(url, this);
       if (options.autoOpen !== false) {
         queueMicrotask(() => {
           this.open();
@@ -1680,9 +1723,18 @@ function mockBrowserWebSocket(
       });
     }
 
-    receive(data: string): void {
+    receive(data: string, onRead?: () => void): void {
       if (this.readyState === TestWebSocket.OPEN) {
-        this.dispatchEvent(new MessageEvent("message", { data }));
+        const incoming = new MessageEvent("message", { data });
+        if (onRead) {
+          Object.defineProperty(incoming, "data", {
+            get() {
+              onRead();
+              return data;
+            },
+          });
+        }
+        this.dispatchEvent(incoming);
       }
     }
 

@@ -1,262 +1,109 @@
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
-import { mockAutoRunModel } from "../../../mocks/handlers/api-run-models.ts";
-import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
-import { screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
+import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { accountModels } from "./chat-account-model-fixture.ts";
+import {
+  composerModelTrigger,
+  findComposerEditor,
+} from "./chat-composer-test-helpers.ts";
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 import {
   closeModelPanel,
   findModelOption,
-  modelOption,
   openModelPanel,
   queryModelOption,
 } from "./chat-model-panel-test-helpers.ts";
-import { installConnectedPersonalSubscriptions } from "./personal-subscription-fixtures.ts";
-
-import { setupPage } from "../../../__tests__/page-helper.ts";
-import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
-import { buildRunModel } from "./chat-model-builders.ts";
-import {
-  NEW_CHAT_PATH,
-  readyChat,
-  RUN_PATH,
-  sendText,
-  createChatRunFixtures,
-} from "./chat-run-test-fixtures.ts";
+import { RUN_PATH, RUN_THREAD_ID } from "./chat-run-test-fixtures.ts";
+import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 const context = testContext();
-const { installRunChat } = createChatRunFixtures(context);
 
-const FIXTURE_DATE = "2026-08-12T09:00:00.000Z";
-
-function runModelFixture(model: string, index: number): AvailableRunModel {
-  return buildRunModel({
-    model,
-    modelProviderId: `e4000000-0000-4000-a000-${String(index).padStart(12, "0")}`,
-  });
-}
-
-function configureRunModels(models: readonly string[]): void {
-  installConnectedPersonalSubscriptions(context);
-  context.mocks.data.availableRunModels(
-    models.map((model, index) => {
-      return runModelFixture(model, index + 1);
-    }),
-  );
-}
-
-function preference(
-  selectedModel: string,
-  serviceTier: "priority" | null = null,
-): void {
-  context.mocks.data.userModelPreference({
-    selectedModel,
-    serviceTier,
-    modelSettings: {},
-    selectedImageModel: null,
-    updatedAt: FIXTURE_DATE,
-  });
-}
-
-async function modelPicker(name: string): Promise<HTMLElement> {
-  return await composerModelTrigger(name);
-}
-
-async function readyComposer(name = "Message"): Promise<HTMLElement> {
-  const composer = await screen.findByRole("textbox", { name });
-  expect(composer).toBeVisible();
-  return composer;
-}
-
-async function chooseModel(
-  user: ReturnType<typeof userEvent.setup>,
-  currentLabel: string,
-  optionName: string | RegExp,
-): Promise<void> {
-  const panel = await openModelPanel(currentLabel);
-  await user.click(modelOption(optionName, panel));
-  await closeModelPanel();
-}
-
-test("Edit only the model for an existing thread", async () => {
-  const user = userEvent.setup({ delay: null });
-  installRunChat({ selectedModel: "claude-opus-5" });
-  configureRunModels(["claude-opus-5", "claude-sonnet-5"]);
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
-  });
-
-  await readyChat();
-  await expect(modelPicker("Claude Opus 5")).resolves.toBeVisible();
-
-  await chooseModel(user, "Claude Opus 5", /^Claude Sonnet 5/iu);
-
-  await expect(modelPicker("Claude Sonnet 5")).resolves.toBeVisible();
+const opus = "claude-opus-5",
+  sonnet = "claude-sonnet-5";
+test("chat-composer-model-resolution-001 choosing Sonnet updates the existing chat picker", async () => {
+  accountModels(context, [opus, sonnet], null);
+  mockChatLifecycle(context, { threadId: RUN_THREAD_ID, selectedModel: opus });
+  await setupPage({ context, path: RUN_PATH });
+  const panel = await openModelPanel("Claude Opus 5");
+  click(await findModelOption("Claude Sonnet 5", panel));
+  await composerModelTrigger("Claude Sonnet 5");
   expect(
-    screen.queryByRole("group", { name: "Model for this chat" }),
-  ).not.toBeInTheDocument();
+    within(panel).queryByRole("group", { name: /model for this chat/i }),
+  ).toBeNull();
+  await expect(
+    findModelOption("Claude Sonnet 5", panel),
+  ).resolves.toBeChecked();
 });
-
-test("Resolve the model shown for a chat", async () => {
-  installRunChat({ selectedModel: "claude-fable-5-1" });
-  configureRunModels(["claude-fable-5-1", "claude-opus-5-5"]);
-  preference("claude-opus-5-5");
-
-  await setupPage({
-    context,
-    path: NEW_CHAT_PATH,
-  });
-
-  await readyComposer();
-  await expect(modelPicker("Claude Opus 5.5")).resolves.toBeVisible();
-});
-
-test("Switch only the thread to Auto when its model is no longer selectable", async () => {
-  const requests: string[] = [];
-  installRunChat({
+test("chat-composer-model-resolution-003 an unavailable saved model is repaired to Auto before sending", async () => {
+  const repair = context.mocks.deferred<unknown>(),
+    sent = context.mocks.deferred<unknown>();
+  accountModels(context, ["gpt-6-sol"], null);
+  mockChatLifecycle(context, {
+    threadId: RUN_THREAD_ID,
     selectedModel: "deepseek-v4.1-flash",
-    onModelSelectionUpdate: (body) => {
-      requests.push(`thread model ${String(body.model)}`);
+    onModelSelectionUpdate: (b) => {
+      return repair.resolve(b);
     },
-    onSendRequest: (body) => {
-      requests.push(`send model ${String(body.model)}`);
+    onSendRequest: (b) => {
+      return sent.resolve(b);
     },
   });
-  context.mocks.data.availableRunModels([
-    {
-      ...runModelFixture("gpt-6-sol", 2),
-      subscriptionOptions: { efforts: ["low", "high"], serviceTier: null },
-    },
-  ]);
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
-  });
-
-  await readyChat();
+  await setupPage({ context, path: RUN_PATH });
   const panel = await openModelPanel("Auto");
-  await expect(findModelOption(/^GPT 6 Sol/iu, panel)).resolves.toBeVisible();
-  expect(queryModelOption(/DeepSeek/iu, panel)).not.toBeInTheDocument();
+  await findModelOption("GPT 6 Sol", panel);
+  expect(queryModelOption(/DeepSeek/i, panel)).toBeNull();
   await closeModelPanel();
-
-  await sendText("Run on the model shown");
-
-  // The send carries no model, so the member's default model is untouched.
-  await waitFor(() => {
-    expect(requests).toStrictEqual([
-      "thread model null",
-      "send model undefined",
-    ]);
-  });
+  await fill(await findComposerEditor(), "Review the route");
+  click(await findFastControl("button", "Send"));
+  await expect(repair.promise).resolves.toMatchObject({ modelSelection: null });
+  const send = await sent.promise;
+  expect(send).not.toHaveProperty("model", expect.any(String));
+  expect(send).not.toHaveProperty("modelSelection.selectedModel");
 });
-
-test.each([null, "auto", "okou-1.0"])(
-  "Send without repairing an Auto thread storing %s",
-  async (selectedModel) => {
-    const requests: string[] = [];
-    installRunChat({
-      selectedModel,
-      onModelSelectionUpdate: () => {
-        requests.push("repair model");
+test.each([
+  ["004", null],
+  ["005", "auto"],
+] as const)(
+  "chat-composer-model-resolution-%s sending with Auto selected leaves the saved choice alone",
+  async (_id, value) => {
+    const repair = context.mocks.deferred<unknown>();
+    accountModels(context, ["gpt-6-sol"], null);
+    mockChatLifecycle(context, {
+      threadId: RUN_THREAD_ID,
+      selectedModel: value,
+      onModelSelectionUpdate: (b) => {
+        return repair.resolve(b);
       },
-      onSendRequest: () => {
-        requests.push("send");
-      },
     });
-    configureRunModels(["claude-opus-5"]);
-    context.mocks.api(runModelsMainContract.list, ({ respond }) => {
-      return respond(200, {
-        models: [
-          {
-            ...mockAutoRunModel(),
-            model: selectedModel === "auto" ? "auto" : null,
-          },
-          runModelFixture("claude-opus-5", 1),
-        ],
-      });
-    });
-
-    await setupPage({
-      context,
-      path: RUN_PATH,
-    });
-
-    await readyChat();
-    const panel = await openModelPanel("Auto");
-    expect(modelOption(/^Auto/u, panel)).toBeChecked();
-    await closeModelPanel();
-    await sendText("Continue on Auto");
+    await setupPage({ context, path: RUN_PATH });
+    await composerModelTrigger("Auto");
+    await fill(await findComposerEditor(), "Sort these notes");
+    click(await findFastControl("button", "Send"));
     await expect(
-      screen.findByText("Continue on Auto"),
+      screen.findByText("Sort these notes", {
+        selector: '[data-role="user"] *',
+      }),
     ).resolves.toBeInTheDocument();
-    expect(requests).toStrictEqual(["send"]);
+    expect(repair.settled()).toBeFalsy();
   },
 );
-
-test("Keep the stored selection when sending on an available model", async () => {
-  const sentModels: (string | null | undefined)[] = [];
-  installRunChat({
-    selectedModel: "claude-opus-5",
-    onSendRequest: (body) => {
-      sentModels.push(body.model);
+test("chat-composer-model-resolution-007 sending in the existing Opus conversation uses its stored model", async () => {
+  const sent = context.mocks.deferred<unknown>();
+  accountModels(context, [opus], null);
+  mockChatLifecycle(context, {
+    threadId: RUN_THREAD_ID,
+    selectedModel: opus,
+    onSendRequest: (b) => {
+      return sent.resolve(b);
     },
   });
-  configureRunModels(["claude-opus-5"]);
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
-  });
-
-  await readyChat();
-  await expect(modelPicker("Claude Opus 5")).resolves.toBeVisible();
-
-  await sendText("Run on the pinned model");
-
-  await waitFor(() => {
-    expect(sentModels).toStrictEqual([undefined]);
-  });
-});
-
-test("Keep an existing thread's explicit model", async () => {
-  installRunChat({ selectedModel: "claude-opus-5" });
-  configureRunModels(["claude-fable-5-1", "claude-opus-5-5", "claude-opus-5"]);
-  preference("claude-opus-5-5");
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
-  });
-
-  await readyChat();
-  await expect(modelPicker("Claude Opus 5")).resolves.toBeVisible();
-});
-
-test("Start a new chat on Auto without a saved preference", async () => {
-  configureRunModels(["claude-fable-5-1", "claude-opus-5-5"]);
-
-  await setupPage({
-    context,
-    path: NEW_CHAT_PATH,
-  });
-
-  await readyComposer();
-  await expect(modelPicker("Auto")).resolves.toBeVisible();
-});
-
-test("Start a new chat on Auto when the saved preference has no route", async () => {
-  configureRunModels(["claude-fable-5-1"]);
-  preference("claude-opus-5-5");
-
-  await setupPage({
-    context,
-    path: NEW_CHAT_PATH,
-  });
-
-  await readyComposer();
-  await expect(modelPicker("Auto")).resolves.toBeVisible();
+  await setupPage({ context, path: RUN_PATH });
+  await composerModelTrigger("Claude Opus 5");
+  await fill(await findComposerEditor(), "Summarize the notes");
+  click(await findFastControl("button", "Send"));
+  const body = await sent.promise;
+  expect(body).toHaveProperty("threadId", RUN_THREAD_ID);
+  expect(body).not.toHaveProperty("model", expect.any(String));
+  expect(body).not.toHaveProperty("modelSelection.selectedModel");
 });

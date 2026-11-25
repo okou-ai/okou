@@ -13,7 +13,6 @@
     <string name="chat_undo_unconfirmed">Impossible de confirmer l’annulation.</string>
     <string name="chat_feedback_dismiss">Fermer</string>
     <string name="chat_list_first_load_failed">Chargement temporairement indisponible</string>
-    <string name="chat_list_load_when_online">Les chats se chargeront dès que vous serez de nouveau en ligne.</string>
     <string name="chat_list_title">Discussions</string>
     <string name="chat_refresh">Actualiser les discussions</string>
     <string name="chat_loading">Chargement des discussions…</string>
@@ -81,6 +80,14 @@
     <string name="chat_delete_description">Les messages et brouillons de « %1$s » seront définitivement supprimés. Les tâches en cours seront arrêtées et les automatisations liées seront mises en pause.</string>
     <string name="chat_rename_project">Renommer le projet</string>
     <string name="chat_project_name">Nom du projet</string>
+    <string name="chat_project_create">Nouveau projet</string>
+    <string name="chat_project_create_confirm">Créer</string>
+    <string name="chat_project_creating">Création en cours…</string>
+    <string name="chat_project_create_close">Fermer</string>
+    <string name="chat_project_checking">Vérification…</string>
+    <string name="chat_project_create_failed">Impossible de créer le projet. Le nom a été conservé.</string>
+    <string name="chat_project_create_unconfirmed">La création du projet n’a pas encore été confirmée</string>
+    <string name="chat_project_name_too_long">Le nom du projet ne peut pas dépasser %1$d caractères</string>
     <string name="chat_project_rename_unconfirmed">Impossible de confirmer le nom du projet.</string>
     <string name="chat_project_rename_rejected">Impossible de renommer le projet.</string>
     <string name="chat_project_rename_save">Enregistrer</string>
@@ -108,4 +115,9 @@
     <string name="chat_rename_save_unconfirmed">Le résultat de l’enregistrement reste à confirmer.</string>
     <string name="chat_title_saved">Titre de la discussion enregistré</string>
     <string name="chat_project_name_saved">Nom du projet enregistré</string>
+    <string name="inline_image_loading">Chargement de l’image…</string>
+    <string name="inline_image_no_thumbnail">Miniature indisponible</string>
+    <string name="inline_image_unavailable">Image indisponible</string>
+    <string name="inline_image_view_original">Voir l’original</string>
+    <string name="inline_image_open_link">Ouvrir le lien</string>
 </resources>

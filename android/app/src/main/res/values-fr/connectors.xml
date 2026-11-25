@@ -42,7 +42,6 @@
     <string name="connector_disconnect">Déconnecter le compte</string>
     <string name="connector_disconnect_title">Déconnecter ce compte ?</string>
     <string name="connector_disconnect_copy">Les chats et automatisations qui utilisent ce compte peuvent nécessiter une autre connexion. Les autres comptes restent disponibles.</string>
-    <string name="connector_load_when_online">Le contenu se chargera dès que vous serez de nouveau en ligne.</string>
     <string name="connector_loading">Chargement des connecteurs…</string>
     <string name="connector_loading_accounts">Chargement des comptes…</string>
     <string name="connector_loading_permissions">Chargement des autorisations…</string>
@@ -52,7 +51,6 @@
     <string name="connector_accounts_failed">Impossible de charger les comptes.</string>
     <string name="connector_permissions_failed">Impossible de charger les autorisations.</string>
     <string name="connector_impact_failed">Impossible de vérifier où ce compte est utilisé.</string>
-    <string name="connector_offline">Hors connexion</string>
     <string name="connector_network_failed">Impossible de joindre Okou. Vérifiez votre connexion et réessayez.</string>
     <string name="connector_account_unavailable">Ce compte n’est plus disponible.</string>
     <string name="connector_unavailable">L’autorisation n’est pas disponible pour ce compte.</string>

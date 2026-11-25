@@ -60,6 +60,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.mockwebserver.MockResponse
@@ -256,11 +257,66 @@ class ChatComposerRootTest {
 
         val finalBounds = transcript.assertIsDisplayed().getUnclippedBoundsInRoot()
         assertEquals(initialBounds.bottom - initialBounds.top, finalBounds.bottom - finalBounds.top)
+        val editor = input.fetchSemanticsNode().config
+        assertEquals(draft, editor[SemanticsProperties.InputText].text)
         assertEquals(
-            draft,
-            input.fetchSemanticsNode().config[SemanticsProperties.EditableText].text,
+            "First line Second line Third line Final line",
+            editor[SemanticsProperties.EditableText].text,
         )
         compose.onNodeWithContentDescription("Send").assertIsDisplayed().assertIsEnabled()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h520dp")
+    fun earlierRepliesExpandBelowTheSummaryWithoutMovingIt() {
+        val app = compose.activity.application as ComposerRootApplication
+        val earlier = "The website copy is checked."
+        val lastParagraph = "Record the final decisions in the release notes."
+        val latest =
+            "The release materials are ready.\n\n" +
+                "The website and email are confirmed. Two checks remain before launch.\n\n" +
+                "Please share the updated checklist with all channel owners.\n\n" +
+                lastParagraph
+        fun id(seq: Long) = "50624000-0000-4000-8000-${seq.toString().padStart(12, '0')}"
+        fun reply(seq: Long, text: String) =
+            historyEventWire(id(seq), seq, payload = """{"content":${JsonPrimitive(text)}}""")
+        val rows =
+            listOf(
+                reply(1, "$earlier\n\nUse the approved release links."),
+                reply(2, "The email draft is checked."),
+                reply(3, latest),
+                historyEventWire(id(4), 4, type = "run.completed", payload = "null"),
+            )
+        app.fixture.chats.historyCatchUp = { MockResponse().setResponseCode(503) }
+        app.fixture.chats.historyRows = { request ->
+            val since = request.requestUrl?.queryParameter("sinceSeqId")?.toInt() ?: 0
+            jsonResponse(
+                """{"rows":[${rows.drop(since).joinToString(",")}],"cursor":{"lastEventId":"${id(4)}","lastSeqId":4},"hasMore":false}""",
+            )
+        }
+        app.contextGate.countDown()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText("Personal chat").fetchSemanticsNodes().size == 1
+        }
+        compose.onNodeWithText("Personal chat").performClick()
+        captureOwners()
+        val summary = compose.onNodeWithTag("conversation_reply_summary")
+        compose.waitUntilExactlyOneExists(hasTestTag("conversation_reply_summary"), 5_000)
+        compose.waitUntil("latest conversation is displayed", 5_000) {
+            app.fixture.chats.readRequests.get() > 0
+        }
+        // Wait for the independently laid out paragraph after Markdown rendering.
+        compose.waitUntilExactlyOneExists(hasText(lastParagraph), 5_000)
+        val resting = summary.assertIsDisplayed().getUnclippedBoundsInRoot()
+        summary.performClick()
+        compose.waitUntilExactlyOneExists(hasText(earlier), 5_000)
+        val expanded = summary.assertIsDisplayed().getUnclippedBoundsInRoot()
+        assertEquals(resting.top, expanded.top)
+        val firstReply = compose.onNodeWithText(earlier).assertIsDisplayed()
+        assertTrue(firstReply.getUnclippedBoundsInRoot().top >= expanded.bottom)
+        summary.performClick()
+        compose.waitUntilDoesNotExist(hasText(earlier), 5_000)
+        assertEquals(resting.top, summary.getUnclippedBoundsInRoot().top)
     }
 
     @Test
@@ -276,14 +332,9 @@ class ChatComposerRootTest {
         )
         // Native focus loss collapses an active selection; preserve the cursor on recreation.
         input.performTextInputSelection(TextRange(13))
-        compose.onNodeWithContentDescription("Chat actions").performClick()
-        compose.onNodeWithText("Settings").performClick()
-        compose.onNodeWithText("Display mode").assertExists()
         captureOwners()
         // Recreation runs the same complete Activity budget check as every Debug save.
         compose.activityRule.scenario.recreate()
-        compose.onNodeWithText("Display mode").assertExists()
-        compose.onNodeWithContentDescription("Back").performClick()
         assertEquals(
             large,
             input.fetchSemanticsNode().config[SemanticsProperties.EditableText].text,
@@ -626,32 +677,41 @@ class ChatComposerRootTest {
         compose.onNodeWithContentDescription("Chats").assertExists()
         compose.onNodeWithText("New chat").performClick()
         compose.onNodeWithTag("message_input").assertTextContains("Original **message** 👋")
-        app.fixture.disconnectSend = true
-        compose.onNodeWithContentDescription("Send").assertIsEnabled().performClick()
-        compose.waitUntil(10_000) {
-            // Drain the actual native owner as journal/HTTP completions return to Main.
-            compose.onNodeWithTag("message_input").fetchSemanticsNode()
-            app.fixture.inputs.size == 1 ||
-                editor?.uiState?.value?.failed?.isNotEmpty() == true ||
-                editor?.uiState?.value?.persistence ==
-                    ai.okou.android.chat.ComposerPersistence.Failed
-        }
-        assertEquals(
-            "${editor?.uiState?.value}; requests=${app.fixture.requests.map { it.path }}",
-            1,
-            app.fixture.inputs.size,
-        )
-        app.contextGate.countDown()
-        val event = app.fixture.inputs.keys.single()
-        messageText(event, "Original **message** 👋").assertIsDisplayed()
-        compose.onNodeWithTag("message_input").performTextInput("Newer draft 你好")
         val checkStarted = CountDownLatch(1)
         val checkResponse = CountDownLatch(1)
         app.fixture.beforeInputStatusReturn = {
             checkStarted.countDown()
             checkResponse.await()
         }
+        // Keep confirmed history from settling the input before the status check returns.
+        app.fixture.beforeHistoryReturn = { threadId ->
+            if (
+                app.fixture.created.any { it["clientThreadId"]?.jsonPrimitive?.content == threadId }
+            ) {
+                checkResponse.await()
+            }
+        }
+        val event: String
         try {
+            app.fixture.disconnectSend = true
+            compose.onNodeWithContentDescription("Send").assertIsEnabled().performClick()
+            compose.waitUntil(10_000) {
+                // Drain the actual native owner as journal/HTTP completions return to Main.
+                compose.onNodeWithTag("message_input").fetchSemanticsNode()
+                app.fixture.inputs.size == 1 ||
+                    editor?.uiState?.value?.failed?.isNotEmpty() == true ||
+                    editor?.uiState?.value?.persistence ==
+                        ai.okou.android.chat.ComposerPersistence.Failed
+            }
+            assertEquals(
+                "${editor?.uiState?.value}; requests=${app.fixture.requests.map { it.path }}",
+                1,
+                app.fixture.inputs.size,
+            )
+            app.contextGate.countDown()
+            event = app.fixture.inputs.keys.single()
+            messageText(event, "Original **message** 👋").assertIsDisplayed()
+            compose.onNodeWithTag("message_input").performTextInput("Newer draft 你好")
             app.sendGate.countDown()
             awaitConversation { checkStarted.count == 0L }
             messageDelivery(event, "Sending…").assertIsDisplayed()

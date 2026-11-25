@@ -1,3 +1,4 @@
+import { hostedSiteDomainRoutes } from "./hosted-site-domains";
 import { artifactUrlSchema } from "./artifact-references";
 import {
   array,
@@ -50,6 +51,7 @@ export const hostedSiteUrlSchema = object({
   publicSlug: string(),
   url: url(),
   isActive: boolean(),
+  effectiveUrl: url().optional(),
 });
 
 export const hostedSiteDeliveryPointerSchema = object({
@@ -320,6 +322,7 @@ const creationRoute = {
 } as const;
 
 export const hostContract = c.router({
+  ...hostedSiteDomainRoutes(),
   resolveAlias: {
     method: "GET",
     path: "/api/host/aliases/:publicSlug",
@@ -546,6 +549,8 @@ export const hostContract = c.router({
       prefix: string().startsWith("sites/").max(1024),
       manifestKey: string().startsWith("sites/").max(1024),
       presentation: literal("banner").optional(),
+      hostname: string().max(253).optional(),
+      bindingRevision: uuid().optional(),
     }),
     responses: {
       200: hostedSiteAccessDecisionSchema,

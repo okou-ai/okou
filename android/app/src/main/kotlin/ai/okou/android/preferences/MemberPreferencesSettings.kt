@@ -171,40 +171,50 @@ internal fun TimezonePicker(
         fallbackFocus = fallbackFocus,
     ) { dismiss ->
         if (current == null || onSelect == null) return@SettingsPickerRow
-        SettingsSheet(title, dismiss, scroll = SettingsSheetScroll.None) {
-            val locale = LocalConfiguration.current.locales[0]
-            val utcName = stringResource(R.string.settings_timezone_utc)
-            val options =
-                remember(current, locale, utcName) { timezoneOptions(current, locale, utcName) }
-            val initialZone = remember { current }
-            val list =
-                rememberLazyListState(
-                    initialFirstVisibleItemIndex = options.indexOfFirst { it.id == current },
+        TimezoneSelectionSheet(current, title, dismiss, onSelect)
+    }
+}
+
+@Composable
+internal fun TimezoneSelectionSheet(
+    current: String,
+    title: String,
+    dismiss: () -> Unit,
+    onSelect: (String) -> Unit,
+) {
+    SettingsSheet(title, dismiss, scroll = SettingsSheetScroll.None) {
+        val locale = LocalConfiguration.current.locales[0]
+        val utcName = stringResource(R.string.settings_timezone_utc)
+        val options =
+            remember(current, locale, utcName) { timezoneOptions(current, locale, utcName) }
+        val initialZone = remember { current }
+        val list =
+            rememberLazyListState(
+                initialFirstVisibleItemIndex = options.indexOfFirst { it.id == current },
+            )
+        val focus = remember { FocusRequester() }
+        val input = LocalInputModeManager.current
+        var positioned by remember { mutableStateOf(false) }
+        LaunchedEffect(positioned) {
+            if (positioned && input.inputMode == InputMode.Keyboard) focus.requestFocus()
+        }
+        LazyColumn(Modifier.fillMaxWidth().selectableGroup(), state = list) {
+            items(options, key = { it.id }) { zone ->
+                SettingsChoiceRow(
+                    timezoneLabel(zone),
+                    selected = zone.id == current,
+                    enabled = true,
+                    onClick = {
+                        dismiss()
+                        onSelect(zone.id)
+                    },
+                    modifier =
+                        if (zone.id == initialZone)
+                            Modifier.focusRequester(focus).onGloballyPositioned {
+                                positioned = true
+                            }
+                        else Modifier,
                 )
-            val focus = remember { FocusRequester() }
-            val input = LocalInputModeManager.current
-            var positioned by remember { mutableStateOf(false) }
-            LaunchedEffect(positioned) {
-                if (positioned && input.inputMode == InputMode.Keyboard) focus.requestFocus()
-            }
-            LazyColumn(Modifier.fillMaxWidth().selectableGroup(), state = list) {
-                items(options, key = { it.id }) { zone ->
-                    SettingsChoiceRow(
-                        timezoneLabel(zone),
-                        selected = zone.id == current,
-                        enabled = true,
-                        onClick = {
-                            dismiss()
-                            onSelect(zone.id)
-                        },
-                        modifier =
-                            if (zone.id == initialZone)
-                                Modifier.focusRequester(focus).onGloballyPositioned {
-                                    positioned = true
-                                }
-                            else Modifier,
-                    )
-                }
             }
         }
     }

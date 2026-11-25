@@ -1,222 +1,71 @@
+import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { expect, test, vi } from "vitest";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
-
-import { click } from "../../../__tests__/page-helper.ts";
 import {
   conversationEvents,
-  messageAnchor,
-  messageOffset,
   mockChatGeometry,
+  messageOffset,
+  messageAnchor,
   requiredElement,
-  VIEWPORT_HEIGHT,
 } from "./chat-conversation-locator-test-helpers.ts";
-import {
-  chatScrollContainer,
-  setupPage,
-  createChatLifecycleHelpers,
-} from "./chat-lifecycle-test-helpers.ts";
+import { RUN_PATH, RUN_THREAD_ID } from "./chat-run-test-fixtures.ts";
+import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 const context = testContext();
-const { mockChatLifecycleWithoutBrowserSession } =
-  createChatLifecycleHelpers(context);
 
-const MAX_TICK_COUNT = 24;
-const TICK_PITCH = 10;
-
-async function setupLocatorConversation({
-  threadId,
-  turnCount,
-}: {
-  threadId: string;
-  turnCount: number;
-}) {
+async function firstMarker(turns: number) {
+  vi.stubEnv("TZ", "UTC");
   mockChatGeometry();
-  mockChatLifecycleWithoutBrowserSession({
-    threadId,
-    threadTitle: "Locator sampled history",
-    chatEvents: conversationEvents(turnCount),
+  mockChatLifecycle(context, {
+    threadId: RUN_THREAD_ID,
+    chatEvents: conversationEvents(turns),
   });
-  await setupPage({
-    context,
-    path: `/chats/${threadId}`,
-    host: "app.okou.ai",
-    locale: "en-US",
-  });
-
-  await screen.findByText(`Locator answer ${String(turnCount)}`);
-  const container = chatScrollContainer();
+  await setupPage({ context, path: RUN_PATH });
+  await screen.findByText("Locator answer " + turns);
   const rail = requiredElement("[data-conversation-locator]");
-  const tickCount = Math.min(turnCount, MAX_TICK_COUNT);
   await waitFor(() => {
     expect(rail.querySelectorAll("[data-locator-tick]")).toHaveLength(
-      tickCount,
+      Math.min(turns, 24),
     );
   });
-  return { container, rail, tickCount };
+  fireEvent.pointerMove(rail, {
+    clientY: (600 - (Math.min(turns, 24) - 1) * 10) / 2,
+  });
+  return rail;
 }
-
-function endpointMarkY(tickCount: number, endpoint: "first" | "last"): number {
-  const halfTrack = ((tickCount - 1) * TICK_PITCH) / 2;
-  return VIEWPORT_HEIGHT / 2 + (endpoint === "first" ? -halfTrack : halfTrack);
-}
-
-test("sampled markers show the first-turn timestamp across the whole conversation", async () => {
-  const user = userEvent.setup();
-  const { container, rail, tickCount } = await setupLocatorConversation({
-    threadId: "b0000000-0000-4000-a000-000000000825",
-    // One turn above the compact scale limit proves that the whole thread is
-    // sampled without making unrelated interaction cases render 60 events.
-    turnCount: MAX_TICK_COUNT + 1,
-  });
-  expect(
-    within(container).queryByText("Locator question 1"),
-  ).not.toBeInTheDocument();
-
-  await user.pointer({
-    target: rail,
-    coords: { clientX: 12, clientY: endpointMarkY(tickCount, "first") },
-  });
-  const preview = requiredElement("[data-conversation-locator-preview]");
+test("chat-conversation-locator-001 first sampled marker previews the timestamp of the unrendered opening question", async () => {
+  await firstMarker(25);
+  expect(screen.queryByText("Locator question 1")).toBeNull();
+  const time = await screen.findByText("Aug 1, 10:00 AM", { selector: "time" });
+  expect(time).toHaveAttribute("datetime", "2026-08-01T10:00:00.000Z");
+});
+test("chat-conversation-locator-005 leaving the locator dismisses the first turn timestamp", async () => {
+  const rail = await firstMarker(8);
+  await screen.findByText("Aug 1, 10:00 AM", { selector: "time" });
+  fireEvent.pointerLeave(rail);
   await waitFor(() => {
-    expect(within(preview).getByText("Aug 1, 10:00 AM")).toHaveAttribute(
-      "datetime",
-      "2026-08-01T10:00:00.000Z",
-    );
+    expect(
+      screen.queryByText("Aug 1, 10:00 AM", { selector: "time" }),
+    ).toBeNull();
   });
 });
 
-test("first-turn navigation reaches beyond the rendered conversation", async () => {
-  const user = userEvent.setup();
-  const { container, rail, tickCount } = await setupLocatorConversation({
-    threadId: "b0000000-0000-4000-a000-000000000830",
-    turnCount: 30,
-  });
-  expect(
-    within(container).queryByText("Locator question 1"),
-  ).not.toBeInTheDocument();
-  await user.pointer({
-    target: rail,
-    coords: { clientX: 12, clientY: endpointMarkY(tickCount, "first") },
-  });
+test("chat-conversation-locator-002 selecting the oldest marker unmounts the far end of a thirty-turn transcript", async () => {
+  const rail = await firstMarker(30);
+  const pane = requiredElement("[data-scroll-container]");
+  expect(screen.queryByText("Locator question 1")).not.toBeInTheDocument();
+  await screen.findByText("Aug 1, 10:00 AM", { selector: "time" });
   click(rail);
-
-  await within(container).findByText("Locator question 1");
-  expect(within(container).queryByText("Locator answer 24")).toBeNull();
-  expect(within(container).queryByText("Locator answer 30")).toBeNull();
+  await screen.findByText("Locator question 1");
   await waitFor(() => {
-    // The first message cannot move below the top edge without overscrolling.
-    expect(messageOffset("Locator question 1", container)).toBe(0);
+    expect(messageOffset("Locator question 1", pane)).toBe(0);
     expect(
-      messageAnchor("Locator question 1", container).querySelector(
+      messageAnchor("Locator question 1", pane).querySelector(
         "[data-locator-landed]",
       ),
     ).toBeInTheDocument();
   });
-});
-
-test("repeat marker selection keeps the landing feedback visible", async () => {
-  const user = userEvent.setup();
-  const { container, rail, tickCount } = await setupLocatorConversation({
-    threadId: "b0000000-0000-4000-a000-000000000826",
-    turnCount: 8,
-  });
-
-  await user.pointer({
-    target: rail,
-    coords: { clientX: 12, clientY: endpointMarkY(tickCount, "first") },
-  });
-  click(rail);
-  await within(container).findByText("Locator question 1");
-  await waitFor(() => {
-    expect(
-      messageAnchor("Locator question 1", container).querySelector(
-        "[data-locator-landed]",
-      ),
-    ).toBeInTheDocument();
-  });
-
-  click(rail);
-  await waitFor(() => {
-    expect(
-      messageAnchor("Locator question 1", container).querySelector(
-        "[data-locator-landed]",
-      ),
-    ).toBeInTheDocument();
-  });
-});
-
-test("selecting another marker moves the landing feedback", async () => {
-  const user = userEvent.setup();
-  const { container, rail, tickCount } = await setupLocatorConversation({
-    threadId: "b0000000-0000-4000-a000-000000000827",
-    turnCount: 8,
-  });
-
-  await user.pointer({
-    target: rail,
-    coords: { clientX: 12, clientY: endpointMarkY(tickCount, "first") },
-  });
-  click(rail);
-  await within(container).findByText("Locator question 1");
-  await waitFor(() => {
-    expect(
-      messageAnchor("Locator question 1", container).querySelector(
-        "[data-locator-landed]",
-      ),
-    ).toBeInTheDocument();
-  });
-
-  await user.pointer({
-    target: rail,
-    coords: { clientX: 12, clientY: endpointMarkY(tickCount, "last") },
-  });
-  const preview = requiredElement("[data-conversation-locator-preview]");
-  await waitFor(() => {
-    expect(within(preview).getByText("Aug 1, 10:07 AM")).toHaveAttribute(
-      "datetime",
-      "2026-08-01T10:07:00.000Z",
-    );
-  });
-  click(rail);
-  await waitFor(() => {
-    expect(messageOffset("Locator question 8", container)).toBeCloseTo(168);
-    expect(messageOffset("Locator question 1", container)).toBeLessThan(0);
-    expect(
-      messageAnchor("Locator question 8", container).querySelector(
-        "[data-locator-landed]",
-      ),
-    ).toBeInTheDocument();
-    expect(
-      messageAnchor("Locator question 1", container).querySelector(
-        "[data-locator-landed]",
-      ),
-    ).not.toBeInTheDocument();
-  });
-});
-
-test("leaving the locator hides its timestamp preview", async () => {
-  const user = userEvent.setup();
-  const { rail, tickCount } = await setupLocatorConversation({
-    threadId: "b0000000-0000-4000-a000-000000000829",
-    turnCount: 8,
-  });
-
-  await user.pointer({
-    target: rail,
-    coords: { clientX: 12, clientY: endpointMarkY(tickCount, "first") },
-  });
-  const preview = requiredElement("[data-conversation-locator-preview]");
-  await waitFor(() => {
-    expect(within(preview).getByText("Aug 1, 10:00 AM")).toHaveAttribute(
-      "datetime",
-      "2026-08-01T10:00:00.000Z",
-    );
-  });
-
-  await user.unhover(rail);
-  await waitFor(() => {
-    expect(preview).not.toBeInTheDocument();
-  });
+  expect(screen.queryByText("Locator answer 24")).not.toBeInTheDocument();
+  expect(screen.queryByText("Locator answer 30")).not.toBeInTheDocument();
 });

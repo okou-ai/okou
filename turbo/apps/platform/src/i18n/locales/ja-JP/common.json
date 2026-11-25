@@ -506,6 +506,40 @@
       "kindIcon": "{{kind}} アーティファクト",
       "loading": "アーティファクトをロードしています"
     },
+    "customDomain": {
+      "addressHint": "Choose the full address used when you share this website.",
+      "checks": {
+        "certificate": "HTTPS",
+        "dns": "DNS connection",
+        "ownership": "Ownership"
+      },
+      "connect": "Connect a domain",
+      "continue": "Continue",
+      "copied": "Copied",
+      "copyFailed": "Could not copy. Select the value to copy it.",
+      "copyRecord": "Copy {{type}} value",
+      "disconnectConfirm": "This domain will be disconnected from this website.",
+      "dnsHelp": "Add these records at your DNS provider, then click Verify",
+      "domain": "Domain",
+      "hostnameExample": "www.example.com",
+      "httpsReady": "HTTPS ready",
+      "lastChecked": "Last checked {{time}}",
+      "manage": "Manage {{hostname}}",
+      "needsSetup": "Finish setup",
+      "notChecked": "No verification yet",
+      "okouUrl": "Okou URL",
+      "ownDomain": "Enter a domain you own",
+      "remove": "Remove",
+      "removeConfirm": "Your sharing link will return to {{url}}.",
+      "removeHostname": "Remove {{hostname}}",
+      "removeTitle": "Remove custom domain?",
+      "removing": "This domain is disconnected. Click Remove to finish cleaning up its configuration.",
+      "title": "Custom domain",
+      "urlPreview": "https://{{hostname}}",
+      "verified": "Domain verified. Save to use this address.",
+      "verify": "Verify",
+      "yourDomains": "Connected domains"
+    },
     "deletion": {
       "cancel": "キャンセル",
       "delete": "削除",
@@ -1167,6 +1201,12 @@
       "proWarning": "Pro は現在の請求期間の終了まで利用できます。その後、このワークスペースはプランなしになり、再度アップグレードするまで Okou は仕事を実行できません。",
       "teamWarning": "チームのアクセスは、現在の請求期間が終了するまで有効のままです。その後、このワークスペースは {{plan}} に移動します。",
       "title": "ダウングレード計画"
+    },
+    "feedback": {
+      "otherPlaceholder": "詳しく教えてください…",
+      "rewardTerms": "ワークスペースごとに1回 · クレジットは30日間有効",
+      "submitFeedback": "フィードバックを送信",
+      "thanks": "フィードバックありがとうございます"
     },
     "invoices": {
       "amount": "金額",
@@ -1888,6 +1928,14 @@
       "message": "メッセージ",
       "modelForThisChat": "このチャットのモデル",
       "placeholder": "ワークフローの自動化、タスクの管理を依頼してください...",
+      "presentationFormatSetup": {
+        "description": "既定の形式を保存してから、プレゼンテーションを生成します。今回のリクエストで形式を明示した場合は、そちらが優先されます。",
+        "htmlDescription": "ブラウザーでの共有に最適",
+        "pptxDescription": "PowerPoint で編集できるスライド",
+        "saveAndGenerate": "保存して生成",
+        "settingsHint": "「設定 → 環境設定 → チャット」でいつでも変更できます。",
+        "title": "プレゼンテーションの既定の形式を選択"
+      },
       "selectedModelUnavailable": "選択されたモデルは使用できません。送信する前に設定してください。",
       "selectedModelUnavailableToast": "選択したモデルは利用できません",
       "selectModel": "モデルを選択してください",
@@ -5719,6 +5767,16 @@
       "actions": {
         "resetUsage": "使用量をリセットする"
       },
+      "antigravity": {
+        "check": "ログイン状態を確認",
+        "error": "割り当てられたログイン環境を確認して、もう一度お試しください。",
+        "expired": "ログインの有効期限が切れました。もう一度接続してください。",
+        "openTerminal": "Google ログイン用のターミナルを開く",
+        "terminal": "ターミナルで次のコマンドを実行し、個人の Google AI アカウントでログインしてください。",
+        "title": "Google AI（Antigravity）",
+        "unassigned": "ログイン用のターミナルを管理者に割り当ててもらってください。",
+        "verify": "このコマンドはサブスクリプションの利用枠を使い、Neon、Carbon、Hydrogen にそれぞれ 1 件のリクエストを送信します。"
+      },
       "deviceAuth": {
         "claude": {
           "authorizationCode": "認証コード",
@@ -5918,6 +5976,13 @@
           "title": "デフォルトモデル"
         },
         "description": "新しいチャットの初期設定とメッセージの送信方法を選択します。",
+        "presentationFormat": {
+          "description": "新しいプレゼンテーションの既定の形式を選択します",
+          "saveFailed": "既定の形式を保存できませんでした。もう一度お試しください。",
+          "title": "プレゼンテーションの既定の形式",
+          "unavailable": "利用できません",
+          "unset": "未設定"
+        },
         "sectionTitle": "チャット"
       },
       "debug": {

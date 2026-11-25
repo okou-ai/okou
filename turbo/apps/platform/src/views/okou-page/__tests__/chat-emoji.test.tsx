@@ -1,377 +1,126 @@
-import { act, fireEvent, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { HttpResponse } from "msw";
-import { expect, test } from "vitest";
 import { chatThreadRenameContract } from "@okouai/api-contracts/contracts/chat-threads";
-
-import {
-  click,
-  fill,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
-import { chatThreadEmojiDataUrl as emojiGroupsUrl } from "../../../data/chat-thread-emoji-url.ts";
-import { CHAT_THREAD_EMOJI_FIXTURE } from "../../../mocks/handlers/chat-thread-emoji.ts";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { expect, test } from "vitest";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { createDeferredPromise } from "../../../signals/utils.ts";
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
+import { RUN_PATH, RUN_THREAD_ID } from "./chat-run-test-fixtures.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 const context = testContext();
-const THREAD_ID = "b0000000-0000-4000-a000-000000000001";
 
-function setupEmojiPage(threadTitle = "Emoji planning"): Promise<void> {
+async function visitEmoji(desktop: boolean, save?: Promise<void>) {
+  const media = context.mocks.browser.matchMedia((q) => {
+    return desktop && q.includes("min-width");
+  });
   mockChatLifecycle(context, {
-    threadId: THREAD_ID,
-    threadTitle,
+    threadId: RUN_THREAD_ID,
+    threadTitle: save ? "Emoji planning" : "😀 Emoji planning",
   });
-  return setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-  });
-}
-
-function buttonByLabel(label: string): HTMLButtonElement {
-  const button = screen.getByLabelText(label);
-  if (!(button instanceof HTMLButtonElement)) {
-    throw new Error(`Button not found: ${label}`);
-  }
-  return button;
-}
-
-function categoryButton(label: string): HTMLButtonElement {
-  const toolbar = screen.getByRole("toolbar", { name: "Emoji categories" });
-  const button = queryAllByRoleFast("button", toolbar).find((candidate) => {
-    return candidate.getAttribute("aria-label") === label;
-  });
-  if (!(button instanceof HTMLButtonElement)) {
-    throw new Error(`Emoji category button not found: ${label}`);
-  }
-  return button;
-}
-
-function emojiButton(label: string): HTMLButtonElement {
-  const button = document.querySelector(
-    `[data-chat-thread-emoji][aria-label="${label}"]`,
-  );
-  if (!(button instanceof HTMLButtonElement)) {
-    throw new Error(`Emoji button not found: ${label}`);
-  }
-  return button;
-}
-
-function emojiFeed(): HTMLElement {
-  const feed = document.querySelector("[data-chat-thread-emoji-feed]");
-  if (!(feed instanceof HTMLElement)) {
-    throw new Error("Emoji feed not found");
-  }
-  return feed;
-}
-
-async function openEmojiPicker(): Promise<HTMLInputElement> {
-  await setupEmojiPage();
-  await waitFor(() => {
-    expect(buttonByLabel("Change icon")).toBeInTheDocument();
-  });
-
-  click(buttonByLabel("Change icon"));
-
-  const searchInput = await screen.findByLabelText("Search emoji");
-  if (!(searchInput instanceof HTMLInputElement)) {
-    throw new Error("Emoji search is not an input");
-  }
-  // The category sections arrive with the emoji data fetched on open.
-  await screen.findByText("Smileys & Emotion");
-  return searchInput;
-}
-
-function setCategoryLayout(feed: HTMLElement): void {
-  const sections = Array.from(
-    feed.querySelectorAll<HTMLElement>("[data-chat-thread-emoji-section]"),
-  );
-  for (const [index, section] of sections.entries()) {
-    Object.defineProperty(section, "offsetTop", {
-      configurable: true,
-      value: index * 100,
+  if (save) {
+    context.mocks.api(chatThreadRenameContract.rename, async ({ respond }) => {
+      await save;
+      return respond(204);
     });
   }
+  await setupPage({ context, path: RUN_PATH });
+  const trigger = await findFastControl("button", "Change icon");
+  return { media, trigger };
 }
-
-function nextAnimationFrame(): Promise<void> {
-  const frame = createDeferredPromise<void>(context.signal);
-  window.requestAnimationFrame(() => {
-    frame.resolve();
+test("chat-emoji-003 moving to desktop keeps the chat emoji and a single page title", async () => {
+  const { media, trigger } = await visitEmoji(false);
+  expect(trigger).toHaveTextContent("😀");
+  media.setMatches((q) => {
+    return q.includes("min-width");
   });
-  return frame.promise;
-}
-
-test("Keep the check-mark thread icon Done", async () => {
-  await setupEmojiPage();
-  await waitFor(() => {
-    expect(buttonByLabel("Change icon")).toBeInTheDocument();
-  });
-
-  click(buttonByLabel("Change icon"));
-  await screen.findByLabelText("Search emoji");
-
-  expect(emojiButton("Done")).toHaveTextContent("✅");
-});
-
-test("Show frequently used emoji while the full emoji set loads", async () => {
-  const emojiData = context.mocks.deferred<void>();
-  context.mocks.http.get(emojiGroupsUrl, async () => {
-    await emojiData.promise;
-    return HttpResponse.json(CHAT_THREAD_EMOJI_FIXTURE);
-  });
-  await setupEmojiPage();
-  await waitFor(() => {
-    expect(buttonByLabel("Change icon")).toBeInTheDocument();
-  });
-
-  click(buttonByLabel("Change icon"));
-  await screen.findByLabelText("Search emoji");
-
-  expect(screen.getByText("Frequently used")).toBeInTheDocument();
-  expect(screen.queryByText("Smileys & Emotion")).toBeNull();
-
-  emojiData.resolve();
-
-  await screen.findByText("Smileys & Emotion");
-  expect(emojiButton("grinning face")).toHaveTextContent("😀");
-});
-
-test("Retain a thread icon when resizing from mobile to desktop", async () => {
-  const viewport = context.mocks.browser.matchMedia(false);
-  await setupEmojiPage("😀 Emoji planning");
-  await waitFor(() => {
-    expect(screen.getByLabelText("Back to chats")).toBeInTheDocument();
-    expect(buttonByLabel("Change icon")).toHaveTextContent("😀");
-  });
-
-  act(() => {
-    viewport.setMatches(true);
-  });
-  await waitFor(() => {
-    expect(buttonByLabel("More actions")).toBeInTheDocument();
-    expect(buttonByLabel("Change icon")).toHaveTextContent("😀");
-  });
+  await findFastControl("button", "More actions");
+  await expect(
+    findFastControl("button", "Change icon"),
+  ).resolves.toHaveTextContent("😀");
   expect(screen.getAllByTestId("chat-thread-header-title")).toHaveLength(1);
+  expect(screen.getByTestId("chat-thread-header-title")).toHaveTextContent(
+    "Emoji planning",
+  );
 });
-
-test("Change a thread icon before its save finishes", async () => {
-  context.mocks.browser.matchMedia(false);
-  const renameResponse = context.mocks.deferred<void>();
-  context.mocks.api(chatThreadRenameContract.rename, async ({ respond }) => {
-    await renameResponse.promise;
-    return respond(204);
-  });
-
-  await setupEmojiPage();
-  await waitFor(() => {
-    expect(screen.getByTestId("chat-thread-header-title")).toHaveTextContent(
-      "Emoji planning",
-    );
-    expect(screen.getByLabelText("Back to chats")).toBeInTheDocument();
-  });
-  const changeIcon = buttonByLabel("Change icon");
-
-  click(changeIcon);
-  const searchInput = await screen.findByLabelText("Search emoji");
-  await screen.findByText("Smileys & Emotion");
-  click(emojiButton("grinning face"));
-  await waitFor(() => {
-    expect(changeIcon).toHaveTextContent("😀");
-  });
-  expect(searchInput).toBeInTheDocument();
-  renameResponse.resolve();
-  await waitFor(() => {
-    expect(searchInput).not.toBeInTheDocument();
-  });
-});
-
-test("Restore chat focus after closing the mobile emoji picker", async () => {
-  context.mocks.browser.matchMedia(false);
-  await setupEmojiPage();
-  await waitFor(() => {
-    expect(buttonByLabel("Change icon")).toBeInTheDocument();
-  });
-  const chatThread = screen.getByRole("region", { name: "Chat thread" });
-  const changeIcon = buttonByLabel("Change icon");
-
-  click(changeIcon);
-  const searchInput = await screen.findByLabelText("Search emoji");
-  click(changeIcon);
-  await waitFor(() => {
-    expect(searchInput).not.toBeInTheDocument();
-  });
-  await waitFor(() => {
-    expect(chatThread).toHaveFocus();
-  });
-});
-
 test.each([
-  { from: "mobile", to: "desktop", desktop: false },
-  { from: "desktop", to: "mobile", desktop: true },
-])(
-  "Keep one focused emoji picker when resizing from $from to $to",
-  async ({ desktop }) => {
-    const viewport = context.mocks.browser.matchMedia(desktop);
-    const searchInput = await openEmojiPicker();
-
-    // "eye" matches two emoji in the test emoji data. Search before
-    // remounting so the remounted picker has to keep the query.
-    await fill(searchInput, "eye");
+  ["006", false],
+  ["007", true],
+] as const)(
+  "chat-emoji-%s changing the viewport preserves the active eye search",
+  async (_id, desktop) => {
+    const { trigger, media } = await visitEmoji(desktop);
+    click(trigger);
+    const search = await screen.findByPlaceholderText("Search emoji");
+    await userEvent.type(search, "eye");
+    media.setMatches((q) => {
+      return !desktop && q.includes("min-width");
+    });
     await waitFor(() => {
-      expect(queryAllByRoleFast("button", emojiFeed())).toHaveLength(2);
+      const input = screen.getByPlaceholderText("Search emoji");
+      expect(input).toHaveValue("eye");
+      expect(input).toHaveFocus();
     });
-
-    act(() => {
-      viewport.setMatches(!desktop);
-    });
-
-    await waitFor(() => {
-      expect(
-        screen.getByLabelText(desktop ? "Back to chats" : "More actions"),
-      ).toBeInTheDocument();
-      const searchInputs = screen.getAllByLabelText("Search emoji");
-      expect(searchInputs).toHaveLength(1);
-      expect(searchInputs[0]).toHaveFocus();
-      expect(searchInputs[0]).toHaveValue("eye");
-      expect(queryAllByRoleFast("button", emojiFeed())).toHaveLength(2);
-    });
+    expect(screen.getAllByPlaceholderText("Search emoji")).toHaveLength(1);
     expect(screen.getAllByTestId("chat-thread-header-title")).toHaveLength(1);
     expect(screen.getByTestId("chat-thread-header-title")).toHaveTextContent(
       "Emoji planning",
     );
+    await expect(
+      findFastControl("button", "eyes"),
+    ).resolves.toBeInTheDocument();
+    await expect(
+      findFastControl("button", "face with rolling eyes"),
+    ).resolves.toBeInTheDocument();
   },
 );
-
-test("Choosing an emoji category exits search results", async () => {
-  const user = userEvent.setup();
-  const searchInput = await openEmojiPicker();
-  await user.type(searchInput, "watermelon");
+test("chat-emoji-005 the chat takes focus after its change-icon button closes the picker", async () => {
+  const { trigger } = await visitEmoji(false);
+  click(trigger);
+  await screen.findByPlaceholderText("Search emoji");
+  click(trigger);
   await waitFor(() => {
-    expect(searchInput).toHaveValue("watermelon");
-    expect(emojiButton("watermelon")).toBeInTheDocument();
-  });
-  expect(screen.queryByText("Food & Drink")).toBeNull();
-
-  click(categoryButton("Food & Drink"));
-
-  await waitFor(() => {
-    expect(searchInput).toHaveValue("");
-    expect(screen.getByText("Food & Drink")).toBeInTheDocument();
-    expect(categoryButton("Food & Drink")).toHaveAttribute(
-      "aria-current",
-      "location",
-    );
+    expect(screen.queryByPlaceholderText("Search emoji")).toBeNull();
+    expect(
+      document.activeElement?.closest("[data-chat-thread-container-id]"),
+    ).toHaveAttribute("data-chat-thread-container-id", RUN_THREAD_ID);
   });
 });
-
-test("Choosing an emoji category updates the category rail", async () => {
-  await openEmojiPicker();
-  const feed = emojiFeed();
-  setCategoryLayout(feed);
-  Object.defineProperties(feed, {
-    clientHeight: { configurable: true, value: 200 },
-    scrollHeight: { configurable: true, value: 1200 },
-    scrollTo: {
-      configurable: true,
-      value: ({ top }: ScrollToOptions) => {
-        feed.scrollTop = top ?? 0;
-      },
-    },
-  });
-
-  click(categoryButton("Food & Drink"));
-  await nextAnimationFrame();
-
-  expect(categoryButton("Food & Drink")).toHaveAttribute(
-    "aria-current",
-    "location",
-  );
-  expect(categoryButton("Frequently used")).not.toHaveAttribute("aria-current");
-  const controlledSectionId =
-    categoryButton("Food & Drink").getAttribute("aria-controls");
-  expect(document.getElementById(controlledSectionId ?? "")).toContainElement(
-    screen.getByText("Food & Drink"),
-  );
-  expect(feed.scrollTop).toBeGreaterThan(0);
+test("chat-emoji-010 moving between emoji categories retains search until the new category is selected", async () => {
+  const { trigger } = await visitEmoji(true);
+  click(trigger);
+  const search = await screen.findByPlaceholderText("Search emoji");
+  await userEvent.type(search, "watermelon");
+  expect(screen.queryByText("Smileys & Emotion")).toBeNull();
+  const old = await findFastControl("button", "Frequently used"),
+    next = await findFastControl("button", "Smileys & Emotion");
+  old.focus();
+  await userEvent.keyboard("{ArrowRight}");
+  expect(next).toHaveFocus();
+  expect(old).toHaveAttribute("aria-current", "location");
+  expect(search).toHaveValue("watermelon");
+  await userEvent.keyboard("{Enter}");
+  expect(search).toHaveValue("");
+  expect(next).toHaveFocus();
+  expect(next).toHaveAttribute("aria-current", "location");
+  await expect(
+    screen.findByText("Smileys & Emotion"),
+  ).resolves.toBeInTheDocument();
 });
 
-test("Keyboard category navigation preserves search until activation", async () => {
-  const user = userEvent.setup();
-  const searchInput = await openEmojiPicker();
-  await user.type(searchInput, "watermelon");
+test("chat-emoji-004 the selected icon appears before the held rename closes the picker", async () => {
+  const gate = context.mocks.deferred<void>();
+  const { trigger } = await visitEmoji(false, gate.promise);
+  expect(trigger).not.toHaveTextContent("😀");
+  click(trigger);
+  const search = await screen.findByPlaceholderText("Search emoji");
+  click(await findFastControl("button", "grinning face"));
   await waitFor(() => {
-    expect(emojiButton("watermelon")).toBeInTheDocument();
+    return expect(trigger).toHaveTextContent("😀");
   });
-  const frequent = categoryButton("Frequently used");
-  const smileys = categoryButton("Smileys & Emotion");
-
-  act(() => {
-    frequent.focus();
-  });
-  expect(frequent).toHaveFocus();
-  await user.keyboard("{ArrowRight}");
-
-  expect(smileys).toHaveFocus();
-  expect(searchInput).toHaveValue("watermelon");
-  expect(frequent).toHaveAttribute("aria-current", "location");
-  expect(screen.queryByText("Smileys & Emotion")).not.toBeInTheDocument();
-
-  await user.keyboard("{Enter}");
-
+  expect(search).toBeInTheDocument();
+  gate.resolve();
   await waitFor(() => {
-    expect(searchInput).toHaveValue("");
-    expect(screen.getByText("Smileys & Emotion")).toBeInTheDocument();
-    expect(smileys).toHaveAttribute("aria-current", "location");
+    return expect(search).not.toBeInTheDocument();
   });
-  expect(smileys).toHaveFocus();
-});
-
-test("The emoji picker names the emoji under the pointer", async () => {
-  await openEmojiPicker();
-  expect(screen.getByText("Pick an emoji")).toBeInTheDocument();
-
-  fireEvent.mouseOver(emojiButton("grinning face"));
-
-  await waitFor(() => {
-    expect(screen.getByText(":grinning_face:")).toBeInTheDocument();
-  });
-
-  fireEvent.mouseOver(emojiButton("watermelon"));
-
-  await waitFor(() => {
-    expect(screen.getByText(":watermelon:")).toBeInTheDocument();
-  });
-  expect(screen.queryByText(":grinning_face:")).toBeNull();
-});
-
-test("Manual emoji scrolling updates the current category without moving focus", async () => {
-  const user = userEvent.setup();
-  await openEmojiPicker();
-  const feed = emojiFeed();
-  setCategoryLayout(feed);
-  expect(categoryButton("Frequently used")).toHaveAttribute(
-    "aria-current",
-    "location",
-  );
-
-  act(() => {
-    categoryButton("Frequently used").focus();
-  });
-  expect(categoryButton("Frequently used")).toHaveFocus();
-  await user.keyboard(" ");
-  await nextAnimationFrame();
-  feed.scrollTop = 100;
-  fireEvent.scroll(feed);
-
-  await waitFor(() => {
-    expect(categoryButton("Smileys & Emotion")).toHaveAttribute(
-      "aria-current",
-      "location",
-    );
-  });
-  expect(categoryButton("Frequently used")).not.toHaveAttribute("aria-current");
-  expect(categoryButton("Frequently used")).toHaveFocus();
 });

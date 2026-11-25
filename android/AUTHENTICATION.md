@@ -66,14 +66,15 @@ authorization, the current API resource and its workspace presentation store.
 Identity includes API origin, user, Clerk session and workspace. An additional
 in-memory generation fences replaced work; it is not persisted as identity.
 
-A locally restored active SDK session with a selected workspace opens the native
-chat list immediately in its loading state. The workspace owner refreshes Clerk
-and confirms the organization with the origin-bound API client. A selected
-membership with known permissions in both the refreshed and observed SDK state
-allows the complete workspace picker to load separately. Startup falls back to
-the complete membership request when that evidence is unavailable. The existing
-Room connection can open during these checks. Scoped rows are restored after
-authorization while canonical preferences and list synchronization run.
+A locally restored active SDK session with known permissions for its selected
+workspace can display its matching Room chat checkpoint before Clerk refresh
+completes. The cache is scoped to the API origin, user, workspace, role and
+permissions. Local filtering is available during verification. Workspace API
+calls and remote chat actions wait for the server to confirm workspace access.
+Recoverable failures keep the cached list visible and retry while the app is
+active. Explicit denial or a changed scope retires the cached presentation.
+When local evidence is incomplete, startup still checks Clerk before displaying
+workspace content.
 
 A 409 or incomplete timezone, locale or member memory invokes the existing
 idempotent preferences initialization endpoint. Complete preferences enable the
@@ -81,12 +82,20 @@ workspace's protected actions, settings and realtime attachment. Ordinary prefer
 failures leave the authorized list visible and retry initialization in the same
 workspace. A change of identity, access loss or required update retires the owner.
 
+After the user confirms sign-out, the waiting screen hides workspace content
+during the Clerk request. A rejected request with the same authorization restores
+the originating page and shows localized feedback. Losing access retires the
+workspace immediately while the sign-out continues for the same Clerk session.
+When Clerk clears or replaces that session, the app ends the wait and retires
+any former workspace.
+
 There is no backend schema or migration. Existing server initialization can fill
 missing preference/default-executor metadata and create missing member memory and
 its existing proactive workflows. It does not replace existing memory content.
 Clerk alone persists encrypted authentication/device credentials through its
 Android Keystore owner. Credentials never enter appearance DataStore or content
-caches. Workspace drafts remain in-memory presentation data.
+caches. The [composer journal](README.md#composer-draft-continuity) retains drafts
+in private app storage under their API origin, account and workspace.
 
 `MemberPreferencesModel` belongs to that presentation store and owns canonical
 preferences, pending selections and save/refresh/error state. Palette and locale

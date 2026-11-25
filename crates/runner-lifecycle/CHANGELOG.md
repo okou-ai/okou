@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.18.38](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.37...runner-lifecycle-v0.18.38) (2026-11-24)
+
+## [0.18.37](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.36...runner-lifecycle-v0.18.37) (2026-11-24)
+
+
+### Refactoring
+
+* **runner:** share bounded inotify readiness handling ([#50579](https://github.com/okou-ai/okou/issues/50579)) ([1920abe](https://github.com/okou-ai/okou/commit/1920abef18cfd8340f86c5294de511cb139320f6))
+
 ## [0.18.36](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.35...runner-lifecycle-v0.18.36) (2026-11-24)
 
 ## [0.18.35](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.34...runner-lifecycle-v0.18.35) (2026-11-24)

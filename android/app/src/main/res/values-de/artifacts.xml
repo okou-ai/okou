@@ -28,6 +28,7 @@
     <string name="artifact_empty">Noch keine Artefakte</string>
     <string name="artifact_empty_type">Keine Artefakte dieses Typs</string>
     <string name="artifact_no_matches">Keine passenden Artefakte</string>
+    <string name="artifact_clear_keyword">Suche löschen</string>
     <string name="artifact_show_all">Alle anzeigen</string>
     <string name="artifact_catalog_load_failed">Artefakte können vorübergehend nicht geladen werden</string>
     <string name="artifact_catalog_refresh_failed">Aktualisierung vorübergehend nicht möglich. Geladene Artefakte werden angezeigt.</string>

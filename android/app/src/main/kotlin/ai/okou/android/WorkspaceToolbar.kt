@@ -377,15 +377,17 @@ internal fun WorkspaceToolbarActions(
     showFilter: Boolean,
     list: ChatListUiState,
     selectFilter: ((ChatListFilter) -> Unit)?,
-    markAllRead: () -> Unit,
+    markAllRead: (() -> Unit)?,
     update: UpdateToolbarAction?,
     settingsFocus: FocusRequester,
     openSettings: ((restoreFocus: Boolean) -> Unit)?,
+    openProjectCreation: ((restoreFocus: Boolean) -> Unit)?,
 ) {
     val hasUpdate = update != null
     var menu by remember(showFilter, hasUpdate) { mutableStateOf<WorkspaceMenuPage?>(null) }
     val filterFocus = remember { FocusRequester() }
-    var restoreMenuFocus by remember(showFilter, hasUpdate) { mutableStateOf(false) }
+    var restoreMenuFocus by
+        remember(showFilter, hasUpdate) { mutableStateOf<FocusRequester?>(null) }
     var anchorFocused by remember { mutableStateOf(false) }
     var restoreSettingsAnchor by remember { mutableStateOf(false) }
     val settingsAnchor =
@@ -401,13 +403,14 @@ internal fun WorkspaceToolbarActions(
     val filterTint = if (filterApplied) colors.onSecondaryContainer else colors.onSurface
 
     fun closeMenu() {
-        restoreMenuFocus = true
+        restoreMenuFocus =
+            if (hasUpdate || menu == WorkspaceMenuPage.Overflow) settingsFocus else filterFocus
         menu = null
     }
     LaunchedEffect(menu, showFilter, hasUpdate) {
-        if (menu == null && restoreMenuFocus) {
-            restoreMenuFocus = false
-            (if (hasUpdate) settingsFocus else filterFocus).requestFocus()
+        if (menu == null) {
+            restoreMenuFocus?.requestFocus()
+            restoreMenuFocus = null
         }
     }
 
@@ -416,7 +419,7 @@ internal fun WorkspaceToolbarActions(
             menu?.let { page ->
                 val items = buildList {
                     if (page == WorkspaceMenuPage.Overflow) {
-                        if (showFilter) {
+                        if (hasUpdate && showFilter) {
                             add(
                                 WorkspaceMenuItem(
                                     stringResource(R.string.chat_filter),
@@ -424,6 +427,18 @@ internal fun WorkspaceToolbarActions(
                                     enabled = selectFilter != null,
                                 ) {
                                     menu = WorkspaceMenuPage.Filter
+                                },
+                            )
+                        }
+                        if (showFilter) {
+                            add(
+                                WorkspaceMenuItem(
+                                    stringResource(R.string.chat_project_create),
+                                    R.drawable.ic_create_new_folder,
+                                    enabled = openProjectCreation != null,
+                                ) {
+                                    menu = null
+                                    openProjectCreation?.invoke(restoreSettingsAnchor)
                                 },
                             )
                         }
@@ -442,10 +457,12 @@ internal fun WorkspaceToolbarActions(
                             WorkspaceMenuItem(
                                 stringResource(R.string.chat_mark_all_read),
                                 R.drawable.ic_done_all,
-                                enabled = remember(list) { list.markAllReadTargets().isNotEmpty() },
+                                enabled =
+                                    markAllRead != null &&
+                                        remember(list) { list.markAllReadTargets().isNotEmpty() },
                             ) {
                                 closeMenu()
-                                markAllRead()
+                                markAllRead?.invoke()
                             },
                         )
                         for (choice in ChatListFilter.entries) {
@@ -492,25 +509,20 @@ internal fun WorkspaceToolbarActions(
                         stringResource(R.string.chat_filter),
                     )
                 }
-                menuContent()
+                if (menu == WorkspaceMenuPage.Filter) menuContent()
             }
-        }
-        IconButton(
-            modifier = settingsAnchor,
-            onClick = { openSettings?.invoke(anchorFocused) },
-            enabled = openSettings != null,
-            colors = IconButtonDefaults.iconButtonColors(contentColor = colors.onSurface),
-        ) {
-            Icon(painterResource(R.drawable.ic_settings), stringResource(R.string.settings))
         }
     } else {
         UpdateToolbarButton(update)
+    }
+    if (showFilter || hasUpdate) {
         Box {
             IconButton(
                 modifier =
-                    settingsAnchor.then(filterTreatment).semantics {
-                        if (showFilter) stateDescription = currentFilter
+                    settingsAnchor.then(if (hasUpdate) filterTreatment else Modifier).semantics {
+                        if (hasUpdate && showFilter) stateDescription = currentFilter
                     },
+                enabled = hasUpdate || openSettings != null || openProjectCreation != null,
                 onClick = {
                     restoreSettingsAnchor = anchorFocused
                     menu = WorkspaceMenuPage.Overflow
@@ -519,10 +531,19 @@ internal fun WorkspaceToolbarActions(
                 Icon(
                     painterResource(R.drawable.ic_more_horiz),
                     stringResource(R.string.chat_more_actions),
-                    tint = filterTint,
+                    tint = if (hasUpdate) filterTint else colors.onSurface,
                 )
             }
-            menuContent()
+            if (hasUpdate || menu == WorkspaceMenuPage.Overflow) menuContent()
+        }
+    } else {
+        IconButton(
+            modifier = settingsAnchor,
+            onClick = { openSettings?.invoke(anchorFocused) },
+            enabled = openSettings != null,
+            colors = IconButtonDefaults.iconButtonColors(contentColor = colors.onSurface),
+        ) {
+            Icon(painterResource(R.drawable.ic_settings), stringResource(R.string.settings))
         }
     }
 }

@@ -13,7 +13,6 @@
     <string name="chat_undo_unconfirmed">실행 취소 결과를 확인할 수 없었습니다.</string>
     <string name="chat_feedback_dismiss">닫기</string>
     <string name="chat_list_first_load_failed">일시적으로 불러올 수 없습니다</string>
-    <string name="chat_list_load_when_online">다시 온라인 상태가 되면 채팅이 로드됩니다.</string>
     <string name="chat_list_title">채팅</string>
     <string name="chat_refresh">채팅 새로고침</string>
     <string name="chat_loading">채팅을 불러오는 중…</string>
@@ -77,6 +76,14 @@
     <string name="chat_delete_description">‘%1$s’의 메시지와 초안이 영구 삭제됩니다. 실행 중인 작업은 중단되고 연결된 자동화는 일시 중지됩니다.</string>
     <string name="chat_rename_project">프로젝트 이름 변경</string>
     <string name="chat_project_name">프로젝트 이름</string>
+    <string name="chat_project_create">새 프로젝트</string>
+    <string name="chat_project_create_confirm">만들기</string>
+    <string name="chat_project_creating">만드는 중…</string>
+    <string name="chat_project_create_close">닫기</string>
+    <string name="chat_project_checking">확인 중…</string>
+    <string name="chat_project_create_failed">프로젝트를 만들지 못했습니다. 입력한 이름은 유지됩니다.</string>
+    <string name="chat_project_create_unconfirmed">프로젝트 생성 결과가 아직 확인되지 않았습니다</string>
+    <string name="chat_project_name_too_long">프로젝트 이름은 %1$d자 이하여야 합니다</string>
     <string name="chat_project_rename_unconfirmed">프로젝트 이름을 확인할 수 없습니다.</string>
     <string name="chat_project_rename_rejected">프로젝트 이름을 변경할 수 없습니다.</string>
     <string name="chat_project_rename_save">저장</string>
@@ -104,4 +111,9 @@
     <string name="chat_rename_save_unconfirmed">저장 결과가 아직 확인되지 않았습니다.</string>
     <string name="chat_title_saved">채팅 제목이 저장되었습니다</string>
     <string name="chat_project_name_saved">프로젝트 이름이 저장되었습니다</string>
+    <string name="inline_image_loading">이미지 불러오는 중…</string>
+    <string name="inline_image_no_thumbnail">미리 보기 이미지를 사용할 수 없음</string>
+    <string name="inline_image_unavailable">이미지를 사용할 수 없음</string>
+    <string name="inline_image_view_original">원본 보기</string>
+    <string name="inline_image_open_link">링크 열기</string>
 </resources>

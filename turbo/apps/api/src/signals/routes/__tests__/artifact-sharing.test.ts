@@ -248,6 +248,30 @@ test.each([
     expect(grant.body).toStrictEqual({
       share: { id: expect.any(String), email: viewer.email },
     });
+    await flushWaitUntilForTest();
+    const repeated = await accept(
+      app(owner)(artifactSharingContract).share({
+        headers,
+        params: resource.params,
+        body: { email: viewer.email },
+      }),
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect(repeated.body).toStrictEqual(grant.body);
+    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
+    expect(context.mocks.resend.send.mock.calls[0]?.[0]).toMatchObject({
+      from: "Okou <noreply@okou.ai>",
+      to: viewer.email,
+      template: {
+        id: "okou-artifact-invitation-v1",
+        variables: {
+          INVITER_NAME: "Taylor Viewer",
+          RECIPIENT_EMAIL: viewer.email,
+          ARTIFACT_URL: expect.stringContaining("/artifacts/"),
+        },
+      },
+    });
     const outside = { ...viewer, orgId: `other_${randomUUID()}` };
     await createRunsApi(context).grantProEntitlement(outside);
     const preview = await accept(
@@ -303,7 +327,6 @@ test.each([
       }),
       [404],
     );
-    expect(context.mocks.resend.send).not.toHaveBeenCalled();
   },
 );
 
@@ -327,10 +350,12 @@ test("external invitations use the Resend file template, deduplicate and require
   expect(repeated.body).toStrictEqual(first.body);
   expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
   expect(context.mocks.resend.send.mock.calls[0]?.[0]).toMatchObject({
+    from: "Okou <noreply@okou.ai>",
     to: viewer.email,
     template: {
       id: "okou-artifact-invitation-v1",
       variables: {
+        INVITER_NAME: "Taylor Viewer",
         RECIPIENT_EMAIL: viewer.email,
         ARTIFACT_URL: expect.stringContaining("/artifacts/"),
       },

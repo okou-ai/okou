@@ -9722,6 +9722,14 @@ data class ChatMessageSearchResponse(
 )
 
 @Serializable
+data class CreateProjectRequest(
+    val `id`: String,
+    val `eventId`: String,
+    val `name`: String,
+    val `fromThreadId`: String? = null,
+)
+
+@Serializable
 data class RenameProjectRequest(
     val `eventId`: String,
     val `name`: String? = null,
@@ -9729,7 +9737,7 @@ data class RenameProjectRequest(
 )
 
 @Serializable
-data class RenamedProject(
+data class ProjectRecord(
     val `id`: String,
     val `name`: String,
     val `createdAt`: String,
@@ -15616,6 +15624,31 @@ object SendRequestSerializer : KSerializer<SendRequest> {
 data class AcceptedInput(
     val `threadId`: String,
     val `createdAt`: String? = null,
+)
+
+@Serializable
+data class RunActivityRequest(
+    val `runId`: String,
+)
+
+@Serializable
+data class RunActivitySummaryMessagesItem(
+    val `id`: String,
+    val `text`: String,
+)
+
+@Serializable
+enum class RunActivitySummaryStatus {
+    @SerialName("available") AVAILABLE,
+    @SerialName("ineligible") INELIGIBLE,
+    @SerialName("unavailable") UNAVAILABLE,
+}
+
+@Serializable
+data class RunActivitySummary(
+    val `runId`: String,
+    val `messages`: List<RunActivitySummaryMessagesItem>,
+    val `status`: RunActivitySummaryStatus,
 )
 
 @Serializable(with = InputStatusSerializer::class) sealed interface InputStatus

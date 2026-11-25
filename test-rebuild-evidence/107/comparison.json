@@ -1,0 +1,188 @@
+{
+  "revisions": {
+    "frozen": "b0a10287edf4242383c28e39c6f7675053febb32",
+    "beforeFirstWithdrawal": "5310dbb9ba6bd8b95507bc7293f6da3ed8aa004b",
+    "beforeSecondWithdrawal": "a445586e0483bb7e2440e60200a8deed30aa3df9",
+    "main": "7c9025af98e840271151001a11aa98a8ea7c76cc",
+    "opening": "1699ffa1134c9072908c78a015b6593ee3e6853d"
+  },
+  "method": "Compared the independent Router and native receiver trials against original suites, both withdrawal parents, main, the handoff and directly referenced test helpers. Cross-file counts cover five consecutive substantive added lines. A matching setup is reviewed separately from the assertion and its observable receiver.",
+  "owners": {
+    "turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts": {
+      "currentOwner": "turbo/apps/platform/src/shared-database/__tests__/message-port.native.replay.mjs",
+      "compared": {
+        "frozen": {
+          "ownerSha256": "c2b934876e44a5aa0c103fdb76d9adb02fbcf06fae515d773167e1248f5e164c",
+          "matchingFiveLineBlocks": 0,
+          "helperSources": {
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d"
+          }
+        },
+        "beforeFirstWithdrawal": {
+          "ownerSha256": "7c9eb6dbb42970c124ec5b7da9abf09dbe6e5d567730c093df322797101b394f",
+          "matchingFiveLineBlocks": 0,
+          "helperSources": {
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d"
+          }
+        },
+        "beforeSecondWithdrawal": {
+          "ownerSha256": null,
+          "matchingFiveLineBlocks": 0,
+          "helperSources": {}
+        },
+        "main": {
+          "ownerSha256": "cb9e3fc62f124ed706613256e58108837e94989b1343e268c42ffa9c7d5c8d05",
+          "matchingFiveLineBlocks": 0,
+          "helperSources": {
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d"
+          }
+        },
+        "opening": {
+          "ownerSha256": null,
+          "matchingFiveLineBlocks": 0,
+          "helperSources": {}
+        }
+      },
+      "currentCrossFileMatches": {}
+    },
+    "turbo/apps/platform/src/signals/__tests__/realtime.test.ts": {
+      "currentOwner": "turbo/apps/platform/src/signals/__tests__/realtime.native.replay.mjs",
+      "compared": {
+        "frozen": {
+          "ownerSha256": "45010b16d0004e9e1f746b655df0b077a18ef7dffd0a979135aeb73744b9370c",
+          "matchingFiveLineBlocks": 0,
+          "helperSources": {
+            "turbo/apps/platform/src/__tests__/mock-auth.ts": "a53189888ed023df4a7c720440a53048da89b0cf12a01a66a91022d22b477bb8",
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d"
+          }
+        },
+        "beforeFirstWithdrawal": {
+          "ownerSha256": "e436b57610eab65a6a440b211abaa4853384a86ca0feb14bd27ce9bac78c1336",
+          "matchingFiveLineBlocks": 0,
+          "helperSources": {
+            "turbo/apps/platform/src/__tests__/mock-auth.ts": "a53189888ed023df4a7c720440a53048da89b0cf12a01a66a91022d22b477bb8",
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d"
+          }
+        },
+        "beforeSecondWithdrawal": {
+          "ownerSha256": null,
+          "matchingFiveLineBlocks": 0,
+          "helperSources": {}
+        },
+        "main": {
+          "ownerSha256": "edd0b0d60a889a55067f778ffaa606c1ed59dd61ac1d8530e283532a3499189a",
+          "matchingFiveLineBlocks": 0,
+          "helperSources": {
+            "turbo/apps/platform/src/__tests__/mock-auth.ts": "a53189888ed023df4a7c720440a53048da89b0cf12a01a66a91022d22b477bb8",
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d"
+          }
+        },
+        "opening": {
+          "ownerSha256": null,
+          "matchingFiveLineBlocks": 0,
+          "helperSources": {}
+        }
+      },
+      "currentCrossFileMatches": {}
+    },
+    "turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.test.tsx": {
+      "currentOwner": "turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.test.tsx",
+      "compared": {
+        "frozen": {
+          "ownerSha256": "22d304ec42d291040c6a4d515915ae767150639f7c677e1497d41542cca2c005",
+          "matchingFiveLineBlocks": 0,
+          "helperSources": {
+            "turbo/apps/platform/src/__tests__/page-helper.ts": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": "f44c989a172cb7016262ef8687c8ba5012da8d3baecb56abd8fba9183f56aacd",
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d"
+          }
+        },
+        "beforeFirstWithdrawal": {
+          "ownerSha256": "b364569561c4aaa5c0de583c8a2ed13a6ac6d6fd1be2a355fb9eea61c7574631",
+          "matchingFiveLineBlocks": 0,
+          "helperSources": {
+            "turbo/apps/platform/src/__tests__/page-helper.ts": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": "fefec188dcf9648965532a42c74f4bc88fb74a14d71672f2c8b627ee7d3a640a",
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d"
+          }
+        },
+        "beforeSecondWithdrawal": {
+          "ownerSha256": null,
+          "matchingFiveLineBlocks": 0,
+          "helperSources": {}
+        },
+        "main": {
+          "ownerSha256": "22d304ec42d291040c6a4d515915ae767150639f7c677e1497d41542cca2c005",
+          "matchingFiveLineBlocks": 0,
+          "helperSources": {
+            "turbo/apps/platform/src/__tests__/page-helper.ts": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": "f44c989a172cb7016262ef8687c8ba5012da8d3baecb56abd8fba9183f56aacd",
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d"
+          }
+        },
+        "opening": {
+          "ownerSha256": "f9aedc2b1c82041edff51a6a2e82c2aea3a9e6dbd5b7a7b79abd829fd357d9cd",
+          "matchingFiveLineBlocks": 2,
+          "helperSources": {
+            "turbo/apps/platform/src/__tests__/page-helper.ts": "008ed724541ca075e909f9814c1fdfa72647ab0a160059ceb3c2ad09dc104c99",
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": "d1e55d256f0e0e234c094ab373bf72b2b731dabd5e99a9f41c61d9d5a5ccc734",
+            "turbo/apps/platform/src/views/browser-session/__tests__/browser-native-page-fixture.ts": "29b9002992b95515275cb9842e09a7b927448c94fc8ea4f26a070f22096a6fea"
+          }
+        }
+      },
+      "currentCrossFileMatches": {}
+    },
+    "turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx": {
+      "currentOwner": "turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx",
+      "compared": {
+        "frozen": {
+          "ownerSha256": "783c18daf14b34fa9620c0f00a09c2bda8003bb5f1e42cebf941c6ffc60a52d6",
+          "matchingFiveLineBlocks": 0,
+          "helperSources": {
+            "turbo/apps/platform/src/__tests__/page-helper.ts": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": "f44c989a172cb7016262ef8687c8ba5012da8d3baecb56abd8fba9183f56aacd",
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": "54e660d701aaaf4852716ad2fd52908f36821726443c48bc4e73af739448682b"
+          }
+        },
+        "beforeFirstWithdrawal": {
+          "ownerSha256": "1b041a0da5699ee163eaca4bb695a899cebd8854c96ebe10a5854e6959f2368d",
+          "matchingFiveLineBlocks": 0,
+          "helperSources": {
+            "turbo/apps/platform/src/__tests__/page-helper.ts": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": "fefec188dcf9648965532a42c74f4bc88fb74a14d71672f2c8b627ee7d3a640a",
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": "54e660d701aaaf4852716ad2fd52908f36821726443c48bc4e73af739448682b"
+          }
+        },
+        "beforeSecondWithdrawal": {
+          "ownerSha256": null,
+          "matchingFiveLineBlocks": 0,
+          "helperSources": {}
+        },
+        "main": {
+          "ownerSha256": "783c18daf14b34fa9620c0f00a09c2bda8003bb5f1e42cebf941c6ffc60a52d6",
+          "matchingFiveLineBlocks": 0,
+          "helperSources": {
+            "turbo/apps/platform/src/__tests__/page-helper.ts": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": "f44c989a172cb7016262ef8687c8ba5012da8d3baecb56abd8fba9183f56aacd",
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": "54e660d701aaaf4852716ad2fd52908f36821726443c48bc4e73af739448682b"
+          }
+        },
+        "opening": {
+          "ownerSha256": "18b7a2215c6c3c68af8458650ae0c5c71c2e66ba8ad89e612ccb6e06c779fd67",
+          "matchingFiveLineBlocks": 0,
+          "helperSources": {
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": "d1e55d256f0e0e234c094ab373bf72b2b731dabd5e99a9f41c61d9d5a5ccc734",
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/views/browser-session/__tests__/browser-native-page-fixture.ts": "29b9002992b95515275cb9842e09a7b927448c94fc8ea4f26a070f22096a6fea",
+            "turbo/apps/platform/src/__tests__/page-helper.ts": "008ed724541ca075e909f9814c1fdfa72647ab0a160059ceb3c2ad09dc104c99"
+          }
+        }
+      },
+      "currentCrossFileMatches": {}
+    }
+  }
+}

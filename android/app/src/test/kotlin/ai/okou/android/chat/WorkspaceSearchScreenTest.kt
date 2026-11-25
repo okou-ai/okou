@@ -215,6 +215,129 @@ class WorkspaceSearchScreenTest {
     }
 
     @Test
+    fun allSearchWaitsForInitialChatsAndExplainsTheSavedScopeWhenThereIsNoMatch() {
+        val search = ChatSearchState(TextFieldValue("Missing"))
+        var chats by mutableStateOf(ChatListUiState(listPhase = ChatReadPhase.Loading))
+        var remote by
+            mutableStateOf(
+                WorkspaceSearchResults(
+                    "Missing",
+                    messages = SearchRead.Failed,
+                    artifacts = SearchRead.Failed,
+                ),
+            )
+        var workflows by mutableStateOf<SearchRead<SearchWorkflowHit>>(SearchRead.Failed)
+        compose.setContent {
+            OkouTheme(false) {
+                WorkspaceSearchScreen(
+                    state = chats,
+                    search = search,
+                    widthDp = 400,
+                    listWidth = null,
+                    focusOnEntry = false,
+                    onFocused = {},
+                    onClose = {},
+                    onOpen = {},
+                    remote = remote,
+                    workflowResults = workflows,
+                    onOpenWorkflow = {},
+                    onOpenArtifact = {},
+                )
+            }
+        }
+
+        val genericFailure = compose.onNodeWithText("Couldn’t load search results")
+        val savedScope = compose.onNodeWithText("Search is limited to saved chats. No matches.")
+        val all = compose.onNodeWithTag("search_type_All")
+        val query = compose.onNodeWithTag("chat_search_query")
+        compose.mainClock.advanceTimeBy(280)
+        compose.onNodeWithContentDescription("Loading chats…").assertIsDisplayed()
+        genericFailure.assertDoesNotExist()
+
+        compose.runOnIdle {
+            chats = ChatListUiState(listReadFailure = ChatListReadFailure.NeedsRetry)
+        }
+        genericFailure.assertIsDisplayed()
+        savedScope.assertDoesNotExist()
+
+        compose.runOnIdle { chats = ChatListUiState(confirmedAt = 1) }
+        savedScope.assertIsDisplayed()
+        genericFailure.assertDoesNotExist()
+        all.assertIsSelected()
+        query.assertTextContains("Missing")
+
+        compose.onNodeWithTag("search_type_Chats").performClick()
+        compose.runOnIdle {
+            chats = chats.copy(listReadFailure = ChatListReadFailure.NeedsRetry)
+        }
+        savedScope.assertIsDisplayed()
+        compose.runOnIdle {
+            chats = chats.copy(listReadFailure = null)
+            remote =
+                WorkspaceSearchResults(
+                    "Missing",
+                    messages = SearchRead.Ready(emptyList()),
+                    artifacts = SearchRead.Ready(emptyList()),
+                )
+        }
+        compose.onNodeWithText("No matching chats").assertIsDisplayed()
+        savedScope.assertDoesNotExist()
+        compose.runOnIdle { workflows = SearchRead.Ready(emptyList()) }
+        all.performClick()
+        compose.onNodeWithText("No matching results").assertIsDisplayed()
+        query.assertTextContains("Missing")
+    }
+
+    @Test
+    fun confirmedEmptyMessagesKeepThePartialNoticeAccurateWhenArtifactsFail() {
+        val date = "2026-11-13T00:00:00Z"
+        val chat =
+            ConfirmedChat(
+                id = "chat",
+                title = "Launch plan",
+                sortAt = date,
+                createdAt = date,
+                updatedAt = date,
+                pinnedAt = null,
+                archived = false,
+                renamedAt = null,
+            )
+        val search = ChatSearchState(TextFieldValue("Launch"))
+        var messages by mutableStateOf<SearchRead<SearchMessageHit>>(SearchRead.Failed)
+        compose.setContent {
+            OkouTheme(false) {
+                WorkspaceSearchScreen(
+                    state = ChatListUiState(confirmedAt = 1, threadsByRecency = listOf(chat)),
+                    search = search,
+                    widthDp = 400,
+                    listWidth = null,
+                    focusOnEntry = false,
+                    onFocused = {},
+                    onClose = {},
+                    onOpen = {},
+                    remote = WorkspaceSearchResults("Launch", messages, SearchRead.Failed),
+                    workflowResults = SearchRead.Failed,
+                    onOpenWorkflow = {},
+                    onOpenArtifact = {},
+                )
+            }
+        }
+
+        val localOnly =
+            compose.onNodeWithText("Some results couldn’t load. Showing saved chats only.")
+        val partial = compose.onNodeWithText("Some results couldn’t load")
+        localOnly.assertIsDisplayed()
+        compose.onNodeWithText("Launch plan").assertIsDisplayed()
+
+        compose.runOnIdle { messages = SearchRead.Ready(emptyList()) }
+        partial.assertIsDisplayed()
+        localOnly.assertDoesNotExist()
+        compose.onNodeWithText("Launch plan").assertIsDisplayed()
+        compose.onNodeWithTag("search_type_All").assertIsSelected()
+        compose.onNodeWithTag("chat_search_query").assertTextContains("Launch")
+    }
+
+    @Test
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun searchProgressKeepsItsPaletteColorsAndSemanticsWithReducedMotion() {
         val search = ChatSearchState(TextFieldValue("Launch"))
@@ -293,7 +416,7 @@ class WorkspaceSearchScreenTest {
         compose.mainClock.advanceTimeBy(600)
         assertEquals(light, colors())
         compose.runOnIdle { dark = true }
-        assertColors(0xFF819EE0.toInt(), 0xFF2D323B.toInt())
+        assertColors(0xFF8BA6E2.toInt(), 0xFF2F333C.toInt())
         assertEquals(bounds, progress.getUnclippedBoundsInRoot())
     }
 }

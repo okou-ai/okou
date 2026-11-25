@@ -19,7 +19,8 @@ final class MessageAttachmentThumbnail {
 /// One detail visit owns shared thumbnail reads; the cache owns their retention budget.
 @MainActor
 final class MessageAttachmentResources {
-  let store = CCState.Store()
+  /// The workspace session's Store, which keeps this visit's thumbnail reads.
+  let store: CCState.Store
   fileprivate let lifetime = CCState.State(true)
   private let cache: NSCache<NSString, MessageAttachmentThumbnailRead> = {
     let cache = NSCache<NSString, MessageAttachmentThumbnailRead>()
@@ -37,7 +38,10 @@ final class MessageAttachmentResources {
   private var pending: [String: MessageAttachmentThumbnailRead] = [:]
   private var closed = false
 
-  init(commands: ChatCommands, didFail: @escaping @MainActor (Error) -> Void) {
+  init(
+    commands: ChatCommands, graph: CCState.Store, didFail: @escaping @MainActor (Error) -> Void
+  ) {
+    store = graph
     self.commands = commands
     self.didFail = didFail
   }

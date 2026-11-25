@@ -9,10 +9,11 @@ with a selected workspace opens the native conversation list while access is
 checked. The toolbar uses the bundled workspace logo and shows filter and
 Settings as soon as the selected workspace is identified. The tool shortcuts
 stay in place in the same shell, and a known optional update uses the toolbar.
-A fresh selected membership with known permissions allows cached conversations
-and Projects to appear while the app refreshes the list and loads workspace
-metadata and member preferences. The full membership check and organization
-gate still apply when selected permissions are unavailable.
+A restored active session with known permissions for its selected workspace can
+show matching cached conversations and Projects while Clerk verifies access.
+Local filters and Settings are usable during verification. Online confirmation
+enables chat actions and starts synchronization. The full membership check and
+organization gate still apply when selected permissions are unavailable.
 The workspace chat list uses single-line rows, indented
 Project chats, and separators within groups that have pins and ordinary chats.
 Collapsed Projects summarize unread or running chats. Selecting a chat opens
@@ -30,18 +31,22 @@ Simplified and Traditional Chinese.
 
 Android reads a private cache of the last confirmed display mode and palette
 while the identified workspace loads. The cache is scoped to the API origin,
-account and workspace and is read off the main thread. Settings can show those
-values after workspace authorization while its preference controls wait for
-the initial response. The server response takes precedence and refreshes the
-cache. Workspace content requires current authorization for the selected
-workspace.
+account and workspace and is read off the main thread. With known local
+workspace permissions, Settings can show these values while the app verifies
+workspace access. Preference controls become available after the app loads the
+server preferences, which take precedence and refresh the cache. Remote
+workspace content and operations require verified workspace access.
 Temporary workspace metadata and preference failures after authorization retry
-in the foreground and on reconnect. Cached chats stay usable, and the workspace
+while the app is in the foreground. Cached chats stay usable, and the workspace
 row in Settings shows preparation and temporary failures in its subtitle.
 
 My Okou in Settings reads and edits the signed-in user's personal Instructions
 for the selected workspace through the canonical Instructions API. Loading
 Instructions leaves chat and Appearance available.
+Closing an edited Instructions panel asks whether to discard before removing
+the draft. Conflict recovery asks before loading the latest version and keeps
+the edit when that read fails. Saving keeps the panel and its edit visible
+with a disabled saving action until the request settles.
 Saves always carry the displayed base version; a concurrent Web edit preserves
 the local draft and requires explicitly loading the latest version. Clearing the
 field and saving clears Instructions. A lost save response reads the server back;
@@ -125,16 +130,13 @@ linked chat from a workflow run returns feedback to the run history.
 Canonical event IDs settle submitted changes, including events observed before
 a snapshot rebase. Chat list reads retry while the foreground needs the list,
 after 3, 3, 6, 12, 24, and then every 48 seconds. Server `Retry-After` can extend
-the wait.
-Known loss of connectivity pauses reads. Reconnecting retries immediately,
-subject to a server `Retry-After` deadline. A first read with no available list
-shows the skeleton after 250 ms. Failures keep the available list or skeleton
-in place. With a confirmed list, the progress bar appears during an active
-read once the last confirmation is more than ten minutes old, or immediately
-after three consecutive read failures. It stays visible through retry gaps
-until success or a terminal failure. If a write stays unconfirmed, Refresh
-chats reads back the list and clears the unresolved projection once that
-read succeeds.
+the wait. A first read with no available list shows the skeleton after 250 ms.
+Failures keep the available list or skeleton in place. With a confirmed list,
+the progress bar appears during an active read once the last confirmation is
+more than ten minutes old, or immediately after three consecutive read
+failures. It stays visible through retry gaps until success or a terminal
+failure. If a write stays unconfirmed, Refresh chats reads back the list and
+clears the unresolved projection once that read succeeds.
 
 A definitively failed Undo keeps the confirmed row state and closes its offer.
 An uncertain Undo keeps its receipt check available.
@@ -170,6 +172,10 @@ are recreated. Snapshot replacement and tail appends commit atomically,
 and disk readback precedes publication when storage succeeds. A failed write keeps
 the confirmed network result available and retries it on refresh. Thread-local
 403/404 clears that history without retiring the workspace.
+
+History cache reads page by sequence within one transaction. Writes serialize
+and insert records in batches within one transaction. These batches limit
+transient memory while preserving the complete history checkpoint.
 
 The reader streams gzip NDJSON snapshots and follows canonical paired-cursor raw
 rows, including valid zero cold start, missing snapshot fallback, gap-tolerant
@@ -416,7 +422,8 @@ are in `android-instrumentation-api35-<revision>-shard-<index>` artifacts, with 
 attempt suffix on reruns.
 
 CI also runs three `build-test` shards on separate runners with two test JVMs
-each. Shard 0 runs the format, policy, and lint checks and builds the Debug APK.
+each. All three run the same command with different shard indices. The `build`
+job runs format and policy checks, Android lint, and Debug APK assembly.
 Each shard retains its XML in `android-jvm-results-<revision>-shard-<index>`.
 The local commands above run the full suites by default. See
 [test runtime and CI sharding](../docs/android/android-testing.md#test-runtime-and-ci-sharding)
@@ -493,10 +500,10 @@ commits skip Android validation after release-context detection succeeds. The
 production release job independently builds, signs and verifies its exact-target
 APK; it does not consume validation artifacts. Ordinary change selection includes
 Android sources/docs, CI inputs, Web semantic colors, and shared font/color-evaluator
-assets. Three jobs run the Debug JVM suite. Shard 0 also runs lint and uploads
-the Debug APK for seven days. Separate Linux/KVM jobs run the three Debug device
-shards and the Release smoke tests. The Release job uploads the unsigned APK and
-compressed R8 map for seven days.
+assets. Three jobs run the Debug JVM suite. The `build` job uploads the Debug
+APK for one day. Separate Linux/KVM jobs run the three Debug device shards and
+the Release smoke tests. The Release job
+uploads the unsigned APK and compressed R8 map for one day.
 The final `ci-gate-android` check always reports an aggregate result. For
 non-release changes it requires successful change detection and every selected
 job to pass. Cancellation, failure or an unexpected skip fails the gate.
@@ -650,6 +657,11 @@ Optional releases appear in the chat-list toolbar and app update settings.
 Required updates own the full-screen recovery flow. Automatic checks run on
 foreground without holding the first native frame and reuse successful discovery
 for 10 minutes, including across process restarts.
+Recoverable checks and downloads get two automatic retries. Each uses the
+delay supplied by `Retry-After`, or three seconds when no delay is supplied. Opening
+details can start a new check after failure when no compatible update is known
+and the server's wait has passed. The retry actions in details and the required
+update screen can advance a scheduled attempt without starting a second job.
 
 Startup retains and revalidates an eligible pending APK for the current
 installed version. It removes other updater-owned APKs, including the package
@@ -841,9 +853,12 @@ warming. Detail-only notifications do not request warming. Like Web, the
 cohort combines the 100 most recent non-hidden conversations
 with indicator thread IDs. The selected conversation keeps its own reader. A
 one-second serialized trailing worker reads lightweight Room cursors and uses the
-canonical batch catch-up endpoint; missing cursors rebuild through concurrent
-snapshot reads, matching Web. A recoverable failure in one snapshot does not
-discard successful siblings; authorization/update failures cancel the batch.
+canonical batch catch-up endpoint. Missing cursors rebuild in at most two
+concurrent jobs. Each job holds its slot until cache persistence or recovery
+cleanup completes, so the bound also covers decoded checkpoints waiting to be
+written. The selected conversation reads independently of those slots. A
+recoverable snapshot failure preserves successful siblings. Authorization and
+update failures cancel the batch.
 Warming never marks content read or drives list loading. Conditional transactions
 reject an obsolete baseline or a now-selected target, preserving newer foreground
 history. STOP/retirement cancels the worker, and failures remain owned separately
@@ -851,10 +866,10 @@ from visible reads. Every conversation remains fully readable on demand regardle
 of warming eligibility; the cohort is not a row, content or history-size limit.
 
 `HistoryWarmingTest` exercises actual batch HTTPS/tuple codecs, cursor reuse,
-large Unicode rows and disk reopen, concurrent snapshot/missing-thread recovery,
+large Unicode rows and disk reopen, bounded snapshot recovery and missing threads,
 held-background independence, stale foreground/background publication and
-stop/restart/retirement. Parallel recovery can increase concurrent network and
-memory use; its resource owner still cancels every child on STOP or retirement.
+stop/restart/retirement. The warming owner cancels both active and queued
+recoveries on STOP or retirement.
 
 The native conversation uses canonical history to show reading progress. The
 workspace observes realtime transport independently of that UI. The generated empty-object

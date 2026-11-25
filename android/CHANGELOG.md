@@ -1,5 +1,85 @@
 # Changelog
 
+## [0.56.0](https://github.com/okou-ai/okou/compare/android-v0.55.6...android-v0.56.0) (2026-11-25)
+
+
+### Features
+
+* **android:** render inline markdown images in conversations ([#50662](https://github.com/okou-ai/okou/issues/50662)) ([b67f49d](https://github.com/okou-ai/okou/commit/b67f49d764028747d763e795a72d9904328bcd8a))
+
+## [0.55.6](https://github.com/okou-ai/okou/compare/android-v0.55.5...android-v0.55.6) (2026-11-25)
+
+
+### Bug Fixes
+
+* **android:** align connector read feedback and detail spacing ([#50707](https://github.com/okou-ai/okou/issues/50707)) ([f43d1fb](https://github.com/okou-ai/okou/commit/f43d1fb924dabb66bf0cde9244e666fd84c3703e))
+* **android:** align personal instructions editor with settings design ([#50602](https://github.com/okou-ai/okou/issues/50602)) ([3a121ab](https://github.com/okou-ai/okou/commit/3a121ab6b4996e1ba4d2c42c6b57ff8b09daedd0))
+
+## [0.55.5](https://github.com/okou-ai/okou/compare/android-v0.55.4...android-v0.55.5) (2026-11-25)
+
+
+### Refactoring
+
+* **android:** share content read feedback timing ([#50649](https://github.com/okou-ai/okou/issues/50649)) ([042ae13](https://github.com/okou-ai/okou/commit/042ae135dbe3c6d917f9e8ec828de4bf834f9c3b))
+
+## [0.55.4](https://github.com/okou-ai/okou/compare/android-v0.55.3...android-v0.55.4) (2026-11-24)
+
+
+### Bug Fixes
+
+* **android:** align chat composer and conversation interactions ([#50624](https://github.com/okou-ai/okou/issues/50624)) ([5094420](https://github.com/okou-ai/okou/commit/509442037de291e3732c4ac6614d3a798504d090))
+
+## [0.55.3](https://github.com/okou-ai/okou/compare/android-v0.55.2...android-v0.55.3) (2026-11-24)
+
+
+### Bug Fixes
+
+* **android:** align artifact catalog filters and keyboard navigation ([#50608](https://github.com/okou-ai/okou/issues/50608)) ([a969f0d](https://github.com/okou-ai/okou/commit/a969f0d2ec7227136192da380298f17b535d3058))
+* **android:** align conversation artifact cards with the design ([#50633](https://github.com/okou-ai/okou/issues/50633)) ([723a7f0](https://github.com/okou-ai/okou/commit/723a7f06c48781bb2136eca5f3a75c586ec7b9da))
+* **android:** align incompatible update recovery with design ([#50630](https://github.com/okou-ai/okou/issues/50630)) ([5aa1d8b](https://github.com/okou-ai/okou/commit/5aa1d8ba12cdb0646c38a8428a136c36fed0f191))
+* **android:** align workflow automation editing with the design ([#50610](https://github.com/okou-ai/okou/issues/50610)) ([cefee69](https://github.com/okou-ai/okou/commit/cefee69cfcca1158eda91c74eb0fef7ce315a64c))
+* **android:** keep connector detail and return focus stable ([#50609](https://github.com/okou-ai/okou/issues/50609)) ([47c825a](https://github.com/okou-ai/okou/commit/47c825ac8ab9f3191c0697b579ee1f0f695c0512))
+
+
+### CI
+
+* **android:** combine release and change detection ([#50639](https://github.com/okou-ai/okou/issues/50639)) ([9ee5820](https://github.com/okou-ai/okou/commit/9ee5820917c21c1dad79a3a3900a3675e48e9a75))
+
+
+### Performance Improvements
+
+* **android:** bound Room history read and write batches ([#50616](https://github.com/okou-ai/okou/issues/50616)) ([76b3262](https://github.com/okou-ai/okou/commit/76b32628b43ca1af37287805d3a34c202a4c9019))
+* **android:** show cached chats before online verification ([#50589](https://github.com/okou-ai/okou/issues/50589)) ([126d0af](https://github.com/okou-ai/okou/commit/126d0af973036e3d17e09d03ad7b84e7cba00749))
+
+## [0.55.2](https://github.com/okou-ai/okou/compare/android-v0.55.1...android-v0.55.2) (2026-11-24)
+
+
+### Refactoring
+
+* **android:** share rename form behavior ([#50603](https://github.com/okou-ai/okou/issues/50603)) ([40612fc](https://github.com/okou-ai/okou/commit/40612fc8e5b64953367f02b51a71531f352f7560))
+
+## [0.55.1](https://github.com/okou-ai/okou/compare/android-v0.55.0...android-v0.55.1) (2026-11-24)
+
+
+### Performance Improvements
+
+* **android:** bound concurrent history snapshot warming ([#50548](https://github.com/okou-ai/okou/issues/50548)) ([07da7e2](https://github.com/okou-ai/okou/commit/07da7e260519967a920c94ac508559d3b165ea4c))
+
+## [0.55.0](https://github.com/okou-ai/okou/compare/android-v0.54.1...android-v0.55.0) (2026-11-24)
+
+
+### Features
+
+* **android:** align conversation turn feedback with design ([#50540](https://github.com/okou-ai/okou/issues/50540)) ([f26d10e](https://github.com/okou-ai/okou/commit/f26d10e72b824696e9cf80000e7069a63afad08b))
+
+
+### Bug Fixes
+
+* **android:** align update progress and required entry spacing ([#50547](https://github.com/okou-ai/okou/issues/50547)) ([2534248](https://github.com/okou-ai/okou/commit/2534248c6d06e3b120d9ae91b9e1c71370800e6a))
+* **android:** align workflow browsing and automation feedback ([#50539](https://github.com/okou-ai/okou/issues/50539)) ([440a72d](https://github.com/okou-ai/okou/commit/440a72da019c525427aa1220d96d5d137dc239d4))
+* **android:** align workspace search fallback feedback ([#50567](https://github.com/okou-ai/okou/issues/50567)) ([48394a2](https://github.com/okou-ai/okou/commit/48394a2ca0df27d4b7d4f8c37dbc02ef7da87d01))
+* **android:** restore settings after a failed sign-out ([#50565](https://github.com/okou-ai/okou/issues/50565)) ([3d00e6f](https://github.com/okou-ai/okou/commit/3d00e6ff63bbc8040aa35249739bcdb0bf700473))
+
 ## [0.54.1](https://github.com/okou-ai/okou/compare/android-v0.54.0...android-v0.54.1) (2026-11-24)
 
 

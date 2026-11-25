@@ -286,7 +286,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 const ACTIVE_RUN_STATUSES = ["pending", "running"] as const;
-const INDICATOR_ACTIVE_LIMIT = 50;
 const INDICATOR_UNREAD_LIMIT = 50;
 /** Unread candidates read per request: the newest threads within the lookback. */
 export const INDICATOR_UNREAD_CANDIDATE_LIMIT = 128;
@@ -346,6 +345,7 @@ type IndicatorScope = {
   readonly userId: string;
   readonly orgId: string;
   readonly includeActiveUnread: boolean;
+  readonly activeLimit: number;
 };
 type IndicatorThreadRow = {
   readonly threadId: string;
@@ -385,7 +385,7 @@ function createIndicatorRows(args: IndicatorScope) {
         )
         .groupBy(chatThreads.id)
         .orderBy(desc(max(agentRuns.createdAt)))
-        .limit(INDICATOR_ACTIVE_LIMIT);
+        .limit(args.activeLimit);
     },
   );
   const unreadRows$ = computed(

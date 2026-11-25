@@ -1,0 +1,56 @@
+{
+  "baseline": "ad0d44dbca05ff2c7470cc98b88376adf861253d",
+  "starting": 92,
+  "handled": [
+    "chat-list-optimistic-002",
+    "agent-suggestions-004",
+    "agent-suggestions-015",
+    "integrations-discord-037",
+    "integrations-discord-038",
+    "settings-model-loading-001",
+    "composer-custom-template-recommendations-009",
+    "connector-directory-010",
+    "directed-connect-page-008",
+    "connectors-account-rename-focus-011",
+    "connectors-account-rename-focus-013",
+    "message-port-017",
+    "message-port-018",
+    "message-port-020",
+    "message-port-027",
+    "single-connection-client-001",
+    "worker-runtime-005",
+    "worker-runtime-008",
+    "api-client-bootstrap-001",
+    "indexeddb-client-003"
+  ],
+  "substitutions": [],
+  "removed": [
+    "agent-suggestions-015",
+    "message-port-017"
+  ],
+  "added": [],
+  "remaining": 90,
+  "remainingOwners": 33,
+  "closedOwners": [],
+  "firstOriginalAcceptances": [
+    "message-port-017"
+  ],
+  "restorations": [],
+  "revisions": [
+    "agent-suggestions-015"
+  ],
+  "retirements": [],
+  "decisions": [
+    "platform-direct-bridge-002",
+    "shared-database-browser-006",
+    "unread-through-at-001",
+    "chat-continuity-uploads-003",
+    "connector-provider-pages-013",
+    "paid-media-creation-002"
+  ],
+  "upstream": 68,
+  "activeLedgerAnchors": 90,
+  "survivingOriginalGwtAndOwnerPairs": 90,
+  "beforeSetSHA256": "40f7be077b8cdb4c109d15fe90c10484fe7f5670504684371ee0d18f0477dd32",
+  "afterSetSHA256": "7b3d4b982cfabb136c59055b17b3f195bc6164e7ddf58759cc515362aa9a3f1e"
+}

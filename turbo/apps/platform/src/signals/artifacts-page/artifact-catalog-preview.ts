@@ -47,21 +47,20 @@ export function createCatalogArtifactPreviewSignals(
     return detail && "file" in detail ? detail.file.size : undefined;
   });
   const text$ = computed(async (get): Promise<TextPreviewContent> => {
-    const detail = await get(artifactCatalog.selectedArtifactDetail$);
-    if (!detail) {
-      throw new Error("Selected artifact is unavailable");
-    }
-    const preview = artifactDetailPreview(detail);
-    if (!isTextPreviewKind(preview.kind)) {
-      throw new Error("Selected artifact is not a text preview");
-    }
     const resourceUrl = await get(resourceUrl$);
     if (!resourceUrl) {
       throw new Error("Selected artifact preview is unavailable");
     }
     return fetchPreviewText(resourceUrl);
   });
+  const contentReady$ = computed(async (get) => {
+    const detail = await get(artifactCatalog.selectedArtifactDetail$);
+    if (detail && isTextPreviewKind(artifactDetailPreview(detail).kind)) {
+      await get(text$);
+    }
+  });
   return {
+    contentReady$,
     resourceUrl$,
     imageUrl$,
     shareUrl$,

@@ -1,0 +1,49 @@
+{
+  "baseline": "42d8234906b2766b3ba4236f4fad3fbeb133a52c",
+  "starting": 113,
+  "handled": [
+    "message-port-014",
+    "message-port-011",
+    "message-port-033",
+    "message-port-036",
+    "message-port-037",
+    "message-port-038",
+    "message-port-039",
+    "realtime-002",
+    "realtime-006",
+    "realtime-010",
+    "realtime-011",
+    "chat-composer-connector-overview-007",
+    "chat-composer-connector-overview-009",
+    "client-001",
+    "client-002",
+    "client-003",
+    "client-004",
+    "client-006",
+    "client-007",
+    "client-008"
+  ],
+  "removed": [
+    "chat-composer-connector-overview-007",
+    "chat-composer-connector-overview-009"
+  ],
+  "added": [],
+  "firstOriginalAcceptances": [
+    "chat-composer-connector-overview-007",
+    "chat-composer-connector-overview-009"
+  ],
+  "restorations": [],
+  "revisions": [],
+  "retirements": [],
+  "remaining": 111,
+  "remainingOwners": 46,
+  "decisions": [
+    "platform-direct-bridge-002",
+    "shared-database-browser-006",
+    "unread-through-at-001",
+    "chat-continuity-uploads-003",
+    "connector-provider-pages-013",
+    "paid-media-creation-002"
+  ],
+  "upstream": 68
+}

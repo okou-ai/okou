@@ -22,6 +22,7 @@ import ai.okou.android.api.generated.InputStatusVariant3Status
 import ai.okou.android.api.generated.Organization
 import ai.okou.android.api.generated.PersonalInstructions
 import ai.okou.android.api.generated.ProjectArchive
+import ai.okou.android.api.generated.RunActivitySummaryStatus
 import ai.okou.android.api.generated.SendRequest
 import ai.okou.android.api.generated.SendRequestVariant1
 import ai.okou.android.api.generated.UpdateDefaultModelPreference
@@ -53,6 +54,7 @@ import ai.okou.android.chat.SearchMessageHit
 import ai.okou.android.chat.ServerDraftTarget
 import ai.okou.android.chat.TextDisposition
 import ai.okou.android.chat.WorkspaceSearchService
+import ai.okou.android.chat.asConfirmedProject
 import ai.okou.android.chat.historyJson
 import ai.okou.android.chat.readHistoryNdjson
 import ai.okou.android.connectors.ConnectorService
@@ -372,6 +374,15 @@ class CanonicalWorkspaceSession(
 
     override suspend fun threadDetail(threadId: String) = api.threadDetail(threadId)
 
+    override suspend fun summarizeRunActivity(threadId: String, runId: String): String? {
+        val summary = api.summarizeRunActivity(threadId, runId)
+        if (summary.runId != runId) throw ApiFailure.IncompatibleResponse()
+        return summary.messages
+            .firstOrNull { it.text.isNotBlank() }
+            ?.text
+            .takeIf { summary.status == RunActivitySummaryStatus.AVAILABLE }
+    }
+
     override suspend fun markRead(threadId: String) = api.markRead(threadId)
 
     override suspend fun markUnread(threadId: String) = api.markUnread(threadId)
@@ -384,6 +395,12 @@ class CanonicalWorkspaceSession(
 
     override suspend fun deleteThread(threadId: String, eventId: String) =
         api.deleteThread(threadId, eventId)
+
+    override suspend fun createProject(projectId: String, name: String) =
+        api.createProject(projectId, name).asConfirmedProject(projectId)
+
+    override suspend fun projectDetail(projectId: String) =
+        api.projectDetail(projectId).asConfirmedProject(projectId)
 
     override suspend fun renameProject(projectId: String, name: String, eventId: String) =
         api.renameProject(projectId, name, eventId)

@@ -15,6 +15,11 @@
       "pattern": "*.okou.app/*",
       "zone_name": "okou.app",
     },
+    {
+      // Cloudflare for SaaS customer hostnames use this zone's fallback Worker.
+      "pattern": "*/*",
+      "zone_name": "okou.app",
+    },
   ],
   "vars": {
     "ARTIFACT_OG_API_ORIGIN": "https://api.okou.ai",

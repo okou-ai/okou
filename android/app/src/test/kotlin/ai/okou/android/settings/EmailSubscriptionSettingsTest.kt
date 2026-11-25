@@ -188,10 +188,8 @@ class EmailSubscriptionSettingsTest {
                     }
                 }
             val model = model(api, service, otherWorkspace, cache) { 600_002L }
-            model.online(false)
             model.visible(true)
             assertEquals(initial, model.state.first { it.read.value != null }.read.value)
-            model.online(true)
             runCurrent()
             assertTrue(model.state.value.read.refreshing)
             advanceTimeBy(5_999)

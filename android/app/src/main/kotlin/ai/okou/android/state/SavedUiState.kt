@@ -1,6 +1,7 @@
 package ai.okou.android.state
 
 import ai.okou.android.artifacts.ArtifactFilter
+import ai.okou.android.artifacts.ExternalImagePreviewPrefix
 import ai.okou.android.chat.ConversationAnchor
 import ai.okou.android.chat.ConversationFindTarget
 import ai.okou.android.chat.ConversationLinkPosition
@@ -73,6 +74,10 @@ internal fun rememberSettingsReturnFocus(): MutableState<SettingsDestination?> =
 internal fun rememberWorkspaceSwitchTarget(): MutableState<String?> = rememberSaveable {
     mutableStateOf(null)
 }
+
+@Composable
+internal fun rememberWorkspacePresentationState(): SaveableStateHolder =
+    rememberSaveableStateHolder()
 
 @Composable
 internal fun rememberConnectorsOpen(): MutableState<Boolean> = rememberSaveable {
@@ -404,6 +409,12 @@ internal data class WorkspaceNavigation(
     val messageSequence: Long? = null,
 )
 
+internal const val RetainedExternalImagePreview = "external-image"
+
+// Only the in-memory preview owner retains the external URL across recreation.
+private fun String.restorableArtifactLink() =
+    if (startsWith(ExternalImagePreviewPrefix)) RetainedExternalImagePreview else this
+
 internal data class ArtifactsDestination(
     val sourceId: String? = null,
     val searchResultId: String? = null,
@@ -442,7 +453,7 @@ private fun WorkspaceNavigation.savedFields(): List<Any> {
         artifacts != null,
         artifacts?.sourceId.orEmpty(),
         chatResourcesId.orEmpty(),
-        chatArtifactLink.orEmpty(),
+        chatArtifactLink?.restorableArtifactLink().orEmpty(),
         chatArtifactFocusKey.orEmpty(),
         messageSequence ?: 0L,
         artifacts?.searchResultId.orEmpty(),
@@ -475,7 +486,7 @@ private fun restoreWorkspaceNavigation(fields: List<Any?>): WorkspaceNavigation 
         search ?: SearchRoute.Closed,
         artifacts,
         (fields.getOrNull(6) as? String)?.ifEmpty { null },
-        (fields.getOrNull(7) as? String)?.ifEmpty { null },
+        (fields.getOrNull(7) as? String)?.ifEmpty { null }?.restorableArtifactLink(),
         (fields.getOrNull(8) as? String)?.ifEmpty { null },
         (fields.getOrNull(9) as? Long)?.takeIf { it > 0 },
     )

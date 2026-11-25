@@ -32,10 +32,8 @@ def validate(directory):
     directory = pathlib.Path(directory)
     result, collector, terminals = report._validate_cases(directory, CASES, report.PHASES)
     policy = supplied_policy(collector, result, "native_pause_policy_json")
-    witnesses = {case: [] for case in CASES}
-    report.collect_witnesses(
-        directory / 'stdout.log', {PREFIX: witnesses},
-        case_matches=lambda value: value in CASES,
+    witnesses = report.collect_case_witnesses(
+        directory / 'stdout.log', PREFIX, CASES,
         invalid_message="invalid native physical pause witness",
     )
     identities = {events[1][key] for events in terminals.values() for key in ("sandbox_id", "backing_generation")}

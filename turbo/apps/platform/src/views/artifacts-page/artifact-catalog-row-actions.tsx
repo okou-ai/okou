@@ -1,35 +1,30 @@
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import type { ArtifactSummary } from "@okouai/api-contracts/contracts/artifact-catalog";
+import { useGet, useSet } from "ccstate-react";
 import { artifactCatalogRowDeletionScope } from "../../signals/artifacts-page/artifact-catalog-row-actions.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { detach, Reason } from "../../signals/utils.ts";
 import {
   ArtifactDeleteDialog,
   ArtifactDeleteMoreMenu,
 } from "../okou-page/artifact-deletion.tsx";
 
-/** More/Delete for a catalog row; owner detail loads only when its menu opens. */
+/** More/Delete uses the summary already returned by the owner-scoped catalog. */
 export function ArtifactCatalogRowActions({
-  artifactId,
+  artifact,
 }: {
-  readonly artifactId: string;
+  readonly artifact: ArtifactSummary;
 }) {
   const scope = artifactCatalogRowDeletionScope;
   const pageSignal = useGet(pageSignal$);
-  const session = useGet(scope.session$);
-  const detail = useLoadable(scope.detail$);
   const triggerRef = useSet(scope.menuTriggerRef$);
   const menuOpenChanged = useSet(scope.menuOpenChanged$);
   const requestDeletion = useSet(scope.requestFromMenu$);
-  const active = session?.artifactId === artifactId;
 
   return (
     <ArtifactDeleteMoreMenu
       triggerRef={triggerRef}
-      disabled={!active || detail.state !== "hasData" || !detail.data}
-      loading={active && detail.state === "loading"}
       onOpenChange={(open, details) => {
         menuOpenChanged(
-          artifactId,
+          artifact.id,
           {
             open,
             trigger: details.trigger,
@@ -39,11 +34,7 @@ export function ArtifactCatalogRowActions({
         );
       }}
       onDelete={() => {
-        detach(
-          requestDeletion(artifactId, pageSignal),
-          Reason.DomCallback,
-          "confirm catalog row deletion",
-        );
+        requestDeletion(artifact, pageSignal);
       }}
     />
   );

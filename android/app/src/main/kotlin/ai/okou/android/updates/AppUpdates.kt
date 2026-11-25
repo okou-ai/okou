@@ -12,6 +12,9 @@ import java.io.InterruptedIOException
 import java.net.SocketException
 import java.net.UnknownHostException
 import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.TimeMark
+import kotlin.time.TimeSource
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -21,13 +24,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.emptyFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -84,7 +83,6 @@ data class UpdateUiState(
     val transfer: UpdateTransfer = UpdateTransfer.Recovering(null),
     val problem: UpdateProblem? = null,
     val sdk: Int,
-    val offline: Boolean = false,
 ) {
     val candidate
         get() = info?.release
@@ -172,16 +170,16 @@ class AppUpdates(
     sdk: Int,
     dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
     private val now: () -> Long = System::currentTimeMillis,
-    connectivity: Flow<Boolean> = emptyFlow(),
+    private val clock: TimeSource = TimeSource.Monotonic,
 ) : Closeable {
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val mutable = MutableStateFlow(UpdateUiState(version, sdk = sdk))
     val state = mutable.asStateFlow()
     val required = state.map { it.required }.stateIn(scope, SharingStarted.Eagerly, false)
     private val initialized = CompletableDeferred<Unit>()
-    private val connectivityReady = CompletableDeferred<Unit>()
     private val persistence = Mutex()
     private var checkedAt = 0L
+    private var automaticCheckAfter: TimeMark? = null
     private var checkJob: Job? = null
     private var transferJob: Job? = null
     private val checkRetry = RetryDelay()
@@ -189,22 +187,6 @@ class AppUpdates(
     @Volatile private var transferTicket = 0L
 
     init {
-        scope.launch {
-            try {
-                connectivity.collectLatest { online ->
-                    val reconnected = online && mutable.value.offline
-                    mutable.update { it.copy(offline = !online) }
-                    connectivityReady.complete(Unit)
-                    if (reconnected) {
-                        initialized.await()
-                        check(manual = mutable.value.needsRequiredRelease)
-                    }
-                }
-            } finally {
-                // An absent connectivity observer completes without a sample.
-                connectivityReady.complete(Unit)
-            }
-        }
         scope.launch {
             try {
                 val saved = store.load()?.takeIf { it.installedVersion == version }
@@ -246,21 +228,32 @@ class AppUpdates(
         }
     }
 
-    fun check(manual: Boolean = true, advanceRetry: Boolean = false) {
+    fun check(manual: Boolean = true) {
+        startCheck(manual) { snapshot ->
+            snapshot.needsRequiredRelease ||
+                checkedAt <= 0 ||
+                now() - checkedAt !in 0 until 10.minutes.inWholeMilliseconds
+        }
+    }
+
+    internal fun checkAfterFailure() {
+        if (mutable.value.check != UpdateCheck.Failed) return
+        startCheck(manual = false) { snapshot ->
+            snapshot.check == UpdateCheck.Failed &&
+                snapshot.displayedRelease?.let(snapshot::isEligible) != true
+        }
+    }
+
+    private fun startCheck(manual: Boolean, shouldCheck: (UpdateUiState) -> Boolean) {
         if (checkJob?.isActive == true) {
-            if (advanceRetry && !mutable.value.offline) checkRetry.advance()
+            if (manual) checkRetry.advance()
             return
         }
         checkJob = scope.launch {
             initialized.await()
-            connectivityReady.await()
-            val snapshot = mutable.value
-            if (snapshot.offline) return@launch
             if (
                 !manual &&
-                    !snapshot.needsRequiredRelease &&
-                    checkedAt > 0 &&
-                    now() - checkedAt in 0 until 10.minutes.inWholeMilliseconds
+                    (automaticCheckAfter?.hasNotPassedNow() == true || !shouldCheck(mutable.value))
             )
                 return@launch
             val info = readRelease() ?: return@launch
@@ -287,6 +280,7 @@ class AppUpdates(
     }
 
     private suspend fun readRelease(): AndroidUpdates? {
+        automaticCheckAfter = null
         var retries = 0
         while (true) {
             mutable.update { it.copy(check = UpdateCheck.Checking) }
@@ -295,12 +289,16 @@ class AppUpdates(
             } catch (error: Exception) {
                 currentCoroutineContext().ensureActive()
                 classify(error, UpdateProblem.Check)
-                if (!error.isTemporaryNetworkFailure() || retries == 2) {
+                val retryable = error.isTemporaryNetworkFailure()
+                if (!retryable || retries == 2) {
+                    if (retryable) {
+                        automaticCheckAfter = error.retryAfter()?.let { clock.markNow() + it }
+                    }
                     mutable.update { it.copy(check = UpdateCheck.Failed) }
                     return null
                 }
                 retries++
-                checkRetry.awaitNextAttempt {
+                checkRetry.awaitNextAttempt(error) {
                     mutable.update { it.copy(check = UpdateCheck.Waiting) }
                 }
             }
@@ -322,13 +320,12 @@ class AppUpdates(
             } catch (error: Exception) {
                 reportStorageFailure(error)
             }
-            if (mutable.value.needsRequiredRelease) check()
+            if (mutable.value.needsRequiredRelease) check(manual = false)
         }
     }
 
     fun download(release: AndroidUpdatesRelease, advanceRetry: Boolean = false): Boolean {
         val offered = mutable.value
-        if (offered.offline) return false
         if (transferJob?.isActive == true) {
             return advanceRetry &&
                 (offered.transfer as? UpdateTransfer.Waiting)?.release == release &&
@@ -337,8 +334,7 @@ class AppUpdates(
         if (!offered.canDownload || offered.candidate != release) return false
         transferJob = scope.launch {
             val snapshot = mutable.value
-            if (snapshot.offline || !snapshot.canDownload || snapshot.candidate != release)
-                return@launch
+            if (!snapshot.canDownload || snapshot.candidate != release) return@launch
             val ticket = ++transferTicket
             mutable.update {
                 it.copy(transfer = UpdateTransfer.Downloading(release), problem = null)
@@ -376,7 +372,7 @@ class AppUpdates(
                     return
                 }
                 retries++
-                downloadRetry.awaitNextAttempt {
+                downloadRetry.awaitNextAttempt(error) {
                     mutable.update {
                         it.copy(transfer = UpdateTransfer.Waiting(release), problem = failure)
                     }
@@ -389,18 +385,17 @@ class AppUpdates(
         }
     }
 
-    private inner class RetryDelay {
+    private class RetryDelay {
         private var pending: CompletableDeferred<Unit>? = null
 
         fun advance() = pending?.complete(Unit) == true
 
-        suspend fun awaitNextAttempt(showWaiting: () -> Unit) {
+        suspend fun awaitNextAttempt(error: Exception, showWaiting: () -> Unit) {
             val signal = CompletableDeferred<Unit>()
             pending = signal
             try {
                 showWaiting()
-                withTimeoutOrNull(3_000) { signal.await() }
-                state.first { !it.offline }
+                withTimeoutOrNull(error.retryAfter() ?: 3.seconds) { signal.await() }
             } finally {
                 if (pending === signal) pending = null
             }
@@ -497,6 +492,9 @@ class AppUpdates(
         service.close()
     }
 }
+
+private fun Exception.retryAfter() =
+    (this as? ApiFailure.Http)?.retryAfterSeconds?.takeIf { it >= 0 }?.seconds
 
 private fun Exception.isTemporaryNetworkFailure(): Boolean =
     when (this) {

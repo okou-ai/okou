@@ -1,343 +1,185 @@
-import { cleanup, screen, within } from "@testing-library/react";
-import { expect, test, vi } from "vitest";
-import { projectsContract } from "@okouai/api-contracts/contracts/projects";
-import { platformRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
-import { composerDraftContract } from "@okouai/api-contracts/contracts/composer-draft";
 import {
-  chatThreadDraftContract,
-  chatThreadEventsContract,
-  chatThreadsContract,
-} from "@okouai/api-contracts/contracts/chat-threads";
-import { setupPage, startPage } from "../../../__tests__/page-helper.ts";
+  projectsContract,
+  type Project,
+} from "@okouai/api-contracts/contracts/projects";
+import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { cleanup, screen } from "@testing-library/react";
+import { test, expect } from "vitest";
 import {
+  setupPage,
+  startPage,
+  type SetupPageAuth,
+} from "../../../__tests__/page-helper.ts";
+import {
+  testContext,
   createTestRuntime,
   mockChatThreadSnapshotResponse,
-  testContext,
 } from "../../../signals/__tests__/test-helpers.ts";
+import { changeChatThreadList } from "../../../mocks/mock-helpers.ts";
 import {
-  continuityThread,
-  continuityEventRow,
-  installContinuityWorkspace,
-} from "./chat-continuity-test-helpers.ts";
-
-const context = testContext();
-const firstPage = createTestRuntime(context);
-const nextPage = createTestRuntime(context);
-const PROJECT_ID = "30000000-0000-4000-8000-000000000071";
-const CREATED_AT = "2026-11-02T00:00:00.000Z";
-
-function installWorkspace() {
-  const thread = continuityThread(121, 1, "Planning conversation");
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 121,
-    threads: [thread],
-  });
-  context.mocks.api(composerDraftContract.get, ({ respond }) => {
-    return respond(200, { draftUserMessage: null, draftAttachments: null });
-  });
-  context.mocks.api(chatThreadDraftContract.get, ({ respond }) => {
-    return respond(200, { draftUserMessage: null, draftAttachments: null });
-  });
-  return {
-    ...workspace.pageOptions,
-    path: `/chats/${thread.id}`,
-    sharedWorkerTestTransport: "message-port" as const,
-  };
+  findFastControl,
+  queryFastControl,
+} from "./chat-message-experience-test-helpers.ts";
+import { chatListAuth, chatListThread } from "./chat-list-test-helpers.ts";
+const context = testContext(),
+  time = "2026-08-03T12:00:00Z";
+function project(name: string): Project {
+  return { id: crypto.randomUUID(), name, createdAt: time, updatedAt: time };
 }
-
-function snapshot(name = "Launch", seqId = 1) {
-  return {
-    projects: [
-      { id: PROJECT_ID, name, createdAt: CREATED_AT, updatedAt: CREATED_AT },
-    ],
-    latestEventId: null,
-    latestSeqId: seqId,
-  };
+function title(name: string) {
+  return findFastControl("button", "Show or hide chats in " + name);
 }
-
-function renamed(seqId: number, name: string) {
-  return {
-    id: `30000000-0000-4000-8000-${seqId.toString().padStart(12, "0")}`,
-    seqId,
-    projectId: PROJECT_ID,
-    kind: "renamed" as const,
-    name,
-    createdAt: CREATED_AT,
-  };
-}
-
-function installMetadata() {
-  context.mocks.api(projectsContract.snapshot, ({ respond }) => {
-    return respond(200, snapshot());
-  });
-  context.mocks.api(projectsContract.events, ({ respond }) => {
-    return respond(200, { events: [], hasMore: false });
-  });
-}
-
-function disposeFirstPage() {
-  firstPage.dispose();
-  cleanup();
-  vi.mocked(window.history.pushState).mockRestore();
-  vi.mocked(window.history.replaceState).mockRestore();
-  vi.mocked(window.history.back).mockRestore();
-}
-
-test("Projects catch changes made while a cached page waits for realtime", async () => {
-  const options = installWorkspace();
-  installMetadata();
-  const row = continuityEventRow(
-    121,
-    1,
-    continuityThread(121, 1, "Planning conversation").id,
-    "output.message",
-    { payload: { content: "Cached conversation" } },
-  );
-  context.mocks.api(chatThreadEventsContract.rows, ({ query, respond }) => {
+function snapshot(item: Project, seq: number, reply?: () => Promise<void>) {
+  const eventId = crypto.randomUUID();
+  context.mocks.api(projectsContract.snapshot, async ({ respond }) => {
+    await reply?.();
     return respond(200, {
-      rows: query.sinceSeqId < 1 ? [row] : [],
-      cursor: { lastEventId: row.id, lastSeqId: 1 },
-      hasMore: false,
+      projects: [item],
+      latestSeqId: seq,
+      latestEventId: eventId,
     });
   });
-  await setupPage({ context: firstPage, ...options });
-  disposeFirstPage();
-
-  const connecting = context.mocks.deferred<void>();
-  const connection = context.mocks.deferred<void>();
-  let renamedWhileConnecting = false;
-  context.mocks.api(projectsContract.events, ({ respond }) => {
-    return respond(200, {
-      events: renamedWhileConnecting ? [renamed(2, "Launch ready")] : [],
-      hasMore: false,
-    });
-  });
-  context.mocks.api(
-    platformRealtimeTokenContract.create,
-    async ({ respond }) => {
-      if (!connecting.settled()) {
-        connecting.resolve();
-      }
-      await connection.promise;
-      return respond(200, {
-        keyName: "mock-ably-key",
-        clientId: "chat-list-user-321",
-        timestamp: 1,
-        capability: '{"*":["*"]}',
-        nonce: "startup-connection",
-        mac: "mock-signature",
-      });
-    },
-  );
-  const page = await startPage({ context: nextPage, ...options });
-  try {
-    await page.content;
-    await connecting.promise;
-    expect(screen.getByText("Launch")).toBeInTheDocument();
-    renamedWhileConnecting = true;
-    connection.resolve();
-    await page.ready;
-    await expect(
-      screen.findByText("Launch ready"),
-    ).resolves.toBeInTheDocument();
-  } finally {
-    if (!connection.settled()) {
-      connection.resolve();
-    }
-    await page.ready;
-  }
-});
-
-test("Projects load and catch up on a browser without Symbol.dispose", async () => {
-  const options = installWorkspace();
-  installMetadata();
-  const nativeSymbol = Symbol;
-  const descriptors = Object.fromEntries(
-    Object.entries(Object.getOwnPropertyDescriptors(nativeSymbol)).filter(
-      ([key]) => {
-        return key !== "dispose" && key !== "asyncDispose";
-      },
-    ),
-  );
-  const browserSymbol = Object.defineProperties(function Symbol(
-    description?: string | number,
-  ) {
-    return nativeSymbol(description);
-  }, descriptors);
-  vi.stubGlobal("Symbol", browserSymbol);
-  context.mocks.api(projectsContract.events, ({ query, respond }) => {
-    return query.sinceSeqId === 1
-      ? respond(200, { events: [renamed(2, "Launch draft")], hasMore: true })
-      : respond(200, { events: [renamed(3, "Launch ready")], hasMore: false });
-  });
-
-  await setupPage({ context, ...options });
-
-  const list = screen.getByTestId("sidebar-chat-threads-virtual-list");
-  expect(within(list).getByText("Launch ready")).toBeInTheDocument();
-  expect(screen.getByRole("textbox", { name: "Message" })).toBeInTheDocument();
-});
-
-test("An empty cached chat list discovers a newly published snapshot", async () => {
-  const options = installWorkspace();
-  installMetadata();
-  const thread = continuityThread(121, 1, "Planning conversation");
+}
+test("project-cache-002 a thread list notification discovers a chat after an empty snapshot", async () => {
+  const auth = chatListAuth(902),
+    chat = chatListThread(22, "Planning conversation");
   let published = false;
   context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
     return respond(
       200,
       mockChatThreadSnapshotResponse(context, {
-        chatThreads: published ? [thread] : [],
-        latestEventId: published
-          ? "30000000-0000-4000-8000-000000000005"
-          : null,
-        latestSeqId: published ? 5 : null,
+        chatThreads: published ? [chat] : [],
+        latestEventId: published ? chat.id : null,
+        latestSeqId: published ? 1 : null,
       }),
     );
   });
-  context.mocks.api(chatThreadsContract.events, ({ respond }) => {
-    return respond(200, { events: [], hasMore: false });
-  });
+  snapshot(project("Launch"), 1);
   await setupPage({
     context,
-    ...options,
     path: "/",
-    cachedChatThreadEvents: {
-      snapshot: { chatThreads: [], latestEventId: null, latestSeqId: null },
-      events: [],
-    },
+    auth,
+    cachedChatThreadEvents: { snapshot: null, events: [] },
+    sharedWorkerTestTransport: "message-port",
   });
-  expect(screen.getByText("Launch")).toBeInTheDocument();
-
+  await title("Launch");
+  expect(screen.queryByText("Planning conversation")).toBeNull();
   published = true;
-  context.mocks.ably.trigger("threadListChanged");
-
-  await expect(
-    screen.findByText("Planning conversation"),
-  ).resolves.toBeInTheDocument();
+  changeChatThreadList();
+  await findFastControl("link", /Planning conversation/);
 });
-
-test.each(["open", "read", "write"] as const)(
-  "Projects remain available online when IndexedDB cannot %s",
-  async (operation) => {
-    const options = installWorkspace();
-    installMetadata();
-    if (operation === "open") {
-      vi.spyOn(indexedDB, "open").mockImplementation(() => {
-        throw new DOMException("Browser storage disabled", "SecurityError");
-      });
-    } else {
-      const transaction = IDBDatabase.prototype.transaction;
-      vi.spyOn(IDBDatabase.prototype, "transaction").mockImplementation(
-        function (this: IDBDatabase, names, mode, settings) {
-          if (mode === (operation === "read" ? "readonly" : "readwrite")) {
-            throw new DOMException(
-              "Browser storage unavailable",
-              operation === "read" ? "InvalidStateError" : "QuotaExceededError",
-            );
-          }
-          return transaction.call(this, names, mode, settings);
-        },
-      );
-    }
-
-    await setupPage({ context, ...options });
-
-    expect(
-      within(screen.getByTestId("sidebar-chat-threads-virtual-list")).getByText(
-        "Launch",
-      ),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("textbox", { name: "Message" }),
-    ).toBeInTheDocument();
-  },
-);
-
-test("Projects restore persisted events before an expired cursor is rebuilt", async () => {
-  const options = installWorkspace();
-  installMetadata();
-  context.mocks.api(projectsContract.events, ({ respond }) => {
+test("project-cache-006 an expired persisted project cursor rebuilds the visible project from a new snapshot", async () => {
+  const first = createTestRuntime(context),
+    second = createTestRuntime(context),
+    auth = chatListAuth(906),
+    launch = project("Launch"),
+    event = {
+      id: crypto.randomUUID(),
+      seqId: 2,
+      projectId: launch.id,
+      kind: "renamed" as const,
+      name: "Launch ready",
+      createdAt: time,
+    };
+  snapshot(launch, 1);
+  context.mocks.api(projectsContract.events, ({ query, respond }) => {
     return respond(200, {
-      events: [renamed(2, "Launch ready")],
+      events: query.sinceSeqId < 2 ? [event] : [],
       hasMore: false,
     });
   });
-  await setupPage({ context: firstPage, ...options });
-  expect(screen.getByText("Launch ready")).toBeInTheDocument();
-  disposeFirstPage();
-
-  const resume = context.mocks.deferred<void>();
-  context.mocks.api(projectsContract.snapshot, ({ respond }) => {
-    return respond(200, snapshot("Launch restored", 5));
+  await setupPage({
+    context: first,
+    path: "/",
+    auth,
+    sharedWorkerTestTransport: "message-port",
   });
+  await title("Launch ready");
+  cleanup();
+  const gate = context.mocks.deferred<void>(),
+    waiting = context.mocks.deferred<void>();
+  snapshot({ ...launch, name: "Launch restored" }, 5);
   context.mocks.api(projectsContract.events, async ({ query, respond }) => {
-    await resume.promise;
-    return query.sinceSeqId === 2
-      ? respond(410, {
-          error: {
-            code: "PROJECT_EVENTS_EXPIRED",
-            message: "Refresh snapshot",
-          },
-        })
-      : respond(200, { events: [], hasMore: false });
-  });
-  const page = await startPage({ context: nextPage, ...options });
-  await page.content;
-  await expect(screen.findByText("Launch ready")).resolves.toBeInTheDocument();
-
-  resume.resolve();
-  await page.ready;
-  await expect(
-    screen.findByText("Launch restored"),
-  ).resolves.toBeInTheDocument();
-});
-
-test.each(["account", "workspace"] as const)(
-  "Project cache stays private when another %s opens the same browser",
-  async (scope) => {
-    const options = installWorkspace();
-    installMetadata();
-    await setupPage({ context: firstPage, ...options });
-    expect(screen.getByText("Launch")).toBeInTheDocument();
-    disposeFirstPage();
-
-    const requested = context.mocks.deferred<void>();
-    const resume = context.mocks.deferred<void>();
-    context.mocks.api(projectsContract.snapshot, async ({ respond }) => {
-      if (!requested.settled()) {
-        requested.resolve();
+    if (query.sinceSeqId === 2) {
+      if (!waiting.settled()) {
+        waiting.resolve();
       }
-      await resume.promise;
-      return respond(200, snapshot("Other owner's Project"));
+      await gate.promise;
+      return respond(410, {
+        error: { code: "CURSOR_EXPIRED", message: "Expired sequence" },
+      });
+    }
+    return respond(200, { events: [], hasMore: false });
+  });
+  const page = await startPage({
+    context: second,
+    path: "/",
+    auth,
+    sharedWorkerTestTransport: "message-port",
+  });
+  await waiting.promise;
+  await title("Launch ready");
+  expect(screen.queryByText("Launch restored")).toBeNull();
+  gate.resolve();
+  await page.ready;
+  await title("Launch restored");
+  expect(screen.queryByText("Launch ready")).toBeNull();
+});
+test.each([
+  ["007", "account"],
+  ["008", "workspace"],
+] as const)(
+  "project-cache-%s a different %s cannot inherit the previous owner's cached project",
+  async (_id, kind) => {
+    const first = createTestRuntime(context),
+      second = createTestRuntime(context),
+      firstAuth = chatListAuth(907);
+    snapshot(project("Launch"), 1);
+    await setupPage({
+      context: first,
+      path: "/",
+      auth: firstAuth,
+      sharedWorkerTestTransport: "message-port",
     });
-    const auth = options.auth;
-    const page = await startPage({
-      context: nextPage,
-      ...options,
-      auth: {
-        ...auth,
-        ...(scope === "account"
-          ? { user: { ...auth.user, id: "other-project-cache-user" } }
-          : {
-              organization: {
-                activeOrg: {
-                  id: "other-project-cache-org",
-                  name: "Other workspace",
-                },
-                memberships: [{ id: "other-project-cache-org" }],
-              },
-            }),
-      },
+    await title("Launch");
+    cleanup();
+    const auth: SetupPageAuth =
+      kind === "account"
+        ? {
+            ...firstAuth,
+            user: { id: "user_other_harbor", fullName: "New reader" },
+          }
+        : {
+            ...firstAuth,
+            organization: {
+              activeOrg: { id: "org_other_harbor", name: "Other workspace" },
+              memberships: [{ id: "org_other_harbor" }],
+            },
+          };
+    const gate = context.mocks.deferred<void>(),
+      waiting = context.mocks.deferred<void>();
+    snapshot(project("Other owner's Project"), 1, async () => {
+      if (!waiting.settled()) {
+        waiting.resolve();
+      }
+      await gate.promise;
     });
-    await page.content;
-    await requested.promise;
-    expect(screen.queryByText("Launch")).not.toBeInTheDocument();
-
-    resume.resolve();
-    await page.ready;
-    await expect(
-      screen.findByText("Other owner's Project"),
-    ).resolves.toBeInTheDocument();
+    const next = await startPage({
+      context: second,
+      path: "/",
+      auth,
+      sharedWorkerTestTransport: "message-port",
+    });
+    await waiting.promise;
+    await next.content;
+    expect(
+      queryFastControl("button", "Show or hide chats in Launch"),
+    ).toBeNull();
+    gate.resolve();
+    await next.ready;
+    await title("Other owner's Project");
+    expect(
+      queryFastControl("button", "Show or hide chats in Launch"),
+    ).toBeNull();
   },
 );

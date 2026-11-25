@@ -150,8 +150,8 @@ struct ForYouCaughtUp: View {
 struct ForYouLoadingCard: View {
   private static let chip: CGFloat = 140
   private static let titleEnd: CGFloat = 180
-  /// A direction's height: a Body label over two Subheadline lines.
-  private static let option: CGFloat = 100
+  /// A direction's height: its action line, a Body label and two Subheadline lines.
+  private static let option: CGFloat = 120
 
   var body: some View {
     VStack(alignment: .leading, spacing: OkouSpace.xl) {
@@ -161,7 +161,7 @@ struct ForYouLoadingCard: View {
         OkouSkeletonBlock(width: Self.titleEnd, height: OkouSpace.xxl)
         OkouSkeletonBlock(height: OkouSpace.xl).padding(.top, OkouSpace.xs)
       }
-      VStack(spacing: OkouSpace.ten) {
+      VStack(spacing: OkouSpace.sm) {
         ForEach(0..<2, id: \.self) { _ in
           OkouSkeletonBlock(height: Self.option, radius: OkouRadius.control)
         }
@@ -169,6 +169,38 @@ struct ForYouLoadingCard: View {
     }
     .okouShimmer()
     .accessibilityRepresentation { ProgressView() }
+  }
+}
+
+/// The layers of the deck under the card in front: solid cards on the scene, each a little
+/// narrower, lower and more shaded than the one above it.
+struct ForYouDeckLayers: View {
+  let count: Int
+  let ground: Color
+  /// How far each layer peeks below the one above it.
+  let drop: CGFloat
+  /// How much narrower each layer is than the one above it.
+  let inset: CGFloat
+  /// How much more each deeper layer is shaded.
+  let shade: Double
+
+  var body: some View {
+    ZStack(alignment: .bottom) {
+      ForEach(Array((1...count).reversed()), id: \.self) { layer in
+        RoundedRectangle(cornerRadius: OkouRadius.sheet, style: .continuous)
+          .fill(ground)
+          .overlay {
+            RoundedRectangle(cornerRadius: OkouRadius.sheet, style: .continuous)
+              .fill(OkouMediaColor.scrim.opacity(Double(layer) * shade))
+          }
+          .overlay {
+            RoundedRectangle(cornerRadius: OkouRadius.sheet, style: .continuous)
+              .strokeBorder(OkouColor.border, lineWidth: OkouSpace.hairline)
+          }
+          .scaleEffect(x: 1 - CGFloat(layer) * inset, y: 1, anchor: .bottom)
+          .offset(y: CGFloat(layer) * drop)
+      }
+    }
   }
 }
 

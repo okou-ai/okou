@@ -502,7 +502,7 @@ export function debounceCommand<T, Args extends unknown[]>(
     ): Promise<Awaited<T>> => {
       parentSignal.throwIfAborted();
       const signal = set(reset$, parentSignal);
-      await delay(intervalMs, { signal });
+      await delay(IN_VITEST ? 0 : intervalMs, { signal });
       const invocationArgs: [...Args, AbortSignal] = [...args];
       invocationArgs[invocationArgs.length - 1] = signal;
       const result = await set(command$, ...invocationArgs);

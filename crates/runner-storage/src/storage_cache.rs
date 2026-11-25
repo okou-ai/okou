@@ -128,6 +128,8 @@ const BODY_BUFFER_FALLBACK_CAPACITY: usize = 64 * 1024;
 const CONCURRENCY: usize = 4;
 /// Idle transport retention, independent of the per-object request deadline.
 const FRESH_DELIVERY_HTTP_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+/// Bound new connection establishment on the first fresh archive GET.
+const FRESH_DELIVERY_FIRST_CONNECT_TIMEOUT: Duration = Duration::from_millis(1500);
 /// Bound a stalled first response without shortening body or later-attempt allowance.
 const FRESH_DELIVERY_FIRST_HEADERS_TIMEOUT: Duration = Duration::from_secs(5);
 const FRESH_DELIVERY_SLOW_HEADERS: Duration = Duration::from_millis(100);
@@ -2404,9 +2406,10 @@ async fn fetch_fresh_archive_once(
     first_attempt: bool,
 ) -> Result<(Bytes, FreshArchiveSizeSource), FreshArchiveFetchError> {
     let (phase, connection_attempt_observer) = FreshArchivePhaseGuard::new_headers(phase_records);
+    let connect_timeout = first_attempt.then_some(FRESH_DELIVERY_FIRST_CONNECT_TIMEOUT);
     let mut mismatch = None;
     let headers = connection_attempt_observer
-        .scope(async {
+        .scope(connect_timeout, async {
             let request = http
                 .get(archive_url)
                 .timeout(OBJECT_DOWNLOAD_TIMEOUT)

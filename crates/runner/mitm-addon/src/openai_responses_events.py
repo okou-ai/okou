@@ -2,6 +2,9 @@
 
 CLIENT_CREATE_EVENT = "response.create"
 SERVER_CREATED_EVENT = "response.created"
+SERVER_COMPLETED_EVENT = "response.completed"
+SERVER_INCOMPLETE_EVENT = "response.incomplete"
+SERVER_FAILED_EVENT = "response.failed"
 SERVER_ERROR_EVENT = "error"
 
 # Terminal Responses events whose Response object may carry usage. WebSocket
@@ -10,7 +13,7 @@ SERVER_ERROR_EVENT = "error"
 # contract instead of source-preserving append-only events. ``response.done`` is
 # retained as the established compatibility terminal.
 TERMINAL_EVENTS = frozenset(
-    ("response.completed", "response.done", "response.incomplete", "response.failed")
+    (SERVER_COMPLETED_EVENT, "response.done", SERVER_INCOMPLETE_EVENT, SERVER_FAILED_EVENT)
 )
 
 SERVER_LIFECYCLE_EVENTS = TERMINAL_EVENTS | {

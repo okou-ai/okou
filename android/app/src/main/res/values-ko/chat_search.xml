@@ -27,6 +27,7 @@
     <string name="chat_search_short">검색</string>
     <string name="chat_search_partial_local">일부 결과를 불러오지 못했습니다. 저장된 채팅만 표시합니다.</string>
     <string name="chat_search_saved_chats">새로고침할 수 없습니다. 저장된 채팅을 표시합니다.</string>
+    <string name="chat_search_saved_chats_no_matches">저장된 채팅만 검색할 수 있습니다. 일치하는 채팅이 없습니다.</string>
     <string name="chat_search_saved_results">새로고침할 수 없습니다. 이전 결과를 표시합니다.</string>
     <string name="chat_search_messages_failed">메시지를 검색할 수 없습니다</string>
     <string name="chat_search_workflows_failed">워크플로를 검색할 수 없습니다</string>

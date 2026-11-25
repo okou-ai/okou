@@ -3,6 +3,7 @@
 use crate::common;
 
 use base64::Engine as _;
+use serde::Serialize as _;
 use serde_json::{Value, json};
 use std::io::{BufRead, BufReader, BufWriter, Read, Seek, Write};
 use std::time::Duration;
@@ -11,12 +12,29 @@ use tokio::process::Command;
 const LIMIT: usize = 4 * 1024 * 1024;
 const SESSION_ID: &str = "00000000-0000-4000-8000-000000000042";
 const SECRET: &str = "oversized-delivery-secret";
+const REPEATED_TEXT_UNIT: &str = "你\"\\\n";
+const REPEATED_TEXT_MARKER: &str = "@CLAUDE_OVERSIZED_TEXT_BODY@";
 
-fn large_text(label: &str) -> Value {
+fn large_text_template(label: &str) -> Value {
     Value::String(format!(
-        "head-{label}-{SECRET}-{}-tail-{label}",
-        "你\"\\\n".repeat(LIMIT / 6)
+        "head-{label}-{SECRET}-{REPEATED_TEXT_MARKER}-tail-{label}"
     ))
+}
+
+struct RepeatedText<'a>(&'a str);
+
+impl serde_json::ser::Formatter for RepeatedText<'_> {
+    fn write_string_fragment<W: ?Sized + Write>(
+        &mut self,
+        writer: &mut W,
+        fragment: &str,
+    ) -> std::io::Result<()> {
+        if let Some((prefix, suffix)) = fragment.split_once(REPEATED_TEXT_MARKER) {
+            write!(writer, "{prefix}{}{suffix}", self.0)
+        } else {
+            writer.write_all(fragment.as_bytes())
+        }
+    }
 }
 
 #[tokio::test]
@@ -30,24 +48,28 @@ async fn oversized_claude_events_are_reduced_or_skipped_while_run_completes()
     std::fs::create_dir_all(&home)?;
     let server = common::RecordingServer::start(200, Duration::ZERO).await?;
     let mut text = json!({"type":"assistant","message":{"id":"text","role":"assistant","usage":{"input_tokens":7},"content":[{"type":"text","text":null}]}});
-    text["message"]["content"][0]["text"] = large_text("text");
+    text["message"]["content"][0]["text"] = large_text_template("text");
     let mut input = json!({"type":"assistant","message":{"id":"input","role":"assistant","content":[{"type":"tool_use","id":"tool-1","name":"Read","input":{"path":null}}]}});
-    input["message"]["content"][0]["input"]["path"] = large_text("input");
+    input["message"]["content"][0]["input"]["path"] = large_text_template("input");
     let mut output = json!({"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tool-1","is_error":true,"content":null}]}});
-    output["message"]["content"][0]["content"] = large_text("output");
+    output["message"]["content"][0]["content"] = large_text_template("output");
     let mut image = json!({"type":"user","message":{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":null}}]}});
     image["message"]["content"][0]["source"]["data"] =
         Value::String(common::delivery_image::png_base64(1024, 1024)?);
     let mut irreducible = json!({"type":"assistant","message":{"id":null,"role":"assistant","content":[{"type":"text","text":"protected identity cannot be truncated"}]}});
     irreducible["message"]["id"] = Value::String("protected-identity-".repeat(LIMIT / 16));
     let mut result = json!({"type":"result","subtype":"success","session_id":SESSION_ID,"is_error":false,"usage":{"input_tokens":7,"output_tokens":9},"result":null});
-    result["result"] = large_text("result");
+    result["result"] = large_text_template("result");
     let mut tail = json!({"type":"result","subtype":"success","session_id":SESSION_ID,"is_error":false,"result":"final native result","protectedMetadata":null});
     tail["protectedMetadata"] = Value::String("protected-tail-".repeat(LIMIT / 12));
     // Keep the complete output fixture out of the unrelated input prompt.
     let source_path = tmp.path().join("original.jsonl");
     {
         let mut events = BufWriter::with_capacity(64 * 1024, std::fs::File::create(&source_path)?);
+        // Escape one repetition with Serde. The formatter inserts its repeated
+        // contents inside the four template strings, so omit the outer quotes.
+        let unit = serde_json::to_string(REPEATED_TEXT_UNIT)?;
+        let repeated_text = unit[1..unit.len() - 1].repeat(LIMIT / REPEATED_TEXT_UNIT.len());
         for event in [
             json!({"type":"system","subtype":"init","session_id":SESSION_ID,"model":"mock-claude"}),
             json!({"type":"assistant","message":{"id":"ordinary","role":"assistant","content":[{"type":"text","text":"ordinary text"}]}}),
@@ -60,7 +82,10 @@ async fn oversized_claude_events_are_reduced_or_skipped_while_run_completes()
             result,
             tail,
         ] {
-            serde_json::to_writer(&mut events, &event)?;
+            event.serialize(&mut serde_json::Serializer::with_formatter(
+                &mut events,
+                RepeatedText(&repeated_text),
+            ))?;
             events.write_all(b"\n")?;
         }
         events.flush()?;

@@ -66,7 +66,6 @@
     <string name="workflow_notion_child">Subhalaman Notion dibuat</string>
     <string name="workflow_notion_item">Item basis data Notion dibuat</string>
     <string name="workflow_notion_updated">Halaman Notion diperbarui</string>
-    <string name="workflow_offline_changes">Hubungkan ke internet untuk menyimpan. Perubahan Anda tetap ada.</string>
     <string name="workflow_pause">Jeda</string>
     <string name="workflow_paused">Otomatisasi dijeda</string>
     <string name="workflow_private">Hanya saya</string>
@@ -103,7 +102,6 @@
     <plurals name="workflow_enabled_count">
         <item quantity="other">%d otomatisasi aktif</item>
     </plurals>
-    <string name="workflow_draft_network_failed">Draf chat baru tidak dapat dibuka. Draf Anda yang sudah ada tetap tersimpan. Periksa koneksi Anda dan coba lagi.</string>
     <string name="workflow_rule_change_failed">Aturan ini tidak dapat diubah.</string>
     <string name="workflow_rule_network_failed">Aturan ini tidak dapat diubah. Periksa koneksi Anda dan coba lagi.</string>
     <string name="workflow_write_conflict">Alur kerja ini berubah saat disimpan. Perubahan Anda tetap ada.</string>
@@ -119,4 +117,12 @@
     <string name="workflow_history_trigger_unavailable">Pemicu tidak tersedia</string>
     <string name="workflow_history_scheduled">Pemicu terjadwal</string>
     <string name="workflow_history_manual">Eksekusi manual</string>
+    <string name="workflow_catalog_refresh_failed">Direktori alur kerja tidak dapat diperbarui. Menampilkan alur kerja yang sudah dimuat.</string>
+    <string name="workflow_history_earlier_failed">Eksekusi sebelumnya tidak dapat dimuat.</string>
+    <string name="workflow_rule_checking">Memeriksa hasil…</string>
+    <string name="workflow_rule_unconfirmed">Hasilnya belum dikonfirmasi.</string>
+    <string name="workflow_event">Peristiwa</string>
+    <string name="workflow_event_source">Sumber peristiwa</string>
+    <string name="workflow_source_gmail">Gmail · Email diterima</string>
+    <string name="workflow_source_calendar">Google Calendar · Acara dibuat</string>
 </resources>

@@ -1,3 +1,4 @@
+import { resolveHostedCustomDomain$ } from "./hosted-site-domains.service";
 import { createHash, randomBytes } from "node:crypto";
 import { command } from "ccstate";
 import { and, eq, gt } from "drizzle-orm";
@@ -85,7 +86,18 @@ export const authorizeHostedSiteSession$ = command(
     },
     signal: AbortSignal,
   ) => {
-    if (!supportedOrigin(args.origin)) {
+    const custom =
+      !supportedOrigin(args.origin) &&
+      new URL(args.origin).origin === args.origin &&
+      args.origin === `https://${new URL(args.origin).hostname}` &&
+      args.origin.startsWith("https://")
+        ? await set(
+            resolveHostedCustomDomain$,
+            new URL(args.origin).hostname,
+            signal,
+          )
+        : null;
+    if (!supportedOrigin(args.origin) && custom?.siteId !== args.siteId) {
       return { status: "denied" as const };
     }
     const policy = await set(readHostedSitePolicy$, args.siteId, signal);
@@ -96,6 +108,7 @@ export const authorizeHostedSiteSession$ = command(
       4,
     );
     if (
+      !custom &&
       !(await set(
         hostedSiteSessionOrigin$,
         {
@@ -147,6 +160,7 @@ export const authorizeHostedSiteSession$ = command(
       .values({
         siteId: args.siteId,
         origin: args.origin,
+        customDomainRevision: custom ? custom.revision : null,
         userId: identity.userId,
         clerkSessionId: identity.sessionId,
         codeHash: hash(code),
@@ -172,6 +186,21 @@ export const exchangeHostedSiteSession$ = command(
     },
     signal: AbortSignal,
   ) => {
+    let customDomainRevision: string | null = null;
+    if (!supportedOrigin(args.origin)) {
+      const binding = await set(
+        resolveHostedCustomDomain$,
+        new URL(args.origin).hostname,
+        signal,
+      );
+      if (
+        args.origin !== `https://${new URL(args.origin).hostname}` ||
+        binding?.siteId !== args.siteId
+      ) {
+        return null;
+      }
+      customDomainRevision = binding.revision;
+    }
     const condition = and(
       eq(hostedSiteBrowserSessions.siteId, args.siteId),
       eq(hostedSiteBrowserSessions.origin, args.origin),
@@ -188,7 +217,11 @@ export const exchangeHostedSiteSession$ = command(
       .where(condition)
       .limit(1);
     signal.throwIfAborted();
-    if (!pending || !(await set(liveSession$, pending, signal))) {
+    if (
+      !pending ||
+      pending.customDomainRevision !== customDomainRevision ||
+      !(await set(liveSession$, pending, signal))
+    ) {
       return null;
     }
     const sessionToken = `okou_site_${randomBytes(32).toString("hex")}`;
@@ -221,8 +254,23 @@ export const hostedSiteSessionViewer$ = command(
     const token = hostedSiteSessionTokenSchema.safeParse(
       authorization?.startsWith("Bearer ") ? authorization.slice(7) : null,
     );
-    if (!token.success || !supportedOrigin(args.origin)) {
+    if (!token.success) {
       return undefined;
+    }
+    let customDomainRevision: string | null = null;
+    if (!supportedOrigin(args.origin)) {
+      const binding = await set(
+        resolveHostedCustomDomain$,
+        new URL(args.origin).hostname,
+        signal,
+      );
+      if (
+        args.origin !== `https://${new URL(args.origin).hostname}` ||
+        binding?.siteId !== args.siteId
+      ) {
+        return undefined;
+      }
+      customDomainRevision = binding.revision;
     }
     const [session] = await get(db$)
       .select()
@@ -238,6 +286,7 @@ export const hostedSiteSessionViewer$ = command(
       .limit(1);
     signal.throwIfAborted();
     return session &&
+      session.customDomainRevision === customDomainRevision &&
       (await set(liveSession$, session, signal)) &&
       session.expiresAt.getTime() > nowDate().getTime()
       ? session.userId

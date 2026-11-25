@@ -40,7 +40,6 @@ fun AssistantRecoveryPanel(
     target: ComposerTarget,
     failureId: String,
     reason: String?,
-    offline: Boolean,
 ) {
     val read by model.uiState.collectAsStateWithLifecycle()
     val input by composer.uiState.collectAsStateWithLifecycle()
@@ -49,8 +48,7 @@ fun AssistantRecoveryPanel(
         return
     }
     val entry = input.entry(target)
-    val busy =
-        offline || target.key in input.busy || input.persistence != ComposerPersistence.Durable
+    val busy = target.key in input.busy || input.persistence != ComposerPersistence.Durable
     val attempt = entry.recovery?.takeIf { it.selection == read.selection }
     val unresolvedOther =
         entry.recovery?.let {
@@ -80,7 +78,7 @@ fun AssistantRecoveryPanel(
         }
     }
     Surface(
-        Modifier.fillMaxWidth().padding(top = 8.dp),
+        Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
@@ -163,6 +161,7 @@ fun AssistantRecoveryPanel(
                     FlowRow(
                         Modifier.padding(top = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Button(
                             onClick = { composer.recover(target, data.selection.failureId) },
@@ -219,7 +218,11 @@ private fun RecoveryNote(text: String, error: Boolean = false, announced: Boolea
     Text(
         text,
         modifier =
-            if (announced) Modifier.semantics { liveRegion = LiveRegionMode.Polite } else Modifier,
+            Modifier.padding(top = 4.dp)
+                .then(
+                    if (announced) Modifier.semantics { liveRegion = LiveRegionMode.Polite }
+                    else Modifier,
+                ),
         style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp),
         color =
             if (error) MaterialTheme.colorScheme.error

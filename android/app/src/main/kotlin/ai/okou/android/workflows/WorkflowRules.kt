@@ -189,6 +189,7 @@ internal sealed interface WorkflowEdit {
         val original: RuleFields,
         val value: RuleFields = original,
         val enabled: Boolean = false,
+        val lastEventSource: EditableTrigger = EditableTrigger.Calendar,
     ) : WorkflowEdit {
         override val changed
             get() =

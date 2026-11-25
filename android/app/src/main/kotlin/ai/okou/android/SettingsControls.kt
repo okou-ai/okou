@@ -2,6 +2,7 @@ package ai.okou.android
 
 import ai.okou.android.state.rememberSettingsFlag
 import ai.okou.android.updates.updateFocusOutline
+import androidx.activity.compose.BackHandler
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -14,13 +15,17 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -65,6 +70,7 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -344,17 +350,20 @@ internal fun SettingsModal(
     dismissible: Boolean = true,
     fullScreen: Boolean = false,
     showDragHandle: Boolean = true,
+    fitContentInsets: Boolean = false,
+    confirmDismiss: (() -> Boolean)? = null,
     content: @Composable (centered: Boolean) -> Unit,
 ) {
     val window = currentWindowSizeDp()
     if (fullScreen || workspaceListPaneWidth(window.width, window.height) != null) {
         Dialog(
-            onDismissRequest = onDismiss,
+            onDismissRequest = { if (confirmDismiss?.invoke() != false) onDismiss() },
             properties =
                 DialogProperties(
                     dismissOnBackPress = dismissible,
                     dismissOnClickOutside = dismissible && !fullScreen,
                     usePlatformDefaultWidth = false,
+                    decorFitsSystemWindows = !fitContentInsets,
                 ),
         ) {
             Surface(
@@ -363,28 +372,40 @@ internal fun SettingsModal(
                 shape = if (fullScreen) RectangleShape else MaterialTheme.shapes.extraLarge,
                 color = MaterialTheme.colorScheme.surface,
             ) {
-                content(true)
+                if (fitContentInsets) {
+                    Box(Modifier.windowInsetsPadding(WindowInsets.safeDrawing)) { content(true) }
+                } else content(true)
             }
         }
     } else {
         val allowDismiss by rememberUpdatedState(dismissible)
+        val confirm by rememberUpdatedState(confirmDismiss)
         ModalBottomSheet(
             onDismissRequest = onDismiss,
             sheetState =
                 rememberBottomSheetState(
                     initialValue = SheetValue.Hidden,
                     enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
-                    confirmValueChange = { it != SheetValue.Hidden || allowDismiss },
+                    confirmValueChange = {
+                        it != SheetValue.Hidden || allowDismiss && confirm?.invoke() != false
+                    },
                 ),
             sheetGesturesEnabled = dismissible,
             dragHandle = if (showDragHandle) ({ BottomSheetDefaults.DragHandle() }) else null,
             containerColor = MaterialTheme.colorScheme.surface,
             properties =
                 ModalBottomSheetProperties(
-                    shouldDismissOnBackPress = dismissible,
+                    shouldDismissOnBackPress = dismissible && confirmDismiss == null,
                     shouldDismissOnClickOutside = dismissible,
                 ),
         ) {
+            // A vetoed native predictive hide can leave the sheet scaled after Back.
+            val imeVisible = WindowInsets.isImeVisible
+            val keyboard = LocalSoftwareKeyboardController.current
+            BackHandler(enabled = confirmDismiss != null) {
+                if (imeVisible) keyboard?.hide()
+                else if (dismissible && confirmDismiss?.invoke() != false) onDismiss()
+            }
             content(false)
         }
     }
@@ -412,13 +433,21 @@ internal fun SettingsSheet(
     actionSpacing: Dp = 8.dp,
     scroll: SettingsSheetScroll = SettingsSheetScroll.Body,
     dismissible: Boolean = true,
+    fullScreenInShortWindow: Boolean = false,
+    confirmDismiss: (() -> Boolean)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val compactHeight = isShortSettingsPanelWindow()
     val scrollModifier =
         if (scroll == SettingsSheetScroll.None) Modifier
         else Modifier.verticalScroll(rememberScrollState())
-    SettingsModal(onDismiss, dismissible = dismissible) { centered ->
+    SettingsModal(
+        onDismiss,
+        dismissible = dismissible,
+        fullScreen = compactHeight && fullScreenInShortWindow,
+        fitContentInsets = compactHeight && fullScreenInShortWindow,
+        confirmDismiss = confirmDismiss,
+    ) { centered ->
         Column(
             modifier
                 .fillMaxWidth()
@@ -427,14 +456,15 @@ internal fun SettingsSheet(
                 .then(if (scroll == SettingsSheetScroll.Panel) scrollModifier else Modifier),
         ) {
             Box(Modifier.fillMaxWidth()) {
+                val compactTitle = compactHeight && fullScreenInShortWindow
                 Text(
                     title,
                     Modifier.padding(start = titleInset, end = titleInset, bottom = 8.dp)
                         .semantics { heading() },
                     style =
                         MaterialTheme.typography.titleLarge.copy(
-                            fontSize = 22.sp,
-                            lineHeight = 28.sp,
+                            fontSize = if (compactTitle) 16.sp else 22.sp,
+                            lineHeight = if (compactTitle) 24.sp else 28.sp,
                             fontWeight = FontWeight.SemiBold,
                         ),
                 )
@@ -505,6 +535,8 @@ internal fun OkouConfirmationDialog(
     confirmEnabled: Boolean = true,
     dismissEnabled: Boolean = true,
     destructive: Boolean = false,
+    dismissLabel: String = stringResource(R.string.settings_cancel),
+    keepActionsVisible: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     Dialog(
@@ -572,7 +604,7 @@ internal fun OkouConfirmationDialog(
                                             contentColor = colors.onSurface,
                                         ),
                                 ) {
-                                    Text(stringResource(R.string.settings_cancel))
+                                    Text(dismissLabel)
                                 }
                                 TextButton(
                                     onClick = onConfirm,
@@ -602,12 +634,14 @@ internal fun OkouConfirmationDialog(
                             actions.height -
                             titleSpace -
                             actionSpace
-                    // Let the whole dialog scroll if the body would be squeezed below two lines.
+                    // Let the whole dialog scroll if there is too little room for the body.
+                    val minimumBodyHeight =
+                        if (keepActionsVisible) bodyStyle.fontSize.toDp().roundToPx()
+                        else bodyStyle.lineHeight.toDp().roundToPx() * 2
                     val body =
                         children[1].measure(
                             loose.copy(
-                                maxHeight =
-                                    maxOf(bodySpace, bodyStyle.lineHeight.toDp().roundToPx() * 2),
+                                maxHeight = maxOf(bodySpace, minimumBodyHeight),
                             ),
                         )
                     val bodyTop = heading.height + titleSpace

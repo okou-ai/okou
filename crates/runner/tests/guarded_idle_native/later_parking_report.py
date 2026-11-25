@@ -50,10 +50,8 @@ def validate(directory):
     directory = pathlib.Path(directory)
     result, collector, terminals = report._validate_cases(directory, CASES, report.PHASES)
     policy = supplied_policy(collector, result, "native_later_parking_policy_json")
-    witnesses = {case: [] for case in CASES}
-    report.collect_witnesses(
-        directory / 'stdout.log', {PREFIX: witnesses},
-        case_matches=lambda value: value in CASES,
+    witnesses = report.collect_case_witnesses(
+        directory / 'stdout.log', PREFIX, CASES,
         invalid_message="invalid later parking witness",
     )
     identities = {e[1][k] for e in terminals.values() for k in ("sandbox_id", "backing_generation")}
@@ -125,9 +123,10 @@ def validate(directory):
         if not status_evidence.status_wait_advanced(before, after):
             raise ValueError("final status wait not positively observed")
         second = foreground.heartbeat(waiting.get("heartbeat"), 2, polled, events[3]["monotonic_ns"])
-        if first != second or first in runners:
-            raise ValueError("heartbeat runner changed or replayed")
-        runners.add(first)
+        foreground.claim_heartbeat_identity(
+            first, (second,), runners,
+            "heartbeat runner changed or replayed",
+        )
         exact(waiting.get("accounting"), dict.fromkeys(COUNTS, 0) | {"closed": False}, "open accounting not settled")
         exact(waiting, {"io_released_ns": io_released, "status_wait_polled_ns": polled,
             "status_waits_before": before, "status_waits_after": after, "receiver_polled_pending": True,

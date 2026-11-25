@@ -134,7 +134,6 @@ internal data class DefaultModelState(
     val record: DefaultModelRecord? = null,
     val save: DefaultModelSave? = null,
     val options: DefaultModelOptions? = null,
-    val offline: Boolean = false,
     val catalogUnavailable: Boolean = false,
 ) {
     val pending: UpdateDefaultModelPreference?
@@ -214,15 +213,7 @@ internal class DefaultModelSettings(
     fun foreground(active: Boolean) {
         if (foreground == active) return
         foreground = active
-        synchronizeReads()
-    }
-
-    fun online(online: Boolean) {
-        val current = mutable.value
-        if (current.offline == !online) return
-        mutable.value = current.copy(offline = !online, catalogUnavailable = false)
-        saveWait?.cancel()
-        if (online) resumeReadback()
+        if (active && readbackBlocked) resumeReadback()
         synchronizeReads()
     }
 
@@ -284,7 +275,7 @@ internal class DefaultModelSettings(
 
     private fun synchronizeReads() {
         val current = mutable.value
-        val active = foreground && !current.offline && authorized()
+        val active = foreground && authorized()
         val refresh = active && presented && destination == null && current.record != null
         if (!refresh) {
             preferenceRead?.cancel()
@@ -399,7 +390,7 @@ internal class DefaultModelSettings(
     }
 
     private fun canSave(): Boolean =
-        authorized() && !mutable.value.offline && !readbackBlocked && mutable.value.pending != null
+        authorized() && !readbackBlocked && mutable.value.pending != null
 
     private suspend fun savePreferences() {
         while (canSave()) {

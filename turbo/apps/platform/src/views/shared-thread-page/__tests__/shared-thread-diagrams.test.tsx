@@ -1,61 +1,24 @@
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
-import { screen, waitFor, within } from "@testing-library/react";
+import { screen, within, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
-
-import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
+import { click } from "../../../__tests__/page-helper.ts";
 import {
   testContext,
   warmMermaidParser,
 } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  getNamedButton,
+  queryNamedButton,
+} from "../../okou-page/__tests__/chat-attachment-test-helpers.ts";
 import {
   setupSharedThreadPage,
   sharedThread,
 } from "./shared-thread-test-helpers.ts";
 
 const context = testContext();
-
 warmMermaidParser();
 
-const DIAGRAM = "```mermaid\nflowchart LR\n  Draft --> Review\n```";
-
-function actionNames(container: ParentNode): readonly string[] {
-  return queryAllByRoleFast("button", container)
-    .map((button) => {
-      return button.getAttribute("aria-label") ?? button.textContent?.trim();
-    })
-    .sort();
-}
-
-function getButtonByName(name: string, container: ParentNode): HTMLElement {
-  const button = queryAllByRoleFast("button", container).find((candidate) => {
-    return (
-      candidate.getAttribute("aria-label") === name ||
-      candidate.textContent?.trim() === name
-    );
-  });
-  if (!button) {
-    throw new Error(`Expected button named "${name}"`);
-  }
-  return button;
-}
-
-function getExpandButton(): HTMLElement {
-  const button = queryAllByRoleFast("button").find((candidate) => {
-    return candidate.getAttribute("aria-label") === "Expand diagram";
-  });
-  if (!button) {
-    throw new Error("Expected an expandable diagram");
-  }
-  return button;
-}
-
-async function findDiagramDialog(): Promise<HTMLElement> {
-  const dialog = await screen.findByRole("dialog");
-  await within(dialog).findByTestId("attachment-lightbox-image");
-  return dialog;
-}
-
-test("a diagram in a shared conversation expands in the conversation", async () => {
+test("shared-thread-diagrams-001 downloads the displayed SVG from the conversation viewer", async () => {
   const browser = context.mocks.browser.blobDownload();
   context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
     return respond(
@@ -63,61 +26,56 @@ test("a diagram in a shared conversation expands in the conversation", async () 
       sharedThread({
         messages: [
           {
-            messageIndex: 0,
             role: "assistant",
-            content: `Here is the flow.\n\n${DIAGRAM}`,
-            runIndex: 0,
+            messageIndex: 0,
+            content:
+              "Survey sequence\n\n```mermaid\nflowchart LR\nStart --> Finish\n```",
           },
         ],
       }),
     );
   });
-
-  await setupSharedThreadPage(context, { host: "app.okou.ai" });
-
-  await expect(
-    screen.findByText("Here is the flow."),
-  ).resolves.toBeInTheDocument();
-  const expand = await waitFor(() => {
-    return getExpandButton();
+  await setupSharedThreadPage(context);
+  await expect(screen.findByAltText("Diagram")).resolves.toBeInTheDocument();
+  click(getNamedButton("Expand diagram"));
+  const viewer = await screen.findByRole("dialog");
+  const preview = await within(viewer).findByRole("img", {
+    name: "diagram.svg",
   });
-  await waitFor(() => {
-    expect(expand).toBeEnabled();
-  });
-
-  click(expand);
-
-  const dialog = await findDiagramDialog();
-  const image = within(dialog).getByTestId("attachment-lightbox-image");
-  await waitFor(() => {
-    expect(image).toBeVisible();
-  });
-  const source = image.getAttribute("src");
-  if (!source) {
-    throw new Error("Expected the expanded diagram to have a source");
+  const imageUrl = preview.getAttribute("src");
+  if (!imageUrl) {
+    throw new Error("Missing rendered diagram URL");
   }
-  expect(browser.blobForUrl(source)?.type).toBe("image/svg+xml");
-  expect(within(dialog).getByText("diagram.svg")).toBeInTheDocument();
-  // The diagram was drawn in this browser, so its address is dead anywhere
-  // else and the dialog offers the copy that is worth something instead.
-  const actions = actionNames(dialog);
-  expect(actions).toStrictEqual(
-    expect.arrayContaining(["Close", "Download", "Fill view"]),
-  );
-  expect(actions).not.toContain("Share");
-  expect(actions).not.toContain("Copy link");
-  expect(actions).not.toContain("Open in split view");
-  expect(getButtonByName("Zoom in", dialog)).toBeEnabled();
-  expect(getButtonByName("Zoom out", dialog)).toBeEnabled();
-  expect(getButtonByName("Reset zoom", dialog)).toBeEnabled();
+  const svg = browser.blobForUrl(imageUrl);
+  expect(svg?.type).toBe("image/svg+xml");
+  for (const name of [
+    "Close",
+    "Fill view",
+    "Zoom in",
+    "Zoom out",
+    "Reset zoom",
+  ]) {
+    expect(getNamedButton(name, viewer)).toBeEnabled();
+  }
+  for (const name of ["Share", "Copy link", "Open in split view"]) {
+    expect(queryNamedButton(name, viewer)).toBeNull();
+  }
 
-  click(getButtonByName("Download", dialog));
-
+  click(getNamedButton("Download", viewer));
   await waitFor(() => {
-    expect(browser.downloads).toHaveLength(1);
+    return expect(browser.downloads).toContainEqual({
+      url: imageUrl,
+      filename: "diagram.svg",
+      blob: svg,
+    });
   });
-  // The rendered bytes are already in the page, so saving them needs no fetch.
-  expect(browser.downloads[0]?.url).toBe(source);
-  expect(browser.downloads[0]?.filename).toBe("diagram.svg");
-  await expect(browser.downloads[0]?.blob?.text()).resolves.toContain("<svg");
+  const saved = browser.downloads[0]?.blob;
+  if (!saved) {
+    throw new Error("Download contained no SVG data");
+  }
+  const drawing = new DOMParser().parseFromString(
+    await saved.text(),
+    "image/svg+xml",
+  );
+  expect(drawing.documentElement.localName).toBe("svg");
 });

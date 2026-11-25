@@ -25,6 +25,7 @@ from typing import Literal
 
 import openai_responses_events
 
+from .json_limits import MODEL_JSON_MAX_WORK_UNITS
 from .json_probe import TopLevelStringFieldProbeResult, probe_top_level_string_field
 from .json_selective import (
     JSON_INTEGER_VALUE_LIMIT_EXCEEDED,
@@ -40,6 +41,7 @@ from .model_tokens import (
     MODEL_USAGE_CATEGORY_CACHE_READ,
     MODEL_USAGE_CATEGORY_INPUT,
     MODEL_USAGE_CATEGORY_OUTPUT,
+    MODEL_USAGE_QUANTITY_FIELD,
     update_model_usage_quantity,
 )
 from .openai_tokens import partition_input_tokens
@@ -70,7 +72,6 @@ _JSON_PREFILTER_MAX_STRING_BYTES = 1024
 _RESPONSES_EVENT_PREFILTER_MAX_BYTES = 4096
 # Bound dense syntax and slow scalar inspection while retaining the selective
 # parser's bulk-scan path for ordinary large content strings.
-_RESPONSES_MAX_WORK_UNITS = 65_536
 _WEBSOCKET_INSPECTION_STEP_BYTES = 4096
 OPENAI_RESPONSES_WEBSOCKET_WORK_LIMIT_ERROR = "work_limit_exceeded"
 
@@ -131,18 +132,20 @@ class OpenAIResponsesEvent:
     _classification: _ResponsesEventTypeClassification
 
 
-_RESPONSES_RESPONSE_SCALAR_FIELDS = {
+_RESPONSES_RESPONSE_TEXT_FIELDS = {
     ("id",): ScalarField("string", max_bytes=1024),
     ("model",): ScalarField("string", max_bytes=1024),
     ("service_tier",): ScalarField("string", max_bytes=1024),
-    ("usage", "input_tokens"): ScalarField("int", max_bytes=64, max_int_value=MAX_USAGE_QUANTITY),
-    ("usage", "output_tokens"): ScalarField("int", max_bytes=64, max_int_value=MAX_USAGE_QUANTITY),
-    ("usage", "input_tokens_details", "cached_tokens"): ScalarField(
-        "int", max_bytes=64, max_int_value=MAX_USAGE_QUANTITY
-    ),
-    ("usage", "input_tokens_details", "cache_write_tokens"): ScalarField(
-        "int", max_bytes=64, max_int_value=MAX_USAGE_QUANTITY
-    ),
+}
+_RESPONSES_USAGE_QUANTITY_PATHS = (
+    ("usage", "input_tokens"),
+    ("usage", "output_tokens"),
+    ("usage", "input_tokens_details", "cached_tokens"),
+    ("usage", "input_tokens_details", "cache_write_tokens"),
+)
+_RESPONSES_RESPONSE_SCALAR_FIELDS = {
+    **_RESPONSES_RESPONSE_TEXT_FIELDS,
+    **dict.fromkeys(_RESPONSES_USAGE_QUANTITY_PATHS, MODEL_USAGE_QUANTITY_FIELD),
 }
 
 _RESPONSES_SSE_RESPONSE_SCALAR_FIELDS = {
@@ -153,12 +156,10 @@ _RESPONSES_SSE_SCALAR_FIELDS = {
     ("type",): ScalarField("string", max_bytes=1024, overflow_policy="discard"),
     **_RESPONSES_SSE_RESPONSE_SCALAR_FIELDS,
 }
+# Retain lifecycle evidence even when a complete frame exceeds the usage quantity ceiling.
 _RESPONSES_WEBSOCKET_RESPONSE_SCALAR_FIELDS = {
-    **_RESPONSES_RESPONSE_SCALAR_FIELDS,
-    ("usage", "input_tokens"): ScalarField("int", max_bytes=128),
-    ("usage", "output_tokens"): ScalarField("int", max_bytes=128),
-    ("usage", "input_tokens_details", "cached_tokens"): ScalarField("int", max_bytes=128),
-    ("usage", "input_tokens_details", "cache_write_tokens"): ScalarField("int", max_bytes=128),
+    **_RESPONSES_RESPONSE_TEXT_FIELDS,
+    **dict.fromkeys(_RESPONSES_USAGE_QUANTITY_PATHS, ScalarField("int", max_bytes=128)),
 }
 _RESPONSES_WEBSOCKET_SSE_RESPONSE_SCALAR_FIELDS = {
     **_RESPONSES_WEBSOCKET_RESPONSE_SCALAR_FIELDS,
@@ -218,7 +219,7 @@ def inspect_openai_responses_client_event_steps(
     extractor = JsonSelectiveExtractor(
         scalar_fields=_RESPONSES_CLIENT_SCALAR_FIELDS,
         scalar_consistency_paths={("type",), ("generate",)},
-        max_work_units=_RESPONSES_MAX_WORK_UNITS,
+        max_work_units=MODEL_JSON_MAX_WORK_UNITS,
     )
     result = yield from _inspect_websocket_json_steps(extractor, body)
     if not result.complete:
@@ -372,7 +373,7 @@ def inspect_openai_responses_server_event_steps(
     extractor = JsonSelectiveExtractor(
         scalar_fields=scalar_fields,
         scalar_consistency_paths=consistency_paths,
-        max_work_units=_RESPONSES_MAX_WORK_UNITS,
+        max_work_units=MODEL_JSON_MAX_WORK_UNITS,
     )
     result = yield from _inspect_websocket_json_steps(extractor, event._body)
 
@@ -803,7 +804,7 @@ class _OpenAIResponsesSseUsageHandler:
                     if self._on_terminal_usage is not None or self._on_observation is not None
                     else None
                 ),
-                max_work_units=_RESPONSES_MAX_WORK_UNITS,
+                max_work_units=MODEL_JSON_MAX_WORK_UNITS,
             )
             self._event_extractors[include_type] = extractor
         self._extractor = extractor

@@ -28,6 +28,7 @@
     <string name="artifact_empty">अभी कोई आर्टिफ़ैक्ट नहीं है</string>
     <string name="artifact_empty_type">इस प्रकार का कोई आर्टिफ़ैक्ट नहीं है</string>
     <string name="artifact_no_matches">कोई मेल खाता आर्टिफ़ैक्ट नहीं मिला</string>
+    <string name="artifact_clear_keyword">खोज साफ़ करें</string>
     <string name="artifact_show_all">सभी दिखाएँ</string>
     <string name="artifact_catalog_load_failed">फ़िलहाल आर्टिफ़ैक्ट लोड नहीं हो पा रहे हैं</string>
     <string name="artifact_catalog_refresh_failed">फ़िलहाल अपडेट नहीं हो पा रहा है। लोड किए गए आर्टिफ़ैक्ट दिख रहे हैं।</string>

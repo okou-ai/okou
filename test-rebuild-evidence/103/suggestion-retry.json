@@ -1,0 +1,196 @@
+{
+  "page": {
+    "initialCard": "1a8ee9d0-23c7-4c01-b53c-1a1865c8ed6f",
+    "publishedBackground": "Survey launch depends on the tide",
+    "editorTitle": "Approve the coastal survey",
+    "retainedFollowup": "Confirm the harbor depth with Mara.",
+    "retainedCard": true,
+    "failure": "This suggestion background has changed",
+    "editorClosed": true,
+    "cardRemoved": true,
+    "retryEnabled": true,
+    "confirmation": "Sent to a new chat",
+    "empty": "All caught up",
+    "page": "/for-you"
+  },
+  "receiver": {
+    "id": "1a8ee9d0-23c7-4c01-b53c-1a1865c8ed6f",
+    "member": "user_47a643f2-0f88-4fbc-bdbc-377d02b6c918",
+    "workspace": "org_898c6ee9-f786-44aa-b13d-95716998220e",
+    "attempts": [
+      {
+        "status": 409,
+        "thread": "f4464b23-2172-8284-aeea-24d928df0183",
+        "event": "c9c7638a-bfed-856b-bd29-a8f223386723",
+        "document": {
+          "version": 1,
+          "parts": [
+            {
+              "type": "additional_info",
+              "text": "Okou suggestion context v1:\n{\"suggestionId\":\"1a8ee9d0-23c7-4c01-b53c-1a1865c8ed6f\",\"draftId\":\"1a8ee9d0-23c7-4c01-b53c-1a1865c8ed6f\",\"optionId\":\"custom\",\"titleSnapshot\":\"Approve the coastal survey\",\"rationaleSnapshot\":\"A decision needs your input\",\"contextVersion\":\"bfdebe1cf67c83a5115d2452552570a85ff551111c921cd5e07a05722bd2caf0\",\"attachmentIds\":[]}"
+            },
+            {
+              "type": "feedback",
+              "quote": "Survey launch depends on the tide",
+              "note": [
+                {
+                  "type": "text",
+                  "text": "Confirm the harbor depth with Mara."
+                }
+              ]
+            }
+          ]
+        },
+        "historyStatus": 200,
+        "storedEvent": false,
+        "card": {
+          "active": [
+            "1a8ee9d0-23c7-4c01-b53c-1a1865c8ed6f"
+          ],
+          "receipts": []
+        }
+      },
+      {
+        "status": 201,
+        "thread": "f4464b23-2172-8284-aeea-24d928df0183",
+        "event": "c9c7638a-bfed-856b-bd29-a8f223386723",
+        "document": {
+          "version": 1,
+          "parts": [
+            {
+              "type": "additional_info",
+              "text": "Okou suggestion context v1:\n{\"suggestionId\":\"1a8ee9d0-23c7-4c01-b53c-1a1865c8ed6f\",\"draftId\":\"1a8ee9d0-23c7-4c01-b53c-1a1865c8ed6f\",\"optionId\":\"custom\",\"titleSnapshot\":\"Approve the coastal survey\",\"rationaleSnapshot\":\"A decision needs your input\",\"contextVersion\":\"bfdebe1cf67c83a5115d2452552570a85ff551111c921cd5e07a05722bd2caf0\",\"attachmentIds\":[]}"
+            },
+            {
+              "type": "feedback",
+              "quote": "Survey launch depends on the tide",
+              "note": [
+                {
+                  "type": "text",
+                  "text": "Confirm the harbor depth with Mara."
+                }
+              ]
+            }
+          ]
+        },
+        "historyStatus": 200,
+        "storedEvent": true,
+        "card": {
+          "active": [],
+          "receipts": [
+            {
+              "id": "1a8ee9d0-23c7-4c01-b53c-1a1865c8ed6f",
+              "state": {
+                "status": "consumed",
+                "selectedOptionId": "custom",
+                "feedbacks": [
+                  {
+                    "id": "c9c7638a-bfed-856b-bd29-a8f223386723",
+                    "kind": "custom_sent",
+                    "createdAt": "2026-11-24T04:24:41.116Z",
+                    "learnedAt": null,
+                    "targetId": null,
+                    "note": "",
+                    "choice": "Confirm the harbor depth with Mara.",
+                    "context": {
+                      "title": "Approve the coastal survey",
+                      "rationale": "A decision needs your input",
+                      "optionLabel": null
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "final": {
+      "saved": {
+        "id": "c9c7638a-bfed-856b-bd29-a8f223386723",
+        "threadId": "f4464b23-2172-8284-aeea-24d928df0183",
+        "content": null,
+        "seqId": 1,
+        "sequenceNumber": null,
+        "createdAt": "2026-11-24T04:24:41.106Z",
+        "eventType": "input.prompt",
+        "userMessage": {
+          "version": 1,
+          "parts": [
+            {
+              "type": "additional_info",
+              "text": "Okou suggestion context v1:\n{\"suggestionId\":\"1a8ee9d0-23c7-4c01-b53c-1a1865c8ed6f\",\"draftId\":\"1a8ee9d0-23c7-4c01-b53c-1a1865c8ed6f\",\"optionId\":\"custom\",\"titleSnapshot\":\"Approve the coastal survey\",\"rationaleSnapshot\":\"A decision needs your input\",\"contextVersion\":\"bfdebe1cf67c83a5115d2452552570a85ff551111c921cd5e07a05722bd2caf0\",\"attachmentIds\":[]}"
+            },
+            {
+              "type": "feedback",
+              "quote": "Survey launch depends on the tide",
+              "note": [
+                {
+                  "type": "text",
+                  "text": "Confirm the harbor depth with Mara."
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "prior": {
+        "active": [],
+        "receipts": [
+          {
+            "id": "1a8ee9d0-23c7-4c01-b53c-1a1865c8ed6f",
+            "state": {
+              "status": "consumed",
+              "selectedOptionId": "custom",
+              "feedbacks": [
+                {
+                  "id": "c9c7638a-bfed-856b-bd29-a8f223386723",
+                  "kind": "custom_sent",
+                  "createdAt": "2026-11-24T04:24:41.116Z",
+                  "learnedAt": null,
+                  "targetId": null,
+                  "note": "",
+                  "choice": "Confirm the harbor depth with Mara.",
+                  "context": {
+                    "title": "Approve the coastal survey",
+                    "rationale": "A decision needs your input",
+                    "optionLabel": null
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "ordinaryStatus": 409,
+      "after": {
+        "active": [],
+        "receipts": [
+          {
+            "id": "1a8ee9d0-23c7-4c01-b53c-1a1865c8ed6f",
+            "state": {
+              "status": "consumed",
+              "selectedOptionId": "custom",
+              "feedbacks": [
+                {
+                  "id": "c9c7638a-bfed-856b-bd29-a8f223386723",
+                  "kind": "custom_sent",
+                  "createdAt": "2026-11-24T04:24:41.116Z",
+                  "learnedAt": null,
+                  "targetId": null,
+                  "note": "",
+                  "choice": "Confirm the harbor depth with Mara.",
+                  "context": {
+                    "title": "Approve the coastal survey",
+                    "rationale": "A decision needs your input",
+                    "optionLabel": null
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}

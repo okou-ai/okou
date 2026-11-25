@@ -11,7 +11,11 @@
  */
 
 import { FeatureSwitchKey } from "./feature-switch-key";
-import { STAFF_ORG_ID_HASHES, fnv1a } from "./identity-hash";
+import {
+  STAFF_ORG_ID_FINGERPRINTS,
+  STAFF_ORG_ID_HASHES,
+  fnv1a,
+} from "./identity-hash";
 import { isStaffOrg } from "./staff-org";
 
 export interface FeatureSwitch {
@@ -80,7 +84,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.ArtifactThreePointTiming]: {
     maintainer: "bingjie@okou.ai",
-    displayName: "Artifact three-point phase timing",
     description:
       "Record versioned research, generation, and authenticated completion observations in Axiom.",
     enabled: false,
@@ -90,7 +93,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.PhoneUse]: {
     maintainer: "lancy@okou.ai",
-    displayName: "Phone Use",
     description: "Internal cloud-controlled iOS device automation.",
     enabled: false,
   },
@@ -107,6 +109,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Member-wide connector account access",
     description: "Apply connector account eligibility across a member's chats.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.EmailIntegration]: {
     maintainer: "yuma@okou.ai",
@@ -129,15 +132,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-    restrictOverridesToAudience: true,
   },
   [FeatureSwitchKey.MarkdownFirstOutput]: {
     maintainer: "bingjie@okou.ai",
     displayName: "Markdown-first document output",
     description:
-      "Prefer Markdown for unformatted text documents, use a clearer heading hierarchy in document previews, and offer DOCX and PDF exports.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+      "Use Markdown for text-focused documents and HTML for visual or interactive deliverables, with structured Markdown previews and DOCX and PDF exports.",
+    enabled: true,
   },
   [FeatureSwitchKey.MarkdownArtifactQuote]: {
     maintainer: "bingjie@okou.ai",
@@ -145,6 +146,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Copy or quote selected Markdown passages into the owning chat in desktop split view.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ProjectArchive]: {
     maintainer: "ethan@okou.ai",
@@ -186,14 +188,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.WorkflowRecencySync]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Workflow recency sync",
-    description:
-      "Sync recently used workflows across devices in each workspace.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.ZipArtifactPreview]: {
     maintainer: "liangyou@okou.ai",
     displayName: "ZIP artifact preview",
@@ -207,6 +201,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Browse artifacts in a searchable list with type filters, creation-time sorting, and the existing sidebar previews.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.SlashActions]: {
     maintainer: "tongx@okou.ai",
@@ -274,6 +269,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.HostedSiteCustomDomains]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Custom domains",
+    description:
+      "Connect verified custom domains from Customize URL with a subscription.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.FreePlanArtifactPaywall]: {
     maintainer: "ming@okou.ai",
     displayName: "Free plan artifact paywall",
@@ -294,8 +297,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Suggestions",
     description:
       "Update the user profile daily and curate useful next-step suggestions.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.PresentationConvert]: {
     maintainer: "bingjie@okou.ai",
@@ -316,6 +318,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "yuma@okou.ai",
     description: "Enable the DocuSign e-signature connector",
     enabled: false,
+  },
+  [FeatureSwitchKey.AppStoreConnect]: {
+    maintainer: "lancy@okou.ai",
+    displayName: "App Store Connect",
+    description:
+      "Manage Apple app listings, TestFlight builds, reviews and releases.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.PayPalConnector]: {
     maintainer: "yuma@okou.ai",
@@ -371,14 +381,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.CodexExecution]: {
     maintainer: "liangyou@okou.ai",
-    displayName: "Codex execution (test only)",
     description:
       "Test-only override to use Codex instead of Pi for supported ChatGPT subscription runs. Auto always stays on Pi.",
     enabled: false,
   },
   [FeatureSwitchKey.GeminiAntigravity]: {
     maintainer: "lancy@okou.ai",
-    displayName: "Gemini 4 with Antigravity",
     description:
       "Opt into Neon, Carbon, and Hydrogen with a personal Google AI subscription.",
     enabled: false,
@@ -448,6 +456,16 @@ function evaluateSwitch(fs: FeatureSwitch, hashes: ResolvedHashes): boolean {
   if (hashes.orgIdHash && fs.enabledOrgIdHashes?.includes(hashes.orgIdHash))
     return true;
   return false;
+}
+
+/** Digests for evaluating a switch's staff organization audience in PostgreSQL. */
+export function getStaffOrgRolloutDigests(key: FeatureSwitchKey): string[] {
+  const orgHashes = FEATURE_SWITCHES[key].enabledOrgIdHashes;
+  return STAFF_ORG_ID_FINGERPRINTS.filter(({ hash }) => {
+    return orgHashes?.includes(hash);
+  }).map(({ sha256 }) => {
+    return sha256;
+  });
 }
 
 /** Whether this identity may opt into or manage a switch in Lab. */

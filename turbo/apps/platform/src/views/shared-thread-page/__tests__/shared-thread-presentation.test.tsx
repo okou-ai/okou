@@ -1,237 +1,113 @@
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
-
-import { queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { platformOkouWordmarkLightImg } from "../../../lib/static-assets.ts";
 import {
-  testContext,
-  warmMermaidParser,
-} from "../../../signals/__tests__/test-helpers.ts";
-import {
-  getLinkByName,
-  linksByName,
   setupSharedThreadPage,
   sharedThread,
+  getLinkByName,
 } from "./shared-thread-test-helpers.ts";
 
 const context = testContext();
+const host = "app.okou.ai";
 
-warmMermaidParser();
-
-test("A missing public conversation uses the Okou presentation", async () => {
+test("shared-thread-presentation-001 lets the signed-out reader return to a missing conversation after sign-in", async () => {
   context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
     return respond(404, {
-      error: { code: "NOT_FOUND", message: "Not found" },
+      error: { code: "NOT_FOUND", message: "Unknown share" },
     });
   });
-
-  await setupSharedThreadPage(context, { host: "app.okou.ai" });
-
+  await setupSharedThreadPage(context, { host });
   await expect(
-    screen.findByRole("heading", {
-      name: "You can’t view this chat",
-    }),
+    screen.findByText("You can’t view this chat"),
   ).resolves.toBeInTheDocument();
-  for (const link of linksByName("Sign in")) {
-    const url = new URL(link.getAttribute("href")!);
-    expect(url.searchParams.get("redirect_url")).toBe(window.location.href);
-  }
-  const brandLink = getLinkByName("Okou");
-  expect(brandLink).toHaveAttribute("href", "https://app.okou.ai");
-  expect(getLinkByName("Sign up")).toHaveAttribute(
+  const header = screen.getByRole("banner");
+  expect(getLinkByName("Okou", header)).toHaveAttribute(
     "href",
-    expect.stringContaining("https://app.okou.ai/sign-up"),
+    "https://app.okou.ai",
   );
+  const back = new URL("https://app.okou.ai/sign-in");
+  back.searchParams.set("redirect_url", location.href);
+  expect(getLinkByName("Sign in", header)).toHaveAttribute("href", back.href);
+  const recovery = screen.getByRole("main");
+  expect(getLinkByName("Sign in", recovery)).toHaveAttribute("href", back.href);
+  back.pathname = "/sign-up";
+  expect(getLinkByName("Sign up", header)).toHaveAttribute("href", back.href);
 });
 
-test("A public conversation renders shared messages with Okou branding", async () => {
-  context.mocks.browser.matchMedia((query) => {
-    return query === "(prefers-color-scheme: dark)";
+test("shared-thread-presentation-002 reads the published heading hierarchy and emphasis in dark mode", async () => {
+  context.mocks.browser.matchMedia((q) => {
+    return q === "(prefers-color-scheme: dark)";
   });
   context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
-    return respond(200, {
-      ...sharedThread(),
-      title: "Public launch plan",
-      messages: [
-        {
-          messageIndex: 0,
-          role: "user",
-          content: "What should we launch?",
-          runIndex: 0,
-        },
-        {
-          messageIndex: 1,
-          role: "assistant",
-          content: "The plain status is ready.",
-          runIndex: 0,
-        },
-        {
-          messageIndex: 2,
-          role: "assistant",
-          content: "Primary\n=\n\nLaunch the **public preview**.",
-          runIndex: 0,
-        },
-        {
-          messageIndex: 3,
-          role: "assistant",
-          content: "Secondary\n--",
-          runIndex: 0,
-        },
-      ],
-    });
+    return respond(
+      200,
+      sharedThread({
+        title: "Public launch plan",
+        messages: [
+          {
+            role: "user",
+            messageIndex: 0,
+            content: "Which phase ships first?",
+          },
+          {
+            role: "assistant",
+            messageIndex: 1,
+            content:
+              "# Primary\n\n## Secondary\n\nStart with the **public preview**.",
+          },
+        ],
+      }),
+    );
   });
-
-  await setupSharedThreadPage(context, { host: "app.okou.ai" });
-
+  await setupSharedThreadPage(context, { host });
   await expect(
-    screen.findByRole("heading", { name: "Public launch plan" }),
+    screen.findByRole("heading", { level: 2, name: "Secondary" }),
   ).resolves.toBeInTheDocument();
-  expect(screen.getByText("What should we launch?")).toBeInTheDocument();
-  expect(screen.getByText("The plain status is ready.")).toBeInTheDocument();
-  await expect(
-    screen.findByRole("heading", { name: "Primary" }),
-  ).resolves.toHaveProperty("tagName", "H1");
-  expect(screen.getByRole("heading", { name: "Secondary" })).toHaveProperty(
-    "tagName",
-    "H2",
-  );
-  expect(screen.getByText("public preview")).toHaveProperty(
-    "tagName",
-    "STRONG",
-  );
-  expect(screen.queryByTestId("rich-content-loading")).not.toBeInTheDocument();
-  const brandLink = getLinkByName("Okou");
-  expect(brandLink).toHaveAttribute("href", "https://app.okou.ai");
-  expect(within(brandLink).getByRole("img", { name: "Okou" })).toHaveAttribute(
+  expect(
+    screen.getByRole("heading", { level: 1, name: "Primary" }),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText("public preview", { selector: "strong" }),
+  ).toBeInTheDocument();
+  expect(screen.getByText("Which phase ships first?")).toBeInTheDocument();
+  const header = screen.getByRole("banner");
+  expect(within(header).getByText("Public launch plan")).toBeInTheDocument();
+  const home = getLinkByName("Okou", header);
+  expect(home).toHaveAttribute("href", "https://app.okou.ai");
+  expect(home.querySelector("img")).toHaveAttribute(
     "src",
     platformOkouWordmarkLightImg,
   );
+  expect(screen.queryByTestId("rich-content-loading")).not.toBeInTheDocument();
 });
 
-test("A shared conversation draws Okou with the animated avatar once it is on", async () => {
+test("shared-thread-presentation-005 keeps literal prompt emphasis beside a safe external link", async () => {
+  const url = "https://example.com/report";
   context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
     return respond(
       200,
       sharedThread({
         messages: [
           {
-            messageIndex: 0,
             role: "user",
-            content: "What should we launch?",
-            runIndex: 0,
-          },
-          {
-            messageIndex: 1,
-            role: "assistant",
-            content: "The plain status is ready.",
-            runIndex: 0,
+            messageIndex: 0,
+            content: `Compare ${url} with **bold** notes.`,
           },
         ],
       }),
     );
   });
-
-  await setupSharedThreadPage(context, {
-    host: "app.okou.ai",
-    auth: { user: { id: "avatar-share-reader", fullName: "Share Reader" } },
-    featureSwitches: { [FeatureSwitchKey.OkouAnimatedAvatar]: true },
-  });
-
-  await expect(
-    screen.findByText("The plain status is ready."),
-  ).resolves.toBeInTheDocument();
-  const avatar = document.querySelector("[data-shared-assistant-avatar]");
-  expect(avatar).toHaveAttribute("data-okou-avatar", "animated");
-  expect(avatar).toHaveAccessibleName("Okou");
-});
-
-test("A shared conversation renders CJK emphasis", async () => {
-  const source = "**机构与身份：**个人站 Artibiotics";
-  context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
-    return respond(
-      200,
-      sharedThread({
-        messages: [{ messageIndex: 0, role: "assistant", content: source }],
-      }),
-    );
-  });
-
-  await setupSharedThreadPage(context, {
-    host: "app.okou.ai",
-    auth: { user: { id: "cjk-share-reader", fullName: "Share Reader" } },
-  });
-
-  const content = await screen.findByText("机构与身份：");
-  expect(content.tagName).toBe("STRONG");
-  expect(content.closest("p")?.textContent).toBe(
-    "机构与身份：个人站 Artibiotics",
+  await setupSharedThreadPage(context, { host });
+  const urlText = await screen.findByText(url, { selector: "a" });
+  expect(urlText.parentElement).toBeVisible();
+  expect(urlText.parentElement).toHaveTextContent(
+    `Compare ${url} with **bold** notes.`,
   );
-});
-
-test("A link inside a public prompt is clickable for a signed-out visitor", async () => {
-  const content =
-    "Compare https://example.com/report and keep **bold** as is, please.";
-  context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
-    return respond(
-      200,
-      sharedThread({
-        messages: [{ messageIndex: 0, role: "user", content, runIndex: 0 }],
-      }),
-    );
-  });
-
-  await setupSharedThreadPage(context, { host: "app.okou.ai" });
-
-  const link = await waitFor(() => {
-    const found = queryAllByRoleFast("link").find((candidate) => {
-      return candidate.getAttribute("href") === "https://example.com/report";
-    });
-    if (!found) {
-      throw new Error("Prompt link not found");
-    }
-    return found;
-  });
-  expect(link).toHaveTextContent("https://example.com/report");
-  expect(link).toHaveAttribute("target", "_blank");
-  expect(link).toHaveAttribute("rel", "noopener noreferrer");
-  // The prompt is not Markdown, so `**bold**` has to survive linking.
-  expect(screen.getByText("Compare")).toBeInTheDocument();
-  expect(
-    screen.getByText("and keep **bold** as is, please."),
-  ).toBeInTheDocument();
-});
-
-test("A public conversation renders embedded media and diagrams", async () => {
-  const content = [
-    "![Launch map](https://media.example.com/launch.png)",
-    "",
-    "```mermaid",
-    "flowchart TD",
-    "  Plan --> Launch",
-    "```",
-  ].join("\n");
-  context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
-    return respond(
-      200,
-      sharedThread({
-        messages: [{ messageIndex: 0, role: "assistant", content }],
-      }),
-    );
-  });
-
-  await setupSharedThreadPage(context, { host: "app.okou.ai" });
-
-  const image = await screen.findByRole("img", { name: "Launch map" });
-  fireEvent.load(image);
-  expect(image).toBeVisible();
-  expect(image).toHaveAttribute("src", "https://media.example.com/launch.png");
-  await expect(
-    screen.findByRole("img", { name: "Diagram" }),
-  ).resolves.toBeVisible();
-  const expandDiagram = queryAllByRoleFast("button").find((button) => {
-    return button.getAttribute("aria-label") === "Expand diagram";
-  });
-  expect(expandDiagram).toBeEnabled();
+  expect(urlText).toHaveAttribute("href", url);
+  expect(urlText).toHaveAttribute("target", "_blank");
+  expect(urlText.getAttribute("rel")?.split(/\s+/u)).toStrictEqual(
+    expect.arrayContaining(["noopener", "noreferrer"]),
+  );
 });

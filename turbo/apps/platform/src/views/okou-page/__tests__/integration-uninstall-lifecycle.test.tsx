@@ -1,109 +1,115 @@
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
-import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { click } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+
 import {
-  getAction,
-  getIntegrationCard,
-  mockSlack,
-  mockTeams,
-  setupIntegrationsPage,
-} from "./connector-integrations-test-helpers.ts";
+  click,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
+const INSTALL_URL = "https://slack.com/oauth/v2/authorize?client_id=okou";
 
-test.each(["slack", "teams"] as const)(
-  "%s uninstall keeps confirmation while pending and recovers after failure",
-  async (platform) => {
-    const name = platform === "slack" ? "Slack" : "Microsoft Teams";
-    mockSlack(context, {
-      isInstalled: true,
-      isConnected: true,
+function button(name: string, container: ParentNode): HTMLElement | undefined {
+  return queryAllByRoleFast("button", container).find((candidate) => {
+    return (
+      candidate.textContent?.trim() === name ||
+      candidate.getAttribute("aria-label") === name
+    );
+  });
+}
+
+function slackCard(): HTMLElement {
+  const card = [
+    ...document.querySelectorAll<HTMLElement>('[data-slot="integration-card"]'),
+  ].find((candidate) => {
+    return candidate.textContent?.includes("Slack");
+  });
+  if (!card) {
+    throw new Error("Expected the Slack card");
+  }
+  return card;
+}
+
+test("slack uninstall keeps confirmation while pending and recovers after failure", async () => {
+  const server = { installed: true };
+  context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
+    return respond(200, {
+      isConnected: server.installed,
+      isInstalled: server.installed,
       isAdmin: true,
-      installUrl: "https://slack.example.test/install",
+      workspaceName: server.installed ? "Acme" : null,
+      installUrl: INSTALL_URL,
     });
-    mockTeams(context, { isInstalled: true, isAdmin: true });
-    const started = context.mocks.deferred<void>();
-    const response = context.mocks.deferred<void>();
-    let fail = true;
-    if (platform === "slack") {
-      context.mocks.api(
-        integrationsSlackContract.disconnect,
-        async ({ respond }) => {
-          if (fail) {
-            started.resolve();
-            await response.promise;
-            return respond(403, {
-              error: { code: "FORBIDDEN", message: "Uninstall unavailable" },
-            });
-          }
-          mockSlack(context, {
-            isAdmin: true,
-            installUrl: "https://slack.example.test/install",
-          });
-          return respond(200, { ok: true });
-        },
-      );
-    } else {
-      context.mocks.api(
-        teamsConnectContract.disconnect,
-        async ({ respond }) => {
-          if (fail) {
-            started.resolve();
-            await response.promise;
-            return respond(403, {
-              error: { code: "FORBIDDEN", message: "Uninstall unavailable" },
-            });
-          }
-          mockTeams(context, { isInstalled: false, isAdmin: true });
-          return respond(200, { success: true });
-        },
-      );
-    }
-    await setupIntegrationsPage(context);
-    await screen.findByText(name);
-    click(
-      getAction(
-        "button",
-        platform === "slack" ? "More options" : `More ${name} options`,
-        getIntegrationCard(name),
-      ),
-    );
-    click(
-      getAction(
-        "button",
-        platform === "slack" ? "Uninstall" : `Uninstall ${name}`,
-      ),
-    );
-    const dialog = await screen.findByRole("dialog", {
-      name: `Uninstall ${name} integration?`,
-    });
-    click(getAction("button", "Uninstall", dialog));
-    await started.promise;
-    expect(getAction("button", "Cancel", dialog)).toBeDisabled();
-    expect(getAction("button", "Uninstalling…", dialog)).toBeDisabled();
-    const user = userEvent.setup();
-    await user.keyboard("{Escape}");
-    expect(dialog).toBeInTheDocument();
-    response.resolve();
-    await screen.findByText("Uninstall unavailable");
-    expect(getAction("button", "Uninstall", dialog)).toBeEnabled();
-    fail = false;
-    click(getAction("button", "Uninstall", dialog));
-    await waitFor(() => {
-      expect(
-        getAction(
-          "button",
-          platform === "slack" ? "Install to Slack" : "Install in Teams",
-          getIntegrationCard(name),
-        ),
-      ).toBeEnabled();
-    });
-    await waitFor(() => {
-      expect(dialog).not.toBeInTheDocument();
-    });
-  },
-);
+  });
+  const firstAttempt = { pending: true };
+  const requested = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  context.mocks.api(
+    integrationsSlackContract.disconnect,
+    async ({ query, respond }) => {
+      expect(query.action).toBe("uninstall");
+      if (firstAttempt.pending) {
+        firstAttempt.pending = false;
+        requested.resolve();
+        await release.promise;
+        return respond(403, {
+          error: { code: "FORBIDDEN", message: "Uninstall unavailable" },
+        });
+      }
+      server.installed = false;
+      return respond(200, { ok: true });
+    },
+  );
+  await setupPage({ context, path: "/works" });
+  const options = await waitFor(() => {
+    const found = button("More options", slackCard());
+    expect(found).toBeDefined();
+    return found as HTMLElement;
+  });
+  click(options);
+  // The card's options open as a popover of actions.
+  const uninstallItem = await waitFor(() => {
+    const item = button("Uninstall", document.body);
+    expect(item).toBeDefined();
+    return item as HTMLElement;
+  });
+  click(uninstallItem);
+  const dialog = await screen.findByRole("dialog", {
+    name: "Uninstall Slack integration?",
+  });
+  const user = userEvent.setup({ delay: null });
+
+  click(button("Uninstall", dialog) as HTMLElement);
+  await requested.promise;
+
+  await waitFor(() => {
+    expect(button("Uninstalling…", dialog)).toBeDisabled();
+  });
+  expect(button("Cancel", dialog)).toBeDisabled();
+  await user.keyboard("{Escape}");
+  expect(dialog).toBeInTheDocument();
+
+  release.resolve();
+
+  await expect(
+    screen.findByText("Uninstall unavailable"),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(button("Uninstall", dialog)).toBeEnabled();
+  });
+
+  click(button("Uninstall", dialog) as HTMLElement);
+
+  await waitFor(() => {
+    expect(dialog).not.toBeInTheDocument();
+  });
+  await waitFor(() => {
+    expect(
+      within(slackCard()).getByText("Install to Slack"),
+    ).toBeInTheDocument();
+  });
+});

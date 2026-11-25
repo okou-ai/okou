@@ -507,6 +507,40 @@
       "kindIcon": "{{kind}} आर्टिफ़ैक्ट",
       "loading": "आर्टिफ़ैक्ट लोड हो रहे हैं"
     },
+    "customDomain": {
+      "addressHint": "Choose the full address used when you share this website.",
+      "checks": {
+        "certificate": "HTTPS",
+        "dns": "DNS connection",
+        "ownership": "Ownership"
+      },
+      "connect": "Connect a domain",
+      "continue": "Continue",
+      "copied": "Copied",
+      "copyFailed": "Could not copy. Select the value to copy it.",
+      "copyRecord": "Copy {{type}} value",
+      "disconnectConfirm": "This domain will be disconnected from this website.",
+      "dnsHelp": "Add these records at your DNS provider, then click Verify",
+      "domain": "Domain",
+      "hostnameExample": "www.example.com",
+      "httpsReady": "HTTPS ready",
+      "lastChecked": "Last checked {{time}}",
+      "manage": "Manage {{hostname}}",
+      "needsSetup": "Finish setup",
+      "notChecked": "No verification yet",
+      "okouUrl": "Okou URL",
+      "ownDomain": "Enter a domain you own",
+      "remove": "Remove",
+      "removeConfirm": "Your sharing link will return to {{url}}.",
+      "removeHostname": "Remove {{hostname}}",
+      "removeTitle": "Remove custom domain?",
+      "removing": "This domain is disconnected. Click Remove to finish cleaning up its configuration.",
+      "title": "Custom domain",
+      "urlPreview": "https://{{hostname}}",
+      "verified": "Domain verified. Save to use this address.",
+      "verify": "Verify",
+      "yourDomains": "Connected domains"
+    },
     "deletion": {
       "cancel": "रद्द करें",
       "delete": "हटाएँ",
@@ -1171,6 +1205,12 @@
       "proWarning": "Pro पहुँच वर्तमान बिलिंग अवधि के अंत तक सक्रिय रहेगी। इसके बाद यह कार्यक्षेत्र बिना प्लान के हो जाएगा और दोबारा अपग्रेड करने तक Okou काम नहीं कर पाएगा।",
       "teamWarning": "वर्तमान बिलिंग अवधि समाप्त होने तक आपकी टीम की पहुंच सक्रिय रहती है। उसके बाद, यह वर्कस्पेस {{plan}} पर चला जाता है।",
       "title": "डाउनग्रेड योजना"
+    },
+    "feedback": {
+      "otherPlaceholder": "हमें और बताएँ…",
+      "rewardTerms": "हर कार्यक्षेत्र में एक बार · क्रेडिट 30 दिन तक मान्य हैं",
+      "submitFeedback": "फ़ीडबैक भेजें",
+      "thanks": "आपके फ़ीडबैक के लिए धन्यवाद"
     },
     "invoices": {
       "amount": "मात्रा",
@@ -1894,6 +1934,14 @@
       "message": "संदेश",
       "modelForThisChat": "इस चैट के लिए मॉडल",
       "placeholder": "मुझसे वर्कफ़्लो ऑटोमेट करने और टास्क मैनेज करने के लिए कहें...",
+      "presentationFormatSetup": {
+        "description": "हम यह डिफ़ॉल्ट सहेजकर आपकी प्रस्तुति बनाएँगे। आपके अनुरोध में स्पष्ट रूप से बताए गए फ़ॉर्मैट को प्राथमिकता मिलेगी।",
+        "htmlDescription": "ब्राउज़र में साझा करने के लिए उपयुक्त",
+        "pptxDescription": "PowerPoint में संपादन योग्य स्लाइड",
+        "saveAndGenerate": "सहेजें और बनाएँ",
+        "settingsHint": "इसे कभी भी सेटिंग → प्राथमिकताएँ → चैट में बदलें।",
+        "title": "डिफ़ॉल्ट प्रस्तुति फ़ॉर्मैट चुनें"
+      },
       "selectedModelUnavailable": "चयनित मॉडल उपलब्ध नहीं है. भेजने से पहले इसे कॉन्फ़िगर करें.",
       "selectedModelUnavailableToast": "चयनित मॉडल उपलब्ध नहीं है",
       "selectModel": "मॉडल चुनें",
@@ -5742,6 +5790,16 @@
       "actions": {
         "resetUsage": "उपयोग रीसेट करें"
       },
+      "antigravity": {
+        "check": "साइन इन जाँचें",
+        "error": "अपने लिए तय साइन-इन परिवेश की जाँच करें और फिर कोशिश करें।",
+        "expired": "साइन इन की अवधि समाप्त हो गई है। खाता फिर से कनेक्ट करें।",
+        "openTerminal": "Google साइन-इन टर्मिनल खोलें",
+        "terminal": "अपने टर्मिनल में यह कमांड चलाएँ और अपने व्यक्तिगत Google AI खाते से साइन इन करें।",
+        "title": "Google AI (Antigravity)",
+        "unassigned": "किसी व्यवस्थापक से अपने लिए साइन-इन टर्मिनल निर्धारित करने को कहें।",
+        "verify": "यह कमांड आपके सब्सक्रिप्शन कोटे का उपयोग करके Neon, Carbon और Hydrogen को एक-एक अनुरोध भेजती है।"
+      },
       "deviceAuth": {
         "claude": {
           "authorizationCode": "प्राधिकरण संकेत - लिपि",
@@ -5942,6 +6000,13 @@
           "title": "डिफ़ॉल्ट मॉडल"
         },
         "description": "नए चैट के लिए डिफ़ॉल्ट सेटिंग और संदेश भेजने का तरीका चुनें।",
+        "presentationFormat": {
+          "description": "नई प्रस्तुतियों के लिए डिफ़ॉल्ट फ़ॉर्मैट चुनें",
+          "saveFailed": "डिफ़ॉल्ट फ़ॉर्मैट सहेजा नहीं जा सका। फिर से कोशिश करें।",
+          "title": "डिफ़ॉल्ट प्रस्तुति फ़ॉर्मैट",
+          "unavailable": "उपलब्ध नहीं",
+          "unset": "सेट नहीं है"
+        },
         "sectionTitle": "चैट"
       },
       "debug": {

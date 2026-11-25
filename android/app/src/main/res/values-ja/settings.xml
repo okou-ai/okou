@@ -36,8 +36,6 @@
     <string name="settings_accounts_scope">「%1$s」で使用するサブスクリプションアカウントを選択します。</string>
     <string name="settings_accounts_scope_empty">「%1$s」のモデルアカウント</string>
     <string name="settings_workspace_status">「%1$s」 · %2$s</string>
-    <string name="settings_accounts_offline">オフラインです。接続するとアカウントを切り替えられます。</string>
-    <string name="settings_accounts_offline_connect">オフラインです。接続するとモデルアカウントを連携できます。</string>
     <string name="settings_accounts_unavailable">現在、モデルアカウントを表示できません。</string>
     <string name="settings_accounts_update_failed">モデルアカウントを更新できませんでした。前回取得した情報を表示しています。</string>
     <string name="settings_accounts_empty">モデルアカウントが連携されていません</string>
@@ -66,7 +64,6 @@
     <string name="settings_credits_less_than">%1$s 未満</string>
     <string name="settings_credit_balance">クレジット残高</string>
     <string name="settings_credit_scope">「%1$s」の Okou クレジット</string>
-    <string name="settings_credit_offline">オフラインです。前回取得した残高を表示しています。</string>
     <string name="settings_credit_update_failed">更新できませんでした。前回取得した残高を表示しています。</string>
     <string name="settings_credit_unavailable">現在、残高を表示できません。</string>
     <string name="settings_credit_member">個人用利用パック</string>
@@ -83,7 +80,6 @@
     <string name="settings_model_plan_restricted">別のプランが必要</string>
     <string name="settings_model_fast">高速モード</string>
     <string name="settings_model_fast_usage">オンにすると、ChatGPT のサブスクリプション使用量は標準モードの %1$s 倍になります</string>
-    <string name="settings_model_load_when_online">オンラインに戻るとコンテンツが読み込まれます。</string>
     <string name="settings_model_save_rolled_back">既定のモデルを保存できなかったため、以前の設定に戻しました。</string>
     <string name="settings_model_save_unconfirmed">既定のモデルが保存されたかどうかはまだ確認できていません。</string>
     <string name="settings_model_effort">推論強度</string>
@@ -98,7 +94,6 @@
     <string name="settings_proactive_services">プロアクティブサービス</string>
     <string name="settings_proactive_scope">この設定は「%1$s」に適用されます。</string>
     <string name="settings_proactive_loading">プロアクティブサービスを読み込み中</string>
-    <string name="settings_proactive_offline">オフラインです。設定を変更するには接続してください。</string>
     <string name="settings_proactive_needs_timezone">配信を予約するにはタイムゾーンを選択してください。</string>
     <string name="settings_proactive_read_failed">現在、この設定を読み込めません。</string>
     <string name="settings_proactive_refresh_failed">同期できませんでした。最後に確認した設定を表示しています。</string>

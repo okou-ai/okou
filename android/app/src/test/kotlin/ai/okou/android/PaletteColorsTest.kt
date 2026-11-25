@@ -74,6 +74,33 @@ class PaletteColorsTest {
                         contrast(colors.onSecondaryContainer, colors.secondaryContainer) >= 3f,
                     )
                     val status = activityStatusColor(palette, dark)
+                    // Material 3 draws its 10% press ripple over the row and its contents.
+                    val ripple = colors.onBackground.copy(alpha = 0.10f)
+                    for ((background, text, stateLayer) in
+                        listOf(
+                            Triple(colors.background, colors.onBackground, Color.Transparent),
+                            Triple(colors.background, colors.onBackground, ripple),
+                            Triple(
+                                colors.secondaryContainer,
+                                colors.onSecondaryContainer,
+                                Color.Transparent,
+                            ),
+                            Triple(colors.secondaryContainer, colors.onSecondaryContainer, ripple),
+                        )) {
+                        val displayedBackground = stateLayer.compositeOver(background)
+                        fun rowContrast(color: Color) =
+                            contrast(stateLayer.compositeOver(color), displayedBackground)
+                        assertTrue("$palette/$dark chat title", rowContrast(text) >= 4.5f)
+                        assertTrue(
+                            "$palette/$dark chat focus",
+                            contrast(colors.onBackground, displayedBackground) >= 3f,
+                        )
+                        assertTrue(
+                            "$palette/$dark chat icon",
+                            rowContrast(colors.onSurfaceVariant) >= 3f,
+                        )
+                        assertTrue("$palette/$dark chat status", rowContrast(status) >= 3f)
+                    }
                     val activeTrack = if (dark) colors.primary else status
                     val activeThumb = if (dark) colors.onPrimary else Color.White
                     assertTrue(

@@ -46,9 +46,11 @@ _CONNECTOR_RESPONSE_FINALIZER = "_connector_response_finalizer"
 _RESPONSE_STREAM_CALLBACK = "_response_stream_callback"
 _RESPONSE_INSPECTION = "_response_inspection"
 
-_ANTHROPIC_MESSAGES_SSE_PROTOCOL = "anthropic_messages_sse"
-_OPENAI_CHAT_COMPLETIONS_SSE_PROTOCOL = "openai_chat_completions_sse"
-_OPENAI_RESPONSES_SSE_PROTOCOL = "openai_responses_sse"
+_MODEL_SSE_LOG_PROTOCOLS: dict[usage.ModelUsageProtocol, str] = {
+    "anthropic_messages": "anthropic_messages_sse",
+    "openai_chat_completions": "openai_chat_completions_sse",
+    "openai_responses": "openai_responses_sse",
+}
 
 _ResponseChunkParser = Callable[[bytes], None]
 _SseUsageParseErrorLogger = Callable[[str, str], None]
@@ -176,7 +178,7 @@ def _make_response_decode_session(
 def _make_model_sse_parse_error_logger(
     flow: http.HTTPFlow,
     *,
-    usage_protocol: str,
+    model_protocol: usage.ModelUsageProtocol,
 ) -> _SseUsageParseErrorLogger:
     proxy_log_path = flow_metadata.proxy_log_path(flow.metadata)
     warning_budget = ParseErrorWarningBudget()
@@ -191,7 +193,7 @@ def _make_model_sse_parse_error_logger(
             "warn",
             "Model provider SSE usage extraction failed",
             type="usage_event",
-            usage_protocol=usage_protocol,
+            usage_protocol=_MODEL_SSE_LOG_PROTOCOLS[model_protocol],
             event=event,
             error=error,
         )
@@ -265,12 +267,9 @@ def _configure_model_sse_inspection(
         nonlocal observed_terminal
         observed_terminal = True
 
+    log_parse_error = _make_model_sse_parse_error_logger(flow, model_protocol=model_protocol)
+
     if model_protocol == "openai_responses":
-        usage_protocol = _OPENAI_RESPONSES_SSE_PROTOCOL
-        log_parse_error = _make_model_sse_parse_error_logger(
-            flow,
-            usage_protocol=usage_protocol,
-        )
 
         def record_openai_terminal_usage(terminal_usage: dict) -> None:
             usage.merge_openai_responses_usage_result(
@@ -284,22 +283,12 @@ def _configure_model_sse_inspection(
             on_terminal_usage=record_openai_terminal_usage,
         )
     elif model_protocol == "openai_chat_completions":
-        usage_protocol = _OPENAI_CHAT_COMPLETIONS_SSE_PROTOCOL
-        log_parse_error = _make_model_sse_parse_error_logger(
-            flow,
-            usage_protocol=usage_protocol,
-        )
         parser_fn, usage_dict = usage.create_openai_chat_completions_sse_usage_extractor(
             on_parse_error=log_parse_error,
             on_usage=observe_usage,
             on_done=observe_done,
         )
     else:
-        usage_protocol = _ANTHROPIC_MESSAGES_SSE_PROTOCOL
-        log_parse_error = _make_model_sse_parse_error_logger(
-            flow,
-            usage_protocol=usage_protocol,
-        )
 
         def observe_anthropic_event(event: str) -> None:
             observe_usage(usage_dict, event == "message_stop")
@@ -330,7 +319,7 @@ def _configure_model_sse_inspection(
             flow,
             "Deferred model SSE response inspection was interrupted",
             error,
-            usage_protocol=usage_protocol,
+            usage_protocol=_MODEL_SSE_LOG_PROTOCOLS[model_protocol],
         )
 
     routing = openrouter_routing_log.observation(flow)
@@ -365,7 +354,7 @@ def _configure_model_sse_inspection(
                 log_parse_error("compressed_body", decode_error)
                 usage_dict.clear()
                 if (
-                    usage_protocol == _OPENAI_RESPONSES_SSE_PROTOCOL
+                    model_protocol == "openai_responses"
                     and decode_error == body_decoding.INCOMPLETE_COMPRESSED_BODY
                 ):
                     usage.merge_openai_responses_usage_result(

@@ -42,7 +42,6 @@
     <string name="connector_disconnect">Disconnect account</string>
     <string name="connector_disconnect_title">Disconnect this account?</string>
     <string name="connector_disconnect_copy">Chats and automations using this account may need to choose another connection. Other accounts remain available.</string>
-    <string name="connector_load_when_online">Content will load when you’re back online.</string>
     <string name="connector_loading">Loading connectors…</string>
     <string name="connector_loading_accounts">Loading accounts…</string>
     <string name="connector_loading_permissions">Loading permissions…</string>
@@ -52,7 +51,6 @@
     <string name="connector_accounts_failed">Could not load accounts.</string>
     <string name="connector_permissions_failed">Could not load permissions.</string>
     <string name="connector_impact_failed">Could not check where this account is used.</string>
-    <string name="connector_offline">Offline</string>
     <string name="connector_network_failed">Could not reach Okou. Check your connection and try again.</string>
     <string name="connector_account_unavailable">This account is no longer available.</string>
     <string name="connector_unavailable">Authorization is unavailable for this account.</string>

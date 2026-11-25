@@ -20,6 +20,10 @@ import { createTemplateGalleryHelpers } from "./chat-composer-template-gallery-t
 import { clickComposerAddMenuItem } from "./chat-composer-add-menu-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
+import {
+  captureTemplateSubmission,
+  deck,
+} from "./template-submission-fixtures.ts";
 const context = testContext();
 const reloadedContext = createTestRuntime(context);
 const { mockTemplateChat } = createTemplateGalleryHelpers(context);
@@ -68,9 +72,12 @@ async function openChart(): Promise<HTMLElement> {
   return await screen.findByRole("region", { name: "Visualization options" });
 }
 
-test.each(["html", "pptx"] as const)(
-  "Presentation submits the saved %s default without rewriting the user's explicit format",
-  async (format) => {
+test.each([
+  ["presentation-output-format-001", "html"],
+  ["presentation-output-format-003", "pptx"],
+] as const)(
+  "%s Presentation submits the saved %s default without rewriting the user's explicit format",
+  async (_id, format) => {
     context.mocks.data.userPreferences({ presentationFormat: format });
     const capture = mockTemplateChat();
     await setupPage({
@@ -219,7 +226,7 @@ test("A queued untagged message freezes its saved presentation default", async (
   });
 });
 
-test("The saved default reaches presentation templates inside feedback without dropping their fields", async () => {
+test("presentation-output-format-004 The saved default reaches presentation templates inside feedback without dropping their fields", async () => {
   context.mocks.data.userPreferences({ presentationFormat: "pptx" });
   const capture = mockTemplateChat();
   const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!;
@@ -283,7 +290,7 @@ test("The saved default reaches presentation templates inside feedback without d
   });
 });
 
-test("A fresh page reads the server default again", async () => {
+test("presentation-output-format-005 A fresh page reads the server default again", async () => {
   context.mocks.data.userPreferences({ presentationFormat: "html" });
   mockTemplateChat();
   await setupPage({
@@ -405,18 +412,16 @@ test("An unavailable preference rejects submission instead of treating it as uns
   expect(capture.sentMessages).toHaveLength(0);
 });
 
-test.each(["feature off", "ineligible audience"] as const)(
-  "%s sends normally without presentation preference context",
-  async (condition) => {
+test.each([false, true])(
+  "A Lab tester sends with presentation format opt-in set to %s",
+  async (enabled) => {
     context.mocks.data.userPreferences({ presentationFormat: "pptx" });
     const capture = mockTemplateChat();
     await setupPage({
       context,
       path: "/",
-      ...(condition === "feature off" ? { auth: ownerAuth } : {}),
       featureSwitches: {
-        [FeatureSwitchKey.PresentationOutputFormat]:
-          condition === "ineligible audience",
+        [FeatureSwitchKey.PresentationOutputFormat]: enabled,
       },
     });
     const editor = await findComposerEditor();
@@ -426,9 +431,51 @@ test.each(["feature off", "ineligible audience"] as const)(
     await waitFor(() => {
       expect(capture.sentMessages).toHaveLength(1);
     });
-    expect(capture.sentMessages[0]?.parts).toContainEqual({
-      type: "additional_info",
-      text: expect.not.stringContaining("# Presentation Output Preference"),
-    });
+    const additionalInfo = capture.sentMessages[0]?.parts
+      .filter((part) => {
+        return part.type === "additional_info";
+      })
+      .map((part) => {
+        return part.text;
+      })
+      .join("\n");
+    expect(additionalInfo?.includes("# Presentation Output Preference")).toBe(
+      enabled,
+    );
+    expect(additionalInfo?.includes("- Output format: PPTX format")).toBe(
+      enabled,
+    );
   },
 );
+
+test("presentation-output-format-009 A chosen template keeps its default slide range when format preferences are disabled", async () => {
+  context.mocks.data.userPreferences({ presentationFormat: "pptx" });
+  const submission = captureTemplateSubmission(context);
+  await setupPage({
+    context,
+    path: "/",
+    auth: ownerAuth,
+    featureSwitches: { [FeatureSwitchKey.PresentationOutputFormat]: false },
+  });
+  await openPresentation();
+  const text = "Prepare the intertidal field report";
+  await fill(await findComposerEditor(), text);
+  const shelf = screen.getByRole("group", { name: "Presentation templates" });
+  click(button(deck.title, shelf));
+  click(button("Send"));
+  const parts = (await submission.promise).userMessage?.parts;
+  expect(parts).toContainEqual({ type: "text", text });
+  const template = parts?.find((part) => {
+    return part.type === "template";
+  })?.template;
+  if (template?.type !== "presentation") {
+    throw new Error("Missing selected template");
+  }
+  expect(template.selection.templateId).toBe(deck.templateId);
+  expect(template.selection.outputFormat).toBeUndefined();
+  const instructions = parts?.find((part) => {
+    return part.type === "additional_info";
+  })?.text;
+  expect(instructions).toContain("Slide count: 8-12");
+  expect(instructions).toContain("different slide count, the message wins");
+});

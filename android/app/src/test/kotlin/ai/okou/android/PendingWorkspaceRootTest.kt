@@ -72,10 +72,12 @@ import org.robolectric.annotation.Config
 open class PendingWorkspaceApplication : TestOkouApplication() {
     protected open val selectedAccess: MembershipAccess? = null
     protected open val seedChats = true
-    val authorizationResponse = CompletableDeferred<Unit>()
+    protected open val chatCacheAgeMillis = 0L
+    var authorizationResponse = CompletableDeferred<Unit>()
     var membershipsResponse = CompletableDeferred(Unit)
     var organizationResponse = CompletableDeferred<Unit>()
     @Volatile var listResponse = CompletableDeferred<Unit>()
+    val listRequested = CompletableDeferred<Unit>()
     var preferencesResponse = CompletableDeferred<Unit>()
     @Volatile private var editTail = ChatEvents(emptyList(), false)
 
@@ -96,6 +98,7 @@ open class PendingWorkspaceApplication : TestOkouApplication() {
             object : TestChatService() {
 
                 override suspend fun chatEvents(since: Long?): ChatEvents {
+                    listRequested.complete(Unit)
                     listResponse.await()
                     val tail = editTail
                     return if (since == null) tail
@@ -169,7 +172,7 @@ open class PendingWorkspaceApplication : TestOkouApplication() {
                                 events.events,
                                 events.events.single().cursor(),
                             ),
-                            System.currentTimeMillis(),
+                            System.currentTimeMillis() - chatCacheAgeMillis,
                         )
                     }
             }
@@ -227,6 +230,10 @@ class UncachedWorkspaceApplication : FreshWorkspaceAccessApplication() {
     override val seedChats = false
 }
 
+class StaleCachedWorkspaceApplication : FreshWorkspaceAccessApplication() {
+    override val chatCacheAgeMillis = 11 * 60_000L
+}
+
 @RunWith(RobolectricTestRunner::class)
 @Config(
     sdk = [35],
@@ -261,11 +268,13 @@ class PendingWorkspaceRootTest {
     fun coldStartShowsLocalControlsAndCachedContentBeforeWorkspaceReads() {
         val avatar = compose.onNodeWithContentDescription("Switch workspace", substring = true)
         val filter = compose.onNodeWithContentDescription("Filter")
-        val settings = compose.onNodeWithContentDescription("Settings")
+        val more = compose.onNodeWithContentDescription("More actions")
         val search = compose.onNodeWithTag("workspace_search_entry")
+        compose.runOnIdle { app.membershipsResponse = CompletableDeferred() }
+        awaitCachedRow()
         avatar.assertIsDisplayed().assertIsNotEnabled()
-        filter.assertIsDisplayed().assertIsNotEnabled()
-        settings.assertIsDisplayed().assertIsNotEnabled()
+        filter.assertIsDisplayed().assertIsEnabled()
+        more.assertIsDisplayed().assertIsEnabled()
         val searchBounds = search.getUnclippedBoundsInRoot()
         val avatarBounds = avatar.getUnclippedBoundsInRoot()
         val list = compose.onNodeWithTag("chat_list")
@@ -275,18 +284,13 @@ class PendingWorkspaceRootTest {
                 compose.onNodeWithContentDescription(it).assertIsDisplayed().assertIsNotEnabled()
             }
         val toolBounds = tools.map { it.getUnclippedBoundsInRoot() }
-        compose.onNodeWithText(CACHED_CHAT).assertDoesNotExist()
-
-        compose.runOnIdle {
-            app.membershipsResponse = CompletableDeferred()
-            app.authorizationResponse.complete(Unit)
-        }
-        awaitCachedRow()
+        check(!app.listRequested.isCompleted)
+        val row = compose.onNodeWithTag("chat_$CHAT_PERSONAL")
+        row.assertIsDisplayed().assertIsNotEnabled()
         compose.onNodeWithContentDescription("Loading chats…").assertDoesNotExist()
-        assertEquals(searchBounds, search.getUnclippedBoundsInRoot())
-        assertEquals(avatarBounds, avatar.getUnclippedBoundsInRoot())
-        assertEquals(listBounds, list.getUnclippedBoundsInRoot())
-        assertEquals(toolBounds, tools.map { it.getUnclippedBoundsInRoot() })
+        compose
+            .onNodeWithContentDescription(app.getString(R.string.chat_syncing))
+            .assertDoesNotExist()
         filter.assertIsEnabled().performClick()
         compose.onNodeWithText("Archived").performClick()
         compose.onNodeWithTag("chat_filter_heading").assert(hasText("Archived"))
@@ -294,7 +298,9 @@ class PendingWorkspaceRootTest {
         compose.onNodeWithText("Inbox").performClick()
         compose.onNodeWithText(CACHED_CHAT).assertIsDisplayed()
 
-        settings.assertIsEnabled().performClick()
+        more.performClick()
+        val newProject = compose.onNodeWithText("New project").assertIsNotEnabled()
+        compose.onNodeWithText("Settings").performClick()
         compose.onNodeWithText("Display mode").assertIsNotEnabled()
         val creditBalance = compose.onNodeWithText("Credit balance").assertIsNotEnabled()
         val creditBounds = creditBalance.getUnclippedBoundsInRoot()
@@ -311,13 +317,22 @@ class PendingWorkspaceRootTest {
         compose.onNodeWithText(CACHED_CHAT).assertIsDisplayed()
 
         compose.runOnIdle {
+            app.authorizationResponse.complete(Unit)
             app.renameOnServer("Synced startup chat")
             app.listResponse.complete(Unit)
         }
         compose.waitUntil(10_000) { listState()?.source == ChatListSource.Network }
         compose.onNodeWithText("Synced startup chat").assertIsDisplayed()
         compose.onNodeWithText(CACHED_CHAT).assertDoesNotExist()
-        settings.performClick()
+        assertEquals(searchBounds, search.getUnclippedBoundsInRoot())
+        assertEquals(avatarBounds, avatar.getUnclippedBoundsInRoot())
+        assertEquals(listBounds, list.getUnclippedBoundsInRoot())
+        assertEquals(toolBounds, tools.map { it.getUnclippedBoundsInRoot() })
+        more.performClick()
+        newProject.assertIsEnabled().performClick()
+        compose.onNodeWithContentDescription("Project name").assertIsDisplayed()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.openChatListSettings()
         compose.runOnIdle { app.organizationResponse.complete(Unit) }
         compose.waitUntil(10_000) {
             compose.onAllNodesWithText("Workspace A").fetchSemanticsNodes().isNotEmpty()
@@ -370,9 +385,10 @@ class PendingWorkspaceRootTest {
             button.assertIsDisplayed().assertIsEnabled()
             assertEquals(startupBounds, search.getUnclippedBoundsInRoot())
 
+            awaitCachedRow()
             overflow.performClick()
-            compose.onNodeWithText("Filter").assertIsNotEnabled()
-            compose.onNodeWithText("Settings").assertIsNotEnabled()
+            compose.onNodeWithText("Filter").assertIsEnabled()
+            compose.onNodeWithText("Settings").assertIsEnabled()
             compose.runOnIdle { app.authorizationResponse.complete(Unit) }
             awaitCachedRow()
             compose.onNodeWithText("Filter").assertIsEnabled()
@@ -403,7 +419,7 @@ class PendingWorkspaceRootTest {
         val empty = compose.activity.getString(R.string.chat_empty)
         compose.onNodeWithText(empty).assertDoesNotExist()
         compose.onNodeWithContentDescription("Filter").assertIsEnabled()
-        compose.onNodeWithContentDescription("Settings").assertIsEnabled()
+        compose.onNodeWithContentDescription("More actions").assertIsEnabled()
 
         compose.runOnIdle { app.listResponse.complete(Unit) }
         compose.waitUntil(10_000) { listState()?.source == ChatListSource.Network }
@@ -443,6 +459,47 @@ class PendingWorkspaceRootTest {
         } finally {
             compose.mainClock.autoAdvance = true
         }
+    }
+
+    @Test
+    @Config(application = StaleCachedWorkspaceApplication::class)
+    fun staleCacheShowsSyncProgressWhileAuthorizationIsPending() {
+        awaitCachedRow()
+        compose
+            .onNodeWithContentDescription(app.getString(R.string.chat_syncing))
+            .assertIsDisplayed()
+        compose.onNodeWithContentDescription("Loading chats…").assertDoesNotExist()
+        check(!app.listRequested.isCompleted)
+    }
+
+    @Test
+    @Config(application = FreshWorkspaceAccessApplication::class)
+    fun verificationFailureRetainsCachedRowsUntilTheRetrySucceeds() {
+        awaitCachedRow()
+        val row = compose.onNodeWithTag("chat_$CHAT_PERSONAL")
+        compose.runOnIdle {
+            val failed = app.authorizationResponse
+            app.authorizationResponse = CompletableDeferred()
+            failed.completeExceptionally(ApiFailure.Network(java.io.IOException("connection lost")))
+        }
+        compose.waitUntil(10_000) { sessionState().stage == SessionStage.Unavailable }
+        row.assertIsDisplayed().assertIsNotEnabled()
+        compose.runOnIdle { app.authorizationResponse.complete(Unit) }
+        compose.waitUntil(10_000) { sessionState().opening is OpeningWorkspace.Authorized }
+        row.assertIsDisplayed().assertIsEnabled()
+    }
+
+    @Test
+    @Config(application = FreshWorkspaceAccessApplication::class)
+    fun clerkDenialRetiresTheLocallyRestoredChatList() {
+        awaitCachedRow()
+        compose.runOnIdle {
+            app.authorizationResponse.completeExceptionally(ApiFailure.Unauthenticated())
+        }
+        compose
+            .onNodeWithText(compose.activity.getString(R.string.auth_access_removed))
+            .assertIsDisplayed()
+        compose.onNodeWithText(CACHED_CHAT).assertDoesNotExist()
     }
 
     @Test
@@ -488,7 +545,7 @@ class PendingWorkspaceRootTest {
         compose.onNodeWithTag("message_input").assertDoesNotExist()
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithText("New chat").assertIsNotEnabled()
-        compose.onNodeWithContentDescription("Settings").assertIsEnabled()
+        compose.onNodeWithContentDescription("More actions").assertIsEnabled()
         compose.onNodeWithContentDescription("Search workspace").performClick()
         compose.onNodeWithTag("chat_search_query").performTextReplacement("startup")
         compose.onNodeWithText(CACHED_CHAT).performClick()
@@ -504,7 +561,7 @@ class PendingWorkspaceRootTest {
         compose.onNodeWithTag("chat_search_query").assert(hasText("startup"))
         compose.onNodeWithText(CACHED_CHAT).assertExists()
         compose.onNodeWithContentDescription("Back").performClick()
-        compose.onNodeWithContentDescription("Settings").assertExists()
+        compose.onNodeWithContentDescription("More actions").assertExists()
         compose.onNodeWithText("New chat").assertIsEnabled()
         assertEquals(startupBounds, searchEntry.getUnclippedBoundsInRoot())
     }
@@ -563,20 +620,22 @@ class PendingWorkspaceRootTest {
     }
 
     @Test
-    fun temporaryPreferenceFailureRecoversOnReconnectWithoutInterruptingCachedChats() {
+    fun temporaryPreferenceFailureRetriesWithoutInterruptingCachedChats() {
         compose.runOnIdle { app.organizationResponse.complete(Unit) }
         awaitCachedRow()
         compose.onNodeWithContentDescription("Search workspace").performClick()
         compose.onNodeWithText(CACHED_CHAT).assertExists()
         compose.runOnIdle {
-            app.preferencesResponse.completeExceptionally(ApiFailure.Http(503, null, null, null))
+            val failed = app.preferencesResponse
+            app.preferencesResponse = CompletableDeferred()
+            failed.completeExceptionally(ApiFailure.Http(503, null, null, null))
         }
         compose.waitUntil(10_000) { sessionState().stage == SessionStage.Unavailable }
         compose.onNodeWithText("Try again").assertDoesNotExist()
         compose.onNodeWithText(CACHED_CHAT).assertExists()
         compose.onNodeWithContentDescription("Back").performClick()
 
-        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.openChatListSettings()
         compose
             .onNodeWithText(app.getString(R.string.chat_list_first_load_failed))
             .performScrollTo()
@@ -594,18 +653,11 @@ class PendingWorkspaceRootTest {
                 "Muted, Updating chat…",
             ),
         )
-        compose.onNodeWithContentDescription("Settings").assertIsEnabled()
+        compose.onNodeWithContentDescription("More actions").assertIsEnabled()
         compose.onNodeWithText("New chat").assertIsNotEnabled()
         row.performClick()
         compose.onNodeWithTag("conversation").assertExists()
         compose.onNodeWithText("Try again").assertDoesNotExist()
-        compose.runOnIdle {
-            app.connectivity.value = false
-            app.organizationResponse = CompletableDeferred()
-            app.preferencesResponse = CompletableDeferred()
-        }
-        compose.waitUntil(10_000) { listState()?.offline == true }
-        compose.runOnIdle { app.connectivity.value = true }
         compose.onNodeWithTag("conversation").assertExists()
         compose.onNodeWithTag("message_input").assertDoesNotExist()
         compose.runOnIdle { app.preferencesResponse.complete(Unit) }
@@ -613,7 +665,7 @@ class PendingWorkspaceRootTest {
         compose.onNodeWithTag("message_input").assertExists()
         compose.onNodeWithContentDescription("Back").performClick()
         row.assertExists()
-        compose.onNodeWithContentDescription("Settings").assertExists()
+        compose.onNodeWithContentDescription("More actions").assertExists()
     }
 
     @Test
@@ -626,14 +678,12 @@ class PendingWorkspaceRootTest {
             list?.source == ChatListSource.Network && list.projectsSource != null
         }
 
-        compose.runOnIdle { app.listResponse = CompletableDeferred() }
-        compose.runOnIdle { app.connectivity.value = false }
-        compose.waitUntil(10_000) { listState()?.offline == true }
-        compose.runOnIdle { app.connectivity.value = true }
-        compose.waitUntil(10_000) {
-            val list = listState()
-            list?.offline == false && list.listPhase == ChatReadPhase.Loading
+        val chats = requireNotNull(listModel())
+        compose.runOnIdle {
+            app.listResponse = CompletableDeferred()
+            chats.refresh()
         }
+        compose.waitUntil(10_000) { listState()?.listPhase == ChatReadPhase.Loading }
         compose.onNodeWithText("Refreshing chats…").assertDoesNotExist()
         val row = hasTestTag("chat_$CHAT_PERSONAL")
         compose.onNode(row).performSemanticsAction(SemanticsActions.OnLongClick)
@@ -668,10 +718,14 @@ class PendingWorkspaceRootTest {
         ViewModelProvider(compose.activity)[SessionModel::class.java].uiState.value
     }
 
-    private fun listState() =
+    private fun listModel() =
         sessionState().let {
-            (it.ready?.chats ?: (it.opening as? OpeningWorkspace.Authorized)?.chats)?.uiState?.value
+            it.ready?.chats
+                ?: (it.opening as? OpeningWorkspace.Authorized)?.chats
+                ?: (it.opening as? OpeningWorkspace.Cached)?.chats
         }
+
+    private fun listState() = listModel()?.uiState?.value
 }
 
 private const val CACHED_CHAT = "Saved startup chat"

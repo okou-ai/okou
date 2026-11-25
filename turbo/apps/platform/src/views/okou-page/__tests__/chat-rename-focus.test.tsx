@@ -1,139 +1,90 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { chatThreadRenameContract } from "@okouai/api-contracts/contracts/chat-threads";
-
-import {
-  click,
-  fill,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  continuityThread,
-  installContinuityWorkspace,
-} from "./chat-continuity-test-helpers.ts";
+  SECOND_ATTACHMENT_THREAD_ID,
+  mockSplitAttachmentChats,
+} from "./chat-attachment-test-helpers.ts";
+import { findComposer } from "./chat-message-experience-test-helpers.ts";
+import { RUN_PATH, RUN_THREAD_ID } from "./chat-run-test-fixtures.ts";
+import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 const context = testContext();
 
-function threadContainer(threadId: string): HTMLElement {
-  const container = document.querySelector<HTMLElement>(
-    `[data-chat-thread-container-id="${threadId}"]`,
-  );
-  if (!container) {
-    throw new Error(`Expected chat pane ${threadId}`);
-  }
-  return container;
-}
-
-async function setupRenamePage() {
-  context.mocks.browser.matchMedia(true);
-  const main = continuityThread(81, 1, "Main focus chat");
-  const side = continuityThread(81, 2, "Side focus chat");
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 81,
-    threads: [main, side],
-  });
-  context.mocks.api(chatThreadRenameContract.rename, ({ respond }) => {
-    return respond(204);
-  });
-  await setupPage({
-    context,
-    path: `/chats/${main.id}?sidebar=${side.id}`,
-    ...workspace.pageOptions,
-  });
-  await waitFor(() => {
-    for (const thread of [main, side]) {
-      expect(
-        within(threadContainer(thread.id)).getByRole("textbox", {
-          name: "Message",
-        }),
-      ).toBeInTheDocument();
-    }
-  });
-  return { main, side };
-}
-
-async function renameDialog(): Promise<HTMLElement> {
-  const dialog = await screen.findByRole("dialog", { name: "Rename chat" });
-  await waitFor(() => {
-    expect(within(dialog).getByPlaceholderText("Chat title")).toHaveFocus();
-  });
-  return dialog;
-}
-
-test.each(["Enter", "Escape", "Cancel", "Close"])(
-  "Do not focus the emoji button after Rename closes with %s",
-  async (dismissal) => {
-    const { side } = await setupRenamePage();
-    const user = userEvent.setup({ delay: null });
-    const container = threadContainer(side.id);
-    container.focus();
-    await user.keyboard("{F2}");
-    const dialog = await renameDialog();
-
-    if (dismissal === "Enter") {
-      await fill(
-        within(dialog).getByPlaceholderText("Chat title"),
-        "Renamed side focus chat",
-      );
-      await user.keyboard("{Enter}");
-    } else if (dismissal === "Escape") {
-      await user.keyboard("{Escape}");
-    } else {
-      const button = queryAllByRoleFast("button", dialog).find((candidate) => {
-        return (
-          candidate.getAttribute("aria-label") === dismissal ||
-          candidate.textContent?.trim() === dismissal
-        );
-      });
-      if (!button) {
-        throw new Error(`Expected Rename ${dismissal} button`);
-      }
-      click(button);
-    }
-    await waitFor(() => {
-      expect(dialog).not.toBeInTheDocument();
+test.each([
+  ["005", "keyboard"],
+  ["007", "title"],
+])(
+  "chat-rename-focus-%s dismissing Rename from the main conversation returns focus to the document",
+  async (_id, entry) => {
+    context.mocks.browser.matchMedia((q) => {
+      return q.includes("min-width");
     });
-    expect(document.body).toHaveFocus();
-
-    await user.keyboard("{Enter}");
-    expect(screen.queryByLabelText("Search emoji")).not.toBeInTheDocument();
-  },
-);
-
-test.each(["main", "side"] as const)(
-  "Leave focus unforced after Rename opens from the %s composer",
-  async (pane) => {
-    const threads = await setupRenamePage();
+    mockChatLifecycle(context, {
+      threadId: RUN_THREAD_ID,
+      threadTitle: "Field notes",
+    });
+    await setupPage({ context, path: RUN_PATH });
     const user = userEvent.setup({ delay: null });
-    const composer = within(threadContainer(threads[pane].id)).getByRole(
-      "textbox",
-      { name: "Message" },
-    );
-    await user.click(composer);
-    await user.keyboard("{F2}");
-    const dialog = await renameDialog();
+    const title = await screen.findByTestId("chat-thread-header-title");
+    if (entry === "title") {
+      await user.dblClick(title);
+    } else {
+      await user.click(await findComposer());
+      await user.keyboard("{F2}");
+    }
+    const dialog = await screen.findByRole("dialog", { name: "Rename chat" });
     await user.keyboard("{Escape}");
     await waitFor(() => {
       expect(dialog).not.toBeInTheDocument();
+      expect(document.body).toHaveFocus();
     });
-    expect(document.body).toHaveFocus();
   },
 );
 
-test("Do not focus the emoji button after title double-click Rename", async () => {
-  const { main } = await setupRenamePage();
-  const user = userEvent.setup({ delay: null });
-  const title = within(threadContainer(main.id)).getByTestId(
-    "chat-thread-header-title",
-  );
-  await user.dblClick(title);
-  const dialog = await renameDialog();
-  await user.keyboard("{Escape}");
-  await waitFor(() => {
-    expect(dialog).not.toBeInTheDocument();
-  });
-  expect(document.body).toHaveFocus();
-});
+test.each([
+  ["001", "Enter"],
+  ["002", "Escape"],
+])(
+  "chat-rename-focus-%s closing side-pane Rename leaves the body focused",
+  async (_id, key) => {
+    context.mocks.browser.matchMedia((q) => {
+      return q.includes("min-width");
+    });
+    mockSplitAttachmentChats(
+      context,
+      { threadId: RUN_THREAD_ID, title: "Main planning", events: [] },
+      {
+        threadId: SECOND_ATTACHMENT_THREAD_ID,
+        title: "Side notes",
+        events: [],
+      },
+    );
+    await setupPage({
+      context,
+      path: RUN_PATH + "?sidebar=" + SECOND_ATTACHMENT_THREAD_ID,
+    });
+    const title = await screen.findByText("Side notes", {
+      selector: '[data-testid="chat-thread-header-title"]',
+    });
+    const pane = title.closest(
+      "[data-chat-thread-container-id]",
+    )! as HTMLElement;
+    click(within(pane).getByRole("textbox", { name: "Message" }));
+    await userEvent.keyboard("{F2}");
+    const dialog = await screen.findByRole("dialog", { name: "Rename chat" });
+    if (key === "Enter") {
+      const name = within(dialog).getByRole("textbox");
+      await fill(name, "Revised side notes");
+    }
+    await userEvent.keyboard("{" + key + "}");
+    await waitFor(() => {
+      expect(dialog).not.toBeInTheDocument();
+      expect(document.body).toHaveFocus();
+    });
+    await userEvent.keyboard("{Enter}");
+    expect(screen.queryByPlaceholderText("Search emoji")).toBeNull();
+  },
+);

@@ -7,6 +7,9 @@ import ai.okou.android.WorkspaceMenu
 import ai.okou.android.WorkspaceMenuItem
 import ai.okou.android.api.generated.IndicatorsThreadsValue
 import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.rememberContentReadFeedbackAfter
+import ai.okou.android.rememberContentReadSkeleton
+import ai.okou.android.updates.updateFocusOutline
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.compose.animation.core.CubicBezierEasing
@@ -15,6 +18,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -57,10 +62,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isShiftPressed
@@ -104,6 +111,18 @@ private val projectChildFade = tween<Float>(ProjectMotionMillis, easing = ChatLi
 private val immediatePlacement = snap<IntOffset>()
 
 @Composable
+private fun chatListRowBackground(
+    interactions: MutableInteractionSource,
+    selected: Boolean,
+): Color {
+    val colors = MaterialTheme.colorScheme
+    if (selected) return colors.secondaryContainer
+    val hovered by interactions.collectIsHoveredAsState()
+    return if (hovered) colors.onBackground.copy(alpha = 0.05f).compositeOver(colors.background)
+    else colors.background
+}
+
+@Composable
 internal fun ChatListScreen(
     state: ChatListUiState,
     composer: State<ComposerState>?,
@@ -129,6 +148,8 @@ internal fun ChatListScreen(
     selectedChatId: String?,
     wide: Boolean,
     newChatEnabled: Boolean,
+    chatActionsEnabled: Boolean,
+    startupSyncPending: Boolean,
     startupRecovery: @Composable (() -> Unit)?,
     dismissProjectRenameRejection: (ProjectRenameRejection) -> Unit,
     feedback: @Composable () -> Unit,
@@ -142,7 +163,7 @@ internal fun ChatListScreen(
                 )
             }
         }
-    val canRenameProject = state.canRenameProject
+    val canRenameProject = chatActionsEnabled && state.canRenameProject
     var deletingId by remember { mutableStateOf<String?>(null) }
     deletingId?.let { id ->
         val thread = state.threads.firstOrNull { it.id == id && it.hidden != true }
@@ -199,10 +220,12 @@ internal fun ChatListScreen(
     val previousExpansion =
         remember(listState, projectExpansion) { ChatListProjectIds(savedExpansion) }
     val precedingIds = previousExpansion.ids
+    val createdProject = (renameFocus as? WorkspaceRenameTarget.Project)?.takeIf { it.newlyCreated }
     val expansionChanged =
         savedExpansion != null &&
             (precedingIds != null || expansion.hasLocalChoices) &&
-            precedingIds.orEmpty() != savedExpansion
+            precedingIds.orEmpty() != savedExpansion &&
+            (createdProject == null || precedingIds.orEmpty() != savedExpansion - createdProject.id)
     val newlyExpanded =
         if (expansionChanged) expandedProjectIds - precedingIds.orEmpty() else emptySet()
     // Give Compose stable lazy item positions without animating the initial disk restore.
@@ -275,22 +298,24 @@ internal fun ChatListScreen(
     val outline = MaterialTheme.colorScheme.outlineVariant
     val missingUnread = state.confirmedAt != null && state.waitingForUnreadIndicators
     val firstLoadFailed =
-        !state.offline &&
-            if (missingUnread) state.indicatorsNonRetryableFailure
-            else state.listReadFailure == ChatListReadFailure.NeedsRetry
-    val awaitingFirstList =
-        (state.confirmedAt == null || missingUnread) &&
-            pendingByProject.isEmpty() &&
-            !(missingUnread && state.offline) &&
-            !firstLoadFailed &&
-            (startupRecovery == null || state.listPhase != ChatReadPhase.Idle)
-    val skeletonVisible = rememberChatWaitIndicator(awaitingFirstList, ChatListSkeletonDelayMillis)
-    val unreadFilter = state.filter == ChatListFilter.Unread
+        if (missingUnread) state.indicatorsNonRetryableFailure
+        else state.listReadFailure == ChatListReadFailure.NeedsRetry
     val hasUsableList = state.confirmedAt != null && !missingUnread
+    val skeletonVisible =
+        rememberContentReadSkeleton(
+            hasContent = hasUsableList || pendingByProject.isNotEmpty(),
+            awaitingRead =
+                !firstLoadFailed &&
+                    (startupRecovery == null || state.listPhase != ChatReadPhase.Idle),
+        )
+    val unreadFilter = state.filter == ChatListFilter.Unread
     val syncConfirmation =
-        if (!hasUsableList || state.offline) null
+        if (!hasUsableList) null
         else {
-            val listRead = state.confirmedAt.takeIf { state.listPhase == ChatReadPhase.Loading }
+            val listRead =
+                state.confirmedAt.takeIf {
+                    startupSyncPending || state.listPhase == ChatReadPhase.Loading
+                }
             val unreadRead =
                 state.unreadConfirmedAt?.takeIf {
                     unreadFilter && state.indicatorsPhase == ChatReadPhase.Loading
@@ -305,14 +330,11 @@ internal fun ChatListScreen(
         remember(syncConfirmation) {
             syncConfirmation?.let { chatSyncNoticeDelayMillis(it, System.currentTimeMillis()) }
         }
-    // Keep the timer's composition in place as reads start and finish.
-    val syncDelayReached =
-        rememberChatWaitIndicator(syncDelay != null && syncDelay > 0L, syncDelay ?: 0L)
+    val syncDelayReached = rememberContentReadFeedbackAfter(syncDelay)
     val syncVisible =
         hasUsableList &&
             (state.listRetryProgressVisible ||
                 unreadFilter && state.indicatorsRetryProgressVisible ||
-                syncDelay == 0L ||
                 syncDelayReached)
     // Follow changes to refreshed content without turning Project expansion into a scroll action.
     val lastContentKey =
@@ -372,10 +394,6 @@ internal fun ChatListScreen(
                 }
                 if (state.confirmedAt == null || missingUnread) {
                     when {
-                        missingUnread && state.offline ->
-                            row("list_offline") {
-                                ChatContentLoadNotice(R.string.chat_list_load_when_online)
-                            }
                         firstLoadFailed ->
                             row("list_first_read") {
                                 ContentReadFeedback(
@@ -392,19 +410,14 @@ internal fun ChatListScreen(
                 if (
                     state.confirmedAt != null &&
                         !missingUnread &&
-                        !state.offline &&
                         state.indicatorsPhase == ChatReadPhase.Failed &&
-                        (!unreadFilter || state.indicatorsNonRetryableFailure)
+                        state.indicatorsNonRetryableFailure
                 ) {
                     row("list_indicators_unavailable") {
                         ChatListDependencyNotice(R.string.chat_refresh_failed)
                     }
                 }
-                if (
-                    state.confirmedAt != null &&
-                        !state.offline &&
-                        state.projectsPhase == ChatReadPhase.Failed
-                )
+                if (state.confirmedAt != null && state.projectsPhase == ChatReadPhase.Failed)
                     row("list_metadata_unavailable") {
                         ChatListDependencyNotice(R.string.chat_metadata_unavailable)
                     }
@@ -438,8 +451,17 @@ internal fun ChatListScreen(
                         allowCollapsedChat = false,
                     )
                 if (anchor == null) onRenameFocusFinished(renameFocus)
-                else if (listState.layoutInfo.visibleItemsInfo.none { it.key == renameFocusKey })
-                    listState.requestScrollToItem(anchor.index)
+                else {
+                    val layout = listState.layoutInfo
+                    val row = layout.visibleItemsInfo.firstOrNull { it.key == renameFocusKey }
+                    if (
+                        row == null ||
+                            (createdProject != null &&
+                                (row.offset < layout.viewportStartOffset ||
+                                    row.offset + row.size > layout.viewportEndOffset))
+                    )
+                        listState.requestScrollToItem(anchor.index)
+                }
             }
         }
         LazyColumn(
@@ -455,7 +477,11 @@ internal fun ChatListScreen(
             state = listState,
         ) {
             items(leadingItems.size, key = { leadingItems[it].first }) { leadingItems[it].second() }
-            if (state.confirmedAt != null || pendingByProject.isNotEmpty()) {
+            if (
+                state.confirmedAt != null ||
+                    pendingByProject.isNotEmpty() ||
+                    state.projects.isNotEmpty()
+            ) {
                 sections.forEach { section ->
                     val group = section.group
                     val project = group.project
@@ -474,7 +500,7 @@ internal fun ChatListScreen(
                                 canRename = canRenameProject,
                                 renaming = state.renamingProjectId == project.id,
                                 delete = { requestDeleteProject(project.id) },
-                                canDelete = state.canDeleteProject,
+                                canDelete = chatActionsEnabled && state.canDeleteProject,
                                 deleteDialogOpen = confirmingProjectDelete == project.id,
                                 renameFocus =
                                     (renameFocus as? WorkspaceRenameTarget.Project)?.takeIf {
@@ -606,9 +632,11 @@ internal fun ChatListScreen(
                                     row = section.firstChatRow + index,
                                     actions =
                                         thread
+                                            ?.takeIf { chatActionsEnabled }
                                             ?.let { state.rowActions(it, group, threadIndex) }
                                             .orEmpty(),
                                     pendingAction = state.pendingRowActions[id],
+                                    enabled = chatActionsEnabled,
                                     deleteDialogOpen = deletingId == id,
                                     rename = { restore -> renameThread(id, restore) },
                                     renameFocus =
@@ -879,6 +907,8 @@ private fun ProjectRow(
 ) {
     val collapsed = activity != null
     val status = activity?.status ?: ChatRowStatus.None
+    val colors = MaterialTheme.colorScheme
+    val interactions = remember { MutableInteractionSource() }
     val locale = LocalConfiguration.current.locales[0]
     val number = remember(locale) { NumberFormat.getIntegerInstance(locale) }
     val unread = stringResource(R.string.chat_unread)
@@ -919,10 +949,15 @@ private fun ProjectRow(
             Modifier.fillMaxWidth()
                 .heightIn(min = ChatListRowHeight)
                 .clip(ChatListRowShape)
+                .background(chatListRowBackground(interactions, selected = false))
                 .contextMenuInput(openMenu)
                 .focusRequester(rowFocus)
+                .focusProperties { canFocus = true }
                 .onFocusChanged { rowFocused = it.isFocused }
+                .updateFocusOutline(ChatListRowShape, colors.onBackground, keyboardOnly = true)
                 .combinedClickable(
+                    interactionSource = interactions,
+                    indication = ChatPressRipple,
                     role = Role.Button,
                     onClick = toggle,
                     onLongClick = openMenu,
@@ -961,6 +996,7 @@ private fun ProjectRow(
                 Text(
                     name,
                     Modifier.weight(1f, fill = false),
+                    color = colors.onBackground,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = chatListTitleStyle(),
@@ -977,10 +1013,8 @@ private fun ProjectRow(
                     modifier = Modifier.size(16.dp),
                 )
             }
-            if (status != ChatRowStatus.None) {
-                Spacer(Modifier.width(8.dp))
-                ChatStatusGlyph(status, runningFrame, row)
-            }
+            Spacer(Modifier.width(8.dp))
+            ChatStatusGlyph(status, runningFrame, row)
         }
         if (menuOpen && openMenu != null) {
             val items = buildList {
@@ -1063,6 +1097,7 @@ private fun ChatRow(
     row: Int,
     actions: List<ChatRowAction>,
     pendingAction: ChatRowAction?,
+    enabled: Boolean,
     deleteDialogOpen: Boolean,
     rename: (Boolean) -> Unit,
     renameFocus: WorkspaceRenameTarget?,
@@ -1110,6 +1145,7 @@ private fun ChatRow(
     val archiveAction = actions.firstOrNull {
         it == ChatRowAction.Archive || it == ChatRowAction.Unarchive
     }
+    val interactions = remember { MutableInteractionSource() }
     ChatRowSwipe(
         readAction = readAction.takeIf { openMenu != null },
         archiveAction = archiveAction.takeIf { openMenu != null },
@@ -1120,11 +1156,15 @@ private fun ChatRow(
                 .fillMaxWidth()
                 .heightIn(min = ChatListRowHeight)
                 .clip(ChatListRowShape)
-                .background(if (isSelected) colors.secondaryContainer else colors.background)
+                .background(chatListRowBackground(interactions, isSelected))
                 .contextMenuInput(openMenu)
                 .focusRequester(rowFocus)
                 .onFocusChanged { rowFocused = it.isFocused }
+                .updateFocusOutline(ChatListRowShape, colors.onBackground, keyboardOnly = true)
                 .combinedClickable(
+                    interactionSource = interactions,
+                    indication = ChatPressRipple,
+                    enabled = enabled,
                     onClick = open,
                     onLongClick = openMenu,
                     onLongClickLabel = stringResource(R.string.chat_actions),
@@ -1139,7 +1179,7 @@ private fun ChatRow(
         ) {
             if (hasDraft) {
                 Icon(
-                    painterResource(R.drawable.ic_edit),
+                    painterResource(R.drawable.ic_edit_note),
                     contentDescription = null,
                     tint = colors.onSurfaceVariant,
                     modifier = Modifier.size(ChatListLeadingIconSize).testTag("chat_draft_icon"),
@@ -1149,7 +1189,7 @@ private fun ChatRow(
             Text(
                 title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.chat_untitled),
                 Modifier.weight(1f),
-                color = if (isSelected) colors.onSecondaryContainer else colors.onSurface,
+                color = if (isSelected) colors.onSecondaryContainer else colors.onBackground,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 style = chatListTitleStyle(),
@@ -1298,16 +1338,6 @@ internal fun ChatListTextAction(
                     fontWeight = FontWeight(550),
                 ),
         )
-    }
-}
-
-@Composable
-private fun ChatContentLoadNotice(@StringRes message: Int) {
-    Box(
-        Modifier.heightIn(min = 48.dp).padding(horizontal = 12.dp),
-        contentAlignment = Alignment.CenterStart,
-    ) {
-        ContentReadFeedback(message)
     }
 }
 

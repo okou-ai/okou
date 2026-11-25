@@ -1,0 +1,1723 @@
+{
+  "message-port-015": [
+    {
+      "trial": "proof-port015",
+      "stages": [
+        {
+          "label": "both shelves open",
+          "index": 139,
+          "path": "/",
+          "visible": [
+            "Side survey",
+            "Primary survey",
+            "Find people"
+          ]
+        },
+        {
+          "label": "unrelated A",
+          "index": 140,
+          "path": "/",
+          "visible": [
+            "Side survey",
+            "Primary survey",
+            "Find people"
+          ]
+        },
+        {
+          "label": "addressed A",
+          "index": 148,
+          "path": "/",
+          "visible": [
+            "Side survey",
+            "Primary survey",
+            "Find people",
+            "Harbor exhibit"
+          ]
+        },
+        {
+          "label": "existing A and B shelves show the publication",
+          "index": 148
+        },
+        {
+          "label": "fresh catalog control",
+          "index": 207,
+          "path": "/",
+          "visible": [
+            "Side survey",
+            "Primary survey",
+            "Find people",
+            "Harbor exhibit"
+          ]
+        }
+      ],
+      "externalReceipts": [
+        {
+          "index": 33,
+          "op": "catalog",
+          "alias": "A",
+          "published": false
+        },
+        {
+          "index": 49,
+          "op": "subscribe",
+          "name": "user:fixture",
+          "topic": "presentationTemplatesChanged"
+        },
+        {
+          "index": 50,
+          "op": "subscribe",
+          "name": "org:fixture",
+          "topic": "presentationTemplatesChanged"
+        },
+        {
+          "index": 68,
+          "op": "metadata",
+          "status": 200,
+          "resource": "snapshot"
+        },
+        {
+          "index": 75,
+          "op": "metadata",
+          "status": 200,
+          "resource": "thread-snapshot.json"
+        },
+        {
+          "index": 76,
+          "op": "catalog",
+          "alias": "A",
+          "published": false
+        },
+        {
+          "index": 77,
+          "op": "catalog",
+          "alias": "A",
+          "published": false
+        },
+        {
+          "index": 84,
+          "op": "metadata",
+          "status": 200,
+          "resource": "events"
+        },
+        {
+          "index": 117,
+          "op": "metadata",
+          "status": 200,
+          "resource": "snapshot"
+        },
+        {
+          "index": 118,
+          "op": "metadata",
+          "status": 200,
+          "resource": "thread-snapshot.json"
+        },
+        {
+          "index": 121,
+          "op": "metadata",
+          "status": 200,
+          "resource": "events"
+        },
+        {
+          "index": 138,
+          "op": "catalog",
+          "alias": "B",
+          "published": false
+        },
+        {
+          "index": 139,
+          "op": "published",
+          "name": "org:unrelated",
+          "topic": "presentationTemplatesChanged"
+        },
+        {
+          "index": 140,
+          "op": "published",
+          "name": "org:fixture",
+          "topic": "presentationTemplatesChanged"
+        },
+        {
+          "index": 141,
+          "op": "delivery-1",
+          "name": "org:fixture",
+          "topic": "presentationTemplatesChanged"
+        },
+        {
+          "index": 146,
+          "op": "catalog",
+          "alias": "A",
+          "published": true
+        },
+        {
+          "index": 147,
+          "op": "catalog",
+          "alias": "B",
+          "published": true
+        },
+        {
+          "index": 188,
+          "op": "metadata",
+          "status": 200,
+          "resource": "snapshot"
+        },
+        {
+          "index": 196,
+          "op": "metadata",
+          "status": 200,
+          "resource": "thread-snapshot.json"
+        },
+        {
+          "index": 205,
+          "op": "metadata",
+          "status": 200,
+          "resource": "events"
+        },
+        {
+          "index": 206,
+          "op": "catalog",
+          "alias": "unknown",
+          "published": true
+        }
+      ]
+    }
+  ],
+  "message-port-020": [
+    {
+      "trial": "worker-port020",
+      "stages": [
+        {
+          "label": "A pending before B first opens the dashboard",
+          "index": 88
+        },
+        {
+          "label": "B first dashboard no second publish",
+          "index": 128,
+          "sidebar": "Side survey",
+          "unread": false,
+          "readViaB": false
+        }
+      ],
+      "externalReceipts": [
+        {
+          "index": 48,
+          "op": "indicators",
+          "alias": "A"
+        },
+        {
+          "index": 87,
+          "op": "asked",
+          "alias": "A",
+          "mode": "hold"
+        },
+        {
+          "index": 88,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 89,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 90,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 91,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 92,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 93,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 94,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 95,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 96,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 97,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 98,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 99,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 100,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 101,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 102,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 103,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 104,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 105,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 106,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 107,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 108,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 109,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 110,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 111,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 112,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 113,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 114,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 115,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 116,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 117,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 118,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 119,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 121,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 122,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 124,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 125,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 126,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 127,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 128,
+          "op": "settled",
+          "alias": "A",
+          "mode": "hold",
+          "status": 200
+        },
+        {
+          "index": 129,
+          "op": "asked",
+          "alias": "A",
+          "mode": "hold"
+        },
+        {
+          "index": 130,
+          "op": "indicators",
+          "alias": "A"
+        }
+      ]
+    }
+  ],
+  "message-port-027": [
+    {
+      "trial": "run3-port027",
+      "stages": [
+        {
+          "label": "both signed-in dashboards with snapshot titles",
+          "index": 110,
+          "path": "/",
+          "visible": [
+            "Side survey",
+            "Primary survey",
+            "Find people"
+          ]
+        },
+        {
+          "label": "online empty control",
+          "index": 158,
+          "path": "/chats/THREAD",
+          "visible": [
+            "Side survey",
+            "Primary survey",
+            "Side survey",
+            "Find people"
+          ]
+        },
+        {
+          "label": "A closed before B offline first selection",
+          "index": 158,
+          "closed": true
+        },
+        {
+          "label": "first offline read",
+          "index": 159,
+          "path": "/chats/THREAD",
+          "visible": [
+            "Side survey",
+            "Primary survey",
+            "Side survey"
+          ]
+        },
+        {
+          "label": "B still reads nonempty thread",
+          "index": 179,
+          "path": "/chats/THREAD",
+          "visible": [
+            "Side survey",
+            "Primary survey",
+            "Primary survey",
+            "Question number 16"
+          ]
+        }
+      ],
+      "externalReceipts": [
+        {
+          "index": 67,
+          "op": "metadata",
+          "status": 200,
+          "resource": "snapshot"
+        },
+        {
+          "index": 68,
+          "op": "metadata",
+          "status": 200,
+          "resource": "thread-snapshot.json"
+        },
+        {
+          "index": 73,
+          "op": "metadata",
+          "status": 200,
+          "resource": "events"
+        },
+        {
+          "index": 116,
+          "op": "metadata",
+          "status": 200,
+          "resource": "snapshot"
+        },
+        {
+          "index": 128,
+          "op": "metadata",
+          "status": 200,
+          "resource": "thread-snapshot.json"
+        },
+        {
+          "index": 143,
+          "op": "metadata",
+          "status": 200,
+          "resource": "events"
+        }
+      ],
+      "empty": [
+        "Okou",
+        "Workflows",
+        "Connectors",
+        "Artifacts",
+        "Channels",
+        "R",
+        "New chat",
+        "Ctrl+Shift+O",
+        "Side survey",
+        "Primary survey",
+        "Get Team",
+        "More credits & concurrent runs",
+        "Side survey",
+        "Ask me to automate workflows, manage tasks..."
+      ],
+      "online": [
+        "Customers, creators, decision-makers",
+        "Explore",
+        "Research",
+        "Traffic, ads, products, topics",
+        "Explore",
+        "Create",
+        "From your first idea to something ready to share.",
+        "Presentation",
+        "Image",
+        "Document",
+        "Website",
+        "Chart",
+        "Workflow",
+        "Runs on a schedule or a trigger",
+        "Scheduled",
+        "Triggers",
+        "Advanced",
+        "SOC 2 Type II",
+        "In progress",
+        "CCPA / CPRA",
+        "Compliant",
+        "GDPR",
+        "Compliant",
+        "HIPAA",
+        "Aligned",
+        "ISO/IEC 27001",
+        "Aligned",
+        "Ask me to automate workflows, manage tasks..."
+      ]
+    }
+  ],
+  "worker-runtime-005": [
+    {
+      "trial": "run3-runtime005",
+      "stages": [
+        {
+          "label": "both signed-in dashboards with snapshot titles",
+          "index": 110,
+          "path": "/",
+          "visible": [
+            "Side survey",
+            "Find people"
+          ]
+        },
+        {
+          "label": "A closed before B offline first selection",
+          "index": 116,
+          "closed": true
+        },
+        {
+          "label": "first offline read",
+          "index": 122,
+          "path": "/chats/THREAD",
+          "visible": [
+            "Side survey"
+          ]
+        }
+      ],
+      "externalReceipts": [
+        {
+          "index": 65,
+          "op": "metadata",
+          "status": 200,
+          "resource": "snapshot"
+        },
+        {
+          "index": 68,
+          "op": "metadata",
+          "status": 200,
+          "resource": "thread-snapshot.json"
+        },
+        {
+          "index": 73,
+          "op": "metadata",
+          "status": 200,
+          "resource": "events"
+        }
+      ],
+      "empty": [
+        "Okou",
+        "Workflows",
+        "Connectors",
+        "Artifacts",
+        "Channels",
+        "R",
+        "New chat",
+        "Ctrl+Shift+O",
+        "Side survey",
+        "Stored tide ledger",
+        "Stored tide ledger",
+        "Ask me to automate workflows, manage tasks...",
+        "HTTP 500"
+      ]
+    },
+    {
+      "trial": "delta-runtime005",
+      "stages": [
+        {
+          "label": "both signed-in dashboards with snapshot titles",
+          "index": 110,
+          "path": "/",
+          "visible": [
+            "Side survey",
+            "Find people"
+          ]
+        },
+        {
+          "label": "metadata recovery after snapshot",
+          "index": 131,
+          "revised": false
+        },
+        {
+          "label": "A closed before B offline first selection",
+          "index": 131,
+          "closed": true
+        },
+        {
+          "label": "first offline read",
+          "index": 137,
+          "path": "/chats/THREAD",
+          "visible": [
+            "Side survey"
+          ]
+        }
+      ],
+      "externalReceipts": [
+        {
+          "index": 46,
+          "op": "metadata",
+          "status": 200,
+          "resource": "snapshot"
+        },
+        {
+          "index": 54,
+          "op": "metadata",
+          "status": 200,
+          "resource": "thread-snapshot.json"
+        },
+        {
+          "index": 71,
+          "op": "metadata",
+          "status": 200,
+          "resource": "events"
+        },
+        {
+          "index": 116,
+          "op": "metadata",
+          "status": 200,
+          "resource": "snapshot"
+        },
+        {
+          "index": 117,
+          "op": "connection-state",
+          "name": "suspended",
+          "topic": ""
+        },
+        {
+          "index": 118,
+          "op": "connection-state",
+          "name": "connected",
+          "topic": ""
+        },
+        {
+          "index": 124,
+          "op": "metadata",
+          "status": 200,
+          "resource": "thread-snapshot.json"
+        },
+        {
+          "index": 129,
+          "op": "metadata",
+          "status": 200,
+          "resource": "events"
+        },
+        {
+          "index": 130,
+          "op": "renameDelta",
+          "status": 200
+        }
+      ],
+      "empty": [
+        "Okou",
+        "Workflows",
+        "Connectors",
+        "Artifacts",
+        "Channels",
+        "R",
+        "New chat",
+        "Ctrl+Shift+O",
+        "Side survey",
+        "Revised tide ledger",
+        "Get Team",
+        "More credits & concurrent runs",
+        "Revised tide ledger",
+        "Ask me to automate workflows, manage tasks..."
+      ]
+    }
+  ],
+  "worker-runtime-008": [
+    {
+      "trial": "delta-runtime008",
+      "stages": [
+        {
+          "label": "both signed-in dashboards with snapshot titles",
+          "index": 114,
+          "path": "/",
+          "visible": [
+            "Side survey",
+            "Primary survey",
+            "Find people"
+          ]
+        },
+        {
+          "label": "seed batch with primary baseline and empty side",
+          "index": 132
+        },
+        {
+          "label": "primary 48 to 49 plus unchanged side",
+          "index": 142
+        },
+        {
+          "label": "A closed before B offline first selection",
+          "index": 142,
+          "closed": true
+        },
+        {
+          "label": "first offline read",
+          "index": 148,
+          "path": "/chats/THREAD",
+          "visible": [
+            "Side survey",
+            "Primary survey",
+            "Side survey"
+          ]
+        },
+        {
+          "label": "offline changed thread",
+          "index": 154,
+          "shown": true
+        }
+      ],
+      "externalReceipts": [
+        {
+          "index": 46,
+          "op": "metadata",
+          "status": 200,
+          "resource": "snapshot"
+        },
+        {
+          "index": 66,
+          "op": "metadata",
+          "status": 200,
+          "resource": "thread-snapshot.json"
+        },
+        {
+          "index": 71,
+          "op": "metadata",
+          "status": 200,
+          "resource": "events"
+        },
+        {
+          "index": 116,
+          "op": "metadata",
+          "status": 200,
+          "resource": "snapshot"
+        },
+        {
+          "index": 128,
+          "op": "metadata",
+          "status": 200,
+          "resource": "thread-snapshot.json"
+        },
+        {
+          "index": 131,
+          "op": "catchUp",
+          "status": 200,
+          "threads": [
+            {
+              "source": "side",
+              "cursor": 0,
+              "returned": 0
+            },
+            {
+              "source": "primary",
+              "cursor": 0,
+              "returned": 48
+            }
+          ]
+        },
+        {
+          "index": 134,
+          "op": "metadata",
+          "status": 200,
+          "resource": "events"
+        },
+        {
+          "index": 141,
+          "op": "catchUp",
+          "status": 200,
+          "threads": [
+            {
+              "source": "side",
+              "cursor": 0,
+              "returned": 0
+            },
+            {
+              "source": "primary",
+              "cursor": 48,
+              "returned": 1
+            }
+          ]
+        }
+      ],
+      "empty": [
+        "Okou",
+        "Workflows",
+        "Connectors",
+        "Artifacts",
+        "Channels",
+        "R",
+        "New chat",
+        "Ctrl+Shift+O",
+        "Side survey",
+        "Primary survey",
+        "Get Team",
+        "More credits & concurrent runs",
+        "Side survey",
+        "Ask me to automate workflows, manage tasks..."
+      ]
+    }
+  ],
+  "realtime-004": [
+    {
+      "trial": "verified-rt004",
+      "stages": [
+        {
+          "label": "addressed organization changes drawer capacity 6/7 to 4/7",
+          "index": 88,
+          "path": "/",
+          "visible": [
+            "Side survey",
+            "Primary survey",
+            "Find people"
+          ],
+          "network": [
+            [
+              "/api/user-preferences",
+              409
+            ],
+            [
+              "/api/user-model-preference",
+              200
+            ],
+            [
+              "/api/user-preferences/initialize",
+              200
+            ]
+          ]
+        }
+      ],
+      "externalReceipts": [
+        {
+          "index": 46,
+          "op": "metadata",
+          "status": 200,
+          "resource": "snapshot"
+        },
+        {
+          "index": 60,
+          "op": "metadata",
+          "status": 200,
+          "resource": "thread-snapshot.json"
+        },
+        {
+          "index": 61,
+          "op": "subscribe",
+          "name": "user-org:fixture:fixture",
+          "topic": "*"
+        },
+        {
+          "index": 65,
+          "op": "subscribe",
+          "name": "org:fixture",
+          "topic": "runQueueChanged"
+        },
+        {
+          "index": 71,
+          "op": "metadata",
+          "status": 200,
+          "resource": "events"
+        },
+        {
+          "index": 80,
+          "op": "capacity",
+          "active": 6
+        },
+        {
+          "index": 81,
+          "op": "published",
+          "name": "user:fixture",
+          "topic": "runQueueChanged"
+        },
+        {
+          "index": 82,
+          "op": "delivery-0",
+          "name": "user:fixture",
+          "topic": "runQueueChanged"
+        },
+        {
+          "index": 83,
+          "op": "published",
+          "name": "org:fixture",
+          "topic": "runQueueChanged"
+        },
+        {
+          "index": 84,
+          "op": "delivery-1",
+          "name": "org:fixture",
+          "topic": "runQueueChanged"
+        },
+        {
+          "index": 87,
+          "op": "capacity",
+          "active": 4
+        }
+      ]
+    }
+  ],
+  "realtime-008": [
+    {
+      "trial": "verified-rt008",
+      "stages": [
+        {
+          "label": "matching single update creates visible card after reconnect",
+          "index": 112,
+          "path": "/chats/THREAD",
+          "visible": [
+            "Side survey",
+            "Primary survey",
+            "Primary survey",
+            "Question number 16",
+            "Automations",
+            "Harbor schedule"
+          ],
+          "network": [
+            [
+              "/api/user-preferences",
+              409
+            ],
+            [
+              "/api/user-model-preference",
+              200
+            ],
+            [
+              "/api/user-preferences/initialize",
+              200
+            ],
+            [
+              "/api/chat-threads/THREAD/draft",
+              200
+            ],
+            [
+              "/api/chat-threads/THREAD",
+              200
+            ],
+            [
+              "/api/chat-threads/THREAD/mark-read",
+              200
+            ],
+            [
+              "/api/chat-threads/THREAD/workflow-automations",
+              200
+            ],
+            [
+              "/api/chat-threads/THREAD/workflow-automations",
+              200
+            ]
+          ]
+        }
+      ],
+      "externalReceipts": [
+        {
+          "index": 46,
+          "op": "metadata",
+          "status": 200,
+          "resource": "snapshot"
+        },
+        {
+          "index": 60,
+          "op": "subscribe",
+          "name": "user-org:fixture:fixture",
+          "topic": "*"
+        },
+        {
+          "index": 65,
+          "op": "subscribe",
+          "name": "org:fixture",
+          "topic": "runQueueChanged"
+        },
+        {
+          "index": 66,
+          "op": "metadata",
+          "status": 200,
+          "resource": "thread-snapshot.json"
+        },
+        {
+          "index": 73,
+          "op": "metadata",
+          "status": 200,
+          "resource": "events"
+        },
+        {
+          "index": 78,
+          "op": "connection-state",
+          "name": "suspended",
+          "topic": ""
+        },
+        {
+          "index": 88,
+          "op": "subscribe",
+          "name": "user:fixture",
+          "topic": "chatThreadDetailChanged:thread"
+        },
+        {
+          "index": 90,
+          "op": "subscribe",
+          "name": "user:fixture",
+          "topic": "chatThreadAutomationsChanged:thread"
+        },
+        {
+          "index": 96,
+          "op": "detail",
+          "status": 200
+        },
+        {
+          "index": 105,
+          "op": "automations",
+          "status": 200
+        },
+        {
+          "index": 106,
+          "op": "connection-state",
+          "name": "connected",
+          "topic": ""
+        },
+        {
+          "index": 107,
+          "op": "published",
+          "name": "user:fixture",
+          "topic": "chatThreadAutomationsChanged:thread"
+        },
+        {
+          "index": 108,
+          "op": "delivery-1",
+          "name": "user:fixture",
+          "topic": "chatThreadAutomationsChanged:thread"
+        },
+        {
+          "index": 111,
+          "op": "automations",
+          "status": 200
+        }
+      ]
+    }
+  ],
+  "realtime-019": [
+    {
+      "trial": "run3-rt019",
+      "stages": [
+        {
+          "label": "initial thread detail",
+          "index": 101,
+          "path": "/chats/THREAD",
+          "visible": [
+            "Side survey",
+            "Primary survey",
+            "Primary survey",
+            "Question number 16"
+          ],
+          "network": [
+            [
+              "/api/user-preferences",
+              409
+            ],
+            [
+              "/api/user-model-preference",
+              200
+            ],
+            [
+              "/api/user-preferences/initialize",
+              200
+            ],
+            [
+              "/api/chat-threads/THREAD/draft",
+              200
+            ],
+            [
+              "/api/chat-threads/THREAD",
+              200
+            ]
+          ]
+        },
+        {
+          "label": "automation panel open",
+          "index": 104,
+          "path": "/chats/THREAD",
+          "visible": [
+            "Side survey",
+            "Primary survey",
+            "Primary survey",
+            "Question number 16",
+            "Automations",
+            "Could not load automations"
+          ],
+          "network": [
+            [
+              "/api/chat-threads/THREAD/mark-read",
+              200
+            ],
+            [
+              "/api/chat-threads/THREAD/workflow-automations",
+              200
+            ]
+          ]
+        },
+        {
+          "label": "chatThreadDetailChanged:",
+          "index": 107,
+          "path": "/chats/THREAD",
+          "visible": [
+            "Side survey",
+            "Primary survey",
+            "Primary survey",
+            "Question number 16",
+            "Automations",
+            "Could not load automations"
+          ],
+          "network": [
+            [
+              "/api/chat-threads/THREAD",
+              200
+            ]
+          ]
+        },
+        {
+          "label": "chatThreadAutomationsChanged:",
+          "index": 111,
+          "path": "/chats/THREAD",
+          "visible": [
+            "Side survey",
+            "Primary survey",
+            "Primary survey",
+            "Question number 16",
+            "Automations",
+            "Could not load automations"
+          ],
+          "network": [
+            [
+              "/api/chat-threads/THREAD/workflow-automations",
+              200
+            ]
+          ]
+        }
+      ],
+      "externalReceipts": [
+        {
+          "index": 59,
+          "op": "subscribe",
+          "name": "user-org:fixture:fixture",
+          "topic": "*"
+        },
+        {
+          "index": 63,
+          "op": "subscribe",
+          "name": "org:fixture",
+          "topic": "runQueueChanged"
+        },
+        {
+          "index": 64,
+          "op": "metadata",
+          "status": 200,
+          "resource": "snapshot"
+        },
+        {
+          "index": 68,
+          "op": "metadata",
+          "status": 200,
+          "resource": "thread-snapshot.json"
+        },
+        {
+          "index": 73,
+          "op": "metadata",
+          "status": 200,
+          "resource": "events"
+        },
+        {
+          "index": 87,
+          "op": "subscribe",
+          "name": "user:fixture",
+          "topic": "chatThreadDetailChanged:thread"
+        },
+        {
+          "index": 89,
+          "op": "subscribe",
+          "name": "user:fixture",
+          "topic": "chatThreadAutomationsChanged:thread"
+        },
+        {
+          "index": 103,
+          "op": "automations",
+          "status": 200
+        },
+        {
+          "index": 104,
+          "op": "delivery-1",
+          "name": "user:fixture",
+          "topic": "chatThreadDetailChanged:thread"
+        },
+        {
+          "index": 107,
+          "op": "delivery-1",
+          "name": "user:fixture",
+          "topic": "chatThreadAutomationsChanged:thread"
+        },
+        {
+          "index": 110,
+          "op": "automations",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "trial": "proof-rt019",
+      "stages": [
+        {
+          "label": "initial thread detail",
+          "index": 102,
+          "path": "/chats/THREAD",
+          "visible": [
+            "Side survey",
+            "Primary survey",
+            "Primary survey",
+            "Question number 16"
+          ],
+          "network": [
+            [
+              "/api/user-preferences",
+              409
+            ],
+            [
+              "/api/user-model-preference",
+              200
+            ],
+            [
+              "/api/user-preferences/initialize",
+              200
+            ],
+            [
+              "/api/chat-threads/THREAD/draft",
+              200
+            ],
+            [
+              "/api/chat-threads/THREAD",
+              200
+            ],
+            [
+              "/api/chat-threads/THREAD/mark-read",
+              200
+            ]
+          ]
+        },
+        {
+          "label": "automation panel open",
+          "index": 105,
+          "path": "/chats/THREAD",
+          "visible": [
+            "Side survey",
+            "Primary survey",
+            "Primary survey",
+            "Question number 16",
+            "Automations",
+            "No automations yet",
+            "Automations that run in this chat will show up here."
+          ],
+          "network": [
+            [
+              "/api/chat-threads/THREAD/workflow-automations",
+              200
+            ]
+          ]
+        },
+        {
+          "label": "connector menu reads preferences",
+          "index": 113,
+          "path": "/chats/THREAD",
+          "visible": [],
+          "network": [
+            [
+              "/api/chat-connector-overview",
+              200
+            ],
+            [
+              "/api/chat-threads/THREAD/remote-access",
+              200
+            ]
+          ]
+        },
+        {
+          "label": "return to the thread",
+          "index": 113,
+          "path": "/chats/THREAD",
+          "visible": [],
+          "network": []
+        },
+        {
+          "label": "chatThreadDetailChanged:",
+          "index": 115,
+          "path": "/chats/THREAD",
+          "visible": [],
+          "network": []
+        },
+        {
+          "label": "chatThreadAutomationsChanged:",
+          "index": 117,
+          "path": "/chats/THREAD",
+          "visible": [],
+          "network": []
+        }
+      ],
+      "externalReceipts": [
+        {
+          "index": 56,
+          "op": "subscribe",
+          "name": "user-org:fixture:fixture",
+          "topic": "*"
+        },
+        {
+          "index": 60,
+          "op": "subscribe",
+          "name": "org:fixture",
+          "topic": "runQueueChanged"
+        },
+        {
+          "index": 67,
+          "op": "metadata",
+          "status": 200,
+          "resource": "snapshot"
+        },
+        {
+          "index": 68,
+          "op": "metadata",
+          "status": 200,
+          "resource": "thread-snapshot.json"
+        },
+        {
+          "index": 73,
+          "op": "metadata",
+          "status": 200,
+          "resource": "events"
+        },
+        {
+          "index": 87,
+          "op": "subscribe",
+          "name": "user:fixture",
+          "topic": "chatThreadDetailChanged:thread"
+        },
+        {
+          "index": 89,
+          "op": "subscribe",
+          "name": "user:fixture",
+          "topic": "chatThreadAutomationsChanged:thread"
+        },
+        {
+          "index": 93,
+          "op": "detail",
+          "status": 200
+        },
+        {
+          "index": 104,
+          "op": "automations",
+          "status": 200
+        },
+        {
+          "index": 112,
+          "op": "connectorOverview",
+          "status": 200
+        },
+        {
+          "index": 113,
+          "op": "published",
+          "name": "user:fixture",
+          "topic": "chatThreadDetailChanged:thread"
+        },
+        {
+          "index": 114,
+          "op": "delivery-1",
+          "name": "user:fixture",
+          "topic": "chatThreadDetailChanged:thread"
+        },
+        {
+          "index": 115,
+          "op": "published",
+          "name": "user:fixture",
+          "topic": "chatThreadAutomationsChanged:thread"
+        },
+        {
+          "index": 116,
+          "op": "delivery-1",
+          "name": "user:fixture",
+          "topic": "chatThreadAutomationsChanged:thread"
+        }
+      ]
+    }
+  ],
+  "realtime-020": [
+    {
+      "trial": "proof-rt020",
+      "stages": [
+        {
+          "label": "initial thread detail",
+          "index": 102,
+          "path": "/chats/THREAD",
+          "visible": [
+            "Side survey",
+            "Primary survey",
+            "Primary survey",
+            "Question number 16"
+          ],
+          "network": [
+            [
+              "/api/user-preferences",
+              409
+            ],
+            [
+              "/api/user-model-preference",
+              200
+            ],
+            [
+              "/api/user-preferences/initialize",
+              200
+            ],
+            [
+              "/api/chat-threads/THREAD/draft",
+              200
+            ],
+            [
+              "/api/chat-threads/THREAD",
+              500
+            ],
+            [
+              "/api/chat-threads/THREAD/mark-read",
+              200
+            ]
+          ]
+        },
+        {
+          "label": "automation panel open",
+          "index": 105,
+          "path": "/chats/THREAD",
+          "visible": [
+            "Side survey",
+            "Primary survey",
+            "Primary survey",
+            "Question number 16",
+            "Automations",
+            "No automations yet",
+            "Automations that run in this chat will show up here."
+          ],
+          "network": [
+            [
+              "/api/chat-threads/THREAD/workflow-automations",
+              200
+            ]
+          ]
+        },
+        {
+          "label": "chatThreadAutomationsChanged:",
+          "index": 110,
+          "path": "/chats/THREAD",
+          "visible": [
+            "Side survey",
+            "Primary survey",
+            "Primary survey",
+            "Question number 16",
+            "Automations",
+            "Harbor schedule"
+          ],
+          "network": [
+            [
+              "/api/chat-threads/THREAD/workflow-automations",
+              200
+            ]
+          ]
+        }
+      ],
+      "externalReceipts": [
+        {
+          "index": 46,
+          "op": "metadata",
+          "status": 200,
+          "resource": "snapshot"
+        },
+        {
+          "index": 58,
+          "op": "metadata",
+          "status": 200,
+          "resource": "thread-snapshot.json"
+        },
+        {
+          "index": 62,
+          "op": "subscribe",
+          "name": "user-org:fixture:fixture",
+          "topic": "*"
+        },
+        {
+          "index": 65,
+          "op": "subscribe",
+          "name": "org:fixture",
+          "topic": "runQueueChanged"
+        },
+        {
+          "index": 69,
+          "op": "metadata",
+          "status": 200,
+          "resource": "events"
+        },
+        {
+          "index": 87,
+          "op": "subscribe",
+          "name": "user:fixture",
+          "topic": "chatThreadDetailChanged:thread"
+        },
+        {
+          "index": 89,
+          "op": "subscribe",
+          "name": "user:fixture",
+          "topic": "chatThreadAutomationsChanged:thread"
+        },
+        {
+          "index": 95,
+          "op": "detail",
+          "status": 500
+        },
+        {
+          "index": 104,
+          "op": "automations",
+          "status": 200
+        },
+        {
+          "index": 105,
+          "op": "published",
+          "name": "user:fixture",
+          "topic": "chatThreadAutomationsChanged:thread"
+        },
+        {
+          "index": 106,
+          "op": "delivery-1",
+          "name": "user:fixture",
+          "topic": "chatThreadAutomationsChanged:thread"
+        },
+        {
+          "index": 109,
+          "op": "automations",
+          "status": 200
+        }
+      ]
+    }
+  ],
+  "chat-scroll-020": {
+    "markdown": {
+      "id": "020",
+      "before": {
+        "text": {
+          "event": "aa970000-0000-4000-8000-000000000038",
+          "text": "Turn 13, observation 3.",
+          "y": 427.75,
+          "visible": true
+        },
+        "frame": {
+          "top": -81.25,
+          "height": 180,
+          "width": 200,
+          "decoded": 0
+        },
+        "arrivals": 1
+      },
+      "after": {
+        "text": {
+          "event": "aa970000-0000-4000-8000-000000000038",
+          "text": "Turn 13, observation 3.",
+          "y": 427.75,
+          "visible": true
+        },
+        "frame": {
+          "top": -81.25,
+          "height": 180,
+          "width": 200,
+          "decoded": 75
+        },
+        "arrivals": 1
+      }
+    },
+    "linkedMarkdown": {
+      "id": "020",
+      "before": {
+        "text": {
+          "event": "aa970000-0000-4000-8000-000000000038",
+          "text": "Turn 13, observation 3.",
+          "y": 427.75,
+          "visible": true
+        },
+        "frame": {
+          "top": -81.25,
+          "height": 180,
+          "width": 200,
+          "decoded": 0
+        },
+        "arrivals": 1
+      },
+      "after": {
+        "text": {
+          "event": "aa970000-0000-4000-8000-000000000038",
+          "text": "Turn 13, observation 3.",
+          "y": 427.75,
+          "visible": true
+        },
+        "frame": {
+          "top": -81.25,
+          "height": 180,
+          "width": 200,
+          "decoded": 75
+        },
+        "arrivals": 1
+      }
+    },
+    "previousMermaidControl": "../105/scroll.json"
+  }
+}

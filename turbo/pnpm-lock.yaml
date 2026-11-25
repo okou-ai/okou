@@ -273,6 +273,9 @@ importers:
       tar:
         specifier: '>=7.5.21'
         version: 7.5.22
+      tldts:
+        specifier: 7.0.28
+        version: 7.0.28
       undici:
         specifier: 7.30.2
         version: 7.30.2
@@ -768,6 +771,9 @@ importers:
       '@okouai/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      '@posthog/core':
+        specifier: 1.50.5
+        version: 1.50.5
       '@ricky0123/vad-web':
         specifier: 0.0.31
         version: 0.0.31
@@ -952,6 +958,9 @@ importers:
         specifier: ^4.6.6
         version: 4.6.7
     devDependencies:
+      '@expo-google-fonts/noto-sans':
+        specifier: 0.4.2
+        version: 0.4.2
       '@fontpkg/noto-sans-cjk-sc':
         specifier: ^2.4.0
         version: 2.4.0
@@ -961,6 +970,9 @@ importers:
       '@fontsource/noto-emoji':
         specifier: 5.3.2
         version: 5.3.2
+      '@napi-rs/canvas':
+        specifier: 1.0.13
+        version: 1.0.13
       '@okouai/eslint-config':
         specifier: workspace:*
         version: link:../../packages/eslint-config
@@ -1030,6 +1042,9 @@ importers:
       i18next-cli:
         specifier: 1.74.0
         version: 1.74.0(@swc/helpers@0.5.21)(@types/node@24.13.4)(@typescript/typescript6@6.0.2)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      jsqr:
+        specifier: 1.4.0
+        version: 1.4.0
       msw:
         specifier: ^2.13.2
         version: 2.13.2(@types/node@24.13.4)(@typescript/typescript6@6.0.2)
@@ -2749,6 +2764,9 @@ packages:
   '@eslint/plugin-kit@0.7.3':
     resolution: {integrity: sha512-IkO+/KEUvwbVpiURZg+P7zF74z5Jxe0UgJxVni+RtoHQ6IZieXaO02kmadomap/q+l6bc/jdPGGqTjhuZnuz1Q==}
     engines: {node: ^20.19.0 || ^22.13.0 || >=24}
+
+  '@expo-google-fonts/noto-sans@0.4.2':
+    resolution: {integrity: sha512-zYD8G2ijWLxqmquoQgghNh/x9p0yxWwArD0oxO1oXY1qx5vOd4t0Kbhnu/Cx8RTy08OgA8RtxuULZFaXwVPnPw==}
 
   '@floating-ui/core@1.8.0':
     resolution: {integrity: sha512-0CIZ5itps/8x7BG8dEIhs53BvCUH2PCoogtakwRTut+Arm58sJooJ0AuZhLw2HJYIR5cMLNPBSS728sPho2khQ==}
@@ -7623,6 +7641,9 @@ packages:
     resolution: {integrity: sha512-POQXvpdL69+CluYsillJ7SUhKvytYjW9vG/GKpnf+xP8UWgYEM/RaMzHHofbALDiKbbP1W8UEYmgGl39WkPZsg==}
     engines: {'0': node >= 0.2.0}
 
+  jsqr@1.4.0:
+    resolution: {integrity: sha512-dxLob7q65Xg2DvstYkRpkYtmKm2sPJ9oFhrhmudT1dZvNFFTlroai3AWSpLey/w5vMcLBXRgOJsbXpdN9HzU/A==}
+
   jsx-ast-utils@3.3.5:
     resolution: {integrity: sha512-ZZow9HBI5O6EPgSJLUb8n2NKgmVWTwCvHGwFuJlMjvLFqlGG6pjirPhtdsseaLZjSibD8eegzmYpUZwoIlj2cQ==}
     engines: {node: '>=4.0'}
@@ -11143,6 +11164,8 @@ snapshots:
       '@eslint/core': 1.2.1
       levn: 0.4.1
 
+  '@expo-google-fonts/noto-sans@0.4.2': {}
+
   '@floating-ui/core@1.8.0':
     dependencies:
       '@floating-ui/utils': 0.2.12
@@ -11619,7 +11642,6 @@ snapshots:
       '@napi-rs/canvas-linux-x64-musl': 1.0.13
       '@napi-rs/canvas-win32-arm64-msvc': 1.0.13
       '@napi-rs/canvas-win32-x64-msvc': 1.0.13
-    optional: true
 
   '@napi-rs/wasm-runtime@1.2.4(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)':
     dependencies:
@@ -15984,6 +16006,8 @@ snapshots:
   jsonc-parser@3.3.1: {}
 
   jsonparse@1.3.1: {}
+
+  jsqr@1.4.0: {}
 
   jsx-ast-utils@3.3.5:
     dependencies:

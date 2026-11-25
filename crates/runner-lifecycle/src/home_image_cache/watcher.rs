@@ -1,14 +1,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
-use std::os::fd::{AsFd, AsRawFd, RawFd};
 use std::path::Path;
 
 use nix::errno::Errno;
-use nix::sys::inotify::{AddWatchFlags, InitFlags, Inotify, WatchDescriptor};
+use nix::sys::inotify::{AddWatchFlags, WatchDescriptor};
 use tokio::io::unix::AsyncFd;
 
 use crate::error::{LifecycleError, LifecycleResult};
 use runner_host::host_file::{self, DirMode};
+use runner_host::inotify::InotifySource;
 use runner_types::types::MAX_HELD_HOME_STATES;
 
 use super::entry::is_cache_key_name;
@@ -44,7 +44,6 @@ const WATCH_INVALIDATION_FLAGS: AddWatchFlags = AddWatchFlags::IN_DELETE_SELF
     .union(AddWatchFlags::IN_MOVE_SELF)
     .union(AddWatchFlags::IN_UNMOUNT)
     .union(AddWatchFlags::IN_IGNORED);
-const MAX_EVENT_READ_BATCHES_PER_CHANGE: usize = 16;
 
 /// Advisory cache mutation observed from the host-shared filesystem.
 ///
@@ -125,7 +124,7 @@ impl HomeImageCacheInner {
 
 /// Non-recursive inotify observer for one host-shared home cache.
 pub struct HomeCacheWatcher {
-    inotify: AsyncFd<AsyncInotify>,
+    inotify: AsyncFd<InotifySource>,
     root_watch: WatchDescriptor,
     entry_by_watch: BTreeMap<WatchDescriptor, WatchedEntry>,
     watch_by_cache_key: BTreeMap<String, WatchDescriptor>,
@@ -150,14 +149,6 @@ struct EntryWatchUpdate {
     requires_full_reconcile: bool,
 }
 
-struct AsyncInotify(Inotify);
-
-impl AsRawFd for AsyncInotify {
-    fn as_raw_fd(&self) -> RawFd {
-        self.0.as_fd().as_raw_fd()
-    }
-}
-
 impl HomeCacheWatcher {
     pub async fn new(cache: HomeImageCache) -> LifecycleResult<Self> {
         host_file::ensure_dir(
@@ -166,15 +157,14 @@ impl HomeCacheWatcher {
             "home image cache root",
         )
         .map_err(|error| watcher_io_error("prepare root", error.kind()))?;
-        let inotify = Inotify::init(InitFlags::IN_CLOEXEC | InitFlags::IN_NONBLOCK)
-            .map_err(|error| watcher_error("initialize", error))?;
+        let inotify =
+            InotifySource::initialize().map_err(|error| watcher_error("initialize", error))?;
         let root_watch = inotify
             .add_watch(cache.home_image_cache_dir(), ROOT_WATCH_FLAGS)
             .map_err(|error| watcher_error("watch root", error))?;
-        // SAFETY: AsyncInotify owns inotify and exposes the same live descriptor until drop.
-        let inotify = unsafe { AsyncFd::register(AsyncInotify(inotify)) }.map_err(|error| {
-            watcher_io_error("register descriptor", std::io::Error::from(error).kind())
-        })?;
+        let inotify = inotify
+            .register()
+            .map_err(|error| watcher_io_error("register descriptor", error.kind()))?;
         let mut watcher = Self {
             inotify,
             root_watch,
@@ -237,7 +227,7 @@ impl HomeCacheWatcher {
         loop {
             // Race only before draining kernel events. Cancelling asynchronous
             // classification after draining would lose an ordinary mutation.
-            let mut ready = tokio::select! {
+            let ready = tokio::select! {
                 change = self.cache.inner.next_selection_release() => return Ok(change),
                 ready = self.inotify.readable() => ready
                     .map_err(|error| watcher_io_error("wait for events", error.kind()))?,
@@ -245,21 +235,9 @@ impl HomeCacheWatcher {
 
             let observed_at = tokio::time::Instant::now();
             let mut pending_events = Vec::new();
-            let mut drained_all_events = false;
-            for _ in 0..MAX_EVENT_READ_BATCHES_PER_CHANGE {
-                match self.inotify.get_ref().0.read_events() {
-                    Ok(events) => pending_events.extend(events),
-                    Err(Errno::EAGAIN) => {
-                        drained_all_events = true;
-                        break;
-                    }
-                    Err(error) => return Err(watcher_error("read events", error)),
-                }
-            }
-            if drained_all_events {
-                ready.clear_ready();
-            }
-            drop(ready);
+            let drained_all_events =
+                InotifySource::drain_ready(ready, |events| pending_events.extend(events))
+                    .map_err(|error| watcher_error("read events", error))?;
 
             let mut changed = false;
             let mut requires_full_reconcile = false;
@@ -504,7 +482,6 @@ impl HomeCacheWatcher {
         let watch = match self
             .inotify
             .get_ref()
-            .0
             .add_watch(&entry_dir, ENTRY_WATCH_FLAGS)
         {
             Ok(watch) => watch,
@@ -616,7 +593,7 @@ impl HomeCacheWatcher {
     fn forget_entry_watch(&mut self, cache_key: &str) -> Option<EntryWatchState> {
         if let Some(watch) = self.watch_by_cache_key.remove(cache_key) {
             let state = self.entry_by_watch.remove(&watch).map(|entry| entry.state);
-            let _ = self.inotify.get_ref().0.rm_watch(watch);
+            let _ = self.inotify.get_ref().remove_watch(watch);
             return state;
         }
         None
@@ -629,7 +606,7 @@ impl HomeCacheWatcher {
         } else {
             None
         };
-        let _ = self.inotify.get_ref().0.rm_watch(watch);
+        let _ = self.inotify.get_ref().remove_watch(watch);
         state
     }
 }

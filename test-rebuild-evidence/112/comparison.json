@@ -1,0 +1,511 @@
+{
+  "revisions": {
+    "frozen": "b0a10287edf4242383c28e39c6f7675053febb32",
+    "beforeFirstWithdrawal": "5310dbb9ba6bd8b95507bc7293f6da3ed8aa004b",
+    "beforeSecondWithdrawal": "a445586e0483bb7e2440e60200a8deed30aa3df9",
+    "main": "1f5da4856d184af3b838dfcfd1d48fcf2275536c",
+    "opening": "c008af36dbb8ad20ac2cac6aa0e9752eaaaa8276"
+  },
+  "method": "Extracted the independently authored test callbacks from the TypeScript syntax tree. Searched whitespace-normalized bodies, with titles removed, through every JS/TS source blob in Platform, the exported browser client and prior in-repository replay evidence at each revision. Also compared five-line excerpts of at least 110 normalized characters. Existing helper and external fixture reuse is documented separately.",
+  "sourceFiles": {
+    "frozen": 1862,
+    "beforeFirstWithdrawal": 1864,
+    "beforeSecondWithdrawal": 1582,
+    "main": 1848,
+    "opening": 1937
+  },
+  "uniqueBlobs": 4008,
+  "originalOwners": {
+    "turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts": {
+      "frozen": "580baa671bd48a8f041a34939aef93c99f34e71f",
+      "beforeFirstWithdrawal": "c3536fc66bd8c19ee1d9ef3b1130c4632cdb6305",
+      "beforeSecondWithdrawal": null,
+      "main": "99cec3ba4d7d73bbf39d3ef516222c69f62eea59",
+      "opening": null
+    },
+    "turbo/apps/platform/src/shared-database/__tests__/platform-direct-bridge.test.ts": {
+      "frozen": "67231a7b48b6867ee9d7cbc5ee4522f4f39b4f5f",
+      "beforeFirstWithdrawal": "3898ac83de1c8ec8b26e4543172e738a4edae4d1",
+      "beforeSecondWithdrawal": null,
+      "main": "335ec2b25f0ccc4a1705bb406af2d7217a3b37dc",
+      "opening": null
+    },
+    "turbo/apps/platform/src/shared-database/__tests__/single-connection-client.test.ts": {
+      "frozen": "e18a4abf9d7a36688204f8a70bfcc1edff514bae",
+      "beforeFirstWithdrawal": "231025b5c7eec49527a168fc048a9b8333889351",
+      "beforeSecondWithdrawal": null,
+      "main": "e18a4abf9d7a36688204f8a70bfcc1edff514bae",
+      "opening": null
+    },
+    "turbo/apps/platform/src/shared-database/__tests__/worker-runtime.test.ts": {
+      "frozen": "94c6e2f3bd39bcbca5501d95792d1327c6c99f68",
+      "beforeFirstWithdrawal": "e149bf217c1bc2cf5fb3433fe37acf9bb7b1feb8",
+      "beforeSecondWithdrawal": null,
+      "main": "9fe2b59638f7bed3b06338aa98f28ab487c5f5b0",
+      "opening": null
+    },
+    "turbo/apps/platform/src/signals/__tests__/api-client-bootstrap.test.ts": {
+      "frozen": "b23f14e6f476b3d19ec5dcb5700092645bb2c22b",
+      "beforeFirstWithdrawal": "e833306280388e430618e04d2203b86126084517",
+      "beforeSecondWithdrawal": null,
+      "main": "7ce9e1c31f77f0e43ff5f4d8907db0d3c4486d8b",
+      "opening": null
+    },
+    "turbo/apps/platform/src/signals/__tests__/clerk-user.test.ts": {
+      "frozen": "e13b6caf84d8fb4e93c3e73b703a341da8ff17f7",
+      "beforeFirstWithdrawal": "31070421dc606f121c7f25efbbe4f204a029965e",
+      "beforeSecondWithdrawal": null,
+      "main": "e13b6caf84d8fb4e93c3e73b703a341da8ff17f7",
+      "opening": null
+    },
+    "turbo/apps/platform/src/signals/__tests__/realtime.test.ts": {
+      "frozen": "0fca14af8e3a6c283bf9db6304bd5b6876eb41e8",
+      "beforeFirstWithdrawal": "6c05edf7299d0ea3aebe6804578c981a98c34538",
+      "beforeSecondWithdrawal": null,
+      "main": "7267d0c0bde6b38e3a944d41ea762432ae8a4f5c",
+      "opening": null
+    },
+    "turbo/apps/platform/src/signals/__tests__/shared-database-browser.test.ts": {
+      "frozen": "b98c2db1d4793d7633a7cae54faeaaac07f4c1ec",
+      "beforeFirstWithdrawal": "8ecfc34ebcaaa20f3d23c1b55a5365f504e55c74",
+      "beforeSecondWithdrawal": null,
+      "main": "b98c2db1d4793d7633a7cae54faeaaac07f4c1ec",
+      "opening": null
+    },
+    "turbo/apps/platform/src/signals/browser/__tests__/client.test.ts": {
+      "frozen": "1cecdc68ed57e74adeb0965c96d2e641112972f2",
+      "beforeFirstWithdrawal": "36bb707358b5f92642c411726e6441b2c075c82a",
+      "beforeSecondWithdrawal": null,
+      "main": "1cecdc68ed57e74adeb0965c96d2e641112972f2",
+      "opening": "a0228e20a0b1b206e8f3bcbaa91836d894bccdbf"
+    },
+    "turbo/apps/platform/src/signals/chat-page/__tests__/unread-through-at.test.ts": {
+      "frozen": "0c748c8ee8a94253691ca445be5c40361dca8ad0",
+      "beforeFirstWithdrawal": "927cb61fcde90c3fbda5afc14d95ff1a21ac2301",
+      "beforeSecondWithdrawal": null,
+      "main": "0c748c8ee8a94253691ca445be5c40361dca8ad0",
+      "opening": null
+    },
+    "turbo/apps/platform/src/signals/external/__tests__/indexeddb-client.test.ts": {
+      "frozen": "9f6e20438d3de07344fa06030148b710494fd608",
+      "beforeFirstWithdrawal": "c1d9acd67ae61fca3d08aaecfc07d40ef17e7bdc",
+      "beforeSecondWithdrawal": null,
+      "main": "9f6e20438d3de07344fa06030148b710494fd608",
+      "opening": null
+    },
+    "turbo/apps/platform/src/signals/voice-io/__tests__/voice-draft-audio.test.ts": {
+      "frozen": "30c21b98d9f2f3f26389b4947a383d7abe561ef7",
+      "beforeFirstWithdrawal": "f9dd0256789a57c5982a0ddd2f9a939c1ecf321c",
+      "beforeSecondWithdrawal": null,
+      "main": "30c21b98d9f2f3f26389b4947a383d7abe561ef7",
+      "opening": null
+    },
+    "turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx": {
+      "frozen": "83e169953a493cd6ba305053df804dcf125c8a79",
+      "beforeFirstWithdrawal": "df42595880e26b4337d7ea793406d99d90423ef5",
+      "beforeSecondWithdrawal": null,
+      "main": "83e169953a493cd6ba305053df804dcf125c8a79",
+      "opening": "58e4f8faa4fd2924e5f43271bec0bffbc285869d"
+    },
+    "turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.test.tsx": {
+      "frozen": "bf53583f131b06c751e1f84a83732d18830ed442",
+      "beforeFirstWithdrawal": "52b6d2ee3e3e2e57f518a9f0a4c8eca21f1310cb",
+      "beforeSecondWithdrawal": null,
+      "main": "bf53583f131b06c751e1f84a83732d18830ed442",
+      "opening": "5e68c4c468ca7d15f532bc1a5b28c5ed2af5b3db"
+    },
+    "turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx": {
+      "frozen": "e24c1e9e2b2e61666a93f737db7699ee7d62b6ce",
+      "beforeFirstWithdrawal": "2b1ad404287a9d57630dec7ed7c779a5908c5e93",
+      "beforeSecondWithdrawal": null,
+      "main": "e24c1e9e2b2e61666a93f737db7699ee7d62b6ce",
+      "opening": "7dec529eeb1a3eb67b9753f647f2a73e892a3ae8"
+    },
+    "turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-binding.test.tsx": {
+      "frozen": "5d9f9a64a34b864227f108f555d6edf9f06bbabb",
+      "beforeFirstWithdrawal": "87d7473264b4af3e0a993f47ae8bd161c56b1aa0",
+      "beforeSecondWithdrawal": "87d7473264b4af3e0a993f47ae8bd161c56b1aa0",
+      "main": "5d9f9a64a34b864227f108f555d6edf9f06bbabb",
+      "opening": "8206ac8912e683061168a6f6c93879ec36856f1f"
+    },
+    "turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx": {
+      "frozen": "3a7efca735bf39f248b11e44e10701945742b7e1",
+      "beforeFirstWithdrawal": "8cdca9fa103df200fcbc956a88e52f5b16f157ec",
+      "beforeSecondWithdrawal": null,
+      "main": "3a7efca735bf39f248b11e44e10701945742b7e1",
+      "opening": "3a6d46f234a4fe18d2af9252f4c9e11c5c875748"
+    },
+    "turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx": {
+      "frozen": "61a2cefb94a4099b899fc3eb5aa6b8c3255d5dc0",
+      "beforeFirstWithdrawal": "adf3677b510ab593d853f44239b013352ad820c2",
+      "beforeSecondWithdrawal": "a6d66e335269256a5676f9e3c62e0cab5fb5f0cd",
+      "main": "38e7acb42fcfd15b76a2da34130fa84e3c178bab",
+      "opening": "639ec76e09de986a956d80d14c8fac10d83b001b"
+    },
+    "turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-recording.test.tsx": {
+      "frozen": "dcb3dfdb04c427611ea73a605a2a57a8167d2574",
+      "beforeFirstWithdrawal": "ab294afd128a6ac0897dcb7571ac9a17705777d4",
+      "beforeSecondWithdrawal": "04569b540c6f81c07c0f3d6ed124c347f11f973d",
+      "main": "dcb3dfdb04c427611ea73a605a2a57a8167d2574",
+      "opening": "9f9d3734435123daf1d6b83a14db6befb1b4269b"
+    },
+    "turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-uploads.test.tsx": {
+      "frozen": "d83df5241fabe18b93c6b55b698482bb69605302",
+      "beforeFirstWithdrawal": "d092d22249e63e163a578fd1f69023dbb6ec93f8",
+      "beforeSecondWithdrawal": null,
+      "main": "d83df5241fabe18b93c6b55b698482bb69605302",
+      "opening": "5c94ca7c3c4511f9b7de29d49504f7f4907e2afa"
+    },
+    "turbo/apps/platform/src/views/okou-page/__tests__/chat-conversation-locator.test.tsx": {
+      "frozen": "8262d3e0922ec4a607c2d75ce6ce547ef0c9abe2",
+      "beforeFirstWithdrawal": "9cc83198d1d6357ff916be1657e8fdc107e90a89",
+      "beforeSecondWithdrawal": null,
+      "main": "afc169e678cc055d053a6505d43e726611972f0f",
+      "opening": "ee96a597b46b9a917a944fd16e227e87617064a5"
+    },
+    "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-optimistic.test.tsx": {
+      "frozen": "e0a7a78ed523b5294cece98683f9fcd501d990dc",
+      "beforeFirstWithdrawal": "8a252af8370db0b9d6ed8592a864d099935aacc9",
+      "beforeSecondWithdrawal": "8a252af8370db0b9d6ed8592a864d099935aacc9",
+      "main": "8a5f16d5de7149c2f793e3adfd09e146a82bcb53",
+      "opening": "810cddeb54e81fa61c4fcf8bb7741bc0842123b7"
+    },
+    "turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-browser.test.tsx": {
+      "frozen": "6889af8311aa2dfc949b7b34289e286c126e33ca",
+      "beforeFirstWithdrawal": "52754fe4340ca464d376532626253c64f60be2c3",
+      "beforeSecondWithdrawal": null,
+      "main": "d8905a8f80e46ca37eb18656533eee2b4b40e0f5",
+      "opening": null
+    },
+    "turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx": {
+      "frozen": "c167ff3df27ec78984985bf91852a79d64299385",
+      "beforeFirstWithdrawal": "6e6fc80d59bcad951262586c30a7d2a330c4030d",
+      "beforeSecondWithdrawal": null,
+      "main": "0d974ba1a569b6a0951daf4b92480bf372acb758",
+      "opening": "141edb725882bdee47a3e3199bb2bc26a4f5ee9b"
+    },
+    "turbo/apps/platform/src/views/okou-page/__tests__/composer-custom-template-recommendations.test.tsx": {
+      "frozen": "3e8b8b5e69525e53a01ca3c399f2b34ad73386e0",
+      "beforeFirstWithdrawal": "1399eb117f8932d05be9645ab321dc90f4a26a82",
+      "beforeSecondWithdrawal": null,
+      "main": "aac855398e4aeda4c2f1c03da89c2e2f08574c62",
+      "opening": "3d06486dae808229153e1f1ea0dc7c6ce12e9607"
+    },
+    "turbo/apps/platform/src/views/okou-page/__tests__/connector-directory.test.tsx": {
+      "frozen": "060b2a4f93d5384a6d9e077467db79538fd03eff",
+      "beforeFirstWithdrawal": "b031ab19f5f3d9a36f611ed579b33cbd1a0c8e53",
+      "beforeSecondWithdrawal": "b031ab19f5f3d9a36f611ed579b33cbd1a0c8e53",
+      "main": "47f59a0f596a0a2204b4b2be760006f041acf22c",
+      "opening": "5938a218f32e3f6ea9d421ab57a9bf6e876fe88a"
+    },
+    "turbo/apps/platform/src/views/okou-page/__tests__/connector-provider-pages.test.tsx": {
+      "frozen": "16e2a3e046cfd423e3a408a92f4bed67de2f6cca",
+      "beforeFirstWithdrawal": "b46219c858097935a668e97a7882bc4b65013450",
+      "beforeSecondWithdrawal": "b46219c858097935a668e97a7882bc4b65013450",
+      "main": "36f63bb938d700f83e9e8215a0004e54f4b2d90a",
+      "opening": "8ae91fff9fd789973063e29988ac8777d42915f8"
+    },
+    "turbo/apps/platform/src/views/okou-page/__tests__/connectors-account-rename-focus.test.tsx": {
+      "frozen": "c2cb839a0c188466401800e899dbebf2b409affc",
+      "beforeFirstWithdrawal": "b01135a7118012ebafe4ba0e88f0c1768ed3824d",
+      "beforeSecondWithdrawal": "b01135a7118012ebafe4ba0e88f0c1768ed3824d",
+      "main": "c2cb839a0c188466401800e899dbebf2b409affc",
+      "opening": "0a3e88b0d73fab5321239fc3a89ca48fc1685ba1"
+    },
+    "turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx": {
+      "frozen": "1c92c923e7b23733d6f8d99dea4eba630ee6215e",
+      "beforeFirstWithdrawal": "5cde789859bcd7652cc74d4780edd0203e339ed7",
+      "beforeSecondWithdrawal": null,
+      "main": "8aef3c66081206049bb12297be5ebb82d81c2d26",
+      "opening": "f171d84ea2d98b6b70d6035125bf0514ab3ad0cf"
+    },
+    "turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx": {
+      "frozen": "a18fbc35c32b63d97e729bacba487ed608e6723c",
+      "beforeFirstWithdrawal": "dbb2b8d4344df582bdf3c40ca1a3e12f44cce15f",
+      "beforeSecondWithdrawal": null,
+      "main": "b4b9889318d664fb1e02a1218c2228920e44cd5e",
+      "opening": "617baf1872bef930dbcf7571a432b99d6372245b"
+    },
+    "turbo/apps/platform/src/views/okou-page/__tests__/paid-media-creation.test.tsx": {
+      "frozen": "947dc0403147e2c5f7e96f4b0020dfe5d3e6ff55",
+      "beforeFirstWithdrawal": "6721372acf8ab95e420d163d9c86640ad3f6a0c2",
+      "beforeSecondWithdrawal": null,
+      "main": "ea55223d7dabcf3d4021510f7cb9303997bc69aa",
+      "opening": "dc2675326676732c84ba6d378fe18fdbd5ade064"
+    },
+    "turbo/apps/platform/src/views/okou-page/__tests__/settings-model-loading.test.tsx": {
+      "frozen": "73f50897a8353b55f3ce1a8d1f0536adb3c41ab2",
+      "beforeFirstWithdrawal": "e318b55a0cdebe2450937ca9151e157d6c0ffce8",
+      "beforeSecondWithdrawal": null,
+      "main": "73f50897a8353b55f3ce1a8d1f0536adb3c41ab2",
+      "opening": "c544e225914558063e801dc3a02173757855f178"
+    }
+  },
+  "directHelpers": {
+    "turbo/apps/platform/src/__tests__/mock-auth.ts": {
+      "frozen": "66e10fdecd7c0d2fbf119649f9fa60a69748496d",
+      "beforeFirstWithdrawal": "66e10fdecd7c0d2fbf119649f9fa60a69748496d",
+      "beforeSecondWithdrawal": "66e10fdecd7c0d2fbf119649f9fa60a69748496d",
+      "main": "66e10fdecd7c0d2fbf119649f9fa60a69748496d",
+      "opening": "66e10fdecd7c0d2fbf119649f9fa60a69748496d"
+    },
+    "turbo/apps/platform/src/__tests__/page-helper.ts": {
+      "frozen": "503ff86cdec111e7acb5c2a163170f667dcb8cd7",
+      "beforeFirstWithdrawal": "503ff86cdec111e7acb5c2a163170f667dcb8cd7",
+      "beforeSecondWithdrawal": "503ff86cdec111e7acb5c2a163170f667dcb8cd7",
+      "main": "503ff86cdec111e7acb5c2a163170f667dcb8cd7",
+      "opening": "1a7f0b68f4728337d72def72d1d03d93542cd629"
+    },
+    "turbo/apps/platform/src/mocks/handlers/api-feature-switches.helpers.ts": {
+      "frozen": "51f08f2ef45e4c12b092d0f31ffde1fb41501d7d",
+      "beforeFirstWithdrawal": "51f08f2ef45e4c12b092d0f31ffde1fb41501d7d",
+      "beforeSecondWithdrawal": "5b2bf3fd8646f73caf40599045c0fbf075c9d3c5",
+      "main": "5b2bf3fd8646f73caf40599045c0fbf075c9d3c5",
+      "opening": "5b2bf3fd8646f73caf40599045c0fbf075c9d3c5"
+    },
+    "turbo/apps/platform/src/mocks/mock-helpers.ts": {
+      "frozen": "25d0f4b9e664baf9c835df96d32f5b9c8f341dc0",
+      "beforeFirstWithdrawal": "25d0f4b9e664baf9c835df96d32f5b9c8f341dc0",
+      "beforeSecondWithdrawal": "25d0f4b9e664baf9c835df96d32f5b9c8f341dc0",
+      "main": "25d0f4b9e664baf9c835df96d32f5b9c8f341dc0",
+      "opening": "25d0f4b9e664baf9c835df96d32f5b9c8f341dc0"
+    },
+    "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+      "frozen": "728b18a9075783660512557fe91e447847f0a770",
+      "beforeFirstWithdrawal": "728b18a9075783660512557fe91e447847f0a770",
+      "beforeSecondWithdrawal": "728b18a9075783660512557fe91e447847f0a770",
+      "main": "728b18a9075783660512557fe91e447847f0a770",
+      "opening": "728b18a9075783660512557fe91e447847f0a770"
+    },
+    "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-template-gallery-test-helpers.ts": {
+      "frozen": "0bda01eb6e9b8c6f06d3ba5edeb7b6846e607df2",
+      "beforeFirstWithdrawal": "0bda01eb6e9b8c6f06d3ba5edeb7b6846e607df2",
+      "beforeSecondWithdrawal": "0bda01eb6e9b8c6f06d3ba5edeb7b6846e607df2",
+      "main": "12a04867cff3e0654f3bdd242fb63c4b21e68933",
+      "opening": "12a04867cff3e0654f3bdd242fb63c4b21e68933"
+    },
+    "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-test-helpers.ts": {
+      "frozen": "833183a881658d424a41fffef885bf460444b2ce",
+      "beforeFirstWithdrawal": "833183a881658d424a41fffef885bf460444b2ce",
+      "beforeSecondWithdrawal": "8881776882e800700598cc78d1708b47055994af",
+      "main": "e5b1a048d215f2456ff8d7d11e8256b24cf4be43",
+      "opening": "e5b1a048d215f2456ff8d7d11e8256b24cf4be43"
+    },
+    "turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-test-helpers.ts": {
+      "frozen": "4c6e43692ac4c82ccc353cf31c58eb39c6772ad0",
+      "beforeFirstWithdrawal": "4c6e43692ac4c82ccc353cf31c58eb39c6772ad0",
+      "beforeSecondWithdrawal": "4c6e43692ac4c82ccc353cf31c58eb39c6772ad0",
+      "main": "a09b5734f146df049ea0368e0cb7a62e41768307",
+      "opening": "a09b5734f146df049ea0368e0cb7a62e41768307"
+    },
+    "turbo/apps/platform/src/views/okou-page/__tests__/chat-event-test-helpers.ts": {
+      "frozen": "a323697c65855e511fdad6a914abe529f5fe99eb",
+      "beforeFirstWithdrawal": "a323697c65855e511fdad6a914abe529f5fe99eb",
+      "beforeSecondWithdrawal": "a323697c65855e511fdad6a914abe529f5fe99eb",
+      "main": "a323697c65855e511fdad6a914abe529f5fe99eb",
+      "opening": "a323697c65855e511fdad6a914abe529f5fe99eb"
+    },
+    "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": {
+      "frozen": "775ed1605a2dacd60f658d5966ca769c7f43c038",
+      "beforeFirstWithdrawal": "775ed1605a2dacd60f658d5966ca769c7f43c038",
+      "beforeSecondWithdrawal": "662032ee97395f0fa7c78b57e8605c374e88fc66",
+      "main": "495bb81978eb0f6a5746ee0a10f5cbb5b6443410",
+      "opening": "dde91fed1d2929cf1fe66f36c86da5e05c95c1f7"
+    },
+    "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": {
+      "frozen": "4efb987b57ca9ad0a004590332a61778d509edd3",
+      "beforeFirstWithdrawal": "bad1c0ca12687d0cc1082787a5f05a0e3f58964c",
+      "beforeSecondWithdrawal": "5a69dc50b02d324a59af1b48511f94eaea3892c2",
+      "main": "cae4b78c183f01eb5302b6a80ee83207801ddfe5",
+      "opening": "cae4b78c183f01eb5302b6a80ee83207801ddfe5"
+    },
+    "turbo/apps/platform/src/views/okou-page/__tests__/chat-test-helpers.ts": {
+      "frozen": "f6140d46219e4f1b7a9b4fb208a22e56d37590f9",
+      "beforeFirstWithdrawal": "fb8257b4f9196d72aaf3d9754a7511f12244eee8",
+      "beforeSecondWithdrawal": "fb8257b4f9196d72aaf3d9754a7511f12244eee8",
+      "main": "4ab0ec4aafa634501add3f87f8f78824a2338219",
+      "opening": "bb2fde210cc6fe23b61719de2069e42a1b0425eb"
+    },
+    "turbo/apps/platform/src/views/okou-page/__tests__/connector-integrations-test-helpers.ts": {
+      "frozen": "119575913209773f37788d3d914c85fa1763a2e2",
+      "beforeFirstWithdrawal": "35ab06ae0ceb10b35f1524c1481aeef561959d2e",
+      "beforeSecondWithdrawal": "35ab06ae0ceb10b35f1524c1481aeef561959d2e",
+      "main": "6d092561cb8ba0190b91ed2051119024ac5b8c64",
+      "opening": "6d092561cb8ba0190b91ed2051119024ac5b8c64"
+    },
+    "turbo/apps/platform/src/views/okou-page/__tests__/sidebar-test-helpers.tsx": {
+      "frozen": "c410cff13a3342827508d24d9d0b57ad54d66e5a",
+      "beforeFirstWithdrawal": "004884f6c41142b5c4375c4e772f89975f584b5a",
+      "beforeSecondWithdrawal": "004884f6c41142b5c4375c4e772f89975f584b5a",
+      "main": "25bdb5b7515f95484878a2cce2fbcff6d3a7b80e",
+      "opening": "a1b18d95e1f6315b835bd0049da2be1be9c0cb56"
+    },
+    "turbo/apps/platform/src/views/okou-page/__tests__/wallet-settings-test-helpers.ts": {
+      "frozen": null,
+      "beforeFirstWithdrawal": null,
+      "beforeSecondWithdrawal": null,
+      "main": null,
+      "opening": "f24951be04e567282964add613a45c25186b8c17"
+    }
+  },
+  "cases": [
+    {
+      "id": "realtime-011",
+      "title": "realtime-011 Link settings refresh on subscription, handle the member event, and recover missed changes",
+      "path": "turbo/apps/platform/src/views/okou-page/__tests__/settings-wallet.test.tsx",
+      "sha256": "a77c69fa10da1085b748b7b8d995a7e1f970127a50df42599660d3f95d0dd5ed",
+      "matches": [],
+      "overlapCount": 0,
+      "longestSharedExcerpts": []
+    },
+    {
+      "id": "clerk-user-003",
+      "title": "clerk-user-003 An invitation waiting through sign-in belongs to the first settled member",
+      "path": "turbo/apps/platform/src/views/okou-page/__tests__/workspace-invitations.test.tsx",
+      "sha256": "a5f81730577a56b12e7960da26c9d5516284c50d5a68a152b32a30c2f98e7505",
+      "matches": [],
+      "overlapCount": 0,
+      "longestSharedExcerpts": []
+    },
+    {
+      "id": "message-port-033",
+      "title": "message-port-033 Unread and read-cursor updates leave the transcript alone until its next message arrives",
+      "path": "turbo/apps/platform/src/views/okou-page/__tests__/updating-chat-indicators-at-home.test.ts",
+      "sha256": "939843b73a1fa363863aad7aa4671718808999bf10ec299e5d89a1118fb7091f",
+      "matches": [],
+      "overlapCount": 0,
+      "longestSharedExcerpts": []
+    },
+    {
+      "id": "message-port-023",
+      "title": "message-port-023 The same pending indicators read returns the named aggregate to both callers",
+      "path": "test-rebuild-evidence/112/registered-ports.native.test.mjs",
+      "sha256": "23eba099beac9bea13578b20499d68906b855021947ba7983d999ec0dd416098",
+      "matches": [],
+      "overlapCount": 0,
+      "longestSharedExcerpts": []
+    },
+    {
+      "id": "message-port-020",
+      "title": "message-port-020 The second window issues its read and supplies the successful credential while the first waits",
+      "path": "test-rebuild-evidence/112/registered-ports.native.test.mjs",
+      "sha256": "1cebf91f35761195329ea05374aa62888d250df8a92bb5c0e4fe88db39c822b6",
+      "matches": [],
+      "overlapCount": 0,
+      "longestSharedExcerpts": []
+    },
+    {
+      "id": "message-port-027",
+      "title": "message-port-027 A released account port closes and the surviving registered window receives its empty offline query",
+      "path": "test-rebuild-evidence/112/registered-ports.native.test.mjs",
+      "sha256": "d7f007ebdac895fc7875e74e76fb242dd7a8990711ca5aa8812aa49942ba603c",
+      "matches": [],
+      "overlapCount": 0,
+      "longestSharedExcerpts": []
+    },
+    {
+      "id": "message-port-014",
+      "title": "message-port-014 Each original subscriber receives its own resync and the last release ends the shared topic",
+      "path": "test-rebuild-evidence/112/registered-ports.native.test.mjs",
+      "sha256": "3e6f44ffccc84a459fdf712087b1bec61d7021998957afb434055fa89de409d6",
+      "matches": [],
+      "overlapCount": 0,
+      "longestSharedExcerpts": []
+    },
+    {
+      "id": "message-port-033",
+      "title": "message-port-033 The registered tab reloads indicators three times before two messages advance its offline history",
+      "path": "test-rebuild-evidence/112/registered-ports.native.test.mjs",
+      "sha256": "9758f76fe622f6b8a77c7397a5502ab22487d1f25b6447127bd0882409cb5cac",
+      "matches": [],
+      "overlapCount": 0,
+      "longestSharedExcerpts": []
+    },
+    {
+      "id": "message-port-038",
+      "title": "message-port-038 Both waiting ports receive the attach failure and the reacquired subscription delivers to its new owner",
+      "path": "test-rebuild-evidence/112/registered-ports.native.test.mjs",
+      "sha256": "f9903491ffce4c17186675e2d85856965bac8f0cf22f05f7c85b2346cc705a93",
+      "matches": [],
+      "overlapCount": 0,
+      "longestSharedExcerpts": []
+    },
+    {
+      "id": "client-006",
+      "title": "client-006 Equal page session IDs on separate connections deliver only the originating viewer's native events",
+      "path": "test-rebuild-evidence/112/registered-ports.native.test.mjs",
+      "sha256": "9b77240447edc770609e21a620cb7d2d669583ea5ae828c1fdf5030643a35147",
+      "matches": [],
+      "overlapCount": 0,
+      "longestSharedExcerpts": []
+    },
+    {
+      "id": "chat-capability-voice-recording-005",
+      "title": "A saved recording longer than one polish request restores the entire transcript to the message editor",
+      "path": "turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-recording.test.tsx",
+      "sha256": "778398c277032673ebfc14f2c0914f24e6679415039f6f35df14065d95c0a1c7",
+      "matches": [],
+      "overlapCount": 0,
+      "longestSharedExcerpts": []
+    },
+    {
+      "id": "paid-media-creation-002",
+      "title": "An image prompt reaches the new conversation after the disabled tool is enabled in settings",
+      "path": "turbo/apps/platform/src/views/okou-page/__tests__/paid-media-creation.test.tsx",
+      "sha256": "9c0ff116fda52343721250de9d52ff62adc8214b0a2ac402364ae169626ce5a6",
+      "matches": [],
+      "overlapCount": 1,
+      "longestSharedExcerpts": [
+        {
+          "size": 253,
+          "normalizedExcerpt": "click(awaitfindFastControl(\"button\",\"Image\"));awaitscreen.findByText(\"Imagegenerationisoffforyou\");click(awaitfindFastControl(\"button\",\"Opensettings\"));constsettings=awaitscreen.findByRole(\"dialog\");constimage=",
+          "paths": [
+            "turbo/apps/platform/src/views/okou-page/__tests__/paid-media-creation.test.tsx"
+          ],
+          "revisions": [
+            "opening"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "unread-through-at-001",
+      "title": "Reading a newer completed run clears its unread state even while the sidebar has an older update",
+      "path": "turbo/apps/platform/src/views/okou-page/__tests__/chat-send-read-status.test.tsx",
+      "sha256": "6be5730b4fd3937ff2b7610274d27670e397c71809bc2f7bcb17b1b6318c1f7a",
+      "matches": [],
+      "overlapCount": 2,
+      "longestSharedExcerpts": [
+        {
+          "size": 160,
+          "normalizedExcerpt": "constparse=Response.prototype.json;vi.spyOn(Response.prototype,\"json\").mockImplementation(asyncfunction(this:Response,){constbody:unknown=awaitparse.call(this);",
+          "paths": [
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-fork.test.tsx"
+          ],
+          "revisions": [
+            "opening"
+          ]
+        },
+        {
+          "size": 160,
+          "normalizedExcerpt": "constparse=Response.prototype.json;vi.spyOn(Response.prototype,\"json\").mockImplementation(asyncfunction(this:Response,){constbody:unknown=awaitparse.call(this);",
+          "paths": [
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-send-read-status.test.tsx"
+          ],
+          "revisions": [
+            "opening"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "agent-suggestions-004",
+      "title": "A member opens the preloaded unread suggestion without waiting for the details service",
+      "path": "turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx",
+      "sha256": "dc3f876a7b413d8fcbf2ce72f9081e99a308f09690066140b1401e6f9dbfd063",
+      "matches": [],
+      "overlapCount": 0,
+      "longestSharedExcerpts": []
+    }
+  ]
+}

@@ -5,6 +5,7 @@ import ai.okou.android.MainActivity
 import ai.okou.android.R
 import ai.okou.android.TestAuthentication
 import ai.okou.android.TestOkouApplication
+import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.RequiredUpdate
 import ai.okou.android.api.generated.AndroidUpdates
 import ai.okou.android.auth.Authentication
@@ -18,6 +19,7 @@ import android.os.Build
 import android.os.LocaleList
 import android.provider.Settings
 import android.text.format.Formatter
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.SemanticsActions
@@ -27,7 +29,7 @@ import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
-import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
@@ -48,7 +50,6 @@ import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Rule
@@ -67,15 +68,12 @@ class UpdateRootApplication : TestOkouApplication() {
             heldCheck = CompletableDeferred()
         }
 
-    internal val online = MutableStateFlow(true)
-
     override val updates by lazy {
         AppUpdates(
             fixture,
             MemoryUpdateStore(),
             BuildConfig.VERSION_NAME,
             Build.VERSION.SDK_INT,
-            connectivity = online,
         )
     }
 
@@ -288,7 +286,7 @@ class UpdateRootTest {
             compose.activityRule.scenario.recreate()
             val release = updateRelease("99.1234.5678").copy(size = 123_456_789)
             compose.runOnIdle { app.fixture.response = AndroidUpdates(null, release) }
-            openUpdateSettings(viaOverflow = false)
+            openUpdateSettings()
             updateSettingsRow().performScrollTo().performClick()
             val heading = updateDetailsHeading()
             val close = updateDetailText("Close")
@@ -344,15 +342,13 @@ class UpdateRootTest {
 
     @Test
     @Config(qualifiers = "w240dp-h200dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun requiredUpdateActionIsReachableInACompactWindow() {
-        app.fixture.heldCheck!!.complete(Unit)
         app.updates.requireUpdate(RequiredUpdate("99.0.0"))
-        compose.waitUntil(10_000) { app.updates.state.value.canDownload }
-        val update = compose.onNodeWithText("Download update")
-        compose.onNodeWithText("Update required").assertIsDisplayed()
-        val bounds = update.assertIsDisplayed().getUnclippedBoundsInRoot()
-        update.performClick()
-        compose.waitUntil(10_000) { app.updates.state.value.transfer is UpdateTransfer.Downloading }
+        compose.waitUntil(10_000) {
+            val state = app.updates.state.value
+            state.required && state.check == UpdateCheck.Checking
+        }
         val progress =
             compose.onNode(
                 SemanticsMatcher.expectValue(
@@ -360,7 +356,26 @@ class UpdateRootTest {
                     ProgressBarRangeInfo.Indeterminate,
                 ),
             )
+        fun progressFillsCorner(): Boolean {
+            val pixels = progress.assertIsDisplayed().captureToImage().toPixelMap()
+            // A point outside the full-screen action's pill.
+            val (x, y) = with(compose.density) { 8.dp.roundToPx() to 3.dp.roundToPx() }
+            return pixels[x, y] == pixels[pixels.width / 2, y]
+        }
+        assertFalse("Checking uses the full-screen entry pill", progressFillsCorner())
+
+        checkNotNull(app.fixture.heldCheck).complete(Unit)
+        compose.waitUntil(10_000) { app.updates.state.value.canDownload }
+        val update = compose.onNodeWithText("Download update")
+        compose.onNodeWithText("Update required").assertIsDisplayed()
+        val bounds = update.assertIsDisplayed().getUnclippedBoundsInRoot()
+        update.performClick()
+        compose.waitUntil(10_000) { app.updates.state.value.transfer is UpdateTransfer.Downloading }
         assertEquals(bounds, progress.assertIsDisplayed().getUnclippedBoundsInRoot())
+        assertFalse(
+            "Preparing the download keeps the full-screen action shape",
+            progressFillsCorner(),
+        )
         compose.onNodeWithText("Preparing…").assertHasNoClickAction()
     }
 
@@ -387,36 +402,61 @@ class UpdateRootTest {
                 )
             installed.performScrollTo().assertIsDisplayed()
             assertEquals(bounds, action.assertIsDisplayed().getUnclippedBoundsInRoot())
+            action.performClick()
+            val preparing = compose.onNodeWithText(app.getString(R.string.updates_preparing))
+            assertEquals(bounds, preparing.assertIsDisplayed().getUnclippedBoundsInRoot())
         } finally {
             RuntimeEnvironment.setFontScale(originalFontScale)
         }
     }
 
     @Test
-    fun offlineRequiredPageShowsTheInstalledVersionDuringDiscovery() {
+    fun requiredPageShowsTheInstalledVersionAndAllowsImmediateCheckAndDownloadRetries() {
         val discovery = checkNotNull(app.fixture.heldCheck)
+        val retryDiscovery = CompletableDeferred<Unit>()
+        val limited = ApiFailure.Http(429, null, null, 60)
         try {
-            app.online.value = false
             app.updates.requireUpdate(RequiredUpdate("99.0.0"))
             compose.waitUntil(10_000) {
-                app.updates.state.value.required && app.updates.state.value.offline
+                app.updates.state.value.let { it.required && it.check == UpdateCheck.Checking }
             }
             compose.onNodeWithText("Update Okou to continue").assertIsDisplayed()
             compose
                 .onNodeWithText("Current version: ${BuildConfig.VERSION_NAME}")
                 .assertIsDisplayed()
-            compose
-                .onNodeWithText("Connect to the internet to check for updates.")
-                .assertIsDisplayed()
-            compose.onNodeWithText("Waiting to check").assertIsNotEnabled()
+            compose.onNodeWithText("Checking…").assertIsDisplayed()
             compose.onNodeWithText("You are up to date").assertDoesNotExist()
 
-            app.online.value = true
-            discovery.complete(Unit)
+            compose.runOnIdle {
+                app.fixture.checkRejection = limited
+                discovery.complete(Unit)
+            }
+            compose.waitUntil(10_000) { app.updates.state.value.check == UpdateCheck.Waiting }
+            compose.runOnIdle {
+                app.fixture.checkRejection = null
+                app.fixture.heldCheck = retryDiscovery
+            }
+            compose.onNodeWithText("Retry check").assertIsEnabled().performClick()
+            compose.waitUntil(10_000) { app.updates.state.value.check == UpdateCheck.Checking }
+            compose.onNodeWithText("Checking…").assertIsDisplayed()
+
+            retryDiscovery.complete(Unit)
             compose.waitUntil(10_000) { app.updates.state.value.canDownload }
-            compose.onNodeWithText("Download update").assertIsEnabled()
+            val release = checkNotNull(app.updates.state.value.candidate)
+            compose.onNodeWithText("Download update").assertIsEnabled().performClick()
+            compose.runOnIdle { app.fixture.transfer.completeExceptionally(limited) }
+            compose.waitUntil(10_000) {
+                app.updates.state.value.transfer == UpdateTransfer.Waiting(release)
+            }
+            compose.runOnIdle { app.fixture.transfer = CompletableDeferred() }
+            compose.onNodeWithText("Retry download").assertIsEnabled().performClick()
+            compose.waitUntil(10_000) {
+                app.updates.state.value.transfer == UpdateTransfer.Downloading(release)
+            }
+            compose.onNodeWithText("Preparing…").assertIsDisplayed()
         } finally {
             discovery.complete(Unit)
+            retryDiscovery.complete(Unit)
         }
     }
 
@@ -570,17 +610,16 @@ class UpdateRootTest {
         assertNoPlatformLaunch()
     }
 
-    private fun openUpdateSettings(viaOverflow: Boolean = true) {
+    private fun openUpdateSettings() {
         compose.runOnIdle {
             (app.authentication as TestAuthentication).state.value = testAuthenticationState()
         }
-        val entry =
-            app.getString(if (viaOverflow) R.string.chat_more_actions else R.string.settings)
+        val entry = app.getString(R.string.chat_more_actions)
         compose.waitUntil(10_000) {
             compose.onAllNodesWithContentDescription(entry).fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithContentDescription(entry).performClick()
-        if (viaOverflow) compose.onNodeWithText(app.getString(R.string.settings)).performClick()
+        compose.onNodeWithText(app.getString(R.string.settings)).performClick()
     }
 
     private fun updateSettingsRow() =

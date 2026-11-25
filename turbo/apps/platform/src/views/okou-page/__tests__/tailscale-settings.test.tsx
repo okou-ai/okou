@@ -1,429 +1,322 @@
+import { orgContract } from "@okouai/api-contracts/contracts/org-routes";
 import {
   tailscaleContract,
+  type CreateTailscaleConfigRequest,
   type TailscaleConfig,
   type TailscaleImpactPreview,
 } from "@okouai/api-contracts/contracts/tailscale";
-import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
-import { act, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, expect, test } from "vitest";
-import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import { expect, test } from "vitest";
+
 import {
-  mockOrganization,
-  emitMockedClerkEvent,
-} from "../../../__tests__/mock-auth.ts";
+  click,
+  fill,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { getAction } from "./connector-integrations-test-helpers.ts";
+import { getConnectorAction } from "./connector-page-test-helpers.ts";
+import {
+  mockRemoteInventory,
+  REMOTE_TIMESTAMP,
+  remoteId,
+  type RemoteInventory,
+} from "./connectors-remote-control-test-helpers.ts";
 
 const context = testContext();
-const orgId = "org_tailscale_settings";
-const auth = Object.freeze({
-  user: { id: "tailscale-owner", fullName: "Tailscale Owner" },
-  organization: {
-    activeOrg: { id: orgId, name: "Engineering" },
-    memberships: [{ id: orgId }],
-  },
-});
-const config: TailscaleConfig = Object.freeze({
-  id: "a0000000-0000-4000-8000-000000000001",
-  name: "Development network",
-  scope: "personal",
-  tags: ["tag:okou"],
-  revision: 1,
-  generation: 1,
-  sshHosts: [],
-  vncHosts: [],
-  createdAt: "2026-10-12T00:00:00.000Z",
-  updatedAt: "2026-10-12T00:00:00.000Z",
-});
-const shared: TailscaleConfig = Object.freeze({
-  ...config,
-  id: "a0000000-0000-4000-8000-000000000002",
-  name: "Team network",
-  scope: "organization",
-});
-const impact: TailscaleImpactPreview = Object.freeze({
-  expectedRevision: 1,
-  ownHostCount: 0,
-  otherHostCount: 2,
-  affectedOwners: [{ userId: "other-owner", displayName: "Other Owner" }],
-  impactSnapshot: "a".repeat(64),
-});
-const acknowledgement =
-  "I understand these members' hosts will remain saved but cannot connect until their owners rebind them.";
+const SECRET = "tskey-client-secret-7781";
+const PROVIDER_DETAIL = "tailnet acl hash 9f3e rejected the client";
 
-beforeEach(() => {
-  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
-    return respond(200, { configs: [] });
-  });
-  context.mocks.api(tailscaleContract.list, ({ respond }) => {
-    return respond(200, { configs: [config, shared] });
-  });
-});
-
-async function page(
-  path = "/connectors?scope=private-network",
-  role: "admin" | "member" = "member",
-) {
-  context.mocks.data.org({ id: orgId, name: "Engineering", role });
-  await setupPage({ context, auth, path });
+function network(
+  index: number,
+  name: string,
+  overrides: Partial<TailscaleConfig> = {},
+): TailscaleConfig {
+  return {
+    id: remoteId("a", index),
+    name,
+    scope: "personal",
+    tags: ["tag:okou"],
+    revision: 1,
+    generation: 1,
+    createdAt: REMOTE_TIMESTAMP,
+    updatedAt: REMOTE_TIMESTAMP,
+    sshHosts: [],
+    vncHosts: [],
+    ...overrides,
+  };
 }
 
-async function createForm() {
-  click(getAction("button", "Add network"));
-  await screen.findByRole("heading", { name: "Add a private network" });
-  click(screen.getByText("Tailscale", { exact: true }));
-  await screen.findByRole("dialog", { name: "Download Tailscale" });
-  click(getAction("button", "Enter existing credentials"));
-  const name = await screen.findByLabelText("Network name");
-  const form = name.closest("form")!;
-  await fill(name, "New network");
-  click(within(form).getByText("Allowed tags", { selector: "summary" }));
-  await fill(
-    within(form).getByLabelText("Allowed tags"),
-    "tag:okou, tag:build",
-  );
-  await fill(within(form).getByLabelText("Client ID"), "test-client-id");
-  await fill(within(form).getByLabelText("Client Secret"), "secret-canary");
-  return form;
+function impact(otherHostCount: number, mark: string): TailscaleImpactPreview {
+  return {
+    expectedRevision: 1,
+    ownHostCount: 0,
+    otherHostCount,
+    affectedOwners: [{ userId: "user_member", displayName: "Morgan Lee" }],
+    impactSnapshot: mark.repeat(64),
+  };
 }
 
-async function editPersonal() {
-  await page(
-    `/connectors?scope=private-network&remoteResource=tailscale:${config.id}`,
-  );
-  await screen.findByRole("heading", { name: config.name });
-  click(getAction("button", "Edit settings"));
-  const name = await screen.findByLabelText("Network name");
-  return name.closest("form")!;
-}
-
-async function sharedDeletion() {
-  await page(
-    `/connectors?scope=private-network&remoteResource=tailscale:${shared.id}`,
-    "admin",
-  );
-  await screen.findByRole("heading", { name: shared.name });
-  click(getAction("button", "Delete Tailscale"));
-  const dialog = await screen.findByRole("dialog", {
-    name: "Delete Tailscale",
+function choiceButton(text: string): HTMLElement {
+  const button = queryAllByRoleFast("button").find((candidate) => {
+    return candidate.textContent?.trim() === text;
   });
-  await within(dialog).findByText(/Other Owner/u);
-  return dialog;
+  if (!button) {
+    throw new Error(`Expected the "${text}" choice`);
+  }
+  return button;
+}
+
+function scopeRadio(label: string): HTMLElement {
+  const owner = Array.from(document.querySelectorAll("label")).find(
+    (candidate) => {
+      return candidate.textContent?.trim().startsWith(label);
+    },
+  );
+  const radio = owner && queryAllByRoleFast("radio", owner)[0];
+  if (!radio) {
+    throw new Error(`Expected the "${label}" scope`);
+  }
+  return radio;
+}
+
+function acknowledgement(container: HTMLElement): HTMLElement {
+  return within(container).getByRole("checkbox", { name: /^I understand/ });
+}
+
+async function openPrivateNetworks(): Promise<void> {
+  await setupPage({ context, path: "/connectors?scope=private-network" });
+  await waitFor(() => {
+    expect(getConnectorAction("button", "Add network")).toBeEnabled();
+  });
+}
+
+async function startTailscaleDraft(): Promise<void> {
+  click(getConnectorAction("button", "Add network"));
+  await waitFor(() => {
+    expect(
+      choiceButton("TailscaleConnect to devices with Tailscale"),
+    ).toBeEnabled();
+  });
+  click(choiceButton("TailscaleConnect to devices with Tailscale"));
+  const guide = await screen.findByRole("dialog", {
+    name: "Download Tailscale",
+  });
+  click(getConnectorAction("button", "Enter existing credentials", guide));
+  await expect(
+    screen.findByRole("heading", { name: "Add a Tailscale network" }),
+  ).resolves.toBeInTheDocument();
+}
+
+async function fillDraft(name: string): Promise<HTMLElement> {
+  await fill(screen.getByLabelText("Network name"), name);
+  await fill(screen.getByLabelText("Client ID"), "client-4410");
+  const secret = screen.getByLabelText("Client Secret");
+  await fill(secret, SECRET);
+  return secret;
+}
+
+async function openNetwork(name: string): Promise<void> {
+  await waitFor(() => {
+    expect(getConnectorAction("link", `Manage ${name}`)).toBeInTheDocument();
+  });
+  click(getConnectorAction("link", `Manage ${name}`));
+  await expect(
+    screen.findByRole("heading", { name, level: 2 }),
+  ).resolves.toBeInTheDocument();
+}
+
+function recordCreates(
+  inventory: RemoteInventory,
+  outcome: "created" | "failed",
+): { body?: CreateTailscaleConfigRequest } {
+  const last: { body?: CreateTailscaleConfigRequest } = {};
+  context.mocks.api(tailscaleContract.create, ({ body, respond }) => {
+    last.body = body;
+    if (outcome === "failed") {
+      return respond(500, {
+        error: { code: "TAILSCALE_PROVIDER_ERROR", message: PROVIDER_DETAIL },
+      });
+    }
+    const created = network(9, body.name, {
+      id: body.id,
+      scope: body.scope,
+      tags: body.tags,
+    });
+    inventory.tailscale = [...inventory.tailscale, created];
+    return respond(201, created);
+  });
+  return last;
 }
 
 test("Creating a network saves the entered tags and clears credentials", async () => {
-  let configs: TailscaleConfig[] = [];
-  const requests: unknown[] = [];
-  context.mocks.api(tailscaleContract.list, ({ respond }) => {
-    return respond(200, { configs });
+  context.mocks.api(orgContract.get, ({ respond }) => {
+    return respond(200, {
+      id: "org_default",
+      name: "Default Org",
+      role: "member",
+    });
   });
-  context.mocks.api(tailscaleContract.create, ({ body, respond }) => {
-    requests.push(body);
-    const created = {
-      ...config,
-      id: body.id,
-      name: body.name,
-      tags: body.tags,
-    };
-    configs = [created];
-    return respond(201, created);
-  });
-  await page();
-  const form = await createForm();
-  const secret = within(form).getByLabelText("Client Secret");
-  expect(secret).toHaveAttribute("type", "password");
-  click(getAction("button", "Save network", form));
-  await screen.findByText("New network");
-  expect(requests).toStrictEqual([
-    {
-      id: expect.any(String),
-      scope: "personal",
-      name: "New network",
-      tags: ["tag:okou", "tag:build"],
-      credentials: {
-        clientId: "test-client-id",
-        clientSecret: "secret-canary",
-      },
-    },
-  ]);
-  expect(secret).toHaveValue("");
-  expect(document.body.textContent).not.toContain("secret-canary");
-});
+  const inventory = mockRemoteInventory(context);
+  const created = recordCreates(inventory, "created");
+  await openPrivateNetworks();
+  await startTailscaleDraft();
+  const secret = await fillDraft("New network");
+  click(screen.getByText("Allowed tags", { selector: "summary" }));
+  await fill(screen.getByLabelText("Allowed tags"), "tag:okou tag:build");
 
-test("Credential replacement clears discarded secrets and updates tags against the current revision", async () => {
-  let current = config;
-  const requests: unknown[] = [];
-  context.mocks.api(tailscaleContract.list, ({ respond }) => {
-    return respond(200, { configs: [current] });
+  click(getConnectorAction("button", "Save network"));
+
+  await openNetwork("New network");
+  expect(screen.getByText("tag:okou, tag:build")).toBeInTheDocument();
+  expect(created.body).toStrictEqual({
+    id: expect.any(String),
+    name: "New network",
+    scope: "personal",
+    tags: ["tag:okou", "tag:build"],
+    credentials: { clientId: "client-4410", clientSecret: SECRET },
   });
-  context.mocks.api(tailscaleContract.update, ({ body, respond }) => {
-    requests.push(body);
-    current = { ...config, tags: body.tags ?? config.tags, revision: 2 };
-    return respond(200, current);
-  });
-  const form = await editPersonal();
-  const replace = within(form).getByRole("checkbox", {
-    name: "Replace OAuth credentials",
-  });
-  await userEvent.click(replace);
-  const discarded = within(form).getByLabelText("Client Secret");
-  await fill(discarded, "discarded-secret-canary");
-  await userEvent.click(replace);
-  expect(discarded).toHaveValue("");
-  await userEvent.click(replace);
-  const secret = within(form).getByLabelText("Client Secret");
   expect(secret).toHaveValue("");
-  await fill(within(form).getByLabelText("Client ID"), "rotated-client");
-  await fill(secret, "rotated-secret");
-  await fill(within(form).getByLabelText("Allowed tags"), "tag:build");
-  click(getAction("button", "Save network", form));
-  await screen.findByRole("heading", { name: config.name });
-  expect(requests).toStrictEqual([
-    {
-      expectedRevision: 1,
-      name: config.name,
-      tags: ["tag:build"],
-      credentials: {
-        clientId: "rotated-client",
-        clientSecret: "rotated-secret",
-      },
-    },
-  ]);
+  expect(document.body).not.toHaveTextContent(SECRET);
 });
 
 test("Realtime impact refresh invalidates an old acknowledgement without discarding deletion", async () => {
-  let currentImpact = impact;
+  const shared = network(2, "Team tailnet", { scope: "organization" });
+  mockRemoteInventory(context, { tailscale: [shared] });
+  const preview = { current: impact(2, "a") };
   context.mocks.api(tailscaleContract.impactPreview, ({ respond }) => {
-    return respond(200, currentImpact);
+    return respond(200, preview.current);
   });
-  const dialog = await sharedDeletion();
-  await userEvent.click(
-    within(dialog).getByRole("checkbox", { name: acknowledgement }),
+  const user = userEvent.setup({ delay: null });
+  await openPrivateNetworks();
+  await openNetwork("Team tailnet");
+  click(getConnectorAction("button", "Delete Tailscale"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Delete Tailscale",
+  });
+  await expect(within(dialog).findByRole("alert")).resolves.toHaveTextContent(
+    "Affected: 1 member and 2 hosts.",
   );
-  expect(getAction("button", "Delete Tailscale", dialog)).toBeEnabled();
-  currentImpact = {
-    ...impact,
-    otherHostCount: 3,
-    impactSnapshot: "c".repeat(64),
-  };
-  await act(() => {
-    return context.mocks.ably.trigger("tailscale:changed", { orgId });
+  await user.click(acknowledgement(dialog));
+  await waitFor(() => {
+    expect(
+      getConnectorAction("button", "Delete Tailscale", dialog),
+    ).toBeEnabled();
   });
-  await within(dialog).findByText(/1 member and 3 hosts/u);
-  expect(within(dialog).getByRole("checkbox")).not.toBeChecked();
-  expect(getAction("button", "Delete Tailscale", dialog)).toBeDisabled();
-  expect(within(dialog).getByText(shared.name)).toBeInTheDocument();
-});
 
-test("Shared deletion acknowledges fresh impact without exposing other host identities", async () => {
-  const requests: unknown[] = [];
-  context.mocks.api(tailscaleContract.impactPreview, ({ query, respond }) => {
-    expect(query).toStrictEqual({ operation: "delete" });
-    return respond(200, impact);
-  });
-  context.mocks.api(tailscaleContract.delete, ({ body, respond }) => {
-    requests.push(body);
-    return respond(204);
-  });
-  const dialog = await sharedDeletion();
-  expect(getAction("button", "Delete Tailscale", dialog)).toBeDisabled();
-  await userEvent.click(
-    within(dialog).getByRole("checkbox", { name: acknowledgement }),
-  );
-  click(getAction("button", "Delete Tailscale", dialog));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  expect(requests).toStrictEqual([
-    { expectedRevision: 1, impactSnapshot: impact.impactSnapshot },
-  ]);
-});
+  // A member binds another host; the server announces the change.
+  preview.current = impact(3, "b");
+  context.mocks.ably.trigger("tailscale:changed", { orgId: "org_default" });
 
-test("A refreshed shared revision is deleted only after acknowledging its current impact", async () => {
-  let current = shared;
-  let currentImpact = impact;
-  const requests: unknown[] = [];
-  context.mocks.api(tailscaleContract.list, ({ respond }) => {
-    return respond(200, { configs: [current] });
-  });
-  context.mocks.api(tailscaleContract.impactPreview, ({ respond }) => {
-    return respond(200, currentImpact);
-  });
-  context.mocks.api(tailscaleContract.delete, ({ body, respond }) => {
-    requests.push(body);
-    return respond(204);
-  });
-  const dialog = await sharedDeletion();
-  await userEvent.click(
-    within(dialog).getByRole("checkbox", { name: acknowledgement }),
-  );
-  current = {
-    ...shared,
-    name: "Changed shared network",
-    revision: 2,
-    generation: 2,
-  };
-  currentImpact = {
-    ...impact,
-    expectedRevision: 2,
-    impactSnapshot: "d".repeat(64),
-  };
-  await act(() => {
-    return context.mocks.ably.trigger("tailscale:changed", { orgId });
-  });
   await waitFor(() => {
-    expect(within(dialog).getByRole("checkbox")).not.toBeChecked();
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(
+      "Affected: 1 member and 3 hosts.",
+    );
   });
-  expect(getAction("button", "Delete Tailscale", dialog)).toBeDisabled();
-  await userEvent.click(
-    within(dialog).getByRole("checkbox", { name: acknowledgement }),
-  );
-  click(getAction("button", "Delete Tailscale", dialog));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  expect(requests).toStrictEqual([
-    { expectedRevision: 2, impactSnapshot: "d".repeat(64) },
-  ]);
+  expect(acknowledgement(dialog)).toHaveAttribute("aria-checked", "false");
+  expect(
+    getConnectorAction("button", "Delete Tailscale", dialog),
+  ).toBeDisabled();
+  expect(dialog).toBeInTheDocument();
+  expect(within(dialog).getByText("Team tailnet")).toBeInTheDocument();
 });
 
 test("An unconfirmed network creation keeps the credential draft frozen without exposing provider details", async () => {
-  context.mocks.api(tailscaleContract.create, ({ respond }) => {
-    return respond(500, {
-      error: { code: "INTERNAL_ERROR", message: "private-secret-detail" },
-    });
-  });
-  await page();
-  const form = await createForm();
-  click(getAction("button", "Save network", form));
-  await within(form).findByRole("alert");
-  expect(within(form).getByLabelText("Client Secret")).toBeDisabled();
-  expect(within(form).getByLabelText("Client Secret")).toHaveValue(
-    "secret-canary",
-  );
-  expect(getAction("button", "Save network", form)).toBeDisabled();
-  expect(document.body.textContent).not.toContain("private-secret-detail");
+  const inventory = mockRemoteInventory(context);
+  recordCreates(inventory, "failed");
+  await openPrivateNetworks();
+  await startTailscaleDraft();
+  const secret = await fillDraft("New network");
+
+  click(getConnectorAction("button", "Save network"));
+
+  await expect(screen.findByText("Save failed.")).resolves.toBeInTheDocument();
+  expect(secret).toHaveValue(SECRET);
+  expect(secret).toBeDisabled();
+  expect(getConnectorAction("button", "Save network")).toBeDisabled();
+  expect(document.body).not.toHaveTextContent(PROVIDER_DETAIL);
 });
 
 test("Changing organizations unmounts the draft and clears secrets", async () => {
-  context.mocks.data.org({ id: "org_next", name: "Next", role: "member" });
-  await page();
-  const form = await createForm();
-  const secret = within(form).getByLabelText("Client Secret");
-  await act(() => {
-    mockOrganization({
-      activeOrg: { id: "org_next", name: "Next" },
-      memberships: [{ id: "org_next" }],
-    });
-    emitMockedClerkEvent();
-  });
-  await screen.findByTestId("connectors-scroll-content");
-  expect(window.location.pathname).toBe("/connectors");
-  expect(form).not.toBeInTheDocument();
-  expect(secret).toHaveValue("");
-  expect(screen.queryByLabelText("Client Secret")).toBeNull();
-});
+  mockRemoteInventory(context);
+  await openPrivateNetworks();
+  await startTailscaleDraft();
+  const secret = await fillDraft("New network");
+  const clerk = context.mocks.clerk();
 
-test("Leaving the network editor clears a secret draft before starting again", async () => {
-  await page();
-  const first = await createForm();
-  const secret = within(first).getByLabelText("Client Secret");
-  click(getAction("button", "Back"));
-  await screen.findByText(config.name);
-  const next = await createForm();
-  expect(secret).toHaveValue("");
-  expect(within(next).getByLabelText("Client Secret")).toHaveValue(
-    "secret-canary",
-  );
-});
+  clerk.organization({
+    activeOrg: { id: "org_second", name: "Second workspace" },
+    memberships: [{ id: "org_default" }, { id: "org_second" }],
+  });
+  clerk.stateChanged();
 
-test("Changing organizations during save clears secrets and fences a late response", async () => {
-  const pending = context.mocks.deferred<void>();
-  const started = context.mocks.deferred<void>();
-  context.mocks.data.org({ id: "org_next", name: "Next", role: "member" });
-  context.mocks.api(tailscaleContract.create, async ({ body, respond }) => {
-    started.resolve();
-    await pending.promise;
-    return respond(201, { ...config, id: body.id });
+  await waitFor(() => {
+    expect(secret).not.toBeInTheDocument();
   });
-  await page();
-  const first = await createForm();
-  const secret = within(first).getByLabelText("Client Secret");
-  click(getAction("button", "Save network", first));
-  await started.promise;
-  await act(() => {
-    mockOrganization({
-      activeOrg: { id: "org_next", name: "Next" },
-      memberships: [{ id: "org_next" }],
-    });
-    emitMockedClerkEvent();
-  });
-  await screen.findByTestId("connectors-scroll-content");
-  expect(window.location.pathname).toBe("/connectors");
-  expect(first).not.toBeInTheDocument();
   expect(secret).toHaveValue("");
-  expect(screen.queryByLabelText("Client Secret")).toBeNull();
-  await act(() => {
-    mockOrganization(auth.organization);
-    emitMockedClerkEvent();
-  });
-  click(getAction("link", "Connectors"));
-  await screen.findByTestId("connectors-scope-private-network");
-  click(screen.getByTestId("connectors-scope-private-network"));
-  await screen.findByText(config.name);
-  const next = await createForm();
-  await fill(within(next).getByLabelText("Network name"), "Second draft");
-  await act(async () => {
-    pending.resolve();
-    await pending.promise;
-  });
-  expect(within(next).getByLabelText("Network name")).toHaveValue(
-    "Second draft",
-  );
-  expect(within(next).getByLabelText("Client Secret")).toHaveValue(
-    "secret-canary",
-  );
+  expect(screen.queryByLabelText("Client Secret")).not.toBeInTheDocument();
 });
 
 test("An impact conflict rejects an outdated network restriction without exposing provider details", async () => {
-  const requests: unknown[] = [];
+  const shared = network(2, "Team tailnet", { scope: "organization" });
+  mockRemoteInventory(context, { tailscale: [shared] });
+  const preview = impact(2, "c");
   context.mocks.api(tailscaleContract.impactPreview, ({ respond }) => {
-    return respond(200, impact);
+    return respond(200, preview);
   });
+  const converted: {
+    body?: { expectedRevision: number; impactSnapshot: string };
+  } = {};
   context.mocks.api(
     tailscaleContract.convertToPersonal,
     ({ body, respond }) => {
-      requests.push(body);
+      converted.body = body;
       return respond(409, {
-        error: {
-          code: "TAILSCALE_IMPACT_CONFLICT",
-          message: "private-provider-detail",
-        },
+        error: { code: "TAILSCALE_IMPACT_CHANGED", message: PROVIDER_DETAIL },
       });
     },
   );
-  await page(
-    `/connectors?scope=private-network&remoteResource=tailscale:${shared.id}`,
-    "admin",
-  );
-  await screen.findByRole("heading", { name: shared.name });
-  click(getAction("button", "Edit settings"));
-  await screen.findByLabelText("Network name");
-  click(screen.getByText("Only me", { exact: true }));
-  click(getAction("button", "Save network"));
-  const dialog = await screen.findByRole("dialog", {
+  const user = userEvent.setup({ delay: null });
+  await openPrivateNetworks();
+  await openNetwork("Team tailnet");
+  click(getConnectorAction("button", "Edit settings"));
+  await expect(
+    screen.findByRole("heading", { name: "Edit Tailscale" }),
+  ).resolves.toBeInTheDocument();
+  const onlyMe = scopeRadio("Only me");
+  await user.click(onlyMe);
+  click(getConnectorAction("button", "Save network"));
+  const confirmation = await screen.findByRole("dialog", {
     name: "Make this network available only to you?",
   });
-  await within(dialog).findByText("Other Owner");
-  await userEvent.click(within(dialog).getByRole("checkbox"));
-  click(getAction("button", "Make personal", dialog));
-  await within(dialog).findByText(
-    "The network or its linked connections changed. Your draft is kept. Reopen the network and review the latest settings before changing who can use it.",
+  await expect(
+    within(confirmation).findByRole("alert"),
+  ).resolves.toHaveTextContent(
+    "Affected: 1 member and 2 hosts. Their hosts will stay saved but cannot connect until their owners rebind them.",
   );
-  expect(getAction("button", "Make personal", dialog)).toBeDisabled();
-  expect(document.body.textContent).not.toContain("private-provider-detail");
-  expect(requests).toStrictEqual([
-    { expectedRevision: 1, impactSnapshot: "a".repeat(64) },
-  ]);
+  await user.click(acknowledgement(confirmation));
+  await waitFor(() => {
+    expect(
+      getConnectorAction("button", "Make personal", confirmation),
+    ).toBeEnabled();
+  });
+
+  click(getConnectorAction("button", "Make personal", confirmation));
+
+  await expect(
+    within(confirmation).findByText(
+      "The network or its linked connections changed. Your draft is kept. Reopen the network and review the latest settings before changing who can use it.",
+    ),
+  ).resolves.toBeInTheDocument();
+  expect(
+    getConnectorAction("button", "Make personal", confirmation),
+  ).toBeDisabled();
+  // The edit form behind the confirmation keeps the restriction draft.
+  expect(onlyMe).toHaveAttribute("aria-checked", "true");
+  expect(document.body).not.toHaveTextContent(PROVIDER_DETAIL);
+  expect(converted.body).toStrictEqual({
+    expectedRevision: 1,
+    impactSnapshot: preview.impactSnapshot,
+  });
 });

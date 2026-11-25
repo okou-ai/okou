@@ -7,14 +7,18 @@ struct ConversationRowProjection {
   let conversation: ConversationStore
   /// The conversation's graph value for this render; ChatDetailView resolves it.
   let transcript: ConversationProjection.Value
+  /// The render window for this render, which ChatDetailView also resolves.
+  let window: ConversationPresentation.Window
+  /// Whether a send is in flight, from the delivery state ChatDetailView resolves.
+  let isSending: Bool
   private var history: ChatHistory { transcript.history ?? .empty }
 
   var rows: [ConversationCollectionRow] {
-    let items = conversation.visibleItems
+    let items = window.items
     if conversation.sharing.isSelecting {
       let sharing = conversation.sharing
       let visibleIDs = Set(items.compactMap(\.message).map(\.id))
-      var rows: [ConversationCollectionRow] = conversation.hasEarlierMessages ? [.earlier] : []
+      var rows: [ConversationCollectionRow] = window.hasEarlierMessages ? [.earlier] : []
       rows += sharing.groups.filter { !$0.eventIDs.allSatisfy { !visibleIDs.contains($0) } }
         .enumerated().map { index, group in
           // The preceding row already reserves the selection background's bottom inset.
@@ -23,7 +27,7 @@ struct ConversationRowProjection {
       return rows
     }
     var result: [ConversationCollectionRow] = []
-    if conversation.hasEarlierMessages {
+    if window.hasEarlierMessages {
       result.append(.earlier)
     }
     for (index, item) in items.enumerated() {
@@ -63,7 +67,7 @@ struct ConversationRowProjection {
           .message(
             message, showsAvatar: !continuesGroup, topSpacing: spacing,
             pendingRetry: pendingRetry,
-            isSending: pendingRetry == true && conversation.isSending, isWorkHistory: isWorkHistory,
+            isSending: pendingRetry == true && isSending, isWorkHistory: isWorkHistory,
             showsActions: !conversation.sharing.isSelecting && !isWorkHistory
               && pendingRetry == nil && endsTurn(at: index, in: items))
         )

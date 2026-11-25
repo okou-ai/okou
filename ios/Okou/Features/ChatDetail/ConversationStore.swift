@@ -9,7 +9,7 @@ import Observation
 final class ConversationStore {
   var failureRecoveryActions: ConversationFailureRecovery { failureRecovery }
   @ObservationIgnored private lazy var failureRecovery = ConversationFailureRecovery(
-    conversation: self, commands: commands, lifecycleTasks: lifecycleTasks,
+    conversation: self, commands: commands, graph: graph, lifecycleTasks: lifecycleTasks,
     detailOwner: { [weak self] in self?.detailOwner },
     refresh: { [weak self] in
       guard let self else { return }
@@ -36,7 +36,7 @@ final class ConversationStore {
     confirmHistory: { [weak self] in self?.history = $0 },
     replacePending: { [weak self] in self?.pending = $0 },
     reconcileProjection: { [weak self] in self?.reconcileProjection() },
-    clearStopIssue: { [weak self] in self?.stopIssue = nil },
+    clearStopIssue: { [weak self] in self?.updateDelivery { $0.stopIssue = nil } },
     cancelRecoverySend: { [weak self] in self?.sendTask?.cancel() },
     report: { [weak self] in self?.report($0) })
 
@@ -68,10 +68,10 @@ final class ConversationStore {
       await refresh()
     }, didFail: didFail)
   @ObservationIgnored lazy var attachmentViewer = MessageAttachmentStore(
-    commands: commands, didFail: didFail)
+    commands: commands, graph: graph, didFail: didFail)
   @ObservationIgnored lazy var artifacts = MessageArtifactStore(
     service: commands.artifacts, threadID: thread.id, webURL: webURL, markdown: messageMarkdown,
-    didFail: didFail)
+    graph: graph, didFail: didFail)
   // Confirmed input for delivery, Stop, read watermarks and the native render window.
   // Independent resource phases remain in their original Tasks, not in this snapshot.
   // Its values live in the workspace session's Store; views read `transcript`.
@@ -115,19 +115,18 @@ final class ConversationStore {
 
   var isLoading: Bool { reading.isLoading }
 
-  private(set) var isSending = false
-  private(set) var deliveryFailures: [String: DeliveryFailure] = [:]
-  private(set) var stopIssue: String?
+  /// The delivery state, kept in the workspace session's Store. ChatDetailView reads it
+  /// through CCStateSwiftUI; the accessors in the extension below serve owner logic,
+  /// actions and tests.
+  @ObservationIgnored let delivery: Computed<Delivery>
+  @ObservationIgnored private let deliveryState = CCState.State(Delivery())
 
   private let didRequestNewChat: @MainActor () -> Void
-  private(set) var isStopping = false { didSet { reconcileActivitySummary() } }
-  private(set) var error: String?
   var readSyncError: String? { reading.readSyncError }
 
   var historySyncError: String? { reading.historySyncError }
 
   var syncError: String? { historySyncError ?? readSyncError }
-  private(set) var needsUpgrade = false
   let webURL: URL
   let messageMarkdown: MessageMarkdownCache
   let measurements: ConversationMeasurementCache
@@ -173,13 +172,13 @@ final class ConversationStore {
   }
 
   @ObservationIgnored lazy var approvals = ApprovalCardRegistry(
-    thread: thread, commands: commands, sync: sync, didFail: didFail,
+    thread: thread, commands: commands, sync: sync, graph: graph, didFail: didFail,
     didContinue: { [weak self] in
       guard let self, !closed else { return }
       await refresh()
     })
   @ObservationIgnored lazy var permissionActions = PermissionActionRegistry(
-    commands: commands, sync: sync, didFail: didFail,
+    commands: commands, sync: sync, graph: graph, didFail: didFail,
     didContinue: { [weak self] in
       guard let self, !closed else { return }
       await refresh()
@@ -221,13 +220,16 @@ final class ConversationStore {
     let lifecycleTasks = lifecycleTasks ?? LifecycleTasks()
     self.lifecycleTasks = lifecycleTasks
     projection = ConversationProjection(store: graph)
+    let deliveryState = deliveryState
+    delivery = Computed { get in try get(deliveryState) }
     self.modelSelection = modelSelection
     self.workflowSource = workflowSource
     self.didRequestNewChat = didRequestNewChat
     readResources = ConversationReadResources(
-      sync: sync, threadID: thread.id, sleep: readRetrySleep, didFail: didFail,
+      sync: sync, threadID: thread.id, graph: graph, sleep: readRetrySleep, didFail: didFail,
       lifecycleTasks: lifecycleTasks)
-    self.runUsage = ConversationRunUsageStore(sync: sync, threadID: thread.id, didFail: didFail)
+    self.runUsage = ConversationRunUsageStore(
+      sync: sync, threadID: thread.id, graph: graph, didFail: didFail)
     self.activitySummary = ConversationActivitySummary(
       sync: sync, threadID: thread.id, graph: graph, didRequireUpgrade: didFail,
       sleep: activitySleep, lifecycleTasks: lifecycleTasks)
@@ -358,12 +360,12 @@ final class ConversationStore {
 
   private func submit(_ message: PendingMessage) async {
     guard sendTask == nil, !closed, !needsUpgrade, !Task.isCancelled else { return }
-    isSending = true
+    updateDelivery { $0.isSending = true }
     modelSelection?.isSending = true
     let task = Task { [weak self] in
       guard let self else { return false }
       defer {
-        isSending = false
+        updateDelivery { $0.isSending = false }
         modelSelection?.isSending = false
         sendTask = nil
         didSettle()
@@ -385,8 +387,10 @@ final class ConversationStore {
         if let index = pending.firstIndex(where: { $0.id == message.id }) {
           pending[index].needsRetry = false
         }
-        deliveryFailures[message.id] = nil
-        error = nil
+        updateDelivery {
+          $0.failures[message.id] = nil
+          $0.error = nil
+        }
         return true
       } catch {
         guard !closed else { return false }
@@ -394,14 +398,16 @@ final class ConversationStore {
           pending[index].needsRetry = true
         }
         let status = (error as? APIClientError)?.statusCode
+        let failure: DeliveryFailure
         if !submitted
           || status.map({ (400..<500).contains($0) && ![408, 409].contains($0) }) == true
         {
-          deliveryFailures[message.id] = .notSent(
+          failure = .notSent(
             String(localized: "Message not sent. ") + ChatRequestFailure.message(for: error))
         } else {
-          deliveryFailures[message.id] = .unconfirmed
+          failure = .unconfirmed
         }
+        updateDelivery { $0.failures[message.id] = failure }
         report(error)
         return false
       }
@@ -417,12 +423,14 @@ final class ConversationStore {
 
   func stop() async {
     guard stopTask == nil, !closed, !needsUpgrade, !Task.isCancelled else { return }
-    isStopping = true
-    stopIssue = nil
+    updateDelivery {
+      $0.isStopping = true
+      $0.stopIssue = nil
+    }
     let task = Task { [weak self] in
       guard let self else { return }
       defer {
-        isStopping = false
+        updateDelivery { $0.isStopping = false }
         stopTask = nil
         didSettle()
       }
@@ -434,7 +442,7 @@ final class ConversationStore {
       } catch is CancellationError {
       } catch {
         guard !closed, !Task.isCancelled else { return }
-        stopIssue = String(localized: "Stopping has not been confirmed.")
+        updateDelivery { $0.stopIssue = String(localized: "Stopping has not been confirmed.") }
         report(error)
         await refresh()
       }
@@ -536,7 +544,7 @@ final class ConversationStore {
   /// Hand a derived projection to the native window after confirmed business changes.
   private func reconcileProjection() {
     let pendingIDs = Set(pending.map(\.id))
-    deliveryFailures = deliveryFailures.filter { pendingIDs.contains($0.key) }
+    updateDelivery { $0.failures = $0.failures.filter { pendingIDs.contains($0.key) } }
     failureRecovery.requestFailureAccounts()
     reading.reconcileWindow()
   }
@@ -548,13 +556,68 @@ final class ConversationStore {
 
   private func show(_ failure: Error) {
     guard !closed else { return }
-    error = failure.localizedDescription
+    let message = failure.localizedDescription
+    updateDelivery { $0.error = message }
     report(failure)
   }
 
   private func report(_ failure: Error) {
     guard !closed else { return }
-    needsUpgrade = (failure as? APIClientError)?.statusCode == 426
+    let needsUpgrade = (failure as? APIClientError)?.statusCode == 426
+    updateDelivery { $0.needsUpgrade = needsUpgrade }
     didFail(failure)
   }
+}
+
+extension ConversationStore {
+  /// Delivery state that views read: a send or Stop in flight, a Stop that was not
+  /// confirmed, the last failure, an upgrade requirement, and each pending message's failure.
+  struct Delivery: Equatable {
+    var isSending = false
+    var isStopping = false
+    var stopIssue: String?
+    var error: String?
+    var needsUpgrade = false
+    var failures: [String: DeliveryFailure] = [:]
+  }
+
+  var currentDelivery: Delivery {
+    do { return try graph.get(deliveryState) } catch {
+      preconditionFailure("Cannot read the conversation delivery graph: \(error)")
+    }
+  }
+  var isSending: Bool { currentDelivery.isSending }
+  var isStopping: Bool { currentDelivery.isStopping }
+  var stopIssue: String? { currentDelivery.stopIssue }
+  var error: String? { currentDelivery.error }
+  var needsUpgrade: Bool { currentDelivery.needsUpgrade }
+  var deliveryFailures: [String: DeliveryFailure] { currentDelivery.failures }
+
+  /// Replaces the delivery state. Stop changes the activity label's demand, so a change of
+  /// `isStopping` reconciles it, as the former property observer did.
+  fileprivate func updateDelivery(_ mutation: (inout Delivery) -> Void) {
+    let previous = currentDelivery
+    var next = previous
+    mutation(&next)
+    guard next != previous else { return }
+    do { try graph.set(deliveryState, next) } catch {
+      preconditionFailure("Cannot update the conversation delivery graph: \(error)")
+    }
+    if next.isStopping != previous.isStopping { reconcileActivitySummary() }
+  }
+}
+
+extension ConversationStore {
+  /// The render window, kept in the workspace session's Store. ChatDetailView reads it,
+  /// `navigation` and `loadsEarlier` through CCStateSwiftUI; the synchronous accessors in the
+  /// class serve owner logic, the scroll coordinator's actions and tests.
+  var window: Computed<ConversationPresentation.Window> { reading.window }
+  /// The remembered reading row and the latest explicit reveal.
+  var navigation: Computed<ConversationPresentation.Navigation> { reading.navigation }
+  /// Whether earlier groups are being prepared for the render window.
+  var loadsEarlier: Computed<Bool> { reading.loadsEarlier }
+  /// The synchronous values of `window` and `navigation`, for a render whose graph read has
+  /// not resolved.
+  var currentWindow: ConversationPresentation.Window { reading.currentWindow }
+  var currentNavigation: ConversationPresentation.Navigation { reading.currentNavigation }
 }

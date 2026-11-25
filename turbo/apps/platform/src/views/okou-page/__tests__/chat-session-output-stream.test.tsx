@@ -1,433 +1,361 @@
-import { computerUseAuthorizationRequestsContract } from "@okouai/api-contracts/contracts/computer-use";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { findComposerEditor } from "./chat-composer-test-helpers.ts";
+import { sessionOutputChannelName } from "@okouai/api-contracts/validators/realtime";
 import { act, screen, waitFor } from "@testing-library/react";
-import { expect, test } from "vitest";
+import { test, expect } from "vitest";
+import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import { createChatEvent } from "../../../mocks/mock-helpers.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import {
-  sessionOutputChannelName,
-  type SessionOutputDelta,
-} from "@okouai/api-contracts/contracts/realtime";
-import { setupPage, click } from "../../../__tests__/page-helper.ts";
-import {
-  hasSubscriptionOnChannel,
-  triggerAblyChannelEvent,
-} from "../../../mocks/ably.ts";
-import {
+  findEnabledButton,
+  promptEvent,
   assistantEvent,
   completedEvent,
-  promptEvent,
-  publishRunUpdate,
-  findWorkHistoryToggle,
-  findLink,
-  RUN_PATH,
   RUN_THREAD_ID,
-  createChatRunFixtures,
+  RUN_PATH,
 } from "./chat-run-test-fixtures.ts";
-
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 const context = testContext();
-const { installRunChat } = createChatRunFixtures(context);
-
-const RUN_ID = "d0000000-0000-4000-a000-000000000851";
-const EVENT_ID = "d0000000-0000-4000-a000-000000000852";
-const CHANNEL = sessionOutputChannelName(
-  "test-user-123",
-  "org_default",
-  RUN_ID,
-);
-
-function activeRun(additionalRunIds: readonly string[] = []) {
-  context.mocks.api(
-    computerUseAuthorizationRequestsContract.get,
-    ({ respond }) => {
-      return respond(404, {
-        error: { code: "NOT_FOUND", message: "Request unavailable" },
-      });
-    },
-  );
+async function conversation() {
+  const user = { id: "harbor-reader", fullName: "Harbor Reader" };
+  const org = { id: "org_harbor", name: "Harbor" };
+  const run = crypto.randomUUID(),
+    event = crypto.randomUUID();
+  const channel = sessionOutputChannelName(user.id, org.id, run);
   const events = [
     promptEvent({
-      id: "stream-prompt",
-      runId: RUN_ID,
+      id: crypto.randomUUID(),
       seqId: 1,
-      text: "Prepare a report",
+      text: "Prepare the report",
+      runId: run,
     }),
   ];
-  installRunChat({
-    chatEvents: events,
-    activeRunIds: [RUN_ID, ...additionalRunIds],
-  });
-  return events;
-}
-
-function push(chunkIndex: number, delta: string, eventId = EVENT_ID): void {
-  const payload: SessionOutputDelta = {
+  mockChatLifecycle(context, {
     threadId: RUN_THREAD_ID,
-    runId: RUN_ID,
-    eventId,
-    runEventId: "api-first:attempt:2",
-    createdAt: "2026-08-01T10:00:02.000Z",
-    chunkIndex,
-    delta,
+    activeRunIds: [run],
+    chatEvents: events,
+  });
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    host: "app.okou.ai",
+    auth: {
+      user,
+      organization: { activeOrg: org, memberships: [{ id: org.id }] },
+    },
+  });
+  await screen.findByText("Prepare the report");
+  const subscribed = () => {
+    return context.mocks.ably.hasSubscriptionOnChannel(channel, run);
   };
-  act(() => {
-    triggerAblyChannelEvent(CHANNEL, RUN_ID, payload);
-  });
-}
-
-async function subscribed(): Promise<void> {
   await waitFor(() => {
-    expect(hasSubscriptionOnChannel(CHANNEL, RUN_ID)).toBeTruthy();
+    expect(subscribed()).toBeTruthy();
   });
+  let index = 0;
+  const createdAt = "2026-08-01T10:00:02.000Z";
+  return {
+    subscribed,
+    chunk(delta: string) {
+      context.mocks.ably.triggerOnChannel(channel, run, {
+        threadId: RUN_THREAD_ID,
+        runId: run,
+        eventId: event,
+        runEventId: "report-event",
+        createdAt,
+        chunkIndex: index++,
+        delta,
+      });
+    },
+    nextBlock(text: string) {
+      context.mocks.ably.triggerOnChannel(channel, run, {
+        threadId: RUN_THREAD_ID,
+        runId: run,
+        eventId: crypto.randomUUID(),
+        runEventId: crypto.randomUUID(),
+        createdAt: "2026-08-01T10:00:03.000Z",
+        chunkIndex: 0,
+        delta: text,
+      });
+    },
+    persist(text: string) {
+      events.push(
+        assistantEvent({ id: event, runId: run, seqId: 2, text, createdAt }),
+      );
+      createChatEvent(RUN_THREAD_ID);
+    },
+    finish() {
+      events.push(
+        completedEvent({ id: crypto.randomUUID(), runId: run, seqId: 3 }),
+      );
+      createChatEvent(RUN_THREAD_ID);
+    },
+  };
 }
+const url = "https://app.okou.ai/computer-use/authorize/harbor-report";
+const card = () => {
+  return screen.findByTestId("computer-use-authorization-card");
+};
+test("chat-session-output-stream-004 the same authorization card survives added paragraphs and finalization", async () => {
+  const api = await conversation();
+  api.chunk(url + " ");
+  const request = await card();
+  api.chunk("Review this request.");
+  await screen.findByText(/Review this request/);
+  await expect(card()).resolves.toBe(request);
+  api.chunk("\n\nWork can continue.");
+  await screen.findByText("Work can continue.");
+  await expect(card()).resolves.toBe(request);
+  api.persist(url + " Review this request.\n\nWork can continue.");
+  api.finish();
+  await waitFor(() => {
+    expect(api.subscribed()).toBeFalsy();
+  });
+  await expect(card()).resolves.toBe(request);
+});
+test("chat-session-output-stream-006 closing a Markdown link presents authorization during the active run", async () => {
+  const api = await conversation();
+  api.chunk("[Review access](" + url);
+  await screen.findByText(/Review access/);
+  expect(screen.queryByTestId("computer-use-authorization-card")).toBeNull();
+  api.chunk(")");
+  await expect(card()).resolves.toBeVisible();
+  expect(screen.getAllByTestId("computer-use-authorization-card")).toHaveLength(
+    1,
+  );
+  expect(api.subscribed()).toBeTruthy();
+});
+test("chat-session-output-stream-009 the approval destination includes its final signature underscore", async () => {
+  const api = await conversation();
+  const link = "https://app.link.com/approve/harbor?signature=abc";
+  api.chunk(link);
+  await screen.findByText(link);
+  api.chunk("_ ");
+  const purchase = await findFastControl("link", "Review purchase");
+  expect(purchase).toHaveAttribute("href", link + "_");
+  api.chunk("Review the order details.");
+  await screen.findByText(/Review the order details/);
+});
+test("chat-session-output-stream-011 completing the run ends its live subscription after displaying the durable report", async () => {
+  const api = await conversation();
+  api.persist("The complete report");
+  await screen.findByText("The complete report");
+  expect(api.subscribed()).toBeTruthy();
+  api.finish();
+  await waitFor(() => {
+    expect(api.subscribed()).toBeFalsy();
+  });
+  expect(screen.getByText("The complete report")).toBeVisible();
+});
 
-async function setupActiveOutputStream() {
-  const events = activeRun();
-  await setupPage({ context, path: RUN_PATH });
-  await subscribed();
+test("chat-session-output-stream-010 closing the streamed PDF embed reveals its preview through completion", async () => {
+  const wire = await conversation();
+  const open = "![Port survey](https://a.okou.io/harbor7pdf.pdf";
+  wire.chunk(open);
+  await screen.findByText(/Port survey/);
+  const preview = "Open pdf preview for harbor7pdf.pdf";
+  expect(screen.queryByLabelText(preview)).not.toBeInTheDocument();
+  wire.chunk(")");
+  await expect(screen.findByLabelText(preview)).resolves.toBeInTheDocument();
+  wire.persist(open + ")\n\nSurvey delivered.");
+  wire.finish();
+  await screen.findByText("Survey delivered.");
+  expect(screen.getByLabelText(preview)).toBeInTheDocument();
+});
+
+test.each([
+  ["session-output-stream-002", "delivered"],
+  ["Withheld control", "withheld"],
+] as const)(
+  "%s The replacement run keeps streaming in the same conversation with the old attach %s",
+  async (_case, schedule) => {
+    const first = crypto.randomUUID();
+    const member = "expense-reader",
+      org = "expense-group";
+    const channel = (id: string) => {
+      return sessionOutputChannelName(member, org, id);
+    };
+    const obsolete = context.mocks.ably.deferSubscribeOnChannel(
+      channel(first),
+      first,
+    );
+    let attached = false;
+    function finishAttachment() {
+      if (!attached) {
+        attached = true;
+        obsolete.attach();
+      }
+    }
+    const next = context.mocks.deferred<string>();
+    const lifecycle = mockChatLifecycle(context, {
+      onRunCreate(_body, runId) {
+        next.resolve(runId);
+      },
+      threadId: RUN_THREAD_ID,
+      activeRunIds: [first],
+      chatEvents: [
+        promptEvent({
+          id: crypto.randomUUID(),
+          seqId: 1,
+          text: "Review invoice batch",
+          runId: first,
+        }),
+      ],
+    });
+    try {
+      await setupPage({
+        context,
+        path: RUN_PATH,
+        sharedWorkerTestTransport: "message-port",
+        auth: {
+          user: { id: member, fullName: "Member" },
+          organization: {
+            activeOrg: { id: org, name: "Billing" },
+            memberships: [{ id: org }],
+          },
+        },
+      });
+      await screen.findByText("Review invoice batch");
+      await obsolete.started;
+      lifecycle.completeRun("Invoice list complete");
+      await screen.findByText("Invoice list complete");
+      await fill(await findComposerEditor(), "Review the outstanding receipts");
+      click(await findEnabledButton("Send"));
+      const second = await next.promise;
+      await waitFor(() => {
+        return expect(
+          context.mocks.ably.hasSubscriptionOnChannel(channel(second), second),
+        ).toBeTruthy();
+      });
+      const emit = (id: string, index: number, text: string) => {
+        context.mocks.ably.triggerOnChannel(channel(id), id, {
+          threadId: RUN_THREAD_ID,
+          runId: id,
+          eventId: id,
+          runEventId: "receipt",
+          createdAt: "2026-11-03T11:00:00Z",
+          chunkIndex: index,
+          delta: text,
+        });
+      };
+      if (schedule === "delivered") {
+        finishAttachment();
+      }
+      await waitFor(() => {
+        return expect(obsolete.completed()).toBe(schedule === "delivered");
+      });
+      emit(second, 0, "The invoice will ");
+      await screen.findByText("The invoice will");
+      expect(obsolete.completed()).toBe(schedule === "delivered");
+      await waitFor(() => {
+        return expect(
+          context.mocks.ably.hasSubscriptionOnChannel(channel(first), first),
+        ).toBeFalsy();
+      });
+      emit(first, 0, "Superseded old content");
+      emit(second, 1, "settle tomorrow.");
+      await screen.findByText("The invoice will settle tomorrow.");
+      expect(screen.queryByText("Superseded old content")).toBeNull();
+      expect(obsolete.completed()).toBe(schedule === "delivered");
+      expect(
+        context.mocks.ably.hasSubscriptionOnChannel(channel(second), second),
+      ).toBeTruthy();
+      click(await findFastControl("link", /^New chat/));
+      await waitFor(() => {
+        return expect(window.location.pathname).toBe("/");
+      });
+      await waitFor(() => {
+        return expect(
+          context.mocks.ably.hasSubscriptionOnChannel(channel(second), second),
+        ).toBeFalsy();
+      });
+    } finally {
+      finishAttachment();
+    }
+  },
+);
+
+test("A returning conversation reacquires live output after its reader left for Workflows", async () => {
+  const session = await conversation();
+  session.chunk("Ready at platform nine.");
+  await screen.findByText("Ready at platform nine.");
+  click(await findFastControl("link", "Workflows"));
+  await screen.findByRole("heading", { name: "Workflows" });
+  await waitFor(() => {
+    return expect(session.subscribed()).toBeFalsy();
+  });
+  window.history.back();
+  await screen.findByText("Prepare the report");
+  await waitFor(() => {
+    return expect(session.subscribed()).toBeTruthy();
+  });
+  session.nextBlock("Depart from platform four.");
+  await screen.findByText("Depart from platform four.");
+  await expect(findComposerEditor()).resolves.toBeEnabled();
+});
+
+async function pendingReport() {
+  const events = await conversation();
+  events.chunk("Preparing the report.");
+  await screen.findByText("Preparing the report.");
   return events;
 }
 
-function publishDurableReport(events: ReturnType<typeof activeRun>) {
-  events.push(
-    assistantEvent({
-      id: EVENT_ID,
-      runId: RUN_ID,
-      seqId: 2,
-      text: "The complete report",
-    }),
-  );
-  publishRunUpdate();
-}
-
-test("Append live text deltas during a run", async () => {
-  await setupActiveOutputStream();
-  push(0, "Preparing");
-  await expect(screen.findByText("Preparing")).resolves.toBeVisible();
-  push(3, " the report");
-  await expect(
-    screen.findByText("Preparing the report"),
-  ).resolves.toBeVisible();
-});
-
-test("Reconcile live text with the durable assistant event", async () => {
-  const events = await setupActiveOutputStream();
-  push(0, "Preparing");
-  push(3, " the report");
-  await expect(
-    screen.findByText("Preparing the report"),
-  ).resolves.toBeVisible();
-  publishDurableReport(events);
-  await expect(screen.findByText("The complete report")).resolves.toBeVisible();
-  expect(screen.queryByText("Preparing the report")).not.toBeInTheDocument();
-  push(0, "A late first packet");
-  push(4, "A late delta");
-  expect(screen.queryByText(/A late/)).not.toBeInTheDocument();
+test("chat-session-output-stream-002 A durable report ignores a late live fragment before completion", async () => {
+  const events = await pendingReport();
+  events.persist("The complete report");
+  await screen.findByText("The complete report");
+  act(() => {
+    return events.chunk(" Additional figures.");
+  });
+  expect(screen.getByText("The complete report")).toBeInTheDocument();
+  expect(screen.queryByText(/Additional figures/)).not.toBeInTheDocument();
+  events.finish();
+  await waitFor(() => {
+    return expect(events.subscribed()).toBeFalsy();
+  });
   expect(screen.getAllByText("The complete report")).toHaveLength(1);
+  expect(
+    screen.queryByText(/Preparing the report|Additional figures/),
+  ).not.toBeInTheDocument();
 });
 
-test("A growing action URL becomes a card as soon as a boundary arrives", async () => {
-  const events = activeRun();
-  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
-  await subscribed();
+test("Without a durable event the late fragment extends the visible report", async () => {
+  const events = await pendingReport();
+  events.chunk(" Additional figures.");
+  await expect(
+    screen.findByText("Preparing the report. Additional figures."),
+  ).resolves.toBeVisible();
+});
 
+test("A partial authorization URL can already be followed before the terminating space", async () => {
+  const events = await conversation();
   const prefix = "https://app.okou.ai/computer-use/authorize/";
-  let url = `${prefix}abcdefghijklmnopqrstuvwxyz`;
-  push(0, url);
-  await expect(screen.findByText(url)).resolves.toBeInTheDocument();
-  expect(screen.queryByText("Computer Use authorization")).toBeNull();
-
-  for (const [index, delta] of [
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-    "0123456789",
-  ].entries()) {
-    url += delta;
-    push(index + 1, delta);
-    await waitFor(() => {
-      expect(screen.getByTitle(url).closest("a")).toHaveAttribute("href", url);
-    });
-    expect(screen.queryByText("Computer Use authorization")).toBeNull();
-  }
-
-  // A trailing period is still ambiguous: it may be part of the next URL byte.
-  push(3, ".");
+  events.chunk(prefix + "harbor");
+  const early = await findFastControl("link", prefix + "harbor");
+  expect(early).toHaveAttribute("href", prefix + "harbor");
+  expect(
+    screen.queryByTestId("computer-use-authorization-card"),
+  ).not.toBeInTheDocument();
+  events.chunk("-report.");
+  await expect(findFastControl("link", url)).resolves.toHaveAttribute(
+    "href",
+    url,
+  );
+  expect(
+    screen.queryByTestId("computer-use-authorization-card"),
+  ).not.toBeInTheDocument();
+  events.chunk(" Continue here.");
+  await card();
+  expect(screen.getAllByTestId("computer-use-authorization-card")).toHaveLength(
+    1,
+  );
+  events.persist(url + ". Continue here.");
+  events.finish();
   await waitFor(() => {
-    expect(
-      document.querySelector("[data-chat-thread-container-id]"),
-    ).toHaveTextContent(`${url.slice(0, 77)}....`);
+    return expect(events.subscribed()).toBeFalsy();
   });
-  expect(screen.queryByText("Computer Use authorization")).toBeNull();
-
-  push(4, " ");
-  await expect(
-    screen.findByText("Computer Use authorization"),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getAllByText("Computer Use authorization")).toHaveLength(1);
-
-  const content = `${url}. Read more`;
-  push(5, "Read more");
-  await expect(screen.findByText(/Read more/u)).resolves.toBeInTheDocument();
-  expect(screen.getAllByText("Computer Use authorization")).toHaveLength(1);
-
-  events.push(
-    assistantEvent({
-      id: EVENT_ID,
-      runId: RUN_ID,
-      seqId: 2,
-      text: `${content} (finished)`,
-    }),
+  await screen.findByText(/Continue here/);
+  expect(screen.getAllByTestId("computer-use-authorization-card")).toHaveLength(
+    1,
   );
-  publishRunUpdate();
-  await waitFor(() => {
-    expect(screen.getByText(/Read more \(finished\)/u)).toBeInTheDocument();
-    expect(screen.getAllByText("Computer Use authorization")).toHaveLength(1);
-  });
-});
-
-test("A completed URL card stays mounted while the message continues and finalizes", async () => {
-  const events = await setupActiveOutputStream();
-  const url =
-    "https://app.okou.ai/computer-use/authorize/abcdefghijklmnopqrstuvwxyz";
-  push(0, `${url} `);
-  const card = await screen.findByTestId("computer-use-authorization-card");
-
-  push(1, "The next sentence");
-  await expect(
-    screen.findByText("The next sentence"),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByTestId("computer-use-authorization-card")).toBe(card);
-
-  push(2, "\n\nAnother paragraph");
-  await expect(
-    screen.findByText("Another paragraph"),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByTestId("computer-use-authorization-card")).toBe(card);
-
-  events.push(
-    assistantEvent({
-      id: EVENT_ID,
-      runId: RUN_ID,
-      seqId: 2,
-      text: `${url} The next sentence\n\nAnother paragraph finished`,
-    }),
-  );
-  publishRunUpdate();
-  await expect(
-    screen.findByText("Another paragraph finished"),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByTestId("computer-use-authorization-card")).toBe(card);
-});
-
-test("Only terminated URLs become cards when two actions share a streaming line", async () => {
-  const events = activeRun();
-  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
-  await subscribed();
-
-  const first = `https://app.okou.ai/computer-use/authorize/${"a".repeat(26)}`;
-  const second = `https://app.okou.ai/computer-use/authorize/${"b".repeat(26)}`;
-  const content = `${first} ${second}`;
-  push(0, content);
-  await expect(screen.findByText(second)).resolves.toBeInTheDocument();
-  expect(screen.getAllByText("Computer Use authorization")).toHaveLength(1);
-
-  push(1, " ");
-  await waitFor(() => {
-    expect(
-      screen.getAllByTestId("computer-use-authorization-card"),
-    ).toHaveLength(2);
-  });
-
-  events.push(
-    assistantEvent({
-      id: EVENT_ID,
-      runId: RUN_ID,
-      seqId: 2,
-      text: `${content} \n\nBoth actions complete`,
-    }),
-  );
-  publishRunUpdate();
-  await waitFor(() => {
-    expect(screen.getByText("Both actions complete")).toBeInTheDocument();
-    expect(screen.getAllByText("Computer Use authorization")).toHaveLength(2);
-  });
-});
-
-test("A closed Markdown action link becomes a card before the run finishes", async () => {
-  await setupActiveOutputStream();
-  const url =
-    "https://app.okou.ai/computer-use/authorize/abcdefghijklmnopqrstuvwxyz";
-  push(0, `[Authorize](<${url}>)`);
-  await expect(
-    screen.findByText("Computer Use authorization"),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getAllByText("Computer Use authorization")).toHaveLength(1);
-});
-
-test("A trailing bare URL becomes a card when its final event arrives", async () => {
-  const events = activeRun();
-  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
-  await subscribed();
-
-  const url =
-    "https://app.okou.ai/computer-use/authorize/abcdefghijklmnopqrstuvwxyz";
-  push(0, url);
-  await expect(screen.findByText(url)).resolves.toBeInTheDocument();
-  expect(screen.queryByText("Computer Use authorization")).toBeNull();
-
-  events.push(
-    assistantEvent({ id: EVENT_ID, runId: RUN_ID, seqId: 2, text: url }),
-  );
-  publishRunUpdate();
-  await expect(
-    screen.findByText("Computer Use authorization"),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getAllByText("Computer Use authorization")).toHaveLength(1);
-});
-
-test("Wallet cards preserve the complete signed URL across streamed chunks", async () => {
-  const events = activeRun();
-  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
-  await subscribed();
-
-  const partial =
-    "https://app.link.com/activity/approve/lsrq_fixture?token=partial";
-  const suffix = "%2Fsigned&key=exact+key#review_";
-  const url = `${partial}${suffix}`;
-  push(0, partial);
-  await expect(screen.findByText(partial)).resolves.toBeInTheDocument();
-  expect(screen.queryByLabelText("Review purchase")).toBeNull();
-
-  push(1, suffix);
-  await waitFor(() => {
-    expect(
-      screen
-        .getByText(partial, { exact: false })
-        .closest('[data-slot="markdown"]'),
-    ).toHaveTextContent(url.slice(0, 77) + "...");
-  });
-  expect(screen.queryByLabelText("Review purchase")).toBeNull();
-
-  events.push(
-    assistantEvent({ id: EVENT_ID, runId: RUN_ID, seqId: 2, text: url }),
-  );
-  publishRunUpdate();
-  const link = await screen.findByLabelText("Review purchase");
-  expect(link).toHaveAttribute("href", url);
-  expect(link).toHaveAttribute("target", "_blank");
-  expect(screen.getAllByLabelText("Review purchase")).toHaveLength(1);
-});
-
-test("A wallet signature tail becomes a card after a streamed URL boundary", async () => {
-  activeRun();
-  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
-  await subscribed();
-
-  const partial = "https://app.link.com/approve?token=signature";
-  const url = `${partial}_`;
-  push(0, partial);
-  await expect(screen.findByText(partial)).resolves.toBeInTheDocument();
-  expect(screen.queryByLabelText("Review purchase")).toBeNull();
-
-  push(1, "_ Review before continuing.");
-  const link = await screen.findByLabelText("Review purchase");
-  expect(link).toHaveAttribute("href", url);
-  expect(screen.getByText("Review before continuing.")).toBeInTheDocument();
-});
-
-test("An explicit artifact preview appears when its Markdown link closes", async () => {
-  const events = activeRun();
-  await setupPage({ context, path: RUN_PATH });
-  await subscribed();
-
-  const content = "![Brief preview](https://a.okou.io/a1b2c3d4e5.pdf)";
-  push(0, content.slice(0, -1));
-  const cardLabel = "Open pdf preview for a1b2c3d4e5.pdf";
-  await expect(
-    screen.findByText(/Brief preview/u),
-  ).resolves.toBeInTheDocument();
-  expect(screen.queryByLabelText(cardLabel)).toBeNull();
-
-  push(1, ")");
-  await expect(screen.findByLabelText(cardLabel)).resolves.toBeInTheDocument();
-  expect(screen.getAllByLabelText(cardLabel)).toHaveLength(1);
-
-  events.push(
-    assistantEvent({
-      id: EVENT_ID,
-      runId: RUN_ID,
-      seqId: 2,
-      text: `${content}\n\nPreview complete`,
-    }),
-  );
-  publishRunUpdate();
-  await waitFor(() => {
-    expect(screen.getByText("Preview complete")).toBeInTheDocument();
-    expect(screen.getAllByLabelText(cardLabel)).toHaveLength(1);
-  });
-});
-
-test("Unsubscribe from output after the durable run completes", async () => {
-  const events = await setupActiveOutputStream();
-  publishDurableReport(events);
-  await expect(screen.findByText("The complete report")).resolves.toBeVisible();
-  events.push(
-    completedEvent({ id: "stream-completed", runId: RUN_ID, seqId: 3 }),
-  );
-  publishRunUpdate();
-  await waitFor(() => {
-    expect(hasSubscriptionOnChannel(CHANNEL, RUN_ID)).toBeFalsy();
-  });
-});
-
-test("A viewer missing chunk zero waits for the durable output and can receive the next block", async () => {
-  const events = activeRun();
-  await setupPage({ context, path: RUN_PATH });
-  await subscribed();
-  push(1, "Missing beginning");
-  const nextEventId = "d0000000-0000-4000-a000-000000000853";
-  push(0, "The next block", nextEventId);
-  await expect(screen.findByText("The next block")).resolves.toBeVisible();
-  expect(screen.queryByText("Missing beginning")).not.toBeInTheDocument();
-  events.push(
-    assistantEvent({
-      id: EVENT_ID,
-      runId: RUN_ID,
-      seqId: 2,
-      text: "Recovered complete block",
-    }),
-  );
-  publishRunUpdate();
-  click(await findWorkHistoryToggle("collapsed"));
-  await expect(
-    screen.findByText("Recovered complete block"),
-  ).resolves.toBeVisible();
-});
-
-test("Changing runs replaces the channel and leaving the thread cancels the subscription", async () => {
-  const nextRunId = "d0000000-0000-4000-a000-000000000854";
-  const events = activeRun([nextRunId]);
-  await setupPage({ context, path: RUN_PATH });
-  await subscribed();
-  const nextChannel = sessionOutputChannelName(
-    "test-user-123",
-    "org_default",
-    nextRunId,
-  );
-  events.push(
-    completedEvent({ id: "first-finished", runId: RUN_ID, seqId: 2 }),
-    promptEvent({
-      id: "next-prompt",
-      runId: nextRunId,
-      seqId: 3,
-      text: "Start the next report",
-    }),
-  );
-  publishRunUpdate();
-  await waitFor(() => {
-    expect(hasSubscriptionOnChannel(nextChannel, nextRunId)).toBeTruthy();
-    expect(hasSubscriptionOnChannel(CHANNEL, RUN_ID)).toBeFalsy();
-  });
-  click(await findLink("Workflows"));
-  await expect(
-    screen.findByRole("heading", { name: "Workflows" }),
-  ).resolves.toBeVisible();
-  expect(hasSubscriptionOnChannel(nextChannel, nextRunId)).toBeFalsy();
 });

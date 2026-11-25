@@ -28,6 +28,7 @@
     <string name="artifact_empty">No artifacts yet</string>
     <string name="artifact_empty_type">No artifacts of this type</string>
     <string name="artifact_no_matches">No matching artifacts</string>
+    <string name="artifact_clear_keyword">Clear keyword</string>
     <string name="artifact_show_all">Show all</string>
     <string name="artifact_catalog_load_failed">Temporarily unable to load artifacts</string>
     <string name="artifact_catalog_refresh_failed">Temporarily unable to update. Showing loaded artifacts.</string>

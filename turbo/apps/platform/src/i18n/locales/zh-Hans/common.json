@@ -506,6 +506,40 @@
       "kindIcon": "{{kind}}成果",
       "loading": "正在加载成果"
     },
+    "customDomain": {
+      "addressHint": "Choose the full address used when you share this website.",
+      "checks": {
+        "certificate": "HTTPS",
+        "dns": "DNS 连接",
+        "ownership": "所有权"
+      },
+      "connect": "Connect a domain",
+      "continue": "继续",
+      "copied": "已复制",
+      "copyFailed": "无法复制，请选中记录值手动复制",
+      "copyRecord": "复制 {{type}} 值",
+      "disconnectConfirm": "This domain will be disconnected from this website.",
+      "dnsHelp": "在 DNS 服务商处配置这些记录，然后点击验证",
+      "domain": "域名",
+      "hostnameExample": "www.example.com",
+      "httpsReady": "HTTPS ready",
+      "lastChecked": "上次检查 {{time}}",
+      "manage": "Manage {{hostname}}",
+      "needsSetup": "Finish setup",
+      "notChecked": "尚未验证",
+      "okouUrl": "Okou URL",
+      "ownDomain": "输入你拥有的域名",
+      "remove": "移除",
+      "removeConfirm": "分享链接将恢复为 {{url}}。",
+      "removeHostname": "Remove {{hostname}}",
+      "removeTitle": "移除自定义域名？",
+      "removing": "此域名已断开连接。点击移除以完成配置清理。",
+      "title": "自定义域名",
+      "urlPreview": "https://{{hostname}}",
+      "verified": "Domain verified. Save to use this address.",
+      "verify": "验证",
+      "yourDomains": "Connected domains"
+    },
     "deletion": {
       "cancel": "取消",
       "delete": "删除",
@@ -1167,6 +1201,12 @@
       "proWarning": "Pro 权益持续到本计费周期结束。之后此工作区将变为无套餐，升级后 Okou 才能继续工作。",
       "teamWarning": "你的 Team 权益会持续到当前账单周期结束，之后这个工作区会变成{{plan}}。",
       "title": "降级套餐"
+    },
+    "feedback": {
+      "otherPlaceholder": "可以多说一点…",
+      "rewardTerms": "每个工作区仅一次 · 积分有效期 30 天",
+      "submitFeedback": "提交反馈",
+      "thanks": "感谢你的反馈"
     },
     "invoices": {
       "amount": "金额",
@@ -1888,6 +1928,14 @@
       "message": "消息",
       "modelForThisChat": "本次对话使用的模型",
       "placeholder": "让我自动化工作流、管理任务…",
+      "presentationFormatSetup": {
+        "description": "保存默认格式后，将生成你的演示文稿。本次需求中的明确格式要求仍优先。",
+        "htmlDescription": "适合在浏览器中分享",
+        "pptxDescription": "可在 PowerPoint 中编辑",
+        "saveAndGenerate": "保存并生成",
+        "settingsHint": "随时可在「设置 → 偏好设置 → 聊天」中修改。",
+        "title": "选择默认演示文稿格式"
+      },
       "selectedModelUnavailable": "所选模型当前不可用。配置好之后再发送。",
       "selectedModelUnavailableToast": "所选模型当前不可用",
       "selectModel": "选择模型",
@@ -5719,6 +5767,16 @@
       "actions": {
         "resetUsage": "重置用量"
       },
+      "antigravity": {
+        "check": "查看登录状态",
+        "error": "请检查分配给你的登录环境，然后重试。",
+        "expired": "登录已过期，请重新连接。",
+        "openTerminal": "打开 Google 登录终端",
+        "terminal": "在终端运行以下命令，然后使用你的个人 Google AI 账号登录。",
+        "title": "Google AI（Antigravity）",
+        "unassigned": "请管理员为你分配登录终端。",
+        "verify": "运行此命令会使用你的订阅额度，分别向 Neon、Carbon 和 Hydrogen 发送一次请求。"
+      },
       "deviceAuth": {
         "claude": {
           "authorizationCode": "授权码",
@@ -5918,6 +5976,13 @@
           "title": "默认模型"
         },
         "description": "设置新聊天的默认项和消息发送方式。",
+        "presentationFormat": {
+          "description": "选择新演示文稿的默认格式",
+          "saveFailed": "无法保存默认格式，请重试。",
+          "title": "默认演示文稿格式",
+          "unavailable": "暂不可用",
+          "unset": "未设置"
+        },
         "sectionTitle": "聊天"
       },
       "debug": {

@@ -452,7 +452,7 @@ function createChatPageShortcutBindings({
       shouldHandle: canToggleThreadState,
       run: toggleThreadPin,
     },
-    [GLOBAL_KEYBOARD_SHORTCUTS.toggleChatArchive.binding]: {
+    [GLOBAL_KEYBOARD_SHORTCUTS.toggleArchive.binding]: {
       allowInEditableTarget: true,
       shouldHandle: canToggleThreadState,
       run: toggleThreadArchive,

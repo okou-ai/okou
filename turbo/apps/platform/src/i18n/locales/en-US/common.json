@@ -507,6 +507,40 @@
       "kindIcon": "{{kind}} artifact",
       "loading": "Loading artifacts"
     },
+    "customDomain": {
+      "addressHint": "Choose the full address used when you share this website.",
+      "checks": {
+        "certificate": "HTTPS",
+        "dns": "DNS connection",
+        "ownership": "Ownership"
+      },
+      "connect": "Connect a domain",
+      "continue": "Continue",
+      "copied": "Copied",
+      "copyFailed": "Could not copy. Select the value to copy it.",
+      "copyRecord": "Copy {{type}} value",
+      "disconnectConfirm": "This domain will be disconnected from this website.",
+      "dnsHelp": "Add these records at your DNS provider, then click Verify",
+      "domain": "Domain",
+      "hostnameExample": "www.example.com",
+      "httpsReady": "HTTPS ready",
+      "lastChecked": "Last checked {{time}}",
+      "manage": "Manage {{hostname}}",
+      "needsSetup": "Finish setup",
+      "notChecked": "No verification yet",
+      "okouUrl": "Okou URL",
+      "ownDomain": "Enter a domain you own",
+      "remove": "Remove",
+      "removeConfirm": "Your sharing link will return to {{url}}.",
+      "removeHostname": "Remove {{hostname}}",
+      "removeTitle": "Remove custom domain?",
+      "removing": "This domain is disconnected. Click Remove to finish cleaning up its configuration.",
+      "title": "Custom domain",
+      "urlPreview": "https://{{hostname}}",
+      "verified": "Domain verified. Save to use this address.",
+      "verify": "Verify",
+      "yourDomains": "Connected domains"
+    },
     "deletion": {
       "cancel": "Cancel",
       "delete": "Delete",
@@ -1171,6 +1205,12 @@
       "proWarning": "Your Pro access remains active until the current billing period ends. After that, this workspace moves to No plan and Okou cannot work until you upgrade again.",
       "teamWarning": "Your Team access remains active until the current billing period ends. After that, this workspace moves to {{plan}}.",
       "title": "Downgrade plan"
+    },
+    "feedback": {
+      "otherPlaceholder": "Tell us more…",
+      "rewardTerms": "Once per workspace · Credits expire in 30 days",
+      "submitFeedback": "Submit feedback",
+      "thanks": "Thanks for your feedback"
     },
     "invoices": {
       "amount": "Amount",
@@ -1894,6 +1934,14 @@
       "message": "Message",
       "modelForThisChat": "Model for this chat",
       "placeholder": "Ask me to automate workflows, manage tasks...",
+      "presentationFormatSetup": {
+        "description": "We'll save this default, then generate your presentation. An explicit format in your request still takes priority.",
+        "htmlDescription": "Best for sharing in a browser",
+        "pptxDescription": "Editable slides for PowerPoint",
+        "saveAndGenerate": "Save and generate",
+        "settingsHint": "Change it anytime in Settings → Preferences → Chat.",
+        "title": "Choose a default presentation format"
+      },
       "selectedModelUnavailable": "The selected model is not available. Configure it before sending.",
       "selectedModelUnavailableToast": "The selected model is not available",
       "selectModel": "Select model",
@@ -5740,6 +5788,16 @@
       "actions": {
         "resetUsage": "Reset usage"
       },
+      "antigravity": {
+        "check": "Check sign-in",
+        "error": "Check your assigned sign-in worker and try again.",
+        "expired": "Sign-in expired. Connect again to start a new session.",
+        "openTerminal": "Open Google sign-in terminal",
+        "terminal": "Run this command in your terminal and sign in with your personal Google AI account.",
+        "title": "Google AI (Antigravity)",
+        "unassigned": "Ask an administrator to assign your sign-in terminal.",
+        "verify": "This command uses your subscription to send one request each to Neon, Carbon and Hydrogen."
+      },
       "deviceAuth": {
         "claude": {
           "authorizationCode": "Authorization code",
@@ -5940,6 +5998,13 @@
           "title": "Default model"
         },
         "description": "Choose defaults for new chats and how messages are sent.",
+        "presentationFormat": {
+          "description": "Choose the default for new presentations",
+          "saveFailed": "Couldn't save the default format. Try again.",
+          "title": "Default presentation format",
+          "unavailable": "Unavailable",
+          "unset": "Not set"
+        },
         "sectionTitle": "Chat"
       },
       "debug": {

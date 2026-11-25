@@ -71,8 +71,12 @@ internal constructor(
     }
 
     internal fun toggle(projectId: String) {
-        val expanded = state.value.expandedIds?.contains(projectId) == true
-        choices[projectId] = Choice(!expanded)
+        setExpanded(projectId, state.value.expandedIds?.contains(projectId) != true)
+    }
+
+    internal fun setExpanded(projectId: String, expanded: Boolean) {
+        if ((state.value.expandedIds?.contains(projectId) == true) == expanded) return
+        choices[projectId] = Choice(expanded)
         savedIds.remove(projectId)
         publish()
         if (!savingIds.add(projectId)) return

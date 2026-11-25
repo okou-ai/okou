@@ -1,19 +1,28 @@
-import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { catalogFixture } from "../../../mocks/handlers/connector-account-fixtures.ts";
-import { act, screen, waitFor, within } from "@testing-library/react";
-import { bankingWorkspaceContract } from "@okouai/api-contracts/contracts/banking";
-import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import { runConnectorAccountsContract } from "@okouai/api-contracts/contracts/run-connector-accounts";
-
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
+  browserAuthMethod,
+  catalogConnector,
+  connectedConnectorResponse,
+  connectorActionUrl,
+} from "./chat-capability-connector-test-helpers.ts";
+import { manualAuthMethod } from "./chat-composer-connectors-test-helpers.ts";
+import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { runConnectorAccountsContract } from "@okouai/api-contracts/contracts/run-connector-accounts";
+import { mockAuthorizationCallbackThread } from "./authorization-callback-test-helpers.ts";
+import {
+  builtinConnectorsMainContract,
   builtinConnectorManualGrantContract,
   builtinConnectorOauthStartContract,
 } from "@okouai/api-contracts/contracts/connectors";
-import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
-import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
-import { expect, test } from "vitest";
 
+import {
+  connectorAccountsContract,
+  type ConnectorAccountConnection,
+} from "@okouai/api-contracts/contracts/connector-accounts";
+import { bankingWorkspaceContract } from "@okouai/api-contracts/contracts/banking";
+import { screen, waitFor, within } from "@testing-library/react";
+import { expect, test } from "vitest";
 import {
   click,
   fill,
@@ -21,1473 +30,499 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { mockChatLifecycle } from "./chat-test-helpers.ts";
-import { createChatEvent } from "../../../mocks/mock-helpers.ts";
-import { mockOAuthCompletions } from "./connector-page-test-helpers.ts";
+
+import {
+  assistantEvent,
+  completedEvent,
+  createChatRunFixtures,
+  findEnabledButton,
+  findLink,
+  queryButton,
+  RUN_THREAD_ID,
+  RUN_PATH,
+} from "./chat-run-test-fixtures.ts";
 
 const context = testContext();
-const THREAD_ID = "b0000000-0000-4000-a000-000000000902";
-const CONNECTOR_URL = `https://app.okou.ai/connectors/github/authorize?threadId=${THREAD_ID}`;
-const PERMISSION_URL = `https://app.okou.ai/connectors/permissions?orgId=org_default&userId=test-user-123&connectorSlug=slack&permission=files:read`;
-const EXACT_CONNECTION_ID = "f0000000-0000-4000-a000-000000000911";
-const DEFAULT_CONNECTION_ID = "f0000000-0000-4000-a000-000000000912";
-
-const MEMBER_PERMISSION_URL =
-  "https://app.okou.ai/connectors/permissions?orgId=org_default&userId=test-user-123&connectorSlug=slack&permission=files:read";
-
-function exactReconnectUrl(connectionId = EXACT_CONNECTION_ID): URL {
-  const url = new URL(
-    `https://app.okou.ai/connectors/github/reconnect/${connectionId}`,
-  );
-  url.searchParams.set("threadId", THREAD_ID);
-  url.searchParams.set("callbackPrompt", "Continue the account-specific task");
-  return url;
-}
-
-function mockExactReconnectAccount(
-  accountStatus: "connected" | "reconnect-required" | "missing",
-  options?: {
-    unnamedManualAccount?: boolean;
-    accountAvailable?: () => boolean;
-    unsupportedAuthMethod?: boolean;
-    accountAuthMethod?: "oauth" | "api-token";
-  },
-): () => void {
-  let exactReconnectCompleted = false;
-  const github = connectorSlugSchema.parse("github");
-  const catalogItem = {
-    slug: github,
-    label: "GitHub",
-    description: "GitHub connector",
-    icon: {
-      url: "https://icons.example.test/github.svg",
-      invertInDarkMode: false,
-    },
-    category: "productivity" as const,
-    generation: [],
-    tags: [],
-    authMethods: [
-      ...(!options?.unsupportedAuthMethod
-        ? [
-            {
-              id: "api-token",
-              label: "API token",
-              description: null,
-              grantKind: "manual" as const,
-              supportsRefresh: true,
-              manualFields: [
-                {
-                  id: "apiToken",
-                  label: "API token",
-                  required: true,
-                  placeholder: "work-github-token",
-                  inputType: "password" as const,
-                },
-              ],
-              startOptions: [],
-            },
-          ]
-        : []),
-      {
-        id: "oauth",
-        label: "OAuth",
-        description: null,
-        grantKind: "auth-code" as const,
-        supportsRefresh: true,
-        manualFields: [],
-        startOptions: [],
-      },
-    ],
-    permissionSummary: {
-      hasPermissions: false,
-      permissionCount: 0,
-      hasCategories: false,
-      hasDefaultPolicyOverrides: false,
-    },
-    connection: {
-      id: DEFAULT_CONNECTION_ID,
-      authMethod: "oauth",
-      externalUsername: "default-user",
-      externalEmail: null,
-      reconnectReason: null,
-    },
-    connected: true,
-    connectionStatus: "connected" as const,
-    scopeMismatch: false,
-    tokenExpiresAt: null,
-    singleAuthCodeAuthMethodId: null,
-    connectNotice: null,
-  };
-  context.mocks.api(connectorCatalogContract.get, ({ params, respond }) => {
-    return params.connectorSlug === github
-      ? respond(200, { connector: catalogItem })
-      : respond(404, {
-          error: { code: "NOT_FOUND", message: "Connector not found" },
-        });
-  });
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    return respond(200, { connectors: [catalogItem] });
-  });
-  context.mocks.api(
-    connectorAccountsContract.connection,
-    ({ params, query, respond }) => {
-      if (
-        accountStatus === "missing" ||
-        options?.accountAvailable?.() === false ||
-        params.connectionId !== EXACT_CONNECTION_ID ||
-        query.kind !== "builtin" ||
-        query.connectorSlug !== github
-      ) {
-        return respond(404, {
-          error: { code: "NOT_FOUND", message: "Account not found" },
-        });
-      }
-      return respond(200, {
-        id: EXACT_CONNECTION_ID,
-        target: {
-          kind: "builtin",
-          connectorSlug: github,
-        },
-        authMethod: options?.accountAuthMethod ?? "api-token",
-        displayName: options?.unnamedManualAccount ? null : "Work GitHub",
-        isDefault: false,
-        externalId: null,
-        externalUsername: null,
-        externalEmail: null,
-        oauthScopes: options?.accountAuthMethod === "oauth" ? [] : null,
-        connectionStatus: exactReconnectCompleted ? "connected" : accountStatus,
-        missingRequiredFields: [],
-        configuredFieldKeys: ["apiToken"],
-        reconnectReason:
-          accountStatus === "reconnect-required"
-            ? "authorization_expired_or_revoked"
-            : null,
-        tokenExpiresAt: null,
-        createdAt: "2026-08-01T12:00:00.000Z",
-        updatedAt: "2026-08-01T12:00:00.000Z",
-      });
-    },
-  );
-  return () => {
-    exactReconnectCompleted = true;
-  };
-}
-
-function assistantMessage(id: string, content: string) {
-  return {
-    id,
-    role: "assistant" as const,
-    content,
-    runId: `run-${id}`,
-    createdAt: "2026-08-01T12:00:00.000Z",
-  };
-}
-
-function mockManualReconnect(
-  onReconnect: (account: unknown) => void,
-  onComplete: () => void,
-  options?: { completion?: Promise<void>; responseId?: string },
-): void {
-  context.mocks.api(
-    builtinConnectorManualGrantContract.connect,
-    async ({ params, body, respond, withSignal }) => {
-      expect(params.connectorSlug).toBe("github");
-      expect(body.authMethod).toBe("api-token");
-      onReconnect(body.account);
-      if (options?.completion) {
-        await withSignal(options.completion);
-      }
-      onComplete();
-      return respond(200, {
-        connectionId: options?.responseId ?? EXACT_CONNECTION_ID,
-      });
-    },
-  );
-}
-
-function buttonIn(container: ParentNode, name: string): HTMLElement {
-  const button = queryAllByRoleFast("button", container).find((candidate) => {
-    return (
-      candidate.textContent?.trim() === name ||
-      candidate.getAttribute("aria-label") === name
-    );
-  });
-  if (!button) {
-    throw new Error(`Expected button named "${name}"`);
-  }
-  return button;
-}
-
-function setupChat(
-  content: string,
-  onSend?: (prompt: string) => void,
-): Promise<void> {
-  mockChatLifecycle(context, {
-    threadId: THREAD_ID,
-    threadTitle: "Action requests",
-    chatEvents: [assistantMessage("action-request", content)],
-    onSendRequest: ({ prompt }) => {
-      onSend?.(prompt);
-    },
-  });
-  return setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-    host: "app.okou.ai",
-  });
-}
-
-function expectNodeBefore(before: Node, after: Node): void {
-  expect(
-    before.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
-}
-
-test("A member permission link is enhanced only for its callback Chat", async () => {
-  const other = new URL(MEMBER_PERMISSION_URL);
-  other.searchParams.set("threadId", "d0000000-0000-4000-8000-000000000099");
-  other.searchParams.set("callbackPrompt", "Continue the task");
-  await setupChat(
-    `[Review permissions](${MEMBER_PERMISSION_URL}) and [Continue elsewhere](${other}).`,
-  );
-  await screen.findByTestId("permission-action-card");
-  expect(screen.getAllByTestId("permission-action-card")).toHaveLength(1);
-  expect(screen.getAllByTestId("unavailable-action-card")).toHaveLength(1);
-});
-
-test("A connector link becomes an action without losing surrounding prose", async () => {
-  await setupChat(
-    [
-      "Authorization choices",
-      "",
-      `[Authorize GitHub](${CONNECTOR_URL})`,
-      "",
-      `Please approve [GitHub access](${CONNECTOR_URL}) so I can continue.`,
-    ].join("\n"),
-  );
-
-  const loadedMessage = await screen.findByText("Authorization choices");
-  await waitFor(() => {
-    expect(screen.getAllByTestId("connector-action-card")).toHaveLength(2);
-  });
-  const cards = screen.getAllByTestId("connector-action-card");
-  const sentence = screen.getByText(
-    "Please approve GitHub access so I can continue.",
-  );
-  expect(cards[0]).toHaveTextContent("GitHub");
-  expect(cards[1]).toHaveTextContent("GitHub");
-  expect(screen.queryByText("Authorize GitHub")).toBeNull();
-  expectNodeBefore(loadedMessage, cards[0]!);
-  expectNodeBefore(cards[0]!, sentence);
-  expectNodeBefore(sentence, cards[1]!);
-});
-
-test("A permission request beside an ordinary link keeps its explanation", async () => {
-  const referenceUrl = "https://example.com/reference?topic=access";
-  await setupChat(
-    `Read the [reference](${referenceUrl}), then [allow file reads](${PERMISSION_URL}) so I can continue.`,
-  );
-
-  const card = await screen.findByTestId("permission-action-card");
-  const reference = queryAllByRoleFast("link").find((link) => {
-    return link.textContent === "reference";
-  });
-  expect(reference).toHaveAttribute("href", referenceUrl);
-  const sentence = reference?.closest("p");
-  expect(sentence).toHaveTextContent(
-    "Read the reference, then allow file reads so I can continue.",
-  );
-  expectNodeBefore(sentence!, card);
-  await waitFor(() => {
-    expect(
-      queryAllByRoleFast("button", card).find((button) => {
-        return button.textContent?.trim() === "Confirm";
-      }),
-    ).toBeEnabled();
-  });
-  expect(
-    queryAllByRoleFast("link").some((link) => {
-      return link.getAttribute("href") === PERMISSION_URL;
-    }),
-  ).toBeFalsy();
-});
-
-test("Multiple actions on one line keep their order and formatted prose", async () => {
-  await setupChat(
-    `Please **[connect GitHub](${CONNECTOR_URL}) and [allow file reads](${PERMISSION_URL})**, then review [GitHub again](${CONNECTOR_URL}).`,
-  );
-
-  const permission = await screen.findByTestId("permission-action-card");
-  await waitFor(() => {
-    expect(screen.getAllByTestId("connector-action-card")).toHaveLength(2);
-  });
-  const connectors = screen.getAllByTestId("connector-action-card");
-  const emphasis = screen.getByText("connect GitHub and allow file reads");
-  expect(emphasis.tagName).toBe("STRONG");
-  expect(emphasis.closest("p")).toHaveTextContent(
-    "Please connect GitHub and allow file reads, then review GitHub again.",
-  );
-  expectNodeBefore(emphasis, connectors[0]!);
-  expectNodeBefore(connectors[0]!, permission);
-  expectNodeBefore(permission, connectors[1]!);
-});
-
-test("Removing formatted bare actions leaves readable prose without empty markers", async () => {
-  await setupChat(
-    [
-      `Before **${CONNECTOR_URL}** and __${PERMISSION_URL}__, continue.`,
-      "",
-      `Review **${CONNECTOR_URL} and ${PERMISSION_URL}** before continuing.`,
-    ].join("\n"),
-  );
-
-  await waitFor(() => {
-    expect(screen.getAllByTestId("connector-action-card")).toHaveLength(2);
-    expect(screen.getAllByTestId("permission-action-card")).toHaveLength(2);
-  });
-  expect(screen.getByText("Before and , continue.")).toBeInTheDocument();
-  const emphasis = screen.getByText("and", { selector: "strong" });
-  expect(emphasis.closest("p")).toHaveTextContent(
-    "Review and before continuing.",
-  );
-});
-
-test("Incomplete action links are shown as unavailable", async () => {
-  const connectorWithoutAgent =
-    "https://app.okou.ai/connectors/github/authorize";
-  const bankingWithoutReason = new URL(`https://app.okou.ai/banking/access`);
-  bankingWithoutReason.searchParams.set("threadId", THREAD_ID);
-  bankingWithoutReason.searchParams.set(
-    "callbackPrompt",
-    "Continue after banking access",
-  );
-  await setupChat(
-    [
-      "Incomplete requests",
-      "",
-      connectorWithoutAgent,
-      "",
-      bankingWithoutReason.toString(),
-    ].join("\n"),
-  );
-
-  await screen.findByText("Incomplete requests");
-  await waitFor(() => {
-    expect(screen.getAllByTestId("unavailable-action-card")).toHaveLength(2);
-  });
-  expect(screen.getAllByText("Action unavailable")).toHaveLength(2);
-  expect(
-    queryAllByRoleFast("link").some((link) => {
-      return (
-        link.getAttribute("href") === connectorWithoutAgent ||
-        link.getAttribute("href") === bankingWithoutReason.toString()
-      );
-    }),
-  ).toBeFalsy();
-});
-
-test("Invalid actions remain unavailable beside valid and external links", async () => {
-  const mismatchedConnectorUrl = CONNECTOR_URL.replace(
-    THREAD_ID,
-    "b0000000-0000-4000-a000-000000000099",
-  );
-  const wrongThreadUrl = `${PERMISSION_URL}&threadId=b0000000-0000-4000-a000-000000000099&callbackPrompt=Continue`;
-  const externalUrl = CONNECTOR_URL.replace(
-    "app.okou.ai",
-    "app.okou.ai.evil.test",
-  );
-  await setupChat(
-    `Review [another chat (${mismatchedConnectorUrl})](${mismatchedConnectorUrl}), ${wrongThreadUrl}, [this chat](${CONNECTOR_URL}) and the [external reference](${externalUrl}).`,
-  );
-
-  await screen.findByTestId("connector-action-card");
-  await waitFor(() => {
-    expect(screen.getAllByTestId("unavailable-action-card")).toHaveLength(2);
-  });
-  const links = queryAllByRoleFast("link");
-  const external = links.find((link) => {
-    return link.textContent === "external reference";
-  });
-  expect(external).toHaveAttribute("href", externalUrl);
-  expect(external?.closest("p")).toHaveTextContent(
-    `Review another chat (${mismatchedConnectorUrl}), , this chat and the external reference.`,
-  );
-  expect(
-    links.some((link) => {
-      return [mismatchedConnectorUrl, wrongThreadUrl, CONNECTOR_URL].includes(
-        link.getAttribute("href") ?? "",
-      );
-    }),
-  ).toBeFalsy();
-});
-
-test("A bare relative permission beside another link keeps punctuation and prose", async () => {
-  const relativeUrl =
-    new URL(PERMISSION_URL).pathname + new URL(PERMISSION_URL).search;
-  await setupChat(
-    `Please authorize ${relativeUrl}。 Then read [the reference](https://example.com).`,
-  );
-
-  const card = await screen.findByTestId("permission-action-card");
-  const reference = queryAllByRoleFast("link").find((link) => {
-    return link.textContent === "the reference";
-  });
-  expect(reference).toHaveAttribute("href", "https://example.com");
-  expect(reference?.closest("p")).toHaveTextContent(
-    "Please authorize 。 Then read the reference.",
-  );
-  expectNodeBefore(reference!, card);
-});
-
-test("Bare actions recognize typographic delimiters without losing their labels", async () => {
-  const relativePermissionUrl =
-    new URL(PERMISSION_URL).pathname + new URL(PERMISSION_URL).search;
-  const englandFlag =
-    "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}";
-  await setupChat(
-    [
-      `Dev：${PERMISSION_URL}`,
-      `Prod:${PERMISSION_URL}`,
-      `Docs(${CONNECTOR_URL})`,
-      `说明【${PERMISSION_URL}】`,
-      `Status—${CONNECTOR_URL}`,
-      `Next→${PERMISSION_URL}`,
-      `🔐${CONNECTOR_URL}`,
-      `❤️${CONNECTOR_URL}`,
-      `👍🏽${CONNECTOR_URL}`,
-      `1️⃣${CONNECTOR_URL}`,
-      `${englandFlag}${CONNECTOR_URL}`,
-      `Relative：${relativePermissionUrl}`,
-    ].join("\n\n"),
-  );
-
-  await waitFor(() => {
-    expect(screen.getAllByTestId("permission-action-card")).toHaveLength(5);
-    expect(screen.getAllByTestId("connector-action-card")).toHaveLength(7);
-  });
-  for (const label of [
-    "Dev：",
-    "Prod:",
-    "Docs()",
-    "说明【】",
-    "Status—",
-    "Next→",
-    "🔐",
-    "❤️",
-    "👍🏽",
-    "1️⃣",
-    englandFlag,
-    "Relative：",
-  ]) {
-    expect(screen.getByText(label)).toBeInTheDocument();
-  }
-  expect(
-    Array.from(
-      document.querySelectorAll(
-        '[data-testid="permission-action-card"], [data-testid="connector-action-card"]',
-      ),
-      (card) => {
-        return (card as HTMLElement).dataset.testid;
-      },
-    ),
-  ).toStrictEqual([
-    "permission-action-card",
-    "permission-action-card",
-    "connector-action-card",
-    "permission-action-card",
-    "connector-action-card",
-    "permission-action-card",
-    "connector-action-card",
-    "connector-action-card",
-    "connector-action-card",
-    "connector-action-card",
-    "connector-action-card",
-    "permission-action-card",
-  ]);
-  expect(
-    queryAllByRoleFast("link").some((link) => {
-      return [PERMISSION_URL, CONNECTOR_URL, relativePermissionUrl].includes(
-        link.getAttribute("href") ?? "",
-      );
-    }),
-  ).toBeFalsy();
-});
-
-test("Action-looking URLs embedded in structural text remain content", async () => {
-  const relativePermissionUrl =
-    new URL(PERMISSION_URL).pathname + new URL(PERMISSION_URL).search;
-  const externalUrl = `https://example.com/redirect?next=${PERMISSION_URL}`;
-  await setupChat(
-    [
-      `Word: prefix${PERMISSION_URL}`,
-      `Identifier: prefix_${PERMISSION_URL}`,
-      `Hyphenated identifier: prefix-${PERMISSION_URL}`,
-      `Path: /docs/${PERMISSION_URL}`,
-      `Dot path: .${relativePermissionUrl}`,
-      `Home path: ~${relativePermissionUrl}`,
-      `Wildcard path: *${relativePermissionUrl}`,
-      `Matrix path: item;${relativePermissionUrl}`,
-      `Assignment: next=${PERMISSION_URL}`,
-      `Query: ?next=${PERMISSION_URL}`,
-      `Address: user@${PERMISSION_URL}`,
-      `Combining identifier: cafe\u0301${PERMISSION_URL}`,
-      `Relative path: docs/${relativePermissionUrl}`,
-      `[Outer URL](${externalUrl})`,
-    ].join("\n\n"),
-  );
-
-  await screen.findByText(/Word: prefix/u);
-  expect(screen.queryAllByTestId("permission-action-card")).toHaveLength(0);
-  expect(screen.getByText(/Identifier: prefix_/u)).toBeInTheDocument();
-  expect(
-    screen.getByText(/Hyphenated identifier: prefix-/u),
-  ).toBeInTheDocument();
-  expect(screen.getByText(/Path: \/docs\//u)).toBeInTheDocument();
-  expect(screen.getByText(/Dot path: \.\//u)).toBeInTheDocument();
-  expect(screen.getByText(/Home path: ~\//u)).toBeInTheDocument();
-  expect(screen.getByText(/Wildcard path: \*\//u)).toBeInTheDocument();
-  expect(screen.getByText(/Matrix path: item;\//u)).toBeInTheDocument();
-  expect(screen.getByText(/Assignment: next=/u)).toBeInTheDocument();
-  expect(screen.getByText(/Query: \?next=/u)).toBeInTheDocument();
-  expect(screen.getByText(/Address: user@/u)).toBeInTheDocument();
-  expect(screen.getByText(/Combining identifier: cafe/u)).toBeInTheDocument();
-  expect(screen.getByText(/Relative path: docs\//u)).toBeInTheDocument();
-  const outerLink = queryAllByRoleFast("link").find((link) => {
-    return link.textContent === "Outer URL";
-  });
-  expect(outerLink).toHaveAttribute("href", externalUrl);
-});
-
-test("A bare action stops before adjacent Chinese punctuation and prose", async () => {
-  await setupChat(`Please connect ${CONNECTOR_URL}。然后继续查看说明。`);
-
-  const sentence = await screen.findByText(
-    "Please connect 。然后继续查看说明。",
-  );
-  const card = await screen.findByTestId("connector-action-card");
-  expectNodeBefore(sentence, card);
-  expect(screen.queryByTestId("unavailable-action-card")).toBeNull();
-});
-
-test("Action labels stay literal instead of becoming new Markdown links or headings", async () => {
-  const mismatchedConnectorUrl = CONNECTOR_URL.replace(
-    THREAD_ID,
-    "b0000000-0000-4000-a000-000000000099",
-  );
-  await setupChat(
-    [
-      `[\\[reference\\]](${mismatchedConnectorUrl}) remains literal.`,
-      "",
-      `[# Review](${CONNECTOR_URL}) before continuing.`,
-      "",
-      `[www.example.com](${mismatchedConnectorUrl}) stays unavailable.`,
-      "",
-      "[reference]: https://example.com/reference",
-    ].join("\n"),
-  );
-
-  await screen.findByTestId("connector-action-card");
-  expect(screen.getAllByTestId("unavailable-action-card")).toHaveLength(2);
-  expect(screen.getByText("[reference] remains literal.")).toBeInTheDocument();
-  expect(screen.getByText("# Review before continuing.").tagName).toBe("P");
-  expect(
-    screen.getByText("www.example.com stays unavailable."),
-  ).toBeInTheDocument();
-  expect(
-    queryAllByRoleFast("link").filter((link) => {
-      return (
-        link.getAttribute("href") === "https://example.com/reference" ||
-        link.getAttribute("href") === "http://www.example.com"
-      );
-    }),
-  ).toHaveLength(0);
-});
-
-test("Code, images and table links stay content beside real actions", async () => {
-  await setupChat(
-    [
-      "Action examples",
-      "",
-      "```text",
-      `${CONNECTOR_URL} ${PERMISSION_URL}`,
-      "```",
-      "",
-      `Keep \`[code link](${PERMISSION_URL})\` and [connect GitHub](${CONNECTOR_URL}).`,
-      "",
-      `Embedded token: prefix${PERMISSION_URL}`,
-      "",
-      `    ${PERMISSION_URL}`,
-      "",
-      `![Example image](${PERMISSION_URL})`,
-      "",
-      "| Connector | Permission |",
-      "| --- | --- |",
-      `| [Table connector](${CONNECTOR_URL}) | [Table permission](${PERMISSION_URL}) |`,
-    ].join("\n"),
-  );
-
-  await screen.findByTestId("connector-action-card");
-  const code = screen.getByText(`[code link](${PERMISSION_URL})`);
-  expect(code.closest("code")).not.toBeNull();
-  expect(code.closest("p")).toHaveTextContent("and connect GitHub.");
-  const tablePermission = queryAllByRoleFast("link").find((link) => {
-    return link.textContent === "Table permission";
-  });
-  expect(tablePermission).toHaveAttribute("href", PERMISSION_URL);
-  expect(tablePermission?.closest("table")).not.toBeNull();
-  expect(screen.getByAltText("Example image")).toHaveAttribute(
-    "src",
-    PERMISSION_URL,
-  );
-  expect(screen.getAllByTestId("connector-action-card")).toHaveLength(1);
-  expect(screen.queryByTestId("permission-action-card")).toBeNull();
-});
-
-test("Retained action labels preserve numeric character references", async () => {
-  await setupChat(
-    `Read [&#35; Review &#x26; approve](${CONNECTOR_URL}) before continuing.`,
-  );
-
-  await screen.findByTestId("connector-action-card");
-  expect(
-    screen.getByText("Read # Review & approve before continuing."),
-  ).toBeInTheDocument();
-});
-
-test("Multiline inline code stays literal beside a real action", async () => {
-  await setupChat(
-    [
-      "Keep `example",
-      `${CONNECTOR_URL} https://example.com`,
-      "end` as code.",
-      "",
-      `Please [allow file reads](${PERMISSION_URL}).`,
-    ].join("\n"),
-  );
-
-  await screen.findByTestId("permission-action-card");
-  expect(screen.queryByTestId("connector-action-card")).toBeNull();
-  expect(
-    screen.getByText(`example ${CONNECTOR_URL} https://example.com end`)
-      .tagName,
-  ).toBe("CODE");
-});
-
-test("Actions around multiline code remain available in paragraphs, quotes and lists", async () => {
-  await setupChat(
-    [
-      `Please [allow file reads](${PERMISSION_URL}) and keep \`plain`,
-      `${CONNECTOR_URL} https://example.com`,
-      "end` as code.",
-      "",
-      "> Keep **`quoted",
-      `> ${CONNECTOR_URL} https://example.com`,
-      `> end\`** and [allow file reads](${PERMISSION_URL}).`,
-      "",
-      "- Examples",
-      "    - Keep `nested",
-      `      ${CONNECTOR_URL} https://example.com`,
-      `      end\` and [allow file reads](${PERMISSION_URL}).`,
-    ].join("\n"),
-  );
-
-  await waitFor(() => {
-    expect(screen.getAllByTestId("permission-action-card")).toHaveLength(3);
-  });
-  expect(screen.queryByTestId("connector-action-card")).toBeNull();
-  for (const label of ["plain", "quoted", "nested"]) {
-    expect(
-      screen.getByText(`${label} ${CONNECTOR_URL} https://example.com end`)
-        .tagName,
-    ).toBe("CODE");
-  }
-});
-
-test("Nested list actions remain available while indented code stays content", async () => {
-  await setupChat(
-    [
-      "- Connection choices",
-      `    - Please [connect GitHub](${CONNECTOR_URL}).`,
-      `    - Please [allow file reads](${PERMISSION_URL}).`,
-      "",
-      "> Quoted example",
-      ">",
-      `>     ${CONNECTOR_URL}`,
-      "",
-      `    ${PERMISSION_URL}`,
-      "",
-      "- Nested code example",
-      "    - Copy this example:",
-      "",
-      `          ${CONNECTOR_URL}`,
-    ].join("\n"),
-  );
-
-  await screen.findByTestId("permission-action-card");
-  expect(screen.getAllByTestId("connector-action-card")).toHaveLength(1);
-  expect(screen.getAllByTestId("permission-action-card")).toHaveLength(1);
-  expect(screen.getByText("Please connect GitHub.")).toBeInTheDocument();
-  expect(
-    screen.getByText("Please allow file reads.").closest("li"),
-  ).not.toBeNull();
-  const codeExamples = Array.from(
-    document.querySelectorAll("pre code"),
-    (code) => {
-      return code.textContent?.trim();
-    },
-  );
-  expect(codeExamples).toStrictEqual([
-    CONNECTOR_URL,
-    PERMISSION_URL,
-    CONNECTOR_URL,
-  ]);
-});
-
-test("Indented code keeps its formatting at message and action boundaries", async () => {
-  await setupChat(
-    [
-      `    ${PERMISSION_URL}`,
-      "",
-      `Please [connect GitHub](${CONNECTOR_URL}).`,
-      "",
-      `    ${CONNECTOR_URL}`,
-    ].join("\n"),
-  );
-
-  await screen.findByText("Please connect GitHub.");
-  expect(screen.getAllByTestId("connector-action-card")).toHaveLength(1);
-  expect(screen.queryByTestId("permission-action-card")).toBeNull();
-  const codeExamples = Array.from(
-    document.querySelectorAll("pre code"),
-    (code) => {
-      return code.textContent?.trim();
-    },
-  );
-  expect(codeExamples).toStrictEqual([PERMISSION_URL, CONNECTOR_URL]);
-});
-
-test("An exact reconnect card opens the non-default account dialog and continues only after success", async () => {
-  const complete = mockExactReconnectAccount("reconnect-required");
-  let submittedAccount: unknown = null;
-  let continuationPrompt: string | null = null;
-  mockManualReconnect((account) => {
-    submittedAccount = account;
-  }, complete);
-  const url = exactReconnectUrl();
-  await setupChat(`Reconnect this account:\n\n${url.toString()}`, (prompt) => {
-    continuationPrompt = prompt;
-  });
-
-  const card = await screen.findByTestId("connector-action-card");
-  expect(card).toHaveTextContent("GitHub · Work GitHub");
-  const reconnect = queryAllByRoleFast("button", card).find((button) => {
-    return button.textContent?.trim() === "Reconnect";
-  });
-  expect(reconnect).toBeEnabled();
-  expect(screen.queryByText(url.toString())).toBeNull();
-
-  click(reconnect!);
-  const dialog = await screen.findByRole("dialog", {
-    name: "GitHub · Work GitHub",
-  });
-  expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
-  expect(
-    queryAllByRoleFast("button", dialog).some((button) => {
-      return button.textContent?.trim() === "Reconnect";
-    }),
-  ).toBeFalsy();
-  expect(continuationPrompt).toBeNull();
-  await fill(
-    within(dialog).getByPlaceholderText("work-github-token"),
-    "synthetic-token",
-  );
-  expect(continuationPrompt).toBeNull();
-  click(buttonIn(dialog, "Save"));
-
-  await waitFor(() => {
-    expect(submittedAccount).toStrictEqual({
-      intent: "reconnect",
-      connectionId: EXACT_CONNECTION_ID,
-    });
-    expect(continuationPrompt).toBe("Continue the account-specific task");
-  });
-  expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
-});
-
-test("A reconnect completion for another account never continues the chat", async () => {
-  const complete = mockExactReconnectAccount("reconnect-required");
-  let continuationPrompt: string | null = null;
-  let submittedAccount: unknown = null;
-  mockManualReconnect(
-    (account) => {
-      submittedAccount = account;
-    },
-    complete,
-    { responseId: DEFAULT_CONNECTION_ID },
-  );
-  await setupChat(exactReconnectUrl().toString(), (prompt) => {
-    continuationPrompt = prompt;
-  });
-
-  const card = await screen.findByTestId("connector-action-card");
-  click(buttonIn(card, "Reconnect"));
-  const dialog = await screen.findByRole("dialog", {
-    name: "GitHub · Work GitHub",
-  });
-  await fill(
-    within(dialog).getByPlaceholderText("work-github-token"),
-    "synthetic-token",
-  );
-  click(buttonIn(dialog, "Save"));
-
-  await waitFor(() => {
-    expect(submittedAccount).toStrictEqual({
-      intent: "reconnect",
-      connectionId: EXACT_CONNECTION_ID,
-    });
-    expect(buttonIn(dialog, "Save")).toBeEnabled();
-  });
-  expect(dialog).toBeInTheDocument();
-  expect(continuationPrompt).toBeNull();
-});
-
-test("Closing an in-flight reconnect dialog never continues after a late success", async () => {
-  const complete = mockExactReconnectAccount("reconnect-required");
-  const gate = context.mocks.deferred<void>();
-  const requestStarted = context.mocks.deferred<{
-    account: unknown;
-    signal: AbortSignal;
-  }>();
-  const serverCompleted = context.mocks.deferred<void>();
-  let continuationPrompt: string | null = null;
-  context.mocks.api(
-    builtinConnectorManualGrantContract.connect,
-    async ({ params, body, request, respond }) => {
-      expect(params.connectorSlug).toBe("github");
-      expect(body.authMethod).toBe("api-token");
-      requestStarted.resolve({ account: body.account, signal: request.signal });
-      // The server can still complete after the client cancels its request.
-      await gate.promise;
-      complete();
-      serverCompleted.resolve();
-      return respond(200, { connectionId: EXACT_CONNECTION_ID });
-    },
-  );
-  await setupChat(exactReconnectUrl().toString(), (prompt) => {
-    continuationPrompt = prompt;
-  });
-
-  const card = await screen.findByTestId("connector-action-card");
-  click(buttonIn(card, "Reconnect"));
-  const dialog = await screen.findByRole("dialog", {
-    name: "GitHub · Work GitHub",
-  });
-  await fill(
-    within(dialog).getByPlaceholderText("work-github-token"),
-    "synthetic-token",
-  );
-  const save = buttonIn(dialog, "Save");
-  click(save);
-  const request = await requestStarted.promise;
-  expect(request.account).toStrictEqual({
-    intent: "reconnect",
-    connectionId: EXACT_CONNECTION_ID,
-  });
-  click(buttonIn(dialog, "Close"));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(request.signal.aborted).toBeTruthy();
-  });
-
-  gate.resolve();
-  await serverCompleted.promise;
-  expect(screen.queryByText("GitHub connected successfully")).toBeNull();
-  expect(continuationPrompt).toBeNull();
-});
-
-test("An unnamed manual reconnect account uses its account label in the card and dialog", async () => {
-  mockExactReconnectAccount("reconnect-required", {
-    unnamedManualAccount: true,
-  });
-  await setupChat(exactReconnectUrl().toString());
-
-  const card = await screen.findByTestId("connector-action-card");
-  expect(card).toHaveTextContent("GitHub · API token");
-  expect(card).toHaveTextContent("Reconnect required");
-  const reconnect = queryAllByRoleFast("button", card)[0]!;
-  expect(reconnect).toHaveTextContent("Reconnect");
-  click(reconnect);
-  await expect(
-    screen.findByRole("dialog", { name: "GitHub · API token" }),
-  ).resolves.toBeInTheDocument();
-});
-
-test("An exact OAuth account reconnects in one click and continues only after success", async () => {
-  const complete = mockExactReconnectAccount("reconnect-required", {
-    accountAuthMethod: "oauth",
-  });
-  const completedAttempts = mockOAuthCompletions(context);
-  const oauthAttemptId = crypto.randomUUID();
-  const popup = context.mocks.browser.authWindow();
-  Object.defineProperty(popup, "location", {
-    value: { href: "about:blank" },
-  });
-  context.mocks.browser.open(popup);
-  const authorizationUrl =
-    "https://provider.example.test/reconnect-work-github";
-  let submittedAccount: unknown = null;
-  let continuationPrompt: string | null = null;
-  context.mocks.api(
-    builtinConnectorOauthStartContract.start,
-    ({ params, body, respond }) => {
-      expect(params.connectorSlug).toBe("github");
-      expect(body.authMethod).toBe("oauth");
-      submittedAccount = body.account;
-      return respond(200, {
-        authorizationUrl,
-        oauthAttemptId,
-        connectionId: EXACT_CONNECTION_ID,
-      });
-    },
-  );
-  await setupChat(exactReconnectUrl().toString(), (prompt) => {
-    continuationPrompt = prompt;
-  });
-
-  const card = await screen.findByTestId("connector-action-card");
-  click(buttonIn(card, "Reconnect"));
-  await waitFor(() => {
-    expect(popup.location.href).toBe(authorizationUrl);
-    expect(submittedAccount).toStrictEqual({
-      intent: "reconnect",
-      connectionId: EXACT_CONNECTION_ID,
-    });
-  });
-  expect(continuationPrompt).toBeNull();
-
-  complete();
-  completedAttempts.set(oauthAttemptId, EXACT_CONNECTION_ID);
-  popup.close();
-  await waitFor(() => {
-    expect(continuationPrompt).toBe("Continue the account-specific task");
-  });
-  expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
-});
-
-test("A bare relative exact reconnect link opens the dialog and retains its callback", async () => {
-  const complete = mockExactReconnectAccount("reconnect-required");
-  let continuationPrompt: string | null = null;
-  let submittedAccount: unknown = null;
-  mockManualReconnect((account) => {
-    submittedAccount = account;
-  }, complete);
-  const url = exactReconnectUrl();
-  const relativeUrl = url.pathname + url.search;
-  await setupChat(`Reconnect this work account: ${relativeUrl}。`, (prompt) => {
-    continuationPrompt = prompt;
-  });
-
-  const card = await screen.findByTestId("connector-action-card");
-  expect(card).toHaveTextContent("GitHub · Work GitHub");
-  expect(
-    screen.getByText("Reconnect this work account: 。"),
-  ).toBeInTheDocument();
-  expect(screen.queryByText(relativeUrl)).toBeNull();
-  const reconnect = queryAllByRoleFast("button", card).find((button) => {
-    return button.textContent?.trim() === "Reconnect";
-  });
-  expect(reconnect).toBeEnabled();
-
-  click(reconnect!);
-  const dialog = await screen.findByRole("dialog", {
-    name: "GitHub · Work GitHub",
-  });
-  expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
-  expect(continuationPrompt).toBeNull();
-  await fill(
-    within(dialog).getByPlaceholderText("work-github-token"),
-    "synthetic-token",
-  );
-  click(buttonIn(dialog, "Save"));
-  await waitFor(() => {
-    expect(submittedAccount).toStrictEqual({
-      intent: "reconnect",
-      connectionId: EXACT_CONNECTION_ID,
-    });
-    expect(continuationPrompt).toBe("Continue the account-specific task");
-  });
-});
-
-test("A connected exact account still allows explicit reconnection instead of using the default", async () => {
-  mockExactReconnectAccount("connected");
-  await setupChat(
-    `[Reconnect the work account](${exactReconnectUrl().toString()})`,
-  );
-
-  const card = await screen.findByTestId("connector-action-card");
-  expect(card).toHaveTextContent("GitHub · Work GitHub");
-  expect(card).toHaveTextContent("Connected");
-  const reconnect = queryAllByRoleFast("button", card).find((button) => {
-    return button.textContent?.trim() === "Reconnect";
-  });
-  expect(reconnect).toBeEnabled();
-  click(reconnect!);
-  await expect(
-    screen.findByRole("dialog", { name: "GitHub · Work GitHub" }),
-  ).resolves.toBeInTheDocument();
-  expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
-});
-
-test("A reconnect card rechecks an account that disappears before activation", async () => {
-  let accountAvailable = true;
-  mockExactReconnectAccount("reconnect-required", {
-    accountAvailable: () => {
-      return accountAvailable;
-    },
-  });
-  await setupChat(exactReconnectUrl().toString());
-  const card = await screen.findByTestId("connector-action-card");
-  accountAvailable = false;
-  click(queryAllByRoleFast("button", card)[0]!);
-
-  await expect(
-    screen.findByTestId("unavailable-action-card"),
-  ).resolves.toBeInTheDocument();
-  expect(screen.queryByRole("dialog")).toBeNull();
-  expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
-});
-
-test("A reconnect card stays unavailable if its stored authentication method is no longer offered", async () => {
-  mockExactReconnectAccount("reconnect-required", {
-    unsupportedAuthMethod: true,
-  });
-  await setupChat(exactReconnectUrl().toString());
-
-  await expect(
-    screen.findByTestId("unavailable-action-card"),
-  ).resolves.toBeInTheDocument();
-  expect(screen.queryByRole("dialog")).toBeNull();
-  expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
-});
-
-test("Closing the exact reconnect dialog does not send the callback", async () => {
-  mockExactReconnectAccount("reconnect-required");
-  let continuationPrompt: string | null = null;
-  await setupChat(exactReconnectUrl().toString(), (prompt) => {
-    continuationPrompt = prompt;
-  });
-  const card = await screen.findByTestId("connector-action-card");
-  click(queryAllByRoleFast("button", card)[0]!);
-  const dialog = await screen.findByRole("dialog", {
-    name: "GitHub · Work GitHub",
-  });
-  click(buttonIn(dialog, "Close"));
-
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  expect(continuationPrompt).toBeNull();
-  expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
-});
-
-test("Malformed or context-mismatched exact reconnect links are inert", async () => {
-  const wrongThread = exactReconnectUrl();
-  wrongThread.searchParams.set(
-    "threadId",
-    "b0000000-0000-4000-a000-000000000099",
-  );
-  const malformedId = exactReconnectUrl("not-an-account-id");
-  await setupChat(
-    [wrongThread, malformedId]
-      .map((url) => {
-        return url.toString();
-      })
-      .join("\n\n"),
-  );
-
-  await waitFor(() => {
-    expect(screen.getAllByTestId("unavailable-action-card")).toHaveLength(2);
-  });
-  expect(screen.queryByTestId("connector-action-card")).toBeNull();
-  expect(
-    queryAllByRoleFast("link").some((link) => {
-      return [wrongThread, malformedId].some((url) => {
-        return link.getAttribute("href") === url.toString();
-      });
-    }),
-  ).toBeFalsy();
-});
-
-test("A missing exact reconnect account never falls back to the default", async () => {
-  mockExactReconnectAccount("missing");
-  await setupChat(exactReconnectUrl().toString());
-
-  const card = await screen.findByTestId("unavailable-action-card");
-  expect(card).toHaveTextContent("Action unavailable");
-  expect(screen.queryByTestId("connector-action-card")).toBeNull();
-  expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
-});
-
-function mockOwnedApprovalThread() {
-  context.mocks.api(chatThreadMetadataContract.get, ({ params, respond }) => {
-    expect(params.id).toBe(THREAD_ID);
-    return respond(200, {
-      id: THREAD_ID,
-      title: "Action requests",
-      selectedModel: null,
-      modelSettings: {},
-      serviceTier: null,
-      pinnedAt: null,
-      archived: false,
-      muted: false,
-      computerUseHostId: null,
-      cloudBrowserEnabled: false,
-    });
-  });
-}
-
-async function exerciseAccountSwitch(
-  entry: "chat" | "direct",
-  scope: "chat" | "member",
+const permit =
+  "/connectors/permissions?orgId=org_default&userId=test-user-123&connectorSlug=slack&permission=files:read";
+const github = "/connectors/github/authorize?threadId=" + RUN_THREAD_ID;
+const origin = "https://app.okou.ai";
+const ref = "https://handbook.example/references";
+const ticks = String.fromCharCode(96);
+type CallbackReceipt = { threadId?: string; prompt?: string };
+async function open(
+  text: string,
+  onSendRequest?: (body: CallbackReceipt) => void,
 ) {
-  const github = connectorSlugSchema.parse("github");
-  const connectionId = "f0000000-0000-4000-a000-000000000901";
-  const otherConnectionId = "f0000000-0000-4000-a000-000000000902";
-  const iconUrl = "https://icons.example.test/account-switch-github.svg";
-  const action = scope === "member" ? "member-approval" : "select";
-  const button = scope === "member" ? "Allow for 1h" : "Switch";
-  const switchUrl = new URL(
-    `https://app.okou.ai/connectors/accounts/${connectionId}/${action}`,
+  const runId = crypto.randomUUID();
+  const events = [
+    assistantEvent({ id: "review-copy", runId, seqId: 1, text }),
+    completedEvent({ id: "review-done", runId, seqId: 2 }),
+  ];
+  const lifecycle = createChatRunFixtures(context).installRunChat({
+    threadId: RUN_THREAD_ID,
+    chatEvents: events,
+    ...(onSendRequest ? { onSendRequest } : {}),
+  });
+  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
+  return lifecycle;
+}
+function follows(earlier: Element, later: Element) {
+  expect(earlier.compareDocumentPosition(later)).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
   );
-  switchUrl.searchParams.set("kind", "builtin");
-  switchUrl.searchParams.set("connectorSlug", github);
-  switchUrl.searchParams.set("threadId", THREAD_ID);
-  switchUrl.searchParams.set("callbackPrompt", "Continue");
-  if (scope === "member") {
-    switchUrl.searchParams.set(
-      "requestId",
-      "f0000000-0000-4000-a000-000000000903",
-    );
+}
+async function permission() {
+  const card = await screen.findByTestId("permission-action-card");
+  expect(card).toHaveTextContent(/slack/i);
+  expect(card).toHaveTextContent(/files:read|shared files/i);
+  return card;
+}
+async function githubCard() {
+  const card = await screen.findByTestId("connector-action-card");
+  expect(within(card).getByText("GitHub")).toBeInTheDocument();
+  return card;
+}
+function targets(url: string) {
+  return queryAllByRoleFast("link").filter((link) => {
+    return link.getAttribute("href") === url;
+  });
+}
+
+test("chat-cards-002 a reference sentence remains readable above its actionable Slack request", async () => {
+  await open(
+    "Consult the [release manual](" +
+      ref +
+      ") before sharing.\n\n[Allow access](" +
+      permit +
+      ")",
+  );
+  const card = await permission();
+  const link = await findLink("release manual");
+  expect(link).toHaveAttribute("href", ref);
+  const sentence = link.closest("p");
+  expect(sentence).toHaveTextContent(
+    "Consult the release manual before sharing.",
+  );
+  follows(sentence!, card);
+  await waitFor(() => {
+    expect(queryButton("Confirm", card)).toBeEnabled();
+  });
+});
+test("chat-cards-003 formatted action labels keep their emphasis and cards follow the message order", async () => {
+  await open(
+    "**Review [the patch](" +
+      github +
+      ") then [the attachments](" +
+      permit +
+      ").**\n\n[Authorize again](" +
+      github +
+      ")",
+  );
+  const slack = await permission();
+  await waitFor(() => {
+    expect(screen.getAllByTestId("connector-action-card")).toHaveLength(2);
+  });
+  const [first, last] = screen.getAllByTestId("connector-action-card");
+  expect(first).toHaveTextContent("GitHub");
+  expect(last).toHaveTextContent("GitHub");
+  expect(
+    screen.getByText(/Review the patch then the attachments/, {
+      selector: "strong",
+    }),
+  ).toBeInTheDocument();
+  follows(first!, slack);
+  follows(slack, last!);
+});
+test("chat-cards-007 Chinese punctuation and a reference preceding a relative permission card stay in the sentence", async () => {
+  await open("审批：" + permit + "，详见[发布说明](" + ref + ")。");
+  const card = await permission();
+  const link = await findLink("发布说明");
+  expect(link).toHaveAttribute("href", ref);
+  expect(link.closest("p")).toHaveTextContent("审批：，详见发布说明。");
+  follows(link, card);
+});
+test("chat-cards-009 embedded permission paths stay literal and an external redirect remains navigable", async () => {
+  const fragments = [
+    "word" + permit,
+    "record_" + permit,
+    "/archive" + permit,
+    "next=" + permit,
+    "mail@domain" + permit,
+  ];
+  const destination =
+    "https://redirect.example/?next=" + encodeURIComponent(permit);
+  await open(
+    fragments.join(" ") + " [External destination](" + destination + ")",
+  );
+  const link = await findLink("External destination");
+  expect(link).toHaveAttribute("href", destination);
+  for (const fragment of fragments) {
+    expect(link.closest("p")).toHaveTextContent(fragment);
   }
+  expect(
+    screen.queryByTestId("permission-action-card"),
+  ).not.toBeInTheDocument();
+});
+test("chat-cards-010 a bare GitHub action leaves the Chinese continuation in the transcript", async () => {
+  await open(origin + github + "，完成后继续核对。");
+  await githubCard();
+  expect(screen.getByText(/，完成后继续核对。/)).toBeInTheDocument();
+  expect(
+    screen.queryByTestId("unavailable-action-card"),
+  ).not.toBeInTheDocument();
+});
+test("Escaped and heading-like labels remain literal across valid and mismatched thread actions", async () => {
+  const mismatch = github.replace(
+    RUN_THREAD_ID,
+    "82000000-0000-4000-8000-000000000019",
+  );
+  await open(
+    String.raw`Read [Review \[patch\]](` +
+      github +
+      ") now.\n\nChoose [# Other chat](" +
+      mismatch +
+      ") later.\n\nSee [www.portal.example][other]\n\n[other]: " +
+      mismatch +
+      "\n\n[patch]: " +
+      ref,
+  );
+  await githubCard();
+  await waitFor(() => {
+    expect(screen.getAllByTestId("unavailable-action-card")).toHaveLength(2);
+  });
+  expect(targets(ref)).toHaveLength(0);
+  for (const label of [
+    "Review [patch]",
+    "# Other chat",
+    "www.portal.example",
+  ]) {
+    expect(
+      screen.getByText((_, el) => {
+        return el?.tagName === "P" && el.textContent?.includes(label) === true;
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(label, { selector: "a,h1,h2,h3,h4,h5,h6" }),
+    ).not.toBeInTheDocument();
+  }
+});
+test("chat-cards-012 examples, an image and table links stay content alongside one live GitHub card", async () => {
+  const imageUrl = origin + permit;
+  await open(
+    [
+      ticks.repeat(3),
+      origin + permit,
+      ticks.repeat(3),
+      "",
+      ticks + github + ticks + " text_" + permit,
+      "",
+      "    " + origin + github,
+      "",
+      "![Overview diagram](" + imageUrl + ")",
+      "",
+      "| Action | Example |",
+      "| --- | --- |",
+      "| [Table grant](" + permit + ") | [Table login](" + github + ") |",
+      "",
+      "[Continue review](" + github + ")",
+    ].join("\n"),
+  );
+  await githubCard();
+  expect(screen.getAllByTestId("connector-action-card")).toHaveLength(1);
+  expect(
+    screen.queryByTestId("permission-action-card"),
+  ).not.toBeInTheDocument();
+  const examples = screen
+    .getAllByText(
+      (_, el) => {
+        return el?.tagName === "CODE";
+      },
+      { selector: "code" },
+    )
+    .map((el) => {
+      return el.textContent?.trim();
+    });
+  expect(examples).toStrictEqual(
+    expect.arrayContaining([origin + permit, github, origin + github]),
+  );
+  expect(
+    screen.getByText("text_" + permit, { exact: false }),
+  ).toHaveTextContent("text_" + permit);
+  expect(screen.getByAltText("Overview diagram")).toHaveAttribute(
+    "src",
+    imageUrl,
+  );
+  const links = queryAllByRoleFast("link", screen.getByRole("table"));
+  expect(
+    links.find((link) => {
+      return link.textContent?.trim() === "Table grant";
+    }),
+  ).toHaveAttribute("href", permit);
+  expect(
+    links.find((link) => {
+      return link.textContent?.trim() === "Table login";
+    }),
+  ).toHaveAttribute("href", github);
+});
+test("chat-cards-013 a GitHub action keeps its decoded hash and ampersand as label text", async () => {
+  await open(
+    "Please choose [&#35; Review &#38; approve](" + github + ") today.",
+  );
+  await githubCard();
+  expect(
+    screen.getByText("Please choose # Review & approve today."),
+  ).toBeInTheDocument();
+});
+test("chat-cards-014 a multiline code span preserves both URLs beside a real permission request", async () => {
+  await open(
+    "Use " +
+      ticks +
+      origin +
+      github +
+      "\n" +
+      ref +
+      ticks +
+      " for comparison.\n\n[Read the files](" +
+      permit +
+      ")",
+  );
+  await permission();
+  const code = screen.getByText(/\/connectors\/github\//, { selector: "code" });
+  expect(code).toHaveTextContent(origin + github + " " + ref);
+  expect(screen.queryByTestId("connector-action-card")).not.toBeInTheDocument();
+});
+test("chat-cards-017 indented examples keep their order around one actionable paragraph", async () => {
+  await open(
+    "    " +
+      permit +
+      "\n\nReview [this connection](" +
+      github +
+      ").\n\n    " +
+      github,
+  );
+  await githubCard();
+  const a = screen.getByText(
+    (_, el) => {
+      return el?.textContent?.trim() === permit;
+    },
+    { selector: "pre code" },
+  );
+  const b = screen.getByText(
+    (_, el) => {
+      return el?.textContent?.trim() === github;
+    },
+    { selector: "pre code" },
+  );
+  follows(a, b);
+  expect(screen.getAllByTestId("connector-action-card")).toHaveLength(1);
+  expect(
+    screen.queryByTestId("permission-action-card"),
+  ).not.toBeInTheDocument();
+});
+
+const workId = "f0000000-0000-4000-8000-000000000022";
+function workAccount(): ConnectorAccountConnection {
+  return {
+    id: workId,
+    target: { kind: "builtin", connectorSlug: "github" },
+    displayName: "Work GitHub",
+    isDefault: false,
+    authMethod: "oauth",
+    connectionStatus: "reconnect-required",
+    reconnectReason: null,
+    externalId: workId,
+    externalUsername: null,
+    externalEmail: null,
+    oauthScopes: null,
+    tokenExpiresAt: null,
+    createdAt: "2026-09-01T00:00:00Z",
+    updatedAt: "2026-09-01T00:00:00Z",
+    missingRequiredFields: [],
+    configuredFieldKeys: [],
+  };
+}
+function reconnectRequest(id: string) {
+  return (
+    "/connectors/github/reconnect/" +
+    id +
+    "?" +
+    new URLSearchParams({
+      threadId: RUN_THREAD_ID,
+      callbackPrompt: "Continue account maintenance",
+    }).toString()
+  );
+}
+function reconnectAccount() {
+  const work = workAccount();
+  let available = true;
   context.mocks.api(
     connectorAccountsContract.connection,
     ({ params, respond }) => {
-      return respond(200, {
-        missingRequiredFields: [],
-        configuredFieldKeys: [],
-        id: params.connectionId,
-        target: { kind: "builtin", connectorSlug: github },
-        authMethod: "oauth",
-        displayName:
-          params.connectionId === connectionId
-            ? "Work GitHub"
-            : "Personal GitHub",
-        isDefault: false,
-        externalId: null,
-        externalUsername: null,
-        externalEmail: null,
-        oauthScopes: [],
-        connectionStatus: "connected",
-        reconnectReason: null,
-        tokenExpiresAt: null,
-        createdAt: "2026-08-01T12:00:00.000Z",
-        updatedAt: "2026-08-01T12:00:00.000Z",
-      });
+      return available && params.connectionId === work.id
+        ? respond(200, work)
+        : respond(404, {
+            error: { code: "NOT_FOUND", message: "Account removed" },
+          });
     },
   );
-  let selectionWrites = 0;
-  let selectedConnectionId: string | null = null;
-  const selection = {
-    target: { kind: "builtin" as const, connectorSlug: github },
-    connectionId,
-  };
-  context.mocks.api(
-    chatConnectorAccessContract.getThread,
-    ({ params, query, respond }) => {
-      expect(params.threadId).toBe(THREAD_ID);
-      expect(query).toMatchObject(selection.target);
-      return respond(200, {
-        target: selection.target,
-        accounts: [],
-        available: selectedConnectionId !== null,
-        currentConnectionId: selectedConnectionId,
-      });
-    },
-  );
-  context.mocks.api(
-    scope === "member"
-      ? runConnectorAccountsContract.approveMember
-      : runConnectorAccountsContract.approve,
-    ({ body, respond }) => {
-      expect(body).toStrictEqual({
-        ...selection,
-        connectionId: selectionWrites === 1 ? otherConnectionId : connectionId,
-      });
-      selectedConnectionId = body.connectionId;
-      selectionWrites += 1;
-      context.mocks.ably.trigger(`chatThreadDetailChanged:${THREAD_ID}`);
-      return respond(200, body);
-    },
-  );
-  // The slug route also matches the catalog's static paths, so the status
-  // route is registered after it to keep answering its own path.
-  const itemReads: string[] = [];
-  context.mocks.api(connectorCatalogContract.get, ({ params, respond }) => {
-    itemReads.push(params.connectorSlug);
-    return params.connectorSlug === github
-      ? respond(200, {
-          connector: catalogFixture({
-            slug: github,
-            label: "GitHub",
-            description: "GitHub connector",
-            icon: { url: iconUrl, invertInDarkMode: false },
-            category: "productivity",
-            generation: [],
-            tags: [],
-            authMethods: [],
-            permissionSummary: {
-              hasPermissions: false,
-              permissionCount: 0,
-              hasCategories: false,
-              hasDefaultPolicyOverrides: false,
-            },
-            singleAuthCodeAuthMethodId: null,
-            connectNotice: null,
-            account: {
-              connectionStatus: "connected",
-              scopeMismatch: false,
-              tokenExpiresAt: null,
-            },
-          }),
-        })
-      : respond(404, {
-          error: { code: "NOT_FOUND", message: "Connector not found" },
-        });
-  });
-  let statusReads = 0;
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    statusReads += 1;
-    return respond(200, { connectors: [] });
-  });
-
-  const callbackIds: {
-    clientEventId?: string;
-    chatThreadSortEventId?: string;
-  }[] = [];
-  const lifecycle = mockChatLifecycle(context, {
-    threadId: THREAD_ID,
-    threadTitle: "Action requests",
-    chatEvents: [
-      assistantMessage(
-        "action-request",
-        `Use the work account\n\n${switchUrl.toString()}`,
-      ),
-    ],
-    onSendRequest: (body) => {
-      expect(body.prompt).toBe("Continue");
-      expect(body.threadId).toBe(THREAD_ID);
-      callbackIds.push({
-        clientEventId: body.clientEventId,
-        chatThreadSortEventId: body.chatThreadSortEventId,
-      });
-    },
-  });
-  if (entry === "direct") {
-    mockOwnedApprovalThread();
-  }
-  await setupPage({
-    context,
-    path:
-      entry === "direct"
-        ? switchUrl.pathname + switchUrl.search
-        : `/chats/${THREAD_ID}`,
-    host: "app.okou.ai",
-    featureSwitches: {},
-  });
-
-  const card = await screen.findByTestId("connector-account-action-card");
-  expect(card).toHaveTextContent("Switch to Work GitHub?");
-  expect(
-    within(card).queryByText(
-      "Allow across your chats. Select this account here.",
-    ) !== null,
-  ).toBe(scope === "member");
-  await waitFor(() => {
-    expect(card.querySelector(`img[src="${iconUrl}"]`)).toBeInTheDocument();
-  });
-  expect(itemReads).toStrictEqual([github]);
-  expect(statusReads).toBe(0);
-
-  expect(selectionWrites).toBe(0);
-  click(buttonIn(card, button));
-  await waitFor(() => {
-    expect(callbackIds).toHaveLength(1);
-  });
-  expect(callbackIds[0]).toStrictEqual({
-    clientEventId: expect.any(String),
-    chatThreadSortEventId: expect.any(String),
-  });
-  expect(selectionWrites).toBe(1);
-  await waitFor(() => {
-    expect(card).toHaveTextContent("Switched to Work GitHub");
-  });
-
-  const chat = screen.queryByRole("region", { name: "Chat thread" });
-  expect(Boolean(chat)).toBe(entry === "chat");
-  if (!chat) {
-    return;
-  }
-  if (scope === "member") {
-    selectedConnectionId = null;
-    await exerciseFreshMemberApproval(lifecycle, switchUrl);
-    return;
-  }
-  // These reply queries depend on text and children, not attribute changes.
-  const replyWaitOptions = {
-    container: chat,
-    mutationObserverOptions: {
-      subtree: true,
-      childList: true,
-      characterData: true,
+  return {
+    remove: () => {
+      available = false;
     },
   };
-
-  const otherSwitchUrl = new URL(switchUrl);
-  otherSwitchUrl.pathname = otherSwitchUrl.pathname.replace(
-    connectionId,
-    otherConnectionId,
-  );
-  // Fixture-driven realtime inputs bypass Testing Library's DOM actions.
-  await act(() => {
-    lifecycle.completeRun(
-      `Use the personal account\n\n${otherSwitchUrl.toString()}`,
-    );
-    // Duplicate realtime delivery can overlap reads of an applied tail.
-    createChatEvent(THREAD_ID);
-  });
-  // Avoid serializing the entire chat for every missing-reply check.
-  await waitFor(() => {
-    expect(
-      within(chat).queryByText("Use the personal account"),
-    ).toBeInTheDocument();
-  }, replyWaitOptions);
-  await waitFor(() => {
-    expect(screen.getAllByTestId("connector-account-action-card")).toHaveLength(
-      2,
-    );
-  });
-  const otherCard = screen.getAllByTestId("connector-account-action-card")[1]!;
-  expect(otherCard).toHaveTextContent("Switch to Personal GitHub?");
-  click(buttonIn(otherCard, button));
-  await waitFor(() => {
-    expect(otherCard).toHaveTextContent("Switched to Personal GitHub");
-    expect(buttonIn(card, button)).toBeEnabled();
-    expect(callbackIds).toHaveLength(2);
-  });
-  expect(selectionWrites).toBe(2);
-  await act(() => {
-    lifecycle.completeRun("Continued with Personal GitHub");
-    createChatEvent(THREAD_ID);
-  });
-  await waitFor(() => {
-    expect(
-      within(chat).queryByText("Continued with Personal GitHub"),
-    ).toBeInTheDocument();
-  }, replyWaitOptions);
-
-  click(buttonIn(card, button));
-  await waitFor(() => {
-    expect(card).toHaveTextContent("Switched to Work GitHub");
-    expect(callbackIds).toHaveLength(3);
-  });
-  expect(selectionWrites).toBe(3);
-  for (const ids of callbackIds) {
-    expect(ids).toStrictEqual({
-      clientEventId: expect.any(String),
-      chatThreadSortEventId: expect.any(String),
-    });
-  }
-  const clientEventIds = callbackIds.map((ids) => {
-    return ids.clientEventId;
-  });
-  const chatThreadSortEventIds = callbackIds.map((ids) => {
-    return ids.chatThreadSortEventId;
-  });
-  expect(new Set(clientEventIds).size).toBe(3);
-  expect(new Set(chatThreadSortEventIds).size).toBe(3);
-  await act(() => {
-    lifecycle.completeRun("Continued with Work GitHub again");
-    createChatEvent(THREAD_ID);
-  });
-  await waitFor(() => {
-    expect(
-      within(chat).queryByText("Continued with Work GitHub again"),
-    ).toBeInTheDocument();
-  }, replyWaitOptions);
 }
-
-async function exerciseFreshMemberApproval(
-  lifecycle: ReturnType<typeof mockChatLifecycle>,
-  previousUrl: URL,
-) {
-  const freshUrl = new URL(previousUrl);
-  freshUrl.searchParams.set(
-    "requestId",
-    "f0000000-0000-4000-a000-000000000904",
-  );
-  await act(() => {
-    lifecycle.completeRun(`Access expired\n\n${freshUrl.toString()}`);
-  });
-  await waitFor(() => {
-    const cards = screen.getAllByTestId("connector-account-action-card");
-    expect(cards).toHaveLength(2);
-    expect(buttonIn(cards[1]!, "Allow for 1h")).toBeEnabled();
-  });
+async function reconnectCard() {
+  const card = await screen.findByTestId("connector-action-card");
+  expect(card).toHaveTextContent("GitHub · Work GitHub");
+  return findEnabledButton("Reconnect", card);
 }
-
 test.each([
-  ["chat", "chat"],
-  ["direct", "chat"],
-  ["chat", "member"],
-  ["direct", "member"],
+  { title: "chat-cards-022 the exact account", target: "exact" },
+  { title: "The expired default account", target: "default" },
 ] as const)(
-  "Connector account switching from %s with %s approval",
-  exerciseAccountSwitch,
+  "$title reconnects in one click with its saved OAuth method before the chat resumes",
+  async ({ target }) => {
+    const account = {
+      ...workAccount(),
+      scopeMismatch: false,
+      isDefault: target === "default",
+    };
+    const attempt = crypto.randomUUID();
+    const callback = "Continue account maintenance";
+    const authorization = "https://github.example.test/login/renew";
+    const popup = context.mocks.browser.authWindow();
+    const destination = { href: "about:blank" };
+    Object.defineProperty(popup, "location", { value: destination });
+    context.mocks.browser.open(popup);
+    const catalog = catalogConnector({
+      slug: "github",
+      label: "GitHub",
+      method: browserAuthMethod(),
+    });
+    context.mocks.api(connectorCatalogContract.get, ({ respond }) => {
+      return respond(200, {
+        connector: {
+          ...catalog,
+          authMethods: [browserAuthMethod("alternate"), browserAuthMethod()],
+          singleAuthCodeAuthMethodId: null,
+        },
+      });
+    });
+    context.mocks.api(connectorAccountsContract.connection, ({ respond }) => {
+      return respond(200, account);
+    });
+    context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
+      return respond(200, {
+        connections: [account],
+        defaultConnection: account.isDefault ? account : null,
+        nextCursor: null,
+      });
+    });
+    context.mocks.api(builtinConnectorsMainContract.list, ({ respond }) => {
+      return respond(200, {
+        connectors: [
+          connectedConnectorResponse({
+            id: account.id,
+            slug: "github",
+            authMethod: "oauth",
+            updatedAt: account.updatedAt,
+            reconnectRequired:
+              account.connectionStatus === "reconnect-required",
+          }),
+        ],
+      });
+    });
+    context.mocks.api(
+      builtinConnectorOauthStartContract.start,
+      ({ body, params, respond }) => {
+        expect(params.connectorSlug).toBe("github");
+        expect(body.authMethod).toBe("oauth");
+        expect(body.account).toStrictEqual({
+          intent: "reconnect",
+          connectionId: account.id,
+        });
+        return respond(200, {
+          authorizationUrl: authorization,
+          oauthAttemptId: attempt,
+          connectionId: account.id,
+        });
+      },
+    );
+    const early = context.mocks.deferred<void>();
+    context.mocks.api(
+      connectorAccountsContract.oauthCompletion,
+      ({ params, respond }) => {
+        expect(params.attemptId).toBe(attempt);
+        if (account.connectionStatus === "connected") {
+          return respond(200, { connectionId: account.id });
+        }
+        early.resolve();
+        return respond(404, {
+          error: { code: "NOT_FOUND", message: "Authorization pending" },
+        });
+      },
+    );
+    const action =
+      target === "exact"
+        ? origin + reconnectRequest(account.id)
+        : connectorActionUrl({ slug: "github", callbackPrompt: callback });
+    await open(action);
+    const sent = context.mocks.deferred<string>();
+    context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+      expect(body.threadId).toBe(RUN_THREAD_ID);
+      if (typeof body.prompt === "string") {
+        sent.resolve(body.prompt);
+      }
+      return respond(201, { threadId: RUN_THREAD_ID });
+    });
+    const card = await screen.findByTestId("connector-action-card");
+    expect(card).toHaveTextContent(
+      target === "exact" ? "Work GitHub" : "GitHub",
+    );
+    click(await findEnabledButton("Reconnect", card));
+    await waitFor(() => {
+      return expect(destination.href).toBe(authorization);
+    });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    context.mocks.ably.trigger("connector:changed", {
+      connectorSlug: "github",
+    });
+    await waitFor(() => {
+      expect(early.settled()).toBeTruthy();
+    });
+    expect(sent.settled()).toBeFalsy();
+    account.connectionStatus = "connected";
+    account.updatedAt = "2026-09-02T12:00:00.000Z";
+    context.mocks.ably.trigger("connector:changed", {
+      connectorSlug: "github",
+    });
+    if (target === "exact") {
+      popup.close();
+    }
+    await expect(sent.promise).resolves.toBe(callback);
+    expect(location.pathname).toBe(RUN_PATH);
+  },
 );
-
-test("Ordinary or code links remain message content", async () => {
-  const ordinaryUrl = "https://example.com/reference";
-  await setupChat(
-    [
-      "Reference examples",
-      "",
-      "```text",
-      CONNECTOR_URL,
-      "```",
-      "",
-      `Read the [ordinary reference](${ordinaryUrl}) for details.`,
-    ].join("\n"),
-  );
-
-  await screen.findByText("Reference examples");
-  const code = await screen.findByText(CONNECTOR_URL);
-  const ordinaryLink = queryAllByRoleFast("link").find((link) => {
-    return link.textContent === "ordinary reference";
-  });
-  expect(code.closest("code")).not.toBeNull();
-  expect(ordinaryLink).toHaveAttribute("href", ordinaryUrl);
-  expect(document.querySelector("[data-testid$='action-card']")).toBeNull();
+test("chat-cards-025 an account removed after rendering cannot open a reconnect dialog", async () => {
+  const service = reconnectAccount();
+  await open(origin + reconnectRequest(workId));
+  const button = await reconnectCard();
+  service.remove();
+  click(button);
+  await screen.findByTestId("unavailable-action-card");
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(window.location.pathname).toBe(RUN_PATH);
 });
-
-async function reviewBankingRequest(entry: "chat" | "direct") {
-  const reason = "Review quarterly subscription expenses";
-  const bankingUrl = new URL("https://app.okou.ai/banking/access");
-  bankingUrl.searchParams.set("reason", reason);
-  bankingUrl.searchParams.set("threadId", THREAD_ID);
-  bankingUrl.searchParams.set(
-    "callbackPrompt",
-    "Continue with the subscription review",
-  );
+test("The workspace banking card identifies its purpose and read-only data scope", async () => {
+  const reason = "Reconcile the October statements";
+  const path =
+    "/banking/access?" +
+    new URLSearchParams({
+      reason,
+      threadId: RUN_THREAD_ID,
+      callbackPrompt: "Resume reconciliation",
+    }).toString();
   context.mocks.api(
     bankingWorkspaceContract.accessRequestStatus,
     ({ respond }) => {
@@ -1498,55 +533,342 @@ async function reviewBankingRequest(entry: "chat" | "direct") {
       });
     },
   );
-  if (entry === "direct") {
-    mockOwnedApprovalThread();
-    await setupPage({
-      context,
-      path: bankingUrl.pathname + bankingUrl.search,
-      host: "app.okou.ai",
-    });
-  } else {
-    await setupChat(["Banking request", "", bankingUrl.toString()].join("\n"));
-    await screen.findByText("Banking request");
-  }
-  const card = await screen.findByTestId("banking-action-card");
-  expect(Boolean(screen.queryByRole("region", { name: "Chat thread" }))).toBe(
-    entry === "chat",
-  );
-  expect(card).toHaveTextContent("Banking access request");
-  expect(card).toHaveTextContent(reason);
-  expect(card).toHaveTextContent(
-    "Accounts, balances, and transactions · read only",
-  );
+  await open(origin + path);
+  const card = within(await screen.findByTestId("banking-action-card"));
+
+  expect(card.getByText(reason)).toBeInTheDocument();
   expect(
-    queryAllByRoleFast("link").some((link) => {
-      return link.getAttribute("href") === bankingUrl.toString();
-    }),
-  ).toBeFalsy();
+    card.getByText(/accounts, balances, and transactions · read only/i),
+  ).toBeInTheDocument();
+  expect(targets(origin + path)).toStrictEqual([]);
+});
+
+test("A member can review standalone Slack access while a link for another chat is unavailable", async () => {
+  const link = new URL("/connectors/permissions", origin);
+  link.search = new URLSearchParams({
+    orgId: "org_default",
+    userId: "test-user-123",
+    connectorSlug: "slack",
+    permission: "files:read",
+  }).toString();
+  const elsewhere = new URL(link);
+  elsewhere.searchParams.set("threadId", crypto.randomUUID());
+  elsewhere.searchParams.set("callbackPrompt", "Resume the other conversation");
+  await open(
+    "[Review Slack access](" +
+      link.href +
+      ") then [Resume elsewhere](" +
+      elsewhere.href +
+      ").",
+  );
+  await permission();
+  await expect(
+    screen.findByTestId("unavailable-action-card"),
+  ).resolves.toBeVisible();
+});
+
+function approvalPath(
+  pathname: string,
+  prompt: string,
+  extra: Record<string, string> = {},
+) {
+  return (
+    pathname +
+    "?" +
+    new URLSearchParams({
+      threadId: RUN_THREAD_ID,
+      callbackPrompt: prompt,
+      ...extra,
+    })
+  );
 }
 
-test.each(["chat", "direct"] as const)(
-  "Review banking request from %s",
-  reviewBankingRequest,
+test("A standalone workspace bank review names the requested purpose and its read-only scope", async () => {
+  const reason = "Prepare the refund ledger";
+  mockAuthorizationCallbackThread(context, RUN_THREAD_ID);
+  context.mocks.api(
+    bankingWorkspaceContract.accessRequestStatus,
+    ({ respond }) => {
+      return respond(200, {
+        grant: null,
+        connection: null,
+        session: null,
+      });
+    },
+  );
+  const path = approvalPath("/banking/access", "Finish the refund review", {
+    reason,
+  });
+  await setupPage({ context, host: "app.okou.ai", path });
+  const card = await screen.findByTestId("banking-action-card");
+  await expect(within(card).findByText(reason)).resolves.toBeVisible();
+  expect(card).toHaveTextContent(reason);
+  expect(card).toHaveTextContent(
+    /accounts, balances, and transactions · read only/i,
+  );
+  expect(location.pathname).toBe("/banking/access");
+  expect(
+    screen.queryByRole("region", { name: "Chat thread" }),
+  ).not.toBeInTheDocument();
+});
+
+test.each([
+  ["conversation", "chat"],
+  ["standalone", "chat"],
+  ["conversation", "member"],
+  ["standalone", "member"],
+] as const)(
+  "A member confirms the GitHub account from the %s link with %s approval",
+  async (entry, scope) => {
+    const account = {
+      ...workAccount(),
+      displayName: "Release team",
+      connectionStatus: "connected" as const,
+    };
+    const callback = "Continue the release audit using the team account";
+    const member = scope === "member";
+    const requestId = crypto.randomUUID();
+    const path = approvalPath(
+      "/connectors/accounts/" +
+        account.id +
+        (member ? "/member-approval" : "/select"),
+      callback,
+      {
+        kind: "builtin",
+        connectorSlug: "github",
+        ...(member ? { requestId } : {}),
+      },
+    );
+    let selected: string | null = null;
+    context.mocks.api(
+      connectorAccountsContract.connection,
+      ({ params, respond }) => {
+        expect(params.connectionId).toBe(account.id);
+        return respond(200, account);
+      },
+    );
+    context.mocks.api(
+      chatConnectorAccessContract.getThread,
+      ({ params, respond }) => {
+        expect(params.threadId).toBe(RUN_THREAD_ID);
+        return respond(200, {
+          target: account.target,
+          currentConnectionId: selected,
+          available: true,
+          accounts: [
+            {
+              connectionId: account.id,
+              displayName: account.displayName,
+              defaultEnabled: true,
+              isDefault: false,
+              overrideEnabled: null,
+              enabled: true,
+            },
+          ],
+        });
+      },
+    );
+    context.mocks.api(
+      member
+        ? runConnectorAccountsContract.approveMember
+        : runConnectorAccountsContract.approve,
+      ({ params, body, respond }) => {
+        expect(params.threadId).toBe(RUN_THREAD_ID);
+        expect(body).toMatchObject({
+          connectionId: account.id,
+          target: account.target,
+        });
+        selected = body.connectionId;
+        return respond(200, body);
+      },
+    );
+    const sent = context.mocks.deferred<CallbackReceipt>();
+    const receipt = ({ threadId, prompt }: CallbackReceipt) => {
+      sent.resolve({ threadId, prompt });
+    };
+    let conversation: Awaited<ReturnType<typeof open>> | undefined;
+    if (entry === "conversation") {
+      conversation = await open(origin + path, receipt);
+    } else {
+      mockAuthorizationCallbackThread(context, RUN_THREAD_ID);
+      await setupPage({ context, host: "app.okou.ai", path });
+      context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+        receipt({ threadId: body.threadId, prompt: body.prompt });
+        return respond(201, { threadId: RUN_THREAD_ID });
+      });
+    }
+    const card = await screen.findByTestId("connector-account-action-card");
+    const chat = screen.queryByRole("region", { name: "Chat thread" });
+    expect(chat !== null).toBe(entry === "conversation");
+    await expect(
+      within(card).findByText("Switch to Release team?"),
+    ).resolves.toBeVisible();
+    const githubIcon = 'img[src="https://icons.example.test/github.svg"]';
+    await waitFor(() => {
+      expect(card.querySelector(githubIcon)).toBeInTheDocument();
+    });
+    expect(selected).toBeNull();
+
+    expect(
+      within(card).queryByText(
+        "Allow across your chats. Select this account here.",
+      ) !== null,
+    ).toBe(member);
+    click(await findEnabledButton(member ? "Allow for 1h" : "Switch", card));
+    await expect(sent.promise).resolves.toStrictEqual({
+      threadId: RUN_THREAD_ID,
+      prompt: callback,
+    });
+    await expect(
+      within(card).findByText("Switched to Release team"),
+    ).resolves.toBeVisible();
+    expect(selected).toBe(account.id);
+    expect(card.querySelector(githubIcon)).toBeInTheDocument();
+    if (!member || !conversation) {
+      return;
+    }
+    selected = null;
+    const fresh = new URL(path, origin);
+    fresh.searchParams.set("requestId", crypto.randomUUID());
+    conversation.completeRun("Renew the release approval\n\n" + fresh.href);
+    const renewedCard = await waitFor(() => {
+      const cards = screen.getAllByTestId("connector-account-action-card");
+      expect(cards).toHaveLength(2);
+      return cards[1]!;
+    });
+    await findEnabledButton("Allow for 1h", renewedCard);
+  },
 );
 
 test.each([
-  "/banking/access?reason=Review+spend&",
-  "/connectors/accounts/f0000000-0000-4000-a000-000000000901/select?kind=builtin&connectorSlug=github&",
-  "/connectors/accounts/f0000000-0000-4000-a000-000000000901/member-approval?kind=builtin&connectorSlug=github&requestId=f0000000-0000-4000-a000-000000000903&",
-])("A direct approval requires access to its Chat (%s)", async (route) => {
-  context.mocks.api(chatThreadMetadataContract.get, ({ respond }) => {
-    return respond(404, {
-      error: { code: "NOT_FOUND", message: "Chat thread not found" },
+  ["banking", "/banking/access", { reason: "Review the renewal" }],
+  [
+    "member approval",
+    "/connectors/accounts/" + workId + "/member-approval",
+    { kind: "builtin", connectorSlug: "github", requestId: workId },
+  ],
+  [
+    "connector account",
+    "/connectors/accounts/" + workId + "/select",
+    { kind: "builtin", connectorSlug: "github" },
+  ],
+] as const)(
+  "The standalone %s review shows the missing page for an inaccessible chat",
+  async (_kind, pathname, options) => {
+    mockAuthorizationCallbackThread(context, RUN_THREAD_ID, () => {
+      return false;
     });
+    await setupPage({
+      context,
+      host: "app.okou.ai",
+      path: approvalPath(pathname, "Continue the renewal", options),
+    });
+    await expect(
+      screen.findByRole("heading", { name: "That page isn't here." }),
+    ).resolves.toBeVisible();
+    expect(
+      screen.queryByTestId("connector-account-action-card"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("banking-action-card")).not.toBeInTheDocument();
+  },
+);
+
+async function submitManualReconnect(relative: boolean, other: boolean) {
+  const work = { ...workAccount(), authMethod: "api-token" };
+  const fallback = {
+    ...work,
+    id: crypto.randomUUID(),
+    displayName: "Personal GitHub",
+    isDefault: true,
+  };
+  const method = manualAuthMethod();
+  const connector = catalogConnector({
+    slug: "github",
+    label: "GitHub",
+    method,
+    hasAccount: true,
+    connectionId: fallback.id,
   });
-  await setupPage({
-    context,
-    path: `${route}threadId=${THREAD_ID}&callbackPrompt=Continue`,
-    host: "app.okou.ai",
+  context.mocks.api(connectorCatalogContract.get, ({ respond }) => {
+    return respond(200, { connector });
   });
-  const heading = await screen.findByRole("heading", { level: 1 });
-  expect(heading).toHaveTextContent("That page isn't here.");
-  expect(screen.queryByTestId("banking-action-card")).toBeNull();
-  expect(screen.queryByTestId("connector-account-action-card")).toBeNull();
+  context.mocks.api(
+    connectorAccountsContract.connection,
+    ({ params, respond }) => {
+      return respond(200, params.connectionId === work.id ? work : fallback);
+    },
+  );
+  const received = context.mocks.deferred<void>();
+  const receipt = context.mocks.deferred<void>();
+  context.mocks.api(
+    builtinConnectorManualGrantContract.connect,
+    async ({ body, respond }) => {
+      if (
+        body.account.intent !== "reconnect" ||
+        body.account.connectionId !== work.id ||
+        body.values.apiToken !== "review-example"
+      ) {
+        return respond(400, {
+          error: { code: "INVALID_INPUT", message: "Wrong account or value" },
+        });
+      }
+      received.resolve();
+      await receipt.promise;
+      const completed = other ? fallback : work;
+      completed.connectionStatus = "connected";
+      return respond(200, { connectionId: completed.id });
+    },
+  );
+  const prompt = "Continue the account-specific task";
+  const query = new URLSearchParams({
+    threadId: RUN_THREAD_ID,
+    callbackPrompt: prompt,
+  });
+  const link =
+    (relative ? "" : origin) +
+    "/connectors/github/reconnect/" +
+    work.id +
+    "?" +
+    query;
+  await open(
+    relative ? "Work account: " + link + "。 Proceed when ready." : link,
+  );
+  if (relative) {
+    await screen.findByText(/Work account:/);
+    await screen.findByText(/。 Proceed when ready\./);
+  }
+  click(await reconnectCard());
+  const form = await screen.findByRole("dialog");
+  expect(form).toHaveTextContent("Work GitHub");
+  expect(location.pathname).toBe(RUN_PATH);
+  await fill(within(form).getByDisplayValue(""), "review-example");
+  const save = await findEnabledButton("Save", form);
+  click(save);
+  await received.promise;
+  expect(save).toBeDisabled();
+  expect(screen.queryByText(prompt)).not.toBeInTheDocument();
+  receipt.resolve();
+  return { form, prompt };
+}
+
+test.each([
+  { id: "018", relative: false, link: "absolute" },
+  { id: "023", relative: true, link: "punctuated relative" },
+])(
+  "chat-cards-$id the $link Work link resumes the chat after its receipt",
+  async ({ relative }) => {
+    const { prompt } = await submitManualReconnect(relative, false);
+    await screen.findByText(prompt, { selector: '[data-role="user"] *' });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  },
+);
+
+test("chat-cards-019 a default-account receipt keeps the Work dialog open for retry", async () => {
+  const { form, prompt } = await submitManualReconnect(false, true);
+  await findEnabledButton("Save", form);
+  expect(form).toHaveTextContent(
+    "Connector account response identity mismatch.",
+  );
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
+  expect(screen.queryByText(prompt)).not.toBeInTheDocument();
 });

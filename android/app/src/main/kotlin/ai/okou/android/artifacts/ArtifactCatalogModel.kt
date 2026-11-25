@@ -4,6 +4,7 @@ import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.ResponseLimitExceeded
 import ai.okou.android.chat.ChatCacheStore
 import ai.okou.android.chat.ChatChanges
+import ai.okou.android.contentReadStaleDelayMillis
 import android.graphics.Bitmap
 import android.util.Log
 import android.util.LruCache
@@ -28,7 +29,6 @@ import kotlinx.coroutines.launch
 
 internal const val ArtifactRetryDelayMillis = 3_000L
 private const val ArtifactRetryLimit = 2
-private const val ChatArtifactFreshMillis = 10L * 60_000
 
 internal enum class ArtifactProblem {
     Denied,
@@ -82,7 +82,6 @@ internal data class ConfirmedArtifactCatalog(val page: ArtifactPage, val confirm
 internal data class ArtifactCatalogState(
     val query: ArtifactQuery = ArtifactQuery(),
     val catalog: ConfirmedArtifactCatalog? = null,
-    val offline: Boolean = false,
     val failedRead: ArtifactCatalogFailure? = null,
     val reading: ArtifactCatalogRead? = null,
     val relatedChats: RelatedChatResourcesState = RelatedChatResourcesState(),
@@ -101,7 +100,6 @@ internal data class ArtifactCatalogState(
 class ArtifactCatalogModel
 internal constructor(
     private val service: ArtifactService,
-    connectivity: Flow<Boolean>,
     private val cache: ChatCacheStore.Lease? = null,
     catalogChanges: Flow<ChatChanges> = emptyFlow(),
     unavailableChat: Flow<String?> = emptyFlow(),
@@ -114,6 +112,11 @@ internal constructor(
     private val catalogs = LinkedHashMap<ArtifactQuery, ConfirmedArtifactCatalog>(8, 0.75f, true)
     private val previews = LinkedHashMap<String, ArtifactPreviewState>(3, 0.75f, true)
     private val thumbnails = LruCache<String, Bitmap>(40)
+    internal val inlineImages =
+        InlineArtifactImages(service, viewModelScope) { error ->
+            val failure = problem(error)
+            if (error is ApiFailure.Unauthenticated) ArtifactProblem.Denied else failure
+        }
     private var active = false
     private var catalogVisible = false
     private var catalogJob: Job? = null
@@ -127,31 +130,10 @@ internal constructor(
 
     init {
         viewModelScope.launch {
-            connectivity.collect { online ->
-                val current = mutable.value
-                if (online == !current.offline) return@collect
-                val preview = current.preview
-                mutable.value =
-                    current.copy(
-                        offline = !online,
-                        preview =
-                            if (online && preview?.isHosted == true) preview.copy(content = null)
-                            else preview,
-                    )
-                if (online && active) {
-                    if (catalogJob?.isActive != true) {
-                        readCatalog(append = current.failedRead == ArtifactCatalogFailure.More)
-                    }
-                    if (relatedRead?.isActive != true) refreshRelatedChats()
-                    refreshWorkflows()
-                    if (previewJob?.isActive != true) {
-                        mutable.value.preview?.let { readPreview(it.id) }
-                    }
-                }
-            }
-        }
-        viewModelScope.launch {
             catalogChanges.collect { changes ->
+                if (changes.resync) inlineImages.invalidate()
+                else if (changes.artifactThreads.isNotEmpty())
+                    inlineImages.invalidate(changes.artifactThreads)
                 val threadId = mutable.value.query.chatThreadId ?: return@collect
                 if (catalogVisible && (changes.resync || threadId in changes.artifactThreads)) {
                     readCatalog()
@@ -166,7 +148,10 @@ internal constructor(
         viewModelScope.launch {
             unavailableChat.collect { threadId ->
                 missingThread = threadId
-                if (threadId != null) evictChatCatalog(threadId)
+                if (threadId != null) {
+                    inlineImages.invalidate(setOf(threadId))
+                    evictChatCatalog(threadId)
+                }
             }
         }
     }
@@ -183,7 +168,7 @@ internal constructor(
             if (catalogVisible) {
                 if (currentQuery != mutable.value.query) query(currentQuery, debounce = false)
                 else {
-                    readCatalog()
+                    readCatalog(append = mutable.value.failedRead == ArtifactCatalogFailure.More)
                     refreshRelatedChats()
                     refreshWorkflows()
                 }
@@ -275,13 +260,15 @@ internal constructor(
         if (id != null) readPreview(id)
     }
 
-    internal suspend fun thumbnail(url: String, offline: Boolean): Bitmap? {
+    internal fun retainedExternalImageId(): String? =
+        mutable.value.preview?.id?.takeIf { it.startsWith(ExternalImagePreviewPrefix) }
+
+    internal suspend fun thumbnail(url: String): Bitmap? {
         thumbnails.get(url)?.let {
             return it
         }
-        if (offline) return null
         return try {
-            service.thumbnail(url)?.also { thumbnails.put(url, it) }
+            retryArtifactOperation { service.thumbnail(url) }?.also { thumbnails.put(url, it) }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
@@ -352,8 +339,7 @@ internal constructor(
             val progress =
                 base?.oldestConfirmation?.let { confirmedAt ->
                     launch {
-                        val age = wallMillis() - confirmedAt
-                        delay((ChatArtifactFreshMillis - age + 1).coerceAtLeast(0L))
+                        delay(contentReadStaleDelayMillis(confirmedAt, wallMillis()))
                         mutable.update { it.copy(relatedChats = state.copy(syncingStale = true)) }
                     }
                 }
@@ -473,8 +459,7 @@ internal constructor(
         val progress =
             baseline?.confirmedAt?.let { confirmedAt ->
                 launch {
-                    val remaining = ChatArtifactFreshMillis - (wallMillis() - confirmedAt)
-                    delay((remaining + 1).coerceAtLeast(0L))
+                    delay(contentReadStaleDelayMillis(confirmedAt, wallMillis()))
                     mutable.update { it.copy(workflows = state.copy(syncingStale = true)) }
                 }
             }
@@ -552,8 +537,7 @@ internal constructor(
                     }
                     ?.let { snapshot ->
                         launch {
-                            val age = wallMillis() - snapshot.confirmedAt
-                            delay((ChatArtifactFreshMillis - age + 1).coerceAtLeast(0L))
+                            delay(contentReadStaleDelayMillis(snapshot.confirmedAt, wallMillis()))
                             mutable.update { it.copy(reading = ArtifactCatalogRead.SyncingStale) }
                         }
                     }
@@ -598,7 +582,7 @@ internal constructor(
             append -> ArtifactCatalogRead.More
             threadId != null &&
                 catalog != null &&
-                wallMillis() - catalog.confirmedAt > ChatArtifactFreshMillis ->
+                contentReadStaleDelayMillis(catalog.confirmedAt, wallMillis()) == 0L ->
                 ArtifactCatalogRead.SyncingStale
             else -> ArtifactCatalogRead.Refreshing
         }
@@ -679,6 +663,7 @@ internal constructor(
         catalogs.clear()
         previews.clear()
         thumbnails.evictAll()
+        inlineImages.invalidate()
         cache?.let {
             storeCatalog {
                 it.deleteArtifactCatalog()
@@ -756,6 +741,8 @@ internal constructor(
         }
         previewJob?.cancel()
         previewJob = viewModelScope.launch {
+            // External image metadata describes the URL. Only reading it establishes access.
+            val externalImage = id.startsWith(ExternalImagePreviewPrefix)
             var detailAuthorized = false
             var fileAccessAuthorized = false
             try {
@@ -764,7 +751,7 @@ internal constructor(
                     detailAuthorized = false
                     fileAccessAuthorized = false
                     val info = service.info(id)
-                    detailAuthorized = true
+                    detailAuthorized = !externalImage
                     updatePreview(id) {
                         copy(
                             item = info.item,
@@ -776,7 +763,7 @@ internal constructor(
                         when (val resource = info.resource) {
                             is ArtifactResource.File -> {
                                 val access = info.resolvedAccess ?: service.fileAccess(resource)
-                                fileAccessAuthorized = true
+                                fileAccessAuthorized = !externalImage
                                 updatePreview(id) { copy(access = access) }
                                 service.fileContent(resource, access)
                             }
@@ -811,7 +798,14 @@ internal constructor(
                 val discardContent = revoked || errorType == ArtifactProblem.Unsupported
                 updatePreview(id) {
                     if (discardContent) previews.remove(id)
+                    if (revoked && !detailAuthorized) {
+                        val source =
+                            if (externalImage) id
+                            else messageArtifactLink(id)?.takeIf { it.startsWith("/artifacts/") }
+                        source?.let(inlineImages::revoke)
+                    }
                     copy(
+                        item = item.takeUnless { revoked && externalImage },
                         info = info.takeUnless { revoked && !detailAuthorized },
                         content = content.takeIf { hasReadableContent && !discardContent },
                         access = access.takeUnless { revoked && !fileAccessAuthorized },

@@ -66,7 +66,6 @@
     <string name="workflow_notion_child">Notion 子頁面已建立</string>
     <string name="workflow_notion_item">Notion 資料庫項目已建立</string>
     <string name="workflow_notion_updated">Notion 頁面內容已更新</string>
-    <string name="workflow_offline_changes">連線後可儲存，變更已保留。</string>
     <string name="workflow_pause">暫停</string>
     <string name="workflow_paused">自動化已暫停</string>
     <string name="workflow_private">僅自己</string>
@@ -103,7 +102,6 @@
     <plurals name="workflow_enabled_count">
         <item quantity="other">%d 項自動化啟用</item>
     </plurals>
-    <string name="workflow_draft_network_failed">無法開啟新聊天草稿。已保留現有草稿，請檢查網路後重試。</string>
     <string name="workflow_rule_change_failed">無法變更此規則。</string>
     <string name="workflow_rule_network_failed">無法變更此規則，請檢查網路後重試。</string>
     <string name="workflow_write_conflict">儲存時此工作流已更新。你的變更已保留。</string>
@@ -119,4 +117,12 @@
     <string name="workflow_history_trigger_unavailable">觸發方式無法取得</string>
     <string name="workflow_history_scheduled">排程觸發</string>
     <string name="workflow_history_manual">手動執行</string>
+    <string name="workflow_catalog_refresh_failed">暫時無法更新工作流程目錄，顯示已載入內容</string>
+    <string name="workflow_history_earlier_failed">暫時無法載入較早的執行記錄</string>
+    <string name="workflow_rule_checking">正在核對結果…</string>
+    <string name="workflow_rule_unconfirmed">提交結果尚未確認。</string>
+    <string name="workflow_event">事件</string>
+    <string name="workflow_event_source">事件來源</string>
+    <string name="workflow_source_gmail">Gmail · 收到郵件</string>
+    <string name="workflow_source_calendar">Google Calendar · 建立行程</string>
 </resources>

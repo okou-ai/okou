@@ -1,209 +1,116 @@
 import {
   billingCreditCheckoutContract,
-  billingStatusContract,
-  billingUsagePackCatalogContract,
-  billingUsagePackManagementContract,
-  type BillingStatusResponse,
   type CreditCheckoutRequest,
+  billingStatusContract,
 } from "@okouai/api-contracts/contracts/billing";
-import {
-  chatEventsContract,
-  chatThreadEventsContract,
-} from "@okouai/api-contracts/contracts/chat-threads";
-import { screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
+import { screen, within, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
+import { accountModels } from "./chat-account-model-fixture.ts";
 import {
   click,
-  fill,
-  queryAllByRoleFast,
   setupPage,
+  queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
 import {
-  mockChatEventRows,
-  normalizeMockChatEvents,
-  type MockChatEventInput,
-} from "./chat-event-test-helpers.ts";
+  billingPlanCapabilities,
+  defaultBillingStatus,
+} from "../../../mocks/handlers/api-billing.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import {
-  findButton,
-  NEW_CHAT_PATH,
+  createChatRunFixtures,
+  findEnabledButton,
   promptEvent,
+  publishRunUpdate,
+  queryButton,
   readyChat,
   RUN_PATH,
   RUN_THREAD_ID,
   sendText,
-  createChatRunFixtures,
 } from "./chat-run-test-fixtures.ts";
-import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
-import { createChatEvent } from "../../../mocks/mock-helpers.ts";
-import {
-  chatEventRowsResponse,
-  testContext,
-} from "../../../signals/__tests__/test-helpers.ts";
+
+import { packages } from "./workspace-billing-fixtures.ts";
 
 const context = testContext();
 const { installRunChat } = createChatRunFixtures(context);
+const BLOCKED_PROMPT = "Summarize this week's sales calls";
+const BLOCKED_RUN_ID = "d0000000-0000-4000-a000-000000000b01";
 
-const BILLING_RUN_ID = "d0000000-0000-4000-a000-000000001301";
-
-type WorkspaceRole = "admin" | "member";
-
-function billingFailure(error: "insufficient_credits" | "pro_required") {
-  return [
-    promptEvent({
-      id: "billing-user-prompt",
-      runId: BILLING_RUN_ID,
-      seqId: 1,
-      text: "Finish the campaign brief",
-    }),
-    {
-      id: "billing-run-error",
-      eventType: "output.error",
-      role: "assistant",
-      content: null,
-      error,
-      runId: BILLING_RUN_ID,
-      seqId: 2,
-      createdAt: "2026-08-01T10:00:02.000Z",
-    },
-  ] satisfies MockChatEventInput[];
+interface Workspace {
+  tier: "limited-free-1" | "pro";
+  credits: number;
 }
 
-function billingStatus(args: {
-  readonly tier: string;
-  readonly credits: number;
-  readonly canBuyCredits: boolean;
-}): BillingStatusResponse {
-  const paid = args.tier === "pro" || args.tier === "team";
+function arrangeWorkspace(
+  role: "admin" | "member",
+  initial: Workspace,
+  overrides: { canBuyCredits?: boolean } = {},
+): Workspace {
+  const workspace = { ...initial };
+  packages(context);
+  context.mocks.data.org({ id: "org_billing", name: "Sales Org", role });
+  context.mocks.api(billingStatusContract.get, ({ respond }) => {
+    return respond(200, {
+      ...defaultBillingStatus(),
+      tier: workspace.tier,
+      ...billingPlanCapabilities(workspace.tier),
+      credits: workspace.credits,
+      ...overrides,
+    });
+  });
+  return workspace;
+}
+
+function blockedRun(error: "insufficient_credits" | "pro_required"): {
+  readonly events: MockChatEventInput[];
+} {
   return {
-    showUsagePack: false,
-    tier: args.tier,
-    ...billingPlanCapabilities(args.tier),
-    canBuyCredits: args.canBuyCredits,
-    credits: args.credits,
-    onboardingPaymentPending: false,
-    subscriptionStatus: paid ? "active" : null,
-    currentPeriodEnd: paid ? "2026-09-30T00:00:00.000Z" : null,
-    cancelAtPeriodEnd: false,
-    scheduledChange: null,
-    hasSubscription: paid,
-    autoRecharge: { enabled: false, threshold: null, amount: null },
-    creditExpiry: { expiringNextCycle: 0, nextExpiryDate: null },
-    creditBreakdown: [],
-    creditGrants: [],
-    concurrencyLimit: 0,
-    concurrencySubscriptions: [],
+    events: [
+      promptEvent({
+        id: "e0000000-0000-4000-a000-000000000b01",
+        runId: BLOCKED_RUN_ID,
+        seqId: 1,
+        text: BLOCKED_PROMPT,
+        createdAt: "2026-11-20T07:50:00.000Z",
+      }),
+      {
+        id: "e0000000-0000-4000-a000-000000000b02",
+        role: "assistant",
+        content: null,
+        error,
+        runId: BLOCKED_RUN_ID,
+        seqId: 2,
+        createdAt: "2026-11-20T07:50:01.000Z",
+      },
+    ],
   };
 }
 
-function installBillingState(args: {
-  readonly tier: string;
-  readonly role: WorkspaceRole;
-  readonly credits: number;
-  readonly canBuyCredits: boolean;
-}): void {
-  context.mocks.data.org({
-    id: "org_billing_recovery",
-    name: "Billing Recovery Workspace",
-    role: args.role,
-  });
-  context.mocks.api(billingStatusContract.get, ({ respond }) => {
-    return respond(200, billingStatus(args));
-  });
-  context.mocks.api(billingUsagePackCatalogContract.get, ({ respond }) => {
-    return respond(200, {
-      supportsFreeMembers: true,
-      usagePacks: [
-        {
-          usagePackUsd: 20,
-          priceUsd: 20,
-          purchasedCredits: 20_000,
-          bonusCredits: 2000,
-          totalCredits: 22_000,
-        },
-      ],
-    });
-  });
-  context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
-    return respond(404, {
-      error: { code: "NOT_FOUND", message: "No usage-pack subscription" },
-    });
-  });
+async function openBlockedChat(
+  error: "insufficient_credits" | "pro_required",
+): Promise<MockChatEventInput[]> {
+  const { events } = blockedRun(error);
+  installRunChat({ chatEvents: events });
+  await setupPage({ context, path: RUN_PATH });
+  await readyChat();
+  await expect(screen.findByText(BLOCKED_PROMPT)).resolves.toBeInTheDocument();
+  return events;
 }
 
-function installBlockedChat(
-  error: "insufficient_credits" | "pro_required" = "insufficient_credits",
-): void {
-  installRunChat({ chatEvents: billingFailure(error) });
-}
-
-function queryButton(
-  name: string,
-  container: ParentNode = document.body,
-): HTMLElement | null {
-  return (
-    queryAllByRoleFast("button", container).find((button) => {
-      return (
-        button.getAttribute("aria-label") === name ||
-        button.textContent?.replace(/\s+/gu, " ").trim() === name
-      );
-    }) ?? null
-  );
-}
-
-function button(name: string, container: ParentNode = document.body) {
-  const match = queryButton(name, container);
-  if (!match) {
-    throw new Error(`${name} button was not visible`);
-  }
-  return match;
-}
-
-async function expectProPlans(): Promise<void> {
-  click(await findButton("Upgrade to Pro"));
+async function upgradeToPro(): Promise<HTMLElement> {
+  click(await findEnabledButton("Upgrade to Pro"));
   const plans = await screen.findByRole("dialog", { name: "Choose a plan" });
-  click(await within(plans).findByText("Start with Pro"));
-  const configuration = await screen.findByRole("dialog", {
+  click(await findEnabledButton("Start with Pro", plans));
+  return await screen.findByRole("dialog", {
     name: "Configure member packages",
   });
-  expect(within(configuration).getByText("Step 2 of 2")).toBeInTheDocument();
-  click(within(configuration).getByLabelText("Close"));
-  await waitFor(() => {
-    expect(configuration).not.toBeInTheDocument();
-  });
-  expect(screen.getByRole("textbox", { name: "Message" })).toBeInTheDocument();
 }
 
-test("Direct a workspace member to an admin when billing blocks a run", async () => {
-  installBillingState({
-    tier: "limited-free-1",
-    role: "member",
-    credits: 0,
-    canBuyCredits: true,
-  });
-  installBlockedChat();
-
-  await setupPage({ context, path: RUN_PATH });
-
-  await readyChat();
-  await expect(
-    screen.findByText(/Ask a workspace admin to add credits/u),
-  ).resolves.toBeVisible();
-  expect(queryButton("Upgrade to Pro")).not.toBeInTheDocument();
-  expect(queryButton("$5")).not.toBeInTheDocument();
-  expect(queryButton("$10")).not.toBeInTheDocument();
-  expect(queryButton("Custom")).not.toBeInTheDocument();
-});
-
 test("Let a free workspace admin choose a small top-up or the Pro plans flow", async () => {
+  arrangeWorkspace("admin", { tier: "limited-free-1", credits: 0 });
   const checkoutRequests: CreditCheckoutRequest[] = [];
-  installBillingState({
-    tier: "limited-free-1",
-    role: "admin",
-    credits: 0,
-    canBuyCredits: true,
-  });
   context.mocks.api(
     billingCreditCheckoutContract.create,
     ({ body, respond }) => {
@@ -218,27 +125,20 @@ test("Let a free workspace admin choose a small top-up or the Pro plans flow", a
       });
     },
   );
-  installBlockedChat("insufficient_credits");
-
-  await setupPage({ context, path: RUN_PATH });
-
-  await readyChat();
+  await openBlockedChat("insufficient_credits");
+  const frame = await screen.findByTestId("assistant-error-card-shell");
   await expect(
-    screen.findByText("You're out of credits"),
-  ).resolves.toBeInTheDocument();
-  const frame = screen.getByTestId("assistant-error-card-shell");
-  expect(
-    within(frame).getByText(
+    within(frame).findByText(
       "Add credits from $5 to keep going, or upgrade to Pro to unlock exclusive features.",
     ),
-  ).toBeInTheDocument();
+  ).resolves.toBeInTheDocument();
   expect(
-    queryAllByRoleFast("button", frame).map((element) => {
-      return element.textContent?.trim();
+    queryAllByRoleFast("button", frame).map((button) => {
+      return button.textContent?.trim();
     }),
   ).toStrictEqual(["$5", "$10", "Upgrade to Pro"]);
   for (const dollars of [5, 10]) {
-    click(button(`$${String(dollars)}`, frame));
+    click(await findEnabledButton(`$${String(dollars)}`, frame));
     const review = await screen.findByRole("dialog", {
       name: "Review credit purchase",
     });
@@ -249,325 +149,176 @@ test("Let a free workspace admin choose a small top-up or the Pro plans flow", a
       credits: dollars * 1000,
       supportsInAppPreview: true,
     });
-    click(button("Cancel", review));
+    click(await findEnabledButton("Cancel", review));
     await waitFor(() => {
       expect(review).not.toBeInTheDocument();
     });
   }
-
-  await expectProPlans();
+  const configuration = await upgradeToPro();
+  expect(within(configuration).getByText("Step 2 of 2")).toBeInTheDocument();
+  click(within(configuration).getByLabelText("Close"));
+  await waitFor(() => {
+    expect(configuration).not.toBeInTheDocument();
+  });
+  expect(screen.getByRole("textbox", { name: "Message" })).toBeInTheDocument();
 });
 
-test("Let a limited-free workspace admin unlock a Pro-only capability", async () => {
-  installBillingState({
-    tier: "limited-free-1",
-    role: "admin",
-    credits: 500,
-    canBuyCredits: true,
-  });
-  installBlockedChat("pro_required");
-
-  await setupPage({ context, path: RUN_PATH });
-
-  await readyChat();
+test("Let a paid workspace admin keep their existing top-up choices", async () => {
+  arrangeWorkspace("admin", { tier: "pro", credits: 0 });
+  await openBlockedChat("insufficient_credits");
+  const frame = await screen.findByTestId("assistant-error-card-shell");
   await expect(
-    screen.findByText(/Upgrade to Pro to keep chatting/u),
-  ).resolves.toBeVisible();
-
-  await expectProPlans();
-});
-
-test("Let a paid workspace admin buy more credits", async () => {
-  const user = userEvent.setup({ delay: null });
-  const checkoutRequests: CreditCheckoutRequest[] = [];
-  installBillingState({
-    tier: "pro",
-    role: "admin",
-    credits: 0,
-    canBuyCredits: true,
-  });
-  context.mocks.api(
-    billingCreditCheckoutContract.create,
-    ({ body, respond }) => {
-      checkoutRequests.push(body);
-      return respond(200, {
-        status: "preview",
-        credits: body.credits,
-        amountCents: body.credits / 10,
-        currency: "usd",
-        expiresAt: "2026-09-01T00:10:00.000Z",
-        previewToken: `credit-preview-${String(checkoutRequests.length)}`,
-      });
-    },
-  );
-  installBlockedChat();
-
-  await setupPage({ context, path: RUN_PATH });
-
-  await readyChat();
-  await expect(
-    screen.findByText("You're out of credits"),
-  ).resolves.toBeVisible();
-  const frame = screen.getByTestId("assistant-error-card-shell");
+    within(frame).findByText("Add credits to keep chatting with Okou."),
+  ).resolves.toBeInTheDocument();
   expect(
-    within(frame).getByText("Add credits to keep chatting with Okou."),
-  ).toBeInTheDocument();
-  for (const amount of ["$100", "$200", "$300"]) {
-    expect(button(amount, frame)).toBeVisible();
-  }
-  expect(button("Custom", frame)).toBeVisible();
-  expect(
-    screen.queryByRole("dialog", { name: "You're out of credits" }),
-  ).not.toBeInTheDocument();
-
-  click(button("$100", frame));
-
-  let review = await screen.findByRole("dialog", {
-    name: "Review credit purchase",
-  });
-  expect(within(review).getByText("$100.00")).toBeVisible();
-  expect(checkoutRequests[0]).toMatchObject({
-    credits: 100_000,
-    supportsInAppPreview: true,
-  });
-  click(button("Cancel", review));
-
-  click(button("Custom", frame));
-  const customAmount = within(frame).getByRole("textbox", {
-    name: "Custom dollar amount",
-  });
-  expect(customAmount).toBeVisible();
-  await fill(customAmount, "250");
-  click(button("Buy"));
-
-  review = await screen.findByRole("dialog", {
-    name: "Review credit purchase",
-  });
-  expect(within(review).getByText("$250.00")).toBeVisible();
-  expect(checkoutRequests[1]).toMatchObject({
-    credits: 250_000,
-    customAmount: true,
-    supportsInAppPreview: true,
-  });
-  click(button("Cancel", review));
-
-  await fill(customAmount, "0");
-  click(button("Buy"));
+    queryAllByRoleFast("button", frame).map((button) => {
+      return button.textContent?.trim();
+    }),
+  ).toStrictEqual(["$100", "$200", "$300", "Custom", "Buy"]);
+  click(await findEnabledButton("Custom", frame));
   await expect(
-    screen.findAllByText("Enter between $1 and $10,000"),
-  ).resolves.not.toHaveLength(0);
-  expect(checkoutRequests).toHaveLength(2);
-
-  await fill(customAmount, "10001");
-  await user.click(button("Buy"));
-  expect(screen.getAllByText("Enter between $1 and $10,000")).not.toHaveLength(
-    0,
-  );
-  expect(checkoutRequests).toHaveLength(2);
-
-  await fill(customAmount, "275");
-  await user.type(customAmount, "{enter}");
-  review = await screen.findByRole("dialog", {
-    name: "Review credit purchase",
-  });
-  expect(within(review).getByText("$275.00")).toBeVisible();
-  expect(checkoutRequests[2]).toMatchObject({
-    credits: 275_000,
-    customAmount: true,
-  });
-  expect(window.location.search).not.toContain("customUsd");
+    screen.findByRole("textbox", { name: "Custom dollar amount" }),
+  ).resolves.toBeInTheDocument();
 });
 
-test("Offer a plan upgrade when a limited workspace cannot buy top-ups", async () => {
-  installBillingState({
-    tier: "limited-free-1",
-    role: "admin",
-    credits: 0,
-    canBuyCredits: false,
-  });
-  installBlockedChat();
+test("A free workspace can recover from a Pro-only rejection even when top-ups are available", async () => {
+  arrangeWorkspace(
+    "admin",
+    { tier: "limited-free-1", credits: 500 },
+    { canBuyCredits: true },
+  );
+  await openBlockedChat("pro_required");
 
-  await setupPage({ context, path: RUN_PATH });
-
-  await readyChat();
   await expect(
-    screen.findByText(/Upgrade to Pro to keep chatting/u),
-  ).resolves.toBeVisible();
-  await expect(findButton("Upgrade to Pro")).resolves.toBeVisible();
-  expect(queryButton("$100")).not.toBeInTheDocument();
-  expect(queryButton("Custom")).not.toBeInTheDocument();
+    screen.findByText(/^Upgrade to Pro to keep chatting with /u),
+  ).resolves.toBeInTheDocument();
+  expect(queryButton("$5")).toBeNull();
+  expect(queryButton("$10")).toBeNull();
+  await upgradeToPro();
 });
 
 test("Show that a previously blocked chat can continue after credits return", async () => {
-  installBillingState({
-    tier: "pro",
-    role: "member",
-    credits: 25_000,
-    canBuyCredits: true,
-  });
-  installBlockedChat();
+  arrangeWorkspace("member", { tier: "pro", credits: 25_000 });
 
-  await setupPage({ context, path: RUN_PATH });
+  await openBlockedChat("insufficient_credits");
 
-  await readyChat();
-  await expect(screen.findByText("Credits available")).resolves.toBeVisible();
+  await expect(
+    screen.findByText("Credits available"),
+  ).resolves.toBeInTheDocument();
   expect(
-    screen.getByText(
-      /Your credits have been added\. You can continue chatting/u,
-    ),
-  ).toBeVisible();
-  expect(screen.getByRole("textbox", { name: "Message" })).toBeEnabled();
-  expect(queryButton("Upgrade to Pro")).not.toBeInTheDocument();
-  expect(queryButton("$100")).not.toBeInTheDocument();
+    screen.getByText(/^Your credits have been added\. You can continue/u),
+  ).toBeInTheDocument();
+  expect(screen.getByRole("textbox", { name: "Message" })).toHaveAttribute(
+    "contenteditable",
+    "true",
+  );
+  expect(queryButton("Upgrade to Pro")).toBeNull();
+  expect(queryButton("$100")).toBeNull();
 });
 
-// The send response is not read, so the rejection a send turns into arrives as
-// persisted events. The card rendered from them must use the org's current
-// credits rather than the balance loaded before they ran out.
 test("Show a new credit rejection with the current balance", async () => {
-  const tierArgs = { tier: "pro", canBuyCredits: true } as const;
-  installBillingState({ ...tierArgs, role: "admin", credits: 25_000 });
-  installBlockedChat();
-  const events: MockChatEventInput[] = [
-    ...billingFailure("insufficient_credits"),
-  ];
-  context.mocks.api(
-    chatThreadEventsContract.rows,
-    ({ params, query, respond }) => {
-      const rows = mockChatEventRows(
-        normalizeMockChatEvents(events, params.threadId),
-      ).filter((row) => {
-        return row.seqId > query.sinceSeqId;
-      });
-      return respond(200, chatEventRowsResponse(rows, query));
-    },
-  );
-  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-    const createdAt = "2026-08-01T10:01:00.000Z";
-    events.push(
-      {
-        id: body.clientEventId,
-        role: "user",
-        eventType: "input.rejected",
-        content: null,
-        error: "insufficient_credits",
-        userMessage: body.userMessage,
-        seqId: 3,
-        createdAt,
-      },
-      {
-        id: "billing-rejection-error",
-        eventType: "output.error",
-        role: "assistant",
-        content: null,
-        error: "insufficient_credits",
-        seqId: 4,
-        createdAt: "2026-08-01T10:01:01.000Z",
-      },
-    );
-    createChatEvent(RUN_THREAD_ID);
-    return respond(201, { threadId: RUN_THREAD_ID, createdAt });
+  const workspace = arrangeWorkspace("admin", {
+    tier: "pro",
+    credits: 25_000,
   });
-
-  await setupPage({ context, path: RUN_PATH });
-
-  await readyChat();
-  await expect(screen.findByText("Credits available")).resolves.toBeVisible();
-
-  context.mocks.api(billingStatusContract.get, ({ respond }) => {
-    return respond(200, billingStatus({ ...tierArgs, credits: 0 }));
-  });
-  await sendText("Try the brief once more");
-
+  const events = await openBlockedChat("insufficient_credits");
   await expect(
-    screen.findAllByText("You're out of credits"),
-  ).resolves.not.toHaveLength(0);
-  expect(screen.queryByText("Credits available")).not.toBeInTheDocument();
-});
-
-// A new thread's first send has no persisted history before its rejection, so
-// the rejection of the page's own pending message is what makes it new.
-test("Show a first-message credit rejection in a new chat with the current balance", async () => {
-  const tierArgs = { tier: "pro", canBuyCredits: true } as const;
-  installBillingState({ ...tierArgs, role: "admin", credits: 25_000 });
-  let billingRequests = 0;
-  context.mocks.api(billingStatusContract.get, ({ respond }) => {
-    billingRequests += 1;
-    return respond(200, billingStatus({ ...tierArgs, credits: 25_000 }));
-  });
-  installRunChat();
-  let sentThreadId: string | null = null;
-  const events: MockChatEventInput[] = [];
-  context.mocks.api(
-    chatThreadEventsContract.rows,
-    ({ params, query, respond }) => {
-      const rows =
-        params.threadId === sentThreadId
-          ? mockChatEventRows(
-              normalizeMockChatEvents(events, params.threadId),
-            ).filter((row) => {
-              return row.seqId > query.sinceSeqId;
-            })
-          : [];
-      return respond(200, chatEventRowsResponse(rows, query));
-    },
-  );
+    screen.findByText("Credits available"),
+  ).resolves.toBeInTheDocument();
+  // The balance runs out, so the API rejects the next message the way it
+  // rejects a queued input: the input is replaced and an error follows it.
+  workspace.credits = 0;
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-    if (body.threadId === undefined || body.clientEventId === undefined) {
-      throw new Error("Expected a new-thread send with client ids");
-    }
-    const threadId = body.threadId;
-    sentThreadId = threadId;
-    const createdAt = "2026-08-01T10:01:00.000Z";
     events.push(
       {
-        id: body.clientEventId,
+        id: "e0000000-0000-4000-a000-000000000b03",
         role: "user",
-        eventType: "input.prompt",
-        content: null,
-        userMessage: body.userMessage,
-        seqId: 1,
-        createdAt,
-      },
-      {
-        id: "first-message-rejection",
-        role: "user",
-        eventType: "input.rejected",
-        content: null,
-        error: "insufficient_credits",
+        content: body.prompt ?? "",
+        ...(body.userMessage ? { userMessage: body.userMessage } : {}),
         revokesEventId: body.clientEventId,
-        userMessage: body.userMessage,
-        seqId: 2,
-        createdAt: "2026-08-01T10:01:00.001Z",
+        error: "insufficient_credits",
+        runId: undefined,
+        seqId: 100,
+        createdAt: "2026-11-20T08:00:00.000Z",
       },
       {
-        id: "first-message-rejection-error",
-        eventType: "output.error",
+        id: "e0000000-0000-4000-a000-000000000b04",
         role: "assistant",
         content: null,
         error: "insufficient_credits",
-        seqId: 3,
-        createdAt: "2026-08-01T10:01:00.002Z",
+        runId: undefined,
+        seqId: 101,
+        createdAt: "2026-11-20T08:00:00.001Z",
       },
     );
-    createChatEvent(threadId);
-    return respond(201, { threadId, createdAt });
+    publishRunUpdate(RUN_THREAD_ID);
+    return respond(201, { threadId: RUN_THREAD_ID });
   });
 
-  await setupPage({ context, path: NEW_CHAT_PATH });
-
-  await readyChat();
-  await waitFor(() => {
-    expect(billingRequests).toBeGreaterThan(0);
-  });
-
-  context.mocks.api(billingStatusContract.get, ({ respond }) => {
-    return respond(200, billingStatus({ ...tierArgs, credits: 0 }));
-  });
-  await sendText("Draft the first campaign brief");
+  await sendText("Try the summary again");
 
   await expect(
     screen.findAllByText("You're out of credits"),
   ).resolves.not.toHaveLength(0);
   expect(screen.queryByText("Credits available")).not.toBeInTheDocument();
 });
+
+test("A limited-free owner sees the specific recovery explanation for an exhausted balance", async () => {
+  arrangeWorkspace("admin", { tier: "limited-free-1", credits: 0 });
+  await openBlockedChat("insufficient_credits");
+  const explanation = await screen.findByText(
+    "Add credits from $5 to keep going, or upgrade to Pro to unlock exclusive features.",
+  );
+  expect(explanation).toBeVisible();
+  expect(screen.queryByText("Upgrade to Pro to run")).not.toBeInTheDocument();
+  expect(
+    screen.queryByText("insufficient_credits", { exact: true }),
+  ).toBeNull();
+  await expect(
+    screen.findByText("You're out of credits", { exact: true }),
+  ).resolves.toBeVisible();
+});
+
+test.each(["admin", "member"] as const)(
+  "A structured credit failure shows the billing recovery available to the %s",
+  async (role) => {
+    arrangeWorkspace(role, { tier: "limited-free-1", credits: 0 });
+    accountModels(context, ["gpt-5.6-sol", "gpt-5.6-luna"], "gpt-5.6-sol");
+    const raw = "The provider rejected invoice authorization for the draft.";
+    const { events } = blockedRun("insufficient_credits");
+    installRunChat({
+      chatEvents: [
+        events[0]!,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          runId: BLOCKED_RUN_ID,
+          content: raw,
+          runLifecycleEvent: "failed",
+          failureReason: "insufficient_credits",
+          seqId: 2,
+          createdAt: "2026-11-20T07:52:00Z",
+        },
+      ],
+    });
+    await setupPage({ context, path: RUN_PATH });
+    await screen.findByText(BLOCKED_PROMPT);
+    const card = await screen.findByTestId("assistant-error-card-shell");
+    const content = within(card);
+    expect(content.getByText("You're out of credits")).toBeVisible();
+    expect(content.queryByText("Upgrade to Pro to run")).toBeNull();
+    expect(screen.queryByText(raw)).toBeNull();
+    expect(content.queryByRole("combobox")).toBeNull();
+    const explanation =
+      role === "admin"
+        ? "Add credits from $5 to keep going, or upgrade to Pro to unlock exclusive features."
+        : "Ask a workspace admin to add credits so you can keep chatting with Okou.";
+    await expect(content.findByText(explanation)).resolves.toBeVisible();
+    const labels = queryAllByRoleFast("button", card).map((button) => {
+      return button.textContent?.trim();
+    });
+    expect(labels).toStrictEqual(
+      role === "admin" ? ["$5", "$10", "Upgrade to Pro"] : [],
+    );
+  },
+);

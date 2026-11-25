@@ -66,7 +66,6 @@
     <string name="workflow_notion_child">Sous-page Notion créée</string>
     <string name="workflow_notion_item">Élément de base de données Notion créé</string>
     <string name="workflow_notion_updated">Page Notion mise à jour</string>
-    <string name="workflow_offline_changes">Connectez-vous pour enregistrer. Vos modifications sont conservées.</string>
     <string name="workflow_pause">Mettre en pause</string>
     <string name="workflow_paused">Automatisations en pause</string>
     <string name="workflow_private">Moi uniquement</string>
@@ -105,7 +104,6 @@
         <item quantity="many">%d automatisations actives</item>
         <item quantity="other">%d automatisations actives</item>
     </plurals>
-    <string name="workflow_draft_network_failed">Impossible d’ouvrir le brouillon du nouveau chat. Votre brouillon actuel est conservé. Vérifiez votre connexion et réessayez.</string>
     <string name="workflow_rule_change_failed">Impossible de modifier cette règle.</string>
     <string name="workflow_rule_network_failed">Impossible de modifier cette règle. Vérifiez votre connexion et réessayez.</string>
     <string name="workflow_write_conflict">Ce workflow a changé pendant l’enregistrement. Vos modifications sont conservées.</string>
@@ -121,4 +119,12 @@
     <string name="workflow_history_trigger_unavailable">Déclencheur indisponible</string>
     <string name="workflow_history_scheduled">Déclenchement planifié</string>
     <string name="workflow_history_manual">Exécution manuelle</string>
+    <string name="workflow_catalog_refresh_failed">Impossible d’actualiser le répertoire des workflows. Les workflows chargés restent affichés.</string>
+    <string name="workflow_history_earlier_failed">Impossible de charger les exécutions précédentes.</string>
+    <string name="workflow_rule_checking">Vérification du résultat…</string>
+    <string name="workflow_rule_unconfirmed">Le résultat reste à confirmer.</string>
+    <string name="workflow_event">Événement</string>
+    <string name="workflow_event_source">Source de l’événement</string>
+    <string name="workflow_source_gmail">Gmail · E-mail reçu</string>
+    <string name="workflow_source_calendar">Google Calendar · Événement créé</string>
 </resources>

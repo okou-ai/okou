@@ -4,6 +4,7 @@ import json
 import math
 from collections.abc import Callable
 
+from .json_limits import MODEL_JSON_MAX_WORK_UNITS
 from .json_selective import (
     FIRST_ARRAY_ELEMENT,
     JsonExtractionResult,
@@ -19,12 +20,12 @@ from .model_tokens import (
     MODEL_USAGE_CATEGORY_CACHE_READ,
     MODEL_USAGE_CATEGORY_INPUT,
     MODEL_USAGE_CATEGORY_OUTPUT,
+    MODEL_USAGE_QUANTITY_FIELD,
 )
 from .openai_tokens import partition_input_tokens
-from .quantities import MAX_USAGE_QUANTITY, is_usage_quantity
+from .quantities import is_usage_quantity
 from .sse import SseUsageScanner
 
-_CHAT_COMPLETIONS_MAX_WORK_UNITS = 65_536
 _CHAT_COMPLETIONS_SSE_FAST_PATH_MAX_BYTES = 1024
 _JSON_MAX_NUMBER_BYTES = 128
 _DONE_SENTINEL = b"[DONE]"
@@ -60,11 +61,7 @@ _CHAT_COMPLETIONS_SCALAR_FIELDS = {
     ("model",): ScalarField("string", max_bytes=1024),
     ("service_tier",): ScalarField("string", max_bytes=1024),
     **{
-        (*prefix, field): ScalarField(
-            "int",
-            max_bytes=64,
-            max_int_value=MAX_USAGE_QUANTITY,
-        )
+        (*prefix, field): MODEL_USAGE_QUANTITY_FIELD
         for prefix in _USAGE_PATHS
         for field in (
             "prompt_tokens",
@@ -73,11 +70,7 @@ _CHAT_COMPLETIONS_SCALAR_FIELDS = {
         )
     },
     **{
-        (*prefix, "prompt_tokens_details", field): ScalarField(
-            "int",
-            max_bytes=64,
-            max_int_value=MAX_USAGE_QUANTITY,
-        )
+        (*prefix, "prompt_tokens_details", field): MODEL_USAGE_QUANTITY_FIELD
         for prefix in _USAGE_PATHS
         for field in ("cached_tokens", "cache_write_tokens")
     },
@@ -206,7 +199,7 @@ def _new_extractor() -> JsonSelectiveExtractor:
         object_presence_paths=set(_USAGE_PATHS),
         value_presence_paths=set(_USAGE_VALUE_PRESENCE_PATHS),
         max_number_bytes=_JSON_MAX_NUMBER_BYTES,
-        max_work_units=_CHAT_COMPLETIONS_MAX_WORK_UNITS,
+        max_work_units=MODEL_JSON_MAX_WORK_UNITS,
     )
 
 

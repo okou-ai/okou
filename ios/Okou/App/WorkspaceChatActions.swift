@@ -343,10 +343,14 @@ final class WorkspaceChatActions {
       didFail: { [weak self] in self?.handle($0) })
   }
 
+  /// Removes the fork's sheet. A swipe makes SwiftUI clear the sheet's item, and run its
+  /// `onDismiss`, from inside its own interactive dismissal. Closing the fork ends native
+  /// editing, and a keyboard change there re-enters the sheet's layout and aborts on an
+  /// exclusivity violation, so the fork closes on the next main-actor turn.
   func dismissFork() {
-    guard fork?.isSending != true else { return }
-    fork?.close()
-    fork = nil
+    guard let fork, !fork.isSending else { return }
+    self.fork = nil
+    lifecycleTasks.track(Task { @MainActor in fork.close() })
   }
 
   private func finishFork(_ thread: ChatThread) {

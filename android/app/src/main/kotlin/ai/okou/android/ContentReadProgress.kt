@@ -49,6 +49,8 @@ internal fun ContentReadProgress(
     var animate by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         val motion = coroutineContext[MotionDurationScale]
+        // Android starts its scale observer on first access, before snapshotFlow can read it.
+        motion?.scaleFactor
         snapshotFlow { motion?.scaleFactor != 0f }.collect { animate = it }
     }
     if (animate) {

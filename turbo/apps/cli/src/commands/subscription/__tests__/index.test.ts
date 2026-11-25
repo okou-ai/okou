@@ -214,3 +214,75 @@ describe("okou subscription", () => {
     expect(output()).toContain("Connect a subscription in Settings > Models");
   });
 });
+
+describe("internal Antigravity subscription", () => {
+  const profileUrl = "http://localhost:3000/api/me/subscriptions/antigravity";
+  const bindingId = "30000000-0000-4000-8000-000000000001";
+  it("prints the assigned browser link for a web-only worker", async () => {
+    server.use(
+      http.get(profileUrl, () => {
+        return HttpResponse.json({
+          status: "connected",
+          bindingId,
+          loginOrigin: "https://member.agy.example.com",
+        });
+      }),
+    );
+    await subscriptionCommand.parseAsync(["antigravity", "status"], {
+      from: "user",
+    });
+    expect(output()).toContain(
+      `https://member.agy.example.com/?arg=${bindingId}`,
+    );
+    expect(output()).not.toContain("ssh -t");
+  });
+  it("shows the assigned sign-in terminal and disconnects only the requested binding", async () => {
+    server.use(
+      http.post(profileUrl, async ({ request }) => {
+        expect(await request.json()).toEqual({});
+        return HttpResponse.json({
+          status: "pending",
+          bindingId,
+          loginHost: "tester@agy.example.com",
+          expiresAt: "2030-10-01T12:00:00.000Z",
+        });
+      }),
+      http.get(profileUrl, () => {
+        return HttpResponse.json({
+          status: "connected",
+          bindingId,
+          loginHost: "tester@agy.example.com",
+        });
+      }),
+      http.delete(`${profileUrl}/${bindingId}`, () => {
+        return HttpResponse.json({ status: "disconnected" });
+      }),
+    );
+    await subscriptionCommand.parseAsync(["antigravity", "connect"], {
+      from: "user",
+    });
+    expect(output()).toContain(`ssh -t -- tester@agy.example.com ${bindingId}`);
+    log.mockClear();
+    await subscriptionCommand.parseAsync(["antigravity", "status"], {
+      from: "user",
+    });
+    expect(output()).toContain(
+      `ssh -t -- tester@agy.example.com verify ${bindingId}`,
+    );
+    log.mockClear();
+    await subscriptionCommand.parseAsync(["antigravity", "status", "--json"], {
+      from: "user",
+    });
+    expect(JSON.parse(output())).toEqual({
+      status: "connected",
+      bindingId,
+      loginHost: "tester@agy.example.com",
+    });
+    log.mockClear();
+    await subscriptionCommand.parseAsync(
+      ["antigravity", "disconnect", bindingId],
+      { from: "user" },
+    );
+    expect(output()).toContain("disconnected");
+  });
+});

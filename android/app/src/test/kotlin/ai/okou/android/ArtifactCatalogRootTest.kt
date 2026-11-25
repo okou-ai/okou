@@ -22,7 +22,9 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.widget.VideoView
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
@@ -50,9 +52,11 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -72,6 +76,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.abs
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.JsonPrimitive
 import okhttp3.mockwebserver.MockResponse
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -105,6 +110,12 @@ internal abstract class ArtifactCatalogRootTestFixture {
         compose.runOnIdle { compose.activity.viewModelStore.clear() }
         app.fixture.close()
         app.cacheSnapshot.restore()
+    }
+
+    protected fun resumeArtifactRoute() {
+        val scenario = compose.activityRule.scenario
+        scenario.moveToState(Lifecycle.State.CREATED)
+        scenario.moveToState(Lifecycle.State.RESUMED)
     }
 
     protected fun loadedWebsiteUrl(): String? = websiteView()?.let { shadowOf(it).lastLoadedUrl }
@@ -204,7 +215,7 @@ class ArtifactWorkflowResourcesApplication : ChatListApplication() {
 @Config(sdk = [35], qualifiers = "en-rUS-w400dp-h800dp", application = ChatListApplication::class)
 internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
     @Test
-    fun firstCatalogReadRetriesWhileConnectivityIsUnavailableAndUsesTerminalErrorMeasurements() {
+    fun firstCatalogReadRespectsRetryAfterAndReportsExhaustedRetries() {
         val fixture = ArtifactApiFixture(app.fixture)
         fixture.install()
         val release = CountDownLatch(1)
@@ -219,7 +230,6 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
                 } else MockResponse().setResponseCode(503)
             } else respond(request)
         }
-        compose.runOnIdle { app.connectivity.value = false }
         app.responseGate.countDown()
         awaitText(fixture.sourceTitle)
         val failureText = "Temporarily unable to load artifacts"
@@ -252,7 +262,7 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
         mainLooper.idleFor(12, TimeUnit.SECONDS)
         assertEquals(3, attempts.size)
         app.fixture.commandResponse = respond
-        compose.runOnIdle { app.connectivity.value = true }
+        resumeArtifactRoute()
         awaitText(fixture.summary.title)
     }
 
@@ -354,10 +364,8 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
             compose.onNodeWithText(notice).getUnclippedBoundsInRoot().top > previousRow.bottom,
         )
         assertEquals(1, appendRequests.get())
-        compose.runOnIdle { app.connectivity.value = false }
-        compose.waitUntil(10_000) { ready.chatArtifacts.state.value.offline }
         refuseAppend.set(false)
-        compose.runOnIdle { app.connectivity.value = true }
+        resumeArtifactRoute()
         awaitText(fixture.slides.title)
         assertEquals(2, appendRequests.get())
 
@@ -706,6 +714,86 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
 @Config(sdk = [35], qualifiers = "en-rUS-w400dp-h800dp", application = ChatListApplication::class)
 internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
     @Test
+    fun emptyCatalogActionsRestoreFocusAndKeepTheSelectedTypeWhenClearing() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            compose.activityRule.scenario.recreate()
+            val fixture = ArtifactApiFixture(app.fixture)
+            fixture.install()
+            app.responseGate.countDown()
+            awaitText(fixture.sourceTitle)
+            compose.onNodeWithContentDescription("Artifacts").performClick()
+            awaitText(fixture.checklist.title)
+
+            val files = compose.onNodeWithText("Files")
+            val query = compose.onNodeWithTag("artifact_query")
+            files.performClick()
+            query.performTextReplacement("no matching artifact")
+            awaitText("No matching artifacts")
+            val title = compose.onNodeWithText("No matching artifacts", useUnmergedTree = true)
+            val list = compose.onNodeWithTag("artifact_list").getUnclippedBoundsInRoot()
+            assertEquals(28.dp, title.getUnclippedBoundsInRoot().left - list.left)
+            compose.onNodeWithText("Clear keyword").assertHeightIsAtLeast(48.dp).performClick()
+            awaitText(fixture.checklist.title)
+            query.assertIsFocused()
+            assertEquals(
+                "",
+                query.fetchSemanticsNode().config[SemanticsProperties.EditableText].text,
+            )
+            files.assertIsSelected()
+            compose.onNodeWithText("Yesterday").assertIsDisplayed()
+
+            compose.onNodeWithText("Videos").performClick()
+            awaitText("No artifacts of this type")
+            compose.onNodeWithText("Show all").assertHeightIsAtLeast(48.dp).performClick()
+            awaitText(fixture.checklist.title)
+            compose.onNodeWithText("All").assertIsSelected().assertIsFocused()
+        } finally {
+            instrumentation.resetInTouchMode()
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w840dp-h820dp")
+    fun wideCatalogRevealsKeyboardFiltersAndKeepsFocusOnTheActivatedResult() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            compose.activityRule.scenario.recreate()
+            val fixture = ArtifactApiFixture(app.fixture, includeVideo = true)
+            fixture.install()
+            app.responseGate.countDown()
+            awaitText(fixture.sourceTitle)
+            compose.onNodeWithContentDescription("Artifacts").performClick()
+            awaitText(fixture.checklist.title)
+
+            val catalog = compose.onNodeWithTag("artifact_catalog").getUnclippedBoundsInRoot()
+            val videos = compose.onNodeWithText("Videos")
+            val filterEnd = catalog.right - 16.dp
+            assertTrue(videos.getUnclippedBoundsInRoot().right > filterEnd)
+            videos.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
+            assertTrue(videos.assertIsFocused().getUnclippedBoundsInRoot().right <= filterEnd)
+            videos.performKeyInput { pressKey(Key.Enter) }
+            awaitText(fixture.video.title)
+
+            val row = compose.onNode(hasText(fixture.video.title) and hasClickAction())
+            row.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
+            row.performKeyInput { pressKey(Key.Enter) }
+            awaitText("Play")
+            row.assertIsFocused().assertIsSelected()
+
+            val all = compose.onNodeWithText("All")
+            all.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
+            all.performKeyInput { pressKey(Key.Enter) }
+            awaitText(fixture.checklist.title)
+            compose.onNodeWithTag("artifact_preview_title").assertTextContains(fixture.video.title)
+        } finally {
+            instrumentation.resetInTouchMode()
+        }
+    }
+
+    @Test
     fun catalogUsesTheDesignedDateSpacingAndRowAlignment() {
         val fixture = ArtifactApiFixture(app.fixture)
         fixture.install()
@@ -1027,8 +1115,7 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithTag("conversation").assertIsDisplayed()
 
-        val onlinePages = fixture.catalogScopes.size
-        compose.runOnIdle { app.connectivity.value = false }
+        val previousPageRequests = fixture.catalogScopes.size
         val reopened = CountDownLatch(1)
         fixture.beforeCatalog = { reopened.await() }
         try {
@@ -1038,29 +1125,117 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
         } finally {
             reopened.countDown()
         }
-        compose.waitUntil(10_000) { fixture.catalogScopes.size > onlinePages }
+        compose.waitUntil(10_000) { fixture.catalogScopes.size > previousPageRequests }
         compose.onNodeWithText(fixture.slides.title).assertIsDisplayed()
     }
 
     @Test
     fun conversationCardOpensAnAuthorizedPreviewWithoutReadingTheCatalog() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            compose.activityRule.scenario.recreate()
+            val fixture = ArtifactApiFixture(app.fixture)
+            fixture.install()
+            fixture.installInlineHistory()
+            app.fixture.historyReply +=
+                "\n\n[${fixture.checklist.title}](/artifacts/checklist1.md) " +
+                    "[${fixture.image.title}](/artifacts/thumbnail1.png)"
+            app.responseGate.countDown()
+            awaitText(fixture.sourceTitle)
+            compose.onNodeWithText(fixture.sourceTitle).performClick()
+            awaitText(fixture.image.title)
+
+            val button = SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button)
+            val summary = compose.onNode(hasText(fixture.summary.title) and button)
+            val checklist = compose.onNode(hasText(fixture.checklist.title) and button)
+            val image = compose.onNode(hasText(fixture.image.title) and button)
+            val intro = compose.onNodeWithText("The release summary is ready.")
+            val summaryBounds = summary.assertHeightIsAtLeast(60.dp).getUnclippedBoundsInRoot()
+            val checklistBounds = checklist.getUnclippedBoundsInRoot()
+            assertEquals(12.dp, summaryBounds.top - intro.getUnclippedBoundsInRoot().bottom)
+            assertEquals(8.dp, checklistBounds.top - summaryBounds.bottom)
+            assertEquals(8.dp, image.getUnclippedBoundsInRoot().top - checklistBounds.bottom)
+            assertTrue(fixture.requestedReferences.isEmpty())
+            summary.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
+            summary.assertIsFocused().performKeyInput { pressKey(Key.Enter) }
+
+            awaitText("Preview only", partial = true)
+            compose.onNodeWithText("Artifact preview").assertIsDisplayed()
+            compose.onNodeWithText("Save file").assertDoesNotExist()
+            assertEquals(
+                listOf("/api/artifact-references/artifacts2.md"),
+                fixture.requestedReferences,
+            )
+            assertTrue(fixture.catalogScopes.isEmpty())
+            compose.onNodeWithContentDescription("Back").performClick()
+            awaitText(fixture.image.title)
+            summary.assertIsFocused()
+        } finally {
+            instrumentation.resetInTouchMode()
+        }
+    }
+
+    @Test
+    fun adjacentArtifactCardsUseEightDpThroughMarkdownListsAndEarlierReplies() {
         val fixture = ArtifactApiFixture(app.fixture)
         fixture.install()
         fixture.installInlineHistory()
+        val note = "Additional material for the handoff."
+        val handoff = "Release handoff notes"
+        val latest =
+            app.fixture.historyReply +
+                "\n\n- [${fixture.checklist.title}](/artifacts/checklist1.md)" +
+                "\n- [${fixture.image.title}](/artifacts/thumbnail1.png)" +
+                "\n- $note\n- [$handoff](/artifacts/part000001.md)"
+        val earlier =
+            "[${fixture.site.title}](https://fixture.okou.app/)" +
+                "\n\n[${fixture.slides.title}](/artifacts/launchdeck.pptx)"
+        app.fixture.setHistoryEvents(
+            CHAT_PERSONAL,
+            listOf(
+                historyEventWire(
+                    "input",
+                    17,
+                    type = "input.prompt",
+                    payload =
+                        """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Review the release files"}]}}""",
+                ),
+                historyEventWire(
+                    "earlier-output",
+                    19,
+                    payload = """{"content":${JsonPrimitive(earlier)}}""",
+                ),
+                historyEventWire(
+                    "output",
+                    23,
+                    payload = """{"content":${JsonPrimitive(latest)}}""",
+                ),
+                historyEventWire(type = "run.completed", payload = "null"),
+            ),
+        )
         app.responseGate.countDown()
         awaitText(fixture.sourceTitle)
         compose.onNodeWithText(fixture.sourceTitle).performClick()
-        awaitText(fixture.summary.title)
-        assertTrue(fixture.requestedReferences.isEmpty())
-        compose.onNodeWithText(fixture.summary.title).assertHeightIsAtLeast(60.dp).performClick()
-        awaitText("Preview only", partial = true)
-        compose.onNodeWithText("Artifact preview").assertIsDisplayed()
-        compose.onNodeWithText("Save file").assertDoesNotExist()
-        assertEquals(1, fixture.requestedReferences.size)
-        assertTrue(fixture.catalogScopes.isEmpty())
-        compose.onNodeWithContentDescription("Back").performClick()
-        awaitText(fixture.summary.title)
-        compose.onNodeWithText(fixture.summary.title).assertIsFocused()
+        awaitText(fixture.slides.title)
+
+        val labels =
+            listOf(
+                fixture.summary.title,
+                fixture.checklist.title,
+                fixture.image.title,
+                note,
+                handoff,
+                fixture.site.title,
+                fixture.slides.title,
+            )
+        val bounds = labels.map { label ->
+            compose.onNodeWithText(label).getUnclippedBoundsInRoot()
+        }
+        assertEquals(
+            listOf(8.dp, 8.dp, 12.dp, 12.dp, 8.dp, 8.dp),
+            bounds.zipWithNext { above, below -> below.top - above.bottom },
+        )
     }
 
     @Test
@@ -1234,10 +1409,9 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
 @Config(sdk = [35], qualifiers = "en-rUS-w400dp-h800dp", application = ChatListApplication::class)
 internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
     @Test
-    fun uncachedDocumentResolvesItsAccessWhileConnectivityIsReportedUnavailable() {
+    fun uncachedDocumentResolvesItsAccessBeforeDisplayingContent() {
         val fixture = ArtifactApiFixture(app.fixture)
         fixture.install()
-        compose.runOnIdle { app.connectivity.value = false }
         app.responseGate.countDown()
         awaitText(fixture.sourceTitle)
         compose.onNodeWithContentDescription("Artifacts").performClick()
@@ -1346,7 +1520,7 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
 
     @Test
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    fun cachedDocumentAndImagePreviewsStayReadableOffline() {
+    fun cachedDocumentAndImageStayReadableWhileTheirRefreshIsPending() {
         val fixture = ArtifactApiFixture(app.fixture)
         fixture.install()
         app.responseGate.countDown()
@@ -1365,14 +1539,27 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
         compose.waitUntilExactlyOneExists(hasContentDescription(fixture.image.title), 10_000)
         backToCatalog.performClick()
 
-        compose.runOnIdle { app.connectivity.value = false }
-        compose.waitUntil(10_000) { artifactModel.state.value.offline }
-        compose.onNodeWithText(fixture.image.title).performClick()
-        compose.onNodeWithContentDescription(fixture.image.title).assertIsDisplayed()
-        backToCatalog.performClick()
+        val release = CountDownLatch(1)
+        val respond = app.fixture.commandResponse
+        app.fixture.commandResponse = { request ->
+            if (
+                request.requestUrl?.encodedPath in
+                    setOf("/artifact-bytes/image", "/artifact-bytes/summary")
+            ) {
+                release.await()
+            }
+            respond(request)
+        }
+        try {
+            compose.onNodeWithText(fixture.image.title).performClick()
+            compose.onNodeWithContentDescription(fixture.image.title).assertIsDisplayed()
+            backToCatalog.performClick()
 
-        compose.onNodeWithText(fixture.summary.title).performClick()
-        compose.onNodeWithText(documentText, substring = true).assertIsDisplayed()
+            compose.onNodeWithText(fixture.summary.title).performClick()
+            compose.onNodeWithText(documentText, substring = true).assertIsDisplayed()
+        } finally {
+            release.countDown()
+        }
     }
 
     @Test
@@ -1389,7 +1576,6 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
         awaitText(body, partial = true)
         val surface = compose.onNodeWithTag("artifact_preview_surface")
         val originalBounds = surface.getUnclippedBoundsInRoot()
-        compose.runOnIdle { app.connectivity.value = false }
         val failures = CopyOnWriteArrayList<Long>()
         val respond = app.fixture.commandResponse
         app.fixture.commandResponse = { request ->
@@ -1398,7 +1584,7 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
                 MockResponse().setResponseCode(503)
             } else respond(request)
         }
-        compose.runOnIdle { app.connectivity.value = true }
+        resumeArtifactRoute()
         awaitText("Temporarily unable to load preview")
 
         compose.onNodeWithText(body, substring = true).assertIsDisplayed()
@@ -1425,7 +1611,7 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
     }
 
     @Test
-    fun missingWebsiteGrantKeepsTheFrameAndSourceWhenConnectivityDrops() {
+    fun missingWebsiteGrantKeepsTheFrameAndSourceAcrossForegrounding() {
         val fixture = ArtifactApiFixture(app.fixture)
         fixture.install()
         val respond = app.fixture.commandResponse
@@ -1445,16 +1631,15 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
         val source = compose.onNodeWithText("View source conversation")
         source.assertIsEnabled()
 
-        compose.runOnIdle { app.connectivity.value = false }
-        compose.waitUntil(10_000) { artifactModel.state.value.offline }
-        compose.onNodeWithText("Source unavailable").assertIsDisplayed()
+        resumeArtifactRoute()
+        awaitText("Source unavailable")
         compose.onNodeWithText("Temporarily unable to load preview").assertDoesNotExist()
         source.assertIsEnabled()
         assertEquals(frameBounds, frame.getUnclippedBoundsInRoot())
     }
 
     @Test
-    fun missingWebsiteDocumentKeepsTheSourceStatusUntilReconnectReloads() {
+    fun missingWebsiteDocumentKeepsTheSourceStatusUntilForegroundRefresh() {
         val fixture = ArtifactApiFixture(app.fixture)
         fixture.install()
         openWebsite(fixture)
@@ -1470,13 +1655,7 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
         val browser = compose.onNodeWithText("Open in browser")
         browser.assertIsEnabled()
 
-        compose.runOnIdle { app.connectivity.value = false }
-        compose.waitUntil(10_000) { artifactModel.state.value.offline }
-        compose.onNodeWithText("Source unavailable").assertIsDisplayed()
-        browser.assertDoesNotExist()
-        assertEquals(frameBounds, frame.getUnclippedBoundsInRoot())
-
-        compose.runOnIdle { app.connectivity.value = true }
+        resumeArtifactRoute()
         compose.waitUntil(10_000) { loadedWebsiteUrl() != null }
         assertEquals(2, fixture.requestedSiteGrants.size)
         compose.onNodeWithText("Source unavailable").assertDoesNotExist()
@@ -1485,26 +1664,17 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
     }
 
     @Test
-    fun websiteDenialSurvivesDisconnectionBeforeTheNextFrame() {
+    fun websiteDocumentDenialKeepsTheFrameAndSourceAction() {
         val fixture = ArtifactApiFixture(app.fixture)
         fixture.install()
         openWebsite(fixture)
         val view = checkNotNull(websiteView())
-        val model = artifactModel
-        val connectivity = app.connectivity
         val frame = compose.onNodeWithTag("artifact_preview_surface")
         val frameBounds = frame.getUnclippedBoundsInRoot()
-        compose.mainClock.autoAdvance = false
-        try {
-            failWebsiteDocument(view, 403)
-            compose.runOnIdle { connectivity.value = false }
-            compose.waitUntil(10_000) { model.state.value.offline }
-        } finally {
-            compose.mainClock.autoAdvance = true
-        }
+        failWebsiteDocument(view, 403)
+        awaitText("You don’t have access to this artifact")
+        assertNull(websiteView())
 
-        compose.onNodeWithText("You don’t have access to this artifact").assertIsDisplayed()
-        compose.onNodeWithText("Open in browser").assertDoesNotExist()
         compose.onNodeWithText("View source conversation").assertIsEnabled()
         assertEquals(frameBounds, frame.getUnclippedBoundsInRoot())
     }
@@ -1560,7 +1730,7 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
     }
 
     @Test
-    fun websiteReconnectKeepsItsFrameAndSourceWhileWaitingForFreshAccess() {
+    fun websiteRefreshKeepsItsFrameAndSourceWhileCheckingAccess() {
         val releaseGrant = CountDownLatch(1)
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         instrumentation.setInTouchMode(false)
@@ -1589,24 +1759,22 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
             val surfaceHeight = surfaceBounds.bottom - surfaceBounds.top
             assertEquals(surfaceWidth.value * 9f / 16f, surfaceHeight.value, 1f)
 
-            compose.runOnIdle { app.connectivity.value = false }
-            awaitText("Temporarily unable to load preview")
-            compose.onNodeWithText("Open in browser").assertDoesNotExist()
-            assertEquals(surfaceBounds, surface.getUnclippedBoundsInRoot())
-            assertEquals(sourceBounds, source.getUnclippedBoundsInRoot())
-            assertNull(loadedWebsiteUrl())
+            val initialUrl = loadedWebsiteUrl()
             source.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
             source.assertIsFocused()
 
             fixture.beforeSitePreview = { releaseGrant.await() }
-            compose.runOnIdle { app.connectivity.value = true }
+            val model = artifactModel
+            compose.runOnIdle {
+                model.setActive(false)
+                model.setActive(true)
+            }
             compose.waitUntil(10_000) {
                 // Let the detail response reach the main owner before the grant request begins.
                 shadowOf(Looper.getMainLooper()).idle()
                 fixture.requestedSiteGrants.size == 2
             }
-            compose.waitUntilExactlyOneExists(hasTestTag("artifact_preview_loading"), 10_000)
-            assertNull(loadedWebsiteUrl())
+            assertEquals(initialUrl, loadedWebsiteUrl())
             assertEquals(surfaceBounds, surface.getUnclippedBoundsInRoot())
             assertEquals(sourceBounds, source.assertIsFocused().getUnclippedBoundsInRoot())
 
@@ -1636,26 +1804,25 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
 
         val browser = compose.onNodeWithText("Open in browser")
         val surface = compose.onNodeWithTag("artifact_preview_surface")
-        awaitText("Open in browser")
+        compose.waitUntil(10_000) { loadedWebsiteUrl() != null }
         val initialBounds = surface.getUnclippedBoundsInRoot()
         assertTrue(browser.getUnclippedBoundsInRoot().bottom <= initialBounds.top)
         scrollWebsitePreview()
         val readingBounds = surface.getUnclippedBoundsInRoot()
         assertTrue(readingBounds.top < initialBounds.top)
 
-        compose.runOnIdle { app.connectivity.value = false }
-        awaitText("Temporarily unable to load preview")
-        browser.assertDoesNotExist()
+        failWebsiteDocument(checkNotNull(websiteView()), 404)
+        awaitText("Source unavailable")
         assertEquals(readingBounds, surface.getUnclippedBoundsInRoot())
 
-        compose.runOnIdle { app.connectivity.value = true }
-        awaitText("Open in browser")
+        resumeArtifactRoute()
+        compose.waitUntil(10_000) { loadedWebsiteUrl() != null }
         assertEquals(readingBounds, surface.getUnclippedBoundsInRoot())
     }
 
     @Test
     @Config(qualifiers = "en-rUS-w720dp-h360dp")
-    fun inlineWebsiteKeepsTheReadingPositionWhileItsReconnectGrantIsPending() {
+    fun inlineWebsiteKeepsTheReadingPositionWhileItsGrantRefreshes() {
         val fixture = ArtifactApiFixture(app.fixture)
         fixture.install()
         app.fixture.historyReply = "[${fixture.site.title}](https://fixture.okou.app/)"
@@ -1663,49 +1830,33 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
         awaitText(fixture.sourceTitle)
         compose.onNodeWithText(fixture.sourceTitle).performClick()
         awaitText(fixture.site.title)
-        compose.runOnIdle { app.connectivity.value = false }
         compose.onNodeWithText(fixture.site.title).performClick()
 
         val browser = compose.onNodeWithText("Open in browser")
         val surface = compose.onNodeWithTag("artifact_preview_surface")
-        awaitText("Temporarily unable to load preview")
+        compose.waitUntil(10_000) { loadedWebsiteUrl() != null }
+        val firstUrl = loadedWebsiteUrl()
         val initialBounds = surface.getUnclippedBoundsInRoot()
         val width = initialBounds.right - initialBounds.left
         val height = initialBounds.bottom - initialBounds.top
         assertEquals(width.value * 9f / 16f, height.value, 1f)
-        compose.onNodeWithTag("artifact_preview_title").assertTextContains("fixture.okou.app")
-        browser.assertDoesNotExist()
-        assertEquals(1, fixture.requestedSiteGrants.size)
-
-        compose.runOnIdle { app.connectivity.value = true }
-        compose.waitUntil(10_000) {
-            fixture.requestedSiteGrants.size == 2 &&
-                loadedWebsiteUrl() == fixture.requestedSiteGrants.last()
-        }
-        awaitText("Open in browser")
-        assertEquals(initialBounds, surface.getUnclippedBoundsInRoot())
         assertTrue(browser.getUnclippedBoundsInRoot().bottom <= initialBounds.top)
         scrollWebsitePreview()
         val readingBounds = surface.getUnclippedBoundsInRoot()
         assertTrue(readingBounds.top < initialBounds.top)
 
-        compose.runOnIdle { app.connectivity.value = false }
-        awaitText("Temporarily unable to load preview")
-        assertEquals(readingBounds, surface.getUnclippedBoundsInRoot())
-
         val releaseGrant = CountDownLatch(1)
         try {
             fixture.beforeSitePreview = { releaseGrant.await() }
-            compose.runOnIdle { app.connectivity.value = true }
-            compose.waitUntilExactlyOneExists(hasTestTag("artifact_preview_loading"), 10_000)
-            compose.waitUntil(10_000) { fixture.requestedSiteGrants.size == 3 }
-            browser.assertDoesNotExist()
+            resumeArtifactRoute()
+            compose.waitUntil(10_000) { fixture.requestedSiteGrants.size == 2 }
+            assertEquals(firstUrl, loadedWebsiteUrl())
             assertEquals(readingBounds, surface.getUnclippedBoundsInRoot())
         } finally {
             releaseGrant.countDown()
         }
 
-        awaitText("Open in browser")
+        compose.waitUntil(10_000) { loadedWebsiteUrl() == fixture.requestedSiteGrants.last() }
         assertEquals(readingBounds, surface.getUnclippedBoundsInRoot())
     }
 }

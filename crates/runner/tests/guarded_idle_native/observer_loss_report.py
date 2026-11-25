@@ -19,10 +19,8 @@ def validate(directory):
     directory = pathlib.Path(directory)
     result, collector, terminals = report._validate_cases(directory, CASES, report.PHASES)
     policy = supplied_policy(collector, result, "native_observer_loss_policy_json")
-    witnesses = {case: [] for case in CASES}
-    report.collect_witnesses(
-        directory / 'stdout.log', {PREFIX: witnesses},
-        case_matches=lambda value: value in CASES,
+    witnesses = report.collect_case_witnesses(
+        directory / 'stdout.log', PREFIX, CASES,
         invalid_message="invalid observer-loss witness",
     )
     runners = set()
@@ -78,9 +76,10 @@ def validate(directory):
                 or not status_evidence.status_wait_advanced(before, after)):
             raise ValueError("final status was not Pending after complete required IO")
         second = foreground.heartbeat(status.get("heartbeat"), 2, status_polled, events[4]["monotonic_ns"], (0, 0))
-        if first != second or first in runners:
-            raise ValueError("observer-loss heartbeat changed or replayed its runner generation")
-        runners.add(first)
+        foreground.claim_heartbeat_identity(
+            first, (second,), runners,
+            "observer-loss heartbeat changed or replayed its runner generation",
+        )
         accounting(status.get("accounting"), True)
         exact(status, {"io_released_ns": io_released, "status_held_ns": status_held,
                        "status_wait_polled_ns": status_polled, "status_waits_before": before,
