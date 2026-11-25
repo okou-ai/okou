@@ -67,13 +67,11 @@ async function readyFeed() {
     ).toBeTruthy();
   });
 }
-test("skill-import-dialog-001 Import skills immediately precedes Create in chat on Workflows", async () => {
-  const { trigger } = await workflowPage();
+test("skill-import-dialog-001 / skill-import-dialog-002 / skill-import-dialog-010 Import skills keeps the Claude Code prompt and both uploads when reopened", async () => {
+  const { trigger, upload } = await workflowPage();
   const create = await findFastControl("button", "Create in chat");
   expect(trigger.nextElementSibling).toBe(create);
-});
-test("skill-import-dialog-002 An empty Claude Code import presents the instructions and a folded provider-specific prompt", async () => {
-  const { trigger } = await workflowPage();
+
   const dialog = await show(trigger);
   const d = within(dialog);
   expect(d.getByRole("radio", { name: "Claude Code" })).toBeChecked();
@@ -88,6 +86,26 @@ test("skill-import-dialog-002 An empty Claude Code import presents the instructi
   expect(prompt).toHaveTextContent("vm0_skillimport_claudeCode_local");
   expect(prompt).toHaveTextContent("~/.claude/skills/");
   expect(prompt).not.toHaveTextContent("~/.codex/skills/");
+  const originalPrompt = prompt.textContent;
+
+  await readyFeed();
+  upload("report-import", "Quarterly review");
+  await d.findByText("Quarterly review");
+  click(await findFastControl("button", "Close", dialog));
+  await waitFor(() => {
+    return expect(dialog).not.toBeInTheDocument();
+  });
+  await expect(screen.findByText("Quarterly review")).resolves.toBeVisible();
+  upload("collection-import", "Studio collection");
+  const second = await show(trigger);
+  const reopened = within(second);
+  await reopened.findByText("Studio collection");
+  expect(reopened.getByText("Quarterly review")).toBeVisible();
+  click(await findFastControl("button", "Show full prompt", second));
+  expect(
+    (await reopened.findByRole("region", { name: "Skill import prompt" }))
+      .textContent,
+  ).toBe(originalPrompt);
 });
 test("skill-import-dialog-005 Modified and auxiliary workflow-link activations preserve the live import session", async () => {
   const { trigger, upload } = await workflowPage();
@@ -140,32 +158,6 @@ test.each([
     expect(location.pathname + location.search).toBe("/workflows");
   },
 );
-test("skill-import-dialog-010 Reopening imports reconciles both uploads and retains the original session prompt", async () => {
-  const { trigger, upload } = await workflowPage();
-  const first = await show(trigger);
-  const d = within(first);
-  click(await findFastControl("button", "Show full prompt", first));
-  const prompt = (await d.findByRole("region", { name: "Skill import prompt" }))
-    .textContent;
-  await readyFeed();
-  upload("report-import", "Quarterly review");
-  await d.findByText("Quarterly review");
-  click(await findFastControl("button", "Close", first));
-  await waitFor(() => {
-    return expect(first).not.toBeInTheDocument();
-  });
-  await expect(screen.findByText("Quarterly review")).resolves.toBeVisible();
-  upload("collection-import", "Studio collection");
-  const second = await show(trigger);
-  const reopened = within(second);
-  await reopened.findByText("Studio collection");
-  expect(reopened.getByText("Quarterly review")).toBeVisible();
-  click(await findFastControl("button", "Show full prompt", second));
-  expect(
-    (await reopened.findByRole("region", { name: "Skill import prompt" }))
-      .textContent,
-  ).toBe(prompt);
-});
 test("skill-import-dialog-014 Escape returns focus to Import skills and releases its realtime subscription", async () => {
   const { trigger } = await workflowPage();
   trigger.focus();
