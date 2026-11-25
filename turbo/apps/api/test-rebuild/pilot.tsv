@@ -55,20 +55,20 @@ artifacts	src/signals/routes/__tests__/host.bdd.test.ts	host.bdd-004	rewritten	1
 artifacts	src/signals/routes/__tests__/host.bdd.test.ts	host.bdd-006	planned		
 artifacts	src/signals/routes/__tests__/host.bdd.test.ts	host.bdd-007	rewritten	116.8	
 artifacts	src/signals/routes/__tests__/host.bdd.test.ts	host.bdd-008	planned		
-artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-001	planned		
-artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-004	planned		
-artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-005	planned		
+artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-001	rewritten	140.7	
+artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-004	rewritten	129.1	
+artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-005	rewritten	68.5	
 artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-007	planned		
-artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-008	planned		
-artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-010	planned		
-artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-011	planned		
-artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-012	planned		
-artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-013	planned		
-artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-016	planned		
-artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-017	planned		
-artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-018	planned		
-artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-027	planned		
-artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-028	planned		
+artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-008	rewritten	79.1	
+artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-010	rewritten	120.5	
+artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-011	rewritten	100.1	
+artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-012	rewritten	83.5	
+artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-013	rewritten	188.9	
+artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-016	rewritten	60.0	
+artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-017	rewritten	123.9	
+artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-018	rewritten	56.9	
+artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-027	rewritten	107.7	
+artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-028	rewritten	46.8	
 artifacts	src/signals/routes/__tests__/hosted-site-url.test.ts	hosted-site-url-001	planned		
 artifacts	src/signals/routes/__tests__/hosted-site-url.test.ts	hosted-site-url-002	planned		
 artifacts	src/signals/routes/__tests__/hosted-site-url.test.ts	hosted-site-url-003	planned		
