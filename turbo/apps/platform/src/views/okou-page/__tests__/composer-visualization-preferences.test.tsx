@@ -17,11 +17,13 @@ const context = testContext(),
 async function press(name: string, root?: HTMLElement) {
   click(await findFastControl("button", name, root));
 }
-async function option(name: string) {
-  const panel = await screen.findByRole("region", {
+function visualizationOptions() {
+  return screen.findByRole("region", {
     name: "Visualization options",
   });
-  await press(name, panel);
+}
+async function option(name: string) {
+  await press(name, await visualizationOptions());
 }
 function holder(element: HTMLElement, selector: string) {
   const node = element.closest(selector);
@@ -128,21 +130,24 @@ test.each([
     expect(fixture.sentMessages).toStrictEqual([]);
     await fill(await findComposerEditor(), second);
     await clickComposerAddMenuItem("Create");
-    await screen.findByRole("region", { name: "Visualization options" });
-    await option("Spreadsheet");
-    await option("Website");
-    await option("Sankey diagram");
+    const panel = await visualizationOptions();
+    await press("Spreadsheet", panel);
+    await press("Website", panel);
+    await press("Sankey diagram", panel);
     expect(summary(await board())).toStrictEqual(["Website · Bar, Sankey"]);
-    await option("Website");
-    await option("Spreadsheet");
-    await option("Sankey diagram");
+    await press("Website", panel);
+    await press("Spreadsheet", panel);
+    await press("Sankey diagram", panel);
     expect(summary(await board())).toStrictEqual(["Spreadsheet · Bar"]);
     gate.resolve();
+    // The prompt's run link appears when the app renders the persisted event.
     await waitFor(() => {
-      return expect(fixture.sentMessages[0]).toBeDefined();
+      expect(
+        document.querySelector('[data-role="user"][id^="run-"]'),
+      ).toHaveTextContent(first);
     });
+    expect(fixture.sentMessages[0]).toBeDefined();
     fixture.lifecycle.completeRun("The first chart is ready.");
-    createChatEvent(destination.slice(7));
     await screen.findByText("The first chart is ready.");
     expect(location.pathname).toBe(destination);
     await expect(findComposerEditor()).resolves.toHaveTextContent(second);
