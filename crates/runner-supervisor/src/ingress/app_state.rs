@@ -58,7 +58,7 @@ impl IngressHandler {
         run_id: RunId,
         command: Uuid,
     ) -> Response<Full<Bytes>> {
-        if request.method() != Method::PUT {
+        if request.method() != Method::PUT && request.method() != Method::GET {
             return response(StatusCode::METHOD_NOT_ALLOWED, "");
         }
         let headers = request.headers();
@@ -83,6 +83,33 @@ impl IngressHandler {
             return response(StatusCode::UNAUTHORIZED, "");
         };
         let deadline = Instant::now() + lifetime;
+        let Some(digest) = headers
+            .get("x-okou-content-sha256")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| <[u8; 32] as hex::FromHex>::from_hex(value).ok())
+        else {
+            return response(StatusCode::BAD_REQUEST, "");
+        };
+        let Some(receiver) = self.app_state.get() else {
+            return response(StatusCode::NOT_FOUND, "");
+        };
+        let Some(run) = receiver.run(run_id) else {
+            return response(StatusCode::GONE, "");
+        };
+        if request.method() == Method::GET {
+            let mut reply = match run.receipt(command, host, digest) {
+                Ok(Some(true)) => response(StatusCode::OK, &hex::encode(digest)),
+                Ok(Some(false)) => response(StatusCode::ACCEPTED, ""),
+                Ok(None) => response(StatusCode::NO_CONTENT, ""),
+                Err(UploadError::Conflict) => response(StatusCode::CONFLICT, ""),
+                Err(_) => response(StatusCode::GONE, ""),
+            };
+            reply.headers_mut().insert(
+                hyper::header::CACHE_CONTROL,
+                hyper::header::HeaderValue::from_static("no-store"),
+            );
+            return reply;
+        }
         if headers.contains_key("upgrade")
             || headers.contains_key("content-encoding")
             || headers
@@ -101,19 +128,6 @@ impl IngressHandler {
         if length == 0 || length > MAX_BUNDLE_BYTES {
             return response(StatusCode::PAYLOAD_TOO_LARGE, "");
         }
-        let Some(digest) = headers
-            .get("x-okou-content-sha256")
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| <[u8; 32] as hex::FromHex>::from_hex(value).ok())
-        else {
-            return response(StatusCode::BAD_REQUEST, "");
-        };
-        let Some(receiver) = self.app_state.get() else {
-            return response(StatusCode::NOT_FOUND, "");
-        };
-        let Some(run) = receiver.run(run_id) else {
-            return response(StatusCode::GONE, "");
-        };
         let Some(permit) = receiver.reserve_upload() else {
             return response(StatusCode::TOO_MANY_REQUESTS, "");
         };

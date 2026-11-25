@@ -130,6 +130,28 @@ impl Run {
     pub async fn cancelled(&self) {
         self.cancel.cancelled().await;
     }
+    /// A Mac can recover a lost receipt without uploading the window a second time.
+    pub fn receipt(
+        &self,
+        command: Uuid,
+        host: Uuid,
+        digest: [u8; 32],
+    ) -> Result<Option<bool>, UploadError> {
+        if self.cancel.is_cancelled() {
+            return Err(UploadError::Expired);
+        }
+        let entries = self.entries.lock().unwrap_or_else(|p| p.into_inner());
+        let Some(entry) = entries.get(&command) else {
+            return Ok(None);
+        };
+        if Instant::now() >= entry.deadline || matches!(entry.state, State::Revoked) {
+            return Err(UploadError::Expired);
+        }
+        if entry.host != host || entry.digest != digest {
+            return Err(UploadError::Conflict);
+        }
+        Ok(Some(matches!(entry.state, State::Received)))
+    }
     pub async fn deliver(
         &self,
         command: Uuid,

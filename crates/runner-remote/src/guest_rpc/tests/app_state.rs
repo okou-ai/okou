@@ -54,6 +54,7 @@ async fn app_state_delivers_only_to_an_authorized_assignment_and_repeats_the_rec
             runtime.reserve_upload().unwrap(),
         )
     };
+    assert_eq!(assigned.receipt(command, host, digest), Ok(None));
     let guest = async {
         let mut guest = h.open("assigned-sandbox").await;
         send(&mut guest, &serde_json::to_vec(&json!({"version":1,"method":"computer.appState.receive","params":{"commandId":command}})).unwrap()).await;
@@ -87,7 +88,19 @@ async fn app_state_delivers_only_to_an_authorized_assignment_and_repeats_the_rec
     .await
     .unwrap();
     assert_eq!(receipt.unwrap(), hex::encode(digest));
+    assert_eq!(assigned.receipt(command, host, digest), Ok(Some(true)));
+    assert_eq!(
+        assigned.receipt(command, host, [0; 32]),
+        Err(app_state::UploadError::Conflict)
+    );
     assert_eq!(upload().await.unwrap(), hex::encode(digest));
+    let mut reconnect = h.open("assigned-sandbox").await;
+    send(&mut reconnect, &serde_json::to_vec(&json!({"version":1,"method":"computer.appState.receive","params":{"commandId":command,"resumeSha256":hex::encode(digest)}})).unwrap()).await;
+    // A published pair recovers a lost terminal without receiving any content frames.
+    assert!(matches!(
+        Reader::responses(reconnect).next().await.unwrap(),
+        Some(Frame::Control(runner_rpc_proto::Response::Result { .. }))
+    ));
     let other = bytes::Bytes::from_static(b"changed window");
     assert_eq!(
         assigned

@@ -47,7 +47,9 @@ const check$ = command(async ({ get, set }, signal: AbortSignal) => {
   };
 });
 
-export const runnerAppStateRoute: RouteEntry = {
-  route: runnerAppStateContract.check,
-  handler: check$,
-};
+export const runnerAppStateRoutes: readonly RouteEntry[] = [
+  {
+    route: runnerAppStateContract.check,
+    handler: check$,
+  },
+];

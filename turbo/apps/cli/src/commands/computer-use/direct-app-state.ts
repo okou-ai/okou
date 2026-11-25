@@ -79,18 +79,23 @@ async function publishVerifiedBundle(
   return { files, digest };
 }
 
+interface SavedDelivery {
+  readonly digest: Buffer;
+  readonly files: Awaited<ReturnType<typeof publishComputerUseAppState>>;
+}
+
 export async function readDirectAppState(
   commandId: string,
   source: AsyncIterable<unknown>,
-  acknowledge: (digest: Buffer) => void,
+  acknowledge: (digest: Buffer, files: SavedDelivery["files"]) => void,
   signal: AbortSignal,
+  previouslyPublished?: SavedDelivery["files"],
 ) {
   let buffer: Buffer | undefined;
   let sha256: string | undefined;
   let offset = 0;
   let terminal = false;
-  let published:
-    Awaited<ReturnType<typeof publishComputerUseAppState>> | undefined;
+  let published: SavedDelivery["files"] | undefined = previouslyPublished;
   for await (const payload of rpcFrames(source)) {
     signal.throwIfAborted();
     if (terminal) throw new Error("Data follows the Runner app state receipt");
@@ -117,7 +122,7 @@ export async function readDirectAppState(
       );
       published = files;
       signal.throwIfAborted();
-      acknowledge(digest);
+      acknowledge(digest, files);
     } else {
       const control: unknown = JSON.parse(utf8.decode(payload));
       if (resultSchema.safeParse(control).success && published) {
@@ -141,6 +146,26 @@ export async function receiveDirectAppState(
   timeoutSeconds: number,
 ) {
   const signal = AbortSignal.timeout(timeoutSeconds * 1000);
+  let saved: SavedDelivery | undefined;
+  const retain = (delivery: SavedDelivery) => {
+    saved = delivery;
+  };
+  try {
+    return await receiveOnce(commandId, signal, retain);
+  } catch (error) {
+    signal.throwIfAborted();
+    if (!saved) throw error;
+    // Both files are already published. Recover only their receipt through the same Run.
+    return await receiveOnce(commandId, signal, retain, saved);
+  }
+}
+
+async function receiveOnce(
+  commandId: string,
+  signal: AbortSignal,
+  retain: (value: SavedDelivery) => void,
+  saved?: SavedDelivery,
+) {
   const child = spawn("/usr/local/bin/runner-rpc-client", ["--stream"], {
     stdio: ["pipe", "pipe", "ignore"],
     signal,
@@ -162,15 +187,20 @@ export async function receiveDirectAppState(
           JSON.stringify({
             version: 1,
             method: "computer.appState.receive",
-            params: { commandId },
+            params: {
+              commandId,
+              ...(saved ? { resumeSha256: saved.digest.toString("hex") } : {}),
+            },
           }),
         ),
       ),
     );
+    if (saved) child.stdin.end();
     const result = await readDirectAppState(
       commandId,
       child.stdout,
-      (digest) => {
+      (digest, files) => {
+        retain({ digest, files });
         child.stdin.end(
           Buffer.concat([
             frame(Buffer.concat([Buffer.from([0]), digest])),
@@ -179,6 +209,7 @@ export async function receiveDirectAppState(
         );
       },
       signal,
+      saved?.files,
     );
     if ((await closed) !== 0)
       throw new Error("Runner did not confirm the app state receipt");

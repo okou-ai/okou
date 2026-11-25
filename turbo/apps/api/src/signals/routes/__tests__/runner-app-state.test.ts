@@ -4,12 +4,12 @@ import { runnerAppStateContract } from "@okouai/api-contracts/contracts/computer
 import { mockEnv } from "../../../lib/env";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { testContext } from "../../../__tests__/test-context";
-import { runnerAppStateRoute } from "../runner-app-state";
+import { runnerAppStateRoutes } from "../runner-app-state";
 
 const context = testContext();
 test("requires official Runner authentication and a current direct command", async () => {
   mockEnv("OFFICIAL_RUNNER_SECRET", "c".repeat(64));
-  const client = setupApp({ context, routes: [runnerAppStateRoute] })(
+  const client = setupApp({ context, routes: runnerAppStateRoutes })(
     runnerAppStateContract,
   );
   const request = {
