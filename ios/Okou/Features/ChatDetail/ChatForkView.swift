@@ -5,12 +5,14 @@ import SwiftUI
 import UIKit
 
 struct ChatForkView: View {
-  @Bindable var flow: ChatForkStore
+  let flow: ChatForkStore
   let webURL: URL
   let threads: [ChatThread]
   let project: ChatProject?
   let needsUpgrade: Bool
   let dismiss: () -> Void
+  /// The attempt and model settings, read from the session graph.
+  @LoadableValue private var forkState: Loadable<ChatForkStore.Presentation>
   @State private var confirmsDiscard = false
   @State private var contentHeight: CGFloat = 0
   @State private var navigationInset: CGFloat = 0
@@ -19,6 +21,26 @@ struct ChatForkView: View {
 
   /// Up to this fitted height the sheet clears the keyboard below the largest detent.
   private static let keyboardClearHeight: CGFloat = 340
+
+  init(
+    flow: ChatForkStore, webURL: URL, threads: [ChatThread], project: ChatProject?,
+    needsUpgrade: Bool, dismiss: @escaping () -> Void
+  ) {
+    self.flow = flow
+    self.webURL = webURL
+    self.threads = threads
+    self.project = project
+    self.needsUpgrade = needsUpgrade
+    self.dismiss = dismiss
+    _forkState = LoadableValue(flow.presentation)
+  }
+
+  private var attempt: ChatForkStore.Attempt {
+    forkState.data?.attempt ?? ChatForkStore.Attempt()
+  }
+  private var modelSelection: ChatModelSelectionStore {
+    forkState.data?.modelSelection ?? flow.modelSelection
+  }
 
   private var fittedHeight: CGFloat {
     contentHeight > 0 && navigationInset > 0 ? contentHeight + navigationInset : 0
@@ -47,29 +69,29 @@ struct ChatForkView: View {
   var body: some View {
     NavigationStack {
       VStack(alignment: .leading, spacing: OkouSpace.lg) {
-        if let error = flow.error {
+        if let error = attempt.error {
           OkouBanner(Text(error), icon: "circle-alert", tone: .problem) {
             Button("Retry") { Task { await flow.send() } }
-              .disabled(flow.isSending || needsUpgrade)
+              .disabled(attempt.isSending || needsUpgrade)
           }
           .accessibilityIdentifier("fork-send-error")
           .padding(.horizontal, OkouControl.pageInset)
         }
         let composer = flow.composer
         ChatComposerView(
-          isBusy: flow.isSending, showsProgress: flow.isSending,
+          isBusy: attempt.isSending, showsProgress: attempt.isSending,
           canStop: false, needsUpgrade: needsUpgrade, error: nil,
           attachmentURL: webURL, draftState: composer,
           submit: { await flow.send() }, refresh: nil,
-          modelSelection: flow.modelSelection,
-          connectorSelection: flow.modelSelection.connectors,
+          modelSelection: modelSelection,
+          connectorSelection: modelSelection.connectors,
           mentionSource: ComposerMentionSource(threads: threads),
           workflowSource: flow.workflowSource,
           showsTrailingFeedbackInput: false, project: project
         )
         // A failed or unknown attempt retries the captured message, never an edited body
         // under the same idempotency key. The error banner owns the explicit retry.
-        .disabled(flow.hasPendingAttempt || needsUpgrade)
+        .disabled(attempt.hasPendingAttempt || needsUpgrade)
       }
       .fixedSize(horizontal: false, vertical: true)
       // Measure intrinsic content separately from the native navigation container.
@@ -99,7 +121,7 @@ struct ChatForkView: View {
         Button("Discard", role: .destructive, action: dismiss)
         Button("Keep editing", role: .cancel) {}
       } message: {
-        if flow.deliveryUnconfirmed {
+        if attempt.deliveryUnconfirmed {
           Text("Delivery hasn’t been confirmed. Closing this sheet won’t cancel the message.")
         } else {
           Text("Your message hasn’t been sent.")
@@ -213,16 +235,17 @@ private struct ForkDismissObserver: UIViewControllerRepresentable {
 /// Swipe-dismiss is blocked while the fork is sending or holds typed text, files or a pending
 /// attempt. The composer's edits are read from the session graph.
 private struct ForkDismissGuard: ViewModifier {
-  let flow: ChatForkStore
   @ResolvedValue private var composerEdits: Bool?
+  @ResolvedValue private var presentation: ChatForkStore.Presentation?
 
   init(flow: ChatForkStore) {
-    self.flow = flow
     _composerEdits = ResolvedValue(flow.composerEdits)
+    _presentation = ResolvedValue(flow.presentation)
   }
 
   func body(content: Content) -> some View {
-    content.interactiveDismissDisabled(
-      flow.isSending || flow.hasPendingAttempt || composerEdits == true)
+    let attempt = presentation?.attempt
+    return content.interactiveDismissDisabled(
+      attempt?.isSending == true || attempt?.hasPendingAttempt == true || composerEdits == true)
   }
 }
