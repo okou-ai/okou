@@ -1086,6 +1086,9 @@ test.each(["cloudflare", "vercel"] as const)(
     const signature = url.searchParams.get("sig")!;
     url.searchParams.delete("sig");
     url.searchParams.delete("key");
+    expect([...url.searchParams.keys()]).toStrictEqual(
+      [...url.searchParams.keys()].sort(),
+    );
     expect(
       verifySignature(
         "RSA-SHA256",

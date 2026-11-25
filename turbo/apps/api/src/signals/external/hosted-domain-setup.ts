@@ -351,6 +351,7 @@ export async function discoverHostedDomainSetup(
     if (app.origin === "https://app.okou.ai") {
       query.set("redirect_uri", new URL("/artifacts", app).toString());
     }
+    query.sort();
     const signature = sign(
       "RSA-SHA256",
       Buffer.from(query.toString()),
