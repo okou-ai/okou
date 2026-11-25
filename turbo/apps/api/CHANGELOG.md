@@ -10,6 +10,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.130.2](https://github.com/okou-ai/okou/compare/api-v2.130.1...api-v2.130.2) (2026-11-25)
+
+
+### Performance Improvements
+
+* **app:** defer feed and recent workflow requests at startup ([#50893](https://github.com/okou-ai/okou/issues/50893)) ([48a1ed1](https://github.com/okou-ai/okou/commit/48a1ed18b82cb459328118d6790dc35f67e200cf))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.128.4
+    * @okouai/core bumped to 8.881.2
+    * @okouai/db bumped to 2.69.3
+    * @okouai/pi-agent-runtime bumped to 1.52.79
+
 ## [2.130.1](https://github.com/okou-ai/okou/compare/api-v2.130.0...api-v2.130.1) (2026-11-25)
 
 
