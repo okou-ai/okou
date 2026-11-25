@@ -68,6 +68,7 @@ internal class ConnectorApiFixture(
     @Volatile var failDiscovery = false
     @Volatile var denyDefaultDiscovery = false
     @Volatile var denyCatalogDetail = false
+    @Volatile var offerLiveDeviceEnvironment = true
     @Volatile var failAccountReads = false
     @Volatile var denyAccountReads = false
     @Volatile var denyPermissionReads = false
@@ -120,10 +121,6 @@ internal class ConnectorApiFixture(
                     "engineering-team-execution",
                     null,
                     grantKind = "device-auth",
-                    startOptions =
-                        if (requireDeviceEnvironment)
-                            """[{"id":"environment","kind":"select","label":"Environment","required":true,"defaultValue":null,"options":[{"value":"test","label":"Test workspace"},{"value":"live","label":"Live workspace"}]}]"""
-                        else "[]",
                 ),
             )
             add(
@@ -382,7 +379,23 @@ internal class ConnectorApiFixture(
                         """{"permissions":{"connectorSlug":"$slug","label":"${entry.name}","icon":${icon(entry.slug)},"permissionCount":2,"permissions":[{"name":"$read"},{"name":"$write"}],"categories":null,"defaultPolicy":{"permissionDefault":"ask","unknownPolicy":"deny"}}}""",
                     )
                 } else if (denyCatalogDetail) rejected(403)
-                else json(buildJsonObject { put("connector", entry.body(icon(entry.slug))) })
+                else {
+                    val startOptions =
+                        if (slug == CONNECTOR_DEVICE_EXAMPLE && requireDeviceEnvironment) {
+                            val choices = buildList {
+                                add("""{"value":"test","label":"Test workspace"}""")
+                                if (offerLiveDeviceEnvironment)
+                                    add("""{"value":"live","label":"Live workspace"}""")
+                            }
+                                .joinToString(",")
+                            """[{"id":"environment","kind":"select","label":"Environment","required":true,"defaultValue":null,"options":[$choices]}]"""
+                        } else "[]"
+                    json(
+                        buildJsonObject {
+                            put("connector", entry.body(icon(entry.slug), startOptions))
+                        },
+                    )
+                }
             }
             path == "/api/connector-accounts/inspect" -> {
                 val selected = body(request).getValue("selections").jsonArray
@@ -539,7 +552,11 @@ internal class ConnectorApiFixture(
                                 ?.jsonObject
                                 ?.get("environment")
                                 ?.jsonPrimitive
-                                ?.contentOrNull !in setOf("test", "live")
+                                ?.contentOrNull
+                                .let { value ->
+                                    value != "test" &&
+                                        !(value == "live" && offerLiveDeviceEnvironment)
+                                }
                 )
                     return rejected(400)
                 deviceStartRequests.incrementAndGet()
@@ -706,9 +723,8 @@ internal class ConnectorApiFixture(
         val category: String,
         val rank: Int?,
         val grantKind: String = "auth-code",
-        val startOptions: String = "[]",
     ) {
-        fun body(icon: JsonObject): JsonObject {
+        fun body(icon: JsonObject, startOptions: String = "[]"): JsonObject {
             val method = if (grantKind == "auth-code") "oauth" else grantKind
             val methodLabel = if (grantKind == "auth-code") "OAuth" else method
             val singleAuth = if (grantKind == "auth-code") "\"oauth\"" else "null"

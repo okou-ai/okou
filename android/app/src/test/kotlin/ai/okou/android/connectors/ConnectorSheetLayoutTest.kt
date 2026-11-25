@@ -46,7 +46,7 @@ class ConnectorSheetLayoutTest {
     @Test
     @OptIn(ExperimentalTestApi::class)
     @Config(qualifiers = "en-rUS-w412dp-h892dp")
-    fun deviceSetupRequiresACatalogChoiceBeforeRequestingACode() {
+    fun deviceSetupRequiresACurrentCatalogChoiceBeforeRequestingACode() {
         ConnectorApiFixture(includeGrantExamples = true, requireDeviceEnvironment = true).use {
             fixture ->
             val store = ViewModelStore()
@@ -79,6 +79,13 @@ class ConnectorSheetLayoutTest {
                     .assertHeightIsAtLeast(56.dp)
                     .performClick()
                     .assertIsSelected()
+                submit.assertIsEnabled()
+
+                fixture.offerLiveDeviceEnvironment = false
+                compose.runOnIdle { model.resume() }
+                compose.waitUntilDoesNotExist(hasText("Live workspace"), 10_000)
+                submit.assertIsNotEnabled()
+                compose.onNodeWithText("Test workspace").performClick().assertIsSelected()
                 submit.assertIsEnabled().performClick()
                 compose.waitUntilAtLeastOneExists(hasText(CONNECTOR_EXAMPLE_DEVICE_CODE), 10_000)
                 assertEquals(1, fixture.deviceStartRequests.get())
