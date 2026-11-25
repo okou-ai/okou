@@ -368,9 +368,9 @@ runs	src/signals/routes/__tests__/run-execution.connector-permissions.test.ts	ru
 runs	src/signals/routes/__tests__/run-execution.connector-permissions.test.ts	run-execution.connector-permissions-003	planned		
 runs	src/signals/routes/__tests__/run-execution.connector-permissions.test.ts	run-execution.connector-permissions-004	planned		
 runs	src/signals/routes/__tests__/run-execution.connector-permissions.test.ts	run-execution.connector-permissions-005	planned		
-runs	src/signals/routes/__tests__/run-models.test.ts	run-models-001	planned		
-runs	src/signals/routes/__tests__/run-models.test.ts	run-models-002	planned		
-runs	src/signals/routes/__tests__/run-models.test.ts	run-models-004	planned		
+runs	src/signals/routes/__tests__/run-models.test.ts	run-models-001	rewritten	40.5	
+runs	src/signals/routes/__tests__/run-models.test.ts	run-models-002	rewritten	66.7	
+runs	src/signals/routes/__tests__/run-models.test.ts	run-models-004	rewritten	78.3	
 runs	src/signals/routes/__tests__/run-runner-startup.bdd.test.ts	run-runner-startup.bdd-001	planned		
 runs	src/signals/routes/__tests__/run-runner-startup.bdd.test.ts	run-runner-startup.bdd-002	planned		
 runs	src/signals/routes/__tests__/run-runner-startup.bdd.test.ts	run-runner-startup.bdd-006	planned		
