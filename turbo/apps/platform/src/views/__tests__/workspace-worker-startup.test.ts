@@ -108,6 +108,7 @@ test("shared-worker-preload-003 A worker preloaded for another workspace stays s
 });
 
 test("a worker waiting for a credential loses its tab when the account changes in the same workspace", async () => {
+  const reload = vi.spyOn(window.location, "reload");
   const { connections, registered } = browserWorkers();
   const issuing = context.mocks.deferred<void>();
   const token = context.mocks.deferred<string>();
@@ -152,7 +153,8 @@ test("a worker waiting for a credential loses its tab when the account changes i
   await expect(reply.promise).resolves.toBe("token-error");
   clerk.stateChanged();
   await disconnected.promise;
-  expect(location.pathname).toBe("/");
+  expect(reload).toHaveBeenCalledTimes(1);
+  expect(location.pathname).toBe(page.path);
 });
 
 test("shared-worker-preload-002 An early failure on the matching preload reaches the interruption dialog", async () => {

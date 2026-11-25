@@ -556,14 +556,15 @@ export const watchOrgSwitch$ = command(
       if (needsOnboarding) {
         set(createdOrgToOnboard$, null);
       }
-      const isFirstActivation = prevOrgId === undefined;
+      const workspaceChanged =
+        prevOrgId !== undefined && prevOrgId !== newOrgId;
       const hadMember = prevUserId !== undefined;
       prevOrgId = newOrgId;
       prevUserId = userId;
       setPostHogOrganization(newOrgId);
-      if (isFirstActivation && !needsOnboarding) {
-        // A document which already disconnected its signed-out member must
-        // bootstrap again. Keep the current sign-in destination.
+      if (!workspaceChanged && !needsOnboarding) {
+        // Keep the current URL on sign-in and same-workspace account changes.
+        // A page that served a previous member needs a fresh Worker.
         if (hadMember) {
           location.reload();
         }
