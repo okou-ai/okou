@@ -16,6 +16,7 @@
     <string name="workflow_daily_schedule">Cada día a las %1$s</string>
     <string name="workflow_discard">Descartar</string>
     <string name="workflow_discard_title">¿Descartar los cambios sin guardar?</string>
+    <string name="workflow_discard_detail">Se descartarán los cambios sin guardar de «%1$s» en este dispositivo.</string>
     <string name="workflow_draft_unavailable">No se pudo abrir el borrador del nuevo chat. Tu borrador anterior sigue guardado.</string>
     <string name="workflow_edit">Editar</string>
     <string name="workflow_edit_automation">Editar automatización</string>

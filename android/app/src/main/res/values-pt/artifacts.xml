@@ -62,4 +62,6 @@
     <string name="chat_resources_wechat">WeChat</string>
     <string name="chat_resources_feishu">Feishu</string>
     <string name="chat_resources_messages">Mensagens</string>
+    <string name="artifact_preview_loading">A carregar pré-visualização…</string>
+    <string name="artifact_image_unavailable">Imagem indisponível</string>
 </resources>

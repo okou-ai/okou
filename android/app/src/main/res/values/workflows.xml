@@ -16,6 +16,7 @@
     <string name="workflow_daily_schedule">Daily at %1$s</string>
     <string name="workflow_discard">Discard</string>
     <string name="workflow_discard_title">Discard unsaved changes?</string>
+    <string name="workflow_discard_detail">Unsaved changes to “%1$s” on this device will be discarded.</string>
     <string name="workflow_draft_unavailable">Could not open the new chat draft. Your existing draft is preserved.</string>
     <string name="workflow_edit">Edit</string>
     <string name="workflow_edit_automation">Edit automation</string>

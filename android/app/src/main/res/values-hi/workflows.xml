@@ -16,6 +16,7 @@
     <string name="workflow_daily_schedule">हर दिन %1$s बजे</string>
     <string name="workflow_discard">छोड़ें</string>
     <string name="workflow_discard_title">बिना सहेजे बदलाव छोड़ दें?</string>
+    <string name="workflow_discard_detail">इस डिवाइस पर “%1$s” में किए गए बिना सहेजे बदलाव छोड़ दिए जाएँगे।</string>
     <string name="workflow_draft_unavailable">नया चैट ड्राफ़्ट नहीं खुल सका। आपका मौजूदा ड्राफ़्ट सुरक्षित है।</string>
     <string name="workflow_edit">संपादित करें</string>
     <string name="workflow_edit_automation">ऑटोमेशन संपादित करें</string>

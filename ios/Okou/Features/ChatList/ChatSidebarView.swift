@@ -18,6 +18,8 @@ struct ChatSidebarView: View {
   @LoadableValue private var presentation: Loadable<ChatSidebarPresentation>
   /// Whether workspace search is presented, kept in the workspace session's Store.
   @ResolvedValue private var searchPresented: Bool?
+  /// Project actions and disclosure, kept in the workspace session's Store.
+  @ResolvedValue private var resolvedProjects: ChatProjectStore.Presentation?
 
   init(
     store: WorkspaceStore, authentication: AuthenticationService, workspaceID: String,
@@ -37,6 +39,7 @@ struct ChatSidebarView: View {
     _listRead = LoadableValue(task: store.list.listValue)
     _presentation = LoadableValue(store.sidebar.presentation)
     _searchPresented = ResolvedValue(store.search.presented)
+    _resolvedProjects = ResolvedValue(store.projects.presentation)
   }
 
   private struct ProjectEditor {
@@ -260,7 +263,7 @@ struct ChatSidebarView: View {
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
       }
-      if let error = store.projects.actionError {
+      if let error = projectState.actionError {
         OkouBanner(
           Text(error), icon: "circle-alert", tone: .problem,
           dismiss: store.projects.dismissError
@@ -270,7 +273,7 @@ struct ChatSidebarView: View {
       }
       ForEach(contents.projects) { group in
         projectRow(group)
-        if store.projects.isExpanded(group.id) {
+        if projectState.isExpanded(group.id) {
           if group.section.isEmpty {
             Text("No chats yet")
               .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
@@ -381,8 +384,9 @@ struct ChatSidebarView: View {
 
   private func projectRow(_ group: ChatSidebarPresentation.ProjectGroup) -> some View {
     ChatSidebarProjectRow(
-      group: group, store: store, rowInset: rowInset, statusColumn: statusColumn,
-      close: close,
+      group: group, store: store, expanded: projectState.isExpanded(group.id),
+      isPending: projectState.pending.contains(group.id), rowInset: rowInset,
+      statusColumn: statusColumn, close: close,
       rename: { showEditor(editor(project: group.project)) },
       delete: { deletingProject = group.project })
   }
@@ -507,7 +511,7 @@ struct ChatSidebarView: View {
     case .recent: !thread.isArchived
     case .archived:
       thread.isArchived
-        && !store.projects.projects.contains {
+        && !projectState.projects.contains {
           $0.id == thread.projectId && $0.isArchived
         }
     case .unread, .muted: false
@@ -531,9 +535,19 @@ struct ChatSidebarView: View {
 
 }
 
+extension ChatSidebarView {
+  /// This render's Project state, with the synchronous value for a first render.
+  private var projectState: ChatProjectStore.Presentation {
+    resolvedProjects ?? store.projects.currentPresentation
+  }
+}
+
 private struct ChatSidebarProjectRow: View {
   let group: ChatSidebarPresentation.ProjectGroup
   let store: WorkspaceStore
+  /// Disclosure and a mutation in flight, from the Project state the sidebar resolves.
+  let expanded: Bool
+  let isPending: Bool
   let rowInset: CGFloat
   let statusColumn: CGFloat
   let close: () -> Void
@@ -544,7 +558,6 @@ private struct ChatSidebarProjectRow: View {
 
   var body: some View {
     let project = group.project
-    let expanded = store.projects.isExpanded(project.id)
     // An open project leaves unread and working to its chats' own marks. The folder shows one
     // badge, and unread wins.
     let unread = !expanded && group.section.hasUnread
@@ -604,7 +617,7 @@ private struct ChatSidebarProjectRow: View {
       Button("Rename", okouSymbol: "pencil", action: rename)
       Button("Delete project", okouSymbol: "trash-2", role: .destructive, action: delete)
     }
-    .disabled(store.needsUpgrade || store.projects.pending.contains(project.id))
+    .disabled(store.needsUpgrade || isPending)
   }
 }
 
@@ -613,11 +626,21 @@ private struct ChatSidebarThreadLabel: View {
   let row: ChatSidebarPresentation.Row
   let workspace: WorkspaceStore
   let showsStatusColumn: Bool
+  /// The API's draft list, kept in the workspace session's Store.
+  @ResolvedValue private var listedDrafts: Set<String>?
+
+  init(row: ChatSidebarPresentation.Row, workspace: WorkspaceStore, showsStatusColumn: Bool) {
+    self.row = row
+    self.workspace = workspace
+    self.showsStatusColumn = showsStatusColumn
+    _listedDrafts = ResolvedValue(workspace.listedDraftIDs)
+  }
 
   var body: some View {
     ChatSidebarThreadStates(
       row: row, composer: workspace.residentComposer(row.id),
-      listedDraft: workspace.hasListedDraft(row.id), showsStatusColumn: showsStatusColumn
+      listedDraft: listedDrafts?.contains(row.id) ?? workspace.hasListedDraft(row.id),
+      showsStatusColumn: showsStatusColumn
     )
     .task { await workspace.activateDrafts() }
   }

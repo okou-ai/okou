@@ -1,12 +1,14 @@
-import { computed } from "ccstate";
+import { command, computed } from "ccstate";
 import {
   runRunnerContract,
   runsByIdContract,
   runsQueueContract,
 } from "@okouai/api-contracts/contracts/run-routes";
+import { runWssContract } from "@okouai/api-contracts/contracts/run-wss";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
+import { setResHeader$ } from "../context/hono";
 import { pathParamsOf } from "../context/request";
 import { notFound } from "../../lib/error";
 import {
@@ -15,6 +17,7 @@ import {
   agentRunRunner,
   organizationTier,
 } from "../services/agent-runs.service";
+import { bootstrapRunWss$ } from "../services/run-wss.service";
 import type { RouteEntry } from "../route-entry";
 
 const runReadAuth = {
@@ -66,7 +69,22 @@ const getRunQueueInner$ = computed(async (get) => {
   return { status: 200 as const, body: queue };
 });
 
+const bootstrapWssParams$ = pathParamsOf(runWssContract.bootstrap);
+const bootstrapWss$ = authRoute(
+  { ...runReadAuth, accept: ["session", "pat"] },
+  command(async ({ get, set }, signal: AbortSignal) => {
+    const { orgId, userId } = get(organizationAuthContext$);
+    const { id: runId } = get(bootstrapWssParams$);
+    return await set(bootstrapRunWss$, { runId, orgId, userId }, signal);
+  }),
+);
+const bootstrapWssNoStore$ = command(async ({ set }, signal: AbortSignal) => {
+  set(setResHeader$, "Cache-Control", "no-store");
+  return await set(bootstrapWss$, signal);
+});
+
 export const runsRoutes: readonly RouteEntry[] = [
+  { route: runWssContract.bootstrap, handler: bootstrapWssNoStore$ },
   {
     route: runsQueueContract.getQueue,
     handler: authRoute(runReadAuth, getRunQueueInner$),

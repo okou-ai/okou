@@ -125,7 +125,7 @@ internal class ConversationInlineImageRootTest : ArtifactCatalogRootTestFixture(
 
         fixture.deniedExternalFilename = filename
         compose.onNode(loaded).performClick()
-        awaitText("You don’t have access to this artifact")
+        awaitText("Image unavailable")
         compose.onNodeWithTag("artifact_preview_title").assertDoesNotExist()
         compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
 

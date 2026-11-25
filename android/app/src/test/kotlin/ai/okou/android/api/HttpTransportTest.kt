@@ -14,12 +14,24 @@ import org.junit.Test
 
 class HttpTransportTest {
     @Test
-    fun retryAfterDistinguishesZeroFromInvalidValues() {
+    fun retryAfterDoesNotRoundDownAValidServerDate() {
+        val date = "Tue, 15 Nov 1994 08:12:31 GMT"
+        val deadline = 784_887_151_000L
+
+        assertEquals(1L, retryAfter(date, nowMillis = deadline - 500))
+        assertEquals(2L, retryAfter(date, nowMillis = deadline - 1_500))
+        assertEquals(1L, retryAfter(date, nowMillis = deadline - 1_000))
+        assertEquals(0L, retryAfter(date, nowMillis = deadline + 500))
+    }
+
+    @Test
+    fun retryAfterRequiresACompleteDelayOrDate() {
         assertEquals(0L, retryAfter("0"))
         assertEquals(1L, retryAfter("1"))
+        assertEquals(1L, retryAfter(" 1\t"))
+        assertNull(retryAfter("+1"))
         assertNull(retryAfter("-1"))
-        assertNull(retryAfter("Thu, 01 Jan 1970 00:00:00 GMT extra"))
-        assertEquals(0L, retryAfter("Thu, 01 Jan 1970 00:00:00 GMT"))
+        assertNull(retryAfter("Tue, 15 Nov 1994 08:12:31 GMT, 7"))
     }
 
     @Test

@@ -16,6 +16,7 @@
     <string name="workflow_daily_schedule">매일 %1$s</string>
     <string name="workflow_discard">버리기</string>
     <string name="workflow_discard_title">저장하지 않은 변경사항을 버릴까요?</string>
+    <string name="workflow_discard_detail">이 기기에서 ‘%1$s’에 대해 저장하지 않은 변경사항이 삭제됩니다.</string>
     <string name="workflow_draft_unavailable">새 채팅 초안을 열 수 없습니다. 기존 초안은 유지됩니다.</string>
     <string name="workflow_edit">편집</string>
     <string name="workflow_edit_automation">자동화 편집</string>
