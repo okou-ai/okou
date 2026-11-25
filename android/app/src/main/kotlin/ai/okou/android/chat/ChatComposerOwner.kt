@@ -11,6 +11,7 @@ import ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItemVari
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.connectors.ChatConnectorOverride
 import ai.okou.android.connectors.ConnectorService
+import ai.okou.android.settings.DefaultModelOptions
 import java.io.IOException
 import java.util.UUID
 import kotlin.time.Duration.Companion.days
@@ -344,6 +345,11 @@ internal class ChatComposerOwner(
                 retainedDrafts = journal.retainedDrafts - key,
                 newChatConnectorOverrides = choices ?: journal.newChatConnectorOverrides,
                 retainedDraftConnectorOverrides = journal.retainedDraftConnectorOverrides - key,
+                newChatModel =
+                    if (draftKey == "new:" && key in journal.retainedDraftModels)
+                        journal.retainedDraftModels[key]
+                    else journal.newChatModel,
+                retainedDraftModels = journal.retainedDraftModels - key,
                 drafts =
                     journal.drafts +
                         (draftKey to
@@ -606,23 +612,43 @@ internal class ChatComposerOwner(
         }
     }
 
-    fun send(connection: Connection, target: ComposerTarget) {
+    fun editDraftModel(
+        connection: Connection,
+        target: ComposerTarget,
+        selection: DraftModelSelection,
+    ) {
+        val state = mutable.value
+        val journal = state.journal ?: return
+        if (
+            !connection.current() ||
+                !state.canEditDraftModel(target) ||
+                journal.newChatModel == selection
+        )
+            return
+        replace(journal.copy(newChatModel = selection))
+    }
+
+    fun send(connection: Connection, target: ComposerTarget, options: DefaultModelOptions? = null) {
         if (!mutable.value.canSend(target) || !connection.current()) return
         val op = begin(connection, target.key) ?: return
         val journal = checkNotNull(mutable.value.journal)
         val entry = mutable.value.entry(target)
         val threadId = target.threadId ?: UUID.randomUUID().toString()
         val eventId = UUID.randomUUID().toString()
+        val draftModel = journal.newChatModel.takeIf { target.threadId == null }
         val pending =
             PendingText(
                 eventId,
                 threadId,
                 if (target.threadId == null)
                     CreateThreadRequest(
-                        projectId = target.projectId,
-                        clientThreadId = threadId,
-                        eventId = UUID.randomUUID().toString(),
-                    )
+                            projectId = target.projectId,
+                            clientThreadId = threadId,
+                            eventId = UUID.randomUUID().toString(),
+                        )
+                        .let { request ->
+                            draftModel?.applyTo(request, options) ?: request
+                        }
                 else null,
                 SendRequestVariant1(
                     prompt = entry.text,
@@ -645,6 +671,7 @@ internal class ChatComposerOwner(
                 connectorOverrides =
                     if (target.threadId == null) journal.newChatConnectorOverrides else emptyList(),
                 started = store.sendClock.markNow(),
+                draftModel = draftModel,
             )
         val draftKey = mutable.value.draftKey(target)
         val draft = journal.drafts[draftKey] ?: EditableComposerDraft()
@@ -655,6 +682,7 @@ internal class ChatComposerOwner(
                         (op.key to entry.copy(text = "", pending = pending, receipt = null)),
                 newChatConnectorOverrides =
                     if (pending.create != null) emptyList() else journal.newChatConnectorOverrides,
+                newChatModel = journal.newChatModel.takeIf { pending.create == null },
                 drafts =
                     journal.drafts +
                         (draftKey to
@@ -1002,6 +1030,9 @@ internal class ChatComposerOwner(
                                 entries = journal.entries + (op.key to entry.copy(pending = null)),
                                 retainedDrafts =
                                     journal.retainedDrafts + (latest.eventId to latest.send.prompt),
+                                retainedDraftModels =
+                                    journal.retainedDraftModels +
+                                        (latest.eventId to latest.draftModel),
                                 retainedDraftConnectorOverrides =
                                     if (choices.isEmpty()) journal.retainedDraftConnectorOverrides
                                     else

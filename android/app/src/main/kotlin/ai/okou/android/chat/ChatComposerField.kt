@@ -5,6 +5,7 @@ import ai.okou.android.connectors.ChatConnectorOptions
 import ai.okou.android.connectors.ConnectorAccountTarget
 import ai.okou.android.connectors.connectorFeedbackType
 import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.settings.DefaultModelSettings
 import ai.okou.android.state.rememberJournalEditor
 import ai.okou.android.workspaceListPaneWidth
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -92,6 +93,7 @@ internal fun ChatComposerField(
     beforeSend: () -> Unit = {},
     connectorOptions: ChatConnectorOptions? = null,
     manageConnectors: (ConnectorAccountTarget?) -> Unit = {},
+    defaultModel: DefaultModelSettings? = null,
 ) {
     val state by model.uiState.collectAsStateWithLifecycle()
     val focus = LocalFocusManager.current
@@ -189,7 +191,7 @@ internal fun ChatComposerField(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.Bottom,
             ) {
-                if (connectorOptions != null)
+                if (connectorOptions != null || defaultModel != null)
                     ChatConnectorOptionsButton(
                         connectorOptions,
                         model,
@@ -198,6 +200,7 @@ internal fun ChatComposerField(
                         inputFocused,
                         editorFocus,
                         manageConnectors,
+                        defaultModel,
                     )
                 // Scroll state saved by Compose belongs to this orientation.
                 key(shortWindow) {
@@ -256,7 +259,7 @@ internal fun ChatComposerField(
                     onClick = {
                         focus.clearFocus()
                         beforeSend()
-                        model.send(target)
+                        model.send(target, defaultModel?.state?.value?.options)
                     },
                     modifier = Modifier.size(48.dp).semantics { contentDescription = sendLabel },
                     enabled = state.canSend(target),

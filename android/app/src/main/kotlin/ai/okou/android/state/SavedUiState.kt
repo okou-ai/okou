@@ -117,6 +117,7 @@ internal enum class ComposerOptionsPage {
     Closed,
     Options,
     Connectors,
+    Model,
 }
 
 internal data class ComposerOptionsPresentation(

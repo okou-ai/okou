@@ -20,6 +20,7 @@ data class PendingText(
     val stage: TextStage,
     @Transient val connectorOverrides: List<ChatConnectorOverride> = emptyList(),
     @Transient val started: TimeMark? = null,
+    @Transient val draftModel: DraftModelSelection? = null,
 )
 
 internal val PendingText.awaitingConnectorSetup: Boolean
@@ -84,6 +85,9 @@ data class ComposerJournal(
     val retainedDrafts: Map<String, String> = emptyMap(),
     val newChatConnectorOverrides: List<ChatConnectorOverride> = emptyList(),
     val retainedDraftConnectorOverrides: Map<String, List<ChatConnectorOverride>> = emptyMap(),
+    val newChatModel: DraftModelSelection? = null,
+    // A recorded null restores server-default inheritance for a rejected new chat.
+    val retainedDraftModels: Map<String, DraftModelSelection?> = emptyMap(),
 )
 
 internal fun ComposerJournal.withoutOrdinaryPending(): ComposerJournal =
@@ -190,6 +194,12 @@ data class ComposerState(
         key in failed && journal?.entries?.get(key)?.pending?.awaitingConnectorSetup == true
 
     fun sync(target: ComposerTarget) = synchronization[draftKey(target)] ?: ComposerSync.Idle
+
+    internal fun canEditDraftModel(target: ComposerTarget) =
+        journal != null &&
+            target.threadId == null &&
+            draftKey(target) == "new:" &&
+            entry(target).pending == null
 
     internal fun messagesFor(threadId: String): List<ComposerMessagePreview> = buildList {
         receiptMessages.values.filterTo(this) { it.threadId == threadId }
