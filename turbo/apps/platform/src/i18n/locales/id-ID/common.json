@@ -4411,7 +4411,6 @@
   },
   "myOkou": {
     "conflict": "Instruksi tersimpan berubah di tempat lain. Draf Anda tetap disimpan. Tinjau atau salin sebelum memuat ulang instruksi tersimpan.",
-    "description": "Instruksi Anda untuk Okou di ruang kerja ini",
     "discard": "Buang",
     "draftKept": "Draf Anda tetap ada di tab ini saat berpindah halaman atau ruang kerja.",
     "instructions": "Instruksi",
@@ -5681,7 +5680,6 @@
           "title": "Preferensi"
         },
         "proactiveLearning": {
-          "description": "Pilih cara Okou bekerja secara proaktif.",
           "title": "Proactive"
         },
         "tools": {
@@ -6086,7 +6084,6 @@
         "title": "Brief Pagi"
       },
       "proactiveSuggestions": {
-        "description": "Periksa sumber terhubung setiap jam, perbarui profil Anda setiap hari, dan dapatkan saran langkah berikutnya.",
         "errorMessage": "Pengaturan tidak dapat dimuat atau diperbarui.",
         "missingTimezone": "Atur zona waktu Anda di Preferensi.",
         "preparationFailed": "Untuk sementara tidak tersedia.",

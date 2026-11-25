@@ -4491,7 +4491,6 @@
   },
   "myOkou": {
     "conflict": "Le istruzioni salvate sono state modificate altrove. La bozza è conservata. Rivedila o copiala prima di ricaricare le istruzioni salvate.",
-    "description": "Le tue istruzioni per Okou in questo spazio di lavoro",
     "discard": "Scarta",
     "draftKept": "La bozza rimane in questa scheda quando cambi pagina o spazio di lavoro.",
     "instructions": "Istruzioni",
@@ -5772,7 +5771,6 @@
           "title": "Preferenza"
         },
         "proactiveLearning": {
-          "description": "Scegli come Okou lavora in modo proattivo.",
           "title": "Proactive"
         },
         "tools": {
@@ -6181,7 +6179,6 @@
         "title": "Riepilogo mattutino"
       },
       "proactiveSuggestions": {
-        "description": "Controlla le fonti collegate ogni ora, aggiorna il tuo profilo ogni giorno e ricevi suggerimenti utili sui prossimi passi.",
         "errorMessage": "Impossibile caricare o aggiornare le impostazioni.",
         "missingTimezone": "Imposta il fuso orario nelle preferenze.",
         "preparationFailed": "Temporaneamente non disponibile.",

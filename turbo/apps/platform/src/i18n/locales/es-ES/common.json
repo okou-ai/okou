@@ -4491,7 +4491,6 @@
   },
   "myOkou": {
     "conflict": "Tus instrucciones guardadas cambiaron en otro lugar. Se conserva tu borrador. Revísalo o cópialo antes de recargar las instrucciones guardadas.",
-    "description": "Tus instrucciones para Okou en este espacio de trabajo",
     "discard": "Descartar",
     "draftKept": "Tu borrador permanece en esta pestaña al cambiar de página o espacio de trabajo.",
     "instructions": "Instrucciones",
@@ -5772,7 +5771,6 @@
           "title": "Preferencias"
         },
         "proactiveLearning": {
-          "description": "Elige cómo trabaja Okou de forma proactiva.",
           "title": "Proactive"
         },
         "tools": {
@@ -6181,7 +6179,6 @@
         "title": "Resumen matutino"
       },
       "proactiveSuggestions": {
-        "description": "Revisa tus fuentes conectadas cada hora, actualiza tu perfil a diario y recibe sugerencias útiles sobre los próximos pasos.",
         "errorMessage": "No se pudo cargar o actualizar la configuración.",
         "missingTimezone": "Configura tu zona horaria en Preferencias.",
         "preparationFailed": "No disponible temporalmente.",
