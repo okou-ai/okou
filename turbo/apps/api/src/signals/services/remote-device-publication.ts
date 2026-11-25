@@ -17,7 +17,11 @@ export function publishRemoteChannelDevice(
 ) {
   return db.$with("published_remote_channel_device", {}).as(sql`
     INSERT INTO ${remoteDevices} (id, org_id, user_id, display_name)
-    SELECT ${channel.remoteDeviceId}, ${channel.orgId}, ${channel.userId}, ${channel.displayName}
+    SELECT ${channel.remoteDeviceId}, ${channel.orgId}, ${channel.userId},
+      coalesce(
+        nullif(regexp_replace(${channel.displayName}, '^[[:space:]]+|[[:space:]]+$', '', 'g'), ''),
+        'Unnamed device'
+      )
     FROM ${channel}
     ${candidateId === undefined ? sql.empty() : sql`WHERE ${channel.remoteDeviceId} = ${candidateId}::uuid`}
   `);
