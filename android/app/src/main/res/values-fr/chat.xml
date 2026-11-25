@@ -116,4 +116,9 @@
     <string name="chat_rename_save_unconfirmed">Le résultat de l’enregistrement reste à confirmer.</string>
     <string name="chat_title_saved">Titre de la discussion enregistré</string>
     <string name="chat_project_name_saved">Nom du projet enregistré</string>
+    <string name="inline_image_loading">Chargement de l’image…</string>
+    <string name="inline_image_no_thumbnail">Miniature indisponible</string>
+    <string name="inline_image_unavailable">Image indisponible</string>
+    <string name="inline_image_view_original">Voir l’original</string>
+    <string name="inline_image_open_link">Ouvrir le lien</string>
 </resources>

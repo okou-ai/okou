@@ -67,9 +67,9 @@ async function dismiss() {
     return expect(screen.queryByRole("dialog")).toBeNull();
   });
 }
-async function reopen() {
-  const entry = await findFastControl("button", "My Okou");
-  click(entry);
+async function reopen(container?: HTMLElement) {
+  click(await findFastControl("button", "My Okou", container));
+  click(await findFastControl("tab", "Instructions", container));
   return editor();
 }
 async function changeWorkspace(name: string) {
@@ -93,8 +93,7 @@ test("my-okou-007 A personal draft survives leaving its section and dismissing S
       }),
     ).toBeNull();
   });
-  click(await findFastControl("button", "My Okou", panel));
-  await expect(editor()).resolves.toHaveTextContent(
+  await expect(reopen(panel)).resolves.toHaveTextContent(
     "Keep the release notes short.",
   );
   await dismiss();

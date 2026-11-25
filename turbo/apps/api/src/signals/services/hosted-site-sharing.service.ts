@@ -9,7 +9,7 @@ import { clerk$ } from "../external/clerk";
 import { findClerkUser } from "../external/clerk-users";
 import { hostedLinkOrigin } from "../../lib/link-layout";
 import { nowDate } from "../../lib/time";
-import { buildTeamFromAddress } from "./email-common.service";
+import hostedSiteInvitationTemplate from "../../lib/hosted-site-invitation-template.json";
 
 interface Owner {
   readonly siteId: string;
@@ -54,9 +54,7 @@ export const shareHostedSite$ = command(
     if (recipient?.userId === args.userId) {
       return { status: "self" as const };
     }
-    const inviter = recipient
-      ? null
-      : await findClerkUser(get(clerk$), args.userId, signal);
+    const inviter = await findClerkUser(get(clerk$), args.userId, signal);
     const database = set(writeDb$);
     const [site] = await database
       .select({ publicSlug: hostedSites.publicSlug })
@@ -88,20 +86,13 @@ export const shareHostedSite$ = command(
     if (!share) {
       throw new Error("Website sharing did not return its grant");
     }
-    if (share.userId !== null) {
-      return {
-        status: "ok" as const,
-        share: { id: share.id, email: share.email },
-        outboxId: null,
-      };
-    }
     // The grant ID is also the email operation ID. Retrying after an uncertain
     // enqueue recovers the same invitation instead of sending another email.
     await database
       .insert(emailOutbox)
       .values({
         id: share.id,
-        fromAddress: buildTeamFromAddress(),
+        fromAddress: hostedSiteInvitationTemplate.from,
         toAddresses: args.email,
         subject: "You’re invited to view a website on Okou",
         template: {

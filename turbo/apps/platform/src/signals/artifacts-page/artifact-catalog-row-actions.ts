@@ -1,4 +1,5 @@
 import { command, computed, state } from "ccstate";
+import type { ArtifactSummary } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { createArtifactDeletionSession } from "../artifact-deletion.ts";
 import { onRef, resetSignal } from "../utils.ts";
 
@@ -23,10 +24,6 @@ function createArtifactCatalogRowDeletionScope() {
 
   return {
     session$,
-    detail$: computed(async (get) => {
-      const session = get(session$);
-      return session ? await get(session.detail$) : null;
-    }),
     // Every row may mount this ref; only the opened row owns a session.
     menuTriggerRef$: onRef(
       command(
@@ -76,7 +73,6 @@ function createArtifactCatalogRowDeletionScope() {
         set(confirmationActive$, false);
         set(activeRow$, { artifactId, trigger });
         const session = get(session$)!;
-        set(session.initialize$, sessionSignal);
         sessionSignal.addEventListener(
           "abort",
           () => {
@@ -89,17 +85,13 @@ function createArtifactCatalogRowDeletionScope() {
       },
     ),
     requestFromMenu$: command(
-      async ({ get, set }, artifactId: string, signal: AbortSignal) => {
+      ({ get, set }, artifact: ArtifactSummary, signal: AbortSignal) => {
         const row = get(activeRow$);
         const session = get(session$);
-        if (row?.artifactId === artifactId && session) {
-          // Confirmation outlives its transient result row and menu trigger.
+        if (row?.artifactId === artifact.id && session) {
+          // The owner-scoped list supplies the confirmation; DELETE checks access.
           set(confirmationActive$, true);
-          await set(session.request$, row.trigger, signal);
-          signal.throwIfAborted();
-          if (get(session$) === session && !get(session.target$)) {
-            set(dismiss$);
-          }
+          set(session.requestFromSummary$, artifact, row.trigger, signal);
         }
       },
     ),

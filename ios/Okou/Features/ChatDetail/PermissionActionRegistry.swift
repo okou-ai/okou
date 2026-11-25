@@ -41,8 +41,8 @@ final class PermissionActionRegistry {
   func card(_ action: ChatPermissionBatchAction) -> PermissionBatchStore {
     if let existing = batches[action] { return existing }
     let card = PermissionBatchStore(
-      action: action, resources: resources, commands: commands, sync: sync, didFail: didFail,
-      didContinue: didContinue)
+      action: action, resources: resources, commands: commands, sync: sync, graph: graph,
+      didFail: didFail, didContinue: didContinue)
     if closed {
       card.close()
     } else if owner != nil {

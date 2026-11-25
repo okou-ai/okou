@@ -1,7 +1,11 @@
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { screen, within, waitFor } from "@testing-library/react";
 import { test, expect } from "vitest";
-import { queryAllByRoleFast, setupPage, startPage } from "../../../__tests__/page-helper.ts";
+import {
+  queryAllByRoleFast,
+  setupPage,
+  startPage,
+} from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();

@@ -137,9 +137,8 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "bingjie@okou.ai",
     displayName: "Markdown-first document output",
     description:
-      "Prefer Markdown for unformatted text documents, use a clearer heading hierarchy in document previews, and offer DOCX and PDF exports.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+      "Use Markdown for text-focused documents and HTML for visual or interactive deliverables, with structured Markdown previews and DOCX and PDF exports.",
+    enabled: true,
   },
   [FeatureSwitchKey.MarkdownArtifactQuote]: {
     maintainer: "bingjie@okou.ai",
@@ -298,8 +297,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Suggestions",
     description:
       "Update the user profile daily and curate useful next-step suggestions.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.PresentationConvert]: {
     maintainer: "bingjie@okou.ai",

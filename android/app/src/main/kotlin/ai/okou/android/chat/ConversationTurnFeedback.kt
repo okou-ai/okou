@@ -12,7 +12,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -38,10 +37,10 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalConfiguration
@@ -314,18 +313,11 @@ private fun ConversationTextAction(
 ) {
     val colors = MaterialTheme.colorScheme
     val interactions = remember { MutableInteractionSource() }
-    val pressed by interactions.collectIsPressedAsState()
     val hovered by interactions.collectIsHoveredAsState()
     val focused by interactions.collectIsFocusedAsState()
     val keyboardFocused = focused && LocalInputModeManager.current.inputMode == InputMode.Keyboard
-    val active = pressed || hovered || keyboardFocused
+    val active = hovered || keyboardFocused
     val foreground = if (active) colors.onSecondaryContainer else colors.onSurfaceVariant
-    val background =
-        when {
-            pressed -> foreground.copy(alpha = 0.09f).compositeOver(colors.secondaryContainer)
-            active -> colors.secondaryContainer
-            else -> Color.Transparent
-        }
     val shape = RoundedCornerShape(12.dp)
     Box(
         Modifier.layout { measurable, constraints ->
@@ -337,9 +329,14 @@ private fun ConversationTextAction(
             }
             .then(modifier)
             .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-            .background(background, shape)
+            .clip(shape)
+            .background(if (active) colors.secondaryContainer else Color.Transparent)
             .updateFocusOutline(shape, colors.onSurface, keyboardOnly = true, outlineInset = 3.dp)
-            .clickable(interactionSource = interactions, indication = null, onClick = onClick)
+            .clickable(
+                interactionSource = interactions,
+                indication = ChatPressRipple,
+                onClick = onClick,
+            )
             .padding(horizontal = 8.dp, vertical = 4.dp),
         contentAlignment = Alignment.CenterStart,
     ) {

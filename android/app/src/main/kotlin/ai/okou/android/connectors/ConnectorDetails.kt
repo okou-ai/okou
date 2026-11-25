@@ -7,6 +7,7 @@ import ai.okou.android.OkouSwitch
 import ai.okou.android.R
 import ai.okou.android.SettingsModal
 import ai.okou.android.chat.ChatSkeletonBlock
+import ai.okou.android.chat.ContentReadFeedback
 import ai.okou.android.isShortSettingsPanelWindow
 import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.settingsPanelContentPadding
@@ -241,7 +242,6 @@ internal fun ConnectorDetails(
                         }
                     }
                 }
-                if (entry.description.isNotBlank()) Spacer(Modifier.height(12.dp))
                 ConnectorSectionDivider()
                 Text(
                     stringResource(R.string.connector_accounts),
@@ -268,14 +268,20 @@ internal fun ConnectorDetails(
                 }
 
                 if (detailUnavailable) {
-                    ConnectorStatusBanner(R.string.connector_load_failed)
+                    ContentReadFeedback(R.string.connector_load_failed)
                 } else if (!hasAccountContent) {
                     when {
                         state.accounts.failure == ConnectorReadFailure.Unavailable ->
-                            ConnectorReadError(R.string.connector_accounts_failed)
+                            ContentReadFeedback(
+                                R.string.connector_accounts_failed,
+                                Modifier.fillMaxWidth(),
+                            )
                         state.offline -> ConnectorLoadWhenOnline()
                         state.accounts.failure != null ->
-                            ConnectorReadError(R.string.connector_accounts_failed)
+                            ContentReadFeedback(
+                                R.string.connector_accounts_failed,
+                                Modifier.fillMaxWidth(),
+                            )
                         else ->
                             ConnectorSkeleton(
                                 stringResource(R.string.connector_loading_accounts),
@@ -329,13 +335,13 @@ internal fun ConnectorDetails(
                 if (!state.offline && !detailUnavailable) {
                     when {
                         detail == null && state.detail.failure != null ->
-                            ConnectorStatusBanner(R.string.connector_load_failed)
+                            ContentReadFeedback(R.string.connector_load_failed)
                         hasAccountContent &&
                             state.accounts.failure == ConnectorReadFailure.Unavailable ->
-                            ConnectorStatusBanner(R.string.connector_accounts_failed)
+                            ContentReadFeedback(R.string.connector_accounts_failed)
                         state.detail.failure != null ||
                             hasAccountContent && state.accounts.failure != null ->
-                            ConnectorStatusBanner(R.string.connector_refresh_failed)
+                            ContentReadFeedback(R.string.connector_refresh_failed)
                     }
                 }
                 if (panel == null) ConnectorActionFeedback(action)
@@ -618,10 +624,16 @@ private fun ConnectorPermissionSheet(
             permissions.data == null ->
                 when {
                     permissions.failure == ConnectorReadFailure.Unavailable ->
-                        ConnectorReadError(R.string.connector_permissions_failed)
+                        ContentReadFeedback(
+                            R.string.connector_permissions_failed,
+                            Modifier.fillMaxWidth(),
+                        )
                     offline -> ConnectorLoadWhenOnline()
                     permissions.failure != null ->
-                        ConnectorReadError(R.string.connector_permissions_failed)
+                        ContentReadFeedback(
+                            R.string.connector_permissions_failed,
+                            Modifier.fillMaxWidth(),
+                        )
                     else ->
                         ConnectorSkeleton(
                             stringResource(R.string.connector_loading_permissions),
@@ -656,9 +668,9 @@ private fun ConnectorPermissionSheet(
                 }
         }
         if (permissions.data != null) {
-            if (offline) ConnectorStatusBanner(R.string.connector_offline)
+            if (offline) ContentReadFeedback(R.string.connector_offline)
             else if (permissions.failure == ConnectorReadFailure.Sustained)
-                ConnectorStatusBanner(R.string.connector_refresh_failed)
+                ContentReadFeedback(R.string.connector_refresh_failed)
         }
     }
 }

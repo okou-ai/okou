@@ -112,4 +112,9 @@
     <string name="chat_rename_save_unconfirmed">Hasil penyimpanan belum dikonfirmasi.</string>
     <string name="chat_title_saved">Judul chat disimpan</string>
     <string name="chat_project_name_saved">Nama proyek disimpan</string>
+    <string name="inline_image_loading">Memuat gambar…</string>
+    <string name="inline_image_no_thumbnail">Thumbnail tidak tersedia</string>
+    <string name="inline_image_unavailable">Gambar tidak tersedia</string>
+    <string name="inline_image_view_original">Lihat gambar asli</string>
+    <string name="inline_image_open_link">Buka tautan</string>
 </resources>

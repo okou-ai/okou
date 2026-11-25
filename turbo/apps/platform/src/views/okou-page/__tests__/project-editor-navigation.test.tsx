@@ -1,3 +1,4 @@
+import { composerDraftContract } from "@okouai/api-contracts/contracts/composer-draft";
 import {
   projectsContract,
   type Project,
@@ -9,7 +10,7 @@ import {
   installActiveChatBoundaries,
   installChatListStream,
 } from "./chat-list-test-helpers.ts";
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import {
   click,
@@ -485,6 +486,76 @@ function threadLink(threadId: string) {
     `[data-sidebar-chat-thread-id="${threadId}"]`,
   );
 }
+
+async function openProjectForArchiveShortcut(
+  current: Project,
+  other: Project,
+  enabled: boolean,
+) {
+  context.mocks.browser.userAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X)");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: enabled ? 332 : 333,
+    threads: [],
+  });
+  context.mocks.api(projectsContract.snapshot, ({ respond }) => {
+    return respond(200, {
+      projects: [current, other],
+      latestEventId: null,
+      latestSeqId: 1,
+    });
+  });
+  context.mocks.api(projectsContract.events, ({ respond }) => {
+    return respond(200, { events: [], hasMore: false });
+  });
+  context.mocks.api(composerDraftContract.get, ({ respond }) => {
+    return respond(200, { draftUserMessage: null, draftAttachments: null });
+  });
+  await setupPage({
+    context,
+    path: `/projects/${current.id}`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.ProjectArchive]: enabled },
+  });
+  await expect(handle(current.name)).resolves.toBeInTheDocument();
+}
+
+function pressMacArchiveShortcut() {
+  return fireEvent.keyDown(document, {
+    key: "X",
+    code: "KeyX",
+    metaKey: true,
+    shiftKey: true,
+  });
+}
+
+test("The Project page leaves the archive key available when Project Archive is disabled", async () => {
+  await openProjectForArchiveShortcut(
+    chatListProject("Launch", "a0"),
+    chatListProject("Research", "a1"),
+    false,
+  );
+  expect(pressMacArchiveShortcut()).toBeTruthy();
+});
+
+test("The Mac archive shortcut toggles the current Project on its page", async () => {
+  const launch = chatListProject("Launch", "a0");
+  const research = chatListProject("Research", "a1");
+  context.mocks.api(projectsContract.update, ({ params, body, respond }) => {
+    expect(params.id).toBe(launch.id);
+    return respond(200, { ...launch, archived: body.archived });
+  });
+  await openProjectForArchiveShortcut(launch, research, true);
+
+  pressMacArchiveShortcut();
+  await waitFor(() => {
+    expect(projectRows(launch.id)).toHaveLength(0);
+  });
+  await expect(handle(research.name)).resolves.toBeInTheDocument();
+
+  pressMacArchiveShortcut();
+  await expect(handle(launch.name)).resolves.toBeInTheDocument();
+  expect(location.pathname).toBe(`/projects/${launch.id}`);
+});
 
 test.each([
   { mobile: false, rejected: false },

@@ -10,6 +10,7 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 
 const context = testContext();
 const INSTRUCTIONS = "Reply with short bullet points and cite sources.";
@@ -46,6 +47,7 @@ test("The home avatar opens My Okou settings", async () => {
   click(avatar);
 
   const settings = await screen.findByRole("dialog", { name: "Settings" });
+  click(await findFastControl("tab", "Instructions", settings));
   await expect(
     within(settings).findByText(INSTRUCTIONS),
   ).resolves.toBeInTheDocument();

@@ -1,5 +1,9 @@
 import { mockAuthorizationCallbackThread } from "../../okou-page/__tests__/authorization-callback-test-helpers.ts";
-import { getAction, queryAction, findAction } from "../../okou-page/__tests__/connector-integrations-test-helpers.ts";
+import {
+  getAction,
+  queryAction,
+  findAction,
+} from "../../okou-page/__tests__/connector-integrations-test-helpers.ts";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
 import { connectorPermissionsContract } from "@okouai/api-contracts/contracts/connector-permissions";
 import { screen, waitFor, within } from "@testing-library/react";
@@ -7,7 +11,13 @@ import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { mockNow } from "../../../lib/time.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { ANALYTICS, PERMISSION_NOW, mockPermissionCatalog, mockPermissionGrants, PERMISSION_LATER } from "./permission-test-fixtures.ts";
+import {
+  ANALYTICS,
+  PERMISSION_NOW,
+  mockPermissionCatalog,
+  mockPermissionGrants,
+  PERMISSION_LATER,
+} from "./permission-test-fixtures.ts";
 
 const context = testContext();
 

@@ -1231,7 +1231,11 @@
       "title": "Rétrograder le plan"
     },
     "feedback": {
-      "shareFeedback": "Donner mon avis"
+      "otherPlaceholder": "Dites-nous en plus…",
+      "rewardTerms": "Une fois par espace de travail · Crédits valables 30 jours",
+      "shareFeedback": "Donner mon avis",
+      "submitFeedback": "Envoyer les commentaires",
+      "thanks": "Merci pour vos commentaires"
     },
     "invoices": {
       "amount": "Montant",
