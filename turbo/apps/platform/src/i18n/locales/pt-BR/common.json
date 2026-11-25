@@ -7427,6 +7427,7 @@
       "instructions": "Instruções",
       "manual": "Manual",
       "private": "Privado",
+      "public": "Público",
       "settings": "Configurações",
       "workflow": "Fluxo de trabalho",
       "workflows": "Fluxos de trabalho"
@@ -7513,6 +7514,7 @@
     "list": {
       "actionRequired": "Ação necessária",
       "all": "Todos",
+      "automated": "Automatizados",
       "automations": "Automações",
       "clearFilters": "Limpar filtros",
       "clearSearch": "Limpar busca",
@@ -7521,7 +7523,11 @@
       "description": "Um procedimento operacional padrão reutilizável para uma tarefa. Crie um do zero ou extraia-o do seu trabalho diário; depois, execute, edite ou automatize.",
       "empty": {
         "all": "Crie um fluxo de trabalho no chat ou salve um de uma execução útil.",
-        "search": "Tente outra busca ou altere o filtro."
+        "automated": "Adicione uma automação a um fluxo de trabalho para que ele apareça aqui.",
+        "private": "Nenhum fluxo de trabalho privado ainda.",
+        "public": "Nenhum fluxo de trabalho público ainda.",
+        "search": "Tente outra busca ou altere o filtro.",
+        "without": "Todos os fluxos de trabalho daqui são executados por agendamento ou evento."
       },
       "filter": "Filtrar fluxos de trabalho",
       "filters": "Filtros",
@@ -7532,6 +7538,13 @@
       "ownerLoading": "Carregando autor…",
       "ownerUnavailable": "Autor indisponível",
       "search": "Buscar fluxos de trabalho…",
+      "section": {
+        "event": "Por automação",
+        "later": "Mais tarde",
+        "manual": "Manual",
+        "today": "Executados hoje",
+        "week": "Esta semana"
+      },
       "sort": {
         "alphabetical": "Ordem alfabética",
         "created": "Criados recentemente",

@@ -7343,6 +7343,7 @@
       "instructions": "Instructions",
       "manual": "Manual",
       "private": "Private",
+      "public": "Public",
       "settings": "Settings",
       "workflow": "Workflow",
       "workflows": "Workflows"
@@ -7429,6 +7430,7 @@
     "list": {
       "actionRequired": "Action required",
       "all": "All",
+      "automated": "Automated",
       "automations": "Automations",
       "clearFilters": "Clear filters",
       "clearSearch": "Clear search",
@@ -7437,7 +7439,11 @@
       "description": "A reusable SOP for a task. Write one from scratch or distill it from your daily work, then run, edit, or automate it.",
       "empty": {
         "all": "Create a workflow from chat or save one from a useful run.",
-        "search": "Try another search or change the filter."
+        "automated": "Add an automation to a workflow and it shows up here.",
+        "private": "No private workflows yet.",
+        "public": "No public workflows yet.",
+        "search": "Try another search or change the filter.",
+        "without": "Every workflow here runs on a schedule or event."
       },
       "filter": "Filter workflows",
       "filters": "Filters",
@@ -7448,6 +7454,13 @@
       "ownerLoading": "Loading author…",
       "ownerUnavailable": "Author unavailable",
       "search": "Search workflows…",
+      "section": {
+        "event": "On automation",
+        "later": "Later",
+        "manual": "Manual",
+        "today": "Runs today",
+        "week": "This week"
+      },
       "sort": {
         "alphabetical": "Alphabetical",
         "created": "Newest created",

@@ -1,6 +1,7 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   workflowAutomationsContract,
   type WorkflowAutomationSummary,
@@ -118,10 +119,57 @@ async function expectTitles(expected: string[]) {
   });
 }
 
+test("workflow list keeps the existing controls and grouping by default", async () => {
+  directory();
+  await setupPage({ context, path: "/workflows" });
+  await findAction("button", "Next run");
+  const automated = await findAction("button", "Automated");
+  expect(automated).toHaveAttribute("aria-pressed", "false");
+  await expect(screen.findByText("On automation")).resolves.toBeVisible();
+  expect(screen.queryByRole("searchbox")).toBeNull();
+  click(automated);
+  await waitFor(() => {
+    expect(titles()).toHaveLength(3);
+    expect(titles()).toContain("Open Alpha sales");
+    expect(titles()).toContain("Open Bravo ops");
+    expect(titles()).toContain("Open Delta research");
+  });
+  expect(automated).toHaveAttribute("aria-pressed", "true");
+  expect(location.search).toBe("?filter=automated");
+  click(await findAction("button", "Manual"));
+  await expectTitles(["Charlie launch"]);
+  expect(location.search).toBe("?filter=without");
+});
+
+test("disabled redesign preserves legacy URL filters and ignores directory-only controls", async () => {
+  directory();
+  await setupPage({
+    context,
+    path: "/workflows?filter=automated&sort=alphabetical&automation=without&q=APPROVALS",
+    featureSwitches: { [FeatureSwitchKey.WorkflowListRedesign]: false },
+  });
+  await expectTitles(["Alpha sales", "Bravo ops", "Delta research"]);
+  await expect(findAction("button", "Automated")).resolves.toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  click(await findAction("button", "Private"));
+  await expectTitles(["Bravo ops", "Charlie launch", "Delta research"]);
+  click(await findAction("button", "Alphabetical"));
+  click(menuChoice("menuitem", "Next run"));
+  await findAction("button", "Next run");
+  expect(new URLSearchParams(location.search).has("sort")).toBeFalsy();
+  expect(new URLSearchParams(location.search).get("filter")).toBe("private");
+});
+
 test("workflow directory combines visibility and automation filters and restores the unfiltered list", async () => {
   const user = userEvent.setup();
   directory();
-  await setupPage({ context, path: "/workflows" });
+  await setupPage({
+    context,
+    path: "/workflows",
+    featureSwitches: { [FeatureSwitchKey.WorkflowListRedesign]: true },
+  });
   await expectTitles([
     "Charlie launch",
     "Delta research",
@@ -160,6 +208,7 @@ test("workflow search restores URL state and preserves both filters and sorting"
   await setupPage({
     context,
     path: "/workflows?filter=private&automation=without&sort=alphabetical&q=APPROVALS",
+    featureSwitches: { [FeatureSwitchKey.WorkflowListRedesign]: true },
   });
   await expectTitles(["Charlie launch"]);
   const input = screen.getByRole("searchbox", { name: "Search workflows…" });
@@ -199,6 +248,7 @@ test("next run orders by the earliest enabled schedule and leaves unscheduled wo
   await setupPage({
     context,
     path: "/workflows?sort=next-run&filter=automated",
+    featureSwitches: { [FeatureSwitchKey.WorkflowListRedesign]: true },
   });
   await expectTitles(["Delta research", "Alpha sales", "Bravo ops"]);
   click(await findAction("button", "Filter workflows"));

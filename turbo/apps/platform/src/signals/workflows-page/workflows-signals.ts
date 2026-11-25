@@ -69,6 +69,7 @@ import {
 type WorkflowDetailActionDialog = "copy" | "delete" | null;
 export type WorkflowDetailTab = "automations" | "instructions" | "info";
 export type WorkflowFilter = "all" | "private" | "public";
+export type LegacyWorkflowFilter = WorkflowFilter | "automated" | "without";
 export type WorkflowAutomationFilter = "all" | "automated" | "without";
 export type WorkflowSortMode = "next-run" | "alphabetical" | "created";
 
@@ -311,6 +312,42 @@ function readSearchParam<T extends string>(
     ? (value as T)
     : fallback;
 }
+
+export const legacyWorkflowFilter$ = computed((get): LegacyWorkflowFilter => {
+  return readSearchParam(
+    get(searchParams$),
+    FILTER_PARAM,
+    ["all", "automated", "without", "private", "public"],
+    "all",
+  );
+});
+
+export const legacyWorkflowSortMode$ = computed((get): WorkflowSortMode => {
+  return readSearchParam(
+    get(searchParams$),
+    SORT_MODE_PARAM,
+    ["next-run", "alphabetical", "created"],
+    "next-run",
+  );
+});
+
+export const legacySetWorkflowFilter$ = command(
+  ({ get, set }, value: LegacyWorkflowFilter) => {
+    set(
+      replaceSearchParams$,
+      nextSearchParams(get(searchParams$), FILTER_PARAM, value, "all"),
+    );
+  },
+);
+
+export const legacySetWorkflowSortMode$ = command(
+  ({ get, set }, value: WorkflowSortMode) => {
+    set(
+      replaceSearchParams$,
+      nextSearchParams(get(searchParams$), SORT_MODE_PARAM, value, "next-run"),
+    );
+  },
+);
 
 export const workflowFilter$ = computed((get): WorkflowFilter => {
   return readSearchParam(

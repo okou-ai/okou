@@ -7316,6 +7316,7 @@
       "instructions": "Instruksi",
       "manual": "Manual",
       "private": "Pribadi",
+      "public": "Publik",
       "settings": "Pengaturan",
       "workflow": "Alur kerja",
       "workflows": "Alur kerja"
@@ -7402,6 +7403,7 @@
     "list": {
       "actionRequired": "Tindakan diperlukan",
       "all": "Semua",
+      "automated": "Otomatis",
       "automations": "Otomatisasi",
       "clearFilters": "Hapus filter",
       "clearSearch": "Hapus pencarian",
@@ -7410,7 +7412,11 @@
       "description": "SOP yang dapat digunakan kembali untuk suatu tugas. Tulis dari awal atau ringkas dari pekerjaan harian Anda, lalu jalankan, edit, atau otomatiskan.",
       "empty": {
         "all": "Buat alur kerja dari chat atau simpan dari eksekusi yang bermanfaat.",
-        "search": "Coba pencarian lain atau ubah filter."
+        "automated": "Tambahkan otomatisasi ke alur kerja dan akan muncul di sini.",
+        "private": "Belum ada alur kerja privat.",
+        "public": "Belum ada alur kerja publik.",
+        "search": "Coba pencarian lain atau ubah filter.",
+        "without": "Setiap alur kerja di sini berjalan sesuai jadwal atau peristiwa."
       },
       "filter": "Filter alur kerja",
       "filters": "Filter",
@@ -7421,6 +7427,13 @@
       "ownerLoading": "Memuat penulis…",
       "ownerUnavailable": "Penulis tidak tersedia",
       "search": "Cari alur kerja…",
+      "section": {
+        "event": "Saat otomatisasi",
+        "later": "Nanti",
+        "manual": "Manual",
+        "today": "Dijalankan hari ini",
+        "week": "Minggu ini"
+      },
       "sort": {
         "alphabetical": "Alfabetis",
         "created": "Terbaru dibuat",

@@ -7427,6 +7427,7 @@
       "instructions": "Instructions",
       "manual": "Manuel",
       "private": "Privé",
+      "public": "Public",
       "settings": "Paramètres",
       "workflow": "Workflow",
       "workflows": "Workflows"
@@ -7513,6 +7514,7 @@
     "list": {
       "actionRequired": "Action requise",
       "all": "Tout",
+      "automated": "Automatisé",
       "automations": "Automatisations",
       "clearFilters": "Effacer les filtres",
       "clearSearch": "Effacer la recherche",
@@ -7521,7 +7523,11 @@
       "description": "Une SOP réutilisable pour une tâche. Rédigez-en une à partir de zéro ou tirez-la de votre travail quotidien, puis exécutez-la, modifiez-la ou automatisez-la.",
       "empty": {
         "all": "Créez un workflow depuis le chat ou enregistrez-en un à partir d'une exécution utile.",
-        "search": "Essayez une autre recherche ou modifiez le filtre."
+        "automated": "Ajoutez une automatisation à un workflow et elle apparaîtra ici.",
+        "private": "Aucun workflow privé pour le moment.",
+        "public": "Aucun workflow public pour le moment.",
+        "search": "Essayez une autre recherche ou modifiez le filtre.",
+        "without": "Chaque workflow ici s'exécute selon un calendrier ou un événement."
       },
       "filter": "Filtrer les workflows",
       "filters": "Filtres",
@@ -7532,6 +7538,13 @@
       "ownerLoading": "Chargement de l’auteur…",
       "ownerUnavailable": "Auteur indisponible",
       "search": "Rechercher des workflows…",
+      "section": {
+        "event": "Sur l'automatisation",
+        "later": "Plus tard",
+        "manual": "Manuel",
+        "today": "Exécutions du jour",
+        "week": "Cette semaine"
+      },
       "sort": {
         "alphabetical": "Alphabétique",
         "created": "Créés récemment",

@@ -7427,6 +7427,7 @@
       "instructions": "Instrucciones",
       "manual": "Manual",
       "private": "Privado",
+      "public": "Público",
       "settings": "Configuración",
       "workflow": "Flujo de trabajo",
       "workflows": "Flujos de trabajo"
@@ -7513,6 +7514,7 @@
     "list": {
       "actionRequired": "Acción necesaria",
       "all": "Todos",
+      "automated": "Automatizado",
       "automations": "Automatizaciones",
       "clearFilters": "Borrar filtros",
       "clearSearch": "Borrar búsqueda",
@@ -7521,7 +7523,11 @@
       "description": "Un procedimiento operativo reutilizable para una tarea. Escríbelo desde cero o extráelo de tu trabajo diario; después ejecútalo, edítalo o automatízalo.",
       "empty": {
         "all": "Crea un flujo de trabajo desde el chat o guarda uno a partir de una ejecución útil.",
-        "search": "Prueba otra búsqueda o cambia el filtro."
+        "automated": "Si añades una automatización a un flujo de trabajo, aparece aquí.",
+        "private": "Todavía no hay flujos de trabajo privados.",
+        "public": "Todavía no hay flujos de trabajo públicos.",
+        "search": "Prueba otra búsqueda o cambia el filtro.",
+        "without": "Cada flujo de trabajo aquí funciona según un calendario o evento."
       },
       "filter": "Filtrar flujos de trabajo",
       "filters": "Filtros",
@@ -7532,6 +7538,13 @@
       "ownerLoading": "Cargando autor…",
       "ownerUnavailable": "Autor no disponible",
       "search": "Buscar flujos de trabajo…",
+      "section": {
+        "event": "Por automatización",
+        "later": "Más tarde",
+        "manual": "Manual",
+        "today": "Ejecuciones de hoy",
+        "week": "Esta semana"
+      },
       "sort": {
         "alphabetical": "Alfabético",
         "created": "Más recientes",

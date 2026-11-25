@@ -7427,6 +7427,7 @@
       "instructions": "Istruzioni",
       "manual": "Manuale",
       "private": "Privato",
+      "public": "Pubblico",
       "settings": "Impostazioni",
       "workflow": "Flusso di lavoro",
       "workflows": "Flussi di lavoro"
@@ -7513,6 +7514,7 @@
     "list": {
       "actionRequired": "Azione richiesta",
       "all": "Tutto",
+      "automated": "Automatizzato",
       "automations": "Automazioni",
       "clearFilters": "Cancella filtri",
       "clearSearch": "Cancella ricerca",
@@ -7521,7 +7523,11 @@
       "description": "Una SOP riutilizzabile per un'attività. Scrivine uno da zero o distillalo dal tuo lavoro quotidiano, quindi eseguilo, modificalo o automatizzalo.",
       "empty": {
         "all": "Crea un flusso di lavoro dalla chat o salvane uno da una esecuzione utile.",
-        "search": "Prova un’altra ricerca o modifica il filtro."
+        "automated": "Aggiungi un'automazione a un flusso di lavoro e verrà visualizzata qui.",
+        "private": "Nessun flusso di lavoro privato ancora.",
+        "public": "Nessun flusso di lavoro pubblico ancora.",
+        "search": "Prova un’altra ricerca o modifica il filtro.",
+        "without": "Ogni flusso di lavoro qui viene eseguito in base a una pianificazione o a un evento."
       },
       "filter": "Filtra i flussi di lavoro",
       "filters": "Filtri",
@@ -7532,6 +7538,13 @@
       "ownerLoading": "Caricamento autore…",
       "ownerUnavailable": "Autore non disponibile",
       "search": "Cerca flussi di lavoro…",
+      "section": {
+        "event": "Sull'automazione",
+        "later": "Più tardi",
+        "manual": "Manuale",
+        "today": "Corre oggi",
+        "week": "Questa settimana"
+      },
       "sort": {
         "alphabetical": "Alfabetico",
         "created": "Creati di recente",

@@ -7316,6 +7316,7 @@
       "instructions": "指令",
       "manual": "手動",
       "private": "私有",
+      "public": "公開",
       "settings": "設定",
       "workflow": "工作流",
       "workflows": "工作流"
@@ -7402,6 +7403,7 @@
     "list": {
       "actionRequired": "需要處理",
       "all": "全部",
+      "automated": "已自動化",
       "automations": "自動化",
       "clearFilters": "清除篩選",
       "clearSearch": "清除搜尋",
@@ -7410,7 +7412,11 @@
       "description": "把一項任務沉澱成可複用的標準流程。可以從零編寫，也可以從日常工作中提煉，然後隨時執行、編輯或自動化。",
       "empty": {
         "all": "在對話中建立工作流，或把一次好用的執行儲存下來。",
-        "search": "試試其他關鍵字，或調整篩選條件。"
+        "automated": "給工作流新增自動化後，它就會出現在這裡。",
+        "private": "還沒有私有工作流。",
+        "public": "還沒有公開工作流。",
+        "search": "試試其他關鍵字，或調整篩選條件。",
+        "without": "這裡的每個工作流都按定時任務或事件執行。"
       },
       "filter": "篩選工作流程",
       "filters": "篩選",
@@ -7421,6 +7427,13 @@
       "ownerLoading": "正在載入作者…",
       "ownerUnavailable": "無法獲取作者",
       "search": "搜尋工作流程…",
+      "section": {
+        "event": "由自動化觸發",
+        "later": "更久以後",
+        "manual": "手動",
+        "today": "今天執行",
+        "week": "本週"
+      },
       "sort": {
         "alphabetical": "按名稱",
         "created": "最近建立",

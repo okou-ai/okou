@@ -7316,6 +7316,7 @@
       "instructions": "지침",
       "manual": "수동",
       "private": "비공개",
+      "public": "공개",
       "settings": "설정",
       "workflow": "워크플로",
       "workflows": "워크플로"
@@ -7402,6 +7403,7 @@
     "list": {
       "actionRequired": "조치 필요",
       "all": "전체",
+      "automated": "자동화됨",
       "automations": "자동화",
       "clearFilters": "필터 지우기",
       "clearSearch": "검색 지우기",
@@ -7410,7 +7412,11 @@
       "description": "작업을 위한 재사용 가능한 SOP입니다. 처음부터 작성하거나 일상 업무에서 추출한 후 실행, 편집 또는 자동화하세요.",
       "empty": {
         "all": "채팅에서 워크플로를 생성하거나 유용한 실행에서 저장하세요.",
-        "search": "다른 검색어를 입력하거나 필터를 변경하세요."
+        "automated": "워크플로에 자동화를 추가하면 여기에 표시됩니다.",
+        "private": "비공개 워크플로가 아직 없습니다.",
+        "public": "공개 워크플로가 아직 없습니다.",
+        "search": "다른 검색어를 입력하거나 필터를 변경하세요.",
+        "without": "여기에 있는 모든 워크플로는 일정 또는 이벤트에 따라 실행됩니다."
       },
       "filter": "워크플로 필터",
       "filters": "필터",
@@ -7421,6 +7427,13 @@
       "ownerLoading": "작성자 불러오는 중…",
       "ownerUnavailable": "작성자 정보를 사용할 수 없습니다",
       "search": "워크플로 검색…",
+      "section": {
+        "event": "자동화 시",
+        "later": "나중에",
+        "manual": "수동",
+        "today": "오늘 실행됨",
+        "week": "이번 주"
+      },
       "sort": {
         "alphabetical": "알파벳순",
         "created": "최근 생성순",

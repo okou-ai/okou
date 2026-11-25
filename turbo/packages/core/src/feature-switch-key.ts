@@ -60,4 +60,5 @@ export enum FeatureSwitchKey {
   FreePlanArtifactPaywall = "freePlanArtifactPaywall",
   OnboardingMultipleOutputs = "onboardingMultipleOutputs",
   ChatShareRefresh = "chatShareRefresh",
+  WorkflowListRedesign = "workflowListRedesign",
 }
