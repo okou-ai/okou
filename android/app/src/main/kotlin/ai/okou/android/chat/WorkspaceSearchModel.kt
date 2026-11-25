@@ -77,14 +77,17 @@ private fun WorkflowSummary.toSearchHit() =
 internal fun WorkflowState.searchCatalog(keyword: String): SearchRead<SearchWorkflowHit> {
     val rows =
         catalog
-            ?: return when (catalogFailure) {
-                null -> SearchRead.Loading
-                WorkflowReadFailure.Unavailable -> SearchRead.AccessLost
+            ?: return when {
+                catalogRefreshing || catalogFailure == null -> SearchRead.Loading
+                catalogFailure == WorkflowReadFailure.Unavailable -> SearchRead.AccessLost
                 else -> SearchRead.Failed
             }
+    val matches = rows.mapNotNull { it.toSearchHit().takeIf { hit -> hit.matches(keyword) } }
+    if (catalogRefreshing && matches.isEmpty()) return SearchRead.Loading
     return SearchRead.Ready(
-        rows.mapNotNull { it.toSearchHit().takeIf { hit -> hit.matches(keyword) } },
-        refreshFailed = catalogFailure != null,
+        matches,
+        refreshing = catalogRefreshing,
+        refreshFailed = !catalogRefreshing && catalogFailure != null,
     )
 }
 
