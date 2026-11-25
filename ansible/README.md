@@ -18,8 +18,8 @@ applies provisioning when the Ansible tree changes. A Caddyfile-only update
 validates the file and signals the running Caddy with `SIGUSR1`. The applied
 fingerprint advances only after the same process and systemd invocation confirm
 the reload in the journal. A failed or unconfirmed reload fails provisioning.
-After an explicit rejection from the same process, provisioning restores the
-last confirmed Caddyfile on disk when its hash matches the applied record.
+Provisioning restores the last confirmed Caddyfile on disk after a confirmed
+rejection or when it refuses a combined process and configuration update.
 Deploy process changes, such as a binary or systemd unit update, separately from
 Caddyfile changes on an active host.
 

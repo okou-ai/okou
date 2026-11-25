@@ -187,6 +187,7 @@
              or (runner_caddy_previous.get('uid', runner_caddy_activation_state.uid) | string) != (runner_caddy_activation_state.uid | string)
              or (runner_caddy_previous.get('gid', runner_caddy_activation_state.gid) | string) != (runner_caddy_activation_state.gid | string)
              or runner_caddy_previous.get('groups', runner_caddy_activation_state.groups) != runner_caddy_activation_state.groups }}
+        runner_caddy_mixed_pending: "{{ runner_caddy_active.rc == 0 and runner_caddy_config_pending and runner_caddy_runtime_pending }}"
       block:
         - name: Fingerprint published Caddy deployment files
           ansible.builtin.stat:
@@ -216,12 +217,6 @@
           changed_when: false
           failed_when: runner_caddy_active.rc not in [0, 3, 4]
 
-        - name: Require separate configuration and process updates on an active Caddy
-          ansible.builtin.assert:
-            that: not (runner_caddy_config_pending and runner_caddy_runtime_pending)
-            fail_msg: Caddyfile changes cannot restart an active Caddy. Apply process changes separately.
-          when: runner_caddy_active.rc == 0
-
         - name: Enable Caddy and apply changes to its process inputs
           ansible.builtin.systemd_service:
             name: okou-runner-caddy.service
@@ -230,6 +225,7 @@
             state: >-
               {{ 'started' if runner_caddy_active.rc != 0 else
                  ('restarted' if runner_caddy_runtime_pending else omit) }}
+          when: not runner_caddy_mixed_pending
 
         - name: Hot-reload the Caddyfile in the active process
           ansible.builtin.script:
@@ -245,8 +241,8 @@
           register: runner_caddy_reload
           failed_when: runner_caddy_reload.rc | default(1) not in [0, 3]
 
-        - name: Restore the confirmed source after Caddy rejects the update
-          when: runner_caddy_reload.rc | default(0) == 3
+        - name: Restore the confirmed source after an unapplied configuration update
+          when: runner_caddy_mixed_pending or runner_caddy_reload.rc | default(0) == 3
           block:
             - name: Verify the saved source against the last applied hash
               ansible.builtin.stat:
@@ -266,9 +262,11 @@
                 - runner_caddy_saved_source.stat.exists
                 - runner_caddy_saved_source.stat.checksum == runner_caddy_previous.get('config')
 
-            - name: Fail provisioning after rejected Caddy configuration
+            - name: Fail provisioning after the configuration update was refused
               ansible.builtin.fail:
-                msg: "{{ runner_caddy_reload.stdout }}"
+                msg: >-
+                  {{ 'Caddyfile changes cannot restart an active Caddy. Apply process changes separately.'
+                     if runner_caddy_mixed_pending else runner_caddy_reload.stdout }}
 
         - name: Verify the ready Caddy service invocation
           ansible.builtin.command:

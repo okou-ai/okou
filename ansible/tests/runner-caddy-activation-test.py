@@ -281,6 +281,7 @@ def main():
                 provision(marker="combined", status=409)
             except subprocess.CalledProcessError:
                 assert process_state() == before and http_status() == 418
+                assert config.read_bytes() == confirmed_source
                 assert applied.read_bytes() == committed_state
             else:
                 raise AssertionError(
