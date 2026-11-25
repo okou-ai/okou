@@ -1,7 +1,7 @@
 import "./initialize-fetch.node.ts";
 import { Agent } from "undici";
 
-const IDLE_MS = 30_000;
+const IDLE_MS = 120_000;
 type FetchDispatcher = NonNullable<RequestInit["dispatcher"]>;
 
 export function createRunnerDispatchPool() {
