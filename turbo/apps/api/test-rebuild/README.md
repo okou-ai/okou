@@ -67,3 +67,13 @@ The source review refined the Auto routing and Runner BDDs to capture the actual
 | `webhooks-stripe-credit-purchase-001` | Deduplication is by invoice across distinct signed webhook event IDs. The full post-purchase grant list is identical after replay. |
 | `project-run-context-001` | The queued Run uses the latest membership and both mention names while started Runs preserve their prompts. |
 | `remote-runtime-invalidation-001` | Thread overrides target one Run and defaults target both. SSH resolution and all four Run statuses are verified separately. |
+
+| `connector-external-code-session-read-002` | Mismatched session ID and token pairs return 404, while a matched superseded pair returns 400. The latest request and replay return one account. |
+| `connector-account-default-wakeups-002` | The default is visible after provider failure. Subsequent realtime publication targets the exact owner Run and workspace. |
+| `teams-route-ownership-003` | The second terminal reply moves to the new Teams destination while preserving the Okou thread. |
+| `feishu-shared-conversation-006` | Replay produces only one Feishu reply. The test checks a matching realtime publication attempt and leaves its count unspecified. |
+| `discord-oauth-export-001` | The archive retains first-party contents while excluding raw and hashed authorities and the foreign identity. |
+| `artifact-paywall-001` | Delivery stays allowed and displays a banner, while hiding, renaming and downloads each return 402. |
+| `browser-admission-002` | Admission waits for the first window. The sibling gets a distinct window within the same provider instance. |
+| `execution-storage-url-freshness-001` | Corrected the refresh boundary to 44 hours from the source. The Run spends two minutes queued across that threshold. |
+| `proactive-preferences-001` | Feed source flags remain individually editable when Suggestions is paused, and the returned values are read back through the web session. |
