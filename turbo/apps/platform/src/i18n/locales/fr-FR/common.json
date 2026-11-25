@@ -648,11 +648,10 @@
     "people": {
       "accounts": "Membres correspondants de l’espace de travail",
       "anyone": "Tout le monde",
-      "empty": "Personne d’autre n’a encore accès.",
-      "hint": "En dehors de votre espace de travail ? Utilisez leur adresse e-mail complète.",
       "invitationProcessed": "Invitation de partage traitée",
       "label": "Partager avec des personnes",
       "noAccounts": "Aucun membre correspondant. Saisissez une adresse e-mail complète pour inviter.",
+      "owner": "Propriétaire",
       "placeholder": "Nom ou adresse e-mail",
       "remove": "Retirer l’accès de {{email}}",
       "removed": "Accès retiré",
@@ -665,7 +664,8 @@
       "viewers": "Personnes ayant accès",
       "workspace": "Espace de travail",
       "workspaceDescription": "Membres de {{organization}} et personnes invitées",
-      "workspaceDescriptionUnnamed": "Membres de l’espace de travail et personnes invitées"
+      "workspaceDescriptionUnnamed": "Membres de l’espace de travail et personnes invitées",
+      "you": "{{name}} (vous)"
     },
     "preview": {
       "audioLabel": "Aperçu audio pour {{filename}}",

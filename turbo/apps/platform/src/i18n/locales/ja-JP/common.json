@@ -631,11 +631,10 @@
     "people": {
       "accounts": "一致するワークスペースメンバー",
       "anyone": "全員",
-      "empty": "まだ他の人を招待していません。",
-      "hint": "ワークスペース外の人には、完全なメールアドレスを入力してください。",
       "invitationProcessed": "共有の招待を処理しました",
       "label": "ユーザーに共有",
       "noAccounts": "一致するメンバーがいません。完全なメールアドレスで招待できます。",
+      "owner": "オーナー",
       "placeholder": "名前またはメールアドレス",
       "remove": "{{email}} のアクセス権を削除",
       "removed": "アクセス権を削除しました",
@@ -648,7 +647,8 @@
       "viewers": "アクセスできるユーザー",
       "workspace": "ワークスペース",
       "workspaceDescription": "{{organization}}のメンバーと招待した人",
-      "workspaceDescriptionUnnamed": "ワークスペースのメンバーと招待した人"
+      "workspaceDescriptionUnnamed": "ワークスペースのメンバーと招待した人",
+      "you": "{{name}}（あなた）"
     },
     "preview": {
       "audioLabel": "{{filename}} のオーディオ プレビュー",

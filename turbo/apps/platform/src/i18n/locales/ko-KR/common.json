@@ -631,11 +631,10 @@
     "people": {
       "accounts": "일치하는 워크스페이스 멤버",
       "anyone": "모든 사람",
-      "empty": "아직 다른 사람을 초대하지 않았습니다.",
-      "hint": "워크스페이스 외부 사람은 전체 이메일 주소로 초대하세요.",
       "invitationProcessed": "공유 초대를 처리했습니다",
       "label": "사용자와 공유",
       "noAccounts": "일치하는 멤버가 없습니다. 전체 이메일 주소로 초대하세요.",
+      "owner": "소유자",
       "placeholder": "이름 또는 이메일 주소",
       "remove": "{{email}}의 액세스 권한 삭제",
       "removed": "액세스 권한을 삭제했습니다",
@@ -648,7 +647,8 @@
       "viewers": "액세스 권한이 있는 사용자",
       "workspace": "워크스페이스",
       "workspaceDescription": "{{organization}} 멤버와 초대받은 사람",
-      "workspaceDescriptionUnnamed": "워크스페이스 멤버와 초대받은 사람"
+      "workspaceDescriptionUnnamed": "워크스페이스 멤버와 초대받은 사람",
+      "you": "{{name}}(나)"
     },
     "preview": {
       "audioLabel": "{{filename}} 오디오 미리보기",

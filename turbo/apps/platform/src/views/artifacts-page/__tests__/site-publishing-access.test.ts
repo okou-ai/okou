@@ -245,7 +245,10 @@ function permission(name: string) {
 async function expectPermission(name: string) {
   await waitFor(() => {
     expect(permission(name)).toBeChecked();
-    expect(permission(name)).toHaveAttribute("aria-busy", "false");
+    expect(screen.getByRole("radiogroup")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
   });
 }
 
@@ -447,19 +450,19 @@ test("a limited invitation keeps its email draft and shows no success confirmati
   expect(inviteButton).toBeEnabled();
 });
 
-test("audience choices hide people controls and retain drafts and invitations", async () => {
+test("people controls stay available in every audience and keep drafts and invitations", async () => {
+  const shareId = "00000000-0000-4000-8000-000000000011";
+  let shares = [{ id: shareId, email: "invited@example.com" }];
   context.mocks.api(artifactSharingContract.list, ({ respond }) => {
-    return respond(200, {
-      shares: [
-        {
-          id: "00000000-0000-4000-8000-000000000011",
-          email: "invited@example.com",
-        },
-      ],
-    });
+    return respond(200, { shares });
   });
   context.mocks.api(artifactSharingContract.search, ({ respond }) => {
     return respond(200, { accounts: [] });
+  });
+  context.mocks.api(artifactSharingContract.remove, ({ params, respond }) => {
+    expect(params.shareId).toBe(shareId);
+    shares = [];
+    return respond(200, { removed: shareId });
   });
   await openSharing(context, {
     siteId: invitedSiteId,
@@ -472,29 +475,35 @@ test("audience choices hide people controls and retain drafts and invitations", 
     name: "Share with people",
   });
   await within(menu).findByRole("list", { name: "People with access" });
-  const workspace = permission("Workspace");
   await fill(input, "draft@example.com");
 
-  click(workspace);
+  // Invitations keep granting access in every audience, so the people
+  // controls stay in the accessibility tree instead of collapsing.
+  click(permission("Workspace"));
   await expectPermission("Workspace");
   expect(
     within(menu).getByText("Default Org members and invited people"),
   ).toBeInTheDocument();
-  expect(within(menu).queryByRole("combobox")).not.toBeInTheDocument();
-  expect(within(menu).queryByRole("list")).not.toBeInTheDocument();
-
-  click(permission("Anyone"));
-  await expectPermission("Anyone");
-  expect(within(menu).getByText("Anyone with the link")).toBeInTheDocument();
-  expect(within(menu).queryByRole("combobox")).not.toBeInTheDocument();
-
-  click(permission("Invited people"));
-  await expectPermission("Invited people");
   expect(
     within(menu).getByRole("combobox", { name: "Share with people" }),
   ).toHaveValue("draft@example.com");
   expect(
     within(menu).getByRole("list", { name: "People with access" }),
   ).toHaveTextContent("invited@example.com");
+
+  click(permission("Anyone"));
+  await expectPermission("Anyone");
+  expect(within(menu).getByText("Anyone with the link")).toBeInTheDocument();
+  expect(
+    within(menu).getByRole("list", { name: "People with access" }),
+  ).toHaveTextContent("invited@example.com");
+
+  click(getButtonByName("Remove access for invited@example.com", menu));
+  await waitFor(() => {
+    return expect(
+      within(menu).getByRole("list", { name: "People with access" }),
+    ).not.toHaveTextContent("invited@example.com");
+  });
+  expect(permission("Anyone")).toBeChecked();
   expect(getButtonByName("Copy link", menu)).toBeEnabled();
 });
