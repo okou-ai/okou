@@ -657,8 +657,7 @@ private fun WorkflowField(
         BasicTextField(
             value = input.value,
             onValueChange = {
-                input.edit(it)
-                if (it.text != value) onChange(it.text)
+                if (input.edit(it)) onChange(it.text)
             },
             modifier =
                 Modifier.fillMaxWidth()

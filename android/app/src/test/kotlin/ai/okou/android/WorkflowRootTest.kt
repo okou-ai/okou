@@ -48,6 +48,7 @@ import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.dp
@@ -383,6 +384,13 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
         compose.onNodeWithTag("workflow_save").assertIsNotEnabled()
         name.performTextReplacement("Release checklist")
         compose.onNodeWithText("Use 256 characters or fewer.").assertDoesNotExist()
+        name.performTextInputSelection(TextRange.Zero)
+        name.performSemanticsAction(SemanticsActions.SetText) { setText ->
+            assertTrue(setText(AnnotatedString("Temporary name")))
+            assertTrue(setText(AnnotatedString("Release checklist")))
+        }
+        name.assertTextContains("Release checklist")
+        compose.onNodeWithTag("workflow_save").assertIsNotEnabled()
         val instructions =
             "Confirm the release owner.\n![Launch screenshot](<https://example.test/release.png>)"
         compose

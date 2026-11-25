@@ -216,13 +216,16 @@ internal sealed interface WorkflowEdit {
     }
 }
 
-internal fun WorkflowEdit.updateConfirmed(detail: WorkflowDetail): WorkflowEdit? {
+internal fun WorkflowEdit.updateConfirmed(
+    detail: WorkflowDetail,
+    keepInput: Boolean = changed,
+): WorkflowEdit? {
     if (!detail.canEdit(this)) return null
     return when (this) {
         is WorkflowEdit.Instructions -> {
             val latest = detail.editableInstructions().original
             if (latest == original) this
-            else copy(original = latest, value = if (changed) value else latest)
+            else copy(original = latest, value = if (keepInput) value else latest)
         }
         is WorkflowEdit.Rule -> {
             if (id == null) return this
@@ -230,7 +233,8 @@ internal fun WorkflowEdit.updateConfirmed(detail: WorkflowDetail): WorkflowEdit?
                 detail.automations.firstOrNull { it.id == id }?.editableRule(original.timezone)
                     ?: return null
             if (latest.original == original) copy(enabled = latest.enabled)
-            else if (changed) copy(original = latest.original, enabled = latest.enabled) else latest
+            else if (keepInput) copy(original = latest.original, enabled = latest.enabled)
+            else latest
         }
     }
 }

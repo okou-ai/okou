@@ -28,6 +28,7 @@ import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -242,6 +243,13 @@ class PersonalInstructionsSettingsTest {
         input.performTextReplacement(saved + " ")
         save.assertIsEnabled()
         input.performTextReplacement(saved)
+        save.assertIsNotEnabled()
+        input.performTextInputSelection(TextRange.Zero)
+        input.performSemanticsAction(SemanticsActions.SetText) { setText ->
+            assertTrue(setText(AnnotatedString("Temporary input")))
+            assertTrue(setText(AnnotatedString(saved)))
+        }
+        input.assertTextEquals(saved)
         save.assertIsNotEnabled()
         input.performScrollTo().performTextReplacement("Keep **my** 中文 👋 draft")
         compose.waitUntil(10_000) {
