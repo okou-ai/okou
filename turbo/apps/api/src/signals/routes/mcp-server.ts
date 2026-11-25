@@ -1,3 +1,11 @@
+import { platformRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
+import { transcribeContract } from "@okouai/api-contracts/contracts/transcribe";
+import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
+import { chatThreadCreateRoutes } from "./chat-threads-create";
+import { realtimeTokenRoutes } from "./realtime-token";
+import { uploadsPrepareRoutes } from "./uploads-prepare";
+import { uploadsCompleteRoutes } from "./uploads-complete";
+import { transcribeRoutes } from "./transcribe";
 import { promisify } from "node:util";
 import { gunzip } from "node:zlib";
 import { mcpThreadSnapshotContract } from "@okouai/api-contracts/contracts/mcp-chat-snapshots";
@@ -41,7 +49,10 @@ import type { RouteEntry } from "../route-entry";
 import { getMemberRoleAndUpdateCache$ } from "../services/auth.service";
 import { mcpChatSearch } from "../services/mcp-chat-search.service";
 import { awaitWithSignal, settle } from "../utils";
-import { recallChatEvent$ } from "../services/chat-events.command";
+import {
+  readAcceptedChatInputReceipt$,
+  recallChatEvent$,
+} from "../services/chat-events.command";
 import { sendValidatedChatEvent$ } from "./chat-events";
 import { projectRoutes } from "./projects";
 import { chatThreadRoutes } from "./chat-threads";
@@ -75,7 +86,7 @@ const mcpSendChat$ = command(async ({ get, set }, signal: AbortSignal) => {
     model,
     userMessage,
   } = body.data;
-  const eventId = randomUUID();
+  const eventId = body.data.clientEventId ?? randomUUID();
   const response = await set(
     sendValidatedChatEvent$,
     {
@@ -86,6 +97,9 @@ const mcpSendChat$ = command(async ({ get, set }, signal: AbortSignal) => {
         prompt,
         model,
         clientEventId: eventId,
+        // A keyed first send needs a stable thread as well as a stable input.
+        clientThreadId:
+          threadId === undefined ? body.data.clientEventId : undefined,
         userMessage: userMessage ?? {
           version: 1,
           parts: [{ type: "text", text: prompt }],
@@ -95,9 +109,21 @@ const mcpSendChat$ = command(async ({ get, set }, signal: AbortSignal) => {
     },
     signal,
   );
-  return response.status === 201
-    ? { ...response, body: { ...response.body, eventId } }
-    : response;
+  if (response.status !== 201) {
+    return response;
+  }
+  const receipt =
+    body.data.clientEventId && "replayed" in response && response.replayed
+      ? await set(
+          readAcceptedChatInputReceipt$,
+          response.body.threadId,
+          eventId,
+          signal,
+        )
+      : response;
+  return receipt.status === 201
+    ? { ...receipt, body: { ...receipt.body, eventId } }
+    : receipt;
 });
 
 const mcpRevokeChat$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -159,6 +185,11 @@ const mcpThreadSnapshot$ = command(async ({ get }, signal: AbortSignal) => {
 // The project and chat reads reuse canonical routes in the scoped MCP slice.
 const toolContracts: ReadonlySet<AppRoute> = Object.freeze(
   new Set([
+    chatThreadsContract.create,
+    platformRealtimeTokenContract.create,
+    uploadsContract.preparePrivate,
+    uploadsContract.complete,
+    transcribeContract.playback,
     projectsContract.list,
     projectsContract.threads,
     runModelsMainContract.list,
@@ -178,6 +209,11 @@ const toolContracts: ReadonlySet<AppRoute> = Object.freeze(
   ]),
 );
 const toolRoutes = [
+  ...chatThreadCreateRoutes,
+  ...realtimeTokenRoutes,
+  ...uploadsPrepareRoutes,
+  ...uploadsCompleteRoutes,
+  ...transcribeRoutes,
   ...projectRoutes,
   ...runModelsRoutes,
   ...chatThreadRoutes,

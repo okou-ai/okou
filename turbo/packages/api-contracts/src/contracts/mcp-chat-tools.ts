@@ -18,6 +18,7 @@ import { runsCancelContract } from "./run-routes";
 const normal = chatEventNormalSendBodySchema.shape;
 export const mcpSendChatMessageInputSchema = object({
   prompt: normal.prompt.optional(),
+  clientEventId: mcpEventIdSchema.toLowerCase().optional(),
   userMessage: normal.userMessage.optional(),
   threadId: mcpThreadIdSchema.optional(),
   projectId: uuid().toLowerCase().optional(),

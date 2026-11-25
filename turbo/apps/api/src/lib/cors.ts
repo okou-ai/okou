@@ -6,7 +6,6 @@ import { CLIENT_HEADER_NAMES } from "@okouai/api-contracts/contracts/client-head
 
 import { safeUrlParse } from "../signals/utils";
 import { env } from "./env";
-import { allowedMcpOrigin } from "./mcp-server-config";
 
 // Hono owns CORS for registered API routes directly. Their responses need
 // CORS headers here because they do not pass through a frontend proxy.
@@ -95,9 +94,16 @@ const firstPartyCors: MiddlewareHandler = cors({
   maxAge: 86_400,
 });
 
+function isDeviceWebViewOrigin(origin: string): boolean {
+  return (
+    origin.startsWith("http://127.0.0.1:") &&
+    safeUrlParse(origin)?.origin === origin
+  );
+}
+
 const mcpCors = cors({
   origin: (origin) => {
-    return allowedMcpOrigin(origin) ? origin : null;
+    return isDeviceWebViewOrigin(origin) ? origin : null;
   },
   allowMethods: ["POST", "GET", "DELETE", "OPTIONS"],
   allowHeaders: [
@@ -138,17 +144,17 @@ export const corsMiddleware: MiddlewareHandler = async (context, next) => {
   }
   const origin = req.header("Origin");
   if (req.path === "/mcp") {
-    if (origin !== undefined && !allowedMcpOrigin(origin)) {
+    if (
+      origin !== undefined &&
+      (!isDeviceWebViewOrigin(origin) || req.header("Cookie") !== undefined)
+    ) {
       return context.json({ error: "Forbidden Origin" }, 403);
     }
     return mcpCors(context, next);
   }
 
   // Even Hub serves the installed G2 package on a loopback port chosen at launch.
-  if (
-    origin?.startsWith("http://127.0.0.1:") &&
-    safeUrlParse(origin)?.origin === origin
-  ) {
+  if (origin !== undefined && isDeviceWebViewOrigin(origin)) {
     const preflight = req.method === "OPTIONS";
     const method = preflight
       ? (req.header("Access-Control-Request-Method") ?? "")
