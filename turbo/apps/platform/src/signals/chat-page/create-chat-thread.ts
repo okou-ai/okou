@@ -2909,6 +2909,7 @@ function createChatRenderWindow({
   });
   const { visibleRows$, syncVisibleRows$ } = createChatThreadRows({
     includesTail$,
+    hasLaterReply$: transcriptWindow.hasLaterReply$,
     renderedGroups$: renderedVisibleChatGroups$,
     threadScrollPosition$,
   });

@@ -1,4 +1,5 @@
-import { IconButton, OkouAvatar, cn } from "@okouai/ui";
+import { OkouMessageAvatar } from "../components/okou-message-avatar.tsx";
+import { IconButton, cn } from "@okouai/ui";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { openSettingsDialogAt$ } from "../../signals/okou-page/settings/settings-dialog.ts";
@@ -8,8 +9,10 @@ import { detach, Reason } from "../../signals/utils.ts";
 export function MyOkouAvatarButton({
   size,
   className,
+  animated = true,
 }: {
   size: number;
+  animated?: boolean;
   className?: string;
 }) {
   const { t } = useTranslation();
@@ -29,8 +32,9 @@ export function MyOkouAvatarButton({
         detach(openSettings("my-okou", pageSignal), Reason.DomCallback);
       }}
     >
-      <OkouAvatar
+      <OkouMessageAvatar
         size={size}
+        animated={animated}
         className={cn(
           "transition-opacity group-hover/avatar:opacity-80",
           className,
