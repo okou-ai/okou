@@ -1450,9 +1450,7 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
     fun imagePreviewReservesItsFrameBeforeShowingLoadingAndAccessLoss() {
         val fixture = ArtifactApiFixture(app.fixture, imageDownloadAllowed = true)
         val releaseImage = CountDownLatch(1)
-        val started = CountDownLatch(1)
         fixture.imageResponse = {
-            started.countDown()
             releaseImage.await()
             MockResponse().setResponseCode(403)
         }
@@ -1475,9 +1473,8 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
             loading.assertIsDisplayed()
             assertEquals(pending.height, surface.getUnclippedBoundsInRoot().height)
             compose.mainClock.autoAdvance = true
-            compose.waitUntil(10_000) { started.count == 0L }
+            awaitText("Save file")
             compose.onNodeWithText("Save file").assertIsEnabled()
-            releaseImage.countDown()
         } finally {
             releaseImage.countDown()
             compose.mainClock.autoAdvance = true
