@@ -295,8 +295,8 @@ messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integ
 messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-019	planned		
 messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-021	planned		
 messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-025	planned		
-messaging	src/signals/routes/__tests__/integrations-github-files.test.ts	integrations-github-files-001	planned		
-messaging	src/signals/routes/__tests__/integrations-github-files.test.ts	integrations-github-files-003	planned		
+messaging	src/signals/routes/__tests__/integrations-github-files.test.ts	integrations-github-files-001	rewritten	41.4	
+messaging	src/signals/routes/__tests__/integrations-github-files.test.ts	integrations-github-files-003	rewritten	7.6	
 messaging	src/signals/routes/__tests__/integrations-github-files.test.ts	integrations-github-files-005	planned		
 messaging	src/signals/routes/__tests__/integrations-slack-status.test.ts	integrations-slack-status-001	planned		
 messaging	src/signals/routes/__tests__/integrations-slack-status.test.ts	integrations-slack-status-002	planned		
