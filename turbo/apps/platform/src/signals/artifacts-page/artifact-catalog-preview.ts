@@ -3,6 +3,7 @@ import { computed } from "ccstate";
 import type { ArtifactCatalogViewSignals } from "./create-artifact-catalog-signals.ts";
 import type { MermaidDiagramPreviewCommand } from "../mermaid-diagram.ts";
 import { createMarkdownPreviewTree } from "../markdown-preview-tree.ts";
+import { createZipArtifactPreviewScope } from "../zip-artifact-preview.ts";
 import {
   fetchPreviewText,
   isTextPreviewKind,
@@ -41,27 +42,31 @@ export function createCatalogArtifactPreviewSignals(
     const preview = get(artifactCatalog.selectedArtifactPreview$);
     return preview ? await get(preview.shareUrl$) : null;
   });
-  const text$ = computed(async (get): Promise<TextPreviewContent> => {
+  const size$ = computed(async (get) => {
     const detail = await get(artifactCatalog.selectedArtifactDetail$);
-    if (!detail) {
-      throw new Error("Selected artifact is unavailable");
-    }
-    const preview = artifactDetailPreview(detail);
-    if (!isTextPreviewKind(preview.kind)) {
-      throw new Error("Selected artifact is not a text preview");
-    }
+    return detail && "file" in detail ? detail.file.size : undefined;
+  });
+  const text$ = computed(async (get): Promise<TextPreviewContent> => {
     const resourceUrl = await get(resourceUrl$);
     if (!resourceUrl) {
       throw new Error("Selected artifact preview is unavailable");
     }
     return fetchPreviewText(resourceUrl);
   });
+  const contentReady$ = computed(async (get) => {
+    const detail = await get(artifactCatalog.selectedArtifactDetail$);
+    if (detail && isTextPreviewKind(artifactDetailPreview(detail).kind)) {
+      await get(text$);
+    }
+  });
   return {
+    contentReady$,
     resourceUrl$,
     imageUrl$,
     shareUrl$,
     text$,
     markdownTree$: createMarkdownPreviewTree(text$, openDiagram$, threadId),
+    zipPreview: createZipArtifactPreviewScope(resourceUrl$, size$),
   };
 }
 

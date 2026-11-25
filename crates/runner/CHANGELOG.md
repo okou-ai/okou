@@ -1,5 +1,212 @@
 # Changelog
 
+## [0.251.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.1...runner-rs-v0.251.2) (2026-11-25)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.251.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.0...runner-rs-v0.251.1) (2026-11-25)
+
+
+### Refactoring
+
+* **runner:** keep sse data separators in the scanner ([#50778](https://github.com/okou-ai/okou/issues/50778)) ([ac21c1a](https://github.com/okou-ai/okou/commit/ac21c1a4c3fc3421946c7e6c182bc45f2d1dbce9))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.251.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.250.12...runner-rs-v0.251.0) (2026-11-25)
+
+
+### Features
+
+* receive computer use app state on the assigned runner ([#50745](https://github.com/okou-ai/okou/issues/50745)) ([9977243](https://github.com/okou-ai/okou/commit/99772436210306fef0b462d019a9fe57d118ff81))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.250.12](https://github.com/okou-ai/okou/compare/runner-rs-v0.250.11...runner-rs-v0.250.12) (2026-11-25)
+
+## [0.250.11](https://github.com/okou-ai/okou/compare/runner-rs-v0.250.10...runner-rs-v0.250.11) (2026-11-25)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.250.10](https://github.com/okou-ai/okou/compare/runner-rs-v0.250.9...runner-rs-v0.250.10) (2026-11-25)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.250.9](https://github.com/okou-ai/okou/compare/runner-rs-v0.250.8...runner-rs-v0.250.9) (2026-11-24)
+
+
+### Refactoring
+
+* **runner:** decouple sse usage recovery from log labels ([#50675](https://github.com/okou-ai/okou/issues/50675)) ([11961d2](https://github.com/okou-ai/okou/commit/11961d2c8bf1b66b199b8140fed451f9aadaaba3))
+* **runner:** share single-prefix case witness collection ([#50656](https://github.com/okou-ai/okou/issues/50656)) ([6050e2a](https://github.com/okou-ai/okou/commit/6050e2aa558b377e457d81bd5275a03cc6017530))
+* **runner:** unify model usage quantity field definitions ([#50669](https://github.com/okou-ai/okou/issues/50669)) ([e1d1756](https://github.com/okou-ai/okou/commit/e1d1756fee087cd52abd74fdf80b018ef26b35a8))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.250.8](https://github.com/okou-ai/okou/compare/runner-rs-v0.250.7...runner-rs-v0.250.8) (2026-11-24)
+
+
+### Refactoring
+
+* **runner:** share foreground heartbeat identity claims ([#50622](https://github.com/okou-ai/okou/issues/50622)) ([b9e0765](https://github.com/okou-ai/okou/commit/b9e07650780189961151469653e8e56329836a5a))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.250.7](https://github.com/okou-ai/okou/compare/runner-rs-v0.250.6...runner-rs-v0.250.7) (2026-11-24)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.250.6](https://github.com/okou-ai/okou/compare/runner-rs-v0.250.5...runner-rs-v0.250.6) (2026-11-24)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.250.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.250.4...runner-rs-v0.250.5) (2026-11-24)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.250.4](https://github.com/okou-ai/okou/compare/runner-rs-v0.250.3...runner-rs-v0.250.4) (2026-11-24)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.250.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.250.2...runner-rs-v0.250.3) (2026-11-24)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.250.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.250.1...runner-rs-v0.250.2) (2026-11-24)
+
+
+### Refactoring
+
+* **runner:** share native terminal witness clock ordering ([#50509](https://github.com/okou-ai/okou/issues/50509)) ([6c0c294](https://github.com/okou-ai/okou/commit/6c0c29408ce2c6a00f85db51c9bf304dcd2536ad))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.250.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.250.0...runner-rs-v0.250.1) (2026-11-24)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.250.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.123...runner-rs-v0.250.0) (2026-11-24)
+
+
+### Features
+
+* **runner:** execute gemini 4 turns with antigravity cli ([#50389](https://github.com/okou-ai/okou/issues/50389)) ([17f9b83](https://github.com/okou-ai/okou/commit/17f9b831b49c876e71002ac641b338badf0bff40))
+* **runner:** log managed openrouter routing metadata ([#50392](https://github.com/okou-ai/okou/issues/50392)) ([637a49c](https://github.com/okou-ai/okou/commit/637a49cc6646031aa023c8a631863e88be17ee5d))
+
+
+### Refactoring
+
+* **runner:** share held cleanup coverage receipt validation ([#50421](https://github.com/okou-ai/okou/issues/50421)) ([60f2f23](https://github.com/okou-ai/okou/commit/60f2f23b40cecd7a01b041b8052692faccb0912d))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.123](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.122...runner-rs-v0.249.123) (2026-11-24)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.122](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.121...runner-rs-v0.249.122) (2026-11-24)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.121](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.120...runner-rs-v0.249.121) (2026-11-24)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.120](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.119...runner-rs-v0.249.120) (2026-11-24)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.119](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.118...runner-rs-v0.249.119) (2026-11-24)
+
+
+### Refactoring
+
+* **runner:** share native test witness phase lookup ([#50337](https://github.com/okou-ai/okou/issues/50337)) ([d467cac](https://github.com/okou-ai/okou/commit/d467cac852e2b8b3d421182e3e9d01e5221a62a2))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.118](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.117...runner-rs-v0.249.118) (2026-11-24)
+
+## [0.249.117](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.116...runner-rs-v0.249.117) (2026-11-23)
+
+
+### Refactoring
+
+* **runner:** share indexed native witness refusal checks ([#50331](https://github.com/okou-ai/okou/issues/50331)) ([55954e0](https://github.com/okou-ai/okou/commit/55954e059d8190e4ecee4cba65f8955975d6ac54))
+* **runner:** share native witness omission and duplication checks ([#50318](https://github.com/okou-ai/okou/issues/50318)) ([1ec8153](https://github.com/okou-ai/okou/commit/1ec815376d93e451c8e3a82eb29e1ac23f4e3cef))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.116](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.115...runner-rs-v0.249.116) (2026-11-23)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.115](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.114...runner-rs-v0.249.115) (2026-11-23)
+
+
+### Refactoring
+
+* **runner:** share native scalar receipt refusal sweeps ([#50303](https://github.com/okou-ai/okou/issues/50303)) ([8d5dd5c](https://github.com/okou-ai/okou/commit/8d5dd5c0d4d648555ce75bfcea8f81286731d350))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.114](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.113...runner-rs-v0.249.114) (2026-11-23)
+
+
+### Refactoring
+
+* **runner:** share native create cancellation receipt validation ([#50277](https://github.com/okou-ai/okou/issues/50277)) ([f99f699](https://github.com/okou-ai/okou/commit/f99f699d2d71edbdeef145bcf37e74a08accf3db))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.113](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.112...runner-rs-v0.249.113) (2026-11-23)
 
 

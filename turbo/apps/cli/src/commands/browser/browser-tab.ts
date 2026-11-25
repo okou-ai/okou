@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 
-import { Command, InvalidArgumentError, Option } from "commander";
+import { Command, InvalidArgumentError } from "commander";
 import { array, boolean, literal, object, string } from "zod";
 
 import { withErrorHandler } from "../../lib/command/with-error-handler";
@@ -35,18 +35,8 @@ type SafeTab = {
 };
 
 type TabOptions = {
-  readonly agentSession?: string;
   readonly json?: boolean;
 };
-
-export function parseAgentSession(value: string): string {
-  if (!/^[a-zA-Z0-9_-]{1,64}$/u.test(value)) {
-    throw new InvalidArgumentError(
-      "agent-session must contain only letters, numbers, underscores, or hyphens",
-    );
-  }
-  return value;
-}
 
 function parseTabId(value: string): string {
   if (!tabIdSchema.safeParse(value).success) {
@@ -55,15 +45,19 @@ function parseTabId(value: string): string {
   return value;
 }
 
-function runAgentBrowser(session: string, args: readonly string[]): string {
+function runAgentBrowser(args: readonly string[]): string {
   // Both stdout and stderr can contain full URLs, OAuth parameters or titles.
   // Capture them without forwarding untrusted child output to the agent.
-  const result = spawnSync("agent-browser", ["--session", session, ...args], {
-    encoding: "utf8",
-    timeout: 15_000,
-    maxBuffer: 1024 * 1024,
-    stdio: ["ignore", "pipe", "ignore"],
-  });
+  const result = spawnSync(
+    "agent-browser",
+    ["--session", DEFAULT_AGENT_BROWSER_SESSION, ...args],
+    {
+      encoding: "utf8",
+      timeout: 15_000,
+      maxBuffer: 1024 * 1024,
+      stdio: ["ignore", "pipe", "ignore"],
+    },
+  );
   if (result.error || result.status !== 0) {
     throw new Error(
       "Could not inspect the attached Browser tab; run `okou browser use` and retry.",
@@ -72,9 +66,9 @@ function runAgentBrowser(session: string, args: readonly string[]): string {
   return result.stdout;
 }
 
-function driverJson(session: string, args: readonly string[]): unknown {
+function driverJson(args: readonly string[]): unknown {
   try {
-    return JSON.parse(runAgentBrowser(session, args));
+    return JSON.parse(runAgentBrowser(args));
   } catch {
     throw new Error(
       "Could not inspect the attached Browser safely; run `okou browser use`.",
@@ -93,10 +87,8 @@ function safeOrigin(rawUrl: string): string {
   }
 }
 
-function driverTabs(session: string): readonly DriverTab[] {
-  const list = tabListSchema.safeParse(
-    driverJson(session, ["tab", "list", "--json"]),
-  );
+function driverTabs(): readonly DriverTab[] {
+  const list = tabListSchema.safeParse(driverJson(["tab", "list", "--json"]));
   if (!list.success) {
     throw new Error(
       "Could not read Browser tabs safely; retry after `okou browser use`.",
@@ -124,28 +116,15 @@ function printTabs(tabs: readonly DriverTab[], json: boolean): void {
   }
 }
 
-const agentSessionOption = new Option(
-  "--agent-session <name>",
-  "Attached agent-browser session",
-);
-
-function tabSession(options: TabOptions): string {
-  return options.agentSession === undefined
-    ? DEFAULT_AGENT_BROWSER_SESSION
-    : parseAgentSession(options.agentSession);
-}
-
 const listCommand = new Command()
   .name("list")
   .description(
     "Show tab IDs, origins and selection without full URLs or titles",
   )
-  .addOption(agentSessionOption)
   .option("--json", "Print safe machine-readable tab metadata")
   .action(
     withErrorHandler(async (options: TabOptions) => {
-      const session = tabSession(options);
-      printTabs(driverTabs(session), options.json === true);
+      printTabs(driverTabs(), options.json === true);
     }),
   );
 
@@ -153,14 +132,12 @@ const selectCommand = new Command()
   .name("select")
   .description("Select a current-session tab without printing its URL or title")
   .argument("<tab-id>", "Tab ID from a fresh `okou browser tab list`")
-  .addOption(agentSessionOption)
   .option("--json", "Print safe machine-readable selection metadata")
   .action(
     withErrorHandler(async (id: string, options: TabOptions) => {
-      const session = tabSession(options);
       const parsedId = parseTabId(id);
-      runAgentBrowser(session, ["tab", parsedId]);
-      const selected = driverTabs(session).find((item) => {
+      runAgentBrowser(["tab", parsedId]);
+      const selected = driverTabs().find((item) => {
         return item.tabId === parsedId && item.active;
       });
       const tab = selected ? safeTab(selected) : undefined;

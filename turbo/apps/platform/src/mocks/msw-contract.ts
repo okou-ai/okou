@@ -241,7 +241,16 @@ function createBoundMockApi(context?: SignalContextLike) {
       const query = (parsed?.success ? parsed.data : rawQuery) as InferQuery<R>;
 
       let body = undefined as InferBody<R>;
-      if (route.method !== "GET") {
+      if (
+        route.method !== "GET" &&
+        "contentType" in route &&
+        route.contentType === "multipart/form-data"
+      ) {
+        body = (await withSignal(
+          request.clone().formData(),
+          signal,
+        )) as InferBody<R>;
+      } else if (route.method !== "GET") {
         const text = await withSignal(request.clone().text(), signal);
         if (text.length > 0) {
           body = JSON.parse(text) as InferBody<R>;
@@ -261,7 +270,10 @@ function createBoundMockApi(context?: SignalContextLike) {
         ),
         signal,
       );
-      if (result.body === null || result.body === undefined) {
+      if (
+        result.body === undefined ||
+        [204, 205, 304].includes(result.status)
+      ) {
         return new HttpResponse(null, { status: result.status });
       }
       return HttpResponse.json(result.body, { status: result.status });

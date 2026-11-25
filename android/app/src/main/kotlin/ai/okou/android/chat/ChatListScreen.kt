@@ -7,6 +7,9 @@ import ai.okou.android.WorkspaceMenu
 import ai.okou.android.WorkspaceMenuItem
 import ai.okou.android.api.generated.IndicatorsThreadsValue
 import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.rememberContentReadFeedbackAfter
+import ai.okou.android.rememberContentReadSkeleton
+import ai.okou.android.updates.updateFocusOutline
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.compose.animation.core.CubicBezierEasing
@@ -15,6 +18,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,36 +37,37 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.LongState
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isShiftPressed
@@ -88,10 +94,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -100,14 +103,29 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.text.NumberFormat
 
 private const val ProjectMotionMillis = 250
+private val ChatListLeadingIconSize = 18.dp
+private val ChatListLeadingIconGap = 8.dp
 internal val ChatListMotionEasing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
 private val projectPlacement = tween<IntOffset>(ProjectMotionMillis, easing = ChatListMotionEasing)
 private val projectChildFade = tween<Float>(ProjectMotionMillis, easing = ChatListMotionEasing)
 private val immediatePlacement = snap<IntOffset>()
 
 @Composable
+private fun chatListRowBackground(
+    interactions: MutableInteractionSource,
+    selected: Boolean,
+): Color {
+    val colors = MaterialTheme.colorScheme
+    if (selected) return colors.secondaryContainer
+    val hovered by interactions.collectIsHoveredAsState()
+    return if (hovered) colors.onBackground.copy(alpha = 0.05f).compositeOver(colors.background)
+    else colors.background
+}
+
+@Composable
 internal fun ChatListScreen(
     state: ChatListUiState,
+    composer: State<ComposerState>?,
     open: (ConfirmedChat) -> Unit,
     provisionalChats: List<ProvisionalChat>,
     openProvisional: (ProvisionalChat) -> Unit,
@@ -115,11 +133,13 @@ internal fun ChatListScreen(
     requestMove: (String) -> Unit,
     moveFocus: ProjectMoveFocus?,
     onMoveFocusFinished: (ProjectMoveFocus) -> Unit,
-    renameThread: (String, String) -> Unit,
-    renameProject: (String, String) -> Unit,
+    renameThread: (String, Boolean) -> Unit,
+    renameProject: (String, Boolean) -> Unit,
+    renamingProjectId: String?,
+    renameFocus: WorkspaceRenameTarget?,
+    onRenameFocusFinished: (WorkspaceRenameTarget) -> Unit,
     requestDeleteProject: (String) -> Unit,
     confirmingProjectDelete: String?,
-    retryProjectRename: (String) -> Unit,
     projectExpansion: ProjectExpansionModel?,
     listState: LazyListState,
     newChat: (String?) -> Unit,
@@ -127,33 +147,22 @@ internal fun ChatListScreen(
     selectedChatId: String?,
     wide: Boolean,
     newChatEnabled: Boolean,
+    chatActionsEnabled: Boolean,
+    startupSyncPending: Boolean,
     startupRecovery: @Composable (() -> Unit)?,
     dismissProjectRenameRejection: (ProjectRenameRejection) -> Unit,
     feedback: @Composable () -> Unit,
 ) {
-    var renamingId by remember { mutableStateOf<String?>(null) }
-    var renamingProjectId by remember { mutableStateOf<String?>(null) }
-    val projectToRename = state.projects.firstOrNull { it.id == renamingProjectId }
-    val canRenameProject = state.canRenameProject
-    if (projectToRename != null) {
-        key(projectToRename.id) {
-            RenameListItemDialog(
-                currentName = projectToRename.name,
-                titleRes = R.string.chat_rename_project,
-                labelRes = R.string.chat_project_name,
-                confirmRes = R.string.chat_project_rename_save,
-                maxLength = 120,
-                enabled = canRenameProject,
-                dismiss = { renamingProjectId = null },
-                save = { name ->
-                    renameProject(projectToRename.id, name)
-                    renamingProjectId = null
-                },
-            )
+    val draftIds by
+        remember(composer, state.draftThreadIds) {
+            derivedStateOf(structuralEqualityPolicy()) {
+                draftThreadIdsForList(
+                    state.draftThreadIds,
+                    composer?.value?.journal?.drafts.orEmpty(),
+                )
+            }
         }
-    } else if (renamingProjectId != null && state.projectsPhase == ChatReadPhase.Ready) {
-        LaunchedEffect(renamingProjectId) { renamingProjectId = null }
-    }
+    val canRenameProject = chatActionsEnabled && state.canRenameProject
     var deletingId by remember { mutableStateOf<String?>(null) }
     deletingId?.let { id ->
         val thread = state.threads.firstOrNull { it.id == id && it.hidden != true }
@@ -172,26 +181,6 @@ internal fun ChatListScreen(
         } else if (state.listPhase == ChatReadPhase.Ready) {
             LaunchedEffect(id) { deletingId = null }
         }
-    }
-    val renaming = renamingId?.let { id ->
-        state.threads.firstOrNull { it.id == id && it.hidden != true }
-    }
-    if (renaming != null) {
-        key(renaming.id) {
-            RenameListItemDialog(
-                currentName = renaming.title.orEmpty(),
-                titleRes = R.string.chat_rename,
-                labelRes = R.string.chat_title_field,
-                enabled = renaming.id !in state.pendingRowActions,
-                dismiss = { renamingId = null },
-                save = { title ->
-                    renameThread(renaming.id, title)
-                    renamingId = null
-                },
-            )
-        }
-    } else if (renamingId != null && state.listPhase == ChatReadPhase.Ready) {
-        LaunchedEffect(renamingId) { renamingId = null }
     }
     val unreadAt = state.displayUnreadAt
     val pendingByProject =
@@ -213,9 +202,13 @@ internal fun ChatListScreen(
             pendingByProject.keys,
         )
     val knownProjects = remember(state.projects) { state.projects.mapTo(hashSetOf()) { it.id } }
-    val renameRejection = state.projectRenameRejection
+    val renameRejection =
+        state.projectRenameRejection?.takeUnless { it.projectId == renamingProjectId }
+    val unconfirmedRenames =
+        if (renamingProjectId == null) state.unconfirmedProjectRenames
+        else state.unconfirmedProjectRenames - renamingProjectId
     val projectNoticeIds =
-        state.unconfirmedProjectRenames +
+        unconfirmedRenames +
             listOfNotNull(
                 renameRejection?.projectId,
                 state.projectList.deletingId?.takeUnless { it == confirmingProjectDelete },
@@ -226,10 +219,12 @@ internal fun ChatListScreen(
     val previousExpansion =
         remember(listState, projectExpansion) { ChatListProjectIds(savedExpansion) }
     val precedingIds = previousExpansion.ids
+    val createdProject = (renameFocus as? WorkspaceRenameTarget.Project)?.takeIf { it.newlyCreated }
     val expansionChanged =
         savedExpansion != null &&
             (precedingIds != null || expansion.hasLocalChoices) &&
-            precedingIds.orEmpty() != savedExpansion
+            precedingIds.orEmpty() != savedExpansion &&
+            (createdProject == null || precedingIds.orEmpty() != savedExpansion - createdProject.id)
     val newlyExpanded =
         if (expansionChanged) expandedProjectIds - precedingIds.orEmpty() else emptySet()
     // Give Compose stable lazy item positions without animating the initial disk restore.
@@ -264,6 +259,13 @@ internal fun ChatListScreen(
                 section.group.threads.any { it.id == request.threadId }
         }
     }
+    val renameFocusKey =
+        when (renameFocus) {
+            is WorkspaceRenameTarget.Chat ->
+                renameFocus.id.takeUnless { renameFocus.fromConversation }
+            is WorkspaceRenameTarget.Project -> projectRowKey(renameFocus.id)
+            null -> null
+        }
     val runningKeys =
         remember(indicators, sections, collapsedActivity) {
             buildSet {
@@ -292,25 +294,27 @@ internal fun ChatListScreen(
     val widthDp = currentWindowSizeDp().width
     val largeCompact = widthDp >= 600
     val listInset = if (wide) 12.dp else if (largeCompact) 24.dp else 16.dp
-    val outline = MaterialTheme.colorScheme.outline
+    val outline = MaterialTheme.colorScheme.outlineVariant
     val missingUnread = state.confirmedAt != null && state.waitingForUnreadIndicators
     val firstLoadFailed =
-        !state.offline &&
-            if (missingUnread) state.indicatorsNonRetryableFailure
-            else state.listReadFailure == ChatListReadFailure.NeedsRetry
-    val awaitingFirstList =
-        (state.confirmedAt == null || missingUnread) &&
-            pendingByProject.isEmpty() &&
-            !(missingUnread && state.offline) &&
-            !firstLoadFailed &&
-            (startupRecovery == null || state.listPhase != ChatReadPhase.Idle)
-    val skeletonVisible = rememberChatWaitIndicator(awaitingFirstList, ChatListSkeletonDelayMillis)
-    val unreadFilter = state.filter == ChatListFilter.Unread
+        if (missingUnread) state.indicatorsNonRetryableFailure
+        else state.listReadFailure == ChatListReadFailure.NeedsRetry
     val hasUsableList = state.confirmedAt != null && !missingUnread
+    val skeletonVisible =
+        rememberContentReadSkeleton(
+            hasContent = hasUsableList || pendingByProject.isNotEmpty(),
+            awaitingRead =
+                !firstLoadFailed &&
+                    (startupRecovery == null || state.listPhase != ChatReadPhase.Idle),
+        )
+    val unreadFilter = state.filter == ChatListFilter.Unread
     val syncConfirmation =
-        if (!hasUsableList || state.offline) null
+        if (!hasUsableList) null
         else {
-            val listRead = state.confirmedAt.takeIf { state.listPhase == ChatReadPhase.Loading }
+            val listRead =
+                state.confirmedAt.takeIf {
+                    startupSyncPending || state.listPhase == ChatReadPhase.Loading
+                }
             val unreadRead =
                 state.unreadConfirmedAt?.takeIf {
                     unreadFilter && state.indicatorsPhase == ChatReadPhase.Loading
@@ -323,19 +327,13 @@ internal fun ChatListScreen(
         }
     val syncDelay =
         remember(syncConfirmation) {
-            syncConfirmation?.let {
-                val age = (System.currentTimeMillis() - it).coerceAtLeast(0)
-                (ChatListSyncNoticeAgeMillis + 1 - age).coerceAtLeast(0)
-            }
+            syncConfirmation?.let { chatSyncNoticeDelayMillis(it, System.currentTimeMillis()) }
         }
-    // Keep the timer's composition in place as reads start and finish.
-    val syncDelayReached =
-        rememberChatWaitIndicator(syncDelay != null && syncDelay > 0L, syncDelay ?: 0L)
+    val syncDelayReached = rememberContentReadFeedbackAfter(syncDelay)
     val syncVisible =
         hasUsableList &&
             (state.listRetryProgressVisible ||
                 unreadFilter && state.indicatorsRetryProgressVisible ||
-                syncDelay == 0L ||
                 syncDelayReached)
     // Follow changes to refreshed content without turning Project expansion into a scroll action.
     val lastContentKey =
@@ -395,10 +393,6 @@ internal fun ChatListScreen(
                 }
                 if (state.confirmedAt == null || missingUnread) {
                     when {
-                        missingUnread && state.offline ->
-                            row("list_offline") {
-                                ChatContentLoadNotice(R.string.chat_list_load_when_online)
-                            }
                         firstLoadFailed ->
                             row("list_first_read") {
                                 ContentReadFeedback(
@@ -415,19 +409,14 @@ internal fun ChatListScreen(
                 if (
                     state.confirmedAt != null &&
                         !missingUnread &&
-                        !state.offline &&
                         state.indicatorsPhase == ChatReadPhase.Failed &&
-                        (!unreadFilter || state.indicatorsNonRetryableFailure)
+                        state.indicatorsNonRetryableFailure
                 ) {
                     row("list_indicators_unavailable") {
                         ChatListDependencyNotice(R.string.chat_refresh_failed)
                     }
                 }
-                if (
-                    state.confirmedAt != null &&
-                        !state.offline &&
-                        state.projectsPhase == ChatReadPhase.Failed
-                )
+                if (state.confirmedAt != null && state.projectsPhase == ChatReadPhase.Failed)
                     row("list_metadata_unavailable") {
                         ChatListDependencyNotice(R.string.chat_metadata_unavailable)
                     }
@@ -450,6 +439,30 @@ internal fun ChatListScreen(
                 }
             }
         }
+        if (renameFocus != null && renameFocusKey != null) {
+            LaunchedEffect(renameFocus, sections, leadingItems.size, projectNoticeIds) {
+                val anchor =
+                    sections.findScrollAnchor(
+                        renameFocusKey,
+                        0,
+                        leadingItems.size,
+                        projectNoticeIds,
+                        allowCollapsedChat = false,
+                    )
+                if (anchor == null) onRenameFocusFinished(renameFocus)
+                else {
+                    val layout = listState.layoutInfo
+                    val row = layout.visibleItemsInfo.firstOrNull { it.key == renameFocusKey }
+                    if (
+                        row == null ||
+                            (createdProject != null &&
+                                (row.offset < layout.viewportStartOffset ||
+                                    row.offset + row.size > layout.viewportEndOffset))
+                    )
+                        listState.requestScrollToItem(anchor.index)
+                }
+            }
+        }
         LazyColumn(
             Modifier.widthIn(max = 720.dp).fillMaxSize().testTag("chat_list").semantics {
                 contentDescription = listLabel
@@ -463,7 +476,11 @@ internal fun ChatListScreen(
             state = listState,
         ) {
             items(leadingItems.size, key = { leadingItems[it].first }) { leadingItems[it].second() }
-            if (state.confirmedAt != null || pendingByProject.isNotEmpty()) {
+            if (
+                state.confirmedAt != null ||
+                    pendingByProject.isNotEmpty() ||
+                    state.projects.isNotEmpty()
+            ) {
                 sections.forEach { section ->
                     val group = section.group
                     val project = group.project
@@ -478,12 +495,17 @@ internal fun ChatListScreen(
                                 row = section.firstRow,
                                 toggle = { projectExpansion?.toggle(project.id) },
                                 newChat = if (newChatEnabled) ({ newChat(project.id) }) else null,
-                                rename = { renamingProjectId = project.id },
+                                rename = { restore -> renameProject(project.id, restore) },
                                 canRename = canRenameProject,
                                 renaming = state.renamingProjectId == project.id,
                                 delete = { requestDeleteProject(project.id) },
-                                canDelete = state.canDeleteProject,
+                                canDelete = chatActionsEnabled && state.canDeleteProject,
                                 deleteDialogOpen = confirmingProjectDelete == project.id,
+                                renameFocus =
+                                    (renameFocus as? WorkspaceRenameTarget.Project)?.takeIf {
+                                        it.id == project.id
+                                    },
+                                onRenameFocusFinished = onRenameFocusFinished,
                                 focusAfterMove =
                                     moveFocus?.takeIf {
                                         section === moveFocusSection && section.collapsed
@@ -513,23 +535,15 @@ internal fun ChatListScreen(
                                     dismissProjectRenameRejection(renameRejection)
                                 }
                             }
-                        } else if (project.id in state.unconfirmedProjectRenames) {
+                        } else if (project.id in unconfirmedRenames) {
                             item(key = "project_rename_${project.id}") {
-                                Column(
+                                ChatNotice(
+                                    if (project.id in state.projectList.connectionFailedRenames)
+                                        R.string.chat_action_connection_failed
+                                    else R.string.chat_project_rename_unconfirmed,
                                     Modifier.animateItem(null, placement, null)
                                         .projectChildIndent(outline),
-                                ) {
-                                    ChatNotice(
-                                        if (project.id in state.projectList.connectionFailedRenames)
-                                            R.string.chat_action_connection_failed
-                                        else R.string.chat_project_rename_unconfirmed,
-                                    )
-                                    ChatAction(
-                                        R.string.retry,
-                                        { retryProjectRename(project.id) },
-                                        enabled = canRenameProject,
-                                    )
-                                }
+                                )
                             }
                         }
                         if (section.showsEmptyProjectAction) {
@@ -550,7 +564,7 @@ internal fun ChatListScreen(
                                     }
                                     ChatListTextAction(
                                         R.string.composer_new_project,
-                                        R.drawable.ic_add,
+                                        icon = R.drawable.ic_add,
                                         enabled = newChatEnabled,
                                     ) {
                                         newChat(project.id)
@@ -603,15 +617,24 @@ internal fun ChatListScreen(
                                                 unread,
                                             ),
                                     unread = unread,
+                                    hasDraft = thread != null && id in draftIds,
                                     isSelected = id == selectedChatId,
                                     runningFrame = runningFrame,
                                     row = section.firstChatRow + index,
                                     actions =
                                         thread
+                                            ?.takeIf { chatActionsEnabled }
                                             ?.let { state.rowActions(it, group, threadIndex) }
                                             .orEmpty(),
                                     pendingAction = state.pendingRowActions[id],
+                                    enabled = chatActionsEnabled,
                                     deleteDialogOpen = deletingId == id,
+                                    rename = { restore -> renameThread(id, restore) },
+                                    renameFocus =
+                                        (renameFocus as? WorkspaceRenameTarget.Chat)?.takeIf {
+                                            !it.fromConversation && it.id == id
+                                        },
+                                    onRenameFocusFinished = onRenameFocusFinished,
                                     moveLabel = {
                                         projectMoveLabel(
                                             thread?.let {
@@ -621,7 +644,6 @@ internal fun ChatListScreen(
                                     },
                                     performAction = { action ->
                                         when (action) {
-                                            ChatRowAction.Rename -> renamingId = id
                                             ChatRowAction.Delete -> deletingId = id
                                             ChatRowAction.MoveProject -> requestMove(id)
                                             else -> performRowAction(id, action)
@@ -728,6 +750,7 @@ private fun List<ChatListSection>.findScrollAnchor(
     offset: Int,
     leadingItemCount: Int,
     projectNoticeIds: Set<String>,
+    allowCollapsedChat: Boolean = true,
 ): ChatListScrollAnchor? {
     var row = leadingItemCount
     for (section in this) {
@@ -742,7 +765,8 @@ private fun List<ChatListSection>.findScrollAnchor(
         val threadIndex = threads.indexOfFirst { it.id == key }
         val pendingIndex = pending.indexOfFirst { it.threadId == key }
         if (threadIndex >= 0 || pendingIndex >= 0) {
-            if (section.collapsed) return ChatListScrollAnchor(header, 0)
+            if (section.collapsed)
+                return ChatListScrollAnchor(header, 0).takeIf { allowCollapsedChat }
             val firstPending = section.pinTail + 1
             val chatIndex =
                 when {
@@ -767,45 +791,6 @@ private fun Modifier.projectChildIndent(color: Color): Modifier = drawBehind {
     .padding(start = 24.dp)
 
 @Composable
-internal fun RenameListItemDialog(
-    currentName: String,
-    @StringRes titleRes: Int,
-    @StringRes labelRes: Int,
-    enabled: Boolean,
-    dismiss: () -> Unit,
-    save: (String) -> Unit,
-    maxLength: Int = Int.MAX_VALUE,
-    @StringRes confirmRes: Int = R.string.chat_rename_confirm,
-) {
-    var input by remember { mutableStateOf(TextFieldValue(currentName)) }
-    val name = input.text.trim()
-    val canSave = enabled && name.length in 1..maxLength && name != currentName.trim()
-    val foreground = MaterialTheme.colorScheme.onSurface
-    AlertDialog(
-        onDismissRequest = dismiss,
-        title = { Text(stringResource(titleRes)) },
-        text = {
-            OutlinedTextField(
-                value = input,
-                onValueChange = { input = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text(stringResource(labelRes)) },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                colors =
-                    OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = foreground,
-                        focusedLabelColor = foreground,
-                        cursorColor = foreground,
-                    ),
-            )
-        },
-        confirmButton = { ChatAction(confirmRes, { save(name) }, enabled = canSave) },
-        dismissButton = { ChatAction(R.string.chat_rename_cancel, dismiss) },
-    )
-}
-
-@Composable
 internal fun DeleteChatDialog(
     chatName: String?,
     enabled: Boolean,
@@ -819,7 +804,7 @@ internal fun DeleteChatDialog(
                 R.string.chat_delete_description,
                 chatName?.takeIf { it.isNotBlank() } ?: stringResource(R.string.chat_untitled),
             ),
-        confirmRes = R.string.chat_delete_confirm,
+        confirmRes = R.string.chat_delete,
         enabled = enabled,
         dismiss = dismiss,
         confirm = confirm,
@@ -900,17 +885,21 @@ private fun ProjectRow(
     row: Int,
     toggle: () -> Unit,
     newChat: (() -> Unit)?,
-    rename: () -> Unit,
+    rename: (Boolean) -> Unit,
     canRename: Boolean,
     renaming: Boolean,
     delete: () -> Unit,
     canDelete: Boolean,
     deleteDialogOpen: Boolean,
+    renameFocus: WorkspaceRenameTarget?,
+    onRenameFocusFinished: (WorkspaceRenameTarget) -> Unit,
     focusAfterMove: ProjectMoveFocus?,
     onMoveFocusFinished: (ProjectMoveFocus) -> Unit,
 ) {
     val collapsed = activity != null
     val status = activity?.status ?: ChatRowStatus.None
+    val colors = MaterialTheme.colorScheme
+    val interactions = remember { MutableInteractionSource() }
     val locale = LocalConfiguration.current.locales[0]
     val number = remember(locale) { NumberFormat.getIntegerInstance(locale) }
     val unread = stringResource(R.string.chat_unread)
@@ -930,6 +919,7 @@ private fun ProjectRow(
             onMoveFocusFinished(focusAfterMove)
         }
     }
+    if (renameFocus != null) RestoreRenameOriginFocus(renameFocus, rowFocus, onRenameFocusFinished)
     var rowFocused by remember { mutableStateOf(false) }
     var restoreMenuFocus by remember { mutableStateOf(false) }
     val openMenu: (() -> Unit)? =
@@ -950,10 +940,15 @@ private fun ProjectRow(
             Modifier.fillMaxWidth()
                 .heightIn(min = ChatListRowHeight)
                 .clip(ChatListRowShape)
+                .background(chatListRowBackground(interactions, selected = false))
                 .contextMenuInput(openMenu)
                 .focusRequester(rowFocus)
+                .focusProperties { canFocus = true }
                 .onFocusChanged { rowFocused = it.isFocused }
+                .updateFocusOutline(ChatListRowShape, colors.onBackground, keyboardOnly = true)
                 .combinedClickable(
+                    interactionSource = interactions,
+                    indication = ChatPressRipple,
                     role = Role.Button,
                     onClick = toggle,
                     onLongClick = openMenu,
@@ -981,9 +976,9 @@ private fun ProjectRow(
                 painterResource(if (collapsed) R.drawable.ic_folder else R.drawable.ic_folder_open),
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(ChatListLeadingIconSize),
             )
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(ChatListLeadingIconGap))
             Row(
                 Modifier.weight(1f),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -992,6 +987,7 @@ private fun ProjectRow(
                 Text(
                     name,
                     Modifier.weight(1f, fill = false),
+                    color = colors.onBackground,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = chatListTitleStyle(),
@@ -1008,10 +1004,8 @@ private fun ProjectRow(
                     modifier = Modifier.size(16.dp),
                 )
             }
-            if (status != ChatRowStatus.None) {
-                Spacer(Modifier.width(8.dp))
-                ChatStatusGlyph(status, runningFrame, row)
-            }
+            Spacer(Modifier.width(8.dp))
+            ChatStatusGlyph(status, runningFrame, row)
         }
         if (menuOpen && openMenu != null) {
             val items = buildList {
@@ -1032,9 +1026,9 @@ private fun ProjectRow(
                         R.drawable.ic_edit,
                         enabled = canRename,
                     ) {
-                        restoreMenuFocus = false
                         menuOpen = false
-                        rename()
+                        rename(restoreMenuFocus)
+                        restoreMenuFocus = false
                     },
                 )
                 add(
@@ -1088,18 +1082,24 @@ private fun ChatRow(
     pinned: Boolean,
     status: ChatRowStatus,
     unread: Boolean,
+    hasDraft: Boolean,
     isSelected: Boolean,
     runningFrame: LongState,
     row: Int,
     actions: List<ChatRowAction>,
     pendingAction: ChatRowAction?,
+    enabled: Boolean,
     deleteDialogOpen: Boolean,
+    rename: (Boolean) -> Unit,
+    renameFocus: WorkspaceRenameTarget?,
+    onRenameFocusFinished: (WorkspaceRenameTarget) -> Unit,
     moveLabel: @Composable () -> String,
     performAction: (ChatRowAction) -> Unit,
     open: () -> Unit,
 ) {
     var menuOpen by remember(actions) { mutableStateOf(false) }
     val rowFocus = remember { FocusRequester() }
+    if (renameFocus != null) RestoreRenameOriginFocus(renameFocus, rowFocus, onRenameFocusFinished)
     var rowFocused by remember { mutableStateOf(false) }
     var restoreMenuFocus by remember { mutableStateOf(false) }
     LaunchedEffect(menuOpen, deleteDialogOpen) {
@@ -1120,6 +1120,7 @@ private fun ChatRow(
             status.label(),
             if (status == ChatRowStatus.Running && unread) stringResource(R.string.chat_unread)
             else null,
+            if (hasDraft) stringResource(R.string.chat_has_draft) else null,
             if (pinned) stringResource(R.string.chat_pinned) else null,
             pendingAction?.let {
                 stringResource(
@@ -1135,6 +1136,7 @@ private fun ChatRow(
     val archiveAction = actions.firstOrNull {
         it == ChatRowAction.Archive || it == ChatRowAction.Unarchive
     }
+    val interactions = remember { MutableInteractionSource() }
     ChatRowSwipe(
         readAction = readAction.takeIf { openMenu != null },
         archiveAction = archiveAction.takeIf { openMenu != null },
@@ -1145,11 +1147,15 @@ private fun ChatRow(
                 .fillMaxWidth()
                 .heightIn(min = ChatListRowHeight)
                 .clip(ChatListRowShape)
-                .background(if (isSelected) colors.secondaryContainer else colors.background)
+                .background(chatListRowBackground(interactions, isSelected))
                 .contextMenuInput(openMenu)
                 .focusRequester(rowFocus)
                 .onFocusChanged { rowFocused = it.isFocused }
+                .updateFocusOutline(ChatListRowShape, colors.onBackground, keyboardOnly = true)
                 .combinedClickable(
+                    interactionSource = interactions,
+                    indication = ChatPressRipple,
+                    enabled = enabled,
                     onClick = open,
                     onLongClick = openMenu,
                     onLongClickLabel = stringResource(R.string.chat_actions),
@@ -1162,10 +1168,19 @@ private fun ChatRow(
                 .padding(ChatListRowPadding),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            if (hasDraft) {
+                Icon(
+                    painterResource(R.drawable.ic_edit_note),
+                    contentDescription = null,
+                    tint = colors.onSurfaceVariant,
+                    modifier = Modifier.size(ChatListLeadingIconSize).testTag("chat_draft_icon"),
+                )
+                Spacer(Modifier.width(ChatListLeadingIconGap))
+            }
             Text(
                 title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.chat_untitled),
                 Modifier.weight(1f),
-                color = if (isSelected) colors.onSecondaryContainer else colors.onSurface,
+                color = if (isSelected) colors.onSecondaryContainer else colors.onBackground,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 style = chatListTitleStyle(),
@@ -1184,11 +1199,11 @@ private fun ChatRow(
                             action.icon(),
                             destructive = action == ChatRowAction.Delete,
                         ) {
-                            if (action == ChatRowAction.Rename) {
-                                restoreMenuFocus = false
-                            }
                             menuOpen = false
-                            performAction(action)
+                            if (action == ChatRowAction.Rename) {
+                                rename(restoreMenuFocus)
+                                restoreMenuFocus = false
+                            } else performAction(action)
                         }
                     },
                 close = { menuOpen = false },
@@ -1284,8 +1299,9 @@ private fun ChatAction(label: Int, action: () -> Unit, enabled: Boolean = true) 
 }
 
 @Composable
-private fun ChatListTextAction(
+internal fun ChatListTextAction(
     @StringRes label: Int,
+    modifier: Modifier = Modifier,
     @DrawableRes icon: Int? = null,
     enabled: Boolean = true,
     onClick: () -> Unit,
@@ -1293,7 +1309,7 @@ private fun ChatListTextAction(
     TextButton(
         onClick = onClick,
         enabled = enabled,
-        modifier = Modifier.heightIn(min = 48.dp),
+        modifier = modifier.heightIn(min = 48.dp),
         shape = RoundedCornerShape(12.dp),
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
         colors =
@@ -1313,24 +1329,6 @@ private fun ChatListTextAction(
                     fontWeight = FontWeight(550),
                 ),
         )
-    }
-}
-
-@Composable
-internal fun ChatContentLoadNotice(
-    @StringRes message: Int,
-    horizontalPadding: Dp = 12.dp,
-    retry: (() -> Unit)? = null,
-    retryEnabled: Boolean = true,
-) {
-    Column {
-        Box(
-            Modifier.heightIn(min = 48.dp).padding(horizontal = horizontalPadding),
-            contentAlignment = Alignment.CenterStart,
-        ) {
-            ContentReadFeedback(message)
-        }
-        if (retry != null) ChatAction(R.string.retry, retry, enabled = retryEnabled)
     }
 }
 

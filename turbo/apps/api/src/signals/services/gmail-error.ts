@@ -117,12 +117,20 @@ export function classifyGmailHistoryReadError(
   return { kind: "gmail_error", status };
 }
 
-async function readGmailErrorBody(response: Response): Promise<unknown> {
-  const body = await readBoundedResponseText(response, 16 * 1024);
+async function readGmailErrorBody(
+  response: Response,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  const body = await readBoundedResponseText(response, 16 * 1024, signal);
   if (body.kind === "too_large") {
     return null;
   }
   return safeJsonParse(body.text);
+}
+
+function parseGmailError(body: unknown): GmailError | null {
+  const parsed = gmailErrorResponseSchema.safeParse(body);
+  return parsed.success ? parsed.data.error : null;
 }
 
 function requiresReconnect(status: number, body: unknown): boolean {
@@ -177,6 +185,18 @@ export interface GmailDraftRejection {
   readonly message: string;
 }
 
+export async function gmailDraftReadError(
+  response: Response,
+  signal: AbortSignal,
+): Promise<Error> {
+  const body = await readGmailErrorBody(response, signal);
+  return gmailRequestError(
+    "Failed to read Gmail draft",
+    response.status,
+    parseGmailError(body),
+  );
+}
+
 export async function handleGmailSendError(
   response: Response,
 ): Promise<GmailDraftRejection> {
@@ -186,8 +206,7 @@ export async function handleGmailSendError(
   if (requiresReconnect(response.status, body)) {
     throw new GmailAuthorizationError();
   }
-  const parsed = gmailErrorResponseSchema.safeParse(body);
-  const error = parsed.success ? parsed.data.error : null;
+  const error = parseGmailError(body);
   if (response.status === 400 && isDraftRejection(error)) {
     return {
       kind: "rejected",
@@ -196,6 +215,18 @@ export async function handleGmailSendError(
     };
   }
 
+  throw gmailRequestError(
+    "Gmail rejected the draft send",
+    response.status,
+    error,
+  );
+}
+
+function gmailRequestError(
+  summary: string,
+  status: number,
+  error: GmailError | null,
+): Error {
   // Only allowlisted upstream values are safe to add to the request error log.
   const reasons = new Set(
     [...(error?.errors ?? []), ...(error?.details ?? [])].map((detail) => {
@@ -217,12 +248,12 @@ export async function handleGmailSendError(
       }),
     ),
   ];
-  throw Object.assign(
+  return Object.assign(
     new Error(
-      `Gmail rejected the draft send (HTTP ${response.status}; reason: ${providerReasons.join(", ")})`,
+      `${summary} (HTTP ${status}; reason: ${providerReasons.join(", ")})`,
     ),
     {
-      providerStatus: response.status,
+      providerStatus: status,
       providerReasons,
       ...(providerErrorCode.success
         ? { providerErrorCode: providerErrorCode.data }

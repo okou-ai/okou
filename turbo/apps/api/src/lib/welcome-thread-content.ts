@@ -30,7 +30,7 @@ interface WelcomeContent {
  * identity must remain independent of this version and localized text.
  */
 const WELCOME_THREAD_TEMPLATE = Object.freeze({
-  version: 3,
+  version: 4,
   locales: {
     "en-US": myOkouEn,
     "pt-BR": myOkouPt,

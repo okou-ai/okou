@@ -18,6 +18,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -37,28 +38,32 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+// Keep each control's existing hover and keyboard focus treatment.
+internal val ChatPressRipple = ripple(enableHoverIndication = false, enableFocusIndication = false)
+
 @Composable
 internal fun ConversationToolbarActions(
     state: ChatListUiState,
     thread: ConfirmedChat?,
     onRowAction: (String, ChatRowAction) -> Unit,
     onMove: (String) -> Unit,
-    onRename: (String, String) -> Unit,
-    openSettings: ((restoreFocus: Boolean) -> Unit)?,
+    onRename: (String, Boolean) -> Unit,
+    renameFocus: WorkspaceRenameTarget.Chat?,
+    onRenameFocusFinished: (WorkspaceRenameTarget) -> Unit,
     openResources: ((restoreFocus: Boolean) -> Unit)? = null,
-    settingsFocus: FocusRequester? = null,
+    actionsFocus: FocusRequester? = null,
     onFind: ((restoreFocus: Boolean) -> Unit)? = null,
 ) {
     val actions = thread?.let { state.rowActions(it) }.orEmpty()
-    if (actions.isEmpty() && openSettings == null && openResources == null && onFind == null) return
+    if (actions.isEmpty() && openResources == null && onFind == null) return
     key(thread?.id) {
         var menu by remember { mutableStateOf(false) }
-        var rename by remember { mutableStateOf(false) }
         var delete by remember { mutableStateOf(false) }
-        val focus = settingsFocus ?: remember { FocusRequester() }
+        val focus = actionsFocus ?: remember { FocusRequester() }
+        if (renameFocus != null) RestoreRenameOriginFocus(renameFocus, focus, onRenameFocusFinished)
         var keyboardFocused by remember { mutableStateOf(false) }
         var restoreFocus by remember { mutableStateOf(false) }
-        val busy = state.offline || thread?.id in state.pendingRowActions
+        val busy = thread?.id in state.pendingRowActions
 
         Box {
             IconButton(
@@ -101,17 +106,6 @@ internal fun ConversationToolbarActions(
                 WorkspaceMenu(
                     items =
                         readingActions +
-                            listOfNotNull(
-                                openSettings?.let {
-                                    WorkspaceMenuItem(
-                                        stringResource(R.string.settings),
-                                        R.drawable.ic_settings,
-                                    ) {
-                                        menu = false
-                                        it(restoreFocus)
-                                    }
-                                },
-                            ) +
                             actions.map { action ->
                                 WorkspaceMenuItem(
                                     if (action == ChatRowAction.MoveProject)
@@ -127,7 +121,10 @@ internal fun ConversationToolbarActions(
                                 ) {
                                     menu = false
                                     when (action) {
-                                        ChatRowAction.Rename -> rename = true
+                                        ChatRowAction.Rename -> {
+                                            onRename(checkNotNull(thread).id, restoreFocus)
+                                            restoreFocus = false
+                                        }
                                         ChatRowAction.Delete -> delete = true
                                         ChatRowAction.MoveProject -> onMove(checkNotNull(thread).id)
                                         else -> onRowAction(checkNotNull(thread).id, action)
@@ -139,18 +136,6 @@ internal fun ConversationToolbarActions(
                 )
             }
         }
-        if (rename && thread != null)
-            RenameListItemDialog(
-                currentName = thread.title.orEmpty(),
-                titleRes = R.string.chat_rename,
-                labelRes = R.string.chat_title_field,
-                enabled = !busy && ChatRowAction.Rename in actions,
-                dismiss = { rename = false },
-                save = { title ->
-                    onRename(thread.id, title)
-                    rename = false
-                },
-            )
         if (delete && thread != null)
             DeleteChatDialog(
                 chatName = thread.title,
@@ -161,8 +146,8 @@ internal fun ConversationToolbarActions(
                     onRowAction(thread.id, ChatRowAction.Delete)
                 },
             )
-        LaunchedEffect(menu, rename, delete) {
-            if (!menu && !rename && !delete && restoreFocus) {
+        LaunchedEffect(menu, delete) {
+            if (!menu && !delete && restoreFocus) {
                 restoreFocus = false
                 focus.requestFocus()
             }

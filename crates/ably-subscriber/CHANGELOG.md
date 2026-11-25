@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.0.22](https://github.com/okou-ai/okou/compare/ably-subscriber-v2.0.21...ably-subscriber-v2.0.22) (2026-11-24)
+
+## [2.0.21](https://github.com/okou-ai/okou/compare/ably-subscriber-v2.0.20...ably-subscriber-v2.0.21) (2026-11-24)
+
+
+### Refactoring
+
+* **ably:** own reconnect token invalidation together ([#50361](https://github.com/okou-ai/okou/issues/50361)) ([91307c3](https://github.com/okou-ai/okou/commit/91307c337e37c99ee6d53ae84058ecdb122bb642))
+
+## [2.0.20](https://github.com/okou-ai/okou/compare/ably-subscriber-v2.0.19...ably-subscriber-v2.0.20) (2026-11-23)
+
+
+### Refactoring
+
+* **ably:** share messagepack map key conversion ([#50283](https://github.com/okou-ai/okou/issues/50283)) ([d040741](https://github.com/okou-ai/okou/commit/d0407414225d60df80c7a2c706cdd28c94babd7a))
+
 ## [2.0.19](https://github.com/okou-ai/okou/compare/ably-subscriber-v2.0.18...ably-subscriber-v2.0.19) (2026-11-22)
 
 

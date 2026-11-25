@@ -148,6 +148,7 @@ export function createWorkflowsBddApi(context: TestContext) {
      */
     async setupWorkflowOrg(
       options: {
+        readonly orgId?: string;
         readonly timezone?: string;
         readonly tier?: "pro" | "team";
         readonly model?: RunModel;
@@ -165,7 +166,7 @@ export function createWorkflowsBddApi(context: TestContext) {
           options.maxAutonomyBudget,
         );
       }
-      const actor = bdd.user();
+      const actor = bdd.user({ orgId: options.orgId });
       const entitlement = await runs.grantProEntitlement(actor, {
         tier: options.tier,
       });

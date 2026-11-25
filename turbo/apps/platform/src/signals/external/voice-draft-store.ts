@@ -1,3 +1,4 @@
+import { MAX_TOTAL_AUDIO_BYTES } from "@okouai/api-contracts/contracts/voice-clips";
 import { openDB, type DBSchema } from "idb";
 import type { VoiceIoTranscribeContext } from "@okouai/api-contracts/contracts/voice-io-transcribe";
 import { observeClientOperation } from "../../lib/client-telemetry.ts";
@@ -5,8 +6,12 @@ import { withCleanup } from "../utils.ts";
 import { encodeVoiceDraftPcmWav } from "../voice-io/voice-draft-pcm.ts";
 import { runIndexedDbTransaction } from "./indexeddb-client.ts";
 
+// Each mono PCM WAV has a 44-byte header and two bytes per sample.
+export const MAX_VOICE_MESSAGE_SAMPLES = (MAX_TOTAL_AUDIO_BYTES - 44) / 2;
+
 export interface VoiceDraftRecordingRecord {
   readonly id: string;
+  readonly asVoiceMessage?: boolean;
   readonly sampleCount: number;
   readonly chunkCount: number;
   readonly progress?: VoiceDraftProgress;
@@ -100,6 +105,7 @@ export async function readVoiceDraftRecording(
 export async function createVoiceDraftRecording(
   key: string,
   id: string,
+  asVoiceMessage = false,
 ): Promise<VoiceDraftRecordingRecord> {
   const database = await openVoiceDraftRecordingDatabase();
   // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
@@ -118,7 +124,12 @@ export async function createVoiceDraftRecording(
         if (existing?.sampleCount) {
           return existing;
         }
-        const recording = { id, sampleCount: 0, chunkCount: 0 };
+        const recording = {
+          id,
+          ...(asVoiceMessage ? { asVoiceMessage } : {}),
+          sampleCount: 0,
+          chunkCount: 0,
+        };
         await track(transaction.store.put(recording, key));
         return recording;
       },
@@ -156,15 +167,18 @@ export async function appendVoiceDraftSamples(
             "Voice recording ownership or chunk sequence changed",
           );
         }
+        const batch = recording.asVoiceMessage
+          ? samples.slice(0, MAX_VOICE_MESSAGE_SAMPLES - recording.sampleCount)
+          : samples.slice();
         await track(
           transaction
             .objectStore("chunks")
-            .add(samples.slice().buffer, [key, id, sequence]),
+            .add(batch.buffer, [key, id, sequence]),
         );
         const appended = {
           ...recording,
           chunkCount: sequence + 1,
-          sampleCount: recording.sampleCount + samples.length,
+          sampleCount: recording.sampleCount + batch.length,
         };
         await track(drafts.put(appended, key));
         return appended;

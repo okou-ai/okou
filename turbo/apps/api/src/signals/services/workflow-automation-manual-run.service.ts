@@ -1,5 +1,4 @@
 import { command } from "ccstate";
-import { loadProactivePreferences$ } from "./proactive-workflows-eligibility.service";
 import { proactiveWorkflowKind } from "./proactive-workflow-definitions";
 import { nowDate } from "../../lib/time";
 import {
@@ -74,20 +73,6 @@ export const runOwnedWorkflowAutomationNow$ = command(
         return {
           kind: "conflict",
           message: OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE,
-        };
-      }
-      const eligibility = await set(
-        loadProactivePreferences$,
-        {
-          orgId: automation.orgId,
-          userId: automation.ownerUserId,
-        },
-        signal,
-      );
-      if (!eligibility[kind].available) {
-        return {
-          kind: "forbidden",
-          message: "Proactive Learning is not available.",
         };
       }
     }

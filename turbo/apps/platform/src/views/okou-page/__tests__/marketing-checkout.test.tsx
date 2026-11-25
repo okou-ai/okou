@@ -1,179 +1,177 @@
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  billingCheckoutContract,
-  billingStatusContract,
-} from "@okouai/api-contracts/contracts/billing";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { expect, test, vi } from "vitest";
-
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
 import { mockNow } from "../../../lib/time.ts";
-import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
+import { DetachedBrowserContext } from "happy-dom";
+import { billingUsagePackCheckoutContract } from "@okouai/api-contracts/contracts/billing";
+import { screen, within, waitFor, fireEvent } from "@testing-library/react";
+import { HttpResponse } from "msw";
+import { expect, test, vi } from "vitest";
+import { click } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 import {
-  findButton,
+  billing,
+  setBilling,
+  openWorkspace,
+  packages,
+} from "./workspace-billing-fixtures.ts";
+import { mockChatLifecycle } from "./chat-test-helpers.ts";
+import {
   promptEvent,
-  readyChat,
+  RUN_THREAD_ID,
   RUN_PATH,
-  createChatRunFixtures,
 } from "./chat-run-test-fixtures.ts";
-
 const context = testContext();
-const { installRunChat } = createChatRunFixtures(context);
-
-const ENDPOINT = "https://www.okou.ai/api/events";
-const STRIPE_URL = "https://checkout.stripe.com/test/marketing-paywall";
-const OCCURRED_AT = "2026-09-17T08:30:00.000Z";
-
-function prepareCheckout() {
-  context.mocks.data.org({
-    id: "org_marketing_checkout",
-    name: "Checkout Workspace",
-    role: "admin",
-  });
-  context.mocks.api(billingStatusContract.get, ({ respond }) => {
-    return respond(200, {
-      showUsagePack: false,
-      tier: "limited-free-1",
-      ...billingPlanCapabilities("limited-free-1"),
-      canBuyCredits: false,
-      credits: 0,
-      onboardingPaymentPending: false,
-      subscriptionStatus: null,
-      currentPeriodEnd: null,
-      cancelAtPeriodEnd: false,
-      scheduledChange: null,
-      hasSubscription: false,
-      autoRecharge: { enabled: false, threshold: null, amount: null },
-      creditExpiry: { expiringNextCycle: 0, nextExpiryDate: null },
-      creditBreakdown: [],
-      creditGrants: [],
-      concurrencyLimit: 0,
-      concurrencySubscriptions: [],
-    });
-  });
-  installRunChat({
+async function paywall() {
+  const run = crypto.randomUUID();
+  mockChatLifecycle(context, {
+    threadId: RUN_THREAD_ID,
     chatEvents: [
       promptEvent({
-        id: "checkout-prompt",
-        runId: "d0000000-0000-4000-a000-000000001401",
+        id: crypto.randomUUID(),
         seqId: 1,
-        text: "Create a campaign brief",
+        runId: run,
+        text: "Prepare harbor notes",
       }),
       {
-        id: "checkout-run-error",
-        eventType: "output.error",
+        id: crypto.randomUUID(),
         role: "assistant",
         content: null,
         error: "insufficient_credits",
-        runId: "d0000000-0000-4000-a000-000000001401",
         seqId: 2,
-        createdAt: OCCURRED_AT,
+        createdAt: "2026-08-01T10:00:02Z",
+        runId: run,
+      },
+      {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: null,
+        failureReason: "insufficient_credits",
+        runLifecycleEvent: "failed",
+        seqId: 3,
+        createdAt: "2026-08-01T10:00:03Z",
+        runId: run,
       },
     ],
   });
-  context.mocks.api(billingCheckoutContract.create, ({ respond }) => {
-    return respond(200, { url: STRIPE_URL });
+  setBilling(context, () => {
+    return billing("limited-free-1", { credits: 0, canBuyCredits: false });
   });
-  mockNow(new Date(OCCURRED_AT), context.signal);
+  packages(context);
+  await openWorkspace(context, RUN_PATH);
+  click(await findFastControl("button", "Upgrade to Pro"));
+  const plans = await screen.findByRole("dialog", { name: "Choose a plan" });
+  click(await findFastControl("button", "Start with Pro", plans));
+  const configuration = await screen.findByRole("dialog", {
+    name: "Configure member packages",
+  });
+  return await findFastControl("button", "Upgrade to Pro", configuration);
 }
-
-async function openCheckout() {
-  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
-  await readyChat();
-  await expect(
-    screen.findByText(/Upgrade to Pro to keep chatting/u),
-  ).resolves.toBeInTheDocument();
-}
-
-function confirmButton(dialog: HTMLElement) {
-  const button = queryAllByRoleFast("button", dialog).find((candidate) => {
-    return candidate.textContent?.trim() === "Upgrade to Pro";
-  });
-  if (!button) {
-    throw new Error("Expected the upgrade confirmation button");
-  }
-  return button;
-}
-
-test("A checkout action sends a Marketing event without waiting for it", async () => {
-  prepareCheckout();
-  const received = context.mocks.deferred<Request>();
-  const complete = context.mocks.deferred<void>();
-  context.mocks.http.post(ENDPOINT, async ({ request }) => {
-    received.resolve(request);
-    await complete.promise;
-    return new Response(null, { status: 204 });
-  });
-  const open = vi.spyOn(window, "open").mockReturnValue(null);
-  await openCheckout();
-
-  fireEvent.click(await findButton("Upgrade to Pro"), { ctrlKey: true });
-  const request = await received.promise;
-  await waitFor(() => {
-    expect(open).toHaveBeenCalledWith(STRIPE_URL, "_blank");
-  });
-
-  await expect(request.json()).resolves.toStrictEqual({
-    eventId: expect.stringMatching(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu,
-    ),
-    tag: "checkout-start",
-  });
-  expect(request.credentials).toBe("include");
-  expect(request.headers.get("authorization")).toBe("Bearer test-token");
-  expect(request.headers.get("content-type")).toBe("application/json");
-  expect(request.signal.aborted).toBeFalsy();
-  complete.resolve();
-});
-
-test("A Marketing failure does not prevent the Stripe redirect or start retries", async () => {
-  prepareCheckout();
-  const received = context.mocks.deferred<void>();
-  let requests = 0;
-  context.mocks.http.post(ENDPOINT, () => {
-    requests++;
-    received.resolve();
-    return Response.error();
-  });
-  await openCheckout();
-  click(await findButton("Upgrade to Pro"));
-  await received.promise;
-  await waitFor(() => {
-    expect(window.location.href).toBe(STRIPE_URL);
-  });
-  window.dispatchEvent(new Event("online"));
-  window.dispatchEvent(new Event("focus"));
-  expect(requests).toBe(1);
-});
-
-test("An expired plan preview keeps the quoted amount visible with the confirmation error", async () => {
-  prepareCheckout();
-  context.mocks.api(billingCheckoutContract.create, ({ body, respond }) => {
-    if (body.previewToken !== undefined) {
-      return respond(409, {
-        error: { code: "CONFLICT", message: "Preview expired" },
+test.each([false, true])(
+  "marketing-checkout-001 Ctrl-click opens Stripe while its authenticated marketing receipt is pending (review: %s)",
+  async (reviewRequired) => {
+    const stripe = "https://checkout.example.test/stripe/harbor",
+      event = context.mocks.deferred<{
+        request: Request;
+        body: { tag: string; eventId: string };
+      }>(),
+      gate = context.mocks.deferred<void>();
+    context.mocks.http.get(stripe, () => {
+      return new HttpResponse("<title>Harbor checkout</title>", {
+        headers: { "Content-Type": "text/html" },
       });
-    }
-    return respond(200, {
-      status: "preview",
-      purchaseType: "plan",
-      tier: "pro",
-      immediateAmountCents: 2000,
-      nextRecurringAmountCents: 2000,
-      currency: "usd",
-      expiresAt: "2026-09-17T08:40:00.000Z",
-      previewToken: "preview-plan",
     });
+    context.mocks.http.post("*/api/events", async ({ request }) => {
+      const body = (await request.json()) as { tag: string; eventId: string };
+      if (body.tag === "checkout-start") {
+        event.resolve({ request, body });
+        await gate.promise;
+      }
+      return HttpResponse.json({ ok: true });
+    });
+    context.mocks.api(
+      billingUsagePackCheckoutContract.create,
+      ({ body, respond }) => {
+        if (reviewRequired && !body.previewToken) {
+          return respond(200, {
+            status: "preview",
+            tier: "pro",
+            purchaseType: "usage_pack",
+            immediateAmountCents: 2000,
+            nextRecurringAmountCents: 2000,
+            currency: "usd",
+            previewToken: "reviewed-pro-quote",
+            expiresAt: "2026-03-15T12:10:00Z",
+          });
+        }
+        return respond(200, { url: stripe });
+      },
+    );
+    const tabs = vi.spyOn(DetachedBrowserContext.prototype, "newPage"),
+      upgrade = await paywall();
+    fireEvent.click(upgrade, { ctrlKey: true });
+    if (reviewRequired) {
+      const review = await screen.findByRole("dialog", {
+        name: "Order summary",
+      });
+      click(await findFastControl("button", "Confirm", review));
+    }
+    const { request, body } = await event.promise;
+    expect(body.eventId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu,
+    );
+    expect(request.credentials).toBe("include");
+    expect(request.headers.get("authorization")).toMatch(/^Bearer .+$/u);
+    expect(request.headers.get("content-type")).toMatch(/application\/json/u);
+    await waitFor(() => {
+      expect(
+        tabs.mock.results.some((r) => {
+          return r.value.url === stripe;
+        }),
+      ).toBeTruthy();
+    });
+    expect(request.signal.aborted).toBeFalsy();
+    expect(location.pathname).toBe(RUN_PATH);
+    gate.resolve();
+    for (const entry of tabs.mock.results) {
+      await entry.value.close();
+    }
+  },
+);
+test("marketing-checkout-003 confirming an expired Pro quote keeps both quoted amounts and the retry action visible", async () => {
+  const expiry = context.mocks.deferred<string>();
+  context.mocks.api(
+    billingUsagePackCheckoutContract.create,
+    ({ body, respond }) => {
+      if (body.previewToken) {
+        expiry.resolve(body.previewToken);
+        return respond(409, {
+          error: {
+            code: "BILLING_PREVIEW_EXPIRED",
+            message: "The plan quote expired",
+          },
+        });
+      }
+      return respond(200, {
+        status: "preview",
+        tier: "pro",
+        purchaseType: "usage_pack",
+        immediateAmountCents: 2000,
+        nextRecurringAmountCents: 2000,
+        currency: "usd",
+        previewToken: "local-pro-quote",
+        expiresAt: "2026-03-15T12:10:00Z",
+      });
+    },
+  );
+  click(await paywall());
+  const dialog = await screen.findByRole("dialog", { name: "Order summary" });
+  await waitFor(() => {
+    return expect(within(dialog).getAllByText("$20.00")).toHaveLength(2);
   });
-  await openCheckout();
-  click(await findButton("Upgrade to Pro"));
-  const dialog = await screen.findByRole("dialog", { name: "Upgrade to Pro" });
-  click(confirmButton(dialog));
-  await within(dialog).findByText(/Could not prepare the subscription change/u);
+  const confirm = await findFastControl("button", "Confirm", dialog);
+  mockNow(new Date("2026-03-15T12:11:00Z"), context.signal);
+  click(confirm);
+  await expect(expiry.promise).resolves.toBe("local-pro-quote");
+  await within(dialog).findByText("Could not prepare the subscription change.");
   expect(within(dialog).getAllByText("$20.00")).toHaveLength(2);
-  expect(confirmButton(dialog)).toBeEnabled();
+  expect(confirm).toBeEnabled();
 });

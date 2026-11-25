@@ -12,13 +12,12 @@ export const pwaChatListVisible$ = computed((get) => {
   return get(mobileViewport$) && !get(composeRequested$);
 });
 
-// Prompt and template links still open their prepared composer. The chat home
+// Prompt and handoff links open their prepared composer. The chat home
 // URL is the list; starting a new chat opens its existing thread route.
 export function isPwaComposeRequested(searchParams: URLSearchParams): boolean {
   return Boolean(
     searchParams.get("prompt") ||
     searchParams.get("handoff") ||
-    searchParams.get("templatePicker") ||
     searchParams.get("compose") === "1",
   );
 }

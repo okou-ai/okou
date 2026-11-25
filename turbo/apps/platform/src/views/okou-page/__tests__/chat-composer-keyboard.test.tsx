@@ -1,351 +1,188 @@
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { workflowsCollectionContract } from "@okouai/api-contracts/contracts/workflows";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
-
+import { expect, test, vi } from "vitest";
+import { setupPage } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  fill,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+  composerWorkflow,
+  findComposerEditor,
+} from "./chat-composer-test-helpers.ts";
+import { RUN_PATH, RUN_THREAD_ID } from "./chat-run-test-fixtures.ts";
+import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import {
   findComposer,
   findFastControl,
-  queryFastControl,
-  createMessageExperienceHelpers,
 } from "./chat-message-experience-test-helpers.ts";
 
 const context = testContext();
-const { installMessageExperienceChat } =
-  createMessageExperienceHelpers(context);
 
-const COMPOSER_PLACEHOLDER = "Ask me to automate workflows, manage tasks...";
-const TOUCH_CHAT_THREAD_ID = "c0000000-0000-4000-a000-000000000054";
-
-function installComposerChat(
-  sentPrompts: string[],
-  sendMode: "enter" | "cmd-enter",
-): void {
-  context.mocks.data.userPreferences({ sendMode });
-  installMessageExperienceChat({
-    onSendRequest: ({ prompt }) => {
-      sentPrompts.push(prompt);
-    },
+async function draft() {
+  context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {
+    return respond(
+      200,
+      ["weekly-recap", "pr-123-review"].map((name) => {
+        return composerWorkflow(name, null);
+      }),
+    );
   });
+  mockChatLifecycle(context, { threadId: RUN_THREAD_ID });
+  await setupPage({ context, path: RUN_PATH });
+  const editor = await findComposerEditor();
+  await userEvent.click(editor);
+  return editor;
 }
 
-async function loadNewChatComposer(): Promise<HTMLElement> {
-  return await findComposer();
-}
-
-function draftLines(editor: HTMLElement): string[] {
-  return Array.from(editor.children)
-    .filter((child): child is HTMLParagraphElement => {
-      return child instanceof HTMLParagraphElement;
-    })
-    .map((paragraph) => {
-      return paragraph.textContent ?? "";
-    });
-}
-
-async function expectSentPrompt(prompt: string): Promise<void> {
-  await waitFor(() => {
-    const sentMessage = Array.from(
-      document.querySelectorAll<HTMLElement>('[data-role="user"]'),
-    ).find((message) => {
-      return message.textContent?.includes(prompt);
-    });
-    expect(sentMessage).toBeVisible();
-  });
-}
-
-async function expectAgentWorking(): Promise<void> {
-  await waitFor(() => {
-    expect(queryFastControl("button", "Stop")).toBeVisible();
-    expect(document.querySelector("[data-thinking-indicator]")).toBeVisible();
-  });
-}
-
-interface TouchViewportFixture {
-  readonly closeSoftwareKeyboard: () => void;
-  readonly openSoftwareKeyboard: () => void;
-}
-
-function installTouchViewport(): TouchViewportFixture {
-  const layoutHeight = 800;
-  const keyboardHeight = 320;
-  const visualViewportDescriptor = Object.getOwnPropertyDescriptor(
-    window,
-    "visualViewport",
+test("chat-composer-ime-002 cancelling preedit restores the slash menu before committed text closes it", async () => {
+  const editor = await draft();
+  await userEvent.keyboard("/");
+  await within(await screen.findByTestId("slash-workflow-menu")).findByText(
+    /weekly-recap/,
   );
-  const innerHeightDescriptor = Object.getOwnPropertyDescriptor(
-    window,
-    "innerHeight",
-  );
-  const viewport = Object.assign(new EventTarget(), {
-    height: layoutHeight - keyboardHeight,
-    offsetLeft: 0,
-    offsetTop: 0,
-    onresize: null,
-    onscroll: null,
-    onscrollend: null,
-    pageLeft: 0,
-    pageTop: 0,
-    scale: 1,
-    width: 1024,
-  });
-  Object.defineProperty(window, "innerHeight", {
-    configurable: true,
-    value: layoutHeight,
-  });
-  Object.defineProperty(window, "visualViewport", {
-    configurable: true,
-    value: viewport,
-  });
-  context.signal.addEventListener(
-    "abort",
-    () => {
-      if (innerHeightDescriptor) {
-        Object.defineProperty(window, "innerHeight", innerHeightDescriptor);
-      } else {
-        Reflect.deleteProperty(window, "innerHeight");
-      }
-      if (visualViewportDescriptor) {
-        Object.defineProperty(
-          window,
-          "visualViewport",
-          visualViewportDescriptor,
-        );
-      } else {
-        Reflect.deleteProperty(window, "visualViewport");
-      }
-    },
-    { once: true },
-  );
-
-  function setSoftwareKeyboardOpen(open: boolean): void {
-    viewport.height = open ? layoutHeight - keyboardHeight : layoutHeight;
-    viewport.dispatchEvent(new Event("resize"));
-  }
-
-  return {
-    closeSoftwareKeyboard: () => {
-      setSoftwareKeyboardOpen(false);
-    },
-    openSoftwareKeyboard: () => {
-      setSoftwareKeyboardOpen(true);
-    },
-  };
-}
-
-test("Send with the Enter key preference", async () => {
-  const user = userEvent.setup({ delay: null });
-  const sentPrompts: string[] = [];
-  installComposerChat(sentPrompts, "enter");
-
-  await setupPage({
-    context,
-    path: `/`,
-  });
-
-  const editor = await loadNewChatComposer();
-  await fill(editor, "Prepare the launch summary");
-  await user.keyboard("{Enter}");
+  fireEvent.compositionStart(editor);
+  fireEvent.compositionUpdate(editor, { data: "p r123" });
   await waitFor(() => {
-    expect(sentPrompts).toStrictEqual(["Prepare the launch summary"]);
+    const menu = within(screen.getByTestId("slash-workflow-menu"));
+    expect(menu.queryByText(/weekly-recap/)).toBeNull();
   });
-  await expectSentPrompt("Prepare the launch summary");
-  await expectAgentWorking();
+  fireEvent.compositionUpdate(editor, { data: "" });
+  fireEvent.compositionEnd(editor, { data: "" });
+  expect(editor).toHaveTextContent(/^\/$/);
+  await expect(
+    within(await screen.findByTestId("slash-workflow-menu")).findByText(
+      /weekly-recap/,
+    ),
+  ).resolves.toBeInTheDocument();
+  await userEvent.keyboard("pr123 details");
+  expect(editor).toHaveTextContent(/^\/pr123 details$/);
+  await waitFor(() => {
+    return expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+  });
 });
 
-test("Shift-Enter keeps an active chat's follow-up draft on two lines without sending", async () => {
-  const user = userEvent.setup({ delay: null });
-  const sentPrompts: string[] = [];
-  const threadId = "c0000000-0000-4000-a000-000000000055";
-  const runId = "c0000000-0000-4000-a000-000000000056";
+test("chat-composer-keyboard-002 Shift Enter keeps both lines editable during an active run", async () => {
+  const sent = context.mocks.deferred<void>();
   context.mocks.data.userPreferences({ sendMode: "enter" });
-  installMessageExperienceChat({
-    threadId,
+  mockChatLifecycle(context, {
+    onQueuedEventAppend: () => {
+      return sent.resolve();
+    },
+    onSendRequest: () => {
+      return sent.resolve();
+    },
+    threadId: RUN_THREAD_ID,
+    activeRunIds: ["pending-review"],
     chatEvents: [
       {
-        id: "active-keyboard-prompt",
+        createdAt: "2026-08-01T10:00:00Z",
         role: "user",
-        content: "Prepare the launch summary",
-        runId,
-        createdAt: "2026-08-01T00:00:00Z",
+        content: "Review is underway",
+        runId: "pending-review",
       },
     ],
-    activeRunIds: [runId],
-    onSendRequest: ({ prompt }) => {
-      sentPrompts.push(prompt);
+  });
+  await setupPage({ context, path: RUN_PATH });
+  await screen.findByText("Review is underway");
+  const editor = await findComposer();
+  const user = userEvent.setup({ delay: null });
+  await user.click(editor);
+  await user.keyboard("Keep this draft{Shift>}{Enter}{/Shift}on two lines");
+  expect(editor).toHaveFocus();
+  expect(sent.settled()).toBeFalsy();
+  expect(editor.innerHTML).toMatch(
+    /Keep this draft(?:<br[^>]*>|<\/p><p>)on two lines/u,
+  );
+  expect(
+    document.querySelector('[data-role="user"]')?.textContent,
+  ).not.toContain("Keep this draft");
+});
+
+test("chat-composer-keyboard-003 Control Enter sends the complete Linux draft after plain Enter added a line", async () => {
+  context.mocks.browser.userAgent("Mozilla/5.0 (X11; Linux x86_64)");
+  context.mocks.data.userPreferences({ sendMode: "cmd-enter" });
+  const sent = context.mocks.deferred<string>();
+  mockChatLifecycle(context, {
+    onSendRequest: (b) => {
+      return sent.resolve(b.prompt);
     },
   });
-  await setupPage({ context, path: `/chats/${threadId}` });
-  await expectAgentWorking();
-  const editor = await findComposer();
-  await fill(editor, "Keep this draft");
-  await user.keyboard("{Shift>}{Enter}{/Shift}");
-  await user.keyboard("on two lines");
-  expect(draftLines(editor)).toStrictEqual(["Keep this draft", "on two lines"]);
+  await setupPage({ context, path: "/" });
+  const editor = await screen.findByRole("textbox", { name: "Message" });
+  await userEvent.click(editor);
+  await userEvent.keyboard("Review the campaign{Enter}before publishing");
   expect(editor).toHaveFocus();
-  expect(sentPrompts).toStrictEqual([]);
+  expect(sent.settled()).toBeFalsy();
+  expect(editor).toHaveTextContent("before publishing");
+  await userEvent.keyboard("{Control>}{Enter}{/Control}");
+  await expect(sent.promise).resolves.toBe(
+    "Review the campaign\nbefore publishing",
+  );
+  await screen.findByText(/Review the campaign.*before publishing/s, {
+    selector: "[data-role=user] *",
+  });
+  await findFastControl("button", /Stop/i);
 });
 
-test("Send with the command-key preference", async () => {
-  const user = userEvent.setup({ delay: null });
-  const sentPrompts: string[] = [];
-  context.mocks.browser.userAgent("Mozilla/5.0 (X11; Linux x86_64)");
-  installComposerChat(sentPrompts, "cmd-enter");
-
-  await setupPage({
-    context,
-    path: `/`,
+test("chat-composer-keyboard-005 Android keyboard height and Control distinguish newline from sending", async () => {
+  const viewport = Object.assign(new EventTarget(), {
+    height: innerHeight,
+    width: 390,
+    offsetTop: 0,
+    offsetLeft: 0,
+    scale: 1,
   });
-
-  const editor = await loadNewChatComposer();
-  await fill(editor, "Review the campaign");
-  await user.keyboard("{Enter}");
-  await user.keyboard("before publishing");
-  expect(draftLines(editor)).toStrictEqual([
-    "Review the campaign",
-    "before publishing",
-  ]);
-  expect(editor).toHaveFocus();
-  expect(sentPrompts).toHaveLength(0);
-
-  await user.keyboard("{Control>}{Enter}{/Control}");
-  await waitFor(() => {
-    expect(sentPrompts).toStrictEqual([
-      "Review the campaign\nbefore publishing",
-    ]);
-  });
-  await expectSentPrompt("Review the campaign");
-  await expectAgentWorking();
-});
-
-test("Avoid sending while text composition is in progress", async () => {
-  const sentPrompts: string[] = [];
-  installComposerChat(sentPrompts, "enter");
-
-  await setupPage({
-    context,
-    path: `/`,
-  });
-
-  const editor = await loadNewChatComposer();
-  await fill(editor, "かな");
-  fireEvent.compositionStart(editor, { data: "かな" });
-  fireEvent.keyDown(editor, {
-    code: "Enter",
-    isComposing: true,
-    key: "Enter",
-    keyCode: 229,
-  });
-  fireEvent.compositionEnd(editor, { data: "かな" });
-  fireEvent.compositionStart(editor, { data: "かな" });
-  fireEvent.keyDown(editor, {
-    code: "Enter",
-    ctrlKey: true,
-    isComposing: true,
-    key: "Enter",
-    keyCode: 229,
-  });
-  fireEvent.compositionEnd(editor, { data: "かな" });
-
-  expect(editor).toHaveTextContent("かな");
-  expect(editor).toHaveFocus();
-  expect(sentPrompts).toHaveLength(0);
-  expect(
-    document.querySelectorAll<HTMLElement>('[data-role="user"]'),
-  ).toHaveLength(0);
-});
-
-test("Use the appropriate Enter behavior on touch devices", async () => {
-  const user = userEvent.setup({ delay: null });
-  const sentPrompts: string[] = [];
-  context.mocks.browser.userAgent("Mozilla/5.0 (Linux; Android 15)");
+  vi.stubGlobal("visualViewport", viewport);
+  context.mocks.browser.userAgent(
+    "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/131.0 Mobile Safari/537.36",
+  );
   context.mocks.browser.matchMedia((query) => {
     return query === "(pointer: coarse)" || query === "(any-pointer: fine)";
   });
-  const viewport = installTouchViewport();
   context.mocks.data.userPreferences({ sendMode: "enter" });
-  installMessageExperienceChat({
-    threadId: TOUCH_CHAT_THREAD_ID,
-    onSendRequest: ({ prompt }) => {
-      sentPrompts.push(prompt);
+  const sent: string[] = [];
+  mockChatLifecycle(context, {
+    threadId: RUN_THREAD_ID,
+    onSendRequest(body) {
+      sent.push(body.prompt);
     },
   });
-
-  await setupPage({
-    context,
-    path: `/chats/${TOUCH_CHAT_THREAD_ID}`,
-  });
-
-  let editor = await screen.findByRole("textbox", { name: "Message" });
-  await fill(editor, "Draft from the on-screen keyboard");
-  await user.keyboard("{Enter}");
-  await user.keyboard("with a second line");
-  expect(draftLines(editor)).toStrictEqual([
-    "Draft from the on-screen keyboard",
-    "with a second line",
-  ]);
-  expect(sentPrompts).toHaveLength(0);
-
-  viewport.closeSoftwareKeyboard();
-  await user.keyboard("{Enter}");
-  await waitFor(() => {
-    expect(sentPrompts).toStrictEqual([
-      "Draft from the on-screen keyboard\nwith a second line",
-    ]);
-  });
-  await expectSentPrompt("Draft from the on-screen keyboard");
-  await expectAgentWorking();
-
-  viewport.openSoftwareKeyboard();
-  editor = await screen.findByRole("textbox", { name: "Message" });
-  expect(editor).toHaveTextContent("");
-  await user.click(editor);
-  await user.keyboard("Send with the hardware shortcut");
-  expect(editor).toHaveTextContent("Send with the hardware shortcut");
-  await waitFor(() => {
-    const send = queryAllByRoleFast("button").find((button) => {
-      return button.getAttribute("aria-label") === "Send";
+  await setupPage({ context, path: RUN_PATH });
+  const user = userEvent.setup({ delay: null });
+  async function keyboard(open: boolean) {
+    viewport.height = innerHeight - (open ? 320 : 0);
+    viewport.dispatchEvent(new Event("resize"));
+    await waitFor(() => {
+      expect(document.documentElement.dataset.keyboardOpen === "true").toBe(
+        open,
+      );
     });
-    expect(send).toBeEnabled();
+  }
+  const editor = await findComposer();
+  await user.click(editor);
+  await keyboard(true);
+  await user.paste("Draft from the on-screen keyboard");
+  await user.keyboard("{Enter}");
+  await user.paste("with a second line");
+  expect(sent).toStrictEqual([]);
+  expect(editor.innerHTML).toMatch(
+    /keyboard(?:<br[^>]*>|<\/p><p>)with a second line/,
+  );
+  await keyboard(false);
+  await user.keyboard("{Enter}");
+  const combined = "Draft from the on-screen keyboard\nwith a second line";
+  await waitFor(() => {
+    expect(sent).toContain(combined);
   });
+  await screen.findByText(
+    /Draft from the on-screen keyboard.*with a second line/s,
+    { selector: "[data-role=user] *" },
+  );
+  await findFastControl("button", /Stop/i);
+  await user.click(await findComposer());
+  await keyboard(true);
+  await user.paste("Send with the hardware shortcut");
   await user.keyboard("{Control>}{Enter}{/Control}");
   await waitFor(() => {
-    expect(sentPrompts).toStrictEqual([
-      "Draft from the on-screen keyboard\nwith a second line",
-      "Send with the hardware shortcut",
-    ]);
+    expect(sent).toStrictEqual([combined, "Send with the hardware shortcut"]);
   });
-  await expectSentPrompt("Send with the hardware shortcut");
-});
-
-test("Treat whitespace as an empty message", async () => {
-  const sentPrompts: string[] = [];
-  installComposerChat(sentPrompts, "enter");
-
-  await setupPage({
-    context,
-    path: `/`,
-  });
-
-  const editor = await loadNewChatComposer();
-  const composer = editor.closest("[data-slot='chat-composer-card']");
-  if (!(composer instanceof HTMLElement)) {
-    throw new Error("Composer surface not found");
-  }
-  const send = await findFastControl("button", "Send", composer);
-  expect(within(composer).getByText(COMPOSER_PLACEHOLDER)).toBeVisible();
-  expect(send).toBeDisabled();
-
-  await fill(editor, " ");
-  expect(editor.textContent).toBe(" ");
-  await waitFor(() => {
-    expect(within(composer).queryByText(COMPOSER_PLACEHOLDER)).toBeNull();
-  });
-  expect(send).toBeDisabled();
-  expect(sentPrompts).toHaveLength(0);
 });

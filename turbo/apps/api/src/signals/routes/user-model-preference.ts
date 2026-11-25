@@ -35,6 +35,9 @@ import {
 } from "../services/user-data.service";
 
 const updateBody$ = bodyResultOf(userModelPreferenceContract.update);
+const updateImageBody$ = bodyResultOf(
+  userModelPreferenceContract.updateImageModel,
+);
 const availableRunModels$ = listAvailableRunModels(organizationAuthContext$);
 
 function configuredRunModelProviderType(
@@ -269,6 +272,31 @@ export const userModelPreferenceRoutes: readonly RouteEntry[] = [
     handler: authRoute(
       { requireOrganization: true, missingOrganizationStatus: 401 },
       updateUserModelPreferenceInner$,
+    ),
+  },
+  {
+    route: userModelPreferenceContract.updateImageModel,
+    handler: authRoute(
+      { requireOrganization: true, missingOrganizationStatus: 401 },
+      command(async ({ get, set }, signal: AbortSignal): Promise<unknown> => {
+        const auth = get(organizationAuthContext$);
+        const body = await get(updateImageBody$);
+        signal.throwIfAborted();
+        if (!body.ok) {
+          return body.response;
+        }
+        const result = await set(
+          updateUserModelPreference$,
+          { orgId: auth.orgId, userId: auth.userId, preference: body.data },
+          signal,
+        );
+        signal.throwIfAborted();
+        await publishUserPreferenceChangedForUserSafely(auth.userId, [
+          "defaultImageModel",
+        ]);
+        signal.throwIfAborted();
+        return { status: 200 as const, body: result };
+      }),
     ),
   },
 ];

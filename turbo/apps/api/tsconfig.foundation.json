@@ -245,6 +245,7 @@
     "src/signals/services/model-catalog.service.ts",
     "src/signals/services/run-models.service.ts",
     "src/signals/services/model-route-capabilities.service.ts",
+    "src/signals/services/antigravity-personal-subscription.ts",
     "src/signals/services/model-selection.service.ts",
     "src/signals/services/model-source-context.service.ts",
     "src/signals/services/morning-brief-enrollment-data.service.ts",
@@ -280,6 +281,7 @@
     "src/signals/services/claude-code-usage.service.ts",
     "src/signals/services/codex-reset-credit-expiry.service.ts",
     "src/signals/services/computer-use-host-auth.service.ts",
+    "src/signals/services/computer-use-app-state-transfer.service.ts",
     "src/signals/services/computer-use.service.ts",
     "src/signals/services/desktop-shell-grant.ts",
     "src/signals/services/connector-oauth-state.service.ts",
@@ -375,7 +377,8 @@
     "src/signals/services/user-template-data.service.ts",
     "src/signals/external/lark-official.ts",
     "src/lib/lark-official-app.ts",
-    "src/lib/hosted-site-invitation-template.json"
+    "src/lib/hosted-site-invitation-template.json",
+    "src/lib/artifact-invitation-template.json"
   ],
   "exclude": ["node_modules", "dist"],
   "references": [

@@ -11,20 +11,23 @@ import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.chat.ComposerPersistence
 import ai.okou.android.chat.ComposerTarget
 import ai.okou.android.chat.HistoryPhase
-import ai.okou.android.chat.RunControlPersistence
+import ai.okou.android.chat.RunControlPhase
 import ai.okou.android.chat.plainText
 import android.content.Intent
 import android.os.Looper
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
@@ -36,6 +39,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.test.performTextReplacement
@@ -44,16 +48,19 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ActivityScenario
+import androidx.test.platform.app.InstrumentationRegistry
 import java.util.UUID
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.mockwebserver.MockResponse
@@ -250,11 +257,66 @@ class ChatComposerRootTest {
 
         val finalBounds = transcript.assertIsDisplayed().getUnclippedBoundsInRoot()
         assertEquals(initialBounds.bottom - initialBounds.top, finalBounds.bottom - finalBounds.top)
+        val editor = input.fetchSemanticsNode().config
+        assertEquals(draft, editor[SemanticsProperties.InputText].text)
         assertEquals(
-            draft,
-            input.fetchSemanticsNode().config[SemanticsProperties.EditableText].text,
+            "First line Second line Third line Final line",
+            editor[SemanticsProperties.EditableText].text,
         )
         compose.onNodeWithContentDescription("Send").assertIsDisplayed().assertIsEnabled()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h520dp")
+    fun earlierRepliesExpandBelowTheSummaryWithoutMovingIt() {
+        val app = compose.activity.application as ComposerRootApplication
+        val earlier = "The website copy is checked."
+        val lastParagraph = "Record the final decisions in the release notes."
+        val latest =
+            "The release materials are ready.\n\n" +
+                "The website and email are confirmed. Two checks remain before launch.\n\n" +
+                "Please share the updated checklist with all channel owners.\n\n" +
+                lastParagraph
+        fun id(seq: Long) = "50624000-0000-4000-8000-${seq.toString().padStart(12, '0')}"
+        fun reply(seq: Long, text: String) =
+            historyEventWire(id(seq), seq, payload = """{"content":${JsonPrimitive(text)}}""")
+        val rows =
+            listOf(
+                reply(1, "$earlier\n\nUse the approved release links."),
+                reply(2, "The email draft is checked."),
+                reply(3, latest),
+                historyEventWire(id(4), 4, type = "run.completed", payload = "null"),
+            )
+        app.fixture.chats.historyCatchUp = { MockResponse().setResponseCode(503) }
+        app.fixture.chats.historyRows = { request ->
+            val since = request.requestUrl?.queryParameter("sinceSeqId")?.toInt() ?: 0
+            jsonResponse(
+                """{"rows":[${rows.drop(since).joinToString(",")}],"cursor":{"lastEventId":"${id(4)}","lastSeqId":4},"hasMore":false}""",
+            )
+        }
+        app.contextGate.countDown()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText("Personal chat").fetchSemanticsNodes().size == 1
+        }
+        compose.onNodeWithText("Personal chat").performClick()
+        captureOwners()
+        val summary = compose.onNodeWithTag("conversation_reply_summary")
+        compose.waitUntilExactlyOneExists(hasTestTag("conversation_reply_summary"), 5_000)
+        compose.waitUntil("latest conversation is displayed", 5_000) {
+            app.fixture.chats.readRequests.get() > 0
+        }
+        // Wait for the independently laid out paragraph after Markdown rendering.
+        compose.waitUntilExactlyOneExists(hasText(lastParagraph), 5_000)
+        val resting = summary.assertIsDisplayed().getUnclippedBoundsInRoot()
+        summary.performClick()
+        compose.waitUntilExactlyOneExists(hasText(earlier), 5_000)
+        val expanded = summary.assertIsDisplayed().getUnclippedBoundsInRoot()
+        assertEquals(resting.top, expanded.top)
+        val firstReply = compose.onNodeWithText(earlier).assertIsDisplayed()
+        assertTrue(firstReply.getUnclippedBoundsInRoot().top >= expanded.bottom)
+        summary.performClick()
+        compose.waitUntilDoesNotExist(hasText(earlier), 5_000)
+        assertEquals(resting.top, summary.getUnclippedBoundsInRoot().top)
     }
 
     @Test
@@ -270,14 +332,9 @@ class ChatComposerRootTest {
         )
         // Native focus loss collapses an active selection; preserve the cursor on recreation.
         input.performTextInputSelection(TextRange(13))
-        compose.onNodeWithContentDescription("Chat actions").performClick()
-        compose.onNodeWithText("Settings").performClick()
-        compose.onNodeWithText("Display mode").assertExists()
         captureOwners()
         // Recreation runs the same complete Activity budget check as every Debug save.
         compose.activityRule.scenario.recreate()
-        compose.onNodeWithText("Display mode").assertExists()
-        compose.onNodeWithContentDescription("Back").performClick()
         assertEquals(
             large,
             input.fetchSemanticsNode().config[SemanticsProperties.EditableText].text,
@@ -297,6 +354,11 @@ class ChatComposerRootTest {
         val listStarted = CountDownLatch(1)
         val historyStarted = CountDownLatch(1)
         app.fixture.beforeCreateReturn = { create.await() }
+        // Hold both ways a confirmed queue entry can replace the accepted bubble.
+        app.fixture.beforeInputStatusReturn = { history.await() }
+        app.fixture.chats.historyCatchUp = {
+            jsonResponse("""{"events":{},"notFoundThreads":[]}""")
+        }
         // A list read can see the new chat while its create response is still held.
         app.fixture.beforeListReturn = { containsCreatedChat ->
             if (containsCreatedChat) {
@@ -366,6 +428,8 @@ class ChatComposerRootTest {
             messageText(pending.eventId, prompt).assertIsDisplayed()
             history.countDown()
             val withdrawalLabel = app.getString(R.string.conversation_revoke)
+            compose.waitUntilExactlyOneExists(hasTestTag("open_conversation_queue"), 10_000)
+            compose.onNodeWithTag("open_conversation_queue").performClick()
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithText("New conversation").fetchSemanticsNodes().isNotEmpty() &&
                     compose
@@ -373,12 +437,14 @@ class ChatComposerRootTest {
                         .fetchSemanticsNodes()
                         .size == 1 &&
                     compose
-                        .onAllNodesWithContentDescription(withdrawalLabel)
+                        .onAllNodesWithContentDescription(withdrawalLabel, substring = true)
                         .fetchSemanticsNodes()
                         .size == 1
             }
             messageText(pending.eventId, prompt).assertIsDisplayed()
-            compose.onNodeWithContentDescription(withdrawalLabel).assertIsDisplayed()
+            compose
+                .onNodeWithContentDescription(withdrawalLabel, substring = true)
+                .assertIsDisplayed()
             assertEquals(1, app.fixture.inputs.size)
         } finally {
             create.countDown()
@@ -566,21 +632,29 @@ class ChatComposerRootTest {
             awaitConversation {
                 pending.eventId in chats.history.uiState.value.transcript?.persistedIds.orEmpty()
             }
-            messageText(pending.eventId, prompt).assertIsDisplayed()
+            val queue = hasTestTag("open_conversation_queue")
+            compose.waitUntilExactlyOneExists(queue, 10_000)
+            messageText(pending.eventId, prompt).assertDoesNotExist()
             messageDelivery(pending.eventId, "Sending…").assertDoesNotExist()
-            assertEquals(
-                1,
-                compose.onAllNodesWithTag("message_${pending.eventId}").fetchSemanticsNodes().size,
-            )
             compose.onNodeWithContentDescription("Back").performClick()
             compose.onNodeWithText("New conversation").performClick()
             compose.onNodeWithTag("message_input").assertTextContains("Keep this newer draft")
             compose.onNodeWithText("Check delivery").assertDoesNotExist()
             app.sendGate.countDown()
             awaitConversation {
-                compose.onAllNodesWithText("New conversation").fetchSemanticsNodes().isNotEmpty()
+                editor?.uiState?.value?.entry(ComposerTarget(pending.threadId))?.receipt?.eventId ==
+                    pending.eventId
             }
+            compose.onNode(queue).performClick()
+            val row = hasTestTag("message_${pending.eventId}")
+            compose.waitUntilExactlyOneExists(row, 10_000)
             messageText(pending.eventId, prompt).assertIsDisplayed()
+            val panel = hasTestTag("conversation_queue")
+            compose
+                .onNode(
+                    hasContentDescription("Back") and hasAnyAncestor(hasAnyDescendant(panel)),
+                )
+                .performClick()
             compose.onNodeWithTag("message_input").assertTextContains("Keep this newer draft")
             compose.onNodeWithContentDescription("Send").assertIsEnabled()
             assertEquals(1, app.fixture.inputs.size)
@@ -603,32 +677,41 @@ class ChatComposerRootTest {
         compose.onNodeWithContentDescription("Chats").assertExists()
         compose.onNodeWithText("New chat").performClick()
         compose.onNodeWithTag("message_input").assertTextContains("Original **message** 👋")
-        app.fixture.disconnectSend = true
-        compose.onNodeWithContentDescription("Send").assertIsEnabled().performClick()
-        compose.waitUntil(10_000) {
-            // Drain the actual native owner as journal/HTTP completions return to Main.
-            compose.onNodeWithTag("message_input").fetchSemanticsNode()
-            app.fixture.inputs.size == 1 ||
-                editor?.uiState?.value?.failed?.isNotEmpty() == true ||
-                editor?.uiState?.value?.persistence ==
-                    ai.okou.android.chat.ComposerPersistence.Failed
-        }
-        assertEquals(
-            "${editor?.uiState?.value}; requests=${app.fixture.requests.map { it.path }}",
-            1,
-            app.fixture.inputs.size,
-        )
-        app.contextGate.countDown()
-        val event = app.fixture.inputs.keys.single()
-        messageText(event, "Original **message** 👋").assertIsDisplayed()
-        compose.onNodeWithTag("message_input").performTextInput("Newer draft 你好")
         val checkStarted = CountDownLatch(1)
         val checkResponse = CountDownLatch(1)
         app.fixture.beforeInputStatusReturn = {
             checkStarted.countDown()
             checkResponse.await()
         }
+        // Keep confirmed history from settling the input before the status check returns.
+        app.fixture.beforeHistoryReturn = { threadId ->
+            if (
+                app.fixture.created.any { it["clientThreadId"]?.jsonPrimitive?.content == threadId }
+            ) {
+                checkResponse.await()
+            }
+        }
+        val event: String
         try {
+            app.fixture.disconnectSend = true
+            compose.onNodeWithContentDescription("Send").assertIsEnabled().performClick()
+            compose.waitUntil(10_000) {
+                // Drain the actual native owner as journal/HTTP completions return to Main.
+                compose.onNodeWithTag("message_input").fetchSemanticsNode()
+                app.fixture.inputs.size == 1 ||
+                    editor?.uiState?.value?.failed?.isNotEmpty() == true ||
+                    editor?.uiState?.value?.persistence ==
+                        ai.okou.android.chat.ComposerPersistence.Failed
+            }
+            assertEquals(
+                "${editor?.uiState?.value}; requests=${app.fixture.requests.map { it.path }}",
+                1,
+                app.fixture.inputs.size,
+            )
+            app.contextGate.countDown()
+            event = app.fixture.inputs.keys.single()
+            messageText(event, "Original **message** 👋").assertIsDisplayed()
+            compose.onNodeWithTag("message_input").performTextInput("Newer draft 你好")
             app.sendGate.countDown()
             awaitConversation { checkStarted.count == 0L }
             messageDelivery(event, "Sending…").assertIsDisplayed()
@@ -697,12 +780,18 @@ class ChatComposerRootTest {
             app.sendGate.countDown()
             awaitConversation {
                 listStarted.count == 0L &&
-                    compose.onAllNodesWithText("Queued").fetchSemanticsNodes().size == 1
+                    compose
+                        .onAllNodesWithTag("open_conversation_queue")
+                        .fetchSemanticsNodes()
+                        .size == 1
             }
+            compose.onNodeWithTag("open_conversation_queue").performClick()
             compose
                 .onNode(
-                    hasContentDescription(app.getString(R.string.conversation_revoke)) and
-                        hasAnyAncestor(hasTestTag("message_$eventId")),
+                    hasContentDescription(
+                        app.getString(R.string.conversation_revoke),
+                        substring = true,
+                    ) and hasAnyAncestor(hasTestTag("message_$eventId")),
                 )
                 .assertIsDisplayed()
                 .assertIsEnabled()
@@ -714,7 +803,9 @@ class ChatComposerRootTest {
             assertEquals(input.getValue("threadId"), request.getValue("threadId"))
             assertEquals(eventId, request.getValue("revokesEventId").jsonPrimitive.content)
             assertEquals(1, app.fixture.inputs.size)
-            messageText(eventId, app.getString(R.string.conversation_withdrawing))
+            compose.onNodeWithTag("message_$eventId").assertDoesNotExist()
+            compose
+                .onNodeWithText(app.getString(R.string.conversation_queue_empty))
                 .assertIsDisplayed()
         } finally {
             releaseList.countDown()
@@ -722,7 +813,7 @@ class ChatComposerRootTest {
     }
 
     @Test
-    fun confirmedWithdrawalRemovesOnlyItsCardWhileOlderHistoryIsHeld() {
+    fun pendingWithdrawalRemovesOnlyItsCardAndTransfersFocusBeforeHistoryReturns() {
         val app = compose.activity.application as ComposerRootApplication
         val api = app.fixture.chats
         val manualId = UUID.randomUUID().toString()
@@ -797,8 +888,11 @@ class ChatComposerRootTest {
             } else composerResponse(request)
         }
 
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
         app.contextGate.countDown()
         try {
+            compose.activityRule.scenario.recreate()
             compose.waitUntilExactlyOneExists(hasText("Personal chat"), 10_000)
             compose.onNodeWithText("Personal chat").performClick()
             captureOwners()
@@ -811,24 +905,27 @@ class ChatComposerRootTest {
                 )
             }
             val withdraw =
-                compose.onNodeWithContentDescription(app.getString(R.string.conversation_revoke))
+                compose.onNodeWithContentDescription(
+                    app.getString(R.string.conversation_revoke),
+                    substring = true,
+                )
             awaitConversation {
-                ready.chats.history.uiState.value.phase == HistoryPhase.Ready &&
-                    ready.controls.uiState.value.persistence == RunControlPersistence.Durable
+                ready.chats.history.uiState.value.phase == HistoryPhase.Ready
             }
-            withdraw.assertIsEnabled()
+            compose.onNodeWithTag("open_conversation_queue").performClick()
+            withdraw
+                .assertIsEnabled()
+                .performSemanticsAction(SemanticsActions.RequestFocus)
+                .assertIsFocused()
             holdHistory.set(true)
             compose.runOnIdle { ready.chats.history.refresh() }
             awaitConversation { historyRequested.count == 0L }
             withdraw.performClick()
-            val checkOutcome = compose.onNodeWithText(app.getString(R.string.controls_check))
-            compose.waitUntilExactlyOneExists(
-                hasText(app.getString(R.string.controls_check)),
-                10_000,
-            )
-            checkOutcome.assertIsEnabled().performClick()
+            compose.onNodeWithTag("message_$manualId").assertDoesNotExist()
+            messageText(automationId, workflowName).assertIsDisplayed()
+            compose.onNodeWithTag("message_$automationId").assertIsFocused()
             awaitConversation {
-                ready.controls.uiState.value.journal?.pending?.isEmpty() == true
+                ready.controls.uiState.value.pending.isEmpty()
             }
             assertEquals(
                 manualId,
@@ -839,7 +936,7 @@ class ChatComposerRootTest {
             )
             messageText(manualId, manualText).assertDoesNotExist()
             messageText(automationId, workflowName).assertIsDisplayed()
-            compose.onNodeWithText(app.getString(R.string.controls_recorded)).assertDoesNotExist()
+            compose.onNodeWithTag("message_$automationId").assertIsFocused()
             releaseHistory.countDown()
             awaitConversation {
                 ready.chats.history.uiState.value.transcript?.pendingInputIds == setOf(automationId)
@@ -847,7 +944,94 @@ class ChatComposerRootTest {
             messageText(manualId, manualText).assertDoesNotExist()
         } finally {
             releaseHistory.countDown()
+            instrumentation.resetInTouchMode()
         }
+    }
+
+    @Test
+    fun recoveredHistoryRestoresAWithdrawalWhenItsOutcomeReadAlsoFailed() {
+        val app = compose.activity.application as ComposerRootApplication
+        val api = app.fixture.chats
+        val queuedId = UUID.randomUUID().toString()
+        val prompt = "Restore this queued message"
+        val queued =
+            historyEventWire(
+                queuedId,
+                1,
+                type = "input.prompt",
+                payload =
+                    """{"userMessage":{"version":1,"parts":[{"type":"text","text":"$prompt"}]}}""",
+                run = null,
+            )
+        val readsUnavailable = AtomicBoolean(false)
+        val withdrawals = AtomicInteger()
+        val otherRows = api.historyRows
+        api.historyRows = { request ->
+            val url = checkNotNull(request.requestUrl)
+            if (url.pathSegments[2] != CHAT_PERSONAL) otherRows(request)
+            else if (readsUnavailable.get()) MockResponse().setResponseCode(400)
+            else {
+                val since = url.queryParameter("sinceSeqId")?.toInt() ?: 0
+                val rows = if (since < 1) queued else ""
+                jsonResponse(
+                    """{"rows":[$rows],"cursor":{"lastEventId":"$queuedId","lastSeqId":1},"hasMore":false}""",
+                )
+            }
+        }
+        val otherCommands = api.commandResponse
+        api.commandResponse = { request ->
+            val body =
+                if (
+                    request.method == "POST" &&
+                        request.requestUrl?.encodedPath == "/api/chat/events"
+                )
+                    Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
+                else null
+            if (body != null && "revokesEventId" in body) {
+                withdrawals.incrementAndGet()
+                readsUnavailable.set(true)
+                jsonResponse("{}").setResponseCode(201)
+            } else otherCommands(request)
+        }
+
+        app.contextGate.countDown()
+        compose.waitUntilExactlyOneExists(hasText("Personal chat"), 10_000)
+        compose.onNodeWithText("Personal chat").performClick()
+        val ready = compose.runOnIdle {
+            checkNotNull(
+                ViewModelProvider(compose.activity)[SessionModel::class.java].uiState.value.ready,
+            )
+        }
+        val history = ready.chats.history
+        awaitConversation {
+            history.uiState.value.phase == HistoryPhase.Ready
+        }
+        compose.onNodeWithTag("open_conversation_queue").performClick()
+        val withdraw =
+            hasContentDescription(
+                app.getString(R.string.conversation_revoke),
+                substring = true,
+            ) and hasAnyAncestor(hasTestTag("message_$queuedId"))
+        compose.onNode(withdraw).assertIsEnabled().performClick()
+        awaitConversation {
+            history.uiState.value.phase == HistoryPhase.Failed &&
+                ready.controls.uiState.value.phases.values.singleOrNull() == RunControlPhase.Unknown
+        }
+        compose.onNodeWithTag("message_$queuedId").assertDoesNotExist()
+
+        readsUnavailable.set(false)
+        compose.runOnIdle { history.invalidate(CHAT_PERSONAL) }
+        awaitConversation { history.uiState.value.phase == HistoryPhase.Ready }
+        val failure = hasText(app.getString(R.string.conversation_withdraw_failed))
+        compose.waitUntilExactlyOneExists(failure, 10_000)
+        compose
+            .onNode(
+                failure and hasAnyAncestor(hasTestTag("queue_control_feedback")),
+            )
+            .assertIsDisplayed()
+        messageText(queuedId, prompt).assertIsDisplayed()
+        compose.onNode(withdraw).assertIsEnabled()
+        assertEquals(1, withdrawals.get())
     }
 
     @Test

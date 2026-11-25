@@ -42,7 +42,6 @@
     <string name="connector_disconnect">Putuskan akun</string>
     <string name="connector_disconnect_title">Putuskan hubungan akun ini?</string>
     <string name="connector_disconnect_copy">Chat dan otomatisasi yang memakai akun ini mungkin perlu memilih koneksi lain. Akun lainnya tetap tersedia.</string>
-    <string name="connector_load_when_online">Konten akan dimuat saat Anda kembali online.</string>
     <string name="connector_loading">Memuat konektor…</string>
     <string name="connector_loading_accounts">Memuat akun…</string>
     <string name="connector_loading_permissions">Memuat izin…</string>
@@ -52,7 +51,6 @@
     <string name="connector_accounts_failed">Akun tidak dapat dimuat.</string>
     <string name="connector_permissions_failed">Izin tidak dapat dimuat.</string>
     <string name="connector_impact_failed">Penggunaan akun ini tidak dapat diperiksa.</string>
-    <string name="connector_offline">Offline</string>
     <string name="connector_network_failed">Tidak dapat terhubung ke Okou. Periksa koneksi Anda dan coba lagi.</string>
     <string name="connector_account_unavailable">Akun ini tidak lagi tersedia.</string>
     <string name="connector_unavailable">Otorisasi tidak tersedia untuk akun ini.</string>
@@ -102,4 +100,29 @@
     <plurals name="connector_impact_count">
         <item quantity="other">%d chat secara eksplisit memilih akun ini.</item>
     </plurals>
+    <string name="chat_options_title">Opsi chat</string>
+    <string name="chat_options_settings">Setelan percakapan</string>
+    <string name="chat_connector_scope">Berlaku untuk chat ini. Pada awalnya akun mengikuti setelan default ruang kerja.</string>
+    <string name="chat_connector_empty">Tidak ada akun yang terhubung di ruang kerja ini.</string>
+    <string name="chat_connector_manage">Kelola konektor</string>
+    <string name="chat_connector_restore_defaults">Pulihkan setelan default ruang kerja</string>
+    <string name="chat_connector_saving">Menyimpan pilihan konektor…</string>
+    <string name="chat_connector_save_failed">Pilihan konektor tidak dapat disimpan.</string>
+    <string name="chat_connector_first_send_failed">Pilihan konektor tidak dapat diterapkan. Periksa di Opsi chat, lalu coba kirim ulang pesan ini.</string>
+    <string name="connector_device_denied">Penyedia menolak otorisasi.</string>
+    <string name="connector_device_expired">Kode perangkat telah kedaluwarsa. Mulai otorisasi lagi.</string>
+    <string name="connector_device_failed">Otorisasi perangkat tidak dapat diselesaikan.</string>
+    <string name="connector_access_scope">Berlaku di semua chat Anda.</string>
+    <string name="connector_access_label">Akses untuk %1$s, %2$s</string>
+    <string name="connector_access_allow">Izinkan</string>
+    <string name="connector_access_deny">Tolak</string>
+    <string name="connector_access_always">Selalu</string>
+    <string name="connector_access_expired">Kedaluwarsa</string>
+    <string name="connector_access_under_hour">&lt;1 jam</string>
+    <string name="connector_access_hours">%d jam</string>
+    <string name="connector_access_days">%d hr</string>
+    <string name="connector_access_allow_always">Selalu izinkan</string>
+    <string name="connector_access_allow_hour">Izinkan selama 1 jam</string>
+    <string name="connector_access_allow_day">Izinkan selama 24 jam</string>
+    <string name="connector_access_allow_week">Izinkan selama 7 hari</string>
 </resources>

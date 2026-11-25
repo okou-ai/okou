@@ -25,14 +25,13 @@ export interface ConnectorSourceConnection {
   readonly storageVersion: number;
   readonly needsReconnect: boolean;
   readonly tokenExpiresAt: Date | null;
-  readonly updatedAt: Date;
 }
 /** Custom definition and OAuth binding captured by the bootstrap loader. */
 export interface CustomConnectorSourceBinding {
   readonly definitionAuthMode: CustomConnectorAuthMode;
   readonly definitionStorageVersion: number;
   readonly definitionMcpTransport: CustomConnectorMcpTransport | null;
-  readonly automaticOAuthBindingId: string | null;
+  readonly hasAutomaticOAuthBinding: boolean;
 }
 export interface ConnectorSourceSnapshot {
   readonly source: ConnectorSourceIdentity;
@@ -54,7 +53,7 @@ export interface ConnectorSourceRow extends ConnectorSourceConnection {
   readonly definitionAuthMode: CustomConnectorAuthMode | null;
   readonly definitionStorageVersion: number | null;
   readonly definitionMcpTransport: CustomConnectorMcpTransport | null;
-  readonly automaticOAuthBindingId: string | null;
+  readonly hasAutomaticOAuthBinding: boolean;
 }
 
 export interface ConnectorSourceValues {
@@ -97,7 +96,6 @@ function sourceSnapshot(
       storageVersion: row.storageVersion,
       needsReconnect: row.needsReconnect,
       tokenExpiresAt: row.tokenExpiresAt,
-      updatedAt: row.updatedAt,
     },
     customBinding:
       source.kind === "custom" &&
@@ -107,7 +105,7 @@ function sourceSnapshot(
             definitionAuthMode: row.definitionAuthMode,
             definitionStorageVersion: row.definitionStorageVersion,
             definitionMcpTransport: row.definitionMcpTransport,
-            automaticOAuthBindingId: row.automaticOAuthBindingId,
+            hasAutomaticOAuthBinding: row.hasAutomaticOAuthBinding,
           }
         : null,
     variables: Object.fromEntries(

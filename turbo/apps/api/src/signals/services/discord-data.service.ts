@@ -84,13 +84,20 @@ export function discordBindingFromMemberships(
 }
 
 /** Always ask the identity authority; a cached role cannot revive a binding. */
-function discordMembership(
+export function discordMembership(
   input:
     | { readonly orgId: string; readonly userId: string }
-    | Computed<{ readonly orgId: string; readonly userId: string }>,
+    | Computed<
+        | { readonly orgId: string; readonly userId: string }
+        | null
+        | Promise<{ readonly orgId: string; readonly userId: string } | null>
+      >,
 ) {
   return computed(async (get) => {
-    const binding = "read" in input ? get(input) : input;
+    const binding = "read" in input ? await get(input) : input;
+    if (!binding) {
+      return null;
+    }
     const result = await settle(
       get(clerk$).organizations.getOrganizationMembershipList({
         organizationId: binding.orgId,

@@ -10,6 +10,497 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.127.0](https://github.com/okou-ai/okou/compare/api-v2.126.0...api-v2.127.0) (2026-11-25)
+
+
+### Features
+
+* restart an unresponsive shared browser instance ([#50780](https://github.com/okou-ai/okou/issues/50780)) ([ce2d936](https://github.com/okou-ai/okou/commit/ce2d9360453d9fb4ca063d2a9c9cc2a71b35c4e9))
+
+
+### Bug Fixes
+
+* **api:** allow browser native input from Slack chat runs ([#50810](https://github.com/okou-ai/okou/issues/50810)) ([9ceca37](https://github.com/okou-ai/okou/commit/9ceca377e6ede591b274ba11fe1bf42245af133c))
+* **billing:** unify feedback surveys and one-time rewards ([#50759](https://github.com/okou-ai/okou/issues/50759)) ([44c32b7](https://github.com/okou-ai/okou/commit/44c32b74189f160fe9d3035465970f9a512a5354))
+* **ios:** try google connector universal links before browser authorization ([#50771](https://github.com/okou-ai/okou/issues/50771)) ([9b3c7f0](https://github.com/okou-ai/okou/commit/9b3c7f08e8a1669d118bf367000a4ec0012120c1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.127.0
+    * @okouai/core bumped to 8.878.1
+    * @okouai/db bumped to 2.68.2
+    * @okouai/pi-agent-runtime bumped to 1.52.73
+
+## [2.126.0](https://github.com/okou-ai/okou/compare/api-v2.125.0...api-v2.126.0) (2026-11-25)
+
+
+### Features
+
+* **api:** run official schedules only for recently active owners ([#50775](https://github.com/okou-ai/okou/issues/50775)) ([260dffe](https://github.com/okou-ai/okou/commit/260dffe5585f16f48c7dbd22f682e6ca1819c1a6))
+* **connectors:** support linkedin publishing oauth ([#50774](https://github.com/okou-ai/okou/issues/50774)) ([c63a475](https://github.com/okou-ai/okou/commit/c63a475bf35f4f53a6fa2607576001e81ead0834))
+* deliver opted-in mac app state to the assigned sandbox ([#50748](https://github.com/okou-ai/okou/issues/50748)) ([58beac7](https://github.com/okou-ai/okou/commit/58beac7e0900ba3f87616e7b6068715e2620a0fc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.126.1
+    * @okouai/connectors bumped to 3.25.0
+    * @okouai/core bumped to 8.878.0
+    * @okouai/db bumped to 2.68.1
+    * @okouai/pi-agent-runtime bumped to 1.52.72
+
+## [2.125.0](https://github.com/okou-ai/okou/compare/api-v2.124.1...api-v2.125.0) (2026-11-25)
+
+
+### Features
+
+* **api:** enable suggestions for new accounts after onboarding ([#50749](https://github.com/okou-ai/okou/issues/50749)) ([9478076](https://github.com/okou-ai/okou/commit/9478076996f9e58fd3775f50e3bab7f0a815b187))
+* receive computer use app state on the assigned runner ([#50745](https://github.com/okou-ai/okou/issues/50745)) ([9977243](https://github.com/okou-ai/okou/commit/99772436210306fef0b462d019a9fe57d118ff81))
+
+
+### Bug Fixes
+
+* **billing:** align feedback surveys and share one-time rewards ([#50566](https://github.com/okou-ai/okou/issues/50566)) ([ddf37fc](https://github.com/okou-ai/okou/commit/ddf37fc99d5ab9ee763a6299f597c56241c4224d))
+
+
+### Refactoring
+
+* graduate suggestions into the shared morning brief ([#50746](https://github.com/okou-ai/okou/issues/50746)) ([3a296b9](https://github.com/okou-ai/okou/commit/3a296b93fe3b031bfcf1cb30ce189841198b825f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.126.0
+    * @okouai/core bumped to 8.877.0
+    * @okouai/db bumped to 2.68.0
+    * @okouai/pi-agent-runtime bumped to 1.52.71
+
+## [2.124.1](https://github.com/okou-ai/okou/compare/api-v2.124.0...api-v2.124.1) (2026-11-25)
+
+
+### Bug Fixes
+
+* **api:** send invitation emails to all artifact recipients ([#50727](https://github.com/okou-ai/okou/issues/50727)) ([bb729d8](https://github.com/okou-ai/okou/commit/bb729d87d5a0753e9e7e144a7568357fc1c59fe8))
+
+## [2.124.0](https://github.com/okou-ai/okou/compare/api-v2.123.1...api-v2.124.0) (2026-11-25)
+
+
+### Features
+
+* **cli:** add gated custom domain configuration ([#50696](https://github.com/okou-ai/okou/issues/50696)) ([6792328](https://github.com/okou-ai/okou/commit/679232832d580bf2b7545ed5ab99bb6ed4ce8159))
+* roll out content-aware document output to everyone ([#50706](https://github.com/okou-ai/okou/issues/50706)) ([d7d26cd](https://github.com/okou-ai/okou/commit/d7d26cd3922157848f7adf6d631a2c02f3d3a8fb))
+
+
+### Bug Fixes
+
+* **api:** read flattened openrouter network log fields ([#50714](https://github.com/okou-ai/okou/issues/50714)) ([baaa4d4](https://github.com/okou-ai/okou/commit/baaa4d46ace3f662278e4e5c8e237a17d29ba5b4))
+
+
+### Refactoring
+
+* remove workflow recency sync feature switch ([#50708](https://github.com/okou-ai/okou/issues/50708)) ([edc8bb9](https://github.com/okou-ai/okou/commit/edc8bb96bba57f6e4390bfa3a8905924d1b4b88f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.876.0
+    * @okouai/db bumped to 2.67.4
+    * @okouai/pi-agent-runtime bumped to 1.52.70
+
+## [2.123.1](https://github.com/okou-ai/okou/compare/api-v2.123.0...api-v2.123.1) (2026-11-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.875.0
+    * @okouai/db bumped to 2.67.3
+    * @okouai/pi-agent-runtime bumped to 1.52.69
+
+## [2.123.0](https://github.com/okou-ai/okou/compare/api-v2.122.0...api-v2.123.0) (2026-11-24)
+
+
+### Features
+
+* **connectors:** enable app store connect signing and google play oauth ([#50644](https://github.com/okou-ai/okou/issues/50644)) ([81d115b](https://github.com/okou-ai/okou/commit/81d115b8e1d4d25ff40bfee210859bbd12547927))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.125.0
+    * @okouai/connectors bumped to 3.24.0
+    * @okouai/core bumped to 8.874.0
+    * @okouai/db bumped to 2.67.2
+    * @okouai/pi-agent-runtime bumped to 1.52.68
+
+## [2.122.0](https://github.com/okou-ai/okou/compare/api-v2.121.0...api-v2.122.0) (2026-11-24)
+
+
+### Features
+
+* add first-use presentation format setup ([#50150](https://github.com/okou-ai/okou/issues/50150)) ([0e802ee](https://github.com/okou-ai/okou/commit/0e802ee6b10be62579cc7a5e40f3fc21182a0b15))
+* enable member connector account access for staff ([#50629](https://github.com/okou-ai/okou/issues/50629)) ([d824b76](https://github.com/okou-ai/okou/commit/d824b7647e34b77f0bfb0f6d86049a62d8b5f1d0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.873.0
+    * @okouai/db bumped to 2.67.1
+    * @okouai/pi-agent-runtime bumped to 1.52.67
+
+## [2.121.0](https://github.com/okou-ai/okou/compare/api-v2.120.0...api-v2.121.0) (2026-11-24)
+
+
+### Features
+
+* add subscription-gated custom domains for hosted sites ([#50462](https://github.com/okou-ai/okou/issues/50462)) ([a898459](https://github.com/okou-ai/okou/commit/a8984599f91d9596a3721b0c6d8fa67274c9f985))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.124.0
+    * @okouai/core bumped to 8.872.0
+    * @okouai/db bumped to 2.67.0
+    * @okouai/pi-agent-runtime bumped to 1.52.66
+
+## [2.120.0](https://github.com/okou-ai/okou/compare/api-v2.119.1...api-v2.120.0) (2026-11-24)
+
+
+### Features
+
+* bind internal antigravity sign-in to member profiles ([#50523](https://github.com/okou-ai/okou/issues/50523)) ([ab93ff8](https://github.com/okou-ai/okou/commit/ab93ff8c008746117d5d90211f58425c1f6a0ae8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.123.0
+    * @okouai/core bumped to 8.871.0
+    * @okouai/db bumped to 2.66.0
+    * @okouai/pi-agent-runtime bumped to 1.52.65
+
+## [2.119.1](https://github.com/okou-ai/okou/compare/api-v2.119.0...api-v2.119.1) (2026-11-24)
+
+
+### Performance Improvements
+
+* **api:** trim pending run commit result ([#50572](https://github.com/okou-ai/okou/issues/50572)) ([0bec3de](https://github.com/okou-ai/okou/commit/0bec3de9e9af11512cc04261b844bb2ff365859f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.122.0
+    * @okouai/core bumped to 8.870.2
+    * @okouai/db bumped to 2.65.1
+    * @okouai/pi-agent-runtime bumped to 1.52.64
+
+## [2.119.0](https://github.com/okou-ai/okou/compare/api-v2.118.0...api-v2.119.0) (2026-11-24)
+
+
+### Features
+
+* add member-wide connector account approval ([#50516](https://github.com/okou-ai/okou/issues/50516)) ([ff76d52](https://github.com/okou-ai/okou/commit/ff76d52e21a55cd8f3e34a513e7e5fcfd8ab1e1b))
+* **billing:** allow free workspaces to buy credits ([#50532](https://github.com/okou-ai/okou/issues/50532)) ([f79cdfd](https://github.com/okou-ai/okou/commit/f79cdfde1673397bf7716c1411dd68e8c3020875))
+
+
+### Bug Fixes
+
+* **ios:** discard drafts for unavailable chats ([#50503](https://github.com/okou-ai/okou/issues/50503)) ([4aeac42](https://github.com/okou-ai/okou/commit/4aeac42344c6a9c6a81bbb472d509e04548d8c1d))
+
+
+### Performance Improvements
+
+* **api:** remove redundant connector policy preparation ([#50537](https://github.com/okou-ai/okou/issues/50537)) ([519bc1a](https://github.com/okou-ai/okou/commit/519bc1a711128be1116ecd351babf60f86c15ccc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.121.0
+    * @okouai/core bumped to 8.870.1
+    * @okouai/db bumped to 2.65.0
+    * @okouai/pi-agent-runtime bumped to 1.52.63
+
+## [2.118.0](https://github.com/okou-ai/okou/compare/api-v2.117.1...api-v2.118.0) (2026-11-24)
+
+
+### Features
+
+* **android:** add built-in tool settings ([#50488](https://github.com/okou-ai/okou/issues/50488)) ([728e8ce](https://github.com/okou-ai/okou/commit/728e8ce2a260f26018932353d8c973a552fd6cf7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.120.0
+    * @okouai/core bumped to 8.870.0
+    * @okouai/db bumped to 2.64.2
+    * @okouai/pi-agent-runtime bumped to 1.52.62
+
+## [2.117.1](https://github.com/okou-ai/okou/compare/api-v2.117.0...api-v2.117.1) (2026-11-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.119.0
+    * @okouai/core bumped to 8.869.1
+    * @okouai/db bumped to 2.64.1
+    * @okouai/pi-agent-runtime bumped to 1.52.61
+
+## [2.117.0](https://github.com/okou-ai/okou/compare/api-v2.116.0...api-v2.117.0) (2026-11-24)
+
+
+### Features
+
+* migrate billing feedback to posthog surveys ([#50412](https://github.com/okou-ai/okou/issues/50412)) ([b3c517c](https://github.com/okou-ai/okou/commit/b3c517cd416a26bda272000095c0aa1deafc332e))
+* use saved presentation format for generation ([#50260](https://github.com/okou-ai/okou/issues/50260)) ([ad98aaa](https://github.com/okou-ai/okou/commit/ad98aaa608c934f8eac3325ab079b3ee8fc50dd1))
+
+
+### Refactoring
+
+* **api:** remove staff cutover queue readers ([#49991](https://github.com/okou-ai/okou/issues/49991)) ([3dafb67](https://github.com/okou-ai/okou/commit/3dafb6732b554774fe4673642fc943b3874e1207)) [#46783](https://github.com/okou-ai/okou/issues/46783)
+
+
+### Performance Improvements
+
+* **api:** overlap runner preparation with pending run commit ([#50459](https://github.com/okou-ai/okou/issues/50459)) ([c04f4bf](https://github.com/okou-ai/okou/commit/c04f4bf68d67381de52923c013d8e0cb500d6068))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.118.0
+    * @okouai/core bumped to 8.869.0
+    * @okouai/db bumped to 2.64.0
+    * @okouai/pi-agent-runtime bumped to 1.52.60
+
+## [2.116.0](https://github.com/okou-ai/okou/compare/api-v2.115.0...api-v2.116.0) (2026-11-24)
+
+
+### Features
+
+* **runner:** log managed openrouter routing metadata ([#50392](https://github.com/okou-ai/okou/issues/50392)) ([637a49c](https://github.com/okou-ai/okou/commit/637a49cc6646031aa023c8a631863e88be17ee5d))
+
+
+### Refactoring
+
+* remove artifact name sorting ([#50428](https://github.com/okou-ai/okou/issues/50428)) ([b693ca5](https://github.com/okou-ai/okou/commit/b693ca5a66bab74587596b3971fdc5163f47f352))
+
+
+### Performance Improvements
+
+* **api:** lower runner dispatch gzip threshold to 160 kib ([#50413](https://github.com/okou-ai/okou/issues/50413)) ([74fc1b7](https://github.com/okou-ai/okou/commit/74fc1b78c227e8a8f05d9d6de3f92986030a5bce))
+* **api:** narrow memory startup projections ([#50437](https://github.com/okou-ai/okou/issues/50437)) ([805f349](https://github.com/okou-ai/okou/commit/805f349ee7f455eac7466e1bb7d8a4b93ab0e8e0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.117.0
+    * @okouai/core bumped to 8.868.1
+    * @okouai/db bumped to 2.63.6
+    * @okouai/pi-agent-runtime bumped to 1.52.59
+
+## [2.115.0](https://github.com/okou-ai/okou/compare/api-v2.114.1...api-v2.115.0) (2026-11-24)
+
+
+### Features
+
+* **ios:** add connector management and align chat account controls ([#50371](https://github.com/okou-ai/okou/issues/50371)) ([b6afd7e](https://github.com/okou-ai/okou/commit/b6afd7e2be27cb0356358062dc7bb813200d18f9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.116.0
+    * @okouai/core bumped to 8.868.0
+    * @okouai/db bumped to 2.63.5
+    * @okouai/pi-agent-runtime bumped to 1.52.58
+
+## [2.114.1](https://github.com/okou-ai/okou/compare/api-v2.114.0...api-v2.114.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* **app:** remove standalone template picker ([#50365](https://github.com/okou-ai/okou/issues/50365)) ([6a20b9e](https://github.com/okou-ai/okou/commit/6a20b9e686f663c0f71403cf4d52c6d77820e7a6))
+
+
+### Performance Improvements
+
+* **api:** narrow queue head and memory projections ([#50372](https://github.com/okou-ai/okou/issues/50372)) ([abd2454](https://github.com/okou-ai/okou/commit/abd24544982dc355b67bac959f1f640af7d47523))
+* **api:** prefetch chat follow-ups and batch template sources ([#50375](https://github.com/okou-ai/okou/issues/50375)) ([e91f433](https://github.com/okou-ai/okou/commit/e91f433d6b14dfc6acbb04469b6cf47a93e10556))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.867.1
+    * @okouai/db bumped to 2.63.4
+    * @okouai/pi-agent-runtime bumped to 1.52.57
+
+## [2.114.0](https://github.com/okou-ai/okou/compare/api-v2.113.0...api-v2.114.0) (2026-11-24)
+
+
+### Features
+
+* **artifacts:** add a gated searchable artifact library list ([#50231](https://github.com/okou-ai/okou/issues/50231)) ([2bb0a85](https://github.com/okou-ai/okou/commit/2bb0a8587efb1fc8abc513dba5c50109406226ed))
+* scope composer voice recordings to the organization ([#50373](https://github.com/okou-ai/okou/issues/50373)) ([4e0340a](https://github.com/okou-ai/okou/commit/4e0340a5ffea0390e87b43e77fefdd217abc1cbd))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.115.0
+    * @okouai/core bumped to 8.867.0
+    * @okouai/db bumped to 2.63.3
+    * @okouai/pi-agent-runtime bumped to 1.52.56
+
+## [2.113.0](https://github.com/okou-ai/okou/compare/api-v2.112.1...api-v2.113.0) (2026-11-24)
+
+
+### Features
+
+* add recording chips to chat composers behind a switch ([#50334](https://github.com/okou-ai/okou/issues/50334)) ([7fa55b1](https://github.com/okou-ai/okou/commit/7fa55b15b8286465939af85fe2faeaa1d39a952e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.114.0
+    * @okouai/core bumped to 8.866.0
+    * @okouai/db bumped to 2.63.2
+    * @okouai/pi-agent-runtime bumped to 1.52.55
+
+## [2.112.1](https://github.com/okou-ai/okou/compare/api-v2.112.0...api-v2.112.1) (2026-11-24)
+
+
+### Refactoring
+
+* remove voice messages feature switch ([#50338](https://github.com/okou-ai/okou/issues/50338)) ([35e38a9](https://github.com/okou-ai/okou/commit/35e38a9a333962f7477ff090634b8c38b723f55c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.865.1
+    * @okouai/db bumped to 2.63.1
+    * @okouai/pi-agent-runtime bumped to 1.52.54
+
+## [2.112.0](https://github.com/okou-ai/okou/compare/api-v2.111.1...api-v2.112.0) (2026-11-23)
+
+
+### Features
+
+* archive projects in the chat sidebar ([#50306](https://github.com/okou-ai/okou/issues/50306)) ([8c9f004](https://github.com/okou-ai/okou/commit/8c9f004ac760d95f3f47e8e3fa83d470f2de28c6))
+
+
+### Bug Fixes
+
+* **api:** read subscription oauth client ids from doppler ([#50330](https://github.com/okou-ai/okou/issues/50330)) ([916d81b](https://github.com/okou-ai/okou/commit/916d81b3cb93a6fb0d03dc90ef05b2631fe6a523))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.113.0
+    * @okouai/connectors bumped to 3.23.3
+    * @okouai/core bumped to 8.865.0
+    * @okouai/db bumped to 2.63.0
+    * @okouai/pi-agent-runtime bumped to 1.52.53
+
+## [2.111.1](https://github.com/okou-ai/okou/compare/api-v2.111.0...api-v2.111.1) (2026-11-23)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.864.1
+    * @okouai/db bumped to 2.62.1
+    * @okouai/pi-agent-runtime bumped to 1.52.52
+
+## [2.111.0](https://github.com/okou-ai/okou/compare/api-v2.110.0...api-v2.111.0) (2026-11-23)
+
+
+### Features
+
+* **workflows:** sync recent usage across devices ([#50189](https://github.com/okou-ai/okou/issues/50189)) ([6f67414](https://github.com/okou-ai/okou/commit/6f674143c8776b90c2fbc6410baebbfc02eb4443))
+
+
+### Refactoring
+
+* **api:** remove obsolete agent webhook and telemetry routes ([#50195](https://github.com/okou-ai/okou/issues/50195)) ([2e9ac02](https://github.com/okou-ai/okou/commit/2e9ac02642d6365caa2e1c3da02fe3b15dfa58c1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.112.0
+    * @okouai/core bumped to 8.864.0
+    * @okouai/db bumped to 2.62.0
+    * @okouai/pi-agent-runtime bumped to 1.52.51
+
+## [2.110.0](https://github.com/okou-ai/okou/compare/api-v2.109.0...api-v2.110.0) (2026-11-23)
+
+
+### Features
+
+* persist presentation output format preference ([#50220](https://github.com/okou-ai/okou/issues/50220)) ([c68256f](https://github.com/okou-ai/okou/commit/c68256fc724a9baf19e9c099443be1a2d86b513e))
+
+
+### Bug Fixes
+
+* **api:** repair stale calendar and notion listener accounts ([#50218](https://github.com/okou-ai/okou/issues/50218)) ([fe10a84](https://github.com/okou-ai/okou/commit/fe10a84819276c22396cee7a1de7e31cc3385eb7))
+
+
+### Performance Improvements
+
+* **api:** narrow run startup sql projections ([#50236](https://github.com/okou-ai/okou/issues/50236)) ([42d9ddf](https://github.com/okou-ai/okou/commit/42d9ddf056b6df7bc9d7112e7f95b6034be2cb74))
+* **api:** narrow startup model and plan projections ([#50268](https://github.com/okou-ai/okou/issues/50268)) ([e1d3482](https://github.com/okou-ai/okou/commit/e1d34828328c22ee31c106d806d7b987fb85ed4f))
+* **api:** skip redundant incomplete chat history reads ([#50265](https://github.com/okou-ai/okou/issues/50265)) ([70488be](https://github.com/okou-ai/okou/commit/70488bef11ccc03ceb0251cd895fc9a3878f69a7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.111.0
+    * @okouai/core bumped to 8.863.0
+    * @okouai/db bumped to 2.61.0
+    * @okouai/pi-agent-runtime bumped to 1.52.50
+
 ## [2.109.0](https://github.com/okou-ai/okou/compare/api-v2.108.0...api-v2.109.0) (2026-11-23)
 
 

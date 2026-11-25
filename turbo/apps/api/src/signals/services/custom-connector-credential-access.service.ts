@@ -82,7 +82,6 @@ export interface CustomConnectorCredentialDefinition {
 
 interface CustomConnectorStoredConnection {
   readonly id: string;
-  readonly updatedAt: Date;
   readonly customConnectorId: string;
   readonly storedAuthMethod: string;
   readonly storedStorageVersion: number;
@@ -93,7 +92,7 @@ interface CustomConnectorStoredConnection {
   readonly definitionStorageVersion: number;
   readonly hasAccessToken: boolean;
   readonly hasRefreshToken: boolean;
-  readonly automaticOAuthBindingId: string | null;
+  readonly hasAutomaticOAuthBinding: boolean;
 }
 
 interface ConnectedCustomConnectorConnection {
@@ -134,6 +133,7 @@ interface CustomConnectorRuntimeStorageSnapshot {
 }
 
 export interface CustomConnectorRuntimeStorageRow extends CustomConnectorStoredConnection {
+  readonly updatedAt: Date;
   readonly kind: CustomConnectorRuntimeStorageKind | null;
   readonly key: string | null;
   readonly storedValue: string | null;
@@ -180,10 +180,10 @@ function customConnectorStoredConnectionsSqlParts(args: {
       hasRefreshToken: sql`${customConnectorRefreshTokenSecret.id} IS NOT NULL`
         .mapWith(pgBooleanDecoder)
         .as("has_refresh_token"),
-      automaticOAuthBindingId:
-        sql`${customConnectorAccountOauthBindings.connectorAccountId}`
-          .mapWith(customConnectorAccountOauthBindings.connectorAccountId)
-          .as("automatic_oauth_binding_id"),
+      hasAutomaticOAuthBinding:
+        sql`${customConnectorAccountOauthBindings.connectorAccountId} IS NOT NULL`
+          .mapWith(pgBooleanDecoder)
+          .as("has_automatic_oauth_binding"),
     },
     definitionJoin: and(
       eq(orgCustomConnectors.id, connectors.customConnectorId),
@@ -348,7 +348,7 @@ function customConnectorStoredConnectionHasRequiredMaterial(
     definitionAuthMode: connection.definitionAuthMethod,
     storedAuthMethod: connection.storedAuthMethod,
     hasAccessToken: connection.hasAccessToken,
-    hasAutomaticOAuthBinding: connection.automaticOAuthBindingId !== null,
+    hasAutomaticOAuthBinding: connection.hasAutomaticOAuthBinding,
   });
 }
 
@@ -802,7 +802,7 @@ export function customConnectorRuntimeStorageReadPlan(args: {
     definitionStorageVersion: storedConnections.definitionStorageVersion,
     hasAccessToken: storedConnections.hasAccessToken,
     hasRefreshToken: storedConnections.hasRefreshToken,
-    automaticOAuthBindingId: storedConnections.automaticOAuthBindingId,
+    hasAutomaticOAuthBinding: storedConnections.hasAutomaticOAuthBinding,
     kind: storedValues.kind,
     key: storedValues.key,
     storedValue: storedValues.storedValue,

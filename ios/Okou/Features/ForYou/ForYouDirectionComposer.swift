@@ -1,3 +1,4 @@
+import CCStateSwiftUI
 import ChatData
 import ChatDomain
 import SwiftUI
@@ -13,7 +14,7 @@ final class ForYouDirection {
     self.cardID = cardID
     models = ChatModelSelectionStore(models: workspace.modelStore, threadID: threadID)
     composer = ComposerDraftStore(
-      target: .unassigned, commands: commands,
+      target: .unassigned, commands: commands, graph: workspace.graph,
       didFail: { [weak workspace] in workspace?.reportWorkspaceFailure($0) })
     if let block = composer.editorBlocks.first { composer.requestEditorFocus(block.id) }
   }
@@ -29,23 +30,35 @@ struct ForYouDirectionComposer: View {
   let card: ForYouCard
   let suggestion: ForYouSuggestion
   let workspace: WorkspaceStore
+  /// The confirmed chats for mentions, kept in the workspace session's Store.
+  @ResolvedValue private var threads: [ChatThread]?
+
+  init(
+    direction: ForYouDirection, card: ForYouCard, suggestion: ForYouSuggestion,
+    workspace: WorkspaceStore
+  ) {
+    self.direction = direction
+    self.card = card
+    self.suggestion = suggestion
+    self.workspace = workspace
+    _threads = ResolvedValue(workspace.list.threadsValue)
+  }
 
   var body: some View {
-    @Bindable var composer = direction.composer
+    let composer = direction.composer
     VStack(alignment: .leading, spacing: OkouSpace.xs) {
       ForEach(suggestion.customOption.draft.draftAttachments ?? [], id: \.id) { file in
         Label(file.filename, okouSymbol: "paperclip")
           .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
       }
       ChatComposerView(
-        draft: $composer.text,
         isBusy: workspace.forYou.busy, showsProgress: workspace.forYou.busy,
         canStop: false, needsUpgrade: workspace.needsUpgrade, error: nil,
-        attachmentURL: workspace.webURL, attachments: composer.attachments, draftState: composer,
+        attachmentURL: workspace.webURL, draftState: composer,
         submit: { await workspace.forYou.sendDirection(card, from: direction) }, refresh: nil,
         modelSelection: direction.models, connectorSelection: direction.models.connectors,
-        mentionSource: ComposerMentionSource(threads: workspace.list.threads),
-        workflowSource: workspace.composerWorkflows, quotedSuggestionTitle: suggestion.title,
+        mentionSource: ComposerMentionSource(threads: threads ?? workspace.list.threads),
+        workflowSource: workspace.composerWorkflows, writesDirection: true,
         placeholder: String(localized: "What do you have in mind?")
       )
     }

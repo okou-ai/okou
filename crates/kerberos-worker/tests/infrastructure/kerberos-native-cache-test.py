@@ -46,7 +46,9 @@ set -eu
 context=$(cd -- "$(dirname -- "$0")/../.." && pwd -P)
 fixture_root=${context%/*}
 source "$context.fixture-env"
-env > "$fixture_root/compiler.env"
+if [[ -f "$fixture_root/record-compiler-environment" ]]; then
+  env > "$fixture_root/compiler.env"
+fi
 if [[ ${CACHE_TEST_COMPILE_FAIL:-} == true ]]; then exit 24; fi
 echo compile >> "$fixture_root/compiles"
 while [[ $1 != -o ]]; do shift; done
@@ -84,7 +86,9 @@ class CacheTest(unittest.TestCase):
         configure = ("#!/bin/sh\nset -e\n"
                      f"CACHE_TEST_ROOT={shlex.quote(str(self.root))}\n"
                      'if [ -n "${CONFIG_SITE:-}" ]; then . "$CONFIG_SITE"; fi\n'
-                     'env > configure.env\nmkdir -p include\n'
+                     'if [ -f "$CACHE_TEST_ROOT/record-dependency-environment" ]; then\n'
+                     '  env > configure.env\n'
+                     'fi\nmkdir -p include\n'
                      'if [ "${ac_cv_func_getentropy:-yes}" = yes ]; then\n'
                      '  echo "#define HAVE_GETENTROPY 1" > include/autoconf.h\n'
                      'else echo "/* #undef HAVE_GETENTROPY */" > include/autoconf.h; fi\n')
@@ -93,14 +97,16 @@ class CacheTest(unittest.TestCase):
         self.command("curl", """#!/bin/bash
 set -eu
 while [[ $1 != -o ]]; do url=$1; shift; done
-case "$url" in *ziglang*) name=zig.tar.xz ;; *) name=krb5.tar.gz ;; esac
+case "$url" in */zig-*-linux-0.15.2.tar.xz) name=zig.tar.xz ;; *) name=krb5.tar.gz ;; esac
 exec cp "$CACHE_TEST_ROOT/$name" "$2"
 """)
         self.command("make", f"#!/bin/bash\nfixture_root={shlex.quote(str(self.root))}\n" + """
 set -eu
 if [[ -f "${PWD%/build}.fixture-env" ]]; then source "${PWD%/build}.fixture-env"; fi
 if [[ -f "${PWD%/dependencies/build}.fixture-env" ]]; then source "${PWD%/dependencies/build}.fixture-env"; fi
-env > make.env
+if [[ -f "$fixture_root/record-dependency-environment" ]]; then
+  env > make.env
+fi
 echo "$*" >> "$fixture_root/makes"
 if [[ $4 == util/et && -n ${CACHE_TEST_READY:-} ]]; then
   echo ready > "$CACHE_TEST_READY"
@@ -328,6 +334,7 @@ exec /usr/bin/flock "$@"
                      "ax_cv_check_cflags___Werror": "no", "k5_cv_attr_constructor_destructor": "no,no",
                      "pkg_cv_COM_ERR_LIBS": "foreign", "LIBS": "-lforeign", "DEFCCNAME": "foreign",
                      "with_crypto_impl": "foreign", "MAKEFILES": "foreign", "GNUMAKEFLAGS": "-e"}
+        (self.root / "record-dependency-environment").touch()
         entry = self.run_build(False, extra=overrides)
         with tarfile.open(entry / "libraries.tar.gz") as archive:
             with archive.extractfile("include/autoconf.h") as header:
@@ -500,6 +507,7 @@ exit 73
         log, _ = process.communicate(timeout=15)
         self.assertEqual(process.returncode, 24, log)
         self.assertFalse(list(self.cache.glob("helper-*/complete")))
+        (self.root / "record-compiler-environment").touch()
         self.run_helper(False, extra={"CPATH": "foreign", "ZIG_LIB_DIR": "foreign",
                                       "SOURCE_DATE_EPOCH": "1", "CFLAGS": "foreign"})
         observed = dict(line.split("=", 1) for line in (self.root / "compiler.env").read_text().splitlines())

@@ -42,7 +42,6 @@
     <string name="connector_disconnect">계정 연결 해제</string>
     <string name="connector_disconnect_title">이 계정의 연결을 해제하시겠어요?</string>
     <string name="connector_disconnect_copy">이 계정을 사용하는 채팅과 자동화에서 다른 연결을 선택해야 할 수 있습니다. 다른 계정은 계속 사용할 수 있습니다.</string>
-    <string name="connector_load_when_online">다시 온라인 상태가 되면 콘텐츠를 불러옵니다.</string>
     <string name="connector_loading">커넥터 불러오는 중…</string>
     <string name="connector_loading_accounts">계정 불러오는 중…</string>
     <string name="connector_loading_permissions">권한 불러오는 중…</string>
@@ -52,7 +51,6 @@
     <string name="connector_accounts_failed">계정을 불러오지 못했습니다.</string>
     <string name="connector_permissions_failed">권한을 불러오지 못했습니다.</string>
     <string name="connector_impact_failed">이 계정의 사용 위치를 확인하지 못했습니다.</string>
-    <string name="connector_offline">오프라인</string>
     <string name="connector_network_failed">Okou에 연결할 수 없습니다. 네트워크 연결을 확인한 후 다시 시도하세요.</string>
     <string name="connector_account_unavailable">이 계정은 더 이상 사용할 수 없습니다.</string>
     <string name="connector_unavailable">이 계정을 승인할 수 없습니다.</string>
@@ -102,4 +100,29 @@
     <plurals name="connector_impact_count">
         <item quantity="other">채팅 %d개에서 이 계정을 명시적으로 선택했습니다.</item>
     </plurals>
+    <string name="chat_options_title">채팅 옵션</string>
+    <string name="chat_options_settings">대화 설정</string>
+    <string name="chat_connector_scope">이 채팅에 적용됩니다. 처음에는 워크스페이스의 기본 계정이 사용됩니다.</string>
+    <string name="chat_connector_empty">이 워크스페이스에 연결된 계정이 없습니다.</string>
+    <string name="chat_connector_manage">커넥터 관리</string>
+    <string name="chat_connector_restore_defaults">워크스페이스 기본값 복원</string>
+    <string name="chat_connector_saving">커넥터 선택 저장 중…</string>
+    <string name="chat_connector_save_failed">커넥터 선택을 저장하지 못했습니다.</string>
+    <string name="chat_connector_first_send_failed">커넥터 선택을 적용하지 못했습니다. 채팅 옵션에서 확인한 후 이 메시지를 다시 보내세요.</string>
+    <string name="connector_device_denied">서비스 제공업체가 인증을 거부했습니다.</string>
+    <string name="connector_device_expired">기기 코드가 만료되었습니다. 인증을 다시 시작하세요.</string>
+    <string name="connector_device_failed">기기 인증을 완료하지 못했습니다.</string>
+    <string name="connector_access_scope">모든 채팅에 적용됩니다.</string>
+    <string name="connector_access_label">%1$s 접근 권한, %2$s</string>
+    <string name="connector_access_allow">허용</string>
+    <string name="connector_access_deny">거부</string>
+    <string name="connector_access_always">항상</string>
+    <string name="connector_access_expired">만료됨</string>
+    <string name="connector_access_under_hour">1시간 미만</string>
+    <string name="connector_access_hours">%d시간</string>
+    <string name="connector_access_days">%d일</string>
+    <string name="connector_access_allow_always">항상 허용</string>
+    <string name="connector_access_allow_hour">1시간 동안 허용</string>
+    <string name="connector_access_allow_day">24시간 동안 허용</string>
+    <string name="connector_access_allow_week">7일 동안 허용</string>
 </resources>

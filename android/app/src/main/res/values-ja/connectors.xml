@@ -36,13 +36,12 @@
     <string name="connector_rename">名前を変更</string>
     <string name="connector_rename_title">アカウント名を変更</string>
     <string name="connector_account_name">アカウント名</string>
-    <string name="connector_rename_hint">先頭と末尾の空白は削除されます。最大 %1$d 文字です。</string>
+    <string name="connector_rename_hint">先頭と末尾の空白は削除されます。最大%1$d文字です。</string>
     <string name="connector_rename_required">アカウント名を入力してください。</string>
-    <string name="connector_rename_too_long">アカウント名は %1$d 文字以内で入力してください。</string>
+    <string name="connector_rename_too_long">アカウント名は%1$d文字以内で入力してください。</string>
     <string name="connector_disconnect">アカウントの接続を解除</string>
     <string name="connector_disconnect_title">このアカウントの接続を解除しますか？</string>
     <string name="connector_disconnect_copy">このアカウントを使うチャットや自動化では、別の接続を選ぶ必要がある場合があります。他のアカウントは引き続き利用できます。</string>
-    <string name="connector_load_when_online">オンラインに戻るとコンテンツが読み込まれます。</string>
     <string name="connector_loading">コネクターを読み込み中…</string>
     <string name="connector_loading_accounts">アカウントを読み込み中…</string>
     <string name="connector_loading_permissions">権限を読み込み中…</string>
@@ -52,7 +51,6 @@
     <string name="connector_accounts_failed">アカウントを読み込めませんでした。</string>
     <string name="connector_permissions_failed">権限を読み込めませんでした。</string>
     <string name="connector_impact_failed">このアカウントの利用先を確認できませんでした。</string>
-    <string name="connector_offline">オフライン</string>
     <string name="connector_network_failed">Okou に接続できませんでした。ネットワーク接続を確認して再試行してください。</string>
     <string name="connector_account_unavailable">このアカウントは利用できなくなりました。</string>
     <string name="connector_unavailable">このアカウントは認証できません。</string>
@@ -91,15 +89,40 @@
     <string name="connector_category_meetings">会議とスケジュール</string>
     <string name="connector_category_email">メール</string>
     <plurals name="connector_accounts_count">
-        <item quantity="other">%d 件の保存済みアカウント</item>
+        <item quantity="other">%d件の保存済みアカウント</item>
     </plurals>
     <plurals name="connector_connected_count">
-        <item quantity="other">%d 件のアカウントが接続済み</item>
+        <item quantity="other">%d件のアカウントが接続済み</item>
     </plurals>
     <plurals name="connector_ready_count">
-        <item quantity="other">%d 件のアカウントが利用可能</item>
+        <item quantity="other">%d件のアカウントが利用可能</item>
     </plurals>
     <plurals name="connector_impact_count">
-        <item quantity="other">%d 件のチャットでこのアカウントが明示的に選択されています。</item>
+        <item quantity="other">%d件のチャットでこのアカウントが明示的に選択されています。</item>
     </plurals>
+    <string name="chat_options_title">チャットオプション</string>
+    <string name="chat_options_settings">会話の設定</string>
+    <string name="chat_connector_scope">このチャットに適用されます。初期設定ではワークスペースの既定のアカウントを使用します。</string>
+    <string name="chat_connector_empty">このワークスペースには接続済みのアカウントがありません。</string>
+    <string name="chat_connector_manage">コネクターを管理</string>
+    <string name="chat_connector_restore_defaults">ワークスペースの既定値に戻す</string>
+    <string name="chat_connector_saving">コネクターの選択を保存中…</string>
+    <string name="chat_connector_save_failed">コネクターの選択を保存できませんでした。</string>
+    <string name="chat_connector_first_send_failed">コネクターの選択を適用できませんでした。チャットオプションで確認してから、このメッセージの送信を再試行してください。</string>
+    <string name="connector_device_denied">サービス提供元が認証を拒否しました。</string>
+    <string name="connector_device_expired">デバイスコードの有効期限が切れました。認証をやり直してください。</string>
+    <string name="connector_device_failed">デバイス認証を完了できませんでした。</string>
+    <string name="connector_access_scope">すべてのチャットに適用されます。</string>
+    <string name="connector_access_label">%1$s のアクセス, %2$s</string>
+    <string name="connector_access_allow">許可</string>
+    <string name="connector_access_deny">拒否</string>
+    <string name="connector_access_always">常に</string>
+    <string name="connector_access_expired">期限切れ</string>
+    <string name="connector_access_under_hour">1時間未満</string>
+    <string name="connector_access_hours">%d時間</string>
+    <string name="connector_access_days">%d日</string>
+    <string name="connector_access_allow_always">常に許可</string>
+    <string name="connector_access_allow_hour">1時間許可</string>
+    <string name="connector_access_allow_day">24時間許可</string>
+    <string name="connector_access_allow_week">7日間許可</string>
 </resources>

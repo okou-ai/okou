@@ -60,7 +60,6 @@ final class ForYouStore {
   var notice: Notice?
   private(set) var handled: [Handled] = []
   private(set) var direction: ForYouDirection?
-  private var artworkByID: [String: String] = [:]
 
   var current: ForYouCard? { cards.indices.contains(position) ? cards[position] : nil }
   var summary: Computed<Task<Bool, Error>> { resources.forYouSummary }
@@ -88,10 +87,6 @@ final class ForYouStore {
       let result = try await resources.loadForYou()
       try Task.checkCancellation()
       if let direction, !result.contains(where: { $0.id == direction.cardID }) { closeDirection() }
-      let illustrations = ["ForYouReader", "ForYouBridge", "ForYouWay"]
-      for card in result where artworkByID[card.id] == nil {
-        artworkByID[card.id] = illustrations[artworkByID.count % illustrations.count]
-      }
       cards = result
       position = previous.flatMap { id in result.firstIndex { $0.id == id } } ?? 0
       loaded = true
@@ -100,12 +95,10 @@ final class ForYouStore {
     } catch { self.error = error.localizedDescription }
   }
 
-  func illustration(for card: ForYouCard) -> String? { artworkByID[card.id] }
-
-  func move(_ offset: Int) {
-    guard !busy, cards.count > 1 else { return }
-    direction?.composer.editor.dismissKeyboard()
-    position = (position + offset + cards.count) % cards.count
+  /// The pager came to rest on a card.
+  func show(_ id: String) {
+    guard let index = cards.firstIndex(where: { $0.id == id }), index != position else { return }
+    position = index
     error = nil
   }
 
@@ -215,6 +208,21 @@ final class ForYouStore {
     return openChat && error == nil
   }
 
+  /// Opens the input at once when its chat needs no check: a new chat, or one the list already
+  /// holds. False leaves an unknown chat to `openDirection`, which checks it first.
+  func openListedDirection(_ card: ForYouCard) -> Bool {
+    guard case .suggestion(let suggestion) = card.content, let workspace else { return false }
+    let target = suggestion.customOption.threadId
+    guard target == nil || workspace.list.threads.contains(where: { $0.id == target }) else {
+      return false
+    }
+    guard !busy, current?.id == card.id, !workspace.isClosed else { return true }
+    closeDirection()
+    direction = ForYouDirection(
+      cardID: card.id, threadID: target, commands: commands, workspace: workspace)
+    return true
+  }
+
   func openDirection(_ card: ForYouCard) async {
     guard case .suggestion(let suggestion) = card.content, let workspace else { return }
     await perform {
@@ -274,16 +282,13 @@ final class ForYouStore {
   {
     if let selection = selections[card.id] {
       guard selection.optionID == optionID && selection.direction == direction
-      else {
-        throw ChatError.invalidContract(
-          String(localized: "Retry the previous action to confirm its result."))
-      }
+      else { throw ForYouUnconfirmedChoice() }
       return selection
     }
     let attempt = Selection(
       cardID: card.id, optionID: optionID, direction: direction,
       model: models.flatMap { $0.models.configuration == nil ? nil : $0.selection },
-      effort: models?.requestedEffort, options: models?.connectors.pendingOptions,
+      effort: models?.requestedEffort, options: models?.connectors.submissionOptions,
       computerAccess: models?.connectors.currentComputerAccess)
     selections[card.id] = attempt
     return attempt
@@ -355,6 +360,15 @@ final class ForYouStore {
     } catch is CancellationError {} catch {
       self.error = error.localizedDescription
     }
+  }
+}
+
+/// An earlier choice on a card has no confirmed result yet: only choosing it again can tell
+/// whether it went through, so nothing else on the card starts until then. The banner says just
+/// that, not that chat data is unreadable.
+private struct ForYouUnconfirmedChoice: LocalizedError {
+  var errorDescription: String? {
+    String(localized: "Retry the previous action to confirm its result.")
   }
 }
 

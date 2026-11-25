@@ -30,14 +30,7 @@ async fn foreground_target_and_cheap_background_watermarks_remain_independent() 
             available_bytes: 70 * GIB,
             ..FsStats::default()
         });
-        let device = std::fs::metadata(f.cache.home_image_cache_dir())
-            .unwrap()
-            .dev();
-        let demand = f
-            .cache
-            .reclaim_home_image_headroom(device, 51 * GIB, reclamation_deadline())
-            .await
-            .unwrap();
+        let demand = f.cache.reclaim_foreground_for_test(51 * GIB).await.unwrap();
         assert_eq!(demand.status, HomeCacheReclaimStatus::TargetSatisfied);
         assert_eq!(f.cache.gc_root_scan_count(), 0);
         assert!(f.image("home", &committed).exists());

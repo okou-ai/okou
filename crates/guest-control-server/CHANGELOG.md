@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.24.151](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.150...guest-control-server-v0.24.151) (2026-11-25)
+
+## [0.24.150](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.149...guest-control-server-v0.24.150) (2026-11-24)
+
+
+### Refactoring
+
+* **guest-control:** share fixed helper capture startup ([#50642](https://github.com/okou-ai/okou/issues/50642)) ([1f5da48](https://github.com/okou-ai/okou/commit/1f5da4856d184af3b838dfcfd1d48fcf2275536c))
+
+## [0.24.149](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.148...guest-control-server-v0.24.149) (2026-11-24)
+
+## [0.24.148](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.147...guest-control-server-v0.24.148) (2026-11-24)
+
+## [0.24.147](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.146...guest-control-server-v0.24.147) (2026-11-24)
+
 ## [0.24.146](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.145...guest-control-server-v0.24.146) (2026-11-23)
 
 

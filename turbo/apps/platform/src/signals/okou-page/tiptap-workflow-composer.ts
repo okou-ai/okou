@@ -1,4 +1,8 @@
 import {
+  createVoicePlayer,
+  type VoicePlayer,
+} from "../chat-page/voice-player.ts";
+import {
   createProjectMentionNode,
   projectMentionText,
 } from "./composer-project-mention-node.ts";
@@ -80,6 +84,7 @@ import {
 } from "./workflow-composer-domain.ts";
 import {
   PROJECT_MENTION_NODE_NAME,
+  VOICE_CLIP_NODE_NAME,
   CHAT_THREAD_MENTION_NODE_NAME,
   createEditorDocumentSnapshot,
   draftToEditorDoc,
@@ -90,7 +95,6 @@ import {
   type EditorDocumentSnapshot,
 } from "./user-message-document-codec.ts";
 import { composerWorkflows$ } from "./composer-workflows.ts";
-import type { OpenTemplatePickerDialogCommand } from "./chat-composer.ts";
 import { reloadWorkflowData$ } from "../workflows-page/workflow-reload.ts";
 import { i18n } from "../../i18n/index.ts";
 
@@ -215,7 +219,14 @@ export interface WorkflowComposerSubmissionSnapshot {
   readonly editorDocument: EditorDocumentSnapshot;
 }
 
+export interface ComposerVoiceChip {
+  readonly key: string;
+  readonly dom: HTMLSpanElement;
+  readonly player: VoicePlayer;
+}
+
 export interface WorkflowComposerSignals {
+  readonly voiceChips$: Computed<readonly ComposerVoiceChip[]>;
   readonly editor: Editor;
   readonly setContainerRef$: Command<
     (() => void) | undefined,
@@ -241,7 +252,7 @@ export interface WorkflowComposerSignals {
   readonly slashWorkflowsExpanded$: Computed<boolean>;
   /** The open menu's inner height when its workflows were revealed. */
   readonly slashWorkflowsExpandedHeight$: Computed<number | null>;
-  readonly recentWorkflowIds$: Computed<readonly string[]>;
+  readonly recentWorkflowIds$: Computed<Promise<readonly string[]>>;
   readonly expandSlashWorkflows$: Command<void, []>;
   /** The composer edge the open slash menu hugs: the half its `/` is in. */
   readonly slashMenuSide$: Computed<SlashMenuSide>;
@@ -266,10 +277,7 @@ export interface WorkflowComposerSignals {
     void,
     [GenerationTemplateRequest, ComposerTemplateAttachment]
   >;
-  readonly openTemplatePicker$: Command<
-    void,
-    [OpenComposerTemplatePickerIntent]
-  >;
+  readonly insertVoiceClip$: Command<void, [string]>;
   readonly insertText$: Command<void, [string]>;
   readonly readVoiceContext$: Command<VoiceIoEditorContext, []>;
   readonly selectOrAppendText$: Command<void, [string]>;
@@ -283,20 +291,6 @@ export interface WorkflowComposerSignals {
   >;
   readonly feedback: ComposerFeedbackSignals;
 }
-
-export type OpenComposerTemplatePickerIntent =
-  | {
-      readonly kind: "insert";
-      readonly category: string;
-      /** A shelf preview dismisses back to the shelf, not the picker gallery. */
-      readonly directPreview?: boolean;
-    }
-  | {
-      readonly kind: "edit-selected";
-      readonly category: string;
-      readonly position: number;
-    }
-  | { readonly kind: "edit-legacy"; readonly category: string };
 
 export type ComposerTemplateAttachmentType =
   | "custom"
@@ -374,10 +368,7 @@ const COMPOSER_INLINE_REFERENCE_CLASS = inlineReferenceVariants({
   className: "max-w-full select-none whitespace-nowrap",
 });
 
-/**
- * Same reference surface, with padding and interaction feedback owned by the
- * inner template action.
- */
+/** A selected template is a reference, not a second template browser. */
 const INLINE_TEMPLATE_CHIP_CLASS = inlineReferenceVariants({
   selectable: true,
   padding: "none",
@@ -386,10 +377,7 @@ const INLINE_TEMPLATE_CHIP_CLASS = inlineReferenceVariants({
 });
 
 const INLINE_TEMPLATE_NAME_ZONE_CLASS =
-  "flex h-full min-w-0 items-center gap-1.5 px-2 text-foreground " +
-  "transition-colors hover:bg-state-hover active:bg-state-selected " +
-  "focus-visible:outline-none focus-visible:ring-1 " +
-  "focus-visible:ring-inset focus-visible:ring-ring/50";
+  "flex h-full min-w-0 items-center gap-1.5 px-2 text-foreground";
 
 interface ChatThreadMentionAttributes {
   readonly threadId: string;
@@ -454,6 +442,83 @@ function createChatThreadMentionNodeView(node: ProseMirrorNode): NodeView {
       return true;
     },
   };
+}
+
+function voiceClipLabel() {
+  return i18n.t(($) => {
+    return $.chat.messageDocument.voice;
+  });
+}
+
+function createVoiceClipNode(runtime: WorkflowComposerRuntime) {
+  return Node.create({
+    name: VOICE_CLIP_NODE_NAME,
+    group: "inline",
+    inline: true,
+    atom: true,
+    addAttributes() {
+      return { fileId: { default: null } };
+    },
+    parseHTML() {
+      return [
+        {
+          tag: "span[data-voice-clip]",
+          getAttrs: (element) => {
+            return { fileId: element.dataset.voiceClip };
+          },
+        },
+      ];
+    },
+    renderHTML({ node }) {
+      const fileId: unknown = node.attrs.fileId;
+      return ["span", { "data-voice-clip": fileId }, voiceClipLabel()];
+    },
+    renderText: voiceClipLabel,
+    addNodeView() {
+      return ({ node }) => {
+        const fileId: unknown = node.attrs.fileId;
+        if (typeof fileId !== "string") {
+          throw new Error("Voice clip file ID is missing");
+        }
+        const dom = document.createElement("span");
+        dom.dataset.voiceClip = fileId;
+        dom.className = inlineReferenceVariants({
+          selectable: true,
+          padding: "none",
+          className:
+            "max-w-full select-none gap-0 overflow-hidden whitespace-nowrap",
+        });
+        dom.contentEditable = "false";
+        const chip: ComposerVoiceChip = {
+          dom,
+          key: crypto.randomUUID(),
+          player: createVoicePlayer([{ fileId }]),
+        };
+        runtime.setVoiceChipMounted?.(chip, true);
+        return {
+          dom,
+          destroy() {
+            runtime.setVoiceChipMounted?.(chip, false);
+          },
+          selectNode() {
+            dom.dataset.selected = "";
+          },
+          deselectNode() {
+            delete dom.dataset.selected;
+          },
+          stopEvent(event) {
+            return (
+              event.target instanceof Element &&
+              event.target.closest("button") !== null
+            );
+          },
+          ignoreMutation() {
+            return true;
+          },
+        };
+      };
+    },
+  });
 }
 
 const ChatThreadMentionNode = Node.create({
@@ -868,39 +933,6 @@ function templateAttachmentNodeAttributes(
   };
 }
 
-function templateAttachmentPreviewLabel(
-  attachment: ComposerTemplateAttachment,
-): string {
-  if (attachment.type === "workflow") {
-    return i18n.t(
-      ($) => {
-        return $.chat.templates.previewWorkflow;
-      },
-      {
-        title: attachment.title,
-      },
-    );
-  }
-  if (attachment.type === "website") {
-    return i18n.t(
-      ($) => {
-        return $.chat.templates.previewWebsite;
-      },
-      {
-        title: attachment.title,
-      },
-    );
-  }
-  return i18n.t(
-    ($) => {
-      return $.chat.templates.previewTemplate;
-    },
-    {
-      title: attachment.title,
-    },
-  );
-}
-
 function templateAttachmentRemoveLabel(
   attachment: ComposerTemplateAttachment,
 ): string {
@@ -972,7 +1004,6 @@ function templateAttachmentTypeLabel(
 
 function createTemplateAttachmentNodeView(
   node: ProseMirrorNode,
-  openTemplate: (category: string) => void,
   removeTemplate: () => void,
   localizedUi: Set<() => void>,
 ): NodeView {
@@ -986,12 +1017,8 @@ function createTemplateAttachmentNodeView(
     "inline-flex h-8 max-w-full items-center gap-1 rounded-lg border " +
     "border-border/80 bg-background/90 pl-1 pr-1 text-foreground " +
     "shadow-[0_1px_2px_rgba(15,23,42,0.05)]";
-  const openButton = document.createElement("button");
-  openButton.type = "button";
-  openButton.className =
-    "flex min-w-0 items-center gap-2 rounded-md px-1 py-1 " +
-    "transition-colors hover:bg-muted focus-visible:outline-none " +
-    "focus-visible:ring-2 focus-visible:ring-ring";
+  const name = document.createElement("span");
+  name.className = "flex min-w-0 items-center gap-2 px-1 py-1";
   const iconContainer = document.createElement("span");
   iconContainer.className =
     "flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden " +
@@ -1002,7 +1029,7 @@ function createTemplateAttachmentNodeView(
   divider.className = "h-3.5 w-px shrink-0 bg-divider/70";
   const titleText = document.createElement("span");
   titleText.className = "min-w-0 truncate text-xs font-medium";
-  openButton.append(iconContainer, typeText, divider, titleText);
+  name.append(iconContainer, typeText, divider, titleText);
 
   const removeButton = document.createElement("button");
   removeButton.type = "button";
@@ -1014,16 +1041,12 @@ function createTemplateAttachmentNodeView(
   removeButton.append(
     createComposerIcon(14, 1.8, ["M18 6l-12 12", "M6 6l12 12"]),
   );
-  chip.append(openButton, removeButton);
+  chip.append(name, removeButton);
   dom.append(chip);
 
   let currentNode = node;
   function localize(): void {
     const attachment = templateAttachmentNodeAttributes(currentNode);
-    openButton.setAttribute(
-      "aria-label",
-      templateAttachmentPreviewLabel(attachment),
-    );
     const removeLabel = templateAttachmentRemoveLabel(attachment);
     removeButton.setAttribute("aria-label", removeLabel);
     typeText.textContent = templateAttachmentTypeLabel(attachment.type);
@@ -1050,9 +1073,6 @@ function createTemplateAttachmentNodeView(
       iconContainer.append(icon);
     }
   }
-  openButton.addEventListener("click", () => {
-    openTemplate(templateAttachmentNodeAttributes(currentNode).category);
-  });
   removeButton.addEventListener("click", removeTemplate);
   localizedUi.add(localize);
   render(currentNode);
@@ -1081,20 +1101,8 @@ function createTemplateAttachmentNodeView(
   };
 }
 
-/**
- * A template chip names the template and nothing else. Every text-to-video
- * parameter is owned by the run now and is set from the composer's own
- * settings chip, so there is no second zone to edit here.
- */
-interface InlineTemplateNodeActions {
-  readonly openTemplate: (category: string) => void;
-}
-
-function createInlineTemplateNodeView(
-  node: ProseMirrorNode,
-  actions: InlineTemplateNodeActions,
-  localizedUi: Set<() => void>,
-): NodeView {
+/** A template reference whose selection and deletion belong to the editor. */
+function createInlineTemplateNodeView(node: ProseMirrorNode): NodeView {
   const dom = document.createElement("span");
   dom.dataset.composerInlineTemplate = "";
   dom.className = INLINE_TEMPLATE_CHIP_CLASS;
@@ -1102,9 +1110,8 @@ function createInlineTemplateNodeView(
   dom.style.outline = "none";
   dom.style.userSelect = "none";
 
-  const openButton = document.createElement("button");
-  openButton.type = "button";
-  openButton.className = INLINE_TEMPLATE_NAME_ZONE_CLASS;
+  const name = document.createElement("span");
+  name.className = INLINE_TEMPLATE_NAME_ZONE_CLASS;
   // The template was chosen from a grid of covers, so the chip leads with that
   // cover. 18px inside this
   // 28px chip keeps the cover at the proportion the block template-attachment
@@ -1116,9 +1123,7 @@ function createInlineTemplateNodeView(
   const cover = document.createElement("img");
   cover.alt = "";
   cover.className = "h-full w-full object-cover";
-  // Mirrors Lucide's SwatchBook, which the composer template picker button and
-  // sent-message template chips also use. It stands in whenever the template's
-  // catalog entry carries no cover image.
+  // Mirrors the sent-message template chip's SwatchBook when no cover exists.
   const icon = createComposerIcon(13, 1.7, [
     "M11 17a4 4 0 0 1-8 0V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2Z",
     "M16.7 13H19a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H7",
@@ -1129,15 +1134,14 @@ function createInlineTemplateNodeView(
   const title = document.createElement("span");
   title.className =
     "min-w-0 select-none truncate text-[13px] font-medium text-foreground";
-  openButton.append(glyph, title);
-  dom.append(openButton);
+  name.append(glyph, title);
+  dom.append(name);
 
   let currentNode = node;
   function render(nextNode: ProseMirrorNode): void {
     const attachment = templateAttachmentNodeAttributes(nextNode);
     title.textContent = attachment.title;
-    // The node is rewritten in place when the picker changes the selection, so
-    // the cover has to follow the new attributes rather than only the first.
+    // The cover follows replacements made through the editor selection.
     const coverUrl = attachment.previewImageUrl;
     if (coverUrl === undefined) {
       glyph.replaceChildren(icon);
@@ -1145,22 +1149,7 @@ function createInlineTemplateNodeView(
       cover.src = coverUrl;
       glyph.replaceChildren(cover);
     }
-    openButton.setAttribute(
-      "aria-label",
-      templateAttachmentPreviewLabel(attachment),
-    );
   }
-  // The zone labels are localized, so a locale switch has to re-render the
-  // chip rather than only refresh its labels.
-  function localize(): void {
-    render(currentNode);
-  }
-  openButton.addEventListener("click", () => {
-    actions.openTemplate(
-      templateAttachmentNodeAttributes(currentNode).category,
-    );
-  });
-  localizedUi.add(localize);
   render(currentNode);
 
   return {
@@ -1179,16 +1168,8 @@ function createInlineTemplateNodeView(
     deselectNode() {
       delete dom.dataset.selected;
     },
-    stopEvent(event) {
-      return (
-        event.target instanceof globalThis.Node && dom.contains(event.target)
-      );
-    },
     ignoreMutation() {
       return true;
-    },
-    destroy() {
-      localizedUi.delete(localize);
     },
   };
 }
@@ -1406,6 +1387,9 @@ function valueToWorkflowComposerDoc(value: string): JSONContent {
 }
 
 function composerLeafText(node: ProseMirrorNode): string {
+  if (node.type.name === VOICE_CLIP_NODE_NAME) {
+    return voiceClipLabel();
+  }
   if (node.type.name === PROJECT_MENTION_NODE_NAME) {
     return projectMentionText(node);
   }
@@ -1619,12 +1603,14 @@ function workflowHighlightStorage(editor: Editor): WorkflowHighlightStorage {
 }
 
 interface WorkflowComposerRuntime {
+  readonly voiceChips$: State<readonly ComposerVoiceChip[]>;
+  readonly setVoiceChipMounted$: Command<void, [ComposerVoiceChip, boolean]>;
+  setVoiceChipMounted?: (chip: ComposerVoiceChip, mounted: boolean) => void;
   update(editor: Editor): void;
   selectionUpdate(editor: Editor): void;
   focus(editor: Editor): void;
   pointerUp(editor: Editor): void;
   blur(event: FocusEvent): void;
-  openTemplate(intent: OpenComposerTemplatePickerIntent): void;
   removeTemplate(): void;
   replaceFeedbackItems(items: readonly FeedbackItem[]): void;
   removeFeedback(id: number): void;
@@ -1663,9 +1649,6 @@ function createTemplateAttachmentNode(
       return ({ node }) => {
         return createTemplateAttachmentNodeView(
           node,
-          (category) => {
-            runtime.openTemplate({ kind: "edit-legacy", category });
-          },
           () => {
             runtime.removeTemplate();
           },
@@ -1676,9 +1659,7 @@ function createTemplateAttachmentNode(
   });
 }
 
-function createInlineTemplateNode(
-  runtime: WorkflowComposerRuntime,
-): Node<undefined, unknown> {
+function createInlineTemplateNode(): Node<undefined, unknown> {
   return Node.create({
     name: INLINE_TEMPLATE_NODE_NAME,
     group: "inline",
@@ -1708,23 +1689,8 @@ function createInlineTemplateNode(
       return `Select ${attachment.title} ${attachment.type} template`;
     },
     addNodeView() {
-      return ({ node, getPos }) => {
-        const openTemplate = (category: string): void => {
-          const position = getPos();
-          if (typeof position !== "number") {
-            return;
-          }
-          runtime.openTemplate({
-            kind: "edit-selected",
-            category,
-            position,
-          });
-        };
-        return createInlineTemplateNodeView(
-          node,
-          { openTemplate },
-          runtime.localizedUi,
-        );
+      return ({ node }) => {
+        return createInlineTemplateNodeView(node);
       };
     },
   });
@@ -1785,10 +1751,11 @@ function createWorkflowEditor(runtime: WorkflowComposerRuntime): Editor {
     extensions: [
       ...createWorkflowComposerBaseExtensions(),
       createTemplateAttachmentNode(runtime),
-      createInlineTemplateNode(runtime),
+      createInlineTemplateNode(),
       createFeedbackItemNode(runtime),
       createProjectMentionNode(),
       ChatThreadMentionNode,
+      createVoiceClipNode(runtime),
       WorkflowHighlight,
       UrlHighlight,
     ],
@@ -1941,12 +1908,12 @@ function refreshWorkflowComposerLocalization(
 }
 
 function resetMountedWorkflowRuntime(runtime: WorkflowComposerRuntime): void {
+  delete runtime.setVoiceChipMounted;
   runtime.update = () => {};
   runtime.selectionUpdate = () => {};
   runtime.focus = () => {};
   runtime.pointerUp = () => {};
   runtime.blur = () => {};
-  runtime.openTemplate = () => {};
   runtime.removeTemplate = () => {};
   runtime.replaceFeedbackItems = () => {};
   runtime.removeFeedback = () => {};
@@ -2268,7 +2235,6 @@ interface MountEditorOptions {
     typeof createLegacyTemplateAttachmentControls
   >;
   templateSelection: ReturnType<typeof createTemplateSelectionSignals>;
-  openTemplatePicker$: WorkflowComposerSignals["openTemplatePicker$"];
   caretIndex$: State<number>;
   mountComposition$: Command<void, [AbortSignal]>;
   editorInteractionActiveState$: State<boolean>;
@@ -2377,7 +2343,6 @@ function createMountEditorCommand({
   runtime,
   legacyTemplateAttachment,
   templateSelection,
-  openTemplatePicker$,
   caretIndex$,
   mountComposition$,
   editorInteractionActiveState$,
@@ -2392,6 +2357,9 @@ function createMountEditorCommand({
   const removeFeedback$ = createRemoveFeedbackCommand(editor, draft, feedback);
   return onRef(
     command(async ({ get, set }, element: HTMLElement, signal: AbortSignal) => {
+      runtime.setVoiceChipMounted = (chip, mounted) => {
+        set(runtime.setVoiceChipMounted$, chip, mounted);
+      };
       runtime.update = (updatedEditor) => {
         set(legacyTemplateAttachment.sync$);
         set(templateSelection.sync$);
@@ -2434,13 +2402,6 @@ function createMountEditorCommand({
       };
       runtime.removeFeedback = (id) => {
         set(removeFeedback$, id);
-      };
-      runtime.openTemplate = (intent) => {
-        set(openTemplatePicker$, intent);
-        // A chip button lives inside the editing host, so the caret owns the
-        // picker's focus return. Space and Enter activate a native button, and
-        // a chip that kept focus would reopen the picker instead of editing.
-        editor.view.focus();
       };
       runtime.removeTemplate = () => {
         set(legacyTemplateAttachment.remove$);
@@ -2491,6 +2452,7 @@ function createMountEditorCommand({
       signal.addEventListener("abort", () => {
         compositionGate.cancel(signal.reason);
         resetMountedWorkflowRuntime(runtime);
+        set(runtime.voiceChips$, []);
         set(legacyTemplateAttachment.reset$);
         set(draft.setInputSyncTarget$, null);
         set(previewSuggestionIndexState$, null);
@@ -2655,6 +2617,21 @@ function createInsertTextCommands(editor: Editor) {
 
   return {
     readVoiceContext$,
+    insertVoiceClip$: command((_context, fileId: string) => {
+      const doc = editor.state.doc;
+      const clip = { type: VOICE_CLIP_NODE_NAME, attrs: { fileId } };
+      const lastIsParagraph = doc.lastChild?.type.name === "paragraph";
+      const position = doc.content.size - (lastIsParagraph ? 1 : 0);
+      editor
+        .chain()
+        .focus()
+        .insertContentAt(
+          position,
+          lastIsParagraph ? clip : { type: "paragraph", content: [clip] },
+        )
+        .scrollIntoView()
+        .run();
+    }),
     insertText$,
     insertPromptMarkdown$,
     ...createPromptTextCommands(editor),
@@ -2797,54 +2774,14 @@ function inlineTemplateNode(
   });
 }
 
-function replaceLegacyTemplateAttachmentNode(
-  editor: Editor,
-  inlineTemplate: ProseMirrorNode,
-): boolean {
-  const located = locateTemplateAttachment(editor.state.doc);
-  if (!located) {
-    return false;
-  }
-  const transaction = editor.state.tr.delete(
-    located.position,
-    located.position + located.node.nodeSize,
-  );
-  const nextNode = transaction.doc.nodeAt(located.position);
-  if (nextNode?.type.name === "paragraph") {
-    transaction.insert(located.position + 1, inlineTemplate);
-  } else {
-    transaction.insert(
-      located.position,
-      editor.schema.nodeFromJSON({
-        type: "paragraph",
-        content: [inlineTemplate.toJSON()],
-      }),
-    );
-  }
-  editor.view.dispatch(transaction.scrollIntoView());
-  return true;
-}
-
-function createInsertTemplateCommand(
-  editor: Editor,
-  draft: DraftSignals,
-  legacyReplacementPending$: State<boolean>,
-) {
+function createInsertTemplateCommand(editor: Editor) {
   return command(
     (
-      { get, set },
+      _,
       request: GenerationTemplateRequest,
       attachment: ComposerTemplateAttachment,
     ) => {
       const node = inlineTemplateNode(editor, request, attachment);
-      const replaceLegacy = get(legacyReplacementPending$);
-      set(legacyReplacementPending$, false);
-      if (replaceLegacy) {
-        set(draft.setGenerationTemplate$, undefined);
-        if (replaceLegacyTemplateAttachmentNode(editor, node)) {
-          return;
-        }
-      }
       const { selection } = editor.state;
       if (
         selection instanceof NodeSelection &&
@@ -2867,83 +2804,11 @@ function createInsertTemplateCommand(
   );
 }
 
-/**
- * Rewrites one inline template in place, addressed by position rather than by
- * the editor selection. setNodeMarkup maps a NodeSelection to a TextSelection,
- * so a selection-based update only works once; every later edit would fall
- * through to inserting another chip.
- */
-function createPrepareTemplateInsertionCommand(editor: Editor) {
-  return command(() => {
-    const { selection } = editor.state;
-    if (
-      selection instanceof NodeSelection &&
-      selection.node.type.name === INLINE_TEMPLATE_NODE_NAME
-    ) {
-      editor.commands.setTextSelection(selection.to);
-    }
-  });
-}
-
-function createReadSelectedTemplateCommand(editor: Editor) {
-  return command(() => {
-    const { selection } = editor.state;
-    if (
-      !(selection instanceof NodeSelection) ||
-      selection.node.type.name !== INLINE_TEMPLATE_NODE_NAME
-    ) {
-      return undefined;
-    }
-    const parsed = generationTemplateRequestSchema.safeParse(
-      selection.node.attrs.template,
-    );
-    return parsed.success ? parsed.data : undefined;
-  });
-}
-
-function createTemplateCommands(
-  editor: Editor,
-  draft: DraftSignals,
-  openTemplatePickerDialog$: OpenTemplatePickerDialogCommand,
-) {
-  const legacyReplacementPending$ = state(false);
-  const readSelectedTemplate$ = createReadSelectedTemplateCommand(editor);
-  const prepareTemplateInsertion$ =
-    createPrepareTemplateInsertionCommand(editor);
-  const openTemplatePicker$ = command(
-    ({ get, set }, intent: OpenComposerTemplatePickerIntent): void => {
-      set(legacyReplacementPending$, intent.kind === "edit-legacy");
-      let referenceValue: GenerationTemplateRequest | null = null;
-      if (intent.kind === "edit-selected") {
-        editor.commands.setNodeSelection(intent.position);
-        referenceValue = set(readSelectedTemplate$) ?? null;
-      } else if (intent.kind === "edit-legacy") {
-        referenceValue = get(draft.generationTemplate$) ?? null;
-      }
-      if (intent.kind === "insert") {
-        set(prepareTemplateInsertion$);
-      }
-      set(openTemplatePickerDialog$, {
-        category: intent.category,
-        referenceValue,
-        directPreview: intent.kind === "insert" && intent.directPreview,
-      });
-    },
-  );
-  return {
-    insertTemplate$: createInsertTemplateCommand(
-      editor,
-      draft,
-      legacyReplacementPending$,
-    ),
-    openTemplatePicker$,
-  };
-}
-
 function createInsertUserMessageCommand(editor: Editor) {
   return command((_context, value: UserMessageDocument) => {
     const insertableParts = value.parts.filter((part) => {
       return (
+        part.type === "voice" ||
         part.type === "text" ||
         part.type === "chat_thread" ||
         part.type === "feedback" ||
@@ -3000,13 +2865,28 @@ function createWorkflowComposerRuntime(
     suggestionContext: SuggestionContext | null,
   ) => string,
 ): WorkflowComposerRuntime {
+  const voiceChips$ = state<readonly ComposerVoiceChip[]>([]);
+  const setVoiceChipMounted$ = command(
+    ({ get, set }, chip: ComposerVoiceChip, mounted: boolean) => {
+      const chips = get(voiceChips$);
+      set(
+        voiceChips$,
+        mounted
+          ? [...chips, chip]
+          : chips.filter((item) => {
+              return item !== chip;
+            }),
+      );
+    },
+  );
   return {
+    voiceChips$,
+    setVoiceChipMounted$,
     update(_editor: Editor): void {},
     selectionUpdate(_editor: Editor): void {},
     focus(_editor: Editor): void {},
     pointerUp(_editor: Editor): void {},
     blur(_event: FocusEvent): void {},
-    openTemplate(_intent: OpenComposerTemplatePickerIntent): void {},
     removeTemplate(): void {},
     replaceFeedbackItems(_items: readonly FeedbackItem[]): void {},
     removeFeedback(_id: number): void {},
@@ -3146,12 +3026,8 @@ function createActiveSlashRange(
   });
 }
 
-function createTemplateSignals(
-  editor: Editor,
-  draft: DraftSignals,
-  openDialog$: OpenTemplatePickerDialogCommand,
-) {
-  const commands = createTemplateCommands(editor, draft, openDialog$);
+function createTemplateSignals(editor: Editor, draft: DraftSignals) {
+  const commands = { insertTemplate$: createInsertTemplateCommand(editor) };
   const legacy = createLegacyTemplateAttachmentControls(editor, draft);
   const selection = createTemplateSelectionSignals(
     editor,
@@ -3296,7 +3172,6 @@ function createSlashExpansionSignals(
 
 export function createWorkflowComposerSignals(
   draft: DraftSignals,
-  openDialog$: OpenTemplatePickerDialogCommand,
   options: WorkflowComposerOptions = {},
   feedback: ComposerFeedbackModel = createComposerFeedbackModel(),
 ): WorkflowComposerSignals {
@@ -3325,7 +3200,7 @@ export function createWorkflowComposerSignals(
     editor,
     draft.hasInput$,
   );
-  const templates = createTemplateSignals(editor, draft, openDialog$);
+  const templates = createTemplateSignals(editor, draft);
   const activeSlashRange$ = createActiveSlashRange(
     editor,
     caretIndex$,
@@ -3358,7 +3233,6 @@ export function createWorkflowComposerSignals(
     runtime,
     legacyTemplateAttachment: templates.legacy,
     templateSelection: templates.selection,
-    openTemplatePicker$: templates.commands.openTemplatePicker$,
     caretIndex$,
     mountComposition$,
     editorInteractionActiveState$,
@@ -3383,10 +3257,17 @@ export function createWorkflowComposerSignals(
   );
   return {
     editor,
+    voiceChips$: computed((get) => {
+      return get(runtime.voiceChips$);
+    }),
     setContainerRef$,
     focus$,
     hasInput$: computed((get) => {
-      return get(draft.hasInput$) || get(feedback.active$);
+      return (
+        get(draft.hasInput$) ||
+        get(runtime.voiceChips$).length > 0 ||
+        get(feedback.active$)
+      );
     }),
     hasTemplateAttachment$: templates.legacy.active$,
     templateRequests$: templates.selection.requests$,

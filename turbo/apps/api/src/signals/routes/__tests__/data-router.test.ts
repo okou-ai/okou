@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import {
   dataRouterHistoryContract,
-  dataRouterRequestContract,
   runDataRouterRequestContract,
 } from "@okouai/api-contracts/contracts/data-router";
 import { DATA_ROUTER_PROTOCOL_VERSION } from "@okouai/api-contracts/contracts/data-router-tools";
@@ -293,7 +292,7 @@ describe("Data Router accounting when a run ends", () => {
     await accept(register(otherOrg, otherOrgId), [200]);
     await accept(
       setupApp({ context, routes: webhooksAgentDataRequestRoutes })(
-        dataRouterRequestContract,
+        runDataRouterRequestContract,
       ).register({
         headers: other.headers,
         body: { runId: own.runId, requestId: randomUUID() },

@@ -321,6 +321,10 @@ const ROUTE_CONFIG = [
     setup: setupAuthPageWrapper(setupStandaloneChatApprovalPage$),
   },
   {
+    path: ROUTES.connectorAccountMemberApproval,
+    setup: setupAuthPageWrapper(setupStandaloneChatApprovalPage$),
+  },
+  {
     path: ROUTES.bankingConnectReturnResult,
     setup: setupBankingConnectReturnPage$,
   },

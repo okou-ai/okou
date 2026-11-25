@@ -10,7 +10,7 @@ import later_parking_report as later
 import pressure_report as pressure
 import report
 import status_evidence
-from cleanup_report import COUNTS, accounting, has_accounting_shape, supplied_policy
+from cleanup_report import COUNTS, accounting, exact_coverage, has_accounting_shape, supplied_policy
 from report import exact
 
 PREFIX = "NATIVE_BATCH_REPLACEMENT_WITNESS "
@@ -30,19 +30,16 @@ def covered(value, policy):
             or not policy["tail_growth_bytes"] <= state["cleanup_growth_bytes"]
             <= policy["tail_growth_bytes"] + policy["live_growth_bytes"]):
         raise ValueError("replacement released saving or unused old claims")
-    exact(value, {"allocated": [4,8192,2], "accounting": state,
-                  "original_lease_active": True, "io_release_withheld": True},
-          "replacement lost either full lease or accepted IO")
+    exact_coverage(value, [4, 8192, 2], state,
+                   "replacement lost either full lease or accepted IO")
 
 
 def validate(directory, cases=CASES, policy_key="native_batch_replacement_policy_json"):
     directory = pathlib.Path(directory)
     result, collector, terminals = report._validate_cases(directory, cases, report.PHASES)
     policy = supplied_policy(collector, result, policy_key)
-    witnesses = {case: [] for case in cases}
-    report.collect_witnesses(
-        directory / 'stdout.log', {PREFIX: witnesses},
-        case_matches=lambda value: value in cases,
+    witnesses = report.collect_case_witnesses(
+        directory / 'stdout.log', PREFIX, cases,
         invalid_message="invalid replacement witness",
     )
     identities = {e[1][k] for e in terminals.values() for k in ("sandbox_id", "backing_generation")}
@@ -56,9 +53,10 @@ def validate(directory, cases=CASES, policy_key="native_batch_replacement_policy
         identity = report.witness_identity(terminal[1])
         if report.witness_identity_changed(events, identity):
             raise ValueError("replacement changed the original physical owner")
-        ordered = [terminal[1],events[0],terminal[2],terminal[3],*events[1:4],terminal[4],*events[4:],terminal[5]]
-        report.validate_witness_clock_order(
-            ordered, "replacement original saving/old refusal/new recovery order changed")
+        report.validate_terminal_witness_clock_order(
+            terminal, events, tail_start_index=1, tail_end_index=4,
+            message="replacement original saving/old refusal/new recovery order changed",
+        )
         blocked, tail, pool, progress, saved, waiting, refused, retired, joined = [e["evidence"] for e in events]
         path = blocked.get("status_path")
         status_evidence.claim_status_path(path, paths, "replacement private status path changed")
@@ -120,9 +118,10 @@ def validate(directory, cases=CASES, policy_key="native_batch_replacement_policy
         if not status_evidence.status_wait_advanced(before, after):
             raise ValueError("replacement final status wait not observed")
         second = foreground.heartbeat(waiting.get("heartbeat"),2,polled,events[5]["monotonic_ns"])
-        if first != second or first in runners:
-            raise ValueError("replacement heartbeat runner replayed")
-        runners.add(first)
+        foreground.claim_heartbeat_identity(
+            first, (second,), runners,
+            "replacement heartbeat runner replayed",
+        )
         samples = waiting.get("samples")
         observation_report.paired_fresh_reads(
             samples, policy, events[0]["monotonic_ns"], events[5]["monotonic_ns"]

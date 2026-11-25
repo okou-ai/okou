@@ -16,6 +16,7 @@ import {
 
 import type { DeviceAuthSessionPublication } from "./model-provider-device-session-publication";
 
+import { subscriptionOAuthClientId } from "./subscription-oauth-client-id";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import {
@@ -46,7 +47,6 @@ import {
 
 const CODEX_DEVICE_AUTH_ISSUER = "https://auth.openai.com";
 const CODEX_DEVICE_AUTH_API_BASE_URL = `${CODEX_DEVICE_AUTH_ISSUER}/api/accounts`;
-const CODEX_DEVICE_AUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 const CODEX_DEVICE_AUTH_VERIFICATION_URL = `${CODEX_DEVICE_AUTH_ISSUER}/codex/device`;
 const CODEX_DEVICE_AUTH_REDIRECT_URI = `${CODEX_DEVICE_AUTH_ISSUER}/deviceauth/callback`;
 const CODEX_DEVICE_AUTH_SESSION_TTL_SECONDS = 15 * 60;
@@ -548,7 +548,9 @@ async function requestOpenAiDeviceUserCode(
       fetch(`${CODEX_DEVICE_AUTH_API_BASE_URL}/deviceauth/usercode`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ client_id: CODEX_DEVICE_AUTH_CLIENT_ID }),
+        body: JSON.stringify({
+          client_id: subscriptionOAuthClientId("CODEX_OAUTH_CLIENT_ID"),
+        }),
       }),
       [200],
     ),
@@ -663,7 +665,7 @@ async function exchangeOpenAiAuthorizationCode(
           grant_type: "authorization_code",
           code: args.authorizationCode,
           redirect_uri: CODEX_DEVICE_AUTH_REDIRECT_URI,
-          client_id: CODEX_DEVICE_AUTH_CLIENT_ID,
+          client_id: subscriptionOAuthClientId("CODEX_OAUTH_CLIENT_ID"),
           code_verifier: args.codeVerifier,
         }),
       }),

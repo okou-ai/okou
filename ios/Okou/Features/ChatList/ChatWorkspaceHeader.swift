@@ -1,3 +1,4 @@
+import CCStateSwiftUI
 import ChatDomain
 import SwiftUI
 
@@ -10,7 +11,35 @@ struct ChatWorkspaceHeader: View {
   let openSidebar: () -> Void
 
   var body: some View {
-    let hasUnread = store.list.hasUnreadThreads
+    StoreProvider(store.sidebar.stateStore) {
+      ChatWorkspaceHeaderContent(store: store, height: height, openSidebar: openSidebar)
+        .id(ObjectIdentifier(store))
+    }
+  }
+}
+
+private struct ChatWorkspaceHeaderContent: View {
+  let store: WorkspaceStore
+  let height: CGFloat
+  let openSidebar: () -> Void
+  @LoadableValue private var unreadThreads: Loadable<Bool>
+  /// The selected chat, kept in the workspace session's Store.
+  @ResolvedValue private var selection: String??
+
+  init(store: WorkspaceStore, height: CGFloat, openSidebar: @escaping () -> Void) {
+    self.store = store
+    self.height = height
+    self.openSidebar = openSidebar
+    _unreadThreads = LoadableValue(store.sidebar.hasUnreadThreads)
+    _selection = ResolvedValue(store.selectedThreadValue)
+  }
+
+  private var hasUnread: Bool {
+    if case .hasData(true) = unreadThreads { return true }
+    return false
+  }
+
+  var body: some View {
     HStack(spacing: OkouSpace.sm) {
       if let sharing = store.selectedConversation?.sharing, sharing.isSelecting {
         Text("\(sharing.selectedCount) selected").font(.okou(.headline))
@@ -33,7 +62,7 @@ struct ChatWorkspaceHeader: View {
         .accessibilityValue(hasUnread ? Text("Unread") : Text(verbatim: ""))
         .accessibilityIdentifier("open-sidebar")
         Spacer(minLength: OkouSpace.sm)
-        if let threadID = store.selectedThreadID {
+        if let threadID = selection ?? store.selectedThreadID {
           ChatThreadMoreButton(store: store, threadID: threadID)
         }
       }

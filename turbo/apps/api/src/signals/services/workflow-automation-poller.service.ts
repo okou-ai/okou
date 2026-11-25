@@ -1,5 +1,4 @@
 import { automationWorkflowJoinCondition } from "./workflow-visibility";
-import { selectDueMorningBriefWorkflow$ } from "./morning-brief-workflow-selection.service";
 import { workflowAutomationSnapshot } from "./workflow-automation-snapshot";
 import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
@@ -45,7 +44,9 @@ import { buildWorkflowScheduleAutomationBrief } from "./workflow-automation-brie
 import {
   deferWorkflowSchedule$,
   skipExpiredWorkflowSchedule$,
+  skipInactiveOwnerSchedule$,
 } from "./workflow-schedule-expiry.service";
+import { officialScheduleOwnerIsActive$ } from "./official-schedule-activity.service";
 import {
   preRunFailureFromError,
   recordPreRunFailure$,
@@ -387,6 +388,7 @@ type PollCounters = {
   executed: number;
   skipped: number;
   expired: number;
+  inactiveOwner: number;
   oldestExpiredAnchorAgeMs: number;
 };
 
@@ -577,6 +579,42 @@ const skipExpiredDueRow$ = command(
   },
 );
 
+/**
+ * Official schedules run at the platform's expense, so their owner must have
+ * started a manual Run recently. Departed and paused owners keep the checks
+ * that run first; a concurrently claimed occurrence continues normally.
+ */
+const skipInactiveOwnerDueRow$ = command(
+  async (
+    { set },
+    row: DueWorkflowAutomationRow,
+    currentTime: Date,
+    counters: PollCounters,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const { automation } = row;
+    if (
+      automation.officialBlueprintKey === null ||
+      (await set(
+        officialScheduleOwnerIsActive$,
+        { orgId: automation.orgId, userId: automation.ownerUserId },
+        currentTime,
+        signal,
+      )) ||
+      !(await set(
+        skipInactiveOwnerSchedule$,
+        { automation, at: currentTime },
+        signal,
+      ))
+    ) {
+      return false;
+    }
+    counters.inactiveOwner++;
+    counters.skipped++;
+    return true;
+  },
+);
+
 export const executeDueWorkflowAutomations$ = command(
   async ({ set }, signal: AbortSignal): Promise<ExecuteResult> => {
     const currentTime = nowDate();
@@ -585,11 +623,11 @@ export const executeDueWorkflowAutomations$ = command(
       executed: 0,
       skipped: 0,
       expired: 0,
+      inactiveOwner: 0,
       oldestExpiredAnchorAgeMs: 0,
     };
 
-    for (const original of rows) {
-      let row = original;
+    for (const row of rows) {
       if (await set(retireDepartedOwner$, row, currentTime, signal)) {
         counters.skipped++;
         continue;
@@ -608,6 +646,11 @@ export const executeDueWorkflowAutomations$ = command(
         continue;
       }
       if (await set(skipExpiredDueRow$, row, counters, signal)) {
+        continue;
+      }
+      if (
+        await set(skipInactiveOwnerDueRow$, row, currentTime, counters, signal)
+      ) {
         continue;
       }
 
@@ -635,22 +678,6 @@ export const executeDueWorkflowAutomations$ = command(
         scheduledAnchorAt !== null &&
         (await set(isCanonicalMorningBriefAutomation$, row.automation, signal));
       signal.throwIfAborted();
-      if (journaled) {
-        const selected = await set(
-          selectDueMorningBriefWorkflow$,
-          {
-            automation: row.automation,
-            workflowName: row.workflowName,
-          },
-          signal,
-        );
-        if (!selected) {
-          counters.skipped++;
-          continue;
-        }
-        row = { ...row, ...selected };
-      }
-
       const claimed =
         journaled || recurringScheduleClaim || proactiveKind === "learning"
           ? row.automation

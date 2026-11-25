@@ -14,9 +14,11 @@ import org.junit.Test
 
 class SignedTransferClientTest {
     @Test
-    fun streamedSignedReadPreservesTheServerRetryDeadline() = runTest {
+    fun signedReadsPreserveValidServerRetryDelays() = runTest {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setResponseCode(429).setHeader("Retry-After", "20"))
+            server.enqueue(MockResponse().setResponseCode(503).setHeader("Retry-After", "1"))
+            server.enqueue(MockResponse().setResponseCode(503).setHeader("Retry-After", "-1"))
             SignedTransferClient().use { transfers ->
                 val failure =
                     failure<ApiFailure.Http> {
@@ -24,6 +26,13 @@ class SignedTransferClientTest {
                     }
                 assertEquals(429, failure.status)
                 assertEquals(20L, failure.retryAfterSeconds)
+                val retryAfter =
+                    failure<ApiFailure.Http> { transfers.download(server.url("/preview"), 32) }
+                assertEquals(503, retryAfter.status)
+                assertEquals(1L, retryAfter.retryAfterSeconds)
+                val invalidRetryAfter =
+                    failure<ApiFailure.Http> { transfers.download(server.url("/preview"), 32) }
+                assertNull(invalidRetryAfter.retryAfterSeconds)
             }
         }
     }

@@ -9,7 +9,7 @@ import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { desktopVersionIsSupported } from "../../lib/desktop-version";
 
 import { command, computed, type Computed } from "ccstate";
-import { object, uuid } from "zod";
+import { object, string, uuid } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { desktopShellAuthorizations } from "@okouai/db/schema/desktop-shell-authorization";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -32,6 +32,7 @@ import {
   sql,
 } from "drizzle-orm";
 import {
+  DIRECT_APP_STATE_CAPABILITY,
   desktopShellKindSchema,
   isExpiredScreenshotPointer,
   isStoredScreenshotPointer,
@@ -52,6 +53,11 @@ import {
 } from "@okouai/db/schema/computer-use-host";
 
 import { desktopMinimumSupportedVersion } from "../../lib/desktop-compatibility";
+import {
+  currentAppStateTransfer$,
+  signAppStateUpload,
+  selectAppStateTransfer$,
+} from "./computer-use-app-state-transfer.service";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
@@ -141,6 +147,7 @@ type CreateComputerUseCommandResult =
       readonly status: "created";
       readonly commandId: string;
       readonly commandStatus: "queued";
+      readonly directAppState?: true;
       readonly notifyHosts: readonly ComputerUseCommandNotificationHost[];
     }
   | { readonly status: "no_host" }
@@ -194,7 +201,9 @@ type ClaimNextComputerUseHostCommandResult =
   | { readonly status: "idle" }
   | {
       readonly status: "command";
-      readonly command: ReturnType<typeof serializeCommand>;
+      readonly command: ReturnType<typeof serializeCommand> & {
+        appStateUpload?: ReturnType<typeof signAppStateUpload>;
+      };
     };
 
 type CompleteComputerUseHostCommandParams = ComputerUseHostAuthority &
@@ -1518,13 +1527,51 @@ export const notifyQueuedComputerUseCommand$ = command(
   },
 );
 
-export const createComputerUseCommand$ = command(
+const availableCommandHosts$ = command(
   async (
     { get, set },
+    params: { readonly orgId: string; readonly userId: string },
+    now: Date,
+    signal: AbortSignal,
+  ) => {
+    const hosts = await get(db$)
+      .select()
+      .from(computerUseHosts)
+      .where(
+        and(
+          eq(computerUseHosts.orgId, params.orgId),
+          eq(computerUseHosts.userId, params.userId),
+          isNull(computerUseHosts.revokedAt),
+        ),
+      )
+      .orderBy(desc(computerUseHosts.lastSeenAt));
+    signal.throwIfAborted();
+    const availability = await joinAll(
+      hosts.map((host) => {
+        return set(computerUseHostIsOnline$, host, now, signal);
+      }),
+    );
+    signal.throwIfAborted();
+    return {
+      hasHosts: hosts.length > 0,
+      onlineHosts: hosts.filter((_, index) => {
+        return availability[index];
+      }),
+    };
+  },
+);
+
+export const createComputerUseCommand$ = command(
+  async (
+    { set },
     params: {
       readonly orgId: string;
       readonly userId: string;
       readonly runId?: string;
+      readonly appStateRunner?: {
+        readonly runnerId: string;
+        readonly heartbeatGeneration: number;
+      };
       readonly targetHostId?: string;
       readonly kind: ComputerUseCommandKind;
       readonly payload: ComputerUseCommandPayload;
@@ -1550,31 +1597,16 @@ export const createComputerUseCommand$ = command(
     }
     const db = set(writeDb$);
     const now = nowDate();
-    const hosts = await get(db$)
-      .select()
-      .from(computerUseHosts)
-      .where(
-        and(
-          eq(computerUseHosts.orgId, params.orgId),
-          eq(computerUseHosts.userId, params.userId),
-          isNull(computerUseHosts.revokedAt),
-        ),
-      )
-      .orderBy(desc(computerUseHosts.lastSeenAt));
-    signal.throwIfAborted();
-    if (hosts.length === 0) {
-      return { status: "no_host" };
-    }
-
-    const availability = await joinAll(
-      hosts.map((host) => {
-        return set(computerUseHostIsOnline$, host, now, signal);
-      }),
+    const { hasHosts, onlineHosts } = await set(
+      availableCommandHosts$,
+      params,
+      now,
+      signal,
     );
     signal.throwIfAborted();
-    const onlineHosts = hosts.filter((_, index) => {
-      return availability[index];
-    });
+    if (!hasHosts) {
+      return { status: "no_host" };
+    }
     const payload = commandPayload(params.payload);
     const target = resolveComputerUseCommandTargets({
       onlineHosts,
@@ -1585,10 +1617,23 @@ export const createComputerUseCommand$ = command(
       return target;
     }
 
+    const host = onlineHosts.find((candidate) => {
+      return candidate.id === target.targetHostId;
+    });
+    if (params.kind === "app.state" && params.appStateRunner) {
+      const transfer = await set(
+        selectAppStateTransfer$,
+        params,
+        host,
+        params.appStateRunner,
+        signal,
+      );
+      signal.throwIfAborted();
+      if (transfer) {
+        payload.directAppState = transfer;
+      }
+    }
     if (params.kind.startsWith("shell.")) {
-      const host = onlineHosts.find((candidate) => {
-        return candidate.id === target.targetHostId;
-      });
       const permission = host && shellPermissionId(host);
       if (!permission) {
         return { status: "host_unsupported" };
@@ -1639,6 +1684,7 @@ export const createComputerUseCommand$ = command(
       status: "created",
       commandId: row.id,
       commandStatus: "queued",
+      ...(payload.directAppState ? { directAppState: true as const } : {}),
       notifyHosts: target.notifyHosts,
     };
   },
@@ -1884,6 +1930,57 @@ const refreshComputerUseClaimAdvertisement$ = command(
  * partial unique index on running commands per host is what keeps one host
  * from running two commands when two polls race.
  */
+const serializeClaimedComputerUseCommand$ = command(
+  async (
+    { set },
+    updated: ComputerUseCommandRow,
+    host: ComputerUseHostRow,
+    params: ComputerUseHostAuthority & {
+      readonly supportedCapabilities: readonly string[];
+    },
+    signal: AbortSignal,
+  ): Promise<ClaimNextComputerUseHostCommandResult> => {
+    const claimedCommand = serializeCommand(updated, host.displayName);
+    if (updated.payload.directAppState !== undefined) {
+      const grant =
+        updated.runId &&
+        params.supportedCapabilities.includes(DIRECT_APP_STATE_CAPABILITY)
+          ? await set(
+              currentAppStateTransfer$,
+              updated.runId,
+              updated.id,
+              signal,
+            )
+          : null;
+      signal.throwIfAborted();
+      if (!grant || !updated.runId) {
+        await set(
+          completeComputerUseHostCommand$,
+          {
+            ...params,
+            commandId: updated.id,
+            status: "failed",
+            error: {
+              code: "permission_denied",
+              message: "Direct app state delivery is unavailable",
+            },
+          },
+          signal,
+        );
+        return { status: "idle" };
+      }
+      return {
+        status: "command",
+        command: {
+          ...claimedCommand,
+          appStateUpload: signAppStateUpload(grant, updated.runId, updated.id),
+        },
+      };
+    }
+    return { status: "command", command: claimedCommand };
+  },
+);
+
 export const claimNextComputerUseHostCommand$ = command(
   async (
     { get, set },
@@ -2009,10 +2106,13 @@ export const claimNextComputerUseHostCommand$ = command(
     if (!updated) {
       return { status: "idle" };
     }
-    return {
-      status: "command",
-      command: serializeCommand(updated, host.displayName),
-    };
+    return set(
+      serializeClaimedComputerUseCommand$,
+      updated,
+      host,
+      params,
+      signal,
+    );
   },
 );
 
@@ -2126,6 +2226,62 @@ function logComputerUseCompletionSanitization(
   });
 }
 
+const prepareComputerUseCompletion$ = command(
+  async (
+    { set },
+    host: ComputerUseHostRow,
+    params: CompleteComputerUseHostCommandParams,
+    direct: boolean,
+    signal: AbortSignal,
+  ) => {
+    let nulCharacterCount = 0;
+    let keyCollisionCount = 0;
+    let storedResult: ComputerUseCommandResult | null = null;
+    let suppliedError: ComputerUseCommandError | null = null;
+    if (params.status === "succeeded" && direct) {
+      const receipt = object({
+        snapshotId: uuid(),
+        sha256: string().regex(/^[0-9a-f]{64}$/),
+      })
+        .strict()
+        .safeParse(params.result);
+      if (receipt.success) {
+        storedResult = receipt.data;
+      } else {
+        suppliedError = {
+          code: "invalid_arguments",
+          message: "Invalid direct app state receipt",
+        };
+      }
+    } else if (params.status === "succeeded") {
+      const sanitizedResult = sanitizeComputerUseJsonRecord(params.result);
+      nulCharacterCount = sanitizedResult.nulCharacterCount;
+      keyCollisionCount = sanitizedResult.keyCollisionCount;
+      storedResult = await set(
+        offloadScreenshotForResult$,
+        {
+          owner: host,
+          commandId: params.commandId,
+          result: sanitizedResult.value,
+        },
+        signal,
+      );
+    } else {
+      const sanitizedMessage = sanitizeComputerUseJsonString(
+        params.error.message,
+      );
+      nulCharacterCount = sanitizedMessage.nulCharacterCount;
+      suppliedError = { ...params.error, message: sanitizedMessage.value };
+    }
+    return {
+      storedResult,
+      suppliedError,
+      nulCharacterCount,
+      keyCollisionCount,
+    };
+  },
+);
+
 /**
  * Completion runs without a transaction or locks: plain reads of the host and
  * command, the S3 offload, then one compare-and-set on `status = 'running'`.
@@ -2145,7 +2301,10 @@ export const completeComputerUseHostCommand$ = command(
       return { status: "invalid_connection" };
     }
     const [commandRow] = await get(db$)
-      .select({ status: computerUseCommands.status })
+      .select({
+        status: computerUseCommands.status,
+        payload: computerUseCommands.payload,
+      })
       .from(computerUseCommands)
       .where(
         and(
@@ -2170,30 +2329,19 @@ export const completeComputerUseHostCommand$ = command(
       return { status: "not_running" };
     }
 
-    let nulCharacterCount = 0;
-    let keyCollisionCount = 0;
-    let storedResult: ComputerUseCommandResult | null = null;
-    let suppliedError: ComputerUseCommandError | null = null;
-    if (params.status === "succeeded") {
-      const sanitizedResult = sanitizeComputerUseJsonRecord(params.result);
-      nulCharacterCount = sanitizedResult.nulCharacterCount;
-      keyCollisionCount = sanitizedResult.keyCollisionCount;
-      storedResult = await set(
-        offloadScreenshotForResult$,
-        {
-          owner: host,
-          commandId: params.commandId,
-          result: sanitizedResult.value,
-        },
-        signal,
-      );
-    } else {
-      const sanitizedMessage = sanitizeComputerUseJsonString(
-        params.error.message,
-      );
-      nulCharacterCount = sanitizedMessage.nulCharacterCount;
-      suppliedError = { ...params.error, message: sanitizedMessage.value };
-    }
+    const {
+      storedResult,
+      suppliedError,
+      nulCharacterCount,
+      keyCollisionCount,
+    } = await set(
+      prepareComputerUseCompletion$,
+      host,
+      params,
+      commandRow.payload.directAppState !== undefined,
+      signal,
+    );
+    signal.throwIfAborted();
     const storageError = commandErrorFromResult(storedResult);
     const completedAt = nowDate();
     const finalError = storageError ?? suppliedError;

@@ -23,6 +23,8 @@ final class ConnectorAuthorizationFlow: Identifiable {
   var browserClosed = false
   var pollInterval: Double = 2
   var operatedID: String?
+  // Once recovery opens the form, keep it mounted through a retry.
+  var presentsForm = true
   init(action: ChatConnectorAction, status: ChatConnectorStatus) {
     self.action = action
     self.status = status
@@ -31,6 +33,18 @@ final class ConnectorAuthorizationFlow: Identifiable {
       .id ?? ""
   }
   var method: ChatConnectorMethod? { status.builtin?.authMethods.first { $0.id == methodID } }
+  var availableMethods: [ChatConnectorMethod] {
+    status.builtin?.authMethods.filter { $0.grantKind != "managed" } ?? []
+  }
+  var supportsProviderApplication: Bool {
+    status.target == .builtin("strava") && method?.id == "oauth"
+      && method?.grantKind == "auth-code"
+  }
+  var startsWithoutForm: Bool {
+    needsConnection && availableMethods.count == 1 && method?.grantKind == "auth-code"
+      && method?.manualFields.isEmpty == true && method?.startOptions.isEmpty == true
+      && status.builtin?.connectNotice == nil && !supportsProviderApplication
+  }
   var usesSystemAuthenticationSession: Bool { session?.oauthAttemptId != nil }
   var waiting: Bool { session != nil }
   var isExternalCode: Bool { method?.grantKind == "external-code" && waiting }
@@ -115,7 +129,13 @@ final class ConnectorActionStore {
         notices[action.id] = nil
         // The attempt pins its shared read across cache eviction and native row recycling.
         activeRead = read
-        active = ConnectorAuthorizationFlow(action: action, status: status)
+        let flow = ConnectorAuthorizationFlow(action: action, status: status)
+        active = flow
+        if flow.startsWithoutForm, flow.canSubmit {
+          flow.presentsForm = false
+          flow.busy = true
+          await performSubmission(flow)
+        }
       } catch {
         guard !closed, !Task.isCancelled else { return }
         activationError = ChatRequestFailure.message(for: error)
@@ -129,69 +149,71 @@ final class ConnectorActionStore {
     task?.cancel()
     task = Task { [weak self, weak flow] in
       guard let self, let flow else { return }
-      defer { flow.busy = false }
-      do {
-        guard let current = try await service.status(flow.action) else {
-          throw APIClientError.http(status: 404, message: "This action is no longer available.")
-        }
-        try check(flow)
-        guard current.target == flow.status.target else { throw APIClientError.invalidResponse }
-        if let id = flow.operatedID {
-          try await accept(id, flow: flow)
-          return
-        }
-        guard
-          current.mutationConnectionID?.lowercased()
-            == flow.status.mutationConnectionID?.lowercased()
-        else {
-          throw APIClientError.http(
-            status: 409, message: "The connector account changed. Close this card and refresh.")
-        }
-        if case .select = flow.action.kind {
-          try await service.select(flow.action, status: current)
-          try await finish(flow)
-          return
-        }
-        let reconnect: Bool
-        switch flow.action.kind {
-        case .reconnect, .configuration: reconnect = true
-        default: reconnect = false
-        }
-        if current.connected && !reconnect && flow.session == nil {
-          try await finish(flow)
-          return
-        }
-        if flow.isExternalCode,
-          let receipt = flow.session, let slug = current.target.connectorSlug
-        {
-          guard flow.expiresAt.map({ $0 > Date() }) == true else {
-            throw APIClientError.http(
-              status: 410, message: "Authorization expired. Close this card and try again.")
-          }
-          let result = try await service.completeSession(
-            slug: slug, receipt: receipt,
-            code: flow.code.trimmingCharacters(in: .ecmaScriptWhitespace))
-          flow.code = ""
-          try check(flow)
-          try await accept(result.operatedID, flow: flow)
-          return
-        }
-        try await startAuthorization(flow, status: current)
-      } catch is CancellationError {
-      } catch {
-        guard active === flow, !closed else { return }
-        flow.error = ChatRequestFailure.message(for: error)
-        didFail(error)
+      await performSubmission(flow)
+    }
+  }
+  private func performSubmission(_ flow: ConnectorAuthorizationFlow) async {
+    defer { flow.busy = false }
+    do {
+      guard let current = try await service.status(flow.action) else {
+        throw APIClientError.http(status: 404, message: "This action is no longer available.")
       }
+      try check(flow)
+      guard current.target == flow.status.target else { throw APIClientError.invalidResponse }
+      if let id = flow.operatedID {
+        try await accept(id, flow: flow)
+        return
+      }
+      guard
+        current.mutationConnectionID?.lowercased()
+          == flow.status.mutationConnectionID?.lowercased()
+      else {
+        throw APIClientError.http(
+          status: 409, message: "The connector account changed. Close this card and refresh.")
+      }
+      if case .select = flow.action.kind {
+        try await service.select(flow.action, status: current)
+        try await finish(flow)
+        return
+      }
+      let reconnect: Bool
+      switch flow.action.kind {
+      case .reconnect, .configuration: reconnect = true
+      default: reconnect = false
+      }
+      if current.connected && !reconnect && flow.session == nil {
+        try await finish(flow)
+        return
+      }
+      if flow.isExternalCode,
+        let receipt = flow.session, let slug = current.target.connectorSlug
+      {
+        guard flow.expiresAt.map({ $0 > Date() }) == true else {
+          throw APIClientError.http(
+            status: 410, message: "Authorization expired. Close this card and try again.")
+        }
+        let result = try await service.completeSession(
+          slug: slug, receipt: receipt,
+          code: flow.code.trimmingCharacters(in: .ecmaScriptWhitespace))
+        flow.code = ""
+        try check(flow)
+        try await accept(result.operatedID, flow: flow)
+        return
+      }
+      try await startAuthorization(flow, status: current)
+    } catch is CancellationError {
+    } catch {
+      guard active === flow, !closed else { return }
+      flow.error = ChatRequestFailure.message(for: error)
+      flow.presentsForm = true
+      didFail(error)
     }
   }
   private func startAuthorization(
     _ flow: ConnectorAuthorizationFlow, status current: ChatConnectorStatus
   ) async throws {
     flow.usesProviderApplication = false
-    let nativeAppAuthorization =
-      current.target == .builtin("strava")
-      && flow.method?.id == "oauth" && flow.method?.grantKind == "auth-code"
+    let nativeAppAuthorization = flow.supportsProviderApplication
     let result = try await service.start(
       status: current, method: flow.method, values: flow.values, options: flow.options,
       nativeAppAuthorization: nativeAppAuthorization)
@@ -214,16 +236,16 @@ final class ConnectorActionStore {
     if let attemptID = result.oauthAttemptId {
       guard UUID(uuidString: attemptID) != nil else { throw APIClientError.invalidResponse }
       let webURL = try browserURL(result.authorizationUrl)
-      let appURL =
-        nativeAppAuthorization
-        ? try ConnectorProviderAuthorization.appURL(
-          receipt: result, target: current.target, methodID: flow.methodID, webURL: webURL) : nil
+      try ConnectorProviderAuthorization.validateCallback(result)
+      let appURL = try ConnectorProviderAuthorization.appURL(
+        receipt: result, target: current.target, methodID: flow.methodID, webURL: webURL)
       flow.session = result
       flow.expiresAt = Date().addingTimeInterval(600)
       if let appURL {
         // A refused/canceled authorization is not a failed launch. Only a
         // definitive OS launch failure permits the same attempt's web fallback.
-        let opened = await providerApplication.open(appURL)
+        let opened = await providerApplication.open(
+          appURL, universalLinksOnly: appURL.scheme == "https")
         try check(flow)
         flow.usesProviderApplication = opened
         flow.browserURL = opened ? nil : webURL
@@ -256,6 +278,10 @@ final class ConnectorActionStore {
           try await pollSleep(.seconds(flow.pollInterval))
           if try await checkCompletion(flow) { return }
           if flow.browserClosed, !flow.checking, flow.session?.oauthAttemptId != nil {
+            if !flow.presentsForm {
+              cancel()
+              return
+            }
             flow.session = nil
             flow.notice = String(localized: "Authorization canceled. You can try again.")
             return
@@ -263,6 +289,7 @@ final class ConnectorActionStore {
         } catch is CancellationError { return } catch {
           guard active === flow, !closed else { return }
           flow.error = ChatRequestFailure.message(for: error)
+          flow.presentsForm = true
           flow.session = nil
           flow.browserURL = nil
           didFail(error)
@@ -375,7 +402,9 @@ final class ConnectorActionStore {
   }
 
   func receiveProviderReturn(_ url: URL) {
-    guard !closed, let flow = active, flow.session?.nativeAppAuthorization?.provider == "strava",
+    guard !closed, let flow = active,
+      flow.session?.nativeAppAuthorization?.provider == "strava"
+        || flow.session?.nativeCallbackUrl != nil,
       let attemptID = ConnectorProviderAuthorization.returnAttemptID(url),
       flow.session?.oauthAttemptId?.lowercased() == attemptID
     else { return }
@@ -399,15 +428,20 @@ final class ConnectorActionStore {
   }
 
   func authenticationFinished(
-    flow: ConnectorAuthorizationFlow, url: URL, error: Error?
+    flow: ConnectorAuthorizationFlow, url: URL, callbackURL: URL? = nil, error: Error?
   ) {
     guard !closed, active === flow, flow.browserURL == url else { return }
-    if let error, !(error is CancellationError) {
+    let failure: Error? =
+      error == nil && flow.session?.nativeCallbackUrl != nil
+        && callbackURL != flow.session?.nativeCallbackUrl
+      ? APIClientError.invalidResponse : error
+    if let error = failure, !(error is CancellationError) {
       task?.cancel()
       task = nil
       flow.session = nil
       flow.browserURL = nil
       flow.error = String(localized: "Could not open connector")
+      flow.presentsForm = true
       didFail(error)
       return
     }

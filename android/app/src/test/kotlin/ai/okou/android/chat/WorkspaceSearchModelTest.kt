@@ -28,7 +28,6 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -109,7 +108,7 @@ class WorkspaceSearchModelTest {
                 override suspend fun searchMessages(keyword: String): List<SearchMessageHit> {
                     requests.add(keyword)
                     return when (requests.size) {
-                        1 -> throw ApiFailure.Http(503, null, null, null)
+                        1 -> throw ApiFailure.Http(503, null, null, 1L)
                         2 -> throw ApiFailure.Http(429, null, null, 12L)
                         else -> listOf(hit)
                     }
@@ -130,7 +129,7 @@ class WorkspaceSearchModelTest {
             runCurrent()
             assertEquals(listOf("launch"), requests)
             assertEquals(SearchRead.Retrying, model.results.value.messages)
-            advanceTimeBy(2_999)
+            advanceTimeBy(999)
             runCurrent()
             assertEquals(1, requests.size)
             advanceTimeBy(1)
@@ -275,7 +274,7 @@ class WorkspaceSearchModelTest {
             model.nextArtifacts("release", "page-two")
             runCurrent()
             assertEquals(SearchRead.Ready(listOf(first), "page-two"), model.results.value.artifacts)
-            assertFalse(model.results.value.moreArtifactsFailed)
+            assertEquals(ArtifactSearchPaging.Loading, model.results.value.artifactPaging)
 
             model.update(
                 "release",
@@ -293,7 +292,7 @@ class WorkspaceSearchModelTest {
             )
             runCurrent()
             assertEquals(SearchRead.Ready(listOf(first, second)), model.results.value.artifacts)
-            assertFalse(model.results.value.moreArtifactsFailed)
+            assertEquals(ArtifactSearchPaging.Idle, model.results.value.artifactPaging)
 
             model.update(
                 "history",

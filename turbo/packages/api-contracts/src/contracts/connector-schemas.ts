@@ -96,6 +96,7 @@ export const connectorCompletedOperationResponseSchema = object({
 
 export const builtinConnectorOauthStartResponseSchema = object({
   authorizationUrl: string(),
+  nativeCallbackUrl: string().optional(),
   connectionId: uuid().optional(),
   oauthAttemptId: uuid(),
   nativeAppAuthorization: object({ provider: literal("strava") }).optional(),

@@ -696,8 +696,14 @@ jobs:
 
   publish-ios-testflight:
     name: publish-ios-testflight
-    needs: release-please
-    if: ${{ needs.release-please.outputs.ios_release_created == 'true' }}
+    needs: [release-please, promote-app-worker-production]
+    # Signed Associated Domains must be served before a new app is installed.
+    # An iOS-only release has no App deployment to wait for.
+    if: >-
+      always() && !cancelled() &&
+      needs.release-please.outputs.ios_release_created == 'true' &&
+      (needs.release-please.outputs.app_deploy_required != 'true' ||
+       needs.promote-app-worker-production.result == 'success')
     runs-on: xcode-27
     timeout-minutes: 60
     environment: production
@@ -1708,6 +1714,18 @@ jobs:
                   type: mrkdwn
                   text: "*Database Migration* ❌ Migration failed\n📦 Version: `${{ needs.release-please.outputs.api_version }}`\n⏱️ `${{ steps.migration-duration.outputs.text }}`\n🔗 <${{ github.server_url }}/${{ github.repository }}/releases/tag/api-v${{ needs.release-please.outputs.api_version }}|View Release>\n🔗 <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
 
+      # Platform-paid Official Runs require their managed OpenRouter key before
+      # the API that routes them is promoted.
+      - name: Sync Proactive Model Key
+        id: proactive-model-key
+        if: ${{ needs.release-please.outputs.api_release_created == 'true' }}
+        run: |
+          cd turbo
+          pnpm -F @okouai/db db:sync-proactive-model-key
+        env:
+          DATABASE_URL: ${{ steps.get-db-url.outputs.database-url }}
+          OPENROUTER_PROACTIVE_API_KEY: ${{ secrets.OPENROUTER_PROACTIVE_API_KEY }}
+
       - name: Start GitHub Deployment
         id: deployment
         continue-on-error: true
@@ -2695,8 +2713,8 @@ jobs:
           echo "Production runner host architecture groups:"
           jq . <<<"$matrix"
 
-  # Build runner: download the matching published release binary and stage it
-  # on each architecture group (provision OS + monitoring + `runner build`
+  # Build runner: stage the matching published release binary directly on
+  # each architecture group (provision OS + monitoring + `runner build`
   # rootfs/snapshot). This job does not flip traffic — the systemd
   # service is still running the previous version. Runs after release assets
   # have been published so production staging uses the same binary users can
@@ -2775,7 +2793,8 @@ jobs:
           host_count=$(printf '%s\n' "$hosts" | tr ',' '\n' | sed '/^$/d' | wc -l | tr -d ' ')
           echo "Resolved ${host_count} metal host(s) for ${RUNNER_HOST_GROUP_ID}"
 
-      - name: Download runner binary from GitHub Release
+      - name: Resolve runner binary from GitHub Release
+        id: runner-asset
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.release-please.outputs.runner_rs_version }}
@@ -2786,44 +2805,15 @@ jobs:
           . .github/scripts/runner/runner-image-target.sh
           TAG=$(runner_image_release_tag "$VERSION")
           ASSET_NAME=$(runner_image_release_asset_name "$VERSION" "$TARGET_TRIPLE")
-          EXPECTED_ELF_MACHINE=$(runner_image_elf_machine_hex "$TARGET_TRIPLE")
-
-          ASSET_PATH="crates/target/${TARGET_TRIPLE}/release/runner"
-
-          ASSET_ID=$(curl -sfL \
-            --retry 5 \
-            --retry-delay 2 \
-            --retry-max-time 60 \
-            --retry-all-errors \
-            -H "Authorization: token ${GH_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" \
-            | jq -r --arg name "$ASSET_NAME" '.assets[] | select(.name==$name) | .id')
-
-          if [ -z "$ASSET_ID" ] || [ "$ASSET_ID" = "null" ]; then
-            echo "::error::release ${TAG} is missing asset ${ASSET_NAME}"
+          . .github/scripts/runner/runner-release-assets.sh
+          if ! ASSET_CHECKSUM=$(runner_release_assets_read "$TAG" | runner_release_asset_checksum "$ASSET_NAME") ||
+            [ -z "$ASSET_CHECKSUM" ]; then
+            echo "::error::release ${TAG} did not return a unique asset ${ASSET_NAME} with a SHA-256 digest"
             exit 1
           fi
 
-          mkdir -p "$(dirname "$ASSET_PATH")"
-          curl -sfL \
-            --retry 5 \
-            --retry-delay 2 \
-            --retry-max-time 60 \
-            --retry-all-errors \
-            -H "Authorization: token ${GH_TOKEN}" \
-            -H "Accept: application/octet-stream" \
-            -o "$ASSET_PATH" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/assets/${ASSET_ID}"
-          chmod 0755 "$ASSET_PATH"
-          test -x "$ASSET_PATH"
-
-          ELF_MAGIC=$(od -An -tx1 -N4 "$ASSET_PATH" | tr -d ' \n')
-          ELF_MACHINE=$(dd if="$ASSET_PATH" bs=1 skip=18 count=2 2>/dev/null | od -An -tx1 | tr -d ' \n')
-          if [ "$ELF_MAGIC" != "7f454c46" ] || [ "$ELF_MACHINE" != "$EXPECTED_ELF_MACHINE" ]; then
-            echo "::error::downloaded runner asset does not match ${TARGET_TRIPLE}: magic=${ELF_MAGIC} machine=${ELF_MACHINE} expected_machine=${EXPECTED_ELF_MACHINE}"
-            exit 1
-          fi
+          printf 'url=%s\nchecksum=%s\n' \
+            "$(runner_release_asset_url "$TAG" "$ASSET_NAME")" "$ASSET_CHECKSUM" >> "$GITHUB_OUTPUT"
 
       # Decrypt R2 secrets from resolve-image-cache.  The secrets were
       # AES-encrypted with GRAFANA_CLOUD_API_KEY (a repo-level-only
@@ -2876,6 +2866,8 @@ jobs:
           OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
           RUNNER_VERSION: ${{ needs.release-please.outputs.runner_rs_version }}
           RUNNER_TARGET: ${{ matrix.target }}
+          RUNNER_ASSET_URL: ${{ steps.runner-asset.outputs.url }}
+          RUNNER_ASSET_CHECKSUM: ${{ steps.runner-asset.outputs.checksum }}
           API_URL: ${{ vars.OKOU_API_BACKEND_URL }}
           # R2 image cache credentials — from resolve-image-cache job (repo-level,
           # not production-scoped) so the runner uses the same bucket as CI.
@@ -2893,6 +2885,8 @@ jobs:
             -e "api_url=${API_URL}" \
             -e "runner_version=${RUNNER_VERSION}" \
             -e "runner_target=${RUNNER_TARGET}" \
+            -e "runner_asset_url=${RUNNER_ASSET_URL}" \
+            -e "runner_asset_checksum=${RUNNER_ASSET_CHECKSUM}" \
             -e "r2_account_id=${R2_ACCOUNT_ID:-}" \
             -e "r2_access_key_id=${R2_ACCESS_KEY_ID:-}" \
             -e "r2_secret_access_key=${R2_SECRET_ACCESS_KEY:-}" \

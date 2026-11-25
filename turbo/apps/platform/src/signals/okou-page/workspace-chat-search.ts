@@ -1,5 +1,4 @@
 import { apiClient$ } from "../api-client.ts";
-import { chatThreads$ } from "../chat-thread-list.ts";
 import { eventDrivenChatThreads$ } from "../chat-page/chat-thread-event-sourcing.ts";
 import { chatListQuery$, debouncedChatListQuery$ } from "./sidebar-state.ts";
 import { computed } from "ccstate";
@@ -9,17 +8,13 @@ import type { EventDrivenChatThread } from "@okouai/core/chat-thread-event-repla
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 
-const MAX_VISIBLE_CHAT_THREAD_RESULTS = 25;
+export const MAX_VISIBLE_SEARCH_RESULTS = 25;
+const MAX_MATCHING_THREADS = 3;
 
 export interface WorkspaceSearchChatThread {
   readonly id: string;
   readonly title: string;
   readonly sortAt: string;
-}
-
-interface WorkspaceSearchChatThreadResult {
-  readonly query: string;
-  readonly chatThreads: readonly WorkspaceSearchChatThread[];
 }
 
 interface WorkspaceSearchChatMessageResult {
@@ -50,45 +45,23 @@ export const workspaceSearchChatThreadMap$ = computed((get) => {
   );
 });
 
-export const workspaceSearchChatThreads$ = computed(
-  (get): WorkspaceSearchChatThreadResult => {
+export const threeColumnSearchChatThreads$ = computed(
+  (get): readonly WorkspaceSearchChatThread[] => {
     const query = get(chatListQuery$).trim().toLowerCase();
-    const threads = [...get(workspaceSearchChatThreadMap$).values()];
-    const matchingThreads: WorkspaceSearchChatThread[] = [];
-    for (const thread of threads) {
-      if (query && !thread.title.toLowerCase().includes(query)) {
-        continue;
-      }
-      matchingThreads.push(thread);
+    if (!query) {
+      return [];
     }
-    if (query) {
-      matchingThreads.sort((left, right) => {
+    const matchingThreads = [...get(workspaceSearchChatThreadMap$).values()]
+      .filter((thread) => {
+        return thread.title.toLowerCase().includes(query);
+      })
+      .sort((left, right) => {
         return (
           right.sortAt.localeCompare(left.sortAt) ||
           right.id.localeCompare(left.id)
         );
       });
-    }
-    return {
-      query,
-      chatThreads: matchingThreads.slice(0, MAX_VISIBLE_CHAT_THREAD_RESULTS),
-    };
-  },
-);
-
-export const threeColumnSearchChatThreads$ = computed(
-  async (get): Promise<WorkspaceSearchChatThreadResult> => {
-    const query = get(chatListQuery$).trim().toLowerCase();
-    if (query) {
-      return get(workspaceSearchChatThreads$);
-    }
-    const threads = await get(chatThreads$);
-    return {
-      query,
-      chatThreads: threads
-        .slice(0, MAX_VISIBLE_CHAT_THREAD_RESULTS)
-        .map(workspaceSearchChatThread),
-    };
+    return matchingThreads.slice(0, MAX_MATCHING_THREADS);
   },
 );
 

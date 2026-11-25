@@ -211,7 +211,20 @@ class NativeTextSendTest {
                     10_000,
                 ),
             )
+            val queueTitle = app.getString(R.string.conversation_queue_count, 2)
+            val queue = By.pkg(app.packageName).desc(queueTitle)
+            checkNotNull(device.wait(Until.findObject(queue), 10_000)) {
+                    "Both accepted inputs should be queued"
+                }
+                .click()
+            val queueHeading = By.pkg(app.packageName).text(queueTitle)
+            assertTrue(
+                "Queue panel did not open",
+                device.wait(Until.hasObject(queueHeading), 10_000),
+            )
             text("Native follow-up")
+            assertTrue("Could not inject Back", device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            assertTrue("Queue panel stayed open", device.wait(Until.gone(queueHeading), 10_000))
             assertEquals("", editor().text)
             assertEquals(1, fixture.created.size)
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))

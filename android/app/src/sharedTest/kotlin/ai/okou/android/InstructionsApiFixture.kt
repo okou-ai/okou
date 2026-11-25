@@ -23,6 +23,8 @@ class InstructionsApiFixture : Closeable {
     @Volatile var disconnectSave = false
     @Volatile var rejectSave = false
     @Volatile var beforeRead: () -> Unit = {}
+    @Volatile var beforeSave: () -> Unit = {}
+    @Volatile var rejectRead = false
     @Volatile var responseOwner: String? = null
     private val lock = Any()
     private var revision = 1
@@ -55,11 +57,15 @@ class InstructionsApiFixture : Closeable {
                     requests.add(request)
                     if (request.path != "/api/instructions")
                         return MockResponse().setResponseCode(404)
-                    if (request.method == "GET") beforeRead()
+                    if (request.method == "GET") {
+                        beforeRead()
+                        if (rejectRead) return MockResponse().setResponseCode(503)
+                    }
                     if (denied)
                         return json("""{"error":{"code":"FORBIDDEN","message":"Unavailable"}}""")
                             .setResponseCode(403)
-                    if (request.method == "PUT")
+                    if (request.method == "PUT") {
+                        beforeSave()
                         synchronized(lock) {
                             val input =
                                 Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
@@ -71,6 +77,7 @@ class InstructionsApiFixture : Closeable {
                                 return MockResponse().setResponseCode(400)
                             externalEdit(content)
                         }
+                    }
                     return json(body()).also {
                         if (request.method == "PUT" && disconnectSave)
                             it.setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST)

@@ -1,731 +1,335 @@
-import { act, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
-
+import { expect, test, vi } from "vitest";
+import { thirdPartySubscriptionsMainContract } from "@okouai/api-contracts/contracts/third-party-subscriptions";
 import { personalModelProvidersByTypeContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
-import { thirdPartySubscriptionsMainContract } from "@okouai/api-contracts/contracts/third-party-subscriptions";
-
 import { mockedClerk } from "../../../__tests__/mock-auth.ts";
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
-import { mockNow } from "../../../__tests__/time.ts";
-
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  connectedPersonalClaudeCodeProvider,
-  connectedPersonalCodexProvider,
-  createSidebarAccountHelpers,
-  expectVisibleText,
-  formatResetInTimeZone,
-  mockBrowserTimeZone,
-  openAccountMenu,
-} from "./sidebar-account-test-helpers.ts";
-
+import { mockNow } from "../../../lib/time.ts";
+import { action, billing, setBilling } from "./workspace-billing-fixtures.ts";
 const context = testContext();
-const { mockAdminAccountSidebar } = createSidebarAccountHelpers(context);
-
-async function openSubscriptionUsage(): Promise<HTMLElement> {
-  const entry = await within(
-    screen.getByTestId("labeled-nav-rail"),
-  ).findByLabelText(/^Subscription usage/);
-  click(entry);
-  return screen.findByTestId("account-menu-subscriptions");
+const ordinary = "Subscription usage",
+  low = "Subscription usage: less than 20% remaining";
+const timestamp = "2026-03-10T04:48:00Z";
+function quota(
+  remaining: number | null,
+  hours: number,
+  resetAt: string | null = null,
+) {
+  return {
+    remainingPercent: remaining,
+    usedPercent: remaining === null ? null : 100 - remaining,
+    windowSeconds: 3600 * hours,
+    resetAt,
+  };
 }
-
-test("Open subscriptions by clicking the rail and open Models in Settings", async () => {
-  const user = userEvent.setup();
-  mockBrowserTimeZone("America/New_York");
-  mockNow(new Date("2030-01-01T00:48:00.000Z"), context.signal);
-  mockAdminAccountSidebar();
-  context.mocks.data.personalModelProviders([
-    connectedPersonalCodexProvider({
-      subscriptionResetCreditsNextExpiresAt: "2030-01-04T00:48:00.000Z",
-      subscriptionCredits: { balance: 1250.5, unlimited: false },
-    }),
-    connectedPersonalClaudeCodeProvider(),
-  ]);
-
-  await setupPage({
+function account(
+  provider: "ChatGPT" | "Claude",
+  usage: ModelProviderResponse["subscriptionUsage"],
+  extra: Partial<ModelProviderResponse> = {},
+): ModelProviderResponse {
+  return {
+    id: crypto.randomUUID(),
+    needsReconnect: false,
+    lastRefreshErrorCode: null,
+    type:
+      provider === "Claude" ? "claude-code-oauth-token" : "codex-oauth-token",
+    framework: provider === "Claude" ? "claude-code" : "codex",
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    accountEmail: "robin@example.org",
+    subscriptionUsage: usage,
+    ...extra,
+  };
+}
+function visit() {
+  return setupPage({
     context,
-    path: `/`,
+    host: "app.okou.ai",
+    path: "/workflows",
     auth: {
-      user: {
-        id: "test-user-123",
-        fullName: "Alex Rivera",
-        email: "alex.rivera@example.test",
-      },
+      user: { id: "robin", fullName: "Robin", email: "robin@example.org" },
     },
   });
-
-  const panel = await openSubscriptionUsage();
-
-  const codex = within(panel).getByRole("region", { name: "ChatGPT usage" });
-  const claude = within(panel).getByRole("region", { name: "Claude usage" });
-  expect(
-    within(codex).getByRole("heading", { name: "ChatGPT" }),
-  ).toBeInTheDocument();
-  expect(
-    within(claude).getByRole("heading", { name: "Claude" }),
-  ).toBeInTheDocument();
-  expect(within(codex).getAllByRole("meter")).toHaveLength(1);
-  expect(within(claude).getAllByRole("meter")).toHaveLength(2);
-  expect(within(codex).getByText("55% left")).toBeInTheDocument();
-  expect(within(claude).getByText("88% left")).toBeInTheDocument();
-  expect(within(claude).getByText("76% left")).toBeInTheDocument();
-
-  const entry = within(screen.getByTestId("labeled-nav-rail")).getByLabelText(
-    "Subscription usage",
-  );
-  expect(entry).toHaveAccessibleDescription(
-    "ChatGPT: 55% left; Claude: 76% left",
-  );
-  const tooltipTextSelector = '[data-slot="tooltip-content"] *';
-  const codexInformation = within(codex).getByLabelText("ChatGPT usage");
-  await user.hover(codexInformation);
-  await waitFor(() => {
-    expectVisibleText("Resets in 5d 23h", tooltipTextSelector);
-    expectVisibleText(
-      formatResetInTimeZone("2030-01-07T00:00:00.000Z", "America/New_York"),
-      tooltipTextSelector,
-    );
-  });
-  await user.hover(within(claude).getByRole("heading", { name: "Claude" }));
-  await waitFor(() => {
-    expectVisibleText(
-      formatResetInTimeZone("2030-01-01T05:00:00.000Z", "America/New_York"),
-      tooltipTextSelector,
-    );
-  });
-  click(within(claude).getByLabelText("Claude usage"));
-  const settings = await screen.findByRole("dialog", { name: "Settings" });
-  await expect(
-    within(settings).findByRole("heading", { name: "Use more models" }),
-  ).resolves.toBeInTheDocument();
-  await user.keyboard("{Escape}");
-  await waitFor(() => {
-    expect(entry).toHaveFocus();
-    expect(entry).toHaveAttribute("aria-expanded", "false");
-  });
-  await user.keyboard("{Enter}");
-  await expect(
-    screen.findByRole("dialog", { name: "Subscription usage" }),
-  ).resolves.toBeInTheDocument();
-  expect(entry).toHaveFocus();
-  await user.keyboard("{Escape}");
-  await waitFor(() => {
-    expect(entry).toHaveFocus();
-    expect(entry).toHaveAttribute("aria-expanded", "false");
-  });
-  await user.keyboard(" ");
-  const reopenedPreview = await screen.findByRole("dialog", {
-    name: "Subscription usage",
-  });
-  const chatGpt = within(
-    within(reopenedPreview).getByRole("region", { name: "ChatGPT usage" }),
-  ).getByLabelText("ChatGPT usage");
-  chatGpt.focus();
-  expect(chatGpt).toHaveFocus();
-  await user.keyboard("{Enter}");
-  const reopenedSettings = await screen.findByRole("dialog", {
-    name: "Settings",
-  });
-  await expect(
-    within(reopenedSettings).findByRole("heading", { name: "Use more models" }),
-  ).resolves.toBeInTheDocument();
-});
-
-test.each(["Escape", "Close"])(
-  "Keep the usage preview closed after dismissing Settings with %s",
-  async (dismiss) => {
-    const user = userEvent.setup();
-    mockAdminAccountSidebar();
-    context.mocks.data.personalModelProviders([
-      connectedPersonalCodexProvider(),
-    ]);
-    await setupPage({
-      context,
-      path: `/`,
-    });
-
-    const entry = await within(
-      screen.getByTestId("labeled-nav-rail"),
-    ).findByLabelText("Subscription usage");
-    await user.click(entry);
-    const preview = await screen.findByRole("dialog", {
-      name: "Subscription usage",
-    });
-    click(
-      within(
-        within(preview).getByRole("region", { name: "ChatGPT usage" }),
-      ).getByLabelText("ChatGPT usage"),
-    );
-    const settings = await screen.findByRole("dialog", { name: "Settings" });
-    if (dismiss === "Escape") {
-      await user.keyboard("{Escape}");
-    } else {
-      click(within(settings).getByLabelText("Close"));
-    }
-    await waitFor(() => {
-      expect(entry).toHaveFocus();
-      expect(entry).toHaveAttribute("aria-expanded", "false");
-    });
-
-    // A fresh keyboard activation still opens the preview.
-    act(() => {
-      entry.blur();
-      entry.focus();
-    });
-    expect(entry).toHaveAttribute("aria-expanded", "false");
-    await user.keyboard("{Enter}");
-    await expect(
-      screen.findByTestId("account-menu-subscriptions"),
-    ).resolves.toBeInTheDocument();
-    expect(entry).toHaveFocus();
-  },
-);
-
-test.each<{
-  name: string;
-  credits: ModelProviderResponse["subscriptionCredits"];
-  expected: string;
-}>([
-  { name: "zero", credits: { balance: 0, unlimited: false }, expected: "0" },
-  { name: "unavailable", credits: null, expected: "—" },
+}
+async function preview(label: string) {
+  const rail = await action(label);
+  click(rail);
+  return { rail, panel: await screen.findByRole("dialog", { name: ordinary }) };
+}
+test.each([
   {
-    name: "unlimited",
-    credits: { balance: null, unlimited: true },
-    expected: "Unlimited",
+    id: "sidebar-subscription-usage-004",
+    balance: 0,
+    unlimited: false,
+    label: "0",
   },
   {
-    name: "small positive",
-    credits: { balance: 0.0001, unlimited: false },
-    expected: "< 0.01",
+    id: "sidebar-subscription-usage-006",
+    balance: null,
+    unlimited: true,
+    label: "Unlimited",
+  },
+  {
+    id: "sidebar-subscription-usage-007",
+    balance: 0.0001,
+    unlimited: false,
+    label: "< 0.01",
   },
 ])(
-  "Show $name provider credits when weekly usage is exhausted",
-  async ({ credits, expected }) => {
-    mockAdminAccountSidebar();
-    context.mocks.browser.languages(["zh-CN"]);
+  "$id Exhausted weekly ChatGPT usage reports provider credit $label",
+  async ({ balance, unlimited, label }) => {
     context.mocks.data.personalModelProviders([
-      connectedPersonalCodexProvider({
-        subscriptionUsage: {
-          fiveHour: null,
-          weekly: {
-            usedPercent: 100,
-            remainingPercent: 0,
-            resetAt: "2030-01-07T00:00:00.000Z",
-            windowSeconds: 604_800,
-          },
-        },
-        subscriptionNextResetAt: null,
-        subscriptionResetPeriod: null,
-        subscriptionResetCredits: 0,
-        subscriptionCredits: credits,
-      }),
+      account(
+        "ChatGPT",
+        { weekly: quota(0, 168), fiveHour: null },
+        { subscriptionCredits: { balance, unlimited } },
+      ),
     ]);
-    await setupPage({
-      context,
-      path: `/`,
-      locale: "zh-Hans",
-      auth: { user: { id: "test-user-123", fullName: "Alex Rivera" } },
+    await visit();
+    const { panel } = await preview(low);
+    const provider = within(panel).getByRole("region", {
+      name: "ChatGPT usage",
     });
-    const panel = await openSubscriptionUsage();
-    // Page tests use en-US copy through the shared locale-resource fixture.
-    expect(document.documentElement).toHaveAttribute("lang", "zh-Hans");
-    expect(within(panel).getByText("Credits")).toBeInTheDocument();
-    expect(within(panel).getByText(expected)).toBeInTheDocument();
+    expect(within(provider).getByRole("meter")).toHaveAttribute(
+      "aria-valuenow",
+      "0",
+    );
+    expect(
+      within(provider).getByText("Credits").nextElementSibling?.textContent,
+    ).toBe(label);
   },
 );
-
-test("Keep the ChatGPT summary tied to its weekly limit", async () => {
-  mockNow(new Date("2030-01-01T00:48:00.000Z"), context.signal);
-  mockAdminAccountSidebar();
-  context.mocks.data.personalModelProviders([
-    connectedPersonalCodexProvider({
-      subscriptionUsage: {
-        fiveHour: {
-          usedPercent: 88,
-          remainingPercent: 12,
-          resetAt: "2030-01-01T05:00:00.000Z",
-          windowSeconds: 18_000,
-        },
-        weekly: {
-          usedPercent: 53,
-          remainingPercent: 47,
-          resetAt: "2030-01-07T00:00:00.000Z",
-          windowSeconds: 604_800,
-        },
-      },
-    }),
-    connectedPersonalClaudeCodeProvider(),
-  ]);
-  await setupPage({
-    context,
-    path: `/`,
-    auth: {
-      user: {
-        id: "test-user-123",
-        fullName: "Alex Rivera",
-        email: "alex.rivera@example.test",
-      },
-    },
-  });
-
-  const panel = await openSubscriptionUsage();
-  const codex = within(panel).getByRole("region", {
-    name: "ChatGPT usage",
-  });
-  expect(within(codex).getAllByRole("meter")).toHaveLength(1);
-  expect(
-    within(codex).getByRole("meter", {
-      name: "ChatGPT Weekly limit remaining",
-    }),
-  ).toHaveAttribute("aria-valuenow", "47");
-  expect(within(codex).getByText("47% left")).toBeInTheDocument();
-  expect(
-    within(screen.getByTestId("labeled-nav-rail")).getByLabelText(
-      "Subscription usage",
-    ),
-  ).toHaveAccessibleDescription("ChatGPT: 47% left; Claude: 76% left");
-  expect(
-    within(screen.getByTestId("labeled-nav-rail")).getByLabelText(
-      "Subscription usage",
-    ),
-  ).toBeInTheDocument();
-});
-
-test("Show an exhausted week with its own reset time", async () => {
-  mockBrowserTimeZone("America/New_York");
-  mockNow(new Date("2030-01-01T00:48:00.000Z"), context.signal);
-  mockAdminAccountSidebar();
-  context.mocks.data.personalModelProviders([
-    connectedPersonalCodexProvider({
-      subscriptionResetCredits: 0,
-      subscriptionUsage: {
-        fiveHour: {
-          usedPercent: 0,
-          remainingPercent: 100,
-          resetAt: "invalid reset",
-          windowSeconds: 18_000,
-        },
-        weekly: {
-          usedPercent: 100,
-          remainingPercent: null,
-          resetAt: "2030-01-07T00:00:00.000Z",
-          windowSeconds: 604_800,
-        },
-      },
-    }),
-  ]);
-  await setupPage({
-    context,
-    path: `/`,
-    auth: {
-      user: {
-        id: "test-user-123",
-        fullName: "Alex Rivera",
-        email: "alex.rivera@example.test",
-      },
-    },
-  });
-
-  const panel = await openSubscriptionUsage();
-  const week = within(panel).getByRole("meter", {
-    name: "ChatGPT Weekly limit remaining",
-  });
-  expect(week).toHaveAttribute("aria-valuenow", "0");
-  expect(within(panel).getAllByRole("meter")).toHaveLength(1);
-  expect(within(panel).getByText("Limit reached")).toBeInTheDocument();
-  expect(
-    within(screen.getByTestId("labeled-nav-rail")).getByLabelText(
-      /^Subscription usage/,
-    ),
-  ).toHaveAccessibleDescription("ChatGPT: Limit reached");
-  expect(within(panel).getByText("Resets in 5d 23h")).toBeInTheDocument();
-  await userEvent.setup().hover(week);
-  await waitFor(() => {
-    expectVisibleText(
-      formatResetInTimeZone("2030-01-07T00:00:00.000Z", "America/New_York"),
-    );
-  });
-});
-
-test.each(["Escape", "Cancel"])(
-  "Keep the usage preview closed after dismissing reset confirmation with %s",
-  async (dismiss) => {
-    const user = userEvent.setup();
-    mockAdminAccountSidebar();
-    context.mocks.data.personalModelProviders([
-      connectedPersonalCodexProvider({
-        subscriptionUsage: {
-          fiveHour: null,
-          weekly: {
-            usedPercent: 100,
-            remainingPercent: 0,
-            resetAt: "2030-01-07T00:00:00.000Z",
-            windowSeconds: 604_800,
-          },
-        },
-      }),
-    ]);
-    await setupPage({
-      context,
-      path: `/`,
-    });
-
-    const panel = await openSubscriptionUsage();
-    const entry = within(screen.getByTestId("labeled-nav-rail")).getByLabelText(
-      /^Subscription usage/,
-    );
-    click(within(panel).getByText("Reset usage"));
-    const confirmation = await screen.findByRole("dialog", {
-      name: "Reset Codex usage?",
-    });
-    if (dismiss === "Escape") {
-      await user.keyboard("{Escape}");
-    } else {
-      const cancel = queryAllByRoleFast("button", confirmation).find(
-        (button) => {
-          return button.textContent === "Cancel";
-        },
-      );
-      if (!cancel) {
-        throw new Error("Cancel button not found");
-      }
-      click(cancel);
-    }
+test.each([
+  { id: "sidebar-subscription-usage-016", provider: "ChatGPT" },
+  { id: "sidebar-subscription-usage-017", provider: "Claude" },
+] as const)(
+  "$id $provider warns on its limiting quota and opens its settings",
+  async ({ provider }) => {
+    const windows =
+      provider === "ChatGPT"
+        ? { weekly: quota(12, 168), fiveHour: null }
+        : { fiveHour: quota(12, 5), weekly: quota(85, 168) };
+    context.mocks.data.personalModelProviders([account(provider, windows)]);
+    await visit();
+    const { rail, panel } = await preview(low);
+    expect(rail).toHaveAccessibleDescription(provider + ": 12% left");
+    expect(within(panel).getByText("12% left")).toBeInTheDocument();
+    click(rail);
     await waitFor(() => {
-      expect(entry).toHaveFocus();
-      expect(entry).toHaveAttribute("aria-expanded", "false");
+      return expect(panel).not.toBeInTheDocument();
     });
-    click(entry);
-    await expect(
-      screen.findByTestId("account-menu-subscriptions"),
-    ).resolves.toBeInTheDocument();
+    click(rail);
+    click(
+      await action(
+        provider + " usage",
+        await screen.findByRole("dialog", { name: ordinary }),
+      ),
+    );
+    await screen.findByText("Use more models");
   },
 );
-
-test("Keep Codex reset pending until refreshed sidebar usage is ready", async () => {
-  mockAdminAccountSidebar();
-  const refreshStarted = context.mocks.deferred<void>();
-  const finishRefresh = context.mocks.deferred<void>();
-  let resetCompleted = false;
+test("sidebar-subscription-usage-020 An unknown Claude weekly percentage keeps its missing-value label", async () => {
+  context.mocks.data.personalModelProviders([
+    account("Claude", {
+      weekly: quota(null, 168, "2026-03-13T19:00:00Z"),
+      fiveHour: null,
+    }),
+  ]);
+  await visit();
+  const { rail, panel } = await preview(ordinary);
+  expect(rail).toHaveAccessibleDescription("Claude: —");
+  expect(within(panel).getByText("—")).toBeInTheDocument();
+});
+test("sidebar-subscription-usage-021 An exhausted five-hour window names its time to reset", async () => {
+  mockNow(new Date("2026-03-10T00:48:00Z"), context.signal);
+  context.mocks.data.personalModelProviders([
+    account("Claude", {
+      weekly: null,
+      fiveHour: quota(0, 5, "2026-03-10T05:00:00Z"),
+    }),
+  ]);
+  await visit();
+  const { rail, panel } = await preview(low);
+  expect(rail).toHaveAccessibleDescription("Claude: Limit reached");
+  expect(within(panel).getByRole("meter")).toHaveAttribute(
+    "aria-valuenow",
+    "0",
+  );
+  expect(within(panel).getByText("Limit reached")).toBeInTheDocument();
+  expect(within(panel).getByText("Resets in 4h 12m")).toBeInTheDocument();
+});
+test("sidebar-subscription-usage-012 Reset keeps confirmation locked until the refreshed weekly percentage arrives", async () => {
+  const refresh = context.mocks.deferred<void>(),
+    pending = context.mocks.deferred<void>();
+  let reset = false;
+  context.mocks.api(
+    personalModelProvidersByTypeContract.resetSubscriptionUsage,
+    ({ respond, params }) => {
+      expect(params.type).toBe("codex-oauth-token");
+      reset = true;
+      return respond(200, { outcome: "reset" });
+    },
+  );
+  const exhausted = account(
+    "ChatGPT",
+    { weekly: quota(0, 168), fiveHour: null },
+    { subscriptionResetCredits: 2, subscriptionResetSupported: true },
+  );
   context.mocks.api(
     thirdPartySubscriptionsMainContract.list,
     async ({ respond }) => {
-      if (resetCompleted) {
-        refreshStarted.resolve();
-        await finishRefresh.promise;
+      if (reset) {
+        if (!pending.settled()) {
+          pending.resolve();
+        }
+        await refresh.promise;
       }
       return respond(200, {
         subscriptions: [
-          connectedPersonalCodexProvider({
-            subscriptionResetCredits: resetCompleted ? 1 : 2,
-            subscriptionCredits: { balance: 1250.5, unlimited: false },
-            subscriptionUsage: {
-              fiveHour: null,
-              weekly: {
-                usedPercent: resetCompleted ? 0 : 100,
-                remainingPercent: resetCompleted ? 100 : 0,
-                resetAt: "2030-01-07T00:00:00.000Z",
-                windowSeconds: 604_800,
-              },
-            },
-          }),
+          reset
+            ? {
+                ...exhausted,
+                subscriptionUsage: { weekly: quota(100, 168), fiveHour: null },
+                subscriptionResetCredits: 1,
+              }
+            : exhausted,
         ],
       });
     },
   );
-  context.mocks.api(
-    personalModelProvidersByTypeContract.resetSubscriptionUsage,
-    ({ respond }) => {
-      resetCompleted = true;
-      return respond(200, { outcome: "reset" });
-    },
-  );
-
-  await setupPage({
-    context,
-    path: `/`,
-    auth: {
-      user: {
-        id: "test-user-123",
-        fullName: "Alex Rivera",
-        email: "alex.rivera@example.test",
-      },
-    },
-  });
-
-  let panel = await openSubscriptionUsage();
-  const resetCredits = within(panel).getByText("Reset usage");
-  expect(within(panel).getByText("Credits")).toBeInTheDocument();
-  expect(resetCredits).toBeInTheDocument();
-  click(resetCredits);
-
-  const confirmDialog = await screen.findByRole("dialog", {
+  await visit();
+  const { rail, panel } = await preview(low);
+  click(await action("Reset usage", panel));
+  const confirm = await screen.findByRole("dialog", {
     name: "Reset Codex usage?",
   });
-  expect(
-    within(screen.getByTestId("labeled-nav-rail")).getByLabelText(
-      /^Subscription usage/,
-    ),
-  ).toHaveAttribute("aria-expanded", "false");
-  expect(within(confirmDialog).getByText(/2 resets left/)).toBeInTheDocument();
-  const resetButton = queryAllByRoleFast("button", confirmDialog).find(
-    (button) => {
-      return button.textContent === "Reset usage";
+  click(await action("Reset usage", confirm));
+  await pending.promise;
+  expect(confirm).toBeInTheDocument();
+  await expect(action("Cancel", confirm)).resolves.toBeDisabled();
+  refresh.resolve();
+  await waitFor(() => {
+    return expect(confirm).not.toBeInTheDocument();
+  });
+  expect(rail).toHaveFocus();
+  click(rail);
+  await screen.findByText("100% left");
+});
+test("sidebar-subscription-usage-001 Both accounts retain their own windows and New York reset dates across keyboard navigation", async () => {
+  mockNow(new Date(timestamp), context.signal);
+  const resolveOptions = Intl.DateTimeFormat.prototype.resolvedOptions;
+  vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockImplementation(
+    function (this: Intl.DateTimeFormat) {
+      return { ...resolveOptions.call(this), timeZone: "America/New_York" };
     },
   );
-  if (!resetButton) {
-    throw new Error("Reset usage button not found");
-  }
-  click(resetButton);
-
-  await refreshStarted.promise;
-  expect(confirmDialog).toBeInTheDocument();
-  await waitFor(() => {
-    expect(
-      queryAllByRoleFast("button", confirmDialog).find((button) => {
-        return button.textContent === "Cancel";
-      }),
-    ).toBeDisabled();
+  context.mocks.data.userPreferences({
+    timezone: "America/New_York",
+    locale: "en-US",
   });
-  finishRefresh.resolve();
-
-  await waitFor(() => {
-    const entry = within(screen.getByTestId("labeled-nav-rail")).getByLabelText(
-      /^Subscription usage/,
-    );
-    expect(entry).toHaveFocus();
-    expect(entry).toHaveAttribute("aria-expanded", "false");
-  });
-
-  panel = await openSubscriptionUsage();
-  expect(within(panel).getByText("100% left")).toBeInTheDocument();
-});
-
-test.each([0, null])(
-  "Keep reset unavailable when the reset balance is %s",
-  async (resetCredits) => {
-    mockAdminAccountSidebar();
-    context.mocks.data.personalModelProviders([
-      connectedPersonalCodexProvider({
-        subscriptionResetCredits: resetCredits,
-        subscriptionUsage: {
-          fiveHour: null,
-          weekly: {
-            usedPercent: 100,
-            remainingPercent: 0,
-            resetAt: "2030-01-07T00:00:00.000Z",
-            windowSeconds: 604_800,
-          },
-        },
-      }),
-    ]);
-    await setupPage({
-      context,
-      path: `/`,
-      auth: { user: { id: "test-user-123", fullName: "Alex Rivera" } },
-    });
-    const panel = await openSubscriptionUsage();
-    expect(within(panel).queryByText("Reset usage")).not.toBeInTheDocument();
-    expect(within(panel).getByText(/Resets in /)).toBeInTheDocument();
-  },
-);
-
-test.each([null] as const)(
-  "Keep an active session open when provider loading remains unauthorized (saved locale: %s)",
-  async (locale) => {
-    mockAdminAccountSidebar();
-    context.mocks.data.userPreferences({ locale });
-
-    context.mocks.api(
-      thirdPartySubscriptionsMainContract.list,
-      ({ respond }) => {
-        return respond(401, {
-          error: {
-            code: "UNAUTHORIZED",
-            message: "Unauthorized",
-          },
-        });
-      },
-    );
-
-    await setupPage({
-      context,
-      path: "/workflows",
-      auth: {
-        user: {
-          id: "test-user-123",
-          fullName: "Alex Rivera",
-          email: "alex.rivera@example.test",
-        },
-      },
-    });
-
-    const workflows = await screen.findByRole("heading", { name: "Workflows" });
-    const menu = await openAccountMenu();
-    await expect(
-      within(menu).findByText("12,500 credits"),
-    ).resolves.toBeInTheDocument();
-    expect(workflows).toBeInTheDocument();
-    expect(mockedClerk.redirectToSignIn).not.toHaveBeenCalled();
-    expect(mockedClerk.signOut).not.toHaveBeenCalled();
-
-    click(within(menu).getByText("Settings"));
-    await expect(
-      screen.findByRole("dialog", { name: "Settings" }),
-    ).resolves.toBeInTheDocument();
-  },
-);
-
-test.each([
-  { type: "codex-oauth-token" as const, window: "weekly" as const },
-  { type: "claude-code-oauth-token" as const, window: "fiveHour" as const },
-  { type: "claude-code-oauth-token" as const, window: "weekly" as const },
-])(
-  "Warn when $type $window has little remaining usage",
-  async ({ type, window }) => {
-    mockAdminAccountSidebar();
-    const provider =
-      type === "codex-oauth-token"
-        ? connectedPersonalCodexProvider()
-        : connectedPersonalClaudeCodeProvider();
-    context.mocks.data.personalModelProviders([
-      {
-        ...provider,
-        subscriptionUsage: {
-          fiveHour: null,
-          weekly: null,
-          ...provider.subscriptionUsage,
-          [window]: {
-            usedPercent: 88,
-            remainingPercent: 12,
-            resetAt: "2030-01-07T00:00:00.000Z",
-            windowSeconds: 604_800,
-          },
-        },
-      },
-    ]);
-    await setupPage({
-      context,
-      path: `/`,
-    });
-    const entry = await screen.findByLabelText(
-      "Subscription usage: less than 20% remaining",
-    );
-    click(entry);
-    const panel = await screen.findByRole("dialog", {
-      name: "Subscription usage",
-    });
-    expect(within(panel).getByText("12% left")).toBeInTheDocument();
-    click(entry);
-    await waitFor(() => {
-      expect(entry).toHaveAttribute("aria-expanded", "false");
-    });
-    click(entry);
-    await waitFor(() => {
-      expect(entry).toHaveAttribute("aria-expanded", "true");
-    });
-    const reopenedPanel = await screen.findByRole("dialog", {
-      name: "Subscription usage",
-    });
-    const providerLabel =
-      type === "codex-oauth-token" ? "ChatGPT usage" : "Claude usage";
-    click(
-      within(
-        within(reopenedPanel).getByRole("region", { name: providerLabel }),
-      ).getByLabelText(providerLabel),
-    );
-    const settings = await screen.findByRole("dialog", { name: "Settings" });
-    await expect(
-      within(settings).findByRole("heading", { name: "Use more models" }),
-    ).resolves.toBeInTheDocument();
-  },
-);
-
-test("Keep the account menu available without connected subscriptions", async () => {
-  mockAdminAccountSidebar();
-  context.mocks.data.personalModelProviders([]);
-  await setupPage({
-    context,
-    path: `/`,
-    auth: { user: { id: "test-user-123", fullName: "Alex Rivera" } },
-  });
-  const menu = await openAccountMenu();
-  await expect(
-    within(menu).findByText("12,500 credits"),
-  ).resolves.toBeInTheDocument();
-});
-
-test("Describe connected usage with an unknown percentage without treating it as empty", async () => {
-  mockAdminAccountSidebar();
+  const thursday = "2026-03-12T15:00:00Z",
+    friday = "2026-03-13T19:00:00Z";
   context.mocks.data.personalModelProviders([
-    connectedPersonalClaudeCodeProvider({
-      subscriptionUsage: {
-        fiveHour: null,
-        weekly: {
-          usedPercent: null,
-          remainingPercent: null,
-          resetAt: "2030-01-07T00:00:00.000Z",
-          windowSeconds: 604_800,
-        },
-      },
+    account("Claude", {
+      fiveHour: quota(88, 5, thursday),
+      weekly: quota(76, 168, friday),
     }),
+    account("ChatGPT", { fiveHour: null, weekly: quota(55, 168, friday) }),
   ]);
-  await setupPage({
-    context,
-    path: `/`,
+  await visit();
+  const { rail, panel } = await preview(ordinary);
+  expect(rail).toHaveAccessibleDescription(/ChatGPT: 55% left/);
+  expect(rail).toHaveAccessibleDescription(/Claude: 76% left/);
+  const codex = within(panel).getByRole("region", { name: "ChatGPT usage" }),
+    claude = within(panel).getByRole("region", { name: "Claude usage" });
+  expect(within(codex).getByRole("meter")).toHaveAttribute(
+    "aria-valuenow",
+    "55",
+  );
+  expect(within(claude).getAllByRole("meter")).toHaveLength(2);
+  expect(
+    within(claude).getByRole("meter", {
+      name: "Claude 5-hour limit remaining",
+    }),
+  ).toHaveAttribute("aria-valuenow", "88");
+  expect(
+    within(claude).getByRole("meter", {
+      name: "Claude Weekly limit remaining",
+    }),
+  ).toHaveAttribute("aria-valuenow", "76");
+  expect(within(codex).getByText("55% left")).toBeInTheDocument();
+  expect(within(claude).getByText("88% left")).toBeInTheDocument();
+  expect(within(claude).getByText("76% left")).toBeInTheDocument();
+  const user = userEvent.setup({ delay: null });
+  const codexTarget = await action("ChatGPT usage", codex);
+  codexTarget.focus();
+  await screen.findByText(/Mar 13, 2026.*3:00 PM EDT/u);
+  const target = await action("Claude usage", claude);
+  target.focus();
+  await screen.findByText(/Mar 12, 2026.*11:00 AM EDT/u);
+  await screen.findByText(/Mar 13, 2026.*3:00 PM EDT/u);
+  click(target);
+  await screen.findByText("Use more models");
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    return expect(rail).toHaveFocus();
   });
-  const entry = await within(
-    screen.getByTestId("labeled-nav-rail"),
-  ).findByLabelText("Subscription usage");
-  expect(entry).toHaveAccessibleDescription("Claude: —");
-  const panel = await openSubscriptionUsage();
-  expect(within(panel).getByText("—")).toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).toBeNull();
+  await user.keyboard("{Enter}");
+  await screen.findByRole("dialog", { name: ordinary });
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    return expect(rail).toHaveFocus();
+  });
+  await user.keyboard(" ");
+  const again = await screen.findByRole("dialog", { name: ordinary });
+  const chatgpt = await action("ChatGPT usage", again);
+  chatgpt.focus();
+  await user.keyboard("{Enter}");
+  await screen.findByText("Use more models");
 });
-
-test.each([
-  { resetAt: "2030-01-01T05:00:00.000Z", expected: "Resets in 4h 12m" },
-  { resetAt: null, expected: "Reset time unavailable" },
-])(
-  "Show exhausted Claude usage with $expected",
-  async ({ resetAt, expected }) => {
-    mockNow(new Date("2030-01-01T00:48:00.000Z"), context.signal);
-    mockAdminAccountSidebar();
-    context.mocks.data.personalModelProviders([
-      connectedPersonalClaudeCodeProvider({
-        subscriptionUsage: {
-          fiveHour: {
-            usedPercent: 100,
-            remainingPercent: 0,
-            resetAt,
-            windowSeconds: 18_000,
-          },
-          weekly: null,
-        },
-      }),
-    ]);
-    await setupPage({
-      context,
-      path: `/`,
+function robinBalance() {
+  context.mocks.data.org({ role: "admin" });
+  setBilling(context, () => {
+    return billing("pro", { credits: 12_500 });
+  });
+}
+test("sidebar-subscription-usage-015 Robin stays signed in on Workflows while provider usage rejects the saved session", async () => {
+  robinBalance();
+  context.mocks.data.userPreferences({ locale: null });
+  mockedClerk.signOut.mockImplementation(() => {
+    context.mocks.clerk().sessionSignedOut(true);
+    return Promise.resolve();
+  });
+  context.mocks.api(thirdPartySubscriptionsMainContract.list, ({ respond }) => {
+    return respond(401, {
+      error: { code: "UNAUTHORIZED", message: "Session expired at provider" },
     });
-    const panel = await openSubscriptionUsage();
-    expect(
-      within(panel).getByRole("meter", {
-        name: "Claude 5-hour limit remaining",
-      }),
-    ).toHaveAttribute("aria-valuenow", "0");
-    expect(within(panel).getByText("Limit reached")).toBeInTheDocument();
-    expect(within(panel).getByText(expected)).toBeInTheDocument();
-    expect(
-      within(screen.getByTestId("labeled-nav-rail")).getByLabelText(
-        /^Subscription usage/,
-      ),
-    ).toHaveAccessibleDescription("Claude: Limit reached");
-  },
-);
+  });
+  await visit();
+  click(await action("Robin"));
+  const menu = await screen.findByRole("menu");
+  await within(menu).findByText("12,500 credits");
+  expect(location.pathname).toBe("/workflows");
+  click(within(menu).getByText("Settings"));
+  const settings = await screen.findByRole("dialog", { name: "Settings" });
+  click(await action("Models", settings));
+  await within(settings).findByText("Couldn’t load your accounts.");
+  expect(location.pathname).toBe("/workflows");
+  click(await action("Close", settings));
+  click(await action("Robin"));
+  const signedIn = await screen.findByRole("menu");
+  await within(signedIn).findByText("12,500 credits");
+});
+test("sidebar-subscription-usage-019 An account without linked providers still shows its 12,500-credit balance", async () => {
+  robinBalance();
+  context.mocks.data.personalModelProviders([]);
+  await visit();
+  click(await action("Robin"));
+  const menu = await screen.findByRole("menu");
+  const balance = await within(menu).findByText("12,500 credits");
+  expect(balance).toBeInTheDocument();
+});

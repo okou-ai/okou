@@ -1,16 +1,24 @@
+import CCStateSwiftUI
 import SwiftUI
 import UIKit
 
 /// A plain toolbar action like the composer's add button, with a spinner while the recorder starts.
+/// It is placed under the composer's `StoreProvider`.
 struct ComposerVoiceInputButton: View {
   let voice: ComposerVoiceInputStore
+  @ResolvedValue private var phase: ComposerVoiceInputStore.Phase?
+
+  init(voice: ComposerVoiceInputStore) {
+    self.voice = voice
+    _phase = ResolvedValue(voice.phaseValue)
+  }
 
   var body: some View {
     Button {
       Task { await voice.start() }
     } label: {
       Group {
-        if voice.phase == .starting {
+        if phase == .starting {
           ProgressView().controlSize(.small).tint(OkouColor.mutedForeground)
         } else {
           OkouToolbarIcon("mic")
@@ -22,7 +30,7 @@ struct ComposerVoiceInputButton: View {
     .buttonStyle(.plain)
     .accessibilityLabel("Voice input")
     .accessibilityIdentifier("voice-input")
-    .disabled(voice.phase != .idle)
+    .disabled(phase != .idle)
   }
 }
 
@@ -32,15 +40,24 @@ struct ComposerVoiceInputButton: View {
 /// banner.
 struct ComposerVoiceInputTray: View {
   let voice: ComposerVoiceInputStore
+  @ResolvedValue private var recording: ComposerVoiceInputStore.Content?
   @Environment(\.openURL) private var openURL
   @State private var lastSampleAt = Date.distantPast
   @State private var sampleInterval = OkouMotion.waveformSample
 
+  init(voice: ComposerVoiceInputStore) {
+    self.voice = voice
+    _recording = ResolvedValue(voice.value)
+  }
+
+  /// This render's graph value. The synchronous read only covers a missing first resolution.
+  private var state: ComposerVoiceInputStore.Content { recording ?? voice.snapshot }
+
   var body: some View {
     VStack(alignment: .leading, spacing: OkouSpace.sm) {
-      if let error = voice.error {
+      if let error = state.error {
         OkouBanner(Text(error), icon: "mic", tone: .problem) {
-          if voice.microphoneDenied {
+          if state.microphoneDenied {
             Button("Open Settings") {
               if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
             }
@@ -48,12 +65,12 @@ struct ComposerVoiceInputTray: View {
         }
         .accessibilityIdentifier("voice-input-status")
       }
-      if voice.phase == .recording || voice.phase == .saved || voice.phase == .processing {
+      if state.phase == .recording || state.phase == .saved || state.phase == .processing {
         bar
       }
     }
     .accessibilityIdentifier("voice-input-tray")
-    .onChange(of: voice.levels) { _, _ in
+    .onChange(of: state.levels) { _, _ in
       // The waveform glides one bar per sample; follow the capture's own cadence.
       let now = Date.now
       let gap = now.timeIntervalSince(lastSampleAt)
@@ -74,23 +91,23 @@ struct ComposerVoiceInputTray: View {
       .buttonStyle(.plain)
       .foregroundStyle(OkouColor.foreground)
       .accessibilityLabel("Discard recording")
-      .disabled(voice.phase == .processing)
+      .disabled(state.phase == .processing)
 
       Group {
-        if voice.phase == .processing {
+        if state.phase == .processing {
           HStack(spacing: OkouSpace.sm) {
             ProgressView().controlSize(.small).tint(OkouColor.mutedForeground)
-            Text("Preparing text…")
+            Text(state.asVoiceMessage ? "Uploading recording…" : "Preparing text…")
           }
           .frame(maxWidth: .infinity, alignment: .leading)
         } else {
           HStack(spacing: OkouSpace.sm) {
-            Text(String(format: "%02d:%02d", Int(voice.duration) / 60, Int(voice.duration) % 60))
+            Text(String(format: "%02d:%02d", Int(state.duration) / 60, Int(state.duration) % 60))
               .monospacedDigit()
-              .accessibilityLabel("Recording duration, \(Int(voice.duration)) seconds")
-            if voice.phase == .recording {
+              .accessibilityLabel("Recording duration, \(Int(state.duration)) seconds")
+            if state.phase == .recording {
               OkouLiveWaveform(
-                levels: voice.levels, lastSampleAt: lastSampleAt, interval: sampleInterval)
+                levels: state.levels, lastSampleAt: lastSampleAt, interval: sampleInterval)
             } else {
               Text("Recording saved")
                 .lineLimit(1)
@@ -104,11 +121,11 @@ struct ComposerVoiceInputTray: View {
       .frame(maxWidth: .infinity)
       .frame(height: OkouControl.waveformHeight)
 
-      if voice.phase != .processing {
+      if state.phase != .processing {
         Button {
           Task { await voice.finish() }
         } label: {
-          Text(voice.phase == .recording ? "Done" : "Use")
+          Text(state.phase == .recording ? "Done" : "Use")
             .font(.okou(.subheadline).weight(.semibold))
             .foregroundStyle(OkouColor.primaryForeground)
             .padding(.horizontal, OkouSpace.xs)
@@ -117,8 +134,8 @@ struct ComposerVoiceInputTray: View {
         .buttonStyle(.borderedProminent)
         .buttonBorderShape(.capsule)
         .tint(OkouColor.primary)
-        .disabled(!voice.canUseRecording)
-        .accessibilityLabel(voice.phase == .recording ? "Finish recording" : "Use recording")
+        .disabled(!state.canUseRecording)
+        .accessibilityLabel(state.phase == .recording ? "Finish recording" : "Use recording")
         .accessibilityIdentifier("finish-voice-input")
       }
     }
@@ -126,7 +143,23 @@ struct ComposerVoiceInputTray: View {
     .padding(.trailing, OkouSpace.sm)
     .frame(minHeight: OkouControl.minimumTarget + OkouSpace.sm)
     .glassEffect(.regular, in: Capsule())
-    .sensoryFeedback(.start, trigger: voice.phase == .recording)
+    .sensoryFeedback(.start, trigger: state.phase == .recording)
     .accessibilityElement(children: .contain)
+  }
+}
+
+/// Animates a container whose layout follows the voice tray. The phase is read from the session
+/// graph, so the container changes in the same transaction as the composer.
+struct ComposerVoiceAnimation: ViewModifier {
+  let animation: Animation?
+  @ResolvedValue private var phase: ComposerVoiceInputStore.Phase?
+
+  init(voice: ComposerVoiceInputStore?, animation: Animation?) {
+    self.animation = animation
+    _phase = ResolvedValue(voice?.phaseValue ?? ComposerVoiceInputStore.idlePhase)
+  }
+
+  func body(content: Content) -> some View {
+    content.animation(animation, value: phase)
   }
 }

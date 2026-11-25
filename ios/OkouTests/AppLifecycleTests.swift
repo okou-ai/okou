@@ -376,13 +376,6 @@ private final class LifecycleHTTPFixture: Sendable {
     history = ConversationHistoryFixture(
       count: 2,
       beforeEventRows: beforeEventRows,
-      updateDetail: { request in
-        let key = try Self.workspace(request) + request.url!.path + "/draft"
-        try state.drafts.withLock {
-          $0[key] = try XCTUnwrap(String(data: chatRequestBody(request), encoding: .utf8))
-        }
-        return ChatHTTPResponse(body: #"{"cancellationRecoveryPending":false}"#)
-      },
       additional: { request in
         if let response = ModelHTTPFixtures.response(request.url!.path) { return response }
         switch request.url!.path {
@@ -398,7 +391,7 @@ private final class LifecycleHTTPFixture: Sendable {
         case "/api/projects/snapshot":
           return ChatHTTPResponse(body: #"{"latestEventId":null,"latestSeqId":0,"projects":[]}"#)
         case "/api/chat-drafts/composer",
-          "/api/chat-threads/\(ConversationHistoryFixture.threadID)/draft":
+          "/api/chat-threads/\(ConversationHistoryFixture.threadID)/composer-draft":
           let key = try Self.workspace(request) + request.url!.path
           if request.httpMethod == "PATCH" {
             try state.drafts.withLock {

@@ -12,9 +12,7 @@
     <string name="chat_undo_failed">No se pudo deshacer el cambio.</string>
     <string name="chat_undo_unconfirmed">No se pudo confirmar si se deshizo el cambio.</string>
     <string name="chat_feedback_dismiss">Cerrar</string>
-    <string name="chat_list_offline">Sin conexión</string>
     <string name="chat_list_first_load_failed">No se puede cargar temporalmente</string>
-    <string name="chat_list_load_when_online">Los chats se cargarán al volver a conectarte.</string>
     <string name="chat_list_title">Chats</string>
     <string name="chat_refresh">Actualizar chats</string>
     <string name="chat_loading">Cargando chats…</string>
@@ -24,6 +22,9 @@
     <string name="chat_inbox">Bandeja de entrada</string>
     <string name="chat_mark_all_read">Marcar todo como leído</string>
     <string name="chat_mark_all_read_unconfirmed">Es posible que algunos chats sigan sin leer.</string>
+    <string name="chat_mark_all_read_failed">No se pudieron marcar los chats como leídos.</string>
+    <string name="chat_mark_all_read_partial_failed">Marcados como leídos: %1$d. Fallidos: %2$d.</string>
+    <string name="chat_mark_all_read_mixed">Marcados como leídos: %1$d. Fallidos: %2$d. Sin confirmar: %3$d.</string>
     <plurals name="chat_mark_all_read_partial">
         <item quantity="one">Se marcó como leído %1$d de %2$d chats.</item>
         <item quantity="many">Se marcaron como leídos %1$d de %2$d chats.</item>
@@ -38,6 +39,7 @@
     <string name="chat_back_to_inbox">Volver a la bandeja de entrada</string>
     <string name="chat_more_actions">Más acciones</string>
     <string name="chat_unread">No leídos</string>
+    <string name="chat_has_draft">Tiene un borrador</string>
     <string name="chat_archived">Archivados</string>
     <string name="chat_muted">Silenciados</string>
     <string name="chat_project_empty">No hay chats en este proyecto.</string>
@@ -76,9 +78,16 @@
     <string name="chat_delete_rejected">No se pudo eliminar el chat.</string>
     <string name="chat_delete_title">¿Eliminar el chat?</string>
     <string name="chat_delete_description">Los mensajes y borradores de «%1$s» se eliminarán permanentemente. Se detendrán las tareas en curso y se pausarán las automatizaciones vinculadas.</string>
-    <string name="chat_delete_confirm">Eliminar</string>
     <string name="chat_rename_project">Renombrar proyecto</string>
     <string name="chat_project_name">Nombre del proyecto</string>
+    <string name="chat_project_create">Nuevo proyecto</string>
+    <string name="chat_project_create_confirm">Crear</string>
+    <string name="chat_project_creating">Creando…</string>
+    <string name="chat_project_create_close">Cerrar</string>
+    <string name="chat_project_checking">Comprobando…</string>
+    <string name="chat_project_create_failed">No se pudo crear el proyecto. Se ha conservado el nombre.</string>
+    <string name="chat_project_create_unconfirmed">La creación del proyecto aún no se ha confirmado</string>
+    <string name="chat_project_name_too_long">El nombre del proyecto no puede superar los %1$d caracteres</string>
     <string name="chat_project_rename_unconfirmed">No se pudo confirmar el nombre del proyecto.</string>
     <string name="chat_project_rename_rejected">No se pudo cambiar el nombre del proyecto.</string>
     <string name="chat_project_rename_save">Guardar</string>
@@ -98,4 +107,16 @@
     <string name="chat_project_delete_unconfirmed">No se pudo confirmar la eliminación del proyecto.</string>
     <string name="chat_row_action_rejected_named">No se pudo completar «%1$s».</string>
     <string name="chat_row_action_offline_named">No se pudo completar «%1$s». Comprueba tu conexión y vuelve a intentarlo.</string>
+    <string name="chat_rename_save_failed">No se pudo guardar. Tus cambios se conservaron.</string>
+    <string name="chat_rename_check_result">Comprobar resultado</string>
+    <string name="chat_rename_required">Introduce un nombre.</string>
+    <string name="chat_rename_checking_result">Comprobando el resultado…</string>
+    <string name="chat_rename_save_unconfirmed">El resultado del guardado aún no se ha confirmado.</string>
+    <string name="chat_title_saved">Título del chat guardado</string>
+    <string name="chat_project_name_saved">Nombre del proyecto guardado</string>
+    <string name="inline_image_loading">Cargando imagen…</string>
+    <string name="inline_image_no_thumbnail">Miniatura no disponible</string>
+    <string name="inline_image_unavailable">Imagen no disponible</string>
+    <string name="inline_image_view_original">Ver original</string>
+    <string name="inline_image_open_link">Abrir enlace</string>
 </resources>

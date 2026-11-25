@@ -120,7 +120,7 @@ internal class RealtimeTokenBridge(
             throw AblyException.fromThrowable(cancelled)
         } catch (error: Exception) {
             failed(error)
-            // This observation fails as one owned operation; only an explicit retry starts another.
+            // The owner can reopen the observation after this token request has ended.
             close()
             throw AblyException.fromThrowable(error)
         }

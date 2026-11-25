@@ -5,20 +5,40 @@ import UIKit
 /// The installed-app boundary. Provider credentials and callback exchange stay at the API.
 @MainActor
 protocol ConnectorProviderApplication {
-  func open(_ url: URL) async -> Bool
+  func open(_ url: URL, universalLinksOnly: Bool) async -> Bool
 }
 
 struct SystemConnectorProviderApplication: ConnectorProviderApplication {
-  func open(_ url: URL) async -> Bool {
+  func open(_ url: URL, universalLinksOnly: Bool) async -> Bool {
+    if universalLinksOnly {
+      return await UIApplication.shared.open(url, options: [.universalLinksOnly: true])
+    }
     guard UIApplication.shared.canOpenURL(url) else { return false }
     return await UIApplication.shared.open(url, options: [:])
   }
 }
 
 enum ConnectorProviderAuthorization {
+  private static let googleConnectors: Set<String> = [
+    "gmail", "google-ads", "google-analytics", "google-calendar", "google-cloud",
+    "google-contacts", "google-docs", "google-drive", "google-forms", "google-maps",
+    "google-meet", "google-play", "google-search-console", "google-sheets", "youtube"
+  ]
+
   static func appURL(
     receipt: ChatConnectorReceipt, target: ChatConnectorTarget, methodID: String, webURL: URL
   ) throws -> URL? {
+    if let slug = target.connectorSlug, target == .builtin(slug), googleConnectors.contains(slug),
+      methodID == "oauth"
+    {
+      guard webURL.scheme == "https", webURL.host == "accounts.google.com", webURL.port == nil,
+        webURL.path == "/o/oauth2/v2/auth", webURL.user == nil, webURL.password == nil,
+        webURL.fragment == nil
+      else { throw APIClientError.invalidResponse }
+      // Only iOS can determine whether an installed Google app handles this URL.
+      // Preserve the complete server-owned grant for the system-browser path too.
+      return webURL
+    }
     guard let authorization = receipt.nativeAppAuthorization else { return nil }
     guard authorization.provider == "strava", target == .builtin("strava"), methodID == "oauth",
       webURL.scheme == "https", webURL.host == "www.strava.com", webURL.port == nil,
@@ -34,11 +54,34 @@ enum ConnectorProviderAuthorization {
     return url
   }
 
+  static func validateCallback(_ receipt: ChatConnectorReceipt) throws {
+    guard let url = receipt.nativeCallbackUrl else { return }
+    guard url.scheme == "https", let id = returnAttemptID(url),
+      id == receipt.oauthAttemptId?.lowercased()
+    else { throw APIClientError.invalidResponse }
+  }
+
   static func returnAttemptID(_ url: URL) -> String? {
-    guard url.scheme == "ai.okou.ios", url.host == "connector-authorization",
-      url.user == nil, url.password == nil, url.port == nil, url.query == nil, url.fragment == nil,
-      url.pathComponents.count == 2, let id = UUID(uuidString: url.lastPathComponent)
-    else { return nil }
-    return id.uuidString.lowercased()
+    guard url.user == nil, url.password == nil, url.port == nil, url.fragment == nil else {
+      return nil
+    }
+    if url.scheme == "https",
+      url.host == Bundle.main.object(forInfoDictionaryKey: "ConnectorCallbackHost") as? String,
+      url.path == "/native/connector-authorization",
+      let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
+      items.count == 1, items[0].name == "attemptId", let value = items[0].value,
+      let id = UUID(uuidString: value)
+    {
+      return id.uuidString.lowercased()
+    }
+    // An explicit link on the browser recovery page also works when iOS keeps
+    // a Universal Link in Safari. It only resumes the matching active attempt.
+    if url.scheme == "ai.okou.ios", url.host == "connector-authorization",
+      url.query == nil, url.pathComponents.count == 2,
+      let id = UUID(uuidString: url.lastPathComponent)
+    {
+      return id.uuidString.lowercased()
+    }
+    return nil
   }
 }

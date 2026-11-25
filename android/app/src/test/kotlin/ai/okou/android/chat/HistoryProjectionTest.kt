@@ -1,13 +1,92 @@
 package ai.okou.android.chat
 
+import ai.okou.android.CHAT_IN_PROJECT
 import ai.okou.android.CHAT_PERSONAL
 import ai.okou.android.HISTORY_RUN
 import ai.okou.android.RecoveryApiFixture
+import ai.okou.android.WORKFLOW_RELEASE
+import ai.okou.android.WORKFLOW_SHARED
 import ai.okou.android.historyEventWire
 import org.junit.Assert.*
 import org.junit.Test
 
 class HistoryProjectionTest {
+    @Test
+    fun chatResourcesUseTheFirstLaunchAndOnlyAdmittedWorkflowReferences() {
+        val launch =
+            event(
+                HISTORY_RUN,
+                2,
+                "input.automation",
+                payload =
+                    """{"userMessage":{"version":1,"parts":[{"type":"automation","workflowId":"$WORKFLOW_RELEASE","workflowName":"Historical title"},{"type":"source","kind":"slack","href":"https://app.slack.com/archives/channel/p123"}]}}""",
+            )
+        val queued =
+            event(
+                "queued",
+                1,
+                "input.automation",
+                run = null,
+                payload =
+                    """{"userMessage":{"version":1,"parts":[{"type":"automation","workflowId":"$WORKFLOW_SHARED","workflowName":"Queued only"}]}}""",
+            )
+        val nextRun = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        val later =
+            event(
+                nextRun,
+                3,
+                "input.automation",
+                run = nextRun,
+                payload =
+                    """{"userMessage":{"version":1,"parts":[{"type":"source","kind":"discord"},{"type":"automation","workflowId":"$WORKFLOW_RELEASE","workflowName":"Renamed"}]}}""",
+            )
+        val projected = checkNotNull(transcript(queued, launch, later).resources)
+        assertEquals(
+            ChatResourceOrigin.External(
+                "slack",
+                "https://app.slack.com/archives/channel/p123",
+                null,
+            ),
+            projected.origin,
+        )
+        assertEquals(setOf(WORKFLOW_RELEASE), projected.workflowIds)
+    }
+
+    @Test
+    fun onlyAServerRecordedForwardInTheFirstLaunchIsAnOrigin() {
+        val mention =
+            """{"type":"chat_thread","threadId":"$CHAT_IN_PROJECT","titleSnapshot":"Prior chat"}"""
+        val originRun = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        val forwarded =
+            """{"type":"chat_thread","threadId":"$CHAT_IN_PROJECT","titleSnapshot":"Origin","runId":"$originRun"}"""
+        val launch =
+            event(
+                HISTORY_RUN,
+                1,
+                "input.prompt",
+                payload = """{"userMessage":{"version":1,"parts":[$mention,$forwarded]}}""",
+            )
+        assertEquals(
+            ChatResourceOrigin.Forwarded(CHAT_IN_PROJECT, originRun),
+            transcript(launch).resources?.origin,
+        )
+        val plain =
+            event(
+                HISTORY_RUN,
+                1,
+                "input.prompt",
+                payload = """{"userMessage":{"version":1,"parts":[$mention]}}""",
+            )
+        val steer =
+            event(
+                "steer",
+                2,
+                "input.prompt",
+                payload = """{"userMessage":{"version":1,"parts":[$forwarded]}}""",
+            )
+        assertNull(transcript(plain, steer).resources?.origin)
+    }
+
     @Test
     fun searchTargetsTheDeliveredMessageWhenAnEarlierPromptIsStillQueued() {
         val queued = input("queued", 1, run = null)

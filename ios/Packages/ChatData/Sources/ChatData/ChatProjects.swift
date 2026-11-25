@@ -6,13 +6,21 @@ public struct ChatProject: Codable, Equatable, Identifiable, Sendable {
   public let createdAt: Date
   public let updatedAt: Date
   public let sortOrder: String?
+  let archived: Bool?
+  public let lastArchivedAt: Date?
+  public var isArchived: Bool { archived ?? false }
 
-  init(id: String, name: String, createdAt: Date, updatedAt: Date, sortOrder: String? = nil) {
+  init(
+    id: String, name: String, createdAt: Date, updatedAt: Date, sortOrder: String? = nil,
+    archived: Bool? = nil, lastArchivedAt: Date? = nil
+  ) {
     self.id = id
     self.name = name
     self.createdAt = createdAt
     self.updatedAt = updatedAt
     self.sortOrder = sortOrder
+    self.archived = archived
+    self.lastArchivedAt = lastArchivedAt
   }
 
   /// Match the server's byte ordering, including unranked historical snapshots.
@@ -51,6 +59,19 @@ public struct ChatProjects: Sendable {
     try await client.request(
       "/api/projects/\(id)", method: "PATCH",
       body: JSONEncoder().encode(RenameProject(eventId: eventID, name: name)))
+  }
+
+  public func setArchived(
+    _ id: String, archived: Bool, eventID: String
+  ) async throws -> ChatProject {
+    try await client.request(
+      "/api/projects/\(id)", method: "PATCH",
+      body: JSONEncoder().encode(ArchiveProject(eventId: eventID, archived: archived)))
+  }
+
+  private struct ArchiveProject: Encodable {
+    let eventId: String
+    let archived: Bool
   }
 
   public func delete(_ id: String, eventID: String) async throws {

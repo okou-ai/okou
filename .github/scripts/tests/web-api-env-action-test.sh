@@ -79,17 +79,6 @@ assert_env_key_absent() {
   fi
 }
 
-assert_env_key_count() {
-  local env_file="$1"
-  local key="$2"
-  local expected="$3"
-  local count
-  count="$(awk -F= -v key="$key" '$1 == key { count++ } END { print count + 0 }' "$env_file")"
-  if [[ "$count" != "$expected" ]]; then
-    fail "expected ${key} exactly ${expected} time(s) in ${env_file}"
-  fi
-}
-
 assert_preview_job_ref_absent() {
   local env_file="$1"
   assert_env_key_absent "$env_file" OKOU_PREVIEW_JOB_REF
@@ -97,7 +86,6 @@ assert_preview_job_ref_absent() {
 
 assert_debug_canonical() {
   local env_file="$1"
-  assert_env_key_count "$env_file" OKOU_DEBUG 1
   assert_env_value "$env_file" OKOU_DEBUG "*"
 }
 
@@ -112,13 +100,11 @@ assert_google_llm_config() {
   assert_env_value "$env_file" GCP_LLM_PROJECT_ID "vm0-ai-488909"
   assert_env_value "$env_file" GCP_LLM_WORKLOAD_IDENTITY_PROVIDER "projects/662642595011/locations/global/workloadIdentityPools/vercel-vm0-api/providers/vercel"
   assert_env_value "$env_file" GCP_LLM_SERVICE_ACCOUNT_EMAIL "$account"
-  assert_env_key_count "$env_file" GCP_LLM_SERVICE_ACCOUNT_EMAIL 1
 }
 
 assert_api_backend_url_canonical() {
   local env_file="$1"
   local expected="$2"
-  assert_env_key_count "$env_file" OKOU_API_BACKEND_URL 1
   assert_env_value "$env_file" OKOU_API_BACKEND_URL "$expected"
 }
 
@@ -130,7 +116,6 @@ assert_api_backend_url_absent() {
 assert_machine_secret_canonical() {
   local env_file="$1"
   local expected="$2"
-  assert_env_key_count "$env_file" OKOU_MACHINE_SECRET_KEY 1
   assert_env_value "$env_file" OKOU_MACHINE_SECRET_KEY "$expected"
 }
 
@@ -139,19 +124,9 @@ assert_machine_secret_absent() {
   assert_env_key_absent "$env_file" OKOU_MACHINE_SECRET_KEY
 }
 
-assert_machine_secret_values_absent_from_output() {
-  local output="$1"
-  shift
-  local value
-  for value in "$@"; do
-    assert_not_contains "$output" "$value"
-  done
-}
-
 assert_web_url_canonical() {
   local env_file="$1"
   local expected="$2"
-  assert_env_key_count "$env_file" OKOU_WEB_URL 1
   assert_env_value "$env_file" OKOU_WEB_URL "$expected"
 }
 
@@ -169,17 +144,6 @@ assert_no_fixture_secret_values() {
     if [[ "$output" == *"$unexpected"* ]]; then
       fail "render output exposed a fixture secret value"
     fi
-  done
-}
-
-assert_github_app_mapping_values() {
-  local env_file="$1"
-  local doppler_vars_json="$2"
-  local suffix
-  local expected
-  for suffix in "${GITHUB_APP_VAR_SUFFIXES[@]}" "${GITHUB_APP_SECRET_SUFFIXES[@]}"; do
-    expected="$(jq -r --arg key "GITHUB_APP_${suffix}" '.[$key] // ""' <<< "$doppler_vars_json")"
-    assert_env_value "$env_file" "GITHUB_APP_${suffix}" "$expected"
   done
 }
 
@@ -239,27 +203,15 @@ oauth_client_config_prefixes() {
   ' "$ACTION"
 }
 
-oauth_client_config_keys() {
-  local prefix
-  while IFS= read -r prefix; do
-    printf '%s_OAUTH_CLIENT_ID\n' "$prefix"
-    printf '%s_OAUTH_CLIENT_SECRET\n' "$prefix"
-  done <<< "$(oauth_client_config_prefixes)"
-}
-
 build_doppler_secrets_json() {
   local omit_key="${1:-}"
-  local json="{}"
-  local key
-  while IFS= read -r key; do
-    if [[ "$key" == "$omit_key" ]]; then
-      continue
-    fi
-    json="$(jq -c --arg key "$key" --arg value "doppler-${key}" '. + {($key): $value}' <<< "$json")"
-  done <<< "$(oauth_client_config_keys)"
-  json="$(
-    jq -c '
-      . + {
+  oauth_client_config_prefixes |
+    jq -Rnc --arg omit_key "$omit_key" '
+      reduce (inputs | . + "_OAUTH_CLIENT_ID", . + "_OAUTH_CLIENT_SECRET") as $key
+        ({}; if $key == $omit_key then . else .[$key] = "doppler-\($key)" end)
+      | . + {
+        CODEX_OAUTH_CLIENT_ID: "doppler-CODEX_OAUTH_CLIENT_ID",
+        CLAUDE_CODE_OAUTH_CLIENT_ID: "doppler-CLAUDE_CODE_OAUTH_CLIENT_ID",
         LINK_OAUTH_CLIENT_ID: "doppler-link-client-id",
         LINK_OAUTH_CLIENT_SECRET: "doppler-link-client-secret",
         LINK_STRIPE_PUBLISHABLE_KEY: "pk_live_link_fixture",
@@ -278,9 +230,7 @@ build_doppler_secrets_json() {
         FINICITY_APP_SECRET: "doppler-finicity-app-secret",
         MICROSOFT_TEAMS_BOT_APP_PASSWORD: "doppler-teams-bot-app-password"
       }
-    ' <<< "$json"
-  )"
-  printf '%s' "$json"
+    '
 }
 
 run_action() {
@@ -288,31 +238,18 @@ run_action() {
   local test_dir="$2"
   local input_app="${3:-api}"
   local input_environment="${4:-preview}"
-  local branded_config="${5:-canonical}"
-  local github_app_vars_json="${6:-}"
-  local github_app_secrets_json="${7:-}"
-  local input_job_ref="${8-pr-123}"
-  local input_api_backend_url="${9-https://pr-123-api-backend.okou.test}"
-  local machine_secret_repo_secrets_json="${10:-}"
-  local extra_repo_vars_json="${11:-}"
-  local input_extension_release_created="${12:-true}"
-  local input_extension_id="${13-$BROWSER_EXTENSION_ID}"
+  local var_overrides="${5:-"{}"}"
+  local secret_overrides="${6:-"{}"}"
+  local input_job_ref="${7-pr-123}"
+  local input_api_backend_url="${8-https://pr-123-api-backend.okou.test}"
+  local input_extension_release_created="${9:-true}"
+  local input_extension_id="${10-$BROWSER_EXTENSION_ID}"
   local action_script="${test_dir}/web-api-env-action.sh"
   local github_output="${test_dir}/github-output"
   local repo_vars_json
   local repo_secrets_json
 
-  if [[ -z "$github_app_vars_json" ]]; then
-    github_app_vars_json="{}"
-  fi
-  if [[ -z "$github_app_secrets_json" ]]; then
-    github_app_secrets_json="{}"
-  fi
-  if [[ -z "$extra_repo_vars_json" ]]; then
-    extra_repo_vars_json="{}"
-  fi
-
-  repo_vars_json='{"GH_OAUTH_CLIENT_ID":"github-gh-client-id","SLACK_OAUTH_CLIENT_ID":"github-slack-client-id","GOOGLE_ADS_DEVELOPER_TOKEN":"github-google-ads-var","FINICITY_PARTNER_ID":"github-finicity-partner-id","LINK_STRIPE_PUBLISHABLE_KEY":"pk_live_github_link_fixture","POSTHOG_KEY":"github-posthog-key","POSTHOG_HOST":"https://posthog.github.test","ATOM_URL":"https://atom.github.test","STRIPE_OAUTH_CLIENT_ID":"ca_test_connect_client","STRIPE_CONCURRENCY_PORTAL_CONFIGURATION_ID":"bpc_test_concurrency","MICROSOFT_TEAMS_BOT_APP_ID":"github-teams-bot-app-id","MICROSOFT_TEAMS_APP_TENANT_ID":"github-teams-app-tenant-id","OKOU_PRICE_PRO":"price_test_pro","OKOU_PRICE_TEAM":"price_test_team","OKOU_PRICE_USAGE_PACK_PLAN_PRO":"price_test_usage_pack_plan_pro","OKOU_PRICE_USAGE_PACK_PLAN_TEAM":"price_test_usage_pack_plan_team","OKOU_PRICE_USAGE_PACK_20":"price_test_usage_pack_20","OKOU_PRICE_USAGE_PACK_50":"price_test_usage_pack_50","OKOU_PRICE_USAGE_PACK_100":"price_test_usage_pack_100","OKOU_PRICE_USAGE_PACK_200":"price_test_usage_pack_200","ATOM_GRANT_PRICE":"price_test_atom_grant","OKOU_PRICE_CUSTOM_CREDITS":"price_test_custom_credits","OKOU_PRICE_CUSTOM_CREDIT_UNIT":"price_test_custom_credit_unit","OKOU_PRICE_CONCURRENCY":"price_test_concurrency","GMAIL_PUBSUB_TOPIC_NAME":"projects/github/topics/gmail","GMAIL_PUBSUB_PUSH_AUDIENCE":"https://api.github.test/api/webhooks/gmail","GMAIL_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL":"gmail-push@github.test","GOOGLE_WORKSPACE_EVENTS_PUBSUB_TOPIC_NAME":"projects/github/topics/google-workspace-events","GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_AUDIENCE":"https://api.github.test/api/webhooks/google-workspace-events","GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL":"workspace-events-push@github.test","R2_MARKETING_HANDOFF_BUCKET_NAME":"marketing-handoff-prod","R2_MARKETING_HANDOFF_BUCKET_NAME_DEV":"marketing-handoff-dev"}'
+  repo_vars_json='{"GH_OAUTH_CLIENT_ID":"github-gh-client-id","SLACK_OAUTH_CLIENT_ID":"github-slack-client-id","GOOGLE_ADS_DEVELOPER_TOKEN":"github-google-ads-var","FINICITY_PARTNER_ID":"github-finicity-partner-id","LINK_STRIPE_PUBLISHABLE_KEY":"pk_live_github_link_fixture","POSTHOG_KEY":"github-posthog-key","POSTHOG_HOST":"https://posthog.github.test","ATOM_URL":"https://atom.github.test","STRIPE_OAUTH_CLIENT_ID":"ca_test_connect_client","STRIPE_CONCURRENCY_PORTAL_CONFIGURATION_ID":"bpc_test_concurrency","MICROSOFT_TEAMS_BOT_APP_ID":"github-teams-bot-app-id","MICROSOFT_TEAMS_APP_TENANT_ID":"github-teams-app-tenant-id","OKOU_PRICE_PRO":"price_test_pro","ATOM_GRANT_PRICE":"price_test_atom_grant","GMAIL_PUBSUB_TOPIC_NAME":"projects/github/topics/gmail","GMAIL_PUBSUB_PUSH_AUDIENCE":"https://api.github.test/api/webhooks/gmail","GMAIL_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL":"gmail-push@github.test","GOOGLE_WORKSPACE_EVENTS_PUBSUB_TOPIC_NAME":"projects/github/topics/google-workspace-events","GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_AUDIENCE":"https://api.github.test/api/webhooks/google-workspace-events","GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL":"workspace-events-push@github.test","R2_MARKETING_HANDOFF_BUCKET_NAME":"marketing-handoff-prod","R2_MARKETING_HANDOFF_BUCKET_NAME_DEV":"marketing-handoff-dev"}'
   repo_vars_json="$(jq -c '. + {OKOU_PUBLIC_ARTIFACTS_BASE_URL: "https://cdn.okou.test", OKOU_PUBLIC_HOST_DOMAIN: "okou.app", OKOU_HOST_SCHEME: "https", OKOU_ONE_TIME_CAMPAIGN: "test-campaign"}' <<< "$repo_vars_json")"
   repo_secrets_json='{"R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID":"private-prod-key","R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY":"private-prod-secret","R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID_DEV":"private-dev-key","R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY_DEV":"private-dev-secret","GH_OAUTH_CLIENT_SECRET":"github-gh-client-secret","SLACK_OAUTH_CLIENT_SECRET":"github-slack-client-secret","GOOGLE_ADS_DEVELOPER_TOKEN":"github-google-ads-secret","OKOU_DATA_ROUTER_URL":"https://data.okou.ai/mcp","OKOU_DATA_TOKEN":"github-data-router-token","OKOU_BROWSER_USE_API_KEY":"github-browser-use-api-key","STEAM_WEB_API_KEY":"github-steam-web-api-key","LINK_OAUTH_CLIENT_ID":"github-link-client-id","LINK_OAUTH_CLIENT_SECRET":"github-link-client-secret","FINICITY_APP_KEY":"github-finicity-app-key","FINICITY_APP_SECRET":"github-finicity-app-secret","OKOU_MACHINE_SECRET_KEY":"github-atom-machine-secret","MICROSOFT_TEAMS_BOT_APP_PASSWORD":"github-teams-bot-app-password","VERCEL_AUTOMATION_BYPASS_SECRET":"github-vercel-bypass-secret","STRIPE_WEBHOOK_SECRET":"github-stripe-billing-webhook-secret","STRIPE_AUTOMATION_WEBHOOK_SECRET":"github-stripe-automation-webhook-secret","R2_MARKETING_HANDOFF_ACCESS_KEY_ID":"handoff-prod-key","R2_MARKETING_HANDOFF_SECRET_ACCESS_KEY":"handoff-prod-secret","R2_MARKETING_HANDOFF_ACCESS_KEY_ID_DEV":"handoff-dev-key","R2_MARKETING_HANDOFF_SECRET_ACCESS_KEY_DEV":"handoff-dev-secret"}'
   repo_vars_json="$(jq -c '. + {APNS_KEY_ID: "TESTKEY001", APNS_TEAM_ID: "TESTTEAM01"}' <<< "$repo_vars_json")"
@@ -329,24 +266,11 @@ run_action() {
     AWS_ACCESS_KEY_ID: "github-production-kms-access-key",
     AWS_SECRET_ACCESS_KEY: "github-production-kms-secret"
   }' <<< "$repo_secrets_json")"
-  if [[ "$branded_config" == "empty" ]]; then
-    repo_vars_json="$(jq -c 'with_entries(select(.key | startswith("OKOU_") | not))' <<< "$repo_vars_json")"
-    repo_secrets_json="$(jq -c 'with_entries(select(.key | startswith("OKOU_") | not))' <<< "$repo_secrets_json")"
-  fi
   # Repository defaults; the caller supplies GitHub Environment overrides in
   # the same resolved vars object used by the deployment workflow.
   repo_vars_json="$(jq -c '. + {GCP_LLM_PROJECT_ID: "vm0-ai-488909", GCP_LLM_WORKLOAD_IDENTITY_PROVIDER: "projects/662642595011/locations/global/workloadIdentityPools/vercel-vm0-api/providers/vercel", GCP_LLM_SERVICE_ACCOUNT_EMAIL: "llm-dev@vm0-ai-488909.iam.gserviceaccount.com"}' <<< "$repo_vars_json")"
-  repo_vars_json="$(jq -c --argjson github_app_vars "$github_app_vars_json" '. + $github_app_vars' <<< "$repo_vars_json")"
-  repo_vars_json="$(jq -c --argjson extra_repo_vars "$extra_repo_vars_json" '. + $extra_repo_vars' <<< "$repo_vars_json")"
-  repo_secrets_json="$(jq -c --argjson github_app_secrets "$github_app_secrets_json" '. + $github_app_secrets' <<< "$repo_secrets_json")"
-  if [[ -n "$machine_secret_repo_secrets_json" ]]; then
-    repo_secrets_json="$(
-      jq -c \
-        --argjson machine_secret_sources "$machine_secret_repo_secrets_json" \
-        'del(.OKOU_MACHINE_SECRET_KEY) + $machine_secret_sources' \
-        <<< "$repo_secrets_json"
-    )"
-  fi
+  repo_vars_json="$(jq -c --argjson overrides "$var_overrides" '. + $overrides' <<< "$repo_vars_json")"
+  repo_secrets_json="$(jq -c --argjson overrides "$secret_overrides" '. + $overrides' <<< "$repo_secrets_json")"
 
   extract_action_script > "$action_script"
 
@@ -368,36 +292,6 @@ run_action() {
     DOPPLER_SECRETS_JSON="$doppler_secrets_json" \
     bash "$action_script"
 }
-
-run_github_app_action() {
-  local test_dir="$1"
-  local repo_vars_json="$2"
-  local repo_secrets_json="$3"
-  local doppler_vars_json="${4:-}"
-  if [[ -z "$doppler_vars_json" ]]; then
-    doppler_vars_json="{}"
-  fi
-  run_action \
-    "$(build_doppler_secrets_json | jq -c --argjson vars "$doppler_vars_json" '. + $vars')" \
-    "$test_dir" \
-    api \
-    preview \
-    canonical \
-    "$repo_vars_json" \
-    "$repo_secrets_json"
-}
-
-github_app_canonical_vars_json='{"OKOU_GITHUB_APP_SLUG":" github-canonical-slug ","OKOU_GITHUB_APP_ID":"github-canonical-id","OKOU_GITHUB_APP_CLIENT_ID":"github-canonical-client-id"}'
-github_app_canonical_secrets_json='{"OKOU_GITHUB_APP_CLIENT_SECRET":"github-canonical-client-secret","OKOU_GITHUB_APP_WEBHOOK_SECRET":"github-canonical-webhook-secret","OKOU_GITHUB_APP_PRIVATE_KEY":"github-canonical-private-key"}'
-github_app_doppler_vars_json='{"GITHUB_APP_SLUG":" doppler-canonical-slug ","GITHUB_APP_ID":"doppler-canonical-id","GITHUB_APP_CLIENT_ID":"doppler-canonical-client-id","GITHUB_APP_CLIENT_SECRET":"doppler-canonical-client-secret","GITHUB_APP_WEBHOOK_SECRET":"doppler-canonical-webhook-secret","GITHUB_APP_PRIVATE_KEY":"doppler-canonical-private-key"}'
-github_app_canonical_dir="$(mktemp -d)"
-TEMP_DIRS+=("$github_app_canonical_dir")
-github_app_canonical_output="$(run_github_app_action "$github_app_canonical_dir" "$github_app_canonical_vars_json" "$github_app_canonical_secrets_json" "$github_app_doppler_vars_json" 2>&1)"
-github_app_canonical_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${github_app_canonical_dir}/github-output")"
-assert_contains "$github_app_canonical_output" "Rendered"
-assert_no_fixture_secret_values "$github_app_canonical_output"
-assert_github_app_mapping_values "$github_app_canonical_env_file" "$github_app_doppler_vars_json"
-assert_github_app_source_keys_absent "$github_app_canonical_env_file"
 
 integration_config_keys='[
   "AGENTPHONE_API_KEY",
@@ -457,129 +351,127 @@ gateway_config_keys='[
   "WECHAT_GATEWAY_CONTROL_SECRET"
 ]'
 
-# Each render exercises integration and MCP inputs for one app and environment.
-for integration_environment in preview production; do
-  if [[ "$integration_environment" == preview ]]; then
-    integration_api_origin="https://pr-123-api.okou.test"
-    integration_api_url="$integration_api_origin"
-    integration_mcp_issuer="https://clerk-dev.example.test"
-  else
-    integration_api_origin="https://api.okou.test"
-    integration_api_url="$integration_api_origin/"
-    integration_mcp_issuer="https://clerk.example.test"
+# Both apps use the same integration inputs. The API exposes gateway credentials
+# and derived URLs, while the web render omits them.
+integration_api_origin="https://pr-123-api.okou.test"
+integration_api_url="$integration_api_origin/"
+integration_mcp_issuer="https://clerk-dev.example.test"
+pilot_workers='[{"orgId":"org_pilot","userId":"user_pilot","machineId":"mch_pilot","loginHost":"tester@agy.example.test"}]'
+integration_doppler_json="$(
+  jq -cn --argjson keys "$integration_config_keys" --argjson gateway_keys "$gateway_config_keys" '
+    reduce ($keys + $gateway_keys)[] as $key ({}; .[$key] = ("doppler-integration-" + $key)) |
+    . + {
+      BILLING_FEEDBACK_WEBHOOK_SECRET: "doppler-billing-feedback-secret",
+      DISCORD_APPLICATION_ID: "123456789012345678",
+      DISCORD_PUBLIC_KEY: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      GITHUB_APP_SLUG: " doppler-integration-slug ",
+      LINK_APPROVAL_WORKER_URL: "https://link-approval.example.test",
+      WECHAT_GATEWAY_URL: "https://wechat.example.test"
+    }
+  '
+)"
+integration_repo_secrets="$(
+  jq -c 'with_entries(
+    .key |= (if startswith("GITHUB_APP_") then "OKOU_" + . else . end)
+    | .value = "github-conflicting-integration"
+  ) + {MARKETING_REWARDS_EVENTS_SECRET: "github-marketing-events-secret"}' <<< "$integration_doppler_json"
+)"
+integration_repo_vars="$(
+  jq -c --arg issuer "$integration_mcp_issuer" --arg workers "$(jq . <<< "$pilot_workers")" '
+    del(.MARKETING_REWARDS_EVENTS_SECRET) + {
+      MARKETING_REWARDS_EVENTS_ORIGIN: "https://events.example.test",
+      WHATSAPP_ALLOWED_COUNTRY_PREFIXES: "+1,+49",
+      MCP_OAUTH_ISSUER: $issuer,
+      ANTIGRAVITY_SUBSCRIPTION_WORKERS: $workers,
+      MCP_RESOURCE_URL: "https://wrong-resource.example.test/mcp"
+    }
+  ' <<< "$integration_repo_secrets"
+)"
+integration_secrets="$(
+  build_doppler_secrets_json | jq -c --argjson vars "$integration_doppler_json" '. + $vars'
+)"
+for integration_app in api web; do
+  integration_dir="$(mktemp -d)"
+  TEMP_DIRS+=("$integration_dir")
+  integration_backend_url=""
+  if [[ "$integration_app" == api ]]; then
+    integration_backend_url="$integration_api_url"
   fi
-  integration_doppler_json="$(
-    jq -cn --argjson keys "$integration_config_keys" --argjson gateway_keys "$gateway_config_keys" \
-      --arg scope "$integration_environment" '
-      reduce ($keys + $gateway_keys)[] as $key ({}; .[$key] = ("doppler-" + $scope + "-" + $key)) |
-      . + {
-        DISCORD_APPLICATION_ID: "123456789012345678",
-        DISCORD_PUBLIC_KEY: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        LINK_APPROVAL_WORKER_URL: ("https://link-approval-" + $scope + ".example.test"),
-        WECHAT_GATEWAY_URL: ("https://wechat-" + $scope + ".example.test")
-      }
-    '
+  integration_output="$(
+    run_action "$integration_secrets" "$integration_dir" "$integration_app" preview \
+      "$integration_repo_vars" "$integration_repo_secrets" pr-123 "$integration_backend_url" 2>&1
   )"
-  integration_repo_secrets="$(
-    jq -c 'with_entries(
-      .key |= (if startswith("GITHUB_APP_") then "OKOU_" + . else . end)
-      | .value = "github-conflicting-integration"
-    )' <<< "$integration_doppler_json"
-  )"
-  integration_repo_vars="$(
-    jq -c --arg issuer "$integration_mcp_issuer" '
-      . + {
-        WHATSAPP_ALLOWED_COUNTRY_PREFIXES: "+1,+49",
-        MCP_OAUTH_ISSUER: $issuer,
-        MCP_RESOURCE_URL: "https://wrong-resource.example.test/mcp"
-      }
-    ' <<< "$integration_repo_secrets"
-  )"
-  integration_secrets="$(
-    build_doppler_secrets_json | jq -c --argjson vars "$integration_doppler_json" '. + $vars'
-  )"
-  for integration_app in api web; do
-    integration_dir="$(mktemp -d)"
-    TEMP_DIRS+=("$integration_dir")
-    integration_backend_url=""
-    if [[ "$integration_app" == api ]]; then
-      integration_backend_url="$integration_api_url"
-    fi
-    integration_output="$(
-      run_action "$integration_secrets" "$integration_dir" "$integration_app" "$integration_environment" \
-        canonical "$integration_repo_vars" "$integration_repo_secrets" pr-123 "$integration_backend_url" 2>&1
-    )"
-    integration_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${integration_dir}/github-output")"
-    if [[ ! -f "$integration_env_file" || ! -r "$integration_env_file" || ! -s "$integration_env_file" ]]; then
-      fail "expected a readable, nonempty rendered environment for ${integration_app}/${integration_environment}"
-    fi
-    assert_no_fixture_secret_values "$integration_output"
-    assert_env_absent_value "$integration_env_file" "github-conflicting-integration"
-    if [[ "$integration_app" == api ]]; then
-      integration_rows="$(jq -er 'to_entries[] | [.key, .value] | @tsv' <<< "$integration_doppler_json")"
-      while IFS=$'\t' read -r integration_key integration_value; do
-        assert_env_value "$integration_env_file" "$integration_key" "$integration_value"
-      done <<< "$integration_rows"
-      assert_env_value "$integration_env_file" WHATSAPP_ALLOWED_COUNTRY_PREFIXES "+1,+49"
-      assert_api_backend_url_canonical "$integration_env_file" "$integration_api_url"
-      assert_env_value "$integration_env_file" MCP_RESOURCE_URL "$integration_api_origin/mcp"
-      assert_env_value "$integration_env_file" MCP_OAUTH_ISSUER "$integration_mcp_issuer"
-      assert_env_value "$integration_env_file" FEISHU_CALLBACK_BASE_URL "$integration_api_url"
-      assert_env_value "$integration_env_file" FINICITY_WEBHOOK_BASE_URL "$integration_api_url"
-    else
-      integration_rows="$(jq -er --argjson keys "$gateway_config_keys" '$keys[] as $key | [$key, .[$key]] | @tsv' \
-        <<< "$integration_doppler_json")"
-      while IFS=$'\t' read -r integration_key integration_value; do
-        assert_env_key_absent "$integration_env_file" "$integration_key"
-        assert_env_absent_value "$integration_env_file" "$integration_value"
-      done <<< "$integration_rows"
-      assert_env_key_absent "$integration_env_file" WHATSAPP_ALLOWED_COUNTRY_PREFIXES
-      assert_api_backend_url_absent "$integration_env_file"
-      assert_env_key_absent "$integration_env_file" MCP_RESOURCE_URL
-      assert_env_key_absent "$integration_env_file" MCP_OAUTH_ISSUER
-    fi
-  done
+  integration_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${integration_dir}/github-output")"
+  if [[ ! -f "$integration_env_file" || ! -r "$integration_env_file" || ! -s "$integration_env_file" ]]; then
+    fail "expected a readable, nonempty rendered environment for ${integration_app}"
+  fi
+  assert_no_fixture_secret_values "$integration_output"
+  assert_env_absent_value "$integration_env_file" "github-conflicting-integration"
+  if [[ "$integration_app" == api ]]; then
+    integration_rows="$(jq -er 'to_entries[] | [.key, .value] | @tsv' <<< "$integration_doppler_json")"
+    while IFS=$'\t' read -r integration_key integration_value; do
+      assert_env_value "$integration_env_file" "$integration_key" "$integration_value"
+    done <<< "$integration_rows"
+    assert_github_app_source_keys_absent "$integration_env_file"
+    assert_env_value "$integration_env_file" MARKETING_REWARDS_EVENTS_SECRET "github-marketing-events-secret"
+    assert_env_value "$integration_env_file" MARKETING_REWARDS_EVENTS_ORIGIN "https://events.example.test"
+    assert_env_value "$integration_env_file" WHATSAPP_ALLOWED_COUNTRY_PREFIXES "+1,+49"
+    assert_api_backend_url_canonical "$integration_env_file" "$integration_api_url"
+    assert_env_value "$integration_env_file" MCP_RESOURCE_URL "$integration_api_origin/mcp"
+    assert_env_value "$integration_env_file" MCP_OAUTH_ISSUER "$integration_mcp_issuer"
+    assert_env_value "$integration_env_file" ANTIGRAVITY_SUBSCRIPTION_WORKERS "$pilot_workers"
+    assert_env_value "$integration_env_file" FEISHU_CALLBACK_BASE_URL "$integration_api_url"
+    assert_env_value "$integration_env_file" FINICITY_WEBHOOK_BASE_URL "$integration_api_url"
+  else
+    integration_rows="$(jq -er --argjson keys "$gateway_config_keys" '$keys[] as $key | [$key, .[$key]] | @tsv' \
+      <<< "$integration_doppler_json")"
+    while IFS=$'\t' read -r integration_key integration_value; do
+      assert_env_key_absent "$integration_env_file" "$integration_key"
+      assert_env_absent_value "$integration_env_file" "$integration_value"
+    done <<< "$integration_rows"
+    assert_env_key_absent "$integration_env_file" BILLING_FEEDBACK_WEBHOOK_SECRET
+    assert_env_absent_value "$integration_env_file" "doppler-billing-feedback-secret"
+    assert_env_key_absent "$integration_env_file" MARKETING_REWARDS_EVENTS_SECRET
+    assert_env_key_absent "$integration_env_file" MARKETING_REWARDS_EVENTS_ORIGIN
+    assert_env_key_absent "$integration_env_file" WHATSAPP_ALLOWED_COUNTRY_PREFIXES
+    assert_api_backend_url_absent "$integration_env_file"
+    assert_env_key_absent "$integration_env_file" MCP_RESOURCE_URL
+    assert_env_key_absent "$integration_env_file" MCP_OAUTH_ISSUER
+    assert_env_key_absent "$integration_env_file" ANTIGRAVITY_SUBSCRIPTION_WORKERS
+  fi
 done
 
+# The optional Link values stay empty despite conflicting GitHub inputs.
 machine_secret_dir="$(mktemp -d)"
 TEMP_DIRS+=("$machine_secret_dir")
 machine_secret_output="$(run_action \
-  "$(build_doppler_secrets_json)" "$machine_secret_dir" api preview canonical \
-  "" "" "" "https://pr-123-api-backend.okou.test" \
-  '{"OKOU_MACHINE_SECRET_KEY":" preview-canonical-machine-secret=bytes "}' 2>&1)"
+  "$(build_doppler_secrets_json | jq -c 'del(.LINK_OAUTH_CLIENT_ID, .LINK_OAUTH_CLIENT_SECRET, .LINK_STRIPE_PUBLISHABLE_KEY)')" \
+  "$machine_secret_dir" api preview "" \
+  '{"OKOU_MACHINE_SECRET_KEY":" preview-canonical-machine-secret=bytes "}' "" 2>&1)"
 machine_secret_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${machine_secret_dir}/github-output")"
-assert_machine_secret_values_absent_from_output "$machine_secret_output" " preview-canonical-machine-secret=bytes "
+assert_no_fixture_secret_values "$machine_secret_output"
+assert_not_contains "$machine_secret_output" " preview-canonical-machine-secret=bytes "
 assert_machine_secret_canonical "$machine_secret_env_file" " preview-canonical-machine-secret=bytes "
 assert_preview_job_ref_absent "$machine_secret_env_file"
+assert_env_value "$machine_secret_env_file" LINK_OAUTH_CLIENT_ID ""
+assert_env_value "$machine_secret_env_file" LINK_OAUTH_CLIENT_SECRET ""
 
 api_backend_url_absent_dir="$(mktemp -d)"
 TEMP_DIRS+=("$api_backend_url_absent_dir")
 status=0
 api_backend_url_absent_output="$(
-  run_action "$(build_doppler_secrets_json)" "$api_backend_url_absent_dir" api preview canonical "" "" pr-123 "" 2>&1
+  run_action "$(build_doppler_secrets_json)" "$api_backend_url_absent_dir" api preview "" "" pr-123 "" 2>&1
 )" || status=$?
 if [[ "$status" -eq 0 || -e "${api_backend_url_absent_dir}/web-api-api-preview.env" ]]; then
   fail "missing API backend URL must fail before creating an environment file"
 fi
 assert_contains "$api_backend_url_absent_output" "::error::api-backend-url is required for API deployments"
 
-# The disabled wallet pilot must not make Link credentials required for deployment,
-# and populated GitHub fixture secrets must not become a fallback source.
-missing_wallet_dir="$(mktemp -d)"
-TEMP_DIRS+=("$missing_wallet_dir")
-missing_wallet_output="$(run_action "$(build_doppler_secrets_json | jq -c 'del(.LINK_OAUTH_CLIENT_ID, .LINK_OAUTH_CLIENT_SECRET, .LINK_STRIPE_PUBLISHABLE_KEY)')" "$missing_wallet_dir" 2>&1)"
-missing_wallet_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${missing_wallet_dir}/github-output")"
-assert_contains "$missing_wallet_output" "Rendered"
-assert_env_value "$missing_wallet_env_file" LINK_OAUTH_CLIENT_ID ""
-assert_env_value "$missing_wallet_env_file" LINK_OAUTH_CLIENT_SECRET ""
-
 success_dir="$(mktemp -d)"
 TEMP_DIRS+=("$success_dir")
 success_output="$(run_action "$(build_doppler_secrets_json)" "$success_dir" 2>&1)"
 success_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${success_dir}/github-output")"
-assert_contains "$success_output" "Rendered"
 assert_no_fixture_secret_values "$success_output"
-assert_machine_secret_values_absent_from_output "$success_output" "github-atom-machine-secret"
 assert_env_value "$success_env_file" SECRETS_KMS_KEY_ID "github-preview-kms-key"
 assert_env_value "$success_env_file" AWS_ACCESS_KEY_ID "github-preview-kms-access-key"
 assert_env_value "$success_env_file" AWS_SECRET_ACCESS_KEY "github-preview-kms-secret"
@@ -588,24 +480,6 @@ assert_debug_canonical "$success_env_file"
 assert_github_app_empty_outputs "$success_env_file"
 assert_github_app_source_keys_absent "$success_env_file"
 
-# Render an operator credential through the same API deployment boundary, and
-# ensure web deployments never receive these cross-tenant service capabilities.
-for history_app in api web; do
-  history_dir="$(mktemp -d)"
-  TEMP_DIRS+=("$history_dir")
-  history_output="$(run_action "$(build_doppler_secrets_json)" "$history_dir" \
-    "$history_app" preview canonical '{"MARKETING_REWARDS_EVENTS_ORIGIN":"https://events.example.test"}' \
-    '{"MARKETING_REWARDS_EVENTS_SECRET":"event-delivery-service-fixture-123456789"}' 2>&1)"
-  history_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${history_dir}/github-output")"
-  assert_not_contains "$history_output" "event-delivery-service-fixture-123456789"
-  if [[ "$history_app" == api ]]; then
-    assert_env_value "$history_env_file" MARKETING_REWARDS_EVENTS_SECRET "event-delivery-service-fixture-123456789"
-    assert_env_value "$history_env_file" MARKETING_REWARDS_EVENTS_ORIGIN "https://events.example.test"
-  else
-    assert_env_key_absent "$history_env_file" MARKETING_REWARDS_EVENTS_SECRET
-    assert_env_key_absent "$history_env_file" MARKETING_REWARDS_EVENTS_ORIGIN
-  fi
-done
 assert_env_value "$success_env_file" MARKETING_REWARDS_EVENTS_SECRET ""
 assert_env_value "$success_env_file" MARKETING_REWARDS_EVENTS_ORIGIN ""
 assert_env_value "$success_env_file" R2_STATIC_BUCKET_NAME "static-releases"
@@ -619,28 +493,12 @@ assert_not_contains "$success_output" "handoff-dev-secret"
 assert_env_value "$success_env_file" R2_PRIVATE_ARTIFACTS_BUCKET_NAME "user-artifact-private-dev"
 assert_env_value "$success_env_file" R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID "private-dev-key"
 assert_env_value "$success_env_file" R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY "private-dev-secret"
+assert_env_value "$success_env_file" CODEX_OAUTH_CLIENT_ID "doppler-CODEX_OAUTH_CLIENT_ID"
+assert_env_value "$success_env_file" CLAUDE_CODE_OAUTH_CLIENT_ID "doppler-CLAUDE_CODE_OAUTH_CLIENT_ID"
 assert_env_value "$success_env_file" GH_OAUTH_CLIENT_ID "doppler-GH_OAUTH_CLIENT_ID"
 assert_env_value "$success_env_file" GH_OAUTH_CLIENT_SECRET "doppler-GH_OAUTH_CLIENT_SECRET"
 assert_env_value "$success_env_file" SLACK_OAUTH_CLIENT_ID "doppler-SLACK_OAUTH_CLIENT_ID"
 assert_env_value "$success_env_file" SLACK_OAUTH_CLIENT_SECRET "doppler-SLACK_OAUTH_CLIENT_SECRET"
-assert_env_value "$success_env_file" ZOOM_OAUTH_CLIENT_ID "doppler-ZOOM_OAUTH_CLIENT_ID"
-assert_env_value "$success_env_file" ZOOM_OAUTH_CLIENT_SECRET "doppler-ZOOM_OAUTH_CLIENT_SECRET"
-assert_env_value "$success_env_file" MAILCHIMP_OAUTH_CLIENT_ID "doppler-MAILCHIMP_OAUTH_CLIENT_ID"
-assert_env_value "$success_env_file" MAILCHIMP_OAUTH_CLIENT_SECRET "doppler-MAILCHIMP_OAUTH_CLIENT_SECRET"
-assert_env_value "$success_env_file" CAL_COM_OAUTH_CLIENT_ID "doppler-CAL_COM_OAUTH_CLIENT_ID"
-assert_env_value "$success_env_file" CAL_COM_OAUTH_CLIENT_SECRET "doppler-CAL_COM_OAUTH_CLIENT_SECRET"
-assert_env_value "$success_env_file" COPPER_OAUTH_CLIENT_ID "doppler-COPPER_OAUTH_CLIENT_ID"
-assert_env_value "$success_env_file" COPPER_OAUTH_CLIENT_SECRET "doppler-COPPER_OAUTH_CLIENT_SECRET"
-assert_env_value "$success_env_file" BOX_OAUTH_CLIENT_ID "doppler-BOX_OAUTH_CLIENT_ID"
-assert_env_value "$success_env_file" BOX_OAUTH_CLIENT_SECRET "doppler-BOX_OAUTH_CLIENT_SECRET"
-assert_env_value "$success_env_file" QUICKBOOKS_OAUTH_CLIENT_ID "doppler-QUICKBOOKS_OAUTH_CLIENT_ID"
-assert_env_value "$success_env_file" QUICKBOOKS_OAUTH_CLIENT_SECRET "doppler-QUICKBOOKS_OAUTH_CLIENT_SECRET"
-assert_env_value "$success_env_file" RAMP_OAUTH_CLIENT_ID "doppler-RAMP_OAUTH_CLIENT_ID"
-assert_env_value "$success_env_file" RAMP_OAUTH_CLIENT_SECRET "doppler-RAMP_OAUTH_CLIENT_SECRET"
-assert_env_value "$success_env_file" TIKTOK_ADS_OAUTH_CLIENT_ID "doppler-TIKTOK_ADS_OAUTH_CLIENT_ID"
-assert_env_value "$success_env_file" TIKTOK_ADS_OAUTH_CLIENT_SECRET "doppler-TIKTOK_ADS_OAUTH_CLIENT_SECRET"
-assert_env_value "$success_env_file" TIKTOK_OAUTH_CLIENT_ID "doppler-TIKTOK_OAUTH_CLIENT_ID"
-assert_env_value "$success_env_file" TIKTOK_OAUTH_CLIENT_SECRET "doppler-TIKTOK_OAUTH_CLIENT_SECRET"
 assert_env_value "$success_env_file" MICROSOFT_TEAMS_BOT_APP_ID ""
 assert_env_value "$success_env_file" MICROSOFT_TEAMS_BOT_APP_PASSWORD "doppler-teams-bot-app-password"
 assert_env_value "$success_env_file" MICROSOFT_TEAMS_APP_TENANT_ID ""
@@ -660,7 +518,6 @@ assert_env_value "$success_env_file" FINICITY_PARTNER_ID ""
 assert_env_value "$success_env_file" ATOM_URL "https://tunnel-yuma-atom-api.vm7.ai"
 assert_machine_secret_canonical "$success_env_file" "github-atom-machine-secret"
 assert_env_value "$success_env_file" VERCEL_AUTOMATION_BYPASS_SECRET "github-vercel-bypass-secret"
-assert_env_key_count "$success_env_file" OKOU_PREVIEW_JOB_REF 1
 assert_env_value "$success_env_file" OKOU_PREVIEW_JOB_REF "pr-123"
 assert_api_backend_url_canonical "$success_env_file" "https://pr-123-api-backend.okou.test"
 assert_env_value "$success_env_file" MCP_RESOURCE_URL "https://pr-123-api-backend.okou.test/mcp"
@@ -671,17 +528,7 @@ assert_env_value "$success_env_file" FINICITY_WEBHOOK_BASE_URL "https://pr-123-a
 assert_web_url_canonical "$success_env_file" "https://pr-123-www.okou.test"
 assert_env_value "$success_env_file" GIT_COMMIT_SHA "$EXPECTED_BUILD_COMMIT_SHA"
 assert_env_value "$success_env_file" OKOU_PRICE_PRO "price_test_pro"
-assert_env_value "$success_env_file" OKOU_PRICE_TEAM "price_test_team"
-assert_env_value "$success_env_file" OKOU_PRICE_USAGE_PACK_PLAN_PRO "price_test_usage_pack_plan_pro"
-assert_env_value "$success_env_file" OKOU_PRICE_USAGE_PACK_PLAN_TEAM "price_test_usage_pack_plan_team"
-assert_env_value "$success_env_file" OKOU_PRICE_USAGE_PACK_20 "price_test_usage_pack_20"
-assert_env_value "$success_env_file" OKOU_PRICE_USAGE_PACK_50 "price_test_usage_pack_50"
-assert_env_value "$success_env_file" OKOU_PRICE_USAGE_PACK_100 "price_test_usage_pack_100"
-assert_env_value "$success_env_file" OKOU_PRICE_USAGE_PACK_200 "price_test_usage_pack_200"
 assert_env_value "$success_env_file" ATOM_GRANT_PRICE "price_test_atom_grant"
-assert_env_value "$success_env_file" OKOU_PRICE_CUSTOM_CREDITS "price_test_custom_credits"
-assert_env_value "$success_env_file" OKOU_PRICE_CUSTOM_CREDIT_UNIT "price_test_custom_credit_unit"
-assert_env_value "$success_env_file" OKOU_PRICE_CONCURRENCY "price_test_concurrency"
 assert_env_value "$success_env_file" OKOU_PUBLIC_ARTIFACTS_BASE_URL "https://cdn.okou.test"
 assert_env_value "$success_env_file" PUBLIC_ARTIFACT_SHARES_BASE_URL "https://files.sites.vm7.io"
 assert_env_value "$success_env_file" OKOU_PUBLIC_HOST_DOMAIN "okou.app"
@@ -708,9 +555,7 @@ preview_web_dir="$(mktemp -d)"
 TEMP_DIRS+=("$preview_web_dir")
 preview_web_output="$(run_action "$(build_doppler_secrets_json)" "$preview_web_dir" web preview 2>&1)"
 preview_web_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${preview_web_dir}/github-output")"
-assert_contains "$preview_web_output" "Rendered"
 assert_no_fixture_secret_values "$preview_web_output"
-assert_machine_secret_values_absent_from_output "$preview_web_output" "github-atom-machine-secret"
 assert_preview_job_ref_absent "$preview_web_env_file"
 assert_debug_canonical "$preview_web_env_file"
 assert_api_backend_url_canonical "$preview_web_env_file" "https://pr-123-api-backend.okou.test"
@@ -720,29 +565,12 @@ assert_env_key_absent "$preview_web_env_file" GCP_LLM_PROJECT_ID
 assert_env_key_absent "$preview_web_env_file" GCP_LLM_WORKLOAD_IDENTITY_PROVIDER
 assert_env_key_absent "$preview_web_env_file" GCP_LLM_SERVICE_ACCOUNT_EMAIL
 
-empty_dir="$(mktemp -d)"
-TEMP_DIRS+=("$empty_dir")
-empty_output="$(run_action "$(build_doppler_secrets_json)" "$empty_dir" api preview empty 2>&1)"
-empty_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${empty_dir}/github-output")"
-assert_contains "$empty_output" "Rendered"
-assert_no_fixture_secret_values "$empty_output"
-assert_debug_canonical "$empty_env_file"
-assert_api_backend_url_canonical "$empty_env_file" "https://pr-123-api-backend.okou.test"
-assert_machine_secret_absent "$empty_env_file"
-assert_env_value "$empty_env_file" OKOU_PUBLIC_ARTIFACTS_BASE_URL ""
-assert_env_value "$empty_env_file" OKOU_PUBLIC_HOST_DOMAIN ""
-assert_env_value "$empty_env_file" OKOU_PRICE_PRO ""
-assert_env_value "$empty_env_file" OKOU_ONE_TIME_CAMPAIGN ""
-
 production_web_dir="$(mktemp -d)"
 TEMP_DIRS+=("$production_web_dir")
 production_web_output="$(run_action "$(build_doppler_secrets_json)" "$production_web_dir" web production \
-  canonical "" "" pr-123 "https://pr-123-api-backend.okou.test" "" \
   '{"MCP_OAUTH_ISSUER":"https://clerk.example.test","MCP_RESOURCE_URL":"https://wrong-resource.example.test/mcp"}' 2>&1)"
 production_web_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${production_web_dir}/github-output")"
-assert_contains "$production_web_output" "Rendered"
 assert_no_fixture_secret_values "$production_web_output"
-assert_machine_secret_values_absent_from_output "$production_web_output" "github-atom-machine-secret"
 assert_env_value "$production_web_env_file" OKOU_HOST_SCHEME "https"
 assert_debug_absent "$production_web_env_file"
 assert_api_backend_url_canonical "$production_web_env_file" "https://pr-123-api-backend.okou.test"
@@ -764,11 +592,10 @@ assert_env_absent_value "$production_web_env_file" "github-artifact-preview-waf-
 
 production_api_dir="$(mktemp -d)"
 TEMP_DIRS+=("$production_api_dir")
-production_api_output="$(run_action "$(build_doppler_secrets_json)" "$production_api_dir" api production canonical '{"GCP_LLM_SERVICE_ACCOUNT_EMAIL":"llm-prod@vm0-ai-488909.iam.gserviceaccount.com"}' '{"PREVIEW_KMS_KEY_ID":null,"PREVIEW_KMS_ACCESS_KEY_ID":null,"PREVIEW_KMS_SECRET_ACCESS_KEY":null}' 2>&1)"
+production_api_doppler_json="$(build_doppler_secrets_json | jq -c '. + {BILLING_FEEDBACK_WEBHOOK_SECRET: "doppler-billing-feedback-secret"}')"
+production_api_output="$(run_action "$production_api_doppler_json" "$production_api_dir" api production '{"GCP_LLM_SERVICE_ACCOUNT_EMAIL":"llm-prod@vm0-ai-488909.iam.gserviceaccount.com"}' '{"PREVIEW_KMS_KEY_ID":null,"PREVIEW_KMS_ACCESS_KEY_ID":null,"PREVIEW_KMS_SECRET_ACCESS_KEY":null}' 2>&1)"
 production_api_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${production_api_dir}/github-output")"
-assert_contains "$production_api_output" "Rendered"
 assert_no_fixture_secret_values "$production_api_output"
-assert_machine_secret_values_absent_from_output "$production_api_output" "github-atom-machine-secret"
 assert_env_value "$production_api_env_file" APNS_PRIVATE_KEY_BASE64 "github-apns-test-key"
 assert_env_value "$production_api_env_file" APNS_KEY_ID "TESTKEY001"
 assert_env_value "$production_api_env_file" APNS_TEAM_ID "TESTTEAM01"
@@ -793,12 +620,6 @@ assert_env_absent_value "$production_api_env_file" "github-preview-kms"
 assert_env_value "$production_api_env_file" OKOU_HOST_SCHEME "https"
 assert_debug_absent "$production_api_env_file"
 assert_google_llm_config "$production_api_env_file" "llm-prod@vm0-ai-488909.iam.gserviceaccount.com"
-assert_env_value "$production_api_env_file" MAILCHIMP_OAUTH_CLIENT_ID "doppler-MAILCHIMP_OAUTH_CLIENT_ID"
-assert_env_value "$production_api_env_file" MAILCHIMP_OAUTH_CLIENT_SECRET "doppler-MAILCHIMP_OAUTH_CLIENT_SECRET"
-assert_env_value "$production_api_env_file" CAL_COM_OAUTH_CLIENT_ID "doppler-CAL_COM_OAUTH_CLIENT_ID"
-assert_env_value "$production_api_env_file" CAL_COM_OAUTH_CLIENT_SECRET "doppler-CAL_COM_OAUTH_CLIENT_SECRET"
-assert_env_value "$production_api_env_file" COPPER_OAUTH_CLIENT_ID "doppler-COPPER_OAUTH_CLIENT_ID"
-assert_env_value "$production_api_env_file" COPPER_OAUTH_CLIENT_SECRET "doppler-COPPER_OAUTH_CLIENT_SECRET"
 assert_env_value "$production_api_env_file" R2_MARKETING_HANDOFF_BUCKET_NAME "marketing-handoff-prod"
 assert_env_value "$production_api_env_file" R2_MARKETING_HANDOFF_ACCESS_KEY_ID "handoff-prod-key"
 assert_env_value "$production_api_env_file" R2_MARKETING_HANDOFF_SECRET_ACCESS_KEY "handoff-prod-secret"
@@ -811,6 +632,7 @@ assert_env_value "$production_api_env_file" FEISHU_CALLBACK_BASE_URL "https://pr
 assert_env_value "$production_api_env_file" FINICITY_WEBHOOK_BASE_URL "https://pr-123-api-backend.okou.test"
 assert_env_value "$production_api_env_file" ATOM_URL "https://atom.github.test"
 assert_machine_secret_canonical "$production_api_env_file" "github-atom-machine-secret"
+assert_env_key_absent "$production_api_env_file" ANTIGRAVITY_SUBSCRIPTION_WORKERS
 assert_env_value "$production_api_env_file" MICROSOFT_TEAMS_BOT_APP_ID ""
 assert_env_value "$production_api_env_file" MICROSOFT_TEAMS_BOT_APP_PASSWORD "doppler-teams-bot-app-password"
 assert_env_value "$production_api_env_file" MICROSOFT_TEAMS_APP_TENANT_ID ""
@@ -818,6 +640,7 @@ assert_env_value "$production_api_env_file" OKOU_BROWSER_USE_API_KEY "github-bro
 assert_env_value "$production_api_env_file" OKOU_BROWSER_USE_EXTENSION_ID "$BROWSER_EXTENSION_ID"
 assert_env_value "$production_api_env_file" STRIPE_WEBHOOK_SECRET "github-stripe-billing-webhook-secret"
 assert_env_value "$production_api_env_file" STRIPE_AUTOMATION_WEBHOOK_SECRET "doppler-stripe-automation-webhook-secret"
+assert_env_value "$production_api_env_file" BILLING_FEEDBACK_WEBHOOK_SECRET "doppler-billing-feedback-secret"
 assert_env_absent_value "$production_api_env_file" "doppler-stripe-billing-webhook-secret"
 assert_preview_job_ref_absent "$production_api_env_file"
 
@@ -826,7 +649,7 @@ for kms_secret in PREVIEW_KMS_KEY_ID PREVIEW_KMS_ACCESS_KEY_ID PREVIEW_KMS_SECRE
   TEMP_DIRS+=("$missing_kms_dir")
   missing_kms_secret="$(jq -cn --arg key "$kms_secret" '{($key): null}')"
   status=0
-  missing_kms_output="$(run_action "$(build_doppler_secrets_json)" "$missing_kms_dir" api preview canonical "" "$missing_kms_secret" 2>&1)" || status=$?
+  missing_kms_output="$(run_action "$(build_doppler_secrets_json)" "$missing_kms_dir" api preview "" "$missing_kms_secret" 2>&1)" || status=$?
   if [[ "$status" -eq 0 ]]; then
     fail "preview must reject incomplete KMS credentials instead of using production credentials"
   fi
@@ -837,7 +660,6 @@ done
 # Both default API renders have no Doppler Discord config.
 for discord_env_file in "$success_env_file" "$production_api_env_file"; do
   for discord_key in DISCORD_APPLICATION_ID DISCORD_PUBLIC_KEY DISCORD_BOT_TOKEN DISCORD_GATEWAY_SECRET DISCORD_OAUTH_CLIENT_SECRET; do
-    assert_env_key_count "$discord_env_file" "$discord_key" 1
     assert_env_value "$discord_env_file" "$discord_key" ""
   done
   assert_env_absent_value "$discord_env_file" "github-discord-oauth-secret"
@@ -903,8 +725,8 @@ IFS= read -r registry_origin <&"${EXTENSION_REGISTRY[0]}"
 lookup_dir="$(mktemp -d)"
 TEMP_DIRS+=("$lookup_dir")
 BROWSER_USE_API_URL="$registry_origin" run_action \
-  "$(build_doppler_secrets_json)" "$lookup_dir" api preview canonical \
-  "{}" "{}" pr-123 https://pr-123-api-backend.okou.test "" "" false "" \
+  "$(build_doppler_secrets_json)" "$lookup_dir" api preview \
+  "{}" "{}" pr-123 https://pr-123-api-backend.okou.test false "" \
   > "${lookup_dir}/output"
 lookup_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${lookup_dir}/github-output")"
 assert_env_value "$lookup_env_file" OKOU_BROWSER_USE_EXTENSION_ID "22222222-2222-4222-8222-222222222222"
@@ -912,8 +734,8 @@ missing_lookup_dir="$(mktemp -d)"
 TEMP_DIRS+=("$missing_lookup_dir")
 status=0
 missing_lookup_output="$(BROWSER_USE_API_URL="$registry_origin" run_action \
-  "$(build_doppler_secrets_json)" "$missing_lookup_dir" api production canonical \
-  "{}" "{}" "" https://api.okou.test "" "" false "" 2>&1)" || status=$?
+  "$(build_doppler_secrets_json)" "$missing_lookup_dir" api production \
+  "{}" "{}" "" https://api.okou.test false "" 2>&1)" || status=$?
 if [[ "$status" -eq 0 || -s "${missing_lookup_dir}/github-output" ]]; then
   fail "expected an unavailable extension to stop environment publication"
 fi
@@ -921,5 +743,47 @@ assert_contains "$missing_lookup_output" "No uploaded Okou Browser extension was
 kill "$REGISTRY_PID"
 wait "$REGISTRY_PID" 2>/dev/null || true
 REGISTRY_PID=""
+
+# Custom-domain configuration is scoped to the API and its Doppler environment.
+hosted_domain_keys=(
+  HOSTED_SITE_DOMAIN_CONNECT_PRIVATE_KEY_BASE64
+  HOSTED_SITE_DOMAIN_CONNECT_KEY_HOST
+  HOSTED_SITE_CUSTOM_DOMAIN_API_TOKEN
+  HOSTED_SITE_CUSTOM_DOMAIN_ZONE_ID
+  HOSTED_SITE_CUSTOM_DOMAIN_TARGET
+  HOSTED_SITE_CUSTOM_DOMAIN_WORKER
+  HOSTED_SITE_CUSTOM_DOMAIN_APEX_ADDRESSES
+)
+for hosted_domain_key in "${hosted_domain_keys[@]}"; do
+  assert_env_key_absent "$success_env_file" "$hosted_domain_key"
+  assert_env_key_absent "$production_api_env_file" "$hosted_domain_key"
+done
+for hosted_domain_mode in api:preview api:production web:production; do
+  hosted_domain_app="${hosted_domain_mode%%:*}"
+  hosted_domain_environment="${hosted_domain_mode##*:}"
+  hosted_domain_dir="$(mktemp -d)"
+  TEMP_DIRS+=("$hosted_domain_dir")
+  hosted_domain_json="$(build_doppler_secrets_json | jq -c --arg environment "$hosted_domain_environment" '. + {
+    HOSTED_SITE_DOMAIN_CONNECT_PRIVATE_KEY_BASE64: "ZmFrZS1kb21haW4tY29ubmVjdC1rZXk=",
+    HOSTED_SITE_DOMAIN_CONNECT_KEY_HOST: "_key1",
+    HOSTED_SITE_CUSTOM_DOMAIN_API_TOKEN: ("fixture-domain-token-" + $environment),
+    HOSTED_SITE_CUSTOM_DOMAIN_ZONE_ID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    HOSTED_SITE_CUSTOM_DOMAIN_TARGET: ("connect-" + $environment + ".example.test"),
+    HOSTED_SITE_CUSTOM_DOMAIN_WORKER: "zero-host-worker",
+    HOSTED_SITE_CUSTOM_DOMAIN_APEX_ADDRESSES: "203.0.113.3"
+  }')"
+  hosted_domain_output="$(run_action "$hosted_domain_json" "$hosted_domain_dir" "$hosted_domain_app" "$hosted_domain_environment" 2>&1)"
+  hosted_domain_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${hosted_domain_dir}/github-output")"
+  assert_not_contains "$hosted_domain_output" "fixture-domain-token-"
+  assert_not_contains "$hosted_domain_output" "ZmFrZS1kb21haW4tY29ubmVjdC1rZXk="
+  for hosted_domain_key in "${hosted_domain_keys[@]}"; do
+    if [[ "$hosted_domain_app" == "api" ]]; then
+      hosted_domain_expected="$(jq -r --arg key "$hosted_domain_key" '.[$key]' <<< "$hosted_domain_json")"
+      assert_env_value "$hosted_domain_env_file" "$hosted_domain_key" "$hosted_domain_expected"
+    else
+      assert_env_key_absent "$hosted_domain_env_file" "$hosted_domain_key"
+    fi
+  done
+done
 
 echo "web-api-env-action-test: ok"

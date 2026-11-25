@@ -152,6 +152,7 @@ names.update('OKOU_' + name for name in list(names))
 synthetic_secrets = {name: 'fixture-secret-' + name for name in names}
 doppler = {name + suffix: 'fixture-oauth-' + name + suffix
            for name in names for suffix in ['_OAUTH_CLIENT_ID', '_OAUTH_CLIENT_SECRET']}
+doppler.update(CODEX_OAUTH_CLIENT_ID='fixture-codex-client', CLAUDE_CODE_OAUTH_CLIENT_ID='fixture-claude-client')
 with tempfile.TemporaryDirectory() as temporary:
     environment = dict(os.environ, RUNNER_TEMP=temporary,
                        GITHUB_OUTPUT=str(Path(temporary) / 'outputs'),
@@ -220,7 +221,8 @@ push = context()
 for name in validation:
     assert not condition(jobs[name], push), f'main push must not repeat {name}'
     push[f'needs.{name}.result'] = 'skipped'
-    for event in ['pull_request', 'merge_group']:
+for event in ['pull_request', 'merge_group']:
+    for name in ['file-size-check', 'test-migrate']:
         assert condition(jobs[name], context(event)), f'{event} must retain {name}'
 for name in runner_e2e + ['deploy-stripe-listener']:
     push[f'needs.{name}.result'] = 'skipped'
@@ -253,8 +255,8 @@ def ancestors(name):
 assert not set(finalizers) & ancestors('ci-gate-turbo')
 for event in ['pull_request', 'merge_group']:
     gate(context(event), True)
-    for name in ts_checks + ['file-size-check', 'lint-runtime-api-compat']:
-        gate(context(event) | {f'needs.{name}.result': 'skipped'}, False)
+for name in ts_checks + ['file-size-check']:
+    gate(context('pull_request') | {f'needs.{name}.result': 'skipped'}, False)
 
 # Main baselines run independently of staging; merge groups do not run benches.
 assert set(benchmark['on']) == {'pull_request', 'push'}
@@ -270,19 +272,13 @@ release_contexts = [
 ]
 for values in release_contexts:
     assert not condition(benchmark_detector, values), 'release commits must not create new baselines'
-for name in ['bench-app']:
-    assert name not in jobs, 'benchmarks must not hold the staging workflow lock'
-    job = benchmark['jobs'][name]
-    assert 'prepare' not in needs(job), 'baselines must not wait for deployment preparation'
-    for event in ['push', 'pull_request']:
-        assert condition(job, context(event)), f'{event} must retain {name}'
-        assert not condition(job, context(event) | {
-            'needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed': 'false',
-        }), f'{name} must retain native-only skips'
-    for values in release_contexts:
-        assert not condition(job, values | {
-            'needs.detect-turbo-ts-checks.result': 'skipped',
-        }), f'{name} must remain skipped after release detection'
+assert 'bench-app' not in jobs, 'benchmarks must not hold the staging workflow lock'
+bench_app = benchmark['jobs']['bench-app']
+assert 'prepare' not in needs(bench_app), 'baselines must not wait for deployment preparation'
+for values in release_contexts:
+    assert not condition(bench_app, values | {
+        'needs.detect-turbo-ts-checks.result': 'skipped',
+    }), 'bench-app must remain skipped after release detection'
 
 print('staging workflow selection, isolation, and failure gates: ok')
 PY

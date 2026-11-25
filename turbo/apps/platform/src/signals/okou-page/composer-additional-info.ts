@@ -74,34 +74,29 @@ export function buildComposerAdditionalInfo(
       ? [
           "# Presentation Generation Defaults",
           "The user set these for presentations generated in this run:",
-          ...(presentationFormat
-            ? [
-                `- Output format: ${presentationFormat.toUpperCase()} format`,
-                presentationTemplateFormatInstruction(presentationFormat),
-              ]
-            : []),
           `- Slide count: ${
             presentationSlideCount === "auto"
               ? "Auto (choose the number of slides based on the content)"
               : presentationSlideCount
           }`,
-          presentationFormat
-            ? "The output format is a preference. Where this run's message asks for a different output format or slide count, the message wins."
-            : "Where this run's message asks for a different slide count, the message wins.",
+          "Where this run's message asks for a different slide count, the message wins.",
+        ].join("\n")
+      : "",
+    presentationFormat
+      ? [
+          "# Presentation Output Preference",
+          "For any new presentation produced from this message, use this saved default unless the message explicitly requests another format. This preference does not request a presentation or change another artifact's output type.",
+          `- Output format: ${presentationFormat.toUpperCase()} format`,
+          presentationTemplateFormatInstruction(presentationFormat),
+          "This preference is fixed for this message. Do not query or update the saved preference during generation. Do not infer a default from earlier messages or memory.",
+          'When you produce a new presentation and this saved default chose its format (the message does not name one), end your reply with one short sentence that names the format as the user\'s default (call HTML "web slides" and PPTX "PowerPoint") and says they can ask for the other format or change the default in Settings → Chat.',
         ].join("\n")
       : "",
     visualization
       ? [
           "# Visualization",
           "The user wants a visualized result for this run.",
-          `- Preferred output format: ${visualization.output ?? "report"}${
-            visualization.output === "presentation" && presentationFormat
-              ? ` (${presentationFormat.toUpperCase()} format)`
-              : ""
-          }`,
-          ...(visualization.output === "presentation" && presentationFormat
-            ? [presentationTemplateFormatInstruction(presentationFormat)]
-            : []),
+          `- Preferred output format: ${visualization.output ?? "report"}`,
           visualization.charts.length > 0
             ? `- Preferred chart types: ${visualization.charts.join(", ")}`
             : "",

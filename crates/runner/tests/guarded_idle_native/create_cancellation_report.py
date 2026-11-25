@@ -4,10 +4,9 @@
 import hashlib
 import pathlib
 
+import create_custody_report as custody
 import ext4_superblock
 import progress_report as foreground
-import pressure_report as pressure
-import observation_report as reads
 import report
 import snapshot_report as startup
 
@@ -16,28 +15,12 @@ CASES = {f"CreateCancellation-{mode}" for mode in ("fresh", "snapshot")}
 PHASES = ("inputs_verified", "create_accepted", "cancel_wait", "create_joined", "producers_joined", "accounting_closed")
 
 
-def ordered(values):
-    if any(not report.positive_integer(v) for v in values) or any(a >= b for a,b in zip(values,values[1:])):
-        raise ValueError("actual create physical clock order changed")
-
-
-def accounting(value, growth, uncertain=False):
-    tracked = value.get("tracked_tasks") if isinstance(value,dict) else None
-    if not pressure.integer(tracked, 0 if uncertain else 1) or (uncertain and tracked != 0):
-        raise ValueError("actual create tracked custody changed")
-    report.exact(value, {"registered_operations":1, "started":0 if uncertain else 1,
-        "ordinary_growth_bytes":growth,"cleanup_growth_bytes":0,"tracked_tasks":tracked,"uncertain":int(uncertain)},
-        "actual create original P2 allowance/uncertainty changed")
-
-
 def validate(directory):
     directory = pathlib.Path(directory)
     result, collector, terminals = report._validate_cases(directory, CASES, report.PHASES)
     policy, raw = startup.original_inputs(collector["metadata"], result["artifacts"], "native_create_cancellation")
-    witnesses = {case:[] for case in CASES}
-    report.collect_witnesses(
-        directory / 'stdout.log', {PREFIX: witnesses},
-        case_matches=lambda value: value in CASES,
+    witnesses = report.collect_case_witnesses(
+        directory / 'stdout.log', PREFIX, CASES,
         invalid_message="invalid actual create witness",
     )
     generations, created_ids = set(), set()
@@ -49,8 +32,14 @@ def validate(directory):
         identity = report.witness_identity(terminal[1])
         if report.witness_identity_changed(events, identity):
             raise ValueError("actual create lost original generation")
-        ordered([terminal[1]["monotonic_ns"], *(e["monotonic_ns"] for e in events[:5]), terminal[2]["monotonic_ns"]])
-        ordered([terminal[4]["monotonic_ns"], events[-1]["monotonic_ns"], terminal[-1]["monotonic_ns"]])
+        custody.validate_ordered_clocks([
+            terminal[1]["monotonic_ns"],
+            *(e["monotonic_ns"] for e in events[:5]),
+            terminal[2]["monotonic_ns"],
+        ])
+        custody.validate_ordered_clocks([
+            terminal[4]["monotonic_ns"], events[-1]["monotonic_ns"], terminal[-1]["monotonic_ns"],
+        ])
         initial, accepted, waiting, joined, producers, closed = [e["evidence"] for e in events]
         preparation = policy["replacement_preparation_bytes"]
         growth = startup.BYTES+preparation
@@ -72,43 +61,42 @@ def validate(directory):
                 or hashlib.sha256(block).hexdigest() != created.get("superblock_sha256")):
             raise ValueError("actual ext4 superblock bytes/hash mismatch")
         created_ids.add(path.parent.name)
-        ordered([events[0]["monotonic_ns"],created.get("held_ns"),events[1]["monotonic_ns"]])
+        custody.validate_ordered_clocks([
+            events[0]["monotonic_ns"], created.get("held_ns"), events[1]["monotonic_ns"],
+        ])
         report.exact(created,{"home_path":str(path),"home_bytes":report.NATIVE_HOME_BYTES,
             "ext4_magic":ext4_superblock.MAGIC_HEX,
             "superblock_hex":created["superblock_hex"],"superblock_sha256":created["superblock_sha256"],"held_ns":created["held_ns"]},"actual formatted home shape changed")
-        actual = accepted.get("samples")
-        reads.samples(actual, events[0]["monotonic_ns"],events[1]["monotonic_ns"],policy)
-        fresh = pressure.sustained_ready_samples(actual, events[1]["monotonic_ns"], policy)
-        if (not pressure.integer(accepted.get("available_bytes"),policy["recovery_available_bytes"])
-                or not any(v["available_bytes"] == accepted.get("available_bytes") for v in fresh)):
-            raise ValueError("actual create lacks sustained fresh Ready")
-        accounting(accepted.get("accounting"),growth)
+        actual = custody.validate_accepted_pressure(
+            accepted, events[0]["monotonic_ns"], events[1]["monotonic_ns"], policy,
+            "actual create lacks sustained fresh Ready",
+        )
+        custody.validate_accounting(accepted.get("accounting"), growth)
         report.exact(accepted,{"created":created,"state":"Ready","available_bytes":accepted["available_bytes"],
             "samples":actual,"accounting":accepted["accounting"],"allocated":[4,8192,2],"release_byte_withheld":True},"accepted actual create custody changed")
-        ordered([events[1]["monotonic_ns"], *(waiting.get(k) for k in ("cancelled_ns","first_dropped_ns","second_pending_ns","foreground_acquired_ns")),events[2]["monotonic_ns"]])
-        accounting(waiting.get("accounting"),growth)
-        foreground.observer(waiting.get("observer"),waiting["foreground_acquired_ns"],events[2]["monotonic_ns"])
-        generation=foreground.heartbeat(waiting.get("heartbeat"),1,waiting["foreground_acquired_ns"],events[2]["monotonic_ns"],allocated=(4,8192))
-        if generation in generations: raise ValueError("actual create heartbeat generation replayed")
-        generations.add(generation)
-        report.exact(waiting,{**{k:waiting[k] for k in ("cancelled_ns","first_dropped_ns","second_pending_ns","foreground_acquired_ns","accounting","heartbeat","observer")},
-            "first_pending":True,"first_dropped":True,"second_pending":True,"release_byte_withheld":True,"allocated":[4,8192,2]},"cancelled actual create observer custody changed")
+        custody.validate_cancel_wait(
+            waiting, events[1]["monotonic_ns"], events[2]["monotonic_ns"], growth, generations,
+            replay_message="actual create heartbeat generation replayed",
+            receipt_message="cancelled actual create observer custody changed",
+        )
         completion=joined.get("completion")
         if not isinstance(completion,dict): raise ValueError("actual workspace rollback absent")
-        accounting(completion.get("accounting"),growth)
+        custody.validate_accounting(completion.get("accounting"), growth)
         report.exact(completion,{"workspace":str(path.parent),"workspace_absent":True,"cleanup_ns":completion.get("cleanup_ns"),
             "allocated":[4,8192,2],"accounting":completion["accounting"]},"actual workspace cleanup lost full custody")
-        ordered([events[2]["monotonic_ns"],joined.get("release_ns"),completion["cleanup_ns"],joined.get("joined_ns"),events[3]["monotonic_ns"]])
-        accounting(joined.get("accounting"),growth,True)
+        custody.validate_ordered_clocks([
+            events[2]["monotonic_ns"], joined.get("release_ns"), completion["cleanup_ns"],
+            joined.get("joined_ns"), events[3]["monotonic_ns"],
+        ])
+        custody.validate_accounting(joined.get("accounting"), growth, uncertain=True)
         report.exact(joined,{"completion":completion,"release_ns":joined["release_ns"],"joined_ns":joined["joined_ns"],
             "transaction_joined":True,"cancelled":True,
             "allocated":[2,4096,1],"accounting":joined["accounting"]},"actual create cancellation/uncertainty result changed")
-        accounting(producers.get("accounting"),growth,True)
+        custody.validate_accounting(producers.get("accounting"), growth, uncertain=True)
         report.exact(producers,{"creation_joined":True,"pressure_stopped":True,"heartbeat_joined":True,
             "provider_joined":True,"peer_joined":True,"snapshot_reverified":True,"allocated":[2,4096,1],
             "accounting":producers["accounting"]},"actual create producers not joined before original saving")
-        report.exact(closed,{"registered_operations":1,"tracked_tasks":0,"started":0,"uncertain":1,
-            "ordinary_growth_bytes":growth,"cleanup_growth_bytes":0,"closed":True,"allocated":[0,0,0]},"closed actual create P2 uncertainty was discarded")
+        custody.validate_closed_accounting(closed, growth, "closed actual create P2 uncertainty was discarded")
         result["cases"][case]["create_cancellation"]=events
     result.update(format="native-create-cancellation-report-v2",native_create_cancellation_complete=True,
         checkpoint_models_stalled_storage=False,

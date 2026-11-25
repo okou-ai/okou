@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.32.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.31.109...runner-remote-v0.32.0) (2026-11-25)
+
+
+### Features
+
+* receive computer use app state on the assigned runner ([#50745](https://github.com/okou-ai/okou/issues/50745)) ([9977243](https://github.com/okou-ai/okou/commit/99772436210306fef0b462d019a9fe57d118ff81))
+
+## [0.31.109](https://github.com/okou-ai/okou/compare/runner-remote-v0.31.108...runner-remote-v0.31.109) (2026-11-24)
+
+## [0.31.108](https://github.com/okou-ai/okou/compare/runner-remote-v0.31.107...runner-remote-v0.31.108) (2026-11-24)
+
+## [0.31.107](https://github.com/okou-ai/okou/compare/runner-remote-v0.31.106...runner-remote-v0.31.107) (2026-11-24)
+
+## [0.31.106](https://github.com/okou-ai/okou/compare/runner-remote-v0.31.105...runner-remote-v0.31.106) (2026-11-24)
+
+## [0.31.105](https://github.com/okou-ai/okou/compare/runner-remote-v0.31.104...runner-remote-v0.31.105) (2026-11-24)
+
+## [0.31.104](https://github.com/okou-ai/okou/compare/runner-remote-v0.31.103...runner-remote-v0.31.104) (2026-11-24)
+
+## [0.31.103](https://github.com/okou-ai/okou/compare/runner-remote-v0.31.102...runner-remote-v0.31.103) (2026-11-23)
+
 ## [0.31.102](https://github.com/okou-ai/okou/compare/runner-remote-v0.31.101...runner-remote-v0.31.102) (2026-11-23)
 
 ## [0.31.101](https://github.com/okou-ai/okou/compare/runner-remote-v0.31.100...runner-remote-v0.31.101) (2026-11-23)

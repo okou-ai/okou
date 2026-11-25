@@ -51,6 +51,8 @@ public struct ChatComposerConnector: Identifiable, Sendable {
   public var icon: ChatConnectorIcon?
   public var access: ChatConnectorAccess
   public var currentAccount: ChatConnectorAccount?
+  public var reconnectAccountIDs: [String] = []
+  public var needsAttention: Bool { !reconnectAccountIDs.isEmpty }
   public var id: String { target.key }
 }
 
@@ -137,7 +139,7 @@ public struct ChatComposerAccess: Sendable {
   public init(client: APIClient) { self.client = client }
 
   public func connectors(
-    threadID: String? = nil, options: ChatComposerOptions = .init()
+    threadID: String? = nil, options: ChatComposerOptions = .init(), memberAccess: Bool = false
   ) async throws -> [ChatComposerConnector] {
     struct Builtin: Decodable, Sendable {
       let slug: String
@@ -173,7 +175,8 @@ public struct ChatComposerAccess: Sendable {
       for (index, candidate) in candidates.enumerated() {
         group.addTask {
           let access = try await self.connectorAccess(
-            target: candidate.target, threadID: threadID, options: options)
+            target: candidate.target, threadID: threadID, options: options,
+            memberAccess: memberAccess)
           var currentAccount: ChatConnectorAccount?
           if let id = access.currentConnectionId {
             do {

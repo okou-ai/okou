@@ -54,10 +54,13 @@ import {
   CodexResetUsageDialog,
 } from "./codex-reset-usage-dialog.tsx";
 
+import { AntigravitySubscription } from "./antigravity-subscription.tsx";
+
 export function PersonalProvidersTab() {
   return (
     <div className="flex flex-col gap-8">
       <OAuthAccountGroupsSection />
+      <AntigravitySubscription />
     </div>
   );
 }

@@ -249,9 +249,9 @@ const emptySections = Object.freeze({
   storage_hasRefreshToken: sql`NULL::boolean`
     .mapWith(nullableDriverValueDecoder(pgBooleanDecoder))
     .as("storage_hasRefreshToken"),
-  storage_automaticOAuthBindingId: sql`NULL::uuid`
-    .mapWith(nullableDriverValueDecoder(pgTextDecoder))
-    .as("storage_automaticOAuthBindingId"),
+  storage_hasAutomaticOAuthBinding: sql`NULL::boolean`
+    .mapWith(nullableDriverValueDecoder(pgBooleanDecoder))
+    .as("storage_hasAutomaticOAuthBinding"),
   storage_kind: sql`NULL::text`
     .mapWith(nullableDriverValueDecoder(storageKindDecoder))
     .as("storage_kind"),
@@ -542,7 +542,7 @@ function customRuntimeStorageRows(storage: CustomRuntimeReadPlan["storage"]) {
       storage_definitionStorageVersion: storage.definitionStorageVersion,
       storage_hasAccessToken: storage.hasAccessToken,
       storage_hasRefreshToken: storage.hasRefreshToken,
-      storage_automaticOAuthBindingId: storage.automaticOAuthBindingId,
+      storage_hasAutomaticOAuthBinding: storage.hasAutomaticOAuthBinding,
     })
     .from(storage);
 }
@@ -728,7 +728,9 @@ function customRuntimeStorageFromRow(row: SnapshotRow) {
     ),
     hasAccessToken: requiredSlot(row.storage_hasAccessToken),
     hasRefreshToken: requiredSlot(row.storage_hasRefreshToken),
-    automaticOAuthBindingId: row.storage_automaticOAuthBindingId,
+    hasAutomaticOAuthBinding: requiredSlot(
+      row.storage_hasAutomaticOAuthBinding,
+    ),
     kind: row.storage_kind,
     key: row.storage_key,
     storedValue: row.storage_storedValue,

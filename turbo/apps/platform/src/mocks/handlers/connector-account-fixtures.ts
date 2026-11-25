@@ -11,7 +11,6 @@ import {
   customConnectorMcpResponseSchema,
   type CustomConnectorHttpResponse,
   type CustomConnectorMcpResponse,
-  type CustomConnectorResponse,
   type CustomConnectorOAuthConfig,
   type IntegrationManagedCustomConnectorResponse,
 } from "@okouai/api-contracts/contracts/custom-connectors";
@@ -64,21 +63,6 @@ export type McpFixtureOverrides = Partial<
 const accounts = new WeakMap<object, ConnectorAccountConnection>();
 export function connectorFixtureAccount(definition: object) {
   return accounts.get(definition);
-}
-export function requireConnectorFixtureAccount(definition: object) {
-  const account = accounts.get(definition);
-  if (!account) {
-    throw new Error("Fixture must define the operated connector account");
-  }
-  return account;
-}
-export function customConnectorCompletionFixture<
-  T extends CustomConnectorResponse,
->(definition: T) {
-  return {
-    ...definition,
-    connectionId: requireConnectorFixtureAccount(definition).id,
-  };
 }
 export function connectorAccountFixture(
   target: ConnectorAccountTarget,

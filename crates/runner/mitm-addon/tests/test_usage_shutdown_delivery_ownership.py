@@ -60,7 +60,9 @@ def test_done_owns_retry_after_late_timer_fires_during_executor_join(
 
     done_thread = ThreadUnderTest(target=mitm_addon.done)
     timer_thread: ThreadUnderTest | None = None
+    # The response gates and joins establish ownership without the retry sleep.
     with (
+        patch.object(usage.webhook, "time", spec=["sleep"]),
         failed_server.run(),
         other_server.run(),
         mitm_ctx(),
@@ -139,7 +141,7 @@ def test_final_drain_waits_for_timer_owned_delivery(tmp_path, fresh_usage_execut
     # timer can still own delivery through the real synchronous fallback.
     fresh_usage_executor.shutdown(wait=True)
     drain_thread = ThreadUnderTest(target=usage.drain_usage_events_after_executor_shutdown)
-    with server.run():
+    with patch.object(usage.webhook, "time", spec=["sleep"]), server.run():
         usage.buffer_usage_events(
             server.url(),
             "synthetic-token",

@@ -11,16 +11,17 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { chatThreadRoutes } from "../chat-threads";
+import { chatThreadRoutes, createChatIndicatorsRoute } from "../chat-threads";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 
+const INDICATOR_TEST_MODEL = "claude-fable-5-1";
 const context = testContext();
 const store = createStore();
 const bdd = createBddApi(context);
@@ -99,7 +100,7 @@ async function prepareChatRuntime(): Promise<void> {
 async function prepareEntitledMember(actor: ApiTestUser): Promise<void> {
   await api.grantProEntitlement(actor);
   await api.ensurePersonalSubscriptionModel(actor, {
-    model: "claude-fable-5-1",
+    model: INDICATOR_TEST_MODEL,
   });
 
   const restoreEnvironment = captureConnectorExternalState(context);
@@ -128,7 +129,7 @@ async function createCancelledThread(args: {
 }): Promise<SeededThread> {
   const sent = await chat.sendAndLaunch(args.actor, {
     prompt: args.prompt,
-    model: "claude-fable-5-1",
+    model: INDICATOR_TEST_MODEL,
   });
   const executionInput = await indicatorCredentials.executionInput(
     args.actor,
@@ -335,11 +336,12 @@ describe("GET /api/indicators", () => {
     await expect(currentIndicators()).resolves.toStrictEqual(indicators.body);
   });
 
-  it("keeps the 50 most recent active threads independent of unread state", async () => {
+  it("keeps the most recent active threads independent of unread state", async () => {
     await prepareChatRuntime();
-    // Every send must start a Run (runs, not waiting inputs, feed the active
-    // indicator), so lift the organization concurrency limit.
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "0");
+    const indicatorsClient = setupApp({
+      context,
+      routes: [createChatIndicatorsRoute(2)],
+    })(chatThreadsContract);
     const actor = bdd.user();
     await prepareEntitledMember(actor);
 
@@ -354,19 +356,27 @@ describe("GET /api/indicators", () => {
     await chat.markThreadUnread(actor, older.threadId);
     await indicatorCredentials.executionInput(actor, restarted.runId);
 
-    const recent: Record<string, string> = {};
-    for (let index = 0; index < 50; index += 1) {
-      const sent = await chat.sendAndLaunch(actor, {
-        prompt: `Later active indicator ${index}`,
-      });
-      recent[sent.threadId] = "active";
-    }
+    const newer = await chat.sendAndLaunch(actor, {
+      prompt: "Newer active Run",
+      model: INDICATOR_TEST_MODEL,
+    });
+    const newest = await chat.sendAndLaunch(actor, {
+      prompt: "Newest active Run",
+      model: INDICATOR_TEST_MODEL,
+    });
+    const recent = {
+      [newer.threadId]: "active",
+      [newest.threadId]: "active",
+    };
     await seedMembership(actor);
 
     const headers = {
       authorization: `Bearer ${indicatorCredentials.token(actor)}`,
     };
-    const indicators = await accept(client().indicators({ headers }), [200]);
+    const indicators = await accept(
+      indicatorsClient.indicators({ headers }),
+      [200],
+    );
     expect(indicators.body).toStrictEqual({
       threads: recent,
       unreadAt: {},
@@ -374,7 +384,7 @@ describe("GET /api/indicators", () => {
 
     const readIndependentIndicators = async () => {
       const response = await accept(
-        client().indicators({
+        indicatorsClient.indicators({
           headers,
           query: { includeActiveUnread: "true" },
         }),
@@ -392,5 +402,5 @@ describe("GET /api/indicators", () => {
     await expect(readIndependentIndicators()).resolves.toStrictEqual(
       indicators.body,
     );
-  }, 180_000);
+  });
 });

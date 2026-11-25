@@ -87,6 +87,8 @@ def _run_check_script(
         **os.environ,
         "LC_ALL": "C",
         "PATH": f"{executable_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+        # Each test runs its fresh copy of the checker once.
+        "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONCOERCECLOCALE": "0",
         "PYTHONUTF8": "0",
     }

@@ -1,14 +1,46 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="conversation_queue_count">Antrean (%1$d)</string>
+    <string name="conversation_queue_empty">Tidak ada item dalam antrean</string>
+    <string name="conversation_queue_message">Pesan</string>
+    <plurals name="conversation_queue_attachments">
+        <item quantity="other">Pesan · %d lampiran</item>
+    </plurals>
+    <string name="conversation_run_queued">Menunggu untuk dimulai</string>
     <string name="conversation_welcome">Apa yang ingin Anda kerjakan?</string>
     <string name="conversation_welcome_detail">Beri tahu Okou apa yang ingin Anda lakukan.</string>
     <string name="conversation_jump_latest">Ke pesan terbaru</string>
     <string name="conversation_new_reply">Balasan baru</string>
     <string name="conversation_view_progress">Lihat progres</string>
     <string name="conversation_processing">Sedang memproses…</string>
-    <string name="conversation_history_offline">Riwayat chat akan dimuat saat Anda kembali online.</string>
-    <string name="conversation_offline_send">Sambungkan internet untuk mengirim. Draf Anda tetap di sini.</string>
-    <string name="conversation_work">Proses kerja</string>
+    <string name="conversation_reply_summary">Ringkasan balasan</string>
+    <string name="conversation_turn_continued">Dilanjutkan di giliran berikutnya</string>
+    <string name="conversation_replying">Sedang membalas…</string>
+    <string name="conversation_turn_done">Selesai</string>
+    <string name="conversation_replies_expanded">Diperluas</string>
+    <string name="conversation_replies_collapsed">Diciutkan</string>
+    <string name="conversation_work_elapsed">Sudah bekerja %1$s</string>
+    <string name="conversation_work_total">Total bekerja %1$s</string>
+    <string name="conversation_work_seconds">%1$d detik</string>
+    <string name="conversation_work_minutes">%1$d menit</string>
+    <string name="conversation_work_hours">%1$d jam</string>
+    <string name="conversation_work_minutes_seconds">%1$d menit %2$d detik</string>
+    <string name="conversation_work_hours_minutes">%1$d jam %2$d menit</string>
+    <string name="conversation_followup_continue">Lanjutkan</string>
+    <string name="conversation_feedback_pair">%1$s · %2$s</string>
+    <plurals name="conversation_reply_steps">
+        <item quantity="other">%d langkah</item>
+    </plurals>
+    <string-array name="conversation_completion_phrases">
+        <item>Diselesaikan</item>
+        <item>Semua selesai</item>
+        <item>Dikirim</item>
+        <item>Selesai, siap melayani</item>
+        <item>Tuntas</item>
+        <item>Misi selesai</item>
+        <item>Ditutup</item>
+        <item>Selesai tuntas</item>
+    </string-array>
     <string name="conversation_reply_actions">Tindakan balasan</string>
     <string name="conversation_copy_reply">Salin balasan</string>
     <string name="conversation_reply_copied">Balasan disalin</string>
@@ -16,13 +48,8 @@
     <string name="conversation_queue">Antrean</string>
     <string name="conversation_queue_automation">Otomatisasi alur kerja</string>
     <string name="conversation_skip_automation">Lewati otomatisasi ini</string>
-    <string name="conversation_withdrawing">Menarik…</string>
-    <string name="conversation_skipping">Melewati…</string>
-    <string name="conversation_withdraw_unknown">Hasil penarikan belum diketahui</string>
-    <string name="conversation_skip_unknown">Hasil pelewatan belum diketahui</string>
     <string name="conversation_withdraw_failed">Pesan tidak dapat ditarik</string>
     <string name="conversation_skip_failed">Otomatisasi tidak dapat dilewati</string>
-    <string name="conversation_stop">Hentikan</string>
     <string name="conversation_find">Cari pesan</string>
     <string name="conversation_find_turns">Jelajahi giliran percakapan</string>
     <string name="conversation_find_empty">Tidak ada pesan untuk dicari</string>

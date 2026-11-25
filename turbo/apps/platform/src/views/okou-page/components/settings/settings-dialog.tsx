@@ -31,9 +31,9 @@ import {
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
-import { proactiveSettingsInMyOkou$ } from "../../../../signals/proactive-settings.ts";
 import { featureSwitches$ } from "../../../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
+import { detach, Reason } from "../../../../signals/utils.ts";
 import {
   closeSettingsModal$,
   completeSettingsModalClose$,
@@ -41,9 +41,9 @@ import {
   setSettingsActiveSection$,
   settingsActiveSection$,
   settingsDialogOpen$,
-  settingsDialogSessionActive$,
   type SettingsSection,
 } from "../../../../signals/okou-page/settings/settings-dialog.ts";
+import { settingsDialogSessionActive$ } from "../../../../signals/okou-page/settings/settings-dialog-session.ts";
 import { billingPlansStandalone$ } from "../../../../signals/okou-page/settings/workspace-settings-state.ts";
 import { isOrgAdmin$ } from "../../../../signals/org.ts";
 import { BillingSection } from "./sections/billing-section.tsx";
@@ -117,6 +117,7 @@ function SettingsDialogSession() {
   const standalonePlans = useGet(billingPlansStandalone$);
   const close = useSet(closeSettingsModal$);
   const completeClose = useSet(completeSettingsModalClose$);
+  const signal = useGet(pageSignal$);
   const onOpenChange = (nextOpen: boolean) => {
     if (!nextOpen) {
       close();
@@ -124,7 +125,7 @@ function SettingsDialogSession() {
   };
   const onOpenChangeComplete = (nextOpen: boolean) => {
     if (!nextOpen) {
-      completeClose();
+      detach(completeClose(signal), Reason.DomCallback);
     }
   };
 
@@ -161,7 +162,6 @@ function SettingsDialog({
   const isAdmin =
     isAdminLoadable.state === "hasData" ? isAdminLoadable.data : false;
   const showDebug = features?.[FeatureSwitchKey.OkouDebug] ?? false;
-  const proactive = useLastResolved(proactiveSettingsInMyOkou$);
 
   const sectionMeta = {
     "my-okou": {
@@ -169,9 +169,7 @@ function SettingsDialog({
         return $.myOkou.title;
       }),
       description: t(($) => {
-        return proactive
-          ? $.myOkou.proactiveSettings.description
-          : $.myOkou.description;
+        return $.myOkou.proactiveSettings.description;
       }),
     },
     preference: {
@@ -501,9 +499,7 @@ function SettingsDialog({
                 <div
                   className={cn(
                     "flex min-h-7 items-center gap-2",
-                    resolvedSection === "my-okou" &&
-                      proactive &&
-                      "max-sm:hidden",
+                    resolvedSection === "my-okou" && "max-sm:hidden",
                   )}
                 >
                   <h2 className="hidden h-7 items-center text-xl font-semibold tracking-tight text-foreground sm:flex">

@@ -9,6 +9,7 @@ import ai.okou.android.SettingsSwitchRow
 import ai.okou.android.SettingsTrigger
 import ai.okou.android.WorkspaceFeedbackHost
 import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.settingsPanelContentPadding
 import ai.okou.android.updates.updateFocusOutline
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
@@ -111,7 +112,6 @@ internal fun DefaultModelSetting(
     if (options == null || state.record == null) {
         val status =
             when {
-                state.offline -> stringResource(R.string.settings_model_load_when_online)
                 state.catalogUnavailable -> stringResource(R.string.chat_list_first_load_failed)
                 else -> null
             }
@@ -174,9 +174,7 @@ private fun DefaultModelSheet(
     val windowHeight = currentWindowSizeDp().height
     val fullScreen = windowHeight < 480
     val scroll = rememberScrollState()
-    val size =
-        if (fullScreen) Modifier.fillMaxHeight()
-        else Modifier.heightIn(max = windowHeight.dp * 0.86f).animateContentSize()
+    val size = if (fullScreen) Modifier.fillMaxHeight() else Modifier.animateContentSize()
     val selected = state.selected
     SettingsModal(dismiss, fullScreen = fullScreen) { centered ->
         val routeFeedback by rememberUpdatedState(onFeedbackInOverlay)
@@ -202,12 +200,8 @@ private fun DefaultModelSheet(
         Column(
             Modifier.fillMaxWidth()
                 .then(size)
-                .padding(
-                    start = 16.dp,
-                    end = 16.dp,
-                    top = if (centered && !fullScreen) 16.dp else 0.dp,
-                    bottom = 16.dp,
-                ),
+                .padding(settingsPanelContentPadding(compactHeight = fullScreen))
+                .padding(top = if (centered && !fullScreen) 16.dp else 0.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = dismiss) {
@@ -307,7 +301,7 @@ private fun ModelOption(
 ) {
     val colors = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(12.dp)
-    val focusColor = LocalActivityStatusColor.current
+    val radioColor = LocalActivityStatusColor.current
     val disabledColor = colors.onSurface.copy(alpha = 0.38f)
     val foreground = if (selected) colors.onSecondaryContainer else colors.onSurface
     Row(
@@ -315,7 +309,7 @@ private fun ModelOption(
             .fillMaxWidth()
             .heightIn(min = if (supportingText == null) 56.dp else 72.dp)
             .clip(shape)
-            .updateFocusOutline(shape, focusColor)
+            .updateFocusOutline(shape, foreground)
             .then(if (selected) Modifier.background(colors.secondaryContainer) else Modifier)
             .selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
@@ -343,7 +337,7 @@ private fun ModelOption(
             enabled = enabled,
             colors =
                 RadioButtonDefaults.colors(
-                    selectedColor = focusColor,
+                    selectedColor = radioColor,
                     unselectedColor = colors.onSurfaceVariant,
                     disabledSelectedColor = disabledColor,
                     disabledUnselectedColor = disabledColor,

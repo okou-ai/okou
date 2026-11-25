@@ -1,0 +1,63 @@
+{
+  "connector-directory-010": {
+    "close-first": {
+      "order": [
+        "provider displayed",
+        "directory closed",
+        "callback delivered"
+      ],
+      "windows": 1,
+      "admissions": 1,
+      "consentOrigin": "https://accounts.google.com",
+      "digest": "e87cf07c93b43cafd46449a1b18e53436d3970fae97b29fe3ef51ccca6a5c12c",
+      "admissionStatus": 200,
+      "callbackStatus": 200,
+      "callbackResult": "error",
+      "closedOnDismiss": false
+    },
+    "callback-first": {
+      "order": [
+        "provider displayed",
+        "callback delivered",
+        "directory closed"
+      ],
+      "windows": 1,
+      "admissions": 1,
+      "consentOrigin": "https://accounts.google.com",
+      "digest": "96b3af17990fb767be283c40392617af3e1a5914b0b9e48a814884a5d26f8c7d",
+      "admissionStatus": 200,
+      "callbackStatus": 200,
+      "callbackResult": "error",
+      "closedOnDismiss": false
+    }
+  },
+  "settings-model-loading-001": {
+    "bothOutstanding": {
+      "heading": "Use more models",
+      "status": "Loading accounts…",
+      "empty": false,
+      "connect": false
+    },
+    "billingReleasedFirst": "account loading persists",
+    "subscriptionReleasedFirst": "returned member appears before billing settles",
+    "source": "https://github.com/okou-ai/okou/pull/37519"
+  },
+  "composer-custom-template-recommendations-009": {
+    "draftRetained": true,
+    "removeImageAvailable": true,
+    "sentBeforeWEBP": false,
+    "clipboard": [
+      "old-manual.pdf",
+      "coastal-palette.webp"
+    ],
+    "picker": [
+      "coastal-palette.webp"
+    ],
+    "generationTemplateSelected": false,
+    "destination": "submitted chat",
+    "source": [
+      "https://github.com/okou-ai/okou/pull/39648",
+      "https://github.com/okou-ai/okou/pull/50365"
+    ]
+  }
+}

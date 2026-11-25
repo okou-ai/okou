@@ -31,10 +31,8 @@ def validate(directory):
     directory = pathlib.Path(directory)
     result, collector, terminals = report._validate_cases(directory, CASES, report.PHASES)
     policy = supplied_policy(collector, result, "native_unpark_policy_json")
-    witnesses = {case: [] for case in CASES}
-    report.collect_witnesses(
-        directory / 'stdout.log', {PREFIX: witnesses},
-        case_matches=lambda value: value in CASES,
+    witnesses = report.collect_case_witnesses(
+        directory / 'stdout.log', PREFIX, CASES,
         invalid_message="invalid native unpark witness",
     )
     identities = {events[1][key] for events in terminals.values() for key in ("sandbox_id", "backing_generation")}
@@ -47,10 +45,10 @@ def validate(directory):
         identity = report.witness_identity(terminal[1])
         if report.witness_identity_changed(events, identity):
             raise ValueError("native unpark changed original physical owner")
-        ordered = [terminal[1], *events[:6], terminal[2], terminal[3], *events[6:9],
-                   terminal[4], *events[9:], terminal[5]]
-        report.validate_witness_clock_order(
-            ordered, "native unpark phase clocks lost ordering")
+        report.validate_terminal_witness_clock_order(
+            terminal, events, tail_start_index=6, tail_end_index=9,
+            message="native unpark phase clocks lost ordering",
+        )
         initial, captured, accepted, lost, progress, joined = [event["evidence"] for event in events[:6]]
         mode = case.rsplit("-", 1)[0]
         baseline = status_evidence.validate_initial_status_receipt(

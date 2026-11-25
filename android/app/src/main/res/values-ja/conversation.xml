@@ -1,14 +1,46 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="conversation_queue_count">キュー（%1$d）</string>
+    <string name="conversation_queue_empty">キューに項目はありません</string>
+    <string name="conversation_queue_message">メッセージ</string>
+    <plurals name="conversation_queue_attachments">
+        <item quantity="other">メッセージ · 添付ファイル %d件</item>
+    </plurals>
+    <string name="conversation_run_queued">開始待ち</string>
     <string name="conversation_welcome">今日は何を進めますか？</string>
     <string name="conversation_welcome_detail">やりたいことを Okou に伝えましょう。</string>
     <string name="conversation_jump_latest">最新に戻る</string>
     <string name="conversation_new_reply">新しい返信</string>
     <string name="conversation_view_progress">進捗を確認</string>
     <string name="conversation_processing">処理中…</string>
-    <string name="conversation_history_offline">オンラインになるとチャット履歴が表示されます。</string>
-    <string name="conversation_offline_send">送信するには接続してください。下書きは残ります。</string>
-    <string name="conversation_work">作業の経過</string>
+    <string name="conversation_reply_summary">返信の要約</string>
+    <string name="conversation_turn_continued">次のターンに引き継ぎ</string>
+    <string name="conversation_replying">返信中…</string>
+    <string name="conversation_turn_done">完了</string>
+    <string name="conversation_replies_expanded">展開済み</string>
+    <string name="conversation_replies_collapsed">折りたたみ</string>
+    <string name="conversation_work_elapsed">%1$s作業中</string>
+    <string name="conversation_work_total">作業時間 %1$s</string>
+    <string name="conversation_work_seconds">%1$d秒</string>
+    <string name="conversation_work_minutes">%1$d分</string>
+    <string name="conversation_work_hours">%1$d時間</string>
+    <string name="conversation_work_minutes_seconds">%1$d分%2$d秒</string>
+    <string name="conversation_work_hours_minutes">%1$d時間%2$d分</string>
+    <string name="conversation_followup_continue">続ける</string>
+    <string name="conversation_feedback_pair">%1$s · %2$s</string>
+    <plurals name="conversation_reply_steps">
+        <item quantity="other">%dステップ</item>
+    </plurals>
+    <string-array name="conversation_completion_phrases">
+        <item>終了</item>
+        <item>すべて完了</item>
+        <item>配信済み</item>
+        <item>終了しました。ご対応ください</item>
+        <item>これで終わりです</item>
+        <item>ミッション完了</item>
+        <item>サインオフ</item>
+        <item>無事完了</item>
+    </string-array>
     <string name="conversation_reply_actions">返信の操作</string>
     <string name="conversation_copy_reply">返信をコピー</string>
     <string name="conversation_reply_copied">返信をコピーしました</string>
@@ -16,13 +48,8 @@
     <string name="conversation_queue">キュー</string>
     <string name="conversation_queue_automation">ワークフローの自動化</string>
     <string name="conversation_skip_automation">今回の自動化をスキップ</string>
-    <string name="conversation_withdrawing">取り消し中…</string>
-    <string name="conversation_skipping">スキップ中…</string>
-    <string name="conversation_withdraw_unknown">取り消し結果を確認する必要があります</string>
-    <string name="conversation_skip_unknown">スキップ結果を確認する必要があります</string>
-    <string name="conversation_withdraw_failed">取り消せませんでした</string>
-    <string name="conversation_skip_failed">スキップできませんでした</string>
-    <string name="conversation_stop">停止</string>
+    <string name="conversation_withdraw_failed">メッセージを取り消せませんでした</string>
+    <string name="conversation_skip_failed">自動化をスキップできませんでした</string>
     <string name="conversation_find">メッセージを検索</string>
     <string name="conversation_find_turns">やり取りを表示</string>
     <string name="conversation_find_empty">検索できるメッセージがありません</string>
@@ -31,7 +58,7 @@
     <string name="conversation_find_unavailable">このメッセージは利用できません。</string>
     <string name="conversation_find_attachment">添付ファイル</string>
     <plurals name="conversation_find_matches">
-        <item quantity="other">%d 件のメッセージが一致</item>
+        <item quantity="other">%d件のメッセージが一致</item>
     </plurals>
     <string name="conversation_link_unavailable">この会話リンクは利用できません</string>
     <string name="conversation_link_no_browser">このリンクを開けるブラウザがありません</string>

@@ -3,7 +3,8 @@ import SwiftLintCore
 public func extraRules() -> [any Rule.Type] {
   [
     RenderEffectsRule.self, StableGraphRule.self, PrivateAtomsRule.self,
-    AccessorEscapeRule.self, NativeRequestsRule.self, ResourceFailuresRule.self,
+    AccessorEscapeRule.self, ApplicationSubscriptionRule.self, NativeRequestsRule.self,
+    ResourceFailuresRule.self,
     UselessCatchRule.self,
     TestSynchronizationRule.self,
     CheckAfterAwaitRule.self, ResourceCancellationRule.self,

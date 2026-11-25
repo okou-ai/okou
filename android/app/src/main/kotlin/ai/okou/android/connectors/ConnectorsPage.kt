@@ -4,7 +4,9 @@ import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
 import ai.okou.android.WorkspaceMenu
 import ai.okou.android.WorkspaceMenuItem
-import ai.okou.android.chat.rememberChatWaitIndicator
+import ai.okou.android.WorkspaceToolDirectoryRow
+import ai.okou.android.chat.ContentReadFeedback
+import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.state.ConnectorDirectoryState
 import ai.okou.android.state.rememberConnectorDirectory
 import ai.okou.android.updates.updateFocusOutline
@@ -34,7 +36,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -65,7 +66,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -73,13 +76,13 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
@@ -102,6 +105,7 @@ internal fun ConnectorsPage(
     model: ConnectorModel,
     listWidth: Int?,
     initialSlug: String? = null,
+    initialAccountId: String? = null,
     close: () -> Unit,
 ) {
     val state by model.uiState.collectAsStateWithLifecycle()
@@ -109,6 +113,7 @@ internal fun ConnectorsPage(
     val discoverPosition = rememberLazyListState()
     val connectedPosition = rememberLazyListState()
     val focus = LocalFocusManager.current
+    val inputMode = LocalInputModeManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     var restoreRow by remember { mutableStateOf<String?>(null) }
     val filter =
@@ -133,6 +138,12 @@ internal fun ConnectorsPage(
     }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { model.resume() }
 
+    fun closePage() {
+        // A navigation exit ends the selection. Activity recreation keeps the same route.
+        model.select(null)
+        close()
+    }
+
     fun back() {
         focus.clearFocus()
         keyboard?.hide()
@@ -140,7 +151,7 @@ internal fun ConnectorsPage(
             restoreRow = selected
             route.slug = null
         } else {
-            close()
+            closePage()
         }
     }
 
@@ -181,15 +192,16 @@ internal fun ConnectorsPage(
                     onRestored = { restoreRow = null },
                     editQuery = ::setQuery,
                     setCategory = ::setCategory,
-                    open = { slug ->
-                        focus.clearFocus()
+                    open = { entry ->
+                        if (!wide || inputMode.inputMode != InputMode.Keyboard) focus.clearFocus()
                         keyboard?.hide()
-                        route.slug = slug
+                        route.slug = entry.slug
+                        model.select(entry.slug, entry)
                     },
                 )
             }
         }
-        if (wide) VerticalDivider(color = MaterialTheme.colorScheme.outline)
+        if (wide) VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         if (selected != null) {
             Column(Modifier.weight(1f).fillMaxHeight()) {
                 if (!wide) ConnectorTopBar(stringResource(R.string.connector_title), ::back)
@@ -219,9 +231,11 @@ internal fun ConnectorsPage(
                 key(selected) {
                     ConnectorDetails(
                         model,
-                        matchingState ?: ConnectorUiState(offline = state.offline),
-                        entry,
+                        matchingState ?: ConnectorUiState(),
+                        entry ?: matchingState?.selectedPreview,
                         wide,
+                        initialAccountId = initialAccountId.takeIf { selected == initialSlug },
+                        onCloseInitialAccount = ::closePage,
                     )
                 }
             }
@@ -266,7 +280,7 @@ private fun ConnectorTopBar(title: String, back: () -> Unit) {
                 containerColor = MaterialTheme.colorScheme.background,
             ),
     )
-    HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 }
 
 @Composable
@@ -280,7 +294,7 @@ private fun ConnectorDirectory(
     onRestored: () -> Unit,
     editQuery: (TextFieldValue) -> Unit,
     setCategory: (String?) -> Unit,
-    open: (String) -> Unit,
+    open: (ConnectorEntry) -> Unit,
 ) {
     val query = route.committedQuery.text.trim()
     val searchFocus = remember { FocusRequester() }
@@ -358,6 +372,14 @@ private fun ConnectorDirectory(
             ::clearQuery,
             setCategory,
         )
+        val initialFailure = entries == null && failure != null
+        if (initialFailure) {
+            ConnectorReadError(
+                R.string.connector_load_failed,
+                Modifier.testTag("connector-directory"),
+            )
+            return@Column
+        }
         val restoreFocus = remember { FocusRequester() }
         LazyColumn(
             modifier = Modifier.weight(1f).fillMaxWidth().testTag("connector-directory"),
@@ -368,19 +390,11 @@ private fun ConnectorDirectory(
                 item {
                     when {
                         entries == null ->
-                            when {
-                                failure == ConnectorReadFailure.Unavailable ->
-                                    ConnectorEmpty(R.string.connector_load_failed)
-                                state.offline ->
-                                    ConnectorLoadWhenOnline(Modifier.padding(horizontal = 12.dp))
-                                failure != null -> ConnectorEmpty(R.string.connector_load_failed)
-                                else ->
-                                    key(route.connected, filter) {
-                                        ConnectorSkeleton(
-                                            stringResource(R.string.connector_loading),
-                                            rows = 3,
-                                        )
-                                    }
+                            key(route.connected, filter) {
+                                ConnectorSkeleton(
+                                    stringResource(R.string.connector_loading),
+                                    rows = 3,
+                                )
                             }
                         query.isNotEmpty() ->
                             ConnectorEmpty(
@@ -426,7 +440,7 @@ private fun ConnectorDirectory(
                         (if (restoring) Modifier.focusRequester(restoreFocus) else Modifier)
                             .testTag("connector-${entry.slug}"),
                     ) {
-                        open(entry.slug)
+                        open(entry)
                     }
                     if (restoring)
                         LaunchedEffect(entry.slug) {
@@ -435,11 +449,14 @@ private fun ConnectorDirectory(
                         }
                 }
             }
-        }
-        if (entries != null) {
-            if (state.offline) ConnectorStatusBanner(R.string.connector_offline)
-            else if (failure == ConnectorReadFailure.Sustained)
-                ConnectorStatusBanner(R.string.connector_refresh_failed)
+            if (entries != null && failure != null) {
+                item(key = "connector-directory-read-feedback") {
+                    ContentReadFeedback(
+                        R.string.connector_refresh_failed,
+                        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                    )
+                }
+            }
         }
     }
 }
@@ -462,7 +479,7 @@ private fun ConnectorTabs(connected: Boolean, select: (Boolean) -> Unit) {
                     .background(accent),
             )
         },
-        divider = { HorizontalDivider(color = MaterialTheme.colorScheme.outline) },
+        divider = { HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant) },
     ) {
         listOf(R.string.connector_discover, R.string.connector_connected).forEachIndexed {
             index,
@@ -473,7 +490,10 @@ private fun ConnectorTabs(connected: Boolean, select: (Boolean) -> Unit) {
                 modifier =
                     Modifier.heightIn(min = 48.dp)
                         .focusRequester(focus[index])
-                        .updateFocusOutline(RoundedCornerShape(8.dp), accent)
+                        .updateFocusOutline(
+                            RoundedCornerShape(8.dp),
+                            MaterialTheme.colorScheme.onBackground,
+                        )
                         .onPreviewKeyEvent { event ->
                             if (
                                 event.type == KeyEventType.KeyDown &&
@@ -551,7 +571,7 @@ private fun ConnectorFilters(
                         .background(colors.surfaceVariant)
                         .border(
                             if (focused) 2.dp else 1.dp,
-                            if (focused) LocalActivityStatusColor.current else colors.outline,
+                            if (focused) colors.onSurface else colors.outline,
                             shape,
                         )
                         .padding(
@@ -600,7 +620,7 @@ private fun ConnectorFilters(
                 modifier =
                     Modifier.size(48.dp)
                         .focusRequester(categoryFocus)
-                        .updateFocusOutline(categoryShape, LocalActivityStatusColor.current)
+                        .updateFocusOutline(categoryShape, colors.onSurface)
                         .clip(categoryShape)
                         .background(
                             if (route.category == null) colors.background
@@ -656,38 +676,28 @@ private fun ConnectorDirectoryRow(
     modifier: Modifier,
     open: () -> Unit,
 ) {
-    val colors = MaterialTheme.colorScheme
-    Row(
-        modifier
-            .fillMaxWidth()
-            .heightIn(min = 80.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (selected) colors.surfaceVariant else colors.background)
-            .selectable(selected = selected, role = Role.Button, onClick = open)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ConnectorIcon(entry.icon, large = false, modifier = Modifier.align(Alignment.Top))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(entry.name, style = connectorBodyType().copy(fontWeight = FontWeight.SemiBold))
-            if (entry.description.isNotBlank()) {
-                Text(
-                    entry.description,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    style = connectorSmallType(),
-                    color = colors.onSurfaceVariant,
-                )
-            }
-            if (accounts.isNotEmpty()) ConnectorDirectoryStatus(accounts)
+    WorkspaceToolDirectoryRow(
+        title = entry.name,
+        selected = selected,
+        onClick = open,
+        modifier = modifier,
+        leading = { ConnectorMark(entry.icon, 20.dp) },
+    ) { supportingColor ->
+        if (entry.description.isNotBlank()) {
+            Text(
+                entry.description,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                style = connectorSmallType(),
+                color = supportingColor,
+            )
         }
-        ConnectorChevron()
+        if (accounts.isNotEmpty()) ConnectorDirectoryStatus(accounts, supportingColor)
     }
 }
 
 @Composable
-private fun ConnectorDirectoryStatus(accounts: List<ConnectorSavedAccount>) {
+private fun ConnectorDirectoryStatus(accounts: List<ConnectorSavedAccount>, textColor: Color) {
     val available = accounts.count { it.status == ConnectorAccountStatus.Connected }
     val attention = accounts.any { it.status.needsAttention }
     val message =
@@ -730,7 +740,7 @@ private fun ConnectorDirectoryStatus(accounts: List<ConnectorSavedAccount>) {
                     lineHeight = 16.sp,
                     letterSpacing = 0.sp,
                 ),
-            color = colors.onSurfaceVariant,
+            color = textColor,
         )
     }
 }
@@ -742,7 +752,7 @@ internal fun ConnectorChevron() {
 
 @Composable
 internal fun ConnectorSkeleton(label: String, rows: Int) {
-    if (!rememberChatWaitIndicator(waiting = true)) return
+    if (!rememberContentReadSkeleton()) return
     Column(Modifier.fillMaxWidth().semantics { contentDescription = label }) {
         repeat(rows) {
             Row(
@@ -801,19 +811,11 @@ private fun ConnectorEmpty(title: Int, action: Int? = null, onAction: () -> Unit
 }
 
 @Composable
-internal fun ConnectorLoadWhenOnline(modifier: Modifier = Modifier) {
-    Box(
-        modifier.fillMaxWidth().heightIn(min = 48.dp).semantics(mergeDescendants = true) {
-            liveRegion = LiveRegionMode.Polite
-        },
-        contentAlignment = Alignment.CenterStart,
-    ) {
-        Text(
-            stringResource(R.string.connector_load_when_online),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = connectorFeedbackType(),
-        )
-    }
+internal fun ConnectorReadError(message: Int, modifier: Modifier = Modifier) {
+    ContentReadFeedback(
+        message,
+        modifier.fillMaxWidth().padding(start = 12.dp, top = 24.dp, end = 12.dp),
+    )
 }
 
 @Composable
@@ -821,7 +823,7 @@ internal fun ConnectorStatusBanner(message: Int) {
     Text(
         stringResource(message),
         Modifier.padding(bottom = 8.dp, top = 4.dp)
-            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(12.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
             .padding(horizontal = 12.dp, vertical = 8.dp)
             .semantics { liveRegion = LiveRegionMode.Polite },
         color = MaterialTheme.colorScheme.onSurfaceVariant,

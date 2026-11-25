@@ -11,6 +11,10 @@ import {
 } from "./popup-motion";
 import { cn } from "../../lib/utils";
 
+function useDialogActionsRef() {
+  return React.useRef<DialogPrimitive.Root.Actions>(null);
+}
+
 function Dialog(props: DialogPrimitive.Root.Props) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />;
 }
@@ -337,6 +341,7 @@ function DialogDescription({
 }
 
 export {
+  useDialogActionsRef,
   Dialog,
   DialogClose,
   DialogTrigger,

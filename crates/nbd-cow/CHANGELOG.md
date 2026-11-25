@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.5.32](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.31...nbd-cow-v0.5.32) (2026-11-25)
+
+
+### Refactoring
+
+* **rust:** share timing slot selection between reads and writes ([#50735](https://github.com/okou-ai/okou/issues/50735)) ([26c8d9a](https://github.com/okou-ai/okou/commit/26c8d9a20703d42409c2a38c250624e7c10188bf))
+
+## [0.5.31](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.30...nbd-cow-v0.5.31) (2026-11-24)
+
 ## [0.5.30](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.29...nbd-cow-v0.5.30) (2026-11-22)
 
 

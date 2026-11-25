@@ -1,5 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="settings_built_in_tools">內建工具</string>
+    <string name="settings_tool_scope">你在「%1$s」中使用工具會消耗點數。</string>
+    <string name="settings_common_tools">常用工具</string>
+    <string name="settings_data_tools">資料工具</string>
+    <string name="settings_tool_web_search">網頁搜尋</string>
+    <string name="settings_tool_image_generation">圖片生成</string>
+    <string name="settings_tool_image_model">圖片生成模型</string>
+    <string name="settings_tools_unavailable">暫時無法載入工具。</string>
+    <string name="settings_tool_save_failed">未能確認設定是否儲存。</string>
+    <string name="settings_tool_image_save_failed">未能儲存圖片生成模型</string>
+    <string name="settings_preferences_save_rolled_back">未能儲存設定，已恢復原值。</string>
+    <string name="settings_appearance_sync_failed">外觀未能同步，已套用到此裝置。</string>
     <string name="settings_email_updates">郵件更新</string>
     <string name="settings_email_scope">接收所有工作區的簡報、提醒和更新。</string>
     <string name="settings_email_receive">接收郵件</string>
@@ -24,8 +36,6 @@
     <string name="settings_accounts_scope">選擇你在「%1$s」使用的訂閱帳號。</string>
     <string name="settings_accounts_scope_empty">「%1$s」的模型帳號</string>
     <string name="settings_workspace_status">「%1$s」 · %2$s</string>
-    <string name="settings_accounts_offline">離線，連線後可切換帳號。</string>
-    <string name="settings_accounts_offline_connect">離線，連線後可連接帳號。</string>
     <string name="settings_accounts_unavailable">暫時無法查看模型帳號。</string>
     <string name="settings_accounts_update_failed">暫時無法更新，顯示上次同步的資訊。</string>
     <string name="settings_accounts_empty">尚未連接模型帳號</string>
@@ -54,7 +64,6 @@
     <string name="settings_credits_less_than">&lt; %1$s</string>
     <string name="settings_credit_balance">點數餘額</string>
     <string name="settings_credit_scope">「%1$s」的 Okou 點數</string>
-    <string name="settings_credit_offline">離線，顯示上次餘額。</string>
     <string name="settings_credit_update_failed">暫時無法更新，顯示上次餘額。</string>
     <string name="settings_credit_unavailable">暫時無法查看餘額。</string>
     <string name="settings_credit_member">個人用量包</string>
@@ -70,8 +79,7 @@
     <string name="settings_auto_model_detail">由 Okou 選擇可用模型</string>
     <string name="settings_model_plan_restricted">需要其他方案</string>
     <string name="settings_model_fast">快速模式</string>
-    <string name="settings_model_fast_usage">訂閱用量約 %1$s 倍</string>
-    <string name="settings_model_load_when_online">連線後載入…</string>
+    <string name="settings_model_fast_usage">開啟時，ChatGPT 訂閱用量為標準檔的 %1$s 倍</string>
     <string name="settings_model_save_rolled_back">未能儲存預設模型，已恢復原值。</string>
     <string name="settings_model_save_unconfirmed">預設模型的儲存結果尚未確認。</string>
     <string name="settings_model_effort">推理強度</string>
@@ -83,4 +91,26 @@
     <string name="settings_model_effort_ultra">極高</string>
     <string name="settings_refreshing_model_accounts">正在重新整理模型帳號</string>
     <string name="settings_refreshing_credit_balance">正在重新整理點數餘額</string>
+    <string name="settings_proactive_services">主動服務</string>
+    <string name="settings_proactive_scope">設定在「%1$s」內生效。</string>
+    <string name="settings_proactive_loading">正在載入主動服務</string>
+    <string name="settings_proactive_needs_timezone">請先選擇時區以安排傳送。</string>
+    <string name="settings_proactive_read_failed">暫時無法載入此設定。</string>
+    <string name="settings_proactive_refresh_failed">同步失敗，正在顯示上次確認的設定。</string>
+    <string name="settings_proactive_preparing">正在準備排程…</string>
+    <string name="settings_proactive_schedule_failed">設定已儲存，排程需要處理。</string>
+    <string name="settings_proactive_save_unconfirmed">儲存結果尚未確認。</string>
+    <string name="settings_morning_brief">晨報</string>
+    <string name="settings_morning_brief_detail">每天早上 7:00 前按所選時區送達</string>
+    <string name="settings_morning_brief_save_failed">無法儲存晨報設定，已還原原值。</string>
+    <string name="settings_suggestions">建議</string>
+    <string name="settings_suggestions_detail">檢查連線內容、更新個人檔案並提供建議</string>
+    <string name="settings_suggestions_partial">部分開啟</string>
+    <string name="settings_suggestions_hourly_only">目前僅檢查資訊及更新個人檔案。</string>
+    <string name="settings_suggestions_cards_only">目前僅接收建議卡片。</string>
+    <string name="settings_suggestions_enable_both">同時開啟</string>
+    <string name="settings_suggestions_disable_both">同時關閉</string>
+    <string name="settings_suggestions_save_failed">無法儲存建議設定，已還原原值。</string>
+    <string name="settings_timezone_save_rejected">無法儲存時區，已還原原值。</string>
+    <string name="settings_timezone_schedule_update_failed">時區已儲存，無法更新晨報時間。</string>
 </resources>

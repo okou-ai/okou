@@ -7,6 +7,8 @@ import type { AppRouter } from "../contracts/trpc-contract";
 import type { ClientRouter } from "./types";
 import { androidUpdatesContract as OriginalAndroidUpdatesContract } from "../contracts/android-updates";
 import { androidUpdatesContract } from "./android-updates";
+import { antigravityPersonalSubscriptionContract as OriginalAntigravityPersonalSubscriptionContract } from "../contracts/antigravity-personal-subscription";
+import { antigravityPersonalSubscriptionContract } from "./antigravity-personal-subscription";
 import { artifactCatalogContract as OriginalArtifactCatalogContract } from "../contracts/artifact-catalog";
 import { artifactCatalogContract } from "./artifact-catalog";
 import { artifactDownloadsContract as OriginalArtifactDownloadsContract } from "../contracts/artifact-downloads";
@@ -19,6 +21,8 @@ import { artifactReferencesContract as OriginalArtifactReferencesContract } from
 import { artifactReferencesContract } from "./artifact-references";
 import { artifactSharesContract as OriginalArtifactSharesContract } from "../contracts/artifact-shares";
 import { artifactSharesContract } from "./artifact-shares";
+import { artifactSharingContract as OriginalArtifactSharingContract } from "../contracts/artifact-sharing";
+import { artifactSharingContract } from "./artifact-sharing";
 import { atomSubscriptionGrantsContract as OriginalAtomSubscriptionGrantsContract } from "../contracts/atom-subscription-grants";
 import { atomSubscriptionGrantsContract } from "./atom-subscription-grants";
 import { authContract as OriginalAuthContract } from "../contracts/auth";
@@ -40,13 +44,13 @@ import {
   billingConcurrencySubscriptionContract as OriginalBillingConcurrencySubscriptionContract,
   billingCreditCheckoutContract as OriginalBillingCreditCheckoutContract,
   billingDowngradeContract as OriginalBillingDowngradeContract,
+  billingFeedbackRewardContract as OriginalBillingFeedbackRewardContract,
   billingInvoicesContract as OriginalBillingInvoicesContract,
   billingPortalContract as OriginalBillingPortalContract,
   billingRedeemCodeContract as OriginalBillingRedeemCodeContract,
   billingRedeemContract as OriginalBillingRedeemContract,
   billingRestoreContract as OriginalBillingRestoreContract,
   billingStatusContract as OriginalBillingStatusContract,
-  billingSurveyContract as OriginalBillingSurveyContract,
   billingUsagePackCatalogContract as OriginalBillingUsagePackCatalogContract,
   billingUsagePackCheckoutContract as OriginalBillingUsagePackCheckoutContract,
   billingUsagePackCreditsContract as OriginalBillingUsagePackCreditsContract,
@@ -60,13 +64,13 @@ import {
   billingConcurrencySubscriptionContract,
   billingCreditCheckoutContract,
   billingDowngradeContract,
+  billingFeedbackRewardContract,
   billingInvoicesContract,
   billingPortalContract,
   billingRedeemCodeContract,
   billingRedeemContract,
   billingRestoreContract,
   billingStatusContract,
-  billingSurveyContract,
   billingUsagePackCatalogContract,
   billingUsagePackCheckoutContract,
   billingUsagePackCreditsContract,
@@ -170,6 +174,7 @@ import {
   computerUseHostsContract as OriginalComputerUseHostsContract,
   computerUseSessionHostsContract as OriginalComputerUseSessionHostsContract,
   computerUseWriteCommandContract as OriginalComputerUseWriteCommandContract,
+  runnerAppStateContract as OriginalRunnerAppStateContract,
 } from "../contracts/computer-use";
 import {
   computerUseAuditEventsContract,
@@ -178,6 +183,7 @@ import {
   computerUseHostsContract,
   computerUseSessionHostsContract,
   computerUseWriteCommandContract,
+  runnerAppStateContract,
 } from "./computer-use";
 import { connectedConnectorsContract as OriginalConnectedConnectorsContract } from "../contracts/connected-connectors";
 import { connectedConnectorsContract } from "./connected-connectors";
@@ -291,12 +297,10 @@ import {
 } from "./custom-connectors";
 import {
   dataRouterHistoryContract as OriginalDataRouterHistoryContract,
-  dataRouterRequestContract as OriginalDataRouterRequestContract,
   runDataRouterRequestContract as OriginalRunDataRouterRequestContract,
 } from "../contracts/data-router";
 import {
   dataRouterHistoryContract,
-  dataRouterRequestContract,
   runDataRouterRequestContract,
 } from "./data-router";
 import { debugMorningBriefContract as OriginalDebugMorningBriefContract } from "../contracts/debug-morning-brief";
@@ -573,6 +577,8 @@ import {
 } from "./personal-model-providers";
 import { phoneUseContract as OriginalPhoneUseContract } from "../contracts/phone-use";
 import { phoneUseContract } from "./phone-use";
+import { posthogSurveysContract as OriginalPosthogSurveysContract } from "../contracts/posthog-surveys";
+import { posthogSurveysContract } from "./posthog-surveys";
 import { presentationTemplatesContract as OriginalPresentationTemplatesContract } from "../contracts/presentation-templates";
 import { presentationTemplatesContract } from "./presentation-templates";
 import { proactiveSuggestionsContract as OriginalProactiveSuggestionsContract } from "../contracts/proactive-suggestions";
@@ -619,6 +625,8 @@ import {
   runsCancelContract,
   runsQueueContract,
 } from "./run-routes";
+import { runWssContract as OriginalRunWssContract } from "../contracts/run-wss";
+import { runWssContract } from "./run-wss";
 import { runnerSshContract as OriginalRunnerSshContract } from "../contracts/runner-ssh";
 import { runnerSshContract } from "./runner-ssh";
 import { runnersRunStartupContract as OriginalRunnersRunStartupContract } from "../contracts/runner-startup";
@@ -797,12 +805,17 @@ export const clientDescriptorContracts: readonly (readonly [
   AppRouter,
 ])[] = [
   [androidUpdatesContract, OriginalAndroidUpdatesContract],
+  [
+    antigravityPersonalSubscriptionContract,
+    OriginalAntigravityPersonalSubscriptionContract,
+  ],
   [artifactCatalogContract, OriginalArtifactCatalogContract],
   [artifactDownloadsContract, OriginalArtifactDownloadsContract],
   [artifactGoogleDriveContract, OriginalArtifactGoogleDriveContract],
   [artifactOgContract, OriginalArtifactOgContract],
   [artifactReferencesContract, OriginalArtifactReferencesContract],
   [artifactSharesContract, OriginalArtifactSharesContract],
+  [artifactSharingContract, OriginalArtifactSharingContract],
   [atomSubscriptionGrantsContract, OriginalAtomSubscriptionGrantsContract],
   [authContract, OriginalAuthContract],
   [bankingContract, OriginalBankingContract],
@@ -820,13 +833,13 @@ export const clientDescriptorContracts: readonly (readonly [
   ],
   [billingCreditCheckoutContract, OriginalBillingCreditCheckoutContract],
   [billingDowngradeContract, OriginalBillingDowngradeContract],
+  [billingFeedbackRewardContract, OriginalBillingFeedbackRewardContract],
   [billingInvoicesContract, OriginalBillingInvoicesContract],
   [billingPortalContract, OriginalBillingPortalContract],
   [billingRedeemCodeContract, OriginalBillingRedeemCodeContract],
   [billingRedeemContract, OriginalBillingRedeemContract],
   [billingRestoreContract, OriginalBillingRestoreContract],
   [billingStatusContract, OriginalBillingStatusContract],
-  [billingSurveyContract, OriginalBillingSurveyContract],
   [billingUsagePackCatalogContract, OriginalBillingUsagePackCatalogContract],
   [billingUsagePackCheckoutContract, OriginalBillingUsagePackCheckoutContract],
   [billingUsagePackCreditsContract, OriginalBillingUsagePackCreditsContract],
@@ -898,6 +911,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [computerUseHostsContract, OriginalComputerUseHostsContract],
   [computerUseSessionHostsContract, OriginalComputerUseSessionHostsContract],
   [computerUseWriteCommandContract, OriginalComputerUseWriteCommandContract],
+  [runnerAppStateContract, OriginalRunnerAppStateContract],
   [connectedConnectorsContract, OriginalConnectedConnectorsContract],
   [connectorAccountsContract, OriginalConnectorAccountsContract],
   [connectorCatalogContract, OriginalConnectorCatalogContract],
@@ -1020,7 +1034,6 @@ export const clientDescriptorContracts: readonly (readonly [
   [customConnectorValuesContract, OriginalCustomConnectorValuesContract],
   [customConnectorsContract, OriginalCustomConnectorsContract],
   [dataRouterHistoryContract, OriginalDataRouterHistoryContract],
-  [dataRouterRequestContract, OriginalDataRouterRequestContract],
   [runDataRouterRequestContract, OriginalRunDataRouterRequestContract],
   [debugMorningBriefContract, OriginalDebugMorningBriefContract],
   [
@@ -1260,6 +1273,7 @@ export const clientDescriptorContracts: readonly (readonly [
   ],
   [personalSubscriptionsContract, OriginalPersonalSubscriptionsContract],
   [phoneUseContract, OriginalPhoneUseContract],
+  [posthogSurveysContract, OriginalPosthogSurveysContract],
   [presentationTemplatesContract, OriginalPresentationTemplatesContract],
   [proactiveSuggestionsContract, OriginalProactiveSuggestionsContract],
   [projectChatContract, OriginalProjectChatContract],
@@ -1279,6 +1293,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [runsByIdContract, OriginalRunsByIdContract],
   [runsCancelContract, OriginalRunsCancelContract],
   [runsQueueContract, OriginalRunsQueueContract],
+  [runWssContract, OriginalRunWssContract],
   [runnerSshContract, OriginalRunnerSshContract],
   [runnersRunStartupContract, OriginalRunnersRunStartupContract],
   [runnerVncContract, OriginalRunnerVncContract],

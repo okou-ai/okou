@@ -16,6 +16,7 @@
     <string name="workflow_daily_schedule">Todos os dias às %1$s</string>
     <string name="workflow_discard">Descartar</string>
     <string name="workflow_discard_title">Descartar as alterações não salvas?</string>
+    <string name="workflow_discard_detail">As alterações não salvas em “%1$s” neste dispositivo serão descartadas.</string>
     <string name="workflow_draft_unavailable">Não foi possível abrir o rascunho do novo chat. Seu rascunho atual foi preservado.</string>
     <string name="workflow_edit">Editar</string>
     <string name="workflow_edit_automation">Editar automação</string>
@@ -66,7 +67,6 @@
     <string name="workflow_notion_child">Subpágina do Notion criada</string>
     <string name="workflow_notion_item">Item de banco de dados do Notion criado</string>
     <string name="workflow_notion_updated">Página do Notion atualizada</string>
-    <string name="workflow_offline_changes">Conecte-se para salvar. Suas alterações foram preservadas.</string>
     <string name="workflow_pause">Pausar</string>
     <string name="workflow_paused">Automações pausadas</string>
     <string name="workflow_private">Só eu</string>
@@ -105,7 +105,6 @@
         <item quantity="many">%d automações ativas</item>
         <item quantity="other">%d automações ativas</item>
     </plurals>
-    <string name="workflow_draft_network_failed">Não foi possível abrir o rascunho do novo chat. Seu rascunho atual foi preservado. Verifique sua conexão e tente novamente.</string>
     <string name="workflow_rule_change_failed">Não foi possível alterar esta regra.</string>
     <string name="workflow_rule_network_failed">Não foi possível alterar esta regra. Verifique sua conexão e tente novamente.</string>
     <string name="workflow_write_conflict">Este fluxo de trabalho mudou durante o salvamento. Suas alterações foram preservadas.</string>
@@ -121,4 +120,12 @@
     <string name="workflow_history_trigger_unavailable">Acionador indisponível</string>
     <string name="workflow_history_scheduled">Acionamento programado</string>
     <string name="workflow_history_manual">Execução manual</string>
+    <string name="workflow_catalog_refresh_failed">Não foi possível atualizar o diretório de fluxos de trabalho. A mostrar os fluxos carregados.</string>
+    <string name="workflow_history_earlier_failed">Não foi possível carregar as execuções anteriores.</string>
+    <string name="workflow_rule_checking">A verificar o resultado…</string>
+    <string name="workflow_rule_unconfirmed">O resultado ainda não foi confirmado.</string>
+    <string name="workflow_event">Evento</string>
+    <string name="workflow_event_source">Origem do evento</string>
+    <string name="workflow_source_gmail">Gmail · E-mail recebido</string>
+    <string name="workflow_source_calendar">Google Calendar · Evento criado</string>
 </resources>

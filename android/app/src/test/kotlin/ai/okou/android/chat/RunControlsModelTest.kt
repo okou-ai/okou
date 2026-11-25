@@ -15,7 +15,6 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.test.core.app.ApplicationProvider
-import java.io.File
 import java.util.UUID
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
@@ -128,7 +127,7 @@ internal abstract class RunControlsModelTestFixture {
         val remote: Remote,
         val history: ConversationHistoryModel,
         val controls: RunControlsModel,
-        val store: RunControlJournalStore,
+        val registry: RunControlOwners,
         val owners: ViewModelStore,
         val authorized: AtomicBoolean,
         val retired: CompletableDeferred<Unit>,
@@ -137,9 +136,7 @@ internal abstract class RunControlsModelTestFixture {
     )
 
     protected suspend fun TestScope.withControls(
-        directory: File = temporary.newFolder(),
         initial: List<String> = listOf(input("input", 1)),
-        saved: RunControlJournal? = null,
         retireOnFailure: Boolean = false,
         block: suspend TestScope.(Fixture) -> Unit,
     ) {
@@ -147,7 +144,7 @@ internal abstract class RunControlsModelTestFixture {
         Dispatchers.setMain(dispatcher)
         val context = ApplicationProvider.getApplicationContext<TestOkouApplication>()
         val cache = ChatCacheStore(context, temporary.newFolder(), dispatcher)
-        val store = RunControlJournalStore(context, directory, dispatcher)
+        val registry = RunControlOwners()
         val owners = ViewModelStore()
         val auth = AtomicBoolean(true)
         val retired = CompletableDeferred<Unit>()
@@ -155,7 +152,6 @@ internal abstract class RunControlsModelTestFixture {
             ChatListApiFixture().use { api ->
                 val remote = Remote(api)
                 remote.set(*initial.toTypedArray())
-                saved?.let { store.persist(api.identity, it).await() }
                 val lease = cache.open(api.identity) { auth.get() }
                 val history =
                     ConversationHistoryModel(
@@ -175,7 +171,7 @@ internal abstract class RunControlsModelTestFixture {
                                 initializer {
                                     RunControlsModel(
                                         api.service,
-                                        store,
+                                        registry,
                                         api.identity,
                                         history,
                                         { auth.get() },
@@ -192,7 +188,6 @@ internal abstract class RunControlsModelTestFixture {
                         )[RunControlsModel::class.java]
                     history.open(thread())
                     history.uiState.first { it.phase == HistoryPhase.Ready }
-                    controls.uiState.first { it.persistence == RunControlPersistence.Durable }
                     history.uiState.first { it.detailPhase == ChatReadPhase.Ready }
                     runCurrent()
                     block(
@@ -201,7 +196,7 @@ internal abstract class RunControlsModelTestFixture {
                             remote,
                             history,
                             controls,
-                            store,
+                            registry,
                             owners,
                             auth,
                             retired,
@@ -216,7 +211,6 @@ internal abstract class RunControlsModelTestFixture {
                 }
             }
         } finally {
-            store.close()
             cache.close()
             Dispatchers.resetMain()
         }
@@ -230,6 +224,29 @@ internal abstract class RunControlsModelTestFixture {
         }
     }
 
+    protected suspend fun Fixture.accept(
+        count: Int = 1,
+        submit: RunControlsModel.() -> Unit,
+    ): RunControlsState {
+        val revision = checkNotNull(history.uiState.value.confirmation).revision
+        controls.submit()
+        val accepted =
+            controls.uiState.first {
+                it.pending.size == count &&
+                    it.phases.values.all { phase ->
+                        phase == RunControlPhase.Accepted
+                    }
+            }
+        history.uiState.first { (it.confirmation?.revision ?: 0) > revision }
+        return accepted
+    }
+
+    protected suspend fun Fixture.acceptStop(): RunControlIntent = accept {
+        stop(CHAT_PERSONAL, listOf(HISTORY_RUN))
+    }
+        .pending
+        .single()
+
     protected class Peer(
         val controls: RunControlsModel,
         val history: ConversationHistoryModel,
@@ -238,7 +255,6 @@ internal abstract class RunControlsModelTestFixture {
 
     protected suspend fun TestScope.withPeer(
         fixture: Fixture,
-        store: RunControlJournalStore = fixture.store,
         block: suspend TestScope.(Peer) -> Unit,
     ) {
         val lease = fixture.cache.open(fixture.api.identity) { true }
@@ -261,7 +277,7 @@ internal abstract class RunControlsModelTestFixture {
                         initializer {
                             RunControlsModel(
                                 fixture.api.service,
-                                store,
+                                fixture.registry,
                                 fixture.api.identity,
                                 history,
                                 { true },
@@ -273,7 +289,6 @@ internal abstract class RunControlsModelTestFixture {
                 )[RunControlsModel::class.java]
             history.open(thread())
             history.uiState.first { it.phase == HistoryPhase.Ready }
-            controls.uiState.first { it.persistence == RunControlPersistence.Durable }
             history.uiState.first { it.detailPhase == ChatReadPhase.Ready }
             runCurrent()
             block(Peer(controls, history, owners))
@@ -296,8 +311,7 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
             f.controls.stop(CHAT_PERSONAL, runs)
             f.controls.stop(CHAT_PERSONAL, runs)
             f.controls.uiState.first {
-                it.journal?.pending?.size == 2 &&
-                    it.phases.values.all { p -> p == RunControlPhase.Accepted }
+                it.pending.size == 2 && it.phases.values.all { p -> p == RunControlPhase.Accepted }
             }
             assertEquals(
                 setOf(HISTORY_RUN, secondRun),
@@ -315,35 +329,32 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
                 f.remote.requests.all { it.getHeader("Authorization") == "Bearer fixture-token" },
             )
             assertTrue(f.remote.posts.none { "prompt" in it || "revokesEventId" in it })
-            assertEquals(2, f.store.load(f.api.identity).journal.pending.size)
             assertEquals(HistoryExecution.Running, f.history.uiState.value.transcript?.execution)
         }
     }
 
     @Test
-    fun unknownOutcomeRetryRechecksAndKeepsTheEntireOriginalRequest() = runTest {
+    fun transientStopFailureRetriesTwiceWithTheSameRequestAndOffersOneFailureNotice() = runTest {
         withControls { f ->
             f.remote.write = {
                 jsonResponse("""{"error":{"code":"UNAVAILABLE","message":"Unknown after write"}}""")
                     .setResponseCode(503)
             }
             f.controls.stop(CHAT_PERSONAL, listOf(HISTORY_RUN))
-            val unknown =
-                f.controls.uiState.first {
-                    it.phases.values.singleOrNull() == RunControlPhase.Unknown
-                }
-            val intent = unknown.journal!!.pending.single()
-            f.refresh()
-            f.controls.check(CHAT_PERSONAL)
-            f.controls.uiState.first { it.phases[intent.id] == RunControlPhase.Retryable }
-            assertEquals(1, f.remote.posts.size)
+            val failed = f.controls.uiState.first { it.actionFailures.isNotEmpty() }
+            val intent = failed.actionFailures.single()
+            assertEquals(RunControlPhase.Retryable, failed.phases[intent.id])
+            assertEquals(3, f.remote.posts.size)
+            assertEquals(1, f.remote.posts.distinct().size)
+            assertTrue(f.controls.consumeActionFailure(intent))
+            assertFalse(f.controls.consumeActionFailure(intent))
             f.remote.write = {
                 jsonResponse("""{"threadId":"$CHAT_PERSONAL"}""").setResponseCode(201)
             }
             f.controls.retry(intent.id)
             f.controls.retry(intent.id)
             f.controls.uiState.first { it.phases[intent.id] == RunControlPhase.Accepted }
-            assertEquals(2, f.remote.posts.size)
+            assertEquals(4, f.remote.posts.size)
             assertEquals(f.remote.posts.first(), f.remote.posts.last())
         }
     }
@@ -363,11 +374,8 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
                 ),
             )
             f.controls.check(CHAT_PERSONAL)
-            val done =
-                f.controls.uiState.first {
-                    it.journal?.pending?.isEmpty() == true && it.notice != null
-                }
-            assertEquals(RunControlNoticeKind.TargetSettled, done.notice!!.kind)
+            val done = f.controls.uiState.first { it.pending.isEmpty() }
+            assertTrue(done.actionFailures.isEmpty())
             assertEquals(1, f.remote.posts.size)
         }
     }
@@ -396,7 +404,6 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
             val intent =
                 f.controls.uiState
                     .first { it.phases.values.singleOrNull() == RunControlPhase.Accepted }
-                    .journal!!
                     .pending
                     .single()
             f.refresh()
@@ -408,7 +415,7 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
                 input("replacement", 3, secondRun),
             )
             f.controls.retry(intent.id)
-            f.controls.uiState.first { it.journal?.pending?.isEmpty() == true }
+            f.controls.uiState.first { it.pending.isEmpty() }
             assertEquals(1, f.remote.posts.size)
         }
     }
@@ -445,7 +452,7 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
                     disposition = TextDisposition.Queued,
                 ),
             )
-            assertTrue(checkNotNull(f.controls.uiState.value.journal).pending.isEmpty())
+            assertTrue(f.controls.uiState.value.pending.isEmpty())
             assertTrue(f.remote.posts.isEmpty())
             f.controls.skip(CHAT_PERSONAL, manual)
             f.controls.skip(CHAT_PERSONAL, automation)
@@ -453,7 +460,7 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
                 f.controls.uiState.first { state ->
                     state.phases.values.count { it == RunControlPhase.Accepted } == 2
                 }
-            val manualIntent = accepted.journal!!.pending.single { it.targetId == manual }
+            val manualIntent = accepted.pending.single { it.targetId == manual }
             assertEquals(
                 setOf(manual, automation),
                 f.remote.posts.map { it.getValue("revokesEventId").jsonPrimitive.content }.toSet(),
@@ -487,13 +494,13 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
                 ),
             )
             f.controls.check(CHAT_PERSONAL)
-            f.controls.uiState.first { it.journal?.pending?.isEmpty() == true }
+            f.controls.uiState.first { it.pending.isEmpty() }
             assertEquals(2, f.remote.posts.size)
         }
     }
 
     @Test
-    fun checkingOneWithdrawalLeavesTheOtherQueueEntryAtItsOwnPhase() = runTest {
+    fun recoveredHistoryCanVerifyBothUncertainWithdrawalsWithoutResending() = runTest {
         val manual = eventId("queued manual message")
         withControls(
             initial =
@@ -502,21 +509,65 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
                     input(automation, 2, run = null, type = "input.automation"),
                 ),
         ) { f ->
-            f.remote.write = { MockResponse().setResponseCode(503) }
-            f.controls.skip(CHAT_PERSONAL, manual)
-            f.controls.skip(CHAT_PERSONAL, automation)
-            val unknown =
-                f.controls.uiState.first { state ->
-                    state.phases.values.count { it == RunControlPhase.Unknown } == 2
+            val submitted =
+                f.accept(count = 2) {
+                    skip(CHAT_PERSONAL, manual)
+                    skip(CHAT_PERSONAL, automation)
                 }
-            val intents = checkNotNull(unknown.journal).pending.associateBy { it.targetId }
-            val manualAttempt = intents.getValue(manual).id
-            val automationAttempt = intents.getValue(automation).id
-            f.controls.checkWithdrawal(CHAT_PERSONAL, manual)
+            f.remote.failRows.set(true)
+            f.controls.check(CHAT_PERSONAL)
+            f.controls.uiState.first {
+                it.phases.values.all { phase ->
+                    phase == RunControlPhase.Unknown
+                }
+            }
+            f.remote.failRows.set(false)
+            f.refresh()
+            f.controls.checkUnknown(CHAT_PERSONAL)
             val checked =
-                f.controls.uiState.first { it.phases[manualAttempt] == RunControlPhase.Retryable }
-            assertEquals(RunControlPhase.Unknown, checked.phases[automationAttempt])
+                f.controls.uiState.first {
+                    it.phases.values.all { phase -> phase == RunControlPhase.Retryable }
+                }
+            assertEquals(submitted.pending, checked.actionFailures)
             assertEquals(2, f.remote.posts.size)
+        }
+    }
+
+    @Test
+    fun aStopSettledByReadbackCannotBeSubmittedAgainAgainstHeldHistory() = runTest {
+        withControls { f ->
+            val intent = f.acceptStop()
+            val entered = CompletableDeferred<Unit>()
+            val release = CountDownLatch(1)
+            val firstRows = AtomicBoolean(true)
+            f.api.beforeHistoryResponse = { request ->
+                if (
+                    request.requestUrl?.pathSegments?.last() == "event-rows" &&
+                        firstRows.getAndSet(false)
+                ) {
+                    entered.complete(Unit)
+                    release.await()
+                }
+            }
+            try {
+                f.history.refresh()
+                entered.await()
+                f.remote.set(
+                    input("input", 1),
+                    historyEventWire(intent.id, 2, type = "control.interrupt", payload = "null"),
+                )
+                f.controls.check(CHAT_PERSONAL)
+                val settled = f.controls.uiState.first { it.pending.isEmpty() }
+                assertEquals(setOf(HISTORY_RUN), settled.settledRuns[CHAT_PERSONAL])
+                assertEquals(HISTORY_RUN, f.history.uiState.value.transcript?.activeRunId)
+                f.controls.stop(CHAT_PERSONAL, listOf(HISTORY_RUN))
+                runCurrent()
+                assertEquals(1, f.remote.posts.size)
+            } finally {
+                release.countDown()
+            }
+            f.history.uiState.first { HISTORY_RUN in it.transcript?.terminatedRunIds.orEmpty() }
+            f.controls.uiState.first { it.settledRuns[CHAT_PERSONAL].isNullOrEmpty() }
         }
     }
 
@@ -554,7 +605,7 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
         ) { f ->
             assertEquals(setOf(queued), f.history.uiState.value.transcript?.pendingInputIds)
             f.controls.skip(CHAT_PERSONAL, queued)
-            assertTrue(f.controls.uiState.value.journal!!.pending.isEmpty())
+            assertTrue(f.controls.uiState.value.pending.isEmpty())
             assertTrue(f.remote.posts.isEmpty())
         }
     }
@@ -566,14 +617,13 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
             val intent =
                 f.controls.uiState
                     .first { it.phases.values.singleOrNull() == RunControlPhase.Accepted }
-                    .journal!!
                     .pending
                     .single()
             f.refresh()
             f.remote.failRows.set(true)
             f.controls.check(CHAT_PERSONAL)
-            f.controls.uiState.first { it.notice?.kind == RunControlNoticeKind.ReadFailed }
-            assertEquals(RunControlPhase.Unknown, f.controls.uiState.value.phases[intent.id])
+            assertEquals(RunControlPhase.Checking, f.controls.uiState.value.phases[intent.id])
+            f.controls.uiState.first { it.phases[intent.id] == RunControlPhase.Unknown }
             f.remote.failRows.set(false)
             f.controls.retry(intent.id)
             f.refresh()
@@ -584,16 +634,8 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
 
     @Test
     fun outcomeReadFailureDoesNotCancelAnIndependentPendingMetadataQuery() = runTest {
-        val intent =
-            RunControlIntent(
-                eventId("retry-read-failure"),
-                CHAT_PERSONAL,
-                RunControlKind.Interrupt,
-                HISTORY_RUN,
-            )
-        for (retry in listOf(false, true)) withControls(
-            saved = RunControlJournal(pending = listOf(intent)),
-        ) { f ->
+        for (retry in listOf(false, true)) withControls { f ->
+            val intent = f.acceptStop()
             f.api.historyDetail = {
                 jsonResponse("""{"lastReadAt":null,"cancellationRecoveryPending":true}""")
             }
@@ -627,18 +669,15 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
                 f.remote.failRows.set(true)
                 if (retry) f.controls.retry(intent.id) else f.controls.check(CHAT_PERSONAL)
                 val failed =
-                    f.controls.uiState.first {
-                        if (retry) it.phases[intent.id] == RunControlPhase.Unknown
-                        else it.notice?.kind == RunControlNoticeKind.ReadFailed
-                    }
+                    f.controls.uiState.first { it.phases[intent.id] == RunControlPhase.Unknown }
                 assertEquals(ChatReadPhase.Loading, f.history.uiState.value.detailPhase)
                 assertEquals(RunControlPhase.Unknown, failed.phases[intent.id])
                 release.countDown()
                 val recovered = f.history.uiState.first { it.detailPhase == ChatReadPhase.Ready }
                 assertEquals(true, recovered.detail?.cancellationRecoveryPending)
                 assertEquals(RunControlPhase.Unknown, f.controls.uiState.value.phases[intent.id])
-                assertEquals(listOf(intent), f.controls.uiState.value.journal!!.pending)
-                assertTrue(f.remote.posts.isEmpty())
+                assertEquals(listOf(intent), f.controls.uiState.value.pending)
+                assertEquals(1, f.remote.posts.size)
             } finally {
                 f.remote.failRows.set(false)
                 release.countDown()
@@ -649,14 +688,8 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
     @Test
     fun metadataFailureFinishesWhileOutcomeReadIsPendingAndDoesNotPreventReconciliation() =
         runTest {
-            val intent =
-                RunControlIntent(
-                    eventId("independent-metadata-failure"),
-                    CHAT_PERSONAL,
-                    RunControlKind.Interrupt,
-                    HISTORY_RUN,
-                )
-            withControls(saved = RunControlJournal(pending = listOf(intent))) { f ->
+            withControls { f ->
+                val intent = f.acceptStop()
                 val entered = CompletableDeferred<Unit>()
                 val release = CountDownLatch(1)
                 val first = AtomicBoolean(true)
@@ -682,7 +715,7 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
                     f.history.uiState.first { it.detailPhase == ChatReadPhase.Failed }
                     val failed = f.controls.uiState.value
                     assertEquals(RunControlPhase.Checking, failed.phases[intent.id])
-                    assertEquals(listOf(intent), failed.journal!!.pending)
+                    assertEquals(listOf(intent), failed.pending)
                     f.api.historyDetail = {
                         jsonResponse("""{"lastReadAt":null,"cancellationRecoveryPending":true}""")
                     }
@@ -690,7 +723,7 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
                     f.controls.uiState.first { it.phases[intent.id] == RunControlPhase.Retryable }
                     f.controls.refreshRecovery(CHAT_PERSONAL)
                     f.history.uiState.first { it.detailPhase == ChatReadPhase.Ready }
-                    assertTrue(f.remote.posts.isEmpty())
+                    assertEquals(1, f.remote.posts.size)
                 } finally {
                     release.countDown()
                 }
@@ -699,14 +732,8 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
 
     @Test
     fun newerRecoveryReadSurvivesAnOlderOutcomeReadFailure() = runTest {
-        val intent =
-            RunControlIntent(
-                eventId("older-recovery-read"),
-                CHAT_PERSONAL,
-                RunControlKind.Interrupt,
-                HISTORY_RUN,
-            )
-        withControls(saved = RunControlJournal(pending = listOf(intent))) { f ->
+        withControls { f ->
+            val intent = f.acceptStop()
             val entered = CompletableDeferred<Unit>()
             val release = CountDownLatch(1)
             val firstRead = AtomicBoolean(true)
@@ -733,12 +760,12 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
                 f.remote.failRows.set(true)
                 release.countDown()
                 val failed =
-                    f.controls.uiState.first { it.notice?.kind == RunControlNoticeKind.ReadFailed }
+                    f.controls.uiState.first { it.phases[intent.id] == RunControlPhase.Unknown }
                 assertEquals(ChatReadPhase.Ready, f.history.uiState.value.detailPhase)
                 assertEquals(true, f.history.uiState.value.detail?.cancellationRecoveryPending)
                 assertEquals(RunControlPhase.Unknown, failed.phases[intent.id])
-                assertEquals(listOf(intent), failed.journal!!.pending)
-                assertTrue(f.remote.posts.isEmpty())
+                assertEquals(listOf(intent), failed.pending)
+                assertEquals(1, f.remote.posts.size)
             } finally {
                 release.countDown()
             }
@@ -746,15 +773,9 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
     }
 
     @Test
-    fun heldControlReadDoesNotBlockOrdinaryHistoryOrDispatchAnotherWrite() = runTest {
-        val intent =
-            RunControlIntent(
-                eventId("restored-control"),
-                CHAT_PERSONAL,
-                RunControlKind.Interrupt,
-                HISTORY_RUN,
-            )
-        withControls(saved = RunControlJournal(pending = listOf(intent))) { f ->
+    fun heldControlReadDoesNotBlockOrdinaryHistory() = runTest {
+        withControls { f ->
+            val intent = f.acceptStop()
             val entered = CompletableDeferred<Unit>()
             val release = CountDownLatch(1)
             val hold = AtomicBoolean(true)
@@ -777,7 +798,7 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
                     "Keep all input",
                     f.history.uiState.value.transcript!!.messages.single().blocks.single().text,
                 )
-                assertTrue(f.remote.posts.isEmpty())
+                assertEquals(1, f.remote.posts.size)
             } finally {
                 release.countDown()
             }
@@ -788,17 +809,8 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
     @Test
     fun olderOutcomeReadCannotReplaceANewerCommandsSendingState() = runTest {
         for (readFails in listOf(false, true)) {
-            val original =
-                RunControlIntent(
-                    eventId("original-control"),
-                    CHAT_PERSONAL,
-                    RunControlKind.Interrupt,
-                    HISTORY_RUN,
-                )
-            withControls(
-                initial = listOf(input("first", 1), input("second", 2, secondRun)),
-                saved = RunControlJournal(pending = listOf(original)),
-            ) { f ->
+            withControls(initial = listOf(input("first", 1), input("second", 2, secondRun))) { f ->
+                val original = f.acceptStop()
                 val readEntered = CompletableDeferred<Unit>()
                 val releaseRead = CountDownLatch(1)
                 val firstRead = AtomicBoolean(true)
@@ -824,7 +836,7 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
                     f.controls.stop(CHAT_PERSONAL, listOf(secondRun))
                     postEntered.await()
                     val newer =
-                        f.controls.uiState.value.journal!!.pending.single {
+                        f.controls.uiState.value.pending.single {
                             it.targetId == secondRun
                         }
                     assertEquals(RunControlPhase.Sending, f.controls.uiState.value.phases[newer.id])
@@ -832,11 +844,11 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
                     releaseRead.countDown()
                     val checked =
                         f.controls.uiState.first {
-                            if (readFails) it.notice?.kind == RunControlNoticeKind.ReadFailed
+                            if (readFails) it.phases[original.id] == RunControlPhase.Unknown
                             else it.phases[original.id] == RunControlPhase.Retryable
                         }
                     assertEquals(RunControlPhase.Sending, checked.phases[newer.id])
-                    assertEquals(1, f.remote.posts.size)
+                    assertEquals(2, f.remote.posts.size)
                     f.remote.failRows.set(false)
                     releasePost.countDown()
                     f.controls.uiState.first { it.phases[newer.id] == RunControlPhase.Accepted }
@@ -851,15 +863,8 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
 
     @Test
     fun unauthorizedReadRetiresItsOwnerBeforePublishingAnyFailureState() = runTest {
-        val intent =
-            RunControlIntent(
-                eventId("unauthorized-control"),
-                CHAT_PERSONAL,
-                RunControlKind.Interrupt,
-                HISTORY_RUN,
-            )
-        withControls(saved = RunControlJournal(pending = listOf(intent)), retireOnFailure = true) {
-            f ->
+        withControls(retireOnFailure = true) { f ->
+            f.acceptStop()
             f.api.historyRows = {
                 jsonResponse("""{"error":{"code":"UNAUTHENTICATED","message":"Session expired"}}""")
                     .setResponseCode(401)
@@ -872,7 +877,7 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
                 before.copy(phases = before.phases.mapValues { RunControlPhase.Unknown }),
                 f.controls.uiState.value,
             )
-            assertTrue(f.remote.posts.isEmpty())
+            assertEquals(1, f.remote.posts.size)
         }
     }
 
@@ -900,7 +905,6 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
                     f.controls.uiState.value,
                 )
                 assertEquals(1, f.remote.posts.size)
-                assertEquals(1, f.store.load(f.api.identity).journal.pending.size)
             } finally {
                 release.countDown()
             }
@@ -913,69 +917,40 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
 @Config(sdk = [35], application = TestOkouApplication::class)
 internal class RunControlsPeerModelTest : RunControlsModelTestFixture() {
     @Test
-    fun currentControllersPreserveBothUnknownCommandsAfterFreshStoreRestoration() = runTest {
-        val directory = temporary.newFolder()
-        withControls(
-            directory = directory,
-            initial = listOf(input("first", 1), input("second", 2, secondRun)),
-        ) { f ->
-            f.remote.write = {
-                jsonResponse("""{"error":{"code":"UNAVAILABLE","message":"Unknown outcome"}}""")
-                    .setResponseCode(503)
-            }
-            val expected = mutableListOf<RunControlIntent>()
+    fun pendingControlsAreSharedUntilTheWorkspaceOwnerEnds() = runTest {
+        withControls(initial = listOf(input("first", 1), input("second", 2, secondRun))) { f ->
+            val first = f.acceptStop()
             withPeer(f) { peer ->
-                assertTrue(f.controls.uiState.value.journal!!.pending.isEmpty())
-                assertTrue(peer.controls.uiState.value.journal!!.pending.isEmpty())
-                f.controls.stop(CHAT_PERSONAL, listOf(HISTORY_RUN))
-                val a =
-                    f.controls.uiState
-                        .first {
-                            it.persistence == RunControlPersistence.Durable &&
-                                it.phases.values.singleOrNull() == RunControlPhase.Unknown
-                        }
-                        .journal!!
-                        .pending
-                        .single()
-                expected += a
-                assertEquals(listOf(a), f.store.load(f.api.identity).journal.pending)
+                assertEquals(listOf(first), peer.controls.uiState.value.pending)
                 peer.controls.stop(CHAT_PERSONAL, listOf(secondRun))
-                val shared =
+                val both =
                     peer.controls.uiState.first {
-                        it.journal?.pending?.size == 2 &&
-                            it.persistence == RunControlPersistence.Durable &&
-                            it.phases.values.all { phase -> phase == RunControlPhase.Unknown }
+                        it.pending.size == 2 &&
+                            it.phases.values.all { phase -> phase == RunControlPhase.Accepted }
                     }
-                expected += shared.journal!!.pending.single { it.targetId == secondRun }
-                assertEquals(expected, shared.journal.pending)
-                assertEquals(
-                    expected,
-                    f.controls.uiState.first { it.journal?.pending?.size == 2 }.journal!!.pending,
-                )
-                assertEquals(expected, f.store.load(f.api.identity).journal.pending)
-                assertEquals(2, f.remote.posts.size)
+                assertEquals(both.pending, f.controls.uiState.value.pending)
+                f.owners.clear()
+                assertEquals(both.pending, peer.controls.uiState.value.pending)
             }
-            f.owners.clear()
-            f.store.close()
-            val fresh =
-                RunControlJournalStore(
-                    ApplicationProvider.getApplicationContext(),
-                    directory,
-                    f.dispatcher,
+
+            f.remote.set(
+                input("first", 1),
+                input("second", 2, secondRun),
+                historyEventWire(
+                    first.id,
+                    3,
+                    type = "control.interrupt",
+                    payload = "null",
+                    run = HISTORY_RUN,
+                ),
+            )
+            withPeer(f) { fresh ->
+                assertTrue(fresh.controls.uiState.value.pending.isEmpty())
+                assertEquals(
+                    listOf(secondRun),
+                    fresh.history.uiState.value.transcript?.liveRunIds,
                 )
-            try {
-                withPeer(f, fresh) { restored ->
-                    assertEquals(expected, restored.controls.uiState.value.journal!!.pending)
-                    assertTrue(
-                        restored.controls.uiState.value.phases.values.all {
-                            it == RunControlPhase.Unknown
-                        },
-                    )
-                    runCurrent()
-                    assertEquals(2, f.remote.posts.size)
-                }
-            } finally {
-                fresh.close()
+                assertEquals(2, f.remote.posts.size)
             }
         }
     }
@@ -1000,11 +975,11 @@ internal class RunControlsPeerModelTest : RunControlsModelTestFixture() {
                 try {
                     f.controls.stop(CHAT_PERSONAL, listOf(HISTORY_RUN))
                     entered.await()
-                    val a = f.controls.uiState.value.journal!!.pending.single()
+                    val a = f.controls.uiState.value.pending.single()
                     peer.controls.stop(CHAT_PERSONAL, listOf(HISTORY_RUN, secondRun))
                     peer.controls.uiState.first { state ->
-                        state.journal?.pending?.size == 2 &&
-                            state.journal.pending
+                        state.pending.size == 2 &&
+                            state.pending
                                 .filter { it.targetId == secondRun }
                                 .all { state.phases[it.id] == RunControlPhase.Accepted }
                     }
@@ -1033,7 +1008,6 @@ internal class RunControlsPeerModelTest : RunControlsModelTestFixture() {
                     release.countDown()
                     runCurrent()
                     assertEquals(RunControlPhase.Accepted, peer.controls.uiState.value.phases[a.id])
-                    assertEquals(2, f.store.load(f.api.identity).journal.pending.size)
                 } finally {
                     release.countDown()
                 }
@@ -1042,28 +1016,22 @@ internal class RunControlsPeerModelTest : RunControlsModelTestFixture() {
     }
 
     @Test
-    fun oneControllersCanonicalSettlementPreservesThePeersUnknownIntent() = runTest {
+    fun oneControllersCanonicalSettlementPreservesThePeersUnresolvedIntent() = runTest {
         withControls(initial = listOf(input("first", 1), input("second", 2, secondRun))) { f ->
             withPeer(f) { peer ->
-                f.remote.write = {
-                    jsonResponse("""{"error":{"code":"UNAVAILABLE","message":"Unknown outcome"}}""")
-                        .setResponseCode(503)
-                }
                 f.controls.stop(CHAT_PERSONAL, listOf(HISTORY_RUN))
                 val a =
                     f.controls.uiState
-                        .first { it.phases.values.singleOrNull() == RunControlPhase.Unknown }
-                        .journal!!
+                        .first { it.phases.values.singleOrNull() == RunControlPhase.Accepted }
                         .pending
                         .single()
                 peer.controls.stop(CHAT_PERSONAL, listOf(secondRun))
                 val b =
                     peer.controls.uiState
                         .first {
-                            it.journal?.pending?.size == 2 &&
-                                it.phases.values.all { p -> p == RunControlPhase.Unknown }
+                            it.pending.size == 2 &&
+                                it.phases.values.all { p -> p == RunControlPhase.Accepted }
                         }
-                        .journal!!
                         .pending
                         .single { it.targetId == secondRun }
                 f.remote.set(
@@ -1078,17 +1046,12 @@ internal class RunControlsPeerModelTest : RunControlsModelTestFixture() {
                     ),
                 )
                 peer.controls.check(CHAT_PERSONAL)
-                val settled =
-                    peer.controls.uiState.first {
-                        it.journal?.pending == listOf(b) &&
-                            it.persistence == RunControlPersistence.Durable
-                    }
+                val settled = peer.controls.uiState.first { it.pending == listOf(b) }
                 assertFalse(a.id in settled.phases)
                 assertEquals(
                     listOf(b),
-                    f.controls.uiState.first { it.journal?.pending == listOf(b) }.journal!!.pending,
+                    f.controls.uiState.first { it.pending == listOf(b) }.pending,
                 )
-                assertEquals(listOf(b), f.store.load(f.api.identity).journal.pending)
                 assertEquals(2, f.remote.posts.size)
             }
         }
@@ -1096,17 +1059,8 @@ internal class RunControlsPeerModelTest : RunControlsModelTestFixture() {
 
     @Test
     fun retiringAnOutcomeReaderReleasesThePeerWithoutLosingEitherCommand() = runTest {
-        val original =
-            RunControlIntent(
-                eventId("retired-reader"),
-                CHAT_PERSONAL,
-                RunControlKind.Interrupt,
-                HISTORY_RUN,
-            )
-        withControls(
-            initial = listOf(input("first", 1), input("second", 2, secondRun)),
-            saved = RunControlJournal(pending = listOf(original)),
-        ) { f ->
+        withControls(initial = listOf(input("first", 1), input("second", 2, secondRun))) { f ->
+            val original = f.acceptStop()
             withPeer(f) { peer ->
                 val entered = CompletableDeferred<Unit>()
                 val release = CountDownLatch(1)
@@ -1138,12 +1092,11 @@ internal class RunControlsPeerModelTest : RunControlsModelTestFixture() {
                     val newer =
                         peer.controls.uiState
                             .first { state ->
-                                state.journal!!.pending.any {
+                                state.pending.any {
                                     it.targetId == secondRun &&
                                         state.phases[it.id] == RunControlPhase.Accepted
                                 }
                             }
-                            .journal!!
                             .pending
                             .single { it.targetId == secondRun }
                     f.owners.clear()
@@ -1167,14 +1120,14 @@ internal class RunControlsPeerModelTest : RunControlsModelTestFixture() {
                     )
                     assertEquals(
                         setOf(original, newer),
-                        f.store.load(f.api.identity).journal.pending.toSet(),
+                        peer.controls.uiState.value.pending.toSet(),
                     )
-                    assertEquals(1, f.remote.posts.size)
+                    assertEquals(2, f.remote.posts.size)
                     peer.controls.retry(original.id)
                     peer.controls.uiState.first {
                         it.phases[original.id] == RunControlPhase.Accepted
                     }
-                    assertEquals(2, f.remote.posts.size)
+                    assertEquals(3, f.remote.posts.size)
                     assertEquals(
                         original.id,
                         f.remote.posts.last()["clientEventId"]?.jsonPrimitive?.content,
@@ -1241,18 +1194,9 @@ internal class RunControlsPeerModelTest : RunControlsModelTestFixture() {
 
     @Test
     fun completedScopeCancellationBeforeOnClearedLeavesPeerCommandsRecoverable() = runTest {
-        val saved =
-            RunControlIntent(
-                eventId("cancelled-before-cleared"),
-                CHAT_PERSONAL,
-                RunControlKind.Interrupt,
-                HISTORY_RUN,
-            )
         for (checking in listOf(false, true)) {
-            withControls(
-                initial = listOf(input("first", 1), input("second", 2, secondRun)),
-                saved = if (checking) RunControlJournal(pending = listOf(saved)) else null,
-            ) { f ->
+            withControls(initial = listOf(input("first", 1), input("second", 2, secondRun))) { f ->
+                if (checking) f.acceptStop()
                 withPeer(f) { peer ->
                     val entered = CompletableDeferred<Unit>()
                     val release = CountDownLatch(1)
@@ -1277,7 +1221,7 @@ internal class RunControlsPeerModelTest : RunControlsModelTestFixture() {
                         if (checking) f.controls.check(CHAT_PERSONAL)
                         else f.controls.stop(CHAT_PERSONAL, listOf(HISTORY_RUN))
                         entered.await()
-                        val intent = peer.controls.uiState.value.journal!!.pending.single()
+                        val intent = peer.controls.uiState.value.pending.single()
                         checkNotNull(f.controls.viewModelScope.coroutineContext[Job])
                             .cancelAndJoin()
                         assertEquals(
@@ -1286,7 +1230,7 @@ internal class RunControlsPeerModelTest : RunControlsModelTestFixture() {
                         )
                         f.controls.stop(CHAT_PERSONAL, listOf(secondRun))
                         runCurrent()
-                        assertEquals(listOf(intent), peer.controls.uiState.value.journal!!.pending)
+                        assertEquals(listOf(intent), peer.controls.uiState.value.pending)
                         f.owners.clear()
                         release.countDown()
                         peer.controls.check(CHAT_PERSONAL)
@@ -1301,143 +1245,11 @@ internal class RunControlsPeerModelTest : RunControlsModelTestFixture() {
                             intent.id,
                             f.remote.posts.last()["clientEventId"]?.jsonPrimitive?.content,
                         )
-                        assertEquals(listOf(intent), f.store.load(f.api.identity).journal.pending)
+                        assertEquals(2, f.remote.posts.size)
                     } finally {
                         release.countDown()
                     }
                 }
-            }
-        }
-    }
-}
-
-@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35], application = TestOkouApplication::class)
-internal class RunControlsPersistenceTest : RunControlsModelTestFixture() {
-    @Test
-    fun diskFailureRetainsIntentAndNeverPostsAnUndurableCommand() = runTest {
-        withControls(directory = temporary.newFile()) { f ->
-            f.controls.stop(CHAT_PERSONAL, listOf(HISTORY_RUN))
-            val failed = f.controls.uiState.first { it.persistence == RunControlPersistence.Failed }
-            assertEquals(1, failed.journal!!.pending.size)
-            assertFalse(f.store.load(f.api.identity).durable)
-            assertTrue(f.remote.posts.isEmpty())
-        }
-    }
-
-    @Test
-    fun unversionedJournalCannotRestoreAsEmptyIntentOrEnableAnotherCommand() = runTest {
-        val directory = temporary.newFolder()
-        val intent =
-            RunControlIntent(
-                eventId("unreadable-control"),
-                CHAT_PERSONAL,
-                RunControlKind.Interrupt,
-                HISTORY_RUN,
-            )
-        withControls(directory = directory, saved = RunControlJournal(pending = listOf(intent))) { f
-            ->
-            f.owners.clear()
-            f.store.close()
-            checkNotNull(directory.listFiles()).single { it.extension == "json" }.writeText("{}")
-            val store =
-                RunControlJournalStore(
-                    ApplicationProvider.getApplicationContext(),
-                    directory,
-                    f.dispatcher,
-                )
-            val owners = ViewModelStore()
-            try {
-                val restored =
-                    ViewModelProvider(
-                        owners,
-                        viewModelFactory {
-                            initializer {
-                                RunControlsModel(
-                                    f.api.service,
-                                    store,
-                                    f.api.identity,
-                                    f.history,
-                                    { true },
-                                    { throw it },
-                                    f.dispatcher,
-                                )
-                            }
-                        },
-                    )[RunControlsModel::class.java]
-                val state =
-                    restored.uiState.first { it.persistence != RunControlPersistence.Loading }
-                assertEquals(RunControlPersistence.Failed, state.persistence)
-                assertNull(state.journal)
-                assertEquals(HistoryPhase.Ready, f.history.uiState.value.phase)
-                restored.stop(CHAT_PERSONAL, listOf(HISTORY_RUN))
-                runCurrent()
-                assertTrue(f.remote.posts.isEmpty())
-            } finally {
-                owners.clear()
-                store.close()
-            }
-        }
-    }
-
-    @Test
-    fun restoredIntentKeepsItsIdAndQueriesWithoutAutomaticDispatch() = runTest {
-        val directory = temporary.newFolder()
-        withControls(directory = directory) { f ->
-            f.controls.stop(CHAT_PERSONAL, listOf(HISTORY_RUN))
-            val intent =
-                f.controls.uiState
-                    .first { it.phases.values.singleOrNull() == RunControlPhase.Accepted }
-                    .journal!!
-                    .pending
-                    .single()
-            f.owners.clear()
-            f.store.close()
-            val restoredStore =
-                RunControlJournalStore(
-                    ApplicationProvider.getApplicationContext(),
-                    directory,
-                    f.dispatcher,
-                )
-            val restoredOwners = ViewModelStore()
-            try {
-                val restored =
-                    ViewModelProvider(
-                        restoredOwners,
-                        viewModelFactory {
-                            initializer {
-                                RunControlsModel(
-                                    f.api.service,
-                                    restoredStore,
-                                    f.api.identity,
-                                    f.history,
-                                    { true },
-                                    { throw it },
-                                    f.dispatcher,
-                                )
-                            }
-                        },
-                    )[RunControlsModel::class.java]
-                val state =
-                    restored.uiState.first { it.persistence == RunControlPersistence.Durable }
-                assertEquals(listOf(intent), state.journal!!.pending)
-                assertEquals(RunControlPhase.Unknown, state.phases[intent.id])
-                runCurrent()
-                assertEquals(1, f.remote.posts.size)
-                restored.check(CHAT_PERSONAL)
-                restored.uiState.first { it.phases[intent.id] == RunControlPhase.Retryable }
-                assertEquals(1, f.remote.posts.size)
-                assertTrue(
-                    restoredStore
-                        .load(f.api.identity.copy(userId = "another-member"))
-                        .journal
-                        .pending
-                        .isEmpty(),
-                )
-            } finally {
-                restoredOwners.clear()
-                restoredStore.close()
             }
         }
     }

@@ -16,6 +16,14 @@ struct ChatSidebarView: View {
   @LoadableValue private var projectRead: Loadable<[ChatProject]>
   @LoadableValue private var listRead: Loadable<Void>
   @LoadableValue private var presentation: Loadable<ChatSidebarPresentation>
+  /// Whether workspace search is presented, kept in the workspace session's Store.
+  @ResolvedValue private var searchPresented: Bool?
+  /// Project actions and disclosure, kept in the workspace session's Store.
+  @ResolvedValue private var resolvedProjects: ChatProjectStore.Presentation?
+  /// The confirmed chats, kept in the workspace session's Store.
+  @ResolvedValue private var resolvedThreads: [ChatThread]?
+  /// The selected chat, kept in the workspace session's Store.
+  @ResolvedValue private var resolvedSelection: String??
 
   init(
     store: WorkspaceStore, authentication: AuthenticationService, workspaceID: String,
@@ -34,6 +42,10 @@ struct ChatSidebarView: View {
     _projectRead = LoadableValue(task: store.projects.listValue, keepLast: true)
     _listRead = LoadableValue(task: store.list.listValue)
     _presentation = LoadableValue(store.sidebar.presentation)
+    _searchPresented = ResolvedValue(store.search.presented)
+    _resolvedProjects = ResolvedValue(store.projects.presentation)
+    _resolvedThreads = ResolvedValue(store.list.threadsValue)
+    _resolvedSelection = ResolvedValue(store.selectedThreadValue)
   }
 
   private struct ProjectEditor {
@@ -88,9 +100,9 @@ struct ChatSidebarView: View {
     List {
       if listRead.state == .loading && !store.list.hasLoadedThreads {
         forYouRow
-        OkouLoadingRow("Loading chats…")
-          .frame(maxWidth: .infinity)
-          .listRowInsets(.horizontal, 0)
+        OkouLoadingRow("Loading chats…", statusColumnWidth: statusColumn)
+          .frame(minHeight: OkouControl.listRow)
+          .listRowInsets(EdgeInsets(top: 0, leading: rowInset, bottom: 0, trailing: rowInset))
           .listRowSeparator(.hidden)
           .listRowBackground(Color.clear)
       } else if !store.list.hasLoadedThreads && listError != nil {
@@ -214,7 +226,7 @@ struct ChatSidebarView: View {
     }
     .sheet(
       isPresented: Binding(
-        get: { store.search.isPresented },
+        get: { searchPresented ?? store.search.isPresented },
         set: { if !$0 { store.search.dismiss() } }
       )
     ) {
@@ -235,7 +247,10 @@ struct ChatSidebarView: View {
     ChatSidebarHeader(
       store: store, authentication: authentication, workspaceID: workspaceID,
       headerHeight: headerHeight, isScrolled: isScrolled, accountError: $accountError,
-      threadFilter: threadFilter, close: close, newProject: { showEditor(creationEditor) })
+      threadFilter: threadFilter,
+      hasUnreadChats: (resolvedThreads ?? store.list.threads).contains {
+        !$0.isMuted && $0.indicator == .unread
+      }, close: close, newProject: { showEditor(creationEditor) })
   }
 
   /// For you is always the list's first row, whatever the chats below it are doing.
@@ -257,7 +272,7 @@ struct ChatSidebarView: View {
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
       }
-      if let error = store.projects.actionError {
+      if let error = projectState.actionError {
         OkouBanner(
           Text(error), icon: "circle-alert", tone: .problem,
           dismiss: store.projects.dismissError
@@ -267,7 +282,7 @@ struct ChatSidebarView: View {
       }
       ForEach(contents.projects) { group in
         projectRow(group)
-        if store.projects.isExpanded(group.id) {
+        if projectState.isExpanded(group.id) {
           if group.section.isEmpty {
             Text("No chats yet")
               .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
@@ -377,64 +392,12 @@ struct ChatSidebarView: View {
   }
 
   private func projectRow(_ group: ChatSidebarPresentation.ProjectGroup) -> some View {
-    let project = group.project
-    let expanded = store.projects.isExpanded(project.id)
-    // An open project leaves unread and working to its chats' own marks. The folder shows one
-    // badge, and unread wins.
-    let unread = !expanded && group.section.hasUnread
-    let working = !expanded && !unread && group.section.isWorking
-    return Button {
-      withAnimation(reduceMotion ? nil : OkouMotion.disclosure) {
-        store.projects.toggle(project.id)
-      }
-    } label: {
-      // The chat rows' geometry: the folder in the status column, so the name starts on the
-      // chat titles' edge.
-      HStack(spacing: OkouSpace.ten) {
-        // A folded project badges its folder, as the menu button does for the whole list: the
-        // trailing column keeps the chevron, in line with the chats' own dots.
-        OkouIcon(expanded ? "folder-open" : "folder", size: OkouIconSize.standard)
-          .foregroundStyle(OkouColor.mutedForeground)
-          .modifier(OkouUnreadBadge(isVisible: unread))
-          .modifier(OkouRunningBadge(isVisible: working))
-          .frame(width: statusColumn, alignment: .leading)
-        Text(verbatim: project.name).font(.okou(.body)).lineLimit(1)
-        Spacer(minLength: 0)
-        // The fold's own mark ends the row in the trailing column, turning from down (open)
-        // to right (folded) with the disclosure.
-        OkouIcon("chevron-down", size: OkouIconSize.standard)
-          .foregroundStyle(OkouColor.quietMark)
-          .rotationEffect(.degrees(expanded ? 0 : -90))
-          .accessibilityHidden(true)
-      }
-      .frame(minHeight: OkouControl.listRow)
-      .contentShape(Rectangle())
-    }
-    .buttonStyle(.plain)
-    .accessibilityIdentifier("project-\(project.id)")
-    // The badge is drawn only, so the value names it, as the menu button's does.
-    .accessibilityValue(
-      [
-        expanded ? String(localized: "Expanded") : String(localized: "Collapsed"),
-        unread ? String(localized: "Unread") : nil,
-        working ? String(localized: "Working") : nil
-      ].compactMap { $0 }.joined(separator: ", ")
-    )
-    .listRowInsets(EdgeInsets(top: 0, leading: rowInset, bottom: 0, trailing: rowInset))
-    .listRowSeparator(.hidden)
-    .listRowBackground(Color.clear)
-    .contextMenu {
-      Button("New chat", okouSymbol: "square-pen") {
-        store.startNewChat(projectID: project.id)
-        close()
-      }
-      .disabled(store.isCreating || store.needsUpgrade)
-      Button("Rename", okouSymbol: "pencil") { showEditor(editor(project: project)) }
-      Button("Delete project", okouSymbol: "trash-2", role: .destructive) {
-        deletingProject = project
-      }
-    }
-    .disabled(store.needsUpgrade || store.projects.pending.contains(project.id))
+    ChatSidebarProjectRow(
+      group: group, store: store, expanded: projectState.isExpanded(group.id),
+      isPending: projectState.pending.contains(group.id), rowInset: rowInset,
+      statusColumn: statusColumn, close: close,
+      rename: { showEditor(editor(project: group.project)) },
+      delete: { deletingProject = group.project })
   }
 
   private func editor(project: ChatProject) -> ProjectEditor {
@@ -504,7 +467,7 @@ struct ChatSidebarView: View {
     .listRowBackground(
       RoundedRectangle(cornerRadius: OkouRadius.control)
         .fill(
-          store.selectedThreadID == thread.id
+          selectedThreadID == thread.id
             ? OkouColor.stateSelected : .clear
         )
         .padding(.leading, OkouSpace.md + indentation)
@@ -512,7 +475,7 @@ struct ChatSidebarView: View {
         .background(OkouColor.sidebar)
     )
     .accessibilityIdentifier("chat-\(thread.id)")
-    .accessibilityAddTraits(store.selectedThreadID == thread.id ? .isSelected : [])
+    .accessibilityAddTraits(selectedThreadID == thread.id ? .isSelected : [])
     .contextMenu {
       ChatThreadMenuContent(
         menu: ChatThreadMenu(
@@ -555,7 +518,11 @@ struct ChatSidebarView: View {
   private func archiveRemovesRow(_ thread: ChatThread) -> Bool {
     switch store.sidebar.filter {
     case .recent: !thread.isArchived
-    case .archived: thread.isArchived
+    case .archived:
+      thread.isArchived
+        && !projectState.projects.contains {
+          $0.id == thread.projectId && $0.isArchived
+        }
     case .unread, .muted: false
     }
   }
@@ -577,18 +544,145 @@ struct ChatSidebarView: View {
 
 }
 
+extension ChatSidebarView {
+  /// This render's selected chat, with the synchronous value for a first render.
+  private var selectedThreadID: String? { resolvedSelection ?? store.selectedThreadID }
+
+  /// This render's Project state, with the synchronous value for a first render.
+  private var projectState: ChatProjectStore.Presentation {
+    resolvedProjects ?? store.projects.currentPresentation
+  }
+}
+
+private struct ChatSidebarProjectRow: View {
+  let group: ChatSidebarPresentation.ProjectGroup
+  let store: WorkspaceStore
+  /// Disclosure and a mutation in flight, from the Project state the sidebar resolves.
+  let expanded: Bool
+  let isPending: Bool
+  let rowInset: CGFloat
+  let statusColumn: CGFloat
+  let close: () -> Void
+  let rename: () -> Void
+  let delete: () -> Void
+
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  var body: some View {
+    let project = group.project
+    // An open project leaves unread and working to its chats' own marks. The folder shows one
+    // badge, and unread wins.
+    let unread = !expanded && group.section.hasUnread
+    let working = !expanded && !unread && group.section.isWorking
+    return Button {
+      withAnimation(reduceMotion ? nil : OkouMotion.disclosure) {
+        store.projects.toggle(project.id)
+      }
+    } label: {
+      // The chat rows' geometry: the folder in the status column, so the name starts on the
+      // chat titles' edge.
+      HStack(spacing: OkouSpace.ten) {
+        // A folded project badges its folder, as the menu button does for the whole list: the
+        // trailing column keeps the chevron, in line with the chats' own dots.
+        OkouIcon(expanded ? "folder-open" : "folder", size: OkouIconSize.standard)
+          .foregroundStyle(OkouColor.mutedForeground)
+          .modifier(OkouUnreadBadge(isVisible: unread))
+          .modifier(OkouRunningBadge(isVisible: working))
+          .frame(width: statusColumn, alignment: .leading)
+        Text(verbatim: project.name).font(.okou(.body)).lineLimit(1)
+        if project.isArchived {
+          Text("Archived").font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground)
+        }
+        Spacer(minLength: 0)
+        // The fold's own mark ends the row in the trailing column, turning from down (open)
+        // to right (folded) with the disclosure.
+        OkouIcon("chevron-down", size: OkouIconSize.standard)
+          .foregroundStyle(OkouColor.quietMark)
+          .rotationEffect(.degrees(expanded ? 0 : -90))
+          .accessibilityHidden(true)
+      }
+      .frame(minHeight: OkouControl.listRow)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .accessibilityIdentifier("project-\(project.id)")
+    // The badge is drawn only, so the value names it, as the menu button's does.
+    .accessibilityValue(
+      [
+        expanded ? String(localized: "Expanded") : String(localized: "Collapsed"),
+        unread ? String(localized: "Unread") : nil,
+        working ? String(localized: "Working") : nil
+      ].compactMap { $0 }.joined(separator: ", ")
+    )
+    .listRowInsets(EdgeInsets(top: 0, leading: rowInset, bottom: 0, trailing: rowInset))
+    .listRowSeparator(.hidden)
+    .listRowBackground(Color.clear)
+    .contextMenu {
+      Button("New chat", okouSymbol: "square-pen") {
+        store.startNewChat(projectID: project.id)
+        close()
+      }
+      .disabled(store.isCreating || store.needsUpgrade)
+      Button(project.isArchived ? "Restore project" : "Archive project", okouSymbol: "archive") {
+        Task { await store.projects.setArchived(project.id, archived: !project.isArchived) }
+      }
+      Button("Rename", okouSymbol: "pencil", action: rename)
+      Button("Delete project", okouSymbol: "trash-2", role: .destructive, action: delete)
+    }
+    .disabled(store.needsUpgrade || isPending)
+  }
+}
+
 /// Draft observation belongs to this row, not the workspace's list projection.
 private struct ChatSidebarThreadLabel: View {
   let row: ChatSidebarPresentation.Row
   let workspace: WorkspaceStore
   let showsStatusColumn: Bool
+  /// The API's draft list, kept in the workspace session's Store.
+  @ResolvedValue private var listedDrafts: Set<String>?
+
+  init(row: ChatSidebarPresentation.Row, workspace: WorkspaceStore, showsStatusColumn: Bool) {
+    self.row = row
+    self.workspace = workspace
+    self.showsStatusColumn = showsStatusColumn
+    _listedDrafts = ResolvedValue(workspace.listedDraftIDs)
+  }
+
+  var body: some View {
+    ChatSidebarThreadStates(
+      row: row, composer: workspace.residentComposer(row.id),
+      listedDraft: listedDrafts?.contains(row.id) ?? workspace.hasListedDraft(row.id),
+      showsStatusColumn: showsStatusColumn
+    )
+    .task { await workspace.activateDrafts() }
+  }
+}
+
+/// A resident chat's draft mark follows its composer graph; other chats use the confirmed list.
+private struct ChatSidebarThreadStates: View {
+  let row: ChatSidebarPresentation.Row
+  let listedDraft: Bool
+  let showsStatusColumn: Bool
+  private let isResident: Bool
+  @ResolvedValue private var unsentContent: Bool?
+
+  init(
+    row: ChatSidebarPresentation.Row, composer: ComposerDraftStore?, listedDraft: Bool,
+    showsStatusColumn: Bool
+  ) {
+    self.row = row
+    self.listedDraft = listedDraft
+    self.showsStatusColumn = showsStatusColumn
+    isResident = composer != nil
+    _unsentContent = ResolvedValue(composer?.unsentContent ?? ComposerDraftSignals.noContent)
+  }
 
   var body: some View {
     var states: OkouChatStates = []
     if row.isWorking { states.insert(.working) }
     if row.isMuted { states.insert(.muted) }
     if row.isUnread { states.insert(.unread) }
-    if workspace.hasDraft(row.id) { states.insert(.draft) }
+    if isResident ? unsentContent == true : listedDraft { states.insert(.draft) }
     if row.isPinned { states.insert(.pinned) }
     return Group {
       if showsStatusColumn {
@@ -599,7 +693,6 @@ private struct ChatSidebarThreadLabel: View {
         OkouChatRowLabel(row.title, states: states)
       }
     }
-    .task { await workspace.activateDrafts() }
   }
 }
 

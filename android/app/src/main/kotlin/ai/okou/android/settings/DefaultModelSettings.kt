@@ -1,6 +1,7 @@
 package ai.okou.android.settings
 
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.finiteReadRetryDelays
 import ai.okou.android.api.generated.DefaultModelPreference
 import ai.okou.android.api.generated.RecoveryCatalog
 import ai.okou.android.api.generated.RecoveryModels
@@ -32,10 +33,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-private val retryDelays = listOf(5_000L, 10_000L, 20_000L, 40_000L, 60_000L)
 private val preferenceSaveRetryDelays = listOf(3_000L, 3_000L)
 private const val preferenceRefreshMillis = 10 * 60_000L
-private const val catalogFailureWindowMillis = 30_000L
 
 internal typealias ModelEffort = UpdateDefaultModelPreferenceModelSettingsPatchEffort
 
@@ -135,7 +134,6 @@ internal data class DefaultModelState(
     val record: DefaultModelRecord? = null,
     val save: DefaultModelSave? = null,
     val options: DefaultModelOptions? = null,
-    val offline: Boolean = false,
     val catalogUnavailable: Boolean = false,
 ) {
     val pending: UpdateDefaultModelPreference?
@@ -215,15 +213,7 @@ internal class DefaultModelSettings(
     fun foreground(active: Boolean) {
         if (foreground == active) return
         foreground = active
-        synchronizeReads()
-    }
-
-    fun online(online: Boolean) {
-        val current = mutable.value
-        if (current.offline == !online) return
-        mutable.value = current.copy(offline = !online, catalogUnavailable = false)
-        saveWait?.cancel()
-        if (online) resumeReadback()
+        if (active && readbackBlocked) resumeReadback()
         synchronizeReads()
     }
 
@@ -285,7 +275,7 @@ internal class DefaultModelSettings(
 
     private fun synchronizeReads() {
         val current = mutable.value
-        val active = foreground && !current.offline && authorized()
+        val active = foreground && authorized()
         val refresh = active && presented && destination == null && current.record != null
         if (!refresh) {
             preferenceRead?.cancel()
@@ -344,14 +334,21 @@ internal class DefaultModelSettings(
             } catch (error: Exception) {
                 currentCoroutineContext().ensureActive()
                 onFailure(error)
-                delay(if (error.retryable()) retryDelay(++failures) else preferenceRefreshMillis)
+                if (!authorized()) return
+                val wait =
+                    if (error.retryable()) finiteReadRetryDelays.getOrNull(failures++) else null
+                if (wait != null) {
+                    delay(wait)
+                } else {
+                    failures = 0
+                    delay(preferenceRefreshMillis)
+                }
             }
         }
     }
 
     private suspend fun refreshCatalog() {
         var failures = 0
-        var firstFailure = 0L
         while (authorized()) {
             try {
                 val options = loadOptions()
@@ -366,28 +363,15 @@ internal class DefaultModelSettings(
                 currentCoroutineContext().ensureActive()
                 onFailure(error)
                 if (!authorized()) return
-                if (failures++ == 0) firstFailure = nowMillis()
-                if (mutable.value.options == null || !error.retryable()) showCatalogFailure()
-                if (!error.retryable()) return
-
-                var untilRetry = retryDelay(failures)
-                if (failures >= 3 && !mutable.value.catalogUnavailable) {
-                    val untilNotice =
-                        (catalogFailureWindowMillis - (nowMillis() - firstFailure)).coerceAtLeast(0)
-                    if (untilNotice <= untilRetry) {
-                        delay(untilNotice)
-                        if (!authorized()) return
-                        showCatalogFailure()
-                        untilRetry -= untilNotice
-                    }
+                val wait =
+                    if (error.retryable()) finiteReadRetryDelays.getOrNull(failures++) else null
+                if (wait == null) {
+                    mutable.value = mutable.value.copy(catalogUnavailable = true)
+                    return
                 }
-                delay(untilRetry)
+                delay(wait)
             }
         }
-    }
-
-    private fun showCatalogFailure() {
-        mutable.value = mutable.value.copy(catalogUnavailable = true)
     }
 
     private fun synchronizeSaves() {
@@ -406,7 +390,7 @@ internal class DefaultModelSettings(
     }
 
     private fun canSave(): Boolean =
-        authorized() && !mutable.value.offline && !readbackBlocked && mutable.value.pending != null
+        authorized() && !readbackBlocked && mutable.value.pending != null
 
     private suspend fun savePreferences() {
         while (canSave()) {
@@ -621,9 +605,6 @@ private fun Exception.retryable(): Boolean =
 private fun Exception.definitivelyRejectedWrite(): Boolean =
     this is ApiFailure.Unauthenticated ||
         this is ApiFailure.Http && status in 400..499 && status != 408
-
-private fun retryDelay(failures: Int): Long =
-    retryDelays[(failures - 1).coerceAtMost(retryDelays.lastIndex)]
 
 private fun UpdateDefaultModelPreference.matches(preference: DefaultModelPreference): Boolean =
     // The server can read back an explicit Auto ID for a nullable write.

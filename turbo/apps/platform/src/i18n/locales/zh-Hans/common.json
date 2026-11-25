@@ -253,6 +253,11 @@
         "modelCatalogCacheValidationLatency": "模型目录缓存校验延迟",
         "modelCatalogPrefetchRole": "模型目录预取角色",
         "modelCatalogUpstreamEncoding": "模型目录上游编码",
+        "openrouterAttempts": "OpenRouter 供应商尝试",
+        "openrouterAttemptsIncomplete": "OpenRouter 尝试记录不完整",
+        "openrouterGenerationId": "OpenRouter 生成 ID",
+        "openrouterModel": "OpenRouter 模型",
+        "openrouterProvider": "OpenRouter 供应商",
         "params": "参数",
         "permission": "权限",
         "permissionError": "权限错误",
@@ -430,7 +435,6 @@
       "close": "关闭",
       "closeArtifact": "关闭成果",
       "closeNamed": "关闭 {{title}}",
-      "closePreviewMenu": "关闭预览菜单",
       "download": "下载",
       "downloadArtifact": "下载成果",
       "downloadMarkdownAs": "下载为 {{format}}",
@@ -502,6 +506,77 @@
       "kindIcon": "{{kind}}成果",
       "loading": "正在加载成果"
     },
+    "customDomain": {
+      "addressHint": "Choose the full address used when you share this website.",
+      "automaticHint": "将配置网站的 CNAME 和所有权 TXT。额外证书记录仍需在下方配置，完成后回来点验证。",
+      "automaticSetup": "一键配置网站记录",
+      "checkBeforeEditing": "修改 DNS 前，先点击验证检查记录。",
+      "checkFailed": "需要处理",
+      "checkNotChecked": "尚未检查",
+      "checkPassed": "已通过",
+      "checkPending": "等待中",
+      "checks": {
+        "certificate": "HTTPS",
+        "dns": "DNS 连接",
+        "ownership": "所有权",
+        "provider": "域名激活",
+        "route": "网站路由"
+      },
+      "checkUnavailable": "暂时无法检查",
+      "connect": "Connect a domain",
+      "continue": "继续",
+      "copied": "已复制",
+      "copyFailed": "无法复制，请选中记录值手动复制",
+      "copyRecordName": "复制 {{type}} 名称 {{name}}",
+      "copyRecordValue": "复制 {{type}} 值 {{name}}",
+      "disconnectConfirm": "This domain will be disconnected from this website.",
+      "dnsConfigured": "DNS 已配置",
+      "dnsHelp": "在 DNS 服务商处配置这些记录，然后点击验证",
+      "domain": "域名",
+      "findingProvider": "正在查找 DNS 配置方式…",
+      "hostnameExample": "www.example.com",
+      "httpsReady": "HTTPS ready",
+      "keepTxtValues": "保留同名的已有 TXT 值，每个值分别添加为一条 TXT 记录。",
+      "lastChecked": "上次检查 {{time}}",
+      "manage": "Manage {{hostname}}",
+      "manualHint": "将记录复制到 DNS 设置，完成后回来点验证。",
+      "needsSetup": "Finish setup",
+      "noDnsChanges": "DNS 记录已匹配，无需修改。",
+      "notChecked": "尚未验证",
+      "okouUrl": "Okou URL",
+      "openDns": "打开 {{provider}} DNS",
+      "ownDomain": "输入你拥有的域名",
+      "recordMatched": "已匹配",
+      "recordName": "名称",
+      "recordNeedsCheck": "尚未匹配",
+      "recordValue": "值",
+      "remove": "移除",
+      "removeConfirm": "分享链接将恢复为 {{url}}。",
+      "removeHostname": "Remove {{hostname}}",
+      "removeTitle": "移除自定义域名？",
+      "removing": "此域名已断开连接。点击移除以完成配置清理。",
+      "retryVerification": "查看下方结果，再点击验证重新检查。",
+      "reviewDns": "查看 DNS 记录",
+      "saveToEnable": "点击保存后，分享地址才会更改。",
+      "setUpDns": "设置 DNS 记录",
+      "setupStages": "域名设置步骤",
+      "sharingAddress": "你的分享地址",
+      "steps": {
+        "dns": "DNS 设置",
+        "enable": "启用",
+        "verify": "验证"
+      },
+      "title": "自定义域名",
+      "urlPreview": "https://{{hostname}}",
+      "verificationChecks": "域名验证检查",
+      "verificationComplete": "所有检查均已通过，继续以启用域名。",
+      "verificationDetails": "验证详情",
+      "verified": "Domain verified. Save to use this address.",
+      "verifiedRecords": "已验证的记录（{{total}}）",
+      "verify": "验证",
+      "verifyDomain": "域名验证",
+      "yourDomains": "Connected domains"
+    },
     "deletion": {
       "cancel": "取消",
       "delete": "删除",
@@ -570,6 +645,22 @@
       "text": "文本",
       "video": "视频"
     },
+    "library": {
+      "allArtifacts": "全部成果",
+      "allTypes": "全部类型",
+      "clearFilters": "清除筛选",
+      "clearSearch": "清除搜索",
+      "created": "创建时间",
+      "emptyDescription": "尝试其他名称或类型。",
+      "emptyTitle": "没有找到成果",
+      "loadMore": "加载更多",
+      "name": "名称",
+      "retry": "重试",
+      "search": "搜索成果",
+      "sortAscending": "升序排列",
+      "sortDescending": "降序排列",
+      "type": "类型"
+    },
     "metadata": {
       "generated": "生成于 {{date}}",
       "updated": "更新于 {{date}}"
@@ -577,11 +668,10 @@
     "people": {
       "accounts": "匹配的工作区成员",
       "anyone": "任何人",
-      "empty": "尚未邀请其他人。",
-      "hint": "邀请工作区外的用户？请输入对方的完整邮箱。",
       "invitationProcessed": "分享邀请已处理",
       "label": "分享给指定用户",
       "noAccounts": "未找到匹配的工作区成员。请输入完整邮箱邀请。",
+      "owner": "所有者",
       "placeholder": "姓名或邮箱地址",
       "remove": "移除 {{email}} 的访问权限",
       "removed": "已移除访问权限",
@@ -594,7 +684,8 @@
       "viewers": "有权访问的用户",
       "workspace": "工作区",
       "workspaceDescription": "{{organization}} 成员和受邀人员",
-      "workspaceDescriptionUnnamed": "工作区成员和受邀人员"
+      "workspaceDescriptionUnnamed": "工作区成员和受邀人员",
+      "you": "{{name}}（你）"
     },
     "preview": {
       "audioLabel": "{{filename}} 的音频预览",
@@ -665,15 +756,9 @@
       "updated": "网站网址已更新"
     },
     "templates": {
-      "activeHtmlPreview": "{{title}} 当前 HTML 预览",
-      "all": "全部",
       "avatar": "虚拟形象",
-      "categories": "模板分类",
-      "category": "模板分类",
       "fullPreview": "{{title}} 网站完整预览",
       "htmlPreview": "{{title}} HTML 预览",
-      "illustration": "插画",
-      "illustrationPreview": "{{title}} 插画预览",
       "importDeck": "导入你自己的演示文稿",
       "importDeckHint": "（.pptx、.ppt、.pdf）",
       "importDocument": "导入你自己的文档",
@@ -684,18 +769,10 @@
       "importImageHint": "保存为可复用风格",
       "multiAccent": "多口音",
       "nextSlide": "预览下一页",
-      "noMatches": "没有匹配结果",
-      "previewCurrentSlide": "从当前页预览 {{title}}",
       "previewSlide": "预览第 {{slideNumber}} 页",
-      "previewWebsite": "预览网站模板 {{title}}",
       "previousSlide": "预览上一页",
-      "searchConnector": "搜索模板",
-      "searchConnectors": "搜索模板",
       "selectStyle": "选择风格 {{style}}",
       "selectTemplate": "选择模板 {{title}}",
-      "selectWebsite": "选择网站模板 {{title}}",
-      "selectWorkflow": "选择工作流模板 {{title}}",
-      "showVariant": "显示变体 {{variantNumber}}",
       "singleAccent": "单一口音",
       "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "{{title}} 幻灯片预览",
@@ -723,15 +800,11 @@
         "terracottaClay": "陶罐",
         "warmSand": "晨报"
       },
-      "tryDifferentSearch": "换个关键词试试。",
-      "use": "使用",
       "useThisTemplate": "使用这个模板",
       "visibility": {
         "changeLabel": "修改模板可见范围"
       },
       "website": "网站",
-      "websitePreview": "{{title}} 网站模板预览",
-      "workflow": "工作流",
       "workflowCatalog": {
         "auto-inbox-label": {
           "description": "创建一个工作流：当邮件被打上指定的 Gmail 标签时自动运行，并处理这封邮件。",
@@ -1166,6 +1239,12 @@
       "teamWarning": "你的 Team 权益会持续到当前账单周期结束，之后这个工作区会变成{{plan}}。",
       "title": "降级套餐"
     },
+    "feedback": {
+      "otherPlaceholder": "可以多说一点…",
+      "rewardTerms": "每个工作区仅一次 · 积分有效期 30 天",
+      "submitFeedback": "提交反馈",
+      "thanks": "感谢你的反馈"
+    },
     "invoices": {
       "amount": "金额",
       "date": "日期",
@@ -1309,40 +1388,6 @@
     "sidebar": {
       "description": "更多积分和并发运行",
       "getPlan": "获取{{plan}}"
-    },
-    "survey": {
-      "checkoutAbandoned": {
-        "answers": {
-          "just_checking_price": "只是看看价格",
-          "needs_approval": "需要其他人审批",
-          "not_ready_yet": "还没准备好付费",
-          "not_seeing_value": "还没看到它的价值",
-          "other": "其他原因",
-          "payment_issue": "付款时遇到问题",
-          "price_higher_than_expected": "价格比预期高",
-          "results_not_good_enough": "对产出结果不满意"
-        },
-        "description": "只有一个问题，你的回答会帮助我们改进。",
-        "question": "是什么让你没有完成购买？"
-      },
-      "creditsExhausted": {
-        "answers": {
-          "no_need_now": "目前用不到更多",
-          "not_sure_worth_it": "还不确定是否值得",
-          "other": "其他原因",
-          "still_trying": "想再多试用一下",
-          "too_expensive": "价格太高"
-        },
-        "question": "是什么让你今天还没有升级？",
-        "reward": "此工作区首个符合条件的回答可获得 {{credits}} 奖励 credits，有效期 30 天。",
-        "thanksWithCredits": "感谢！已为你添加 {{credits}} credits，可以继续使用了。"
-      },
-      "error": "提交失败，请重试。",
-      "notNow": "暂不回答",
-      "otherLabel": "你的回答",
-      "otherPlaceholder": "补充说明（可选）",
-      "submit": "提交",
-      "thanks": "感谢你的反馈。"
     },
     "toasts": {
       "autoRechargeUpdated": "自动充值已更新",
@@ -1732,6 +1777,7 @@
       "waiting": "正在等待 Mastercard Data Connect。在那边完成后，回到聊天继续。"
     },
     "billing": {
+      "addCreditsOrUpgrade": "最低充值 $5 即可继续使用，或升级 Pro 解锁专属功能。",
       "addCreditsToContinue": "添加积分，继续和 {{assistantName}} 对话。",
       "askAdminCredits": "请工作区管理员添加积分，你就能继续和 {{assistantName}} 对话。",
       "askAdminUpgrade": "请工作区管理员升级到 Pro，你就能继续和 {{assistantName}} 对话。",
@@ -1745,7 +1791,6 @@
       "customAmountError": "请输入 $1 到 $10,000 之间的金额",
       "customDollarAmount": "自定义金额（美元）",
       "outOfCredits": "你的积分用完了",
-      "redirecting": "正在跳转…",
       "upgradeToContinue": "升级到 Pro，继续和 {{assistantName}} 对话。",
       "upgradeToPro": "升级到 Pro",
       "upgradeToRun": "升级到 Pro 才能运行 {{assistantName}}",
@@ -1907,11 +1952,10 @@
       "add": "添加",
       "configureModel": "配置模型",
       "create": {
-        "addStyle": "添加风格",
-        "addTemplate": "添加模板",
         "documentPlaceholder": "你希望文档包含哪些内容？",
         "imagePlaceholder": "描述你想生成的图片…",
         "presentationPlaceholder": "你的演示文稿要讲什么？",
+        "presentationPlaceholderWithDefault": "你的演示文稿是关于什么的？（默认{{format}}）",
         "slideCount": "幻灯片数量",
         "slideCountAuto": "自动",
         "slideCountRange": "{{range}} 页"
@@ -1922,6 +1966,16 @@
       "message": "消息",
       "modelForThisChat": "本次对话使用的模型",
       "placeholder": "让我自动化工作流、管理任务…",
+      "presentationFormatSetup": {
+        "htmlDescription": "可在任意浏览器中打开的链接",
+        "htmlLabel": "网页幻灯片",
+        "openSettings": "打开设置",
+        "pptxDescription": "可编辑的 .pptx 文件",
+        "pptxLabel": "PowerPoint",
+        "savedDefault": "{{format}}已设为演示文稿的默认格式",
+        "settingsHint": "之后的新演示文稿都会使用它，可在设置中修改。",
+        "title": "选择一个默认格式开始"
+      },
       "selectedModelUnavailable": "所选模型当前不可用。配置好之后再发送。",
       "selectedModelUnavailableToast": "所选模型当前不可用",
       "selectModel": "选择模型",
@@ -1948,11 +2002,9 @@
         "scheduleHint": "按计划自动运行",
         "share": "分享对话",
         "shareHint": "分享这段对话的链接",
-        "templates": "模板",
         "unpin": "取消置顶"
       },
       "slashPanel": {
-        "browseAll": "浏览全部模板",
         "hint": "选择一个操作",
         "useTemplate": "使用模板 {{title}}"
       },
@@ -1995,8 +2047,10 @@
     "connectorAccountSwitch": {
       "accountFallback": "连接器账户",
       "actionFailed": "账户切换失败。",
+      "allowForHour": "允许 1 小时",
       "customConnector": "自定义连接器",
       "loadFailed": "无法加载这个连接器账户。",
+      "memberScope": "允许在你的所有聊天中使用，并在此聊天中选择此账号。",
       "reconnectRequired": "需要重新连接。之后的运行可能会继续使用现有的备用账户。",
       "selected": "已切换到 {{account}}",
       "switch": "切换",
@@ -2589,11 +2643,6 @@
       "unsupported": "不支持手动重置；用量将自然恢复。"
     },
     "taskChips": {
-      "presentationFormat": "演示文稿格式",
-      "presentationFormats": {
-        "html": "HTML",
-        "pptx": "PPTX"
-      },
       "presentationTemplates": "演示文稿模板",
       "removeTask": "移除{{task}}",
       "shelf": {
@@ -2611,7 +2660,6 @@
         "website": "网站",
         "workflow": "工作流"
       },
-      "viewAll": "查看全部",
       "visualization": {
         "allCharts": "全部图表",
         "back": "返回可视化选项",
@@ -2793,8 +2841,6 @@
         "workflow": "工作流"
       },
       "previewTemplate": "预览模板 {{title}}",
-      "previewWebsite": "预览网站模板 {{title}}",
-      "previewWorkflow": "预览工作流模板 {{title}}",
       "removeTemplate": "移除模板 {{title}}",
       "removeWebsite": "移除网站模板 {{title}}",
       "removeWorkflow": "移除工作流模板 {{title}}"
@@ -2866,6 +2912,7 @@
       "storageFailed": "音频未能保存。只能使用已保存在此设备上的音频。",
       "textTakingShape": "文字正在成形",
       "transcribing": "正在转写",
+      "uploadingRecording": "正在上传录音…",
       "useRecording": "使用录音"
     },
     "walletAction": {
@@ -2944,6 +2991,8 @@
     "accountsInChat": "选择在此对话中开启哪些账号。",
     "enableByDefault": "默认启用 {{account}}",
     "manageAccounts": "管理账号",
+    "memberPolicyLoadFailed": "无法加载账号访问权限。",
+    "memberSettingsDescription": "选择 Okou 可在你的所有聊天中使用的 {{connector}} 账号。",
     "permissions": "权限",
     "permissionsDescription": "这些规则适用于你所有聊天和账号中的此连接器。",
     "settingsDescription": "选择 Okou 可以在你的对话中使用哪些 {{connector}} 账号。你可以在每个对话中单独调整。",
@@ -3883,7 +3932,6 @@
         "overview": "供应方与客户信息"
       }
     },
-    "filter": "文档分类",
     "formats": {
       "pdf": "PDF",
       "word": "Word 文档"
@@ -3893,10 +3941,8 @@
     "nextPage": "下一页样张",
     "openLarger": "查看大图",
     "page": "第 {{page}} 页",
-    "preview": "预览 {{title}}",
     "previousPage": "上一页样张",
-    "title": "文档",
-    "useNamed": "使用 {{title}}"
+    "title": "文档"
   },
   "featureGuide": {
     "close": "关闭新功能指南",
@@ -4408,7 +4454,6 @@
   },
   "myOkou": {
     "conflict": "指令已在其他地方更新。本地草稿已保留，请先查看或复制，再重新加载已保存的内容。",
-    "description": "在此工作区中，专属于你的 Okou 指令",
     "discard": "放弃",
     "draftKept": "切换页面或工作区时，草稿会保留在此浏览器标签页中。",
     "instructions": "指令",
@@ -5172,6 +5217,7 @@
     }
   },
   "projects": {
+    "archiveProject": "归档",
     "back": "返回",
     "close": "Close",
     "collapse": "收起",
@@ -5208,6 +5254,7 @@
     "removeFromNewChat": "移除{{name}}",
     "rename": "重命名",
     "renameProject": "重命名 Project",
+    "restoreProject": "恢复项目",
     "retryThreads": "重新加载聊天",
     "save": "保存",
     "saveError": "无法保存 Project",
@@ -5676,7 +5723,6 @@
           "title": "偏好设置"
         },
         "proactiveLearning": {
-          "description": "选择 Okou 主动工作的方式。",
           "title": "Proactive"
         },
         "tools": {
@@ -5758,6 +5804,16 @@
     "models": {
       "actions": {
         "resetUsage": "重置用量"
+      },
+      "antigravity": {
+        "check": "查看登录状态",
+        "error": "请检查分配给你的登录环境，然后重试。",
+        "expired": "登录已过期，请重新连接。",
+        "openTerminal": "打开 Google 登录终端",
+        "terminal": "在终端运行以下命令，然后使用你的个人 Google AI 账号登录。",
+        "title": "Google AI（Antigravity）",
+        "unassigned": "请管理员为你分配登录终端。",
+        "verify": "运行此命令会使用你的订阅额度，分别向 Neon、Carbon 和 Hydrogen 发送一次请求。"
       },
       "deviceAuth": {
         "claude": {
@@ -5958,6 +6014,14 @@
           "title": "默认模型"
         },
         "description": "设置新聊天的默认项和消息发送方式。",
+        "presentationFormat": {
+          "htmlDescription": "新演示文稿以链接形式在浏览器中打开",
+          "pptxDescription": "新演示文稿以可编辑的 .pptx 文件交付",
+          "saveFailed": "无法保存默认格式，请重试。",
+          "title": "默认演示文稿格式",
+          "unavailable": "无法加载默认格式",
+          "unsetDescription": "首次制作演示文稿时会询问你"
+        },
         "sectionTitle": "聊天"
       },
       "debug": {
@@ -6064,7 +6128,6 @@
         "title": "晨报"
       },
       "proactiveSuggestions": {
-        "description": "每小时检查已连接的信息来源，每天更新用户画像，并推荐有用的下一步行动。",
         "errorMessage": "无法加载或更新主动建议设置。",
         "missingTimezone": "请在偏好设置中设置时区。",
         "preparationFailed": "暂时无法运行。",
@@ -6355,17 +6418,14 @@
   },
   "sidebar": {
     "escapeShortcut": "Esc",
-    "filterAll": "全部",
     "markAllRead": "全部标为已读",
     "noResults": "没有找到结果",
     "resultCount_other": "{{count}} 条结果",
     "searching": "搜索中…",
     "searchWorkspace": "搜索工作区…",
     "sections": {
-      "artifacts": "成果",
-      "chats": "聊天",
       "messages": "消息",
-      "workflows": "工作流"
+      "threads": "会话"
     }
   },
   "ssh": {
@@ -6523,11 +6583,8 @@
   "templates": {
     "actions": {
       "delete": "删除",
-      "menu": "针对{{title}}的操作",
-      "preview": "预览{{title}}",
       "rename": "重命名模板"
     },
-    "builtIn": "内置",
     "custom": "自定义",
     "delete": {
       "cancel": "取消",
@@ -6542,11 +6599,6 @@
       "page": "第 {{number}} 页"
     },
     "loadFailed": "无法加载模板。",
-    "rename": {
-      "action": "重命名",
-      "cancel": "取消",
-      "save": "保存"
-    },
     "renameFailed": "无法重命名该模板。",
     "sharedBy": "由{{owner}}分享",
     "sharedByMember": "由组织内的成员分享",

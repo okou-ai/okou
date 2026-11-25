@@ -50,7 +50,7 @@ final class ChatComposerMentionTests: XCTestCase {
     }
     let first = try XCTUnwrap(mentionTable(in: host.view)?.visibleCells.first)
     XCTAssertTrue(first.accessibilityActivate())
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: workspace.newComposer) {
       workspace.newComposer.document.parts.contains { $0["type"]?.string == "chat_thread" }
     }
     XCTAssertEqual(input.selectedRange, NSRange(location: 9, length: 0))
@@ -61,7 +61,7 @@ final class ChatComposerMentionTests: XCTestCase {
       mentionTable(in: host.view)?.visibleCells.first?.accessibilityLabel == "Chat: Project 30"
     }
     input.insertText("\n")
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: workspace.newComposer) {
       workspace.newComposer.document.parts.filter { $0["type"]?.string == "chat_thread" }.count == 2
     }
     let expected = MentionNavigationFixture.inlineReferenceDraft
@@ -72,30 +72,35 @@ final class ChatComposerMentionTests: XCTestCase {
 
     input.selectedRange = NSRange(location: 7, length: 1)
     input.deleteBackward()
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: workspace.newComposer) {
       workspace.newComposer.document.parts.filter { $0["type"]?.string == "chat_thread" }.count == 1
     }
     try await eventually { input.undoManager?.groupingLevel == 0 }
     input.undoManager?.undo()
     try await waitForBusinessResult(
+      watching: workspace.newComposer,
       message:
         "After deletion undo: \(workspace.newComposer.document); text: \(String(describing: input.text))"
     ) { workspace.newComposer.document == expected }
     input.undoManager?.redo()
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: workspace.newComposer) {
       workspace.newComposer.document.parts.filter { $0["type"]?.string == "chat_thread" }.count == 1
     }
     input.undoManager?.undo()
-    try await waitForBusinessResult { workspace.newComposer.document == expected }
+    try await waitForBusinessResult(watching: workspace.newComposer) {
+      workspace.newComposer.document == expected
+    }
     try await eventually { input.undoManager?.groupingLevel == 0 }
 
     input.selectedRange = NSRange(location: 0, length: input.text.utf16.count)
     input.insertText("Replacement 中文")
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: workspace.newComposer) {
       workspace.newComposer.document.parts.count == 1 && workspace.newChatDraft == "Replacement 中文"
     }
     input.undoManager?.undo()
-    try await waitForBusinessResult { workspace.newComposer.document == expected }
+    try await waitForBusinessResult(watching: workspace.newComposer) {
+      workspace.newComposer.document == expected
+    }
   }
 
   func testNativeMarkedTextConfirmationDoesNotInsertAMentionAndKeyboardNavigatesChats()
@@ -114,7 +119,9 @@ final class ChatComposerMentionTests: XCTestCase {
     try await waitForBusinessResult { !editor.mentionSuggestions.isEmpty }
     // An empty query has no implicit choice: Return still edits the draft.
     input.insertText("\n")
-    try await waitForBusinessResult { workspace.newChatDraft == "@\n" }
+    try await waitForBusinessResult(watching: workspace.newComposer) {
+      workspace.newChatDraft == "@\n"
+    }
     input.insertText("@")
     input.setMarkedText("研究", selectedRange: NSRange(location: 2, length: 0))
     try await eventually {
@@ -122,7 +129,9 @@ final class ChatComposerMentionTests: XCTestCase {
     }
     input.unmarkText()
     input.insertText("\n")
-    try await waitForBusinessResult { workspace.newChatDraft.contains("研究\n") }
+    try await waitForBusinessResult(watching: workspace.newComposer) {
+      workspace.newChatDraft.contains("研究\n")
+    }
     XCTAssertTrue(workspace.newComposer.document.parts.allSatisfy { $0["type"]?.string == "text" })
     input.insertText("@")
     let target = try XCTUnwrap(
@@ -134,7 +143,7 @@ final class ChatComposerMentionTests: XCTestCase {
     try await mentionKey(UIKeyCommand.inputDownArrow, input: input, host: host.view)
     try await mentionKey(UIKeyCommand.inputUpArrow, input: input, host: host.view)
     input.insertText("\n")
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: workspace.newComposer) {
       workspace.newComposer.document.parts.contains(target.part)
     }
     XCTAssertTrue(input.isFirstResponder)
@@ -178,7 +187,7 @@ final class ChatComposerMentionTests: XCTestCase {
     defer { try? FileManager.default.removeItem(at: file) }
     try Data("Reference comparison".utf8).write(to: file)
     conversation.attachmentDraft.importFiles([file])
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: conversation.composer) {
       conversation.attachmentDraft.hasAttachments && conversation.attachmentDraft.isReady
     }
     let expected = conversation.composer.value.draftUserMessage
@@ -276,9 +285,11 @@ final class ChatComposerMentionTests: XCTestCase {
     let retiredRow = try XCTUnwrap(mentionTable(in: host.view)?.visibleCells.first)
     let started = expectation(description: "Structured clipboard provider started")
     let delivery = DelayedProviderTasks(owner: self)
-    let data = Data(
-      #"{"version":1,"parts":[{"type":"chat_thread","threadId":"74000000-0000-4000-8000-000000000003","titleSnapshot":"Notes"}]}"#
-        .utf8)
+    let reference: MessageJSON = .object([
+      "type": .string("chat_thread"), "threadId": .string(MentionNavigationFixture.thread(3)),
+      "titleSnapshot": .string("Notes")
+    ])
+    let data = try JSONEncoder().encode(ChatDraftDocument(parts: [reference]))
     let provider = NSItemProvider()
     provider.registerDataRepresentation(
       forTypeIdentifier: ComposerAttributedDocument.pasteboardType, visibility: .all
@@ -292,13 +303,22 @@ final class ChatComposerMentionTests: XCTestCase {
     // Exercise the old callbacks after selecting another composer, independently
     // of when SwiftUI dismantles the old editor.
     XCTAssertTrue(retiredRow.accessibilityActivate())
-    delivery.release()
-    try await waitForBusinessResult {
-      originalComposer.document.parts.contains {
-        $0["type"]?.string == "chat_thread"
-          && $0["threadId"]?.string == MentionNavigationFixture.thread(3)
+    // The candidate and the paste are separate edits on the old input. Match the pasted reference.
+    let pasted = expectation(
+      forNotification: UITextView.textDidChangeNotification, object: input
+    ) { _ in
+      MainActor.assumeIsolated {
+        ComposerAttributedDocument.inlineDocument(input.attributedText).parts.contains(reference)
       }
     }
+    delivery.release()
+    let result = await XCTWaiter.fulfillment(of: [pasted], timeout: executionTimeAllowance)
+    guard result == .completed else {
+      return XCTFail("Missing pasted reference notification. " + mentionState(input, in: host.view))
+    }
+    XCTAssertTrue(
+      originalComposer.document.parts.contains(reference),
+      "The original draft lost the pasted reference")
     try await eventually { mentionTable(in: host.view) == nil }
     XCTAssertFalse(workspace.selectedConversation?.composer.hasContent ?? true)
     XCTAssertNil(mentionTable(in: host.view))

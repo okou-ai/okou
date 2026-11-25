@@ -1,0 +1,310 @@
+{
+  "revisions": {
+    "frozen": "b0a10287edf4242383c28e39c6f7675053febb32",
+    "beforeFirstWithdrawal": "5310dbb9ba6bd8b95507bc7293f6da3ed8aa004b",
+    "beforeSecondWithdrawal": "a445586e0483bb7e2440e60200a8deed30aa3df9",
+    "main": "81d76808921cce43aeee21e52924c335a69def79",
+    "opening": "0ae329193d8cf7c998773caa85f88ff925ca458e"
+  },
+  "owners": {
+    "chat-scroll": {
+      "frozen": {
+        "present": true,
+        "sourceSha256": "8bedbca792cbf2509085ad988dfacb230dc35a57825e9c45c6d954f5d1764ff0",
+        "lines": 1596,
+        "helpers": {
+          "turbo/apps/platform/src/__tests__/page-helper.ts": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+          "turbo/apps/platform/src/mocks/mock-helpers.ts": "43803b12d97500d6c5b94f9150db55c8445bf75844cd96393a85bced4a791a2a",
+          "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+          "turbo/apps/platform/src/views/okou-page/__tests__/chat-event-test-helpers.ts": "df21091f9c8c510e0f8d2f536e3d8aa4d3354c14f6abe4d9f06013e74b43f429",
+          "turbo/apps/platform/src/views/okou-page/__tests__/chat-lifecycle-test-helpers.ts": "931d0a69490bd106d5ef9c4c9d3ff810360329a3455b377a368b937e640fb268",
+          "turbo/apps/platform/src/views/okou-page/__tests__/sidebar-test-helpers.tsx": "51700ff9e2cd38220430db386798373105ea8890fc6e3f6cc66751b8d9f6f8c9"
+        }
+      },
+      "beforeFirstWithdrawal": {
+        "present": true,
+        "sourceSha256": "1d47b8ba23817fcec9451dfcec935cce453c589adb524b8a9f9f1f5f52b5e29a",
+        "lines": 1174,
+        "helpers": {
+          "turbo/apps/platform/src/__tests__/page-helper.ts": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+          "turbo/apps/platform/src/mocks/mock-helpers.ts": "43803b12d97500d6c5b94f9150db55c8445bf75844cd96393a85bced4a791a2a",
+          "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+          "turbo/apps/platform/src/views/okou-page/__tests__/chat-event-test-helpers.ts": "df21091f9c8c510e0f8d2f536e3d8aa4d3354c14f6abe4d9f06013e74b43f429",
+          "turbo/apps/platform/src/views/okou-page/__tests__/chat-lifecycle-test-helpers.ts": "b7f6e5f74ced484d9650742205b7a61b56e2104cc989fc639c05343e3475e72d",
+          "turbo/apps/platform/src/views/okou-page/__tests__/sidebar-test-helpers.tsx": "94c6ba43e0e45f6d90708c47d49a624f86255c4b020df6b919162a3a32612495"
+        }
+      },
+      "beforeSecondWithdrawal": {
+        "present": false
+      },
+      "main": {
+        "present": true,
+        "sourceSha256": "21a4306aa91e6df8cf1f90a9cc70cafba1b0ab5c60412d04104ef0fd2a502541",
+        "lines": 1893,
+        "helpers": {
+          "turbo/apps/platform/src/__tests__/page-helper.ts": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+          "turbo/apps/platform/src/mocks/mock-helpers.ts": "43803b12d97500d6c5b94f9150db55c8445bf75844cd96393a85bced4a791a2a",
+          "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+          "turbo/apps/platform/src/views/okou-page/__tests__/chat-event-test-helpers.ts": "df21091f9c8c510e0f8d2f536e3d8aa4d3354c14f6abe4d9f06013e74b43f429",
+          "turbo/apps/platform/src/views/okou-page/__tests__/chat-lifecycle-test-helpers.ts": "4ac61a70d72d94d4cbfdcffb89baf1dfd2efd996e4f902cf3370e8443892714d",
+          "turbo/apps/platform/src/views/okou-page/__tests__/sidebar-test-helpers.tsx": "230bc082a53456b83f4a76aba3162dd1feb5e9c75612fa547a628d1ca41da781"
+        }
+      },
+      "opening": {
+        "present": true,
+        "sourceSha256": "1829b2f52ce5b4311ecc486da7b665f43047190e1c2d38a2a54641ba0930fd22",
+        "lines": 484,
+        "helpers": {
+          "turbo/apps/platform/src/views/okou-page/__tests__/chat-event-test-helpers.ts": "df21091f9c8c510e0f8d2f536e3d8aa4d3354c14f6abe4d9f06013e74b43f429",
+          "turbo/apps/platform/src/__tests__/page-helper.ts": "008ed724541ca075e909f9814c1fdfa72647ab0a160059ceb3c2ad09dc104c99",
+          "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+          "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": "7af98f18efaf93e5f7d02b487786e93c4699f6fa08c81e35ffe4bd7d49703950",
+          "turbo/apps/platform/src/views/okou-page/__tests__/chat-test-helpers.ts": "f0964cd16b97de4d5881252f0a86e695e4ec5623f6d20b1a4841b156b435b227",
+          "turbo/apps/platform/src/views/okou-page/__tests__/chat-run-test-fixtures.ts": "93e3df3924efd06a15ee06ceb1d234608878c4eb7b478edfb2314a2a8e9b20b0",
+          "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-test-helpers.ts": "b66e0c84944c2067734bfd442a5fd5c8b13978fdd065ea0e8895503c0ea1839f",
+          "turbo/apps/platform/src/views/okou-page/__tests__/chat-conversation-locator-test-helpers.ts": "25f874495ca98890b0da383e1a54368689cbdb5b2aa5de6ec717c4297679f795"
+        }
+      }
+    },
+    "message-port": {
+      "frozen": {
+        "present": true,
+        "sourceSha256": "c2b934876e44a5aa0c103fdb76d9adb02fbcf06fae515d773167e1248f5e164c",
+        "lines": 1847,
+        "helpers": {
+          "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+          "turbo/apps/platform/src/shared-database/protocol.ts": "a5d97eba9f04b0db84f16a835f5b490327d24d8a9de68d0ec98c687cf2bffc7a"
+        }
+      },
+      "beforeFirstWithdrawal": {
+        "present": true,
+        "sourceSha256": "7c9eb6dbb42970c124ec5b7da9abf09dbe6e5d567730c093df322797101b394f",
+        "lines": 1384,
+        "helpers": {
+          "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+          "turbo/apps/platform/src/shared-database/protocol.ts": "a5d97eba9f04b0db84f16a835f5b490327d24d8a9de68d0ec98c687cf2bffc7a"
+        }
+      },
+      "beforeSecondWithdrawal": {
+        "present": false
+      },
+      "main": {
+        "present": true,
+        "sourceSha256": "cb9e3fc62f124ed706613256e58108837e94989b1343e268c42ffa9c7d5c8d05",
+        "lines": 1843,
+        "helpers": {
+          "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+          "turbo/apps/platform/src/shared-database/protocol.ts": "a5d97eba9f04b0db84f16a835f5b490327d24d8a9de68d0ec98c687cf2bffc7a"
+        }
+      },
+      "opening": {
+        "present": false
+      }
+    },
+    "browser-response-deadlines": {
+      "frozen": {
+        "present": true,
+        "sourceSha256": "22d304ec42d291040c6a4d515915ae767150639f7c677e1497d41542cca2c005",
+        "lines": 1711,
+        "helpers": {
+          "turbo/apps/platform/src/__tests__/page-helper.ts": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+          "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": "f44c989a172cb7016262ef8687c8ba5012da8d3baecb56abd8fba9183f56aacd",
+          "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d"
+        }
+      },
+      "beforeFirstWithdrawal": {
+        "present": true,
+        "sourceSha256": "b364569561c4aaa5c0de583c8a2ed13a6ac6d6fd1be2a355fb9eea61c7574631",
+        "lines": 1252,
+        "helpers": {
+          "turbo/apps/platform/src/__tests__/page-helper.ts": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+          "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": "fefec188dcf9648965532a42c74f4bc88fb74a14d71672f2c8b627ee7d3a640a",
+          "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d"
+        }
+      },
+      "beforeSecondWithdrawal": {
+        "present": false
+      },
+      "main": {
+        "present": true,
+        "sourceSha256": "22d304ec42d291040c6a4d515915ae767150639f7c677e1497d41542cca2c005",
+        "lines": 1711,
+        "helpers": {
+          "turbo/apps/platform/src/__tests__/page-helper.ts": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+          "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": "f44c989a172cb7016262ef8687c8ba5012da8d3baecb56abd8fba9183f56aacd",
+          "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d"
+        }
+      },
+      "opening": {
+        "present": true,
+        "sourceSha256": "07ab88c015be264d29ae192a629bdefc1b2ab53bee3b42c8dcbe16b508b52fb2",
+        "lines": 498,
+        "helpers": {
+          "turbo/apps/platform/src/__tests__/page-helper.ts": "008ed724541ca075e909f9814c1fdfa72647ab0a160059ceb3c2ad09dc104c99",
+          "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+          "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": "d1e55d256f0e0e234c094ab373bf72b2b731dabd5e99a9f41c61d9d5a5ccc734",
+          "turbo/apps/platform/src/views/browser-session/__tests__/browser-native-page-fixture.ts": "29b9002992b95515275cb9842e09a7b927448c94fc8ea4f26a070f22096a6fea"
+        }
+      }
+    },
+    "connector-directory": {
+      "frozen": {
+        "present": true,
+        "sourceSha256": "d0b7aadb40184c35ce9b61c2880fc534bbd75a78cea89967718a81c87f80d4ac",
+        "lines": 508,
+        "helpers": {
+          "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+          "turbo/apps/platform/src/__tests__/page-helper.ts": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+          "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors-test-helpers.ts": "13793c23ffd010598660ed4d97fcbdc9a1caf96106a805eb7b05b887734701e1",
+          "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": "c431bdda456b01bc108227ce92a9bb270ebc15cb1b62586769a74cde02018c97"
+        }
+      },
+      "beforeFirstWithdrawal": {
+        "present": true,
+        "sourceSha256": "6817752033ab0a4700b1598d6b52949a48192fd03c38468b687e361d1de0c1d3",
+        "lines": 235,
+        "helpers": {
+          "turbo/apps/platform/src/__tests__/page-helper.ts": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+          "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+          "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors-test-helpers.ts": "ec9a35e56bf7cec1a7c0431d26619ea9777f2a0f96cbc4dd67fbf9207cbbaba8",
+          "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": "e4b2a86e6762065f528e03a846f2f536f5e8541c051491e8c9caabaab9c78035"
+        }
+      },
+      "beforeSecondWithdrawal": {
+        "present": true,
+        "sourceSha256": "6817752033ab0a4700b1598d6b52949a48192fd03c38468b687e361d1de0c1d3",
+        "lines": 235,
+        "helpers": {
+          "turbo/apps/platform/src/__tests__/page-helper.ts": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+          "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+          "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors-test-helpers.ts": "33dc2a497f7ec36bf17b0a1e7a69e1a8f89752d5484d9aa19bb5dcd6d745ccf4",
+          "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": "2962cf9ce92a2270f7655af993b4dad9619771a68e2b2366b807c70e8c31454b"
+        }
+      },
+      "main": {
+        "present": true,
+        "sourceSha256": "7e57242221ae2cd5777eca3c9544582c9fa84e5d3c05a255c8da4effb95371d7",
+        "lines": 507,
+        "helpers": {
+          "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+          "turbo/apps/platform/src/__tests__/page-helper.ts": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+          "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors-test-helpers.ts": "8880f603e54ac78608504433dd5dee8412cb9aa5a7446f0d71eeba17ec7ec2d3",
+          "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": "7af98f18efaf93e5f7d02b487786e93c4699f6fa08c81e35ffe4bd7d49703950"
+        }
+      },
+      "opening": {
+        "present": true,
+        "sourceSha256": "4791fc5e944179a5d3b4f6e866e7290a5fe6d8904c10761931b769344c29e421",
+        "lines": 179,
+        "helpers": {
+          "turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-connector-test-helpers.ts": "9e81146caa32ea969197584c9b4e120784fa635368d3bb5a8d0f642eb61f3b55",
+          "turbo/apps/platform/src/mocks/handlers/connector-account-fixtures.ts": "baad2dfb141e2678309fe0923a14cbd0d523a54a0819aaf0b50351bc1bd78369",
+          "turbo/apps/platform/src/__tests__/page-helper.ts": "008ed724541ca075e909f9814c1fdfa72647ab0a160059ceb3c2ad09dc104c99",
+          "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+          "turbo/apps/platform/src/views/okou-page/__tests__/chat-run-test-fixtures.ts": "93e3df3924efd06a15ee06ceb1d234608878c4eb7b478edfb2314a2a8e9b20b0",
+          "turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-test-helpers.ts": "550da6a2c72b33f29d45be6e387c8d509bdcd5dbc7c732864090f4ee8e97a912",
+          "turbo/apps/platform/src/views/okou-page/__tests__/connector-page-test-helpers.ts": "ca3cae8b2d2716b3c8a1ce7b6b33f9cdff50a62b1bbf5492d126faf135277f16"
+        }
+      }
+    },
+    "settings-model-loading": {
+      "frozen": {
+        "present": true,
+        "sourceSha256": "e4df32d9bc1224587fe4ea9e94426344aa5a310fb53166a06db3cba65c6e2316",
+        "lines": 172,
+        "helpers": {
+          "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+          "turbo/apps/platform/src/__tests__/page-helper.ts": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+          "turbo/apps/platform/src/mocks/handlers/api-billing.ts": "37b6663e011692f363ed7849c508617f11da31c2cbec63fd84eb237564e3d65f",
+          "turbo/apps/platform/src/views/okou-page/__tests__/chat-run-test-fixtures.ts": "3e49f7988ae1aa0d26c199345045392c38aa202efba251e4f1e29fa32c259b42"
+        }
+      },
+      "beforeFirstWithdrawal": {
+        "present": true,
+        "sourceSha256": "e6de7d69ae88b6c7b7efbe690a95eee04a712ae4c1105af2d0b3f4dfe0c4fe88",
+        "lines": 164,
+        "helpers": {
+          "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+          "turbo/apps/platform/src/__tests__/page-helper.ts": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+          "turbo/apps/platform/src/mocks/handlers/api-billing.ts": "37b6663e011692f363ed7849c508617f11da31c2cbec63fd84eb237564e3d65f",
+          "turbo/apps/platform/src/views/okou-page/__tests__/chat-run-test-fixtures.ts": "3e49f7988ae1aa0d26c199345045392c38aa202efba251e4f1e29fa32c259b42"
+        }
+      },
+      "beforeSecondWithdrawal": {
+        "present": false
+      },
+      "main": {
+        "present": true,
+        "sourceSha256": "e4df32d9bc1224587fe4ea9e94426344aa5a310fb53166a06db3cba65c6e2316",
+        "lines": 172,
+        "helpers": {
+          "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+          "turbo/apps/platform/src/__tests__/page-helper.ts": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+          "turbo/apps/platform/src/mocks/handlers/api-billing.ts": "37b6663e011692f363ed7849c508617f11da31c2cbec63fd84eb237564e3d65f",
+          "turbo/apps/platform/src/views/okou-page/__tests__/chat-run-test-fixtures.ts": "93e3df3924efd06a15ee06ceb1d234608878c4eb7b478edfb2314a2a8e9b20b0"
+        }
+      },
+      "opening": {
+        "present": true,
+        "sourceSha256": "b2d5ff17c579a9c639a3462bf6b0829d8f194933a108bfb88e1c326fde6b538e",
+        "lines": 177,
+        "helpers": {
+          "turbo/apps/platform/src/views/okou-page/__tests__/personal-account-settings-fixtures.ts": "1663e6262552e246a6fd65aef5a4c26c4d5dab7193394fe10d26e2730069fa33",
+          "turbo/apps/platform/src/__tests__/page-helper.ts": "008ed724541ca075e909f9814c1fdfa72647ab0a160059ceb3c2ad09dc104c99",
+          "turbo/apps/platform/src/mocks/handlers/api-billing.ts": "37b6663e011692f363ed7849c508617f11da31c2cbec63fd84eb237564e3d65f",
+          "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+          "turbo/apps/platform/src/views/okou-page/__tests__/connector-integrations-test-helpers.ts": "6a938869cf82c1fe749427bd6bab63e11ccf93862f72d6850e0d22dc6c622e6c"
+        }
+      }
+    },
+    "composer-custom-template-recommendations": {
+      "frozen": {
+        "present": true,
+        "sourceSha256": "3feae743ad01dc5005ffb598d612c9d91bed780327a2c31f4233e77114cd2c40",
+        "lines": 445,
+        "helpers": {
+          "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+          "turbo/apps/platform/src/__tests__/page-helper.ts": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+          "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-test-helpers.ts": "74d4750529a6706702057def9ba028f92944967352898508f624c2f7bf297eca",
+          "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-template-gallery-test-helpers.ts": "422aef4eff33c2d31accbae09a680ce242b5245c7260b0c930ed50d9b803d525"
+        }
+      },
+      "beforeFirstWithdrawal": {
+        "present": true,
+        "sourceSha256": "48c2ba13a15149874e792a37e5f7baffdfe356c3f9abb944b02e220bb87f92bd",
+        "lines": 339,
+        "helpers": {
+          "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+          "turbo/apps/platform/src/__tests__/page-helper.ts": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+          "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-test-helpers.ts": "74d4750529a6706702057def9ba028f92944967352898508f624c2f7bf297eca",
+          "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-template-gallery-test-helpers.ts": "422aef4eff33c2d31accbae09a680ce242b5245c7260b0c930ed50d9b803d525"
+        }
+      },
+      "beforeSecondWithdrawal": {
+        "present": false
+      },
+      "main": {
+        "present": true,
+        "sourceSha256": "85e0060153d100da3357142a7bd65859330eedcca3f96b46e3a237d3e106b1c9",
+        "lines": 745,
+        "helpers": {
+          "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+          "turbo/apps/platform/src/__tests__/page-helper.ts": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+          "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-test-helpers.ts": "b66e0c84944c2067734bfd442a5fd5c8b13978fdd065ea0e8895503c0ea1839f",
+          "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-template-gallery-test-helpers.ts": "e36c5db8290c6040fca0753f43dcf34a0e146b74b3e50ab5bd146c42324f7c0c"
+        }
+      },
+      "opening": {
+        "present": true,
+        "sourceSha256": "c641ae38a50b11b2cb9f31d298785ef1c7416159075298ab4cccbe057f62bf65",
+        "lines": 280,
+        "helpers": {
+          "turbo/apps/platform/src/__tests__/page-helper.ts": "008ed724541ca075e909f9814c1fdfa72647ab0a160059ceb3c2ad09dc104c99",
+          "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+          "turbo/apps/platform/src/views/okou-page/__tests__/connector-integrations-test-helpers.ts": "6a938869cf82c1fe749427bd6bab63e11ccf93862f72d6850e0d22dc6c622e6c",
+          "turbo/apps/platform/src/views/okou-page/__tests__/template-submission-fixtures.ts": "eff963ecd4d09916374f06ab03c55a592e2f4593da6f2b0f76af57670c6684d2"
+        }
+      }
+    }
+  }
+}

@@ -40,9 +40,8 @@
     <string name="connector_rename_required">Saisissez un nom de compte.</string>
     <string name="connector_rename_too_long">Le nom du compte peut contenir jusqu’à %1$d caractères.</string>
     <string name="connector_disconnect">Déconnecter le compte</string>
-    <string name="connector_disconnect_title">Déconnecter ce compte ?</string>
+    <string name="connector_disconnect_title">Déconnecter ce compte\u202F?</string>
     <string name="connector_disconnect_copy">Les chats et automatisations qui utilisent ce compte peuvent nécessiter une autre connexion. Les autres comptes restent disponibles.</string>
-    <string name="connector_load_when_online">Le contenu se chargera dès que vous serez de nouveau en ligne.</string>
     <string name="connector_loading">Chargement des connecteurs…</string>
     <string name="connector_loading_accounts">Chargement des comptes…</string>
     <string name="connector_loading_permissions">Chargement des autorisations…</string>
@@ -52,7 +51,6 @@
     <string name="connector_accounts_failed">Impossible de charger les comptes.</string>
     <string name="connector_permissions_failed">Impossible de charger les autorisations.</string>
     <string name="connector_impact_failed">Impossible de vérifier où ce compte est utilisé.</string>
-    <string name="connector_offline">Hors connexion</string>
     <string name="connector_network_failed">Impossible de joindre Okou. Vérifiez votre connexion et réessayez.</string>
     <string name="connector_account_unavailable">Ce compte n’est plus disponible.</string>
     <string name="connector_unavailable">L’autorisation n’est pas disponible pour ce compte.</string>
@@ -110,4 +108,29 @@
         <item quantity="many">%d de chats ont explicitement sélectionné ce compte.</item>
         <item quantity="other">%d chats ont explicitement sélectionné ce compte.</item>
     </plurals>
+    <string name="chat_options_title">Options du chat</string>
+    <string name="chat_options_settings">Paramètres de la conversation</string>
+    <string name="chat_connector_scope">Concerne ce chat. Les comptes par défaut de l’espace de travail sont utilisés au départ.</string>
+    <string name="chat_connector_empty">Aucun compte n’est connecté dans cet espace de travail.</string>
+    <string name="chat_connector_manage">Gérer les connecteurs</string>
+    <string name="chat_connector_restore_defaults">Rétablir les réglages par défaut de l’espace de travail</string>
+    <string name="chat_connector_saving">Enregistrement du choix de connecteur…</string>
+    <string name="chat_connector_save_failed">Impossible d’enregistrer le choix de connecteur.</string>
+    <string name="chat_connector_first_send_failed">Impossible d’appliquer les choix de connecteurs. Vérifiez-les dans les options du chat, puis réessayez d’envoyer ce message.</string>
+    <string name="connector_device_denied">Le fournisseur a refusé l’autorisation.</string>
+    <string name="connector_device_expired">Le code de l’appareil a expiré. Relancez l’autorisation.</string>
+    <string name="connector_device_failed">Impossible de terminer l’autorisation de l’appareil.</string>
+    <string name="connector_access_scope">S’applique à toutes vos discussions.</string>
+    <string name="connector_access_label">Accès pour %1$s, %2$s</string>
+    <string name="connector_access_allow">Autoriser</string>
+    <string name="connector_access_deny">Refuser</string>
+    <string name="connector_access_always">Toujours</string>
+    <string name="connector_access_expired">Expiré</string>
+    <string name="connector_access_under_hour">&lt;\u00A01\u00A0h</string>
+    <string name="connector_access_hours">%d\u00A0h</string>
+    <string name="connector_access_days">%d\u00A0j</string>
+    <string name="connector_access_allow_always">Toujours autoriser</string>
+    <string name="connector_access_allow_hour">Autoriser pendant 1\u00A0h</string>
+    <string name="connector_access_allow_day">Autoriser pendant 24\u00A0h</string>
+    <string name="connector_access_allow_week">Autoriser pendant 7\u00A0jours</string>
 </resources>

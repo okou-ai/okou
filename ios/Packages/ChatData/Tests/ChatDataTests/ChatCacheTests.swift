@@ -51,6 +51,30 @@ final class ChatCacheTests: XCTestCase {
     XCTAssertEqual(retained?.rows, [event(1)])
   }
 
+  func testARejectedCursorCanMoveBackwardsWithoutAcceptingStaleAppOrExtensionWrites() async throws {
+    let directory = CacheTestDirectory(owner: self)
+    let app = directory.cache(scope: scope())
+    let other = directory.cache(scope: scope())
+    let old = ChatCacheCursor(eventID: event(10).id, seqID: 10)
+    let advanced = ChatCacheCursor(eventID: event(11).id, seqID: 11)
+    let empty = ChatCacheCursor(eventID: nil, seqID: 0)
+    try await app.replaceThreadList(snapshot: Data("old".utf8), cursor: old, events: [])
+    try await other.appendThreadEvents([event(11)], startingAt: old)
+    let staleReset = try await app.replaceThreadList(
+      snapshot: Data(), cursor: empty, events: [], startingAt: old, afterExpiry: true)
+    XCTAssertFalse(staleReset)
+    let accepted = try await app.replaceThreadList(
+      snapshot: Data("new".utf8), cursor: empty, events: [], startingAt: advanced, afterExpiry: true
+    )
+    XCTAssertTrue(accepted)
+    let lateTail = try await other.appendThreadEvents([event(12)], startingAt: advanced)
+    XCTAssertFalse(lateTail)
+    let restored = try await directory.cache(scope: scope()).loadThreadList()
+    XCTAssertEqual(restored?.snapshot, Data("new".utf8))
+    XCTAssertEqual(restored?.snapshotCursor, empty)
+    XCTAssertEqual(restored?.events, [])
+  }
+
   func testOverlappingConnectionsCannotMoveHistoryOrListCursorsBackwards() async throws {
     let directory = CacheTestDirectory(owner: self)
     let first = directory.cache(scope: scope())

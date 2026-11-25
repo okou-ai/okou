@@ -8,9 +8,14 @@ import ai.okou.android.ConnectorApiFixture
 import ai.okou.android.OkouTheme
 import ai.okou.android.TestOkouApplication
 import androidx.activity.ComponentActivity
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -18,13 +23,17 @@ import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.assertWidthIsEqualTo
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.isOff
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -42,7 +51,6 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.test.platform.app.InstrumentationRegistry
 import java.util.concurrent.CountDownLatch
-import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -50,7 +58,6 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-private const val LOAD_WHEN_ONLINE = "Content will load when you’re back online."
 private const val NETWORK_ACTION_FAILURE =
     "Could not reach Okou. Check your connection and try again."
 
@@ -66,7 +73,7 @@ class ConnectorAccountFlowTest {
         try {
             compose.setContent { OkouTheme(false) { ConnectorSkeleton("Loading connectors", 1) } }
             val skeleton = compose.onNodeWithContentDescription("Loading connectors")
-            compose.mainClock.advanceTimeBy(80)
+            compose.mainClock.advanceTimeBy(224)
             skeleton.assertDoesNotExist()
             compose.mainClock.advanceTimeBy(64)
             skeleton.assertIsDisplayed()
@@ -81,7 +88,14 @@ class ConnectorAccountFlowTest {
         instrumentation.setInTouchMode(false)
         try {
             compose.activityRule.scenario.recreate()
-            withCalendar { fixture, connectivity ->
+            withCalendar { fixture, model ->
+                val description = compose.onNodeWithText("查看日程、查找空闲时间和创建会议。")
+                val accounts = compose.onNodeWithText("Accounts")
+                assertEquals(
+                    33.dp,
+                    accounts.getUnclippedBoundsInRoot().top -
+                        description.getUnclippedBoundsInRoot().bottom,
+                )
                 compose.onNodeWithContentDescription("Back").performClick()
                 val discover = compose.onNodeWithText("Discover")
                 val connected = compose.onNodeWithText("Connected")
@@ -89,16 +103,18 @@ class ConnectorAccountFlowTest {
                 discover.performKeyInput { pressKey(Key.DirectionRight) }
                 connected.assertIsSelected().assertIsFocused()
                 val slack = compose.onNodeWithTag("connector-slack").assertIsDisplayed()
+                val directory = compose.onNodeWithTag("connector-directory")
+                val directoryBounds = directory.getUnclippedBoundsInRoot()
 
-                compose.runOnIdle { connectivity.value = false }
-                awaitText("Offline")
+                compose.runOnIdle { model.pause() }
                 connected.assertIsFocused()
                 slack.assertIsDisplayed()
+                assertEquals(directoryBounds, directory.getUnclippedBoundsInRoot())
 
                 val category = compose.onNodeWithContentDescription("Filter by service category")
                 category.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
                 fixture.removeAccount(CONNECTOR_SLACK_ACCOUNT)
-                compose.runOnIdle { connectivity.value = true }
+                compose.runOnIdle { model.resume() }
                 compose.waitUntilDoesNotExist(hasTestTag("connector-slack"), 10_000)
                 category.assertIsFocused().assertIsEnabled()
                 connected.assertIsSelected()
@@ -108,7 +124,26 @@ class ConnectorAccountFlowTest {
                 compose.onNodeWithText("Clear search").performClick()
                 search.assertIsFocused()
                 connected.assertIsSelected()
-                compose.onNodeWithTag("connector-$CONNECTOR_CALENDAR").assertIsDisplayed()
+                category.performClick()
+                compose.onNodeWithText("Meetings and scheduling").performClick()
+                search.performTextReplacement("calendar")
+                val calendar = compose.onNodeWithTag("connector-$CONNECTOR_CALENDAR")
+                compose.waitUntilAtLeastOneExists(
+                    hasTestTag("connector-$CONNECTOR_CALENDAR"),
+                    10_000,
+                )
+                calendar.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+                calendar.performKeyInput { pressKey(Key.Enter) }
+                awaitText("Permission update required")
+                compose.onNodeWithContentDescription("Back").performClick()
+                calendar.assertIsDisplayed().assertIsFocused()
+                search.assertTextContains("calendar")
+                category.assert(
+                    SemanticsMatcher.expectValue(
+                        SemanticsProperties.StateDescription,
+                        "Meetings and scheduling",
+                    ),
+                )
             }
         } finally {
             instrumentation.resetInTouchMode()
@@ -116,89 +151,154 @@ class ConnectorAccountFlowTest {
     }
 
     @Test
-    fun directoryShowsOfflineLoadingOnlyForTabsWithoutCachedResults() =
-        withDirectory(initiallyOnline = false) { fixture, connectivity ->
-            val waiting =
-                compose.onNode(
-                    hasText(LOAD_WHEN_ONLINE) and hasAnyAncestor(hasTestTag("connector-directory")),
-                )
-            val offline = compose.onNodeWithText("Offline")
-            val empty = "No accounts connected yet"
-            waiting.assertIsDisplayed().assertHeightIsAtLeast(48.dp)
-            offline.assertDoesNotExist()
-            compose.onNodeWithText("Connected").performClick()
-            waiting.assertIsDisplayed()
-            compose.onNodeWithText(empty).assertDoesNotExist()
+    fun wideDirectoryChangesKeepTheSelectedPreviewUntilTheDetailResponds() = withKeyboard {
+        val restoration = StateRestorationTester(compose)
+        withDirectory(
+            listWidth = 180,
+            restoration = restoration,
+            configure = { it.omittedFromDefaultBrowse = setOf("gmail") },
+        ) { fixture, _ ->
+            awaitText("Google Calendar")
 
-            fixture.removeAccount(CONNECTOR_CALENDAR_PRIMARY)
-            fixture.removeAccount(CONNECTOR_CALENDAR_SECONDARY)
-            fixture.removeAccount(CONNECTOR_SLACK_ACCOUNT)
-            compose.runOnIdle { connectivity.value = true }
+            val search = compose.onNodeWithTag("connector-search")
+            search.performTextReplacement("gmail")
+            val gmailRow = hasTestTag("connector-gmail")
+            compose.waitUntilAtLeastOneExists(gmailRow, 10_000)
+            val gmailDetail =
+                compose.onNode(hasText("Gmail") and hasAnyAncestor(hasTestTag("connector-detail")))
+            val releaseDetail = CountDownLatch(1)
+            fixture.denyCatalogDetail = true
+            fixture.detailReplyGate = releaseDetail
+            try {
+                val gmail = compose.onNode(gmailRow)
+                gmail.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+                gmail.performKeyInput { pressKey(Key.Enter) }
+                gmail.assertIsSelected().assertIsFocused()
+                gmailDetail.assertIsDisplayed()
+
+                search.performTextReplacement("calendar")
+                compose.waitUntilAtLeastOneExists(
+                    hasTestTag("connector-$CONNECTOR_CALENDAR"),
+                    10_000,
+                )
+                compose.onNode(gmailRow).assertDoesNotExist()
+                gmailDetail.assertIsDisplayed()
+
+                compose.onNodeWithText("Connected").performClick()
+                compose.onNodeWithContentDescription("Filter by service category").performClick()
+                compose.onNodeWithText("Meetings and scheduling").performClick()
+                compose.waitUntilAtLeastOneExists(
+                    hasTestTag("connector-$CONNECTOR_CALENDAR"),
+                    10_000,
+                )
+                search.assertTextContains("calendar")
+                gmailDetail.assertIsDisplayed()
+
+                restoration.emulateSavedInstanceStateRestore()
+                search.assertTextContains("calendar")
+                gmailDetail.assertIsDisplayed()
+            } finally {
+                releaseDetail.countDown()
+            }
+
+            awaitText("Could not load connectors.")
+            gmailDetail.assertDoesNotExist()
+
+            fixture.denyCatalogDetail = false
+            compose.onNodeWithTag("connector-$CONNECTOR_CALENDAR").performClick()
+            awaitText("Permission update required")
+            gmailDetail.assertDoesNotExist()
+        }
+    }
+
+    @Test
+    fun directoryKeepsConfirmedEmptyResultsWhileRefreshing() =
+        withDirectory(
+            configure = { fixture ->
+                fixture.removeAccount(CONNECTOR_CALENDAR_PRIMARY)
+                fixture.removeAccount(CONNECTOR_CALENDAR_SECONDARY)
+                fixture.removeAccount(CONNECTOR_SLACK_ACCOUNT)
+            },
+        ) { fixture, model ->
+            val empty = "No accounts connected yet"
+            compose.onNodeWithText("Connected").performClick()
             awaitText(empty)
-            waiting.assertDoesNotExist()
             compose.onNodeWithText("Discover").performClick()
             awaitText("Google Calendar")
 
-            compose.runOnIdle { connectivity.value = false }
-            awaitText("Offline")
+            fixture.failDiscovery = true
+            compose.runOnIdle { model.resume() }
             compose.onNodeWithText("Google Calendar").assertIsDisplayed()
             compose.onNodeWithText("Connected").performClick()
             compose.onNodeWithText(empty).assertIsDisplayed()
-            offline.assertIsDisplayed()
-            waiting.assertDoesNotExist()
 
+            fixture.failDiscovery = false
             compose.onNodeWithContentDescription("Filter by service category").performClick()
             compose.onNodeWithText("Email").performClick()
-            val categoryEmpty = compose.onNodeWithText("No connectors in this category")
-            categoryEmpty.assertIsDisplayed()
-            offline.assertIsDisplayed()
-            waiting.assertDoesNotExist()
-
-            compose.runOnIdle { connectivity.value = true }
-            compose.waitUntilDoesNotExist(hasText("Offline"), 10_000)
-            categoryEmpty.assertIsDisplayed()
+            awaitText("No connectors in this category")
             compose.onNodeWithText("Clear category filter").performClick()
             compose.onNodeWithText(empty).assertIsDisplayed()
         }
 
     @Test
-    fun uncachedAccountsAndPermissionsLoadInPlaceAfterReconnect() =
-        withDirectory { _, connectivity ->
-            awaitText("Gmail")
-            compose.runOnIdle { connectivity.value = false }
-            awaitText("Offline")
+    fun uncachedAccountsAndPermissionsLoadInTheSelectedService() = withDirectory { fixture, _ ->
+        awaitText("Gmail")
+        val releaseDetail = CountDownLatch(1)
+        fixture.detailReplyGate = releaseDetail
+        try {
             compose.onNodeWithTag("connector-gmail").performClick()
             compose.onNodeWithText("Gmail").assertIsDisplayed()
-            compose.onNodeWithText(LOAD_WHEN_ONLINE).assertIsDisplayed()
             compose.onNodeWithText("Connect account").assertDoesNotExist()
-            val networkFailure = compose.onNodeWithText(NETWORK_ACTION_FAILURE)
-            networkFailure.assertDoesNotExist()
-
-            compose.runOnIdle { connectivity.value = true }
-            compose.waitUntilAtLeastOneExists(hasText("Connect account") and isEnabled(), 10_000)
-            compose.onNodeWithText(LOAD_WHEN_ONLINE).assertDoesNotExist()
-            val permissions = "Permissions this service can request"
-            awaitText(permissions)
-            compose.runOnIdle { connectivity.value = false }
-            compose.waitForIdle()
-            compose.onNodeWithText("Connect account").assertIsEnabled()
-            networkFailure.assertDoesNotExist()
-            compose.onNodeWithText(permissions).performClick()
-            val inSheet = hasAnyAncestor(hasTestTag("connector-sheet"))
-            compose.onNode(hasText(LOAD_WHEN_ONLINE) and inSheet).assertIsDisplayed()
-            compose.onNode(hasText("Offline") and inSheet).assertDoesNotExist()
-
-            compose.runOnIdle { connectivity.value = true }
-            awaitText("读取邮件")
-            compose.onNodeWithText(LOAD_WHEN_ONLINE).assertDoesNotExist()
-            networkFailure.assertDoesNotExist()
+        } finally {
+            releaseDetail.countDown()
         }
+
+        compose.waitUntilAtLeastOneExists(hasText("Connect account") and isEnabled(), 10_000)
+        compose.onNodeWithText("Permissions this service can request").performClick()
+        awaitText("读取邮件")
+        compose.onNodeWithText(NETWORK_ACTION_FAILURE).assertDoesNotExist()
+    }
+
+    @Test
+    fun firstAccountReadFailureAnnouncesTheErrorAndKeepsBack() = withDirectory { fixture, _ ->
+        awaitText("Gmail")
+        fixture.denyAccountReads = true
+        compose.onNodeWithTag("connector-gmail").performClick()
+        val error = "Could not load accounts."
+        awaitText(error)
+        compose
+            .onNodeWithText(error)
+            .assertWidthIsAtLeast(300.dp)
+            .assert(
+                SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite),
+            )
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.onNodeWithTag("connector-gmail").assertIsDisplayed()
+    }
+
+    @Test
+    fun firstPermissionReadFailureAnnouncesTheErrorAndKeepsClose() = withDirectory { fixture, _ ->
+        awaitText("Gmail")
+        compose.onNodeWithTag("connector-gmail").performClick()
+        val permissions = "Permissions this service can request"
+        awaitText(permissions)
+        fixture.denyPermissionReads = true
+        compose.onNodeWithText(permissions).performClick()
+        val error = "Could not load permissions."
+        awaitText(error)
+        compose
+            .onNodeWithText(error)
+            .assertWidthIsAtLeast(300.dp)
+            .assert(
+                SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite),
+            )
+        compose.onNodeWithText("Close").performClick()
+        compose.onNodeWithText(permissions).assertIsDisplayed()
+    }
 
     @Test
     fun unavailableServicePermissionPanelCanCloseAfterItsLaunchControlDisappears() =
-        withDirectory(initiallyOnline = false) { fixture, connectivity ->
-            fixture.authorizeGmail()
-            compose.runOnIdle { connectivity.value = true }
+        withDirectory(configure = { it.authorizeGmail() }) { fixture, model ->
             awaitText("Gmail")
             compose.onNodeWithTag("connector-gmail").performClick()
             awaitText("gmail@example.com")
@@ -207,10 +307,8 @@ class ConnectorAccountFlowTest {
             compose.onNodeWithText(permissions).performClick()
             awaitText("读取邮件")
 
-            compose.runOnIdle { connectivity.value = false }
-            awaitText("Offline")
             fixture.unavailableCatalogSlugs = setOf("gmail")
-            compose.runOnIdle { connectivity.value = true }
+            compose.runOnIdle { model.resume() }
             awaitText("Could not load permissions.")
             awaitText("Could not load connectors.")
             compose.onNodeWithText("读取邮件").assertDoesNotExist()
@@ -220,19 +318,18 @@ class ConnectorAccountFlowTest {
 
             compose.onNodeWithContentDescription("Back").performClick()
             compose.onNodeWithText("Connected").performClick()
-            compose.runOnIdle { connectivity.value = false }
-            awaitText("Offline")
             compose.onNodeWithTag("connector-gmail").performClick()
             compose.onNodeWithText("Could not load connectors.").assertIsDisplayed()
-            compose.onNodeWithText(LOAD_WHEN_ONLINE).assertDoesNotExist()
         }
 
     @Test
     fun connectedCategoryFindsAccountsOutsideTheDefaultBrowseSnapshot() =
-        withDirectory(initiallyOnline = false) { fixture, connectivity ->
-            fixture.omittedFromDefaultBrowse = setOf("gmail")
-            fixture.authorizeGmail()
-            compose.runOnIdle { connectivity.value = true }
+        withDirectory(
+            configure = {
+                it.omittedFromDefaultBrowse = setOf("gmail")
+                it.authorizeGmail()
+            },
+        ) { fixture, _ ->
             awaitText("Google Calendar")
             compose.onNodeWithText("Connected").performClick()
             awaitText("Gmail")
@@ -288,6 +385,81 @@ class ConnectorAccountFlowTest {
     }
 
     @Test
+    fun reauthorizationKeepsTheSelectedAccountFromLoadingThroughReturn() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            compose.activityRule.scenario.recreate()
+            withDirectory { fixture, _ ->
+                awaitText("Google Calendar")
+                val release = CountDownLatch(1)
+                fixture.detailReplyGate = release
+                val onSheet = hasAnyAncestor(hasTestTag("connector-sheet"))
+                val updatePermissions = compose.onNode(hasText("Update permissions") and onSheet)
+                try {
+                    compose.onNodeWithTag("connector-$CONNECTOR_CALENDAR").performClick()
+                    awaitText("Permission update required")
+                    compose
+                        .onNodeWithTag("connector-account-$CONNECTOR_CALENDAR_SECONDARY")
+                        .performClick()
+                    updatePermissions.performClick()
+                    compose
+                        .onNodeWithText("Update permissions · Google Calendar")
+                        .assertIsDisplayed()
+                    compose.onNode(hasText("协作日历") and onSheet).assertIsDisplayed()
+                    compose.onNodeWithText("Cancel").assertIsEnabled()
+                    compose.onNodeWithText("Continue to provider").assertDoesNotExist()
+                } finally {
+                    release.countDown()
+                }
+
+                awaitText("Continue to provider")
+                compose.onNodeWithText("Cancel").performClick()
+                updatePermissions.assertIsEnabled().assertIsFocused()
+                updatePermissions.performClick()
+                compose.onNodeWithText("Continue to provider").performClick()
+                awaitText("Check authorization")
+                fixture.reauthorizeCalendar()
+                compose.onNodeWithText("Check authorization").performClick()
+                awaitText("Enable by default")
+                compose.onNode(hasText("协作日历") and onSheet).assertIsDisplayed()
+                compose.onNode(hasText("team@example.com") and onSheet).assertIsDisplayed()
+                compose.onNodeWithText("Enable by default").assertIsFocused().assert(isOff())
+                compose.onNodeWithText("Permission update required").assertDoesNotExist()
+            }
+        } finally {
+            instrumentation.resetInTouchMode()
+        }
+    }
+
+    @Test
+    fun deniedMethodsKeepTheAuthorizationPanelAndReturnToTheAccount() =
+        withDirectory { fixture, _ ->
+            awaitText("Google Calendar")
+            fixture.denyCatalogDetail = true
+            compose.onNodeWithTag("connector-$CONNECTOR_CALENDAR").performClick()
+            awaitText("Permission update required")
+            compose.onNodeWithText("协作日历").performClick()
+            compose.onNodeWithText("Update permissions").performClick()
+            compose.onNodeWithText("Update permissions · Google Calendar").assertIsDisplayed()
+            compose
+                .onNode(
+                    hasText("Could not load connectors.") and
+                        hasAnyAncestor(hasTestTag("connector-sheet")),
+                )
+                .assertIsDisplayed()
+                .assert(
+                    SemanticsMatcher.expectValue(
+                        SemanticsProperties.LiveRegion,
+                        LiveRegionMode.Polite,
+                    ),
+                )
+            compose.onNodeWithText("Continue to provider").assertDoesNotExist()
+            compose.onNodeWithText("Cancel").performClick()
+            compose.onNodeWithText("Update permissions").assertIsEnabled()
+        }
+
+    @Test
     fun removingTheTargetAccountDoesNotTurnReauthorizationIntoAdd() = withCalendar { fixture, _ ->
         compose.onNodeWithText("协作日历").performClick()
         compose.onNodeWithText("Update permissions").performClick()
@@ -310,16 +482,16 @@ class ConnectorAccountFlowTest {
         compose
             .onNodeWithText("Leading and trailing spaces are removed. The character limit is 255.")
             .assertIsDisplayed()
-        val input = compose.onNodeWithTag("connector-input")
+        val input = compose.onNodeWithTag("connector-input").performClick()
         val save = compose.onNodeWithText("Save")
         input.performTextReplacement("  工作日历  ")
         save.assertIsNotEnabled()
         input.performTextReplacement("   ")
-        save.performClick()
+        save.assertIsNotEnabled()
         compose.onNodeWithText("Enter an account name.").assertIsDisplayed()
         input.assertIsFocused()
         input.performTextReplacement("x".repeat(256))
-        save.performClick()
+        save.assertIsNotEnabled()
         compose
             .onNodeWithText("The account name exceeds the character limit of 255.")
             .assertIsDisplayed()
@@ -365,8 +537,8 @@ class ConnectorAccountFlowTest {
         }
 
     @Test
-    fun anUnconfirmedRenameCanBeDismissedAndStillReconcilesOnReconnect() =
-        withCalendar { fixture, connectivity ->
+    fun anUnconfirmedRenameCanBeDismissedAndStillReconcilesOnRefresh() =
+        withCalendar { fixture, model ->
             val pending = "The outcome is still unconfirmed."
             compose.onNodeWithText("工作日历").performClick()
             compose.onNodeWithText("Rename").performClick()
@@ -376,24 +548,21 @@ class ConnectorAccountFlowTest {
             compose.onNodeWithText("Save").performClick()
 
             awaitText(pending)
-            compose.runOnIdle { connectivity.value = false }
             compose.onNodeWithText("Cancel").assertIsEnabled().performClick()
             compose.onNodeWithText("Rename account").assertDoesNotExist()
             compose.onNodeWithText("Rename").assertIsNotEnabled()
             compose.onNodeWithText(pending).assertExists()
 
             fixture.failAccountReads = false
-            compose.runOnIdle { connectivity.value = true }
+            compose.runOnIdle { model.resume() }
             awaitText("Meeting calendar")
             compose.waitUntilAtLeastOneExists(hasText("Rename") and isEnabled(), 10_000)
         }
 
     @Test
     fun renameShowsNetworkFailureOnlyAfterSubmitAndKeepsTheFocusedInput() =
-        withCalendar { fixture, connectivity ->
+        withCalendar { fixture, _ ->
             compose.waitUntilAtLeastOneExists(hasText("Add account") and isEnabled(), 10_000)
-            compose.runOnIdle { connectivity.value = false }
-            compose.waitForIdle()
             compose.onNodeWithText("工作日历").performClick()
             compose.onNodeWithText("Rename").assertIsEnabled().performClick()
             val input =
@@ -410,7 +579,6 @@ class ConnectorAccountFlowTest {
             save.assertIsEnabled()
 
             fixture.rejectConnection = false
-            compose.runOnIdle { connectivity.value = true }
             save.performClick()
             compose.waitUntilAtLeastOneExists(hasText("Rename") and isEnabled(), 10_000)
             compose
@@ -422,47 +590,45 @@ class ConnectorAccountFlowTest {
         }
 
     @Test
-    fun disconnectChecksImpactAndSubmitsEvenWhenDeviceReportsOffline() =
-        withCalendar { _, connectivity ->
-            compose.waitUntilAtLeastOneExists(hasText("Add account") and isEnabled(), 10_000)
-            compose.runOnIdle { connectivity.value = false }
-            compose.waitForIdle()
-            compose.onNodeWithText("工作日历").performClick()
-            compose.onNodeWithText("Disconnect account").assertIsEnabled().performClick()
+    fun disconnectChecksImpactBeforeSubmitting() = withCalendar { _, _ ->
+        compose.waitUntilAtLeastOneExists(hasText("Add account") and isEnabled(), 10_000)
+        compose.onNodeWithText("工作日历").performClick()
+        compose.onNodeWithText("Disconnect account").assertIsEnabled().performClick()
 
-            val confirm =
-                hasText("Disconnect account") and
-                    hasAnyAncestor(isDialog()) and
-                    !hasAnyAncestor(hasTestTag("connector-sheet"))
-            awaitText("2 chats have explicitly selected this account.")
-            compose.onNode(confirm).assertIsEnabled().performClick()
-            compose.waitUntilDoesNotExist(hasText("工作日历"), 10_000)
-            compose.onNodeWithText("协作日历").assertIsDisplayed()
-        }
+        val confirm =
+            hasText("Disconnect account") and
+                hasAnyAncestor(isDialog()) and
+                !hasAnyAncestor(hasTestTag("connector-sheet"))
+        awaitText("2 chats have explicitly selected this account.")
+        compose.onNode(confirm).assertIsEnabled().performClick()
+        compose.waitUntilDoesNotExist(hasText("工作日历"), 10_000)
+        compose.onNodeWithText("协作日历").assertIsDisplayed()
+    }
 
-    private fun withCalendar(exercise: (ConnectorApiFixture, MutableStateFlow<Boolean>) -> Unit) =
-        withDirectory { fixture, connectivity ->
+    private fun withCalendar(exercise: (ConnectorApiFixture, ConnectorModel) -> Unit) =
+        withDirectory { fixture, model ->
             awaitText("Google Calendar")
             compose.onNodeWithTag("connector-$CONNECTOR_CALENDAR").performClick()
             awaitText("Permission update required")
-            exercise(fixture, connectivity)
+            exercise(fixture, model)
         }
 
     private fun withDirectory(
-        initiallyOnline: Boolean = true,
-        exercise: (ConnectorApiFixture, MutableStateFlow<Boolean>) -> Unit,
+        listWidth: Int? = null,
+        restoration: StateRestorationTester? = null,
+        configure: (ConnectorApiFixture) -> Unit = {},
+        exercise: (ConnectorApiFixture, ConnectorModel) -> Unit,
     ) {
         ConnectorApiFixture().use { fixture ->
             val store = ViewModelStore()
-            val connectivity = MutableStateFlow(initiallyOnline)
+            configure(fixture)
             try {
                 val model = compose.runOnIdle {
                     ViewModelProvider.create(
                             store,
                             viewModelFactory {
                                 initializer {
-                                    ConnectorModel(fixture.service, connectivity, { true }) { error
-                                        ->
+                                    ConnectorModel(fixture.service, { true }) { error ->
                                         throw AssertionError(
                                             "Unexpected session failure",
                                             error,
@@ -472,11 +638,26 @@ class ConnectorAccountFlowTest {
                             },
                         )[ConnectorModel::class]
                 }
-                compose.setContent { OkouTheme(false) { ConnectorsPage(model, null) {} } }
-                exercise(fixture, connectivity)
+                val content: @Composable () -> Unit = {
+                    OkouTheme(false) { ConnectorsPage(model, listWidth) {} }
+                }
+                if (restoration == null) compose.setContent(content)
+                else restoration.setContent(content)
+                exercise(fixture, model)
             } finally {
                 compose.runOnIdle { store.clear() }
             }
+        }
+    }
+
+    private fun withKeyboard(exercise: () -> Unit) {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            compose.activityRule.scenario.recreate()
+            exercise()
+        } finally {
+            instrumentation.resetInTouchMode()
         }
     }
 

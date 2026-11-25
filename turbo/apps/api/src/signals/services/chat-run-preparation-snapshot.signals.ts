@@ -36,13 +36,15 @@ import {
   pgBooleanDecoder,
   zodDriverValueDecoder,
 } from "../../lib/db-structured-result";
-import { db$ } from "../external/db";
+import { db$, type ReadonlyDb } from "../external/db";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import {
   canonicalChatEventUserMessage,
   canonicalChatInputModelSelection,
 } from "./canonical-chat-event-read.service";
 import { queuedThreadInputCondition } from "./chat-queued-event.service";
+import { runOwnedChatEventCondition } from "./chat-event-type.service";
+import { visibleChatEventCondition } from "./chat-event-visibility.service";
 import { contextJsonRows } from "./context-rowset";
 import {
   pickedThreadColumns,
@@ -98,7 +100,6 @@ function buildPreparationTables(
         id: chatEvents.id,
         chatThreadId: chatEvents.chatThreadId,
         createdAt: chatEvents.createdAt,
-        seqId: chatEvents.seqId,
         eventType: chatEvents.eventType,
         contextType: chatEvents.contextType,
         contextId: chatEvents.contextId,
@@ -154,6 +155,10 @@ function pickedPromptColumns(
         THEN ${requestInput.captureNetworkBodies} ELSE ${storedCapture} END`
     : storedCapture;
   return {
+    hasCompletedPredecessorHistory: completedPredecessorHistory(
+      head,
+      hasCapacity,
+    ),
     isOfficialWorkflowThread:
       sql`CASE WHEN ${hasPromptCapacity} THEN ${officialWorkflowThreadCondition(owner)}
         ELSE false END`.mapWith(pgBooleanDecoder),
@@ -162,6 +167,43 @@ function pickedPromptColumns(
         pgBooleanDecoder,
       ),
   };
+}
+
+function completedPredecessorHistory(
+  head: ReturnType<typeof buildPreparationTables>["head"],
+  hasCapacity: SQL,
+) {
+  const query = new QueryBuilder();
+  const predecessor = exists(
+    query
+      .select({ id: agentRuns.id })
+      .from(agentRuns)
+      .where(
+        and(
+          eq(agentRuns.id, chatThreads.frameworkSessionRunId),
+          eq(agentRuns.chatThreadId, chatThreads.id),
+          eq(agentRuns.userId, chatThreads.userId),
+          eq(agentRuns.status, "completed"),
+          exists(
+            query
+              .select({ id: chatEvents.id })
+              .from(chatEvents)
+              .where(
+                and(
+                  eq(chatEvents.chatThreadId, agentRuns.chatThreadId),
+                  eq(chatEvents.runId, agentRuns.id),
+                  runOwnedChatEventCondition(),
+                  visibleChatEventCondition(),
+                ),
+              ),
+          ),
+        ),
+      ),
+  );
+  return sql`CASE WHEN ${hasCapacity}
+    AND ${inArray(head.contextType, ["web", "agent_run"])}
+    AND ${isNotNull(chatThreads.frameworkSessionRunId)}
+    THEN ${predecessor} ELSE false END`.mapWith(pgBooleanDecoder);
 }
 
 function pickedPhoneUseGrant(hasCapacity: SQL) {
@@ -274,6 +316,96 @@ function pickedProjectReferences(
   );
 }
 
+function preparationSnapshotQuery(
+  db: ReadonlyDb,
+  claim: { readonly orgId: string; readonly chatThreadId: string },
+  owner: Pick<AgentRunContextSignals, "orgId" | "userId">,
+  capacity: number,
+  requestInput?: EnqueuedChatInputFacts,
+) {
+  const { occupancy, head } = buildPreparationTables(
+    claim,
+    capacity,
+    requestInput,
+  );
+  const hasCapacity =
+    capacity === 0 ? sql`true` : lt(occupancy.activeCount, capacity);
+  const phoneGrant = pickedPhoneUseGrant(hasCapacity);
+  const { chatThreadId, ...headFields } = head._.selectedFields;
+  return db
+    .with(occupancy, head)
+    .select({
+      hasCapacity: sql`${hasCapacity}`.mapWith(pgBooleanDecoder),
+      threadHasActiveRun: exists(
+        new QueryBuilder()
+          .select({ runId: activeAgentRuns.runId })
+          .from(activeAgentRuns)
+          .where(eq(activeAgentRuns.chatThreadId, claim.chatThreadId)),
+      ).mapWith(pgBooleanDecoder),
+      memory: memberMemoryHeadFields.memory,
+      revision: memberMemoryHeadFields.revision,
+      archiveCache: memberMemoryHeadFields.archiveCache,
+      thread: pickedThreadColumns,
+      titled:
+        sql`CASE WHEN ${isNotNull(chatThreads.title)} THEN true ELSE ${isNotNull(chatThreads.renamedAt)} END`.mapWith(
+          pgBooleanDecoder,
+        ),
+      computerUseHostGrant: {
+        hostId: computerUseHosts.id,
+        displayName: computerUseHosts.displayName,
+      },
+      phoneUseGrant: {
+        deviceId: phoneGrant.deviceId,
+        grantId: phoneGrant.grantId,
+      },
+      currentProject: { id: projects.id, name: projects.name },
+      projectReferences: pickedProjectReferences(head, hasCapacity),
+      head: headFields,
+      ...pickedPromptColumns(
+        head,
+        hasCapacity,
+        {
+          threadId: claim.chatThreadId,
+          orgId: claim.orgId,
+          userId: owner.userId,
+        },
+        requestInput,
+      ),
+    })
+    .from(occupancy)
+    .leftJoin(head, sql`true`)
+    .leftJoin(
+      chatThreads,
+      and(
+        eq(chatThreads.id, chatThreadId),
+        eq(chatThreads.userId, owner.userId),
+        eq(chatThreads.orgId, owner.orgId),
+      ),
+    )
+    .leftJoin(
+      computerUseHosts,
+      and(
+        hasCapacity,
+        eq(computerUseHosts.id, chatThreads.computerUseHostId),
+        eq(computerUseHosts.orgId, chatThreads.orgId),
+        eq(computerUseHosts.userId, chatThreads.userId),
+        isNull(computerUseHosts.revokedAt),
+      ),
+    )
+    .leftJoinLateral(phoneGrant, sql`true`)
+    .leftJoin(projects, pickedProjectJoin(head, hasCapacity, requestInput))
+    .leftJoin(
+      memberMemories,
+      and(
+        isNotNull(chatThreads.id),
+        hasCapacity,
+        memberMemoryOwnerCondition(owner),
+      ),
+    )
+    .leftJoin(memoryVersions, memberMemoryRevisionCondition)
+    .leftJoin(systemStoragePresignedUrlCache, memberMemoryArchiveCondition());
+}
+
 /** Capture availability and launch facts for the actual FIFO head together. */
 export function createChatRunPreparationSnapshot(
   claim: { readonly orgId: string; readonly chatThreadId: string },
@@ -281,85 +413,15 @@ export function createChatRunPreparationSnapshot(
   requestInput?: EnqueuedChatInputFacts,
 ) {
   return computed(async (get) => {
-    const database = get(db$);
     // The limit belongs to the identity context; occupancy is sampled here.
     const capacity = await get(bootstrap.concurrencyCapacity$);
-    const { occupancy, head } = buildPreparationTables(
+    const [row] = await preparationSnapshotQuery(
+      get(db$),
       claim,
+      bootstrap,
       capacity,
       requestInput,
     );
-    const hasCapacity =
-      capacity === 0 ? sql`true` : lt(occupancy.activeCount, capacity);
-    const phoneGrant = pickedPhoneUseGrant(hasCapacity);
-    const [row] = await database
-      .with(occupancy, head)
-      .select({
-        hasCapacity: sql`${hasCapacity}`.mapWith(pgBooleanDecoder),
-        threadHasActiveRun: exists(
-          new QueryBuilder()
-            .select({ runId: activeAgentRuns.runId })
-            .from(activeAgentRuns)
-            .where(eq(activeAgentRuns.chatThreadId, claim.chatThreadId)),
-        ).mapWith(pgBooleanDecoder),
-        memory: memberMemoryHeadFields.memory,
-        revision: memberMemoryHeadFields.revision,
-        archiveCache: memberMemoryHeadFields.archiveCache,
-        thread: pickedThreadColumns,
-        computerUseHostGrant: {
-          hostId: computerUseHosts.id,
-          displayName: computerUseHosts.displayName,
-        },
-        phoneUseGrant: {
-          deviceId: phoneGrant.deviceId,
-          grantId: phoneGrant.grantId,
-        },
-        currentProject: { id: projects.id, name: projects.name },
-        projectReferences: pickedProjectReferences(head, hasCapacity),
-        head: { ...head._.selectedFields },
-        ...pickedPromptColumns(
-          head,
-          hasCapacity,
-          {
-            threadId: claim.chatThreadId,
-            orgId: claim.orgId,
-            userId: bootstrap.userId,
-          },
-          requestInput,
-        ),
-      })
-      .from(occupancy)
-      .leftJoin(head, sql`true`)
-      .leftJoin(
-        chatThreads,
-        and(
-          eq(chatThreads.id, head.chatThreadId),
-          eq(chatThreads.userId, bootstrap.userId),
-          eq(chatThreads.orgId, bootstrap.orgId),
-        ),
-      )
-      .leftJoin(
-        computerUseHosts,
-        and(
-          hasCapacity,
-          eq(computerUseHosts.id, chatThreads.computerUseHostId),
-          eq(computerUseHosts.orgId, chatThreads.orgId),
-          eq(computerUseHosts.userId, chatThreads.userId),
-          isNull(computerUseHosts.revokedAt),
-        ),
-      )
-      .leftJoinLateral(phoneGrant, sql`true`)
-      .leftJoin(projects, pickedProjectJoin(head, hasCapacity, requestInput))
-      .leftJoin(
-        memberMemories,
-        and(
-          isNotNull(chatThreads.id),
-          hasCapacity,
-          memberMemoryOwnerCondition(bootstrap),
-        ),
-      )
-      .leftJoin(memoryVersions, memberMemoryRevisionCondition)
-      .leftJoin(systemStoragePresignedUrlCache, memberMemoryArchiveCondition());
     if (!row) {
       throw new Error("Chat preparation occupancy returned no row");
     }
@@ -372,14 +434,26 @@ export function createChatRunPreparationSnapshot(
         archiveCache: row.archiveCache,
       },
     };
-    const { thread, head: picked } = row;
-    if (!thread || !picked) {
+    const {
+      thread: joinedThread,
+      head: picked,
+      hasCompletedPredecessorHistory,
+    } = row;
+    if (!joinedThread || !picked) {
       return { ...snapshot, pickedEvent: null };
     }
+    const thread = {
+      ...joinedThread,
+      // A published lease can retain the casing of the client-supplied UUID.
+      id: claim.chatThreadId.toLowerCase(),
+      userId: bootstrap.userId,
+      titled: row.titled,
+    };
     // Only this request's actual FIFO head may use its canonical input facts.
     const owned = requestInput?.id === picked.id ? requestInput : undefined;
     const pickedEvent: PickedThreadInputEvent = {
       ...picked,
+      chatThreadId: thread.id,
       sourceAutonomyBudget:
         owned?.sourceAutonomyBudget ?? picked.sourceAutonomyBudget,
       userMessage: owned ? owned.userMessage : picked.userMessage,
@@ -390,6 +464,7 @@ export function createChatRunPreparationSnapshot(
       userId: thread.userId,
       thread,
       preparation: {
+        hasCompletedPredecessorHistory,
         isOfficialWorkflowThread: row.isOfficialWorkflowThread,
         captureNetworkBodies: row.captureNetworkBodies,
         computerUseHostGrant: row.computerUseHostGrant,

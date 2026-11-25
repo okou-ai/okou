@@ -1,4 +1,5 @@
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
+import type { ComponentProps, Ref } from "react";
 import type { ArtifactSummary } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { useLoadableSet } from "ccstate-react/experimental";
 import {
@@ -20,35 +21,37 @@ import { useTranslation } from "react-i18next";
 
 import {
   artifactPreviewDeletionScope,
-  type PreviewArtifactDeletion,
+  type ArtifactDeletionSession,
   type ArtifactDeletionSourceKind,
 } from "../../signals/artifact-deletion.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import {
   artifactDeletionSurface,
+  closeArtifactDeletion$,
   confirmArtifactDeletion$,
   type ArtifactDeletionOrigin,
+  type ArtifactDeletionConfirmationOrigin,
 } from "../../signals/artifact-deletion-origin.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ArtifactActionTooltip } from "./artifact-actions.tsx";
 
-function PreviewArtifactDeleteMoreMenu({
-  origin,
-  iconSize,
+export function ArtifactDeleteMoreMenu({
+  triggerRef,
+  onDelete,
+  onOpenChange,
+  iconSize = 16,
 }: {
-  readonly origin: ArtifactDeletionOrigin;
-  readonly iconSize: number;
+  readonly triggerRef?: Ref<HTMLButtonElement>;
+  readonly onDelete: () => void;
+  readonly onOpenChange?: ComponentProps<typeof DropdownMenu>["onOpenChange"];
+  readonly iconSize?: number;
 }) {
   const { t } = useTranslation();
-  const pageSignal = useGet(pageSignal$);
-  const scope = artifactPreviewDeletionScope(artifactDeletionSurface(origin));
-  const triggerRef = useSet(scope.menuTriggerRef$);
-  const requestDeletion = useSet(scope.requestFromMenu$);
   const label = t(($) => {
     return $.artifacts.actions.more;
   });
   return (
-    <DropdownMenu modal={false}>
+    <DropdownMenu modal={false} onOpenChange={onOpenChange}>
       <ArtifactActionTooltip label={label}>
         <DropdownMenuTrigger
           ref={triggerRef}
@@ -66,16 +69,7 @@ function PreviewArtifactDeleteMoreMenu({
         </DropdownMenuTrigger>
       </ArtifactActionTooltip>
       <DropdownMenuContent align="end" sideOffset={6}>
-        <DropdownMenuItem
-          className="text-destructive"
-          onClick={() => {
-            detach(
-              requestDeletion(pageSignal),
-              Reason.DomCallback,
-              "confirm artifact deletion",
-            );
-          }}
-        >
+        <DropdownMenuItem className="text-destructive" onClick={onDelete}>
           <Trash2 size={14} />
           {t(($) => {
             return $.artifacts.deletion.delete;
@@ -83,6 +77,32 @@ function PreviewArtifactDeleteMoreMenu({
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+function PreviewArtifactDeleteMoreMenu({
+  origin,
+  iconSize,
+}: {
+  readonly origin: ArtifactDeletionOrigin;
+  readonly iconSize: number;
+}) {
+  const pageSignal = useGet(pageSignal$);
+  const scope = artifactPreviewDeletionScope(artifactDeletionSurface(origin));
+  const triggerRef = useSet(scope.menuTriggerRef$);
+  const requestDeletion = useSet(scope.requestFromMenu$);
+  return (
+    <ArtifactDeleteMoreMenu
+      triggerRef={triggerRef}
+      iconSize={iconSize}
+      onDelete={() => {
+        detach(
+          requestDeletion(pageSignal),
+          Reason.DomCallback,
+          "confirm artifact deletion",
+        );
+      }}
+    />
   );
 }
 
@@ -152,7 +172,7 @@ function PreviewArtifactDeleteButton({
   iconSize,
   menu,
 }: {
-  readonly session: PreviewArtifactDeletion;
+  readonly session: ArtifactDeletionSession;
   readonly origin: ArtifactDeletionOrigin;
   readonly iconSize: number;
   readonly menu: boolean;
@@ -188,21 +208,21 @@ function PreviewArtifactDeleteButton({
             <Trash2 size={iconSize} />
           </Button>
         ))}
-      <PreviewArtifactDeleteDialog session={session} origin={origin} />
+      <ArtifactDeleteDialog session={session} origin={origin} />
     </>
   );
 }
 
-function PreviewArtifactDeleteDialog({
+export function ArtifactDeleteDialog({
   session,
   origin,
 }: {
-  readonly session: PreviewArtifactDeletion;
-  readonly origin: ArtifactDeletionOrigin;
+  readonly session: ArtifactDeletionSession;
+  readonly origin: ArtifactDeletionConfirmationOrigin;
 }) {
   const pageSignal = useGet(pageSignal$);
   const target = useGet(session.target$);
-  const close = useSet(session.close$);
+  const close = useSet(closeArtifactDeletion$);
   const finalFocus = useSet(session.finalFocus$);
   const [deletion, confirm] = useLoadableSet(confirmArtifactDeletion$);
   return (
@@ -210,10 +230,12 @@ function PreviewArtifactDeleteDialog({
       target={target}
       busy={deletion.state === "loading"}
       finalFocus={finalFocus}
-      onCancel={close}
+      onCancel={() => {
+        close(origin, session);
+      }}
       onConfirm={() => {
         detach(
-          confirm(origin, pageSignal),
+          confirm(origin, session, pageSignal),
           Reason.DomCallback,
           "delete preview artifact",
         );

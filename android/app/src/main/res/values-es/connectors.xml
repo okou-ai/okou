@@ -42,7 +42,6 @@
     <string name="connector_disconnect">Desconectar cuenta</string>
     <string name="connector_disconnect_title">¿Desconectar esta cuenta?</string>
     <string name="connector_disconnect_copy">Es posible que los chats y las automatizaciones que usan esta cuenta necesiten otra conexión. Las demás cuentas siguen disponibles.</string>
-    <string name="connector_load_when_online">El contenido se cargará cuando vuelvas a conectarte.</string>
     <string name="connector_loading">Cargando conectores…</string>
     <string name="connector_loading_accounts">Cargando cuentas…</string>
     <string name="connector_loading_permissions">Cargando permisos…</string>
@@ -52,7 +51,6 @@
     <string name="connector_accounts_failed">No se pudieron cargar las cuentas.</string>
     <string name="connector_permissions_failed">No se pudieron cargar los permisos.</string>
     <string name="connector_impact_failed">No se pudo comprobar dónde se usa la cuenta.</string>
-    <string name="connector_offline">Sin conexión</string>
     <string name="connector_network_failed">No se pudo conectar con Okou. Comprueba tu conexión e inténtalo de nuevo.</string>
     <string name="connector_account_unavailable">Esta cuenta ya no está disponible.</string>
     <string name="connector_unavailable">No se puede autorizar esta cuenta.</string>
@@ -110,4 +108,29 @@
         <item quantity="many">%d chats seleccionaron esta cuenta explícitamente.</item>
         <item quantity="other">%d chats seleccionaron esta cuenta explícitamente.</item>
     </plurals>
+    <string name="chat_options_title">Opciones del chat</string>
+    <string name="chat_options_settings">Ajustes de la conversación</string>
+    <string name="chat_connector_scope">Se aplica a este chat. Al principio se usan las cuentas predeterminadas del espacio de trabajo.</string>
+    <string name="chat_connector_empty">No hay cuentas conectadas en este espacio de trabajo.</string>
+    <string name="chat_connector_manage">Gestionar conectores</string>
+    <string name="chat_connector_restore_defaults">Restaurar los valores del espacio de trabajo</string>
+    <string name="chat_connector_saving">Guardando la selección del conector…</string>
+    <string name="chat_connector_save_failed">No se pudo guardar la selección del conector.</string>
+    <string name="chat_connector_first_send_failed">No se pudo aplicar la selección de conectores. Revísala en las opciones del chat y reintenta enviar este mensaje.</string>
+    <string name="connector_device_denied">El proveedor rechazó la autorización.</string>
+    <string name="connector_device_expired">El código del dispositivo ha caducado. Inicia la autorización de nuevo.</string>
+    <string name="connector_device_failed">No se pudo completar la autorización del dispositivo.</string>
+    <string name="connector_access_scope">Se aplica a todos tus chats.</string>
+    <string name="connector_access_label">Acceso para %1$s, %2$s</string>
+    <string name="connector_access_allow">Permitir</string>
+    <string name="connector_access_deny">Denegar</string>
+    <string name="connector_access_always">Siempre</string>
+    <string name="connector_access_expired">Caducado</string>
+    <string name="connector_access_under_hour">&lt;1 h</string>
+    <string name="connector_access_hours">%d h</string>
+    <string name="connector_access_days">%d d</string>
+    <string name="connector_access_allow_always">Permitir siempre</string>
+    <string name="connector_access_allow_hour">Permitir durante 1 h</string>
+    <string name="connector_access_allow_day">Permitir durante 24 h</string>
+    <string name="connector_access_allow_week">Permitir durante 7 días</string>
 </resources>

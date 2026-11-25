@@ -253,6 +253,11 @@
         "modelCatalogCacheValidationLatency": "Latensi Validasi Cache Katalog Model",
         "modelCatalogPrefetchRole": "Peran Prefetch Katalog Model",
         "modelCatalogUpstreamEncoding": "Encoding Upstream Katalog Model",
+        "openrouterAttempts": "OpenRouter Percobaan penyedia",
+        "openrouterAttemptsIncomplete": "OpenRouter Percobaan tidak lengkap",
+        "openrouterGenerationId": "OpenRouter ID generasi",
+        "openrouterModel": "OpenRouter Model",
+        "openrouterProvider": "OpenRouter Penyedia",
         "params": "Parameter",
         "permission": "Izin",
         "permissionError": "Galat Izin",
@@ -430,7 +435,6 @@
       "close": "Tutup",
       "closeArtifact": "Tutup artefak",
       "closeNamed": "Tutup {{title}}",
-      "closePreviewMenu": "Tutup menu pratinjau",
       "download": "Unduh",
       "downloadArtifact": "Unduh artefak",
       "downloadMarkdownAs": "Unduh sebagai {{format}}",
@@ -502,6 +506,77 @@
       "kindIcon": "Artefak {{kind}}",
       "loading": "Memuat artefak"
     },
+    "customDomain": {
+      "addressHint": "Choose the full address used when you share this website.",
+      "automaticHint": "Ini mengatur CNAME situs dan TXT kepemilikan. Tambahkan catatan sertifikat tambahan di bawah, lalu kembali untuk memverifikasi.",
+      "automaticSetup": "Konfigurasi catatan situs",
+      "checkBeforeEditing": "Klik Verifikasi untuk memeriksa catatan sebelum mengubah DNS.",
+      "checkFailed": "Perlu ditangani",
+      "checkNotChecked": "Belum diperiksa",
+      "checkPassed": "Lulus",
+      "checkPending": "Menunggu",
+      "checks": {
+        "certificate": "HTTPS",
+        "dns": "DNS connection",
+        "ownership": "Ownership",
+        "provider": "Aktivasi domain",
+        "route": "Perutean situs"
+      },
+      "checkUnavailable": "Tidak dapat diperiksa",
+      "connect": "Connect a domain",
+      "continue": "Continue",
+      "copied": "Copied",
+      "copyFailed": "Could not copy. Select the value to copy it.",
+      "copyRecordName": "Salin nama {{type}} {{name}}",
+      "copyRecordValue": "Salin nilai {{type}} {{name}}",
+      "disconnectConfirm": "This domain will be disconnected from this website.",
+      "dnsConfigured": "DNS sudah dikonfigurasi",
+      "dnsHelp": "Add these records at your DNS provider, then click Verify",
+      "domain": "Domain",
+      "findingProvider": "Mencari opsi pengaturan DNS…",
+      "hostnameExample": "www.example.com",
+      "httpsReady": "HTTPS ready",
+      "keepTxtValues": "Pertahankan nilai TXT yang ada dengan nama yang sama. Tambahkan setiap nilai sebagai catatan TXT terpisah.",
+      "lastChecked": "Last checked {{time}}",
+      "manage": "Manage {{hostname}}",
+      "manualHint": "Salin catatan ke pengaturan DNS Anda, lalu kembali untuk memverifikasi.",
+      "needsSetup": "Finish setup",
+      "noDnsChanges": "Catatan DNS Anda cocok. Tidak perlu mengubah DNS.",
+      "notChecked": "No verification yet",
+      "okouUrl": "Okou URL",
+      "openDns": "Buka DNS {{provider}}",
+      "ownDomain": "Enter a domain you own",
+      "recordMatched": "Cocok",
+      "recordName": "Nama",
+      "recordNeedsCheck": "Belum cocok",
+      "recordValue": "Nilai",
+      "remove": "Remove",
+      "removeConfirm": "Your sharing link will return to {{url}}.",
+      "removeHostname": "Remove {{hostname}}",
+      "removeTitle": "Remove custom domain?",
+      "removing": "This domain is disconnected. Click Remove to finish cleaning up its configuration.",
+      "retryVerification": "Tinjau hasil di bawah, lalu klik Verifikasi untuk memeriksa lagi.",
+      "reviewDns": "Tinjau catatan DNS",
+      "saveToEnable": "Alamat berbagi hanya berubah saat Anda mengeklik Simpan.",
+      "setUpDns": "Atur catatan DNS",
+      "setupStages": "Tahapan pengaturan domain",
+      "sharingAddress": "Alamat berbagi Anda",
+      "steps": {
+        "dns": "Pengaturan DNS",
+        "enable": "Aktifkan",
+        "verify": "Verifikasi"
+      },
+      "title": "Custom domain",
+      "urlPreview": "https://{{hostname}}",
+      "verificationChecks": "Pemeriksaan verifikasi domain",
+      "verificationComplete": "Semua pemeriksaan berhasil. Lanjutkan untuk mengaktifkan domain Anda.",
+      "verificationDetails": "Detail verifikasi",
+      "verified": "Domain verified. Save to use this address.",
+      "verifiedRecords": "Catatan terverifikasi ({{total}})",
+      "verify": "Verify",
+      "verifyDomain": "Verifikasi domain",
+      "yourDomains": "Connected domains"
+    },
     "deletion": {
       "cancel": "Batal",
       "delete": "Hapus",
@@ -570,6 +645,22 @@
       "text": "Teks",
       "video": "Video"
     },
+    "library": {
+      "allArtifacts": "Semua artefak",
+      "allTypes": "Semua jenis",
+      "clearFilters": "Hapus filter",
+      "clearSearch": "Hapus pencarian",
+      "created": "Dibuat",
+      "emptyDescription": "Coba nama atau jenis lain.",
+      "emptyTitle": "Tidak ada artefak ditemukan",
+      "loadMore": "Muat lebih banyak",
+      "name": "Nama",
+      "retry": "Coba lagi",
+      "search": "Cari artefak",
+      "sortAscending": "Urutkan menaik",
+      "sortDescending": "Urutkan menurun",
+      "type": "Jenis"
+    },
     "metadata": {
       "generated": "Dibuat {{date}}",
       "updated": "Diperbarui {{date}}"
@@ -577,11 +668,10 @@
     "people": {
       "accounts": "Anggota ruang kerja yang cocok",
       "anyone": "Siapa saja",
-      "empty": "Belum ada orang lain yang memiliki akses.",
-      "hint": "Di luar ruang kerja Anda? Gunakan alamat email lengkapnya.",
       "invitationProcessed": "Undangan berbagi telah diproses",
       "label": "Bagikan dengan orang",
       "noAccounts": "Tidak ada anggota yang cocok. Masukkan email lengkap untuk mengundang.",
+      "owner": "Pemilik",
       "placeholder": "Nama atau alamat email",
       "remove": "Hapus akses {{email}}",
       "removed": "Akses dihapus",
@@ -594,7 +684,8 @@
       "viewers": "Orang dengan akses",
       "workspace": "Ruang kerja",
       "workspaceDescription": "Anggota {{organization}} dan orang yang diundang",
-      "workspaceDescriptionUnnamed": "Anggota ruang kerja dan orang yang diundang"
+      "workspaceDescriptionUnnamed": "Anggota ruang kerja dan orang yang diundang",
+      "you": "{{name}} (Anda)"
     },
     "preview": {
       "audioLabel": "Pratinjau audio untuk {{filename}}",
@@ -665,15 +756,9 @@
       "updated": "URL situs diperbarui"
     },
     "templates": {
-      "activeHtmlPreview": "Pratinjau HTML aktif {{title}}",
-      "all": "Semua",
       "avatar": "Avatar",
-      "categories": "Kategori template",
-      "category": "Kategori template",
       "fullPreview": "pratinjau penuh website {{title}}",
       "htmlPreview": "pratinjau HTML {{title}}",
-      "illustration": "Ilustrasi",
-      "illustrationPreview": "pratinjau ilustrasi {{title}}",
       "importDeck": "Impor dek Anda sendiri",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importDocument": "Impor dokumen Anda sendiri",
@@ -684,18 +769,10 @@
       "importImageHint": "Simpan sebagai gaya",
       "multiAccent": "Multi-aksen",
       "nextSlide": "Pratinjau slide berikutnya",
-      "noMatches": "Tidak ada hasil",
-      "previewCurrentSlide": "Pratinjau {{title}} pada slide saat ini",
       "previewSlide": "Pratinjau slide {{slideNumber}}",
-      "previewWebsite": "Pratinjau template website {{title}}",
       "previousSlide": "Pratinjau slide sebelumnya",
-      "searchConnector": "Cari templat",
-      "searchConnectors": "Cari templat",
       "selectStyle": "Pilih gaya {{style}}",
       "selectTemplate": "Pilih template {{title}}",
-      "selectWebsite": "Pilih template website {{title}}",
-      "selectWorkflow": "Pilih template alur kerja {{title}}",
-      "showVariant": "Tampilkan varian {{variantNumber}}",
       "singleAccent": "Satu aksen",
       "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "pratinjau slide {{title}}",
@@ -723,15 +800,11 @@
         "terracottaClay": "Pot tanah liat",
         "warmSand": "Koran pagi"
       },
-      "tryDifferentSearch": "Coba pencarian lain.",
-      "use": "Gunakan",
       "useThisTemplate": "Gunakan template ini",
       "visibility": {
         "changeLabel": "Ubah visibilitas templat"
       },
       "website": "Website",
-      "websitePreview": "pratinjau template website {{title}}",
-      "workflow": "Alur kerja",
       "workflowCatalog": {
         "auto-inbox-label": {
           "description": "Buat alur kerja yang berjalan saat label Gmail dipasang dan menangani email berlabel itu.",
@@ -1166,6 +1239,12 @@
       "teamWarning": "Akses Team Anda tetap aktif hingga akhir periode tagihan saat ini. Setelah itu, ruang kerja ini akan berpindah ke {{plan}}.",
       "title": "Turunkan paket"
     },
+    "feedback": {
+      "otherPlaceholder": "Ceritakan lebih lanjut…",
+      "rewardTerms": "Sekali per ruang kerja · Kredit berlaku 30 hari",
+      "submitFeedback": "Kirim masukan",
+      "thanks": "Terima kasih atas masukannya"
+    },
     "invoices": {
       "amount": "Jumlah",
       "date": "Tanggal",
@@ -1309,40 +1388,6 @@
     "sidebar": {
       "description": "Lebih banyak kredit & eksekusi bersamaan",
       "getPlan": "Dapatkan {{plan}}"
-    },
-    "survey": {
-      "checkoutAbandoned": {
-        "answers": {
-          "just_checking_price": "Hanya ingin melihat harga",
-          "needs_approval": "Perlu persetujuan orang lain",
-          "not_ready_yet": "Belum siap berlangganan",
-          "not_seeing_value": "Belum melihat manfaatnya",
-          "other": "Lainnya",
-          "payment_issue": "Ada masalah saat membayar",
-          "price_higher_than_expected": "Harganya lebih tinggi dari perkiraan",
-          "results_not_good_enough": "Tidak puas dengan hasilnya"
-        },
-        "description": "Hanya satu pertanyaan. Jawaban Anda membantu kami menjadi lebih baik.",
-        "question": "Apa yang membuat Anda tidak menyelesaikan pembelian?"
-      },
-      "creditsExhausted": {
-        "answers": {
-          "no_need_now": "Saat ini belum butuh lebih",
-          "not_sure_worth_it": "Belum yakin sepadan",
-          "other": "Lainnya",
-          "still_trying": "Ingin mencoba lebih lama dulu",
-          "too_expensive": "Terlalu mahal"
-        },
-        "question": "Apa yang membuat Anda belum upgrade hari ini?",
-        "reward": "Jawaban pertama yang memenuhi syarat di ruang kerja ini mendapat {{credits}} kredit bonus, berlaku selama 30 hari.",
-        "thanksWithCredits": "Terima kasih! {{credits}} kredit telah ditambahkan, Anda bisa melanjutkan."
-      },
-      "error": "Jawaban Anda gagal dikirim. Coba lagi.",
-      "notNow": "Nanti saja",
-      "otherLabel": "Jawaban Anda",
-      "otherPlaceholder": "Ceritakan lebih lanjut (opsional)",
-      "submit": "Kirim",
-      "thanks": "Terima kasih atas masukan Anda."
     },
     "toasts": {
       "autoRechargeUpdated": "Isi ulang otomatis diperbarui",
@@ -1732,6 +1777,7 @@
       "waiting": "Menunggu Mastercard Data Connect. Selesaikan proses di sana, lalu kembali ke Chat."
     },
     "billing": {
+      "addCreditsOrUpgrade": "Isi ulang kredit mulai $5 untuk melanjutkan, atau upgrade ke Pro untuk membuka fitur eksklusif.",
       "addCreditsToContinue": "Tambahkan kredit untuk terus mengobrol dengan {{assistantName}}.",
       "askAdminCredits": "Minta admin ruang kerja untuk menambahkan kredit agar Anda bisa terus mengobrol dengan {{assistantName}}.",
       "askAdminUpgrade": "Minta admin ruang kerja untuk upgrade ke Pro agar Anda bisa terus mengobrol dengan {{assistantName}}.",
@@ -1745,7 +1791,6 @@
       "customAmountError": "Masukkan antara $1 dan $10.000",
       "customDollarAmount": "Jumlah dolar kustom",
       "outOfCredits": "Kredit Anda habis",
-      "redirecting": "Mengarahkan...",
       "upgradeToContinue": "Upgrade ke Pro agar tetap bisa mengobrol dengan {{assistantName}}.",
       "upgradeToPro": "Upgrade ke Pro",
       "upgradeToRun": "Upgrade ke Pro untuk menjalankan {{assistantName}}",
@@ -1907,11 +1952,10 @@
       "add": "Tambah",
       "configureModel": "Konfigurasikan model",
       "create": {
-        "addStyle": "Tambahkan gaya",
-        "addTemplate": "Tambahkan templat",
         "documentPlaceholder": "Apa yang ingin Anda sertakan dalam dokumen?",
         "imagePlaceholder": "Jelaskan gambar yang ingin Anda buat…",
         "presentationPlaceholder": "Apa topik presentasi Anda?",
+        "presentationPlaceholderWithDefault": "Presentasi Anda tentang apa? (default: {{format}})",
         "slideCount": "Jumlah slide",
         "slideCountAuto": "Otomatis",
         "slideCountRange": "{{range}} slide"
@@ -1922,6 +1966,16 @@
       "message": "Pesan",
       "modelForThisChat": "Model untuk chat ini",
       "placeholder": "Minta saya mengotomatiskan alur kerja, mengelola tugas...",
+      "presentationFormatSetup": {
+        "htmlDescription": "Tautan yang terbuka di browser mana pun",
+        "htmlLabel": "Slide web",
+        "openSettings": "Buka pengaturan",
+        "pptxDescription": "File .pptx yang dapat diedit",
+        "pptxLabel": "PowerPoint",
+        "savedDefault": "{{format}} sekarang menjadi format default presentasi Anda",
+        "settingsHint": "Dipakai untuk setiap presentasi baru. Anda bisa mengubahnya di Pengaturan.",
+        "title": "Pilih format default untuk memulai"
+      },
       "selectedModelUnavailable": "Model yang dipilih tidak tersedia. Konfigurasikan sebelum mengirim.",
       "selectedModelUnavailableToast": "Model yang dipilih tidak tersedia",
       "selectModel": "Pilih model",
@@ -1948,11 +2002,9 @@
         "scheduleHint": "Jalankan sesuai jadwal",
         "share": "Bagikan obrolan",
         "shareHint": "Bagikan tautan ke percakapan ini",
-        "templates": "Templat",
         "unpin": "Lepas sematan"
       },
       "slashPanel": {
-        "browseAll": "Jelajahi semua templat",
         "hint": "Pilih tindakan",
         "useTemplate": "Gunakan templat {{title}}"
       },
@@ -1995,8 +2047,10 @@
     "connectorAccountSwitch": {
       "accountFallback": "Akun konektor",
       "actionFailed": "Tidak dapat beralih akun.",
+      "allowForHour": "Izinkan selama 1 jam",
       "customConnector": "Konektor khusus",
       "loadFailed": "Akun konektor ini tidak dapat dimuat.",
+      "memberScope": "Izinkan di semua chat Anda. Pilih akun ini di sini.",
       "reconnectRequired": "Perlu menghubungkan kembali. Proses berikutnya mungkin menggunakan cadangan yang ada.",
       "selected": "Beralih ke {{account}}",
       "switch": "Beralih",
@@ -2589,11 +2643,6 @@
       "unsupported": "Reset manual tidak didukung; penggunaan akan pulih secara otomatis."
     },
     "taskChips": {
-      "presentationFormat": "Format presentasi",
-      "presentationFormats": {
-        "html": "HTML",
-        "pptx": "PPTX"
-      },
       "presentationTemplates": "Template presentasi",
       "removeTask": "Hapus {{task}}",
       "shelf": {
@@ -2611,7 +2660,6 @@
         "website": "Situs web",
         "workflow": "Alur kerja"
       },
-      "viewAll": "Lihat semua",
       "visualization": {
         "allCharts": "Semua bagan",
         "back": "Back to visualization options",
@@ -2793,8 +2841,6 @@
         "workflow": "Alur kerja"
       },
       "previewTemplate": "Pratinjau template {{title}}",
-      "previewWebsite": "Pratinjau template situs web {{title}}",
-      "previewWorkflow": "Pratinjau template alur kerja {{title}}",
       "removeTemplate": "Hapus template {{title}}",
       "removeWebsite": "Hapus template situs web {{title}}",
       "removeWorkflow": "Hapus template alur kerja {{title}}"
@@ -2866,6 +2912,7 @@
       "storageFailed": "Audio tidak dapat disimpan. Hanya audio yang sudah tersimpan di perangkat ini yang tersedia.",
       "textTakingShape": "Teks sedang terbentuk",
       "transcribing": "Mentranskripsi",
+      "uploadingRecording": "Mengunggah rekaman…",
       "useRecording": "Gunakan rekaman"
     },
     "walletAction": {
@@ -2944,6 +2991,8 @@
     "accountsInChat": "Pilih akun yang aktif dalam chat ini.",
     "enableByDefault": "Aktifkan {{account}} secara default",
     "manageAccounts": "Kelola akun",
+    "memberPolicyLoadFailed": "Akses akun tidak dapat dimuat.",
+    "memberSettingsDescription": "Pilih akun {{connector}} yang dapat digunakan Okou di semua chat Anda.",
     "permissions": "Izin",
     "permissionsDescription": "Aturan ini berlaku untuk konektor ini di semua chat dan akun Anda.",
     "settingsDescription": "Pilih akun {{connector}} yang dapat digunakan Okou di chat Anda. Anda dapat mengubah akses di setiap chat.",
@@ -3883,7 +3932,6 @@
         "overview": "Detail penyedia dan klien"
       }
     },
-    "filter": "Kategori dokumen",
     "formats": {
       "pdf": "PDF",
       "word": "Dokumen Word"
@@ -3893,10 +3941,8 @@
     "nextPage": "Halaman contoh berikutnya",
     "openLarger": "Buka pratinjau lebih besar",
     "page": "Halaman {{page}}",
-    "preview": "Pratinjau {{title}}",
     "previousPage": "Halaman contoh sebelumnya",
-    "title": "Dokumen",
-    "useNamed": "Gunakan {{title}}"
+    "title": "Dokumen"
   },
   "featureGuide": {
     "close": "Tutup panduan fitur",
@@ -4408,7 +4454,6 @@
   },
   "myOkou": {
     "conflict": "Instruksi tersimpan berubah di tempat lain. Draf Anda tetap disimpan. Tinjau atau salin sebelum memuat ulang instruksi tersimpan.",
-    "description": "Instruksi Anda untuk Okou di ruang kerja ini",
     "discard": "Buang",
     "draftKept": "Draf Anda tetap ada di tab ini saat berpindah halaman atau ruang kerja.",
     "instructions": "Instruksi",
@@ -5172,6 +5217,7 @@
     }
   },
   "projects": {
+    "archiveProject": "Arsipkan",
     "back": "Back",
     "close": "Close",
     "collapse": "Ciutkan",
@@ -5208,6 +5254,7 @@
     "removeFromNewChat": "Hapus {{name}}",
     "rename": "Rename",
     "renameProject": "Rename Project",
+    "restoreProject": "Pulihkan proyek",
     "retryThreads": "Reload threads",
     "save": "Save",
     "saveError": "Could not save Project",
@@ -5676,7 +5723,6 @@
           "title": "Preferensi"
         },
         "proactiveLearning": {
-          "description": "Pilih cara Okou bekerja secara proaktif.",
           "title": "Proactive"
         },
         "tools": {
@@ -5758,6 +5804,16 @@
     "models": {
       "actions": {
         "resetUsage": "Reset penggunaan"
+      },
+      "antigravity": {
+        "check": "Periksa login",
+        "error": "Periksa lingkungan login yang ditetapkan untuk Anda, lalu coba lagi.",
+        "expired": "Sesi login telah berakhir. Hubungkan kembali akun Anda.",
+        "openTerminal": "Buka terminal login Google",
+        "terminal": "Jalankan perintah ini di terminal Anda dan login dengan akun Google AI pribadi Anda.",
+        "title": "Google AI (Antigravity)",
+        "unassigned": "Minta administrator menetapkan terminal login untuk Anda.",
+        "verify": "Perintah ini menggunakan kuota langganan Anda untuk mengirim masing-masing satu permintaan ke Neon, Carbon, dan Hydrogen."
       },
       "deviceAuth": {
         "claude": {
@@ -5958,6 +6014,14 @@
           "title": "Model default"
         },
         "description": "Pilih default untuk chat baru dan cara pesan dikirim.",
+        "presentationFormat": {
+          "htmlDescription": "Presentasi baru terbuka sebagai tautan di browser",
+          "pptxDescription": "Presentasi baru dikirim sebagai file .pptx yang dapat diedit",
+          "saveFailed": "Tidak dapat menyimpan format default. Coba lagi.",
+          "title": "Format presentasi default",
+          "unavailable": "Tidak dapat memuat format default Anda",
+          "unsetDescription": "Kami akan bertanya saat Anda pertama kali membuat presentasi"
+        },
         "sectionTitle": "Chat"
       },
       "debug": {
@@ -6064,7 +6128,6 @@
         "title": "Brief Pagi"
       },
       "proactiveSuggestions": {
-        "description": "Periksa sumber terhubung setiap jam, perbarui profil Anda setiap hari, dan dapatkan saran langkah berikutnya.",
         "errorMessage": "Pengaturan tidak dapat dimuat atau diperbarui.",
         "missingTimezone": "Atur zona waktu Anda di Preferensi.",
         "preparationFailed": "Untuk sementara tidak tersedia.",
@@ -6355,17 +6418,14 @@
   },
   "sidebar": {
     "escapeShortcut": "Esc",
-    "filterAll": "Semua",
     "markAllRead": "Tandai semua sudah dibaca",
     "noResults": "Tidak ada hasil ditemukan",
     "resultCount_other": "{{count}} hasil",
     "searching": "Mencari...",
     "searchWorkspace": "Cari di ruang kerja...",
     "sections": {
-      "artifacts": "Artefak",
-      "chats": "Chat",
       "messages": "Pesan",
-      "workflows": "Alur kerja"
+      "threads": "Utas"
     }
   },
   "ssh": {
@@ -6523,11 +6583,8 @@
   "templates": {
     "actions": {
       "delete": "Hapus",
-      "menu": "Tindakan untuk {{title}}",
-      "preview": "Pratinjau {{title}}",
       "rename": "Ganti nama templat"
     },
-    "builtIn": "Bawaan",
     "custom": "Kustom",
     "delete": {
       "cancel": "Batal",
@@ -6542,11 +6599,6 @@
       "page": "Halaman {{number}}"
     },
     "loadFailed": "Tidak dapat memuat templat.",
-    "rename": {
-      "action": "Ubah nama",
-      "cancel": "Batal",
-      "save": "Simpan"
-    },
     "renameFailed": "Tidak dapat mengganti nama templat.",
     "sharedBy": "Dibagikan oleh {{owner}}",
     "sharedByMember": "Dibagikan oleh anggota organisasi",

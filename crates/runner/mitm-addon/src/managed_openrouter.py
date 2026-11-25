@@ -24,6 +24,7 @@ import content_encoding
 import content_length
 import http_header_syntax
 import managed_upload
+import openrouter_routing_log
 from logging_utils import NETWORK_LOG_MAX_SAFE_SIZE
 from request_authority import AuthorityValidationError, get_trusted_authority
 from usage.json_selective import JsonSelectiveExtractor, JsonValueKind, Path
@@ -177,8 +178,14 @@ def _validate_headers(flow: http.HTTPFlow, policy: PresetPolicy) -> int:
         or flow.request.path != _PATHS[policy.dialect]
     ):
         raise RequestRejectedError("endpoint")
-    for name, _value in flow.request.headers.fields:
+    for name, value in flow.request.headers.fields:
         normalized = name.decode("ascii", errors="replace").lower()
+        if (
+            normalized == openrouter_routing_log.HEADER.lower()
+            and value == b"enabled"
+            and openrouter_routing_log.is_enabled(flow)
+        ):
+            continue
         if normalized not in _HEADERS and not normalized.startswith("x-stainless-"):
             raise RequestRejectedError("header")
     media_type = http_header_syntax.single_header_value(
@@ -210,6 +217,19 @@ def _validate_headers(flow: http.HTTPFlow, policy: PresetPolicy) -> int:
     if length.kind != "valid" or length.value == 0:
         raise BodyLengthRejectedError(length)
     return length.value
+
+
+def enable_routing_log(flow: http.HTTPFlow) -> None:
+    """Opt in only for managed inference, after the upstream auth check."""
+    if (
+        flow.response is None
+        and flow.request.method == "POST"
+        and flow.request.scheme == "https"
+        and flow.request.path in _PATHS.values()
+    ):
+        authority = get_trusted_authority(flow)
+        if authority.host == HOST and authority.port == _HTTPS_PORT:
+            openrouter_routing_log.enable(flow)
 
 
 def admit_request(

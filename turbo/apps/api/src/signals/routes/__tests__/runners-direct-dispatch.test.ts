@@ -4,7 +4,7 @@ import { expect, onTestFinished, test } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { chatEventsRoutes } from "../chat-events";
-import { createBddApi } from "./helpers/api-bdd";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { completePublicClaudeRun } from "./helpers/public-native-run";
@@ -16,6 +16,9 @@ import { createDeferredPromise } from "../../utils";
 import { cronCleanupSandboxesContract } from "@okouai/api-contracts/contracts/cron";
 import { cronCleanupSandboxesRoutes } from "../cron-cleanup-sandboxes";
 import { env } from "../../../lib/env";
+import { runWssContract } from "@okouai/api-contracts/contracts/run-wss";
+import { runsRoutes } from "../runs";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 
@@ -78,18 +81,73 @@ test("delivers complete input after binding its process", async () => {
   });
 });
 
+test("bootstraps a WebSocket only for the Run owner and uses the assigned Runner", async () => {
+  const f = await launchFixture();
+  const { orgId } = f.actor;
+  if (!orgId) {
+    throw new Error("Expected an organization member");
+  }
+  const hostname = "wss-fixture.okou.app";
+  const identity = await f.api.registerDirectRunner(f.group, { hostname });
+  const run = await f.api.createThreadRun(f.actor, {
+    prompt: "Check Run WebSocket bootstrap",
+  });
+  expect(run.status).toBe("running");
+
+  const bdd = createBddApi(context);
+  const client = setupApp({ context, routes: runsRoutes })(runWssContract);
+  const mocks = createRouteMocks(context);
+  function bootstrap(actor: ApiTestUser) {
+    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+    return client.bootstrap({
+      params: { id: run.runId },
+      headers: { authorization: "Bearer clerk-session" },
+      body: undefined,
+    });
+  }
+  const outsider = bdd.user({ orgId });
+  await accept(bootstrap(outsider), [404]);
+
+  const ticket = {
+    ticket: "A".repeat(43),
+    expiresAt: new Date(now() + 30_000).toISOString(),
+  };
+  const controlUrl = `https://${hostname}/runners/${identity.runnerId}/control/runs/${run.runId}/wss-ticket`;
+  server.use(
+    http.post(controlUrl, ({ request }) => {
+      expect(request.headers.get("authorization")).toBe(
+        `Bearer vm0_official_${env("OFFICIAL_RUNNER_SECRET")}`,
+      );
+      expect(request.headers.get("x-okou-runner-heartbeat-generation")).toBe(
+        String(identity.heartbeatGeneration),
+      );
+      return HttpResponse.json(ticket);
+    }),
+  );
+  const granted = await accept(bootstrap(f.actor), [200]);
+  expect(granted.body).toStrictEqual({
+    ...ticket,
+    wssUrl: `wss://${hostname}/runners/${identity.runnerId}/sandbox/runs/${run.runId}`,
+  });
+  expect(granted.headers.get("cache-control")).toBe("no-store");
+});
+
 test.each([
-  { copies: 1, encoding: null },
-  { copies: 40_000, encoding: "gzip" },
+  { copies: 6500, encoding: null, minKiB: 0, maxKiB: 160 },
+  { copies: 12_000, encoding: "gzip", minKiB: 160, maxKiB: 256 },
+  { copies: 40_000, encoding: "gzip", minKiB: 256, maxKiB: 4096 },
 ])(
-  "sends a complete dispatch with content encoding $encoding",
-  async ({ copies, encoding }) => {
+  "sends a complete $minKiB–$maxKiB KiB dispatch with content encoding $encoding",
+  async ({ copies, encoding, minKiB, maxKiB }) => {
     const f = await launchFixture();
     const prompt = "Café review. ".repeat(copies).trim();
+    const requests: { bodyKiB: number; encoding: string | null }[] = [];
     await f.api.registerDirectRunner(f.group, {
-      reply: (envelope, _body, actualEncoding) => {
-        expect(actualEncoding).toBe(encoding);
-        expect(envelope.executionContext.prompt).toContain(prompt);
+      reply: (envelope, body, actualEncoding) => {
+        requests.push({
+          bodyKiB: Buffer.byteLength(body, "utf8") / 1024,
+          encoding: actualEncoding,
+        });
         return HttpResponse.json({
           runnerId: envelope.runnerId,
           heartbeatGeneration: envelope.heartbeatGeneration,
@@ -100,8 +158,13 @@ test.each([
     });
     const run = await f.api.createThreadRun(f.actor, { prompt });
     expect(run.status).toBe("running");
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.encoding).toBe(encoding);
+    expect(requests[0]?.bodyKiB).toBeGreaterThanOrEqual(minKiB);
+    expect(requests[0]?.bodyKiB).toBeLessThan(maxKiB);
     await expect(f.api.executionInput(run.runId)).resolves.toMatchObject({
       runId: run.runId,
+      prompt: expect.stringContaining(prompt),
     });
   },
 );
@@ -362,6 +425,35 @@ test.each(["lost", "process", "generation", "run"] as const)(
     });
   },
 );
+
+test("stops retrying an ambiguous first dispatch once the Run is cancelled", async () => {
+  const f = await launchFixture();
+  let offers = 0;
+  await f.api.registerDirectRunner(f.group, {
+    reply: async (envelope) => {
+      offers++;
+      if (offers === 1) {
+        await f.api.requestCancelRun(
+          f.actor,
+          envelope.executionContext.runId,
+          [200],
+        );
+        return HttpResponse.error();
+      }
+      return HttpResponse.json({
+        runnerId: envelope.runnerId,
+        heartbeatGeneration: envelope.heartbeatGeneration,
+        runId: envelope.executionContext.runId,
+        disposition: "accepted",
+      });
+    },
+  });
+  const run = await f.api.createThreadRun(f.actor, {
+    prompt: "cancel before retrying ambiguous delivery",
+  });
+  expect(offers).toBe(1);
+  expect(run.status).toBe("cancelled");
+});
 
 test("switches candidates only after a definite refusal", async () => {
   const f = await launchFixture();

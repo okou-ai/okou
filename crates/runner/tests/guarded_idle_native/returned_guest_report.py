@@ -4,11 +4,10 @@
 import hashlib
 import pathlib
 
-import create_cancellation_report as create
+import create_custody_report as custody
 import ext4_superblock
 import progress_report as foreground
 import pressure_report as pressure
-import observation_report as reads
 import report
 import snapshot_report as startup
 
@@ -44,10 +43,8 @@ def validate(directory):
     directory = pathlib.Path(directory)
     output, collector, terminals = report._validate_cases(directory, CASES, report.PHASES)
     policy, raw = startup.original_inputs(collector["metadata"], output["artifacts"], "native_returned_guest")
-    witnesses = {case: [] for case in CASES}
-    report.collect_witnesses(
-        directory / 'stdout.log', {PREFIX: witnesses},
-        case_matches=lambda value: value in CASES,
+    witnesses = report.collect_case_witnesses(
+        directory / 'stdout.log', PREFIX, CASES,
         invalid_message="invalid actual returned Guest witness",
     )
     identities, generations, home_uuids = set(), set(), set()
@@ -60,8 +57,14 @@ def validate(directory):
         identity = report.witness_identity(terminal[1])
         if report.witness_identity_changed(events, identity):
             raise ValueError("returned Guest lost original identity")
-        create.ordered([terminal[1]["monotonic_ns"], *(e["monotonic_ns"] for e in events[:-1]), terminal[2]["monotonic_ns"]])
-        create.ordered([terminal[4]["monotonic_ns"], events[-1]["monotonic_ns"], terminal[-1]["monotonic_ns"]])
+        custody.validate_ordered_clocks([
+            terminal[1]["monotonic_ns"],
+            *(e["monotonic_ns"] for e in events[:-1]),
+            terminal[2]["monotonic_ns"],
+        ])
+        custody.validate_ordered_clocks([
+            terminal[4]["monotonic_ns"], events[-1]["monotonic_ns"], terminal[-1]["monotonic_ns"],
+        ])
         initial, accepted, waiting, late, cleanup, cleaned, producers, closed = [e["evidence"] for e in events]
         growth = startup.BYTES+policy["replacement_preparation_bytes"]
         report.exact(initial, {"policy": policy, "inputs_sha256": hashlib.sha256(raw.encode()).hexdigest(),
@@ -87,33 +90,32 @@ def validate(directory):
         if not foreground.identifier(backing) or backing == identity[1] or backing in identities:
             raise ValueError("actual returned backing generation reused")
         identities.add(backing)
-        create.ordered([events[0]["monotonic_ns"], created["returned_ns"], *(s.get("completed_ns") for s in stages), events[1]["monotonic_ns"]])
+        custody.validate_ordered_clocks([
+            events[0]["monotonic_ns"], created["returned_ns"],
+            *(s.get("completed_ns") for s in stages), events[1]["monotonic_ns"],
+        ])
         for item in stages:
             home(item.get("home"), sandbox_id, fs_uuid)
             report.exact(item, {"stage": item["stage"], "completed_ns": item["completed_ns"], "sandbox_id": sandbox_id,
                 "backing_generation": backing, "actual_success": True, "home": item["home"]}, "successful actual Guest stage changed")
         report.exact(actual, {"created": created, "stages": stages, "cleanup": None}, "Guest cleaned before cancelled result")
-        samples = accepted.get("samples")
-        reads.samples(samples, events[0]["monotonic_ns"], events[1]["monotonic_ns"], policy)
-        fresh = pressure.sustained_ready_samples(samples, events[1]["monotonic_ns"], policy)
-        if (not pressure.integer(accepted.get("available_bytes"), policy["recovery_available_bytes"])
-                or not any(v["available_bytes"] == accepted["available_bytes"] for v in fresh)):
-            raise ValueError("actual returned Guest lacks sustained fresh Ready")
-        create.accounting(accepted.get("accounting"), growth)
+        samples = custody.validate_accepted_pressure(
+            accepted, events[0]["monotonic_ns"], events[1]["monotonic_ns"], policy,
+            "actual returned Guest lacks sustained fresh Ready",
+        )
+        custody.validate_accounting(accepted.get("accounting"), growth)
         report.exact(accepted, {"actual": actual, "samples": samples, "available_bytes": accepted["available_bytes"],
             "allocated": [4,8192,2], "accounting": accepted["accounting"], "release_byte_withheld": True}, "accepted Guest lost full custody")
-        create.ordered([events[1]["monotonic_ns"], *(waiting.get(k) for k in ("cancelled_ns", "first_dropped_ns", "second_pending_ns", "foreground_acquired_ns")), events[2]["monotonic_ns"]])
-        create.accounting(waiting.get("accounting"), growth)
-        foreground.observer(waiting.get("observer"), waiting["foreground_acquired_ns"], events[2]["monotonic_ns"])
-        generation = foreground.heartbeat(waiting.get("heartbeat"), 1, waiting["foreground_acquired_ns"], events[2]["monotonic_ns"], allocated=(4,8192))
-        if generation in generations:
-            raise ValueError("returned heartbeat generation replayed")
-        generations.add(generation)
-        report.exact(waiting, {**{k: waiting[k] for k in ("cancelled_ns", "first_dropped_ns", "second_pending_ns", "foreground_acquired_ns", "accounting", "heartbeat", "observer")},
-            "first_pending": True, "first_dropped": True, "second_pending": True, "release_byte_withheld": True,
-            "allocated": [4,8192,2]}, "cancelled Guest observer custody changed")
-        create.ordered([events[2]["monotonic_ns"], late.get("released_ns"), late.get("joined_ns"), events[3]["monotonic_ns"]])
-        create.accounting(late.get("accounting"), growth, True)
+        generation = custody.validate_cancel_wait(
+            waiting, events[1]["monotonic_ns"], events[2]["monotonic_ns"], growth, generations,
+            replay_message="returned heartbeat generation replayed",
+            receipt_message="cancelled Guest observer custody changed",
+        )
+        custody.validate_ordered_clocks([
+            events[2]["monotonic_ns"], late.get("released_ns"), late.get("joined_ns"),
+            events[3]["monotonic_ns"],
+        ])
+        custody.validate_accounting(late.get("accounting"), growth, uncertain=True)
         report.exact(late, {**{k: late[k] for k in ("released_ns", "joined_ns", "accounting")},
             "resource_id": sandbox_id, "prepared": stage == "park", "allocated": [4,8192,2]}, "late result dropped actual Guest/full lease")
         cleanup_actual = cleanup.get("actual", {})
@@ -132,23 +134,28 @@ def validate(directory):
             "workspace": str(path.parent), "workspace_absent": True, "last_home": completion["last_home"],
             "cleanup_ns": completion.get("cleanup_ns"), "allocated": [4,8192,2], "accounting": clean_accounting}, "actual cleanup lost exact backing/workspace/full leases")
         report.exact(cleanup_actual, {"created": created, "stages": stages, "cleanup": completion}, "cleanup switched actual Guest")
-        create.ordered([events[3]["monotonic_ns"], completion["cleanup_ns"], cleanup.get("pending_ns"), events[4]["monotonic_ns"]])
+        custody.validate_ordered_clocks([
+            events[3]["monotonic_ns"], completion["cleanup_ns"], cleanup.get("pending_ns"),
+            events[4]["monotonic_ns"],
+        ])
         foreground.observer(cleanup.get("observer"), cleanup["pending_ns"], events[4]["monotonic_ns"])
         if foreground.heartbeat(cleanup.get("heartbeat"), 2, cleanup["pending_ns"], events[4]["monotonic_ns"], allocated=(4,8192)) != generation:
             raise ValueError("cleanup heartbeat generation changed")
         report.exact(cleanup, {**{k: cleanup[k] for k in ("actual", "pending_ns", "heartbeat", "observer")},
             "cleanup_pending": True, "release_byte_withheld": True,
             "allocated": [4,8192,2], "accounting": clean_accounting}, "required cleanup custody/wait changed")
-        create.ordered([events[4]["monotonic_ns"], cleaned.get("release_ns"), cleaned.get("joined_ns"), events[5]["monotonic_ns"]])
-        create.accounting(cleaned.get("accounting"), growth, True)
+        custody.validate_ordered_clocks([
+            events[4]["monotonic_ns"], cleaned.get("release_ns"), cleaned.get("joined_ns"),
+            events[5]["monotonic_ns"],
+        ])
+        custody.validate_accounting(cleaned.get("accounting"), growth, uncertain=True)
         report.exact(cleaned, {**{k: cleaned[k] for k in ("release_ns", "joined_ns", "accounting")}, "resource_id": sandbox_id,
             "positive_backing_wait": True, "blank_count": 0, "allocated": [2,4096,1]}, "late cleanup failed to join before lease release")
-        create.accounting(producers.get("accounting"), growth, True)
+        custody.validate_accounting(producers.get("accounting"), growth, uncertain=True)
         report.exact(producers, {"preparation_joined": True, "pressure_stopped": True, "heartbeat_joined": True,
             "provider_joined": True, "peer_joined": True, "snapshot_reverified": True,
             "allocated": [2,4096,1], "accounting": producers["accounting"]}, "returned Guest dependencies not joined before original saving")
-        report.exact(closed, {"registered_operations": 1, "tracked_tasks": 0, "started": 0, "uncertain": 1,
-            "ordinary_growth_bytes": growth, "cleanup_growth_bytes": 0, "closed": True, "allocated": [0,0,0]}, "closed returned Guest P2 uncertainty discarded")
+        custody.validate_closed_accounting(closed, growth, "closed returned Guest P2 uncertainty discarded")
         output["cases"][case]["returned_guest"] = events
     output.update(format="native-returned-guest-report-v2", native_returned_guest_complete=True,
         checkpoint_models_stalled_io=False,

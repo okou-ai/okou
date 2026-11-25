@@ -162,6 +162,16 @@ describe("personal paid-tool controls through the CLI entry point", () => {
     expect(output).toContain("## Core Invariants");
     expect(output).not.toContain("--provider built-in");
     expect(output).not.toContain("Settings › Built-in tools");
+    const token = capturedRunToken([]);
+    vi.stubEnv("OKOU_TOKEN", token);
+    let featureSwitchReads = 0;
+    server.use(
+      http.get("http://localhost:3000/api/feature-switches", ({ request }) => {
+        featureSwitchReads += 1;
+        expect(request.headers.get("authorization")).toBe(`Bearer ${token}`);
+        return HttpResponse.json({ switches: {}, effectiveSwitches: {} });
+      }),
+    );
     for (const args of [
       ["presentation", "--prompt", "A roadmap"],
       [
@@ -174,10 +184,14 @@ describe("personal paid-tool controls through the CLI entry point", () => {
       ["website", "--prompt", "A product site"],
     ]) {
       await run(["generate", ...args]);
+      expect(output).toContain(
+        args[0] === "presentation" ? "A roadmap" : "A product site",
+      );
       expect(output).not.toContain("Image workflow:");
       expect(output).not.toContain("okou generate image-batch");
       expect(output).not.toContain("--provider built-in");
     }
+    expect(featureSwitchReads).toBe(2);
     expect(requests).toEqual([]);
   });
 

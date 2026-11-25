@@ -1,0 +1,56 @@
+{
+  "mode": "terminal",
+  "before": {
+    "body": "Browser view unavailable\n\nThe browser does not support this operation.\n\nReconnect",
+    "inputEnabled": false,
+    "at": 1795486355876
+  },
+  "after": {
+    "body": "Browser view unavailable\n\nThe browser does not support this operation.\n\nReconnect",
+    "inputEnabled": false,
+    "at": 1795486386815
+  },
+  "elapsed": 31114,
+  "admissionsBeforeCleanup": [
+    {
+      "kind": "provider admission",
+      "at": 1795486354863,
+      "ordinal": 1
+    },
+    {
+      "kind": "retirement requested",
+      "at": 1795486355206,
+      "sessionId": "2CE60DCA185DB322582E8868C646C118"
+    },
+    {
+      "kind": "Chrome detached",
+      "at": 1795486355208,
+      "sessionId": "2CE60DCA185DB322582E8868C646C118"
+    },
+    {
+      "kind": "peer held",
+      "at": 1795486355701,
+      "sessionId": "A9699AAD198EF1E5FDE64EBAC53D305C"
+    },
+    {
+      "kind": "terminal failure",
+      "at": 1795486355701,
+      "sessionId": "A9699AAD198EF1E5FDE64EBAC53D305C"
+    },
+    {
+      "kind": "retirement requested",
+      "at": 1795486355708,
+      "sessionId": "A9699AAD198EF1E5FDE64EBAC53D305C"
+    },
+    {
+      "kind": "Chrome detached",
+      "at": 1795486355714,
+      "sessionId": "A9699AAD198EF1E5FDE64EBAC53D305C"
+    },
+    {
+      "kind": "admission closed",
+      "at": 1795486355828,
+      "ordinal": 1
+    }
+  ]
+}

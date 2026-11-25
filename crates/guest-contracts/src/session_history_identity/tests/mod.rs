@@ -19,11 +19,15 @@ fn cli_framework_projects_to_session_history_wire_values() {
             "pi",
         ),
     ] {
-        let projected = SessionHistoryFramework::from(framework);
+        let projected = SessionHistoryFramework::try_from(framework).unwrap();
 
         assert_eq!(projected, expected);
         assert_eq!(projected.as_str(), wire_value);
     }
+    assert_eq!(
+        SessionHistoryFramework::try_from(crate::env::CliFramework::Antigravity),
+        Err(SessionHistoryIdentityError::InvalidFramework)
+    );
 }
 
 fn valid_source() -> SessionHistorySourceRef {

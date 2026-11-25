@@ -28,12 +28,14 @@
     <string name="artifact_empty">अभी कोई आर्टिफ़ैक्ट नहीं है</string>
     <string name="artifact_empty_type">इस प्रकार का कोई आर्टिफ़ैक्ट नहीं है</string>
     <string name="artifact_no_matches">कोई मेल खाता आर्टिफ़ैक्ट नहीं मिला</string>
+    <string name="artifact_clear_keyword">खोज साफ़ करें</string>
     <string name="artifact_show_all">सभी दिखाएँ</string>
-    <string name="artifact_offline_cached">ऑफ़लाइन सेव किए गए परिणाम दिख रहे हैं</string>
-    <string name="artifact_offline_catalog">आर्टिफ़ैक्ट देखने के लिए इंटरनेट से कनेक्ट करें</string>
+    <string name="artifact_catalog_load_failed">फ़िलहाल आर्टिफ़ैक्ट लोड नहीं हो पा रहे हैं</string>
+    <string name="artifact_catalog_refresh_failed">फ़िलहाल अपडेट नहीं हो पा रहा है। लोड किए गए आर्टिफ़ैक्ट दिख रहे हैं।</string>
+    <string name="artifact_catalog_page_failed">फ़िलहाल और आर्टिफ़ैक्ट लोड नहीं हो पा रहे हैं</string>
+    <string name="chat_resources_load_failed">फ़िलहाल चैट संसाधन लोड नहीं हो पा रहे हैं</string>
+    <string name="chat_resources_syncing">चैट संसाधन सिंक हो रहे हैं</string>
     <string name="artifact_access_denied">आपके पास इस आर्टिफ़ैक्ट का ऐक्सेस नहीं है</string>
-    <string name="artifact_missing">यह आर्टिफ़ैक्ट अब उपलब्ध नहीं है</string>
-    <string name="artifact_unavailable">अस्थायी रूप से उपलब्ध नहीं है</string>
     <string name="artifact_preview_unsupported">इस फ़ाइल का पूर्वावलोकन उपलब्ध नहीं है</string>
     <string name="artifact_preview_unavailable">अभी पूर्वावलोकन लोड नहीं हो पा रहा है</string>
     <string name="artifact_preview_source_unavailable">स्रोत उपलब्ध नहीं है</string>
@@ -48,4 +50,18 @@
     <string name="artifact_open_website">ब्राउज़र में खोलें</string>
     <string name="artifact_browser_unavailable">ब्राउज़र नहीं खुल सका</string>
     <string name="artifact_play_media">मीडिया प्लेबैक</string>
+    <string name="artifact_play">चलाएँ</string>
+    <string name="artifact_catalog_access_denied">आपके पास इस आर्टिफ़ैक्ट कैटलॉग का ऐक्सेस नहीं है</string>
+    <string name="artifact_catalog_missing">यह आर्टिफ़ैक्ट कैटलॉग अब उपलब्ध नहीं है</string>
+    <string name="chat_resources_related">संबंधित चैट</string>
+    <string name="chat_resources_related_load_failed">फ़िलहाल संबंधित चैट लोड नहीं हो पा रही हैं</string>
+    <string name="chat_resources_related_access_lost">संबंधित चैट अब उपलब्ध नहीं हैं</string>
+    <string name="chat_resources_origin">स्रोत</string>
+    <string name="chat_resources_workflows">वर्कफ़्लो और ऑटोमेशन</string>
+    <string name="chat_resources_workflows_load_failed">फ़िलहाल संबंधित वर्कफ़्लो लोड नहीं हो सके</string>
+    <string name="chat_resources_wechat">WeChat</string>
+    <string name="chat_resources_feishu">Feishu</string>
+    <string name="chat_resources_messages">मैसेज</string>
+    <string name="artifact_preview_loading">प्रीव्यू लोड हो रहा है…</string>
+    <string name="artifact_image_unavailable">चित्र उपलब्ध नहीं है</string>
 </resources>

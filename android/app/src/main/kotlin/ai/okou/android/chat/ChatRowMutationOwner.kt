@@ -25,6 +25,7 @@ internal class ChatRowMutationOwner(
         val connectionFailed: Boolean,
         val alreadySatisfied: Boolean,
         val recoverByTarget: Boolean,
+        val renameAcknowledged: Boolean,
     )
 
     class Confirmation(val failure: ChatRowActionFailure?, val ownWriteConfirmed: Boolean)
@@ -43,6 +44,7 @@ internal class ChatRowMutationOwner(
         pinGroup: ChatListGroup?,
         index: Int,
         state: ChatListUiState,
+        eventId: String?,
     ): List<ChatRowEdit> {
         val orders =
             when (action) {
@@ -63,7 +65,7 @@ internal class ChatRowMutationOwner(
                     return listOf(
                         ChatRowEdit(threadId, newProjectOperationId(wallMillis()), action, value),
                     )
-                else -> return listOf(ChatRowEdit(threadId, newEventId(), action, value))
+                else -> return listOf(ChatRowEdit(threadId, eventId ?: newEventId(), action, value))
             }
         return orders.map { ChatRowEdit(it.threadId, newEventId(), action, it.pinOrder) }
     }
@@ -78,6 +80,7 @@ internal class ChatRowMutationOwner(
         var targetMissing = false
         var connectionFailed = false
         var alreadySatisfied = false
+        var renameAcknowledged = false
         val retries = if (optimistic && action.recoversInBackground) ChatWriteRetries() else null
         try {
             requireCurrent()
@@ -90,8 +93,14 @@ internal class ChatRowMutationOwner(
             for (edit in edits.asReversed()) {
                 requireCurrent()
                 submittedCount++
-                if (retries == null) write(edit)
-                else
+                if (retries == null) {
+                    write(edit)
+                    if (action == ChatRowAction.Rename) {
+                        requireCurrent()
+                        renameAcknowledged = true
+                        if (projection.acknowledgeRename(edit)) publishRows()
+                    }
+                } else
                     retries.run { retrying ->
                         requireCurrent()
                         if (retrying && projection.settleConfirmedTargets(listOf(edit))) {
@@ -121,6 +130,7 @@ internal class ChatRowMutationOwner(
             connectionFailed,
             alreadySatisfied,
             retries != null,
+            renameAcknowledged,
         )
     }
 
@@ -178,6 +188,7 @@ internal class ChatRowMutationOwner(
             submission.recoverByTarget && projection.settleConfirmedTargets(edits)
         if (confirmedElsewhere) publishRows()
         val settled = projection.confirmEdits(edits)
+        if (settled && submission.action == ChatRowAction.Rename) publishRows()
         // A move that never reached its requested rank write already reported failure.
         // Its attempted rank edits still need event reconciliation.
         return if (settled || rollback != null)
@@ -188,6 +199,10 @@ internal class ChatRowMutationOwner(
                     submission.action,
                     edits = edits,
                     conversationId = conversationId,
+                    renameThreadId =
+                        edits.singleOrNull()?.threadId.takeIf {
+                            submission.action == ChatRowAction.Rename
+                        },
                 ),
                 false,
             )

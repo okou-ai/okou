@@ -130,9 +130,6 @@ export const closeChatThreadEmojiMenu$ = command(({ set }) => {
 // ---------------------------------------------------------------------------
 // Three-column search dialog state
 // ---------------------------------------------------------------------------
-export type ThreeColumnSearchFilter =
-  "all" | "chats" | "messages" | "workflows" | "artifacts";
-
 const internalThreeColumnSearchOpen$ = state(false);
 export const threeColumnSearchOpen$ = computed((get) => {
   return get(internalThreeColumnSearchOpen$);
@@ -145,20 +142,9 @@ export const setThreeColumnSearchOpen$ = command(({ set }, open: boolean) => {
   set(internalThreeColumnSearchOpen$, open);
 });
 
-const internalThreeColumnSearchFilter$ = state<ThreeColumnSearchFilter>("all");
-export const threeColumnSearchFilter$ = computed((get) => {
-  return get(internalThreeColumnSearchFilter$);
-});
-export const setThreeColumnSearchFilter$ = command(
-  ({ set }, filter: ThreeColumnSearchFilter) => {
-    set(internalThreeColumnSearchFilter$, filter);
-  },
-);
-
 export const openThreeColumnSearchDialog$ = command(({ set }) => {
   set(hideKeyboardShortcutHints$);
   set(clearChatListQuery$);
-  set(internalThreeColumnSearchFilter$, "all");
   set(internalThreeColumnSearchOpen$, true);
 });
 

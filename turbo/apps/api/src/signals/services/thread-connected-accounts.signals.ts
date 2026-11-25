@@ -961,7 +961,6 @@ function customConnectorSourceSelectionRows(
   }
   const base = {
     id: source.sourceId,
-    updatedAt: connection.updatedAt,
     customConnectorId: source.customConnectorId,
     storedAuthMethod: connection.authMethod,
     storedStorageVersion: connection.storageVersion,
@@ -976,7 +975,7 @@ function customConnectorSourceSelectionRows(
     hasRefreshToken: snapshot.credentialNames.includes(
       CUSTOM_CONNECTOR_OAUTH_REFRESH_TOKEN_SECRET_NAME,
     ),
-    automaticOAuthBindingId: binding.automaticOAuthBindingId,
+    hasAutomaticOAuthBinding: binding.hasAutomaticOAuthBinding,
   };
   // Saved values only count for a compatible auth method at the exact current
   // definition storage version; secrets never apply to unauthenticated access.

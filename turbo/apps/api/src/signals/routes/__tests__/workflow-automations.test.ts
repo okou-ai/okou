@@ -4348,7 +4348,38 @@ describe("okou workflow automations", () => {
   });
 
   it("continues workflow run history across a timestamp shared by two runs", async () => {
-    const owned = await publicChatActor(context);
+    let unfinishedThreadId: string | undefined;
+    const owned = await publicChatActor(context, {
+      runner: {
+        reply: ({ runnerId, heartbeatGeneration, executionContext }) => {
+          const { runId, sandboxToken } = executionContext;
+          // The next run can dispatch before the test observes it.
+          owned.rememberExecution(runId, sandboxToken);
+          return HttpResponse.json({
+            runnerId,
+            heartbeatGeneration,
+            runId,
+            disposition: "accepted",
+          });
+        },
+      },
+      beforeRuns: async () => {
+        if (!unfinishedThreadId) {
+          return;
+        }
+        // An interrupted loop can leave an input queued behind an active run.
+        await accept(
+          setupApp({ context, routes: chatThreadDeleteRoutes })(
+            chatThreadByIdContract,
+          ).delete({
+            headers: authHeaders(),
+            params: { id: unfinishedThreadId },
+          }),
+          [204],
+        );
+        await flushWaitUntilForTest();
+      },
+    });
     await owned.run(async () => {
       const workflowId = await wf.createWorkflow(owned.actor, {
         name: WORKFLOW_NAME,
@@ -4373,20 +4404,29 @@ describe("okou workflow automations", () => {
       const pageSize = 30;
       const runIds: string[] = [];
       const automations = automationsClient();
-      for (let index = 0; index <= pageSize; index += 1) {
-        // A different rule can run at the same instant without deduplicating.
-        mockNow(startedAt + Math.max(0, index - 1));
-        await accept(
+      async function enqueueRun(automationId: string) {
+        const response = await accept(
           automations.run({
             headers: authHeaders(),
-            params: { id: index === 1 ? secondRule : primaryRule },
+            params: { id: automationId },
           }),
           [201],
         );
+        return response.body.chatThreadId;
+      }
+      mockNow(startedAt);
+      unfinishedThreadId = await enqueueRun(primaryRule);
+      for (let index = 0; index <= pageSize; index += 1) {
         const { runId, sandboxToken } = await runs.nextReceivedExecution(
           owned.runnerGroup,
         );
-        owned.rememberExecution(runId, sandboxToken);
+        if (index < pageSize) {
+          // The first two rules can run at the same instant without deduplicating.
+          // Queue the successor before completion so releasing the slot can
+          // dispatch it while the previous run's terminal callback finishes.
+          mockNow(startedAt + index);
+          await enqueueRun(index === 0 ? secondRule : primaryRule);
+        }
         await webhookCallbacks.requestAgentComplete(
           { runId, exitCode: 1, error: "Test run failed" },
           { authorization: `Bearer ${sandboxToken}` },
@@ -4397,6 +4437,7 @@ describe("okou workflow automations", () => {
       // The completion response waits for the terminal chat callback.
       // Observing the next dispatch already drains tracked background work.
       await flushWaitUntilForTest();
+      unfinishedThreadId = undefined;
 
       const tiedRunIds = runIds.slice(0, 2).sort().reverse();
       const expected = [...runIds.slice(2).reverse(), ...tiedRunIds];

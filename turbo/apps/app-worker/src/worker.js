@@ -5,6 +5,7 @@ import { artifactOgMetadataSchema } from "@okouai/api-contracts/contracts/artifa
 import { HOSTED_SITE_ACCESS_PATH } from "@okouai/api-contracts/contracts/hosted-site-access";
 
 import { isBoundPublicPreview } from "./preview-origin.js";
+import { nativeConnectorAuthorizationResponse } from "./native-connector-authorization.js";
 
 import posthogClientMetadata from "../assets/posthog-metadata.json" with { type: "json" };
 
@@ -816,7 +817,10 @@ function withAppHeaders(response, requestUrl) {
   for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
     headers.set(name, value);
   }
-  if (requestUrl.pathname === COPPER_CALLBACK_PATH) {
+  if (
+    requestUrl.pathname === COPPER_CALLBACK_PATH ||
+    requestUrl.pathname === "/native/connector-authorization"
+  ) {
     headers.set("Cache-Control", "no-store");
     headers.set("CDN-Cache-Control", "no-store");
     headers.set("Cloudflare-CDN-Cache-Control", "no-store");
@@ -1017,6 +1021,11 @@ async function handleRequest(
   clerkClientFactory,
   apiFetcher,
 ) {
+  const nativeResponse = nativeConnectorAuthorizationResponse(
+    request,
+    requestUrl,
+  );
+  if (nativeResponse) return nativeResponse;
   if (
     request.method === "GET" &&
     (requestUrl.pathname.startsWith("/artifacts/") ||

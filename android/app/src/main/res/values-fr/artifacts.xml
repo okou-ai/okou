@@ -28,12 +28,14 @@
     <string name="artifact_empty">Aucun artefact pour le moment</string>
     <string name="artifact_empty_type">Aucun artefact de ce type</string>
     <string name="artifact_no_matches">Aucun artefact correspondant</string>
+    <string name="artifact_clear_keyword">Effacer la recherche</string>
     <string name="artifact_show_all">Tout afficher</string>
-    <string name="artifact_offline_cached">Affichage des résultats enregistrés hors connexion</string>
-    <string name="artifact_offline_catalog">Connectez-vous pour voir les artefacts</string>
+    <string name="artifact_catalog_load_failed">Chargement des artefacts temporairement indisponible</string>
+    <string name="artifact_catalog_refresh_failed">Mise à jour temporairement indisponible. Les artefacts déjà chargés restent visibles.</string>
+    <string name="artifact_catalog_page_failed">Chargement des artefacts suivants temporairement indisponible</string>
+    <string name="chat_resources_load_failed">Chargement des ressources de la conversation temporairement indisponible</string>
+    <string name="chat_resources_syncing">Synchronisation des ressources de la conversation</string>
     <string name="artifact_access_denied">Vous n’avez pas accès à cet artefact</string>
-    <string name="artifact_missing">Cet artefact n’est plus disponible</string>
-    <string name="artifact_unavailable">Temporairement indisponible</string>
     <string name="artifact_preview_unsupported">Aucun aperçu disponible pour ce fichier</string>
     <string name="artifact_preview_unavailable">Impossible de charger l’aperçu pour le moment</string>
     <string name="artifact_preview_source_unavailable">Source indisponible</string>
@@ -48,4 +50,18 @@
     <string name="artifact_open_website">Ouvrir dans le navigateur</string>
     <string name="artifact_browser_unavailable">Impossible d’ouvrir le navigateur</string>
     <string name="artifact_play_media">Lecture multimédia</string>
+    <string name="artifact_play">Lire</string>
+    <string name="artifact_catalog_access_denied">Vous n’avez pas accès à ce catalogue d’artefacts</string>
+    <string name="artifact_catalog_missing">Ce catalogue d’artefacts n’est plus disponible</string>
+    <string name="chat_resources_related">Conversations associées</string>
+    <string name="chat_resources_related_load_failed">Chargement des conversations associées temporairement indisponible</string>
+    <string name="chat_resources_related_access_lost">Les conversations associées ne sont plus disponibles</string>
+    <string name="chat_resources_origin">Origine</string>
+    <string name="chat_resources_workflows">Workflows et automatisations</string>
+    <string name="chat_resources_workflows_load_failed">Impossible de charger les workflows associés pour le moment</string>
+    <string name="chat_resources_wechat">WeChat</string>
+    <string name="chat_resources_feishu">Feishu</string>
+    <string name="chat_resources_messages">Messages</string>
+    <string name="artifact_preview_loading">Chargement de l’aperçu…</string>
+    <string name="artifact_image_unavailable">Image indisponible</string>
 </resources>

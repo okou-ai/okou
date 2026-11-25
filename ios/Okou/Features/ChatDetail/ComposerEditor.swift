@@ -205,6 +205,11 @@ final class ComposerEditor {
     return input?.blockID
   }
 
+  func acceptFollowup(_ prompt: String) {
+    guard let view, view.followup == prompt else { return }
+    view.acceptFollowup()
+  }
+
   func selectOrAppendText(_ value: String) {
     let prompt = value.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !prompt.isEmpty else { return }
@@ -231,11 +236,6 @@ final class ComposerEditor {
     let lastParagraph = text.components(separatedBy: "\n").last ?? ""
     let separator = lastParagraph.trimmingCharacters(in: .whitespaces).isEmpty ? "" : "\n"
     view.insertText(separator + prompt)
-    // UIKit can retain the empty keyboard's disabled Send key after this edit.
-    // Ordinary typing keeps its native input session.
-    if view.returnKeyPreference == .send {
-      view.requestReturnKeyReload(restartInputSession: true)
-    }
     target.focusRequested()
     view.scrollRangeToVisible(view.selectedRange)
   }

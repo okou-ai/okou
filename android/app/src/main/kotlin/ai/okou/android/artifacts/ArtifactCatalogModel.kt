@@ -2,7 +2,12 @@ package ai.okou.android.artifacts
 
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.ResponseLimitExceeded
+import ai.okou.android.api.finiteReadRetryDelays
+import ai.okou.android.chat.ChatCacheStore
+import ai.okou.android.chat.ChatChanges
+import ai.okou.android.contentReadStaleDelayMillis
 import android.graphics.Bitmap
+import android.util.Log
 import android.util.LruCache
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -10,17 +15,18 @@ import java.io.IOException
 import java.io.OutputStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-
-internal const val ArtifactRetryDelayMillis = 3_000L
-private const val ArtifactRetryLimit = 2
 
 internal enum class ArtifactProblem {
     Denied,
@@ -38,6 +44,9 @@ internal data class ArtifactPreviewState(
     val content: ArtifactContent? = null,
     val problem: ArtifactProblem? = null,
 ) {
+    val isImage: Boolean
+        get() = item?.kind == ArtifactKind.Image || id.startsWith(ExternalImagePreviewPrefix)
+
     val isHosted: Boolean
         get() =
             info?.resource !is ArtifactResource.File &&
@@ -56,18 +65,34 @@ internal enum class ArtifactSaveResult {
 
 internal enum class ArtifactCatalogRead {
     Refreshing,
+    SyncingStale,
     More,
 }
 
+internal enum class ArtifactCatalogFailure {
+    Initial,
+    Refresh,
+    More,
+    Denied,
+    Missing,
+    ChatUnavailable,
+}
+
+internal data class ConfirmedArtifactCatalog(val page: ArtifactPage, val confirmedAt: Long)
+
 internal data class ArtifactCatalogState(
     val query: ArtifactQuery = ArtifactQuery(),
-    val page: ArtifactPage? = null,
-    val offline: Boolean = false,
-    val problem: ArtifactProblem? = null,
+    val catalog: ConfirmedArtifactCatalog? = null,
+    val failedRead: ArtifactCatalogFailure? = null,
     val reading: ArtifactCatalogRead? = null,
+    val relatedChats: RelatedChatResourcesState = RelatedChatResourcesState(),
+    val workflows: WorkflowResourcesState = WorkflowResourcesState(),
     val preview: ArtifactPreviewState? = null,
     val saveResult: Pair<String, ArtifactSaveResult>? = null,
 ) {
+    val page: ArtifactPage?
+        get() = catalog?.page
+
     val saving: Boolean
         get() = saveResult?.second == ArtifactSaveResult.Saving
 }
@@ -76,40 +101,57 @@ internal data class ArtifactCatalogState(
 class ArtifactCatalogModel
 internal constructor(
     private val service: ArtifactService,
-    connectivity: Flow<Boolean>,
+    private val cache: ChatCacheStore.Lease? = null,
+    catalogChanges: Flow<ChatChanges> = emptyFlow(),
+    unavailableChat: Flow<String?> = emptyFlow(),
+    private val wallMillis: () -> Long = System::currentTimeMillis,
+    private val onCatalogDenied: () -> Unit = {},
     private val sessionFailure: (Exception) -> Unit,
 ) : ViewModel() {
     private val mutable = MutableStateFlow(ArtifactCatalogState())
     internal val state = mutable.asStateFlow()
-    private val catalogs = LinkedHashMap<ArtifactQuery, ArtifactPage>(8, 0.75f, true)
+    private val catalogs = LinkedHashMap<ArtifactQuery, ConfirmedArtifactCatalog>(8, 0.75f, true)
     private val previews = LinkedHashMap<String, ArtifactPreviewState>(3, 0.75f, true)
     private val thumbnails = LruCache<String, Bitmap>(40)
+    internal val inlineImages =
+        InlineArtifactImages(service, viewModelScope) { error ->
+            val failure = problem(error)
+            if (error is ApiFailure.Unauthenticated) ArtifactProblem.Denied else failure
+        }
     private var active = false
     private var catalogVisible = false
     private var catalogJob: Job? = null
+    private var catalogWrite: Job? = null
+    private var relatedRead: Job? = null
+    private var workflowRead: Job? = null
+    private var workflowRefreshPending = false
+    private var workflowReferences: Pair<String, Set<String>>? = null
     private var previewJob: Job? = null
+    private var missingThread: String? = null
 
     init {
         viewModelScope.launch {
-            connectivity.collect { online ->
-                val current = mutable.value
-                if (online == !current.offline) return@collect
-                val preview = current.preview
-                mutable.value =
-                    current.copy(
-                        offline = !online,
-                        reading = null,
-                        page = current.page ?: if (online) null else cachedResults(current.query),
-                        preview =
-                            if (!online && preview?.isHosted == true) preview.copy(content = null)
-                            else preview,
-                    )
-                if (online && active) {
+            catalogChanges.collect { changes ->
+                if (changes.resync) inlineImages.invalidate()
+                else if (changes.artifactThreads.isNotEmpty())
+                    inlineImages.invalidate(changes.artifactThreads)
+                val threadId = mutable.value.query.chatThreadId ?: return@collect
+                if (catalogVisible && (changes.resync || threadId in changes.artifactThreads)) {
                     readCatalog()
                     mutable.value.preview?.let { readPreview(it.id) }
-                } else if (!online) {
-                    catalogJob?.cancel()
-                    previewJob?.cancel()
+                }
+                if (changes.resync || changes.list || threadId in changes.messageThreads) {
+                    refreshRelatedChats()
+                }
+                if (changes.resync) refreshWorkflows()
+            }
+        }
+        viewModelScope.launch {
+            unavailableChat.collect { threadId ->
+                missingThread = threadId
+                if (threadId != null) {
+                    inlineImages.invalidate(setOf(threadId))
+                    evictChatCatalog(threadId)
                 }
             }
         }
@@ -126,27 +168,76 @@ internal constructor(
         if (visible) {
             if (catalogVisible) {
                 if (currentQuery != mutable.value.query) query(currentQuery, debounce = false)
-                else readCatalog()
+                else {
+                    readCatalog(append = mutable.value.failedRead == ArtifactCatalogFailure.More)
+                    refreshRelatedChats()
+                    refreshWorkflows()
+                }
             }
             mutable.value.preview?.let { readPreview(it.id) }
         } else {
             catalogJob?.cancel()
             previewJob?.cancel()
-            mutable.update { it.copy(reading = null) }
+            relatedRead?.cancel()
+            cancelWorkflowRefresh()
+            mutable.update {
+                it.copy(
+                    reading = null,
+                    relatedChats = it.relatedChats.copy(syncingStale = false),
+                    workflows = it.workflows.copy(checking = false, syncingStale = false),
+                )
+            }
         }
     }
 
     internal fun query(next: ArtifactQuery, debounce: Boolean) {
         if (next == mutable.value.query) return
         catalogJob?.cancel()
-        val cached = catalogs[next] ?: if (mutable.value.offline) cachedResults(next) else null
-        mutable.update { it.copy(query = next, page = cached, problem = null, reading = null) }
+        relatedRead?.cancel()
+        cancelWorkflowRefresh()
+        mutable.update {
+            it.copy(
+                query = next,
+                catalog = catalogs[next],
+                failedRead = null,
+                reading = null,
+                relatedChats = RelatedChatResourcesState(),
+                workflows = WorkflowResourcesState(),
+            )
+        }
         readCatalog(debounce = debounce)
+        refreshRelatedChats()
+        refreshWorkflows()
+    }
+
+    internal fun relatedWorkflowIds(threadId: String, ids: Set<String>) {
+        val previous = workflowReferences
+        if (previous?.first == threadId && previous.second == ids) return
+        workflowReferences = threadId to ids
+        cancelWorkflowRefresh()
+        if (mutable.value.query.chatThreadId == threadId) {
+            mutable.update {
+                it.copy(
+                    workflows =
+                        WorkflowResourcesState(
+                            confirmed =
+                                it.workflows.confirmed.takeIf {
+                                    previous?.first == threadId && ids.isNotEmpty()
+                                },
+                        ),
+                )
+            }
+        }
+        refreshWorkflows()
     }
 
     internal fun loadNext() {
         val current = mutable.value
-        if (current.reading != null || current.problem != null || current.page?.nextCursor == null)
+        if (
+            current.reading != null ||
+                current.failedRead != null ||
+                current.page?.nextCursor == null
+        )
             return
         readCatalog(append = true)
     }
@@ -170,13 +261,15 @@ internal constructor(
         if (id != null) readPreview(id)
     }
 
-    internal suspend fun thumbnail(url: String, offline: Boolean): Bitmap? {
+    internal fun retainedExternalImageId(): String? =
+        mutable.value.preview?.id?.takeIf { it.startsWith(ExternalImagePreviewPrefix) }
+
+    internal suspend fun thumbnail(url: String): Bitmap? {
         thumbnails.get(url)?.let {
             return it
         }
-        if (offline) return null
         return try {
-            service.thumbnail(url)?.also { thumbnails.put(url, it) }
+            retryArtifactOperation { service.thumbnail(url) }?.also { thumbnails.put(url, it) }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
@@ -235,97 +328,387 @@ internal constructor(
         }
     }
 
-    private fun readCatalog(append: Boolean = false, debounce: Boolean = false) {
-        val current = mutable.value
-        if (!catalogVisible || current.offline) return
-        catalogJob?.cancel()
-        val query = current.query
-        val cursor = if (append) current.page?.nextCursor ?: return else null
-        mutable.update {
-            it.copy(
-                problem = null,
-                reading = if (append) ArtifactCatalogRead.More else ArtifactCatalogRead.Refreshing,
-            )
-        }
-        catalogJob = viewModelScope.launch {
-            if (debounce) delay(250)
-            retryRead { attempt ->
-                try {
-                    val targetSize = if (append) 0 else current.page?.items?.size ?: 0
-                    val fresh = loadPages(query, cursor, targetSize)
-                    val merged =
-                        if (append) {
-                            val existing = checkNotNull(current.page)
-                            ArtifactPage(
-                                (existing.items + fresh.items).distinctBy { it.id },
-                                fresh.nextCursor,
-                            )
-                        } else fresh
-                    currentCoroutineContext().ensureActive()
-                    catalogs.remember(query, merged, 8)
-                    mutable.update { it.copy(page = merged, problem = null, reading = null) }
-                    false
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (error: Exception) {
-                    val problem = problem(error)
-                    currentCoroutineContext().ensureActive()
-                    val denied = problem == ArtifactProblem.Denied
-                    if (denied || problem == ArtifactProblem.Missing) {
-                        catalogs.clear()
+    private fun refreshRelatedChats() {
+        val threadId = mutable.value.query.chatThreadId ?: return
+        if (!catalogVisible || threadId == missingThread) return
+        relatedRead?.cancel()
+        relatedRead = viewModelScope.launch {
+            val base = mutable.value.relatedChats.confirmed ?: restoreRelatedChats(threadId)
+            currentCoroutineContext().ensureActive()
+            val state = RelatedChatResourcesState(confirmed = base, checking = true)
+            mutable.update { it.copy(relatedChats = state) }
+            val progress =
+                base?.oldestConfirmation?.let { confirmedAt ->
+                    launch {
+                        delay(contentReadStaleDelayMillis(confirmedAt, wallMillis()))
+                        mutable.update { it.copy(relatedChats = state.copy(syncingStale = true)) }
                     }
-                    if (denied) {
-                        previewJob?.cancel()
-                        previews.clear()
-                        thumbnails.evictAll()
-                    }
-                    mutable.update {
-                        it.copy(
-                            page = if (catalogs.isEmpty()) null else it.page,
-                            preview =
-                                if (denied)
-                                    it.preview?.let { preview ->
-                                        ArtifactPreviewState(
-                                            preview.id,
-                                            preview.item,
-                                            problem = problem,
-                                        )
-                                    }
-                                else it.preview,
-                            problem =
-                                problem.takeIf {
-                                    it != ArtifactProblem.Temporary ||
-                                        current.page == null ||
-                                        attempt > 0
-                                },
-                            reading =
-                                if (problem == ArtifactProblem.Temporary)
-                                    ArtifactCatalogRead.Refreshing
-                                else null,
-                        )
-                    }
-                    problem == ArtifactProblem.Temporary
                 }
+            try {
+                val (createdResult, communicatingResult) =
+                    coroutineScope {
+                        val created = async { readRelatedChats(threadId, communicating = false) }
+                        val communicating = async {
+                            readRelatedChats(threadId, communicating = true)
+                        }
+                        created.await() to communicating.await()
+                    }
+                val updated =
+                    ConfirmedRelatedChats(
+                            createdResult.getOrNull() ?: base?.created,
+                            communicatingResult.getOrNull() ?: base?.communicating,
+                        )
+                        .takeIf { it.oldestConfirmation != null }
+                currentCoroutineContext().ensureActive()
+                if (updated != null && updated != base) {
+                    cache?.let { lease ->
+                        storeCatalog { lease.saveRelatedResources(threadId, updated) }
+                    }
+                }
+                mutable.update {
+                    it.copy(
+                        relatedChats =
+                            RelatedChatResourcesState(
+                                confirmed = updated,
+                                failure =
+                                    RelatedChatReadFailure.Temporary.takeIf {
+                                        createdResult.isFailure || communicatingResult.isFailure
+                                    },
+                            ),
+                    )
+                }
+            } catch (_: RelatedChatAccessLost) {
+                currentCoroutineContext().ensureActive()
+                cache?.let { lease -> storeCatalog { lease.saveRelatedResources(threadId, null) } }
+                mutable.update {
+                    it.copy(
+                        relatedChats =
+                            RelatedChatResourcesState(failure = RelatedChatReadFailure.AccessLost),
+                    )
+                }
+            } finally {
+                progress?.cancel()
             }
         }
     }
 
-    private fun cachedResults(query: ArtifactQuery): ArtifactPage? {
-        val byType = catalogs[query.copy(keyword = "")]
-        val all = catalogs[ArtifactQuery(chatThreadId = query.chatThreadId)]
-        if (byType == null && all == null) return null
-        val confirmed = (byType?.items.orEmpty() + all?.items.orEmpty()).distinctBy { it.id }
-        val matching =
-            confirmed
-                .filter {
-                    (query.filter.kind == null || query.filter.kind == it.kind) &&
-                        (query.keyword.isEmpty() ||
-                            it.title.contains(query.keyword, ignoreCase = true))
+    private suspend fun readRelatedChats(
+        threadId: String,
+        communicating: Boolean,
+    ): Result<ConfirmedRelatedChatRead> =
+        try {
+            val rows = retryArtifactOperation { service.relatedChats(threadId, communicating) }
+            Result.success(ConfirmedRelatedChatRead(rows, wallMillis()))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            when (problem(error)) {
+                ArtifactProblem.Denied,
+                ArtifactProblem.Missing -> throw RelatedChatAccessLost()
+                else -> Unit
+            }
+            Result.failure(error)
+        }
+
+    private class RelatedChatAccessLost : Exception()
+
+    private suspend fun restoreRelatedChats(threadId: String): ConfirmedRelatedChats? =
+        try {
+            catalogWrite?.join()
+            cache?.loadRelatedResources(threadId)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            Log.w("ArtifactCatalog", "Could not read related chat resources")
+            null
+        }
+
+    private fun refreshWorkflows() {
+        val (threadId, ids) = workflowReferences ?: return
+        val current = mutable.value
+        if (
+            !catalogVisible ||
+                ids.isEmpty() ||
+                threadId != current.query.chatThreadId ||
+                threadId == missingThread ||
+                current.failedRead == ArtifactCatalogFailure.ChatUnavailable
+        )
+            return
+        if (workflowRead?.isActive == true) {
+            workflowRefreshPending = true
+            return
+        }
+        workflowRead = viewModelScope.launch {
+            do {
+                workflowRefreshPending = false
+                readWorkflows(threadId, ids)
+            } while (workflowRefreshPending)
+        }
+    }
+
+    private fun cancelWorkflowRefresh() {
+        workflowRead?.cancel()
+        workflowRead = null
+        workflowRefreshPending = false
+    }
+
+    private suspend fun readWorkflows(threadId: String, ids: Set<String>) = coroutineScope {
+        val baseline = mutable.value.workflows.confirmed ?: restoreWorkflows(threadId)
+        currentCoroutineContext().ensureActive()
+        val state = WorkflowResourcesState(confirmed = baseline, checking = true)
+        mutable.update { it.copy(workflows = state) }
+        val progress =
+            baseline?.confirmedAt?.let { confirmedAt ->
+                launch {
+                    delay(contentReadStaleDelayMillis(confirmedAt, wallMillis()))
+                    mutable.update { it.copy(workflows = state.copy(syncingStale = true)) }
                 }
-                .sortedWith(
-                    compareByDescending<ArtifactItem> { it.createdAt }.thenByDescending { it.id },
-                )
-        return ArtifactPage(matching, null)
+            }
+        val result =
+            try {
+                val items = retryArtifactOperation { service.relatedWorkflows(ids) }
+                WorkflowResourcesState(ConfirmedWorkflowResources(items, wallMillis()))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                val status = (error as? ApiFailure.Http)?.status
+                if (status == 401) sessionFailure(error) else handleSessionFailure(error)
+                if (status == 403)
+                    WorkflowResourcesState(ConfirmedWorkflowResources(emptyList(), wallMillis()))
+                else WorkflowResourcesState(confirmed = baseline, failed = true)
+            } finally {
+                progress?.cancelAndJoin()
+            }
+        currentCoroutineContext().ensureActive()
+        val confirmed = result.confirmed
+        if (confirmed != null && !result.failed) {
+            cache?.let { lease ->
+                storeCatalog { lease.saveWorkflowResources(threadId, confirmed) }
+            }
+        }
+        mutable.update { it.copy(workflows = result) }
+    }
+
+    private suspend fun restoreWorkflows(threadId: String): ConfirmedWorkflowResources? =
+        try {
+            catalogWrite?.join()
+            cache?.loadWorkflowResources(threadId)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            Log.w("ArtifactCatalog", "Could not read workflow resources")
+            null
+        }
+
+    private fun readCatalog(append: Boolean = false, debounce: Boolean = false) {
+        val current = mutable.value
+        if (!catalogVisible) return
+        val query = current.query
+        val cursor = if (append) current.page?.nextCursor ?: return else null
+        val threadId = query.chatThreadId
+        if (threadId != null && threadId == missingThread) {
+            mutable.update { it.copy(failedRead = ArtifactCatalogFailure.ChatUnavailable) }
+            return
+        }
+        catalogJob?.cancel()
+        mutable.update {
+            it.copy(
+                failedRead = null,
+                reading = catalogRead(append, threadId, current.catalog),
+            )
+        }
+        catalogJob = viewModelScope.launch {
+            if (debounce) delay(250)
+            var base = current.catalog
+            if (base == null && threadId != null && cache != null) {
+                catalogWrite?.join()
+                base = restoreCatalog(threadId)
+                currentCoroutineContext().ensureActive()
+                if (base != null) {
+                    catalogs.remember(query, base, 8)
+                    mutable.update {
+                        it.copy(catalog = base, reading = catalogRead(append, threadId, base))
+                    }
+                }
+            }
+            val staleProgress =
+                base
+                    ?.takeIf {
+                        threadId != null && mutable.value.reading == ArtifactCatalogRead.Refreshing
+                    }
+                    ?.let { snapshot ->
+                        launch {
+                            delay(contentReadStaleDelayMillis(snapshot.confirmedAt, wallMillis()))
+                            mutable.update { it.copy(reading = ArtifactCatalogRead.SyncingStale) }
+                        }
+                    }
+            try {
+                val targetSize = if (append) 0 else base?.page?.items?.size ?: 0
+                val fresh = loadPages(query, cursor, targetSize)
+                val snapshot =
+                    if (append) {
+                        val confirmed = checkNotNull(base)
+                        confirmed.copy(
+                            page =
+                                ArtifactPage(
+                                    (confirmed.page.items + fresh.items).distinctBy { it.id },
+                                    fresh.nextCursor,
+                                ),
+                        )
+                    } else ConfirmedArtifactCatalog(fresh, wallMillis())
+                currentCoroutineContext().ensureActive()
+                if (threadId != null && cache != null) {
+                    val appendedTo = base.takeIf { append }
+                    storeCatalog { cache.saveArtifactCatalog(threadId, snapshot, appendedTo) }
+                }
+                catalogs.remember(query, snapshot, 8)
+                mutable.update { it.copy(catalog = snapshot, failedRead = null, reading = null) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                currentCoroutineContext().ensureActive()
+                failCatalog(query, append, problem(error))
+            } finally {
+                staleProgress?.cancel()
+            }
+        }
+    }
+
+    private fun catalogRead(
+        append: Boolean,
+        threadId: String?,
+        catalog: ConfirmedArtifactCatalog?,
+    ) =
+        when {
+            append -> ArtifactCatalogRead.More
+            threadId != null &&
+                catalog != null &&
+                contentReadStaleDelayMillis(catalog.confirmedAt, wallMillis()) == 0L ->
+                ArtifactCatalogRead.SyncingStale
+            else -> ArtifactCatalogRead.Refreshing
+        }
+
+    private fun failCatalog(query: ArtifactQuery, append: Boolean, problem: ArtifactProblem) {
+        if (problem == ArtifactProblem.Denied) {
+            evictDeniedCatalogs()
+            onCatalogDenied()
+            return
+        }
+        val removed = problem == ArtifactProblem.Missing
+        if (removed) {
+            query.chatThreadId?.let {
+                evictChatCatalog(it, ArtifactCatalogFailure.Missing)
+                return
+            }
+            catalogs.remove(query)
+        }
+        mutable.update {
+            it.copy(
+                catalog = it.catalog.takeUnless { removed },
+                failedRead =
+                    when {
+                        removed -> ArtifactCatalogFailure.Missing
+                        append -> ArtifactCatalogFailure.More
+                        it.catalog == null -> ArtifactCatalogFailure.Initial
+                        else -> ArtifactCatalogFailure.Refresh
+                    },
+                reading = null,
+            )
+        }
+    }
+
+    private fun evictChatCatalog(
+        threadId: String,
+        failure: ArtifactCatalogFailure = ArtifactCatalogFailure.ChatUnavailable,
+    ) {
+        val query = ArtifactQuery(chatThreadId = threadId)
+        catalogs.remove(query)
+        previews.clear()
+        cache?.let {
+            storeCatalog {
+                it.deleteArtifactCatalog(threadId)
+                it.deleteRelatedResources(threadId)
+            }
+        }
+        if (mutable.value.query != query) return
+        catalogJob?.cancel()
+        relatedRead?.cancel()
+        cancelWorkflowRefresh()
+        if (catalogVisible) previewJob?.cancel()
+        mutable.update {
+            it.copy(
+                catalog = null,
+                relatedChats = RelatedChatResourcesState(),
+                workflows = WorkflowResourcesState(),
+                preview =
+                    if (catalogVisible)
+                        it.preview?.let { preview ->
+                            ArtifactPreviewState(
+                                preview.id,
+                                null,
+                                problem = ArtifactProblem.Missing,
+                            )
+                        }
+                    else it.preview,
+                reading = null,
+                failedRead = failure,
+            )
+        }
+    }
+
+    internal fun evictDeniedCatalogs() {
+        catalogJob?.cancel()
+        relatedRead?.cancel()
+        cancelWorkflowRefresh()
+        previewJob?.cancel()
+        catalogs.clear()
+        previews.clear()
+        thumbnails.evictAll()
+        inlineImages.invalidate()
+        cache?.let {
+            storeCatalog {
+                it.deleteArtifactCatalog()
+                it.deleteRelatedResources(null)
+            }
+        }
+        mutable.update {
+            it.copy(
+                catalog = null,
+                relatedChats = RelatedChatResourcesState(),
+                workflows = WorkflowResourcesState(),
+                preview =
+                    it.preview?.let { preview ->
+                        ArtifactPreviewState(preview.id, null, problem = ArtifactProblem.Denied)
+                    },
+                failedRead = ArtifactCatalogFailure.Denied,
+                reading = null,
+            )
+        }
+    }
+
+    private suspend fun restoreCatalog(threadId: String): ConfirmedArtifactCatalog? {
+        return try {
+            cache?.loadArtifactCatalog(threadId)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            Log.w("ArtifactCatalog", "Could not read the confirmed chat artifact catalog")
+            null
+        }
+    }
+
+    private fun storeCatalog(write: suspend () -> Unit) {
+        val previous = catalogWrite
+        catalogWrite = viewModelScope.launch {
+            previous?.join()
+            try {
+                write()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                Log.w("ArtifactCatalog", "Could not update the confirmed chat artifact catalog")
+            }
+        }
     }
 
     private suspend fun loadPages(
@@ -338,7 +721,7 @@ internal constructor(
         var next = cursor
         do {
             if (!visited.add(next)) throw ApiFailure.IncompatibleResponse()
-            val page = service.page(query, next)
+            val page = retryArtifactOperation { service.page(query, next) }
             page.items.forEach { items.putIfAbsent(it.id, it) }
             next = page.nextCursor
         } while (next != null && items.size < targetSize)
@@ -346,9 +729,21 @@ internal constructor(
     }
 
     private fun readPreview(id: String) {
-        if (!active || mutable.value.offline) return
+        if (!active) return
+        if (
+            catalogVisible &&
+                missingThread != null &&
+                mutable.value.query.chatThreadId == missingThread
+        ) {
+            mutable.update {
+                it.copy(preview = ArtifactPreviewState(id, null, problem = ArtifactProblem.Missing))
+            }
+            return
+        }
         previewJob?.cancel()
         previewJob = viewModelScope.launch {
+            // External image metadata describes the URL. Only reading it establishes access.
+            val externalImage = id.startsWith(ExternalImagePreviewPrefix)
             var detailAuthorized = false
             var fileAccessAuthorized = false
             try {
@@ -357,7 +752,7 @@ internal constructor(
                     detailAuthorized = false
                     fileAccessAuthorized = false
                     val info = service.info(id)
-                    detailAuthorized = true
+                    detailAuthorized = !externalImage
                     updatePreview(id) {
                         copy(
                             item = info.item,
@@ -369,7 +764,7 @@ internal constructor(
                         when (val resource = info.resource) {
                             is ArtifactResource.File -> {
                                 val access = info.resolvedAccess ?: service.fileAccess(resource)
-                                fileAccessAuthorized = true
+                                fileAccessAuthorized = !externalImage
                                 updatePreview(id) { copy(access = access) }
                                 service.fileContent(resource, access)
                             }
@@ -404,12 +799,21 @@ internal constructor(
                 val discardContent = revoked || errorType == ArtifactProblem.Unsupported
                 updatePreview(id) {
                     if (discardContent) previews.remove(id)
+                    if (revoked && !detailAuthorized) {
+                        val source =
+                            if (externalImage) id
+                            else messageArtifactLink(id)?.takeIf { it.startsWith("/artifacts/") }
+                        source?.let(inlineImages::revoke)
+                    }
                     copy(
+                        item = item.takeUnless { revoked && externalImage },
                         info = info.takeUnless { revoked && !detailAuthorized },
                         content = content.takeIf { hasReadableContent && !discardContent },
-                        access = access.takeUnless { revoked && !fileAccessAuthorized },
+                        access =
+                            access.takeUnless { revoked && (!fileAccessAuthorized || isImage) },
                         problem =
-                            if (revoked && fileAccessAuthorized) ArtifactProblem.Unavailable
+                            if (revoked && fileAccessAuthorized && !isImage)
+                                ArtifactProblem.Unavailable
                             else errorType,
                     )
                 }
@@ -464,9 +868,10 @@ private suspend fun <T> retryArtifactOperation(
     canRetry: () -> Boolean = { true },
     operation: suspend (remainingRetries: Int) -> T,
 ): T {
-    repeat(ArtifactRetryLimit) { usedRetries ->
+    repeat(finiteReadRetryDelays.size) { usedRetries ->
+        val remainingRetries = finiteReadRetryDelays.size - usedRetries
         try {
-            return operation(ArtifactRetryLimit - usedRetries)
+            return operation(remainingRetries)
         } catch (error: Exception) {
             if (
                 error is CancellationException ||
@@ -475,22 +880,23 @@ private suspend fun <T> retryArtifactOperation(
             ) {
                 throw error
             }
-            delay(ArtifactRetryDelayMillis)
+            delay(
+                artifactRetryDelayMillis(
+                    remainingRetries,
+                    (error as? ApiFailure.Http)?.retryAfterSeconds,
+                ),
+            )
         }
     }
     return operation(0)
 }
 
+internal fun artifactRetryDelayMillis(remainingRetries: Int, retryAfterSeconds: Long?): Long =
+    retryAfterSeconds?.coerceAtMost(Long.MAX_VALUE / 1_000)?.times(1_000)
+        ?: finiteReadRetryDelays[finiteReadRetryDelays.size - remainingRetries]
+
 private fun ArtifactPreviewState.withoutSave(): ArtifactPreviewState =
     copy(access = access?.copy(save = null, previewOnly = true))
-
-private suspend inline fun retryRead(read: (attempt: Int) -> Boolean) {
-    var attempt = 0
-    while (read(attempt)) {
-        delay(2_000L shl attempt)
-        attempt = (attempt + 1).coerceAtMost(4)
-    }
-}
 
 private fun <K, V> LinkedHashMap<K, V>.remember(key: K, value: V, capacity: Int) {
     this[key] = value

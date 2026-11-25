@@ -1,5 +1,6 @@
 package ai.okou.android.updates
 
+import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.RequiredUpdate
 import ai.okou.android.api.generated.AndroidUpdates
 import ai.okou.android.api.generated.AndroidUpdatesRelease
@@ -9,7 +10,6 @@ import java.net.SocketTimeoutException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -46,6 +46,7 @@ internal class ControlledUpdates : UpdateService {
     var heldCheck: CompletableDeferred<Unit>? = null
     var failCheck = false
     var timeoutCheck = false
+    var checkRejection: ApiFailure.Http? = null
     var checks = 0
     var downloaded: File? = null
     var transfer = CompletableDeferred<File>()
@@ -57,6 +58,7 @@ internal class ControlledUpdates : UpdateService {
     override suspend fun check(): AndroidUpdates {
         checks++
         heldCheck?.await()
+        checkRejection?.let { throw it }
         if (failCheck) throw IOException("network")
         if (timeoutCheck) throw SocketTimeoutException("discovery")
         return response
@@ -218,7 +220,7 @@ class AppUpdatesTest {
     }
 
     @Test
-    fun offlineColdStartChecksStaleDiscoveryOnReconnect() = runTest {
+    fun coldStartRefreshesStaleDiscovery() = runTest {
         val store =
             MemoryUpdateStore(
                 UpdateRecord(
@@ -227,23 +229,24 @@ class AppUpdatesTest {
                     checkedAt = 99_000,
                 ),
             )
-        val connectivity = MutableStateFlow(false)
+        val discovery = CompletableDeferred<Unit>()
+        val service = ControlledUpdates().apply { heldCheck = discovery }
         AppUpdates(
-                ControlledUpdates(),
+                service,
                 store,
                 "0.12.0",
                 35,
                 StandardTestDispatcher(testScheduler),
                 now = { 100_000 + 86_400_000 },
-                connectivity = connectivity,
             )
             .use { owner ->
                 owner.check(false)
-                advanceUntilIdle()
-                assertTrue(owner.state.value.offline)
+                runCurrent()
+                assertEquals(1, service.checks)
+                assertEquals(UpdateCheck.Checking, owner.state.value.check)
                 assertFalse(owner.state.value.available)
 
-                connectivity.value = true
+                discovery.complete(Unit)
                 advanceUntilIdle()
                 assertTrue(owner.state.value.canDownload)
                 assertEquals("0.13.0", owner.state.value.displayedRelease?.version)
@@ -252,9 +255,10 @@ class AppUpdatesTest {
     }
 
     @Test
-    fun temporaryDiscoveryAndTransferFailuresResumeTheSameJobs() = runTest {
-        val network = MutableStateFlow(true)
-        val service = ControlledUpdates().apply { timeoutCheck = true }
+    fun automaticCheckAndDownloadRetriesUseTheServerDelay() = runTest {
+        val service =
+            ControlledUpdates().apply { checkRejection = ApiFailure.Http(429, null, null, 1) }
+        val release = updateRelease()
         val store = MemoryUpdateStore()
         AppUpdates(
                 service,
@@ -262,41 +266,83 @@ class AppUpdatesTest {
                 "0.12.0",
                 35,
                 StandardTestDispatcher(testScheduler),
-                now = { 100_000 + testScheduler.currentTime },
-                connectivity = network,
             )
             .use { owner ->
                 owner.check()
                 runCurrent()
                 assertEquals(UpdateCheck.Waiting, owner.state.value.check)
-                service.timeoutCheck = false
-                advanceTimeBy(2_999)
-                runCurrent()
+                service.checkRejection = null
+                advanceTimeBy(999)
                 assertEquals(1, service.checks)
                 advanceTimeBy(1)
                 runCurrent()
+                assertEquals(2, service.checks)
                 assertEquals(UpdateCheck.Checked, owner.state.value.check)
 
-                assertTrue(owner.download(updateRelease()))
+                service.transfer.completeExceptionally(ApiFailure.Http(429, null, null, 8))
+                assertTrue(owner.download(release))
                 runCurrent()
-                network.value = false
-                service.transfer.completeExceptionally(SocketTimeoutException("download"))
-                runCurrent()
-                assertEquals(UpdateTransfer.Waiting(updateRelease()), owner.state.value.transfer)
-                assertFalse(owner.download(updateRelease()))
-                assertEquals(updateRelease(), store.record?.target)
+                assertEquals(UpdateTransfer.Waiting(release), owner.state.value.transfer)
+                assertFalse(owner.download(release))
+                assertEquals(release, store.record?.target)
                 service.transfer = CompletableDeferred(File("verified.apk"))
-                network.value = true
-                advanceTimeBy(3_000)
+                advanceTimeBy(7_999)
+                assertEquals(listOf(release), service.downloadedReleases)
+                advanceTimeBy(1)
                 runCurrent()
-                assertEquals(UpdateTransfer.Ready(updateRelease()), owner.state.value.transfer)
-                assertEquals(listOf(updateRelease(), updateRelease()), service.downloadedReleases)
+                assertEquals(listOf(release, release), service.downloadedReleases)
+                assertEquals(UpdateTransfer.Ready(release), owner.state.value.transfer)
             }
     }
 
     @Test
-    fun temporaryFailuresStopAfterTwoRetries() = runTest {
-        val service = ControlledUpdates().apply { timeoutCheck = true }
+    fun reopeningAFailedCheckRespectsItsLastServerDelayAndDownloadsKeepTheirRetryBudget() =
+        runTest {
+            val service =
+                ControlledUpdates().apply { checkRejection = ApiFailure.Http(429, null, null, 1) }
+            AppUpdates(
+                    service,
+                    MemoryUpdateStore(),
+                    "0.12.0",
+                    35,
+                    StandardTestDispatcher(testScheduler),
+                    clock = testScheduler.timeSource,
+                )
+                .use { owner ->
+                    owner.check()
+                    advanceTimeBy(1_000)
+                    runCurrent()
+                    service.checkRejection = ApiFailure.Http(429, null, null, 8)
+                    advanceTimeBy(1_000)
+                    runCurrent()
+                    assertEquals(3, service.checks)
+                    assertEquals(UpdateCheck.Failed, owner.state.value.check)
+
+                    service.checkRejection = null
+                    owner.checkAfterFailure()
+                    owner.check(manual = false)
+                    advanceTimeBy(7_999)
+                    owner.checkAfterFailure()
+                    runCurrent()
+                    assertEquals(3, service.checks)
+                    advanceTimeBy(1)
+                    owner.checkAfterFailure()
+                    runCurrent()
+                    assertEquals(4, service.checks)
+                    assertEquals(UpdateCheck.Checked, owner.state.value.check)
+                    service.transfer.completeExceptionally(SocketTimeoutException("download"))
+                    assertTrue(owner.download(updateRelease()))
+                    advanceTimeBy(6_000)
+                    runCurrent()
+                    assertEquals(List(3) { updateRelease() }, service.downloadedReleases)
+                    assertEquals(UpdateTransfer.Failed, owner.state.value.transfer)
+                }
+        }
+
+    @Test
+    fun manualCheckAdvancesThePendingRetryWithoutAddingAttempts() = runTest {
+        val service =
+            ControlledUpdates().apply { checkRejection = ApiFailure.Http(429, null, null, 8) }
         AppUpdates(
                 service,
                 MemoryUpdateStore(),
@@ -306,20 +352,90 @@ class AppUpdatesTest {
             )
             .use { owner ->
                 owner.check()
-                advanceTimeBy(6_000)
                 runCurrent()
-                assertEquals(3, service.checks)
-                assertEquals(UpdateCheck.Failed, owner.state.value.check)
+                assertEquals(UpdateCheck.Waiting, owner.state.value.check)
+                owner.check(manual = false)
+                owner.checkAfterFailure()
+                runCurrent()
+                assertEquals(1, service.checks)
 
-                service.timeoutCheck = false
+                val retry = CompletableDeferred<Unit>()
+                service.heldCheck = retry
+                owner.check()
                 owner.check()
                 runCurrent()
+                assertEquals(UpdateCheck.Checking, owner.state.value.check)
+                assertEquals(2, service.checks)
+                owner.check()
+                advanceTimeBy(8_000)
+                runCurrent()
+                assertEquals(2, service.checks)
+
+                service.heldCheck = null
+                retry.complete(Unit)
+                runCurrent()
+                assertEquals(UpdateCheck.Waiting, owner.state.value.check)
+                advanceTimeBy(8_000)
+                runCurrent()
+                assertEquals(UpdateCheck.Failed, owner.state.value.check)
+                assertEquals(3, service.checks)
+
+                service.checkRejection = null
+                owner.check()
+                runCurrent()
+                assertEquals(UpdateCheck.Checked, owner.state.value.check)
+                assertEquals(4, service.checks)
+            }
+    }
+
+    @Test
+    fun manualDownloadAdvancesThePendingRetryForTheSelectedRelease() = runTest {
+        val service = ControlledUpdates()
+        val selected = updateRelease()
+        val newer = updateRelease("0.14.0")
+        AppUpdates(
+                service,
+                MemoryUpdateStore(),
+                "0.12.0",
+                35,
+                StandardTestDispatcher(testScheduler),
+            )
+            .use { owner ->
+                owner.check()
+                runCurrent()
+                service.transfer.completeExceptionally(ApiFailure.Http(429, null, null, 8))
+                assertTrue(owner.download(selected))
+                runCurrent()
+                assertEquals(UpdateTransfer.Waiting(selected), owner.state.value.transfer)
+
+                service.response = AndroidUpdates(null, newer)
+                owner.check()
+                runCurrent()
+                assertFalse(owner.download(newer, advanceRetry = true))
+                service.transfer = CompletableDeferred()
+                assertTrue(owner.download(selected, advanceRetry = true))
+                assertFalse(owner.download(selected, advanceRetry = true))
+                runCurrent()
+                assertEquals(UpdateTransfer.Downloading(selected), owner.state.value.transfer)
+                assertEquals(listOf(selected, selected), service.downloadedReleases)
+                advanceTimeBy(8_000)
+                runCurrent()
+                assertEquals(listOf(selected, selected), service.downloadedReleases)
+
                 service.transfer.completeExceptionally(SocketTimeoutException("download"))
-                assertTrue(owner.download(updateRelease()))
+                runCurrent()
+                assertEquals(UpdateTransfer.Waiting(selected), owner.state.value.transfer)
+                assertTrue(owner.download(selected, advanceRetry = true))
+                runCurrent()
+                assertEquals(UpdateTransfer.Failed, owner.state.value.transfer)
                 advanceTimeBy(6_000)
                 runCurrent()
-                assertEquals(List(3) { updateRelease() }, service.downloadedReleases)
-                assertEquals(UpdateTransfer.Failed, owner.state.value.transfer)
+                assertEquals(List(3) { selected }, service.downloadedReleases)
+
+                service.transfer = CompletableDeferred(File("verified.apk"))
+                assertTrue(owner.download(newer, advanceRetry = true))
+                runCurrent()
+                assertEquals(UpdateTransfer.Ready(newer), owner.state.value.transfer)
             }
     }
 
@@ -538,9 +654,8 @@ class AppUpdatesTest {
     }
 
     @Test
-    fun offlineRequiredUpdateChecksOnReconnectAndLeavesDownloadsToTheUser() = runTest {
-        val service = ControlledUpdates()
-        val connectivity = MutableStateFlow(false)
+    fun requiredUpdateRetriesDiscoveryAndLeavesDownloadsToTheUser() = runTest {
+        val service = ControlledUpdates().apply { timeoutCheck = true }
         val owner =
             AppUpdates(
                 service,
@@ -548,26 +663,20 @@ class AppUpdatesTest {
                 "0.12.0",
                 35,
                 StandardTestDispatcher(testScheduler),
-                connectivity = connectivity,
             )
         try {
             owner.requireUpdate(RequiredUpdate("0.13.0"))
-            advanceUntilIdle()
-            assertTrue(owner.state.value.required && owner.state.value.offline)
-            assertNull(owner.state.value.displayedRelease)
-            assertEquals(0, service.checks)
-
-            connectivity.value = true
-            advanceUntilIdle()
-            assertEquals(1, service.checks)
-            assertTrue(owner.state.value.canDownload)
-
-            connectivity.value = false
             runCurrent()
-            assertFalse(owner.download(updateRelease()))
-            connectivity.value = true
-            advanceUntilIdle()
+            assertTrue(owner.state.value.required)
+            assertEquals(UpdateCheck.Waiting, owner.state.value.check)
+            assertNull(owner.state.value.displayedRelease)
             assertEquals(1, service.checks)
+
+            service.timeoutCheck = false
+            advanceTimeBy(3_000)
+            runCurrent()
+            assertEquals(2, service.checks)
+            assertTrue(owner.state.value.canDownload)
             assertTrue(service.downloadedReleases.isEmpty())
             assertTrue(owner.download(updateRelease()))
             runCurrent()

@@ -7,6 +7,7 @@ import {
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import {
   AUTO_RUN_KEY_VENDOR,
+  PROACTIVE_RUN_KEY_VENDOR,
   isAutoSelectedModel,
 } from "@okouai/core/auto-run-model";
 import {
@@ -227,7 +228,11 @@ function createQueuedModel(
     });
     return "status" in pin ? pin : { pin, selection };
   });
-  const builtInRuntimeRoute$ = createBuiltInRuntimeRoute(bootstrap, modelPin$);
+  const builtInRuntimeRoute$ = createBuiltInRuntimeRoute(
+    bootstrap,
+    modelPin$,
+    creditsWaived$,
+  );
   const providerAdmission$ = createProviderAdmission(
     bootstrap,
     modelPin$,
@@ -280,6 +285,7 @@ function createQueuedModel(
 function createBuiltInRuntimeRoute(
   bootstrap: AgentRunContextSignals,
   modelPin$: QueuedModelPinSignal,
+  creditsWaived$: Computed<Promise<boolean>>,
 ) {
   const builtInRuntimeRoute$ = computed(async (get) => {
     const resolved = await get(modelPin$);
@@ -290,16 +296,21 @@ function createBuiltInRuntimeRoute(
     ) {
       return undefined;
     }
-    const [catalog, pricing, keys] = await Promise.all([
+    const [catalog, pricing, keys, creditsWaived] = await Promise.all([
       get(bootstrap.modelCatalog$),
       get(bootstrap.modelPricing$),
       get(bootstrap.managedModelKeys$),
+      get(creditsWaived$),
     ]);
+    // Platform-paid Official Runs spend from their own managed key.
+    const vendor = creditsWaived
+      ? PROACTIVE_RUN_KEY_VENDOR
+      : AUTO_RUN_KEY_VENDOR;
     return builtInModelRuntimeRouteFromSnapshot({
       catalog,
       selectedModel: resolved.pin.selectedModel,
       modelKeyId: keys.find((key) => {
-        return key.vendor === AUTO_RUN_KEY_VENDOR;
+        return key.vendor === vendor;
       })?.id,
       routePricing: builtInRoutePricingFromSnapshot(
         { serviceTier: undefined },
@@ -647,7 +658,6 @@ function personalSubscriptionAccountCandidates(args: {
   }
   return snapshot.accounts.filter((account) => {
     if (
-      account.disconnectedAt !== null ||
       account.orgId !== snapshot.orgId ||
       account.userId !== snapshot.userId
     ) {

@@ -5,7 +5,8 @@ import UIKit
 /// sync failure with Retry — above the bottom bar: Liquid Glass, a 16 pt Lucide glyph (a
 /// small spinner while it works), one 15 pt line, an optional text action and a ✕. Routine
 /// updates never show here. At accessibility sizes the action moves under the text.
-/// Swipe horizontally to dismiss without competing with bottom-edge system gestures.
+/// Swipe horizontally to dismiss without competing with bottom-edge system gestures. For you
+/// floats it under its header instead, where it never covers a card's directions.
 struct ChatFeedbackSurface: View {
   let message: String
   let icon: String
@@ -21,7 +22,10 @@ struct ChatFeedbackSurface: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
   @Environment(\.scenePhase) private var scenePhase
-  @GestureState private var dismissOffset: CGFloat = 0
+  @GestureState(resetTransaction: Transaction(animation: OkouMotion.press))
+  private var dragOffset: CGFloat = 0
+  @State private var exitOffset: CGFloat?
+  @State private var cardWidth: CGFloat = 0
   @State private var isTouching = false
 
   private var canAutoDismiss: Bool {
@@ -55,24 +59,23 @@ struct ChatFeedbackSurface: View {
     .frame(maxWidth: .infinity, minHeight: OkouControl.listRow, alignment: .leading)
     .glassEffect(.regular, in: RoundedRectangle(cornerRadius: OkouRadius.card, style: .continuous))
     .contentShape(RoundedRectangle(cornerRadius: OkouRadius.card, style: .continuous))
-    .offset(x: reduceMotion ? 0 : dismissOffset)
-    .animation(reduceMotion ? nil : OkouMotion.press, value: isTouching)
+    .onGeometryChange(for: CGFloat.self) {
+      $0.size.width
+    } action: {
+      cardWidth = $0
+    }
+    .offset(x: reduceMotion ? 0 : (exitOffset ?? dragOffset))
+    .opacity(reduceMotion && exitOffset != nil ? 0 : 1)
+    .allowsHitTesting(exitOffset == nil)
     .gesture(ChatFeedbackTouchObservation(isTouching: $isTouching))
     .simultaneousGesture(
       DragGesture(minimumDistance: OkouSpace.md)
-        .updating($dismissOffset) { value, offset, _ in
+        .updating($dragOffset) { value, offset, _ in
           if abs(value.translation.width) > max(OkouSpace.md, abs(value.translation.height)) {
             offset = value.translation.width
           }
         }
-        .onEnded { value in
-          guard abs(value.translation.width) > max(OkouSpace.md, abs(value.translation.height)),
-            abs(value.translation.width) > OkouControl.minimumTarget
-              || (value.predictedEndTranslation.width * value.translation.width > 0
-                && abs(value.predictedEndTranslation.width) > OkouControl.minimumTarget * 2)
-          else { return }
-          dismiss()
-        }
+        .onEnded(finishSwipe)
     )
     // Only the visible feedback owns expiry; overlay handoff starts a fresh idle window.
     .onDisappear { isTouching = false }
@@ -87,6 +90,21 @@ struct ChatFeedbackSurface: View {
     .padding(.vertical, OkouSpace.sm)
     .accessibilityElement(children: .contain)
     .accessibilityAction(.escape, dismiss)
+  }
+
+  private func finishSwipe(_ value: DragGesture.Value) {
+    guard abs(value.translation.width) > max(OkouSpace.md, abs(value.translation.height)),
+      abs(value.translation.width) > OkouControl.minimumTarget
+        || (value.predictedEndTranslation.width * value.translation.width > 0
+          && abs(value.predictedEndTranslation.width) > OkouControl.minimumTarget * 2)
+    else { return }
+    // Take over from the transient drag before SwiftUI resets its gesture state.
+    let distance = max(abs(value.translation.width), cardWidth + 2 * OkouSpace.lg)
+    withAnimation(OkouMotion.press) {
+      exitOffset = value.translation.width < 0 ? -distance : distance
+    } completion: {
+      dismiss()
+    }
   }
 
   private var messageLabel: some View {

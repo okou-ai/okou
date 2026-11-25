@@ -45,8 +45,6 @@ import {
   SuggestionSentNotice,
 } from "./agent-suggestions.tsx";
 import { SuggestionsComplete } from "./suggestions-complete.tsx";
-import { proactiveSettingsInMyOkou$ } from "../../signals/proactive-settings.ts";
-import { ForYouSources } from "./for-you-sources.tsx";
 import { PlatformFeedEvent } from "./platform-feed-event.tsx";
 import {
   forYouCover$,
@@ -136,7 +134,7 @@ function ForYouStack() {
     ...settled,
   ];
   return (
-    <div className="relative mx-auto -mt-26 w-full max-w-176 pb-6 sm:-mt-29">
+    <div className="pointer-events-none relative mx-auto -mt-26 w-full max-w-176 pb-6 sm:-mt-29">
       <div
         className="relative isolate mb-6 grid min-h-(--for-you-card-min-height)"
         style={
@@ -188,7 +186,7 @@ function ForYouStack() {
                           : "motion-safe:animate-card-page-previous-out",
                       )
                     : cn(
-                        "relative z-4",
+                        "pointer-events-auto relative z-4",
                         departure &&
                           (departure.direction === "next"
                             ? "motion-safe:animate-card-page-next-in"
@@ -293,8 +291,8 @@ function ForYouNavigation() {
                 }}
                 className={cn(
                   buttonVariants({ variant: "neutral", size: "icon-lg" }),
-                  "rounded-full bg-card shadow-surface",
-                  "@min-[56rem]/for-you:pointer-events-auto @min-[56rem]/for-you:absolute @min-[56rem]/for-you:top-[calc(50%-0.75rem)] @min-[56rem]/for-you:-translate-y-1/2",
+                  "pointer-events-auto rounded-full bg-card shadow-surface",
+                  "@min-[56rem]/for-you:absolute @min-[56rem]/for-you:top-[calc(50%-0.75rem)] @min-[56rem]/for-you:-translate-y-1/2",
                   direction === "previous"
                     ? "@min-[56rem]/for-you:-left-17"
                     : "@min-[56rem]/for-you:-right-17",
@@ -459,7 +457,6 @@ function headerInkVars(cover: (typeof forYouCovers)[number]): CSSProperties {
 }
 
 function ForYouHeader() {
-  const proactiveInMyOkou = useLastResolved(proactiveSettingsInMyOkou$);
   const { t } = useTranslation();
   const deck = useLastResolved(forYouDeck$);
   const cards = deck?.progressCards ?? [];
@@ -580,7 +577,6 @@ function ForYouHeader() {
             : null}
         </span>
       </div>
-      {proactiveInMyOkou === false && <ForYouSources />}
     </header>
   );
 }

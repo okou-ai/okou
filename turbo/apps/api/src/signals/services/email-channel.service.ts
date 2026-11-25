@@ -372,11 +372,7 @@ function emailInputFiles(
 const completeEmailOnboarding$ = command(
   async (
     { set },
-    {
-      orgId,
-      userId,
-      role,
-    }: { orgId: string; userId: string; role: ApiOrgRole },
+    { orgId, user, role }: { orgId: string; user: ClerkUser; role: ApiOrgRole },
     signal: AbortSignal,
   ) => {
     // Keep the durable email intact for redelivery when signup precedes Clerk's creation event.
@@ -394,7 +390,8 @@ const completeEmailOnboarding$ = command(
       completeOnboarding$,
       {
         orgId,
-        member: { userId, role },
+        member: { userId: user.id, role },
+        clerkUser: user,
         isAdmin: role === "admin",
       },
       signal,
@@ -450,7 +447,7 @@ export const processEmailChannelMessage$ = command(
     }
     await set(
       completeEmailOnboarding$,
-      { orgId: link.orgId, userId: link.userId, role: role.role },
+      { orgId: link.orgId, user, role: role.role },
       signal,
     );
     signal.throwIfAborted();

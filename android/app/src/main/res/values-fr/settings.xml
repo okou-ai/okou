@@ -1,5 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="settings_built_in_tools">Outils intégrés</string>
+    <string name="settings_tool_scope">Les outils utilisés dans %1$s consomment des crédits.</string>
+    <string name="settings_common_tools">Outils courants</string>
+    <string name="settings_data_tools">Outils de données</string>
+    <string name="settings_tool_web_search">Recherche web</string>
+    <string name="settings_tool_image_generation">Génération d’images</string>
+    <string name="settings_tool_image_model">Modèle de génération d’images</string>
+    <string name="settings_tools_unavailable">Les outils sont temporairement indisponibles.</string>
+    <string name="settings_tool_save_failed">Impossible de confirmer la modification.</string>
+    <string name="settings_tool_image_save_failed">Impossible d’enregistrer le modèle de génération d’images</string>
+    <string name="settings_preferences_save_rolled_back">Impossible d’enregistrer les réglages. Les valeurs précédentes ont été rétablies.</string>
+    <string name="settings_appearance_sync_failed">Impossible de synchroniser l’apparence. Elle a été appliquée à cet appareil.</string>
     <string name="settings_email_updates">Actualités par e-mail</string>
     <string name="settings_email_scope">Recevez les résumés, rappels et actualités de tous vos espaces de travail.</string>
     <string name="settings_email_receive">Recevoir les e-mails</string>
@@ -21,11 +33,9 @@
     <string name="settings_account_email">Adresse e-mail</string>
     <string name="settings_account_web">Gérer le compte sur le Web</string>
     <string name="settings_model_accounts">Comptes de modèle</string>
-    <string name="settings_accounts_scope">Choisissez les comptes d’abonnement utilisés dans « %1$s ».</string>
-    <string name="settings_accounts_scope_empty">Comptes de modèle dans « %1$s »</string>
-    <string name="settings_workspace_status">« %1$s » · %2$s</string>
-    <string name="settings_accounts_offline">Hors ligne. Connectez-vous pour changer de compte.</string>
-    <string name="settings_accounts_offline_connect">Hors ligne. Connectez-vous pour associer un compte de modèle.</string>
+    <string name="settings_accounts_scope">Choisissez les comptes d’abonnement utilisés dans «\u00A0%1$s\u00A0».</string>
+    <string name="settings_accounts_scope_empty">Comptes de modèle dans «\u00A0%1$s\u00A0»</string>
+    <string name="settings_workspace_status">«\u00A0%1$s\u00A0» · %2$s</string>
     <string name="settings_accounts_unavailable">Impossible d’afficher les comptes de modèle pour le moment.</string>
     <string name="settings_accounts_update_failed">L’actualisation a échoué. Dernières données connues affichées.</string>
     <string name="settings_accounts_empty">Aucun compte de modèle associé</string>
@@ -53,8 +63,7 @@
     <string name="settings_credits_unavailable_value">Indisponible</string>
     <string name="settings_credits_less_than">&lt; %1$s</string>
     <string name="settings_credit_balance">Solde de crédits</string>
-    <string name="settings_credit_scope">Crédits Okou dans « %1$s »</string>
-    <string name="settings_credit_offline">Hors ligne. Dernier solde connu affiché.</string>
+    <string name="settings_credit_scope">Crédits Okou dans «\u00A0%1$s\u00A0»</string>
     <string name="settings_credit_update_failed">L’actualisation a échoué. Dernier solde connu affiché.</string>
     <string name="settings_credit_unavailable">Impossible d’afficher le solde pour le moment.</string>
     <string name="settings_credit_member">Forfait d’utilisation personnel</string>
@@ -70,8 +79,7 @@
     <string name="settings_auto_model_detail">Okou choisit un modèle disponible</string>
     <string name="settings_model_plan_restricted">Autre abonnement requis</string>
     <string name="settings_model_fast">Mode rapide</string>
-    <string name="settings_model_fast_usage">Utilise environ %1$s fois le quota</string>
-    <string name="settings_model_load_when_online">Le contenu se chargera dès que vous serez de nouveau en ligne.</string>
+    <string name="settings_model_fast_usage">Une fois activé, ce mode multiplie par %1$s la consommation de l’abonnement ChatGPT par rapport au mode standard</string>
     <string name="settings_model_save_rolled_back">Impossible d’enregistrer le modèle par défaut. Le réglage précédent a été rétabli.</string>
     <string name="settings_model_save_unconfirmed">L’enregistrement du modèle par défaut n’est pas encore confirmé.</string>
     <string name="settings_model_effort">Niveau de raisonnement</string>
@@ -83,4 +91,26 @@
     <string name="settings_model_effort_ultra">Ultra</string>
     <string name="settings_refreshing_model_accounts">Actualisation des comptes de modèles</string>
     <string name="settings_refreshing_credit_balance">Actualisation du solde de crédits</string>
+    <string name="settings_proactive_services">Services proactifs</string>
+    <string name="settings_proactive_scope">Ces paramètres s’appliquent dans «\u00A0%1$s\u00A0».</string>
+    <string name="settings_proactive_loading">Chargement des services proactifs</string>
+    <string name="settings_proactive_needs_timezone">Choisissez un fuseau horaire pour programmer l’envoi.</string>
+    <string name="settings_proactive_read_failed">Impossible de charger ce paramètre pour le moment.</string>
+    <string name="settings_proactive_refresh_failed">Échec de la synchronisation. Le dernier paramètre confirmé est affiché.</string>
+    <string name="settings_proactive_preparing">Préparation de la planification…</string>
+    <string name="settings_proactive_schedule_failed">Votre choix a été enregistré. Vérifiez la planification.</string>
+    <string name="settings_proactive_save_unconfirmed">L’enregistrement n’est pas encore confirmé.</string>
+    <string name="settings_morning_brief">Résumé matinal</string>
+    <string name="settings_morning_brief_detail">Livré avant 7 h dans le fuseau horaire choisi</string>
+    <string name="settings_morning_brief_save_failed">Impossible d’enregistrer le résumé matinal. Le paramètre précédent a été rétabli.</string>
+    <string name="settings_suggestions">Suggestions</string>
+    <string name="settings_suggestions_detail">Consulter le contenu connecté, mettre à jour votre profil et proposer des suggestions</string>
+    <string name="settings_suggestions_partial">Activation partielle</string>
+    <string name="settings_suggestions_hourly_only">Actuellement, seuls le contenu et le profil sont vérifiés et mis à jour.</string>
+    <string name="settings_suggestions_cards_only">Actuellement, seules les cartes de suggestions sont envoyées.</string>
+    <string name="settings_suggestions_enable_both">Activer les deux</string>
+    <string name="settings_suggestions_disable_both">Désactiver les deux</string>
+    <string name="settings_suggestions_save_failed">Impossible d’enregistrer les suggestions. Le paramètre précédent a été rétabli.</string>
+    <string name="settings_timezone_save_rejected">Impossible d’enregistrer le fuseau horaire. Le fuseau précédent a été rétabli.</string>
+    <string name="settings_timezone_schedule_update_failed">Le fuseau horaire a été enregistré. Impossible de mettre à jour l’horaire du résumé matinal.</string>
 </resources>

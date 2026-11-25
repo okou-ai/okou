@@ -76,7 +76,11 @@ or numerical startup budget is not a prerequisite for applying this contract.
 
 ## Cache-First Presentation and Optimistic Actions
 
-Restore usable, last-confirmed data after checking the current authorization.
+Check the active identity and access scope before restoring last-confirmed data.
+The chat list can present its exact-scope cache after a locally restored session
+identifies the active account and workspace with known permissions. Verify that
+scope online in the background and retire the cached presentation on denial or
+an identity or scope change.
 Enable each action when its own prerequisites are satisfied. Give each cached
 resource a freshness policy and a canonical refresh path. Keep usable content
 visible during refresh and preserve the distinction between unknown and
@@ -110,6 +114,29 @@ is held, then verify convergence under the applicable failure and ownership
 scenarios. Measure time to usable content, time to visible action feedback,
 and time to canonical confirmation separately when quantifying a latency
 change. See [Android testing](android-testing.md#first-display-with-pending-api-requests).
+
+## Heap and Interactive Performance
+
+For reads with variable payload sizes, account for what stays live across
+download, decode, persistence, and presentation. Streaming the transport
+reduces input buffering. Collecting all decoded rows, building serialized write
+records, or projecting a second full model can still make heap usage grow with
+the dataset. Measure a large individual record and a large collection
+independently. Use bounded batches and windowed reads when the measured
+working set requires them, while preserving complete data and atomic publication.
+
+Limit concurrent background work that retains large payloads. Acquire a slot
+before loading a payload and hold it through persistence or cleanup. Keep
+selected-screen reads and usable cached content independent of background
+slots. Preserve efficient incremental reads and immediate cache hits.
+A concurrency limit controls overlapping work. Measure the largest single
+operation separately when checking that it fits the heap budget.
+
+Measure on a device with a representative app heap limit. On the same build
+configuration and fixtures, compare Java heap peak and GC time alongside
+time to cached or first usable content and total synchronization time. Exercise
+cold reads, cache reopen, and foreground work during prefetch. Keep process
+memory metrics distinct from Java heap measurements.
 
 ## Native Presentation
 

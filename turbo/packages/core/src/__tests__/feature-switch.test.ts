@@ -23,8 +23,14 @@ describe("FeatureSwitchKey", () => {
 
 describe("isFeatureEnabled", () => {
   it.each([
-    FeatureSwitchKey.ArtifactPreviewActionGroup,
+    FeatureSwitchKey.MemberConnectorAccountAccess,
+    FeatureSwitchKey.IosConnectorManagement,
+    FeatureSwitchKey.ComposerVoiceMessages,
+    FeatureSwitchKey.MarkdownArtifactQuote,
+    FeatureSwitchKey.ArtifactLibrary,
+    FeatureSwitchKey.ZipArtifactPreview,
     FeatureSwitchKey.FollowupPlaceholder,
+    FeatureSwitchKey.SlackArtifactChannelSharing,
   ])("defaults %s to staff and honors Lab overrides", (key) => {
     const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
     for (const [context, enabled] of [
@@ -125,24 +131,21 @@ describe("isFeatureEnabled", () => {
     }
   });
 
-  it("defaults Markdown-first output to staff and honors external opt-in", () => {
+  it("enables Markdown-first output for everyone and honors Lab overrides", () => {
     const key = FeatureSwitchKey.MarkdownFirstOutput;
-    const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
-    for (const context of [
+    for (const identity of [
       {},
       { userId: "external-user", orgId: "external-org" },
+      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
     ]) {
-      expect(isFeatureEnabled(key, context)).toBe(false);
-      expect(getAllFeatureStates(context)[key]).toBe(false);
+      expect(isFeatureEnabled(key, identity)).toBe(true);
+      expect(getAllFeatureStates(identity)[key]).toBe(true);
+      for (const enabled of [false, true]) {
+        const context = { ...identity, overrides: { [key]: enabled } };
+        expect(isFeatureEnabled(key, context)).toBe(enabled);
+        expect(getAllFeatureStates(context)[key]).toBe(enabled);
+      }
     }
-    const optedIn = { orgId: "external-org", overrides: { [key]: true } };
-    expect(isFeatureEnabled(key, optedIn)).toBe(true);
-    expect(getAllFeatureStates(optedIn)[key]).toBe(true);
-    expect(isFeatureEnabled(key, staff)).toBe(true);
-    expect(getAllFeatureStates(staff)[key]).toBe(true);
-    expect(
-      isFeatureEnabled(key, { ...staff, overrides: { [key]: false } }),
-    ).toBe(false);
   });
 
   it("enables presentation format for staff and honors Lab overrides", () => {
@@ -161,7 +164,7 @@ describe("isFeatureEnabled", () => {
     }
   });
 
-  it("keeps presentation format unavailable outside its rollout audience even with an opt-in override", () => {
+  it("lets every Lab tester opt into presentation format without enabling it for everyone", () => {
     const key = FeatureSwitchKey.PresentationOutputFormat;
     for (const identity of [
       {},
@@ -172,14 +175,53 @@ describe("isFeatureEnabled", () => {
         orgId: "external-org",
       },
     ]) {
-      expect(isFeatureSwitchAvailable(key, identity)).toBe(false);
-      for (const overrides of [{}, { [key]: true }]) {
-        const context = { ...identity, overrides };
-        expect(isFeatureEnabled(key, context)).toBe(false);
-        expect(getAllFeatureStates(context)[key]).toBe(false);
+      expect(isFeatureSwitchAvailable(key, identity)).toBe(true);
+      expect(isFeatureEnabled(key, identity)).toBe(false);
+      expect(getAllFeatureStates(identity)[key]).toBe(false);
+      for (const enabled of [true, false]) {
+        const context = { ...identity, overrides: { [key]: enabled } };
+        expect(isFeatureEnabled(key, context)).toBe(enabled);
+        expect(getAllFeatureStates(context)[key]).toBe(enabled);
       }
     }
   });
+
+  it.each([
+    FeatureSwitchKey.GeminiAntigravity,
+    FeatureSwitchKey.ComputerUseAppStateDirectTransfer,
+  ])(
+    "allows staff to opt into %s individually, with no default access",
+    (key) => {
+      const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+      expect(getFeatureSwitchMetadata()[key].rolloutStage).toBe("internal");
+      expect(isFeatureSwitchAvailable(key, staff)).toBe(true);
+      expect(getAllFeatureStates(staff)[key]).toBe(false);
+      expect(isFeatureEnabled(key, staff)).toBe(false);
+      for (const enabled of [true, false]) {
+        const context = { ...staff, overrides: { [key]: enabled } };
+        expect(isFeatureEnabled(key, context)).toBe(enabled);
+        expect(getAllFeatureStates(context)[key]).toBe(enabled);
+      }
+    },
+  );
+
+  it.each([
+    FeatureSwitchKey.GeminiAntigravity,
+    FeatureSwitchKey.ComputerUseAppStateDirectTransfer,
+  ])(
+    "ignores %s overrides outside staff workspaces, including stale opt-ins",
+    (key) => {
+      for (const identity of [
+        {},
+        { orgId: "external-org", email: "lancy@okou.ai" },
+      ]) {
+        const context = { ...identity, overrides: { [key]: true } };
+        expect(isFeatureSwitchAvailable(key, context)).toBe(false);
+        expect(isFeatureEnabled(key, context)).toBe(false);
+        expect(getAllFeatureStates(context)[key]).toBe(false);
+      }
+    },
+  );
 
   it("keeps Codex execution test-only and off for everyone without an override", () => {
     const key = FeatureSwitchKey.CodexExecution;
@@ -442,6 +484,15 @@ describe("getFeatureSwitchMetadata", () => {
     const metadata = getFeatureSwitchMetadata();
 
     expect(metadata[FeatureSwitchKey.Banking].rolloutStage).toBe("alpha");
+    expect(metadata[FeatureSwitchKey.MarkdownFirstOutput].rolloutStage).toBe(
+      "released",
+    );
+    expect(metadata[FeatureSwitchKey.ComposerVoiceMessages].rolloutStage).toBe(
+      "beta",
+    );
+    expect(metadata[FeatureSwitchKey.MarkdownArtifactQuote].rolloutStage).toBe(
+      "beta",
+    );
     expect(metadata[FeatureSwitchKey.PresentationConvert].rolloutStage).toBe(
       "alpha",
     );

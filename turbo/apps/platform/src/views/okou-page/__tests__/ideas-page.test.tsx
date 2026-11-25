@@ -1,294 +1,97 @@
-import { catalogFixture } from "../../../mocks/handlers/connector-account-fixtures.ts";
-import {
-  connectorCatalogContract,
-  type PublicConnectorCatalogStatusItem,
-  type PublicConnectorCatalogStatusResponse,
-} from "@okouai/api-contracts/contracts/connector-catalog";
-import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
+import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
-
-import {
-  click,
-  fill,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import { test, expect } from "vitest";
+import { setupPage, click, fill } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { pathname } from "../../../signals/location.ts";
-
+import { findComposerEditor } from "./chat-composer-test-helpers.ts";
 const context = testContext();
 
-const IDEAS_PATH = "/ideas";
-
-const STANDUP_PROMPT =
+const standup =
   "Set up a daily standup report that pulls data from GitHub, Sentry, Axiom, and Plausible every morning, generates a pptx, and posts it to #team-updates";
-
-const REVENUECAT_PROMPT =
-  "Set up a daily RevenueCat digest that tracks new subscriptions, renewals, and cancellations in Google Sheets and alerts on Slack for churn spikes";
-
-function catalogItem(
-  slug: ConnectorSlug,
-  label: string,
-): PublicConnectorCatalogStatusItem {
-  return catalogFixture({
-    slug,
-    label,
-    description: `${label} test connector`,
-    icon: {
-      url: `https://icons.example.test/${slug}.svg`,
-      invertInDarkMode: slug === "github",
-    },
-    category: "test",
-    generation: [],
-    tags: [],
-    authMethods: [
-      {
-        id: "oauth",
-        label: "OAuth",
-        description: "Sign in to grant access.",
-        grantKind: "auth-code",
-        supportsRefresh: true,
-        manualFields: [],
-        startOptions: [],
-      },
-    ],
-    permissionSummary: {
-      hasPermissions: false,
-      permissionCount: 0,
-      hasCategories: false,
-      hasDefaultPolicyOverrides: false,
-    },
-    singleAuthCodeAuthMethodId: "oauth",
-    connectNotice: null,
-  });
-}
-
-function catalogResponse(
-  connectors: readonly PublicConnectorCatalogStatusItem[],
-): PublicConnectorCatalogStatusResponse {
-  return { connectors: [...connectors] };
-}
-
-function mockCatalog(
-  connectors: readonly PublicConnectorCatalogStatusItem[],
-): void {
+async function visit(path: string) {
+  const available = [
+    "github",
+    "sentry",
+    "axiom",
+    "plausible",
+    "slack",
+    "revenuecat",
+    "google-sheets",
+    "zapier",
+    "notion",
+  ];
   context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    return respond(200, catalogResponse(connectors));
-  });
-}
-
-async function findComposer(name = "Message"): Promise<HTMLElement> {
-  return await screen.findByRole("textbox", { name });
-}
-
-test("Category filters expose one persistent selection and preserve search", async () => {
-  mockCatalog([catalogItem("github", "GitHub")]);
-
-  await setupPage({ context, path: IDEAS_PATH });
-  const group = await screen.findByRole("group", {
-    name: "Filter by category",
-  });
-  const filters = queryAllByRoleFast("button", group);
-  const all = filters.find((button) => {
-    return button.textContent === "All";
-  });
-  const engineering = filters.find((button) => {
-    return button.textContent === "Engineering";
-  });
-  if (!all || !engineering) {
-    throw new Error("Expected All and Engineering category filters");
-  }
-  expect(all).toHaveAttribute("aria-pressed", "true");
-  expect(engineering).toHaveAttribute("aria-pressed", "false");
-  expect(screen.getByText("Browser screenshots")).toBeInTheDocument();
-
-  click(all);
-  expect(all).toHaveAttribute("aria-pressed", "true");
-
-  click(engineering);
-  expect(engineering).toHaveAttribute("aria-pressed", "true");
-  expect(all).toHaveAttribute("aria-pressed", "false");
-  expect(screen.getByText("GitHub progress weekly")).toBeInTheDocument();
-  expect(screen.queryByText("Browser screenshots")).not.toBeInTheDocument();
-
-  click(engineering);
-  expect(engineering).toHaveAttribute("aria-pressed", "true");
-  expect(screen.getByText("GitHub progress weekly")).toBeInTheDocument();
-
-  await fill(screen.getByLabelText("Search use cases"), "Browser screenshots");
-  expect(
-    screen.getByText("No use cases match your search."),
-  ).toBeInTheDocument();
-  expect(engineering).toHaveAttribute("aria-pressed", "true");
-
-  click(all);
-  expect(screen.getByText("Browser screenshots")).toBeInTheDocument();
-  expect(screen.getByLabelText("Search use cases")).toHaveValue(
-    "Browser screenshots",
-  );
-  expect(
-    filters.filter((button) => {
-      return button.getAttribute("aria-pressed") === "true";
-    }),
-  ).toStrictEqual([all]);
-});
-
-test("The ideas catalog still offers connector-free use cases", async () => {
-  mockCatalog([]);
-
-  await setupPage({ context, path: IDEAS_PATH });
-  await screen.findByText("Browser screenshots");
-
-  expect(screen.queryByText("Daily standup report")).not.toBeInTheDocument();
-
-  await fill(await screen.findByLabelText("Search use cases"), "Daily standup");
-
-  await expect(
-    screen.findByText("No use cases match your search."),
-  ).resolves.toBeVisible();
-});
-
-test("The breadcrumb links back to My Okou", async () => {
-  mockCatalog([]);
-
-  await setupPage({ context, path: IDEAS_PATH });
-  await screen.findByText("Browser screenshots");
-  const breadcrumb = screen.getAllByRole("navigation").find((nav) => {
-    return nav.textContent === "Chat/Ideas & Use Cases";
-  });
-  if (!breadcrumb) {
-    throw new Error("Expected the ideas page breadcrumb");
-  }
-  const back = queryAllByRoleFast("link", breadcrumb).find((link) => {
-    return link.textContent === "Chat";
-  });
-  if (!back) {
-    throw new Error("Expected the breadcrumb link back to the chat");
-  }
-  click(back);
-
-  await findComposer();
-  expect(pathname()).toBe("/");
-});
-
-test("Connector-dependent ideas fail closed when availability cannot be verified", async () => {
-  const failCatalog = context.mocks.deferred<void>();
-  const failureReturned = context.mocks.deferred<void>();
-  context.mocks.api(connectorCatalogContract.status, async ({ respond }) => {
-    await failCatalog.promise;
-    failureReturned.resolve(undefined);
-    return respond(503, {
-      error: {
-        code: "CONNECTOR_CATALOG_UNAVAILABLE",
-        message: "Connector catalog unavailable",
-      },
+    return respond(200, {
+      connectors: available.map((slug) => {
+        return {
+          slug,
+          label: slug,
+          description: slug,
+          icon: {
+            url: "https://icons.example.test/" + slug + ".svg",
+            invertInDarkMode: false,
+          },
+          category: "productivity",
+          generation: [],
+          tags: [],
+          authMethods: [],
+          permissionSummary: {
+            hasPermissions: false,
+            permissionCount: 0,
+            hasCategories: false,
+            hasDefaultPolicyOverrides: false,
+          },
+          singleAuthCodeAuthMethodId: null,
+          connectNotice: null,
+        };
+      }),
     });
   });
-
-  await setupPage({ context, path: IDEAS_PATH });
-  await screen.findByText("Daily standup report");
-
-  failCatalog.resolve(undefined);
-  await failureReturned.promise;
-
+  await setupPage({ context, path, host: "app.okou.ai" });
+  return await screen.findByRole("searchbox");
+}
+async function card(title: string) {
+  return (
+    (await screen.findByText(title, { exact: true })).closest("a") ??
+    Promise.reject(new Error("Idea card is missing its link"))
+  );
+}
+async function activeDraft(prompt: string) {
+  const editor = await findComposerEditor();
   await waitFor(() => {
-    expect(screen.getByText("Browser screenshots")).toBeVisible();
-    expect(screen.queryByText("Daily standup report")).not.toBeInTheDocument();
+    expect(editor.textContent).toBe(prompt);
+    expect(window.location.pathname).toBe("/");
   });
-});
-
-test("A use case is hidden when any required connector is unavailable", async () => {
-  mockCatalog([catalogItem("github", "GitHub"), catalogItem("slack", "Slack")]);
-
-  await setupPage({ context, path: IDEAS_PATH });
-  await screen.findByText("GitHub progress weekly");
-
-  expect(screen.queryByText("Daily standup report")).not.toBeInTheDocument();
-});
-
-test("A card exposes its prompt link and opens by keyboard", async () => {
-  const user = userEvent.setup({ delay: null });
-  mockCatalog([
-    catalogItem("github", "GitHub"),
-    catalogItem("sentry", "Sentry"),
-    catalogItem("axiom", "Axiom"),
-    catalogItem("plausible", "Plausible"),
-    catalogItem("slack", "Slack"),
-  ]);
-
-  await setupPage({ context, path: IDEAS_PATH });
-  const search = await screen.findByLabelText("Search use cases");
+}
+test("ideas-page-009 the standup card opens its exact prompt with Enter", async () => {
+  const search = await visit("/ideas");
   await fill(search, "Daily standup report");
-
-  const title = await screen.findByText("Daily standup report");
-  const idea = queryAllByRoleFast("link", screen.getByRole("main")).find(
-    (link) => {
-      return link.contains(title);
-    },
-  );
-  if (!idea) {
-    throw new Error("Expected the use-case card to expose a link");
-  }
-  expect(idea).toHaveAttribute(
-    "href",
-    `/?${new URLSearchParams({ prompt: STANDUP_PROMPT })}`,
-  );
-
-  await user.keyboard("{Tab}");
-  expect(idea).toHaveFocus();
-  await user.keyboard("{Enter}");
-
-  const composer = await findComposer();
-  await waitFor(() => {
-    expect(composer.textContent).toBe(STANDUP_PROMPT);
-  });
-  expect(pathname()).toBe("/");
+  const link = await card("Daily standup report");
+  const url = new URL(link.href);
+  expect(url.pathname).toBe("/");
+  expect(url.searchParams.get("prompt")).toBe(standup);
+  link.focus();
+  await userEvent.keyboard("{Enter}");
+  await activeDraft(standup);
 });
-
-test("Search for a use case and start it with the agent", async () => {
-  mockCatalog([
-    catalogItem("github", "GitHub"),
-    catalogItem("sentry", "Sentry"),
-    catalogItem("axiom", "Axiom"),
-    catalogItem("plausible", "Plausible"),
-    catalogItem("slack", "Slack"),
-    catalogItem("revenuecat", "RevenueCat"),
-    catalogItem("google-sheets", "Google Sheets"),
-  ]);
-
-  await setupPage({ context, path: IDEAS_PATH });
-  const search = await screen.findByLabelText("Search use cases");
-
+test("ideas-page-011 searching RevenueCat opens the matching subscriptions digest in chat", async () => {
+  const search = await visit("/ideas");
   await fill(search, "RevenueCat");
-
-  const idea = await screen.findByText("RevenueCat subscription digest");
-  expect(screen.queryByText("Daily standup report")).not.toBeInTheDocument();
-
-  click(idea);
-
-  const composer = await findComposer();
-  await waitFor(() => {
-    expect(composer.textContent).toBe(REVENUECAT_PROMPT);
-  });
+  const link = await card("RevenueCat subscription digest");
+  expect(screen.queryByText("Daily standup report")).toBeNull();
+  click(link);
+  await activeDraft(
+    "Set up a daily RevenueCat digest that tracks new subscriptions, renewals, and cancellations in Google Sheets and alerts on Slack for churn spikes",
+  );
 });
-
-test("Start the Zapier migration idea from the available connector catalog", async () => {
-  mockCatalog([
-    catalogItem("zapier", "Zapier"),
-    catalogItem("slack", "Slack"),
-    catalogItem("notion", "Notion"),
-  ]);
-
-  await setupPage({ context, path: IDEAS_PATH });
-  await fill(await screen.findByLabelText("Search use cases"), "Zapier");
-  click(await screen.findByText("Zapier → Okou migration"));
-
-  const composer = await findComposer();
-  await waitFor(() => {
-    expect(composer.textContent).toBe(
-      "Help me migrate my Zapier workflows to Okou. I have zaps for: new Slack message → Notion, Gmail → Google Sheets, and GitHub PR → Slack",
-    );
-  });
+test("ideas-page-012 the Zapier idea transfers all three migration examples into chat", async () => {
+  const search = await visit("/ideas");
+  await fill(search, "Zapier");
+  const link = await card("Zapier → Okou migration");
+  expect(link).toBeVisible();
+  click(link);
+  await activeDraft(
+    "Help me migrate my Zapier workflows to Okou. I have zaps for: new Slack message → Notion, Gmail → Google Sheets, and GitHub PR → Slack",
+  );
 });

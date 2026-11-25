@@ -9,6 +9,8 @@ import ai.okou.android.api.generated.SendRequestVariant1UserMessage
 import ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItemVariant1
 import ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItemVariant1Type
 import ai.okou.android.auth.WorkspaceIdentity
+import ai.okou.android.connectors.ChatConnectorOverride
+import ai.okou.android.connectors.ConnectorService
 import java.io.IOException
 import java.util.UUID
 import kotlin.time.Duration.Companion.days
@@ -42,6 +44,7 @@ internal class ChatComposerOwner(
         val recovery: AssistantRecoveryModel? = null,
         val history: ConversationHistoryModel? = null,
         val chatList: ChatListModel? = null,
+        val connectors: ConnectorService? = null,
     ) {
         var retired = false
 
@@ -52,6 +55,7 @@ internal class ChatComposerOwner(
         val key: String,
         val connection: Connection,
         val checking: Boolean = false,
+        val recovery: Pair<RecoverySelection, RecoveryOperationPhase>? = null,
     ) {
         var job: Job? = null
         var unsentReset: UnsentReset? = null
@@ -111,10 +115,7 @@ internal class ChatComposerOwner(
             .filter { it.connection === connection }
             .toList()
             .forEach { op ->
-                restoreUnsentReset(op)
-                operations.remove(op.key)
-                mutable.value =
-                    mutable.value.copy(busy = operations.keys.toSet(), checking = checkingTargets())
+                finish(op)
                 op.job?.cancel()
             }
         connections -= connection
@@ -177,7 +178,7 @@ internal class ChatComposerOwner(
         receiptMessages: Map<String, ComposerMessagePreview> = mutable.value.receiptMessages,
     ) {
         val journal = mutable.value.journal ?: return
-        val value = if (journal.format == 3) value.copy(text = "") else value
+        val value = if (journal.format >= 3) value.copy(text = "") else value
         val entries =
             if (
                 value.text.isEmpty() &&
@@ -337,9 +338,12 @@ internal class ChatComposerOwner(
         val text = journal.retainedDrafts[key] ?: return
         val draftKey = mutable.value.draftKey(target)
         val draft = journal.drafts[draftKey] ?: EditableComposerDraft()
+        val choices = if (draftKey == "new:") journal.retainedDraftConnectorOverrides[key] else null
         replace(
             journal.copy(
                 retainedDrafts = journal.retainedDrafts - key,
+                newChatConnectorOverrides = choices ?: journal.newChatConnectorOverrides,
+                retainedDraftConnectorOverrides = journal.retainedDraftConnectorOverrides - key,
                 drafts =
                     journal.drafts +
                         (draftKey to
@@ -352,12 +356,6 @@ internal class ChatComposerOwner(
             ),
         )
         serverTarget(draftKey)?.let { synchronize(connection, it) }
-    }
-
-    fun retrySync(connection: Connection, target: ComposerTarget) {
-        serverTarget(mutable.value.draftKey(target))?.let {
-            synchronize(connection, it, refresh = true)
-        }
     }
 
     private fun serverTarget(key: String): ServerDraftTarget? =
@@ -403,13 +401,26 @@ internal class ChatComposerOwner(
                         val before = journal.drafts[target.key] ?: EditableComposerDraft()
                         readableDrafts.remove(target.key)
                         syncStatus(target.key, ComposerSync.Loading)
-                        val remote = connection.service.composerDraft(target).plainText()
+                        val list = connection.chatList
+                        val indexVersion = list?.draftIndexRequestVersion
+                        val remote =
+                            ChatDependencyRetry()
+                                .read(isCurrent = ::current) {
+                                    connection.service.composerDraft(target)
+                                }
+                                .plainText()
                         currentCoroutineContext().ensureActive()
                         if (!current()) return@launch
                         if (remote == null) {
                             syncStatus(target.key, ComposerSync.Unsupported)
                             return@launch
                         }
+                        if (target.threadId != null && indexVersion != null)
+                            list.confirmDraftPresence(
+                                target.threadId,
+                                !remote.isBlankWebDraft(),
+                                indexVersion,
+                            )
                         readableDrafts += target.key
                         journal = mutable.value.journal ?: return@launch
                         val local = journal.drafts[target.key] ?: EditableComposerDraft()
@@ -447,9 +458,26 @@ internal class ChatComposerOwner(
                         if (mutable.value.journal?.drafts?.get(target.key) != draft) continue
                         if (!saved.durable || saved.journal.drafts[target.key] != draft)
                             throw IOException("Draft is not durable")
-                        connection.service.saveComposerDraft(target, draft.text)
+                        val submitted =
+                            ChatWriteRetries().run {
+                                currentCoroutineContext().ensureActive()
+                                if (
+                                    !current() ||
+                                        mutable.value.journal?.drafts?.get(target.key) != draft
+                                )
+                                    return@run false
+                                connection.service.saveComposerDraft(target, draft.text)
+                                true
+                            }
+                        if (!submitted) continue
                         currentCoroutineContext().ensureActive()
                         if (!current()) return@launch
+                        target.threadId?.let {
+                            connection.chatList?.confirmDraftPresence(
+                                it,
+                                !draft.text.isBlankWebDraft(),
+                            )
+                        }
                         journal = mutable.value.journal ?: return@launch
                         if (journal.drafts[target.key] == draft)
                             replace(
@@ -500,6 +528,40 @@ internal class ChatComposerOwner(
         if (old.createdThreadId != null) put(target.key, old.copy(createdThreadId = null))
     }
 
+    fun editConnectorOverride(
+        connection: Connection,
+        target: ComposerTarget,
+        choice: ChatConnectorOverride?,
+    ) {
+        val state = mutable.value
+        val journal = state.journal ?: return
+        if (
+            !connection.current() ||
+                connection.connectors == null ||
+                !state.canEditDraftConnectors(target)
+        )
+            return
+        val pending = journal.entries[target.key]?.pending
+        val previous = state.connectorOverrides(target)
+        val choices =
+            when {
+                choice != null ->
+                    previous.filterNot { it.connectionId == choice.connectionId } + choice
+                pending != null -> previous.map { it.copy(enabled = null) }
+                else -> emptyList()
+            }
+        if (choices == previous) return
+        // Once the thread exists, reset has to clear even preferences already applied by this send.
+        if (pending == null)
+            replace(
+                journal.copy(
+                    format = CONNECTOR_DRAFT_JOURNAL_FORMAT,
+                    newChatConnectorOverrides = choices,
+                ),
+            )
+        else updatePending(target.key, pending.copy(connectorOverrides = choices))
+    }
+
     fun acknowledge(connection: Connection, threadId: String) {
         if (!connection.current()) return
         val journal = mutable.value.journal ?: return
@@ -511,7 +573,12 @@ internal class ChatComposerOwner(
     private fun checkingTargets() =
         operations.values.filter { it.checking }.mapTo(hashSetOf()) { it.key }
 
-    private fun begin(connection: Connection, key: String, checking: Boolean = false): Operation? {
+    private fun begin(
+        connection: Connection,
+        key: String,
+        checking: Boolean = false,
+        recovery: Pair<RecoverySelection, RecoveryOperationPhase>? = null,
+    ): Operation? {
         if (!connection.current() || mutable.value.journal == null) return null
         operations[key]?.let { previous ->
             // A previous accepted input's replaceable read never owns the next user send.
@@ -524,12 +591,15 @@ internal class ChatComposerOwner(
                 previous.job?.cancel()
             } else return null
         }
-        return Operation(key, connection, checking).also {
+        return Operation(key, connection, checking, recovery).also {
             operations[key] = it
             mutable.value =
                 mutable.value.copy(
                     busy = operations.keys.toSet(),
                     checking = checkingTargets(),
+                    recovering =
+                        recovery?.let { mutable.value.recovering + it } ?: mutable.value.recovering,
+                    recoveryFailures = mutable.value.recoveryFailures - key,
                     failed = mutable.value.failed - key,
                     unobserved = mutable.value.unobserved - key,
                 )
@@ -539,6 +609,7 @@ internal class ChatComposerOwner(
     fun send(connection: Connection, target: ComposerTarget) {
         if (!mutable.value.canSend(target) || !connection.current()) return
         val op = begin(connection, target.key) ?: return
+        val journal = checkNotNull(mutable.value.journal)
         val entry = mutable.value.entry(target)
         val threadId = target.threadId ?: UUID.randomUUID().toString()
         val eventId = UUID.randomUUID().toString()
@@ -571,9 +642,10 @@ internal class ChatComposerOwner(
                         ),
                 ),
                 TextStage.Prepared,
+                connectorOverrides =
+                    if (target.threadId == null) journal.newChatConnectorOverrides else emptyList(),
                 started = store.sendClock.markNow(),
             )
-        val journal = mutable.value.journal ?: return
         val draftKey = mutable.value.draftKey(target)
         val draft = journal.drafts[draftKey] ?: EditableComposerDraft()
         replace(
@@ -581,6 +653,8 @@ internal class ChatComposerOwner(
                 entries =
                     journal.entries +
                         (op.key to entry.copy(text = "", pending = pending, receipt = null)),
+                newChatConnectorOverrides =
+                    if (pending.create != null) emptyList() else journal.newChatConnectorOverrides,
                 drafts =
                     journal.drafts +
                         (draftKey to
@@ -598,8 +672,9 @@ internal class ChatComposerOwner(
 
     /** Explicit user recovery always reuses the frozen request and all original UUIDs. */
     fun retry(connection: Connection, target: ComposerTarget) {
-        val pending = mutable.value.entry(target).pending ?: return
-        if (pending.started != null) return
+        val state = mutable.value
+        val pending = state.entry(target).pending ?: return
+        if (pending.started != null && !state.connectorSetupFailed(target.key)) return
         begin(connection, target.key)?.let(::dispatch)
     }
 
@@ -628,7 +703,14 @@ internal class ChatComposerOwner(
         if (entry.recovery == unsent.prepared) put(op.key, entry.copy(recovery = unsent.previous))
     }
 
-    fun recover(connection: Connection, target: ComposerTarget, failureId: String, reset: Boolean) {
+    fun recover(
+        connection: Connection,
+        target: ComposerTarget,
+        failureId: String,
+        reset: Boolean,
+        confirmedAccount: String? = null,
+        originalResetKey: String? = null,
+    ) {
         val recovery = connection.recovery ?: return
         val selected =
             recovery.selection()?.takeIf {
@@ -648,10 +730,17 @@ internal class ChatComposerOwner(
             previous?.takeIf { it.selection == selected && it.outcome == null }?.reset?.accountId
                 ?: displayed?.resetAccount?.id
         if (reset && expectedAccount == null) return
+        if (confirmedAccount != null && expectedAccount != confirmedAccount) return
+        val unconfirmed = previous?.takeIf { it.outcome == null }?.reset
+        if (confirmedAccount != null && unconfirmed != null) return
+        if (originalResetKey != null && unconfirmed?.idempotencyKey != originalResetKey) return
         if (previous?.submitted == true && previous.selection == selected) return
         if (previous?.reset != null && previous.outcome == null && previous.selection != selected)
             return
-        val op = begin(connection, target.key) ?: return
+        val phase =
+            if (reset && unconfirmed != null) RecoveryOperationPhase.CheckingReset
+            else RecoveryOperationPhase.Preparing
+        val op = begin(connection, target.key, recovery = selected to phase) ?: return
         op.job =
             connection.scope.launch {
                 try {
@@ -783,8 +872,13 @@ internal class ChatComposerOwner(
     }
 
     private fun resumeSends(connection: Connection) {
-        mutable.value.journal?.entries?.forEach { (key, entry) ->
-            if (entry.pending?.started != null && key !in operations)
+        val state = mutable.value
+        state.journal?.entries?.forEach { (key, entry) ->
+            if (
+                entry.pending?.started != null &&
+                    key !in operations &&
+                    !state.connectorSetupFailed(key)
+            )
                 begin(connection, key)?.let(::dispatch)
         }
     }
@@ -800,23 +894,20 @@ internal class ChatComposerOwner(
             throw IOException("Exact pending input is not durable")
     }
 
-    private fun stage(op: Operation, pending: PendingText, stage: TextStage): PendingText {
-        val value = pending.copy(stage = stage)
-        val entry = checkNotNull(mutable.value.journal?.entries?.get(op.key))
+    private fun stage(op: Operation, pending: PendingText, stage: TextStage): PendingText =
+        pending.copy(stage = stage).also { updatePending(op.key, it) }
+
+    private fun updatePending(key: String, pending: PendingText) {
+        val state = mutable.value
+        val journal = checkNotNull(state.journal)
+        val entry = checkNotNull(journal.entries[key])
         check(entry.pending?.eventId == pending.eventId)
-        if (pending.started == null) put(op.key, entry.copy(pending = value))
+        val next = entry.copy(pending = pending)
+        if (pending.started == null) put(key, next)
         else {
-            val state = mutable.value
-            val journal = checkNotNull(state.journal)
             mutable.value =
-                state.copy(
-                    journal =
-                        journal.copy(
-                            entries = journal.entries + (op.key to entry.copy(pending = value)),
-                        ),
-                )
+                state.copy(journal = journal.copy(entries = journal.entries + (key to next)))
         }
-        return value
     }
 
     private fun dispatch(op: Operation) {
@@ -873,6 +964,7 @@ internal class ChatComposerOwner(
                             throw ApiFailure.IncompatibleResponse()
                         sending = stage(op, sending, TextStage.Created)
                     }
+                    applyNewChatConnectors(op, sending)
                     sending = stage(op, sending, TextStage.Sending)
                     val receipt = op.connection.service.sendInput(sending.send)
                     requireCurrent(op)
@@ -899,14 +991,22 @@ internal class ChatComposerOwner(
                         error.status !in setOf(408, 425, 429)
                 ) {
                     val latest = checkNotNull(mutable.value.journal?.entries?.get(op.key)?.pending)
-                    if (latest.stage == TextStage.Creating) {
+                    if (latest.awaitingConnectorSetup) {
+                        fail(op, error)
+                    } else if (latest.stage == TextStage.Creating) {
                         val entry = checkNotNull(mutable.value.journal?.entries?.get(op.key))
                         val journal = checkNotNull(mutable.value.journal)
+                        val choices = latest.connectorOverrides
                         replace(
                             journal.copy(
                                 entries = journal.entries + (op.key to entry.copy(pending = null)),
                                 retainedDrafts =
                                     journal.retainedDrafts + (latest.eventId to latest.send.prompt),
+                                retainedDraftConnectorOverrides =
+                                    if (choices.isEmpty()) journal.retainedDraftConnectorOverrides
+                                    else
+                                        journal.retainedDraftConnectorOverrides +
+                                            (latest.eventId to choices),
                             ),
                         )
                         fail(op, error)
@@ -978,6 +1078,18 @@ internal class ChatComposerOwner(
         requireCurrent(op)
         if (result.threadId != pending.threadId) throw ApiFailure.IncompatibleResponse()
         settle(op, pending, TextDisposition.Accepted)
+    }
+
+    private suspend fun applyNewChatConnectors(op: Operation, pending: PendingText) {
+        if (!pending.awaitingConnectorSetup) return
+        val connectors = op.connection.connectors ?: throw ApiFailure.IncompatibleResponse()
+        val memberAccess = connectors.memberAccessEnabled()
+        requireCurrent(op)
+        if (memberAccess) return
+        for (choice in pending.connectorOverrides) {
+            connectors.setChatOverride(pending.threadId, choice, canReadBack = { current(op) })
+            requireCurrent(op)
+        }
     }
 
     fun observe(connection: Connection, target: ComposerTarget) {
@@ -1146,7 +1258,12 @@ internal class ChatComposerOwner(
                     put(op.key, entry.copy(pending = null))
             }
             report(op.connection, error)
-            mutable.value = mutable.value.copy(failed = mutable.value.failed + op.key)
+            val state = mutable.value
+            val recovery = op.recovery?.first
+            mutable.value =
+                if (recovery != null && state.journal?.entries?.get(op.key)?.pending == null)
+                    state.copy(recoveryFailures = state.recoveryFailures + (op.key to recovery))
+                else state.copy(failed = state.failed + op.key)
         }
     }
 
@@ -1155,7 +1272,13 @@ internal class ChatComposerOwner(
             restoreUnsentReset(op)
             operations.remove(op.key)
             mutable.value =
-                mutable.value.copy(busy = operations.keys.toSet(), checking = checkingTargets())
+                mutable.value.copy(
+                    busy = operations.keys.toSet(),
+                    checking = checkingTargets(),
+                    recovering =
+                        op.recovery?.let { mutable.value.recovering - it.first }
+                            ?: mutable.value.recovering,
+                )
         }
     }
 }

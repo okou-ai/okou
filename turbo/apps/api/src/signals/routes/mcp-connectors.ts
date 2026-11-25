@@ -34,12 +34,11 @@ const runMcpScope$ = computed(async (get) => {
   if (!auth.capabilities.includes("connector-account:switch")) {
     return scope;
   }
-  const query = chatConnectorExecutionReadPlan({
-    orgId: auth.orgId,
-    userId: auth.userId,
-    kind: "run",
-    runId: auth.runId,
-  }).as("mcp_chat_accounts");
+  const query = chatConnectorExecutionReadPlan(
+    { orgId: auth.orgId, userId: auth.userId, kind: "run", runId: auth.runId },
+    undefined,
+    true,
+  ).as("mcp_chat_accounts");
   const execution = chatConnectorExecutionFromRows(
     await get(db$).select().from(query),
   );

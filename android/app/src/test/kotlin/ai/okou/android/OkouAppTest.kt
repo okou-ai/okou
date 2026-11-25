@@ -11,6 +11,7 @@ import ai.okou.android.chat.ChatComposerModel
 import ai.okou.android.chat.ChatListModel
 import ai.okou.android.chat.ChatListService
 import ai.okou.android.chat.RunControlsModel
+import ai.okou.android.preferences.MemberPreferenceSaveFeedback
 import ai.okou.android.preferences.MemberPreferencesModel
 import ai.okou.android.preferences.MemberPreferencesSettings
 import ai.okou.android.updates.UpdateTransfer
@@ -24,10 +25,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
@@ -171,7 +174,7 @@ class OkouAppTest {
                                         if (failPreferenceSave())
                                             throw ai.okou.android.api.ApiFailure.Http(
                                                 400,
-                                                null,
+                                                "BAD_REQUEST",
                                                 null,
                                                 null,
                                             )
@@ -208,7 +211,7 @@ class OkouAppTest {
                                 identity,
                                 WorkspaceTokenProvider { "test-token" },
                             ),
-                            app.runControlJournal,
+                            app.runControlOwners,
                             identity,
                             models.first.first.history,
                             { true },
@@ -235,6 +238,7 @@ class OkouAppTest {
                 val dark = state.theme.resolveDark(isSystemInDarkTheme())
                 OkouTheme(dark) {
                     val color = MaterialTheme.colorScheme.background
+                    val snackbar = remember { SnackbarHostState() }
                     SideEffect { background = color }
                     Box {
                         Box(Modifier.heightIn(max = contentHeight.value)) {
@@ -243,7 +247,9 @@ class OkouAppTest {
                                 models.first.second,
                                 controls,
                                 projectExpansion = null,
+                                snackbar = snackbar,
                                 settingsContent = { _, _, _ ->
+                                    MemberPreferenceSaveFeedback(models.second, snackbar)
                                     SettingsScreen(
                                         models = {},
                                         tools = {},
@@ -355,7 +361,7 @@ class OkouAppTest {
     @Test
     fun workspaceLanguageChoicesRemainReachableWithLargeText() {
         render(fontScale = 2f)
-        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.openChatListSettings()
         compose.onNodeWithText("Language").performScrollTo().performClick()
         compose.onNodeWithText("繁體中文").performScrollTo().assertIsDisplayed()
     }
@@ -364,7 +370,7 @@ class OkouAppTest {
     @Config(qualifiers = "en-rUS-w240dp-h450dp")
     fun compactSettingsShowTheValueBelowTheTitle() {
         render()
-        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.openChatListSettings()
         compose.onNodeWithText("Display mode").performScrollTo().assertIsDisplayed()
         val title = compose.onNodeWithText("Display mode", useUnmergedTree = true)
         val value = compose.onNodeWithText("Follow system", useUnmergedTree = true)
@@ -379,7 +385,7 @@ class OkouAppTest {
     fun chatFilterSurvivesSettingsAndBack() {
         render()
         compose.onNodeWithContentDescription("Chats").assertExists()
-        compose.onNodeWithContentDescription("More actions").assertDoesNotExist()
+        compose.onNodeWithContentDescription("More actions").assertIsDisplayed()
         compose.onNodeWithContentDescription("Filter").performClick()
         compose.onNodeWithText("Inbox").assertIsSelected().assertHeightIsEqualTo(48.dp)
         compose
@@ -388,7 +394,7 @@ class OkouAppTest {
             .assertHeightIsEqualTo(265.dp)
         compose.onNodeWithText("Mark all as read").assertIsNotEnabled()
         compose.onNodeWithText("Archived").performClick()
-        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.openChatListSettings()
         compose.onNodeWithText("Display mode").assertExists()
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithTag("chat_filter_heading").assertIsDisplayed().assert(hasText("Archived"))
@@ -410,7 +416,11 @@ class OkouAppTest {
         compose
             .onNodeWithTag("workspace_popup")
             .assertWidthIsEqualTo(244.dp)
-            .assertHeightIsEqualTo(110.dp)
+            .assertHeightIsEqualTo(158.dp)
+        val filter = compose.onNodeWithText("Filter").getUnclippedBoundsInRoot()
+        val project = compose.onNodeWithText("New project").getUnclippedBoundsInRoot()
+        val settings = compose.onNodeWithText("Settings").getUnclippedBoundsInRoot()
+        assertTrue(filter.top < project.top && project.top < settings.top)
         compose.onNodeWithText("Filter").performClick()
         compose.onNodeWithText("Inbox").assertIsSelected()
         compose.onNodeWithText("Mark all as read").assertIsNotEnabled()
@@ -427,23 +437,25 @@ class OkouAppTest {
     }
 
     @Test
-    fun preferenceFailuresAreVisibleAndRetryRestoresNativeSelection() {
+    fun appearanceRejectKeepsLocalSelectionAndTheNextChoiceDismissesFeedback() {
         var fail = true
         render(failPreferenceSave = { fail })
-        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.openChatListSettings()
         selectAppearance("Dark")
-        compose
-            .onNodeWithText("Could not save your preferences. Your selections are still in use.")
-            .assertExists()
+        val notice =
+            compose.onNodeWithText(
+                compose.activity.getString(R.string.settings_appearance_sync_failed),
+            )
+        notice.assertIsDisplayed()
         compose.onNodeWithText("Dark").assertIsDisplayed()
         compose.runOnIdle { fail = false }
-        compose.onNodeWithText("Try again").performScrollTo().performClick()
         compose.onNodeWithText("Display mode").performClick()
         compose.onNode(isSelectable() and hasText("Dark")).assertIsSelected()
         compose
             .onNode(isSelectable() and hasText("Light"))
             .performSemanticsAction(SemanticsActions.OnClick)
         compose.onNodeWithText("Light").assertIsDisplayed()
+        notice.assertDoesNotExist()
     }
 
     @Test
@@ -451,7 +463,7 @@ class OkouAppTest {
     fun manualAppearanceAndLiveSystemChangesRetainTheActiveDestination() {
         render()
         val light = compose.runOnIdle { background }
-        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.openChatListSettings()
         selectAppearance("Dark")
         compose.onNodeWithText("Dark").assertIsDisplayed()
         compose.runOnIdle { org.junit.Assert.assertNotEquals(light, background) }
@@ -489,7 +501,7 @@ class OkouAppTest {
         compose.onNodeWithTag("chat_list").assertExists()
         compose.onNodeWithTag("workspace_new_chat").assertExists()
         compose.onNodeWithTag("conversation").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.openChatListSettings()
         compose.onNodeWithText("Follow system").assertExists()
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithTag("workspace_new_chat").assertExists()
@@ -521,7 +533,7 @@ class OkouAppTest {
             windowSize.value = IntSize((400 * density).toInt(), (heightDp * density).toInt())
         }
         val draft = (1..20).joinToString("\n") { "Draft line $it" }
-        val selection = TextRange(12)
+        val selection = TextRange(12, 24)
         fun assertDraftAndSelection() {
             val semantics = input.fetchSemanticsNode().config
             assertEquals(draft, semantics[SemanticsProperties.EditableText].text)
@@ -529,20 +541,28 @@ class OkouAppTest {
         }
 
         input.performTextReplacement(draft)
+        input.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
         input.performTextInputSelection(selection)
         input.assertHeightIsEqualTo(160.dp)
 
         resize(479)
-        input.assertHeightIsEqualTo(48.dp)
+        input.assertHeightIsEqualTo(48.dp).assertIsFocused()
+        val compactLayouts = mutableListOf<TextLayoutResult>()
+        input.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(compactLayouts) }
+        val compactLayout = compactLayouts.single()
+        assertEquals(1, compactLayout.lineCount)
+        assertEquals(draft.length, compactLayout.getLineEnd(0))
         compose
             .onNodeWithContentDescription("Send")
             .assertIsDisplayed()
             .assertWidthIsEqualTo(48.dp)
             .assertHeightIsEqualTo(48.dp)
-        assertDraftAndSelection()
+        val compactSemantics = input.fetchSemanticsNode().config
+        assertEquals(draft, compactSemantics[SemanticsProperties.InputText].text)
+        assertEquals(selection, compactSemantics[SemanticsProperties.TextSelectionRange])
 
         resize(480)
-        input.assertHeightIsEqualTo(144.dp)
+        input.assertHeightIsEqualTo(144.dp).assertIsFocused()
         assertDraftAndSelection()
 
         resize(520)
@@ -563,6 +583,11 @@ class OkouAppTest {
 
         val scaledLineHeight = with(Density(density, fontScale = 2f)) { 26.sp.toDp() }
         input.assertHeightIsEqualTo(scaledLineHeight + 16.dp)
+        val layouts = mutableListOf<TextLayoutResult>()
+        input.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        val layout = layouts.single()
+        assertEquals(1, layout.lineCount)
+        assertEquals("First line Second line".length, layout.getLineEnd(0))
         compose.onNodeWithContentDescription("Send").assertIsDisplayed()
     }
 
@@ -706,7 +731,7 @@ class OkouAppTest {
                 }
             }
         render(fontScale = 2f, chatService = chatService)
-        compose.onNodeWithContentDescription("Einstellungen").assertIsDisplayed().performClick()
+        compose.openChatListSettings(more = "Weitere Aktionen", settings = "Einstellungen")
         selectAppearance("Dunkel", row = "Anzeigemodus")
         compose.onNodeWithText("Dunkel").assertIsDisplayed()
         compose.onNodeWithText("Region").performScrollTo().assertIsDisplayed()

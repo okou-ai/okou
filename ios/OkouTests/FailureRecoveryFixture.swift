@@ -104,13 +104,13 @@ final class FailureRecoveryFixture: Sendable {
           )
         }
       case threadPath:
+        return ChatHTTPResponse(body: #"{"cancellationRecoveryPending":false}"#)
+      case threadPath + "/composer-draft":
         if request.httpMethod == "PATCH" {
           let draft = try JSONDecoder().decode(ComposerDraft.self, from: chatRequestBody(request))
           state.value.withLock { $0.draft = draft }
           return ChatHTTPResponse(status: 204, body: "")
         }
-        return ChatHTTPResponse(body: #"{"cancellationRecoveryPending":false}"#)
-      case threadPath + "/draft":
         return try ChatHTTPResponse(
           json: state.value.withLock { $0.draft })
       case "/api/web/file-url":
@@ -345,6 +345,7 @@ final class FailureRecoveryFixture: Sendable {
     let sync = ChatSync(client: http.client, cache: cache)
     let conversation = ConversationStore(
       thread: thread, sync: sync, commands: ChatCommands(client: http.client, sync: sync),
+      graph: makeTestWorkspaceGraph(),
       webURL: http.baseURL, messageMarkdown: MessageMarkdownCache(baseURL: http.baseURL),
       isVisible: isVisible, didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {},
       modelSelection: selection,

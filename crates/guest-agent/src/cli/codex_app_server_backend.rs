@@ -26,8 +26,8 @@ use super::codex_app_server_events::{
 use super::event_delivery::{EventDeliveryRuntime, EventDeliverySender};
 use super::{
     AgentExecutionDeadline, BestEffortAgentLog, CliEventIngestor, CliExecutionControls,
-    CliExecutionResult, CliRuntimeConfig, CliStartupTiming, HeartbeatMonitor, HeartbeatStatus,
-    LOG_TAG, ParsedEventAction, codex_runtime_config,
+    CliExecutionResult, CliFailureDiagnostic, CliRuntimeConfig, CliStartupTiming, HeartbeatMonitor,
+    HeartbeatStatus, LOG_TAG, ParsedEventAction, codex_runtime_config,
 };
 use crate::active_input::{ActiveInputController, ActiveInputFrame, ActiveInputWriter};
 use guest_contracts::diagnostics::{
@@ -362,6 +362,14 @@ async fn run_codex_app_server(
     .map_err(|error| app_server_error(masker, error))?;
     let mut heartbeat_done = false;
     let active_input_controller = active_input.controller();
+    let mut sink = EventIngestSink {
+        ingestor: &mut ingestor,
+        output_timing: &mut output_timing,
+        agent_log: &mut agent_log,
+        masker,
+        should_send_events,
+        event_tx,
+    };
 
     let run = async {
         race_with_heartbeat(
@@ -389,14 +397,6 @@ async fn run_codex_app_server(
         )?;
         notification_state.allow_historical_usage = native_resumed;
         while let Some(notification) = client.pop_notification() {
-            let mut sink = EventIngestSink {
-                ingestor: &mut ingestor,
-                output_timing: &mut output_timing,
-                agent_log: &mut agent_log,
-                masker,
-                should_send_events,
-                event_tx,
-            };
             ingest_notification(
                 notification,
                 &mut sink,
@@ -409,14 +409,6 @@ async fn run_codex_app_server(
         }
 
         if !notification_state.thread_started_emitted {
-            let mut sink = EventIngestSink {
-                ingestor: &mut ingestor,
-                output_timing: &mut output_timing,
-                agent_log: &mut agent_log,
-                masker,
-                should_send_events,
-                event_tx,
-            };
             ingest_event(
                 synthesize_thread_started_event(&thread_identity.canonical_id),
                 &mut sink,
@@ -471,14 +463,6 @@ async fn run_codex_app_server(
             .await?;
             match event {
                 CodexRunEvent::Notification(notification) => {
-                    let mut sink = EventIngestSink {
-                        ingestor: &mut ingestor,
-                        output_timing: &mut output_timing,
-                        agent_log: &mut agent_log,
-                        masker,
-                        should_send_events,
-                        event_tx,
-                    };
                     let notification_scope = CodexTurnScope {
                         thread_id: &thread_identity.canonical_id,
                         turn_id: &turn_id,
@@ -514,14 +498,6 @@ async fn run_codex_app_server(
                         masker,
                     )
                     .await?;
-                    let mut sink = EventIngestSink {
-                        ingestor: &mut ingestor,
-                        output_timing: &mut output_timing,
-                        agent_log: &mut agent_log,
-                        masker,
-                        should_send_events,
-                        event_tx,
-                    };
                     let notification_scope = CodexTurnScope {
                         thread_id: &thread_identity.canonical_id,
                         turn_id: &turn_id,
@@ -563,21 +539,10 @@ async fn run_codex_app_server(
             }
         };
 
-        Ok::<CliExecutionResult, CodexRunError>(CliExecutionResult {
+        Ok::<CliExecutionResult, CodexRunError>(app_server_execution_result(
             exit_code,
-            // App-server terminal events report a protocol-level turn status,
-            // not the child process wait status.
-            cli_observed_exit: None,
-            stderr_lines: Vec::new(),
-            last_event_sequence: None,
-            event_delivery: None,
-            heartbeat: None,
-            jsonl_result: None,
-            post_result_cleanup_jsonl_result: None,
-            failure_diagnostic: ingestor.failure_diagnostic(),
-            control_error: None,
-            cli_termination: None,
-        })
+            sink.ingestor.failure_diagnostic(),
+        ))
     };
     let run_outcome = run_with_execution_deadline(
         run,
@@ -593,14 +558,6 @@ async fn run_codex_app_server(
         AppServerRunOutcome::ExecutionTimedOut { .. } | AppServerRunOutcome::UserCancelled
     ) && let Some(active_turn) = active_turn.as_ref()
     {
-        let mut sink = EventIngestSink {
-            ingestor: &mut ingestor,
-            output_timing: &mut output_timing,
-            agent_log: &mut agent_log,
-            masker,
-            should_send_events,
-            event_tx,
-        };
         match tokio::time::timeout(
             TURN_INTERRUPT_GRACE,
             interrupt_active_turn(
@@ -721,19 +678,13 @@ async fn run_codex_app_server(
                     );
                 }
                 Ok(CliExecutionResult {
-                    exit_code: 1,
-                    cli_observed_exit: None,
                     stderr_lines,
-                    last_event_sequence: None,
-                    event_delivery: None,
                     heartbeat: failure.diagnostic,
-                    jsonl_result: None,
-                    post_result_cleanup_jsonl_result: None,
-                    failure_diagnostic: ingestor.failure_diagnostic(),
                     control_error: Some(failure.error),
                     cli_termination: Some(CliTerminationDiagnostic::new(
                         failure.termination_reason,
                     )),
+                    ..app_server_execution_result(1, ingestor.failure_diagnostic())
                 })
             }
         },
@@ -746,21 +697,17 @@ async fn run_codex_app_server(
                 );
             }
             Ok(CliExecutionResult {
-                exit_code: AGENT_EXECUTION_TIMEOUT_EXIT_CODE,
-                cli_observed_exit: None,
                 stderr_lines,
-                last_event_sequence: None,
-                event_delivery: None,
-                heartbeat: None,
-                jsonl_result: None,
-                post_result_cleanup_jsonl_result: None,
-                failure_diagnostic: ingestor.failure_diagnostic(),
                 control_error: Some(AgentError::Execution(format!(
                     "Agent execution timed out after {timeout_secs} seconds"
                 ))),
                 cli_termination: Some(CliTerminationDiagnostic::new(
                     CliTerminationReason::ExecutionTimeout,
                 )),
+                ..app_server_execution_result(
+                    AGENT_EXECUTION_TIMEOUT_EXIT_CODE,
+                    ingestor.failure_diagnostic(),
+                )
             })
         }
         AppServerRunOutcome::UserCancelled => {
@@ -772,21 +719,34 @@ async fn run_codex_app_server(
                 );
             }
             Ok(CliExecutionResult {
-                exit_code: 1,
-                cli_observed_exit: None,
                 stderr_lines,
-                last_event_sequence: None,
-                event_delivery: None,
-                heartbeat: None,
-                jsonl_result: None,
-                post_result_cleanup_jsonl_result: None,
-                failure_diagnostic: ingestor.failure_diagnostic(),
                 control_error: Some(AgentError::Execution("Run cancelled by user".to_string())),
                 cli_termination: Some(CliTerminationDiagnostic::new(
                     CliTerminationReason::UserCancellation,
                 )),
+                ..app_server_execution_result(1, ingestor.failure_diagnostic())
             })
         }
+    }
+}
+
+fn app_server_execution_result(
+    exit_code: i32,
+    failure_diagnostic: Option<CliFailureDiagnostic>,
+) -> CliExecutionResult {
+    CliExecutionResult {
+        exit_code,
+        // App-server outcomes do not carry a child process wait status.
+        cli_observed_exit: None,
+        stderr_lines: Vec::new(),
+        last_event_sequence: None,
+        event_delivery: None,
+        heartbeat: None,
+        jsonl_result: None,
+        post_result_cleanup_jsonl_result: None,
+        failure_diagnostic,
+        control_error: None,
+        cli_termination: None,
     }
 }
 

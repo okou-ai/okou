@@ -22,6 +22,7 @@ import ai.okou.android.api.generated.InputStatusVariant3Status
 import ai.okou.android.api.generated.Organization
 import ai.okou.android.api.generated.PersonalInstructions
 import ai.okou.android.api.generated.ProjectArchive
+import ai.okou.android.api.generated.RunActivitySummaryStatus
 import ai.okou.android.api.generated.SendRequest
 import ai.okou.android.api.generated.SendRequestVariant1
 import ai.okou.android.api.generated.UpdateDefaultModelPreference
@@ -53,13 +54,18 @@ import ai.okou.android.chat.SearchMessageHit
 import ai.okou.android.chat.ServerDraftTarget
 import ai.okou.android.chat.TextDisposition
 import ai.okou.android.chat.WorkspaceSearchService
+import ai.okou.android.chat.asConfirmedProject
 import ai.okou.android.chat.historyJson
 import ai.okou.android.chat.readHistoryNdjson
 import ai.okou.android.connectors.ConnectorService
 import ai.okou.android.instructions.PersonalInstructionsService
+import ai.okou.android.settings.BuiltInToolsService
+import ai.okou.android.settings.CanonicalBuiltInToolsService
+import ai.okou.android.settings.ProactivePreferencesService
 import ai.okou.android.workflows.WorkflowService
 import java.io.Closeable
 import java.io.IOException
+import java.io.InputStream
 import java.util.Locale
 import java.util.TimeZone
 import kotlinx.coroutines.Dispatchers
@@ -96,6 +102,12 @@ interface WorkspaceSession :
         get() = null
 
     val workflowService: WorkflowService?
+        get() = null
+
+    val proactivePreferences: ProactivePreferencesService?
+        get() = null
+
+    val builtInTools: BuiltInToolsService?
         get() = null
 
     suspend fun usagePackCredits(): ai.okou.android.api.generated.UsagePackCredits
@@ -145,6 +157,12 @@ class CanonicalWorkspaceSession(
 
     private val api =
         ApiClient(identity.apiOrigin.toHttpUrl(), tokens, onUpdateRequired = onUpdateRequired)
+    override val proactivePreferences = ProactivePreferencesService(api)
+    private val builtInToolsService =
+        CanonicalBuiltInToolsService(api, identity.apiOrigin.toHttpUrl())
+    override val builtInTools: BuiltInToolsService
+        get() = builtInToolsService
+
     override val connectors = ConnectorService(api)
     private val transfers = SignedTransferClient()
     override val artifacts = ArtifactService(api, transfers, identity.apiOrigin)
@@ -245,6 +263,8 @@ class CanonicalWorkspaceSession(
     override suspend fun chatEvents(since: Long?) = api.chatEvents(since)
 
     override suspend fun indicators() = api.indicators()
+
+    override suspend fun draftThreadIds() = api.draftThreadIds()
 
     override suspend fun newChatReady(): Boolean {
         val status = api.onboardingStatus()
@@ -354,6 +374,15 @@ class CanonicalWorkspaceSession(
 
     override suspend fun threadDetail(threadId: String) = api.threadDetail(threadId)
 
+    override suspend fun summarizeRunActivity(threadId: String, runId: String): String? {
+        val summary = api.summarizeRunActivity(threadId, runId)
+        if (summary.runId != runId) throw ApiFailure.IncompatibleResponse()
+        return summary.messages
+            .firstOrNull { it.text.isNotBlank() }
+            ?.text
+            .takeIf { summary.status == RunActivitySummaryStatus.AVAILABLE }
+    }
+
     override suspend fun markRead(threadId: String) = api.markRead(threadId)
 
     override suspend fun markUnread(threadId: String) = api.markUnread(threadId)
@@ -367,8 +396,14 @@ class CanonicalWorkspaceSession(
     override suspend fun deleteThread(threadId: String, eventId: String) =
         api.deleteThread(threadId, eventId)
 
+    override suspend fun createProject(projectId: String, name: String) =
+        api.createProject(projectId, name).asConfirmedProject(projectId)
+
+    override suspend fun projectDetail(projectId: String) =
+        api.projectDetail(projectId).asConfirmedProject(projectId)
+
     override suspend fun renameProject(projectId: String, name: String, eventId: String) =
-        api.renameProject(projectId, name, eventId)
+        api.renameProject(projectId, name, eventId).asConfirmedProject(projectId)
 
     override suspend fun moveThreadToProject(
         threadId: String,
@@ -405,18 +440,7 @@ class CanonicalWorkspaceSession(
         }
 
     override suspend fun historyArchive(url: String): List<HistoryEvent> =
-        withContext(Dispatchers.IO) {
-            val address = url.toHttpUrlOrNull() ?: throw ApiFailure.IncompatibleResponse()
-            try {
-                transfers.download(address, ::readHistoryNdjson)
-            } catch (error: ApiFailure.Http) {
-                throw ChatSnapshotUnavailable(error.status)
-            } catch (_: SerializationException) {
-                throw ApiFailure.IncompatibleResponse()
-            } catch (_: IllegalArgumentException) {
-                throw ApiFailure.IncompatibleResponse()
-            }
-        }
+        downloadArchive(url, ::readHistoryNdjson)
 
     override suspend fun chatArchive(url: String): ChatArchive = archive(url)
 
@@ -424,10 +448,13 @@ class CanonicalWorkspaceSession(
 
     @OptIn(ExperimentalSerializationApi::class)
     private suspend inline fun <reified T> archive(url: String): T =
+        downloadArchive(url) { archiveJson.decodeFromStream<T>(it) }
+
+    private suspend fun <T> downloadArchive(url: String, read: (InputStream) -> T): T =
         withContext(Dispatchers.IO) {
             val address = url.toHttpUrlOrNull() ?: throw ApiFailure.IncompatibleResponse()
             try {
-                transfers.download(address) { archiveJson.decodeFromStream<T>(it) }
+                transfers.download(address, read)
             } catch (error: ApiFailure.Http) {
                 throw ChatSnapshotUnavailable(error.status, error.retryAfterSeconds)
             } catch (error: IOException) {
@@ -473,7 +500,11 @@ class CanonicalWorkspaceSession(
         try {
             api.close()
         } finally {
-            transfers.close()
+            try {
+                transfers.close()
+            } finally {
+                builtInToolsService.close()
+            }
         }
     }
 }

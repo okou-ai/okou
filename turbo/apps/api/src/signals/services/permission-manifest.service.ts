@@ -3,10 +3,7 @@ import type {
   PermissionManifest,
   ResolvedModelProviderEnvironment,
 } from "./agent-run-contracts";
-import {
-  type ApiDispatchTimingCollector,
-  measureApiDispatchTiming,
-} from "./api-dispatch-timing.service";
+import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import type { ConnectorRuntimeLookup } from "./connector-catalog-runtime.service";
 import {
   allAllowPolicyForPermissions,
@@ -17,10 +14,7 @@ import {
   resolveConnectorNetworkPolicy,
   runtimeFirewall,
 } from "./connector-runtime-preparation.service";
-import type {
-  ConnectorServerFirewallExecutionMetadata,
-  ConnectorServerFirewallPermissionIndex,
-} from "./connector-server-firewall-catalog.service";
+import type { ConnectorServerFirewallExecutionMetadata } from "./connector-server-firewall-catalog.service";
 import {
   type ConnectorSlug,
   connectorSlugSchema,
@@ -38,7 +32,6 @@ import {
   type FirewallPolicy,
   type NetworkPolicies,
 } from "@okouai/connectors/firewall-types";
-import { defaultFirewallPolicyForPermissionIndex } from "./firewall-network-policy.service";
 import { logger } from "../../lib/log";
 import { safeSync } from "../utils";
 
@@ -66,21 +59,6 @@ function firewallSecretPlaceholdersFromFirewalls(
   }
 
   return Object.keys(placeholders).length > 0 ? placeholders : undefined;
-}
-
-async function loadRequiredFirewallPermissionIndex(args: {
-  readonly snapshot: Pick<ConnectorRuntimeLookup, "serverFirewalls">;
-  readonly connectorSlug: string;
-}): Promise<ConnectorServerFirewallPermissionIndex> {
-  const index = await args.snapshot.serverFirewalls.loadPermissionIndex(
-    args.connectorSlug,
-  );
-  if (!index) {
-    throw new Error(
-      `Missing connector server firewall permission metadata: ${args.connectorSlug}`,
-    );
-  }
-  return index;
 }
 
 function getRequiredFirewallExecutionMetadata(
@@ -260,36 +238,33 @@ export function modelProviderPermissionManifest(
   };
 }
 
-interface BuiltinConnectorManifestSource {
-  readonly metadata: ConnectorServerFirewallExecutionMetadata;
-  readonly permissionIndex: ConnectorServerFirewallPermissionIndex;
-  readonly isMcp: boolean;
-}
-
-function applyBuiltinConnectorMetadataPolicies(
-  sources: readonly BuiltinConnectorManifestSource[],
-  policies: FirewallPolicies | undefined,
+function prepareBuiltinConnectorManifest(
+  selection: RunConnectorCatalogSelection,
+  connectorSlugs: readonly ConnectorSlug[],
   vars: Record<string, string> | undefined,
   connectorSourceIdBySlug: Readonly<Record<string, string>>,
-): PermissionManifest {
+): Omit<PermissionManifest, "networkPolicies"> {
   const firewalls: ExecutionFirewalls = [];
-  const networkPolicies: NetworkPolicies = {};
   const environmentSecretPlaceholders: Record<string, string> = {};
   const billableFirewalls: string[] = [];
 
-  for (const source of sources) {
-    const name = source.metadata.connectorSlug;
-    const permissionNames = [...source.permissionIndex.permissionNames];
-    const defaultPolicy = defaultFirewallPolicyForPermissionIndex(
-      source.permissionIndex,
+  for (const name of connectorSlugs) {
+    if (
+      selection.kind === "empty" ||
+      !selection.selection.serverFirewalls.has(name)
+    ) {
+      continue;
+    }
+    const metadata = getRequiredFirewallExecutionMetadata(
+      selection.selection,
+      name,
     );
-    const policy = policies?.[name];
     const sourceId = connectorSourceIdBySlug[name];
     if (sourceId === undefined) {
       throw new Error("Missing built-in connector source identity");
     }
     const entry = safeSync(() => {
-      return builtinFirewallEntryForMetadata(source.metadata, vars, sourceId);
+      return builtinFirewallEntryForMetadata(metadata, vars, sourceId);
     });
     if ("error" in entry) {
       if (!(entry.error instanceof FirewallBaseUrlResolutionError)) {
@@ -303,26 +278,16 @@ function applyBuiltinConnectorMetadataPolicies(
       continue;
     }
     firewalls.push(entry.ok);
-    if (!source.isMcp) {
-      Object.assign(
-        environmentSecretPlaceholders,
-        source.metadata.placeholderValues,
-      );
+    if (!selection.selection.serverFirewalls.isMcp(name)) {
+      Object.assign(environmentSecretPlaceholders, metadata.placeholderValues);
     }
-    if (source.metadata.billable) {
+    if (metadata.billable) {
       billableFirewalls.push(name);
     }
-
-    networkPolicies[name] = resolveConnectorNetworkPolicy({
-      permissionNames,
-      defaultPolicy,
-      policy,
-    });
   }
 
   return {
     firewalls,
-    networkPolicies,
     environmentSecretPlaceholders: compactRecord(environmentSecretPlaceholders),
     billableFirewalls,
   };
@@ -345,19 +310,17 @@ function builtinRuntimeTargetRegistration(
 }
 
 function mergePermissionManifests(args: {
-  readonly connectorManifest: PermissionManifest;
+  readonly connectorManifest: Omit<PermissionManifest, "networkPolicies">;
   readonly customConnectorManifest: Pick<
     PermissionManifest,
     "firewalls" | "networkPolicies"
   >;
-  readonly providerManifest: PermissionManifest | undefined;
   readonly customConnectorFirewalls: readonly ExpandedFirewallConfig[];
 }): PermissionManifest | undefined {
   const builtinRuntimeTargets = args.connectorManifest.firewalls.map(
     builtinRuntimeTargetRegistration,
   );
   const firewalls = [
-    ...(args.providerManifest?.firewalls ?? []),
     ...args.connectorManifest.firewalls,
     ...args.customConnectorManifest.firewalls,
   ];
@@ -370,29 +333,21 @@ function mergePermissionManifests(args: {
     firewalls,
     builtinRuntimeTargets,
     environmentSecretPlaceholders: mergeRecords(
-      args.providerManifest?.environmentSecretPlaceholders,
       args.connectorManifest.environmentSecretPlaceholders,
       firewallSecretPlaceholdersFromFirewalls(args.customConnectorFirewalls),
     ),
-    billableFirewalls: [
-      ...(args.providerManifest?.billableFirewalls ?? []),
-      ...args.connectorManifest.billableFirewalls,
-    ],
-    networkPolicies: {
-      ...args.providerManifest?.networkPolicies,
-      ...args.connectorManifest.networkPolicies,
-      ...args.customConnectorManifest.networkPolicies,
-    },
+    billableFirewalls: args.connectorManifest.billableFirewalls,
+    // Builtin policies are built from captured grants at Runner publication.
+    networkPolicies: args.customConnectorManifest.networkPolicies,
   };
 }
 
 interface BuildPermissionManifestArgs {
   readonly connectorCatalogSelection: RunConnectorCatalogSelection;
-  readonly modelProvider: ResolvedModelProviderEnvironment | null;
   readonly permissionPolicies: FirewallPolicies | undefined;
   readonly vars: Record<string, string> | undefined;
   readonly connectorVars?: Record<string, string>;
-  readonly connectorSlugs?: readonly ConnectorSlug[];
+  readonly connectorSlugs: readonly ConnectorSlug[];
   readonly connectorSourceIdBySlug?: Readonly<Record<string, string>>;
   readonly customConnectorFirewalls?: readonly ExpandedFirewallConfig[];
   readonly customConnectorPermissionPolicies?: FirewallPolicies;
@@ -400,114 +355,60 @@ interface BuildPermissionManifestArgs {
   readonly customConnectorSourceIdByFirewallName?: Readonly<
     Record<string, string>
   >;
-  readonly timing?: ApiDispatchTimingCollector;
+  readonly timing: ApiDispatchTimingCollector;
 }
 
-export async function buildPermissionManifest(
+export function buildConnectorPermissionManifest(
   args: BuildPermissionManifestArgs,
-): Promise<PermissionManifest | undefined> {
+): PermissionManifest | undefined {
   const connectorBaseUrlVars = mergeRecords(args.vars, args.connectorVars);
   const customConnectorFirewalls = args.customConnectorFirewalls ?? [];
 
-  const builtinSources = await measureApiDispatchTiming(
-    args.timing,
-    "api_dispatch_prepare_context_load_builtin_permission_indexes",
+  const connectorManifest = args.timing.measureSync(
+    "api_dispatch_prepare_context_select_builtin_targets",
     "nested",
-    async () => {
-      if (args.connectorCatalogSelection.kind === "empty") {
-        return [];
-      }
-      const snapshot = args.connectorCatalogSelection.selection;
-      const builtinConnectorSlugs = (
-        args.connectorSlugs ?? Object.keys(args.permissionPolicies ?? {})
-      ).filter((connectorSlug) => {
-        return snapshot.serverFirewalls.has(connectorSlug);
-      });
-      return await Promise.all(
-        builtinConnectorSlugs.map(async (connectorSlug) => {
-          const metadata = getRequiredFirewallExecutionMetadata(
-            snapshot,
-            connectorSlug,
-          );
-          const permissionIndex = await loadRequiredFirewallPermissionIndex({
-            snapshot,
-            connectorSlug,
-          });
-          return {
-            metadata,
-            permissionIndex,
-            isMcp: snapshot.serverFirewalls.isMcp(connectorSlug),
-          };
-        }),
+    () => {
+      return prepareBuiltinConnectorManifest(
+        args.connectorCatalogSelection,
+        args.connectorSlugs,
+        connectorBaseUrlVars,
+        args.connectorSourceIdBySlug ?? {},
       );
     },
   );
 
-  const connectorManifest = await measureApiDispatchTiming(
-    args.timing,
-    "api_dispatch_prepare_context_apply_builtin_permission_policies",
-    "nested",
-    () => {
-      return Promise.resolve(
-        applyBuiltinConnectorMetadataPolicies(
-          builtinSources,
-          args.permissionPolicies,
-          connectorBaseUrlVars,
-          args.connectorSourceIdBySlug ?? {},
-        ),
-      );
-    },
-  );
-  const customConnectorManifest = await measureApiDispatchTiming(
-    args.timing,
+  const customConnectorManifest = args.timing.measureSync(
     "api_dispatch_prepare_context_apply_custom_permission_policies",
     "nested",
     () => {
-      return Promise.resolve(
-        applyConnectorPolicies(
-          customConnectorFirewalls,
-          mergeRecords(
-            args.permissionPolicies,
-            args.customConnectorPermissionPolicies,
-          ),
-          (firewall) => {
-            return customConnectorInlineFirewallEntry(
-              firewall,
-              args.customConnectorIdByFirewallName ?? {},
-              args.customConnectorSourceIdByFirewallName ?? {},
-            );
-          },
-          (_firewall, permissionNames) => {
-            return allAllowPolicyForPermissions(permissionNames);
-          },
+      return applyConnectorPolicies(
+        customConnectorFirewalls,
+        mergeRecords(
+          args.permissionPolicies,
+          args.customConnectorPermissionPolicies,
         ),
+        (firewall) => {
+          return customConnectorInlineFirewallEntry(
+            firewall,
+            args.customConnectorIdByFirewallName ?? {},
+            args.customConnectorSourceIdByFirewallName ?? {},
+          );
+        },
+        (_firewall, permissionNames) => {
+          return allAllowPolicyForPermissions(permissionNames);
+        },
       );
     },
   );
-  const providerManifest = await measureApiDispatchTiming(
-    args.timing,
-    "api_dispatch_prepare_context_apply_model_provider_permission_policy",
-    "nested",
-    () => {
-      return Promise.resolve(
-        modelProviderPermissionManifest(args.modelProvider, args.vars),
-      );
-    },
-  );
-
-  return await measureApiDispatchTiming(
-    args.timing,
+  return args.timing.measureSync(
     "api_dispatch_prepare_context_merge_permission_manifest",
     "nested",
     () => {
-      return Promise.resolve(
-        mergePermissionManifests({
-          connectorManifest,
-          customConnectorManifest,
-          providerManifest,
-          customConnectorFirewalls,
-        }),
-      );
+      return mergePermissionManifests({
+        connectorManifest,
+        customConnectorManifest,
+        customConnectorFirewalls,
+      });
     },
   );
 }

@@ -6,6 +6,7 @@ import ai.okou.android.api.generated.CanonicalOptional
 import ai.okou.android.api.generated.CreateWorkflowAutomationRequest
 import ai.okou.android.api.generated.UpdateWorkflowAutomationRequest
 import ai.okou.android.api.generated.UpdateWorkflowRequest
+import ai.okou.android.api.generated.WorkflowAutomation
 import ai.okou.android.api.generated.WorkflowAutomationVariant1
 import ai.okou.android.api.generated.WorkflowAutomationVariant1Kind
 import ai.okou.android.api.generated.WorkflowAutomationVariant1ScheduleVariant1
@@ -20,6 +21,8 @@ import ai.okou.android.api.generated.WorkflowSummary
 import ai.okou.android.api.generated.WorkflowSummaryVisibility
 import ai.okou.android.api.generated.WorkspaceWorkflowAutomations
 import ai.okou.android.api.generated.WorkspaceWorkflowAutomationsItem
+import ai.okou.android.chat.SearchRead
+import ai.okou.android.chat.searchCatalog
 import ai.okou.android.state.WorkflowTab
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
@@ -129,6 +132,14 @@ internal abstract class WorkflowModelTestFixture {
         var detailRead: suspend (String) -> WorkflowDetail = { detail }
         var rulesRead: suspend () -> WorkspaceWorkflowAutomations = { emptyList() }
         var connectionsRead: suspend () -> Set<String> = { emptySet() }
+        var toggle: suspend (String, Boolean) -> WorkflowAutomation = { _, _ ->
+            error("Unexpected automation toggle")
+        }
+        var updateRule: suspend (String, UpdateWorkflowAutomationRequest) -> WorkflowAutomation =
+            { _, _ ->
+                error("Unexpected automation update")
+            }
+        val toggleRequests = mutableListOf<Pair<String, Boolean>>()
         var detailReads = 0
             private set
 
@@ -208,10 +219,15 @@ internal abstract class WorkflowModelTestFixture {
         override suspend fun updateAutomation(
             id: String,
             request: UpdateWorkflowAutomationRequest,
-        ) = error("Unexpected automation update")
+        ): WorkflowAutomation = updateRule(id, request)
 
-        override suspend fun setAutomationEnabled(id: String, enabled: Boolean) =
-            error("Unexpected automation toggle")
+        override suspend fun setAutomationEnabled(
+            id: String,
+            enabled: Boolean,
+        ): WorkflowAutomation {
+            toggleRequests += id to enabled
+            return toggle(id, enabled)
+        }
     }
 }
 
@@ -233,6 +249,10 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
             model.searchVisibilityChanged(true)
             runCurrent()
             assertEquals(saved, model.state.value.catalog)
+            val matches = model.state.value.searchCatalog("release") as SearchRead.Ready
+            assertTrue(matches.refreshing)
+            assertEquals(listOf(service.summary.id), matches.rows.map { it.id })
+            assertEquals(SearchRead.Loading, model.state.value.searchCatalog("unmatched"))
             assertEquals(2, service.catalogReads)
             assertEquals(1, service.ruleReads)
             assertEquals(1, service.connectionReads)
@@ -245,8 +265,13 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
             runCurrent()
             assertEquals(saved, model.state.value.catalog)
             assertNull(model.state.value.catalogFailure)
+            assertEquals(matches, model.state.value.searchCatalog("release"))
 
             model.searchVisibilityChanged(false)
+            assertEquals(
+                matches.copy(refreshing = false),
+                model.state.value.searchCatalog("release"),
+            )
             advanceTimeBy(600_000)
             val newCatalog = CompletableDeferred<List<WorkflowSummary>>()
             service.catalogRead = { newCatalog.await() }
@@ -254,10 +279,42 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
             runCurrent()
             assertNull(model.state.value.catalog)
             assertNull(model.state.value.catalogFailure)
+            assertEquals(SearchRead.Loading, model.state.value.searchCatalog("release"))
             newCatalog.complete(saved)
             runCurrent()
             assertEquals(saved, model.state.value.catalog)
+            assertEquals(
+                SearchRead.Ready(emptyList<Nothing>()),
+                model.state.value.searchCatalog("unmatched"),
+            )
         }
+
+    @Test
+    fun searchReplacesAFailedInitialCatalogWithLoadingOnResume() = check { service, model ->
+        service.catalogRead = { throw ApiFailure.Network(IOException("Connection failed")) }
+        model.searchVisibilityChanged(true)
+        runCurrent()
+
+        advanceTimeBy(3_000)
+        runCurrent()
+        assertEquals(SearchRead.Loading, model.state.value.searchCatalog("release"))
+        advanceTimeBy(3_000)
+        runCurrent()
+        assertEquals(SearchRead.Failed, model.state.value.searchCatalog("release"))
+
+        val recovered = CompletableDeferred<List<WorkflowSummary>>()
+        service.catalogRead = { recovered.await() }
+        model.foregroundChanged(false)
+        model.foregroundChanged(true)
+        runCurrent()
+        assertEquals(SearchRead.Loading, model.state.value.searchCatalog("release"))
+        recovered.complete(emptyList())
+        runCurrent()
+        assertEquals(
+            SearchRead.Ready(emptyList<Nothing>()),
+            model.state.value.searchCatalog("release"),
+        )
+    }
 
     @Test
     fun switchingBackShowsCachedDetailAndReadsTheLatestWhileItIsVisible() =
@@ -292,13 +349,12 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
         }
 
     @Test
-    fun openingOfflineAttemptsAReadThenResumesOnReconnect() = check { service, model ->
+    fun failedCatalogReadRecoversWhenTheAppReturnsToTheForeground() = check { service, model ->
         var reachable = false
         service.catalogRead = {
             if (!reachable) throw ApiFailure.Network(IOException("Offline"))
             listOf(service.summary)
         }
-        model.connectivityChanged(true)
         model.visibilityChanged(true)
         runCurrent()
 
@@ -311,7 +367,8 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
         assertEquals(WorkflowReadFailure.Network, model.state.value.catalogFailure)
 
         reachable = true
-        model.connectivityChanged(false)
+        model.foregroundChanged(false)
+        model.foregroundChanged(true)
         runCurrent()
         assertEquals(4, service.catalogReads)
         assertEquals(listOf(service.summary), model.state.value.catalog)
@@ -319,7 +376,43 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
     }
 
     @Test
-    fun reconnectKeepsAnActiveReadOnItsServerSchedule() = check { service, model ->
+    fun foregroundingRefreshesTheFailedCatalogWhileOnlySearchIsOpen() = check { service, model ->
+        model.searchVisibilityChanged(true)
+        runCurrent()
+        val saved = listOf(service.summary)
+        assertEquals(saved, model.state.value.catalog)
+        model.searchVisibilityChanged(false)
+
+        service.catalogRead = { throw ApiFailure.Network(IOException("Offline")) }
+        model.searchVisibilityChanged(true)
+        runCurrent()
+        advanceTimeBy(6_000)
+        runCurrent()
+        assertEquals(4, service.catalogReads)
+        assertEquals(saved, model.state.value.catalog)
+        assertEquals(WorkflowReadFailure.Network, model.state.value.catalogFailure)
+
+        val refreshed = listOf(service.summary.copy(displayName = "Refreshed"))
+        service.catalogRead = { refreshed }
+        model.foregroundChanged(false)
+        model.foregroundChanged(true)
+        runCurrent()
+        assertEquals(5, service.catalogReads)
+        assertEquals(refreshed, model.state.value.catalog)
+        assertNull(model.state.value.catalogFailure)
+        assertEquals(0, service.ruleReads)
+        assertEquals(0, service.connectionReads)
+
+        model.searchVisibilityChanged(false)
+        advanceTimeBy(600_000)
+        model.foregroundChanged(false)
+        model.foregroundChanged(true)
+        runCurrent()
+        assertEquals(5, service.catalogReads)
+    }
+
+    @Test
+    fun readRetriesRespectTheServerSchedule() = check { service, model ->
         service.catalogRead = {
             when (service.catalogReads) {
                 1 -> throw ApiFailure.Http(429, null, null, 9)
@@ -331,15 +424,13 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
         runCurrent()
         assertNull(model.state.value.catalogFailure)
 
-        model.connectivityChanged(true)
-        model.connectivityChanged(false)
         advanceTimeBy(8_999)
         runCurrent()
         assertEquals(1, service.catalogReads)
         advanceTimeBy(1)
         runCurrent()
         assertEquals(2, service.catalogReads)
-        advanceTimeBy(2_999)
+        advanceTimeBy(999)
         runCurrent()
         assertEquals(2, service.catalogReads)
         assertNull(model.state.value.catalogFailure)
@@ -353,27 +444,26 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
     }
 
     @Test
-    fun reconnectRestartsTheFailedDetailWhileTheCatalogIsStillReadingConnections() =
-        check { service, model ->
-            val connections = CompletableDeferred<Set<String>>()
-            service.connectionsRead = { connections.await() }
-            service.detailRead = {
-                if (service.detailReads <= 3) throw ApiFailure.Network(IOException("Offline"))
-                service.detail
-            }
-            model.connectivityChanged(true)
-            model.select(service.summary.id)
-            model.visibilityChanged(true)
-            advanceTimeBy(6_000)
-            runCurrent()
-            assertEquals(WorkflowReadFailure.Network, model.state.value.detailFailure)
-
-            model.connectivityChanged(false)
-            runCurrent()
-            assertEquals(service.detail, model.state.value.detail)
-            assertNull(model.state.value.detailFailure)
-            assertNull(model.state.value.connections)
+    fun foregroundingRestartsTheFailedDetailWhileConnectionsArePending() = check { service, model ->
+        val connections = CompletableDeferred<Set<String>>()
+        service.connectionsRead = { connections.await() }
+        service.detailRead = {
+            if (service.detailReads <= 3) throw ApiFailure.Network(IOException("Offline"))
+            service.detail
         }
+        model.select(service.summary.id)
+        model.visibilityChanged(true)
+        advanceTimeBy(6_000)
+        runCurrent()
+        assertEquals(WorkflowReadFailure.Network, model.state.value.detailFailure)
+
+        model.foregroundChanged(false)
+        model.foregroundChanged(true)
+        runCurrent()
+        assertEquals(service.detail, model.state.value.detail)
+        assertNull(model.state.value.detailFailure)
+        assertNull(model.state.value.connections)
+    }
 
     @Test
     fun cachedReadsWaitForTwoRetriesAndRetainTheEditorOnTerminalFailure() =
@@ -415,12 +505,12 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
             runCurrent()
             assertEquals(listOf(0L, 3_000L, 6_000L), catalogAttempts)
 
-            model.connectivityChanged(true)
-            model.connectivityChanged(false)
+            model.foregroundChanged(false)
+            model.foregroundChanged(true)
             runCurrent()
             assertEquals(listOf(0L, 3_000L, 6_000L, 66_000L), catalogAttempts)
             assertNull(model.state.value.catalogFailure)
-            assertEquals(2, service.detailReads)
+            assertEquals(3, service.detailReads)
         }
 
     @Test
@@ -502,8 +592,8 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
         advanceTimeBy(600_000)
         val refreshedDetail = CompletableDeferred<WorkflowDetail>()
         service.detailRead = { refreshedDetail.await() }
-        model.connectivityChanged(true)
-        model.connectivityChanged(false)
+        model.foregroundChanged(false)
+        model.foregroundChanged(true)
         runCurrent()
         assertEquals(listOf(paused), model.state.value.rules?.get(service.summary.id))
         assertEquals(listOf(paused), model.state.value.detail?.automations)
@@ -522,8 +612,8 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
         val catalog = CompletableDeferred<List<WorkflowSummary>>()
         service.catalogRead = { catalog.await() }
         advanceTimeBy(600_000)
-        model.connectivityChanged(true)
-        model.connectivityChanged(false)
+        model.foregroundChanged(false)
+        model.foregroundChanged(true)
         runCurrent()
 
         val published =
@@ -565,8 +655,8 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
         val catalog = CompletableDeferred<List<WorkflowSummary>>()
         service.catalogRead = { catalog.await() }
         advanceTimeBy(600_000)
-        model.connectivityChanged(true)
-        model.connectivityChanged(false)
+        model.foregroundChanged(false)
+        model.foregroundChanged(true)
         runCurrent()
 
         service.detailRead = { throw ApiFailure.Http(404, null, null, null) }
@@ -692,7 +782,6 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
         runCurrent()
         val editor = WorkflowEdit.Rule(id = null, original = RuleFields(timezone = "UTC"))
         model.edit(editor)
-        model.connectivityChanged(true)
         model.save(editor)
         runCurrent()
 
@@ -702,11 +791,176 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
         assertEquals(1, service.catalogReads)
         assertEquals(1, service.ruleReads)
         assertEquals(1, service.connectionReads)
-        model.connectivityChanged(false)
         model.save(editor)
         runCurrent()
         assertEquals(1, service.createAttempts)
     }
+}
+
+@OptIn(ExperimentalCoroutinesApi::class)
+internal class WorkflowToggleModelTest : WorkflowModelTestFixture() {
+    private fun TestScope.openRule(
+        service: Service,
+        model: WorkflowModel,
+        rule: WorkflowAutomationVariant1 = service.weeklyRule(),
+    ): WorkflowAutomationVariant1 {
+        service.detail = service.detail.copy(automations = listOf(rule))
+        service.rulesRead = { listOf(WorkspaceWorkflowAutomationsItem(service.summary, rule)) }
+        model.visibilityChanged(true)
+        runCurrent()
+        model.select(service.summary.id, WorkflowTab.Automations)
+        runCurrent()
+        return rule
+    }
+
+    @Test
+    fun confirmedToggleRetainsTheRuleUntilItsReceiptWithoutAnExtraRead() = check { service, model ->
+        val active = openRule(service, model)
+        val receipt = CompletableDeferred<WorkflowAutomation>()
+        service.toggle = { _, _ -> receipt.await() }
+        val originalReads = service.detailReads
+
+        model.toggle(active)
+        runCurrent()
+        assertEquals(
+            WorkflowToggle(false, WorkflowTogglePhase.Submitting),
+            model.state.value.toggles[active.id],
+        )
+        assertEquals(listOf(active), model.state.value.detail?.automations)
+        model.toggle(active)
+        runCurrent()
+
+        val paused = active.copy(enabled = false, nextRunAt = null)
+        receipt.complete(paused)
+        runCurrent()
+        assertEquals(listOf(active.id to false), service.toggleRequests)
+        assertEquals(listOf(paused), model.state.value.detail?.automations)
+        assertEquals(originalReads, service.detailReads)
+        assertTrue(model.state.value.toggles.isEmpty())
+    }
+
+    @Test
+    fun lostToggleReceiptChecksTheSameRuleBeforePublishingSuccess() = check { service, model ->
+        val active = openRule(service, model)
+        val paused = active.copy(enabled = false, nextRunAt = null)
+        val readback = CompletableDeferred<WorkflowDetail>()
+        service.detailRead = { readback.await() }
+        service.toggle = { _, _ -> throw ApiFailure.Network(IOException("Lost response")) }
+
+        model.toggle(active)
+        runCurrent()
+        assertEquals(
+            WorkflowToggle(false, WorkflowTogglePhase.Checking),
+            model.state.value.toggles[active.id],
+        )
+        assertEquals(listOf(active), model.state.value.detail?.automations)
+        assertNull(model.state.value.issue)
+        model.toggle(active)
+        runCurrent()
+
+        readback.complete(service.detail.copy(automations = listOf(paused)))
+        runCurrent()
+        assertEquals(listOf(active.id to false), service.toggleRequests)
+        assertEquals(listOf(paused), model.state.value.detail?.automations)
+        assertTrue(model.state.value.toggles.isEmpty())
+        assertNull(model.state.value.issue)
+    }
+
+    @Test
+    fun leavingDuringAToggleRequiresAReadBeforeTheRuleCanBeChangedAgain() =
+        check { service, model ->
+            val active = openRule(service, model)
+            val receipt = CompletableDeferred<WorkflowAutomation>()
+            val readback = CompletableDeferred<WorkflowDetail>()
+            service.toggle = { _, _ -> receipt.await() }
+
+            model.toggle(active)
+            runCurrent()
+            model.select(null)
+            receipt.completeExceptionally(ApiFailure.Network(IOException("Lost response")))
+            runCurrent()
+
+            service.detailRead = { readback.await() }
+            model.select(service.summary.id, WorkflowTab.Automations)
+            runCurrent()
+            model.toggle(active)
+            runCurrent()
+            assertEquals(listOf(active.id to false), service.toggleRequests)
+
+            val paused = active.copy(enabled = false, nextRunAt = null)
+            readback.complete(service.detail.copy(automations = listOf(paused)))
+            runCurrent()
+            assertEquals(listOf(paused), model.state.value.detail?.automations)
+        }
+
+    @Test
+    fun savingAnEditToTheRuleClearsItsPreviousToggleFailure() = check { service, model ->
+        val schedule =
+            WorkflowAutomationVariant1ScheduleVariant1(
+                WorkflowAutomationVariant1ScheduleVariant1Type.CRON,
+                "0 9 * * 1-5",
+                "UTC",
+            )
+        val active = openRule(service, model, service.weeklyRule().copy(schedule = schedule))
+        service.toggle = { _, _ -> throw ApiFailure.Network(IOException("Lost response")) }
+        model.toggle(active)
+        runCurrent()
+        assertEquals(WorkflowTogglePhase.Failed, model.state.value.toggles[active.id]?.phase)
+
+        val original = checkNotNull(active.editableRule("UTC"))
+        val changed = original.copy(value = original.value.copy(time = "09:30"))
+        val confirmed = active.copy(schedule = schedule.copy(cronExpression = "30 9 * * 1-5"))
+        service.updateRule = { id, request ->
+            assertEquals(active.id, id)
+            assertEquals(changed.value.updateRequest(), request)
+            confirmed
+        }
+        model.edit(changed)
+        model.save(changed)
+        runCurrent()
+
+        assertEquals(listOf(confirmed), model.state.value.detail?.automations)
+        assertNull(model.state.value.editor)
+        assertNull(model.state.value.toggles[active.id])
+    }
+
+    @Test
+    fun unavailableReadbackKeepsTheActionUnconfirmedUntilAReadSettlesIt() =
+        check { service, model ->
+            val active = openRule(service, model)
+            service.toggle = { _, _ -> throw ApiFailure.Network(IOException("Lost response")) }
+            val originalReads = service.detailReads
+            service.detailRead = { throw ApiFailure.Network(IOException("Read unavailable")) }
+
+            model.toggle(active)
+            advanceTimeBy(6_000)
+            runCurrent()
+            assertEquals(originalReads + 3, service.detailReads)
+            assertEquals(
+                WorkflowToggle(false, WorkflowTogglePhase.Unconfirmed),
+                model.state.value.toggles[active.id],
+            )
+            assertEquals(listOf(active), model.state.value.detail?.automations)
+            model.toggle(active)
+            runCurrent()
+            assertEquals(listOf(active.id to false), service.toggleRequests)
+
+            service.detailRead = { service.detail }
+            model.foregroundChanged(false)
+            model.foregroundChanged(true)
+            runCurrent()
+            assertEquals(
+                WorkflowToggle(false, WorkflowTogglePhase.Failed),
+                model.state.value.toggles[active.id],
+            )
+            val paused = active.copy(enabled = false, nextRunAt = null)
+            service.toggle = { _, _ -> paused }
+            model.toggle(active)
+            runCurrent()
+            assertEquals(listOf(active.id to false, active.id to false), service.toggleRequests)
+            assertEquals(listOf(paused), model.state.value.detail?.automations)
+            assertTrue(model.state.value.toggles.isEmpty())
+        }
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -960,7 +1214,7 @@ internal class WorkflowHistoryModelTest : WorkflowModelTestFixture() {
     }
 
     @Test
-    fun reconnectResumesTheRequestedEarlierHistoryPage() = check { service, model ->
+    fun foregroundingResumesTheRequestedEarlierHistoryPage() = check { service, model ->
         var reachable = true
         service.historyRead = { _, cursor ->
             if (!reachable) throw ApiFailure.Network(IOException())
@@ -972,7 +1226,6 @@ internal class WorkflowHistoryModelTest : WorkflowModelTestFixture() {
         runCurrent()
 
         reachable = false
-        model.connectivityChanged(true)
         model.loadEarlierRuns()
         runCurrent()
         assertNull(model.state.value.historyFailure)
@@ -982,7 +1235,8 @@ internal class WorkflowHistoryModelTest : WorkflowModelTestFixture() {
         assertEquals(listOf(recentRun), model.state.value.history?.runs)
 
         reachable = true
-        model.connectivityChanged(false)
+        model.foregroundChanged(false)
+        model.foregroundChanged(true)
         runCurrent()
         assertNull(model.state.value.historyFailure)
         assertEquals(

@@ -128,6 +128,8 @@ const BODY_BUFFER_FALLBACK_CAPACITY: usize = 64 * 1024;
 const CONCURRENCY: usize = 4;
 /// Idle transport retention, independent of the per-object request deadline.
 const FRESH_DELIVERY_HTTP_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+/// Bound new connection establishment on the first fresh archive GET.
+const FRESH_DELIVERY_FIRST_CONNECT_TIMEOUT: Duration = Duration::from_millis(1500);
 /// Bound a stalled first response without shortening body or later-attempt allowance.
 const FRESH_DELIVERY_FIRST_HEADERS_TIMEOUT: Duration = Duration::from_secs(5);
 const FRESH_DELIVERY_SLOW_HEADERS: Duration = Duration::from_millis(100);
@@ -1111,6 +1113,33 @@ struct GuestStageRecorder<'a> {
     metrics: &'a mut StorageCacheStageMetrics,
 }
 
+impl GuestStageRecorder<'_> {
+    async fn write_batch<'write>(
+        &mut self,
+        writes: impl ExactSizeIterator<Item = &'write GuestStageWrite>,
+        content_bytes: usize,
+    ) -> RunnerResult<()> {
+        let started_at = Instant::now();
+        let mut timing = sandbox::FileWriteTiming::default();
+        let file_count = writes.len();
+        let (lock_wait, result) = {
+            let files = writes
+                .map(GuestStageWrite::as_file_entry)
+                .collect::<Vec<_>>();
+            self.guest_writes
+                .write_files(self.sandbox, &files, &mut timing)
+                .await
+        };
+        self.metrics.record_write_result(
+            self.telemetry,
+            started_at,
+            &result,
+            crate::StorageStageWrite::new(file_count, content_bytes, lock_wait, &timing),
+        );
+        result
+    }
+}
+
 struct ProcessedGroupTask {
     group: CacheTargetGroup,
     metrics: CacheProcessMetrics,
@@ -1414,26 +1443,9 @@ async fn flush_guest_stage_batch(
     if batch.writes.is_empty() {
         return Ok(());
     }
-    let started_at = Instant::now();
-    let mut timing = sandbox::FileWriteTiming::default();
-    let (lock_wait, result) = {
-        let writes = batch
-            .writes
-            .iter()
-            .map(GuestStageWrite::as_file_entry)
-            .collect::<Vec<_>>();
-        stage
-            .guest_writes
-            .write_files(stage.sandbox, &writes, &mut timing)
-            .await
-    };
-    stage.metrics.record_write_result(
-        stage.telemetry,
-        started_at,
-        &result,
-        crate::StorageStageWrite::new(batch.writes.len(), batch.content_bytes, lock_wait, &timing),
-    );
-    result?;
+    stage
+        .write_batch(batch.writes.iter(), batch.content_bytes)
+        .await?;
     batch.writes.clear();
     batch.content_bytes = 0;
     Ok(())
@@ -1462,26 +1474,12 @@ async fn flush_fresh_guest_stage_batch(
     if batch.entries.is_empty() {
         return Ok(());
     }
-    let started_at = Instant::now();
-    let mut timing = sandbox::FileWriteTiming::default();
-    let (lock_wait, result) = {
-        let writes = batch
-            .entries
-            .iter()
-            .map(|entry| entry.write.as_file_entry())
-            .collect::<Vec<_>>();
-        stage
-            .guest_writes
-            .write_files(stage.sandbox, &writes, &mut timing)
-            .await
-    };
-    stage.metrics.record_write_result(
-        stage.telemetry,
-        started_at,
-        &result,
-        crate::StorageStageWrite::new(batch.entries.len(), batch.content_bytes, lock_wait, &timing),
-    );
-    result?;
+    stage
+        .write_batch(
+            batch.entries.iter().map(|entry| &entry.write),
+            batch.content_bytes,
+        )
+        .await?;
     // Moving groups into outcomes must not release capacity while other
     // entries in this successful batch still need their bookkeeping.
     let mut retained_permits = Vec::with_capacity(batch.entries.len());
@@ -2408,9 +2406,10 @@ async fn fetch_fresh_archive_once(
     first_attempt: bool,
 ) -> Result<(Bytes, FreshArchiveSizeSource), FreshArchiveFetchError> {
     let (phase, connection_attempt_observer) = FreshArchivePhaseGuard::new_headers(phase_records);
+    let connect_timeout = first_attempt.then_some(FRESH_DELIVERY_FIRST_CONNECT_TIMEOUT);
     let mut mismatch = None;
     let headers = connection_attempt_observer
-        .scope(async {
+        .scope(connect_timeout, async {
             let request = http
                 .get(archive_url)
                 .timeout(OBJECT_DOWNLOAD_TIMEOUT)

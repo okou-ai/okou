@@ -27,6 +27,9 @@ const OTEL_SERVICE_NAME = "vm0-api";
 // Axiom client errors.
 const AXIOM_INGEST_URL =
   /^https:\/\/api\.axiom\.co\/v1\/datasets\/[^/?#]+\/ingest(?:[?#]|$)/u;
+// The resource path includes the caller-supplied draft ID.
+const GMAIL_DRAFT_RESOURCE_URL =
+  /^https:\/\/gmail\.googleapis\.com\/gmail\/v1\/users\/me\/drafts\/(?!send(?:[?#]|$))[^/?#]+(?:[?#]|$)/u;
 
 class AxiomTraceExporter extends OTLPTraceExporter {
   override export(
@@ -70,7 +73,11 @@ function setupOpenTelemetry() {
     spanProcessors: ["auto"],
     instrumentationConfig: {
       fetch: {
-        ignoreUrls: [AXIOM_INGEST_URL, TELEGRAM_BOT_TELEMETRY_URL],
+        ignoreUrls: [
+          AXIOM_INGEST_URL,
+          TELEGRAM_BOT_TELEMETRY_URL,
+          GMAIL_DRAFT_RESOURCE_URL,
+        ],
       },
     },
   });
@@ -123,6 +130,10 @@ function setupSentry() {
         : null;
     },
     beforeBreadcrumb: (breadcrumb) => {
+      const url: unknown = breadcrumb.data?.url;
+      if (typeof url === "string" && GMAIL_DRAFT_RESOURCE_URL.test(url)) {
+        return null;
+      }
       return filterTelegramSentryBreadcrumb(breadcrumb)
         ? filterDiscordOauthSentryBreadcrumb(breadcrumb)
         : null;

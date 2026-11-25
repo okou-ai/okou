@@ -38,6 +38,13 @@ type OptimisticProjectRename = Pick<
 > & {
   readonly name: string;
 };
+type OptimisticProjectArchive = Pick<
+  ProjectEvent,
+  "id" | "projectId" | "createdAt"
+> & {
+  readonly archived: boolean;
+  readonly lastArchivedAt: Project["lastArchivedAt"];
+};
 interface OptimisticProjectMove {
   readonly id: string;
   readonly updates: readonly { projectId: string; sortOrder: string }[];
@@ -56,23 +63,23 @@ const projectState$ = computed((get) => {
       }[]
     >([]),
     optimisticRenames$: state<readonly OptimisticProjectRename[]>([]),
+    optimisticArchives$: state<readonly OptimisticProjectArchive[]>([]),
     optimisticMoves$: state<readonly OptimisticProjectMove[]>([]),
   };
 });
-// A persisted rename also settles earlier local renames of its Project. One
-// that never persisted must not override the confirmed name that followed it.
-function unsettledRenames(
-  renames: readonly OptimisticProjectRename[],
-  persistedIds: ReadonlySet<string>,
-) {
+// Each buffer edits one field. A persisted edit also settles earlier local
+// edits of that Project's field, so an unpersisted predecessor cannot win.
+function unsettledProjectEdits<
+  T extends Pick<ProjectEvent, "id" | "projectId">,
+>(edits: readonly T[], persistedIds: ReadonlySet<string>) {
   const settledThrough = new Map<string, number>();
-  for (const [index, rename] of renames.entries()) {
-    if (persistedIds.has(rename.id)) {
-      settledThrough.set(rename.projectId, index);
+  for (const [index, edit] of edits.entries()) {
+    if (persistedIds.has(edit.id)) {
+      settledThrough.set(edit.projectId, index);
     }
   }
-  return renames.filter((rename, index) => {
-    return index > (settledThrough.get(rename.projectId) ?? -1);
+  return edits.filter((edit, index) => {
+    return index > (settledThrough.get(edit.projectId) ?? -1);
   });
 }
 // Reorders are serialized across the Project list. Confirming one operation
@@ -105,7 +112,14 @@ export const projects$ = computed((get) => {
       return event.project;
     });
   const pending = new Map(
-    unsettledRenames(get(owner.optimisticRenames$), persistedIds).map(
+    unsettledProjectEdits(get(owner.optimisticRenames$), persistedIds).map(
+      (event) => {
+        return [event.projectId, event];
+      },
+    ),
+  );
+  const pendingArchives = new Map(
+    unsettledProjectEdits(get(owner.optimisticArchives$), persistedIds).map(
       (event) => {
         return [event.projectId, event];
       },
@@ -129,8 +143,20 @@ export const projects$ = computed((get) => {
       const renamed = rename
         ? { ...project, name: rename.name, updatedAt: rename.createdAt }
         : project;
+      const archive = pendingArchives.get(project.id);
+      const archived = archive
+        ? {
+            ...renamed,
+            archived: archive.archived,
+            lastArchivedAt: archive.lastArchivedAt,
+            updatedAt:
+              archive.createdAt > renamed.updatedAt
+                ? archive.createdAt
+                : renamed.updatedAt,
+          }
+        : renamed;
       const sortOrder = pendingOrders.get(project.id);
-      return sortOrder === undefined ? renamed : { ...renamed, sortOrder };
+      return sortOrder === undefined ? archived : { ...archived, sortOrder };
     })
     .sort(compareProjectSortOrder);
 });
@@ -181,7 +207,10 @@ export const syncProjects$ = command(
       });
     });
     set(owner.optimisticRenames$, (events) => {
-      return unsettledRenames(events, persistedIds);
+      return unsettledProjectEdits(events, persistedIds);
+    });
+    set(owner.optimisticArchives$, (events) => {
+      return unsettledProjectEdits(events, persistedIds);
     });
     set(owner.optimisticMoves$, (moves) => {
       return unsettledMoves(moves, persistedIds);
@@ -417,6 +446,41 @@ export const renameProject$ = command(
     await set(syncProjects$, signal);
   },
 );
+export const setProjectArchived$ = command(
+  async ({ get, set }, id: string, archived: boolean, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    const owner = get(projectState$);
+    const eventId = operation();
+    const createdAt = nowDate().toISOString();
+    const project = get(projects$).find((item) => {
+      return item.id === id;
+    });
+    set(owner.optimisticArchives$, (events) => {
+      return [
+        ...events,
+        {
+          id: eventId,
+          projectId: id,
+          archived,
+          lastArchivedAt: archived ? createdAt : project?.lastArchivedAt,
+          createdAt,
+        },
+      ];
+    });
+    await set(waitForProjectCreation$, id, signal);
+    await accept(
+      get(apiClient$)(projectsContract).update({
+        params: { id },
+        body: { archived, eventId },
+        fetchOptions: { signal },
+      }),
+      [200],
+      signal,
+    );
+    await set(syncProjects$, signal);
+  },
+);
+
 export const deleteProjectWithEventId$ = command(
   async (
     { get, set },

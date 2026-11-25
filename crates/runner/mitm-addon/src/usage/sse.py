@@ -51,9 +51,6 @@ class SseUsageEventHandler(Protocol):
     def on_data(self, chunk: bytes) -> None:
         """Called with bytes from a captured data field."""
 
-    def on_data_separator(self) -> None:
-        """Called between multiple captured data fields in one event."""
-
     def on_event_end(self, event_name: str | None) -> None:
         """Called when a captured event is finalized.
 
@@ -304,7 +301,7 @@ class SseUsageScanner:
             self._captured_data_lines = 0
             self._handler.on_event_start(self._event_name)
         elif self._captured_data_lines > 0:
-            self._handler.on_data_separator()
+            self._handler.on_data(b"\n")
 
         self._captured_data_lines += 1
         self._state = "data"

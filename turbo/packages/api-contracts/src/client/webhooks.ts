@@ -206,7 +206,7 @@ export const webhookFirewallAuthContract: ClientDescriptor<
 > = {
   resolve: {
     method: "POST",
-    path: "/api/webhooks/agent/firewall/auth",
+    path: "/api/webhooks/run/firewall/auth",
     statuses: {
       200: true,
       400: true,
@@ -444,7 +444,7 @@ export const webhookUsageEventContract: ClientDescriptor<
 > = {
   send: {
     method: "POST",
-    path: "/api/webhooks/agent/usage-event",
+    path: "/api/webhooks/run/usage-event",
     statuses: {
       200: true,
       400: true,

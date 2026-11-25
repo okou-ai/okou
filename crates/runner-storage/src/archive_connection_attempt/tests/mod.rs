@@ -42,8 +42,11 @@ async fn records_success_and_failure_without_changing_results() {
     for (result, succeeded, failed) in [(Ok(7), 1u8, 0u8), (Err("nope"), 0, 1)] {
         let observer = ConnectionAttemptObserver::default();
         let mut service = ConnectionAttemptLayer.layer(ReadyService(result));
-        let actual = observer.scope(async { service.call(()).await }).await;
-        assert_eq!(actual, result);
+        let actual = observer.scope(None, async { service.call(()).await }).await;
+        assert_eq!(
+            actual.map_err(|error| error.to_string()),
+            result.map_err(str::to_owned)
+        );
         let frozen = observer.freeze();
         assert_eq!(frozen.started, 1);
         assert_eq!(frozen.succeeded, succeeded);
@@ -58,7 +61,7 @@ async fn records_success_and_failure_without_changing_results() {
 async fn freeze_rejects_late_completion() {
     let observer = ConnectionAttemptObserver::default();
     let mut service = ConnectionAttemptLayer.layer(PendingService);
-    let mut future = Box::pin(observer.scope(async { service.call(()).await }));
+    let mut future = Box::pin(observer.scope(None, async { service.call(()).await }));
     assert!(futures_util::poll!(&mut future).is_pending());
     let frozen = observer.freeze();
     assert_eq!(frozen.started, 1);
@@ -71,7 +74,7 @@ async fn freeze_rejects_late_completion() {
 async fn dropped_future_is_terminal_before_freeze() {
     let observer = ConnectionAttemptObserver::default();
     let mut service = ConnectionAttemptLayer.layer(PendingService);
-    let mut future = Box::pin(observer.scope(async { service.call(()).await }));
+    let mut future = Box::pin(observer.scope(None, async { service.call(()).await }));
     assert!(futures_util::poll!(&mut future).is_pending());
     drop(future);
     let frozen = observer.freeze();
@@ -87,7 +90,7 @@ async fn dropped_future_is_terminal_before_freeze() {
 async fn absent_scope_does_not_record_an_attempt() {
     let observer = ConnectionAttemptObserver::default();
     let mut service = ConnectionAttemptLayer.layer(ReadyService(Ok(1)));
-    assert_eq!(service.call(()).await, Ok(1));
+    assert_eq!(service.call(()).await.unwrap(), 1);
     assert_eq!(observer.freeze().started, 0);
 }
 

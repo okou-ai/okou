@@ -10,6 +10,7 @@ import ai.okou.android.api.generated.WorkflowRunHistoryEntry
 import ai.okou.android.api.generated.WorkflowSummary
 import ai.okou.android.api.generated.WorkflowSummaryShadowedBy
 import ai.okou.android.api.generated.WorkflowSummaryVisibility
+import ai.okou.android.api.retryBoundedRead
 import ai.okou.android.state.WorkflowTab
 import android.os.SystemClock
 import androidx.lifecycle.ViewModel
@@ -17,7 +18,6 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,6 +26,7 @@ import kotlinx.coroutines.launch
 
 internal data class WorkflowState(
     val catalog: List<WorkflowSummary>? = null,
+    val catalogRefreshing: Boolean = false,
     val rules: Map<String, List<WorkflowAutomation>>? = null,
     val connections: Set<String>? = null,
     val detail: WorkflowDetail? = null,
@@ -37,15 +38,28 @@ internal data class WorkflowState(
     val historyFailure: WorkflowReadFailure? = null,
     val historyRead: WorkflowHistoryRead? = null,
     val writing: Boolean = false,
+    val toggles: Map<String, WorkflowToggle> = emptyMap(),
     val issue: WorkflowWriteIssue? = null,
     val editor: WorkflowEdit? = null,
 )
 
-internal enum class WorkflowHistoryRead(val loading: Boolean) {
+internal enum class WorkflowHistoryRead(val loading: Boolean, val earlier: Boolean = false) {
     Latest(true),
-    Earlier(true),
-    EarlierPaused(false),
+    Earlier(true, earlier = true),
+    EarlierPaused(false, earlier = true),
 }
+
+internal enum class WorkflowTogglePhase {
+    Submitting,
+    Checking,
+    Unconfirmed,
+    Failed;
+
+    val needsReadback: Boolean
+        get() = this == Checking || this == Unconfirmed
+}
+
+internal data class WorkflowToggle(val enabled: Boolean, val phase: WorkflowTogglePhase)
 
 internal enum class WorkflowReadFailure {
     Unavailable,
@@ -78,7 +92,6 @@ internal constructor(
     private var visible = false
     private var searchingCatalog = false
     private var foreground = false
-    private var offline = false
     private var selected: String? = null
     private var tab = WorkflowTab.Instructions
     private var readSequence = 0L
@@ -92,48 +105,6 @@ internal constructor(
         LinkedHashMap<String, CachedWorkflowHistory>(WORKFLOW_DETAIL_CACHE_CAPACITY, 0.75f, true)
     private var historyLoad: Job? = null
     private val readsAfterWrite = mutableSetOf<WorkflowReadScope>()
-
-    internal fun connectivityChanged(offline: Boolean) {
-        if (this.offline == offline) return
-        this.offline = offline
-        if (!offline) {
-            val current = mutable.value
-            if (current.issue?.failure == WorkflowWriteFailure.Network)
-                mutable.value = current.copy(issue = null)
-            // Active reads already own their backoff, including any server-requested delay.
-            val now = monotonicMillis()
-            refresh(
-                buildSet {
-                    if (
-                        (visible || !searchingCatalog) &&
-                            (!catalogRead.readAt.isFresh(now) ||
-                                current.catalogFailure == WorkflowReadFailure.Network)
-                    )
-                        add(WorkflowReadScope.Catalog)
-                    if (
-                        !rulesRead.readAt.isFresh(now) ||
-                            current.rulesFailure == WorkflowReadFailure.Network
-                    )
-                        add(WorkflowReadScope.Rules)
-                    if (
-                        !connectionsRead.readAt.isFresh(now) ||
-                            current.connectionsFailure == WorkflowReadFailure.Network
-                    )
-                        add(WorkflowReadScope.Connections)
-                    if (
-                        !selected?.let { details[it]?.readAt }.isFresh(now) ||
-                            current.detailFailure == WorkflowReadFailure.Network
-                    )
-                        add(WorkflowReadScope.Detail)
-                    if (
-                        !selected?.let { histories[it]?.readAt }.isFresh(now) ||
-                            current.historyFailure == WorkflowReadFailure.Network
-                    )
-                        add(WorkflowReadScope.History)
-                },
-            )
-        }
-    }
 
     internal fun visibilityChanged(open: Boolean, retainCurrentVisit: Boolean = false) {
         if (visible == open) return
@@ -153,7 +124,7 @@ internal constructor(
             }
             refresh(catalogScope)
         } else if (!visible) {
-            catalogRead.cancel()
+            cancelCatalogRead()
         }
     }
 
@@ -171,14 +142,25 @@ internal constructor(
     }
 
     private fun stopWorkflowReads(keepCatalog: Boolean = false) {
-        if (!keepCatalog) catalogRead.cancel()
+        if (!keepCatalog) cancelCatalogRead()
         rulesRead.cancel()
         cancelDetailRead()
+    }
+
+    private fun cancelCatalogRead() {
+        catalogRead.cancel()
+        if (mutable.value.catalogRefreshing) {
+            mutable.value = mutable.value.copy(catalogRefreshing = false)
+        }
     }
 
     private fun cancelDetailRead() {
         detailLoad?.cancel()
         detailLoad = null
+    }
+
+    private fun invalidateCachedDetail(id: String) {
+        details[id]?.let { details[id] = it.copy(readAt = null) }
     }
 
     private fun cancelHistoryRead(keepEarlierRequest: Boolean = false) {
@@ -193,12 +175,30 @@ internal constructor(
                 WorkflowHistoryRead.Latest,
                 null -> null
             }
-        if (read != current.historyRead) mutable.value = current.copy(historyRead = read)
+        if (read != current.historyRead) {
+            mutable.value =
+                current.copy(
+                    historyRead = read,
+                    historyFailure =
+                        current.historyFailure.takeUnless {
+                            current.historyRead?.earlier == true && read == null
+                        },
+                )
+        }
     }
 
     internal fun select(id: String?, tab: WorkflowTab = WorkflowTab.Instructions) {
-        val newSelection = selected != id
+        val previousSelection = selected
+        val newSelection = previousSelection != id
         if (!newSelection && this.tab == tab) return
+        if (
+            newSelection &&
+                previousSelection != null &&
+                mutable.value.toggles.values.any { it.phase == WorkflowTogglePhase.Submitting }
+        ) {
+            // A receipt can arrive while this workflow is no longer selected.
+            invalidateCachedDetail(previousSelection)
+        }
         selected = id
         this.tab = tab
         cancelHistoryRead()
@@ -215,6 +215,7 @@ internal constructor(
                 history = history?.takeIf { it.readAt.isFresh(now) }?.page,
                 detailFailure = current.detailFailure.takeUnless { newSelection },
                 historyFailure = null,
+                toggles = if (newSelection) emptyMap() else current.toggles,
                 issue = current.issue.takeUnless { newSelection },
                 editor = current.editor.takeUnless { newSelection },
             )
@@ -294,10 +295,13 @@ internal constructor(
     private fun loadCatalog() {
         refreshRange(
             catalogRead,
+            started = { mutable.value = mutable.value.copy(catalogRefreshing = true) },
             fetch = { service.workflows().filter { it.official == null } },
             receive = ::publishCatalog,
             denied = ::clearAccess,
-            failure = { mutable.value = mutable.value.copy(catalogFailure = it) },
+            failure = {
+                mutable.value = mutable.value.copy(catalogRefreshing = false, catalogFailure = it)
+            },
         )
     }
 
@@ -337,12 +341,14 @@ internal constructor(
 
     private fun <T> refreshRange(
         range: WorkflowRangeRead,
+        started: () -> Unit = {},
         fetch: suspend () -> T,
         receive: (T, Map<String, WorkflowDirectoryUpdate?>) -> Unit,
         denied: () -> Unit,
         failure: (WorkflowReadFailure) -> Unit,
     ) {
         if (range.job?.isActive == true) return
+        started()
         range.job = viewModelScope.launch {
             retryReads(failure) {
                 val attempt = WorkflowRangeAttempt(++readSequence)
@@ -407,6 +413,7 @@ internal constructor(
         mutable.value =
             current.copy(
                 catalog = rows,
+                catalogRefreshing = false,
                 catalogFailure = null,
                 rules = if (removed.isEmpty()) current.rules else current.rules?.minus(removed),
                 detail = current.detail?.let { details[it.id]?.detail },
@@ -416,6 +423,7 @@ internal constructor(
                 detailFailure =
                     if (lostSelected) WorkflowReadFailure.Unavailable else current.detailFailure,
                 editor = current.editor.takeUnless { lostSelected },
+                toggles = if (lostSelected) emptyMap() else current.toggles,
                 issue = current.issue.takeUnless { lostSelected },
             )
     }
@@ -450,6 +458,7 @@ internal constructor(
         mutable.value =
             mutable.value.copy(
                 catalog = null,
+                catalogRefreshing = false,
                 rules = null,
                 connections = null,
                 detail = null,
@@ -459,6 +468,7 @@ internal constructor(
                 rulesFailure = null,
                 connectionsFailure = null,
                 detailFailure = WorkflowReadFailure.Unavailable,
+                toggles = emptyMap(),
                 editor = null,
                 issue = null,
             )
@@ -466,9 +476,21 @@ internal constructor(
 
     private fun loadDetail(id: String) {
         if (detailLoad?.isActive == true) return
-        val restoringAccess = mutable.value.detailFailure == WorkflowReadFailure.Unavailable
+        val state = mutable.value
+        val restoringAccess = state.detailFailure == WorkflowReadFailure.Unavailable
+        if (state.toggles.any { it.value.phase == WorkflowTogglePhase.Unconfirmed }) {
+            mutable.value =
+                state.copy(
+                    toggles =
+                        state.toggles.mapValues { (_, toggle) ->
+                            if (toggle.phase == WorkflowTogglePhase.Unconfirmed)
+                                toggle.copy(phase = WorkflowTogglePhase.Checking)
+                            else toggle
+                        },
+                )
+        }
         detailLoad = viewModelScope.launch {
-            retryReads({ mutable.value = mutable.value.copy(detailFailure = it) }) {
+            retryReads(::publishDetailFailure) {
                 val sequence = ++readSequence
                 val response = read {
                     service.workflow(id).also {
@@ -496,6 +518,7 @@ internal constructor(
                                 historyFailure = null,
                                 detailFailure = WorkflowReadFailure.Unavailable,
                                 editor = null,
+                                toggles = emptyMap(),
                                 issue = null,
                             )
                         null
@@ -512,6 +535,20 @@ internal constructor(
         }
     }
 
+    private fun publishDetailFailure(failure: WorkflowReadFailure) {
+        val current = mutable.value
+        mutable.value =
+            current.copy(
+                detailFailure = failure,
+                toggles =
+                    current.toggles.mapValues { (_, toggle) ->
+                        if (toggle.phase == WorkflowTogglePhase.Checking)
+                            toggle.copy(phase = WorkflowTogglePhase.Unconfirmed)
+                        else toggle
+                    },
+            )
+    }
+
     internal fun loadEarlierRuns() {
         if (!authorized() || !visible || !foreground || tab != WorkflowTab.History) return
         val id = selected ?: return
@@ -526,10 +563,16 @@ internal constructor(
         )
             return
         val cached = histories[id]
+        val current = mutable.value
+        val earlier = cursor != null
         mutable.value =
-            mutable.value.copy(
+            current.copy(
                 historyRead =
-                    if (cursor == null) WorkflowHistoryRead.Latest else WorkflowHistoryRead.Earlier,
+                    if (earlier) WorkflowHistoryRead.Earlier else WorkflowHistoryRead.Latest,
+                historyFailure =
+                    current.historyFailure.takeIf {
+                        (current.historyRead?.earlier == true) == earlier
+                    },
             )
         historyLoad = viewModelScope.launch {
             try {
@@ -577,7 +620,7 @@ internal constructor(
                     val current = mutable.value
                     val paused =
                         WorkflowHistoryRead.EarlierPaused.takeIf {
-                            cursor != null && current.historyFailure == WorkflowReadFailure.Network
+                            earlier && current.history != null && current.historyFailure != null
                         }
                     mutable.value = current.copy(historyRead = paused)
                 }
@@ -622,19 +665,11 @@ internal constructor(
         publishFailure: (WorkflowReadFailure) -> Unit,
         attempt: suspend () -> Throwable?,
     ) {
-        for (index in 0..WORKFLOW_READ_RETRIES) {
-            if (!authorized()) return
-            val error = attempt() ?: return
-            val retryAfter = error.retryAfterMillis()
-            if (retryAfter == null || index == WORKFLOW_READ_RETRIES) {
-                publishFailure(
-                    if (error is ApiFailure.Network) WorkflowReadFailure.Network
-                    else WorkflowReadFailure.RefreshFailed,
-                )
-                return
-            }
-            delay(maxOf(WORKFLOW_READ_RETRY_DELAY_MILLIS, retryAfter))
-        }
+        val error = retryBoundedRead(canRead = authorized, attempt = attempt) ?: return
+        publishFailure(
+            if (error is ApiFailure.Network) WorkflowReadFailure.Network
+            else WorkflowReadFailure.RefreshFailed,
+        )
     }
 
     internal fun edit(value: WorkflowEdit?) {
@@ -656,7 +691,8 @@ internal constructor(
         val confirmed = state.detail?.automations?.firstOrNull { it.id == rule.id } ?: return
         if (confirmed.enabled != rule.enabled) return
         if (!confirmed.enabled && !confirmed.canEnable(state.connections)) return
-        changeRule(rule.id) { service.setAutomationEnabled(rule.id, !rule.enabled) }
+        val enabled = !confirmed.enabled
+        changeRule(rule.id, toggleTo = enabled) { service.setAutomationEnabled(rule.id, enabled) }
     }
 
     internal fun save(editor: WorkflowEdit) {
@@ -694,22 +730,29 @@ internal constructor(
         }
     }
 
-    private fun changeRule(id: String, change: suspend () -> WorkflowAutomation) =
-        mutate(ruleId = id) { detail ->
+    private fun changeRule(
+        id: String,
+        toggleTo: Boolean? = null,
+        change: suspend () -> WorkflowAutomation,
+    ) =
+        mutate(ruleId = id, toggleTo = toggleTo) { detail ->
             val confirmed = change()
-            if (confirmed.id != id) throw ApiFailure.IncompatibleResponse()
+            if (confirmed.id != id || toggleTo != null && confirmed.enabled != toggleTo)
+                throw ApiFailure.IncompatibleResponse()
             publishRules(detail, detail.automations.map { if (it.id == id) confirmed else it })
         }
 
     private fun mutate(
         creating: Boolean = false,
         ruleId: String? = null,
+        toggleTo: Boolean? = null,
         action: suspend (WorkflowDetail) -> Unit,
     ) {
         val state = mutable.value
         val detail = state.detail ?: return
         if (!authorized() || !visible || !foreground || state.writing || detail.id != selected)
             return
+        if (ruleId != null && state.toggles[ruleId]?.phase?.needsReadback == true) return
         val permitted =
             when {
                 creating -> detail.canAddAutomation
@@ -726,7 +769,15 @@ internal constructor(
         if (rulesRead.job?.isActive == true) readsAfterWrite.add(WorkflowReadScope.Rules)
         if (detailLoad?.isActive == true) readsAfterWrite.add(WorkflowReadScope.Detail)
         stopWorkflowReads()
-        mutable.value = state.copy(writing = true, issue = null)
+        val toggles =
+            when {
+                ruleId != null && toggleTo != null ->
+                    state.toggles +
+                        (ruleId to WorkflowToggle(toggleTo, WorkflowTogglePhase.Submitting))
+                ruleId != null && ruleId in state.toggles -> state.toggles - ruleId
+                else -> state.toggles
+            }
+        mutable.value = mutable.value.copy(writing = true, toggles = toggles, issue = null)
         viewModelScope.launch {
             try {
                 // await cancellation / scope checks before publishing from a retired session.
@@ -739,21 +790,49 @@ internal constructor(
                 if (authorized() && selected == detail.id) {
                     reportSessionFailure(error)
                     val status = (error as? ApiFailure.Http)?.status
-                    val failure =
-                        when {
-                            creating && (status == null || status >= 500) ->
-                                WorkflowWriteFailure.UncertainCreate
-                            error is ApiFailure.Network -> WorkflowWriteFailure.Network
-                            !creating && ruleId == null && status == 409 ->
-                                WorkflowWriteFailure.Conflict
-                            else -> WorkflowWriteFailure.Failed
-                        }
-                    mutable.value = mutable.value.copy(issue = WorkflowWriteIssue(failure, ruleId))
+                    val current = mutable.value
+                    if (ruleId != null && toggleTo != null && error.toggleOutcomeUnknown()) {
+                        // Keep the displayed detail. Reentering it must read before toggling again.
+                        invalidateCachedDetail(detail.id)
+                        mutable.value =
+                            current.copy(
+                                toggles =
+                                    current.toggles +
+                                        (ruleId to
+                                            WorkflowToggle(
+                                                toggleTo,
+                                                WorkflowTogglePhase.Checking,
+                                            )),
+                            )
+                    } else {
+                        val failure =
+                            when {
+                                creating && (status == null || status >= 500) ->
+                                    WorkflowWriteFailure.UncertainCreate
+                                error is ApiFailure.Network -> WorkflowWriteFailure.Network
+                                !creating && ruleId == null && status == 409 ->
+                                    WorkflowWriteFailure.Conflict
+                                else -> WorkflowWriteFailure.Failed
+                            }
+                        mutable.value = current.copy(issue = WorkflowWriteIssue(failure, ruleId))
+                    }
                     readsAfterWrite.add(WorkflowReadScope.Detail)
                 }
             } finally {
                 if (authorized()) {
-                    mutable.value = mutable.value.copy(writing = false)
+                    val current = mutable.value
+                    mutable.value =
+                        current.copy(
+                            writing = false,
+                            toggles =
+                                if (
+                                    ruleId != null &&
+                                        current.toggles[ruleId]?.phase ==
+                                            WorkflowTogglePhase.Submitting
+                                )
+                                    current.toggles - ruleId
+                                else current.toggles,
+                        )
                     val pending = readsAfterWrite.toSet()
                     readsAfterWrite.clear()
                     refresh(pending)
@@ -762,7 +841,11 @@ internal constructor(
         }
     }
 
-    private fun publishDetail(response: WorkflowDetail, sequence: Long = ++readSequence) {
+    private fun publishDetail(
+        response: WorkflowDetail,
+        sequence: Long = ++readSequence,
+        confirmsToggles: Boolean = true,
+    ) {
         val id = response.id
         if (!authorized() || selected != id) return
         val current = mutable.value
@@ -777,7 +860,21 @@ internal constructor(
         if (rulesRead.isNewerThan(sequence) && current.rules != null) {
             detail = detail.withRules(current.rules[id].orEmpty())
         }
-        details[id] = CachedWorkflowDetail(detail, monotonicMillis())
+        val toggles =
+            if (confirmsToggles && current.toggles.any { it.value.phase.needsReadback }) {
+                current.toggles
+                    .mapNotNull { (ruleId, toggle) ->
+                        val rule = detail.automations.firstOrNull { it.id == ruleId }
+                        when {
+                            !toggle.phase.needsReadback -> ruleId to toggle
+                            rule == null || rule.enabled == toggle.enabled -> null
+                            else -> ruleId to toggle.copy(phase = WorkflowTogglePhase.Failed)
+                        }
+                    }
+                    .toMap()
+            } else current.toggles
+        val readAt = monotonicMillis().takeUnless { toggles.any { it.value.phase.needsReadback } }
+        details[id] = CachedWorkflowDetail(detail, readAt)
         if (details.size > WORKFLOW_DETAIL_CACHE_CAPACITY) details.remove(details.keys.first())
         val update = WorkflowDirectoryUpdate(detail)
         // The directory read may complete after the user has left this detail.
@@ -794,6 +891,7 @@ internal constructor(
             current.copy(
                 detail = detail,
                 detailFailure = null,
+                toggles = toggles,
                 catalog =
                     current.catalog?.map { item ->
                         if (item.id == detail.id) update.applyTo(item) else item
@@ -803,7 +901,7 @@ internal constructor(
     }
 
     private fun publishRules(detail: WorkflowDetail, rules: List<WorkflowAutomation>) =
-        publishDetail(detail.copy(automations = rules))
+        publishDetail(detail.copy(automations = rules), confirmsToggles = false)
 
     private fun recordDetailUpdate(id: String, detail: WorkflowDirectoryUpdate?, sequence: Long) {
         catalogRead.pending?.record(id, detail, sequence)
@@ -833,7 +931,7 @@ internal constructor(
     }
 }
 
-private data class CachedWorkflowDetail(val detail: WorkflowDetail, val readAt: Long)
+private data class CachedWorkflowDetail(val detail: WorkflowDetail, val readAt: Long?)
 
 private data class CachedWorkflowHistory(val page: WorkflowRunHistory, val readAt: Long)
 
@@ -945,19 +1043,14 @@ private fun Map<String, List<WorkflowAutomation>>.withDirectoryUpdates(
     }
 }
 
-private const val WORKFLOW_READ_RETRIES = 2
-private const val WORKFLOW_READ_RETRY_DELAY_MILLIS = 3_000L
-
 private fun Throwable?.denied() =
     this is ApiFailure.Unauthenticated ||
         this is ApiFailure.Http && (status == 401 || status == 403)
 
-private fun Throwable.retryAfterMillis(): Long? =
+private fun Exception.toggleOutcomeUnknown(): Boolean =
     when (this) {
-        is ApiFailure.Network -> 0L
-        is ApiFailure.Http ->
-            if (status == 408 || status == 429 || status in 500..599)
-                (retryAfterSeconds ?: 0L).coerceIn(0, Long.MAX_VALUE / 1_000) * 1_000
-            else null
-        else -> null
+        is ApiFailure.Network -> !connectionFailed
+        is ApiFailure.IncompatibleResponse -> true
+        is ApiFailure.Http -> status == 408 || status in 500..599
+        else -> false
     }

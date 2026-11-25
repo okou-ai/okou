@@ -1,5 +1,6 @@
 package ai.okou.android
 
+import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.RequiredUpdate
 import ai.okou.android.api.generated.AndroidUpdates
 import ai.okou.android.api.generated.AndroidUpdatesRelease
@@ -8,6 +9,7 @@ import ai.okou.android.updates.UpdateRecord
 import ai.okou.android.updates.UpdateService
 import ai.okou.android.updates.UpdateStore
 import ai.okou.android.updates.UpdateTransfer
+import android.text.format.Formatter
 import android.view.KeyEvent
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.takeScreenshot
@@ -138,6 +140,32 @@ class NativeUpdateTest {
                 device.waitForIdle()
                 takeScreenshot().writeToTestStorage("android-update-$name")
             }
+            fun withShortWindowAndLargeText(width: Int, block: () -> Unit) {
+                val originalSize =
+                    device
+                        .executeShellCommand("wm size")
+                        .substringAfter("Override size: ", "")
+                        .trim()
+                val fontScale = device.executeShellCommand("settings get system font_scale").trim()
+                try {
+                    device.executeShellCommand("wm size ${width}x850")
+                    device.executeShellCommand("settings put system font_scale 2.0")
+                    val resized =
+                        object : Condition<UiDevice, Boolean> {
+                            override fun apply(device: UiDevice) =
+                                device.displayWidth == width &&
+                                    device.displayHeight == 850 &&
+                                    app.resources.configuration.fontScale >= 2f
+                        }
+                    assertTrue(device.wait(resized, 10_000) == true)
+                    block()
+                } finally {
+                    if (fontScale.toFloatOrNull() == null)
+                        device.executeShellCommand("settings delete system font_scale")
+                    else device.executeShellCommand("settings put system font_scale $fontScale")
+                    device.executeShellCommand("wm size ${originalSize.ifBlank { "reset" }}")
+                }
+            }
             device.awaitChatList(app)
             val searchLabel = app.getString(R.string.chat_search_workspace)
             val search = By.pkg(app.packageName).desc(searchLabel)
@@ -173,7 +201,7 @@ class NativeUpdateTest {
                 assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
                 device.awaitChatList(app)
             }
-            button(By.pkg(app.packageName).desc(app.getString(R.string.settings))).click()
+            device.openChatListSettings(app)
             val noUpdateNeeded = app.getString(R.string.updates_not_needed)
             val updateNeeded = app.getString(R.string.updates_needed)
             val checking = app.getString(R.string.updates_check_in_progress)
@@ -193,6 +221,7 @@ class NativeUpdateTest {
             val initialDetailsBounds = detailsBounds()
             gate.complete(Unit)
             exists(R.string.updates_error_check)
+            button(By.pkg(app.packageName).text(app.getString(R.string.updates_retry_check)))
             captureState("details-check-failed")
             assertEquals(initialDetailsBounds, detailsBounds())
             closeDetails()
@@ -207,9 +236,23 @@ class NativeUpdateTest {
             assertNotNull(text(noUpdateNeeded))
             assertSettingsRowSize()
             captureState("settings-current")
-            candidate.set(release)
+            candidate.set(release.copy(minimumSdk = 36))
             click(R.string.updates_title)
             click(R.string.updates_check)
+            exists(R.string.updates_android_unsupported)
+            assertNotNull(text(updateTarget))
+            assertNotNull(
+                text(
+                    app.getString(
+                        R.string.updates_package_size,
+                        Formatter.formatShortFileSize(app, release.size),
+                    ),
+                ),
+            )
+            captureState("details-incompatible")
+            candidate.set(release)
+            click(R.string.updates_check_compatible)
+            exists(R.string.updates_download)
             assertNotNull(text(updateTarget))
             device.waitForIdle()
             assertEquals(initialDetailsBounds, detailsBounds())
@@ -240,6 +283,7 @@ class NativeUpdateTest {
             fun awaitMenuFocus(label: String) =
                 device.awaitKeyboardFocus(By.pkg(app.packageName).text(label))
             assertNotNull(text(filter))
+            assertNotNull(text(app.getString(R.string.chat_project_create)))
             assertNotNull(text(app.getString(R.string.settings)))
             instrumentation.setInTouchMode(false)
             awaitMenuFocus(filter)
@@ -337,7 +381,21 @@ class NativeUpdateTest {
             captureState("details-download-failed")
             assertEquals(initialDetailsBounds, detailsBounds())
             download.set(CompletableDeferred())
-            click(R.string.updates_download)
+            click(R.string.updates_retry_download)
+            assertNotNull(text(progressLabel))
+            val rateLimited = download.getAndSet(CompletableDeferred())
+            rateLimited.completeExceptionally(ApiFailure.Http(429, null, null, 60))
+            val waiting = checkNotNull(text(app.getString(R.string.updates_retry_download)))
+            assertTrue(
+                generateSequence(waiting) { it.parent }.any { it.isClickable && it.isEnabled },
+            )
+            captureState("details-retry-waiting")
+            assertEquals(initialDetailsBounds, detailsBounds())
+            withShortWindowAndLargeText(width = 780) {
+                exists(R.string.updates_retry_download)
+                captureState("details-short-retry-waiting")
+            }
+            click(R.string.updates_retry_download)
             assertNotNull(text(progressLabel))
             click(R.string.updates_close)
 
@@ -351,6 +409,18 @@ class NativeUpdateTest {
             download.get().complete(file)
             exists(R.string.updates_open_settings)
             captureState("install-permission")
+            withShortWindowAndLargeText(width = 1000) {
+                exists(R.string.updates_allow_install)
+                val minTouchHeight = (48 * density).roundToInt() - 1
+                for (label in listOf(R.string.updates_later, R.string.updates_open_settings)) {
+                    val action = button(By.pkg(app.packageName).text(app.getString(label)))
+                    assertTrue(
+                        "Expected a visible 48dp target for ${app.getString(label)}",
+                        action.visibleBounds.height() >= minTouchHeight,
+                    )
+                }
+                captureState("install-permission-short")
+            }
             click(R.string.updates_later)
             assertNotNull(text(searchQuery))
             button(By.pkg(app.packageName).desc(app.getString(R.string.back))).click()
@@ -374,8 +444,20 @@ class NativeUpdateTest {
             exists(R.string.updates_required_incompatible)
             exists(R.string.updates_android_unsupported)
             captureState("required-incompatible")
-            candidate.set(release.copy(version = "99.1.0"))
-            click(R.string.updates_check_compatible)
+            withShortWindowAndLargeText(width = 1000) {
+                exists(R.string.updates_required_incompatible_short)
+                val checkVersions =
+                    button(
+                        By.pkg(app.packageName)
+                            .text(app.getString(R.string.updates_check_compatible)),
+                    )
+                assertTrue(checkVersions.visibleBounds.height() >= (48 * density).roundToInt() - 1)
+                captureState("required-incompatible-short")
+                candidate.set(release.copy(version = "99.1.0"))
+                checkVersions.click()
+                exists(R.string.updates_download)
+            }
+            exists(R.string.updates_required)
             exists(R.string.updates_download)
             captureState("update-required")
             scenario.recreate()

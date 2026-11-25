@@ -8,7 +8,10 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { CANONICAL_WORKING_DIR } from "@okouai/api-contracts/contracts/runners";
 import { presentationTemplateSkillInstruction } from "@okouai/core/presentation-template-skill";
-import { PRESENTATION_DELIVERY_INSTRUCTION } from "@okouai/core/presentation-generation-instructions";
+import {
+  PRESENTATION_DELIVERY_INSTRUCTION,
+  PRESENTATION_OUTPUT_FORMAT_INSTRUCTION,
+} from "@okouai/core/presentation-generation-instructions";
 import { artifactPreviewInstructions } from "@okouai/core/artifact-preview-instructions";
 
 const wechatToolsGuidance = Object.freeze([
@@ -29,7 +32,7 @@ function buildIntegrationToolsPrompt(
 ): readonly string[] {
   const localFileContext = [
     markdownFirstOutputEnabled
-      ? "Honor the user's explicitly requested delivery format. Otherwise, for text-focused documents and reports, prefer Markdown as the primary deliverable so it can be opened quickly in Okou. Use HTML for visually rich or interactive deliverables; do not create DOCX or PDF copies unless requested, exported by the user, or required by a selected generation template. Decide the format before choosing production and delivery tools."
+      ? "Honor the user's explicitly requested delivery format. Otherwise, choose the format based on the content: use Markdown for text-focused documents and reports, and HTML for visual or interactive deliverables. Do not create DOCX or PDF copies unless requested, exported by the user, or required by a selected generation template. Decide the format before choosing production and delivery tools."
       : "Honor the user's explicitly requested delivery format. Otherwise, choose a suitable format based on the user's preferences and how they will use the result, such as DOCX, PDF, XLSX, CSV, PPTX, HTML, or images; short content can be answered directly in chat. No format has default priority. Decide the format before choosing production and delivery tools.",
     ...(markdownFirstOutputEnabled
       ? [
@@ -60,9 +63,11 @@ export interface AgentToolsPromptInputs {
   readonly larkOfficialEnabled: boolean;
   readonly wechatEnabled: boolean;
   readonly presentationConvertEnabled: boolean;
+  readonly presentationOutputFormatEnabled: boolean;
   readonly markdownFirstOutputEnabled: boolean;
   readonly cloudBrowserEnabled: boolean;
   readonly artifactThreePointTimingEnabled: boolean;
+  readonly hostedSiteCustomDomainsEnabled: boolean;
 }
 
 export function buildAgentToolsPromptInputs(args: {
@@ -72,6 +77,10 @@ export function buildAgentToolsPromptInputs(args: {
 }): AgentToolsPromptInputs {
   const context = args.featureSwitchContext;
   return {
+    hostedSiteCustomDomainsEnabled: isFeatureEnabled(
+      FeatureSwitchKey.HostedSiteCustomDomains,
+      context,
+    ),
     artifactThreePointTimingEnabled: isFeatureEnabled(
       FeatureSwitchKey.ArtifactThreePointTiming,
       context,
@@ -91,6 +100,10 @@ export function buildAgentToolsPromptInputs(args: {
     ),
     presentationConvertEnabled: isFeatureEnabled(
       FeatureSwitchKey.PresentationConvert,
+      context,
+    ),
+    presentationOutputFormatEnabled: isFeatureEnabled(
+      FeatureSwitchKey.PresentationOutputFormat,
       context,
     ),
     markdownFirstOutputEnabled: isFeatureEnabled(
@@ -180,6 +193,8 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
           "- Okou Browser lifetime: `okou browser use` and `okou browser lease` each extend the session's idle lease by a fixed 10 minutes and report when Okou will reclaim it. The session survives the end of this run, so a later run in the same thread attaches to the same live window and the user can keep working in it. Call `okou browser lease` while a long task keeps the browser idle; a reclaimed session can still resume its saved login profile and reopen its last captured HTTP(S) tab URLs on a best-effort basis.",
           "- Browser tab continuity: When resuming a page after `okou browser use`, do not trust the selected tab or a prior run's `t<N>` ID. Use `okou browser tab list` for safe current IDs and redacted origins. Keep the selected tab only if non-sensitive page evidence confirms it; otherwise inspect a candidate via `okou browser tab select <id>` and confirm it before navigating or submitting. Origin or selection alone is not proof, even with one match. Never invoke raw `agent-browser tab list` or `agent-browser tab <id>` (including `--json`): tool output may expose full URLs, titles or OAuth parameters. If safe commands are unavailable or the page remains unclear, stop without navigating, submitting, repeating input or echoing values.",
           "- Browser shared profile: Each chat has its own window and tabs; website login state is shared across chats.",
+          "- Browser tabs: Keep as few tabs open as the task needs. Reuse a suitable tab and avoid opening duplicates. Close tabs you opened as soon as you no longer need them. Keep tabs the user opened, tabs needed for a follow-up, and tabs with unsaved work.",
+          "- Browser restart: Use `okou browser restart` only after confirming the remote Browser instance remains unresponsive after a fresh connection attempt with `okou browser use`. A single tab crash, website error, or failed lease does not establish that the instance is unresponsive. Restart interrupts every chat currently using this user's shared Browser profile in the workspace and can lose unsaved page state. After restart, follow the tab-continuity checks before acting. Never replay a website action or restart whose outcome is uncertain. If the CLI confirms the old Browser stopped but could not reopen it, use `okou browser use` to reconnect.",
           "- Browser user input priority: keep control of the Browser. When the user must personally supply values to supported exact page controls, especially login username, password, or one-time code, inspect the live page and prefer `okou browser input-request` over direct Browser takeover. It opens a native form, not a general Browser interaction; never ask for secrets in chat or put values in CLI arguments, action URLs, or callback prompts. Fill ordinary values you can supply with `agent-browser` instead.",
           "- Browser input context: every `input-request` requires `--title` and `--reason` in the user's language. Identify the current task and explain why the website needs the requested input, such as signing in to download the requested invoices. Use each field's optional `description` for the intended account, format, or code source when known; do not invent details. This explanation is shown in the input form. Keep secret values out of it, and keep `--callback-prompt` as a separate instruction for continuing after input is applied.",
           "- Browser input completion: `input-request` fills the exact controls but does not submit the website form. After it succeeds, return its exact action URL and use no further Browser commands in this turn. On a successful callback, run `okou browser use` and follow the tab-continuity check to confirm the existing intended page before acting. Inspect its current step without echoing input values; if the website clearly still awaits submission, submit at most once and verify its response. A successful input write does not mean website acceptance or login. A supported one-time-code field can use another input request; needing credentials or a code alone is not a reason for direct takeover. If a target is stale, inspect and recapture it once where safe; never blindly replay an uncertain write.",
@@ -222,18 +237,27 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
         ]
       : []),
     ...buildIntegrationToolsPrompt(args.markdownFirstOutputEnabled),
+    ...(args.hostedSiteCustomDomainsEnabled
+      ? [
+          "- Custom website domains: when the user asks to connect their domain, read `okou host domain --help`. These commands use the same custom-domain feature switch and paid-subscription requirement as Customize URL in the App. Use the owned website's platform Site slug and one exact hostname, not a wildcard. Run `okou host domain add <site> <hostname>`, configure every returned DNS record through an authorized DNS provider or have the user configure them, then run `okou host domain verify <site> <hostname>` once. Verification may return additional certificate TXT records; apply them, allow DNS/HTTPS provisioning to finish, and explicitly verify again. Do not poll or guess DNS targets. Only after all checks are ready, run `okou host domain select <site> <hostname>` and return the saved effective URL. Pending/failed verification prints checks and exits 1. Use `okou host domain list <site> --json` to inspect or recover current state. `select <site> --default` restores the platform sharing URL while keeping connected domains active; `remove <site> <hostname>` revokes the binding and its sessions, then its DNS records can be removed. Preserve the website's existing visibility and private sign-in. After a conflict or uncertain mutation, inspect current settings before retrying; never automatically replay add, verify, select, or remove.",
+        ]
+      : []),
     "- Presentation page images: use `okou presentation screenshot --input <deck.ppt|deck.pptx|deck.pdf|page.html|layouts-dir|url> --out <dir>` to render any presentation source to ordered `page-001.png` files at one fixed page size. PPT, PPTX, and PDF are rasterised through LibreOffice and Poppler; HTML pages, layout directories, and URLs are captured through a browser, one image per slide. It only writes local image files: it uploads nothing, publishes nothing, and is unrelated to `okou presentation-template publish`, so it is the right tool whenever page images are the goal, including review and analysis. Prefer it over `pdftoppm`, `soffice`, or hand-driven `agent-browser` screenshot calls, because a screenshot of a page the browser never painted looks like a successful screenshot. Run `okou presentation screenshot --help` for the current interface.",
     "- Static web artifacts can be published with `okou host <dir> --site <slug> [--spa]`; for HTML presentations, include `--artifact-kind presentation-html`; run `okou host --help` for details.",
-    PRESENTATION_DELIVERY_INSTRUCTION,
+    args.presentationOutputFormatEnabled
+      ? PRESENTATION_OUTPUT_FORMAT_INSTRUCTION
+      : PRESENTATION_DELIVERY_INSTRUCTION,
     ...(args.presentationConvertEnabled
       ? [
-          "- Only when the user explicitly requests PowerPoint/PPTX conversion of an HTML deck (not native PPTX template generation), convert the finished HTML directly with `okou presentation convert --input <deck.html> --out <deck.pptx> --verify`, then upload the PPTX with this surface's `upload-file` command.",
+          args.presentationOutputFormatEnabled
+            ? "- HTML-to-PPTX conversion: run `okou presentation convert --input <deck.html> --out <deck.pptx> --verify`, inspect the converted slide images, then upload the PPTX with this surface's `upload-file` command. For an existing HTML deck, convert that file without regenerating it."
+            : "- Only when the user explicitly requests PowerPoint/PPTX conversion of an HTML deck (not native PPTX template generation), convert the finished HTML directly with `okou presentation convert --input <deck.html> --out <deck.pptx> --verify`, then upload the PPTX with this surface's `upload-file` command.",
         ]
       : []),
     "- Third-party services (GitHub, Slack, Notion, 4,000+ more) can be accessed through connectors. `okou connector search <service-name>` searches every supported service and reports which matching connectors are available to the current run. For supported services, connectors provide a smoother and safer experience: provider credentials stay outside the sandbox and are resolved at the network boundary. When a user wants to connect a third-party service, search for it first. List connected: `okou connector list`. Inspect: `okou connector status <slug>`.",
     "- Connector accounts: inspect the current account with `okou connector status <slug> --json` and list alternatives with `okou connector account list <slug> --json`. Use only an exact `connectionId` returned by these commands; never invent an ID or reuse one from another connector.",
     `- Disconnect a saved connector account with \`okou connector account disconnect <selector> --connection-id <uuid>\` using an exact ID discovered for that connector. It applies directly without an approval step and removes the user's saved account throughout this workspace. Read \`okou connector account disconnect --help\` for reconnection risks. Use \`okou connector account impact\` to inspect affected references first. To change only Chat access, use the Chat account allowance controls; disconnect removes the saved account globally.`,
-    `- Connector account access follows this Chat. Inventory includes enabled and isCurrent. Switch an enabled account directly in this Run with \`okou connector account switch <slug> --connection-id <uuid>\`; a successful switch also saves this Chat's current account for subsequent Runs. For a disabled account, request exact owner approval with \`okou connector account switch-request <slug> --connection-id <uuid> --callback-prompt <prompt>\`. Return the exact URL and end the turn; confirmation enables only that account in this Chat and starts the callback round. Firewall permissions are shared across this member's Chats and accounts in this workspace; switching does not reset them. Listener accounts do not grant execution access.`,
+    `- Connector account inventory includes enabled and isCurrent. Switch an enabled account directly in this Run with \`okou connector account switch <slug> --connection-id <uuid>\`; a successful switch also saves this Chat's current account for subsequent Runs. For a disabled account, request exact owner approval with \`okou connector account switch-request <slug> --connection-id <uuid> --callback-prompt <prompt>\`. Return the exact URL and end the turn. Confirmation grants access to that account for the scope shown on the card, selects it for this Chat, and starts the callback round. Firewall permissions are shared across this member's Chats and accounts in this workspace; switching does not reset them. Listener accounts do not grant execution access.`,
     "- Custom connectors: when the user wants to add their own custom connector, run `okou connector custom -h` first and follow its guidance.",
     "- Model availability and provider routing are workspace model settings, separate from connectors. Use `okou model ls` to list allowed models and `okou model switch` for model-switching guidance.",
     "- Personal subscriptions: use `okou subscription list --json` and `okou subscription show <id> --json` to inspect connected Claude Code / Codex accounts, usage windows, natural reset times, and remaining reset credits. `okou subscription switch <id>` changes only the default account for that provider for subsequent unpinned runs; current runs keep their captured account. Use `okou subscription reset-link <id>` to produce a Codex Reset Card link, return the exact URL, and let the user click Reset. Generating or opening the link does not reset usage.",

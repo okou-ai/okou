@@ -1,6 +1,8 @@
 package ai.okou.android
 
 import ai.okou.android.state.rememberSettingsFlag
+import ai.okou.android.updates.updateFocusOutline
+import androidx.activity.compose.BackHandler
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -13,33 +15,44 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalRippleConfiguration
+import androidx.compose.material3.LocalRippleThemeConfiguration
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.ProvideTextStyle
+import androidx.compose.material3.RippleConfiguration
+import androidx.compose.material3.RippleThemeConfiguration
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberBottomSheetState
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -57,6 +70,7 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -202,18 +216,24 @@ internal fun SettingsSwitchRow(
     leading: @Composable () -> Unit,
     checked: Boolean?,
     onCheckedChange: ((Boolean) -> Unit)?,
+    modifier: Modifier = Modifier,
     supportingText: String? = null,
 ) {
     val action =
         if (checked == null) {
             Modifier.semantics(mergeDescendants = true) { disabled() }
         } else {
-            Modifier.toggleable(checked, enabled = onCheckedChange != null, role = Role.Switch) {
-                onCheckedChange?.invoke(it)
-            }
+            Modifier.updateFocusOutline(
+                    RoundedCornerShape(12.dp),
+                    MaterialTheme.colorScheme.onSurface,
+                )
+                .toggleable(checked, enabled = onCheckedChange != null, role = Role.Switch) {
+                    onCheckedChange?.invoke(it)
+                }
         }
     Row(
-        Modifier.fillMaxWidth()
+        modifier
+            .fillMaxWidth()
             .then(action)
             .heightIn(min = if (supportingText == null) 56.dp else 72.dp)
             .padding(horizontal = 16.dp, vertical = 12.dp),
@@ -253,7 +273,6 @@ internal fun OkouSwitch(checked: Boolean, enabled: Boolean) {
                     colors.onSurface
                         .copy(alpha = if (dark) 0.16f else 0.12f)
                         .compositeOver(colors.surface),
-                outline = colors.onSurface.copy(alpha = 0.64f).compositeOver(colors.surface),
             )
         }
     MaterialTheme(colorScheme = switchColors) {
@@ -266,17 +285,34 @@ internal fun SettingsPickerRow(
     title: String,
     value: String?,
     leading: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    visible: Boolean = true,
+    fallbackFocus: FocusRequester? = null,
     sheet: @Composable (dismiss: () -> Unit) -> Unit,
 ) {
-    SettingsTrigger(enabled = enabled, content = sheet) { modifier, open ->
-        SettingsRow(title, leading, modifier, value, onClick = open, enabled = enabled)
+    SettingsTrigger(
+        enabled = enabled,
+        visible = visible,
+        fallbackFocus = fallbackFocus,
+        content = sheet,
+    ) { triggerModifier, open ->
+        SettingsRow(
+            title,
+            leading,
+            modifier.then(triggerModifier),
+            value,
+            onClick = open,
+            enabled = enabled,
+        )
     }
 }
 
 @Composable
 internal fun SettingsTrigger(
     enabled: Boolean = true,
+    visible: Boolean = true,
+    fallbackFocus: FocusRequester? = null,
     content: @Composable (dismiss: () -> Unit) -> Unit,
     trigger: @Composable (Modifier, open: () -> Unit) -> Unit,
 ) {
@@ -284,15 +320,23 @@ internal fun SettingsTrigger(
     var focused by remember { mutableStateOf(false) }
     var restoreFocus by rememberSettingsFlag()
     val focus = remember { FocusRequester() }
-    trigger(Modifier.focusRequester(focus).onFocusChanged { focused = it.isFocused }) {
-        if (enabled) {
-            restoreFocus = focused
-            open = true
+    // Resolve return focus before Compose detaches the hidden trigger.
+    val restoreRelatedFocus = !visible && (focused || restoreFocus)
+    if (visible) {
+        trigger(Modifier.focusRequester(focus).onFocusChanged { focused = it.isFocused }) {
+            if (enabled) {
+                restoreFocus = focused
+                open = true
+            }
         }
+        if (open && enabled) content { open = false }
     }
-    if (open && enabled) content { open = false }
-    LaunchedEffect(open, enabled) {
-        if (!open && enabled && restoreFocus) {
+    LaunchedEffect(open, enabled, visible) {
+        if (!visible) {
+            open = false
+            restoreFocus = false
+            if (restoreRelatedFocus) fallbackFocus?.requestFocus()
+        } else if (!open && enabled && restoreFocus) {
             restoreFocus = false
             focus.requestFocus()
         }
@@ -305,51 +349,77 @@ internal fun SettingsModal(
     onDismiss: () -> Unit,
     dismissible: Boolean = true,
     fullScreen: Boolean = false,
+    showDragHandle: Boolean = true,
+    fitContentInsets: Boolean = false,
+    confirmDismiss: (() -> Boolean)? = null,
     content: @Composable (centered: Boolean) -> Unit,
 ) {
     val window = currentWindowSizeDp()
     if (fullScreen || workspaceListPaneWidth(window.width, window.height) != null) {
         Dialog(
-            onDismissRequest = onDismiss,
+            onDismissRequest = { if (confirmDismiss?.invoke() != false) onDismiss() },
             properties =
                 DialogProperties(
                     dismissOnBackPress = dismissible,
                     dismissOnClickOutside = dismissible && !fullScreen,
                     usePlatformDefaultWidth = false,
+                    decorFitsSystemWindows = !fitContentInsets,
                 ),
         ) {
             Surface(
                 if (fullScreen) Modifier.fillMaxSize()
                 else Modifier.padding(horizontal = 24.dp).widthIn(max = 460.dp).fillMaxWidth(),
-                shape = if (fullScreen) RectangleShape else RoundedCornerShape(28.dp),
+                shape = if (fullScreen) RectangleShape else MaterialTheme.shapes.extraLarge,
                 color = MaterialTheme.colorScheme.surface,
             ) {
-                content(true)
+                if (fitContentInsets) {
+                    Box(Modifier.windowInsetsPadding(WindowInsets.safeDrawing)) { content(true) }
+                } else content(true)
             }
         }
     } else {
         val allowDismiss by rememberUpdatedState(dismissible)
+        val confirm by rememberUpdatedState(confirmDismiss)
         ModalBottomSheet(
             onDismissRequest = onDismiss,
             sheetState =
                 rememberBottomSheetState(
                     initialValue = SheetValue.Hidden,
                     enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
-                    confirmValueChange = { it != SheetValue.Hidden || allowDismiss },
+                    confirmValueChange = {
+                        it != SheetValue.Hidden || allowDismiss && confirm?.invoke() != false
+                    },
                 ),
             sheetGesturesEnabled = dismissible,
-            sheetMaxWidth = 460.dp,
-            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+            dragHandle = if (showDragHandle) ({ BottomSheetDefaults.DragHandle() }) else null,
             containerColor = MaterialTheme.colorScheme.surface,
             properties =
                 ModalBottomSheetProperties(
-                    shouldDismissOnBackPress = dismissible,
+                    shouldDismissOnBackPress = dismissible && confirmDismiss == null,
                     shouldDismissOnClickOutside = dismissible,
                 ),
         ) {
+            // A vetoed native predictive hide can leave the sheet scaled after Back.
+            val imeVisible = WindowInsets.isImeVisible
+            val keyboard = LocalSoftwareKeyboardController.current
+            BackHandler(enabled = confirmDismiss != null) {
+                if (imeVisible) keyboard?.hide()
+                else if (dismissible && confirmDismiss?.invoke() != false) onDismiss()
+            }
             content(false)
         }
     }
+}
+
+internal fun settingsPanelContentPadding(compactHeight: Boolean) =
+    PaddingValues(start = 16.dp, end = 16.dp, bottom = if (compactHeight) 12.dp else 22.dp)
+
+@Composable internal fun isShortSettingsPanelWindow() = currentWindowSizeDp().height < 480
+
+internal enum class SettingsSheetScroll {
+    Panel,
+    Body,
+    None,
 }
 
 @Composable
@@ -360,44 +430,100 @@ internal fun SettingsSheet(
     actions: (@Composable () -> Unit)? = null,
     titleInset: Dp = 0.dp,
     progress: (@Composable () -> Unit)? = null,
+    actionSpacing: Dp = 8.dp,
+    scroll: SettingsSheetScroll = SettingsSheetScroll.Body,
+    dismissible: Boolean = true,
+    fullScreenInShortWindow: Boolean = false,
+    confirmDismiss: (() -> Boolean)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val windowHeight = currentWindowSizeDp().height.dp
-    val scroll = rememberScrollState()
-    SettingsModal(onDismiss) { centered ->
+    val compactHeight = isShortSettingsPanelWindow()
+    val scrollModifier =
+        if (scroll == SettingsSheetScroll.None) Modifier
+        else Modifier.verticalScroll(rememberScrollState())
+    SettingsModal(
+        onDismiss,
+        dismissible = dismissible,
+        fullScreen = compactHeight && fullScreenInShortWindow,
+        fitContentInsets = compactHeight && fullScreenInShortWindow,
+        confirmDismiss = confirmDismiss,
+    ) { centered ->
         Column(
             modifier
                 .fillMaxWidth()
-                .heightIn(max = windowHeight * 0.80f)
-                .padding(
-                    start = 16.dp,
-                    end = 16.dp,
-                    top = if (centered) 16.dp else 0.dp,
-                    bottom = 16.dp,
-                )
-                .verticalScroll(scroll),
+                .padding(settingsPanelContentPadding(compactHeight))
+                .padding(top = if (centered) 16.dp else 0.dp)
+                .then(if (scroll == SettingsSheetScroll.Panel) scrollModifier else Modifier),
         ) {
             Box(Modifier.fillMaxWidth()) {
+                val compactTitle = compactHeight && fullScreenInShortWindow
                 Text(
                     title,
                     Modifier.padding(start = titleInset, end = titleInset, bottom = 8.dp)
                         .semantics { heading() },
                     style =
                         MaterialTheme.typography.titleLarge.copy(
-                            fontSize = 22.sp,
-                            lineHeight = 28.sp,
+                            fontSize = if (compactTitle) 16.sp else 22.sp,
+                            lineHeight = if (compactTitle) 24.sp else 28.sp,
+                            fontWeight = FontWeight.SemiBold,
                         ),
                 )
                 if (progress != null) Box(Modifier.align(Alignment.BottomCenter)) { progress() }
             }
-            Column(
-                Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                content = content,
-            )
-            if (actions != null) Box(Modifier.padding(top = 8.dp)) { actions() }
+            val body = Modifier.fillMaxWidth()
+            val bodyModifier =
+                when (scroll) {
+                    SettingsSheetScroll.Panel -> body
+                    SettingsSheetScroll.Body -> body.weight(1f, fill = false).then(scrollModifier)
+                    SettingsSheetScroll.None -> body.weight(1f, fill = false)
+                }
+            Column(bodyModifier) {
+                Column(
+                    Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    content = content,
+                )
+                if (actions != null) Box(Modifier.padding(top = actionSpacing)) { actions() }
+            }
         }
     }
+}
+
+@Composable
+internal fun SettingsSheetDescription(text: String) {
+    Text(
+        text,
+        Modifier.padding(horizontal = 8.dp),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp, lineHeight = 20.sp),
+    )
+}
+
+private val buttonFocusOutlineTheme =
+    RippleThemeConfiguration(
+        focus =
+            RippleThemeConfiguration.Focus.InsetRing(
+                outerStrokeInset = 1.dp,
+                outerStrokeWidth = 2.dp,
+                innerStrokeInset = 0.dp,
+                innerStrokeWidth = 0.dp,
+            ),
+    )
+
+@Composable
+internal fun WithButtonFocusOutline(color: Color, content: @Composable () -> Unit) {
+    CompositionLocalProvider(
+        LocalRippleThemeConfiguration provides buttonFocusOutlineTheme,
+        LocalRippleConfiguration provides
+            RippleConfiguration(
+                focus =
+                    RippleConfiguration.Focus.InsetRing(
+                        outerStrokeColor = color,
+                        innerStrokeColor = Color.Transparent,
+                    ),
+            ),
+        content = content,
+    )
 }
 
 @Composable
@@ -409,6 +535,8 @@ internal fun OkouConfirmationDialog(
     confirmEnabled: Boolean = true,
     dismissEnabled: Boolean = true,
     destructive: Boolean = false,
+    dismissLabel: String = stringResource(R.string.settings_cancel),
+    keepActionsVisible: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     Dialog(
@@ -457,38 +585,40 @@ internal fun OkouConfirmationDialog(
                         ) {
                             ProvideTextStyle(bodyStyle, content)
                         }
-                        FlowRow(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            val buttonPadding =
-                                if (compact) PaddingValues(horizontal = 8.dp, vertical = 8.dp)
-                                else ButtonDefaults.TextButtonContentPadding
-                            TextButton(
-                                onClick = onDismiss,
-                                modifier = Modifier.heightIn(min = 48.dp),
-                                enabled = dismissEnabled,
-                                contentPadding = buttonPadding,
-                                colors =
-                                    ButtonDefaults.textButtonColors(
-                                        contentColor = colors.onSurface,
-                                    ),
+                        WithButtonFocusOutline(colors.onBackground) {
+                            FlowRow(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
-                                Text(stringResource(R.string.settings_cancel))
-                            }
-                            TextButton(
-                                onClick = onConfirm,
-                                modifier = Modifier.heightIn(min = 48.dp),
-                                enabled = confirmEnabled,
-                                contentPadding = buttonPadding,
-                                colors =
-                                    ButtonDefaults.textButtonColors(
-                                        contentColor =
-                                            if (destructive) colors.error else colors.onSurface,
-                                    ),
-                            ) {
-                                Text(confirm)
+                                val buttonPadding =
+                                    if (compact) PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+                                    else ButtonDefaults.TextButtonContentPadding
+                                TextButton(
+                                    onClick = onDismiss,
+                                    modifier = Modifier.heightIn(min = 48.dp),
+                                    enabled = dismissEnabled,
+                                    contentPadding = buttonPadding,
+                                    colors =
+                                        ButtonDefaults.textButtonColors(
+                                            contentColor = colors.onSurface,
+                                        ),
+                                ) {
+                                    Text(dismissLabel)
+                                }
+                                TextButton(
+                                    onClick = onConfirm,
+                                    modifier = Modifier.heightIn(min = 48.dp),
+                                    enabled = confirmEnabled,
+                                    contentPadding = buttonPadding,
+                                    colors =
+                                        ButtonDefaults.textButtonColors(
+                                            contentColor =
+                                                if (destructive) colors.error else colors.onSurface,
+                                        ),
+                                ) {
+                                    Text(confirm)
+                                }
                             }
                         }
                     },
@@ -504,12 +634,14 @@ internal fun OkouConfirmationDialog(
                             actions.height -
                             titleSpace -
                             actionSpace
-                    // Let the whole dialog scroll if the body would be squeezed below two lines.
+                    // Let the whole dialog scroll if there is too little room for the body.
+                    val minimumBodyHeight =
+                        if (keepActionsVisible) bodyStyle.fontSize.toDp().roundToPx()
+                        else bodyStyle.lineHeight.toDp().roundToPx() * 2
                     val body =
                         children[1].measure(
                             loose.copy(
-                                maxHeight =
-                                    maxOf(bodySpace, bodyStyle.lineHeight.toDp().roundToPx() * 2),
+                                maxHeight = maxOf(bodySpace, minimumBodyHeight),
                             ),
                         )
                     val bodyTop = heading.height + titleSpace
@@ -545,6 +677,8 @@ internal fun <T> SettingsRadioOptions(
     }
 }
 
+private val settingsChoiceRipple = ripple(enableFocusIndication = false)
+
 @Composable
 internal fun SettingsChoiceRow(
     label: String,
@@ -553,16 +687,26 @@ internal fun SettingsChoiceRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     leading: @Composable () -> Unit = {},
+    trailing: @Composable (Color) -> Unit = {},
 ) {
     val colors = MaterialTheme.colorScheme
     val foreground = if (selected) colors.onSecondaryContainer else colors.onSurface
+    val shape = RoundedCornerShape(12.dp)
     Row(
         modifier
             .fillMaxWidth()
             .heightIn(min = 56.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(shape)
+            .updateFocusOutline(shape, foreground)
             .then(if (selected) Modifier.background(colors.secondaryContainer) else Modifier)
-            .selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
+            .selectable(
+                selected,
+                interactionSource = null,
+                indication = settingsChoiceRipple,
+                enabled = enabled,
+                role = Role.RadioButton,
+                onClick = onClick,
+            )
             .padding(horizontal = 12.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -574,6 +718,7 @@ internal fun SettingsChoiceRow(
             color = foreground,
             style = MaterialTheme.typography.bodyLarge,
         )
+        trailing(foreground)
         Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
             if (selected)
                 Icon(

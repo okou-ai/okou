@@ -27,6 +27,7 @@
     <string name="chat_search_short">Search</string>
     <string name="chat_search_partial_local">Some results couldn’t load. Showing saved chats only.</string>
     <string name="chat_search_saved_chats">Couldn’t refresh. Showing saved chats.</string>
+    <string name="chat_search_saved_chats_no_matches">Search is limited to saved chats. No matches.</string>
     <string name="chat_search_saved_results">Couldn’t refresh. Showing previous results.</string>
     <string name="chat_search_messages_failed">Couldn’t search messages</string>
     <string name="chat_search_workflows_failed">Couldn’t search workflows</string>

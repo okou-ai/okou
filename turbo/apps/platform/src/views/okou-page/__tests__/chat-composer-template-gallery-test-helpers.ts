@@ -11,12 +11,11 @@ import { expect } from "vitest";
 
 import {
   THREAD_ID,
-  tabByText,
   createChatComposerHelpers,
 } from "./chat-composer-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import { clickComposerAddMenuItem } from "./chat-composer-add-menu-test-helpers.ts";
-import { click } from "../../../__tests__/page-helper.ts";
+import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 
 export { THREAD_ID };
 
@@ -29,21 +28,23 @@ interface TemplateChatCapture {
   readonly lifecycle: ReturnType<typeof mockChatLifecycle>;
 }
 
-export async function openTemplatePicker(
-  _user: ReturnType<typeof userEvent.setup>,
-  category?: "Presentation" | "Website" | "Image",
+export async function openTemplateRecommendations(
+  task: "Presentation" | "Document" | "Website" | "Image" = "Presentation",
 ): Promise<HTMLElement> {
-  await clickComposerAddMenuItem("Template");
-  const dialog = await waitFor(() => {
-    return screen.getByRole("dialog");
+  await clickComposerAddMenuItem("Create");
+  const types = await screen.findByRole("radiogroup", { name: "Create" });
+  const choice = queryAllByRoleFast("radio", types).find((candidate) => {
+    return candidate.textContent?.trim() === task;
   });
-  if (category) {
-    const tab = tabByText(category);
-    if (tab.getAttribute("aria-selected") !== "true") {
-      click(tab);
-    }
+  if (!choice) {
+    throw new Error(`Expected creation type ${task}`);
   }
-  return dialog;
+  if (choice.getAttribute("aria-checked") !== "true") {
+    click(choice);
+  }
+  return await screen.findByRole("group", {
+    name: task === "Image" ? "Image styles" : `${task} templates`,
+  });
 }
 
 function presentationHtml(slideTitles: readonly string[]): string {
@@ -110,6 +111,9 @@ export function createTemplateGalleryHelpers(context: TestContext) {
     readonly tier?: string;
     readonly sendGate?: Promise<void>;
     readonly onRunCreate?: () => void;
+    readonly onSendRequest?: NonNullable<
+      Parameters<typeof mockChatLifecycle>[1]
+    >["onSendRequest"];
   }): TemplateChatCapture {
     const sentMessages: UserMessageDocument[] = [];
     const selectedTemplates: GenerationTemplateRequest[] = [];
@@ -134,6 +138,7 @@ export function createTemplateGalleryHelpers(context: TestContext) {
       threadId: options?.threadId ?? THREAD_ID,
       selectedModel: "claude-sonnet-5",
       ...(options?.sendGate ? { sendGate: options.sendGate } : {}),
+      onSendRequest: options?.onSendRequest,
       onThreadCreate(body) {
         threadCreates.push(body.clientThreadId ?? "server-selected");
       },

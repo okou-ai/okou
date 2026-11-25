@@ -76,6 +76,7 @@ export function ArtifactCatalogSidebar() {
           resourceUrl$: artifactCatalogSidebar.preview.resourceUrl$,
           imageUrl$: artifactCatalogSidebar.preview.imageUrl$,
           shareUrl$: artifactCatalogSidebar.preview.shareUrl$,
+          zipPreview: artifactCatalogSidebar.preview.zipPreview,
         }}
         artifactKind={
           detail.data.kind === "presentation"

@@ -1,4 +1,5 @@
 import {
+  boolean,
   index,
   pgTable,
   text,
@@ -16,6 +17,8 @@ export const projects = pgTable(
     orgId: text("org_id").notNull(),
     name: text("name").notNull(),
     sortOrder: text("sort_order"),
+    archived: boolean("archived").default(false).notNull(),
+    lastArchivedAt: timestamp("last_archived_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

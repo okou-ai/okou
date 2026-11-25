@@ -11,7 +11,10 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 const FEATURE_SWITCH_BY_AUTH_METHOD = Object.freeze<
   Record<string, FeatureSwitchKey | undefined>
 >({
+  "app-store-connect\0individual-key": FeatureSwitchKey.AppStoreConnect,
+  "app-store-connect\0team-key": FeatureSwitchKey.AppStoreConnect,
   "docusign\0oauth": FeatureSwitchKey.DocuSignConnector,
+  "linkedin\0oauth": FeatureSwitchKey.LinkedInOAuthConnector,
   "paypal\0api-token": FeatureSwitchKey.PayPalConnector,
   "ramp\0oauth": FeatureSwitchKey.RampConnector,
   "spotify\0oauth": FeatureSwitchKey.SpotifyConnector,

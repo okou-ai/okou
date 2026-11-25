@@ -1,6 +1,17 @@
 """Shared progress receipts for synthetic native report evidence."""
 
 
+def memory_read_receipt(started_ns, finished_ns, read_start_offset_ns):
+    return {
+        "started_ns": started_ns,
+        "finished_ns": finished_ns,
+        "read_start_offset_ns": read_start_offset_ns,
+        "available_bytes": 32 * 1024**3,
+        "age_ns": 2,
+        "read_duration_ns": 1,
+    }
+
+
 def joined_observer(started_ns, completed_ns):
     return {
         "started_ns": started_ns,

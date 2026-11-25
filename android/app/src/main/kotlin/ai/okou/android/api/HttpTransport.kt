@@ -3,7 +3,7 @@ package ai.okou.android.api
 import ai.okou.android.BuildConfig
 import java.io.IOException
 import java.io.InterruptedIOException
-import java.text.ParseException
+import java.text.ParsePosition
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
@@ -31,21 +31,22 @@ internal class ResponseLimitExceeded : IOException("Response exceeds the support
 internal class HttpRejection(val status: Int, val retryAfter: String?, val envelope: String?) :
     IOException("HTTP $status")
 
-internal fun retryAfter(value: String?): Long? {
-    if (value == null) return null
-    value.toLongOrNull()?.let {
-        return it.coerceAtLeast(0)
-    }
-    val formatter = SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss zzz", Locale.US)
-    formatter.timeZone = TimeZone.getTimeZone("GMT")
-    formatter.isLenient = false
-    return try {
-        ((formatter.parse(value)?.time ?: return null) - System.currentTimeMillis()).coerceAtLeast(
-            0,
-        ) / 1000
-    } catch (_: ParseException) {
-        null
-    }
+internal fun retryAfter(value: String?, nowMillis: Long = System.currentTimeMillis()): Long? {
+    val header = value?.trim(' ', '\t') ?: return null
+    if (header.all { it in '0'..'9' }) return header.toLongOrNull()
+
+    val formatter =
+        SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss zzz", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("GMT")
+            isLenient = false
+        }
+    val position = ParsePosition(0)
+    val deadline = formatter.parse(header, position)?.time ?: return null
+    if (position.index != header.length) return null
+
+    val remaining = deadline - nowMillis
+    // Keep the seconds-based API from retrying before the server's HTTP date.
+    return if (remaining <= 0L) 0L else 1L + (remaining - 1L) / 1_000L
 }
 
 internal fun IOException.httpRejection(): HttpRejection? =

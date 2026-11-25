@@ -13,9 +13,7 @@ use super::errors::{
 };
 use super::handshake::{encode_attach_for_channel, send_protocol_pong};
 use super::message::{decode_data, message_targets_channel};
-use super::reconnect::{
-    PendingReconnectToken, ReconnectContext, ReconnectOutcome, attempt_reconnect,
-};
+use super::reconnect::{ReconnectContext, ReconnectOutcome, ReconnectTokens, attempt_reconnect};
 use super::session::{SessionState, TokenRenewalFailure};
 use super::state::{ChannelLifecycleState, reconnect_spacing_delay, retry_delay};
 use super::transport::{
@@ -505,7 +503,7 @@ pub(crate) async fn run_event_loop(mut p: EventLoopState, mut close_rx: CloseRec
 
         let mut retry_immediately = immediate_retry;
         let mut disconnected_retry_count: u32 = 0;
-        let mut pending_reconnect_token: Option<PendingReconnectToken> = None;
+        let mut reconnect_tokens = ReconnectTokens::new(refresh_token);
         let reconnect_started_at = Instant::now();
         let mut reconnect_attempt: u64 = 0;
         loop {
@@ -599,8 +597,7 @@ pub(crate) async fn run_event_loop(mut p: EventLoopState, mut close_rx: CloseRec
                         timing: &p.timing,
                         transport_close_tracker: &p.transport_close_tracker,
                     },
-                    &mut refresh_token,
-                    &mut pending_reconnect_token,
+                    &mut reconnect_tokens,
                 ) => result,
             };
 

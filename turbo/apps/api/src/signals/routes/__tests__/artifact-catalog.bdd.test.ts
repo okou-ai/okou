@@ -6,6 +6,8 @@ import {
 } from "@aws-sdk/client-s3";
 
 import { hostContract } from "@okouai/api-contracts/contracts/host";
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   artifactCatalogContract,
   chatArtifactCatalogChangedEvent,
@@ -25,6 +27,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { RouteEntry } from "../../route-entry";
 import { artifactCatalogRoutes } from "../artifact-catalog";
 import { sharedThreadRoutes } from "../shared-threads";
+import { featureSwitchesRoutes } from "../feature-switches";
 import {
   createBddApi,
   expectApiError,
@@ -181,6 +184,18 @@ interface ReadSharedThreadResult {
 function authenticateSharedThread(actor: ApiTestUser) {
   routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
   return { authorization: "Bearer clerk-session" };
+}
+
+async function enableArtifactLibrary(actor: ApiTestUser) {
+  await accept(
+    setupApp({ context, routes: featureSwitchesRoutes })(
+      featureSwitchesContract,
+    ).update({
+      headers: authenticateSharedThread(actor),
+      body: { switches: { [FeatureSwitchKey.ArtifactLibrary]: true } },
+    }),
+    [200],
+  );
 }
 
 function sharedThreadTestApp() {
@@ -669,6 +684,19 @@ describe("GET /api/artifacts/catalog", () => {
       title: "季度销售报告",
       site: { url: published.url, publicSlug: published.publicSlug },
     });
+    await enableArtifactLibrary(owner.actor);
+    // The title no longer contains the site name, but its actual projection
+    // filename does. Legacy searches remain title-only.
+    await expect(
+      chat.listArtifactCatalog(owner.actor, { keyword: site }),
+    ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
+    const filenameMatch = await chat.listArtifactCatalog(owner.actor, {
+      keyword: site,
+      direction: "asc",
+    });
+    expect(filenameMatch.artifacts).toStrictEqual([
+      expect.objectContaining({ id: entry!.id, title: "季度销售报告" }),
+    ]);
     const redeployed = await publishHostedSite({
       owner,
       site,
@@ -680,6 +708,7 @@ describe("GET /api/artifacts/catalog", () => {
     expect(afterRedeploy.artifacts).toStrictEqual([
       expect.objectContaining({ id: entry!.id, title: "季度销售报告" }),
     ]);
+    expect(afterRedeploy.artifacts[0]!.createdAt).toBe(entry!.createdAt);
     const threadArtifacts = await chat.listThreadArtifacts(
       owner.actor,
       published.threadId,

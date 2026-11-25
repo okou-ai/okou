@@ -1,3 +1,4 @@
+import CCStateSwiftUI
 import ChatData
 import ChatDataTestSupport
 import ChatDomain
@@ -65,7 +66,10 @@ final class QuotedFollowupTests: XCTestCase {
     defer { conversation.close() }
     conversation.draft = "Keep the ordinary draft."
     await conversation.refresh()
-    let host = UIHostingController(rootView: ChatDetailView(conversation: conversation))
+    let host = UIHostingController(
+      rootView: StoreProvider(conversation.composer.store) {
+        ChatDetailView(conversation: conversation)
+      })
     let window = try await mountNativeHost(host) { _ in self.passageInput(in: host.view) != nil }
     defer { unmount(window) }
     let selection = try XCTUnwrap(passageInput(in: host.view))

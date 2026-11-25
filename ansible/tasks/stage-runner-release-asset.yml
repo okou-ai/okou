@@ -1,0 +1,82 @@
+- name: Require release asset URL and SHA-256
+  assert:
+    that:
+      - (runner_asset_url | default('') | length) > 0
+      - (runner_asset_checksum | default('')) is match('^sha256:[0-9a-f]{64}$')
+    fail_msg: "Staging requires a release asset URL and its published SHA-256."
+
+- name: Read installed runner checksum
+  stat:
+    path: "{{ bin_dir }}/runner"
+    checksum_algorithm: sha256
+    get_attributes: false
+    get_mime: false
+  register: installed_runner_binary
+
+- name: Verify and install the runner release asset
+  vars:
+    runner_asset_needs_download: "{{ ('sha256:' ~ (installed_runner_binary.stat.checksum | default(''))) != runner_asset_checksum }}"
+  block:
+    - name: Allocate a private staging directory on the runner filesystem
+      tempfile:
+        state: directory
+        path: "{{ bin_dir }}"
+        prefix: .runner-stage-
+      register: runner_asset_stage
+      when: runner_asset_needs_download
+
+    - name: Download and verify runner release bytes
+      get_url:
+        url: "{{ runner_asset_url }}"
+        checksum: "{{ runner_asset_checksum }}"
+        dest: "{{ runner_asset_stage.path }}/runner"
+        tmp_dest: "{{ runner_asset_stage.path }}"
+        mode: "0755"
+        timeout: 30
+        use_netrc: false
+      when: runner_asset_needs_download
+
+    - name: Verify runner ELF architecture
+      command:
+        argv:
+          - python3
+          - -c
+          - |
+            import sys
+            from pathlib import Path
+
+            with Path(sys.argv[1]).open("rb") as binary:
+                header = binary.read(20)
+            magic = header[:4].hex()
+            machine = header[18:20].hex()
+            expected = sys.argv[2]
+            if magic != "7f454c46" or machine != expected:
+                sys.exit(f"Runner ELF mismatch: magic={magic} machine={machine} expected_machine={expected}")
+          - "{{ (runner_asset_stage.path | default(bin_dir)) ~ '/runner' }}"
+          - "{{ derived_expected_runner_elf_machine }}"
+      changed_when: false
+
+    - name: Atomically install the verified runner
+      command:
+        argv:
+          - mv
+          - -T
+          - --
+          - "{{ runner_asset_stage.path }}/runner"
+          - "{{ bin_dir }}/runner"
+      when: runner_asset_needs_download
+
+    - name: Restore permissions on a reused runner
+      file:
+        path: "{{ bin_dir }}/runner"
+        mode: "0755"
+      when:
+        - not runner_asset_needs_download
+        - installed_runner_binary.stat.mode != '0755'
+
+  always:
+    - name: Remove the private runner staging directory
+      file:
+        path: "{{ runner_asset_stage.path }}"
+        state: absent
+      when: runner_asset_stage.path is defined

@@ -3,7 +3,6 @@ use super::super::allocation::{
     LARGEST, LIVE_PAYLOAD_BYTES, Measurement, PAYLOAD_THRESHOLD, RELEASED_PAYLOAD_BYTES,
 };
 use super::*;
-use guest_contracts::storage_manifest::ArtifactEntry;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
@@ -26,21 +25,12 @@ async fn decoded_storage_batches_bound_allocations_and_release_completed_inputs(
     eprintln!("{}", output.stderr);
 }
 
-#[derive(Default)]
-struct ByteCounter(usize);
-
-impl std::io::Write for ByteCounter {
-    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        self.0 = self
-            .0
-            .checked_add(bytes.len())
-            .ok_or_else(|| std::io::Error::other("serialized manifest length overflow"))?;
-        Ok(bytes.len())
+fn expected_manifest_with_each_mount_starting_a_batch(manifest: &Manifest) -> serde_json::Value {
+    let mut value = serde_json::to_value(manifest).unwrap();
+    for mount in value["storageMounts"].as_array_mut().unwrap() {
+        mount["archiveUrl"] = serde_json::json!(storage_files::PACKED_BATCH_START_URL);
     }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
+    value
 }
 
 fn assert_complete_delivery(
@@ -91,14 +81,22 @@ async fn decoded_storage_batch_memory_child() {
         return;
     }
 
-    let fixture = DeliveryFixture::new(256, 256, 35_000).await;
+    let fixture = DeliveryFixture::new(256, 256, 604).await;
     let sandbox = MockSandbox::new("large-decoded-manifest");
-    let (manifest, files) = fixture.prepare(&sandbox).await;
-    let expected = serde_json::to_value(&manifest).unwrap();
-    let mut source_bytes = ByteCounter::default();
-    serde_json::to_writer(&mut source_bytes, &manifest).unwrap();
-    let source_bytes = source_bytes.0;
-    assert!(source_bytes > 8 * 1024 * 1024);
+    let (mut manifest, files) = fixture.prepare(&sandbox).await;
+    pad_versions_for_split(&mut manifest);
+    let expected = expected_manifest_with_each_mount_starting_a_batch(&manifest);
+    let version_id_bytes: usize = expected["storageMounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|mount| mount["versionId"].as_str().unwrap().len())
+        .sum();
+    // JSON escaping may add bytes, so these strings alone bound the manifest size from below.
+    assert!(
+        version_id_bytes > 8 * 1024 * 1024,
+        "fixture storage version IDs occupy {version_id_bytes} bytes, expected more than 8 MiB"
+    );
     assert_eq!(files.len(), 256);
     let context = minimal_context();
     let mut telemetry = test_telemetry(&fixture.config, &context);
@@ -113,7 +111,7 @@ async fn decoded_storage_batch_memory_child() {
     let calls = sandbox.take_storage_manifest_calls();
     assert_complete_delivery(&calls, &expected, b"content");
     drop(calls);
-    eprintln!("aggregate: source bytes={source_bytes}, largest allocation={largest}");
+    eprintln!("aggregate: version ID bytes={version_id_bytes}, largest allocation={largest}");
     // Individual requests only, not RSS or an aggregate final-batch bound.
     assert!(
         largest <= 1024 * 1024,
@@ -126,13 +124,30 @@ async fn encoded_payloads_follow_the_current_guest_operation() {
     let content = (0..storage_files::MAX_FILE_BYTES)
         .map(|index| index as u8)
         .collect::<Vec<_>>();
-    let fixture = DeliveryFixture::with_archive(3, 3, 35_000, archive_with_content(&content)).await;
+    let fixture =
+        DeliveryFixture::with_archive(3, 3, 604, archive_with_content("file", &content)).await;
     let overrides = Arc::new(MockSandboxOverrides::new());
     let gate = MockLifecycleGate::new();
     overrides.set_storage_manifest_lifecycle_gate(gate.clone());
     let sandbox = MockSandbox::with_overrides("completed-storage-buffers", overrides);
-    let (manifest, files) = fixture.prepare(&sandbox).await;
-    let expected = serde_json::to_value(&manifest).unwrap();
+    let (mut manifest, files) = fixture.prepare(&sandbox).await;
+    // Large, unlogged identity fields keep one mount per Guest request.
+    manifest.artifacts = manifest
+        .storages
+        .drain(..)
+        .enumerate()
+        .map(|(index, storage)| ArtifactEntry {
+            mount_path: storage.mount_path,
+            archive_url: storage.archive_url,
+            empty: false,
+            cached: false,
+            vas_storage_name: storage.vas_storage_name,
+            vas_storage_id: Some(format!("artifact-{index}-{}", "i".repeat(35_000))),
+            vas_version_id: storage.vas_version_id,
+            missing_root_policy: None,
+        })
+        .collect();
+    let expected = expected_manifest_with_each_mount_starting_a_batch(&manifest);
     let context = minimal_context();
     let mut telemetry = test_telemetry(&fixture.config, &context);
     let mut released_before_apply = Vec::with_capacity(3);
@@ -224,13 +239,17 @@ async fn mixed_decoded_mounts_preserve_the_canonical_manifest_boundary() {
             .unwrap()
             .extend(std::iter::repeat_n('x', target - before));
         assert_eq!(serde_json::to_vec(&manifest).unwrap().len(), target);
-        let expected = serde_json::to_value(&manifest).unwrap();
+        let expected = if overflow == 0 {
+            serde_json::to_value(&manifest).unwrap()
+        } else {
+            expected_manifest_with_each_mount_starting_a_batch(&manifest)
+        };
         let result = apply_with_telemetry(&fixture, &sandbox, manifest, &files).await;
         fixture.shutdown().await;
 
         result.unwrap();
         let calls = sandbox.storage_manifest_calls();
         assert_complete_delivery(&calls, &expected, b"content");
-        assert_eq!(calls.len(), 1 + overflow);
+        assert_eq!(calls.len(), 1);
     }
 }

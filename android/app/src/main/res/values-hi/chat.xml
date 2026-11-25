@@ -12,9 +12,7 @@
     <string name="chat_undo_failed">बदलाव पूर्ववत नहीं किया जा सका।</string>
     <string name="chat_undo_unconfirmed">पुष्टि नहीं हो सकी कि बदलाव पूर्ववत हुआ।</string>
     <string name="chat_feedback_dismiss">बंद करें</string>
-    <string name="chat_list_offline">ऑफ़लाइन</string>
     <string name="chat_list_first_load_failed">फ़िलहाल लोड नहीं हो सका</string>
-    <string name="chat_list_load_when_online">फिर से ऑनलाइन होने पर चैट लोड होंगी।</string>
     <string name="chat_list_title">चैट</string>
     <string name="chat_refresh">चैट रीफ़्रेश करें</string>
     <string name="chat_loading">चैट लोड हो रही हैं…</string>
@@ -24,6 +22,9 @@
     <string name="chat_inbox">इनबॉक्स</string>
     <string name="chat_mark_all_read">सभी को पढ़ा हुआ चिह्नित करें</string>
     <string name="chat_mark_all_read_unconfirmed">कुछ चैट अब भी अपठित हो सकती हैं।</string>
+    <string name="chat_mark_all_read_failed">चैट को पढ़ा हुआ चिह्नित नहीं किया जा सका।</string>
+    <string name="chat_mark_all_read_partial_failed">पढ़ा हुआ चिह्नित: %1$d। विफल: %2$d।</string>
+    <string name="chat_mark_all_read_mixed">पढ़ी गईं: %1$d। विफल: %2$d। पुष्टि बाकी: %3$d।</string>
     <plurals name="chat_mark_all_read_partial">
         <item quantity="one">%2$d में से %1$d चैट को पढ़ा गया चिह्नित किया गया।</item>
         <item quantity="other">%2$d में से %1$d चैट को पढ़ा गया चिह्नित किया गया।</item>
@@ -36,6 +37,7 @@
     <string name="chat_back_to_inbox">इनबॉक्स पर वापस जाएँ</string>
     <string name="chat_more_actions">और कार्रवाइयाँ</string>
     <string name="chat_unread">अपठित</string>
+    <string name="chat_has_draft">ड्राफ़्ट मौजूद है</string>
     <string name="chat_archived">संग्रहीत</string>
     <string name="chat_muted">म्यूट</string>
     <string name="chat_project_empty">इस प्रोजेक्ट में कोई चैट नहीं है।</string>
@@ -74,9 +76,16 @@
     <string name="chat_delete_rejected">चैट हटाई नहीं जा सकी।</string>
     <string name="chat_delete_title">चैट हटाएं?</string>
     <string name="chat_delete_description">“%1$s” के संदेश और ड्राफ़्ट हमेशा के लिए हट जाएँगे। चल रहे काम रुक जाएँगे और जुड़े ऑटोमेशन रोक दिए जाएँगे।</string>
-    <string name="chat_delete_confirm">हटाएँ</string>
     <string name="chat_rename_project">प्रोजेक्ट का नाम बदलें</string>
     <string name="chat_project_name">प्रोजेक्ट का नाम</string>
+    <string name="chat_project_create">नया प्रोजेक्ट</string>
+    <string name="chat_project_create_confirm">बनाएँ</string>
+    <string name="chat_project_creating">बनाया जा रहा है…</string>
+    <string name="chat_project_create_close">बंद करें</string>
+    <string name="chat_project_checking">जाँच हो रही है…</string>
+    <string name="chat_project_create_failed">प्रोजेक्ट नहीं बन सका। नाम बरकरार रखा गया है।</string>
+    <string name="chat_project_create_unconfirmed">प्रोजेक्ट बनने की पुष्टि नहीं हुई है</string>
+    <string name="chat_project_name_too_long">प्रोजेक्ट का नाम %1$d वर्णों से अधिक नहीं हो सकता</string>
     <string name="chat_project_rename_unconfirmed">प्रोजेक्ट के नाम की पुष्टि नहीं हो सकी।</string>
     <string name="chat_project_rename_rejected">प्रोजेक्ट का नाम नहीं बदला जा सका।</string>
     <string name="chat_project_rename_save">सहेजें</string>
@@ -96,4 +105,16 @@
     <string name="chat_project_delete_unconfirmed">प्रोजेक्ट हटाए जाने की पुष्टि नहीं हो सकी।</string>
     <string name="chat_row_action_rejected_named">“%1$s” पूरा नहीं किया जा सका।</string>
     <string name="chat_row_action_offline_named">“%1$s” पूरा नहीं किया जा सका। कनेक्शन जाँचें और फिर कोशिश करें।</string>
+    <string name="chat_rename_save_failed">सेव नहीं हो सका। आपके बदलाव सुरक्षित हैं।</string>
+    <string name="chat_rename_check_result">नतीजा देखें</string>
+    <string name="chat_rename_required">कोई नाम दर्ज करें।</string>
+    <string name="chat_rename_checking_result">नतीजे की जाँच हो रही है…</string>
+    <string name="chat_rename_save_unconfirmed">सेव करने के नतीजे की अब तक पुष्टि नहीं हुई है।</string>
+    <string name="chat_title_saved">चैट का शीर्षक सेव हो गया</string>
+    <string name="chat_project_name_saved">प्रोजेक्ट का नाम सेव हो गया</string>
+    <string name="inline_image_loading">इमेज लोड हो रही है…</string>
+    <string name="inline_image_no_thumbnail">थंबनेल उपलब्ध नहीं है</string>
+    <string name="inline_image_unavailable">इमेज उपलब्ध नहीं है</string>
+    <string name="inline_image_view_original">मूल इमेज देखें</string>
+    <string name="inline_image_open_link">लिंक खोलें</string>
 </resources>

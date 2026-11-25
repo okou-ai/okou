@@ -192,6 +192,12 @@ struct NativeAuthView: View {
       .disabled(flow.isWorking).accessibilityLabel("Verification code").accessibilityIdentifier(
         "auth-code")
       primaryAction("Verify and continue", disabled: flow.code.count < 6) { flow.verify() }
+      if flow.canUsePassword {
+        Button("Use password instead") { flow.usePassword() }
+          .font(.okou(.subheadline).weight(.medium)).foregroundStyle(OkouColor.foreground)
+          .frame(maxWidth: .infinity, minHeight: OkouControl.minimumTarget)
+          .disabled(flow.isWorking)
+      }
       TimelineView(.periodic(from: .now, by: 1)) { timeline in
         let remaining = max(0, Int(ceil(flow.resendAvailableAt.timeIntervalSince(timeline.date))))
         Button(remaining == 0 ? "Resend code" : "Resend code in \(remaining)s") { flow.resend() }

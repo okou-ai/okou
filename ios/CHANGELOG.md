@@ -1,5 +1,239 @@
 # Changelog
 
+## [0.65.10](https://github.com/okou-ai/okou/compare/ios-v0.65.9...ios-v0.65.10) (2026-11-25)
+
+
+### Bug Fixes
+
+* **ios:** try google connector universal links before browser authorization ([#50771](https://github.com/okou-ai/okou/issues/50771)) ([9b3c7f0](https://github.com/okou-ai/okou/commit/9b3c7f08e8a1669d118bf367000a4ec0012120c1))
+
+
+### Refactoring
+
+* **ios:** read the chat list and selection from the session graph ([#50787](https://github.com/okou-ai/okou/issues/50787)) ([1ecc07f](https://github.com/okou-ai/okou/commit/1ecc07f20e600c6943e0b4fe2987cb44cfb1aab2))
+
+## [0.65.9](https://github.com/okou-ai/okou/compare/ios-v0.65.8...ios-v0.65.9) (2026-11-25)
+
+
+### Bug Fixes
+
+* **ios:** support connector method switching and direct oauth ([#50742](https://github.com/okou-ai/okou/issues/50742)) ([15898a8](https://github.com/okou-ai/okou/commit/15898a82453dea810807d25dadf545365d4c16df))
+
+## [0.65.8](https://github.com/okou-ai/okou/compare/ios-v0.65.7...ios-v0.65.8) (2026-11-25)
+
+
+### CI
+
+* **ios:** remove the app review submission workflow ([#50737](https://github.com/okou-ai/okou/issues/50737)) ([dc6de0a](https://github.com/okou-ai/okou/commit/dc6de0af465f9e8b273502f5d6de0d0c8a87b48a))
+
+
+### Refactoring
+
+* **ios:** keep the conversation reading window in the session graph ([#50739](https://github.com/okou-ai/okou/issues/50739)) ([3edf334](https://github.com/okou-ai/okou/commit/3edf334954030f929e51cd046fe7c599eea55dc3))
+* **ios:** keep the sidebar draft marks in the session graph ([#50756](https://github.com/okou-ai/okou/issues/50756)) ([b63a254](https://github.com/okou-ai/okou/commit/b63a254b7e35c1ebbe2b045abb9549b0cb953da5))
+* **ios:** keep the workspace search input in the session graph ([#50750](https://github.com/okou-ai/okou/issues/50750)) ([e466437](https://github.com/okou-ai/okou/commit/e466437b3f09c0597efbbb7fa84bdb569acd57f7))
+
+## [0.65.7](https://github.com/okou-ai/okou/compare/ios-v0.65.6...ios-v0.65.7) (2026-11-25)
+
+
+### Refactoring
+
+* **ios:** keep the failure recovery state in the session graph ([#50722](https://github.com/okou-ai/okou/issues/50722)) ([d4491b4](https://github.com/okou-ai/okou/commit/d4491b4516895fe48a692663b6784a5146e12801))
+
+## [0.65.6](https://github.com/okou-ai/okou/compare/ios-v0.65.5...ios-v0.65.6) (2026-11-25)
+
+
+### Refactoring
+
+* **ios:** keep the conversation's delivery state in the session graph ([#50712](https://github.com/okou-ai/okou/issues/50712)) ([98141fe](https://github.com/okou-ai/okou/commit/98141fecb19a1f8c853a6b283c61f65f5686195e))
+
+## [0.65.5](https://github.com/okou-ai/okou/compare/ios-v0.65.4...ios-v0.65.5) (2026-11-25)
+
+
+### Refactoring
+
+* **ios:** keep the permission batch card state in the session graph ([#50695](https://github.com/okou-ai/okou/issues/50695)) ([d36b536](https://github.com/okou-ai/okou/commit/d36b536ce5084a1bb4bc5b46762e6e9dba73ab24))
+* **ios:** keep the permission card state in the session graph ([#50685](https://github.com/okou-ai/okou/issues/50685)) ([f2257c6](https://github.com/okou-ai/okou/commit/f2257c692f9adf2e21817021b00c3e69b4d3db73))
+
+## [0.65.4](https://github.com/okou-ai/okou/compare/ios-v0.65.3...ios-v0.65.4) (2026-11-25)
+
+
+### Refactoring
+
+* **ios:** keep the fork attempt and model settings in the session graph ([#50673](https://github.com/okou-ai/okou/issues/50673)) ([5bd6a2a](https://github.com/okou-ai/okou/commit/5bd6a2a951279a84d432acbe8c91271959357fe7))
+* **ios:** keep the run usage table in the session graph ([#50672](https://github.com/okou-ai/okou/issues/50672)) ([1419225](https://github.com/okou-ai/okou/commit/1419225a07be06a556836059caf28a770f588345))
+
+## [0.65.3](https://github.com/okou-ai/okou/compare/ios-v0.65.2...ios-v0.65.3) (2026-11-24)
+
+
+### Refactoring
+
+* **ios:** keep the activity phrase selection in the session graph ([#50646](https://github.com/okou-ai/okou/issues/50646)) ([1961638](https://github.com/okou-ai/okou/commit/1961638b7019cad78ea503e57304250cb3e2db0f))
+* **ios:** keep the mail draft card state in the session graph ([#50625](https://github.com/okou-ai/okou/issues/50625)) ([e19e656](https://github.com/okou-ai/okou/commit/e19e656af29b540697e9ae5b6277d8418bb78458))
+
+## [0.65.2](https://github.com/okou-ai/okou/compare/ios-v0.65.1...ios-v0.65.2) (2026-11-24)
+
+
+### Refactoring
+
+* **ios:** keep approval card values in the session store ([#50587](https://github.com/okou-ai/okou/issues/50587)) ([2cfbd20](https://github.com/okou-ai/okou/commit/2cfbd20b2879317c984a3615ae2a283385b371c1))
+* **ios:** keep the computer access card's state in the session graph ([#50617](https://github.com/okou-ai/okou/issues/50617)) ([e61f5f2](https://github.com/okou-ai/okou/commit/e61f5f20a81081c75631ea5cf104eca6aee758b8))
+* **ios:** keep the ssh access card's state in the session graph ([#50611](https://github.com/okou-ai/okou/issues/50611)) ([51c0094](https://github.com/okou-ai/okou/commit/51c009401272ec7af574e6e6309b54aebed98eeb))
+
+## [0.65.1](https://github.com/okou-ai/okou/compare/ios-v0.65.0...ios-v0.65.1) (2026-11-24)
+
+
+### Refactoring
+
+* **ios:** keep message attachment and artifact reads in the session store ([#50569](https://github.com/okou-ai/okou/issues/50569)) ([4a6e96a](https://github.com/okou-ai/okou/commit/4a6e96a6132f20fbf567f21e3788d5f208e3add7))
+* **ios:** keep permission card reads in the session store ([#50581](https://github.com/okou-ai/okou/issues/50581)) ([df3660c](https://github.com/okou-ai/okou/commit/df3660c158d67eba3b2d72261794679cde347491))
+
+## [0.65.0](https://github.com/okou-ai/okou/compare/ios-v0.64.0...ios-v0.65.0) (2026-11-24)
+
+
+### Features
+
+* **ios:** say what for you directions do and throw the top card both ways ([#50568](https://github.com/okou-ai/okou/issues/50568)) ([dfc99d5](https://github.com/okou-ai/okou/commit/dfc99d5c28b54aa7d1d7960f2d46938732f8e19a))
+
+
+### Bug Fixes
+
+* **ios:** close the fork after its sheet dismisses ([#50554](https://github.com/okou-ai/okou/issues/50554)) ([ef5b4dc](https://github.com/okou-ai/okou/commit/ef5b4dc21a619da181fa8c6283fe07c00b72e3d0))
+
+
+### Refactoring
+
+* **ios:** keep conversation reads and run usage in the session Store ([#50556](https://github.com/okou-ai/okou/issues/50556)) ([229d5ea](https://github.com/okou-ai/okou/commit/229d5ea180cebda0c13f98987025c841d2211651))
+
+## [0.64.0](https://github.com/okou-ai/okou/compare/ios-v0.63.1...ios-v0.64.0) (2026-11-24)
+
+
+### Features
+
+* add member-wide connector account approval ([#50516](https://github.com/okou-ai/okou/issues/50516)) ([ff76d52](https://github.com/okou-ai/okou/commit/ff76d52e21a55cd8f3e34a513e7e5fcfd8ab1e1b))
+* **ios:** scroll for you reasons in place instead of show more ([#50498](https://github.com/okou-ai/okou/issues/50498)) ([6a86eb2](https://github.com/okou-ai/okou/commit/6a86eb23751bda3334908e384e9ddc100a553bb7))
+
+
+### Bug Fixes
+
+* **ios:** discard drafts for unavailable chats ([#50503](https://github.com/okou-ai/okou/issues/50503)) ([4aeac42](https://github.com/okou-ai/okou/commit/4aeac42344c6a9c6a81bbb472d509e04548d8c1d))
+* **ios:** truncate collapsed follow-up suggestions to one line ([#50529](https://github.com/okou-ai/okou/issues/50529)) ([85dc94d](https://github.com/okou-ai/okou/commit/85dc94d473e47d9fbb4606946970e8c58b8985f6))
+
+
+### Refactoring
+
+* **ios:** keep the conversation transcript in the workspace graph ([#50497](https://github.com/okou-ai/okou/issues/50497)) ([36d3201](https://github.com/okou-ai/okou/commit/36d3201459a8c12fd00393f3593e1691679de5db))
+
+
+### Performance Improvements
+
+* **ci:** overlap ios simulator startup and compilation in the merge queue ([#50530](https://github.com/okou-ai/okou/issues/50530)) ([63e4fae](https://github.com/okou-ai/okou/commit/63e4fae81f0ab37694e0ad1b66473ceb47a45957))
+
+## [0.63.1](https://github.com/okou-ai/okou/compare/ios-v0.63.0...ios-v0.63.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* **ios:** preserve the first voice input through microphone permission ([#50506](https://github.com/okou-ai/okou/issues/50506)) ([f372155](https://github.com/okou-ai/okou/commit/f3721557e647ec53aee0209cbf830b6ef237e7be))
+
+## [0.63.0](https://github.com/okou-ai/okou/compare/ios-v0.62.2...ios-v0.63.0) (2026-11-24)
+
+
+### Features
+
+* **native:** manage member-wide connector account access ([#50496](https://github.com/okou-ai/okou/issues/50496)) ([eda9b10](https://github.com/okou-ai/okou/commit/eda9b103a4531c6c23058180f5150e11a3a986e9))
+
+
+### Bug Fixes
+
+* **ios:** use the native multiline return key in chat ([#50487](https://github.com/okou-ai/okou/issues/50487)) ([4a913f2](https://github.com/okou-ai/okou/commit/4a913f2959d900ff4ef2491ce2bebbf48accd0b8))
+
+## [0.62.2](https://github.com/okou-ai/okou/compare/ios-v0.62.1...ios-v0.62.2) (2026-11-24)
+
+
+### Refactoring
+
+* **ios:** keep the composer's state in the workspace graph ([#50406](https://github.com/okou-ai/okou/issues/50406)) ([accb5df](https://github.com/okou-ai/okou/commit/accb5df191d2eae42ebbadd7b392e23883744ebf))
+
+## [0.62.1](https://github.com/okou-ai/okou/compare/ios-v0.62.0...ios-v0.62.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* **ios:** avoid document cover flashes on preview open ([#50426](https://github.com/okou-ai/okou/issues/50426)) ([21678e5](https://github.com/okou-ai/okou/commit/21678e5b1400ed8d4f5770148b2e38cb6f5a44d9))
+
+## [0.62.0](https://github.com/okou-ai/okou/compare/ios-v0.61.1...ios-v0.62.0) (2026-11-24)
+
+
+### Features
+
+* **ios:** add connector management and align chat account controls ([#50371](https://github.com/okou-ai/okou/issues/50371)) ([b6afd7e](https://github.com/okou-ai/okou/commit/b6afd7e2be27cb0356358062dc7bb813200d18f9))
+* **ios:** support follow-up placeholders and cache workspace feature switches ([#50378](https://github.com/okou-ai/okou/issues/50378)) ([4e41392](https://github.com/okou-ai/okou/commit/4e41392755b97917cdaa67a070b7951d2a219921))
+
+
+### Bug Fixes
+
+* **ios:** align the sidebar loading row with chat titles ([#50410](https://github.com/okou-ai/okou/issues/50410)) ([2e85a3a](https://github.com/okou-ai/okou/commit/2e85a3acd10b9599ebada526124bb6471f4fbff7))
+
+## [0.61.1](https://github.com/okou-ai/okou/compare/ios-v0.61.0...ios-v0.61.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* **ios:** offer password sign-in from the email code screen ([#50382](https://github.com/okou-ai/okou/issues/50382)) ([7f77e6e](https://github.com/okou-ai/okou/commit/7f77e6e291605036e6a31afab9f3ef6aa4e5dbab))
+
+
+### Refactoring
+
+* **ios:** drive workspace returns with one pan recognizer ([#50355](https://github.com/okou-ai/okou/issues/50355)) ([aad511d](https://github.com/okou-ai/okou/commit/aad511d326a04d0b83628f801b5191c97b47dbe7))
+
+## [0.61.0](https://github.com/okou-ai/okou/compare/ios-v0.60.0...ios-v0.61.0) (2026-11-24)
+
+
+### Features
+
+* add recording chips to chat composers behind a switch ([#50334](https://github.com/okou-ai/okou/issues/50334)) ([7fa55b1](https://github.com/okou-ai/okou/commit/7fa55b15b8286465939af85fe2faeaa1d39a952e))
+
+## [0.60.0](https://github.com/okou-ai/okou/compare/ios-v0.59.2...ios-v0.60.0) (2026-11-23)
+
+
+### Features
+
+* archive projects in the chat sidebar ([#50306](https://github.com/okou-ai/okou/issues/50306)) ([8c9f004](https://github.com/okou-ai/okou/commit/8c9f004ac760d95f3f47e8e3fa83d470f2de28c6))
+
+
+### Bug Fixes
+
+* **ios:** slide chat feedback out from its drag position ([#50328](https://github.com/okou-ai/okou/issues/50328)) ([2b8f121](https://github.com/okou-ai/okou/commit/2b8f121778cb8bf819e69ac616bcc89ac3a23204))
+* **ios:** use touch displacement to arbitrate chat swipe back ([#50323](https://github.com/okou-ai/okou/issues/50323)) ([845fc22](https://github.com/okou-ai/okou/commit/845fc225c04e06afd813173ebd272d03193e553f))
+
+## [0.59.2](https://github.com/okou-ai/okou/compare/ios-v0.59.1...ios-v0.59.2) (2026-11-23)
+
+
+### Bug Fixes
+
+* remove the Okou symbol from default workspace avatars ([#50313](https://github.com/okou-ai/okou/issues/50313)) ([caf7355](https://github.com/okou-ai/okou/commit/caf73558c2663ca0345dd35943f05379213c4c4f))
+
+## [0.59.1](https://github.com/okou-ai/okou/compare/ios-v0.59.0...ios-v0.59.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* **ios:** keep the keyboard up when an attachment finishes uploading ([#50298](https://github.com/okou-ai/okou/issues/50298)) ([d6f92a0](https://github.com/okou-ai/okou/commit/d6f92a03ce1b2937b3b053d1fbea640774620f8d))
+
+## [0.59.0](https://github.com/okou-ai/okou/compare/ios-v0.58.0...ios-v0.59.0) (2026-11-23)
+
+
+### Features
+
+* **ios:** follow the finger through the for you deck ([#50252](https://github.com/okou-ai/okou/issues/50252)) ([b5cfa65](https://github.com/okou-ai/okou/commit/b5cfa6513ee993e11a9e436c6b0a1bd883fe99ea))
+
+
+### Bug Fixes
+
+* **ios:** hide unavailable image preview navigation ([#50226](https://github.com/okou-ai/okou/issues/50226)) ([8e503c2](https://github.com/okou-ai/okou/commit/8e503c2c908538eea5b470b2b1111e9d7fdea908)) [#50204](https://github.com/okou-ai/okou/issues/50204)
+* **ios:** match draft attachment glass to the composer ([#50244](https://github.com/okou-ai/okou/issues/50244)) ([8b3f19c](https://github.com/okou-ai/okou/commit/8b3f19c2a7346b8c05966fa0457b8d78952539ee))
+
 ## [0.58.0](https://github.com/okou-ai/okou/compare/ios-v0.57.0...ios-v0.58.0) (2026-11-23)
 
 

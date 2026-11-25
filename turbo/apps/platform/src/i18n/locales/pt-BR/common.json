@@ -266,6 +266,11 @@
         "modelCatalogCacheValidationLatency": "Latência de validação do cache do catálogo de modelos",
         "modelCatalogPrefetchRole": "Função de pré-carregamento do catálogo de modelos",
         "modelCatalogUpstreamEncoding": "Codificação upstream do catálogo de modelos",
+        "openrouterAttempts": "OpenRouter Tentativas de provedor",
+        "openrouterAttemptsIncomplete": "OpenRouter Tentativas incompletas",
+        "openrouterGenerationId": "OpenRouter ID de geração",
+        "openrouterModel": "OpenRouter Modelo",
+        "openrouterProvider": "OpenRouter Provedor",
         "params": "Parâmetros",
         "permission": "Permissão",
         "permissionError": "Erro de permissão",
@@ -444,7 +449,6 @@
       "close": "Fechar",
       "closeArtifact": "Fechar artefato",
       "closeNamed": "Fechar {{title}}",
-      "closePreviewMenu": "Fechar menu de visualização",
       "download": "Baixar",
       "downloadArtifact": "Baixar artefato",
       "downloadMarkdownAs": "Baixar como {{format}}",
@@ -518,6 +522,77 @@
       "kindIcon": "Artefato do tipo {{kind}}",
       "loading": "Carregando artefatos"
     },
+    "customDomain": {
+      "addressHint": "Choose the full address used when you share this website.",
+      "automaticHint": "Isso configura o CNAME do site e o TXT de propriedade. Adicione abaixo os registros adicionais do certificado e volte para verificar.",
+      "automaticSetup": "Configurar registros do site",
+      "checkBeforeEditing": "Clique em Verificar para conferir os registros antes de alterar o DNS.",
+      "checkFailed": "Requer atenção",
+      "checkNotChecked": "Não verificado",
+      "checkPassed": "Aprovado",
+      "checkPending": "Aguardando",
+      "checks": {
+        "certificate": "HTTPS",
+        "dns": "DNS connection",
+        "ownership": "Ownership",
+        "provider": "Ativação do domínio",
+        "route": "Roteamento do site"
+      },
+      "checkUnavailable": "Não foi possível verificar",
+      "connect": "Connect a domain",
+      "continue": "Continue",
+      "copied": "Copied",
+      "copyFailed": "Could not copy. Select the value to copy it.",
+      "copyRecordName": "Copiar nome {{type}} {{name}}",
+      "copyRecordValue": "Copiar valor {{type}} {{name}}",
+      "disconnectConfirm": "This domain will be disconnected from this website.",
+      "dnsConfigured": "DNS configurado",
+      "dnsHelp": "Add these records at your DNS provider, then click Verify",
+      "domain": "Domain",
+      "findingProvider": "Buscando opções de configuração DNS…",
+      "hostnameExample": "www.example.com",
+      "httpsReady": "HTTPS ready",
+      "keepTxtValues": "Mantenha os valores TXT existentes com o mesmo nome. Adicione cada valor como um registro TXT separado.",
+      "lastChecked": "Last checked {{time}}",
+      "manage": "Manage {{hostname}}",
+      "manualHint": "Copie os registros para suas configurações DNS e volte para verificar.",
+      "needsSetup": "Finish setup",
+      "noDnsChanges": "Seus registros DNS correspondem. Não é necessário alterar o DNS.",
+      "notChecked": "No verification yet",
+      "okouUrl": "Okou URL",
+      "openDns": "Abrir DNS da {{provider}}",
+      "ownDomain": "Enter a domain you own",
+      "recordMatched": "Corresponde",
+      "recordName": "Nome",
+      "recordNeedsCheck": "Ainda não corresponde",
+      "recordValue": "Valor",
+      "remove": "Remove",
+      "removeConfirm": "Your sharing link will return to {{url}}.",
+      "removeHostname": "Remove {{hostname}}",
+      "removeTitle": "Remove custom domain?",
+      "removing": "This domain is disconnected. Click Remove to finish cleaning up its configuration.",
+      "retryVerification": "Confira os resultados e clique em Verificar para conferir novamente.",
+      "reviewDns": "Revisar registros DNS",
+      "saveToEnable": "Seu endereço de compartilhamento só muda ao clicar em Salvar.",
+      "setUpDns": "Configure os registros DNS",
+      "setupStages": "Etapas de configuração do domínio",
+      "sharingAddress": "Seu endereço de compartilhamento",
+      "steps": {
+        "dns": "Configurar DNS",
+        "enable": "Ativar",
+        "verify": "Verificação"
+      },
+      "title": "Custom domain",
+      "urlPreview": "https://{{hostname}}",
+      "verificationChecks": "Verificações do domínio",
+      "verificationComplete": "Todas as verificações foram aprovadas. Continue para ativar seu domínio.",
+      "verificationDetails": "Detalhes da verificação",
+      "verified": "Domain verified. Save to use this address.",
+      "verifiedRecords": "Registros verificados ({{total}})",
+      "verify": "Verify",
+      "verifyDomain": "Verificação do domínio",
+      "yourDomains": "Connected domains"
+    },
     "deletion": {
       "cancel": "Cancelar",
       "delete": "Excluir",
@@ -587,6 +662,22 @@
       "text": "Texto",
       "video": "Vídeo"
     },
+    "library": {
+      "allArtifacts": "Todos os artefatos",
+      "allTypes": "Todos os tipos",
+      "clearFilters": "Limpar filtros",
+      "clearSearch": "Limpar busca",
+      "created": "Criado",
+      "emptyDescription": "Tente outro nome ou tipo.",
+      "emptyTitle": "Nenhum artefato encontrado",
+      "loadMore": "Carregar mais",
+      "name": "Nome",
+      "retry": "Tentar novamente",
+      "search": "Buscar artefatos",
+      "sortAscending": "Ordenar em ordem crescente",
+      "sortDescending": "Ordenar em ordem decrescente",
+      "type": "Tipo"
+    },
     "metadata": {
       "generated": "Gerado em {{date}}",
       "updated": "Atualizado em {{date}}"
@@ -594,11 +685,10 @@
     "people": {
       "accounts": "Membros correspondentes do espaço de trabalho",
       "anyone": "Qualquer pessoa",
-      "empty": "Ninguém mais tem acesso ainda.",
-      "hint": "Fora do seu espaço de trabalho? Use o e-mail completo da pessoa.",
       "invitationProcessed": "Convite de compartilhamento processado",
       "label": "Compartilhar com pessoas",
       "noAccounts": "Nenhum membro correspondente. Digite um e-mail completo para convidar.",
+      "owner": "Proprietário",
       "placeholder": "Nome ou endereço de e-mail",
       "remove": "Remover acesso de {{email}}",
       "removed": "Acesso removido",
@@ -611,7 +701,8 @@
       "viewers": "Pessoas com acesso",
       "workspace": "Espaço de trabalho",
       "workspaceDescription": "Membros de {{organization}} e pessoas convidadas",
-      "workspaceDescriptionUnnamed": "Membros do espaço de trabalho e pessoas convidadas"
+      "workspaceDescriptionUnnamed": "Membros do espaço de trabalho e pessoas convidadas",
+      "you": "{{name}} (você)"
     },
     "preview": {
       "audioLabel": "Visualização de áudio de {{filename}}",
@@ -682,15 +773,9 @@
       "updated": "URL do site atualizada"
     },
     "templates": {
-      "activeHtmlPreview": "Visualização HTML ativa de {{title}}",
-      "all": "Todos",
       "avatar": "Avatar",
-      "categories": "Categorias de modelo",
-      "category": "Categoria de modelo",
       "fullPreview": "Visualização completa do site {{title}}",
       "htmlPreview": "Visualização HTML de {{title}}",
-      "illustration": "Ilustração",
-      "illustrationPreview": "Visualização da ilustração {{title}}",
       "importDeck": "Importe sua própria apresentação",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importDocument": "Importar seu próprio documento",
@@ -702,18 +787,10 @@
       "importImageHint": "Salvar como estilo",
       "multiAccent": "Várias cores de destaque",
       "nextSlide": "Visualizar próximo slide",
-      "noMatches": "Nenhum resultado",
-      "previewCurrentSlide": "Visualizar {{title}} no slide atual",
       "previewSlide": "Visualizar slide {{slideNumber}}",
-      "previewWebsite": "Visualizar o modelo de site {{title}}",
       "previousSlide": "Visualizar slide anterior",
-      "searchConnector": "Buscar modelos",
-      "searchConnectors": "Buscar modelos",
       "selectStyle": "Selecionar estilo {{style}}",
       "selectTemplate": "Selecionar modelo {{title}}",
-      "selectWebsite": "Selecionar modelo de site {{title}}",
-      "selectWorkflow": "Selecionar modelo de fluxo de trabalho {{title}}",
-      "showVariant": "Mostrar variação {{variantNumber}}",
       "singleAccent": "Uma cor de destaque",
       "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "Visualização dos slides de {{title}}",
@@ -741,15 +818,11 @@
         "terracottaClay": "Vaso de barro",
         "warmSand": "Jornal da manhã"
       },
-      "tryDifferentSearch": "Tente outra busca.",
-      "use": "Usar",
       "useThisTemplate": "Usar este modelo",
       "visibility": {
         "changeLabel": "Alterar a visibilidade do modelo"
       },
       "website": "Site",
-      "websitePreview": "Visualização do modelo de site {{title}}",
-      "workflow": "Fluxo de trabalho",
       "workflowCatalog": {
         "auto-inbox-label": {
           "description": "Crie um fluxo que roda quando um marcador do Gmail é aplicado e cuida da mensagem marcada.",
@@ -1194,6 +1267,12 @@
       "teamWarning": "Seu acesso Team permanece ativo até o fim do período de cobrança atual. Depois disso, este workspace passará para {{plan}}.",
       "title": "Fazer downgrade do plano"
     },
+    "feedback": {
+      "otherPlaceholder": "Conte-nos mais…",
+      "rewardTerms": "Uma vez por espaço de trabalho · Créditos válidos por 30 dias",
+      "submitFeedback": "Enviar feedback",
+      "thanks": "Obrigado pelo feedback"
+    },
     "invoices": {
       "amount": "Valor",
       "date": "Data",
@@ -1337,40 +1416,6 @@
     "sidebar": {
       "description": "Mais créditos e execuções simultâneas",
       "getPlan": "Obter {{plan}}"
-    },
-    "survey": {
-      "checkoutAbandoned": {
-        "answers": {
-          "just_checking_price": "Só estava conferindo o preço",
-          "needs_approval": "Preciso da aprovação de outra pessoa",
-          "not_ready_yet": "Ainda não estou pronto para assinar",
-          "not_seeing_value": "Ainda não vi o valor",
-          "other": "Outro motivo",
-          "payment_issue": "Tive problemas com o pagamento",
-          "price_higher_than_expected": "O preço foi maior do que eu esperava",
-          "results_not_good_enough": "Não fiquei satisfeito com os resultados"
-        },
-        "description": "É só uma pergunta. Sua resposta nos ajuda a melhorar.",
-        "question": "O que impediu você de concluir a compra?"
-      },
-      "creditsExhausted": {
-        "answers": {
-          "no_need_now": "No momento não preciso de mais",
-          "not_sure_worth_it": "Ainda não sei se vale a pena",
-          "other": "Outro motivo",
-          "still_trying": "Quero testar mais antes",
-          "too_expensive": "É caro demais"
-        },
-        "question": "O que impede você de fazer o upgrade hoje?",
-        "reward": "A primeira resposta elegível neste espaço de trabalho recebe {{credits}} créditos de bônus, válidos por 30 dias.",
-        "thanksWithCredits": "Obrigado! Adicionamos {{credits}} créditos para você continuar."
-      },
-      "error": "Não foi possível enviar sua resposta. Tente novamente.",
-      "notNow": "Agora não",
-      "otherLabel": "Sua resposta",
-      "otherPlaceholder": "Conte mais (opcional)",
-      "submit": "Enviar",
-      "thanks": "Obrigado por nos contar."
     },
     "toasts": {
       "autoRechargeUpdated": "Recarga automática atualizada",
@@ -1768,6 +1813,7 @@
       "waiting": "Aguardando o Mastercard Data Connect. Conclua o processo lá e depois volte ao Chat."
     },
     "billing": {
+      "addCreditsOrUpgrade": "Adicione créditos a partir de $5 para continuar ou faça upgrade para o Pro e desbloqueie recursos exclusivos.",
       "addCreditsToContinue": "Adicione créditos para continuar conversando com o {{assistantName}}.",
       "askAdminCredits": "Peça a um administrador do workspace para adicionar créditos e continuar conversando com o {{assistantName}}.",
       "askAdminUpgrade": "Peça a um administrador do workspace para fazer upgrade para o Pro e continuar conversando com o {{assistantName}}.",
@@ -1781,7 +1827,6 @@
       "customAmountError": "Insira um valor entre US$ 1 e US$ 10.000",
       "customDollarAmount": "Valor personalizado em dólares",
       "outOfCredits": "Seus créditos acabaram",
-      "redirecting": "Redirecionando...",
       "upgradeToContinue": "Faça upgrade para o Pro para continuar conversando com o {{assistantName}}.",
       "upgradeToPro": "Fazer upgrade para o Pro",
       "upgradeToRun": "Faça upgrade para o Pro para executar o {{assistantName}}",
@@ -1943,11 +1988,10 @@
       "add": "Adicionar",
       "configureModel": "Configurar modelo",
       "create": {
-        "addStyle": "Adicionar estilo",
-        "addTemplate": "Adicionar modelo",
         "documentPlaceholder": "O que você gostaria de incluir no seu documento?",
         "imagePlaceholder": "Descreva a imagem que você quer criar…",
         "presentationPlaceholder": "Qual é o tema da sua apresentação?",
+        "presentationPlaceholderWithDefault": "Sobre o que é sua apresentação? ({{format}} por padrão)",
         "slideCount": "Número de slides",
         "slideCountAuto": "Automático",
         "slideCountRange": "{{range}} slides"
@@ -1958,6 +2002,16 @@
       "message": "Mensagem",
       "modelForThisChat": "Modelo para este chat",
       "placeholder": "Peça para automatizar fluxos de trabalho, gerenciar tarefas...",
+      "presentationFormatSetup": {
+        "htmlDescription": "Um link que abre em qualquer navegador",
+        "htmlLabel": "Slides web",
+        "openSettings": "Abrir configurações",
+        "pptxDescription": "Um arquivo .pptx editável",
+        "pptxLabel": "PowerPoint",
+        "savedDefault": "{{format}} agora é seu formato padrão para apresentações",
+        "settingsHint": "Usado em toda nova apresentação. Você pode mudar isso nas Configurações.",
+        "title": "Escolha um formato padrão para começar"
+      },
       "selectedModelUnavailable": "O modelo selecionado não está disponível. Configure-o antes de enviar.",
       "selectedModelUnavailableToast": "O modelo selecionado não está disponível",
       "selectModel": "Selecionar modelo",
@@ -1984,11 +2038,9 @@
         "scheduleHint": "Executar em um agendamento",
         "share": "Compartilhar conversa",
         "shareHint": "Compartilhe um link para esta conversa",
-        "templates": "Modelos",
         "unpin": "Desafixar conversa"
       },
       "slashPanel": {
-        "browseAll": "Ver todos os modelos",
         "hint": "Escolha uma ação",
         "useTemplate": "Usar o modelo {{title}}"
       },
@@ -2031,8 +2083,10 @@
     "connectorAccountSwitch": {
       "accountFallback": "Conta do conector",
       "actionFailed": "Não foi possível mudar de conta.",
+      "allowForHour": "Permitir por 1 hora",
       "customConnector": "Conector personalizado",
       "loadFailed": "Não foi possível carregar esta conta do conector.",
+      "memberScope": "Permita em todos os seus chats. Selecione esta conta aqui.",
       "reconnectRequired": "É necessário reconectar. Execuções posteriores podem usar a alternativa existente.",
       "selected": "Conta alterada para {{account}}",
       "switch": "Mudar",
@@ -2654,11 +2708,6 @@
       "unsupported": "A redefinição manual não é compatível; o uso se recupera automaticamente."
     },
     "taskChips": {
-      "presentationFormat": "Formato da apresentação",
-      "presentationFormats": {
-        "html": "HTML",
-        "pptx": "PPTX"
-      },
       "presentationTemplates": "Modelos de apresentação",
       "removeTask": "Remover {{task}}",
       "shelf": {
@@ -2676,7 +2725,6 @@
         "website": "Site",
         "workflow": "Fluxo de trabalho"
       },
-      "viewAll": "Ver tudo",
       "visualization": {
         "allCharts": "Todos os gráficos",
         "back": "Back to visualization options",
@@ -2858,8 +2906,6 @@
         "workflow": "Fluxo de trabalho"
       },
       "previewTemplate": "Visualizar template {{title}}",
-      "previewWebsite": "Visualizar template de site {{title}}",
-      "previewWorkflow": "Visualizar template de fluxo de trabalho {{title}}",
       "removeTemplate": "Remover template {{title}}",
       "removeWebsite": "Remover template de site {{title}}",
       "removeWorkflow": "Remover template de fluxo de trabalho {{title}}"
@@ -2931,6 +2977,7 @@
       "storageFailed": "Não foi possível salvar o áudio. Somente o áudio já salvo neste dispositivo está disponível.",
       "textTakingShape": "O texto está tomando forma",
       "transcribing": "Transcrevendo",
+      "uploadingRecording": "Enviando a gravação…",
       "useRecording": "Usar gravação"
     },
     "walletAction": {
@@ -3013,6 +3060,8 @@
     "accountsInChat": "Escolha quais contas ficam ativadas neste chat.",
     "enableByDefault": "Ativar {{account}} por padrão",
     "manageAccounts": "Gerenciar contas",
+    "memberPolicyLoadFailed": "Não foi possível carregar o acesso às contas.",
+    "memberSettingsDescription": "Escolha quais contas do {{connector}} o Okou pode usar em seus chats.",
     "permissions": "Permissões",
     "permissionsDescription": "Estas regras se aplicam a este conector em todos os seus chats e contas.",
     "settingsDescription": "Escolha quais contas do {{connector}} o Okou pode usar nos seus chats. Você pode alterar o acesso em cada chat.",
@@ -3958,7 +4007,6 @@
         "overview": "Dados do fornecedor e do cliente"
       }
     },
-    "filter": "Categoria do documento",
     "formats": {
       "pdf": "PDF",
       "word": "Documento do Word"
@@ -3968,10 +4016,8 @@
     "nextPage": "Próxima página de exemplo",
     "openLarger": "Abrir prévia ampliada",
     "page": "Página {{page}}",
-    "preview": "Visualizar {{title}}",
     "previousPage": "Página de exemplo anterior",
-    "title": "Documento",
-    "useNamed": "Usar {{title}}"
+    "title": "Documento"
   },
   "featureGuide": {
     "close": "Fechar guia de novidades",
@@ -4488,7 +4534,6 @@
   },
   "myOkou": {
     "conflict": "Suas instruções salvas foram alteradas em outro lugar. Seu rascunho foi mantido. Revise ou copie antes de recarregar as instruções salvas.",
-    "description": "Suas instruções para o Okou neste espaço de trabalho",
     "discard": "Descartar",
     "draftKept": "Seu rascunho permanece nesta aba ao mudar de página ou espaço de trabalho.",
     "instructions": "Instruções",
@@ -5254,6 +5299,7 @@
     }
   },
   "projects": {
+    "archiveProject": "Arquivar",
     "back": "Back",
     "close": "Close",
     "collapse": "Recolher",
@@ -5294,6 +5340,7 @@
     "removeFromNewChat": "Remover {{name}}",
     "rename": "Rename",
     "renameProject": "Rename Project",
+    "restoreProject": "Restaurar projeto",
     "retryThreads": "Reload threads",
     "save": "Save",
     "saveError": "Could not save Project",
@@ -5767,7 +5814,6 @@
           "title": "Preferência"
         },
         "proactiveLearning": {
-          "description": "Escolha como o Okou trabalha de forma proativa.",
           "title": "Proactive"
         },
         "tools": {
@@ -5849,6 +5895,16 @@
     "models": {
       "actions": {
         "resetUsage": "Redefinir uso"
+      },
+      "antigravity": {
+        "check": "Verificar login",
+        "error": "Confira o ambiente de login atribuído a você e tente novamente.",
+        "expired": "O login expirou. Conecte a conta novamente.",
+        "openTerminal": "Abrir o terminal de login do Google",
+        "terminal": "Execute este comando no terminal e faça login com sua conta pessoal do Google AI.",
+        "title": "Google AI (Antigravity)",
+        "unassigned": "Peça a um administrador para atribuir um terminal de login a você.",
+        "verify": "Este comando usa sua assinatura para enviar uma solicitação a cada um dos modelos Neon, Carbon e Hydrogen."
       },
       "deviceAuth": {
         "claude": {
@@ -6052,6 +6108,14 @@
           "title": "Modelo padrão"
         },
         "description": "Escolha os padrões para novos chats e como as mensagens são enviadas.",
+        "presentationFormat": {
+          "htmlDescription": "Novas apresentações abrem como um link no navegador",
+          "pptxDescription": "Novas apresentações chegam como um arquivo .pptx editável",
+          "saveFailed": "Não foi possível salvar o formato padrão. Tente novamente.",
+          "title": "Formato padrão de apresentação",
+          "unavailable": "Não foi possível carregar seu formato padrão",
+          "unsetDescription": "Vamos perguntar na primeira vez que você criar uma apresentação"
+        },
         "sectionTitle": "Chat"
       },
       "debug": {
@@ -6159,7 +6223,6 @@
         "title": "Resumo matinal"
       },
       "proactiveSuggestions": {
-        "description": "Verifique suas fontes conectadas a cada hora, atualize seu perfil diariamente e receba sugestões úteis de próximos passos.",
         "errorMessage": "Não foi possível carregar ou atualizar as configurações.",
         "missingTimezone": "Defina seu fuso horário nas Preferências.",
         "preparationFailed": "Temporariamente indisponível.",
@@ -6450,7 +6513,6 @@
   },
   "sidebar": {
     "escapeShortcut": "Esc",
-    "filterAll": "Todos",
     "markAllRead": "Marcar tudo como lido",
     "noResults": "Nenhum resultado encontrado",
     "resultCount_one": "{{count}} resultado",
@@ -6459,10 +6521,8 @@
     "searching": "Pesquisando...",
     "searchWorkspace": "Pesquisar no espaço de trabalho...",
     "sections": {
-      "artifacts": "Artefatos",
-      "chats": "Conversas",
       "messages": "Mensagens",
-      "workflows": "Fluxos de trabalho"
+      "threads": "Threads"
     }
   },
   "ssh": {
@@ -6624,11 +6684,8 @@
   "templates": {
     "actions": {
       "delete": "Excluir",
-      "menu": "Ações para {{title}}",
-      "preview": "Visualizar {{title}}",
       "rename": "Renomear modelo"
     },
-    "builtIn": "Integrados",
     "custom": "Personalizados",
     "delete": {
       "cancel": "Cancelar",
@@ -6643,11 +6700,6 @@
       "page": "Página {{number}}"
     },
     "loadFailed": "Não foi possível carregar os modelos.",
-    "rename": {
-      "action": "Renomear",
-      "cancel": "Cancelar",
-      "save": "Salvar"
-    },
     "renameFailed": "Não foi possível renomear o modelo.",
     "sharedBy": "Compartilhado por {{owner}}",
     "sharedByMember": "Compartilhado por um membro da organização",

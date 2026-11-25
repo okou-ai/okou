@@ -1,0 +1,58 @@
+{
+  "voice-draft-audio-010": {
+    "stopBeforeAudio": false,
+    "stopAfterOneSample": "Stop recording"
+  },
+  "voice-draft-audio-013": {
+    "afterUse": 6,
+    "windows": [
+      {
+        "phase": "live",
+        "start": 0,
+        "end": 15
+      },
+      {
+        "phase": "live",
+        "start": 13,
+        "end": 28
+      },
+      {
+        "phase": "live",
+        "start": 26,
+        "end": 41
+      },
+      {
+        "phase": "live",
+        "start": 39,
+        "end": 54
+      },
+      {
+        "phase": "use",
+        "start": 39,
+        "end": 54
+      },
+      {
+        "phase": "use",
+        "start": 52,
+        "end": 60
+      }
+    ],
+    "beforeUse": 4,
+    "resumeOnReturn": false,
+    "editor": "Spoken checkpoint 1 Spoken checkpoint 2 Spoken checkpoint 3 Spoken checkpoint 5 Spoken checkpoint 6"
+  },
+  "chat-capability-voice-recording-004": {
+    "count": 128,
+    "completed": 4,
+    "revisited": false,
+    "timeoutMs": 5000,
+    "result": "timed out before route recovery or polish"
+  },
+  "chat-capability-voice-recording-005": {
+    "count": 129,
+    "completed": 4,
+    "revisited": false,
+    "timeoutMs": 5000,
+    "result": "timed out before route recovery or polish"
+  }
+}

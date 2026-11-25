@@ -1,7 +1,7 @@
 package ai.okou.android.chat
 
 import ai.okou.android.api.ApiFailure
-import ai.okou.android.api.finiteReadRetryDelays
+import ai.okou.android.api.boundedReadRetryDelayMillis
 import ai.okou.android.api.generated.WorkflowSummary
 import ai.okou.android.artifacts.ArtifactKind
 import ai.okou.android.auth.WorkspaceIdentity
@@ -27,16 +27,6 @@ import kotlinx.coroutines.launch
 internal const val RecentSearchChatLimit = 8
 internal const val GroupedSearchResultLimit = 3
 private const val SearchDebounceMillis = 300L
-
-private fun searchRetryAfterMillis(error: Exception): Long? =
-    when (error) {
-        is ApiFailure.Network -> 0L
-        is ApiFailure.Http ->
-            if (error.status == 408 || error.status == 429 || error.status in 500..599) {
-                (error.retryAfterSeconds ?: 0L).coerceIn(0, Long.MAX_VALUE / 1_000) * 1_000
-            } else null
-        else -> null
-    }
 
 internal enum class WorkspaceSearchType {
     All,
@@ -77,14 +67,17 @@ private fun WorkflowSummary.toSearchHit() =
 internal fun WorkflowState.searchCatalog(keyword: String): SearchRead<SearchWorkflowHit> {
     val rows =
         catalog
-            ?: return when (catalogFailure) {
-                null -> SearchRead.Loading
-                WorkflowReadFailure.Unavailable -> SearchRead.AccessLost
+            ?: return when {
+                catalogRefreshing || catalogFailure == null -> SearchRead.Loading
+                catalogFailure == WorkflowReadFailure.Unavailable -> SearchRead.AccessLost
                 else -> SearchRead.Failed
             }
+    val matches = rows.mapNotNull { it.toSearchHit().takeIf { hit -> hit.matches(keyword) } }
+    if (catalogRefreshing && matches.isEmpty()) return SearchRead.Loading
     return SearchRead.Ready(
-        rows.mapNotNull { it.toSearchHit().takeIf { hit -> hit.matches(keyword) } },
-        refreshFailed = catalogFailure != null,
+        matches,
+        refreshing = catalogRefreshing,
+        refreshFailed = !catalogRefreshing && catalogFailure != null,
     )
 }
 
@@ -137,8 +130,14 @@ internal data class WorkspaceSearchResults(
     val keyword: String = "",
     val messages: SearchRead<SearchMessageHit> = SearchRead.Loading,
     val artifacts: SearchRead<SearchArtifactHit> = SearchRead.Loading,
-    val moreArtifactsFailed: Boolean = false,
+    val artifactPaging: ArtifactSearchPaging = ArtifactSearchPaging.Idle,
 )
+
+internal enum class ArtifactSearchPaging {
+    Idle,
+    Loading,
+    Failed,
+}
 
 class WorkspaceSearchModel
 internal constructor(
@@ -190,7 +189,10 @@ internal constructor(
             artifactPageJob?.cancel()
             artifactPageJob = null
             mutable.value =
-                mutable.value.copy(artifacts = SearchRead.Loading, moreArtifactsFailed = false)
+                mutable.value.copy(
+                    artifacts = SearchRead.Loading,
+                    artifactPaging = ArtifactSearchPaging.Idle,
+                )
         }
         visibleType.value = type.takeIf { visible && keyword.isNotEmpty() }
         if (visibleType.value == null) return
@@ -217,10 +219,10 @@ internal constructor(
                 read ->
                 state.copy(
                     artifacts = state.artifacts.updated(read),
-                    moreArtifactsFailed =
-                        state.moreArtifactsFailed &&
-                            read !is SearchRead.Ready &&
-                            read != SearchRead.AccessLost,
+                    artifactPaging =
+                        if (read is SearchRead.Ready || read == SearchRead.AccessLost)
+                            ArtifactSearchPaging.Idle
+                        else state.artifactPaging,
                 )
             }
         }
@@ -238,7 +240,7 @@ internal constructor(
                 current.keyword != keyword ||
                 loaded.nextCursor != cursor ||
                 loaded.refreshFailed ||
-                current.moreArtifactsFailed ||
+                current.artifactPaging == ArtifactSearchPaging.Failed ||
                 artifactPageJob?.isActive == true
         )
             return
@@ -246,6 +248,7 @@ internal constructor(
             searches[WorkspaceSearchType.Artifacts]?.join()
             val currentPage = mutable.value.artifacts as? SearchRead.Ready ?: return@launch
             if (currentPage.nextCursor != cursor || currentPage.refreshFailed) return@launch
+            mutable.value = mutable.value.copy(artifactPaging = ArtifactSearchPaging.Loading)
             readSearch(
                 { it == WorkspaceSearchType.Artifacts },
                 { artifactPage(keyword, cursor) },
@@ -260,9 +263,10 @@ internal constructor(
                     }
                 mutable.value =
                     if (next == SearchRead.AccessLost)
-                        latest.copy(artifacts = next, moreArtifactsFailed = false)
-                    else if (merged == null) latest.copy(moreArtifactsFailed = true)
-                    else latest.copy(artifacts = merged, moreArtifactsFailed = false)
+                        latest.copy(artifacts = next, artifactPaging = ArtifactSearchPaging.Idle)
+                    else if (merged == null)
+                        latest.copy(artifactPaging = ArtifactSearchPaging.Failed)
+                    else latest.copy(artifacts = merged, artifactPaging = ArtifactSearchPaging.Idle)
             }
         }
     }
@@ -317,8 +321,7 @@ internal constructor(
                     ) {
                         onFailure(error)
                     }
-                    val retryAfter = searchRetryAfterMillis(error)
-                    val retryDelay = finiteReadRetryDelays.getOrNull(failures)
+                    val retryDelay = error.boundedReadRetryDelayMillis(failures)
                     if (authorized()) {
                         publish(
                             when {
@@ -326,13 +329,13 @@ internal constructor(
                                     error is ApiFailure.UpdateRequired ||
                                     error is ApiFailure.Http && error.status in setOf(401, 403) ->
                                     SearchRead.AccessLost
-                                retryAfter == null || retryDelay == null -> SearchRead.Failed
+                                retryDelay == null -> SearchRead.Failed
                                 else -> SearchRead.Retrying
                             },
                         )
                     }
-                    if (retryAfter == null || retryDelay == null) return
-                    delay(maxOf(retryAfter, retryDelay))
+                    if (retryDelay == null) return
+                    delay(retryDelay)
                     failures++
                     continue
                 }

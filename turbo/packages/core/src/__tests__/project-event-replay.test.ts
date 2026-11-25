@@ -29,6 +29,43 @@ describe("Project identity and lifecycle", () => {
       ),
     ).toEqual([]);
   });
+  it("replays Project archive and restore in the original order", () => {
+    const id = "30000000-0000-4000-8000-000000000071";
+    const createdAt = "2026-11-01T00:00:00Z";
+    const lastArchivedAt = "2026-11-02T00:00:00Z";
+    const project = {
+      id,
+      name: "Launch",
+      createdAt,
+      updatedAt: createdAt,
+      sortOrder: "a0",
+    };
+    const archive = {
+      id: "30000000-0000-4000-8000-000000000072",
+      projectId: id,
+      kind: "renamed" as const,
+      name: project.name,
+      createdAt: lastArchivedAt,
+      archived: true,
+      lastArchivedAt,
+      seqId: 2,
+    };
+    const archived = replayProjectEvents([project], [archive]);
+    expect(archived).toMatchObject([
+      { id, archived: true, lastArchivedAt, sortOrder: "a0" },
+    ]);
+    expect(
+      replayProjectEvents(archived, [
+        {
+          ...archive,
+          id: "30000000-0000-4000-8000-000000000073",
+          archived: false,
+          seqId: 3,
+        },
+      ]),
+    ).toMatchObject([{ id, archived: false, lastArchivedAt, sortOrder: "a0" }]);
+  });
+
   it("rejects expired and future operation identities without changing their retry timestamp", () => {
     const now = Date.parse("2026-11-02T00:00:00Z");
     const random = "30000000-0000-4000-8000-000000000071";

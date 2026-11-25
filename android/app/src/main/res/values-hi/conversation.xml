@@ -1,14 +1,48 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="conversation_queue_count">कतार (%1$d)</string>
+    <string name="conversation_queue_empty">कतार में कोई आइटम नहीं</string>
+    <string name="conversation_queue_message">संदेश</string>
+    <plurals name="conversation_queue_attachments">
+        <item quantity="one">संदेश · %d अटैचमेंट</item>
+        <item quantity="other">संदेश · %d अटैचमेंट</item>
+    </plurals>
+    <string name="conversation_run_queued">शुरू होने की प्रतीक्षा में</string>
     <string name="conversation_welcome">आज आप किस काम पर आगे बढ़ना चाहते हैं?</string>
     <string name="conversation_welcome_detail">Okou को बताएँ कि आप क्या करना चाहते हैं।</string>
     <string name="conversation_jump_latest">नवीनतम संदेश पर जाएँ</string>
     <string name="conversation_new_reply">नया जवाब</string>
     <string name="conversation_view_progress">प्रगति देखें</string>
     <string name="conversation_processing">काम जारी है…</string>
-    <string name="conversation_history_offline">ऑनलाइन होने पर चैट का इतिहास लोड होगा।</string>
-    <string name="conversation_offline_send">भेजने के लिए ऑनलाइन हों। आपका ड्राफ़्ट यहीं रहेगा।</string>
-    <string name="conversation_work">काम के चरण</string>
+    <string name="conversation_reply_summary">जवाब का सारांश</string>
+    <string name="conversation_turn_continued">अगली बारी में जारी</string>
+    <string name="conversation_replying">जवाब दिया जा रहा है…</string>
+    <string name="conversation_turn_done">पूरा हुआ</string>
+    <string name="conversation_replies_expanded">विस्तृत</string>
+    <string name="conversation_replies_collapsed">संक्षिप्त</string>
+    <string name="conversation_work_elapsed">%1$s से काम जारी है</string>
+    <string name="conversation_work_total">कुल %1$s काम किया</string>
+    <string name="conversation_work_seconds">%1$d से॰</string>
+    <string name="conversation_work_minutes">%1$d मि॰</string>
+    <string name="conversation_work_hours">%1$d घं॰</string>
+    <string name="conversation_work_minutes_seconds">%1$d मि॰ %2$d से॰</string>
+    <string name="conversation_work_hours_minutes">%1$d घं॰ %2$d मि॰</string>
+    <string name="conversation_followup_continue">जारी रखें</string>
+    <string name="conversation_feedback_pair">%1$s · %2$s</string>
+    <plurals name="conversation_reply_steps">
+        <item quantity="one">%d चरण</item>
+        <item quantity="other">%d चरण</item>
+    </plurals>
+    <string-array name="conversation_completion_phrases">
+        <item>समाप्त हुआ</item>
+        <item>सब हो गया</item>
+        <item>पहुँचा दिया</item>
+        <item>आपकी सेवा में, काम पूरा</item>
+        <item>काम समेट लिया</item>
+        <item>मिशन पूरा</item>
+        <item>हस्ताक्षर किए</item>
+        <item>सब निपट गया</item>
+    </string-array>
     <string name="conversation_reply_actions">जवाब की कार्रवाइयाँ</string>
     <string name="conversation_copy_reply">जवाब कॉपी करें</string>
     <string name="conversation_reply_copied">जवाब कॉपी हो गया</string>
@@ -16,13 +50,8 @@
     <string name="conversation_queue">कतार</string>
     <string name="conversation_queue_automation">वर्कफ़्लो ऑटोमेशन</string>
     <string name="conversation_skip_automation">इस ऑटोमेशन को छोड़ें</string>
-    <string name="conversation_withdrawing">वापस लिया जा रहा है…</string>
-    <string name="conversation_skipping">छोड़ा जा रहा है…</string>
-    <string name="conversation_withdraw_unknown">वापस लेने के नतीजे की पुष्टि बाकी है</string>
-    <string name="conversation_skip_unknown">छोड़ने के नतीजे की पुष्टि बाकी है</string>
     <string name="conversation_withdraw_failed">संदेश वापस नहीं लिया जा सका</string>
     <string name="conversation_skip_failed">ऑटोमेशन छोड़ा नहीं जा सका</string>
-    <string name="conversation_stop">रोकें</string>
     <string name="conversation_find">मैसेज खोजें</string>
     <string name="conversation_find_turns">बातचीत के क्रम देखें</string>
     <string name="conversation_find_empty">खोजने के लिए कोई मैसेज नहीं है</string>

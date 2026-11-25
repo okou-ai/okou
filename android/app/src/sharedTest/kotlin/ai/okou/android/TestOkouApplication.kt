@@ -24,7 +24,6 @@ import ai.okou.android.chat.ChatComposerService
 import ai.okou.android.chat.ChatListService
 import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.chat.RealtimeService
-import ai.okou.android.chat.RunControlJournalStore
 import ai.okou.android.chat.RunControlService
 import ai.okou.android.connectors.ConnectorService
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
@@ -41,8 +40,6 @@ import kotlinx.serialization.json.Json
 /** Compiled only into host/device tests. Production has no authentication bypass switch. */
 open class TestOkouApplication : OkouApplication() {
     override fun startCrashReporting() = Unit
-
-    override val connectivity = MutableStateFlow(true)
 
     var updateService: UpdateService? = null
     var updateOwner: AppUpdates? = null
@@ -96,6 +93,11 @@ open class TestOkouApplication : OkouApplication() {
     var chatService: ChatListService = TestChatService()
     var workflows: WorkflowService? = null
     var initialPreferences: UserPreferences? = null
+    internal var preferenceWrite:
+        suspend (UpdatePreferencesRequest, () -> UserPreferences) -> UserPreferences =
+        { _, save ->
+            save()
+        }
     var workspaceRole = OrganizationRole.MEMBER
     var connectorService: ConnectorService? = null
     var searchService: ai.okou.android.chat.WorkspaceSearchService = EmptyWorkspaceSearchService
@@ -105,14 +107,13 @@ open class TestOkouApplication : OkouApplication() {
     var controlService: RunControlService? = null
     var recoveryService: ai.okou.android.chat.AssistantRecoveryService =
         TestAssistantRecoveryService()
-    var controlJournalStore: RunControlJournalStore? = null
-    override val runControlJournal
-        get() = controlJournalStore ?: super.runControlJournal
-
     override val composerJournal
         get() = journalStore ?: super.composerJournal
 
     var instructionsService: PersonalInstructionsService? = null
+    internal var proactivePreferencesService:
+        ai.okou.android.settings.ProactivePreferencesService? =
+        null
     var instructionsStore: PersonalInstructionsDraftStore? = null
     override val instructionsDrafts
         get() = instructionsStore ?: super.instructionsDrafts
@@ -148,6 +149,7 @@ open class TestOkouApplication : OkouApplication() {
             override val artifacts = (fixture ?: canonical.value).artifacts
             override val workflowService = workflows
             override val connectors = connectorService
+            override val proactivePreferences = proactivePreferencesService
 
             override suspend fun usagePackCredits() =
                 (fixture ?: canonical.value).usagePackCredits()
@@ -192,28 +194,29 @@ open class TestOkouApplication : OkouApplication() {
 
             override suspend fun updatePreferences(
                 update: UpdatePreferencesRequest,
-            ): UserPreferences {
-                val updated =
-                    stored()
-                        .copy(
-                            timezone = update.timezone ?: stored().timezone,
-                            colorTheme =
-                                update.colorTheme?.let {
-                                    UserPreferencesColorTheme.valueOf(it.name)
-                                } ?: stored().colorTheme,
-                            locale =
-                                update.locale?.let { UserPreferencesLocale.valueOf(it.name) }
-                                    ?: stored().locale,
-                            theme =
-                                update.theme?.let { UserPreferencesTheme.valueOf(it.name) }
-                                    ?: stored().theme,
-                            cloudBrowserEnabledByDefault =
-                                update.cloudBrowserEnabledByDefault
-                                    ?: stored().cloudBrowserEnabledByDefault,
-                        )
-                preferences[key] = updated
-                return updated
-            }
+            ): UserPreferences =
+                preferenceWrite(update) {
+                    val updated =
+                        stored()
+                            .copy(
+                                timezone = update.timezone ?: stored().timezone,
+                                colorTheme =
+                                    update.colorTheme?.let {
+                                        UserPreferencesColorTheme.valueOf(it.name)
+                                    } ?: stored().colorTheme,
+                                locale =
+                                    update.locale?.let { UserPreferencesLocale.valueOf(it.name) }
+                                        ?: stored().locale,
+                                theme =
+                                    update.theme?.let { UserPreferencesTheme.valueOf(it.name) }
+                                        ?: stored().theme,
+                                cloudBrowserEnabledByDefault =
+                                    update.cloudBrowserEnabledByDefault
+                                        ?: stored().cloudBrowserEnabledByDefault,
+                            )
+                    preferences[key] = updated
+                    updated
+                }
 
             override fun close() {
                 if (canonical.isInitialized()) canonical.value.close()
@@ -241,6 +244,7 @@ class TestAuthentication(initial: AuthenticationState = testAuthenticationState(
     }
     var membershipsAction: suspend () -> List<WorkspaceMembership> = { available }
     var tokenAction: suspend (NativeSession) -> String? = { "test-token" }
+    var renewTokenAction: suspend (NativeSession) -> String? = { tokenAction(it) }
     var selectAction: suspend (NativeSession, String) -> Unit = { session, id ->
         state.value =
             state.value.copy(
@@ -262,6 +266,8 @@ class TestAuthentication(initial: AuthenticationState = testAuthenticationState(
     override suspend fun memberships(expected: NativeSession) = membershipsAction()
 
     override suspend fun token(expected: NativeSession) = tokenAction(expected)
+
+    override suspend fun renewToken(expected: NativeSession) = renewTokenAction(expected)
 
     override suspend fun selectWorkspace(expected: NativeSession, workspaceId: String) =
         selectAction(expected, workspaceId)

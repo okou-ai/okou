@@ -1,5 +1,4 @@
 import { command, computed, state } from "ccstate";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { feedContract } from "@okouai/api-contracts/client/feed";
 import { getSuggestionExpiresAt } from "@okouai/api-contracts/validators/suggestions";
 import type {
@@ -19,7 +18,6 @@ import { now } from "../../lib/time.ts";
 
 import { apiClient$ } from "../api-client.ts";
 import { authenticatedSessionKey$ } from "../auth.ts";
-import { featureSwitches$ } from "../external/feature-switch.ts";
 import { setAblyLoop$ } from "../realtime.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import { onDomEventFn, onRef, resetSignal } from "../utils.ts";
@@ -237,20 +235,6 @@ interface SettledSuggestion extends AgentSuggestionListItem {
   readonly outcome: SuggestionOutcome;
 }
 
-/** The suggestion feature owns both the For you page and its navigation entry. */
-export const suggestionsEnabled$ = computed(async (get) => {
-  return (
-    (await get(featureSwitches$))[FeatureSwitchKey.AgentSuggestion] === true
-  );
-});
-
-const agentSuggestionsEnabled$ = computed(async (get) => {
-  if (!(await get(suggestionsEnabled$))) {
-    return false;
-  }
-  return true;
-});
-
 const feedVersion$ = computed((get) => {
   get(authenticatedSessionKey$);
   return state(0);
@@ -261,9 +245,6 @@ const feedVersion$ = computed((get) => {
  */
 const forYouFeed$ = computed(async (get) => {
   get(get(feedVersion$));
-  if (!(await get(agentSuggestionsEnabled$))) {
-    return [];
-  }
   const result = await accept(
     get(apiClient$)(feedContract).list(),
     [200, 403],

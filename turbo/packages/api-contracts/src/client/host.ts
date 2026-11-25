@@ -5,6 +5,104 @@ import type { hostContract as OriginalHostContract } from "../contracts/host";
 import type { ClientDescriptor } from "./types";
 
 export const hostContract: ClientDescriptor<typeof OriginalHostContract> = {
+  siteDomains: {
+    method: "GET",
+    path: "/api/host/sites/:siteId/domains",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      402: true,
+      403: true,
+      404: true,
+      409: true,
+      503: true,
+    },
+  },
+  addSiteDomain: {
+    method: "POST",
+    path: "/api/host/sites/:siteId/domains",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      402: true,
+      403: true,
+      404: true,
+      409: true,
+      503: true,
+    },
+  },
+  verifySiteDomain: {
+    method: "POST",
+    path: "/api/host/sites/:siteId/domains/:domainId/verify",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      402: true,
+      403: true,
+      404: true,
+      409: true,
+      503: true,
+    },
+  },
+  siteDomainSetup: {
+    method: "GET",
+    path: "/api/host/sites/:siteId/domains/:domainId/setup",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      402: true,
+      403: true,
+      404: true,
+      409: true,
+      503: true,
+    },
+  },
+  removeSiteDomain: {
+    method: "DELETE",
+    path: "/api/host/sites/:siteId/domains/:domainId",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      402: true,
+      403: true,
+      404: true,
+      409: true,
+      503: true,
+    },
+  },
+  selectSiteDomain: {
+    method: "PATCH",
+    path: "/api/host/sites/:siteId/domain-selection",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      402: true,
+      403: true,
+      404: true,
+      409: true,
+      503: true,
+    },
+  },
+  resolveCustomDomain: {
+    method: "GET",
+    path: "/api/host/custom-domains/:hostname",
+    statuses: {
+      200: true,
+    },
+  },
+  customDomainProbe: {
+    method: "GET",
+    path: "/api/host/custom-domain-probes/:domainId",
+    statuses: {
+      200: true,
+    },
+  },
   resolveAlias: {
     method: "GET",
     path: "/api/host/aliases/:publicSlug",

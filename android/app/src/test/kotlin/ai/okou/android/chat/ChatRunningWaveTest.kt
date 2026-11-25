@@ -92,6 +92,25 @@ class ChatRunningWaveTest {
     }
 
     @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun reducedMotionUsesASixDpCenterAndTwelveDpRing() {
+        val bitmap = ImageBitmap(64, 64)
+        CanvasDrawScope().draw(
+            Density(4f),
+            LayoutDirection.Ltr,
+            Canvas(bitmap),
+            Size(64f, 64f),
+        ) {
+            drawRunningWave(Color.Black, STATIC_RUNNING_FRAME, row = 0)
+        }
+        val pixels = bitmap.toPixelMap()
+        assertEquals(0f, pixels[7, 32].alpha, 0f)
+        assertEquals(0.75f, pixels[10, 32].alpha, 1f / 255f)
+        assertEquals(0f, pixels[19, 32].alpha, 0f)
+        assertEquals(1f, pixels[21, 32].alpha, 0f)
+    }
+
+    @Test
     fun sharedFrameAdvancesOnlyForVisibleRunningRowsWithMotionEnabled() {
         lateinit var lifecycle: TestLifecycleOwner
         lateinit var frame: LongState

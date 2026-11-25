@@ -1,22 +1,6 @@
-/** Which edges of a scroller still have content under them. */
-export type ScrollFade = "none" | "start" | "end" | "both";
-
 /**
- * A scroller whose content is clipped by a hard edge reads as a mistake: half a
- * pill, or a card sliced flat. This masks the scroller on whichever edge still
- * has content under it, and on neither edge when nothing overflows — the state
- * comes from `ScrollFade` above.
- *
- * A mask rather than an overlay, because the scroller sits on a surface other
- * layers slide over: an opaque gradient strip would show its own colour against
- * whatever ends up behind it.
- */
-export const SCROLL_FADE_X =
-  "data-[fade=end]:[mask-image:linear-gradient(to_right,#000_calc(100%-24px),transparent)] data-[fade=start]:[mask-image:linear-gradient(to_right,transparent,#000_24px)] data-[fade=both]:[mask-image:linear-gradient(to_right,transparent,#000_24px,#000_calc(100%-24px),transparent)]";
-
-/**
- * The bottom edge of a vertical scroller, for the reason `SCROLL_FADE_X`
- * records: content cut flat on the viewport's edge reads as a rendering fault
+ * The bottom edge of a vertical scroller: content cut flat on the viewport's
+ * edge reads as a rendering fault
  * rather than as "there is more below". Unconditional, because both consumers
  * scroll from the top and only ever have content under their bottom edge.
  *
@@ -46,7 +30,7 @@ export const SCROLL_FADE_Y_END = [
  * the list sits above -- a rule, a footer -- already draws the boundary, so the
  * mask there is a choice, and the Get started connector list makes the other
  * one. The top edge has none: a row sliced flat against nothing is the
- * rendering fault `SCROLL_FADE_X` describes, and it is the only thing between
+ * rendering fault, and it is the only thing between
  * the list and the words that introduce it.
  *
  * Conditional rather than unconditional like `SCROLL_FADE_Y_END`, whose
@@ -66,14 +50,13 @@ export const SCROLL_FADE_Y_START_WHEN_OVERFLOWING = [
 ].join(" ");
 
 /**
- * `SCROLL_FADE_X` for a Base UI `ScrollArea`: each horizontal edge fades only
+ * For a Base UI `ScrollArea`, each horizontal edge fades only
  * while the scroller has content past it, read off the `ScrollArea.Root`'s
  * `data-overflow-x-start` / `data-overflow-x-end` — the root carries `group`,
  * as `SCROLL_FADE_Y_WHEN_OVERFLOWING` does. The presentation template detail
  * filmstrip takes it, so a thumbnail at the dialog's edge reads as "more this
  * way" rather than as a tile cut flat.
  *
- * The 24px matches `SCROLL_FADE_X`; change them together.
  */
 export const SCROLL_FADE_X_WHEN_OVERFLOWING = [
   "group-data-[overflow-x-start]:[-webkit-mask-image:linear-gradient(to_right,transparent_0,#000_24px)]",
@@ -83,10 +66,6 @@ export const SCROLL_FADE_X_WHEN_OVERFLOWING = [
   "group-data-[overflow-x-start]:group-data-[overflow-x-end]:[-webkit-mask-image:linear-gradient(to_right,transparent_0,#000_24px,#000_calc(100%_-_24px),transparent_100%)]",
   "group-data-[overflow-x-start]:group-data-[overflow-x-end]:[mask-image:linear-gradient(to_right,transparent_0,#000_24px,#000_calc(100%_-_24px),transparent_100%)]",
 ].join(" ");
-
-/** Hides the native scrollbar; the fade is what states there is more to see. */
-export const SCROLLBAR_HIDDEN =
-  "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
 
 /**
  * Both vertical edges, each drawn only while the scroller has content past it:

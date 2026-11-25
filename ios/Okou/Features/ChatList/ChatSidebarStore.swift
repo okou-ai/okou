@@ -111,6 +111,7 @@ final class ChatSidebarStore {
   private let retire: Command<Void, Void>
   let contents: Computed<ChatListContents>
   let presentation: Computed<ChatSidebarPresentation>
+  let hasUnreadThreads: Computed<Bool>
 
   init(
     store: CCState.Store, threads: Signal<[ChatThread]>,
@@ -134,6 +135,10 @@ final class ChatSidebarStore {
         projects: get(projects), threads: threads, filter: get(selection))
     }
     self.contents = contents
+    hasUnreadThreads = Computed { get in
+      guard try get(lifetime) else { throw CancellationError() }
+      return try ChatListContents.hasUnreadThreads(projects: get(projects), threads: get(threads))
+    }
     presentation = Computed { get in
       let contents = try get(contents)
       return try ChatSidebarPresentation(

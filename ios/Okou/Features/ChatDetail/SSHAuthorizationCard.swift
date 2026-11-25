@@ -9,13 +9,7 @@ struct SSHAuthorizationCard: View {
 
   var body: some View {
     StoreProvider(store.stateStore) {
-      if loadsState && store.isActive {
-        SSHAuthorizationCardValue(store: store)
-      } else {
-        SSHAuthorizationCardContent(
-          action: store.action, request: nil, loading: true, working: false, error: nil,
-          decide: { _ in }, refresh: {})
-      }
+      SSHAuthorizationCardPhase(store: store, loadsState: loadsState)
     }
     .onChange(of: scenePhase) { _, phase in
       if phase == .active && loadsState { Task { await store.refresh() } }
@@ -24,20 +18,44 @@ struct SSHAuthorizationCard: View {
   }
 }
 
+private struct SSHAuthorizationCardPhase: View {
+  let store: SSHAuthorizationStore
+  let loadsState: Bool
+  @LoadableValue private var presentation: Loadable<SSHAuthorizationStore.Presentation>
+
+  init(store: SSHAuthorizationStore, loadsState: Bool) {
+    self.store = store
+    self.loadsState = loadsState
+    _presentation = LoadableValue(store.presentation)
+  }
+
+  var body: some View {
+    if loadsState, let current = presentation.data, current.isActive {
+      SSHAuthorizationCardValue(store: store, presentation: current)
+    } else {
+      SSHAuthorizationCardContent(
+        action: store.action, request: nil, loading: true, working: false, error: nil,
+        decide: { _ in }, refresh: {})
+    }
+  }
+}
+
 private struct SSHAuthorizationCardValue: View {
   let store: SSHAuthorizationStore
+  let presentation: SSHAuthorizationStore.Presentation
   @LoadableValue private var value: Loadable<ChatSSHAuthorization>
 
-  init(store: SSHAuthorizationStore) {
+  init(store: SSHAuthorizationStore, presentation: SSHAuthorizationStore.Presentation) {
     self.store = store
+    self.presentation = presentation
     _value = LoadableValue(task: store.request, keepLast: true)
   }
 
   var body: some View {
     SSHAuthorizationCardContent(
       action: store.action, request: value.error == nil ? value.data : nil,
-      loading: value.state == .loading, working: store.isWorking,
-      error: value.error.map(ChatRequestFailure.message(for:)) ?? store.error,
+      loading: value.state == .loading, working: presentation.isWorking,
+      error: value.error.map(ChatRequestFailure.message(for:)) ?? presentation.error,
       decide: store.decide, refresh: store.refresh
     )
     .task(id: deadline) {

@@ -1,316 +1,140 @@
-import { paidToolsContract } from "@okouai/api-contracts/contracts/paid-tools";
-import { screen, waitFor, within } from "@testing-library/react";
-import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
-import {
-  click,
-  fill,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import { screen, within } from "@testing-library/react";
+import { HttpResponse } from "msw";
+import { paidToolsContract } from "@okouai/api-contracts/contracts/paid-tools";
+import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { pathname, search } from "../../../signals/location.ts";
-import { ROUTES } from "../../../signals/route-paths.ts";
-import { mockOnboardingConnectorCatalog } from "./onboarding-catalog-test-helpers.ts";
-
+import { findAction } from "../../okou-page/__tests__/connector-integrations-test-helpers.ts";
 const context = testContext();
-const TITLE = "More ways to get your work done";
-const READY_TITLE = "Let’s start your first task";
-const FAMILY_IDS = Object.freeze([
-  "web-extraction",
-  "company-contacts",
-  "web-search",
-  "social",
-  "finance",
-  "places-weather",
-]);
-
-/** An external catalog; Router's web-search family is shown as Okou's own row. */
-function mockCatalog(families: readonly string[] = FAMILY_IDS, status = 200) {
-  for (const url of [
-    "https://data.okou.ai/mcp",
-    "https://okou-data-router-staging.vm0.workers.dev/mcp",
-  ]) {
-    context.mocks.http.post(url, async ({ request }) => {
-      const message = (await request.json()) as { id: unknown };
-      return HttpResponse.json(
-        {
-          jsonrpc: "2.0",
-          id: message.id,
-          result: {
-            tools: families.map((id) => {
-              return {
-                name: `${id}_tool`,
-                inputSchema: { type: "object" },
-                _meta: { "ai.okou/data": { family: id } },
-              };
-            }),
-            _meta: {
-              "ai.okou/data": {
-                families: families.map((id) => {
-                  return {
-                    id,
-                    title: { "en-US": `Router ${id}` },
-                    description: { "en-US": `Research with ${id}.` },
-                  };
-                }),
-              },
-            },
-          },
-        },
-        { status },
-      );
-    });
-  }
-}
-
-function button(name: string) {
-  const element = queryAllByRoleFast("button").find((candidate) => {
-    return (
-      (candidate.getAttribute("aria-label") ??
-        candidate.textContent?.trim()) === name
-    );
-  });
-  if (!element) {
-    throw new Error(`Button not found: ${name}`);
-  }
-  return element;
-}
-
-async function openCapabilities({ isAdmin = true } = {}) {
+const capabilities = "/onboarding/capabilities";
+const heading = "More ways to get your work done";
+function onboarding(isAdmin: boolean) {
   context.mocks.data.onboardingStatus({
+    isAdmin,
     needsOnboarding: true,
     onboardingComplete: false,
-    isAdmin,
-  });
-  mockOnboardingConnectorCatalog(context, []);
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: `${ROUTES.onboardingCapabilities}?redeemCode=LAUNCH50`,
   });
 }
-
-test.each([false, true])(
-  "Capabilities lead with Okou's tools, then follow Router order and text (mobile=%s)",
-  async (mobile) => {
-    context.mocks.browser.matchMedia((query) => {
-      return mobile && query === "(width < 640px)";
-    });
-    mockCatalog();
-    await openCapabilities();
-    await screen.findByRole("heading", { name: TITLE });
-    const list = await screen.findByRole("list", {
-      name: "Built-in capabilities",
-    });
-    const expected = [
-      "Image generation",
-      "Web search",
-      "Router web-extraction",
-      "Router company-contacts",
-      "Router social",
-      "Router finance",
-      "Router places-weather",
-    ].map((name) => {
-      return within(list).getByRole("switch", { name });
-    });
-    expect(within(list).getAllByRole("switch")).toStrictEqual(expected);
-    for (const toggle of expected) {
-      expect(toggle).toBeChecked();
-    }
-    expect(
-      screen.getByText(
-        "Find up-to-date news and facts, with sources you can check.",
-      ),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Research with social.")).toBeInTheDocument();
-    for (const progress of screen.getAllByRole("progressbar")) {
-      expect(progress).toHaveAttribute("aria-valuenow", "5");
-      expect(progress).toHaveAttribute("aria-valuemax", "6");
-    }
-  },
-);
-
-test("A member's saved choice stays visible while saving and survives Back", async () => {
-  mockCatalog();
-  let disabledTools = ["social"];
-  let saved = false;
-  const refreshing = context.mocks.deferred<void>();
-  const release = context.mocks.deferred<void>();
-  context.mocks.api(paidToolsContract.get, async ({ respond, withSignal }) => {
-    if (saved && !release.settled()) {
-      refreshing.resolve();
-      await withSignal(release.promise);
-    }
-    return respond(200, { disabledTools });
-  });
-  context.mocks.api(paidToolsContract.update, ({ params, body, respond }) => {
-    expect(params.toolId).toBe("social");
-    expect(body.disabled).toBeFalsy();
-    disabledTools = [];
-    saved = true;
-    return respond(200, { toolId: params.toolId, disabled: body.disabled });
-  });
-  await openCapabilities({ isAdmin: false });
-  const social = await screen.findByRole("switch", { name: "Router social" });
-  expect(social).not.toBeChecked();
-  click(social);
-  await refreshing.promise;
-  try {
-    expect(social).toBeInTheDocument();
-    expect(social).not.toBeChecked();
-    expect(button("Continue")).toHaveAttribute("aria-disabled", "true");
-    click(button("Continue"));
-    expect(pathname()).toBe(ROUTES.onboardingCapabilities);
-  } finally {
-    release.resolve();
-  }
-  await waitFor(() => {
-    expect(social).toBeChecked();
-    expect(social).not.toHaveAttribute("aria-disabled", "true");
-  });
-  click(button("Continue"));
-  await screen.findByRole("heading", { name: READY_TITLE });
-  expect(new URLSearchParams(search()).get("redeemCode")).toBe("LAUNCH50");
-  click(button("Back"));
-  await expect(
-    screen.findByRole("switch", { name: "Router social" }),
-  ).resolves.toBeChecked();
-});
-
-test("A failed preference update retains the previous choice and can be retried", async () => {
-  mockCatalog();
-  let fail = true;
-  let disabledTools: string[] = [];
+test("onboarding-capabilities-005 disabled tools and the edited presentation request survive backward and forward navigation", async () => {
+  onboarding(true);
   context.mocks.api(paidToolsContract.get, ({ respond }) => {
-    return respond(200, { disabledTools });
+    return respond(200, {
+      disabledTools: [
+        "web-search",
+        "image-generation",
+        "people-search",
+        "finance",
+        "data-search",
+      ],
+    });
   });
-  context.mocks.api(paidToolsContract.update, ({ params, body, respond }) => {
-    if (fail) {
-      fail = false;
-      return respond(500, {
-        error: { message: "Unavailable", code: "INTERNAL_SERVER_ERROR" },
-      });
-    }
-    disabledTools = [params.toolId];
-    return respond(200, { toolId: params.toolId, disabled: body.disabled });
-  });
-  await openCapabilities();
-  const image = await screen.findByRole("switch", { name: "Image generation" });
-  click(image);
-  await screen.findByText("Your change was not saved.");
-  expect(image).toBeChecked();
-  click(image);
-  await waitFor(() => {
-    expect(image).not.toBeChecked();
-    expect(
-      screen.queryByText("Your change was not saved."),
-    ).not.toBeInTheDocument();
-  });
-});
-
-test("All capabilities can be off and the task and separate output format survive navigation", async () => {
-  mockCatalog();
-  context.mocks.api(paidToolsContract.get, ({ respond }) => {
-    return respond(200, { disabledTools: ["image-generation", ...FAMILY_IDS] });
-  });
-  await openCapabilities();
-  const list = await screen.findByRole("list", {
+  await setupPage({ context, path: capabilities });
+  const tools = await screen.findByRole("list", {
     name: "Built-in capabilities",
   });
-  for (const toggle of within(list).getAllByRole("switch")) {
-    expect(toggle).not.toBeChecked();
+  for (const control of within(tools).getAllByRole("switch")) {
+    expect(control).not.toBeChecked();
   }
-  click(button("Back"));
-  await screen.findByRole("heading", { name: "Keep Okou a message away" });
-  click(button("Not now"));
-  await screen.findByRole("heading", { name: TITLE });
-  click(button("Continue"));
-  await screen.findByRole("heading", { name: READY_TITLE });
-  const prompt = await screen.findByLabelText("Your first task");
-  const task = "Draft a launch plan for my business.";
-  await fill(prompt, task);
-  click(button("Presentation"));
-  expect(prompt).toHaveValue(task);
-  expect(button("Presentation")).toHaveAttribute("aria-pressed", "true");
-  click(button("Back"));
-  await screen.findByRole("heading", { name: TITLE });
-  click(button("Continue"));
+  click(await findAction("button", "Back"));
+  click(await findAction("button", "Not now"));
+  await screen.findByRole("switch", { name: "Financial data" });
+  for (const control of screen.getAllByRole("switch")) {
+    expect(control).not.toBeChecked();
+  }
+  click(await findAction("button", "Continue"));
+  const task = "Show the most urgent fulfillment delays.";
+  await fill(await screen.findByLabelText("Your first task"), task);
+  click(await findAction("button", "Presentation"));
+  click(await findAction("button", "Back"));
+  await screen.findByRole("switch", { name: "Financial data" });
+  for (const control of screen.getAllByRole("switch")) {
+    expect(control).not.toBeChecked();
+  }
+  click(await findAction("button", "Continue"));
   await expect(screen.findByLabelText("Your first task")).resolves.toHaveValue(
     task,
   );
-  expect(button("Presentation")).toHaveAttribute("aria-pressed", "true");
+  await expect(findAction("button", "Presentation")).resolves.toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
 });
-
-test("New Router families use their published text and unavailable families stay hidden", async () => {
-  mockCatalog(["future-family"]);
-  await openCapabilities();
-  const toggle = await screen.findByRole("switch", {
-    name: "Router future-family",
+test("onboarding-capabilities-007 a catalog failure leaves the first task accessible", async () => {
+  onboarding(true);
+  context.mocks.http.post(/\/mcp$/u, () => {
+    return new HttpResponse(null, { status: 500 });
   });
-  expect(screen.getByText("Research with future-family.")).toBeInTheDocument();
-  expect(
-    screen.queryByRole("switch", { name: "Router social" }),
-  ).not.toBeInTheDocument();
-  click(toggle);
-  await waitFor(() => {
-    expect(toggle).not.toBeChecked();
-  });
+  await setupPage({ context, path: capabilities });
+  await expect(
+    screen.findByText("Your tool settings could not be loaded."),
+  ).resolves.toBeInTheDocument();
+  click(await findAction("button", "Continue"));
+  await screen.findByRole("heading", { name: "Let’s start your first task" });
 });
-
-test("Catalog failure does not block onboarding", async () => {
-  mockCatalog([], 500);
-  await openCapabilities();
-  await screen.findByText("Your tool settings could not be loaded.");
-  click(button("Continue"));
-  await screen.findByRole("heading", { name: READY_TITLE });
-  expect(pathname()).toBe(ROUTES.onboardingReady);
-});
-
-test.each([true, false])(
-  "All new users choose capabilities after chat channels (isAdmin=%s)",
-  async (isAdmin) => {
-    await openCapabilities({ isAdmin });
-    await screen.findByRole("heading", { name: TITLE });
-    click(button("Back"));
-    await screen.findByRole("heading", { name: "Keep Okou a message away" });
-    click(button("Not now"));
-    await screen.findByRole("heading", { name: TITLE });
-    expect(pathname()).toBe(ROUTES.onboardingCapabilities);
-    click(button("Continue"));
-    await screen.findByRole("heading", { name: READY_TITLE });
-    expect(pathname()).toBe(ROUTES.onboardingReady);
+test.each([
+  ["onboarding-capabilities-008", "administrator", true],
+  ["onboarding-capabilities-009", "member", false],
+] as const)(
+  "%s keeps capabilities between chat channels and the first task for a new %s",
+  async (_id, role, isAdmin) => {
+    onboarding(isAdmin);
+    await setupPage({
+      context,
+      path: "/onboarding/slack",
+      auth: { user: { id: "new-" + role, fullName: "Incoming " + role } },
+    });
+    click(await findAction("button", "Not now"));
+    await screen.findByRole("heading", { name: heading });
+    click(await findAction("button", "Back"));
+    await expect(findAction("button", "Not now")).resolves.toBeEnabled();
+    expect(window.location.pathname).toBe("/onboarding/slack");
+    click(await findAction("button", "Not now"));
+    await screen.findByRole("heading", { name: heading });
+    expect(window.location.pathname).toBe(capabilities);
+    click(await findAction("button", "Continue"));
+    await screen.findByRole("heading", { name: "Let’s start your first task" });
   },
 );
-
-test("Opening Settings does not replace the onboarding catalog", async () => {
-  mockCatalog();
-  await openCapabilities();
-  const list = await screen.findByRole("list", {
-    name: "Built-in capabilities",
+test("onboarding-capabilities-010 the Tools dialog discovers a new family while onboarding keeps its own catalog", async () => {
+  onboarding(true);
+  let family = "social";
+  context.mocks.http.post(/\/mcp$/u, async ({ request }) => {
+    const message = (await request.json()) as { id: string };
+    return HttpResponse.json({
+      jsonrpc: "2.0",
+      id: message.id,
+      result: {
+        tools: [
+          {
+            name: "sample_search",
+            inputSchema: { type: "object", properties: {} },
+            _meta: { "ai.okou/data": { family } },
+          },
+        ],
+        _meta: {
+          "ai.okou/data": {
+            families: [
+              {
+                id: family,
+                title: { "en-US": "Router " + family },
+                description: { "en-US": "Research " + family },
+                summary: "Research " + family,
+              },
+            ],
+          },
+        },
+      },
+    });
   });
-  mockCatalog(["future-family"]);
-  click(button("Test User"));
-  const settings = queryAllByRoleFast("menuitem").find((candidate) => {
-    return candidate.textContent?.trim() === "Settings";
-  });
-  if (!settings) {
-    throw new Error("Settings menu item not found");
-  }
-  click(settings);
-  const dialog = await screen.findByRole("dialog", { name: "Settings" });
-  const tools = queryAllByRoleFast("button", dialog).find((candidate) => {
-    return candidate.textContent?.trim() === "Tools";
-  });
-  if (!tools) {
-    throw new Error("Tools section not found");
-  }
-  click(tools);
-  await within(dialog).findByRole("switch", { name: "Router future-family" });
-  expect(
-    within(list).getByRole("switch", { name: "Router social", hidden: true }),
-  ).toBeInTheDocument();
-  expect(
-    within(list).queryByText("Router future-family"),
-  ).not.toBeInTheDocument();
+  await setupPage({ context, path: capabilities });
+  await screen.findByRole("switch", { name: "Router social" });
+  family = "future-family";
+  click(await findAction("button", "Test User"));
+  click(await screen.findByText("Settings"));
+  const dialog = await screen.findByRole("dialog");
+  click(await findAction("button", "Tools", dialog));
+  await within(dialog).findByText("Router future-family");
+  const list = screen.getByLabelText("Built-in capabilities");
+  expect(list).toHaveTextContent("Router social");
+  expect(list).not.toHaveTextContent("Router future-family");
 });

@@ -1,5 +1,6 @@
 package ai.okou.android.settings
 
+import ai.okou.android.ContentReadProgress
 import ai.okou.android.R
 import ai.okou.android.SettingsGroup
 import ai.okou.android.SettingsIcon
@@ -84,9 +85,9 @@ private fun EmailSubscriptionSheet(
         modifier = Modifier.animateContentSize(alignment = Alignment.BottomCenter),
         titleInset = 8.dp,
         progress = {
-            if (state.read.refreshing && !state.offline) {
-                SettingsRefreshProgress(
-                    stringResource(R.string.settings_email_refreshing),
+            if (state.read.refreshing) {
+                ContentReadProgress(
+                    R.string.settings_email_refreshing,
                     background = MaterialTheme.colorScheme.surface,
                 )
             }

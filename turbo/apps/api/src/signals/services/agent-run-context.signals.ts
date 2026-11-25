@@ -11,7 +11,14 @@ import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-co
 import { secrets } from "@okouai/db/schema/secret";
 import { command, computed, type Computed } from "ccstate";
 import { performance } from "node:perf_hooks";
-import { array, object, record, string, unknown as zUnknown } from "zod";
+import {
+  array,
+  boolean,
+  object,
+  record,
+  string,
+  unknown as zUnknown,
+} from "zod";
 import { pgInt8ToBigIntSchema } from "../../lib/db-raw-rows";
 import {
   withPgPoolAcquisitionCapture,
@@ -42,14 +49,12 @@ import {
   createManagedModelKeys,
   createModelPricing,
 } from "./model-source-context.service";
-import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { variables } from "@okouai/db/schema/variable";
 import { and, eq, isNull, isNotNull, or, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { db$ } from "../external/db";
 
 import { createConnectorRuntimeSelection } from "./connector-catalog-entries.service";
-import { expandConnectorServerFirewallPolicies } from "./connector-server-firewall-catalog.service";
 import { buildAgentRunVariables } from "./agent-run-variables";
 import type { PaidToolId } from "@okouai/api-contracts/contracts/paid-tools";
 import {
@@ -76,6 +81,7 @@ import { createExecutionPackageSources } from "./execution-package-sources";
 import { createExecutionOrgMemberContext } from "./execution-org-member-context.signals";
 import type { ExecutionMemberMetadata } from "./execution-member-metadata.service";
 import {
+  type ExecutionOrgPlan,
   type ExecutionOrgRows,
   executionExpiredCredits,
   executionOrgMetadata,
@@ -118,7 +124,7 @@ export interface AgentRunContextSignals {
   >;
   readonly orgRows$: Computed<Promise<ExecutionOrgRows>>;
   readonly orgMetadata$: Computed<Promise<RunOrgMetadata | null>>;
-  readonly plan$: Computed<Promise<OrgPlanCapabilities | null>>;
+  readonly plan$: Computed<Promise<ExecutionOrgPlan | null>>;
   readonly concurrencyCapacity$: Computed<Promise<number>>;
   readonly credits$: Computed<Promise<ExecutionCreditBalance | null>>;
   readonly modelFacts$: Computed<Promise<OrgModelBootstrap>>;
@@ -662,8 +668,7 @@ const bootstrapVariablesDecoder = zodDriverValueDecoder(
     object({
       name: string(),
       value: string(),
-      userId: string(),
-      connectorId: string().nullable(),
+      isOrg: boolean(),
     }),
   ),
 );
@@ -688,7 +693,6 @@ const bootstrapConnectorAccountColumns = Object.freeze({
   authMethod: connectors.authMethod,
   storageVersion: connectors.storageVersion,
   tokenExpiresAt: connectors.tokenExpiresAt,
-  updatedAt: connectors.updatedAt,
 });
 
 type BootstrapEnvironmentSnapshot =
@@ -706,7 +710,7 @@ const bootstrapAccountRowsDecoder = zodDriverValueDecoder(
       ),
       connectorVariables: record(string(), string()).nullable(),
       credentialNames: array(string()).nullable(),
-      automaticOAuthBindingId: string().nullable(),
+      hasAutomaticOAuthBinding: boolean(),
     }),
   ),
 );
@@ -727,7 +731,7 @@ function bootstrapConnectorAccountRows(
         ),
         'connectorVariables', ${connectorVariableSnapshot.values},
         'credentialNames', ${credentialSnapshot.values},
-        'automaticOAuthBindingId', ${customConnectorAccountOauthBindings.connectorAccountId}
+        'hasAutomaticOAuthBinding', ${customConnectorAccountOauthBindings.connectorAccountId} IS NOT NULL
       )`
         .mapWith(zodDriverValueDecoder(zUnknown()))
         .as("payload"),
@@ -816,7 +820,7 @@ function createAgentEnvironment(
           ...row.account,
           orgId,
           userId,
-          automaticOAuthBindingId: row.automaticOAuthBindingId,
+          hasAutomaticOAuthBinding: row.hasAutomaticOAuthBinding,
         };
       }),
       values: {
@@ -837,7 +841,6 @@ function createAgentEnvironment(
     const materialize = connectorContextDuration(materializeStartedAt);
     return {
       ...snapshot,
-      builtin: first.builtin,
       custom: first.custom,
       permissions: first.permissions,
       threadSources: first.threadSources,
@@ -892,7 +895,7 @@ function bootstrapVariableSnapshot(
       .select({
         values: sql`jsonb_agg(jsonb_build_object(
         'name', ${rows.name}, 'value', ${rows.value},
-        'userId', ${rows.userId}, 'connectorId', ${rows.connectorId}
+        'isOrg', ${eq(rows.userId, ORG_SENTINEL_USER_ID)}
       ))`
           .mapWith(nullableDriverValueDecoder(bootstrapVariablesDecoder))
           .as("user_variable_values"),
@@ -958,7 +961,7 @@ function createConnectorContext(
     return buildAgentRunVariables({ variables: snapshot.variables });
   });
   const { connectorSelection$, permissionGrants$ } =
-    createExecutionConnectorContext(environmentSnapshot$);
+    createExecutionConnectorContext(environmentSnapshot$, member.orgId);
   const customConnectorDefinitions$ = computed(async (get) => {
     return (await get(connectorSelection$)).customConnectorDefinitions;
   });
@@ -998,30 +1001,12 @@ function createConnectorContext(
     };
   });
   const permissionPolicies$ = computed(async (get) => {
-    const [grants, { scope }, catalog] = await Promise.all([
-      get(permissionGrants$),
-      get(connectorSelection$),
-      get(catalog$),
-    ]);
-    const stored = permissionGrantsToFirewallPolicies(
+    const grants = await get(permissionGrants$);
+    return permissionGrantsToFirewallPolicies(
       grants.map(({ connectorSlug, permission, action }) => {
         return { connectorSlug, permission, action };
       }),
     );
-    if (
-      scope.allowedConnectorSlugs.length === 0 &&
-      scope.allowedCustomConnectorIds.length === 0
-    ) {
-      return stored;
-    }
-    if (!catalog) {
-      throw new Error("Scoped connector catalog is missing from bootstrap");
-    }
-    return await expandConnectorServerFirewallPolicies({
-      catalog: catalog.serverFirewalls,
-      stored,
-      connectorSlugs: [...scope.allowedConnectorSlugs],
-    });
   });
   return {
     threadConnectorSources$,

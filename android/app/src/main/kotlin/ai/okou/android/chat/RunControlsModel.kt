@@ -7,15 +7,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
-enum class RunControlPersistence {
-    Loading,
-    Pending,
-    Durable,
-    Failed,
-}
-
 enum class RunControlPhase {
-    Preparing,
     Sending,
     Accepted,
     Unknown,
@@ -23,20 +15,12 @@ enum class RunControlPhase {
     Retryable,
 }
 
-enum class RunControlNoticeKind {
-    Recorded,
-    TargetSettled,
-    ReadFailed,
-}
-
-data class RunControlNotice(val threadId: String, val kind: RunControlNoticeKind)
-
 data class RunControlsState(
-    val journal: RunControlJournal? = null,
-    val persistence: RunControlPersistence = RunControlPersistence.Loading,
+    val pending: List<RunControlIntent> = emptyList(),
     val phases: Map<String, RunControlPhase> = emptyMap(),
-    val notice: RunControlNotice? = null,
     internal val settledQueueInputs: Map<String, Set<String>> = emptyMap(),
+    internal val settledRuns: Map<String, Set<String>> = emptyMap(),
+    internal val actionFailures: List<RunControlIntent> = emptyList(),
 )
 
 fun ConversationUiState.controlRunIds(output: RunOutputState): List<String> =
@@ -68,7 +52,7 @@ internal fun ConversationUiState?.canWithdrawInput(
 /** Presentation connection to shared commands and the existing independent conversation detail. */
 class RunControlsModel(
     service: RunControlService,
-    private val store: RunControlJournalStore,
+    private val owners: RunControlOwners,
     private val identity: WorkspaceIdentity,
     private val history: ConversationHistoryModel,
     authorized: () -> Boolean,
@@ -84,7 +68,7 @@ class RunControlsModel(
             onFailure,
             dispatcher,
         )
-    private val owner = store.attach(identity, connection)
+    private val owner = owners.attach(identity, connection)
     val uiState = owner.uiState
 
     init {
@@ -96,8 +80,6 @@ class RunControlsModel(
             }
         }
     }
-
-    fun retryLocal() = owner.retryLocal(connection)
 
     fun stop(threadId: String, displayedRunIds: List<String>) =
         owner.stop(connection, threadId, displayedRunIds)
@@ -113,8 +95,11 @@ class RunControlsModel(
         else refreshRecovery(threadId)
     }
 
-    internal fun checkWithdrawal(threadId: String, eventId: String) =
-        owner.check(connection, threadId, withdrawalId = eventId)
+    internal fun checkUnknown(threadId: String) =
+        owner.check(connection, threadId, unknownOnly = true)
+
+    internal fun consumeActionFailure(intent: RunControlIntent) =
+        owner.consumeActionFailure(connection, intent)
 
     fun refreshRecovery(threadId: String) {
         if (connection.current() && history.uiState.value.thread?.id == threadId)
@@ -123,6 +108,6 @@ class RunControlsModel(
 
     override fun onCleared() {
         connection.retired = true
-        store.detach(identity, connection, owner)
+        owners.detach(identity, connection, owner)
     }
 }

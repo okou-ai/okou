@@ -14,7 +14,6 @@ import {
   type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import { builtinConnectorsMainContract } from "@okouai/api-contracts/contracts/connectors";
-import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import {
   chatThreadArtifactsContract,
   type ChatThreadArtifactRun,
@@ -239,28 +238,6 @@ export function mockArtifactConversation(
   });
 }
 
-export function googleDriveConnector(
-  connectionStatus: BuiltinConnectorResponse["connectionStatus"],
-): BuiltinConnectorResponse {
-  return {
-    id: GOOGLE_DRIVE_CONNECTION_ID,
-    slug: "google-drive",
-    authMethod: "oauth",
-    externalId: "drive-account-1",
-    externalUsername: "drive-user",
-    externalEmail: "drive-user@example.test",
-    oauthScopes: ["https://www.googleapis.com/auth/drive.file"],
-    connectionStatus,
-    reconnectReason:
-      connectionStatus === "reconnect-required"
-        ? "authorization_expired_or_revoked"
-        : null,
-    tokenExpiresAt: null,
-    createdAt: CREATED_AT,
-    updatedAt: UPDATED_AT,
-  };
-}
-
 export function googleDriveCatalogItem(
   connectionStatus: "connected" | "not-connected" | "reconnect-required",
 ): PublicConnectorCatalogStatusItem {
@@ -334,21 +311,4 @@ export function buttonNamed(
     throw new Error(`Button not found: ${name}`);
   }
   return button;
-}
-
-export function roleItemNamed(
-  role: "menuitem",
-  name: string,
-  container: ParentNode = document.body,
-): HTMLElement {
-  const item = queryAllByRoleFast(role, container).find((candidate) => {
-    return (
-      candidate.getAttribute("aria-label") === name ||
-      candidate.textContent?.trim() === name
-    );
-  });
-  if (!item) {
-    throw new Error(`${role} not found: ${name}`);
-  }
-  return item;
 }

@@ -22,7 +22,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
@@ -133,8 +132,7 @@ class WorkspaceSettingsModelTest {
                 assertEquals(listOf(SettingsApiFixture.alternateAccount), fixture.activations)
 
                 store.clear()
-                val reopened =
-                    settings(reopenedStore, api, online = MutableStateFlow(false), cache = cache)
+                val reopened = settings(reopenedStore, api, cache = cache)
                 reopened.visible(SettingsDestination.ModelAccounts)
                 val restored = reopened.uiState.first { it.accounts.value != null }
                 assertEquals(confirmed.accounts.value, restored.accounts.value)
@@ -171,15 +169,14 @@ class WorkspaceSettingsModelTest {
     }
 
     @Test
-    fun creditsKeepTheMemberValueWhenTheWorkspaceReadFailsAndRefetchOnReconnect() = runTest {
+    fun creditsKeepTheMemberValueWhenTheWorkspaceReadFailsAndRefetchOnReentry() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val store = ViewModelStore()
         try {
             ChatListApiFixture().use { api ->
                 val fixture = SettingsApiFixture(api)
                 fixture.billingStatus = 403
-                val online = MutableStateFlow(true)
-                val model = settings(store, api, admin = true, online = online)
+                val model = settings(store, api, admin = true)
                 model.visible(SettingsDestination.CreditBalance)
                 val initial =
                     model.uiState.first {
@@ -187,14 +184,12 @@ class WorkspaceSettingsModelTest {
                     }
                 assertEquals(860L, initial.usagePack.value!!.totalCredits)
                 assertNull(initial.workspaceCredits.value)
-                online.value = false
+                model.visible(null)
                 runCurrent()
-                assertTrue(model.uiState.value.offline)
                 assertEquals(860L, model.uiState.value.usagePack.value!!.totalCredits)
                 fixture.billingStatus = 200
-                online.value = true
+                model.visible(SettingsDestination.CreditBalance)
                 val restored = model.uiState.first { it.workspaceCredits.value != null }
-                assertFalse(restored.offline)
                 assertEquals(2400.0, restored.workspaceCredits.value!!.credits, 0.0)
                 assertEquals(2, fixture.billingReads.get())
             }
@@ -259,7 +254,6 @@ class WorkspaceSettingsModelTest {
                         reopenedStore,
                         api,
                         admin = true,
-                        online = MutableStateFlow(false),
                         cache = cache,
                     )
                 reopened.visible(SettingsDestination.CreditBalance)
@@ -288,8 +282,7 @@ class WorkspaceSettingsModelTest {
                 model.visible(SettingsDestination.CreditBalance)
                 val confirmed = model.uiState.first { it.usagePack.value != null }.usagePack.value
                 store.clear()
-                val reopened =
-                    settings(reopenedStore, api, online = MutableStateFlow(false), cache = cache)
+                val reopened = settings(reopenedStore, api, cache = cache)
                 reopened.visible(SettingsDestination.CreditBalance)
                 val restored = reopened.uiState.first { it.usagePack.value != null }
                 assertEquals(confirmed, restored.usagePack.value)
@@ -335,21 +328,18 @@ class WorkspaceSettingsModelTest {
                 for (identity in otherScopes) {
                     assertNull(cache.load(identity, "usage-pack", creditsSerializer))
                 }
-                val online = MutableStateFlow(false)
                 var time = 600_000L
                 val reply = CompletableDeferred<UsagePackCredits>()
                 val service =
                     object : WorkspaceSession by api.service {
                         override suspend fun usagePackCredits() = reply.await()
                     }
-                val model =
-                    settings(store, api, online = online, cache = cache, service = service) { time }
+                val model = settings(store, api, cache = cache, service = service) { time }
                 model.visible(SettingsDestination.CreditBalance)
                 assertEquals(
                     saved,
                     model.uiState.first { it.usagePack.value != null }.usagePack.value,
                 )
-                online.value = true
                 runCurrent()
                 assertFalse(model.uiState.value.usagePack.refreshing)
                 model.visible(null)
@@ -487,7 +477,6 @@ class WorkspaceSettingsModelTest {
         store: ViewModelStore,
         api: ChatListApiFixture,
         admin: Boolean = false,
-        online: MutableStateFlow<Boolean> = MutableStateFlow(true),
         cache: WorkspaceSettingsCache? = null,
         service: WorkspaceSession = api.service,
         nowMillis: () -> Long = System::currentTimeMillis,
@@ -509,7 +498,6 @@ class WorkspaceSettingsModelTest {
                             admin,
                             { true },
                             { throw it },
-                            online,
                             cache,
                             nowMillis,
                         )

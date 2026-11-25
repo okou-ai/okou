@@ -15,7 +15,7 @@ import cleanup_report as cleanup
 import report
 import report_test
 import status_failure_report_test as failure_test
-from progress_report_fixture import foreground_heartbeat, joined_observer
+from progress_report_fixture import foreground_heartbeat, joined_observer, memory_read_receipt
 
 
 class BatchAbaReportTests(unittest.TestCase):
@@ -32,10 +32,7 @@ class BatchAbaReportTests(unittest.TestCase):
             terminal = copy.deepcopy(originals[index*6:index*6+6])
             for event, offset in zip(terminal, (0,1,36,37,46,60)):
                 event.update(case=case, monotonic_ns=at(offset), unix_ns=at(offset)+1000)
-                reading = copy.deepcopy(sample)
-                reading["monotonic_ns"] = at(offset)+1
-                reading["processes"][0]["observed_monotonic_ns"] = at(offset)+1
-                self.samples.append(reading)
+                self.samples.append(report_test.residency_sample_at(sample, at(offset) + 1))
             self.events.extend(terminal)
             old, backing = terminal[1]["sandbox_id"], terminal[1]["backing_generation"]
             runner = str(uuid.uuid4())
@@ -64,9 +61,9 @@ class BatchAbaReportTests(unittest.TestCase):
                 {"pool_released_ns":at(13),"heartbeat":foreground_heartbeat(runner, 1, at(14), at(15), (2, 4096)),
                     "receiver_polled_pending":True,"source_read_blocked":True,"accounting":queued,"allocated":[2,4096,1]},
                 {"source_resumed_ns":at(18),"status_wait_polled_ns":at(23),"status_waits_before":0,
-                    "status_waits_after":1,"accounting":zero,"samples":[{"started_ns":at(begin),
-                        "finished_ns":at(end),"read_start_offset_ns":at(begin),"available_bytes":32*1024**3,
-                        "age_ns":2,"read_duration_ns":1} for begin,end in ((19,20),(21,22))],
+                    "status_waits_after":1,"accounting":zero,"samples":[
+                        memory_read_receipt(at(begin), at(end), at(begin))
+                        for begin, end in ((19, 20), (21, 22))],
                     "heartbeat":foreground_heartbeat(runner, 2, at(24), at(25), (2, 4096)),
                     "receiver_polled_pending":True,"original_full_lease_active":True,
                     "original_exit_polled_pending":True,"allocated":[2,4096,1]},
@@ -98,7 +95,7 @@ class BatchAbaReportTests(unittest.TestCase):
                 ))
 
     def event(self, phase):
-        return next(e for e in self.witnesses if e["phase"] == phase)
+        return report_test.witness_for_phase(self.witnesses, phase)
 
     def write(self):
         report_test.write_report_fixture(self.root, self.collector, self.samples,
@@ -110,11 +107,7 @@ class BatchAbaReportTests(unittest.TestCase):
 
     def refused(self, changes):
         original = copy.deepcopy(self.witnesses)
-        for index, change in enumerate(changes):
-            with self.subTest(change=index):
-                self.witnesses = copy.deepcopy(original)
-                change()
-                with self.assertRaises(ValueError): self.validate()
+        report_test.assert_indexed_witness_refusals(self, original, changes)
 
     def test_both_cases_preserve_explicit_native_measurement_limits(self):
         value = self.validate()

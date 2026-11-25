@@ -20,7 +20,8 @@ import {
 import { i18n } from "../../i18n/index.ts";
 import { createComputerUseGuideSignals } from "../computer-use-setup.ts";
 import { command, computed, state, type Command, type Computed } from "ccstate";
-import { onRef, settle } from "../utils.ts";
+import { detach, onRef, Reason } from "../utils.ts";
+import { rootSignal$ } from "../root-signal.ts";
 import {
   prepareRecentWorkflowUse$,
   recordRecentWorkflowUse$,
@@ -57,10 +58,11 @@ import {
   type ComposerUiSignalGroups,
 } from "./chat-composer.ts";
 import { buildComposerAdditionalInfo } from "./composer-additional-info.ts";
+import { presentationOutputFormat$ } from "./presentation-output-format.ts";
 import {
-  presentationOutputFormat$,
-  presentationOutputFormatEnabled$,
-} from "./presentation-output-format.ts";
+  createPresentationFormatSetupSignals,
+  type PresentationFormatSetupSignals,
+} from "./composer-presentation-format-setup.ts";
 import type { ComposerTaskSelection } from "./composer-task-handoff.ts";
 import type { ComposerProjectSignals } from "../projects/composer-project.ts";
 import {
@@ -81,6 +83,7 @@ import {
 type ComposerEditorSignals = Pick<
   WorkflowComposerSignals,
   | "editor"
+  | "voiceChips$"
   | "setContainerRef$"
   | "focus$"
   | "hasInput$"
@@ -135,7 +138,7 @@ type ComposerSuggestionSignals = Pick<
 
 type ComposerTemplateEditorSignals = Pick<
   WorkflowComposerSignals,
-  "hasTemplateAttachment$" | "insertTemplate$" | "openTemplatePicker$"
+  "hasTemplateAttachment$" | "insertTemplate$"
 >;
 
 type ComposerModelUiSignals = ComposerUiSignalGroups["model"];
@@ -214,6 +217,7 @@ interface ComposerComputerSignals {
 }
 
 interface ComposerSubmissionSignals {
+  readonly presentationFormatSetup: PresentationFormatSetupSignals;
   readonly sending$: Computed<Promise<boolean>>;
   readonly primaryAction$: Computed<Promise<ComposerPrimaryAction>>;
   readonly hasCurrentInvocation$: Computed<boolean>;
@@ -379,6 +383,7 @@ function composerEditorSignals(
     singleLineOnMobile: options.singleLineOnMobile,
     forwardComposer: options.forwardComposer,
     editor: composer.editor,
+    voiceChips$: composer.voiceChips$,
     setContainerRef$: composer.setContainerRef$,
     focus$: composer.focus$,
     hasInput$: composer.hasInput$,
@@ -463,7 +468,6 @@ function composerTemplateSignals(
   return {
     hasTemplateAttachment$: composer.hasTemplateAttachment$,
     insertTemplate$: composer.insertTemplate$,
-    openTemplatePicker$: composer.openTemplatePicker$,
   };
 }
 
@@ -514,6 +518,11 @@ function createComposerVoiceInput(
   );
   return createComposerVoiceInputSignals(
     deliverText$,
+    command(async ({ set }, fileId: string, signal: AbortSignal) => {
+      await set(options.draft.load$, signal);
+      signal.throwIfAborted();
+      set(workflowComposer.insertVoiceClip$, fileId);
+    }),
     workflowComposer.readVoiceContext$,
     options.voiceDraftTarget,
   );
@@ -566,7 +575,6 @@ export function createComposerSignals(
   const ui = createComposerUiSignals();
   const workflowComposer = createWorkflowComposerSignals(
     draft,
-    ui.openTemplatePickerDialog$,
     {
       autoFocus: true,
       ...(options.forwardComposer
@@ -580,7 +588,6 @@ export function createComposerSignals(
     insertTemplate$: workflowComposer.insertTemplate$,
     insertPrompt$: workflowComposer.replacePromptText$,
     clearPrompt$: workflowComposer.clearUnchangedPrompt$,
-    openTemplatePicker$: workflowComposer.openTemplatePicker$,
     focusEditor$: workflowComposer.focus$,
     saveDraft$: options.draft.save$,
   });
@@ -652,7 +659,6 @@ export function createComposerSignals(
     template: {
       previewRecommendation$: createTemplateRecommendationPreviewCommand(
         ui.template,
-        workflowComposer.openTemplatePicker$,
       ),
       selectTemplateAndSave$: createComposerTemplateSelection(
         taskChips,
@@ -982,7 +988,6 @@ function createSubmitCurrentInput({
   readonly taskChips: ComposerTaskChipsSignals;
 }) {
   const draft = options.draft.signals;
-  const voiceState$ = voice.state$;
   const readTaskSelection$ = createReadComposerTaskSelection(create, taskChips);
   const submitMessage$ = createSubmitMessageWithVisualization(
     options.submitMessage$,
@@ -1003,11 +1008,13 @@ function createSubmitCurrentInput({
         return false;
       }
       signal.throwIfAborted();
-      const voiceState = await get(voiceState$);
+      const voiceState = await get(voice.state$);
       signal.throwIfAborted();
       if (voiceState.status !== "idle") {
         return false;
       }
+      const presentationFormat =
+        (await get(presentationOutputFormat$)) ?? undefined;
       const submission = await set(
         workflowComposer.readInputForSubmission$,
         signal,
@@ -1035,11 +1042,6 @@ function createSubmitCurrentInput({
       const visualization =
         taskSelection.task === "visualization"
           ? taskSelection.visualization
-          : undefined;
-      const presentationFormat =
-        (await get(presentationOutputFormatEnabled$)) &&
-        (mode === "presentation" || visualization?.output === "presentation")
-          ? get(presentationOutputFormat$)
           : undefined;
       const composerAdditionalInfo = buildComposerAdditionalInfo(
         mode,
@@ -1076,21 +1078,24 @@ function createSubmitCurrentInput({
         workflowComposer.workflows$,
         signal,
       );
+      const recencySignal = get(rootSignal$);
       const submitted = await set(
         submitMessage$,
         action,
         nextSubmission,
         signal,
       );
+      if (submitted && workflowUse) {
+        // The send is already accepted. Optional persistence belongs to the
+        // authenticated root, not the composer that navigation may replace.
+        detach(
+          set(recordRecentWorkflowUse$, workflowUse, recencySignal),
+          Reason.Daemon,
+          "accepted send workflow recency",
+        );
+      }
       if (submitted) {
         await set(taskChips.home.dismissMenu$, menuRevision, signal);
-      }
-      if (submitted && workflowUse) {
-        // Browser history must never turn an accepted send into a send error.
-        // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
-        await settle(() => {
-          set(recordRecentWorkflowUse$, workflowUse, signal);
-        }, signal);
       }
       return submitted;
     },
@@ -1126,13 +1131,18 @@ function createComposerSubmissionSignals(
     workflowComposer,
     voiceState$,
   });
-  const submitCurrentInput$ = createSubmitCurrentInput({
-    options,
-    workflowComposer,
-    voice,
-    create,
-    taskChips,
+  const presentationFormatSetup = createPresentationFormatSetupSignals({
+    task$: taskChips.task$,
+    primaryAction$,
+    submitCurrentInput$: createSubmitCurrentInput({
+      options,
+      workflowComposer,
+      voice,
+      create,
+      taskChips,
+    }),
   });
+  const submitCurrentInput$ = presentationFormatSetup.submit$;
   const activatePrimaryAction$ = command(
     async (
       { get, set },
@@ -1155,6 +1165,7 @@ function createComposerSubmissionSignals(
   );
 
   return {
+    presentationFormatSetup,
     hasCurrentInvocation$,
     primaryAction$,
     submitCurrentInput$,

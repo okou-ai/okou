@@ -129,6 +129,10 @@ final class SidebarDraftRefreshTests: XCTestCase {
     await read.value
     XCTAssertFalse(workspace.hasDraft(fixture.threadID))
     XCTAssertTrue(workspace.hasDraft(fixture.otherID))
+    // Sidebar rows and the widget read the same membership from the graph.
+    let listed = try workspace.graph.get(workspace.listedDraftIDs)
+    XCTAssertFalse(listed.contains(fixture.threadID))
+    XCTAssertTrue(listed.contains(fixture.otherID))
     XCTAssertEqual(fixture.draftReads, 1)
   }
 
@@ -208,16 +212,16 @@ private final class SidebarDraftFixture: Sendable {
         }
         return ChatHTTPResponse(
           body: "{\"draftThreadIds\":\(present ? "[\"\(threadID)\",\"\(otherID)\"]" : "[]")}")
-      case "/api/chat-threads/\(threadID)/draft":
-        let draft = state.values.withLock { $0.draft }
-        return try ChatHTTPResponse(
-          json: draft)
-      case "/api/chat-threads/\(threadID)":
+      case "/api/chat-threads/\(threadID)/composer-draft":
         if request.httpMethod == "PATCH" {
           let draft = try JSONDecoder().decode(ComposerDraft.self, from: chatRequestBody(request))
           state.values.withLock { $0.draft = draft }
           return ChatHTTPResponse(status: 204, body: "")
         }
+        let draft = state.values.withLock { $0.draft }
+        return try ChatHTTPResponse(
+          json: draft)
+      case "/api/chat-threads/\(threadID)":
         return ChatHTTPResponse(body: #"{"cancellationRecoveryPending":false}"#)
       case "/api/chat-threads/\(threadID)/event-snapshot":
         return ChatHTTPResponse(

@@ -1,20 +1,17 @@
 package ai.okou.android.connectors
 
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.retryBoundedRead
 import java.net.ConnectException
 import java.net.NoRouteToHostException
 import java.net.UnknownHostException
-import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeMark
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 internal enum class ConnectorReadFailure {
     Network,
-    Recent,
     Sustained,
     Unavailable,
 }
@@ -40,69 +37,38 @@ internal data class ConnectorRead<T>(
             copy(
                 data = previous.data,
                 expiresAt = previous.expiresAt,
-                failure =
-                    if (previous.failure == ConnectorReadFailure.Sustained) previous.failure
-                    else failure,
             )
 }
-
-private val readRetryDelays = listOf(5.seconds, 10.seconds, 20.seconds, 40.seconds, 60.seconds)
 
 internal suspend fun <T : Any> retryConnectorRead(
     read: suspend () -> T,
     canRead: () -> Boolean,
     onError: (Exception) -> Unit,
     publish: (ConnectorRead<T>) -> Unit,
-    canRetry: () -> Boolean = canRead,
-) = coroutineScope {
-    var failures = 0
-    var failureWindowElapsed = false
-    var failureWindow: Job? = null
-    try {
-        while (canRead()) {
+) {
+    val error =
+        retryBoundedRead(canRead) {
             val value =
                 try {
                     read()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
                 } catch (error: Exception) {
-                    if (error is CancellationException) throw error
+                    currentCoroutineContext().ensureActive()
                     onError(error)
-                    if (!canRead()) return@coroutineScope
-                    failures = (failures + 1).coerceAtMost(readRetryDelays.size)
-                    val failure =
-                        when {
-                            error is ApiFailure.Http && error.status in 403..404 ->
-                                ConnectorReadFailure.Unavailable
-                            failures >= 3 && failureWindowElapsed -> ConnectorReadFailure.Sustained
-                            error.connectionFailed() -> ConnectorReadFailure.Network
-                            else -> ConnectorReadFailure.Recent
-                        }
-                    publish(ConnectorRead(failure = failure))
-                    if (
-                        !canRetry() ||
-                            error is ApiFailure.Http &&
-                                error.status in 400..499 &&
-                                error.status != 408 &&
-                                error.status != 429
-                    )
-                        return@coroutineScope
-                    if (failures == 1) {
-                        failureWindow = launch {
-                            delay(30.seconds)
-                            failureWindowElapsed = true
-                            if (failures >= 3 && canRead() && canRetry())
-                                publish(ConnectorRead(failure = ConnectorReadFailure.Sustained))
-                        }
-                    }
-                    delay(readRetryDelays[failures - 1])
-                    if (!canRetry()) return@coroutineScope
-                    continue
+                    return@retryBoundedRead error.takeIf { canRead() }
                 }
+            currentCoroutineContext().ensureActive()
             if (canRead()) publish(ConnectorRead(value))
-            return@coroutineScope
+            null
+        } ?: return
+    val failure =
+        when {
+            error is ApiFailure.Http && error.status in 403..404 -> ConnectorReadFailure.Unavailable
+            error.connectionFailed() -> ConnectorReadFailure.Network
+            else -> ConnectorReadFailure.Sustained
         }
-    } finally {
-        failureWindow?.cancel()
-    }
+    publish(ConnectorRead(failure = failure))
 }
 
 // Canonical calls do not retry connections or follow redirects. These failures happen
@@ -112,3 +78,8 @@ internal fun Exception.connectionFailed(): Boolean =
         (cause is UnknownHostException ||
             cause is ConnectException ||
             cause is NoRouteToHostException)
+
+internal fun Exception.hasUncertainResponse() =
+    this is ApiFailure.Network ||
+        this is ApiFailure.IncompatibleResponse ||
+        this is ApiFailure.Http && (status == 408 || status >= 500)

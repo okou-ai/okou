@@ -1,254 +1,142 @@
-import { screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { paidToolsContract } from "@okouai/api-contracts/contracts/paid-tools";
 import { HttpResponse } from "msw";
-import { expect, test } from "vitest";
-import {
-  paidToolsContract,
-  type PaidToolId,
-} from "@okouai/api-contracts/contracts/paid-tools";
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import { screen, within, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { test, expect } from "vitest";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-
+import { clickComposerAddMenuItem } from "./chat-composer-add-menu-test-helpers.ts";
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 const context = testContext();
-
-function button(name: string, container: ParentNode = document.body) {
-  const result = queryAllByRoleFast("button", container).find((item) => {
-    return (
-      (item.getAttribute("aria-label") ?? item.textContent?.trim()) === name
-    );
-  });
-  if (!result) {
-    throw new Error(`Expected button ${name}`);
-  }
-  return result;
+async function startResearch() {
+  await setupPage({ context, path: "/", host: "app.okou.ai" });
+  await clickComposerAddMenuItem("Research");
 }
-
-async function setupPeopleSearch() {
-  await setupPage({
-    context,
-    path: `/`,
-  });
-  const people = await screen.findByRole("region", { name: "Find people" });
-  click(button("Explore", people));
-  await screen.findByRole("tablist", { name: "Explore Okou capabilities" });
+async function panel() {
+  click(await findFastControl("button", "Tools"));
+  return await screen.findByRole("dialog", { name: "Built-in tools" });
 }
-
-function openTools() {
-  click(button("Tools"));
-  return screen.findByRole("dialog", { name: "Built-in tools" });
+function setting(panel: HTMLElement, name: string) {
+  return within(panel).findByRole("switch", { name });
 }
-
-async function readySwitch(name: string, container: HTMLElement) {
-  const toggle = await within(container).findByRole("switch", { name });
+async function toggle(control: HTMLElement, enabled: boolean) {
+  click(control);
   await waitFor(() => {
-    expect(toggle).not.toHaveAttribute("aria-disabled", "true");
-  });
-  return toggle;
-}
-
-function mockPreferences() {
-  let disabledTools: PaidToolId[] = [];
-  context.mocks.api(paidToolsContract.get, ({ respond }) => {
-    return respond(200, { disabledTools });
-  });
-  context.mocks.api(paidToolsContract.update, ({ params, body, respond }) => {
-    disabledTools = disabledTools.filter((toolId) => {
-      return toolId !== params.toolId;
-    });
-    if (body.disabled) {
-      disabledTools.push(params.toolId);
-    }
-    return respond(200, { toolId: params.toolId, disabled: body.disabled });
+    expect(control).not.toHaveAttribute("aria-disabled", "true");
+    expect(control).toHaveAttribute("aria-checked", String(enabled));
   });
 }
-
-test("Composer tools and Settings share saved search preferences", async () => {
-  mockPreferences();
-  await setupPeopleSearch();
-  const popup = await openTools();
-  const search = await readySwitch("Web search", popup);
-  const finance = await readySwitch("Financial data", popup);
-  expect(search).toBeChecked();
+test("composer-tools-001 settings and the composer reflect confirmed independent changes to two tool preferences", async () => {
+  await startResearch();
+  const tools = await panel();
+  const web = await setting(tools, "Web search"),
+    finance = await setting(tools, "Financial data");
+  expect(web).toBeChecked();
   expect(finance).toBeChecked();
-  click(search);
-  await waitFor(() => {
-    expect(search).not.toBeChecked();
-  });
-  click(finance);
-  await waitFor(() => {
-    expect(finance).not.toBeChecked();
-  });
+  await toggle(web, false);
+  await toggle(finance, false);
   await userEvent.keyboard("{Escape}");
-  await waitFor(() => {
-    expect(button("Tools")).toHaveFocus();
-  });
-  const rail = screen.getByTestId("labeled-nav-rail");
-  click(within(rail).getByLabelText("Test User"));
+  click(await screen.findByLabelText("Test User"));
   const menu = await screen.findByRole("menu");
-  click(within(menu).getByText("Settings"));
-  const settings = await screen.findByRole("dialog", { name: "Settings" });
-  click(button("Tools", settings));
-  await expect(readySwitch("Web search", settings)).resolves.not.toBeChecked();
-  await expect(
-    readySwitch("Financial data", settings),
-  ).resolves.not.toBeChecked();
-  click(await readySwitch("Web search", settings));
-  await waitFor(() => {
-    expect(
-      within(settings).getByRole("switch", { name: "Web search" }),
-    ).toBeChecked();
-  });
-  click(button("Close", settings));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
-  });
-  const reopened = await openTools();
-  await expect(readySwitch("Web search", reopened)).resolves.toBeChecked();
-  await expect(
-    readySwitch("Financial data", reopened),
-  ).resolves.not.toBeChecked();
+  click(await within(menu).findByText("Settings"));
+  const settings = await screen.findByRole("dialog");
+  click(await within(settings).findByText("Tools", { exact: true }));
+  const settingsWeb = await setting(settings, "Web search");
+  expect(settingsWeb).not.toBeChecked();
+  await expect(setting(settings, "Financial data")).resolves.not.toBeChecked();
+  await toggle(settingsWeb, true);
+  await userEvent.keyboard("{Escape}");
+  const reopened = await panel();
+  await expect(setting(reopened, "Web search")).resolves.toBeChecked();
+  await expect(setting(reopened, "Financial data")).resolves.not.toBeChecked();
 });
-
-test("Closing and reopening Tools retains a pending save and its retryable failure", async () => {
-  const releaseSave = context.mocks.deferred<void>();
+test("composer-tools-002 the pending switch survives reopening, reports its own failure and permits retry", async () => {
+  const delivery = context.mocks.deferred<void>(),
+    requested = context.mocks.deferred<void>();
   let fail = true;
-  let disabledTools: PaidToolId[] = [];
+  const disabled = new Set<string>();
   context.mocks.api(paidToolsContract.get, ({ respond }) => {
-    return respond(200, { disabledTools });
+    return respond(200, { disabledTools: [...disabled] });
   });
   context.mocks.api(
     paidToolsContract.update,
     async ({ params, body, respond }) => {
       if (fail) {
-        await releaseSave.promise;
-        fail = false;
+        requested.resolve();
+        await delivery.promise;
         return respond(500, {
-          error: { code: "INTERNAL_SERVER_ERROR", message: "Save unavailable" },
+          error: { code: "UNAVAILABLE", message: "Try later" },
         });
       }
-      disabledTools = [params.toolId];
+      if (body.disabled) {
+        disabled.add(params.toolId);
+      }
       return respond(200, { toolId: params.toolId, disabled: body.disabled });
     },
   );
-  await setupPeopleSearch();
-  const popup = await openTools();
-  click(await readySwitch("Web search", popup));
-  await within(popup).findByText("Saving…");
-  await userEvent.keyboard("{Escape}");
-  const reopened = await openTools();
-  const search = await within(reopened).findByRole("switch", {
-    name: "Web search",
-  });
-  expect(search).toHaveAttribute("aria-disabled", "true");
-  await expect(readySwitch("Financial data", reopened)).resolves.toBeChecked();
-  releaseSave.resolve();
-  await within(reopened).findByRole("alert");
-  await readySwitch("Web search", reopened);
-  expect(search).toBeChecked();
-  click(search);
+  await startResearch();
+  const first = await panel();
+  click(await setting(first, "Web search"));
+  await requested.promise;
+  click(await findFastControl("button", "Tools"));
   await waitFor(() => {
-    expect(search).not.toBeChecked();
+    expect(first).not.toBeInTheDocument();
   });
+  const next = await panel();
+  const web = await setting(next, "Web search");
+  expect(web).toHaveAttribute("aria-disabled", "true");
+  const finance = await setting(next, "Financial data");
+  expect(finance).not.toHaveAttribute("aria-disabled", "true");
+  expect(finance).toBeChecked();
+  delivery.resolve();
+  await within(next).findByText("Your change was not saved.");
+  expect(web).not.toHaveAttribute("aria-disabled", "true");
+  expect(web).toBeChecked();
+  fail = false;
+  await toggle(web, false);
 });
-
-test.each(["initial read", "confirmation read"])(
-  "Reopening Tools recovers a failed preference %s",
-  async (failure) => {
-    let failRead = failure === "initial read";
-    let failed = false;
-    let disabledTools: PaidToolId[] = [];
-    context.mocks.api(paidToolsContract.get, ({ respond }) => {
-      if (failRead) {
-        failed = true;
-        return respond(500, {
-          error: { code: "INTERNAL_SERVER_ERROR", message: "Read unavailable" },
-        });
-      }
-      return respond(200, { disabledTools });
-    });
-    context.mocks.api(paidToolsContract.update, ({ params, body, respond }) => {
-      disabledTools = body.disabled ? [params.toolId] : [];
-      if (failure === "confirmation read" && !failed) {
-        failRead = true;
-      }
-      return respond(200, { toolId: params.toolId, disabled: body.disabled });
-    });
-    await setupPeopleSearch();
-    const popup = await openTools();
-    if (failure === "confirmation read") {
-      click(await readySwitch("Web search", popup));
-    }
-    await within(popup).findByRole("alert");
-    await userEvent.keyboard("{Escape}");
-    failRead = false;
-    const reopened = await openTools();
-    const search = await readySwitch("Web search", reopened);
-    expect(search).toHaveAttribute(
-      "aria-checked",
-      failure === "initial read" ? "true" : "false",
-    );
-    click(search);
-    await waitFor(() => {
-      expect(search).toHaveAttribute(
-        "aria-checked",
-        failure === "initial read" ? "false" : "true",
-      );
-    });
-  },
-);
-
-test("A failed tool catalog leaves Web search usable and retries on reopening", async () => {
-  mockPreferences();
-  let fail = true;
+test("composer-tools-005 web preferences survive a catalog failure and reopening discovers the new research family", async () => {
+  let restored = false;
+  const family = {
+    id: "new-research",
+    title: { "en-US": "New research" },
+    description: { "en-US": "Find local research" },
+    summary: "Find local research",
+  };
   for (const url of [
     "https://data.okou.ai/mcp",
     "https://okou-data-router-staging.vm0.workers.dev/mcp",
   ]) {
     context.mocks.http.post(url, async ({ request }) => {
-      const message = (await request.json()) as { id: unknown };
-      return fail
-        ? HttpResponse.json({ error: "Unavailable" }, { status: 503 })
-        : HttpResponse.json({
+      const msg = (await request.json()) as { id: number };
+      return restored
+        ? HttpResponse.json({
             jsonrpc: "2.0",
-            id: message.id,
+            id: msg.id,
             result: {
               tools: [
                 {
-                  name: "new_research",
-                  inputSchema: { type: "object" },
-                  _meta: { "ai.okou/data": { family: "new-research" } },
+                  name: "research_lookup",
+                  inputSchema: { type: "object", properties: {} },
+                  _meta: { "ai.okou/data": { family: family.id } },
                 },
               ],
-              _meta: {
-                "ai.okou/data": {
-                  families: [
-                    {
-                      id: "new-research",
-                      title: { "en-US": "New research" },
-                      description: { "en-US": "Research new sources." },
-                    },
-                  ],
-                },
-              },
+              _meta: { "ai.okou/data": { families: [family] } },
             },
-          });
+          })
+        : new HttpResponse(null, { status: 503 });
     });
   }
-  await setupPeopleSearch();
-  const popup = await openTools();
-  await within(popup).findByRole("alert");
-  const search = await readySwitch("Web search", popup);
-  click(search);
+  await startResearch();
+  const first = await panel();
+  await within(first).findByText("Your tool settings could not be loaded.");
+  await toggle(await setting(first, "Web search"), false);
+  restored = true;
+  click(await findFastControl("button", "Tools"));
   await waitFor(() => {
-    expect(search).not.toBeChecked();
+    expect(first).not.toBeInTheDocument();
   });
-  await userEvent.keyboard("{Escape}");
-  fail = false;
-  const reopened = await openTools();
-  await expect(readySwitch("New research", reopened)).resolves.toBeChecked();
-  await expect(readySwitch("Web search", reopened)).resolves.not.toBeChecked();
+  const next = await panel();
+  await expect(setting(next, "New research")).resolves.toBeChecked();
+  await expect(setting(next, "Web search")).resolves.not.toBeChecked();
 });

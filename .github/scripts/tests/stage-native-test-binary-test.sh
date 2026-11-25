@@ -40,7 +40,7 @@ assert_ssh_exited() {
   return 1
 }
 
-mkdir "$test_root/bin"
+mkdir "$test_root/bin" "$test_root/retry-bin"
 cat >"$test_root/test binary" <<'BINARY'
 #!/usr/bin/env bash
 echo native-test
@@ -139,6 +139,13 @@ if [ "$SCENARIO" = lost-ack ] && [ "$count" -eq 1 ]; then exit 255; fi
 SSH
 chmod +x "$test_root/bin/ssh"
 
+# Retry cases observe transfer attempts and results without waiting out backoff.
+cat >"$test_root/retry-bin/sleep" <<'SLEEP'
+#!/usr/bin/env bash
+exit 0
+SLEEP
+chmod +x "$test_root/retry-bin/sleep"
+
 assert_checksum_rejection() {
   local log=$1 expected=$2
   if ! grep -Fxq -- "$expected" "$log"; then
@@ -151,10 +158,12 @@ assert_checksum_rejection() {
 for scenario in success pipe lost-ack late-writer corrupt permanent exhausted; do
   case_dir="$test_root/$scenario"
   mkdir "$case_dir"
-  mkfifo "$case_dir/release" "$case_dir/done"
+  if [[ "$scenario" == late-writer ]]; then
+    mkfifo "$case_dir/release" "$case_dir/done"
+  fi
   rm -f -- "$destination"
   status=0
-  PATH="$test_root/bin:$PATH" CASE_DIR="$case_dir" SCENARIO="$scenario" \
+  PATH="$test_root/retry-bin:$test_root/bin:$PATH" CASE_DIR="$case_dir" SCENARIO="$scenario" \
     bash "$helper" "$test_root/test binary" metal@host.vm3.ai "$destination" \
     >"$case_dir/out" 2>&1 || status=$?
   case "$scenario" in
@@ -207,7 +216,7 @@ cp "$test_root/test binary" "$large"
 size=$((129 * 1024 * 1024 + 37))
 truncate -s "$size" "$large"
 started=$SECONDS
-if ! PATH="$test_root/bin:$PATH" CASE_DIR="$case_dir" SCENARIO=chunk-reset \
+if ! PATH="$test_root/retry-bin:$test_root/bin:$PATH" CASE_DIR="$case_dir" SCENARIO=chunk-reset \
   bash "$helper" "$test_root/linked-binary" metal@host.vm3.ai "$destination" >"$case_dir/out" 2>&1; then
   cat "$case_dir/out" >&2
   exit 1

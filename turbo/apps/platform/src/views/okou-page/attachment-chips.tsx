@@ -1,5 +1,8 @@
 import { ArtifactDeleteButton } from "./artifact-deletion.tsx";
 import { ArtifactPreviewActionGroup } from "./artifact-preview-action-group.tsx";
+import { ZipArtifactPreview } from "./zip-artifact-preview.tsx";
+import { isZipArtifact } from "../../lib/zip-artifact.ts";
+import type { ZipArtifactPreviewScope } from "../../signals/zip-artifact-preview.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import {
@@ -1026,6 +1029,66 @@ export function ArtifactPreviewBody(props: ArtifactPreviewBodyProps) {
   );
 }
 
+export function ArtifactZipBody({
+  url,
+  scope,
+  fullscreen,
+  fallback,
+}: {
+  url: string | null;
+  scope: ZipArtifactPreviewScope;
+  fullscreen: boolean;
+  fallback: ReactNode;
+}) {
+  if (url === null) {
+    return <ArtifactDialogLoadingBody />;
+  }
+  return (
+    <ZipArtifactPreview
+      key={url}
+      scope={scope}
+      fallback={fallback}
+      renderEntry={(preview, imageCanvasSignals) => {
+        return (
+          <ArtifactPreviewContent
+            artifact={undefined}
+            fullscreen={fullscreen}
+            imageCanvasSignals={imageCanvasSignals}
+            preview={preview}
+          />
+        );
+      }}
+    />
+  );
+}
+
+function ArtifactDialogZipBody({
+  artifact,
+  filename,
+  fullscreen,
+  preview,
+  scope,
+}: Pick<ArtifactPreviewBodyProps, "artifact" | "preview" | "fullscreen"> & {
+  filename: string;
+  scope: ZipArtifactPreviewScope;
+}) {
+  const resourceUrl = useLastResolved(preview.resourceUrl$);
+  return (
+    <ArtifactZipBody
+      url={resourceUrl ?? null}
+      scope={scope}
+      fullscreen={fullscreen}
+      fallback={
+        <ArtifactDialogGenericFileBody
+          artifact={artifact}
+          filename={filename}
+          preview={preview}
+        />
+      }
+    />
+  );
+}
+
 function ArtifactPreviewResourceBoundary({
   children,
   preview,
@@ -1055,6 +1118,9 @@ function ArtifactPreviewContent({
   textMaxCharacters = 16_000,
 }: ArtifactPreviewBodyProps) {
   const filename = artifactDialogFilename(preview);
+  const zipEnabled =
+    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.ZipArtifactPreview] ??
+    false;
 
   if (preview.kind === "image") {
     return (
@@ -1077,6 +1143,17 @@ function ArtifactPreviewContent({
   }
 
   if (preview.kind === "file") {
+    if (zipEnabled && preview.zipPreview) {
+      return (
+        <ArtifactDialogZipBody
+          artifact={artifact}
+          filename={filename}
+          fullscreen={fullscreen}
+          preview={preview}
+          scope={preview.zipPreview}
+        />
+      );
+    }
     if (isOfficeFilePreview(filename)) {
       return (
         <ArtifactDialogOfficeDocumentBody
@@ -1401,10 +1478,6 @@ function ArtifactPreviewDialogActions({
   const downloadMetadata = artifact ?? preview;
   const filename = artifact?.filename ?? artifactDialogFilename(preview);
   const showShare = preview.shareAvailable !== false;
-  const groupedActions =
-    useLastResolved(featureSwitches$)?.[
-      FeatureSwitchKey.ArtifactPreviewActionGroup
-    ] ?? false;
   const showSplitView = preview.splitViewAvailable !== false;
   const annotateLightboxImage = useSet(annotateLightboxImage$);
   const annotationTarget =
@@ -1423,7 +1496,6 @@ function ArtifactPreviewDialogActions({
     <div className="flex shrink-0 items-center gap-1">
       <ArtifactPreviewActionGroup
         key={preview.url}
-        enabled={groupedActions}
         artifactId={artifact?.artifactId}
         metadataPending={actionsPending}
         shareAvailable={showShare}
@@ -1479,7 +1551,7 @@ function ArtifactPreviewDialogActions({
           artifactId={artifact?.artifactId}
           origin={{ kind: "preview-dialog" }}
           iconSize={18}
-          menu={groupedActions}
+          menu
         />
         <ArtifactActionSeparator />
         {showSplitView && (
@@ -1662,12 +1734,17 @@ export function FileAttachmentChip({
   const downloadAttachment = useSet(downloadAttachment$);
   const openFileLightbox = useSet(openFileLightbox$);
   const pageSignal = useGet(pageSignal$);
-  const previewOfficeDocument = isOfficeFilePreview(filename);
+  const zipEnabled =
+    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.ZipArtifactPreview] ??
+    false;
+  const canPreview =
+    isOfficeFilePreview(filename) ||
+    (zipEnabled && isZipArtifact(filename, contentType));
   return (
     <button
       type="button"
       onClick={() => {
-        if (previewOfficeDocument) {
+        if (canPreview) {
           openFileLightbox(
             {
               threadId,
@@ -1693,7 +1770,7 @@ export function FileAttachmentChip({
         );
       }}
       aria-label={
-        previewOfficeDocument
+        canPreview
           ? t(
               ($) => {
                 return $.chat.attachments.previewFile;

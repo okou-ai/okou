@@ -137,6 +137,9 @@ export interface SlackConversationMessage {
  * outside this module names an SDK type. See `tsconfig.gateways.json`.
  */
 export interface SlackClient {
+  readonly fetchConversationMembers: (
+    channel: string,
+  ) => Promise<readonly string[]>;
   readonly openDMChannel: (userId: string) => Promise<OpenDmResult>;
   readonly postMessage: (
     channel: string,
@@ -243,6 +246,39 @@ export async function unfurlSlackLinks(
   });
   await web.chat.unfurl(args);
   signal.throwIfAborted();
+}
+
+/** Replace only the ephemeral message associated with a verified interaction. */
+export async function replaceSlackEphemeral(
+  responseUrl: string,
+  text: string,
+  signal: AbortSignal,
+): Promise<void> {
+  const url = new URL(responseUrl);
+  if (
+    url.protocol !== "https:" ||
+    !["hooks.slack.com", "hooks.slack-gov.com"].includes(url.hostname) ||
+    url.port ||
+    url.username ||
+    url.password ||
+    !url.pathname.startsWith("/actions/")
+  ) {
+    throw new Error("Invalid Slack interaction response URL");
+  }
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      response_type: "ephemeral",
+      replace_original: true,
+      text,
+    }),
+    redirect: "error",
+    signal,
+  });
+  if (!response.ok) {
+    throw new Error(`Slack interaction update failed (${response.status})`);
+  }
 }
 
 function isSlackPlatformError(
@@ -762,6 +798,32 @@ export function createSlackClient(
   const web = buildWebClient(token, options?.automaticRetries);
 
   return {
+    async fetchConversationMembers(channel) {
+      const members = new Set<string>();
+      const cursors = new Set<string>();
+      let cursor: string | undefined;
+      do {
+        const page = await web.conversations.members({
+          channel,
+          cursor,
+          limit: 200,
+        });
+        if (!page.ok || !page.members) {
+          throw new Error("Slack channel membership is unavailable");
+        }
+        for (const member of page.members) {
+          members.add(member);
+        }
+        cursor = page.response_metadata?.next_cursor || undefined;
+        if (cursor && cursors.has(cursor)) {
+          throw new Error("Slack returned an incomplete channel member list");
+        }
+        if (cursor) {
+          cursors.add(cursor);
+        }
+      } while (cursor);
+      return [...members];
+    },
     openDMChannel: (userId) => {
       return openDMChannel(web, userId);
     },

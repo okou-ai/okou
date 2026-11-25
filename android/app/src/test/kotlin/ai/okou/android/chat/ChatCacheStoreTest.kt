@@ -9,6 +9,15 @@ import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.ChatEvents
 import ai.okou.android.api.generated.ProjectArchive
 import ai.okou.android.api.generated.ProjectEvents
+import ai.okou.android.artifacts.ArtifactItem
+import ai.okou.android.artifacts.ArtifactKind
+import ai.okou.android.artifacts.ArtifactPage
+import ai.okou.android.artifacts.ConfirmedArtifactCatalog
+import ai.okou.android.artifacts.ConfirmedRelatedChatRead
+import ai.okou.android.artifacts.ConfirmedRelatedChats
+import ai.okou.android.artifacts.ConfirmedWorkflowResources
+import ai.okou.android.artifacts.RelatedChatResource
+import ai.okou.android.artifacts.WorkflowResource
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.chatEventWire
 import ai.okou.android.jsonResponse
@@ -123,6 +132,9 @@ class ChatCacheStoreTest {
             it.execSQL(
                 "CREATE TABLE chat_agents (scope TEXT NOT NULL, id TEXT NOT NULL, position INTEGER NOT NULL, payload TEXT NOT NULL, PRIMARY KEY (scope, id), FOREIGN KEY (scope) REFERENCES chat_scopes(scope) ON DELETE CASCADE)",
             )
+            it.execSQL("DROP TABLE chat_artifact_items")
+            it.execSQL("DROP TABLE chat_artifact_catalogs")
+            it.execSQL("DROP TABLE chat_related_resources")
             it.execSQL("PRAGMA user_version = 2")
         }
 
@@ -138,6 +150,105 @@ class ChatCacheStoreTest {
                 assertEquals(2345L, savedProjects.confirmedAt)
             }
         upgraded.close()
+    }
+
+    @Test
+    fun artifactCatalogReopensConfirmedItemsCursorAndEmptyResultOnlyInTheirAuthorizedScope() =
+        runTest {
+            val root = temporary.newFolder()
+            val first = ArtifactItem("first", "First", ArtifactKind.File, 2_000)
+            val second = ArtifactItem("second", "Second", ArtifactKind.Presentation, 1_000)
+            val prefix = ConfirmedArtifactCatalog(ArtifactPage(listOf(first), "page-2"), 3_000)
+            val all = prefix.copy(page = ArtifactPage(listOf(first, second), null))
+            val empty = ConfirmedArtifactCatalog(ArtifactPage(emptyList(), null), 4_000)
+            val relations =
+                ConfirmedRelatedChats(
+                    created =
+                        ConfirmedRelatedChatRead(
+                            listOf(
+                                RelatedChatResource(CHAT_PROJECT, "Related chat", CHAT_DATE, true),
+                            ),
+                            4_000,
+                        ),
+                )
+            val workflows =
+                ConfirmedWorkflowResources(listOf(WorkflowResource("workflow", "Release")), 5_000)
+            val store = cache(root)
+            store
+                .open(identity) { true }
+                .use { lease ->
+                    assertNull(lease.loadArtifactCatalog(CHAT_PERSONAL))
+                    lease.saveArtifactCatalog(CHAT_PERSONAL, prefix, appendedTo = null)
+                    lease.saveArtifactCatalog(CHAT_PERSONAL, all, appendedTo = prefix)
+                    lease.saveArtifactCatalog(CHAT_PROJECT, empty, appendedTo = null)
+                    lease.saveRelatedResources(CHAT_PERSONAL, relations)
+                    lease.saveWorkflowResources(CHAT_PERSONAL, workflows)
+                }
+            store.close()
+            val reopened = cache(root)
+            for (owner in
+                listOf(
+                    identity.copy(workspaceId = "different"),
+                    identity.copy(userId = "different"),
+                    identity.copy(authorizationScope = "different"),
+                )) {
+                reopened
+                    .open(owner) { true }
+                    .use { lease ->
+                        assertNull(lease.loadArtifactCatalog(CHAT_PERSONAL))
+                        assertNull(lease.loadRelatedResources(CHAT_PERSONAL))
+                        assertNull(lease.loadWorkflowResources(CHAT_PERSONAL))
+                    }
+            }
+            reopened
+                .open(identity.copy(sessionId = "new")) { true }
+                .use { lease ->
+                    assertEquals(all, lease.loadArtifactCatalog(CHAT_PERSONAL))
+                    assertEquals(relations, lease.loadRelatedResources(CHAT_PERSONAL))
+                    assertEquals(workflows, lease.loadWorkflowResources(CHAT_PERSONAL))
+                    assertNull(lease.loadWorkflowResources(CHAT_PROJECT))
+                    lease.saveRelatedResources(CHAT_PERSONAL, null)
+                    assertNull(lease.loadRelatedResources(CHAT_PERSONAL))
+                    assertEquals(workflows, lease.loadWorkflowResources(CHAT_PERSONAL))
+                    lease.deleteRelatedResources(CHAT_PERSONAL)
+                    assertNull(lease.loadRelatedResources(CHAT_PERSONAL))
+                    assertNull(lease.loadWorkflowResources(CHAT_PERSONAL))
+                    assertEquals(empty, lease.loadArtifactCatalog(CHAT_PROJECT))
+                    lease.deleteArtifactCatalog(CHAT_PERSONAL)
+                    assertNull(lease.loadArtifactCatalog(CHAT_PERSONAL))
+                    assertEquals(empty, lease.loadArtifactCatalog(CHAT_PROJECT))
+                    lease.deleteArtifactCatalog()
+                    assertNull(lease.loadArtifactCatalog(CHAT_PROJECT))
+                }
+        }
+
+    @Test
+    fun freshRelationsCanReplaceAnUnreadableCacheAndPreserveEachOthersData() = runTest {
+        val root = temporary.newFolder()
+        val store = cache(root)
+        val workflows =
+            ConfirmedWorkflowResources(listOf(WorkflowResource("workflow", "Release")), 5_000)
+        val related = ConfirmedRelatedChats(created = ConfirmedRelatedChatRead(emptyList(), 6_000))
+        store.open(identity) { true }.use { it.saveWorkflowResources(CHAT_PERSONAL, workflows) }
+        store.close()
+        BundledSQLiteDriver().open(root.resolve("chats.db").path).use {
+            it.execSQL("UPDATE chat_related_resources SET payload = '{'")
+        }
+
+        val reopened = cache(root)
+        reopened
+            .open(identity) { true }
+            .use {
+                it.saveRelatedResources(CHAT_PERSONAL, related)
+                it.saveWorkflowResources(CHAT_PERSONAL, workflows)
+            }
+        reopened.close()
+        cache(root)
+            .open(identity) { true }
+            .use {
+                assertEquals(related, it.loadRelatedResources(CHAT_PERSONAL))
+                assertEquals(workflows, it.loadWorkflowResources(CHAT_PERSONAL))
+            }
     }
 
     @Test

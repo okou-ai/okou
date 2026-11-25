@@ -4,10 +4,10 @@ import { computed, type Computed } from "ccstate";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
 import {
   nullableDriverValueDecoder,
+  pgBooleanDecoder,
   pgTextDecoder,
 } from "../../lib/db-structured-result";
 import { db$ } from "../external/db";
-import { joinAll } from "../utils";
 
 interface TemplateSourceInput {
   readonly userId: string;
@@ -24,14 +24,22 @@ const templateKind = sql`${userTemplates.manifest}->>'kind'`.mapWith(
 export function createRunTemplateSources(
   input$: Computed<Promise<TemplateSourceInput | null>>,
 ) {
-  const presentations$ = computed(async (get) => {
+  return computed(async (get) => {
     const input = await get(input$);
-    if (!input?.presentationIds.length) {
-      return [];
+    if (
+      !input ||
+      (!input.presentationIds.length && !input.userTemplateIds.length)
+    ) {
+      return { presentations: [], mounted: [] };
     }
-    return await get(db$)
+    const db = get(db$);
+    const presentations = db
       .select({
+        isPresentation: sql`true`.mapWith(pgBooleanDecoder),
         id: presentationTemplates.id,
+        kind: sql`null::text`.mapWith(
+          nullableDriverValueDecoder(pgTextDecoder),
+        ),
         guidanceBundle: presentationTemplates.guidanceBundle,
       })
       .from(presentationTemplates)
@@ -45,14 +53,9 @@ export function createRunTemplateSources(
           ),
         ),
       );
-  });
-  const mounted$ = computed(async (get) => {
-    const input = await get(input$);
-    if (!input?.userTemplateIds.length) {
-      return [];
-    }
-    return await get(db$)
+    const mounted = db
       .select({
+        isPresentation: sql`false`.mapWith(pgBooleanDecoder),
         id: userTemplates.id,
         kind: templateKind,
         guidanceBundle: userTemplates.guidanceBundle,
@@ -68,12 +71,18 @@ export function createRunTemplateSources(
           ),
         ),
       );
-  });
-  return computed(async (get) => {
-    const [presentations, mounted] = await joinAll([
-      get(presentations$),
-      get(mounted$),
-    ]);
-    return { presentations, mounted };
+    const rows = await (input.presentationIds.length
+      ? input.userTemplateIds.length
+        ? presentations.unionAll(mounted)
+        : presentations
+      : mounted);
+    return {
+      presentations: rows.flatMap(({ isPresentation, id, guidanceBundle }) => {
+        return isPresentation ? [{ id, guidanceBundle }] : [];
+      }),
+      mounted: rows.flatMap(({ isPresentation, id, kind, guidanceBundle }) => {
+        return isPresentation ? [] : [{ id, kind, guidanceBundle }];
+      }),
+    };
   });
 }

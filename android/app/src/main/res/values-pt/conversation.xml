@@ -1,14 +1,50 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="conversation_queue_count">Fila (%1$d)</string>
+    <string name="conversation_queue_empty">Nenhum item na fila</string>
+    <string name="conversation_queue_message">Mensagem</string>
+    <plurals name="conversation_queue_attachments">
+        <item quantity="one">Mensagem · %d anexo</item>
+        <item quantity="many">Mensagem · %d anexos</item>
+        <item quantity="other">Mensagem · %d anexos</item>
+    </plurals>
+    <string name="conversation_run_queued">Aguardando início</string>
     <string name="conversation_welcome">Em que você quer trabalhar?</string>
     <string name="conversation_welcome_detail">Conte ao Okou o que você quer fazer.</string>
     <string name="conversation_jump_latest">Ir para a mensagem mais recente</string>
     <string name="conversation_new_reply">Nova resposta</string>
     <string name="conversation_view_progress">Ver progresso</string>
     <string name="conversation_processing">Processando…</string>
-    <string name="conversation_history_offline">O histórico será carregado quando você estiver online.</string>
-    <string name="conversation_offline_send">Conecte-se para enviar. Seu rascunho fica aqui.</string>
-    <string name="conversation_work">Etapas do trabalho</string>
+    <string name="conversation_reply_summary">Resumo da resposta</string>
+    <string name="conversation_turn_continued">Continuado no próximo turno</string>
+    <string name="conversation_replying">Respondendo…</string>
+    <string name="conversation_turn_done">Concluído</string>
+    <string name="conversation_replies_expanded">Expandido</string>
+    <string name="conversation_replies_collapsed">Recolhido</string>
+    <string name="conversation_work_elapsed">Trabalhando há %1$s</string>
+    <string name="conversation_work_total">Trabalhou por %1$s</string>
+    <string name="conversation_work_seconds">%1$d s</string>
+    <string name="conversation_work_minutes">%1$d min</string>
+    <string name="conversation_work_hours">%1$d h</string>
+    <string name="conversation_work_minutes_seconds">%1$d min %2$d s</string>
+    <string name="conversation_work_hours_minutes">%1$d h %2$d min</string>
+    <string name="conversation_followup_continue">Continuar</string>
+    <string name="conversation_feedback_pair">%1$s · %2$s</string>
+    <plurals name="conversation_reply_steps">
+        <item quantity="one">%d etapa</item>
+        <item quantity="many">%d de etapas</item>
+        <item quantity="other">%d etapas</item>
+    </plurals>
+    <string-array name="conversation_completion_phrases">
+        <item>Concluído</item>
+        <item>Tudo pronto</item>
+        <item>Entregue</item>
+        <item>Finalizado, ao seu dispor</item>
+        <item>Por hoje é só</item>
+        <item>Missão cumprida</item>
+        <item>Encerrado</item>
+        <item>Tudo resolvido</item>
+    </string-array>
     <string name="conversation_reply_actions">Ações da resposta</string>
     <string name="conversation_copy_reply">Copiar resposta</string>
     <string name="conversation_reply_copied">Resposta copiada</string>
@@ -16,13 +52,8 @@
     <string name="conversation_queue">Fila</string>
     <string name="conversation_queue_automation">Automação de fluxo de trabalho</string>
     <string name="conversation_skip_automation">Ignorar esta automação</string>
-    <string name="conversation_withdrawing">A retirar…</string>
-    <string name="conversation_skipping">A ignorar…</string>
-    <string name="conversation_withdraw_unknown">Resultado da retirada por confirmar</string>
-    <string name="conversation_skip_unknown">Resultado da omissão por confirmar</string>
-    <string name="conversation_withdraw_failed">Não foi possível retirar</string>
-    <string name="conversation_skip_failed">Não foi possível ignorar</string>
-    <string name="conversation_stop">Parar</string>
+    <string name="conversation_withdraw_failed">Não foi possível retirar a mensagem.</string>
+    <string name="conversation_skip_failed">Não foi possível ignorar a automação.</string>
     <string name="conversation_find">Buscar mensagens</string>
     <string name="conversation_find_turns">Explorar turnos</string>
     <string name="conversation_find_empty">Nenhuma mensagem para buscar</string>

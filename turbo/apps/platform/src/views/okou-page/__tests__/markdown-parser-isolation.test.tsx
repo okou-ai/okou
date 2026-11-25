@@ -1,266 +1,147 @@
-import { instructionsContract } from "@okouai/api-contracts/contracts/instructions";
-import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
-import { runTelemetryEventsContract } from "@okouai/api-contracts/contracts/run-routes";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { sessionOutputChannelName } from "@okouai/api-contracts/validators/realtime";
+import { runTelemetryEventsContract } from "@okouai/api-contracts/contracts/run-routes";
 import { screen, waitFor, within } from "@testing-library/react";
-import { expect, test } from "vitest";
-
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import { test, expect } from "vitest";
+import { setupPage, click } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { createMarkdownChatFixture } from "./markdown-page-test-helpers.ts";
-
-const context = testContext();
-const RUN_ID = "a0000000-0000-4000-a000-000000000071";
-
-function getLink(name: string): HTMLElement {
-  const link = queryAllByRoleFast("link").find((candidate) => {
-    return (
-      candidate.textContent?.trim() === name ||
-      candidate.getAttribute("aria-label") === name
+import { mockChatLifecycle } from "./chat-test-helpers.ts";
+import {
+  RUN_THREAD_ID,
+  promptEvent,
+  assistantEvent,
+  completedEvent,
+} from "./chat-run-test-fixtures.ts";
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
+const context = testContext(),
+  user = Object.freeze({ id: "markdown-reader", fullName: "Coastal Reader" }),
+  org = Object.freeze({ id: "org_markdown", name: "Harbor" });
+async function fromInstructions(run: string, finished: boolean) {
+  const events = [
+    promptEvent({
+      id: crypto.randomUUID(),
+      seqId: 1,
+      text: "Read the harbor report",
+      runId: run,
+    }),
+  ];
+  if (finished) {
+    events.push(
+      assistantEvent({
+        id: crypto.randomUUID(),
+        seqId: 2,
+        text: "Harbor reply is complete",
+        runId: run,
+      }),
+      completedEvent({ id: crypto.randomUUID(), seqId: 3, runId: run }),
     );
-  });
-  if (!link) {
-    throw new Error(`Expected link named "${name}"`);
   }
-  return link;
-}
-
-function markdownFrameFor(element: Element): HTMLElement {
-  const frame = element.closest<HTMLElement>(".wmde-markdown");
-  if (!frame) {
-    throw new Error("Expected content inside a Markdown frame");
-  }
-  return frame;
-}
-
-async function openInstructionsThenChat(): Promise<void> {
-  context.mocks.api(instructionsContract.get, ({ respond }) => {
-    return respond(200, {
-      content: "<u>Editor underline</u>",
-      orgId: "org_current",
-      userId: "test-user-123",
-      updatedAt: "2026-08-01T10:00:00.000Z",
-      version: "first",
-    });
+  mockChatLifecycle(context, {
+    threadTitle: "Harbor report chat",
+    threadId: RUN_THREAD_ID,
+    chatEvents: events,
+    activeRunIds: finished ? [] : [run],
   });
   await setupPage({
     context,
-    path: "/?settings=my-okou&focus=instructions",
-    featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
-  });
-  const settings = await screen.findByRole("dialog", { name: "Settings" });
-  const editor = await within(settings).findByLabelText("Instructions");
-  expect(editor.querySelector("u")).toHaveTextContent("Editor underline");
-  click(within(settings).getByLabelText("Close", { selector: "button" }));
-  const chatLink = await waitFor(() => {
-    return getLink("Rich content");
-  });
-  click(chatLink);
-}
-
-async function prepareLiteralPlusMarkdownChat(initialReply?: string) {
-  const chat = createMarkdownChatFixture(context);
-  const rows = [chat.outputMessage("++Plain message++", { seqId: 1 })];
-  if (initialReply) {
-    rows.push(
-      chat.outputMessage(initialReply, {
-        id: "streamed-markdown",
-        runEventId: "streamed-markdown",
-        seqId: 2,
-      }),
-    );
-  }
-  chat.install({
-    rows: () => {
-      return rows;
+    path: "/?settings=my-okou",
+    auth: {
+      user,
+      organization: { activeOrg: org, memberships: [{ id: org.id }] },
+    },
+    featureSwitches: {
+      [FeatureSwitchKey.OkouDebug]: true,
     },
   });
-  await openInstructionsThenChat();
-  return { chat, rows };
-}
-
-test("Opening Instructions preserves literal plus signs in a new streamed reply", async () => {
-  const { chat, rows } = await prepareLiteralPlusMarkdownChat();
-  const threadSelector = `[data-chat-thread-container-id="${chat.threadId}"]`;
-  const queryMessage = (text: string) => {
-    const thread = document.querySelector<HTMLElement>(threadSelector);
-    return thread && within(thread).queryByText(text);
-  };
+  const settings = await screen.findByRole("dialog");
+  const instructions = await findFastControl("tab", "Instructions", settings);
+  click(instructions);
   await waitFor(() => {
-    expect(queryMessage("++Plain message++")).toBeInTheDocument();
-  });
-  rows.push(
-    chat.outputMessage("**Streaming:** ++Reply", {
-      id: "streamed-markdown",
-      runEventId: "streamed-markdown",
-      seqId: 2,
-    }),
-  );
-  context.mocks.ably.trigger(chat.realtimeTopic);
-  const streaming = await waitFor(() => {
-    const content = queryMessage("Streaming:");
-    if (!content) {
-      throw new Error("Expected the streamed reply");
-    }
-    return content;
-  });
-  expect(streaming.tagName).toBe("STRONG");
-  expect(markdownFrameFor(streaming)).toHaveTextContent("++Reply");
-  expect(markdownFrameFor(streaming).querySelector("u")).toBeNull();
-});
-
-test("Opening Instructions preserves literal plus signs as an unfinished reply grows", async () => {
-  const { chat, rows } = await prepareLiteralPlusMarkdownChat(
-    "**Streaming:** ++Reply",
-  );
-  const streaming = await screen.findByText("Streaming:");
-  expect(streaming.tagName).toBe("STRONG");
-  expect(markdownFrameFor(streaming)).toHaveTextContent("++Reply");
-  rows[1] = chat.outputMessage("**Streaming:** ++Reply+", {
-    id: "streamed-markdown",
-    runEventId: "streamed-markdown",
-    seqId: 3,
-    sequenceNumber: 2,
-  });
-  context.mocks.ably.trigger(chat.realtimeTopic);
-  await waitFor(() => {
-    expect(markdownFrameFor(screen.getByText("Streaming:"))).toHaveTextContent(
-      "++Reply+",
+    expect(new URL(location.href).searchParams.get("focus")).toBe(
+      "instructions",
     );
+    expect(instructions).toHaveAttribute("aria-selected", "true");
   });
-  expect(
-    markdownFrameFor(screen.getByText("Streaming:")).querySelector("u"),
-  ).toBeNull();
-});
-
-test("Opening Instructions preserves rich Markdown when a streamed reply completes", async () => {
-  const chat = createMarkdownChatFixture(context);
-  const rows = [
-    chat.outputMessage("++Plain message++", { seqId: 1 }),
-    chat.outputMessage("**Streaming:** ++Reply+", {
-      id: "streamed-markdown",
-      runEventId: "streamed-markdown",
-      seqId: 2,
-    }),
-  ];
-  chat.install({
-    rows: () => {
-      return rows;
-    },
+  click(await findFastControl("button", "Close", settings));
+  click(await findFastControl("link", /Harbor report chat/));
+  await screen.findByText("Read the harbor report");
+  expect(location.pathname).toBe("/chats/" + RUN_THREAD_ID);
+}
+test("markdown-parser-isolation-002 an unfinished reply keeps bold and literal plus signs after visiting Instructions", async () => {
+  const run = crypto.randomUUID();
+  await fromInstructions(run, false);
+  const channel = sessionOutputChannelName(user.id, org.id, run),
+    eventId = crypto.randomUUID();
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscriptionOnChannel(channel, run),
+    ).toBeTruthy();
   });
-  await openInstructionsThenChat();
-  const streaming = await screen.findByText("Streaming:");
-  expect(streaming.tagName).toBe("STRONG");
-  expect(markdownFrameFor(streaming)).toHaveTextContent("++Reply+");
-  rows[1] = chat.outputMessage(
-    [
-      "**Streaming:** ++Reply++",
-      "",
-      "`++Code++` and C++ / i++",
-      "",
-      "++[Reference](https://example.com/a++b)++",
-      "",
-      "3. Third item",
-      "4. Fourth item",
-      "",
-      "- [x] Checked task",
-    ].join("\n"),
-    {
-      id: "streamed-markdown",
-      runEventId: "streamed-markdown",
-      seqId: 3,
-      sequenceNumber: 2,
-    },
-  );
-  rows.push(chat.runCompleted({ seqId: 4, sequenceNumber: 3 }));
-  context.mocks.ably.trigger(chat.realtimeTopic);
-  await screen.findByText("Checked task");
-  const frame = markdownFrameFor(screen.getByText("Streaming:"));
-  expect(frame).toHaveTextContent("++Reply++");
-  expect(frame).toHaveTextContent("C++ / i++");
-  expect(frame).toHaveTextContent("++Reference++");
-  expect(frame.querySelector("code")).toHaveTextContent("++Code++");
-  expect(frame.querySelector("u")).toBeNull();
-  expect(getLink("Reference")).toHaveAttribute(
-    "href",
-    "https://example.com/a++b",
-  );
-  expect(frame.querySelector("ol")).toHaveAttribute("start", "3");
-  expect(frame.querySelector('input[type="checkbox"]')).toBeChecked();
-});
-
-test("Opening Instructions keeps rich Activity logs readable", async () => {
-  const chat = createMarkdownChatFixture(context);
-  const rows = [
-    chat.inputPrompt("Inspect the response", { seqId: 1, runId: RUN_ID }),
-    chat.outputMessage("Inspect the completed response", {
-      seqId: 2,
-      runId: RUN_ID,
-    }),
-    chat.runCompleted({ seqId: 3, runId: RUN_ID }),
-  ];
-  chat.install({
-    rows: () => {
-      return rows;
-    },
-  });
-  context.mocks.api(logsByIdContract.getById, ({ respond }) => {
-    return respond(200, {
-      id: RUN_ID,
-      sessionId: "markdown-isolation-session",
-      framework: "claude-code",
-      modelProvider: null,
-      selectedModel: null,
-      triggerSource: "web",
-      status: "completed",
-      prompt: "Inspect the response",
-      appendSystemPrompt: null,
-      createdAt: "2026-09-04T09:29:00Z",
-      startedAt: "2026-09-04T09:29:01Z",
-      completedAt: "2026-09-04T09:29:02Z",
+  function chunk(chunkIndex: number, delta: string) {
+    context.mocks.ably.triggerOnChannel(channel, run, {
+      threadId: RUN_THREAD_ID,
+      runId: run,
+      eventId,
+      runEventId: "harbor-progress",
+      createdAt: "2026-08-01T09:00:00Z",
+      chunkIndex,
+      delta,
     });
-  });
+  }
+  chunk(0, "**Status** ++Reply");
+  await screen.findByText(/\+\+Reply$/);
+  chunk(1, "+");
+  const literal = await screen.findByText(/\+\+Reply\+$/),
+    bubble = literal.closest('[data-role="assistant"]');
+  if (!(bubble instanceof HTMLElement)) {
+    throw new Error("No rendered assistant reply");
+  }
+  expect(
+    within(bubble).getByText("Status").closest("strong"),
+  ).toBeInTheDocument();
+  expect(bubble.querySelector("u")).toBeNull();
+});
+test("markdown-parser-isolation-004 opening the completed run's logs preserves its distinct rich text elements", async () => {
+  const run = "a0000000-0000-4000-a000-000000000001";
   context.mocks.api(
     runTelemetryEventsContract.getTelemetryEvents,
     ({ respond }) => {
       return respond(200, {
         events: [
           {
-            sequenceNumber: 0,
+            sequenceNumber: 1,
+            createdAt: "2026-08-01T09:00:00Z",
             eventType: "assistant",
             eventData: {
+              type: "assistant",
               message: {
+                role: "assistant",
                 content: [
                   {
                     type: "text",
-                    text: "**Activity:** ++Literal text++ and <u>HTML underline</u>",
+                    text: "**Activity** ++literal++ <u>Log underline</u>",
                   },
                 ],
               },
             },
-            createdAt: "2026-09-04T09:29:02Z",
           },
         ],
         hasMore: false,
+        lastEventSequence: 1,
         status: "completed",
-        lastEventSequence: 0,
       });
     },
   );
-
-  await openInstructionsThenChat();
-
-  await screen.findByText("Inspect the completed response");
-  click(getLink("View run logs"));
-
-  const activity = await screen.findByText("Activity:");
-  expect(activity.tagName).toBe("STRONG");
-  const frame = markdownFrameFor(activity);
-  expect(frame).toHaveTextContent("++Literal text++");
-  expect(frame.querySelector("u")).toHaveTextContent("HTML underline");
-  expect(window.location.pathname).toBe(`/activities/${RUN_ID}`);
+  await fromInstructions(run, true);
+  await screen.findByText("Harbor reply is complete");
+  click(await findFastControl("link", "View run logs"));
+  await waitFor(() => {
+    expect(location.pathname).toBe("/activities/" + run);
+  });
+  const strong = await screen.findByText("Activity", { selector: "strong" });
+  expect(strong).toBeVisible();
+  await expect(screen.findByText(/\+\+literal\+\+/)).resolves.toBeVisible();
+  await expect(
+    screen.findByText("Log underline", { selector: "u" }),
+  ).resolves.toBeVisible();
 });

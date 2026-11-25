@@ -1,5 +1,4 @@
 import CCStateSwiftUI
-import ChatData
 import SwiftUI
 import UIKit
 
@@ -39,9 +38,9 @@ struct ChatSettingsView: View {
   @Environment(\.scenePhase) private var scenePhase
   @AppStorage(OkouAppearancePreference.storageKey) private var appearance =
     OkouAppearancePreference.system.rawValue
-  @Environment(\.composerPreferences) private var preferences
   @State private var signingOut = false
   @State private var confirmsSignOut = false
+  @State private var connectors: ComposerConnectorStore?
 
   private static let securityURL = URL(string: "https://www.okou.ai/en/security")!
   #if STAGING
@@ -103,39 +102,16 @@ struct ChatSettingsView: View {
               settingsLabel("Language", icon: "languages")
             }
           }
-          Picker(
-            selection: Binding(
-              get: { preferences?.returnKey ?? .newline },
-              set: { preferences?.setReturnKey($0) })
-          ) {
-            ForEach(ComposerReturnKeyPreference.allCases, id: \.self) { option in
-              Text(option.title).tag(option)
-            }
-          } label: {
-            settingsLabel("Return key", icon: "pencil")
-          }
-          .okouValuePicker()
-          .accessibilityIdentifier("return-key-preference")
-          .disabled(preferences == nil)
         } header: {
           Text("Preferences").okouSectionHeader()
         } footer: {
-          VStack(alignment: .leading, spacing: OkouSpace.sm) {
-            Text(
-              "Notifications tell you when a chat finishes. Choose connectors under + in the message composer."
-            )
-            .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
-            if preferences?.returnKey == .send {
-              Text("When set to Send, touch and hold the message field to insert a new line.")
-                .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
-            }
-            if let error = preferences?.error {
-              Text(error).font(.okou(.footnote)).foregroundStyle(OkouColor.destructive)
-            }
-          }
+          Text(
+            "Notifications tell you when a chat finishes. Choose connectors under + in the message composer."
+          )
           .okouSectionNote()
         }
         StoreProvider(store.settingsResources.store) {
+          SettingsConnectorsSection(workspace: store, open: openConnectors)
           SettingsModelsSection(models: store.modelStore)
         }
         Section {
@@ -215,12 +191,40 @@ struct ChatSettingsView: View {
       .navigationTitle("Settings")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar { OkouCloseToolbarItem { dismiss() } }
+      .navigationDestination(
+        isPresented: Binding(
+          get: { connectors != nil },
+          set: {
+            if !$0 {
+              connectors?.close()
+              connectors = nil
+            }
+          })
+      ) {
+        if let connectors { SettingsConnectorsView(store: connectors) }
+      }
       .onChange(of: scenePhase) { _, current in
         if current == .active {
           store.prepareSettings()
         }
       }
     }
+    .onDisappear {
+      connectors?.close()
+      connectors = nil
+    }
+  }
+
+  private func openConnectors() {
+    let models = store.modelStore
+    connectors = ComposerConnectorStore(
+      service: models.connectorAccess, authorizationService: models.connectorAuthorization,
+      webURL: store.webURL, includesRemote: false,
+      managementEnabled: { true },
+      memberAccessEnabled: { [weak models] in
+        models?.lastKnownFeatureSwitches?.usesMemberConnectorAccess == true
+      },
+      didFail: { [weak models] in models?.report($0) })
   }
 
   private var profile: some View {
@@ -300,7 +304,7 @@ private struct SettingsModelsSection: View {
   }
 
   var body: some View {
-    if canLinkSubscriptions == true {
+    if (canLinkSubscriptions ?? models.lastKnownFeatureSwitches?.canLinkSubscriptions) == true {
       Section {
         NavigationLink {
           PersonalSubscriptionsView(store: models.subscriptions)

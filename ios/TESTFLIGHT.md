@@ -172,7 +172,7 @@ release's publication or device acceptance.
 ## Local verification without Apple access
 
 ```sh
-node --test ios/scripts/{testflight,distribution-availability,app-review}.test.mjs .github/scripts/release/ios-app-review.test.mjs
+node --test ios/scripts/{testflight,distribution-availability}.test.mjs
 python3 ios/scripts/archive-promotion.test.py
 python3 ios/scripts/archive-proof.test.py
 python3 ios/scripts/upload-sentry-symbols.test.py
@@ -217,20 +217,11 @@ receipt. Verification does not submit a build or change a minimum version.
    message and viewing its result. Prepare the store listing, screenshots,
    privacy information, review contact details and any required demo account
    in App Store Connect.
-2. In Actions, run **Submit iOS for App Review** on `main` with the exact
-   marketing version and build number. The production workflow verifies the
-   release publisher's upload record, checks that the same build is available
-   in TestFlight and eligible for the App Store, then submits it directly to
-   Apple with **manual release**. The existing iOS App Store Connect key needs
-   App Manager access. The Actions summary links to the app and records the
-   Apple build ID, submission ID and state.
-3. After approval, release the app manually in App Store Connect. To raise
+2. In App Store Connect, open the iOS App Store version matching the tested
+   marketing version, or create it if needed. Under **Build**, select the
+   tested build number and save. Choose **Manually release this version**.
+3. When the listing and review details are ready, choose **Add for Review**.
+   Check the items in the submission, then choose **Submit for Review**.
+4. After approval, release the app manually in App Store Connect. To raise
    the App Store minimum later, verify public availability in the configured
    storefronts and use the normal minimum-version policy PR.
-
-To recover from a failure, resolve the reported metadata or draft conflict in
-App Store Connect and run the same version and build again. The workflow checks
-the current Apple state and uses a GitHub commit status to remember the Apple
-draft ID for that exact build. An already submitted build returns its receipt.
-If Apple created an empty draft but the ID could not be recorded, reconcile the
-draft in App Store Connect before retrying.

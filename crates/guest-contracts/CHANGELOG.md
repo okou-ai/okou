@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.33.3](https://github.com/okou-ai/okou/compare/guest-contracts-v0.33.2...guest-contracts-v0.33.3) (2026-11-25)
+
+## [0.33.2](https://github.com/okou-ai/okou/compare/guest-contracts-v0.33.1...guest-contracts-v0.33.2) (2026-11-24)
+
+
+### Performance Improvements
+
+* **runner:** compact decoded storage apply manifests ([#50508](https://github.com/okou-ai/okou/issues/50508)) ([65487f7](https://github.com/okou-ai/okou/commit/65487f765b77fdb941a715f238660dc3add05f81))
+
+## [0.33.1](https://github.com/okou-ai/okou/compare/guest-contracts-v0.33.0...guest-contracts-v0.33.1) (2026-11-24)
+
+## [0.33.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.33...guest-contracts-v0.33.0) (2026-11-24)
+
+
+### Features
+
+* **runner:** execute gemini 4 turns with antigravity cli ([#50389](https://github.com/okou-ai/okou/issues/50389)) ([17f9b83](https://github.com/okou-ai/okou/commit/17f9b831b49c876e71002ac641b338badf0bff40))
+
 ## [0.32.33](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.32...guest-contracts-v0.32.33) (2026-11-23)
 
 

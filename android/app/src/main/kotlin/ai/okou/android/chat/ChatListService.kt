@@ -23,7 +23,11 @@ interface ChatListService : ConversationHistoryService {
 
     suspend fun deleteThread(threadId: String, eventId: String)
 
-    suspend fun renameProject(projectId: String, name: String, eventId: String)
+    suspend fun createProject(projectId: String, name: String): ConfirmedProject
+
+    suspend fun projectDetail(projectId: String): ConfirmedProject
+
+    suspend fun renameProject(projectId: String, name: String, eventId: String): ConfirmedProject
 
     suspend fun moveThreadToProject(threadId: String, projectId: String?, eventId: String)
 
@@ -44,6 +48,8 @@ interface ChatListService : ConversationHistoryService {
     suspend fun chatEvents(since: Long?): ChatEvents
 
     suspend fun indicators(): Indicators
+
+    suspend fun draftThreadIds(): List<String>
 
     suspend fun projectSnapshot(): ProjectSnapshot
 

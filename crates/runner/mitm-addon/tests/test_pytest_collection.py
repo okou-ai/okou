@@ -61,6 +61,8 @@ def test_directory_fixture_is_available_to_all_consumers(
             "pytest.ini",
             f"--confcutdir={tmp_path}",
             "-q",
+            "-p",
+            "no:cacheprovider",
             *paths,
         ],
         cwd=tmp_path,

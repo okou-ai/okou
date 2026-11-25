@@ -11,7 +11,6 @@ import ai.okou.android.chat.ComposerSync
 import ai.okou.android.chat.ComposerTarget
 import ai.okou.android.chat.RealtimePhase
 import ai.okou.android.chat.RealtimeSnapshot
-import ai.okou.android.chat.RunControlJournalStore
 import ai.okou.android.chat.RunControlPhase
 import ai.okou.android.chat.RunControlsModel
 import ai.okou.android.chat.RunOutputSignal
@@ -65,7 +64,6 @@ class NativeRealtimeTest {
         val oldChats = app.chatService
         val oldRealtime = app.realtimeService
         val oldJournal = app.journalStore
-        val oldControlJournal = app.controlJournalStore
         val oldControlService = app.controlService
         val oldComposerService = app.composerService
         val oldRecoveryService = app.recoveryService
@@ -74,14 +72,12 @@ class NativeRealtimeTest {
         val directory =
             Files.createTempDirectory(app.cacheDir.toPath(), "realtime-native-").toFile()
         val journal = ComposerJournalStore(app, directory)
-        val controlsJournal = RunControlJournalStore(app, directory.resolve("controls"))
         val fixture = ChatListApiFixture()
         val external = TestRealtimeService()
         external.snapshot.value = RealtimeSnapshot(RealtimePhase.Connecting)
         app.chatService = fixture.service
         app.realtimeService = external
         app.journalStore = journal
-        app.controlJournalStore = controlsJournal
         app.controlService = fixture.service
         app.composerService = fixture.service
         app.recoveryService = fixture.service
@@ -107,9 +103,9 @@ class NativeRealtimeTest {
                 appendLine(
                     "controlPosts=${controlPosts.get()}; responseHeld=${controlResponse.count}",
                 )
-                appendLine("controlPersistence=${control?.persistence}; phases=${control?.phases}")
+                appendLine("controlPhases=${control?.phases}")
                 appendLine(
-                    "pendingControls=${control?.journal?.pending?.map { it.id to it.targetId }}",
+                    "pendingControls=${control?.pending?.map { it.id to it.targetId }}",
                 )
                 appendLine(
                     "historyPhase=${history?.phase}; liveRuns=${history?.transcript?.liveRunIds}",
@@ -188,18 +184,14 @@ class NativeRealtimeTest {
                     )
                 if (!matched) throw AssertionError(diagnostics())
             }
+            val stopAction = By.pkg(app.packageName).desc(app.getString(R.string.controls_stop))
             fun clickStop() {
                 step = "Locate enabled Stop button"
                 val button =
                     checkNotNull(
                         device.wait(
                             Until.findObject(
-                                By.pkg(app.packageName)
-                                    .clickable(true)
-                                    .enabled(true)
-                                    .hasDescendant(
-                                        label(app.getString(R.string.conversation_stop)),
-                                    ),
+                                stopAction,
                             ),
                             10_000,
                         ),
@@ -217,8 +209,6 @@ class NativeRealtimeTest {
                 shown == visible
             }
             device.awaitChatList(app)
-            val connecting = app.getString(R.string.realtime_connecting)
-            assertFalse(device.hasObject(label(connecting)))
             scenario.onActivity {
                 val ready =
                     checkNotNull(
@@ -233,14 +223,10 @@ class NativeRealtimeTest {
             condition { chats?.uiState?.value?.threads?.any { it.id == CHAT_PERSONAL } == true }
             reveal("Personal chat")
             text("Personal chat").click()
-            step = "Show realtime status in the open conversation"
-            text(connecting)
-            assertNotNull(
-                device.wait(
-                    Until.findObject(By.pkg(app.packageName).textContains("Native history")),
-                    10_000,
-                ),
-            )
+            step = "Load conversation history while realtime is connecting"
+            val reply = By.pkg(app.packageName).textContains("Native history")
+            assertNotNull(device.wait(Until.findObject(reply), 10_000))
+            assertFalse(device.hasObject(label(app.getString(R.string.retry))))
             val editor =
                 checkNotNull(
                     device.wait(
@@ -255,9 +241,14 @@ class NativeRealtimeTest {
             ime(true)
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             ime(false)
+            val replyBounds = checkNotNull(device.findObject(reply)).visibleBounds
             external.snapshot.value =
                 external.snapshot.value.copy(phase = RealtimePhase.Unavailable)
-            text(app.getString(R.string.realtime_unavailable))
+            condition("Disconnect keeps the conversation visible without a retry action") {
+                chats?.updates?.phase?.value == RealtimePhase.Unavailable &&
+                    device.findObject(reply)?.visibleBounds == replyBounds &&
+                    !device.hasObject(label(app.getString(R.string.retry)))
+            }
 
             val sequence = AtomicLong(41)
             val title = AtomicReference("Changed on another client")
@@ -310,8 +301,15 @@ class NativeRealtimeTest {
             external.snapshot.value =
                 RealtimeSnapshot(RealtimePhase.Connected, 1, changes = ChatChanges(resync = true))
             text("Changed on another client")
-            // The new confirmed message can be below the current viewport; use native scrolling.
-            reveal("External input")
+            val queueTitle = app.getString(R.string.conversation_queue_count, 1)
+            step = "Open the externally updated queue"
+            checkNotNull(
+                    device.wait(Until.findObject(By.pkg(app.packageName).desc(queueTitle)), 10_000),
+                )
+                .click()
+            text("External input")
+            assertTrue(device.pressBack())
+            condition("System Back closes the queue") { !device.hasObject(label(queueTitle)) }
             assertTrue(
                 checkNotNull(
                         device.findObject(By.pkg(app.packageName).clazz("android.widget.EditText")),
@@ -569,12 +567,9 @@ class NativeRealtimeTest {
                     state.persistence == ComposerPersistence.Durable &&
                     state.sync(target) == ComposerSync.Saved
             }
-            condition("Composer saving indicators leave the native layout") {
-                !device.hasObject(label(app.getString(R.string.composer_saving))) &&
-                    !device.hasObject(label(app.getString(R.string.composer_sync_saving))) &&
-                    !device.hasObject(label(app.getString(R.string.composer_unconfirmed)))
+            condition("Send confirmation leaves the native layout") {
+                !device.hasObject(label(app.getString(R.string.composer_unconfirmed)))
             }
-            reveal(app.getString(R.string.conversation_stop))
             clickStop()
             condition("Single interrupt reaches transport while the response is held") {
                 controlPosts.get() == 1 &&
@@ -583,41 +578,33 @@ class NativeRealtimeTest {
                     controls?.uiState?.value?.phases?.values?.singleOrNull() ==
                         RunControlPhase.Sending
             }
-            controlResponse.countDown()
-            condition("Ambiguous interrupt response publishes Unknown") {
-                controls?.uiState?.value?.phases?.values?.singleOrNull() == RunControlPhase.Unknown
+            condition("Only the Stop action leaves the running layout") {
+                !device.hasObject(stopAction)
             }
+            // The queued input has yet to start its own turn.
+            reveal(app.getString(R.string.conversation_replying))
+            assertFalse(device.hasObject(label(app.getString(R.string.controls_stop_failed))))
             assertEquals(
                 activeRun,
                 interrupted.get()!!.getValue("interruptsRunId").jsonPrimitive.content,
             )
-            // An ambiguous receipt keeps Stop unavailable until readback settles it.
-            reveal(app.getString(R.string.controls_unknown))
-            val pendingStop =
-                device.findObject(
-                    By.pkg(app.packageName)
-                        .clickable(true)
-                        .hasDescendant(label(app.getString(R.string.conversation_stop))),
-                )
-            checkNotNull(pendingStop)
-            assertTrue(!pendingStop.isEnabled)
-            device.waitForIdle()
             scenario.onActivity {
-                assertEquals(1, controls?.uiState?.value?.journal?.pending?.size)
+                assertEquals(1, controls?.uiState?.value?.pending?.size)
             }
             assertEquals(1, controlPosts.get())
             external.snapshot.value =
                 external.snapshot.value.copy(phase = RealtimePhase.Unavailable)
             condition { chats?.updates?.phase?.value == RealtimePhase.Unavailable }
             publishControl.set(true)
+            controlResponse.countDown()
             external.snapshot.value =
                 external.snapshot.value.copy(
                     phase = RealtimePhase.Connected,
                     revision = external.snapshot.value.revision + 1,
                     changes = ChatChanges(resync = true),
                 )
-            condition { controls?.uiState?.value?.journal?.pending?.isEmpty() == true }
-            reveal("Control recorded in conversation history.")
+            condition { controls?.uiState?.value?.pending?.isEmpty() == true }
+            reveal(app.getString(R.string.history_cancelled))
             assertEquals(1, controlPosts.get())
             assertTrue(
                 chats?.history?.uiState?.value?.transcript?.messages?.any {
@@ -691,9 +678,7 @@ class NativeRealtimeTest {
             try {
                 val button =
                     device.findObject(
-                        By.pkg(app.packageName)
-                            .clickable(true)
-                            .hasDescendant(By.text(app.getString(R.string.conversation_stop))),
+                        By.pkg(app.packageName).desc(app.getString(R.string.controls_stop)),
                     )
                 val summary =
                     diagnostics() +
@@ -724,7 +709,6 @@ class NativeRealtimeTest {
                         }
                     },
                     { runBlocking { journal.close() } },
-                    { runBlocking { controlsJournal.close() } },
                     { fixture.close() },
                     { cache.restore() },
                     { app.restoreApiPreferences(oldPreferences) },
@@ -732,7 +716,6 @@ class NativeRealtimeTest {
                         app.chatService = oldChats
                         app.realtimeService = oldRealtime
                         app.journalStore = oldJournal
-                        app.controlJournalStore = oldControlJournal
                         app.controlService = oldControlService
                         app.composerService = oldComposerService
                         app.recoveryService = oldRecoveryService

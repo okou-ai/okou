@@ -17,8 +17,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+
+private const val MAX_CONCURRENT_SNAPSHOT_RECOVERIES = 2
 
 data class HistoryWarmingState(
     val phase: ChatReadPhase = ChatReadPhase.Idle,
@@ -120,43 +124,47 @@ class ChatHistoryWarming(
         withContext(dispatcher) { batch.validate(cursors) }
         requireCurrent(ticket)
         cache.appendWarmedHistories(cached, batch.events, System.currentTimeMillis(), selected)
+        if (batch.notFoundThreads.isEmpty()) return
+
         val failures = coroutineScope {
+            val slots = Semaphore(MAX_CONCURRENT_SNAPSHOT_RECOVERIES)
             batch.notFoundThreads
                 .map { id ->
-                    async {
-                        requireCurrent(ticket)
-                        if (id == selected()) return@async null
-                        try {
-                            val checkpoint = history.synchronize(id, null)
-                            requireCurrent(ticket)
-                            cache.saveWarmedHistory(
-                                checkpoint,
-                                System.currentTimeMillis(),
-                                cached[id],
-                                selected,
-                            )
-                            null
-                        } catch (cancelled: CancellationException) {
-                            throw cancelled
-                        } catch (error: Exception) {
-                            requireCurrent(ticket)
-                            when {
-                                error is ApiFailure.Http && error.status in setOf(403, 404) -> {
-                                    onUnavailable(id)
-                                    cache.clearWarmedHistory(id, cached[id], selected)
-                                    null
-                                }
-                                error is ApiFailure.Unauthenticated ||
-                                    error is ApiFailure.UpdateRequired ||
-                                    error is ApiFailure.Http && error.status == 401 -> throw error
-                                else -> error
-                            }
-                        }
-                    }
+                    async { slots.withPermit { recoverHistory(id, cached[id], ticket) } }
                 }
                 .awaitAll()
         }
         failures.firstOrNull { it != null }?.let { throw it }
+    }
+
+    private suspend fun recoverHistory(
+        threadId: String,
+        baseline: HistoryCursor?,
+        ticket: Long,
+    ): Exception? {
+        requireCurrent(ticket)
+        if (threadId == selected()) return null
+        return try {
+            val checkpoint = history.synchronize(threadId, null)
+            requireCurrent(ticket)
+            cache.saveWarmedHistory(checkpoint, System.currentTimeMillis(), baseline, selected)
+            null
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            requireCurrent(ticket)
+            when {
+                error is ApiFailure.Http && error.status in setOf(403, 404) -> {
+                    onUnavailable(threadId)
+                    cache.clearWarmedHistory(threadId, baseline, selected)
+                    null
+                }
+                error is ApiFailure.Unauthenticated ||
+                    error is ApiFailure.UpdateRequired ||
+                    error is ApiFailure.Http && error.status == 401 -> throw error
+                else -> error
+            }
+        }
     }
 
     fun close() {
