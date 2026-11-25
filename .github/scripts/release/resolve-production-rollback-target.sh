@@ -2,6 +2,8 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# API 2.125.0 writes the canonical Morning Brief installation and queued input name.
+readonly CANONICAL_MORNING_BRIEF_API_COMMIT=f3f8b32329ee00bba832eed313b62e27c9697cb7
 readonly BLANK_SANDBOX_STATUS_READER_COMMIT=febec8a3399be74b0f14a89cb9f42e39dd5ce69f
 readonly PROVIDER_BALANCE_FAILURE_COMMIT=0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6
 # #43433 publishes each default Agent with its reference and never adopts an
@@ -240,6 +242,9 @@ if [ -z "$release_tags" ]; then
   fail "Target commit has no release tags: ${TARGET_COMMIT}"
 fi
 
+if ! git merge-base --is-ancestor "$CANONICAL_MORNING_BRIEF_API_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates canonical Morning Brief writes: ${CANONICAL_MORNING_BRIEF_API_COMMIT}."
+fi
 if ! git merge-base --is-ancestor "$CUSTOM_CONNECTOR_SKILL_MIRROR_FREE_API_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the mirror-free custom connector Skill API: ${CUSTOM_CONNECTOR_SKILL_MIRROR_FREE_API_COMMIT}."
 fi

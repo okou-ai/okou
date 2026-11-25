@@ -1,7 +1,3 @@
-import {
-  INTERNAL_TEST_MORNING_BRIEF_DEFINITION_NAME,
-  MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
-} from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
@@ -180,17 +176,8 @@ export function createThreadAutomationSnapshot(
       packageSources,
       ...official
     } = row;
-    // A queued input carries the installation's name at enqueue time. Follow
-    // this Official rename for launch and its mounted skill, without rewriting
-    // the stored event or the provenance of a Run that already started.
-    const launchEvent =
-      event.workflowName === INTERNAL_TEST_MORNING_BRIEF_DEFINITION_NAME &&
-      workflow?.officialDefinitionName ===
-        MORNING_BRIEF_OFFICIAL_DEFINITION_NAME
-        ? { ...event, workflowName: MORNING_BRIEF_OFFICIAL_DEFINITION_NAME }
-        : event;
     return {
-      event: launchEvent,
+      event,
       target:
         automation && workflow && packageSources
           ? {

@@ -98,6 +98,8 @@ case "${1:-}" in
       else
         [ "${MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_VALID:-1}" = "1" ]
       fi
+    elif [ "${3:-}" = "f3f8b32329ee00bba832eed313b62e27c9697cb7" ]; then
+      [ "${4:-}" = "$TARGET_COMMIT" ] && [ "${MOCK_CANONICAL_MORNING_BRIEF_API_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "046a7bac03cc5f5a94cc67394756f69be2eaf111" ]; then
       [ "${MOCK_MARKETING_SHORT_ADDRESS_WRITER_TARGET_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "d1739bed31dcde34fead64d82e54489fda10549f" ]; then
@@ -802,6 +804,14 @@ assert_failure "predates DAV firewall method support" \
 [ ! -s "${tmp_dir}/dav-runner-reader.output" ] || fail "pre-DAV Runner must not publish outputs"
 if grep -Eq '^ssh |releases/tags/' "${tmp_dir}/boundaries.log"; then
   fail "pre-DAV Runner must fail before Runner artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates canonical Morning Brief writes" \
+  run_resolver "${tmp_dir}/morning-brief.output" MOCK_CANONICAL_MORNING_BRIEF_API_VALID=0
+[ ! -s "${tmp_dir}/morning-brief.output" ] || fail "legacy Morning Brief writer must not publish outputs"
+if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+  fail "legacy Morning Brief writer must fail before provider or host access"
 fi
 
 # Outgoing configuration requests must not overlap a rollback that can adopt
