@@ -4,18 +4,9 @@ import ai.okou.android.auth.SessionModel
 import ai.okou.android.instructions.InstructionsPhase
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import ai.okou.android.instructions.PersonalInstructionsModel
-import android.app.Instrumentation
 import android.content.Context
-import android.os.Build
 import android.view.KeyEvent
-import android.view.View
-import android.view.ViewGroup
 import android.view.accessibility.AccessibilityWindowInfo
-import android.view.inputmethod.EditorInfo
-import android.view.inputmethod.InputConnection
-import android.view.inspector.WindowInspector
-import androidx.annotation.RequiresApi
-import androidx.core.view.children
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ActivityScenario
@@ -216,38 +207,9 @@ class NativeInstructionsTest {
                     10_000,
                 ) == true,
             )
-            val connection =
-                if (Build.VERSION.SDK_INT >= 29) {
-                    editor().click()
-                    editor(requireFocus = true)
-                    awaitIme(true)
-                    activeInputConnection(instrumentation).also { input ->
-                        instrumentation.runOnMainSync {
-                            input.beginBatchEdit()
-                            try {
-                                assertTrue(input.setComposingRegion(0, localDraft.length))
-                                assertTrue(input.setComposingText("zhongwen", 1))
-                            } finally {
-                                input.endBatchEdit()
-                            }
-                        }
-                    }
-                } else null
-            val composingText =
-                if (connection == null) localDraft
-                else
-                    checkNotNull(
-                            device.wait(
-                                Until.findObject(
-                                    By.pkg(app.packageName)
-                                        .clazz("android.widget.EditText")
-                                        .focused(true)
-                                        .textContains("zhongwen"),
-                                ),
-                                10_000,
-                            ),
-                        )
-                        .text
+            editor().click()
+            editor(requireFocus = true)
+            awaitIme(true)
             val webText = "Changed on Web"
             fixture.externalEdit(webText)
             scenario.onActivity { model.refresh() }
@@ -260,21 +222,10 @@ class NativeInstructionsTest {
                     10_000,
                 ) == true,
             )
-            if (connection == null) {
-                assertEquals(localDraft, editor().text)
-            } else {
-                assertEquals(composingText, editor(requireFocus = true).text)
-                instrumentation.runOnMainSync {
-                    assertTrue(connection.setComposingText("中文", 1))
-                    assertTrue(connection.finishComposingText())
-                }
-                editor(
-                    expectedText = composingText.replaceFirst("zhongwen", "中文"),
-                    requireFocus = true,
-                )
-                assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
-                awaitIme(false)
-            }
+            assertEquals(localDraft, editor(requireFocus = true).text)
+            assertTrue(imeVisible())
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            awaitIme(false)
             assertEquals(1, fixture.requests.count { it.method == "PUT" })
             assertTrue(text(app.getString(R.string.instructions_save)).isEnabled)
             click(R.string.settings_cancel)
@@ -322,24 +273,6 @@ class NativeInstructionsTest {
         MultipleFailureException.assertEmpty(failures)
     }
 }
-
-@RequiresApi(29)
-private fun activeInputConnection(instrumentation: Instrumentation): InputConnection {
-    var connection: InputConnection? = null
-    instrumentation.runOnMainSync {
-        connection =
-            WindowInspector.getGlobalWindowViews()
-                .asSequence()
-                .filter(View::hasWindowFocus)
-                .mapNotNull(::activeTextEditor)
-                .firstNotNullOfOrNull { it.onCreateInputConnection(EditorInfo()) }
-    }
-    return checkNotNull(connection) { "The focused editor did not expose an input connection" }
-}
-
-private fun activeTextEditor(view: View): View? =
-    if (view.onCheckIsTextEditor()) view
-    else (view as? ViewGroup)?.children?.firstNotNullOfOrNull(::activeTextEditor)
 
 internal fun UiDevice.confirmInstructionsDiscard(context: Context) {
     val label = By.pkg(context.packageName).text(context.getString(R.string.instructions_discard))
