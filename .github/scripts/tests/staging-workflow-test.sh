@@ -24,7 +24,8 @@ staging = workflow('staging')
 benchmark = workflow('benchmark')
 jobs = turbo['jobs']
 ts_checks = [
-    'lint-eslint', 'lint-style', 'lint-types', 'lint-type-app', 'lint-type-api',
+    'lint-eslint', 'lint-eslint-api', 'lint-eslint-app', 'lint-db-dependencies',
+    'lint-style', 'lint-types', 'lint-type-app', 'lint-type-api',
     'lint-format', 'lint-knip', 'test-cli', 'test-app', 'test-api', 'test-other',
     'test-browser-extension-package', 'test-browser-extension',
 ]
