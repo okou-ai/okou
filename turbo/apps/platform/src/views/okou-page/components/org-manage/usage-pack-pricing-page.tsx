@@ -1252,7 +1252,7 @@ export function PricingStepContent({
   return (
     <>
       {/* Mobile titles share the ledger's inset; navigation gets its own row. */}
-      <DialogHeader className="grid shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 border-b border-[hsl(var(--gray-200))] px-5 py-3 text-left md:h-14 md:flex md:gap-3 md:py-0 md:pl-6 md:pr-4">
+      <DialogHeader className="grid shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 border-b border-[hsl(var(--gray-200))] px-5 py-3 text-left md:h-14 md:flex md:flex-row md:gap-3 md:py-0 md:pl-6 md:pr-4">
         {onBack && <PricingBackButton onBack={onBack} />}
         <DialogTitle
           className={cn(
