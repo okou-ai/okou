@@ -488,25 +488,43 @@ describe("Site preview resource capabilities", () => {
     expect(await head.text()).toBe("");
   });
 
-  it("serves an API-issued public-publication target through the isolated preview origin", async () => {
-    const f = capabilityFixture();
-    const publication = `sites/brands/okou/publications/${deploymentId}`;
-    for (const [key, value] of f.objects) {
-      if (key.startsWith(prefix))
-        f.objects.set(key.replace(prefix, publication), value);
-    }
-    f.objects.set(
-      `${publication}/manifest.json`,
-      JSON.stringify({ ...f.manifest, access: undefined }),
-    );
-    f.objects.set(
-      grantKey,
-      JSON.stringify({ ...f.grant, prefix: publication }),
-    );
-    const response = await fetchWorker(new Request(`${origin}/`), f.env);
-    expect(response.status).toBe(200);
-    expect(await response.text()).toContain("Private report");
-  });
+  it.each([
+    `sites/brands/okou/publications/${deploymentId}`,
+    "sites/orgs/org_test/sproutpop-launch-deck/versions/1",
+    `sites/orgs/org_test/coastal-hotel/deployments/${deploymentId}`,
+  ])(
+    "serves a public publication at %s through the isolated preview origin",
+    async (publication) => {
+      const f = capabilityFixture();
+      for (const [key, value] of f.objects) {
+        if (key.startsWith(prefix))
+          f.objects.set(key.replace(prefix, publication), value);
+      }
+      f.objects.set(
+        `${publication}/manifest.json`,
+        JSON.stringify({ ...f.manifest, access: undefined }),
+      );
+      f.objects.set(
+        grantKey,
+        JSON.stringify({ ...f.grant, prefix: publication }),
+      );
+      for (const path of ["/", "/assets/site.css", "/assets/app.js"]) {
+        const response = await fetchWorker(
+          new Request(`${origin}${path}`, {
+            headers: { "Sec-Fetch-Dest": path === "/" ? "iframe" : "script" },
+          }),
+          f.env,
+        );
+        expect(response.status).toBe(200);
+        expect(response.headers.get("Set-Cookie")).toBeNull();
+        expect(await response.text()).toContain(
+          path === "/"
+            ? "Private report"
+            : f.files[path as keyof typeof f.files][0],
+        );
+      }
+    },
+  );
 
   it("checks credential expiry before serving a previously read resource", async () => {
     const f = capabilityFixture();
