@@ -10,6 +10,13 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.124.1](https://github.com/okou-ai/okou/compare/api-v2.124.0...api-v2.124.1) (2026-11-25)
+
+
+### Bug Fixes
+
+* **api:** send invitation emails to all artifact recipients ([#50727](https://github.com/okou-ai/okou/issues/50727)) ([bb729d8](https://github.com/okou-ai/okou/commit/bb729d87d5a0753e9e7e144a7568357fc1c59fe8))
+
 ## [2.124.0](https://github.com/okou-ai/okou/compare/api-v2.123.1...api-v2.124.0) (2026-11-25)
 
 
