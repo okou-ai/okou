@@ -315,13 +315,13 @@ messaging	src/signals/routes/__tests__/integrations-slack.test.ts	integrations-s
 messaging	src/signals/routes/__tests__/integrations-slack.test.ts	integrations-slack-017	rewritten	65.4	
 messaging	src/signals/routes/__tests__/integrations-slack.test.ts	integrations-slack-021	rewritten	63.3	
 messaging	src/signals/routes/__tests__/integrations-slack.test.ts	integrations-slack-022	rewritten	70.6	
-messaging	src/signals/routes/__tests__/integrations-teams-installation-owner.test.ts	integrations-teams-installation-owner-001	planned		
-messaging	src/signals/routes/__tests__/integrations-teams-installation-owner.test.ts	integrations-teams-installation-owner-002	planned		
-messaging	src/signals/routes/__tests__/integrations-teams-installation-owner.test.ts	integrations-teams-installation-owner-003	planned		
-messaging	src/signals/routes/__tests__/integrations-teams-installation-owner.test.ts	integrations-teams-installation-owner-005	planned		
-messaging	src/signals/routes/__tests__/integrations-teams-installation-owner.test.ts	integrations-teams-installation-owner-007	planned		
-messaging	src/signals/routes/__tests__/integrations-teams-installation-owner.test.ts	integrations-teams-installation-owner-008	planned		
-messaging	src/signals/routes/__tests__/integrations-teams-installation-owner.test.ts	integrations-teams-installation-owner-011	planned		
+messaging	src/signals/routes/__tests__/integrations-teams-installation-owner.test.ts	integrations-teams-installation-owner-001	rewritten	138.9	
+messaging	src/signals/routes/__tests__/integrations-teams-installation-owner.test.ts	integrations-teams-installation-owner-002	rewritten	129.2	
+messaging	src/signals/routes/__tests__/integrations-teams-installation-owner.test.ts	integrations-teams-installation-owner-003	rewritten	41.4	
+messaging	src/signals/routes/__tests__/integrations-teams-installation-owner.test.ts	integrations-teams-installation-owner-005	rewritten	84.9	
+messaging	src/signals/routes/__tests__/integrations-teams-installation-owner.test.ts	integrations-teams-installation-owner-007	rewritten	67.0	
+messaging	src/signals/routes/__tests__/integrations-teams-installation-owner.test.ts	integrations-teams-installation-owner-008	rewritten	80.0	
+messaging	src/signals/routes/__tests__/integrations-teams-installation-owner.test.ts	integrations-teams-installation-owner-011	rewritten	63.0	
 non-route	src/__tests__/app-factory-android.test.ts	app-factory-android-001	planned		
 non-route	src/__tests__/app-factory-android.test.ts	app-factory-android-003	planned		
 non-route	src/__tests__/app-factory-android.test.ts	app-factory-android-006	planned		
