@@ -333,8 +333,21 @@ reaction. SwiftUI reads graph values through CCStateSwiftUI, actions read them
 through their owner's synchronous accessors, and follow-up work continues in the
 command that made the change. The adapter's own subscriptions and test waiting
 support are the only listeners. When an owner triggers every reload of a read, it
-confirms the new read in that method instead of watching for invalidation. Do
-not mirror the bridge pattern through other callbacks either.
+confirms the new read in that method instead of watching for invalidation.
+
+The same copy can hide without `store.watch`. Each of these publishes a graph
+result through Observation and is not allowed:
+
+- a callback that a computed's Task invokes, such as `didLoad...`, which assigns
+  into an `@Observable` property;
+- a computed's Task that writes an `@Observable` property as a side effect;
+- an owner method that awaits a read, such as `try await store.get(read).value`,
+  and assigns the result to an observed property that views render;
+- a SwiftUI `onChange` that copies a resolved value into an observable owner
+  for another view to render.
+
+A confirmed value that actions need synchronously is graph `State`, written
+where the read publishes it, and views resolve it like any other signal.
 
 Review the complete path: trigger, graph/Store identity, dependency Task,
 publication, invalidation, and teardown. Confirm which state is a resource
