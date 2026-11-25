@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.65.9](https://github.com/okou-ai/okou/compare/ios-v0.65.8...ios-v0.65.9) (2026-11-25)
+
+
+### Bug Fixes
+
+* **ios:** support connector method switching and direct oauth ([#50742](https://github.com/okou-ai/okou/issues/50742)) ([15898a8](https://github.com/okou-ai/okou/commit/15898a82453dea810807d25dadf545365d4c16df))
+
 ## [0.65.8](https://github.com/okou-ai/okou/compare/ios-v0.65.7...ios-v0.65.8) (2026-11-25)
 
 

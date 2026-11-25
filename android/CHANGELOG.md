@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.56.2](https://github.com/okou-ai/okou/compare/android-v0.56.1...android-v0.56.2) (2026-11-25)
+
+
+### Bug Fixes
+
+* **android:** copy inline images safely from replies ([#50766](https://github.com/okou-ai/okou/issues/50766)) ([630309e](https://github.com/okou-ai/okou/commit/630309e8c9aaa2bc73be7ae9e58a34171e960e14))
+
 ## [0.56.1](https://github.com/okou-ai/okou/compare/android-v0.56.0...android-v0.56.1) (2026-11-25)
 
 

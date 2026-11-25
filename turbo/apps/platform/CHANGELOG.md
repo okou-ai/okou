@@ -13,6 +13,23 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1182.0](https://github.com/okou-ai/okou/compare/app-v0.1181.0...app-v0.1182.0) (2026-11-25)
+
+
+### Features
+
+* **app:** clarify free-plan top-ups and pro upgrades ([#50549](https://github.com/okou-ai/okou/issues/50549)) ([0f067b9](https://github.com/okou-ai/okou/commit/0f067b9d0642dba3e65c809978c30e44c690a7a0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.126.1
+    * @okouai/connectors bumped to 3.25.0
+    * @okouai/core bumped to 8.878.0
+    * @okouai/ui bumped to 1.22.17
+
 ## [0.1181.0](https://github.com/okou-ai/okou/compare/app-v0.1180.1...app-v0.1181.0) (2026-11-25)
 
 
