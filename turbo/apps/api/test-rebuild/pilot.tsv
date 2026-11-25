@@ -594,12 +594,12 @@ connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	cust
 connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-029	planned		extension after sandbox reset
 connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-031	planned		extension after sandbox reset
 connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-032	planned		extension after sandbox reset
-connectors	src/signals/routes/__tests__/connectors-search.test.ts	connectors-search-002	planned		extension after sandbox reset
-connectors	src/signals/routes/__tests__/connectors-search.test.ts	connectors-search-003	planned		extension after sandbox reset
-connectors	src/signals/routes/__tests__/connectors-search.test.ts	connectors-search-008	planned		extension after sandbox reset
-connectors	src/signals/routes/__tests__/connectors-search.test.ts	connectors-search-010	planned		extension after sandbox reset
-connectors	src/signals/routes/__tests__/connectors-search.test.ts	connectors-search-011	planned		extension after sandbox reset
-connectors	src/signals/routes/__tests__/connectors-search.test.ts	connectors-search-012	planned		extension after sandbox reset
+connectors	src/signals/routes/__tests__/connectors-search.test.ts	connectors-search-002	rewritten	62.0	extension after sandbox reset
+connectors	src/signals/routes/__tests__/connectors-search.test.ts	connectors-search-003	rewritten	12.0	extension after sandbox reset
+connectors	src/signals/routes/__tests__/connectors-search.test.ts	connectors-search-008	rewritten	29.2	extension after sandbox reset
+connectors	src/signals/routes/__tests__/connectors-search.test.ts	connectors-search-010	rewritten	8.5	extension after sandbox reset
+connectors	src/signals/routes/__tests__/connectors-search.test.ts	connectors-search-011	rewritten	8.7	extension after sandbox reset
+connectors	src/signals/routes/__tests__/connectors-search.test.ts	connectors-search-012	skipped		slow-setup: an Okou run execution token carrying connector:read is only issued to a dispatched thread Run (thread-okou-token.signals prepareOkouToken$ during Run claim); no lighter public issuing path
 connectors	src/signals/routes/__tests__/connectors-list.test.ts	connectors-list-001	rewritten	42.2	extension after sandbox reset
 connectors	src/signals/routes/__tests__/connectors-list.test.ts	connectors-list-002	rewritten	62.4	extension after sandbox reset
 connectors	src/signals/routes/__tests__/connectors-list.test.ts	connectors-list-003	rewritten	50.4	extension after sandbox reset
