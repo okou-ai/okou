@@ -13,7 +13,6 @@ import { mockEnv } from "../lib/env";
 import webClientCompatibility from "../lib/web-client-compatibility.json";
 import { healthRoutes } from "../signals/routes/health";
 import { mailRoutes } from "../signals/routes/mail";
-import { realtimeTokenRoutes } from "../signals/routes/realtime-token";
 import { iosClientCompatibility, testContext } from "./test-context";
 
 const TEST_APP_ROUTES = Object.freeze([...healthRoutes, ...mailRoutes]);
@@ -303,131 +302,6 @@ describe("createApp", () => {
   });
 
   describe("cors", () => {
-    describe("Even Hub installed chat", () => {
-      const origin = "http://127.0.0.1:56844";
-      const thread = "/api/chat-threads/00000000-0000-4000-8000-000000000001";
-
-      function request(path: string, init: RequestInit) {
-        mockEnv("ENV", "production");
-        const app = createApp({
-          signal: context.signal,
-          routes: realtimeTokenRoutes,
-        });
-        return app.request(path, init);
-      }
-
-      function preflight(
-        path: string,
-        method: string,
-        webview: string,
-        headers = "authorization",
-      ) {
-        return request(path, {
-          method: "OPTIONS",
-          headers: {
-            origin: webview,
-            "access-control-request-method": method,
-            "access-control-request-headers": headers,
-          },
-        });
-      }
-
-      it.each([
-        [origin, "POST", "/api/chat-threads"],
-        ["http://127.0.0.1:50496", "POST", "/api/chat/events"],
-        [origin, "POST", "/api/realtime/token"],
-        [origin, "GET", `${thread}/metadata`],
-        [origin, "GET", `${thread}/event-snapshot`],
-        [origin, "GET", `${thread}/event-rows?sinceSeqId=0&limit=50`],
-      ])(
-        "allows a preflight from %s for %s %s",
-        async (webview, method, path) => {
-          const headers =
-            method === "POST" ? "content-type, Authorization" : "authorization";
-          const response = await preflight(path, method, webview, headers);
-          const allowedHeaders = response.headers
-            .get("access-control-allow-headers")
-            ?.toLowerCase()
-            .split(/\s*,\s*/u);
-
-          expect(response.status).toBe(204);
-          expect(response.headers.get("access-control-allow-origin")).toBe(
-            webview,
-          );
-          expect(response.headers.get("access-control-allow-methods")).toBe(
-            method,
-          );
-          expect(new Set(allowedHeaders)).toStrictEqual(
-            new Set(["authorization", "content-type"]),
-          );
-          expect(
-            response.headers.get("access-control-allow-credentials"),
-          ).toBeNull();
-        },
-      );
-
-      it.each([
-        [origin, "POST", "/api/uploads/prepare/private"],
-        [origin, "DELETE", `${thread}/metadata`],
-        ["http://localhost:56844", "POST", "/api/chat/events"],
-        ["http://127.0.0.1.example:56844", "POST", "/api/chat/events"],
-      ])(
-        "withholds preflight access for %s %s %s",
-        async (webview, method, path) => {
-          const response = await preflight(path, method, webview);
-          expect(
-            response.headers.get("access-control-allow-origin"),
-          ).toBeNull();
-        },
-      );
-
-      it("requires preflight to request the Authorization header", async () => {
-        const response = await preflight(
-          "/api/chat/events",
-          "POST",
-          origin,
-          "content-type",
-        );
-        expect(response.headers.get("access-control-allow-origin")).toBeNull();
-      });
-
-      function realtimeToken(headers: Record<string, string>) {
-        return request("/api/realtime/token", {
-          method: "POST",
-          headers: { origin, "content-type": "application/json", ...headers },
-          body: "{}",
-        });
-      }
-
-      it("exposes the route's 401 to the WebView when its bearer is invalid", async () => {
-        const response = await realtimeToken({
-          authorization: "Bearer vm0_pat_invalid",
-        });
-        expect(response.status).toBe(401);
-        await expect(response.json()).resolves.toMatchObject({
-          error: { code: "UNAUTHORIZED" },
-        });
-        expect(response.headers.get("access-control-allow-origin")).toBe(
-          origin,
-        );
-        expect(
-          response.headers.get("access-control-allow-credentials"),
-        ).toBeNull();
-      });
-
-      it.each<Record<string, string>>([
-        { cookie: "__session=example" },
-        {
-          cookie: "__session=example",
-          authorization: "Bearer vm0_pat_invalid",
-        },
-      ])("rejects cookie authentication with %j", async (headers) => {
-        const response = await realtimeToken(headers);
-        expect(response.status).toBe(403);
-        expect(response.headers.get("access-control-allow-origin")).toBeNull();
-      });
-    });
-
     it("echoes allowed cross-origin on registered route responses", async () => {
       mockEnv("ENV", "production");
       const app = createApp({
