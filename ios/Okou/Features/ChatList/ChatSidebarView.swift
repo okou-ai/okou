@@ -16,6 +16,8 @@ struct ChatSidebarView: View {
   @LoadableValue private var projectRead: Loadable<[ChatProject]>
   @LoadableValue private var listRead: Loadable<Void>
   @LoadableValue private var presentation: Loadable<ChatSidebarPresentation>
+  /// Whether workspace search is presented, kept in the workspace session's Store.
+  @ResolvedValue private var searchPresented: Bool?
 
   init(
     store: WorkspaceStore, authentication: AuthenticationService, workspaceID: String,
@@ -34,6 +36,7 @@ struct ChatSidebarView: View {
     _projectRead = LoadableValue(task: store.projects.listValue, keepLast: true)
     _listRead = LoadableValue(task: store.list.listValue)
     _presentation = LoadableValue(store.sidebar.presentation)
+    _searchPresented = ResolvedValue(store.search.presented)
   }
 
   private struct ProjectEditor {
@@ -214,7 +217,7 @@ struct ChatSidebarView: View {
     }
     .sheet(
       isPresented: Binding(
-        get: { store.search.isPresented },
+        get: { searchPresented ?? store.search.isPresented },
         set: { if !$0 { store.search.dismiss() } }
       )
     ) {
