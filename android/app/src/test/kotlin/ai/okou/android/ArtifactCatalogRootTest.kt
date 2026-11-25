@@ -70,7 +70,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.util.Calendar
-import java.util.SimpleTimeZone
+import java.util.Locale
 import java.util.TimeZone
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
@@ -832,9 +832,10 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
         val original = TimeZone.getDefault()
         val utcHour = Calendar.getInstance(TimeZone.getTimeZone("UTC")).get(Calendar.HOUR_OF_DAY)
         // Put the current time near 18:00 and the fixture's 10:20 entry before the new midnight.
-        val offset = (18 - utcHour) * 3_600_000
+        val hours = 18 - utcHour
+        fun zone(offset: Int) = TimeZone.getTimeZone("GMT%+03d:00".format(Locale.ROOT, offset))
         try {
-            TimeZone.setDefault(SimpleTimeZone(offset, "catalog-before"))
+            TimeZone.setDefault(zone(hours))
             val fixture = ArtifactApiFixture(app.fixture)
             fixture.install()
             app.responseGate.countDown()
@@ -845,7 +846,7 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
             val requests = fixture.catalogQueries.size
 
             compose.runOnIdle {
-                TimeZone.setDefault(SimpleTimeZone(offset - 12 * 3_600_000, "catalog-after"))
+                TimeZone.setDefault(zone(hours - 12))
                 app.sendBroadcast(Intent(Intent.ACTION_TIMEZONE_CHANGED))
             }
             compose.waitUntil(10_000) {

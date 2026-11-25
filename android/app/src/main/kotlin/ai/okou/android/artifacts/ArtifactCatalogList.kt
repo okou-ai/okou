@@ -10,6 +10,9 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.icu.util.Calendar
+import android.icu.util.GregorianCalendar
+import android.icu.util.TimeZone as IcuTimeZone
 import android.text.format.DateFormat
 import androidx.annotation.StringRes
 import androidx.compose.foundation.Image
@@ -88,8 +91,8 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LifecycleStartEffect
 import java.text.SimpleDateFormat
-import java.util.Calendar
 import java.util.Date
+import java.util.TimeZone
 
 @Composable
 internal fun ArtifactCatalogList(
@@ -529,15 +532,37 @@ internal enum class ArtifactDay(@param:StringRes val label: Int) {
 }
 
 internal class ArtifactDates(
-    val today: Long,
-    val yesterday: Long,
+    nowMillis: Long,
+    zone: TimeZone,
     private val formatTime: java.text.DateFormat,
     private val formatDate: java.text.DateFormat,
     private val formatMonthDay: java.text.DateFormat,
-    private val startOfYear: Long,
     private val todayLabel: String,
     private val yesterdayLabel: String,
 ) {
+    val today: Long
+    val yesterday: Long
+    private val startOfYear: Long
+
+    init {
+        val calendar =
+            GregorianCalendar(IcuTimeZone.getTimeZone(zone.id)).apply {
+                timeInMillis = nowMillis
+                // A local date begins at its first valid instant, even when midnight repeats or is
+                // skipped.
+                repeatedWallTimeOption = Calendar.WALLTIME_FIRST
+                skippedWallTimeOption = Calendar.WALLTIME_NEXT_VALID
+            }
+        val localDay = calendar.get(Calendar.JULIAN_DAY)
+        val firstDayOfYear = localDay - (calendar.get(Calendar.DAY_OF_YEAR) - 1)
+        today = calendar.startOfDayMillis(localDay)
+        yesterday = calendar.startOfDayMillis(localDay - 1)
+        startOfYear = calendar.startOfDayMillis(firstDayOfYear)
+        formatTime.timeZone = zone
+        formatDate.timeZone = zone
+        formatMonthDay.timeZone = zone
+    }
+
     fun group(time: Long): ArtifactDay =
         when {
             time >= today -> ArtifactDay.Today
@@ -587,32 +612,23 @@ internal fun rememberArtifactDates(): ArtifactDates {
     val todayLabel = stringResource(R.string.artifact_today)
     val yesterdayLabel = stringResource(R.string.artifact_yesterday)
     return remember(context, locale, calendarRevision, todayLabel, yesterdayLabel) {
-        val calendar = Calendar.getInstance()
-        val zone = calendar.timeZone
-        val today = (calendar.clone() as Calendar).startOfDayMillis()
-        val yesterday =
-            (calendar.clone() as Calendar).apply { add(Calendar.DATE, -1) }.startOfDayMillis()
-        val startOfYear = calendar.apply { set(Calendar.DAY_OF_YEAR, 1) }.startOfDayMillis()
         ArtifactDates(
-            today,
-            yesterday,
-            DateFormat.getTimeFormat(context).apply { timeZone = zone },
-            DateFormat.getMediumDateFormat(context).apply { timeZone = zone },
-            SimpleDateFormat(DateFormat.getBestDateTimePattern(locale, "MMMd"), locale).apply {
-                timeZone = zone
-            },
-            startOfYear,
-            todayLabel,
-            yesterdayLabel,
+            nowMillis = System.currentTimeMillis(),
+            zone = TimeZone.getDefault(),
+            formatTime = DateFormat.getTimeFormat(context),
+            formatDate = DateFormat.getMediumDateFormat(context),
+            formatMonthDay =
+                SimpleDateFormat(DateFormat.getBestDateTimePattern(locale, "MMMd"), locale),
+            todayLabel = todayLabel,
+            yesterdayLabel = yesterdayLabel,
         )
     }
 }
 
-private fun Calendar.startOfDayMillis(): Long {
-    set(Calendar.HOUR_OF_DAY, 0)
-    set(Calendar.MINUTE, 0)
-    set(Calendar.SECOND, 0)
-    set(Calendar.MILLISECOND, 0)
+private fun Calendar.startOfDayMillis(localDay: Int): Long {
+    clear()
+    set(Calendar.JULIAN_DAY, localDay)
+    set(Calendar.MILLISECONDS_IN_DAY, 0)
     return timeInMillis
 }
 
