@@ -121,7 +121,7 @@ class NativeInstructionsTest {
                         Until.findObject(
                             By.pkg(app.packageName).clazz("android.widget.EditText").apply {
                                 if (requireFocus) focused(true)
-                                if (expectedText != null) text(expectedText)
+                                if (expectedText != null) this.text(expectedText)
                             },
                         ),
                         10_000,
@@ -206,6 +206,15 @@ class NativeInstructionsTest {
             assertTrue(editor().text.contains("Native **instructions** 👋"))
             val localDraft = "Keep this local draft"
             editor().text = localDraft
+            refreshHeld.countDown()
+            assertTrue(
+                device.wait(
+                    object : Condition<UiDevice, Boolean> {
+                        override fun apply(unused: UiDevice) = !model.uiState.value.busy
+                    },
+                    10_000,
+                ) == true,
+            )
             val connection =
                 if (Build.VERSION.SDK_INT >= 29) {
                     editor().click()
@@ -213,15 +222,20 @@ class NativeInstructionsTest {
                     awaitIme(true)
                     activeInputConnection(instrumentation).also { input ->
                         instrumentation.runOnMainSync {
-                            assertTrue(input.setSelection(localDraft.length, localDraft.length))
-                            assertTrue(input.setComposingText("zhongwen", 1))
+                            input.beginBatchEdit()
+                            try {
+                                assertTrue(input.setComposingRegion(0, localDraft.length))
+                                assertTrue(input.setComposingText("zhongwen", 1))
+                            } finally {
+                                input.endBatchEdit()
+                            }
                         }
-                        editor(expectedText = "${localDraft}zhongwen")
+                        editor(expectedText = "zhongwen")
                     }
                 } else null
             val webText = "Changed on Web"
             fixture.externalEdit(webText)
-            refreshHeld.countDown()
+            scenario.onActivity { model.refresh() }
             assertTrue(
                 device.wait(
                     object : Condition<UiDevice, Boolean> {
@@ -234,12 +248,12 @@ class NativeInstructionsTest {
             if (connection == null) {
                 assertEquals(localDraft, editor().text)
             } else {
-                assertEquals("${localDraft}zhongwen", editor(requireFocus = true).text)
+                assertEquals("zhongwen", editor(requireFocus = true).text)
                 instrumentation.runOnMainSync {
                     assertTrue(connection.setComposingText("中文", 1))
                     assertTrue(connection.finishComposingText())
                 }
-                editor(expectedText = "${localDraft}中文", requireFocus = true)
+                editor(expectedText = "中文", requireFocus = true)
                 assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
                 awaitIme(false)
             }
