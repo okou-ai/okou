@@ -57,3 +57,13 @@ The source review refined the Auto routing and Runner BDDs to capture the actual
 | `feishu-user-deletion-002`                | The shared suite uses Lark-specific status while the display name remains Feishu User.                                                    |
 | `discord-gateway-identity-002`            | Signed event identity and stable message identity differ. The original thread projection is verified after rejection.                     |
 | `integration-model-recovery-telegram-001` | Thread Auto selection is distinct from global preference. The continued Runner input and 64-byte callback limit are preserved.            |
+
+| `connector-catalog-status-generation-001` | Catalog-only changes preserve the account timestamp and default ID. Reconnection keeps the account ID and supplies the added region. |
+| `builtin-mcp-discovery-002` | The selected non-default account is identified before deletion and discovery falls back to the remaining default. |
+| `chat-thread-connector-selection.ownership-001` | Current-selection returns 400 and an inaccessible override returns 404. Foreign thread protection and live account rename and deletion are retained. |
+| `chat-events-pi-failed-history-002` | Partial output retains the failed generation, and a completion replay preserves the result. |
+| `chat-indicators-realtime-001` | Message output uses the message topic, separate from the start and terminal indicator notifications. |
+| `image-io-responses-recovery-001` | The balance falls by seven after interruption and by nine total after recovery, with only one provider submission. |
+| `webhooks-stripe-credit-purchase-001` | Deduplication is by invoice across distinct signed webhook event IDs. The full post-purchase grant list is identical after replay. |
+| `project-run-context-001` | The queued Run uses the latest membership and both mention names while started Runs preserve their prompts. |
+| `remote-runtime-invalidation-001` | Thread overrides target one Run and defaults target both. SSH resolution and all four Run statuses are verified separately. |
