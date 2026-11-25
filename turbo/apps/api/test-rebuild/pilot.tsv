@@ -298,12 +298,12 @@ messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integ
 messaging	src/signals/routes/__tests__/integrations-github-files.test.ts	integrations-github-files-001	rewritten	41.4	
 messaging	src/signals/routes/__tests__/integrations-github-files.test.ts	integrations-github-files-003	rewritten	7.6	
 messaging	src/signals/routes/__tests__/integrations-github-files.test.ts	integrations-github-files-005	planned		
-messaging	src/signals/routes/__tests__/integrations-slack-status.test.ts	integrations-slack-status-001	planned		
-messaging	src/signals/routes/__tests__/integrations-slack-status.test.ts	integrations-slack-status-002	planned		
-messaging	src/signals/routes/__tests__/integrations-slack-status.test.ts	integrations-slack-status-004	planned		
-messaging	src/signals/routes/__tests__/integrations-slack-status.test.ts	integrations-slack-status-005	planned		
-messaging	src/signals/routes/__tests__/integrations-slack-status.test.ts	integrations-slack-status-008	planned		
-messaging	src/signals/routes/__tests__/integrations-slack-status.test.ts	integrations-slack-status-011	planned		
+messaging	src/signals/routes/__tests__/integrations-slack-status.test.ts	integrations-slack-status-001	rewritten	25.5	
+messaging	src/signals/routes/__tests__/integrations-slack-status.test.ts	integrations-slack-status-002	rewritten	185.3	
+messaging	src/signals/routes/__tests__/integrations-slack-status.test.ts	integrations-slack-status-004	rewritten	95.5	
+messaging	src/signals/routes/__tests__/integrations-slack-status.test.ts	integrations-slack-status-005	rewritten	18.3	
+messaging	src/signals/routes/__tests__/integrations-slack-status.test.ts	integrations-slack-status-008	rewritten	78.4	
+messaging	src/signals/routes/__tests__/integrations-slack-status.test.ts	integrations-slack-status-011	rewritten	111.6	
 messaging	src/signals/routes/__tests__/integrations-slack.test.ts	integrations-slack-001	planned		
 messaging	src/signals/routes/__tests__/integrations-slack.test.ts	integrations-slack-002	planned		
 messaging	src/signals/routes/__tests__/integrations-slack.test.ts	integrations-slack-003	planned		
