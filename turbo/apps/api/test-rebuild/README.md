@@ -347,3 +347,21 @@ Rates slightly above 50% come from rounding small files up. The only `more` file
 ### Upstream tests
 
 From the frozen baseline through `main` at `3acc628d7f`, upstream added, modified or deleted no files under `turbo/apps/api`. The separate upstream selection count is 0.
+
+### Spot check of unselected cases
+
+Ethan asked whether the unselected cases are mostly extreme. A seeded random sample, stratified by domain, took 396 of the 3,954 unselected cases (10%). Independent reviewers read each case's Given/When/Then alongside the selected cases in the same file. The coordinator then re-read every case they flagged as a miss. Each case has one primary category in `spot-check-not-selected.tsv`.
+
+| Category                                                               | Cases | Share |
+| ---------------------------------------------------------------------- | ----: | ----: |
+| Variant of a selected case in the same file, same user outcome         |   166 | 41.9% |
+| Extreme: precise race, clock boundary or contrived failure combination |    68 | 17.2% |
+| Hard for a user or caller to construct                                 |    50 | 12.6% |
+| Non-route configuration, library, adapter or fixture                   |    36 |  9.1% |
+| Internal implementation only                                           |    31 |  7.8% |
+| Negative assertion or tombstone without a unique consequence           |    27 |  6.8% |
+| Miss: user-reachable and not covered by any selected case              |    18 |  4.5% |
+
+Including variants that use contrived setups, 166 cases (41.9%) are extreme or hard to construct from the user's point of view. The unselected set is therefore mainly repeats plus extreme or hard-to-construct cases, not only extreme cases.
+
+The 18 confirmed misses are now selected. The selection is 3,517 of 7,453 cases (47.2%), with exceptions in 130 files: 18 `more` and 112 `fewer`. The sampled miss rate suggests about 180 similar gaps among the remaining unselected cases. A further pass could find them.

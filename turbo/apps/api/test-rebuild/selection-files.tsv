@@ -12,7 +12,7 @@ src/__tests__/test-database-url.test.ts	8	4	0	fewer	Test-infrastructure database
 src/__tests__/vercel-build.test.ts	2	1	1	none	
 src/__tests__/vercel-crons.test.ts	2	1	0	fewer	Static deployment cron configuration check
 src/__tests__/worker-lifecycle.test.ts	6	3	3	none	
-src/lib/__tests__/agent-notification-email-renderer.test.ts	8	4	4	none	
+src/lib/__tests__/agent-notification-email-renderer.test.ts	8	4	5	more	Spot check of unselected cases added agent-notification-email-renderer-001 (notification emails keep ordered-list numbering).
 src/lib/__tests__/api-backend-url.test.ts	3	2	0	fewer	Deployment URL configuration helper, no user-triggered scenario
 src/lib/__tests__/billing-redirect.test.ts	5	3	2	fewer	Remaining rows are preview-host variants of the same redirect allowlist rule
 src/lib/__tests__/db-instrumentation.test.ts	14	7	0	fewer	DB pool telemetry and test resource cleanup internals
@@ -60,17 +60,17 @@ src/signals/routes/__tests__/artifact-downloads.test.ts	9	5	5	none
 src/signals/routes/__tests__/artifact-library.test.ts	3	2	2	none	
 src/signals/routes/__tests__/artifact-paywall.test.ts	2	1	1	none	
 src/signals/routes/__tests__/artifact-shares.test.ts	59	30	30	none	
-src/signals/routes/__tests__/artifact-sharing.test.ts	6	3	3	none	
+src/signals/routes/__tests__/artifact-sharing.test.ts	6	3	4	more	Spot check of unselected cases added artifact-sharing-004 (file share search is limited to the owner workspace).
 src/signals/routes/__tests__/artifacts.bdd.test.ts	2	1	1	none	
 src/signals/routes/__tests__/atom-subscription-grants.test.ts	24	12	12	none	
-src/signals/routes/__tests__/auth-device.bdd.test.ts	22	11	11	none	
+src/signals/routes/__tests__/auth-device.bdd.test.ts	22	11	12	more	Spot check of unselected cases added auth-device.bdd-005 (a signed-in web user renews the realtime token).
 src/signals/routes/__tests__/auth-me.test.ts	4	2	2	none	
 src/signals/routes/__tests__/auth-org.bdd.test.ts	8	4	4	none	
 src/signals/routes/__tests__/auto-run-routing.test.ts	2	1	1	none	
 src/signals/routes/__tests__/automation-disabled-feed-events.test.ts	8	4	4	none	
 src/signals/routes/__tests__/auxiliary-generation.test.ts	11	6	6	none	
 src/signals/routes/__tests__/banking-webhook.test.ts	19	10	10	none	
-src/signals/routes/__tests__/banking.test.ts	15	8	8	none	
+src/signals/routes/__tests__/banking.test.ts	15	8	9	more	Spot check of unselected cases added banking-013 (the bank connect link carries the webhook and return addresses).
 src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	39	20	20	none	
 src/signals/routes/__tests__/billing-auto-recharge.test.ts	30	15	15	none	
 src/signals/routes/__tests__/billing-checkout-complete.test.ts	9	5	5	none	
@@ -89,7 +89,7 @@ src/signals/routes/__tests__/billing-portal.test.ts	14	7	7	none
 src/signals/routes/__tests__/billing-redeem-code.test.ts	18	9	9	none	
 src/signals/routes/__tests__/billing-redeem.test.ts	19	10	10	none	
 src/signals/routes/__tests__/billing-restore.test.ts	9	5	5	none	
-src/signals/routes/__tests__/billing-status.test.ts	27	14	14	none	
+src/signals/routes/__tests__/billing-status.test.ts	27	14	15	more	Spot check of unselected cases added billing-status-018 (a non-admin member can read billing status).
 src/signals/routes/__tests__/billing-stripe-metadata-binding.test.ts	9	5	5	none	
 src/signals/routes/__tests__/billing-usage-media.bdd.test.ts	6	3	3	none	
 src/signals/routes/__tests__/billing-usage-pack-checkout.test.ts	24	12	12	none	
@@ -179,7 +179,7 @@ src/signals/routes/__tests__/chat-thread-draft-store.test.ts	10	5	5	none
 src/signals/routes/__tests__/chat-thread-indicators.test.ts	5	3	3	none	
 src/signals/routes/__tests__/chat-thread-mark-all-read.test.ts	7	4	4	none	
 src/signals/routes/__tests__/chat-thread-pdf-filename.test.ts	4	2	2	none	
-src/signals/routes/__tests__/chat-thread-queue-pick.test.ts	10	5	5	none	
+src/signals/routes/__tests__/chat-thread-queue-pick.test.ts	10	5	6	more	Spot check of unselected cases added chat-thread-queue-pick-007 (a member prompt steers the Run while an automation event waits).
 src/signals/routes/__tests__/chat-thread-read-cursor.test.ts	6	3	3	none	
 src/signals/routes/__tests__/chat-thread-stored-selection.test.ts	1	1	1	none	
 src/signals/routes/__tests__/chat-threads-archive.test.ts	2	1	1	none	
@@ -210,7 +210,7 @@ src/signals/routes/__tests__/computer-use-content-get.test.ts	1	1	1	none
 src/signals/routes/__tests__/computer-use-host-directory.test.ts	3	2	2	none	
 src/signals/routes/__tests__/computer-use-host-presence.test.ts	12	6	6	none	
 src/signals/routes/__tests__/computer-use-host-session-concurrency.test.ts	4	2	2	none	
-src/signals/routes/__tests__/computer-use-host-start.test.ts	2	1	1	none	
+src/signals/routes/__tests__/computer-use-host-start.test.ts	2	1	2	more	Spot check of unselected cases added computer-use-host-start-002 (another user reusing an installation ID gets a separate host).
 src/signals/routes/__tests__/computer-use-result-notifications.test.ts	8	4	4	none	
 src/signals/routes/__tests__/computer-use-screenshot-completion.test.ts	2	1	1	none	
 src/signals/routes/__tests__/computer-use-session-hosts.test.ts	25	13	13	none	
@@ -244,7 +244,7 @@ src/signals/routes/__tests__/connector-grant-identity.test.ts	9	5	5	none
 src/signals/routes/__tests__/connector-invalidation.test.ts	1	1	0	fewer	Sole case is a client-aborted delete during provider revocation, an interleaving a user cannot deliberately construct
 src/signals/routes/__tests__/connector-oauth-completion.test.ts	6	3	3	none	
 src/signals/routes/__tests__/connector-permissions.expiration.test.ts	2	1	1	none	
-src/signals/routes/__tests__/connector-permissions.test.ts	5	3	3	none	
+src/signals/routes/__tests__/connector-permissions.test.ts	5	3	4	more	Spot check of unselected cases added connector-permissions-003 (connector rules survive account switches and stay editable).
 src/signals/routes/__tests__/connector-required-entries.test.ts	2	1	1	none	
 src/signals/routes/__tests__/connector-run-failure-isolation.test.ts	2	1	1	none	
 src/signals/routes/__tests__/connector-runtime-placeholders.test.ts	1	1	1	none	
@@ -261,7 +261,7 @@ src/signals/routes/__tests__/connectors-oauth-reconnect-start.test.ts	5	3	3	none
 src/signals/routes/__tests__/connectors-oauth-start.test.ts	91	46	46	none	
 src/signals/routes/__tests__/connectors-openid.bdd.test.ts	8	4	4	none	
 src/signals/routes/__tests__/connectors-search.test.ts	12	6	6	none	
-src/signals/routes/__tests__/connectors.bdd.test.ts	100	50	50	none	
+src/signals/routes/__tests__/connectors.bdd.test.ts	100	50	51	more	Spot check of unselected cases added connectors.bdd-049 (a temporarily unavailable custom MCP server returns a retryable error).
 src/signals/routes/__tests__/conversation-history-deletion.test.ts	2	1	1	none	
 src/signals/routes/__tests__/credit-low-balance-alert.test.ts	3	2	1	fewer	Remaining 2 differ only in membership-cache refresh shape (duplicate identity across directory pages, empty directory) observable only during a live membership-lookup outage
 src/signals/routes/__tests__/cron-compact-chat-thread-snapshots.test.ts	1	1	1	none	
@@ -271,7 +271,7 @@ src/signals/routes/__tests__/cron-connector-catalog.test.ts	12	6	6	none
 src/signals/routes/__tests__/cron-monitor-chat-event-queue.test.ts	1	1	0	fewer	Single cron-secret 401 check on an internal scheduler endpoint that no user or integration calls
 src/signals/routes/__tests__/cron-official-workflow-catalog.test.ts	8	4	4	none	
 src/signals/routes/__tests__/cron-process-background-jobs.test.ts	4	2	0	fewer	Remaining 4 are scheduler cron-secret 401 checks and marketing-rewards delivery-config/batch-bound operator checks with no user or integration caller
-src/signals/routes/__tests__/cron-project-chat-event-search.test.ts	6	3	3	none	
+src/signals/routes/__tests__/cron-project-chat-event-search.test.ts	6	3	4	more	Spot check of unselected cases added cron-project-chat-event-search-006 (chat search returns hits newest first).
 src/signals/routes/__tests__/cron-retain-chat-events.test.ts	1	1	0	fewer	Single cron-secret 401 check on an internal scheduler endpoint that no user or integration calls
 src/signals/routes/__tests__/cron-snapshot-chat-events.test.ts	4	2	2	none	
 src/signals/routes/__tests__/cron-sync-skills.test.ts	6	3	3	none	
@@ -329,7 +329,7 @@ src/signals/routes/__tests__/feature-guides.test.ts	18	9	9	none
 src/signals/routes/__tests__/feature-switches.test.ts	18	9	9	none	
 src/signals/routes/__tests__/feishu-branding-connection.test.ts	26	13	13	none	
 src/signals/routes/__tests__/feishu-browser-connect.test.ts	1	1	1	none	
-src/signals/routes/__tests__/feishu-conversation.test.ts	20	10	10	none	
+src/signals/routes/__tests__/feishu-conversation.test.ts	20	10	11	more	Spot check of unselected cases added feishu-conversation-018 (a Lark history failure still starts the mentioned Run).
 src/signals/routes/__tests__/feishu-files-history.test.ts	14	7	7	none	
 src/signals/routes/__tests__/feishu-installation.test.ts	20	10	8	fewer	Remaining 12 are concurrent-setup race interleavings (004-007, 014-017) and injected object-storage failure/R2-free repair internals (008-009, 018-019)
 src/signals/routes/__tests__/feishu-message-delivery.test.ts	16	8	8	none	
@@ -356,7 +356,7 @@ src/signals/routes/__tests__/hosted-site-scope.test.ts	2	1	1	none
 src/signals/routes/__tests__/hosted-site-sharing.test.ts	12	6	6	none	
 src/signals/routes/__tests__/hosted-site-url.test.ts	5	3	3	none	
 src/signals/routes/__tests__/hosted-upload-immutability.test.ts	4	2	2	none	
-src/signals/routes/__tests__/image-io-generate.test.ts	79	40	37	fewer	Remaining 42 are Fal failure-payload parsing variants (status-only codes, ambiguous/malformed details, duplicate-callback repeats of already-kept error codes), a concurrent last-slot race, and a provider-omitted billing-dimensions fault
+src/signals/routes/__tests__/image-io-generate.test.ts	79	40	38	fewer	Remaining 42 are Fal failure-payload parsing variants (status-only codes, ambiguous/malformed details, duplicate-callback repeats of already-kept error codes), a concurrent last-slot race, and a provider-omitted billing-dimensions fault Spot check of unselected cases added image-io-generate-048 (an unclassified provider failure shows the generic error without a charge).
 src/signals/routes/__tests__/image-io-responses-recovery.test.ts	1	1	1	none	
 src/signals/routes/__tests__/image-io-responses.test.ts	14	7	7	none	
 src/signals/routes/__tests__/image-io-run-lifetime.test.ts	2	1	1	none	
@@ -367,12 +367,12 @@ src/signals/routes/__tests__/integration-model-recovery-telegram.test.ts	1	1	1	n
 src/signals/routes/__tests__/integrations-discord-files.test.ts	31	16	16	none	
 src/signals/routes/__tests__/integrations-discord-native.test.ts	54	27	27	none	
 src/signals/routes/__tests__/integrations-discord.test.ts	38	19	19	none	
-src/signals/routes/__tests__/integrations-email.test.ts	77	39	39	none	
+src/signals/routes/__tests__/integrations-email.test.ts	77	39	40	more	Spot check of unselected cases added integrations-email-066 (a DMARC-failing sender cannot link an address).
 src/signals/routes/__tests__/integrations-feishu-message.test.ts	26	13	13	none	
 src/signals/routes/__tests__/integrations-github-files.test.ts	5	3	3	none	
 src/signals/routes/__tests__/integrations-github-status.test.ts	3	2	2	none	
 src/signals/routes/__tests__/integrations-slack-message.test.ts	29	15	15	none	
-src/signals/routes/__tests__/integrations-slack-read.test.ts	39	20	20	none	
+src/signals/routes/__tests__/integrations-slack-read.test.ts	39	20	21	more	Spot check of unselected cases added integrations-slack-read-007 (channel membership is found beyond the first Slack page).
 src/signals/routes/__tests__/integrations-slack-status.test.ts	12	6	6	none	
 src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	45	23	23	none	
 src/signals/routes/__tests__/integrations-slack-upload-init.test.ts	7	4	4	none	
@@ -428,7 +428,7 @@ src/signals/routes/__tests__/official-workflows.test.ts	11	6	6	none
 src/signals/routes/__tests__/onboarding-bootstrap.test.ts	7	4	4	none	
 src/signals/routes/__tests__/onboarding-recommendations.test.ts	3	2	2	none	
 src/signals/routes/__tests__/onboarding-sources.test.ts	2	1	1	none	
-src/signals/routes/__tests__/onboarding.test.ts	17	9	9	none	
+src/signals/routes/__tests__/onboarding.test.ts	17	9	10	more	Spot check of unselected cases added onboarding-012 (a failed onboarding completion can be retried).
 src/signals/routes/__tests__/ops-logs.bdd.test.ts	4	2	2	none	
 src/signals/routes/__tests__/org-cache.test.ts	10	5	5	none	
 src/signals/routes/__tests__/org-delete-billing.test.ts	22	11	11	none	
@@ -469,7 +469,7 @@ src/signals/routes/__tests__/run-lifecycle-chain.bdd.test.ts	25	13	13	none
 src/signals/routes/__tests__/run-lifecycle-chat-events.bdd.test.ts	8	4	4	none	
 src/signals/routes/__tests__/run-lifecycle-completion.bdd.test.ts	43	22	22	none	
 src/signals/routes/__tests__/run-lifecycle-connector-injection.bdd.test.ts	12	6	6	none	
-src/signals/routes/__tests__/run-lifecycle-custom-connectors.bdd.test.ts	34	17	17	none	
+src/signals/routes/__tests__/run-lifecycle-custom-connectors.bdd.test.ts	34	17	18	more	Spot check of unselected cases added run-lifecycle-custom-connectors.bdd-003 (built-in and custom connectors on the same host both reach the Run).
 src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts	20	10	10	none	
 src/signals/routes/__tests__/run-model-invalidation.test.ts	1	1	1	none	
 src/signals/routes/__tests__/run-models.test.ts	5	3	3	none	
@@ -564,7 +564,7 @@ src/signals/routes/__tests__/voice-google-auth-retry.test.ts	32	16	3	fewer	Remai
 src/signals/routes/__tests__/voice-google-auth.test.ts	30	15	4	fewer	Remaining 26 are server-side Google workload-identity config/env permutations, malformed STS/impersonation token fields, body-size bounds and credential-cache/clock-skew timing; success, 503 PROVIDER_UNAVAILABLE, 503 NOT_CONFIGURED and 502 denied-auth outcomes each kept once
 src/signals/routes/__tests__/voice-io-polish.test.ts	14	7	7	none	
 src/signals/routes/__tests__/voice-io-transcribe.test.ts	42	21	21	none	
-src/signals/routes/__tests__/wallet.test.ts	86	43	43	none	
+src/signals/routes/__tests__/wallet.test.ts	86	43	44	more	Spot check of unselected cases added wallet-072 (transactions stay readable after a token refresh).
 src/signals/routes/__tests__/web-file-url.test.ts	7	4	4	none	
 src/signals/routes/__tests__/webhooks-agent-firewall-auth-automatic.test.ts	15	8	8	none	
 src/signals/routes/__tests__/webhooks-agent-firewall-auth-aws.test.ts	8	4	4	none	
@@ -586,7 +586,7 @@ src/signals/routes/__tests__/webhooks-stripe-credit-purchase.test.ts	1	1	1	none
 src/signals/routes/__tests__/webhooks-stripe-worker.test.ts	2	1	1	none	
 src/signals/routes/__tests__/webhooks-workflow-automations.test.ts	4	2	2	none	
 src/signals/routes/__tests__/webhooks-x-resource-usage.test.ts	9	5	5	none	
-src/signals/routes/__tests__/welcome-chat-threads-automatic.test.ts	7	4	4	none	
+src/signals/routes/__tests__/welcome-chat-threads-automatic.test.ts	7	4	5	more	Spot check of unselected cases added welcome-chat-threads-automatic-003 (a user joining a second workspace gets its own welcome thread).
 src/signals/routes/__tests__/welcome-chat-threads.test.ts	18	9	9	none	
 src/signals/routes/__tests__/whatsapp.test.ts	48	24	24	none	
 src/signals/routes/__tests__/workflow-automations.test.ts	65	33	33	none	

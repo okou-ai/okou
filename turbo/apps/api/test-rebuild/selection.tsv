@@ -152,7 +152,7 @@ src/__tests__/worker-lifecycle.test.ts	worker-lifecycle-003	not-selected
 src/__tests__/worker-lifecycle.test.ts	worker-lifecycle-004	not-selected	
 src/__tests__/worker-lifecycle.test.ts	worker-lifecycle-005	not-selected	
 src/__tests__/worker-lifecycle.test.ts	worker-lifecycle-006	selected	core-path
-src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-001	not-selected	
+src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-001	selected	visible-result
 src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-002	not-selected	
 src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-003	selected	visible-result
 src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-004	selected	visible-result
@@ -867,7 +867,7 @@ src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-059	not-sel
 src/signals/routes/__tests__/artifact-sharing.test.ts	artifact-sharing-001	selected	core-path
 src/signals/routes/__tests__/artifact-sharing.test.ts	artifact-sharing-002	not-selected	
 src/signals/routes/__tests__/artifact-sharing.test.ts	artifact-sharing-003	selected	access-isolation
-src/signals/routes/__tests__/artifact-sharing.test.ts	artifact-sharing-004	not-selected	
+src/signals/routes/__tests__/artifact-sharing.test.ts	artifact-sharing-004	selected	access-isolation
 src/signals/routes/__tests__/artifact-sharing.test.ts	artifact-sharing-005	selected	business-rule
 src/signals/routes/__tests__/artifact-sharing.test.ts	artifact-sharing-006	not-selected	
 src/signals/routes/__tests__/artifacts.bdd.test.ts	artifacts.bdd-001	not-selected	
@@ -900,7 +900,7 @@ src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-001	selecte
 src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-002	selected	visible-result
 src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-003	not-selected	
 src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-004	not-selected	
-src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-005	not-selected	
+src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-005	selected	core-path
 src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-006	not-selected	
 src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-007	selected	access-isolation
 src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-008	not-selected	
@@ -982,7 +982,7 @@ src/signals/routes/__tests__/banking.test.ts	banking-009	not-selected
 src/signals/routes/__tests__/banking.test.ts	banking-010	selected	core-path
 src/signals/routes/__tests__/banking.test.ts	banking-011	not-selected	
 src/signals/routes/__tests__/banking.test.ts	banking-012	not-selected	
-src/signals/routes/__tests__/banking.test.ts	banking-013	not-selected	
+src/signals/routes/__tests__/banking.test.ts	banking-013	selected	core-path
 src/signals/routes/__tests__/banking.test.ts	banking-014	selected	access-isolation
 src/signals/routes/__tests__/banking.test.ts	banking-015	not-selected	
 src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-001	selected	business-rule
@@ -1287,7 +1287,7 @@ src/signals/routes/__tests__/billing-status.test.ts	billing-status-014	selected	
 src/signals/routes/__tests__/billing-status.test.ts	billing-status-015	not-selected	
 src/signals/routes/__tests__/billing-status.test.ts	billing-status-016	selected	visible-result
 src/signals/routes/__tests__/billing-status.test.ts	billing-status-017	selected	visible-result
-src/signals/routes/__tests__/billing-status.test.ts	billing-status-018	not-selected	
+src/signals/routes/__tests__/billing-status.test.ts	billing-status-018	selected	access-isolation
 src/signals/routes/__tests__/billing-status.test.ts	billing-status-019	selected	visible-result
 src/signals/routes/__tests__/billing-status.test.ts	billing-status-020	not-selected	
 src/signals/routes/__tests__/billing-status.test.ts	billing-status-021	selected	business-rule
@@ -2141,7 +2141,7 @@ src/signals/routes/__tests__/chat-thread-queue-pick.test.ts	chat-thread-queue-pi
 src/signals/routes/__tests__/chat-thread-queue-pick.test.ts	chat-thread-queue-pick-004	not-selected	
 src/signals/routes/__tests__/chat-thread-queue-pick.test.ts	chat-thread-queue-pick-005	selected	core-path
 src/signals/routes/__tests__/chat-thread-queue-pick.test.ts	chat-thread-queue-pick-006	not-selected	
-src/signals/routes/__tests__/chat-thread-queue-pick.test.ts	chat-thread-queue-pick-007	not-selected	
+src/signals/routes/__tests__/chat-thread-queue-pick.test.ts	chat-thread-queue-pick-007	selected	business-rule
 src/signals/routes/__tests__/chat-thread-queue-pick.test.ts	chat-thread-queue-pick-008	not-selected	
 src/signals/routes/__tests__/chat-thread-queue-pick.test.ts	chat-thread-queue-pick-009	selected	business-rule
 src/signals/routes/__tests__/chat-thread-queue-pick.test.ts	chat-thread-queue-pick-010	selected	visible-result
@@ -2491,7 +2491,7 @@ src/signals/routes/__tests__/computer-use-host-session-concurrency.test.ts	compu
 src/signals/routes/__tests__/computer-use-host-session-concurrency.test.ts	computer-use-host-session-concurrency-003	selected	visible-result
 src/signals/routes/__tests__/computer-use-host-session-concurrency.test.ts	computer-use-host-session-concurrency-004	not-selected	
 src/signals/routes/__tests__/computer-use-host-start.test.ts	computer-use-host-start-001	selected	core-path
-src/signals/routes/__tests__/computer-use-host-start.test.ts	computer-use-host-start-002	not-selected	
+src/signals/routes/__tests__/computer-use-host-start.test.ts	computer-use-host-start-002	selected	access-isolation
 src/signals/routes/__tests__/computer-use-result-notifications.test.ts	computer-use-result-notifications-001	selected	core-path
 src/signals/routes/__tests__/computer-use-result-notifications.test.ts	computer-use-result-notifications-002	not-selected	
 src/signals/routes/__tests__/computer-use-result-notifications.test.ts	computer-use-result-notifications-003	selected	visible-result
@@ -2720,7 +2720,7 @@ src/signals/routes/__tests__/connector-permissions.expiration.test.ts	connector-
 src/signals/routes/__tests__/connector-permissions.expiration.test.ts	connector-permissions.expiration-002	not-selected	
 src/signals/routes/__tests__/connector-permissions.test.ts	connector-permissions-001	not-selected	
 src/signals/routes/__tests__/connector-permissions.test.ts	connector-permissions-002	selected	core-path
-src/signals/routes/__tests__/connector-permissions.test.ts	connector-permissions-003	not-selected	
+src/signals/routes/__tests__/connector-permissions.test.ts	connector-permissions-003	selected	business-rule
 src/signals/routes/__tests__/connector-permissions.test.ts	connector-permissions-004	selected	access-isolation
 src/signals/routes/__tests__/connector-permissions.test.ts	connector-permissions-005	selected	access-isolation
 src/signals/routes/__tests__/connector-required-entries.test.ts	connector-required-entries-001	selected	core-path
@@ -3030,7 +3030,7 @@ src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-045	not-selec
 src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-046	not-selected	
 src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-047	not-selected	
 src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-048	not-selected	
-src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-049	not-selected	
+src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-049	selected	visible-result
 src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-050	not-selected	
 src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-051	not-selected	
 src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-052	not-selected	
@@ -3130,7 +3130,7 @@ src/signals/routes/__tests__/cron-project-chat-event-search.test.ts	cron-project
 src/signals/routes/__tests__/cron-project-chat-event-search.test.ts	cron-project-chat-event-search-003	selected	access-isolation
 src/signals/routes/__tests__/cron-project-chat-event-search.test.ts	cron-project-chat-event-search-004	not-selected	
 src/signals/routes/__tests__/cron-project-chat-event-search.test.ts	cron-project-chat-event-search-005	selected	visible-result
-src/signals/routes/__tests__/cron-project-chat-event-search.test.ts	cron-project-chat-event-search-006	not-selected	
+src/signals/routes/__tests__/cron-project-chat-event-search.test.ts	cron-project-chat-event-search-006	selected	visible-result
 src/signals/routes/__tests__/cron-retain-chat-events.test.ts	cron-retain-chat-events-001	not-selected	
 src/signals/routes/__tests__/cron-snapshot-chat-events.test.ts	cron-snapshot-chat-events-001	selected	visible-result
 src/signals/routes/__tests__/cron-snapshot-chat-events.test.ts	cron-snapshot-chat-events-002	not-selected	
@@ -3575,7 +3575,7 @@ src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-014
 src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-015	not-selected	
 src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-016	not-selected	
 src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-017	selected	core-path
-src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-018	not-selected	
+src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-018	selected	visible-result
 src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-019	not-selected	
 src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-020	not-selected	
 src/signals/routes/__tests__/feishu-files-history.test.ts	feishu-files-history-001	selected	core-path
@@ -3880,7 +3880,7 @@ src/signals/routes/__tests__/image-io-generate.test.ts	image-io-generate-044	not
 src/signals/routes/__tests__/image-io-generate.test.ts	image-io-generate-045	not-selected	
 src/signals/routes/__tests__/image-io-generate.test.ts	image-io-generate-046	not-selected	
 src/signals/routes/__tests__/image-io-generate.test.ts	image-io-generate-047	not-selected	
-src/signals/routes/__tests__/image-io-generate.test.ts	image-io-generate-048	not-selected	
+src/signals/routes/__tests__/image-io-generate.test.ts	image-io-generate-048	selected	visible-result
 src/signals/routes/__tests__/image-io-generate.test.ts	image-io-generate-049	not-selected	
 src/signals/routes/__tests__/image-io-generate.test.ts	image-io-generate-050	not-selected	
 src/signals/routes/__tests__/image-io-generate.test.ts	image-io-generate-051	not-selected	
@@ -4141,7 +4141,7 @@ src/signals/routes/__tests__/integrations-email.test.ts	integrations-email-062	s
 src/signals/routes/__tests__/integrations-email.test.ts	integrations-email-063	selected	business-rule
 src/signals/routes/__tests__/integrations-email.test.ts	integrations-email-064	selected	access-isolation
 src/signals/routes/__tests__/integrations-email.test.ts	integrations-email-065	selected	business-rule
-src/signals/routes/__tests__/integrations-email.test.ts	integrations-email-066	not-selected	
+src/signals/routes/__tests__/integrations-email.test.ts	integrations-email-066	selected	access-isolation
 src/signals/routes/__tests__/integrations-email.test.ts	integrations-email-067	not-selected	
 src/signals/routes/__tests__/integrations-email.test.ts	integrations-email-068	selected	visible-result
 src/signals/routes/__tests__/integrations-email.test.ts	integrations-email-069	selected	core-path
@@ -4222,7 +4222,7 @@ src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-
 src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-004	selected	core-path
 src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-005	selected	core-path
 src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-006	selected	visible-result
-src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-007	not-selected	
+src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-007	selected	access-isolation
 src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-008	selected	access-isolation
 src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-009	selected	visible-result
 src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-010	selected	visible-result
@@ -5105,7 +5105,7 @@ src/signals/routes/__tests__/onboarding.test.ts	onboarding-008	selected	business
 src/signals/routes/__tests__/onboarding.test.ts	onboarding-009	selected	core-path
 src/signals/routes/__tests__/onboarding.test.ts	onboarding-010	not-selected	
 src/signals/routes/__tests__/onboarding.test.ts	onboarding-011	selected	business-rule
-src/signals/routes/__tests__/onboarding.test.ts	onboarding-012	not-selected	
+src/signals/routes/__tests__/onboarding.test.ts	onboarding-012	selected	visible-result
 src/signals/routes/__tests__/onboarding.test.ts	onboarding-013	selected	business-rule
 src/signals/routes/__tests__/onboarding.test.ts	onboarding-014	not-selected	
 src/signals/routes/__tests__/onboarding.test.ts	onboarding-015	not-selected	
@@ -5496,7 +5496,7 @@ src/signals/routes/__tests__/run-lifecycle-connector-injection.bdd.test.ts	run-l
 src/signals/routes/__tests__/run-lifecycle-connector-injection.bdd.test.ts	run-lifecycle-connector-injection.bdd-012	selected	business-rule
 src/signals/routes/__tests__/run-lifecycle-custom-connectors.bdd.test.ts	run-lifecycle-custom-connectors.bdd-001	selected	core-path
 src/signals/routes/__tests__/run-lifecycle-custom-connectors.bdd.test.ts	run-lifecycle-custom-connectors.bdd-002	not-selected	
-src/signals/routes/__tests__/run-lifecycle-custom-connectors.bdd.test.ts	run-lifecycle-custom-connectors.bdd-003	not-selected	
+src/signals/routes/__tests__/run-lifecycle-custom-connectors.bdd.test.ts	run-lifecycle-custom-connectors.bdd-003	selected	business-rule
 src/signals/routes/__tests__/run-lifecycle-custom-connectors.bdd.test.ts	run-lifecycle-custom-connectors.bdd-004	not-selected	
 src/signals/routes/__tests__/run-lifecycle-custom-connectors.bdd.test.ts	run-lifecycle-custom-connectors.bdd-005	selected	core-path
 src/signals/routes/__tests__/run-lifecycle-custom-connectors.bdd.test.ts	run-lifecycle-custom-connectors.bdd-006	selected	core-path
@@ -6808,7 +6808,7 @@ src/signals/routes/__tests__/wallet.test.ts	wallet-068	selected	business-rule
 src/signals/routes/__tests__/wallet.test.ts	wallet-069	selected	visible-result
 src/signals/routes/__tests__/wallet.test.ts	wallet-070	selected	visible-result
 src/signals/routes/__tests__/wallet.test.ts	wallet-071	not-selected	
-src/signals/routes/__tests__/wallet.test.ts	wallet-072	not-selected	
+src/signals/routes/__tests__/wallet.test.ts	wallet-072	selected	core-path
 src/signals/routes/__tests__/wallet.test.ts	wallet-073	selected	business-rule
 src/signals/routes/__tests__/wallet.test.ts	wallet-074	selected	visible-result
 src/signals/routes/__tests__/wallet.test.ts	wallet-075	selected	core-path
@@ -7207,7 +7207,7 @@ src/signals/routes/__tests__/webhooks-x-resource-usage.test.ts	webhooks-x-resour
 src/signals/routes/__tests__/webhooks-x-resource-usage.test.ts	webhooks-x-resource-usage-009	not-selected	
 src/signals/routes/__tests__/welcome-chat-threads-automatic.test.ts	welcome-chat-threads-automatic-001	selected	core-path
 src/signals/routes/__tests__/welcome-chat-threads-automatic.test.ts	welcome-chat-threads-automatic-002	not-selected	
-src/signals/routes/__tests__/welcome-chat-threads-automatic.test.ts	welcome-chat-threads-automatic-003	not-selected	
+src/signals/routes/__tests__/welcome-chat-threads-automatic.test.ts	welcome-chat-threads-automatic-003	selected	business-rule
 src/signals/routes/__tests__/welcome-chat-threads-automatic.test.ts	welcome-chat-threads-automatic-004	selected	core-path
 src/signals/routes/__tests__/welcome-chat-threads-automatic.test.ts	welcome-chat-threads-automatic-005	not-selected	
 src/signals/routes/__tests__/welcome-chat-threads-automatic.test.ts	welcome-chat-threads-automatic-006	selected	business-rule
