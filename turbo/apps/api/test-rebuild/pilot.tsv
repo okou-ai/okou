@@ -494,18 +494,18 @@ artifacts	src/signals/routes/__tests__/host-delete.bdd.test.ts	host-delete.bdd-0
 artifacts	src/signals/routes/__tests__/artifact-library.test.ts	artifact-library-001	planned		extension after sandbox reset
 artifacts	src/signals/routes/__tests__/artifact-library.test.ts	artifact-library-002	planned		extension after sandbox reset
 artifacts	src/signals/routes/__tests__/user-template-publish.test.ts	user-template-publish-001	planned		extension after sandbox reset
-artifacts	src/signals/routes/__tests__/user-template-publish.test.ts	user-template-publish-002	planned		extension after sandbox reset
-artifacts	src/signals/routes/__tests__/user-template-publish.test.ts	user-template-publish-003	planned		extension after sandbox reset
-artifacts	src/signals/routes/__tests__/user-template-publish.test.ts	user-template-publish-004	planned		extension after sandbox reset
-artifacts	src/signals/routes/__tests__/user-template-publish.test.ts	user-template-publish-007	planned		extension after sandbox reset
-artifacts	src/signals/routes/__tests__/user-template-publish.test.ts	user-template-publish-008	planned		extension after sandbox reset
-artifacts	src/signals/routes/__tests__/user-template-publish.test.ts	user-template-publish-012	planned		extension after sandbox reset
-artifacts	src/signals/routes/__tests__/user-template-publish.test.ts	user-template-publish-016	planned		extension after sandbox reset
-artifacts	src/signals/routes/__tests__/user-template-publish.test.ts	user-template-publish-018	planned		extension after sandbox reset
-artifacts	src/signals/routes/__tests__/user-template-publish.test.ts	user-template-publish-022	planned		extension after sandbox reset
-artifacts	src/signals/routes/__tests__/user-template-publish.test.ts	user-template-publish-023	planned		extension after sandbox reset
-artifacts	src/signals/routes/__tests__/user-template-publish.test.ts	user-template-publish-024	planned		extension after sandbox reset
-artifacts	src/signals/routes/__tests__/user-template-publish.test.ts	user-template-publish-025	planned		extension after sandbox reset
+artifacts	src/signals/routes/__tests__/user-template-publish.test.ts	user-template-publish-002	rewritten	120.9	extension after sandbox reset
+artifacts	src/signals/routes/__tests__/user-template-publish.test.ts	user-template-publish-003	rewritten	142.8	extension after sandbox reset
+artifacts	src/signals/routes/__tests__/user-template-publish.test.ts	user-template-publish-004	rewritten	104.4	extension after sandbox reset
+artifacts	src/signals/routes/__tests__/user-template-publish.test.ts	user-template-publish-007	rewritten	190.9	extension after sandbox reset
+artifacts	src/signals/routes/__tests__/user-template-publish.test.ts	user-template-publish-008	rewritten	82.9	extension after sandbox reset
+artifacts	src/signals/routes/__tests__/user-template-publish.test.ts	user-template-publish-012	rewritten	105.4	extension after sandbox reset
+artifacts	src/signals/routes/__tests__/user-template-publish.test.ts	user-template-publish-016	rewritten	109.5	extension after sandbox reset
+artifacts	src/signals/routes/__tests__/user-template-publish.test.ts	user-template-publish-018	skipped		slow-setup: needs a Pro member with a Runner group to dispatch two chat Runs (inspect execution input, cancel) before and after the package swap; dispatched chat Run setup costs 240-790 ms per test
+artifacts	src/signals/routes/__tests__/user-template-publish.test.ts	user-template-publish-022	rewritten	79.2	extension after sandbox reset
+artifacts	src/signals/routes/__tests__/user-template-publish.test.ts	user-template-publish-023	rewritten	88.7	extension after sandbox reset
+artifacts	src/signals/routes/__tests__/user-template-publish.test.ts	user-template-publish-024	rewritten	111.3	extension after sandbox reset
+artifacts	src/signals/routes/__tests__/user-template-publish.test.ts	user-template-publish-025	rewritten	95.2	extension after sandbox reset
 billing	src/signals/routes/__tests__/billing-auto-recharge.test.ts	billing-auto-recharge-004	rewritten	117.7	extension after sandbox reset
 billing	src/signals/routes/__tests__/billing-auto-recharge.test.ts	billing-auto-recharge-007	rewritten	117.2	extension after sandbox reset
 billing	src/signals/routes/__tests__/billing-auto-recharge.test.ts	billing-auto-recharge-008	rewritten	171.6	extension after sandbox reset
