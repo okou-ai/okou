@@ -393,9 +393,10 @@ private struct WorkspaceRootView: View {
       UIApplication.shared.sendAction(
         #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
-    .onChange(of: store.selectedThreadID) { _, id in
-      if id == nil { taglineIndex = Int.random(in: 0..<64) }
-    }
+    .modifier(
+      WorkspaceSelectionChange(store: store) { id in
+        if id == nil { taglineIndex = Int.random(in: 0..<64) }
+      })
   }
 
   private var greetingText: String {
@@ -456,6 +457,22 @@ private struct WorkspaceWidgetPublisher: View {
     Color.clear
       .frame(width: 0, height: 0)
       .task(id: snapshot) { [snapshot] in OkouWidgetPublishing.publish(snapshot) }
+  }
+}
+
+/// Reacts to a change of the selected chat, which it reads from the workspace session's graph,
+/// so it applies under the workspace's Store provider.
+private struct WorkspaceSelectionChange: ViewModifier {
+  let action: (String?) -> Void
+  @ResolvedValue private var selection: String??
+
+  init(store: WorkspaceStore, action: @escaping (String?) -> Void) {
+    self.action = action
+    _selection = ResolvedValue(store.selectedThreadValue)
+  }
+
+  func body(content: Content) -> some View {
+    content.onChange(of: selection ?? nil) { _, id in action(id) }
   }
 }
 
