@@ -1,3 +1,4 @@
+import CCState
 import ChatData
 import ChatDomain
 import Observation
@@ -51,7 +52,12 @@ final class ComposerEditor {
     return true
   }
 
-  let workflows = ComposerWorkflowSuggestions()
+  let workflows: ComposerWorkflowSuggestions
+
+  /// The slash suggestions keep their candidate request in the composer's Store.
+  init(graph: CCState.Store) {
+    workflows = ComposerWorkflowSuggestions(graph: graph)
+  }
   struct Input {
     weak var view: ComposerTextView?
     let blockID: UUID?

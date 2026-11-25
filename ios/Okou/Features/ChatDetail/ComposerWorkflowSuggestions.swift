@@ -1,3 +1,4 @@
+import CCState
 import ChatData
 import Observation
 import UIKit
@@ -7,7 +8,7 @@ import UIKit
 final class ComposerWorkflowSuggestions {
   private(set) var query: String?
   private(set) var selectedIndex = -1
-  @ObservationIgnored let resources = ComposerWorkflowResources()
+  @ObservationIgnored let resources: ComposerWorkflowResources
   private var source: ComposerWorkflowSource?
   @ObservationIgnored private weak var view: ComposerTextView?
   @ObservationIgnored private var range: NSRange?
@@ -18,6 +19,10 @@ final class ComposerWorkflowSuggestions {
   }
   @ObservationIgnored private var isCurrent: @MainActor () -> Bool = { false }
   @ObservationIgnored private var focusRequested: @MainActor () -> Void = {}
+
+  init(graph: CCState.Store) {
+    resources = ComposerWorkflowResources(graph: graph)
+  }
 
   var matches: [ComposerWorkflow] {
     guard query != nil, source?.isClosed == false, isCurrent(),

@@ -225,7 +225,7 @@ final class ConversationFailureRecovery {
     }
     let context = FailureRecoveryResources(
       failure: failure, subscriptions: conversation.modelSelection?.models.subscriptions.resources,
-      commands: commands, didFail: { [weak self] in self?.report($0) })
+      graph: store, commands: commands, didFail: { [weak self] in self?.report($0) })
     update { $0.context = context }
     do { try context.start() } catch is CancellationError {} catch { report(error) }
   }
