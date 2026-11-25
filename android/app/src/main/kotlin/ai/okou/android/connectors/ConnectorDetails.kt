@@ -7,8 +7,8 @@ import ai.okou.android.OkouSwitch
 import ai.okou.android.R
 import ai.okou.android.SettingsModal
 import ai.okou.android.chat.ChatSkeletonBlock
-import ai.okou.android.chat.rememberChatWaitIndicator
 import ai.okou.android.isShortSettingsPanelWindow
+import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.settingsPanelContentPadding
 import ai.okou.android.updates.updateFocusOutline
 import androidx.compose.animation.animateContentSize
@@ -341,7 +341,7 @@ internal fun ConnectorDetails(
                 if (panel == null) ConnectorActionFeedback(action)
             } else if (state.offline) {
                 ConnectorLoadWhenOnline()
-            } else if (rememberChatWaitIndicator(waiting = true, delayMillis = 250)) {
+            } else if (rememberContentReadSkeleton()) {
                 val label = stringResource(R.string.connector_loading)
                 Column(
                     Modifier.fillMaxWidth().semantics { contentDescription = label },

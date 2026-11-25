@@ -9,6 +9,7 @@ import ai.okou.android.api.generated.CanonicalOptional
 import ai.okou.android.api.generated.RecoveryBillingCreditBreakdownItemCategory
 import ai.okou.android.api.generated.RecoverySubscriptionsSubscriptionsItem
 import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.state.SettingsDestination
 import android.icu.util.Calendar
 import android.widget.Toast
@@ -38,10 +39,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -70,7 +68,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.time.Instant
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import okhttp3.HttpUrl.Companion.toHttpUrl
 
@@ -207,11 +204,7 @@ private fun SettingsPageIntro(workspace: String, @StringRes scope: Int, @StringR
 
 @Composable
 internal fun SettingsPlaceholder(loadingLabel: String? = null) {
-    var visible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        delay(250)
-        visible = true
-    }
+    val visible = rememberContentReadSkeleton()
     val semantics =
         if (visible && loadingLabel != null)
             Modifier.semantics { contentDescription = loadingLabel }

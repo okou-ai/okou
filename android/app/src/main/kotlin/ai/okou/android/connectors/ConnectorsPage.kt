@@ -4,7 +4,7 @@ import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
 import ai.okou.android.WorkspaceMenu
 import ai.okou.android.WorkspaceMenuItem
-import ai.okou.android.chat.rememberChatWaitIndicator
+import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.state.ConnectorDirectoryState
 import ai.okou.android.state.rememberConnectorDirectory
 import ai.okou.android.updates.updateFocusOutline
@@ -766,7 +766,7 @@ internal fun ConnectorChevron() {
 
 @Composable
 internal fun ConnectorSkeleton(label: String, rows: Int) {
-    if (!rememberChatWaitIndicator(waiting = true, delayMillis = 250)) return
+    if (!rememberContentReadSkeleton()) return
     Column(Modifier.fillMaxWidth().semantics { contentDescription = label }) {
         repeat(rows) {
             Row(
