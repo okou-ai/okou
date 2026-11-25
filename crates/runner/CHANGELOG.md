@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.251.9](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.8...runner-rs-v0.251.9) (2026-11-25)
+
+
+### Refactoring
+
+* **runner:** share model usage identity field bounds ([#50886](https://github.com/okou-ai/okou/issues/50886)) ([e335468](https://github.com/okou-ai/okou/commit/e335468a5ae0e5632bccd0b48a0e8bd09263b46b))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.251.8](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.7...runner-rs-v0.251.8) (2026-11-25)
 
 ### Release Dependencies

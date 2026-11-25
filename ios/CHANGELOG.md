@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.66.4](https://github.com/okou-ai/okou/compare/ios-v0.66.3...ios-v0.66.4) (2026-11-25)
+
+
+### Bug Fixes
+
+* **ios:** stack filename and size in composer attachment chips ([#50903](https://github.com/okou-ai/okou/issues/50903)) ([eb3e75a](https://github.com/okou-ai/okou/commit/eb3e75a5d174504f462d93ca430ffb1e4dc2366c))
+
 ## [0.66.3](https://github.com/okou-ai/okou/compare/ios-v0.66.2...ios-v0.66.3) (2026-11-25)
 
 
