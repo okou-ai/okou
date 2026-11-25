@@ -12,11 +12,9 @@ private typealias FixtureData = ConnectorHTTPFixtures
 private final class ProviderApplication: ConnectorProviderApplication {
   let opens: Bool
   var openedURL: URL?
-  var requiresUniversalLink = false
   init(opens: Bool) { self.opens = opens }
-  func open(_ url: URL, universalLinksOnly: Bool) async -> Bool {
+  func open(_ url: URL) async -> Bool {
     openedURL = url
-    requiresUniversalLink = universalLinksOnly
     return opens
   }
 }
@@ -82,53 +80,11 @@ private final class ProviderAuthorizationFixture: Sendable {
 
 @MainActor
 final class ConnectorProviderAuthorizationTests: XCTestCase {
-  func testGoogleConnectorsTryTheExactUniversalLinkAndConfirmTheirBackendAccount() async throws {
-    for slug in [
-      "gmail", "google-ads", "google-analytics", "google-calendar", "google-cloud",
-      "google-contacts", "google-docs", "google-drive", "google-forms", "google-maps",
-      "google-meet", "google-play", "google-search-console", "google-sheets", "youtube"
-    ] {
-      let initial = expectation(description: "\(slug) app authorization polling")
-      let returned = expectation(description: "\(slug) return confirmation polling")
-      let schedules = Mutex(0)
-      let clock = ConnectorPollingClock(didSchedule: { _ in
-        let count = schedules.withLock { value in
-          value += 1
-          return value
-        }
-        (count == 1 ? initial : returned).fulfill()
-      })
-      let provider = ProviderApplication(opens: true)
-      let responses = ProviderAuthorizationFixture(slug: slug)
-      let fixture = ChatHTTPFixture { try responses.response($0) }
-      let continued = Mutex(false)
-      let store = ConnectorActionStore(
-        service: ChatConnectorService(client: fixture.client),
-        didContinue: { continued.withLock { $0 = true } }, didFail: { _ in },
-        providerApplication: provider, pollSleep: clock.sleep)
-      defer { store.close() }
-      store.activate(.configuration(target: .builtin(slug), threadID: nil))
-      await fulfillment(of: [initial], timeout: 3)
-      XCTAssertTrue(provider.requiresUniversalLink)
-      XCTAssertEqual(provider.openedURL?.absoluteString, responses.authorizationURL)
-      XCTAssertNil(store.active?.browserURL)
-      XCTAssertFalse(continued.withLock { $0 })
-      store.providerSceneActive(false)
-      responses.completed.withLock { $0 = true }
-      store.receiveProviderReturn(try XCTUnwrap(store.active?.session?.nativeCallbackUrl))
-      await fulfillment(of: [returned], timeout: 3)
-      clock.advance(.seconds(2))
-      try await waitForBusinessResult { store.active == nil }
-      XCTAssertTrue(continued.withLock { $0 })
-      XCTAssertEqual(responses.starts.withLock { $0 }, 1)
-    }
-  }
-
-  func testGoogleUniversalLinkFailureCompletesTheSameGrantInTheSystemBrowser() async throws {
+  func testGoogleSystemBrowserAuthorizationConfirmsTheExactBackendAccount() async throws {
     let scheduled = expectation(description: "Google browser authorization polling")
     let clock = ConnectorPollingClock(didSchedule: { _ in scheduled.fulfill() })
-    let provider = ProviderApplication(opens: false)
-    let responses = ProviderAuthorizationFixture(slug: "google-docs")
+    let provider = ProviderApplication(opens: true)
+    let responses = ProviderAuthorizationFixture(slug: "gmail")
     let fixture = ChatHTTPFixture { try responses.response($0) }
     let continued = Mutex(false)
     let store = ConnectorActionStore(
@@ -136,13 +92,11 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
       didContinue: { continued.withLock { $0 = true } }, didFail: { _ in },
       providerApplication: provider, pollSleep: clock.sleep)
     defer { store.close() }
-    store.activate(.configuration(target: .builtin("google-docs"), threadID: nil))
+    store.activate(.configuration(target: .builtin("gmail"), threadID: nil))
     await fulfillment(of: [scheduled], timeout: 3)
     let flow = try XCTUnwrap(store.active)
     let browser = try XCTUnwrap(flow.browserURL)
-    XCTAssertTrue(provider.requiresUniversalLink)
     XCTAssertTrue(flow.usesSystemAuthenticationSession)
-    XCTAssertEqual(browser, provider.openedURL)
     XCTAssertEqual(browser.absoluteString, responses.authorizationURL)
     responses.completed.withLock { $0 = true }
     store.authenticationFinished(
@@ -153,8 +107,8 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
     XCTAssertEqual(responses.starts.withLock { $0 }, 1)
   }
 
-  func testGoogleAppDenialDoesNotStartAnotherBrowserAuthorization() async throws {
-    let scheduled = expectation(description: "Google app authorization polling")
+  func testGoogleBrowserCancellationChecksThePendingAttemptBeforeRetry() async throws {
+    let scheduled = expectation(description: "Google browser authorization polling")
     let clock = ConnectorPollingClock(didSchedule: { _ in scheduled.fulfill() })
     let responses = ProviderAuthorizationFixture(slug: "gmail")
     let fixture = ChatHTTPFixture { try responses.response($0) }
@@ -167,7 +121,8 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
     store.activate(action)
     await fulfillment(of: [scheduled], timeout: 3)
     let flow = try XCTUnwrap(store.active)
-    store.receiveProviderReturn(try XCTUnwrap(flow.session?.nativeCallbackUrl))
+    store.authenticationFinished(
+      flow: flow, url: try XCTUnwrap(flow.browserURL), error: CancellationError())
     clock.advance(.seconds(2))
     try await waitForBusinessResult { store.active == nil }
     XCTAssertNil(flow.browserURL)
@@ -201,7 +156,6 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
     await fulfillment(of: [initial], timeout: 3)
     XCTAssertNil(store.active?.browserURL)
     let launched = try XCTUnwrap(provider.openedURL)
-    XCTAssertFalse(provider.requiresUniversalLink)
     XCTAssertEqual(launched.scheme, "strava")
     XCTAssertEqual(launched.host, "oauth")
     XCTAssertEqual(launched.path, "/mobile/authorize")
