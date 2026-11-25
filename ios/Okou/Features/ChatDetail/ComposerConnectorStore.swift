@@ -289,6 +289,7 @@ final class ComposerConnectorStore {
       ?? ChatComputerAccess(
         cloudBrowserEnabled: snapshot.remotes?.cloudBrowserEnabledByDefault ?? false)
   }
+  var visibleComputerUseHosts: [ChatComputerHost] { visibleComputerUseHosts(in: snapshot) }
   func visibleComputerUseHosts(in snapshot: Snapshot) -> [ChatComputerHost] {
     let selectedID = computerAccess(in: snapshot).computerUseHostId
     return (snapshot.remotes?.computerUseHosts ?? []).filter {
