@@ -89,6 +89,12 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.TimeZone
 
+private data class ArtifactCatalogListState(
+    val page: ArtifactPage?,
+    val failure: ArtifactCatalogFailure?,
+    val reading: ArtifactCatalogRead?,
+)
+
 @Composable
 internal fun ArtifactCatalogList(
     model: ArtifactCatalogModel,
@@ -105,22 +111,21 @@ internal fun ArtifactCatalogList(
     modifier: Modifier = Modifier,
 ) {
     val filter = query.filter
-    val displayed =
+    val current = state.takeIf { it.query == query }
+    val listState = ArtifactCatalogListState(current?.page, current?.failedRead, current?.reading)
+    val (page, failure, reading) =
         when (state.failedRead) {
             ArtifactCatalogFailure.Denied,
             ArtifactCatalogFailure.Missing,
-            ArtifactCatalogFailure.ChatUnavailable -> state
+            ArtifactCatalogFailure.ChatUnavailable -> listState
             else ->
                 key(input, query) {
                     retainSearchResultsWhileComposing(
-                        state,
+                        listState,
                         hasPendingSearchText(input.text, input.composition, query.keyword),
                     )
                 }
         }
-    val page = displayed.page.takeIf { displayed.query == query }
-    val failure = displayed.failedRead.takeIf { displayed.query == query }
-    val reading = displayed.reading.takeIf { displayed.query == query }
     val localDates = rememberArtifactDates()
     val groups =
         remember(page, query, localDates.today, localDates.yesterday) {
