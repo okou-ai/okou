@@ -15,7 +15,7 @@ struct ComposerConnectorDetail: View {
     guard let flow = store.authorization.active,
       flow.status.target == .builtin(connector.slug)
     else { return false }
-    return flow.busy
+    return flow.busy || flow.waiting || flow.checking
   }
 
   var body: some View {
@@ -99,7 +99,7 @@ struct ComposerConnectorDetail: View {
           }
         }
         .buttonStyle(OkouButtonStyle(isPrimary: !added, isCompact: true))
-        .disabled(isAuthorizing)
+        .disabled(store.authorization.active != nil)
         .accessibilityValue(isAuthorizing ? Text("Connecting…") : Text(""))
         .accessibilityIdentifier("connector-connect")
         if connector.permissionSummary.hasPermissions
