@@ -247,12 +247,6 @@ function billingAndMessagingEnvSchema() {
     MICROSOFT_TEAMS_BOT_APP_PASSWORD: string().min(1).optional(),
     MICROSOFT_TEAMS_APP_TENANT_ID: string().min(1).optional(),
     CONCURRENT_RUN_LIMIT_CAP: coerce.number().int().min(0).optional(),
-    CHAT_INDICATOR_ACTIVE_LIMIT: coerce
-      .number()
-      .int()
-      .min(1)
-      .max(50)
-      .default(50),
     // Independent DB-coordinated API inference protection. These limits are
     // technical safeguards, not customer quota or Sandbox capacity.
     PI_INFERENCE_ORG_MAX_IN_FLIGHT: coerce.number().int().positive().default(8),

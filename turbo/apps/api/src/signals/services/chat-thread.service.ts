@@ -73,7 +73,6 @@ import {
 } from "../../lib/db-raw-rows";
 import { chatThreadInitializationCtes } from "./chat-thread-initialization-plan";
 import { now, nowDate, nowDateSql } from "../../lib/time";
-import { env } from "../../lib/env";
 import { safeSqlStateCode } from "../../lib/pg-errors";
 import { inferMimetype } from "./chat-event-shared.service";
 import { chatThreadOrganizationPredicate } from "./chat-thread-organization.service";
@@ -346,6 +345,7 @@ type IndicatorScope = {
   readonly userId: string;
   readonly orgId: string;
   readonly includeActiveUnread: boolean;
+  readonly activeLimit: number;
 };
 type IndicatorThreadRow = {
   readonly threadId: string;
@@ -385,7 +385,7 @@ function createIndicatorRows(args: IndicatorScope) {
         )
         .groupBy(chatThreads.id)
         .orderBy(desc(max(agentRuns.createdAt)))
-        .limit(env("CHAT_INDICATOR_ACTIVE_LIMIT"));
+        .limit(args.activeLimit);
     },
   );
   const unreadRows$ = computed(

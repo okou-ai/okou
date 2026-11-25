@@ -11,10 +11,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { chatThreadRoutes } from "../chat-threads";
+import { chatThreadRoutes, createChatIndicatorsRoute } from "../chat-threads";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -338,7 +338,10 @@ describe("GET /api/indicators", () => {
 
   it("keeps the most recent active threads independent of unread state", async () => {
     await prepareChatRuntime();
-    mockEnv("CHAT_INDICATOR_ACTIVE_LIMIT", "2");
+    const indicatorsClient = setupApp({
+      context,
+      routes: [createChatIndicatorsRoute(2)],
+    })(chatThreadsContract);
     const actor = bdd.user();
     await prepareEntitledMember(actor);
 
@@ -370,7 +373,10 @@ describe("GET /api/indicators", () => {
     const headers = {
       authorization: `Bearer ${indicatorCredentials.token(actor)}`,
     };
-    const indicators = await accept(client().indicators({ headers }), [200]);
+    const indicators = await accept(
+      indicatorsClient.indicators({ headers }),
+      [200],
+    );
     expect(indicators.body).toStrictEqual({
       threads: recent,
       unreadAt: {},
@@ -378,7 +384,7 @@ describe("GET /api/indicators", () => {
 
     const readIndependentIndicators = async () => {
       const response = await accept(
-        client().indicators({
+        indicatorsClient.indicators({
           headers,
           query: { includeActiveUnread: "true" },
         }),
