@@ -1167,11 +1167,15 @@ export const startComputerUseHost$ = command(
           remoteDeviceId: computerUseHosts.remoteDeviceId,
           orgId: computerUseHosts.orgId,
           userId: computerUseHosts.userId,
-          displayName: computerUseHosts.displayName,
           connectionGeneration: computerUseHosts.connectionGeneration,
         }),
     );
-    const device = publishRemoteChannelDevice(db, paired, candidateId);
+    const device = publishRemoteChannelDevice(
+      db,
+      paired,
+      displayName,
+      candidateId,
+    );
     const [host] = await db
       .with(paired, device)
       .select({

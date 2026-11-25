@@ -547,7 +547,11 @@ const commitSshConnectionCreationAttempt$ = command(
         )
         .returning({ ...connectionSelection }),
     );
-    const device = publishRemoteChannelDevice(db, written);
+    const device = publishRemoteChannelDevice(
+      db,
+      written,
+      args.body.displayName,
+    );
     const complete =
       sql`1 / CASE WHEN (${db.select({ count: count() }).from(written)}) = (${db.select({ count: count() }).from(ready)}) THEN 1 ELSE 0 END`.mapWith(
         pgIntegerDecoder,

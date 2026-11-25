@@ -325,7 +325,12 @@ const register$ = command(async ({ get, set }, signal: AbortSignal) => {
       })
       .returning(),
   );
-  const published = publishRemoteChannelDevice(db, paired, candidateId);
+  const published = publishRemoteChannelDevice(
+    db,
+    paired,
+    values.displayName,
+    candidateId,
+  );
   const [device] = await db.with(paired, published).select().from(paired);
   signal.throwIfAborted();
   if (!device) {

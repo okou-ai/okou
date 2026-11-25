@@ -583,7 +583,11 @@ const writeInlineVncConnectionCreate$ = command(
         })
         .returning({ ...vncCreationSelection }),
     );
-    const device = publishRemoteChannelDevice(db, connection);
+    const device = publishRemoteChannelDevice(
+      db,
+      connection,
+      args.body.displayName,
+    );
     const complete = publication.completion(connection);
     const [created] = await db
       .with(
@@ -626,6 +630,7 @@ export const createVncConnection$ = command(
       return prepared;
     }
     const { security, transport, preparedCredential } = prepared.value;
+    const { displayName } = args.body;
     const publication = vncNetworkPublication(args.owner, {
       ...security.value,
       ...transport.value,
@@ -697,7 +702,7 @@ export const createVncConnection$ = command(
             })
             .returning({ ...vncCreationSelection }),
         );
-        const device = publishRemoteChannelDevice(db, connection);
+        const device = publishRemoteChannelDevice(db, connection, displayName);
         const complete = publication.completion(connection);
         const [created] = await db
           .with(...publication.ctes, connection, device, complete)
