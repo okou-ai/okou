@@ -7,6 +7,10 @@ import XCTest
 
 private typealias FixtureData = ConnectorHTTPFixtures
 
+private struct UnavailableProviderApplication: ConnectorProviderApplication {
+  func open(_ url: URL, universalLinksOnly: Bool) async -> Bool { false }
+}
+
 private let multipleMethodCatalog = """
   {"connector":{"slug":"slack","label":"Slack","description":"Read messages","connectNotice":null,"authMethods":[
     {"id":"oauth","label":"Sign in","grantKind":"auth-code","manualFields":[],"startOptions":[]},
@@ -169,6 +173,8 @@ final class ConnectorConnectEntryTests: XCTestCase {
 
   func testProviderNoticeRequiresConfirmationBeforeStartingOAuth() async throws {
     let confirmed = Mutex(false)
+    let authorizationURL =
+      "https://accounts.google.com/o/oauth2/v2/auth?client_id=42&state=notice-state&response_type=code&scope=read&redirect_uri=https%3A%2F%2Fapp.example.invalid%2Fconnectors%2Fgmail%2Fcallback"
     let scheduled = expectation(description: "Confirmed OAuth attempt is waiting")
     let clock = ConnectorPollingClock(didSchedule: { _ in scheduled.fulfill() })
     let fixture = ChatHTTPFixture { request in
@@ -182,14 +188,14 @@ final class ConnectorConnectEntryTests: XCTestCase {
         XCTAssertTrue(confirmed.withLock { $0 })
         return ChatHTTPResponse(
           body:
-            "{\"authorizationUrl\":\"https://auth.example.invalid/start\",\"oauthAttemptId\":\"\(FixtureData.attemptID)\"}"
+            "{\"authorizationUrl\":\"\(authorizationURL)\",\"oauthAttemptId\":\"\(FixtureData.attemptID)\"}"
         )
       }
       return try XCTUnwrap(FixtureData.response(request, connected: false, grantKind: "auth-code"))
     }
     let store = ConnectorActionStore(
       service: ChatConnectorService(client: fixture.client), didContinue: {}, didFail: { _ in },
-      pollSleep: clock.sleep)
+      providerApplication: UnavailableProviderApplication(), pollSleep: clock.sleep)
     defer { store.close() }
     store.activate(.configuration(target: .builtin("gmail"), threadID: nil))
     try await waitForBusinessResult { store.active?.canSubmit == true }
