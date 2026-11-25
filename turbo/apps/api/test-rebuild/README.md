@@ -95,3 +95,8 @@ The source review refined the Auto routing and Runner BDDs to capture the actual
 | `teams-oauth-017` | Preserved the first redirect, follow-up JSON and resumable callback when authentication is missing. |
 | `teams-workspace-identity-010` | Upload replay preserves its pinned destination and text across membership changes and disconnect. The uncertain delivery is attempted once. |
 | `app-factory-075` | Verified the version-only request is accepted when the client-type header is absent. The separately expanded TestFlight and App Store floor rows preserve the actual configured and reported floors. |
+| `custom-connector-hostnames-003` | The update helper uses PUT on the individual custom connector route. The BDD now reflects that contract. |
+| `builtin-mcp-account-surfaces-003` | The title refers to an outage, but the setup only changes a storage bucket. Kept the selection, inspection, disable and restore behavior that is asserted. |
+| `custom-connectors-automatic-dcr-003` | Confirmed HTTP 502 with `MCP_OAUTH_PROVIDER_UNAVAILABLE`, preserved account and exactly one later registration. |
+| `conversation-history-deletion-002` | The completed Run is read before deletion. The post-deletion assertion is HTTP 200 on completion replay, so the BDD does not claim a post-deletion history read. |
+| `workspace-workflow-permissions-002` | The source checks exactly one cloned schedule, owned by the requesting member with the 900-second interval. |
