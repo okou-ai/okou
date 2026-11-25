@@ -2627,8 +2627,9 @@ function PackageConfigurationStep({
         totals={totals}
       />
       {/* The frame keeps step 1's height, so a short member list leaves slack
-          between the ledger and the action at the foot of the dialog. */}
-      <div className="mt-auto">
+          between the ledger and the action at the foot of the dialog. Keep
+          the wrapper sticky so short viewports retain the whole action bar. */}
+      <div className="sticky bottom-0 mt-auto">
         {management ? (
           <ManagedSubscriptionOrderSummary
             catalog={catalog}
