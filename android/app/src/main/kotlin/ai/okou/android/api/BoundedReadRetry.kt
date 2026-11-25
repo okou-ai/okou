@@ -1,10 +1,9 @@
 package ai.okou.android.api
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
-
-private const val ReadRetries = 2
-private const val ReadRetryDelayMillis = 3_000L
+import kotlinx.coroutines.ensureActive
 
 /**
  * The caller handles each attempt and returns an error when the read failed. A null result means
@@ -14,26 +13,29 @@ internal suspend fun <E : Throwable> retryBoundedRead(
     canRead: () -> Boolean,
     attempt: suspend () -> E?,
 ): E? {
-    var remaining = ReadRetries
+    var retries = 0
     if (!canRead()) return null
     while (true) {
         val error = attempt() ?: return null
         if (error is CancellationException) throw error
-        val wait = error.boundedReadDelayMillis()
-        if (remaining == 0 || wait == null) return error
+        val defaultDelay = finiteReadRetryDelays.getOrNull(retries) ?: return error
+        val wait = error.boundedReadDelayMillis(defaultDelay) ?: return error
         delay(wait)
+        currentCoroutineContext().ensureActive()
         if (!canRead()) return null
-        remaining--
+        retries++
     }
 }
 
-private fun Throwable.boundedReadDelayMillis(): Long? =
+private fun Throwable.boundedReadDelayMillis(defaultDelay: Long): Long? =
     when (this) {
-        is ApiFailure.Network -> ReadRetryDelayMillis
+        is ApiFailure.Network -> defaultDelay
         is ApiFailure.Http ->
             if (status == 408 || status == 429 || status in 500..599) {
-                val seconds = (retryAfterSeconds ?: 0L).coerceIn(0L, Long.MAX_VALUE / 1_000)
-                maxOf(ReadRetryDelayMillis, seconds * 1_000)
+                retryAfterSeconds
+                    ?.takeIf { it >= 0L }
+                    ?.coerceAtMost(Long.MAX_VALUE / 1_000)
+                    ?.times(1_000) ?: defaultDelay
             } else null
         else -> null
     }

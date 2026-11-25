@@ -79,7 +79,7 @@ class ConnectorReadTest {
     }
 
     @Test
-    fun serverDelayExtendsOnlyTheAttemptThatSuppliesIt() = runTest {
+    fun serverDelayCanBeLongerOrShorterThanTheDefault() = runTest {
         val attempts = mutableListOf<Long>()
         var result: ConnectorRead<String>? = null
         val read = launch {
@@ -101,10 +101,10 @@ class ConnectorReadTest {
         advanceTimeBy(7_999)
         runCurrent()
         assertEquals(listOf(0L), attempts)
-        advanceTimeBy(3_001)
+        advanceTimeBy(1_001)
         runCurrent()
         read.join()
-        assertEquals(listOf(0L, 8_000L, 11_000L), attempts)
+        assertEquals(listOf(0L, 8_000L, 9_000L), attempts)
         assertEquals(ConnectorRead("ready"), result)
     }
 
