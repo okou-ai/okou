@@ -33,8 +33,8 @@ internal class HttpRejection(val status: Int, val retryAfter: String?, val envel
 
 internal fun retryAfter(value: String?): Long? {
     if (value == null) return null
-    value.toLongOrNull()?.let {
-        return it.coerceAtLeast(0)
+    value.toLongOrNull()?.let { seconds ->
+        return seconds.takeIf { it >= 0 }
     }
     val formatter = SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss zzz", Locale.US)
     formatter.timeZone = TimeZone.getTimeZone("GMT")

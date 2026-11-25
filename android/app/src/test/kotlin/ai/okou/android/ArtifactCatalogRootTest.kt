@@ -133,7 +133,11 @@ internal abstract class ArtifactCatalogRootTestFixture {
         compose.waitUntil(10_000) { loadedWebsiteUrl() != null }
     }
 
-    protected fun failWebsiteDocument(view: WebView, status: Int = 503) {
+    protected fun failWebsiteDocument(
+        view: WebView,
+        status: Int = 503,
+        retryAfter: String? = null,
+    ) {
         compose.runOnIdle {
             val address = Uri.parse(checkNotNull(shadowOf(view).lastLoadedUrl))
             val request =
@@ -151,7 +155,14 @@ internal abstract class ArtifactCatalogRootTestFixture {
                     override fun getRequestHeaders() = emptyMap<String, String>()
                 }
             val response =
-                WebResourceResponse("text/plain", "UTF-8", status, "Unavailable", emptyMap(), null)
+                WebResourceResponse(
+                    "text/plain",
+                    "UTF-8",
+                    status,
+                    "Unavailable",
+                    retryAfter?.let { mapOf("retry-after" to it) }.orEmpty(),
+                    null,
+                )
             view.webViewClient.onReceivedHttpError(view, request, response)
         }
     }
@@ -1741,9 +1752,20 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
         val first = checkNotNull(websiteView())
         val frame = compose.onNodeWithTag("artifact_preview_surface")
         val originalBounds = frame.getUnclippedBoundsInRoot()
-        failWebsiteDocument(first)
-        compose.waitUntil(10_000) { websiteView()?.let { it !== first } == true }
-        val retry = checkNotNull(websiteView())
+        compose.mainClock.autoAdvance = false
+        val retry =
+            try {
+                failWebsiteDocument(first, retryAfter = "1")
+                compose.mainClock.advanceTimeBy(750)
+                val waiting = websiteView()
+                assertTrue(waiting == null || waiting === first)
+                compose.mainClock.advanceTimeUntil(1_250) {
+                    websiteView()?.let { it !== first } == true
+                }
+                checkNotNull(websiteView())
+            } finally {
+                compose.mainClock.autoAdvance = true
+            }
         assertEquals(fixture.requestedSiteGrants.single(), loadedWebsiteUrl())
         assertEquals(originalBounds, frame.getUnclippedBoundsInRoot())
 

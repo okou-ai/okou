@@ -2,6 +2,7 @@ package ai.okou.android.artifacts
 
 import ai.okou.android.ContentReadFeedbackDelayMillis
 import ai.okou.android.R
+import ai.okou.android.api.retryAfter
 import ai.okou.android.chat.ConfirmedChat
 import ai.okou.android.chat.HistoryMarkdown
 import ai.okou.android.rememberContentReadFeedbackAfter
@@ -495,9 +496,10 @@ private fun HostedArtifactPreview(
     var usedRetries by remember { mutableIntStateOf(0) }
     key(usedRetries) {
         val attempt = remember { HostedDocumentAttempt() }
-        val problem = attempt.problem
+        val failure = attempt.failure
+        val remainingRetries = content.remainingRetries - usedRetries
         when {
-            problem == null ->
+            failure == null ->
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
                     factory = {
@@ -506,7 +508,7 @@ private fun HostedArtifactPreview(
                         isolatedPreview(
                             it,
                             content.url,
-                            onFailure = attempt::recordProblem,
+                            onFailure = attempt::recordFailure,
                             onLoaded = { view ->
                                 view.scrollTo(0, initialScroll)
                                 view.setOnScrollChangeListener { _, _, y, _, _ -> onScroll(y) }
@@ -519,33 +521,41 @@ private fun HostedArtifactPreview(
                     },
                     update = {},
                 )
-            problem == ArtifactProblem.Temporary && usedRetries < content.remainingRetries -> {
+            failure.problem == ArtifactProblem.Temporary && remainingRetries > 0 -> {
                 val lifecycle = LocalLifecycleOwner.current.lifecycle
                 LaunchedEffect(lifecycle) {
                     lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                        delay(ArtifactRetryDelayMillis)
+                        delay(artifactRetryDelayMillis(remainingRetries, failure.retryAfterSeconds))
                         usedRetries++
                     }
                 }
                 PreviewLoading()
             }
-            else -> PreviewStatusText(problem.previewLabel())
+            else -> PreviewStatusText(failure.problem.previewLabel())
         }
     }
 }
 
+private data class HostedDocumentFailure(
+    val problem: ArtifactProblem,
+    val retryAfterSeconds: Long? = null,
+)
+
 /** The preview can still read the last active attempt's access result after release. */
 private class HostedDocumentAttempt {
-    var problem by mutableStateOf<ArtifactProblem?>(null)
+    var failure by mutableStateOf<HostedDocumentFailure?>(null)
         private set
 
     val accessProblem: ArtifactProblem?
-        get() = problem.takeIf { it == ArtifactProblem.Missing || it == ArtifactProblem.Denied }
+        get() =
+            failure?.problem.takeIf {
+                it == ArtifactProblem.Missing || it == ArtifactProblem.Denied
+            }
 
     private var released = false
 
-    fun recordProblem(problem: ArtifactProblem) {
-        if (!released && this.problem == null) this.problem = problem
+    fun recordFailure(failure: HostedDocumentFailure) {
+        if (!released && this.failure == null) this.failure = failure
     }
 
     fun release() {
@@ -559,7 +569,7 @@ private class HostedDocumentAttempt {
 private fun isolatedPreview(
     context: Context,
     url: HttpUrl,
-    onFailure: (ArtifactProblem) -> Unit,
+    onFailure: (HostedDocumentFailure) -> Unit,
     onLoaded: (WebView) -> Unit,
 ): WebView =
     WebView(context).apply {
@@ -607,14 +617,23 @@ private fun isolatedPreview(
                     request: WebResourceRequest,
                     response: WebResourceResponse,
                 ) {
-                    reportFailure(request, artifactHttpProblem(response.statusCode))
+                    val retryAfterHeader =
+                        response.responseHeaders
+                            ?.entries
+                            ?.firstOrNull { it.key.equals("Retry-After", ignoreCase = true) }
+                            ?.value
+                    reportFailure(
+                        request,
+                        artifactHttpProblem(response.statusCode),
+                        retryAfterHeader,
+                    )
                 }
 
                 override fun onRenderProcessGone(
                     view: WebView,
                     detail: RenderProcessGoneDetail,
                 ): Boolean {
-                    onFailure(ArtifactProblem.Unavailable)
+                    onFailure(HostedDocumentFailure(ArtifactProblem.Unavailable))
                     return true
                 }
 
@@ -627,7 +646,11 @@ private fun isolatedPreview(
                     onLoaded(view)
                 }
 
-                private fun reportFailure(request: WebResourceRequest, problem: ArtifactProblem) {
+                private fun reportFailure(
+                    request: WebResourceRequest,
+                    problem: ArtifactProblem,
+                    retryAfterHeader: String? = null,
+                ) {
                     if (!request.isForMainFrame) return
                     // Only the app's original GET is safe to replay, before the hosted page is
                     // shown.
@@ -638,8 +661,8 @@ private fun isolatedPreview(
                     openingDocument = false
                     onFailure(
                         if (!retry && problem == ArtifactProblem.Temporary)
-                            ArtifactProblem.Unavailable
-                        else problem,
+                            HostedDocumentFailure(ArtifactProblem.Unavailable)
+                        else HostedDocumentFailure(problem, retryAfter(retryAfterHeader)),
                     )
                 }
             }
