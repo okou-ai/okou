@@ -183,9 +183,9 @@ connectors	src/signals/routes/__tests__/connected-connectors.test.ts	connected-c
 connectors	src/signals/routes/__tests__/connector-account-detail.test.ts	connector-account-detail-003	rewritten	128.5	
 connectors	src/signals/routes/__tests__/connector-account-detail.test.ts	connector-account-detail-005	rewritten	67.5	
 connectors	src/signals/routes/__tests__/connector-account-detail.test.ts	connector-account-detail-006	rewritten	114.0	
-connectors	src/signals/routes/__tests__/connector-account-scope-diff.test.ts	connector-account-scope-diff-003	planned		
+connectors	src/signals/routes/__tests__/connector-account-scope-diff.test.ts	connector-account-scope-diff-003	rewritten	119.4	
 connectors	src/signals/routes/__tests__/connector-account-scope-diff.test.ts	connector-account-scope-diff-004	planned		
-connectors	src/signals/routes/__tests__/connector-account-scope-diff.test.ts	connector-account-scope-diff-005	planned		
+connectors	src/signals/routes/__tests__/connector-account-scope-diff.test.ts	connector-account-scope-diff-005	rewritten	118.5	
 connectors	src/signals/routes/__tests__/connector-accounts.test.ts	connector-accounts-002	planned		
 connectors	src/signals/routes/__tests__/connector-accounts.test.ts	connector-accounts-003	planned		
 connectors	src/signals/routes/__tests__/connector-accounts.test.ts	connector-accounts-004	planned		
