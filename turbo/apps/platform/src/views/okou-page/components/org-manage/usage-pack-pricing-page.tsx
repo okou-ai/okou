@@ -462,12 +462,13 @@ function MemberIdentity({ member }: { readonly member: MemberDisplay }) {
   );
 }
 
-/* Every ledger row lands on the same three columns: who or what the line is,
+/* Desktop ledger rows share three columns: who or what the line is,
    the control, and the money. The money column is wide enough for the total
    row's 24px figure at five digits -- it is the one number that has to fit,
-   and a shared width is what keeps every amount on one right edge. */
+   and a shared width is what keeps every amount on one right edge. Narrow
+   screens put controls and credit totals on a full-width second line. */
 const LEDGER_ROW =
-  "grid min-h-16 grid-cols-[minmax(0,1fr)_minmax(15rem,17rem)_9.5rem] items-center gap-3 py-2.5";
+  "grid min-h-16 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 py-2.5 md:grid-cols-[minmax(0,1fr)_minmax(15rem,17rem)_9.5rem] md:gap-3";
 const LEDGER_RULE = "border-t border-[hsl(var(--gray-100))]";
 
 function LedgerPrice({
@@ -521,7 +522,7 @@ function usagePackCreditsLabel(item: MemberUsagePackOption): string {
 function LedgerPlanRow({ plan }: { readonly plan: UsagePackPlan }) {
   return (
     <div className={LEDGER_ROW}>
-      <div className="col-span-2 flex min-w-0 items-center gap-3">
+      <div className="flex min-w-0 items-center gap-3 md:col-span-2">
         <span className="flex size-10 shrink-0 items-center justify-center">
           <img
             src={plan.image}
@@ -539,7 +540,7 @@ function LedgerPlanRow({ plan }: { readonly plan: UsagePackPlan }) {
               { plan: planName(plan.tier) },
             )}
           </span>
-          <span className="block truncate text-[13px] leading-5 text-muted-foreground">
+          <span className="block text-[13px] leading-5 text-muted-foreground md:truncate">
             {i18n.t(($) => {
               return $.billing.plans.usagePacks.memberExclusive;
             })}
@@ -564,12 +565,12 @@ function LedgerTotalRow({
 }) {
   return (
     <div className={`${LEDGER_ROW} border-t border-border py-4`}>
-      <span className="text-sm font-medium text-foreground">
+      <span className="min-w-0 text-sm font-medium text-foreground">
         {i18n.t(($) => {
           return $.billing.plans.usagePacks.monthlyTotal;
         })}
       </span>
-      <span className="truncate px-3 text-sm text-foreground">
+      <span className="col-span-2 row-start-2 min-w-0 text-sm text-foreground md:col-span-1 md:row-auto md:truncate md:px-3">
         {bonusCredits > 0
           ? i18n.t(
               ($) => {
@@ -587,14 +588,16 @@ function LedgerTotalRow({
               { credits: formatLocalizedNumber(credits) },
             )}
       </span>
-      {comparisonRows ? (
-        <ManagedSubscriptionComparisonTooltip
-          rows={comparisonRows}
-          totalUsd={totalUsd}
-        />
-      ) : (
-        <LedgerPrice strong value={totalUsd} />
-      )}
+      <div className="col-start-2 row-start-1 text-right md:col-auto md:row-auto">
+        {comparisonRows ? (
+          <ManagedSubscriptionComparisonTooltip
+            rows={comparisonRows}
+            totalUsd={totalUsd}
+          />
+        ) : (
+          <LedgerPrice strong value={totalUsd} />
+        )}
+      </div>
     </div>
   );
 }
@@ -647,7 +650,7 @@ function MemberUsageRow({
   return (
     <div className={LEDGER_ROW}>
       <MemberIdentity member={member} />
-      <div className="min-w-0">
+      <div className="col-span-2 row-start-2 min-w-0 md:col-span-1 md:row-auto">
         <Select
           disabled={disabled}
           value={String(selection)}
@@ -694,7 +697,11 @@ function MemberUsageRow({
           </p>
         )}
       </div>
-      <LedgerPrice value={usagePackCatalogItem(catalog, selection).priceUsd} />
+      <div className="col-start-2 row-start-1 text-right md:col-auto md:row-auto">
+        <LedgerPrice
+          value={usagePackCatalogItem(catalog, selection).priceUsd}
+        />
+      </div>
     </div>
   );
 }
@@ -1164,7 +1171,8 @@ function pricingStepTitle(step: PricingStep): string {
    dialog keeps the billing overview it is decided against in place behind it.
    Every step shares one dialog frame at one fixed width and height, so moving
    between them only changes the body -- the header band, the step counter and
-   the outer edges hold still. That is also why the review is a step and not a
+   the outer edges hold still on desktop. Narrow headers grow to fit their
+   title and step counter. That is also why the review is a step and not a
    dialog of its own: stacking a third modal on the flow would bury both the
    billing tab and the packages the review is about. The height is the tallest
    step's (plan selection) measured against its content, so it has to come down
@@ -1235,15 +1243,17 @@ export function PricingStepContent({
   const { t } = useTranslation();
   return (
     <>
-      {/* The close button shares the header row with its title and steps. */}
-      <DialogHeader className="h-14 flex-row shrink-0 items-center gap-3 border-b border-[hsl(var(--gray-200))] py-0 pl-6 pr-4 text-left">
+      {/* Keep both navigation controls beside the title at every width. */}
+      <DialogHeader className="min-h-14 flex-row shrink-0 items-center gap-3 border-b border-[hsl(var(--gray-200))] px-4 py-3 text-left sm:h-14 sm:py-0 sm:pl-6">
         {onBack && <PricingBackButton onBack={onBack} />}
-        <DialogTitle className="min-w-0 flex-1 text-base font-medium leading-none">
-          {title ?? (step !== undefined && pricingStepTitle(step))}
-        </DialogTitle>
-        {step !== undefined && (
-          <PricingStepIndicator current={step} total={total} />
-        )}
+        <div className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+          <DialogTitle className="min-w-0 flex-1 text-base font-medium leading-snug sm:leading-none">
+            {title ?? (step !== undefined && pricingStepTitle(step))}
+          </DialogTitle>
+          {step !== undefined && (
+            <PricingStepIndicator current={step} total={total} />
+          )}
+        </div>
         <DialogClose
           render={
             <IconButton

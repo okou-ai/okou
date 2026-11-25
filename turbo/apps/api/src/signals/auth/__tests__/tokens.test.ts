@@ -159,6 +159,26 @@ describe("auth tokens", () => {
     });
   });
 
+  it.each([true, false])(
+    "limits Suggestions capabilities to personal execution (personal: %s)",
+    (personalExecution) => {
+      const token = issueOkouToken(
+        "user_okou",
+        "run_okou",
+        "org_okou",
+        undefined,
+        {
+          personalExecution,
+        },
+      );
+      const capabilities = verifyOkouToken(token)?.capabilities;
+      expect(capabilities?.includes("suggestion:read")).toBe(personalExecution);
+      expect(capabilities?.includes("suggestion:write")).toBe(
+        personalExecution,
+      );
+    },
+  );
+
   it("generates one Okou-scoped run token with the complete run claims", () => {
     const computerUseHostId = "00000000-0000-4000-8000-000000000001";
     const customConnectorId = "00000000-0000-4000-8000-000000000002";

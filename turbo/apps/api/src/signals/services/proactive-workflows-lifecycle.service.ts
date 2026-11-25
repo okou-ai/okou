@@ -229,7 +229,7 @@ export const ensureProactiveWorkflows$ = command(
     const kinds = (
       Object.keys(PROACTIVE_WORKFLOW_DEFINITIONS) as ProactiveWorkflowKind[]
     ).filter((kind) => {
-      return eligibility[kind].active;
+      return eligibility[kind];
     });
     const member =
       kinds.length > 0

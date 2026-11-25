@@ -1,3 +1,4 @@
+import { receiveDirectAppState } from "./direct-app-state";
 import { createShellCommand } from "./shell";
 import { decodeSandboxTokenPayload } from "../../lib/api/sandbox-token";
 import { waitForComputerUseCommand } from "./wait-for-command";
@@ -417,6 +418,14 @@ async function runReadCommand(
       timeoutMs: timeoutSeconds * 1000,
       ...payload,
     });
+    if (created.directAppState) {
+      const result = await receiveDirectAppState(
+        created.commandId,
+        timeoutSeconds,
+      );
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
     await waitForCommand(created, timeoutSeconds);
   } catch (error) {
     throwComputerUseAuthorizationGuidanceError(error);

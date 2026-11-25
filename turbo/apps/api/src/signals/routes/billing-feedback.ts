@@ -79,9 +79,7 @@ const rewardWebhook$ = command(async ({ get, set }, signal: AbortSignal) => {
   const event = body.data;
   const properties = event.properties;
   if (
-    !Object.values(BILLING_FEEDBACK_SURVEYS).some((surveyId) => {
-      return surveyId === properties.$survey_id;
-    }) ||
+    properties.$survey_id !== BILLING_FEEDBACK_SURVEYS.credits_exhausted ||
     !properties.$survey_completed
   ) {
     return { status: 200 as const, body: { rewardCredits: 0 } };

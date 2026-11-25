@@ -81,6 +81,51 @@ pub mod runners {
                 }
             }
 
+            /// Generated route bindings under `runners::runs::by_run_id::computer_use`.
+            pub mod computer_use {
+                /// Generated route bindings under `runners::runs::by_run_id::computer_use::commands`.
+                pub mod commands {
+                    /// Generated route bindings under `runners::runs::by_run_id::computer_use::commands::by_command_id`.
+                    pub mod by_command_id {
+                        /// Generated route bindings under `runners::runs::by_run_id::computer_use::commands::by_command_id::check`.
+                        pub mod check {
+                            /// Check current Computer Use authority for one direct app state delivery.
+                            /// Route contract: `POST /api/runners/runs/:runId/computer-use/commands/:commandId/check`.
+                            pub const CHECK: crate::RouteTemplate = crate::RouteTemplate {
+                                method: crate::Method::Post,
+                                path: "/api/runners/runs/:runId/computer-use/commands/:commandId/check",
+                            };
+
+                            /// Path parameters for `POST /api/runners/runs/:runId/computer-use/commands/:commandId/check`.
+                            #[derive(Debug, Clone, Copy)]
+                            pub struct Params<'a> {
+                                /// Value for the `:runId` path parameter.
+                                pub run_id: &'a str,
+                                /// Value for the `:commandId` path parameter.
+                                pub command_id: &'a str,
+                            }
+
+                            /// Build the concrete path for `POST /api/runners/runs/:runId/computer-use/commands/:commandId/check`.
+                            /// Percent-encodes each path parameter as a URL path segment.
+                            #[must_use]
+                            pub fn path(params: Params<'_>) -> String {
+                                format!(
+                                    "/api/runners/runs/{}/computer-use/commands/{}/check",
+                                    crate::route::encode_path_segment(params.run_id),
+                                    crate::route::encode_path_segment(params.command_id),
+                                )
+                            }
+
+                            /// Build a resolved route for `POST /api/runners/runs/:runId/computer-use/commands/:commandId/check`.
+                            #[must_use]
+                            pub fn route(params: Params<'_>) -> crate::ResolvedRoute {
+                                crate::ResolvedRoute::new(CHECK.method, path(params))
+                            }
+                        }
+                    }
+                }
+            }
+
             /// Generated route bindings under `runners::runs::by_run_id::connector_runtime`.
             pub mod connector_runtime {
                 /// Generated route bindings under `runners::runs::by_run_id::connector_runtime::sync`.

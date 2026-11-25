@@ -1206,12 +1206,6 @@
       "teamWarning": "Your Team access remains active until the current billing period ends. After that, this workspace moves to {{plan}}.",
       "title": "Downgrade plan"
     },
-    "feedback": {
-      "otherPlaceholder": "Tell us more…",
-      "rewardTerms": "Once per workspace · Credits expire in 30 days",
-      "submitFeedback": "Submit feedback",
-      "thanks": "Thanks for your feedback"
-    },
     "invoices": {
       "amount": "Amount",
       "date": "Date",
@@ -4432,7 +4426,6 @@
   },
   "myOkou": {
     "conflict": "Your saved instructions changed elsewhere. Your draft is kept here. Review or copy it before reloading the latest saved instructions.",
-    "description": "Your instructions for Okou in this workspace",
     "discard": "Discard",
     "draftKept": "Your draft is kept in this browser tab when you navigate or switch workspaces.",
     "instructions": "Instructions",
@@ -5705,7 +5698,6 @@
           "title": "Preference"
         },
         "proactiveLearning": {
-          "description": "Choose how Okou works proactively.",
           "title": "Proactive"
         },
         "tools": {
@@ -6111,7 +6103,6 @@
         "title": "Morning brief"
       },
       "proactiveSuggestions": {
-        "description": "Check connected sources hourly, update your user profile daily, and suggest useful next steps.",
         "errorMessage": "Proactive Suggestions settings could not be loaded or updated.",
         "missingTimezone": "Set your time zone in Preferences.",
         "preparationFailed": "Temporarily unavailable.",

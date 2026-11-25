@@ -12,7 +12,6 @@ type EnqueueStage =
   | "body"
   | "references"
   | "suggestion_validation"
-  | "suggestion_access"
   | "context_ready"
   | "thread_selection"
   | "followup_validation"

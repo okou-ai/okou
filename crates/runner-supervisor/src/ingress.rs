@@ -3,6 +3,7 @@
 //! Health and complete-input dispatch share service authentication. Sandbox
 //! paths stay reserved. Caddy terminates TLS and preserves the original URI.
 
+mod app_state;
 pub(crate) mod dispatch;
 
 use std::convert::Infallible;
@@ -44,6 +45,7 @@ struct IngressHandler {
     token: String,
     runner_version: &'static str,
     dispatch: OnceLock<dispatch::DispatchIntake>,
+    app_state: OnceLock<runner_remote::app_state::Runtime>,
 }
 
 impl IngressHandler {
@@ -59,6 +61,7 @@ impl IngressHandler {
             token: token.to_owned(),
             runner_version,
             dispatch: OnceLock::new(),
+            app_state: OnceLock::new(),
         }
     }
 
@@ -122,7 +125,8 @@ impl IngressHandler {
             .and_then(|run| run.parse::<RunId>().ok().filter(|id| id.to_string() == run));
         // Hyper keeps the raw URI: no decoding/rewriting may turn a reserved
         // sandbox path, traversal or encoded separator into a control request.
-        if (request.uri().path() != path && dispatch_run.is_none())
+        let upload = app_state::target(self.identity.runner_id(), request.uri().path());
+        if (request.uri().path() != path && dispatch_run.is_none() && upload.is_none())
             || request.uri().query().is_some()
         {
             return response(StatusCode::NOT_FOUND, "");
@@ -134,6 +138,9 @@ impl IngressHandler {
             })
         {
             return response(StatusCode::NOT_FOUND, "");
+        }
+        if let Some((run_id, command)) = upload {
+            return self.handle_app_state(request, run_id, command).await;
         }
         let credential = request
             .headers()
@@ -375,6 +382,7 @@ impl IngressRuntime {
                     biased;
                     () = cancel.cancelled() => break,
                     _ = expiry_tick.tick() => {
+                        if let Some(receiver) = handler.app_state.get() { receiver.expire(); }
                         if let Some(intake) = handler.dispatch.get() {
                             intake.expire(dispatch::now_ms());
                         }
@@ -415,6 +423,13 @@ impl IngressRuntime {
     /// Called once before the first Running publication, never as a watchdog.
     pub async fn check_public_health(&self) -> io::Result<()> {
         self.handler.check_public().await
+    }
+
+    pub(crate) fn enable_app_state(&self, receiver: runner_remote::app_state::Runtime) {
+        assert!(
+            self.handler.app_state.set(receiver).is_ok(),
+            "app state receiver configured once"
+        );
     }
 
     pub(crate) fn enable_dispatch(&self, intake: dispatch::DispatchIntake) {

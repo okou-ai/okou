@@ -1,6 +1,5 @@
 import { test, expect } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   morningBriefPreferenceContract,
   type MorningBriefPreferenceResponse,
@@ -33,8 +32,7 @@ async function openBrief(status: "preparing" | "error") {
   );
   await setupPage({
     context,
-    path: "/?settings=preference",
-    featureSwitches: { [FeatureSwitchKey.AgentSuggestion]: false },
+    path: "/?settings=my-okou",
   });
   return screen.findByRole("switch", { name: /morning brief/i });
 }

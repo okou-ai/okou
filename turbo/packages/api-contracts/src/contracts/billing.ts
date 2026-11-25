@@ -1351,7 +1351,7 @@ export const billingFeedbackRewardContract = c.router({
       401: apiErrorSchema,
       500: apiErrorSchema,
     },
-    summary: "Get a signed, eligible billing feedback reward offer",
+    summary: "Get a signed, eligible credits-exhaustion feedback reward offer",
   },
 });
 
