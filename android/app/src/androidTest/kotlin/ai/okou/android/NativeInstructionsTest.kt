@@ -4,6 +4,7 @@ import ai.okou.android.auth.SessionModel
 import ai.okou.android.instructions.InstructionsPhase
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import ai.okou.android.instructions.PersonalInstructionsModel
+import android.content.Context
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityWindowInfo
 import androidx.lifecycle.ViewModelProvider
@@ -99,9 +100,7 @@ class NativeInstructionsTest {
                 reveal(label)
                 checkNotNull(
                         device.wait(
-                            Until.findObject(
-                                By.pkg(app.packageName).text(label).clickable(true).enabled(true),
-                            ),
+                            Until.findObject(By.pkg(app.packageName).text(label).enabled(true)),
                             10_000,
                         ),
                     )
@@ -214,7 +213,7 @@ class NativeInstructionsTest {
             assertTrue(text(app.getString(R.string.instructions_save)).isEnabled)
             click(R.string.settings_cancel)
             reveal(app.getString(R.string.instructions_unsaved))
-            click(R.string.instructions_discard)
+            device.confirmInstructionsDiscard(app)
             reveal(app.getString(R.string.appearance))
             click(R.string.instructions_title)
             assertEquals(webText, editor(expectedText = webText).text)
@@ -256,4 +255,28 @@ class NativeInstructionsTest {
         }
         MultipleFailureException.assertEmpty(failures)
     }
+}
+
+internal fun UiDevice.confirmInstructionsDiscard(context: Context) {
+    val label = By.pkg(context.packageName).text(context.getString(R.string.instructions_discard))
+    val button =
+        checkNotNull(
+            wait(
+                object : Condition<UiDevice, UiObject2?> {
+                    override fun apply(device: UiDevice): UiObject2? =
+                        device.findObjects(label).firstNotNullOfOrNull { node ->
+                            // The heading also uses this label. Compose may expose button text
+                            // as a child of the actionable node.
+                            generateSequence(node) { it.parent }
+                                .firstOrNull {
+                                    it.isEnabled && it.isClickable
+                                }
+                        }
+                },
+                10_000,
+            ),
+        ) {
+            "Discard confirmation button was not reachable"
+        }
+    button.click()
 }
