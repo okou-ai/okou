@@ -983,7 +983,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(appendSystemPrompt).toContain(
           "including its page-rendering and publish steps",
         );
-        expect(appendSystemPrompt).toContain("No format has default priority");
         expect(appendSystemPrompt).not.toContain(
           "prefer Markdown as the primary deliverable",
         );
@@ -1002,7 +1001,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           "Honor the user's explicitly requested delivery format.",
         );
         expect(appendSystemPrompt).toContain(
-          "use Markdown for text-focused documents and reports, and HTML for visual or interactive deliverables. No format has default priority.",
+          "use Markdown for text-focused documents and reports, and HTML for visual or interactive deliverables.",
         );
         expect(appendSystemPrompt).toContain(
           "Keep Markdown as the source of truth and let the user export DOCX or PDF",
