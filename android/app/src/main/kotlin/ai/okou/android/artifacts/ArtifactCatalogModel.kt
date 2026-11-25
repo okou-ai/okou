@@ -46,6 +46,9 @@ internal data class ArtifactPreviewState(
     val content: ArtifactContent? = null,
     val problem: ArtifactProblem? = null,
 ) {
+    val isImage: Boolean
+        get() = item?.kind == ArtifactKind.Image
+
     val isHosted: Boolean
         get() =
             info?.resource !is ArtifactResource.File &&
@@ -811,9 +814,11 @@ internal constructor(
                     copy(
                         info = info.takeUnless { revoked && !detailAuthorized },
                         content = content.takeIf { hasReadableContent && !discardContent },
-                        access = access.takeUnless { revoked && !fileAccessAuthorized },
+                        access =
+                            access.takeUnless { revoked && (!fileAccessAuthorized || isImage) },
                         problem =
-                            if (revoked && fileAccessAuthorized) ArtifactProblem.Unavailable
+                            if (revoked && fileAccessAuthorized && !isImage)
+                                ArtifactProblem.Unavailable
                             else errorType,
                     )
                 }

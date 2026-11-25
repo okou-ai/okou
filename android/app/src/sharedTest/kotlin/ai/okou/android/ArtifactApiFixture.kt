@@ -26,6 +26,7 @@ internal class ArtifactApiFixture(
     private val summaryDownloadAllowed: Boolean = false,
     private val imageBody: ByteArray? = null,
     includeVideo: Boolean = false,
+    private val imageDownloadAllowed: Boolean? = null,
 ) {
     data class Item(val id: String, val kind: String, val title: String, val date: String)
 
@@ -90,6 +91,10 @@ internal class ArtifactApiFixture(
     var beforeCatalog: (RecordedRequest) -> Unit = {}
     var beforeDownload: () -> Unit = {}
     @Volatile var beforeSitePreview: () -> Unit = {}
+    @Volatile
+    var imageResponse: () -> MockResponse = {
+        MockResponse().setBody(Buffer().write(imageBody ?: sampleImage()))
+    }
     var pageSize = 40
     var downloadGranted = true
     val catalogQueries = CopyOnWriteArrayList<Pair<String?, String?>>()
@@ -136,6 +141,10 @@ internal class ArtifactApiFixture(
                     assertNull(request.getHeader("Authorization"))
                     MockResponse().setBody(Buffer().write(imageBody ?: sampleImage()))
                 }
+                "/artifact-bytes/image-preview" -> {
+                    assertNull(request.getHeader("Authorization"))
+                    imageResponse()
+                }
                 "/artifact-bytes/checklist",
                 "/artifact-bytes/summary" -> {
                     assertNull(request.getHeader("Authorization"))
@@ -152,6 +161,9 @@ internal class ArtifactApiFixture(
                             requestedReferences.add(path)
                             reference(summary, "summary", summaryDownloadAllowed)
                         }
+                        path == "/api/artifact-references/thumbnail1.png" &&
+                            imageDownloadAllowed != null ->
+                            reference(image, "image-preview", imageDownloadAllowed)
                         path == "/api/artifact-references/checklist1.md/download" -> {
                             requestedDownloads.add(path)
                             beforeDownload()
@@ -264,6 +276,9 @@ internal class ArtifactApiFixture(
                             when (item) {
                                 checklist -> "/artifacts/checklist1.md"
                                 summary -> "/artifacts/artifacts2.md"
+                                image ->
+                                    if (imageDownloadAllowed != null) "/artifacts/thumbnail1.png"
+                                    else api.server.url("/artifact-bytes/image").toString()
                                 video -> api.server.url("/artifact-bytes/video").toString()
                                 else -> api.server.url("/artifact-bytes/image").toString()
                             }
@@ -294,8 +309,11 @@ internal class ArtifactApiFixture(
                 .toString(),
         )
 
-    private fun reference(item: Item, path: String, downloadAllowed: Boolean) =
-        jsonResponse(
-            """{"url":"${api.server.url("/artifact-bytes/$path")}","expiresAt":"${date(1)}","downloadUrl":"${api.server.url("/artifact-bytes/$path")}","downloadAllowed":$downloadAllowed,"filename":"$path.md","contentType":"text/markdown","target":{"kind":"file","id":"${item.id}"}}""",
+    private fun reference(item: Item, path: String, downloadAllowed: Boolean): MockResponse {
+        val filename = if (item == image) "avatar.png" else "$path.md"
+        val type = if (item == image) "image/png" else "text/markdown"
+        return jsonResponse(
+            """{"url":"${api.server.url("/artifact-bytes/$path")}","expiresAt":"${date(1)}","downloadUrl":"${api.server.url("/artifact-bytes/$path")}","downloadAllowed":$downloadAllowed,"filename":"$filename","contentType":"$type","target":{"kind":"file","id":"${item.id}"}}""",
         )
+    }
 }

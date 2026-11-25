@@ -62,4 +62,6 @@
     <string name="chat_resources_wechat">WeChat</string>
     <string name="chat_resources_feishu">Feishu</string>
     <string name="chat_resources_messages">मैसेज</string>
+    <string name="artifact_preview_loading">प्रीव्यू लोड हो रहा है…</string>
+    <string name="artifact_image_unavailable">चित्र उपलब्ध नहीं है</string>
 </resources>

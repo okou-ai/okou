@@ -1,5 +1,6 @@
 package ai.okou.android.artifacts
 
+import ai.okou.android.ContentReadFeedbackDelayMillis
 import ai.okou.android.R
 import ai.okou.android.chat.ConfirmedChat
 import ai.okou.android.chat.HistoryMarkdown
@@ -313,9 +314,14 @@ private fun PreviewContent(preview: ArtifactPreviewState?, offline: Boolean) {
     val content = preview?.content
     val problem = preview?.problem
     val hosted = preview?.isHosted == true
+    val imageStatus = preview?.isImage == true && content !is ArtifactContent.Image
     val waiting = content == null && problem == null
-    val showLoading = rememberContentReadFeedbackAfter(100L.takeIf { waiting })
-    if (!hosted && waiting && !showLoading) return
+    val showLoading =
+        key(preview?.id.takeIf { imageStatus }) {
+            val delay = if (imageStatus) ContentReadFeedbackDelayMillis else 100L
+            rememberContentReadFeedbackAfter(delay.takeIf { waiting })
+        }
+    if (!hosted && !imageStatus && waiting && !showLoading) return
     val colors = MaterialTheme.colorScheme
     val documentSurface = content is ArtifactContent.Text || content is ArtifactContent.Image
     Surface(
@@ -361,12 +367,40 @@ private fun PreviewContent(preview: ArtifactPreviewState?, offline: Boolean) {
                     else key(content.url) { MediaArtifactPreview(content) }
                 else ->
                     when {
+                        imageStatus -> ImagePreviewStatus(content, problem, showLoading)
                         problem != null -> PreviewStatus(problem.previewLabel())
                         content == ArtifactContent.Unsupported ->
                             PreviewStatus(R.string.artifact_preview_unsupported)
                         else -> PreviewStatusFrame(ratio = true) { PreviewLoading() }
                     }
             }
+        }
+    }
+}
+
+@Composable
+private fun ImagePreviewStatus(
+    content: ArtifactContent?,
+    problem: ArtifactProblem?,
+    showLoading: Boolean,
+) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        Box(
+            Modifier.fillMaxWidth()
+                .heightIn(min = maxOf(112.dp, maxWidth / PreviewAspectRatio))
+                .padding(horizontal = 16.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            val label =
+                when {
+                    problem == ArtifactProblem.Denied || problem == ArtifactProblem.Missing ->
+                        R.string.artifact_image_unavailable
+                    problem != null || content == ArtifactContent.Unsupported ->
+                        R.string.artifact_preview_unavailable
+                    showLoading -> R.string.artifact_preview_loading
+                    else -> null
+                }
+            if (label != null) PreviewStatusText(label)
         }
     }
 }
