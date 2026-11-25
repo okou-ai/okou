@@ -1,3 +1,7 @@
+import {
+  connectorConnectionExternalPrincipal,
+  connectorConnectionPrincipalValue,
+} from "./connector-account-mutation.service";
 import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectors } from "@okouai/db/schema/connector";
 import { command } from "ccstate";
@@ -16,6 +20,7 @@ export const connectorIdentityConflictAccount$ = command(
       readonly target: ConnectorAccountTarget;
       readonly externalId: string | undefined;
       readonly issuer?: string;
+      readonly externalUsername?: string | null;
     },
     signal: AbortSignal,
   ): Promise<string | undefined> => {
@@ -43,6 +48,13 @@ export const connectorIdentityConflictAccount$ = command(
             : eq(connectors.customConnectorId, args.target.customConnectorId),
           eq(connectors.externalId, args.externalId),
           eq(connectors.externalIssuer, args.issuer ?? ""),
+          eq(
+            connectorConnectionExternalPrincipal(),
+            connectorConnectionPrincipalValue(
+              args.target.kind === "builtin" ? args.target.connectorSlug : null,
+              args.externalUsername,
+            ),
+          ),
         ),
       )
       .limit(1);

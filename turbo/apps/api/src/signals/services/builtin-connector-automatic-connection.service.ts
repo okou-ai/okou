@@ -1,3 +1,7 @@
+import {
+  connectorConnectionExternalPrincipal,
+  connectorConnectionPrincipalValue,
+} from "./connector-account-mutation.service";
 import { connectorIdentityConflictAccount$ } from "./connector-identity-conflict-recovery";
 import { settle } from "../utils";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
@@ -201,6 +205,13 @@ function automaticReconnectWhere(
       ? and(
           eq(connectors.externalId, input.identity?.id ?? ""),
           eq(connectors.externalIssuer, input.binding?.issuer ?? ""),
+          eq(
+            connectorConnectionExternalPrincipal(),
+            connectorConnectionPrincipalValue(
+              input.connectorSlug,
+              input.identity?.username,
+            ),
+          ),
         )
       : undefined,
     // Optional public discovery cannot erase OAuth accepted in parallel.
@@ -384,6 +395,7 @@ export const publishAutomaticConnection$ = command(
               userId: input.userId,
               target: { kind: "builtin", connectorSlug: input.connectorSlug },
               externalId: input.identity?.id,
+              externalUsername: input.identity?.username,
               issuer: input.binding?.issuer,
             },
             signal,

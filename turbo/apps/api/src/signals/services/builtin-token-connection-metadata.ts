@@ -1,3 +1,4 @@
+import { connectorConnectionExternalPrincipal } from "./connector-account-mutation.service";
 import { connectors } from "@okouai/db/schema/connector";
 import {
   and,
@@ -82,7 +83,7 @@ function tokenMetadataInsert(
               }),
             ),
           )}, updated_at = clock_timestamp()
-        WHERE ${and(eq(connectors.externalId, identity), eq(connectors.externalIssuer, write.insert?.matchExternalIssuer ?? ""))}`;
+        WHERE ${and(eq(connectors.externalId, identity), eq(connectors.externalIssuer, write.insert?.matchExternalIssuer ?? ""), eq(connectorConnectionExternalPrincipal(), write.insert?.matchExternalPrincipal ?? ""))}`;
   }
   return sql`INSERT INTO ${connectors} (${sql.join(
     fields.map(({ column }) => {

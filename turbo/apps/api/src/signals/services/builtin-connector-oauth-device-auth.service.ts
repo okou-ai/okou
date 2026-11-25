@@ -868,6 +868,7 @@ const completeClaimedSession$ = command(
                 connectorSlug: args.prepared.runtimeMethod.connectorSlug,
               },
               externalId: args.prepared.userInfo.id,
+              externalUsername: args.prepared.userInfo.username,
             },
             signal,
           )

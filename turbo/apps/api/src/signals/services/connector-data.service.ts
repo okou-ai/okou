@@ -1,3 +1,4 @@
+import { connectorConnectionPrincipalValue } from "./connector-account-mutation.service";
 import { connectorIdentityConflictAccount$ } from "./connector-identity-conflict-recovery";
 import { connectEmailFromMailAccount$ } from "./email-connection.service";
 import {
@@ -2234,6 +2235,10 @@ export function builtinConnectorTokenMutationValues(
     },
     mutation: args.account,
     allowSiblings: true,
+    matchExternalPrincipal: connectorConnectionPrincipalValue(
+      args.runtimeMethod.connectorSlug,
+      args.userInfo.username,
+    ),
     matchExternalId: authorizedExternalIdForMutation({
       mutation: args.account,
       matchExistingExternalIdentity: args.matchExistingExternalIdentity,
@@ -2710,6 +2715,7 @@ export const upsertBuiltinConnectorTokenConnection$ = command(
                 connectorSlug: args.runtimeMethod.connectorSlug,
               },
               externalId: args.userInfo.id,
+              externalUsername: args.userInfo.username,
             },
             signal,
           )
