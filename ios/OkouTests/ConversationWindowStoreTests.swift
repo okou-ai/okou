@@ -58,6 +58,13 @@ final class ConversationWindowStoreTests: XCTestCase {
     let position = ConversationReadingPosition(
       messageID: readingID, offset: -42)
     conversation.rememberReadingPosition(position)
+    // Offsets belong to the native viewport; the detail view's scroll target ignores them.
+    let target = try conversation.graph.get(conversation.navigation)
+    XCTAssertEqual(target.readingMessageID, readingID)
+    conversation.rememberReadingPosition(
+      ConversationReadingPosition(messageID: readingID, offset: -12))
+    XCTAssertEqual(try conversation.graph.get(conversation.navigation), target)
+    conversation.rememberReadingPosition(position)
     async let first: Void = conversation.loadEarlierMessages()
     async let overlapping: Void = conversation.loadEarlierMessages()
     _ = await (first, overlapping)
