@@ -22,6 +22,10 @@ struct ChatSidebarView: View {
   @ResolvedValue private var resolvedProjects: ChatProjectStore.Presentation?
   /// The confirmed chats, kept in the workspace session's Store.
   @ResolvedValue private var resolvedThreads: [ChatThread]?
+  /// Whether a chat list has been published, kept in the workspace session's Store.
+  @ResolvedValue private var resolvedLoaded: Bool?
+  /// Chats the read-state snapshot marks unread, kept in the workspace session's Store.
+  @ResolvedValue private var resolvedUnread: Set<String>?
   /// The selected chat, kept in the workspace session's Store.
   @ResolvedValue private var resolvedSelection: String??
 
@@ -45,6 +49,8 @@ struct ChatSidebarView: View {
     _searchPresented = ResolvedValue(store.search.presented)
     _resolvedProjects = ResolvedValue(store.projects.presentation)
     _resolvedThreads = ResolvedValue(store.list.threadsValue)
+    _resolvedLoaded = ResolvedValue(store.list.hasLoadedThreadsValue)
+    _resolvedUnread = ResolvedValue(store.list.unreadThreadIDsValue)
     _resolvedSelection = ResolvedValue(store.selectedThreadValue)
   }
 
@@ -85,6 +91,8 @@ struct ChatSidebarView: View {
     Binding(get: { store.sidebar.filter }, set: { store.sidebar.select($0) })
   }
 
+  private var hasLoadedThreads: Bool { resolvedLoaded ?? store.list.hasLoadedThreads }
+
   private var listError: String? {
     listRead.error?.localizedDescription ?? store.list.error
   }
@@ -98,14 +106,14 @@ struct ChatSidebarView: View {
 
   var body: some View {
     List {
-      if listRead.state == .loading && !store.list.hasLoadedThreads {
+      if listRead.state == .loading && !hasLoadedThreads {
         forYouRow
         OkouLoadingRow("Loading chats…", statusColumnWidth: statusColumn)
           .frame(minHeight: OkouControl.listRow)
           .listRowInsets(EdgeInsets(top: 0, leading: rowInset, bottom: 0, trailing: rowInset))
           .listRowSeparator(.hidden)
           .listRowBackground(Color.clear)
-      } else if !store.list.hasLoadedThreads && listError != nil {
+      } else if !hasLoadedThreads && listError != nil {
         forYouRow
         Text("Your chats could not be loaded. Try updating again.")
           .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
@@ -140,7 +148,7 @@ struct ChatSidebarView: View {
       }
     }
     // The first snapshot establishes the list; subsequent membership changes animate.
-    .transaction(value: store.list.hasLoadedThreads) { transaction in
+    .transaction(value: hasLoadedThreads) { transaction in
       transaction.animation = nil
     }
     .transaction(value: threadRowIDs) { transaction in
@@ -248,9 +256,10 @@ struct ChatSidebarView: View {
       store: store, authentication: authentication, workspaceID: workspaceID,
       headerHeight: headerHeight, isScrolled: isScrolled, accountError: $accountError,
       threadFilter: threadFilter,
-      hasUnreadChats: (resolvedThreads ?? store.list.threads).contains {
-        !$0.isMuted && $0.indicator == .unread
-      }, close: close, newProject: { showEditor(creationEditor) })
+      hasUnreadChats: !(resolvedUnread ?? store.list.unreadThreadIDs).isEmpty
+        || (resolvedThreads ?? store.list.threads).contains {
+          !$0.isMuted && $0.indicator == .unread
+        }, close: close, newProject: { showEditor(creationEditor) })
   }
 
   /// For you is always the list's first row, whatever the chats below it are doing.
