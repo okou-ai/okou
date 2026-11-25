@@ -23,9 +23,33 @@ internal class ChatRenameEditor(
     val restoreFocus: Boolean,
     submission: RenameSubmission? = null,
 ) {
-    val baseline = initialName.trim()
+    var baseline by mutableStateOf(initialName)
+        private set
+
     val field = WorkspaceNameField(submission?.name ?: initialName)
     var submitted by mutableStateOf(submission)
+
+    fun updateConfirmedName(name: String, readOnly: Boolean) {
+        if (name == baseline) return
+        val input = field.input
+        if (
+            !readOnly &&
+                input.composition == null &&
+                normalizedRenameName(input.text) == normalizedRenameName(baseline)
+        ) {
+            val previousSelection = input.selection
+            input.edit {
+                replace(0, length, name)
+                selection =
+                    TextRange(
+                        previousSelection.start.coerceAtMost(length),
+                        previousSelection.end.coerceAtMost(length),
+                    )
+            }
+            field.focusedSelection = input.selection
+        }
+        baseline = name
+    }
 }
 
 internal class WorkspaceNameField(initialName: String = "") {

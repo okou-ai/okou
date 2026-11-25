@@ -218,6 +218,55 @@ internal class ChatRenameFormRootTest : ChatListRootTestFixture() {
     }
 
     @Test
+    fun chatRenameUsesTheLatestConfirmedNameWhileKeepingEditsAndSelection() {
+        val app = compose.activity.application as ChatListApplication
+        val events = app.fixture.rowEventTail()
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithTag("chat_$CHAT_PERSONAL").performTouchInput { longClick() }
+        compose.onNodeWithText("Rename chat").performClick()
+        val editor = compose.onNodeWithContentDescription("Chat title")
+        val save = compose.onNodeWithText("Save")
+
+        fun publishTitle(sequence: Long, eventId: String, title: String) {
+            events.add(
+                sequence to chatEventWire(eventId, sequence, kind = "renamed", title = title),
+            )
+            refreshWorkspaceChats()
+            compose.waitUntil(10_000) {
+                currentList()?.confirmedThreads?.any {
+                    it.id == CHAT_PERSONAL && it.title == title
+                } == true
+            }
+        }
+
+        publishTitle(24, HISTORY_LAST_EVENT, "Remote title")
+        editor.assertTextContains("Remote title").assertIsFocused()
+        save.assertIsNotEnabled()
+
+        editor.performTextReplacement("Personal chat")
+        editor.performTextInputSelection(TextRange(1, 4))
+        save.assertIsEnabled()
+        publishTitle(25, "00000025-0000-4000-8000-000000000000", "Newer title")
+        editor.assertTextContains("Personal chat").assertIsFocused()
+        assertEquals(
+            TextRange(1, 4),
+            editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange],
+        )
+        save.assertIsEnabled()
+
+        publishTitle(26, "00000026-0000-4000-8000-000000000000", "Personal chat")
+        editor.assertTextContains("Personal chat")
+        save.assertIsNotEnabled()
+
+        editor.performTextReplacement("  Personal chat  ")
+        save.assertIsNotEnabled()
+        publishTitle(27, "00000027-0000-4000-8000-000000000000", "Final title")
+        editor.assertTextContains("Final title")
+        save.assertIsNotEnabled()
+    }
+
+    @Test
     fun lateCanonicalChatTitleKeepsNewEditsOpen() {
         val app = compose.activity.application as ChatListApplication
         val events = app.fixture.rowEventTail()

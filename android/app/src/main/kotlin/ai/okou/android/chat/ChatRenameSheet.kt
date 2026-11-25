@@ -90,6 +90,10 @@ internal fun RenameListItemSheet(
         return
     }
 
+    LaunchedEffect(editor, confirmedName, readOnly) {
+        editor.updateConfirmedName(confirmedName, readOnly)
+    }
+
     val hint = if (projectName) null else stringResource(R.string.chat_rename_trim_hint)
     val validation =
         if (form.error == RenameFieldError.Required) stringResource(R.string.chat_rename_required)
