@@ -3,14 +3,15 @@ import { searchParams$, updateSearchParams$ } from "../route.ts";
 import { onRef, waitForToken } from "../utils.ts";
 import {
   agentSuggestionListItems$,
-  forYouVisitEntries$,
+  forYouVisitSnapshot$,
   settledFeedOrder$,
   suggestionDirectionItemId$,
 } from "./agent-suggestion-session.ts";
 
 /** The URL identifies the reading position; browsing never consumes a card. */
 export const forYouDeck$ = computed((get) => {
-  const entries = get(forYouVisitEntries$);
+  const snapshot = get(forYouVisitSnapshot$);
+  const entries = snapshot?.entries ?? [];
   const suggestions = get(agentSuggestionListItems$);
   const events = entries.filter((entry) => {
     return "dismissed$" in entry;
@@ -54,7 +55,16 @@ export const forYouDeck$ = computed((get) => {
   const settledOrder = get(settledFeedOrder$);
   return {
     cards,
-    waiting,
+    remainingIds:
+      snapshot?.source === "list"
+        ? entries
+            .filter((entry) => {
+              return waiting.has(entry);
+            })
+            .map((entry) => {
+              return entry.item.id;
+            })
+        : undefined,
     settled: items
       .filter(({ outcome }) => {
         return outcome !== null;

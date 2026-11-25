@@ -5,7 +5,6 @@ import { ForYouPage } from "../../views/okou-page/for-you-page.tsx";
 
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
-import { pageVersion$ } from "../page-signal.ts";
 import { resetProjectUi$ } from "../projects/project-ui.ts";
 import { updatePage$ } from "../react-router.ts";
 import { detach, Reason } from "../utils.ts";
@@ -14,18 +13,13 @@ import { enterSuggestionSession$ } from "./agent-suggestion-session.ts";
 import { setupForYouPagination$ } from "./for-you.ts";
 
 export const setupForYouPage$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
+  async ({ set }, signal: AbortSignal) => {
     signal.throwIfAborted();
     set(setupForYouPagination$, signal);
     set(setupForYouPageKeyboardShortcuts$, signal);
     set(resetProjectUi$);
     const loading = set(enterSuggestionSession$, signal);
-    // Retain resolved counts only within this visit.
-    set(
-      updatePage$,
-      createElement(ForYouPage, { key: get(pageVersion$) }),
-      "sidebar",
-    );
+    set(updatePage$, createElement(ForYouPage), "sidebar");
     set(
       updateDocumentTitle$,
       i18n.t(($) => {

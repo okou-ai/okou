@@ -495,9 +495,14 @@ test("agent-suggestions-025 a withdrawn second choice refreshes the pool and pre
   const staleMessage =
     "Suggestion is no longer available. Refresh your suggestions.";
   context.mocks.api(feedContract.list, async ({ respond }) => {
-    if (withdrawn) {
+    if (withdrawn && !refresh.settled()) {
       refresh.resolve();
       await release.promise;
+      return respond(503, {
+        error: { code: "UNAVAILABLE", message: "Feed unavailable" },
+      });
+    }
+    if (withdrawn) {
       return respond(200, { items: [offer] });
     }
     return respond(200, { items: [one, two, three, four] });
@@ -529,6 +534,11 @@ test("agent-suggestions-025 a withdrawn second choice refreshes the pool and pre
   await screen.findByText(
     "That suggestion is no longer available. Suggestions have been refreshed.",
   );
+  const alert = await screen.findByRole("alert");
+  expect(screen.getByText("2 to go")).toBeInTheDocument();
+  click(await findFastControl("link", "Previous suggestion"));
+  await expect(activeCard(three)).resolves.toBeVisible();
+  click(await findFastControl("button", "Try again", alert));
   await expect(activeCard(offer)).resolves.toBeVisible();
   expect(screen.getByText("1 to go")).toBeInTheDocument();
   expect(queryFastControl("link", "Next suggestion")).toBeNull();
@@ -1289,6 +1299,11 @@ test("agent-suggestions-015 a member with only built-in Auto can send the first 
 test("Opening For you shows the summary card and keeps its draft and read receipt when the list arrives", async () => {
   const first = proposal("Visit the eastern breakwater");
   const second = proposal("Review the ferry timetable", 20);
+  const revised = {
+    ...proposal("A revised breakwater plan", first.priority),
+    id: first.id,
+    createdAt: first.createdAt,
+  };
   const release = context.mocks.deferred<void>();
   const reads: string[] = [];
   let listReads = 0;
@@ -1298,7 +1313,7 @@ test("Opening For you shows the summary card and keeps its draft and read receip
   context.mocks.api(feedContract.list, async ({ respond }) => {
     listReads++;
     await release.promise;
-    return respond(200, { items: [second, first] });
+    return respond(200, { items: [second, revised] });
   });
   context.mocks.api(feedContract.markRead, ({ params, respond }) => {
     reads.push(params.id);
@@ -1342,6 +1357,34 @@ test("Opening For you shows the summary card and keeps its draft and read receip
   );
   expect(reads).toStrictEqual([first.id]);
   await expect(activeCard(first)).resolves.toBeVisible();
+});
+
+test("The full list updates an untouched preview when the same suggestion is revised", async () => {
+  const preview = proposal("Confirm the morning sailing");
+  const revised = {
+    ...proposal("Confirm the evening sailing"),
+    id: preview.id,
+    createdAt: preview.createdAt,
+    updatedAt: new Date(Date.parse(preview.updatedAt) + 1).toISOString(),
+  };
+  const release = context.mocks.deferred<void>();
+  context.mocks.api(feedContract.summary, ({ respond }) => {
+    return respond(200, { hasUnread: true, firstItem: preview });
+  });
+  context.mocks.api(feedContract.list, async ({ respond }) => {
+    await release.promise;
+    return respond(200, { items: [revised] });
+  });
+  try {
+    await openDeck();
+    await expect(activeCard(preview)).resolves.toBeVisible();
+  } finally {
+    release.resolve();
+  }
+  const card = await activeCard(revised);
+  await expect(
+    findFastControl("button", "Prepare Confirm the evening sailing", card),
+  ).resolves.toBeEnabled();
 });
 
 test("Retrying a failed list preserves feedback and Undo from the preview", async () => {

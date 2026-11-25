@@ -4,7 +4,7 @@ import { command, computed, state, type Command } from "ccstate";
 import { feedContract } from "@okouai/api-contracts/client/feed";
 import type { FeedSources } from "@okouai/api-contracts/contracts/feed";
 import { accept } from "../../lib/accept.ts";
-import { setAblyLoop$ } from "../realtime.ts";
+import { setAblyInvalidationLoop$ } from "../realtime.ts";
 import { apiClient$ } from "../api-client.ts";
 import { authenticatedSessionKey$ } from "../auth.ts";
 import { createDeferredPromise, onRef } from "../utils.ts";
@@ -46,26 +46,19 @@ export const reloadForYouSources$ = command(({ get, set }) => {
   });
 });
 
-const refreshForYouSummary$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    set(reloadForYouSources$);
-    await get(forYouSummary$);
-    signal.throwIfAborted();
-    return false;
-  },
-);
-export const followForYouSummaryOnRef$ = onRef(
-  command(({ set }, _row: HTMLElement, signal: AbortSignal) => {
+/** Notifications can arrive while the mobile chat list is off screen. */
+export const subscribeForYouSources$ = command(
+  ({ set }, signal: AbortSignal) => {
     set(
-      setAblyLoop$,
+      setAblyInvalidationLoop$,
       {
         scope: "credential",
         topic: "agentSuggestionsChanged",
-        loopCommand$: refreshForYouSummary$,
+        invalidations: [reloadForYouSources$],
       },
       signal,
     );
-  }),
+  },
 );
 
 export const updateForYouSource$ = command(

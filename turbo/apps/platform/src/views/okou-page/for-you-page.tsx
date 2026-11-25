@@ -23,7 +23,7 @@ import { Skeleton } from "@okouai/ui/components/ui/skeleton";
 import { useTranslation } from "react-i18next";
 import {
   type AgentSuggestionEntry,
-  forYouItems$,
+  forYouListRequest$,
   reloadSuggestionSession$,
 } from "../../signals/okou-page/agent-suggestion-session.ts";
 import {
@@ -641,17 +641,8 @@ const DEFAULT_GROUND = "248 245 243";
 export function ForYouPage() {
   const { t } = useTranslation();
   const deck = useGet(forYouDeck$);
-  const items = useLastResolved(forYouItems$);
-  const listState = useLoadableState(forYouItems$);
-  // The summary card is actionable before the full list can supply a count.
-  // Filter the last complete list against live feedback and Undo during a reload.
-  const remaining = items
-    ?.filter((entry) => {
-      return deck.waiting.has(entry);
-    })
-    .map((entry) => {
-      return entry.item.id;
-    });
+  const listState = useLoadableState(forYouListRequest$);
+  const remaining = deck.remainingIds;
   const currentId = deck.cards[0]?.entry.item.id;
   const position = remaining?.indexOf(currentId ?? "") ?? -1;
   const pager = useForYouPager(remaining, position);
@@ -659,7 +650,7 @@ export function ForYouPage() {
   const reload = useSet(reloadSuggestionSession$);
   const signal = useGet(pageSignal$);
   const hasStack =
-    deck.cards.length > 0 || deck.settled.length > 0 || items !== undefined;
+    deck.cards.length > 0 || deck.settled.length > 0 || remaining !== undefined;
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-brand-off-white dark:bg-background">
       <main

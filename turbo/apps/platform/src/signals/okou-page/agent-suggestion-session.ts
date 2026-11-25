@@ -28,7 +28,6 @@ import {
   resetSignal,
   waitForToken,
 } from "../utils.ts";
-import type { ComposerSubmission } from "./composer-signals.ts";
 import { createDraftSignals } from "./chat-draft.ts";
 import { createPlatformEventEntry } from "./platform-feed-events.ts";
 import {
@@ -246,10 +245,7 @@ interface SettledSuggestion extends AgentSuggestionListItem {
 /** A member can start a custom response while only the summary card is available. */
 export interface SuggestionDirectionSession {
   readonly entry: AgentSuggestionEntry;
-  readonly target:
-    { readonly kind: "new" } | { readonly kind: "thread"; readonly id: string };
   readonly impression: SuggestionImpression;
-  readonly finish: (threadId: string, submission: ComposerSubmission) => void;
 }
 type ForYouEntry =
   AgentSuggestionEntry | ReturnType<typeof createPlatformEventEntry>;
@@ -257,48 +253,65 @@ type ForYouEntry =
 function createSuggestionSession() {
   const direction$ = state<SuggestionDirectionSession | null>(null);
   const settledOrder$ = state<readonly string[]>([]);
-  const cards$ = state<readonly ForYouEntry[] | null>(null);
+  const snapshot$ = state<{
+    readonly source: "preview" | "list";
+    readonly entries: readonly ForYouEntry[];
+  } | null>(null);
+  const request$ = state<Promise<void> | undefined>(undefined);
   const entries$ = computed((get) => {
-    return (get(cards$) ?? []).filter((entry) => {
+    return (get(snapshot$)?.entries ?? []).filter((entry) => {
       return "unavailable$" in entry;
     });
   });
-  const items$ = state<Promise<readonly ForYouEntry[]> | undefined>(undefined);
+
+  function createEntry(item: ActiveFeedItem): ForYouEntry {
+    return item.type === "suggestion"
+      ? createSuggestionEntry(item)
+      : createPlatformEventEntry(item, settledOrder$);
+  }
 
   // Reuse entries across the preview and list so drafts, feedback and Undo
   // stay attached to their cards. A completed empty list supersedes the preview.
   const applyCards$ = command(
     ({ get, set }, items: readonly ActiveFeedItem[]) => {
       const editing = get(direction$)?.entry;
-      const offered = new Set(
+      const offered = new Map(
         items.map((item) => {
-          return item.id;
+          return [item.id, item] as const;
         }),
       );
       const byId = new Map<string, ForYouEntry>();
-      for (const entry of get(cards$) ?? []) {
+      for (const entry of get(snapshot$)?.entries ?? []) {
         const id = entry.item.id;
+        const current = offered.get(id);
         if ("unavailable$" in entry) {
-          if (
-            get(entry.unavailable$) ||
-            (!offered.has(id) && entry !== editing && !get(entry.acted$))
-          ) {
+          const keepAction = entry === editing || get(entry.acted$);
+          if (get(entry.unavailable$) || (!current && !keepAction)) {
             set(entry.unavailable$, true);
             continue;
           }
-        } else if (!offered.has(id) && !get(entry.dismissed$)) {
+          // An untouched card uses the authoritative revision. Writes and drafts
+          // keep the exact signed content on which the member acted.
+          if (
+            !keepAction &&
+            current?.type === "suggestion" &&
+            (entry.item.consumeToken !== current.consumeToken ||
+              entry.item.updatedAt !== current.updatedAt)
+          ) {
+            continue;
+          }
+        } else if (current?.type === "event") {
+          // The workflow description may change while dismissal is in flight.
+          byId.set(id, { ...entry, item: current });
+          continue;
+        } else if (!get(entry.dismissed$)) {
           continue;
         }
         byId.set(id, entry);
       }
-      for (const item of items) {
+      for (const item of offered.values()) {
         if (!byId.has(item.id)) {
-          byId.set(
-            item.id,
-            item.type === "suggestion"
-              ? createSuggestionEntry(item)
-              : createPlatformEventEntry(item, settledOrder$),
-          );
+          byId.set(item.id, createEntry(item));
         }
       }
       const cards = [...byId.values()].sort((left, right) => {
@@ -308,8 +321,7 @@ function createSuggestionSession() {
           left.item.id.localeCompare(right.item.id)
         );
       });
-      set(cards$, cards);
-      return cards;
+      set(snapshot$, { source: "list", entries: cards });
     },
   );
 
@@ -336,7 +348,7 @@ function createSuggestionSession() {
   const resetRead$ = resetSignal();
   const reload$ = command(({ set }, pageSignal: AbortSignal) => {
     const load = set(readList$, set(resetRead$, pageSignal));
-    set(items$, load);
+    set(request$, load);
     return load;
   });
   const showPreview$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -347,10 +359,10 @@ function createSuggestionSession() {
     if (
       firstItem &&
       (!target || firstItem.id === target) &&
-      !get(cards$) &&
+      !get(snapshot$) &&
       get(forYouSummary$) === summary
     ) {
-      set(applyCards$, [firstItem]);
+      set(snapshot$, { source: "preview", entries: [createEntry(firstItem)] });
     }
   });
   // Handled cards, in the order the member handled them.
@@ -359,8 +371,8 @@ function createSuggestionSession() {
     direction$,
     showPreview$,
     reload$,
-    items$,
-    cards$,
+    request$,
+    snapshot$,
     settledOrder$,
     entries$,
     settled$,
@@ -403,8 +415,8 @@ export const agentSuggestionListItems$ = computed(
     return [...waiting, ...settled];
   },
 );
-export const forYouVisitEntries$ = computed((get) => {
-  return get(get(session$).cards$) ?? [];
+export const forYouVisitSnapshot$ = computed((get) => {
+  return get(get(session$).snapshot$);
 });
 export const settledFeedOrder$ = computed((get) => {
   return get(get(session$).settledOrder$);
@@ -416,9 +428,9 @@ export const focusSuggestionTitleOnRef$ = onRef<HTMLHeadingElement>(
   }),
 );
 
-/** Resolves once every page of this visit's list has arrived. */
-export const forYouItems$ = computed((get) => {
-  return get(get(session$).items$);
+/** The current request can fail while a previous complete list remains usable. */
+export const forYouListRequest$ = computed((get) => {
+  return get(get(session$).request$);
 });
 
 export const enterSuggestionSession$ = command(
