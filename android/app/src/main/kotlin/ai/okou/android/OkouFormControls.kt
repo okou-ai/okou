@@ -19,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.disabled
@@ -40,6 +41,22 @@ internal object OkouFormLayout {
 
 @Composable
 internal fun okouFormInputStyle() = MaterialTheme.typography.bodyLarge.copy(letterSpacing = 0.sp)
+
+@Composable
+internal fun okouFormSupportingTextHeight() = with(LocalDensity.current) { 16.sp.toDp() }
+
+@Composable
+internal fun OkouFormFieldError(message: String?) {
+    Box(Modifier.heightIn(min = okouFormSupportingTextHeight())) {
+        if (message != null) {
+            Text(
+                message,
+                style =
+                    MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp),
+            )
+        }
+    }
+}
 
 internal enum class OkouActionTreatment {
     Primary,

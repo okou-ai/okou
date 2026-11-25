@@ -118,7 +118,7 @@ internal class PersonalInstructionsOwner(
         val state = mutable.value
         if (!connection.current() || !state.canEdit || content == state.content) return
         val base = state.saved ?: return
-        val next = state.copy(saveRejected = false)
+        val next = state.copy(saveRejected = false, saveConfirmed = false)
         if (content == base.content && state.read != InstructionsRead.Failed)
             replaceDraft(null, next)
         else mutable.value = next.copy(draft = InstructionsDraft(content, base))
@@ -215,7 +215,7 @@ internal class PersonalInstructionsOwner(
             }
     }
 
-    private fun acceptRead(saved: PersonalInstructions) {
+    private fun acceptRead(saved: PersonalInstructions, settlingSave: Boolean = false) {
         store.rememberConfirmed(identity, saved)
         val state = mutable.value
         val draft = state.draft
@@ -224,7 +224,14 @@ internal class PersonalInstructionsOwner(
             draft == null -> mutable.value = next
             draft.attempted && saved.version == draft.base.version ->
                 mutable.value = next.copy(recoveryVersion = saved.version)
-            draft.content == saved.content -> replaceDraft(null, next.copy(saveRejected = false))
+            draft.content == saved.content ->
+                replaceDraft(
+                    null,
+                    next.copy(
+                        saveRejected = false,
+                        saveConfirmed = settlingSave || draft.attempted,
+                    ),
+                )
             draft.attempted -> replaceDraft(draft.copy(attempted = false), next)
             else -> mutable.value = next
         }
@@ -260,6 +267,7 @@ internal class PersonalInstructionsOwner(
                 mutable.value.copy(
                     request = InstructionsRequest.Preparing,
                     saveRejected = false,
+                    saveConfirmed = false,
                     recoveryVersion = null,
                 ),
             ),
@@ -330,14 +338,14 @@ internal class PersonalInstructionsOwner(
         requireCurrent(op)
         if (saved.content != attempt.content || saved.version == attempt.base.version)
             throw ApiFailure.IncompatibleResponse()
-        acceptRead(saved)
+        acceptRead(saved, settlingSave = true)
     }
 
     private suspend fun readAfterSave(op: Operation): PersonalInstructions? =
         try {
             val saved = op.connection.service.personalInstructions()
             requireCurrent(op)
-            acceptRead(saved)
+            acceptRead(saved, settlingSave = true)
             saved
         } catch (cancelled: CancellationException) {
             throw cancelled

@@ -36,7 +36,6 @@
     <string name="connector_rename">名前を変更</string>
     <string name="connector_rename_title">アカウント名を変更</string>
     <string name="connector_account_name">アカウント名</string>
-    <string name="connector_rename_hint">先頭と末尾の空白は削除されます。最大 %1$d 文字です。</string>
     <string name="connector_rename_required">アカウント名を入力してください。</string>
     <string name="connector_rename_too_long">アカウント名は %1$d 文字以内で入力してください。</string>
     <string name="connector_disconnect">アカウントの接続を解除</string>
