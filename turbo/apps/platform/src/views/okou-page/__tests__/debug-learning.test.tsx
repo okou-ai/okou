@@ -68,7 +68,6 @@ async function visit(entries: WorkflowAutomationsListEntry[]) {
     path: "/?settings=debug",
     host: "app.okou.ai",
     featureSwitches: {
-      [FeatureSwitchKey.AgentSuggestion]: true,
       [FeatureSwitchKey.OkouDebug]: true,
     },
   });

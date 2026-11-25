@@ -5,7 +5,6 @@ import {
   chatThreadMuteContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { cronExecuteWorkflowAutomationsContract } from "@okouai/api-contracts/contracts/cron";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import {
   feedContract,
   type PlatformEvent,
@@ -14,7 +13,6 @@ import {
   workflowAutomationsContract,
   type WorkflowAutomationSummary,
 } from "@okouai/api-contracts/contracts/workflows";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
@@ -23,7 +21,6 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatThreadGetRoutes } from "../chat-threads-get";
 import { chatThreadMuteRoutes } from "../chat-threads-mute";
 import { cronExecuteWorkflowAutomationsRoutes } from "../cron-execute-workflow-automations";
-import { featureSwitchesRoutes } from "../feature-switches";
 import { feedRoutes } from "../feed";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -66,21 +63,8 @@ function feedClient() {
   return setupApp({ context, routes: feedRoutes })(feedContract);
 }
 
-async function feedSwitch(actor: ApiTestUser, enabled: boolean) {
-  await accept(
-    setupApp({ context, routes: featureSwitchesRoutes })(
-      featureSwitchesContract,
-    ).update({
-      headers: authHeaders(actor),
-      body: { switches: { [FeatureSwitchKey.AgentSuggestion]: enabled } },
-    }),
-    [200],
-  );
-}
-
 async function createScenario(
   options: {
-    readonly feedEnabled?: boolean;
     readonly scheduleType?: "cron" | "loop" | "once";
   } = {},
 ): Promise<Scenario> {
@@ -92,7 +76,6 @@ async function createScenario(
   const runnerGroup = await runs.configureRunnerGroup();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
-  await feedSwitch(actor, options.feedEnabled ?? true);
   const workflowName = `disabled-feed-event-${randomUUID().slice(0, 8)}`;
   const workflowId = await workflows.createWorkflow(actor, {
     name: workflowName,
@@ -334,7 +317,6 @@ describe("recurring automation auto-disable platform feed events", () => {
     const peer = workflows.user({ orgId: scenario.actor.orgId });
     const otherWorkspace = workflows.user({ userId: scenario.actor.userId });
     for (const outsider of [peer, otherWorkspace]) {
-      await feedSwitch(outsider, true);
       await expect(inbox(outsider)).resolves.toStrictEqual([]);
       await accept(
         feedClient().dismiss({
@@ -496,16 +478,6 @@ describe("recurring automation auto-disable platform feed events", () => {
       throw new Error("Expected a new system update after enabling its source");
     }
     expectDisableNotice(event, scenario, new Date(now()).toISOString());
-  });
-
-  it("keeps disabling schedules without emitting while the feed switch is off", async () => {
-    const scenario = await createScenario({ feedEnabled: false });
-    for (const failure of [1, 2, 3]) {
-      await completeFailedManualRun(scenario);
-      expect((await readAutomation(scenario)).enabled).toBe(failure < 3);
-    }
-    await feedSwitch(scenario.actor, true);
-    await expect(inbox(scenario.actor)).resolves.toStrictEqual([]);
   });
 
   it("does not emit for a manual disable and can emit again after re-enabling", async () => {

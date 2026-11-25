@@ -1,6 +1,5 @@
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   feedContract,
   type Suggestion,
@@ -28,7 +27,6 @@ import {
   findFastControl,
   queryFastControl,
 } from "./chat-message-experience-test-helpers.ts";
-import { setMockFeatureSwitches } from "../../../mocks/handlers/api-feature-switches.helpers.ts";
 import {
   acme,
   design,
@@ -45,7 +43,6 @@ test("agent-suggestions-039 the empty For you destination reports zero remaining
   await setupPage({
     context,
     path: "/for-you",
-    featureSwitches: { [FeatureSwitchKey.AgentSuggestion]: true },
   });
   await screen.findByText("All caught up");
   expect(screen.getByText("0 to go")).toBeInTheDocument();
@@ -112,7 +109,6 @@ function openDeck(path = "/for-you") {
   return setupPage({
     context,
     path,
-    featureSwitches: { [FeatureSwitchKey.AgentSuggestion]: true },
   });
 }
 
@@ -695,7 +691,6 @@ test("The For you banner reads the saved artwork again when the member reopens t
     await setupPage({
       context: runtime,
       path: "/for-you",
-      featureSwitches: { [FeatureSwitchKey.AgentSuggestion]: true },
     });
     click(await findFastControl("button", "Change cover"));
     return screen.findByRole("dialog", { name: "Change cover" });
@@ -779,8 +774,7 @@ test("A previously visited suggestion becomes available again after its fresh fe
     }
     return respond(200, { items: [saved] });
   });
-  const featureSwitches = { [FeatureSwitchKey.AgentSuggestion]: true };
-  await setupPage({ context: first, path: "/for-you", featureSwitches });
+  await setupPage({ context: first, path: "/for-you" });
   await activeCard(saved);
   cleanup();
   first.dispose();
@@ -1030,7 +1024,6 @@ test("agent-suggestions-007 a member returning to For you sees only the selected
     }
     return respond(200, { items: [card] });
   });
-  setMockFeatureSwitches({ [FeatureSwitchKey.AgentSuggestion]: true });
   await directory(context, () => {
     return Promise.resolve();
   });

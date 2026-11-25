@@ -7,7 +7,6 @@ import { feedPreferences } from "@okouai/db/schema/feed-preference";
 import { publishAgentSuggestionsChangedSafely } from "../external/realtime";
 import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
-import { resourceUnavailable } from "../../lib/error";
 import { nowDate } from "../../lib/time";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -25,11 +24,12 @@ import { proactivePreferenceAccess$ } from "../services/proactive-preference-acc
 
 const readProactivePreference$ = command(
   async (
-    { get },
+    { get, set },
     owner: ProactiveWorkflowOwner,
-    eligibility: Awaited<ReturnType<typeof loadProactivePreferences$.write>>,
     signal: AbortSignal,
   ): Promise<ProactivePreference> => {
+    const eligibility = await set(loadProactivePreferences$, owner, signal);
+    signal.throwIfAborted();
     const definitions = Object.values(PROACTIVE_WORKFLOW_DEFINITIONS);
     const automations = await get(db$)
       .select({
@@ -59,12 +59,12 @@ const readProactivePreference$ = command(
       );
     signal.throwIfAborted();
     const unavailableReason =
-      eligibility.suggestions.enabled && eligibility.timezone === null
+      eligibility.suggestions && eligibility.timezone === null
         ? "missing-timezone"
         : null;
     return {
-      enabled: eligibility.suggestions.enabled,
-      status: !eligibility.suggestions.active
+      enabled: eligibility.suggestions,
+      status: !eligibility.suggestions
         ? "paused"
         : automations.some((automation) => {
               return automation.status === "failed" || automation.failures;
@@ -142,10 +142,6 @@ const preferenceRoute$ = command(
     }
     const auth = get(organizationAuthContext$);
     const owner = { orgId: auth.orgId, userId: auth.userId };
-    const eligibility = await set(loadProactivePreferences$, owner, signal);
-    if (!eligibility.suggestions.available) {
-      return resourceUnavailable("Proactive is not enabled.");
-    }
     if (operation !== "read") {
       const withFeed = operation === "withFeed";
       const body = await get(
@@ -169,17 +165,7 @@ const preferenceRoute$ = command(
         set(ensureProactiveWorkflows$, owner, signal),
         signal,
       );
-      const savedEligibility = await set(
-        loadProactivePreferences$,
-        owner,
-        signal,
-      );
-      const preference = await set(
-        readProactivePreference$,
-        owner,
-        savedEligibility,
-        signal,
-      );
+      const preference = await set(readProactivePreference$, owner, signal);
       return {
         status: 200 as const,
         body: setup.ok
@@ -189,7 +175,7 @@ const preferenceRoute$ = command(
     }
     return {
       status: 200 as const,
-      body: await set(readProactivePreference$, owner, eligibility, signal),
+      body: await set(readProactivePreference$, owner, signal),
     };
   },
 );

@@ -292,13 +292,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.AgentSuggestion]: {
-    maintainer: "lancy@okou.ai",
-    displayName: "Suggestions",
-    description:
-      "Update the user profile daily and curate useful next-step suggestions.",
-    enabled: true,
-  },
   [FeatureSwitchKey.PresentationConvert]: {
     maintainer: "bingjie@okou.ai",
     description:

@@ -4415,7 +4415,6 @@
   },
   "myOkou": {
     "conflict": "指令已在其他地方更新。本地草稿已保留，请先查看或复制，再重新加载已保存的内容。",
-    "description": "在此工作区中，专属于你的 Okou 指令",
     "discard": "放弃",
     "draftKept": "切换页面或工作区时，草稿会保留在此浏览器标签页中。",
     "instructions": "指令",
@@ -5685,7 +5684,6 @@
           "title": "偏好设置"
         },
         "proactiveLearning": {
-          "description": "选择 Okou 主动工作的方式。",
           "title": "Proactive"
         },
         "tools": {
@@ -6090,7 +6088,6 @@
         "title": "晨报"
       },
       "proactiveSuggestions": {
-        "description": "每小时检查已连接的信息来源，每天更新用户画像，并推荐有用的下一步行动。",
         "errorMessage": "无法加载或更新主动建议设置。",
         "missingTimezone": "请在偏好设置中设置时区。",
         "preparationFailed": "暂时无法运行。",

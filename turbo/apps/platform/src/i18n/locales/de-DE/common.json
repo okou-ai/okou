@@ -4435,7 +4435,6 @@
   },
   "myOkou": {
     "conflict": "Deine gespeicherten Anweisungen wurden anderswo geändert. Dein Entwurf bleibt erhalten. Prüfe oder kopiere ihn, bevor du die gespeicherten Anweisungen neu lädst.",
-    "description": "Deine Anweisungen für Okou in diesem Arbeitsbereich",
     "discard": "Verwerfen",
     "draftKept": "Dein Entwurf bleibt in diesem Browser-Tab erhalten, wenn du die Seite oder den Arbeitsbereich wechselst.",
     "instructions": "Anweisungen",
@@ -5708,7 +5707,6 @@
           "title": "Einstellungen"
         },
         "proactiveLearning": {
-          "description": "Wähle, wie Okou proaktiv arbeitet.",
           "title": "Proactive"
         },
         "tools": {
@@ -6114,7 +6112,6 @@
         "title": "Morgenbrief"
       },
       "proactiveSuggestions": {
-        "description": "Verbundene Quellen stündlich prüfen, dein Nutzerprofil täglich aktualisieren und hilfreiche nächste Schritte vorschlagen.",
         "errorMessage": "Die Einstellungen konnten nicht geladen oder aktualisiert werden.",
         "missingTimezone": "Legen Sie Ihre Zeitzone in den Einstellungen fest.",
         "preparationFailed": "Vorübergehend nicht verfügbar.",

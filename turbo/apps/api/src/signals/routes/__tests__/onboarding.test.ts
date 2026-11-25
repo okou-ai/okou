@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { cronOfficialWorkflowCatalogContract } from "@okouai/api-contracts/contracts/cron";
 import {
   onboardingCompleteContract,
@@ -19,7 +18,6 @@ import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRouteMocks } from "./helpers/route-test";
 import { mockClerkUsers } from "./helpers/clerk-users";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 import { billingStatusRoutes } from "../billing-status";
 import { cronOfficialWorkflowCatalogRoutes } from "../cron-official-workflow-catalog";
@@ -430,23 +428,6 @@ describe("POST /api/onboarding/complete", () => {
     expect(
       (await accept(preferences.get({ headers }), [200])).body.enabled,
     ).toBeFalsy();
-  });
-
-  it("leaves Suggestions paused if the feature was unavailable during onboarding", async () => {
-    const actor = orgActor();
-    mockClerkUsers(context, [{ id: actor.userId, createdAt: now() }]);
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.AgentSuggestion]: false,
-    });
-    await completeAs(actor);
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.AgentSuggestion]: true,
-    });
-    const preference = await accept(
-      suggestionsClient().get({ headers: authHeaders() }),
-      [200],
-    );
-    expect(preference.body.enabled).toBeFalsy();
   });
 
   it("can retry onboarding after Clerk temporarily fails to return the account", async () => {
