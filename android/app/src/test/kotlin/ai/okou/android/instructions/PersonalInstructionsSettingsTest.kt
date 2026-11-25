@@ -471,6 +471,11 @@ class PersonalInstructionsSettingsTest {
         awaitRead(InstructionsRead.RefreshFailed)
         val feedback = compose.onNodeWithText(app.getString(R.string.instructions_refresh_failed))
         feedback.assertIsDisplayed()
+        val snackbarBounds = feedback.getUnclippedBoundsInRoot()
+        assertTrue(
+            "Refresh feedback $snackbarBounds stays above Save $initialSave",
+            snackbarBounds.bottom <= initialSave.top,
+        )
         input.assertTextEquals("Keep editing when the read fails")
         save.assertIsEnabled()
         assertEquals(initialEditor, input.getUnclippedBoundsInRoot())

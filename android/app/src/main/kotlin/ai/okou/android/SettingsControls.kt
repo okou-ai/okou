@@ -57,6 +57,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -71,6 +72,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
@@ -451,6 +454,8 @@ internal fun SettingsSheet(
         fitContentInsets = compactHeight && fullScreenInShortWindow,
         confirmDismiss = confirmDismiss,
     ) { centered ->
+        var panelBottom by remember { mutableFloatStateOf(0f) }
+        var actionTop by remember { mutableStateOf<Float?>(null) }
         val panel: @Composable () -> Unit = {
             Column(
                 modifier
@@ -488,20 +493,35 @@ internal fun SettingsSheet(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                         content = content,
                     )
-                    if (actions != null) Box(Modifier.padding(top = actionSpacing)) { actions() }
+                    if (actions != null) {
+                        val anchor =
+                            if (snackbar == null) Modifier
+                            else Modifier.onGloballyPositioned { actionTop = it.positionInRoot().y }
+                        Box(Modifier.padding(top = actionSpacing).then(anchor)) { actions() }
+                    }
                 }
             }
         }
         if (snackbar == null) panel()
         else {
-            Box(propagateMinConstraints = true) {
+            Box(
+                Modifier.onGloballyPositioned {
+                    panelBottom = it.positionInRoot().y + it.size.height
+                },
+                propagateMinConstraints = true,
+            ) {
                 panel()
                 Box(Modifier.matchParentSize()) {
+                    // Overlay the content while keeping the action group reachable.
+                    val actionInset =
+                        with(LocalDensity.current) {
+                            (panelBottom - (actionTop ?: panelBottom)).coerceAtLeast(0f).toDp()
+                        }
                     SnackbarHost(
                         snackbar,
                         Modifier.align(Alignment.BottomCenter)
                             .widthIn(max = 504.dp)
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                            .padding(start = 12.dp, end = 12.dp, bottom = actionInset + 8.dp),
                     )
                 }
             }
