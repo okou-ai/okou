@@ -121,3 +121,17 @@ The source review refined the Auto routing and Runner BDDs to capture the actual
 | `discord-oauth-060` | The BDD records what OpenTelemetry exports without adding assertions about request logs. |
 | `data-router-004` | Initial cancellation charges three credits, and cancellation replay plus terminal callback do not charge again. |
 | `browser-screenshot-publication-002` | Retired previews remain suspended until their owning chats are deleted. The surviving chat can reopen its saved URL. |
+| `connector-catalog-021` | Expiry status and time are checked on the device-authorized account detail. Catalog status checks the Stripe slug and public field boundary. |
+| `connector-catalog-017` | The source checks one-click capability and GitHub auth metadata without asserting connection state. |
+| `chat-event-annotations-008` | The GitHub source part is submitted through Chat, as established by following the helper. |
+| `chat-event-annotations-009` | Applied the same helper correction to the second GitHub source scenario. |
+| `chat-events-model-overrides-009` | Fast GPT-6.1 Sol uses its medium default, and cancellation remains effective after the success callback is replayed. |
+| `chat-thread-queue-pick-003` | Capacity remains occupied after cancellation until the Sandbox end callback. |
+| `internal-callbacks-teams-006` | The queued failure reaches the queued activity, without a second provider delivery on replay. |
+| `internal-callbacks-teams-015` | The follow-up dispatch is observable. The test does not assert null continuation. |
+| `internal-callbacks-teams-016` | The second failed-Run case also verifies dispatch without asserting null continuation. |
+| `chat-threads-model-selection-002` | Duplicate supplied event IDs create a two-position gap, while the fresh event pair remains adjacent and replay is identical. |
+| `me-model-providers-upsert-013` | A terminally expired refresh triggers one refresh, zero consumes and an account reconnect flag. |
+| `me-model-providers-upsert-014` | Retrying a transient 503 with the same idempotency key consumes once. |
+| `credit-low-balance-alert-003` | Followed debit and membership helper to the actual PUT. Empty directory results clear both roles, producing 503 and no-store for both CLI identities. |
+| `runtime-credit-balance-001` | Auth is leased while balance is positive. Both forms of billable access are rejected at zero, and nonbillable auth still succeeds. |
