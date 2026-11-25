@@ -139,6 +139,18 @@ async function discover(hostname: string, signal: AbortSignal) {
     if (values.length || zone === root) {
       return null;
     }
+    const nameservers = await queryHostedDomainDns(zone, "NS", signal);
+    // A delegated zone cannot inherit its parent's DNS provider.
+    if (
+      nameservers.Answer?.some((answer) => {
+        return (
+          answer.type === 2 &&
+          answer.name.toLowerCase().replace(/\.$/u, "") === zone
+        );
+      })
+    ) {
+      return null;
+    }
     zone = zone.slice(zone.indexOf(".") + 1);
   }
 }

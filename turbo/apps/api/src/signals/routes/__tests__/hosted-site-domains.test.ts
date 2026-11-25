@@ -1190,6 +1190,44 @@ test("domain setup is denied when the feature is off and remains scoped to the w
   expect(disabled.status).toBe(403);
 });
 
+test("a delegated zone cannot inherit automatic setup from its parent provider", async () => {
+  const fixture = await scenario();
+  domainProvider();
+  const domain = (await add(fixture)).domains[0]!;
+  dnsSetupProvider("vercel");
+  server.use(
+    http.get("https://cloudflare-dns.com/dns-query", ({ request }) => {
+      const url = new URL(request.url);
+      const name = url.searchParams.get("name");
+      const type = url.searchParams.get("type");
+      return HttpResponse.json({
+        Status: 0,
+        Answer:
+          name === domain.hostname && type === "NS"
+            ? [{ name, type: 2, data: "ns1.dnspod.net." }]
+            : name === "_domainconnect.customer-example.net"
+              ? [{ name, type: 16, data: '"domainconnect.vercel.com"' }]
+              : [],
+      });
+    }),
+  );
+  const setup = (
+    await accept(
+      fixture.api.siteDomainSetup({
+        headers,
+        params: { siteId: fixture.prepared.siteId, domainId: domain.id },
+      }),
+      [200],
+    )
+  ).body;
+  expect(setup).toMatchObject({
+    status: "manual",
+    providerName: "DNSPod",
+    controlPanelUrl: "https://console.dnspod.cn/",
+    automaticUrl: null,
+  });
+});
+
 test("a supported template without a published signing key keeps manual setup available", async () => {
   const fixture = await scenario();
   domainProvider();
