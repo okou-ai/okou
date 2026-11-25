@@ -41,6 +41,12 @@ export type UpdateUserModelPreferenceRequest = zInfer<
   typeof updateUserModelPreferenceRequestSchema
 >;
 
+export const imageModelPreferenceSchema = object({
+  selectedImageModel: imageModelIdSchema.nullable(),
+}).strict();
+
+export type ImageModelPreference = zInfer<typeof imageModelPreferenceSchema>;
+
 export const userModelPreferenceContract = c.router({
   get: {
     method: "GET",
@@ -69,6 +75,21 @@ export const userModelPreferenceContract = c.router({
       500: apiErrorSchema,
     },
     summary: "Update current user's model-first preference",
+  },
+  updateImageModel: {
+    method: "PATCH",
+    path: "/api/user-model-preference",
+    headers: authHeadersSchema,
+    body: imageModelPreferenceSchema,
+    responses: {
+      200: userModelPreferenceResponseSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      500: apiErrorSchema,
+    },
+    summary:
+      "Update only the current workspace member's image generation model",
   },
 });
 

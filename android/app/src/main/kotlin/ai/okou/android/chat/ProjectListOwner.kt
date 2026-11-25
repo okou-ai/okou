@@ -8,11 +8,25 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 internal const val ProjectNameLimit = 120
+
+internal enum class ProjectCreatePhase {
+    Creating,
+    Checking,
+    Rejected,
+    Unconfirmed,
+    Confirmed;
+
+    val inProgress: Boolean
+        get() = this == Creating || this == Checking
+}
+
+internal data class ProjectCreation(val id: String, val phase: ProjectCreatePhase)
 
 data class ProjectRenameRejection internal constructor(val projectId: String, val eventId: String)
 
@@ -25,9 +39,15 @@ enum class ProjectDeleteStatus {
 
 @ConsistentCopyVisibility
 data class ProjectDeleteFeedback
-internal constructor(val projectId: String, val eventId: String, val status: ProjectDeleteStatus)
+internal constructor(val projectId: String, val eventId: String, val status: ProjectDeleteStatus) {
+    internal val rejected =
+        status == ProjectDeleteStatus.Rejected || status == ProjectDeleteStatus.ConnectionFailed
+    internal val feedbackOrder = nextChatFeedbackOrder()
+}
 
-data class ProjectListUiState(
+@ConsistentCopyVisibility
+data class ProjectListUiState
+internal constructor(
     val rows: List<ConfirmedProject> = emptyList(),
     val phase: ChatReadPhase = ChatReadPhase.Idle,
     val source: ChatListSource? = null,
@@ -37,7 +57,8 @@ data class ProjectListUiState(
     val unconfirmedRenames: Set<String> = emptySet(),
     internal val connectionFailedRenames: Set<String> = emptySet(),
     internal val renameRejection: ProjectRenameRejection? = null,
-    internal val deleteFeedback: ProjectDeleteFeedback? = null,
+    internal val deleteFeedback: List<ProjectDeleteFeedback> = emptyList(),
+    internal val creation: ProjectCreation? = null,
 ) {
     internal val canRename: Boolean
         get() = source != null && renamingId == null && deletingId == null
@@ -71,6 +92,8 @@ internal class ProjectListOwner(
         set(value) = publish(value)
 
     private var confirmedProjects: ConfirmedProjects? = null
+    private var createRequest: CreateRequest? = null
+    private val createReceipts = mutableMapOf<String, ConfirmedProject>()
     private var projectRename: ProjectRename? = null
     private val retryableProjectRenames = mutableMapOf<String, ProjectRename>()
     private val retryableProjectDeletes = mutableMapOf<String, String>()
@@ -85,6 +108,8 @@ internal class ProjectListOwner(
         val checkpoint: ProjectCheckpoint,
         val rows: List<ConfirmedProject>,
     )
+
+    private data class CreateRequest(val id: String, val name: String)
 
     private data class ProjectRename(
         val id: String,
@@ -152,6 +177,127 @@ internal class ProjectListOwner(
             checkpoint
         }
 
+    fun createProject(input: String) {
+        if (!current()) return
+        val phase = state.creation?.phase
+        val name = input.trim()
+        if (
+            (phase != null && phase != ProjectCreatePhase.Rejected) ||
+                name.length !in 1..ProjectNameLimit
+        )
+            return
+        submitCreation(CreateRequest(newProjectOperationId(wallMillis()), name), checking = false)
+    }
+
+    fun checkProjectCreation() {
+        if (!current() || state.creation?.phase != ProjectCreatePhase.Unconfirmed) return
+        createRequest?.let { submitCreation(it, checking = true) }
+    }
+
+    fun dismissProjectCreation() {
+        if (!current() || state.creation?.phase?.inProgress == true) return
+        createRequest = null
+        state = state.copy(creation = null)
+    }
+
+    private fun submitCreation(request: CreateRequest, checking: Boolean) {
+        createRequest = request
+        val phase = if (checking) ProjectCreatePhase.Checking else ProjectCreatePhase.Creating
+        state = state.copy(creation = ProjectCreation(request.id, phase))
+        scope.launch {
+            var uncertain = checking
+            var retries = 0
+            while (true) {
+                try {
+                    val observed = if (uncertain) lookupCreatedProject(request.id) else null
+                    requireCurrent()
+                    if (createRequest !== request) return@launch
+                    val project =
+                        observed
+                            ?: try {
+                                service.createProject(request.id, request.name)
+                            } catch (error: Exception) {
+                                if (error is CancellationException) throw error
+                                if (
+                                    !error.rejectsProjectMutation() &&
+                                        !(error is ApiFailure.Network && error.connectionFailed)
+                                )
+                                    uncertain = true
+                                throw error
+                            }
+                    requireCurrent()
+                    if (createRequest !== request) return@launch
+                    confirmCreation(project)
+                    return@launch
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    requireCurrent()
+                    if (createRequest !== request) return@launch
+                    val retryAfter = dependencyRetryAfterMillis(error)
+                    if (retryAfter != null && retries < ChatDependencyRetryCount && !offline()) {
+                        retries++
+                        delay(maxOf(ChatDependencyRetryDelayMillis, retryAfter))
+                        requireCurrent()
+                        if (createRequest !== request) return@launch
+                        if (!offline()) continue
+                    }
+                    if (error !is ApiFailure.Http || error.status != 404) onFailure(error)
+                    requireCurrent()
+                    val observed = if (uncertain) observeCreationAfterFailure(request.id) else null
+                    if (createRequest !== request) return@launch
+                    if (observed != null) {
+                        confirmCreation(observed)
+                    } else {
+                        val result =
+                            if (uncertain) ProjectCreatePhase.Unconfirmed
+                            else ProjectCreatePhase.Rejected
+                        if (!uncertain) createRequest = null
+                        state = state.copy(creation = ProjectCreation(request.id, result))
+                    }
+                    return@launch
+                }
+            }
+        }
+    }
+
+    private suspend fun lookupCreatedProject(id: String): ConfirmedProject? {
+        requireCurrent()
+        confirmedRows()
+            .firstOrNull { it.id == id }
+            ?.let {
+                return it
+            }
+        return try {
+            service.projectDetail(id).also { requireCurrent() }
+        } catch (error: ApiFailure.Http) {
+            if (error.status != 404) throw error
+            null
+        }
+    }
+
+    private suspend fun observeCreationAfterFailure(id: String): ConfirmedProject? =
+        try {
+            lookupCreatedProject(id)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: ApiFailure) {
+            if (error !is ApiFailure.Http || error.status != 404) onFailure(error)
+            requireCurrent()
+            null
+        }
+
+    private fun confirmCreation(project: ConfirmedProject) {
+        // A feed event may have reached this owner before the write response.
+        val id = project.id
+        if (confirmedRows().none { it.id == id } && !hasProjectReceipt(id)) {
+            createReceipts[id] = project
+        }
+        createRequest = null
+        publishProjects(state.copy(creation = ProjectCreation(id, ProjectCreatePhase.Confirmed)))
+        invalidate()
+    }
+
     internal fun renameProject(id: String, input: String): Boolean {
         val name = input.trim()
         if (
@@ -181,7 +327,11 @@ internal class ProjectListOwner(
         if (!current() || !state.canRename || confirmedRows().none { it.id == id }) return
         val previousAttempt = retryableProjectDeletes[id]
         val eventId = previousAttempt ?: newProjectOperationId(wallMillis())
-        state = state.copy(deletingId = id, deleteFeedback = null)
+        state =
+            state.copy(
+                deletingId = id,
+                deleteFeedback = state.deleteFeedback.filter { it.rejected && it.projectId != id },
+            )
         scope.launch {
             try {
                 val failure =
@@ -201,15 +351,7 @@ internal class ProjectListOwner(
                         failure.connectionFailed &&
                         previousAttempt == null
                 ) {
-                    state =
-                        state.copy(
-                            deleteFeedback =
-                                ProjectDeleteFeedback(
-                                    id,
-                                    eventId,
-                                    ProjectDeleteStatus.ConnectionFailed,
-                                ),
-                        )
+                    recordDeleteFeedback(id, eventId, ProjectDeleteStatus.ConnectionFailed)
                     return@launch
                 }
                 val rejected = failure?.rejectsProjectMutation() == true
@@ -231,23 +373,31 @@ internal class ProjectListOwner(
                 if (outcome == ProjectDeleteStatus.Unconfirmed)
                     retryableProjectDeletes[id] = eventId
                 else retryableProjectDeletes.remove(id)
-                state = state.copy(deleteFeedback = ProjectDeleteFeedback(id, eventId, outcome))
+                recordDeleteFeedback(id, eventId, outcome)
             } finally {
                 if (current()) state = state.copy(deletingId = null)
             }
         }
     }
 
+    private fun recordDeleteFeedback(id: String, eventId: String, status: ProjectDeleteStatus) {
+        state =
+            state.copy(
+                deleteFeedback = state.deleteFeedback + ProjectDeleteFeedback(id, eventId, status),
+            )
+    }
+
     fun retryProjectDelete(feedback: ProjectDeleteFeedback) {
         if (
-            state.deleteFeedback == feedback && feedback.status == ProjectDeleteStatus.Unconfirmed
+            feedback in state.deleteFeedback && feedback.status == ProjectDeleteStatus.Unconfirmed
         ) {
             deleteProject(feedback.projectId)
         }
     }
 
     fun dismissProjectDeleteFeedback(feedback: ProjectDeleteFeedback) {
-        if (current() && state.deleteFeedback == feedback) state = state.copy(deleteFeedback = null)
+        if (current() && feedback in state.deleteFeedback)
+            state = state.copy(deleteFeedback = state.deleteFeedback - feedback)
     }
 
     private fun hasProjectReceipt(
@@ -258,14 +408,30 @@ internal class ProjectListOwner(
             (checkpoint.archive.latestEventId == eventId ||
                 checkpoint.events.any { it.id == eventId })
 
-    private fun confirmedRows(source: ChatListSource? = state.source): List<ConfirmedProject> =
-        if (source == null) emptyList() else checkNotNull(confirmedProjects).rows
+    private fun confirmedRows(source: ChatListSource? = state.source): List<ConfirmedProject> {
+        val rows = if (source == null) emptyList() else checkNotNull(confirmedProjects).rows
+        if (createReceipts.isEmpty()) return rows
+        val ids = rows.mapTo(hashSetOf()) { it.id }
+        return (rows + createReceipts.values.filterNot { it.id in ids }).inProjectOrder()
+    }
 
     private fun publishProjects(snapshot: ProjectListUiState) {
         val rows = confirmedRows(snapshot.source)
         val pending = projectRename
+        val creation = snapshot.creation
+        // A create and subsequent delete can arrive in the same batch.
+        val settledCreation =
+            if (
+                creation != null &&
+                    createRequest != null &&
+                    (rows.any { it.id == creation.id } || hasProjectReceipt(creation.id))
+            ) {
+                createRequest = null
+                creation.copy(phase = ProjectCreatePhase.Confirmed)
+            } else creation
         state =
             snapshot.copy(
+                creation = settledCreation,
                 rows =
                     if (pending == null) rows
                     else
@@ -391,6 +557,13 @@ internal class ProjectListOwner(
                         else replayConfirmedProjects(saved)
                     requireCurrent()
                     confirmedProjects = selected
+                    if (createReceipts.isNotEmpty()) {
+                        val affected =
+                            selected.checkpoint.events.mapTo(hashSetOf()) { it.projectId }
+                        selected.rows.mapTo(affected) { it.id }
+                        selected.checkpoint.archive.projects.mapTo(affected) { it.id }
+                        createReceipts.keys.removeAll(affected)
+                    }
                     if (retryableProjectDeletes.isNotEmpty()) {
                         val ids = selected.rows.mapTo(hashSetOf()) { it.id }
                         retryableProjectDeletes.keys.retainAll(ids)
@@ -419,8 +592,11 @@ internal class ProjectListOwner(
                             source = ChatListSource.Network,
                             renameRejection = renameRejection,
                             deleteFeedback =
-                                snapshot.deleteFeedback?.let { feedback ->
-                                    if (selected.rows.none { it.id == feedback.projectId })
+                                snapshot.deleteFeedback.map { feedback ->
+                                    if (
+                                        feedback.status != ProjectDeleteStatus.Confirmed &&
+                                            selected.rows.none { it.id == feedback.projectId }
+                                    )
                                         feedback.copy(status = ProjectDeleteStatus.Confirmed)
                                     else feedback
                                 },

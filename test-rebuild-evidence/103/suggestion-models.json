@@ -1,0 +1,68 @@
+{
+  "noPersonalProvider": {
+    "mode": "actual no-subscription member",
+    "cards": [
+      {
+        "id": "e0fb49cc-fc8f-4e32-af1d-fec3d6b5085d",
+        "title": "Map the ridge"
+      },
+      {
+        "id": "de65b87e-7ab3-4b87-9e53-ce6910f54d97",
+        "title": "Check the harbor"
+      }
+    ],
+    "member": "user_47a643f2-0f88-4fbc-bdbc-377d02b6c918",
+    "workspace": "org_898c6ee9-f786-44aa-b13d-95716998220e",
+    "disconnectStatus": 204,
+    "models": [
+      {
+        "model": "auto",
+        "modelLabel": "Auto",
+        "modelProviderId": null,
+        "memberEffective": {
+          "providerType": "built-in",
+          "runtimeProviderType": "openrouter-codex",
+          "credentialScope": "org",
+          "availability": "available",
+          "accountSelection": "not_applicable"
+        }
+      }
+    ],
+    "input": {
+      "thread": "63307ed8-3468-4d48-81f4-ad8dd8f1580a",
+      "event": "c34a6806-fabc-4760-a2e3-7bf82791450d",
+      "parts": [
+        {
+          "type": "text",
+          "text": "Review the project update and prepare the next steps."
+        }
+      ]
+    },
+    "sendStatus": 201,
+    "remaining": "de65b87e-7ab3-4b87-9e53-ce6910f54d97",
+    "confirmation": "Sent to a new chat"
+  },
+  "emptyContract": {
+    "mode": "empty contract response",
+    "cards": [
+      {
+        "id": "e0fb49cc-fc8f-4e32-af1d-fec3d6b5085d",
+        "title": "Map the ridge"
+      },
+      {
+        "id": "de65b87e-7ab3-4b87-9e53-ce6910f54d97",
+        "title": "Check the harbor"
+      }
+    ],
+    "member": "user_47a643f2-0f88-4fbc-bdbc-377d02b6c918",
+    "workspace": "org_898c6ee9-f786-44aa-b13d-95716998220e",
+    "disconnectStatus": 204,
+    "models": [],
+    "error": "The selected model is not available",
+    "positions": [
+      "e0fb49cc-fc8f-4e32-af1d-fec3d6b5085d",
+      "de65b87e-7ab3-4b87-9e53-ce6910f54d97",
+      "e0fb49cc-fc8f-4e32-af1d-fec3d6b5085d"
+    ]
+  }
+}

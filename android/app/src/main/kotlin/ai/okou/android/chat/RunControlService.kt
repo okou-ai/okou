@@ -4,23 +4,17 @@ import ai.okou.android.api.generated.AcceptedInput
 import ai.okou.android.api.generated.SendRequest
 import ai.okou.android.api.generated.SendRequestVariant2
 import ai.okou.android.api.generated.SendRequestVariant3
-import kotlinx.serialization.Required
-import kotlinx.serialization.Serializable
 
 interface RunControlService : ConversationHistoryService {
     suspend fun sendControl(request: SendRequest): AcceptedInput
 }
 
-@Serializable
 enum class RunControlKind {
     Interrupt,
     Revoke,
 }
 
-/** Frozen user intent. Restoration never dispatches it without a new explicit action. */
-@OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
-@kotlinx.serialization.json.JsonIgnoreUnknownKeys
-@Serializable
+/** Frozen user intent for submission and canonical outcome checks. */
 data class RunControlIntent(
     val id: String,
     val threadId: String,
@@ -42,21 +36,6 @@ data class RunControlIntent(
                     clientEventId = id,
                 )
         }
-}
-
-@Serializable
-data class RunControlJournal(
-    @Required val format: Int = 1,
-    val pending: List<RunControlIntent> = emptyList(),
-) {
-    fun validate() {
-        require(format == 1 && pending.map { it.id }.distinct().size == pending.size)
-        require(
-            pending.all {
-                it.id.isNotEmpty() && it.threadId.isNotEmpty() && it.targetId.isNotEmpty()
-            },
-        )
-    }
 }
 
 enum class RunControlEvidence {

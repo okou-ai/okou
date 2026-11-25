@@ -169,6 +169,18 @@ export const iosClientContracts: readonly {
     route: chatConnectorAccessContract.accountDefaults,
   },
   {
+    id: "ios.chatConnectorAccessContract.accountPolicies",
+    route: chatConnectorAccessContract.accountPolicies,
+  },
+  {
+    id: "ios.chatConnectorAccessContract.updateAccountPolicy",
+    route: chatConnectorAccessContract.updateAccountPolicy,
+  },
+  {
+    id: "ios.chatConnectorAccessContract.overviewTarget",
+    route: chatConnectorAccessContract.overviewTarget,
+  },
+  {
     id: "ios.chatConnectorAccessContract.updateAccountDefault",
     route: chatConnectorAccessContract.updateAccountDefault,
   },
@@ -245,6 +257,14 @@ export const iosClientContracts: readonly {
     route: chatThreadConnectorSelectionContract.clear,
   },
   { id: "ios.chatThreadDraftContract.get", route: chatThreadDraftContract.get },
+  {
+    id: "ios.chatThreadDraftContract.readComposer",
+    route: chatThreadDraftContract.readComposer,
+  },
+  {
+    id: "ios.chatThreadDraftContract.saveComposer",
+    route: chatThreadDraftContract.saveComposer,
+  },
   {
     id: "ios.chatThreadEventsContract.catchUp",
     route: chatThreadEventsContract.catchUp,
@@ -345,6 +365,22 @@ export const iosClientContracts: readonly {
   {
     id: "ios.connectorAccountsContract.connections",
     route: connectorAccountsContract.connections,
+  },
+  {
+    id: "ios.connectorAccountsContract.inspect",
+    route: connectorAccountsContract.inspect,
+  },
+  {
+    id: "ios.connectorAccountsContract.rename",
+    route: connectorAccountsContract.rename,
+  },
+  {
+    id: "ios.connectorAccountsContract.deletionImpact",
+    route: connectorAccountsContract.deletionImpact,
+  },
+  {
+    id: "ios.connectorAccountsContract.delete",
+    route: connectorAccountsContract.delete,
   },
   {
     id: "ios.connectorAccountsContract.oauthCompletion",
@@ -478,6 +514,10 @@ export const iosClientContracts: readonly {
   {
     id: "ios.runConnectorAccountsContract.approve",
     route: runConnectorAccountsContract.approve,
+  },
+  {
+    id: "ios.runConnectorAccountsContract.approveMember",
+    route: runConnectorAccountsContract.approveMember,
   },
   {
     id: "ios.thirdPartySubscriptionsMainContract.list",

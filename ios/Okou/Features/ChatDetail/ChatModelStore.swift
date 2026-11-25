@@ -12,7 +12,15 @@ final class ChatModelStore {
   let connectorAccess: ChatComposerAccess
   let connectorAuthorization: ChatConnectorService
   let subscriptions: PersonalSubscriptionStore
-  private(set) var configuration: ChatModelConfiguration?
+  private var loadedConfiguration: ChatModelConfiguration?
+  var configuration: ChatModelConfiguration? {
+    guard let switches = lastKnownFeatureSwitches else { return loadedConfiguration }
+    return loadedConfiguration?.withSwitches(switches.effectiveSwitches)
+  }
+  var lastKnownFeatureSwitches: SidebarFeatureSwitches? { resources.featureSnapshot.current }
+  var usesFollowupPlaceholder: Bool {
+    lastKnownFeatureSwitches?.effectiveSwitches["followupPlaceholder"] == true
+  }
   private(set) var active = false
   private var closed = false
   private var reportingCatalog: ModelCatalog?
@@ -80,7 +88,7 @@ final class ChatModelStore {
           try signal.checkCancellation()
           try Task.checkCancellation()
           guard let self, !closed else { throw CancellationError() }
-          configuration = value
+          loadedConfiguration = value
           return value
         } catch {
           if !Task.isCancelled, !signal.isCancelled { self?.report(error) }
@@ -139,13 +147,13 @@ final class ChatModelStore {
   func applyPreference(_ preference: ModelPreference) {
     guard !closed, let configuration else { return }
     publication?.cancel()
-    self.configuration = configuration.withPreference(preference)
+    loadedConfiguration = configuration.withPreference(preference)
   }
   func close() {
     closed = true
     publication?.cancel()
     publication = nil
-    configuration = nil
+    loadedConfiguration = nil
     do { try stateStore.set(lifetime, false) } catch { didFail(error) }
     if ownsResources { resources.close() }
     reportingCatalog = nil
@@ -203,7 +211,13 @@ final class ChatModelSelectionStore {
     clearMetadata = Command { context in try context.set(metadataDemand, nil) }
     connectors = ComposerConnectorStore(
       service: models.connectorAccess, authorizationService: models.connectorAuthorization,
-      webURL: models.webURL, threadID: threadID, readRetrySleep: models.readRetrySleep,
+      webURL: models.webURL, threadID: threadID,
+      managementEnabled: { [weak models] in
+        models?.configuration?.switches["iosConnectorManagement"] == true
+      },
+      memberAccessEnabled: { [weak models] in
+        models?.lastKnownFeatureSwitches?.usesMemberConnectorAccess == true
+      }, readRetrySleep: models.readRetrySleep,
       didFail: models.report)
     self.threadID = threadID
     stored = cachedSelection

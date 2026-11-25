@@ -356,10 +356,12 @@ gateway_config_keys='[
 integration_api_origin="https://pr-123-api.okou.test"
 integration_api_url="$integration_api_origin/"
 integration_mcp_issuer="https://clerk-dev.example.test"
+pilot_workers='[{"orgId":"org_pilot","userId":"user_pilot","machineId":"mch_pilot","loginHost":"tester@agy.example.test"}]'
 integration_doppler_json="$(
   jq -cn --argjson keys "$integration_config_keys" --argjson gateway_keys "$gateway_config_keys" '
     reduce ($keys + $gateway_keys)[] as $key ({}; .[$key] = ("doppler-integration-" + $key)) |
     . + {
+      BILLING_FEEDBACK_WEBHOOK_SECRET: "doppler-billing-feedback-secret",
       DISCORD_APPLICATION_ID: "123456789012345678",
       DISCORD_PUBLIC_KEY: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       GITHUB_APP_SLUG: " doppler-integration-slug ",
@@ -375,11 +377,12 @@ integration_repo_secrets="$(
   ) + {MARKETING_REWARDS_EVENTS_SECRET: "github-marketing-events-secret"}' <<< "$integration_doppler_json"
 )"
 integration_repo_vars="$(
-  jq -c --arg issuer "$integration_mcp_issuer" '
+  jq -c --arg issuer "$integration_mcp_issuer" --arg workers "$(jq . <<< "$pilot_workers")" '
     del(.MARKETING_REWARDS_EVENTS_SECRET) + {
       MARKETING_REWARDS_EVENTS_ORIGIN: "https://events.example.test",
       WHATSAPP_ALLOWED_COUNTRY_PREFIXES: "+1,+49",
       MCP_OAUTH_ISSUER: $issuer,
+      ANTIGRAVITY_SUBSCRIPTION_WORKERS: $workers,
       MCP_RESOURCE_URL: "https://wrong-resource.example.test/mcp"
     }
   ' <<< "$integration_repo_secrets"
@@ -416,6 +419,7 @@ for integration_app in api web; do
     assert_api_backend_url_canonical "$integration_env_file" "$integration_api_url"
     assert_env_value "$integration_env_file" MCP_RESOURCE_URL "$integration_api_origin/mcp"
     assert_env_value "$integration_env_file" MCP_OAUTH_ISSUER "$integration_mcp_issuer"
+    assert_env_value "$integration_env_file" ANTIGRAVITY_SUBSCRIPTION_WORKERS "$pilot_workers"
     assert_env_value "$integration_env_file" FEISHU_CALLBACK_BASE_URL "$integration_api_url"
     assert_env_value "$integration_env_file" FINICITY_WEBHOOK_BASE_URL "$integration_api_url"
   else
@@ -425,12 +429,15 @@ for integration_app in api web; do
       assert_env_key_absent "$integration_env_file" "$integration_key"
       assert_env_absent_value "$integration_env_file" "$integration_value"
     done <<< "$integration_rows"
+    assert_env_key_absent "$integration_env_file" BILLING_FEEDBACK_WEBHOOK_SECRET
+    assert_env_absent_value "$integration_env_file" "doppler-billing-feedback-secret"
     assert_env_key_absent "$integration_env_file" MARKETING_REWARDS_EVENTS_SECRET
     assert_env_key_absent "$integration_env_file" MARKETING_REWARDS_EVENTS_ORIGIN
     assert_env_key_absent "$integration_env_file" WHATSAPP_ALLOWED_COUNTRY_PREFIXES
     assert_api_backend_url_absent "$integration_env_file"
     assert_env_key_absent "$integration_env_file" MCP_RESOURCE_URL
     assert_env_key_absent "$integration_env_file" MCP_OAUTH_ISSUER
+    assert_env_key_absent "$integration_env_file" ANTIGRAVITY_SUBSCRIPTION_WORKERS
   fi
 done
 
@@ -585,7 +592,8 @@ assert_env_absent_value "$production_web_env_file" "github-artifact-preview-waf-
 
 production_api_dir="$(mktemp -d)"
 TEMP_DIRS+=("$production_api_dir")
-production_api_output="$(run_action "$(build_doppler_secrets_json)" "$production_api_dir" api production '{"GCP_LLM_SERVICE_ACCOUNT_EMAIL":"llm-prod@vm0-ai-488909.iam.gserviceaccount.com"}' '{"PREVIEW_KMS_KEY_ID":null,"PREVIEW_KMS_ACCESS_KEY_ID":null,"PREVIEW_KMS_SECRET_ACCESS_KEY":null}' 2>&1)"
+production_api_doppler_json="$(build_doppler_secrets_json | jq -c '. + {BILLING_FEEDBACK_WEBHOOK_SECRET: "doppler-billing-feedback-secret"}')"
+production_api_output="$(run_action "$production_api_doppler_json" "$production_api_dir" api production '{"GCP_LLM_SERVICE_ACCOUNT_EMAIL":"llm-prod@vm0-ai-488909.iam.gserviceaccount.com"}' '{"PREVIEW_KMS_KEY_ID":null,"PREVIEW_KMS_ACCESS_KEY_ID":null,"PREVIEW_KMS_SECRET_ACCESS_KEY":null}' 2>&1)"
 production_api_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${production_api_dir}/github-output")"
 assert_no_fixture_secret_values "$production_api_output"
 assert_env_value "$production_api_env_file" APNS_PRIVATE_KEY_BASE64 "github-apns-test-key"
@@ -624,6 +632,7 @@ assert_env_value "$production_api_env_file" FEISHU_CALLBACK_BASE_URL "https://pr
 assert_env_value "$production_api_env_file" FINICITY_WEBHOOK_BASE_URL "https://pr-123-api-backend.okou.test"
 assert_env_value "$production_api_env_file" ATOM_URL "https://atom.github.test"
 assert_machine_secret_canonical "$production_api_env_file" "github-atom-machine-secret"
+assert_env_key_absent "$production_api_env_file" ANTIGRAVITY_SUBSCRIPTION_WORKERS
 assert_env_value "$production_api_env_file" MICROSOFT_TEAMS_BOT_APP_ID ""
 assert_env_value "$production_api_env_file" MICROSOFT_TEAMS_BOT_APP_PASSWORD "doppler-teams-bot-app-password"
 assert_env_value "$production_api_env_file" MICROSOFT_TEAMS_APP_TENANT_ID ""
@@ -631,6 +640,7 @@ assert_env_value "$production_api_env_file" OKOU_BROWSER_USE_API_KEY "github-bro
 assert_env_value "$production_api_env_file" OKOU_BROWSER_USE_EXTENSION_ID "$BROWSER_EXTENSION_ID"
 assert_env_value "$production_api_env_file" STRIPE_WEBHOOK_SECRET "github-stripe-billing-webhook-secret"
 assert_env_value "$production_api_env_file" STRIPE_AUTOMATION_WEBHOOK_SECRET "doppler-stripe-automation-webhook-secret"
+assert_env_value "$production_api_env_file" BILLING_FEEDBACK_WEBHOOK_SECRET "doppler-billing-feedback-secret"
 assert_env_absent_value "$production_api_env_file" "doppler-stripe-billing-webhook-secret"
 assert_preview_job_ref_absent "$production_api_env_file"
 
@@ -733,5 +743,42 @@ assert_contains "$missing_lookup_output" "No uploaded Okou Browser extension was
 kill "$REGISTRY_PID"
 wait "$REGISTRY_PID" 2>/dev/null || true
 REGISTRY_PID=""
+
+# Custom-domain configuration is scoped to the API and its Doppler environment.
+hosted_domain_keys=(
+  HOSTED_SITE_CUSTOM_DOMAIN_API_TOKEN
+  HOSTED_SITE_CUSTOM_DOMAIN_ZONE_ID
+  HOSTED_SITE_CUSTOM_DOMAIN_TARGET
+  HOSTED_SITE_CUSTOM_DOMAIN_WORKER
+  HOSTED_SITE_CUSTOM_DOMAIN_APEX_ADDRESSES
+)
+for hosted_domain_key in "${hosted_domain_keys[@]}"; do
+  assert_env_key_absent "$success_env_file" "$hosted_domain_key"
+  assert_env_key_absent "$production_api_env_file" "$hosted_domain_key"
+done
+for hosted_domain_mode in api:preview api:production web:production; do
+  hosted_domain_app="${hosted_domain_mode%%:*}"
+  hosted_domain_environment="${hosted_domain_mode##*:}"
+  hosted_domain_dir="$(mktemp -d)"
+  TEMP_DIRS+=("$hosted_domain_dir")
+  hosted_domain_json="$(build_doppler_secrets_json | jq -c --arg environment "$hosted_domain_environment" '. + {
+    HOSTED_SITE_CUSTOM_DOMAIN_API_TOKEN: ("fixture-domain-token-" + $environment),
+    HOSTED_SITE_CUSTOM_DOMAIN_ZONE_ID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    HOSTED_SITE_CUSTOM_DOMAIN_TARGET: ("connect-" + $environment + ".example.test"),
+    HOSTED_SITE_CUSTOM_DOMAIN_WORKER: "zero-host-worker",
+    HOSTED_SITE_CUSTOM_DOMAIN_APEX_ADDRESSES: "203.0.113.3"
+  }')"
+  hosted_domain_output="$(run_action "$hosted_domain_json" "$hosted_domain_dir" "$hosted_domain_app" "$hosted_domain_environment" 2>&1)"
+  hosted_domain_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${hosted_domain_dir}/github-output")"
+  assert_not_contains "$hosted_domain_output" "fixture-domain-token-"
+  for hosted_domain_key in "${hosted_domain_keys[@]}"; do
+    if [[ "$hosted_domain_app" == "api" ]]; then
+      hosted_domain_expected="$(jq -r --arg key "$hosted_domain_key" '.[$key]' <<< "$hosted_domain_json")"
+      assert_env_value "$hosted_domain_env_file" "$hosted_domain_key" "$hosted_domain_expected"
+    else
+      assert_env_key_absent "$hosted_domain_env_file" "$hosted_domain_key"
+    fi
+  done
+done
 
 echo "web-api-env-action-test: ok"

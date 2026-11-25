@@ -40,27 +40,6 @@ export const VISIBILITY_OPTIONS: readonly UserTemplateVisibility[] = [
   "organization",
 ];
 
-export function VisibilityLabel({
-  visibility,
-}: {
-  readonly visibility: UserTemplateVisibility;
-}) {
-  const { t } = useTranslation();
-  const Icon = visibility === "private" ? Lock : Users;
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <Icon size={13} className="shrink-0" aria-hidden />
-      {visibility === "private"
-        ? t(($) => {
-            return $.templates.visibility.private;
-          })
-        : t(($) => {
-            return $.templates.visibility.organization;
-          })}
-    </span>
-  );
-}
-
 /**
  * Whose template this is, for a reader who cannot manage it.
  *

@@ -4,13 +4,7 @@
     <string name="auth_check_failed">Couldn’t check workspace access.</string>
     <string name="auth_selection_failed">Couldn’t open this workspace.</string>
     <string name="auth_sign_out_failed">Couldn’t sign out.</string>
-    <string name="composer_sync_loading">Loading saved draft…</string>
-    <string name="composer_sync_saving">Syncing draft…</string>
-    <string name="composer_sync_failed">Draft sync failed. Your input stays on this device.</string>
-    <string name="composer_sync_unsupported">This draft has content you can continue editing on Web. Your input stays on this device; automatic sync is paused.</string>
-    <string name="composer_sync_retry">Retry draft sync</string>
     <string name="composer_restore_draft">Restore retained draft</string>
-    <string name="controls_storage_failed">Pending control storage is unavailable.</string>
     <string name="controls_stop">Stop task</string>
     <string name="controls_stop_failed">Could not stop the task.</string>
     <string name="app_name" translatable="false">Okou</string>
@@ -38,9 +32,9 @@
     <string name="auth_signing_out">Signing out…</string>
     <string name="auth_workspace">Current workspace</string>
     <string name="auth_switch_workspace">Switch workspace</string>
+    <string name="auth_switch_workspace_pending">Switching workspace</string>
+    <string name="auth_switch_workspace_failed">Couldn’t switch to this workspace.</string>
     <string name="auth_browser_unavailable">Install a browser to open workspace setup.</string>
-    <string name="preference_save_failed">Could not save your preferences. Your selections are still in use.</string>
-    <string name="preference_refresh_failed">Could not refresh preferences. Try again.</string>
     <string name="preference_color_theme">Color theme</string>
     <string name="preference_language">Language</string>
     <string name="palette_default">Default</string>
@@ -90,7 +84,6 @@
     <string name="composer_retry">Retry this same message</string>
     <string name="composer_not_observed">The message is not yet observable. Its delivery remains unconfirmed.</string>
     <string name="composer_request_failed">The request failed. Your draft and pending message are retained.</string>
-    <string name="composer_saving">Saving draft on this device…</string>
     <string name="updates_title">App updates</string>
     <string name="updates_installed">Current version: %1$s</string>
     <string name="updates_current">You are up to date</string>
@@ -104,6 +97,7 @@
     <string name="updates_download_failed">Download failed</string>
     <string name="updates_check_compatible">Check versions</string>
     <string name="updates_required_incompatible">This device can’t update Okou</string>
+    <string name="updates_required_incompatible_short">Device can’t update</string>
     <string name="updates_required_short">Update required</string>
     <string name="updates_ready">Continue installation</string>
     <string name="updates_later">Later</string>
@@ -128,9 +122,7 @@
     <string name="updates_error_interrupted">The download was interrupted.</string>
     <string name="updates_error_install">Android could not install the update.</string>
     <string name="updates_unavailable">A suitable update is not available yet.</string>
-    <string name="updates_android_unsupported">This update needs a newer Android system version.</string>
-    <string name="realtime_connecting">Connecting to live updates…</string>
-    <string name="realtime_unavailable">Live updates unavailable. You can still refresh manually.</string>
+    <string name="updates_android_unsupported">Update Android to a newer version, then check again.</string>
     <string name="settings_account">Account</string>
     <string name="settings_cancel">Cancel</string>
     <string name="settings_saving">Saving…</string>
@@ -138,11 +130,12 @@
     <string name="settings_sign_out_body">To use Okou again on this device, sign in. Drafts stay with this account.</string>
     <string name="updates_waiting_to_check">Waiting to check</string>
     <string name="updates_waiting_to_install">Waiting to install</string>
+    <string name="updates_retry_download">Retry download</string>
+    <string name="updates_retry_check">Retry check</string>
     <string name="updates_waiting_to_download">Waiting to download</string>
     <string name="instructions_placeholder">What would you like Okou to keep in mind?</string>
     <string name="instructions_save_when_online">Connect to save your changes.</string>
     <string name="settings_timezone">Time zone</string>
-    <string name="settings_timezone_hint">Default time zone for new scheduled tasks.</string>
     <string name="settings_timezone_utc">Coordinated Universal Time</string>
     <string name="settings_timezone_format">%1$s (UTC%2$s)</string>
 </resources>

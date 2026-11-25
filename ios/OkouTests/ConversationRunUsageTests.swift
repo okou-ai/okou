@@ -91,7 +91,8 @@ final class ConversationRunUsageTests: XCTestCase {
       return Self.response(count == 1 ? 999 : 3)
     }
     let store = ConversationRunUsageStore(
-      sync: ChatSync(client: fixture.client), threadID: "thread", didFail: { _ in })
+      sync: ChatSync(client: fixture.client), threadID: "thread",
+      graph: makeTestWorkspaceGraph(), didFail: { _ in })
     let usage = RunUsageProbe(store, owner: self)
     defer { store.close() }
     store.update(runIDs: [Self.runID], events: [Self.runID: "event"])
@@ -224,7 +225,8 @@ final class ConversationRunUsageTests: XCTestCase {
       return Self.response(999)
     }
     let store = ConversationRunUsageStore(
-      sync: ChatSync(client: old.client), threadID: "old-thread", didFail: { _ in })
+      sync: ChatSync(client: old.client), threadID: "old-thread",
+      graph: makeTestWorkspaceGraph(), didFail: { _ in })
     let usage = RunUsageProbe(store, owner: self)
     defer { store.close() }
     store.update(runIDs: [Self.runID], events: [Self.runID: "event"])
@@ -232,7 +234,8 @@ final class ConversationRunUsageTests: XCTestCase {
     store.close()
     let other = ChatHTTPFixture { _ in Self.response(3) }
     let next = ConversationRunUsageStore(
-      sync: ChatSync(client: other.client), threadID: "new-thread", didFail: { _ in })
+      sync: ChatSync(client: other.client), threadID: "new-thread",
+      graph: makeTestWorkspaceGraph(), didFail: { _ in })
     let nextUsage = RunUsageProbe(next, owner: self)
     defer { next.close() }
     next.update(runIDs: [Self.runID], events: [Self.runID: "event"])
@@ -254,7 +257,8 @@ final class ConversationRunUsageTests: XCTestCase {
       return Self.response(count == 1 ? 999 : 12)
     }
     let store = ConversationRunUsageStore(
-      sync: ChatSync(client: fixture.client), threadID: "thread", didFail: { _ in })
+      sync: ChatSync(client: fixture.client), threadID: "thread",
+      graph: makeTestWorkspaceGraph(), didFail: { _ in })
     let usage = RunUsageProbe(store, owner: self)
     defer { store.close() }
     store.update(runIDs: [Self.runID], events: [Self.runID: "first"])
@@ -277,7 +281,8 @@ final class ConversationRunUsageTests: XCTestCase {
       return Self.response(5, runIDs: body.runIds)
     }
     let store = ConversationRunUsageStore(
-      sync: ChatSync(client: fixture.client), threadID: "thread", didFail: { _ in })
+      sync: ChatSync(client: fixture.client), threadID: "thread",
+      graph: makeTestWorkspaceGraph(), didFail: { _ in })
     let usage = RunUsageProbe(store, owner: self)
     defer { store.close() }
     let ids = (0..<205).map { "run-\($0)" }
@@ -299,7 +304,8 @@ final class ConversationRunUsageTests: XCTestCase {
       return Self.response(7)
     }
     let store = ConversationRunUsageStore(
-      sync: ChatSync(client: fixture.client), threadID: "shared-thread", didFail: { _ in })
+      sync: ChatSync(client: fixture.client), threadID: "shared-thread",
+      graph: makeTestWorkspaceGraph(), didFail: { _ in })
     defer { store.close() }
     let label = RunUsageProbe(store, owner: self)
     let details = RunUsageProbe(store, owner: self)
@@ -323,7 +329,8 @@ final class ConversationRunUsageTests: XCTestCase {
       return Self.response(count > 3 ? 9 : 5, runIDs: body.runIds)
     }
     let store = ConversationRunUsageStore(
-      sync: ChatSync(client: fixture.client), threadID: "bounded-thread", didFail: { _ in })
+      sync: ChatSync(client: fixture.client), threadID: "bounded-thread",
+      graph: makeTestWorkspaceGraph(), didFail: { _ in })
     let usage = RunUsageProbe(store, owner: self)
     defer { store.close() }
     let events = Dictionary(uniqueKeysWithValues: ids.map { ($0, "settled") })
@@ -391,6 +398,7 @@ private final class RunUsageProbe {
   private let usage: ConversationRunUsageStore
   private(set) var states: [String: ConversationRunUsageState] = [:]
   @ObservationIgnored private var subscriptions: [String: Subscription] = [:]
+  @ObservationIgnored private var tableSubscription: Subscription?
   @ObservationIgnored private var watched: [String: ConversationRunUsageResource] = [:]
   @ObservationIgnored private var tasks: [String: Task<Void, Never>] = [:]
   @ObservationIgnored private var retiredTasks: [Task<Void, Never>] = []
@@ -400,11 +408,21 @@ private final class RunUsageProbe {
   init(_ usage: ConversationRunUsageStore, owner: XCTestCase) {
     self.usage = usage
     owner.addTeardownBlock { @MainActor [self] in await close() }
+    do {
+      // The resource table is graph state; a new or replaced read schedules a re-scan.
+      tableSubscription = try usage.store.watch(usage.resources) { [weak self] in
+        Task { @MainActor in self?.trackResources() }
+      }
+    } catch { XCTFail("Cannot observe usage resources: \(error)") }
     trackResources()
   }
 
   func detach() {
     stopped = true
+    do { try tableSubscription?.cancel() } catch {
+      XCTFail("Cannot detach usage resources: \(error)")
+    }
+    tableSubscription = nil
     for subscription in subscriptions.values {
       do { try subscription.cancel() } catch { XCTFail("Cannot detach usage observer: \(error)") }
     }
@@ -424,10 +442,10 @@ private final class RunUsageProbe {
 
   private func trackResources() {
     guard !stopped else { return }
-    let resources = withObservationTracking {
-      usage.resources
-    } onChange: { [weak self] in
-      Task { @MainActor in self?.trackResources() }
+    let resources: [String: ConversationRunUsageResource]
+    do { resources = try usage.store.get(usage.resources) } catch {
+      XCTFail("Cannot read usage resources: \(error)")
+      return
     }
     for id in subscriptions.keys where resources[id] == nil || resources[id] !== watched[id] {
       do { try subscriptions.removeValue(forKey: id)?.cancel() } catch {
@@ -441,7 +459,7 @@ private final class RunUsageProbe {
     for (id, resource) in resources where subscriptions[id] == nil {
       do {
         watched[id] = resource
-        subscriptions[id] = try usage.stateStore.watch(resource.value) { [weak self] in
+        subscriptions[id] = try usage.store.watch(resource.value) { [weak self] in
           self?.read(resource)
         }
         read(resource)
@@ -462,7 +480,7 @@ private final class RunUsageProbe {
     revisions[id] = revision
     states[id] = .loading
     do {
-      let pending = try usage.stateStore.get(resource.value)
+      let pending = try usage.store.get(resource.value)
       tasks[id] = Task { [weak self] in
         let result = await pending.result
         guard let self, !stopped, !Task.isCancelled, revisions[id] == revision else { return }

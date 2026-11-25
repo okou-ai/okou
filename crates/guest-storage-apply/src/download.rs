@@ -6,6 +6,7 @@ use crate::source;
 use crate::telemetry::{
     DownloadRunTelemetry, DownloadTaskTelemetry, LocalArchiveTaskMetrics, RemoteArchiveTaskMetrics,
 };
+use guest_contracts::storage_files::{PACKED_BATCH_FILE_URL, PACKED_BATCH_START_URL};
 use guest_contracts::storage_paths::normalize_path;
 use guest_telemetry::{log_error, log_info};
 use std::any::Any;
@@ -20,6 +21,8 @@ use std::time::{Duration, Instant};
 
 const LOCAL_CONCURRENT: usize = 4;
 const LARGE_LOCAL_ARTIFACT_BYTES: u64 = 256 * 1024;
+#[cfg(target_os = "linux")]
+const WIDE_LOCAL_INFLATE_TASKS: usize = 32;
 const BASE_REMOTE_CONCURRENT: usize = 16;
 const MEDIUM_REMOTE_MAX_CONCURRENT: usize = 20;
 const LARGE_REMOTE_BATCH: usize = 64;
@@ -51,6 +54,17 @@ impl<'input> DownloadTask<'input> {
 
     pub(crate) fn mount_path(&self) -> &str {
         &self.mount_path
+    }
+
+    fn log_progress(&self) -> bool {
+        // Packed decoded requests keep batch progress and per-mount result
+        // metrics. Avoid synchronous stderr and system-log writes for the
+        // start and successful completion of every decoded mount.
+        self.files.is_none()
+            || !matches!(
+                self.url.as_str(),
+                PACKED_BATCH_START_URL | PACKED_BATCH_FILE_URL
+            )
     }
 
     pub(crate) fn set_files(
@@ -166,17 +180,25 @@ struct StartedDownload<'input> {
     remote_metrics: Option<RemoteArchiveTaskMetrics>,
     local_metrics: Option<LocalArchiveTaskMetrics>,
     concurrency: usize,
+    #[cfg(target_os = "linux")]
+    inflate_load: Option<archive::inflate::InflateLoad>,
 }
 
 impl<'input> StartedDownload<'input> {
-    fn new(download: PendingDownload<'input>, concurrency: usize) -> Self {
+    fn new(
+        download: PendingDownload<'input>,
+        concurrency: usize,
+        #[cfg(target_os = "linux")] inflate_load: Option<archive::inflate::InflateLoad>,
+    ) -> Self {
         let start = Instant::now();
-        log_info!(
-            LOG_TAG,
-            "Downloading {} to {}",
-            download.task.task.label,
-            download.task.task.mount_path
-        );
+        if download.task.task.log_progress() {
+            log_info!(
+                LOG_TAG,
+                "Downloading {} to {}",
+                download.task.task.label,
+                download.task.task.mount_path
+            );
+        }
         Self {
             id: download.id,
             remote_metrics: download.task.task.telemetry.remote_metrics(),
@@ -185,6 +207,8 @@ impl<'input> StartedDownload<'input> {
             start,
             opened_file_compressed_bytes: None,
             concurrency,
+            #[cfg(target_os = "linux")]
+            inflate_load,
         }
     }
 
@@ -200,12 +224,14 @@ impl<'input> StartedDownload<'input> {
                     self.remote_metrics.as_ref(),
                     self.local_metrics.as_ref(),
                 );
-                log_info!(
-                    LOG_TAG,
-                    "{} downloaded in {}ms",
-                    self.task.task.label,
-                    elapsed.as_millis()
-                );
+                if self.task.task.log_progress() {
+                    log_info!(
+                        LOG_TAG,
+                        "{} downloaded in {}ms",
+                        self.task.task.label,
+                        elapsed.as_millis()
+                    );
+                }
                 true
             }
             Err(error) => {
@@ -271,6 +297,8 @@ struct DownloadScheduler<'input> {
     all_success: bool,
     prioritize_large: bool,
     prioritize_artifact: bool,
+    #[cfg(target_os = "linux")]
+    paired_inflater: Option<usize>,
 }
 
 impl<'input> DownloadScheduler<'input> {
@@ -283,6 +311,12 @@ impl<'input> DownloadScheduler<'input> {
         let prioritize_artifact = allow_artifact_priority
             && pending.len() > concurrency
             && pending.iter().any(PendingDownload::is_large_local_artifact);
+        #[cfg(target_os = "linux")]
+        let paired_inflater = if allow_artifact_priority && concurrency == 2 {
+            paired_inflater(&pending)
+        } else {
+            None
+        };
         Self {
             pending,
             reservations: Vec::new(),
@@ -291,6 +325,8 @@ impl<'input> DownloadScheduler<'input> {
             all_success: true,
             prioritize_large,
             prioritize_artifact,
+            #[cfg(target_os = "linux")]
+            paired_inflater,
         }
     }
 
@@ -308,6 +344,12 @@ impl<'input> DownloadScheduler<'input> {
         telemetry: &mut DownloadRunTelemetry,
     ) -> bool {
         while self.active_attempts < self.concurrency {
+            // Share at most one inflater by using the existing first-wave
+            // Artifact promotion. Local batches with deferred sources do not
+            // set the priority flag.
+            #[cfg(target_os = "linux")]
+            let wide_inflate = self.prioritize_artifact
+                && self.pending.len() + self.active_attempts >= WIDE_LOCAL_INFLATE_TASKS;
             let selection = if self.prioritize_large {
                 DownloadSelection::Largest
             } else if std::mem::take(&mut self.prioritize_artifact) {
@@ -337,7 +379,21 @@ impl<'input> DownloadScheduler<'input> {
                     self.prioritize_artifact = false;
                 }
             }
-            let download = StartedDownload::new(download, self.concurrency);
+            #[cfg(target_os = "linux")]
+            let inflate_load = if self.concurrency == 1 || self.paired_inflater == Some(download.id)
+            {
+                Some(archive::inflate::InflateLoad::Light)
+            } else if wide_inflate && download.is_large_local_artifact() {
+                Some(archive::inflate::InflateLoad::WideBatch)
+            } else {
+                None
+            };
+            let download = StartedDownload::new(
+                download,
+                self.concurrency,
+                #[cfg(target_os = "linux")]
+                inflate_load,
+            );
             self.reservations.push(DownloadReservation::new(&download));
 
             if work_tx.send(download).is_err() {
@@ -368,6 +424,36 @@ impl<'input> DownloadScheduler<'input> {
             }
         }
     }
+}
+
+#[cfg(target_os = "linux")]
+fn paired_inflater(pending: &VecDeque<PendingDownload<'_>>) -> Option<usize> {
+    if pending.len() != 2 {
+        return None;
+    }
+    let first = pending.front()?;
+    let second = pending.back()?;
+    let (artifact, companion) = if first.task.task.telemetry.is_artifact() {
+        (first, second)
+    } else {
+        (second, first)
+    };
+    if !artifact.is_large_local_artifact() || companion.task.task.telemetry.is_artifact() {
+        return None;
+    }
+
+    // A short companion can finish while the inflater and tar writer overlap.
+    // Use the existing archive size estimate or bounded decoded input metadata.
+    const COMPANION_BYTES: usize = 64 * 1024;
+    const COMPANION_FILES: usize = 16;
+    let small = match &companion.task.task.files {
+        Some(files) => {
+            files.len() <= COMPANION_FILES
+                && files.iter().map(|file| file.content.len()).sum::<usize>() <= COMPANION_BYTES
+        }
+        None => (1..COMPANION_BYTES as u64).contains(&companion.estimated_work),
+    };
+    small.then_some(artifact.id)
 }
 
 /// Prepare download targets before any archive worker can start.
@@ -683,26 +769,12 @@ fn run_download_attempt(download: &mut StartedDownload<'_>) -> Result<(), Downlo
         )
         .map_err(|error| DownloadError::new(format!("Decoded storage write failed: {error}")));
     }
-    download_and_extract(
-        &download.task.task.url,
-        download.task.effective_mount_path(),
-        &mut download.opened_file_compressed_bytes,
-        download.remote_metrics.as_mut(),
-        download.local_metrics.as_mut(),
-        download.concurrency,
-        download.task.task.template_guidance.as_ref(),
-    )
+    download_and_extract(download)
 }
 
-fn download_and_extract(
-    url: &str,
-    target_path: &Path,
-    opened_file_compressed_bytes: &mut Option<u64>,
-    remote_metrics: Option<&mut RemoteArchiveTaskMetrics>,
-    local_metrics: Option<&mut LocalArchiveTaskMetrics>,
-    concurrency: usize,
-    template_guidance: Option<&guest_contracts::storage_manifest::TemplateGuidanceReference>,
-) -> Result<(), DownloadError> {
+fn download_and_extract(download: &mut StartedDownload<'_>) -> Result<(), DownloadError> {
+    let task = &download.task.task;
+    let target_path = download.task.effective_mount_path();
     fs::create_dir_all(target_path).map_err(|e| {
         DownloadError::new(format!(
             "Failed to create directory {}: {e}",
@@ -710,38 +782,69 @@ fn download_and_extract(
         ))
     })?;
 
-    let attempt_metrics = remote_metrics
+    let attempt_metrics = download
+        .remote_metrics
         .is_some()
         .then(source::RemoteArchiveAttemptMetrics::default);
-    let local_attempt_metrics = local_metrics
+    let local_attempt_metrics = download
+        .local_metrics
         .is_some()
         .then(source::LocalArchiveAttemptMetrics::default);
+    #[cfg(target_os = "linux")]
+    if let Some(load) = download.inflate_load
+        && task.telemetry.is_artifact()
+        && task.template_guidance.is_none()
+        && let Some(path) = task.url.strip_prefix("file://")
+    {
+        let archive = source::LocalArchive::open(path)?;
+        download.opened_file_compressed_bytes = archive.compressed_bytes;
+        let extract_start = Instant::now();
+        let result = archive::inflate::extract_staged(
+            archive,
+            target_path,
+            local_attempt_metrics.as_ref(),
+            download.concurrency,
+            load,
+        );
+        if let (Some(metrics), Some(attempt)) =
+            (&mut download.local_metrics, &local_attempt_metrics)
+        {
+            metrics.record_extraction(attempt.body_read(), extract_start.elapsed());
+        }
+        return result;
+    }
+
     let reader = match source::open_archive(
-        url,
+        &task.url,
         attempt_metrics.as_ref(),
         local_attempt_metrics.as_ref(),
     ) {
         Ok(reader) => reader,
         Err(error) => {
-            if let (Some(metrics), Some(attempt_metrics)) = (remote_metrics, &attempt_metrics) {
+            if let (Some(metrics), Some(attempt_metrics)) =
+                (&mut download.remote_metrics, &attempt_metrics)
+            {
                 metrics.record_attempt(attempt_metrics.snapshot(), Duration::ZERO);
             }
             return Err(error);
         }
     };
-    *opened_file_compressed_bytes = reader.compressed_bytes();
+    download.opened_file_compressed_bytes = reader.compressed_bytes();
     let extract_start = Instant::now();
-    let result = match template_guidance {
+    let result = match &task.template_guidance {
         Some(reference) => {
-            crate::template_guidance::extract(reader, target_path, concurrency, reference)
+            crate::template_guidance::extract(reader, target_path, download.concurrency, reference)
         }
-        None => archive::extract_tar_gz(reader, target_path, concurrency),
+        None => archive::extract_tar_gz(reader, target_path, download.concurrency),
     };
     let extract_wall = extract_start.elapsed();
-    if let (Some(metrics), Some(attempt_metrics)) = (remote_metrics, &attempt_metrics) {
+    if let (Some(metrics), Some(attempt_metrics)) = (&mut download.remote_metrics, &attempt_metrics)
+    {
         metrics.record_attempt(attempt_metrics.snapshot(), extract_wall);
     }
-    if let (Some(metrics), Some(attempt_metrics)) = (local_metrics, &local_attempt_metrics) {
+    if let (Some(metrics), Some(attempt_metrics)) =
+        (&mut download.local_metrics, &local_attempt_metrics)
+    {
         metrics.record_extraction(attempt_metrics.body_read(), extract_wall);
     }
     result

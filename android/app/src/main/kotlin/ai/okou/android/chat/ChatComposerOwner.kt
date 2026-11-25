@@ -55,6 +55,7 @@ internal class ChatComposerOwner(
         val key: String,
         val connection: Connection,
         val checking: Boolean = false,
+        val recovery: Pair<RecoverySelection, RecoveryOperationPhase>? = null,
     ) {
         var job: Job? = null
         var unsentReset: UnsentReset? = null
@@ -114,10 +115,7 @@ internal class ChatComposerOwner(
             .filter { it.connection === connection }
             .toList()
             .forEach { op ->
-                restoreUnsentReset(op)
-                operations.remove(op.key)
-                mutable.value =
-                    mutable.value.copy(busy = operations.keys.toSet(), checking = checkingTargets())
+                finish(op)
                 op.job?.cancel()
             }
         connections -= connection
@@ -360,12 +358,6 @@ internal class ChatComposerOwner(
         serverTarget(draftKey)?.let { synchronize(connection, it) }
     }
 
-    fun retrySync(connection: Connection, target: ComposerTarget) {
-        serverTarget(mutable.value.draftKey(target))?.let {
-            synchronize(connection, it, refresh = true)
-        }
-    }
-
     private fun serverTarget(key: String): ServerDraftTarget? =
         when {
             key.startsWith("thread:") -> ServerDraftTarget(key.removePrefix("thread:"))
@@ -411,7 +403,12 @@ internal class ChatComposerOwner(
                         syncStatus(target.key, ComposerSync.Loading)
                         val list = connection.chatList
                         val indexVersion = list?.draftIndexRequestVersion
-                        val remote = connection.service.composerDraft(target).plainText()
+                        val remote =
+                            ChatDependencyRetry()
+                                .read(online = ::current) {
+                                    connection.service.composerDraft(target)
+                                }
+                                .plainText()
                         currentCoroutineContext().ensureActive()
                         if (!current()) return@launch
                         if (remote == null) {
@@ -461,7 +458,18 @@ internal class ChatComposerOwner(
                         if (mutable.value.journal?.drafts?.get(target.key) != draft) continue
                         if (!saved.durable || saved.journal.drafts[target.key] != draft)
                             throw IOException("Draft is not durable")
-                        connection.service.saveComposerDraft(target, draft.text)
+                        val submitted =
+                            ChatWriteRetries().run {
+                                currentCoroutineContext().ensureActive()
+                                if (
+                                    !current() ||
+                                        mutable.value.journal?.drafts?.get(target.key) != draft
+                                )
+                                    return@run false
+                                connection.service.saveComposerDraft(target, draft.text)
+                                true
+                            }
+                        if (!submitted) continue
                         currentCoroutineContext().ensureActive()
                         if (!current()) return@launch
                         target.threadId?.let {
@@ -565,7 +573,12 @@ internal class ChatComposerOwner(
     private fun checkingTargets() =
         operations.values.filter { it.checking }.mapTo(hashSetOf()) { it.key }
 
-    private fun begin(connection: Connection, key: String, checking: Boolean = false): Operation? {
+    private fun begin(
+        connection: Connection,
+        key: String,
+        checking: Boolean = false,
+        recovery: Pair<RecoverySelection, RecoveryOperationPhase>? = null,
+    ): Operation? {
         if (!connection.current() || mutable.value.journal == null) return null
         operations[key]?.let { previous ->
             // A previous accepted input's replaceable read never owns the next user send.
@@ -578,12 +591,15 @@ internal class ChatComposerOwner(
                 previous.job?.cancel()
             } else return null
         }
-        return Operation(key, connection, checking).also {
+        return Operation(key, connection, checking, recovery).also {
             operations[key] = it
             mutable.value =
                 mutable.value.copy(
                     busy = operations.keys.toSet(),
                     checking = checkingTargets(),
+                    recovering =
+                        recovery?.let { mutable.value.recovering + it } ?: mutable.value.recovering,
+                    recoveryFailures = mutable.value.recoveryFailures - key,
                     failed = mutable.value.failed - key,
                     unobserved = mutable.value.unobserved - key,
                 )
@@ -687,7 +703,14 @@ internal class ChatComposerOwner(
         if (entry.recovery == unsent.prepared) put(op.key, entry.copy(recovery = unsent.previous))
     }
 
-    fun recover(connection: Connection, target: ComposerTarget, failureId: String, reset: Boolean) {
+    fun recover(
+        connection: Connection,
+        target: ComposerTarget,
+        failureId: String,
+        reset: Boolean,
+        confirmedAccount: String? = null,
+        originalResetKey: String? = null,
+    ) {
         val recovery = connection.recovery ?: return
         val selected =
             recovery.selection()?.takeIf {
@@ -707,10 +730,17 @@ internal class ChatComposerOwner(
             previous?.takeIf { it.selection == selected && it.outcome == null }?.reset?.accountId
                 ?: displayed?.resetAccount?.id
         if (reset && expectedAccount == null) return
+        if (confirmedAccount != null && expectedAccount != confirmedAccount) return
+        val unconfirmed = previous?.takeIf { it.outcome == null }?.reset
+        if (confirmedAccount != null && unconfirmed != null) return
+        if (originalResetKey != null && unconfirmed?.idempotencyKey != originalResetKey) return
         if (previous?.submitted == true && previous.selection == selected) return
         if (previous?.reset != null && previous.outcome == null && previous.selection != selected)
             return
-        val op = begin(connection, target.key) ?: return
+        val phase =
+            if (reset && unconfirmed != null) RecoveryOperationPhase.CheckingReset
+            else RecoveryOperationPhase.Preparing
+        val op = begin(connection, target.key, recovery = selected to phase) ?: return
         op.job =
             connection.scope.launch {
                 try {
@@ -1053,6 +1083,9 @@ internal class ChatComposerOwner(
     private suspend fun applyNewChatConnectors(op: Operation, pending: PendingText) {
         if (!pending.awaitingConnectorSetup) return
         val connectors = op.connection.connectors ?: throw ApiFailure.IncompatibleResponse()
+        val memberAccess = connectors.memberAccessEnabled()
+        requireCurrent(op)
+        if (memberAccess) return
         for (choice in pending.connectorOverrides) {
             connectors.setChatOverride(pending.threadId, choice, canReadBack = { current(op) })
             requireCurrent(op)
@@ -1225,7 +1258,12 @@ internal class ChatComposerOwner(
                     put(op.key, entry.copy(pending = null))
             }
             report(op.connection, error)
-            mutable.value = mutable.value.copy(failed = mutable.value.failed + op.key)
+            val state = mutable.value
+            val recovery = op.recovery?.first
+            mutable.value =
+                if (recovery != null && state.journal?.entries?.get(op.key)?.pending == null)
+                    state.copy(recoveryFailures = state.recoveryFailures + (op.key to recovery))
+                else state.copy(failed = state.failed + op.key)
         }
     }
 
@@ -1234,7 +1272,13 @@ internal class ChatComposerOwner(
             restoreUnsentReset(op)
             operations.remove(op.key)
             mutable.value =
-                mutable.value.copy(busy = operations.keys.toSet(), checking = checkingTargets())
+                mutable.value.copy(
+                    busy = operations.keys.toSet(),
+                    checking = checkingTargets(),
+                    recovering =
+                        op.recovery?.let { mutable.value.recovering - it.first }
+                            ?: mutable.value.recovering,
+                )
         }
     }
 }

@@ -170,6 +170,17 @@ def collect_witnesses(log_path, groups, *, case_matches, invalid_message):
             cases[event["case"]].append(event)
 
 
+def collect_case_witnesses(log_path, prefix, cases, *, invalid_message):
+    """Collect one witness prefix into buckets for every expected case."""
+    witnesses = {case: [] for case in cases}
+    collect_witnesses(
+        log_path, {prefix: witnesses},
+        case_matches=lambda value: value in cases,
+        invalid_message=invalid_message,
+    )
+    return witnesses
+
+
 def validate_phase_clock(value, begin, end, message):
     """Return a positive monotonic timestamp strictly inside its phase bounds."""
     if not positive_integer(value) or not begin < value < end:
@@ -198,6 +209,19 @@ def validate_witness_clock_order(events, message):
     for field in ("monotonic_ns", "unix_ns"):
         if any(a[field] >= b[field] for a, b in zip(events, events[1:])):
             raise ValueError(message)
+
+
+def validate_terminal_witness_clock_order(
+        terminal, witnesses, *, tail_start_index, tail_end_index, message):
+    """Check pre-exit, required-tail, and post-tail witnesses against terminal receipts."""
+    validate_witness_clock_order(
+        [
+            terminal[1], *witnesses[:tail_start_index],
+            terminal[2], terminal[3], *witnesses[tail_start_index:tail_end_index],
+            terminal[4], *witnesses[tail_end_index:], terminal[5],
+        ],
+        message,
+    )
 
 
 def validate_residency(sample):

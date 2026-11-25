@@ -50,7 +50,6 @@ export const OTHER_THREAD_ID = "b0000000-0000-4000-a000-000000000062";
 export const ACME_CONNECTOR_ID = "e0000000-0000-4000-a000-000000000061";
 
 export const FEISHU_CONNECTOR_ID = "e0000000-0000-4000-a000-000000000063";
-export const ORDINARY_CONNECTOR_ID = "e0000000-0000-4000-a000-000000000064";
 
 const CREATED_AT = "2026-08-24T10:00:00.000Z";
 
@@ -62,6 +61,7 @@ interface ComposerThreadFixture {
 }
 
 interface ConnectorFixtureOptions {
+  readonly onFirstRun?: () => void;
   readonly catalog?: readonly PublicConnectorCatalogStatusItem[];
   readonly featuredConnectorSlugs?: readonly ConnectorSlug[];
   /** Category totals discovery reports, so a shelf can close on a real count. */
@@ -219,18 +219,6 @@ export function manualAuthMethod(): PublicConnectorCatalogAuthMethodDetail {
         inputType: "password",
       },
     ],
-    startOptions: [],
-  };
-}
-
-export function noAuthMethod(): PublicConnectorCatalogAuthMethodDetail {
-  return {
-    id: "public",
-    label: "Public access",
-    description: "No credentials are required.",
-    grantKind: "none",
-    supportsRefresh: false,
-    manualFields: [],
     startOptions: [],
   };
 }
@@ -540,6 +528,7 @@ export function createComposerConnectorHelpers(context: TestContext) {
       }[];
     }[] = [];
     const lifecycle = installMessageExperienceChat({
+      onRunCreate: options.onFirstRun,
       threadId: fixtureThreadId,
       onThreadCreate: ({ clientThreadId, initialRemoteAccessOverrides }) => {
         createdThreadRequests.push({

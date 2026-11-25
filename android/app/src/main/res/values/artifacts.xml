@@ -28,6 +28,7 @@
     <string name="artifact_empty">No artifacts yet</string>
     <string name="artifact_empty_type">No artifacts of this type</string>
     <string name="artifact_no_matches">No matching artifacts</string>
+    <string name="artifact_clear_keyword">Clear keyword</string>
     <string name="artifact_show_all">Show all</string>
     <string name="artifact_catalog_load_failed">Temporarily unable to load artifacts</string>
     <string name="artifact_catalog_refresh_failed">Temporarily unable to update. Showing loaded artifacts.</string>
@@ -49,9 +50,16 @@
     <string name="artifact_open_website">Open in browser</string>
     <string name="artifact_browser_unavailable">Couldn’t open a browser</string>
     <string name="artifact_play_media">Media playback</string>
+    <string name="artifact_play">Play</string>
     <string name="artifact_catalog_access_denied">You don’t have access to this artifact catalog</string>
     <string name="artifact_catalog_missing">This artifact catalog is no longer available</string>
     <string name="chat_resources_related">Related chats</string>
     <string name="chat_resources_related_load_failed">Temporarily unable to load related chats</string>
     <string name="chat_resources_related_access_lost">Related chats are no longer available</string>
+    <string name="chat_resources_origin">Origin</string>
+    <string name="chat_resources_workflows">Workflows and automations</string>
+    <string name="chat_resources_workflows_load_failed">Temporarily unable to load related workflows</string>
+    <string name="chat_resources_wechat">WeChat</string>
+    <string name="chat_resources_feishu">Feishu</string>
+    <string name="chat_resources_messages">Messages</string>
 </resources>

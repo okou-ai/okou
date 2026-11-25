@@ -16,6 +16,8 @@ final class ComposerConnectorResources {
   private let service: ChatComposerAccess
 
   private let threadID: String?
+  private let includesRemote: Bool
+  private let memberAccessEnabled: @MainActor () -> Bool
   private let sleep: @Sendable (Duration) async throws -> Void
   private let didLoadConnected: @MainActor ([ChatComposerConnector]) -> Void
   private let didLoadRemote: @MainActor (Remote) -> Void
@@ -30,6 +32,8 @@ final class ComposerConnectorResources {
 
   init(
     service: ChatComposerAccess, threadID: String?, options: ChatComposerOptions,
+    includesRemote: Bool = true,
+    memberAccessEnabled: @escaping @MainActor () -> Bool,
     sleep: @escaping @Sendable (Duration) async throws -> Void,
     didLoadConnected: @escaping @MainActor ([ChatComposerConnector]) -> Void,
     didLoadRemote: @escaping @MainActor (Remote) -> Void,
@@ -37,6 +41,8 @@ final class ComposerConnectorResources {
   ) {
     self.service = service
     self.threadID = threadID
+    self.includesRemote = includesRemote
+    self.memberAccessEnabled = memberAccessEnabled
     self.sleep = sleep
     self.didLoadConnected = didLoadConnected
     self.didLoadRemote = didLoadRemote
@@ -60,11 +66,16 @@ final class ComposerConnectorResources {
       let signal = options.signal
       let task = Task { @MainActor [weak self, service, threadID] in
         guard let self else { throw CancellationError() }
+        let memberAccess = memberAccessEnabled()
         do {
           let value = try await read {
             try await service.validate(threadID: threadID)
             try Task.checkCancellation()
-            return try await service.connectors(threadID: threadID, options: pending)
+            if !includesRemote {
+              return try await service.managedConnectors(memberAccess: memberAccess)
+            }
+            return try await service.connectors(
+              threadID: threadID, options: pending, memberAccess: memberAccess)
           }
           try Task.checkCancellation()
           try signal.checkCancellation()

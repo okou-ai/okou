@@ -11,10 +11,6 @@ import {
   contentBundleSchema,
   type ContentBundle,
 } from "@okouai/api-contracts/contracts/content-bundle";
-import {
-  STAFF_SINGLE_AGENT_ORG_ID,
-  staffWorkflowCopyId,
-} from "@okouai/core/single-agent-migration";
 import { logger } from "../../lib/log";
 import type {
   ExecutionPackageScope,
@@ -60,19 +56,7 @@ export function resolveOrdinaryAutomationWorkflowName(
   const selected = sources.workflows.find(({ id }) => {
     return id === workflow.id;
   });
-  if (selected) {
-    return selected.name;
-  }
-  // Pre-cutover queued input can still mount the authorized legacy winner
-  // after its Automation has been moved to that Workflow's stable copy.
-  // https://github.com/okou-ai/okou/issues/46783
-  if (scope.orgId !== STAFF_SINGLE_AGENT_ORG_ID) {
-    return null;
-  }
-  const legacy = sources.workflows.find(({ id }) => {
-    return staffWorkflowCopyId(id) === workflow.id;
-  });
-  return legacy?.name ?? null;
+  return selected?.name ?? null;
 }
 
 /** Choose and decode the packages for the Run from its first source observation. */

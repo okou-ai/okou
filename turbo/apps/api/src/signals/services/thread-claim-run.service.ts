@@ -10,7 +10,6 @@ import { formatIntegrationRunError$ } from "./integration-run-errors.service";
 import { initializeMemberMemory$ } from "./member-memory-initialization.service";
 import { settleRejectedAutomationInput$ } from "./workflow-schedule-failure.service";
 import type { AgentRunCallbackPayload } from "@okouai/db/jsonb-contracts/agent-run-callback";
-import { STAFF_SINGLE_AGENT_ORG_ID } from "@okouai/core/single-agent-migration";
 import { emailDeliveryTargetSchema } from "./email-chat-callback-payload";
 import { performance } from "node:perf_hooks";
 import {
@@ -84,10 +83,16 @@ import {
 
 import { getOfficialTelegramBotConfig } from "../external/telegram-official";
 import { joinAll, safeSync, settle, tapError } from "../utils";
-import type { DirectRunDispatchResult } from "./direct-run-dispatch.service";
+import {
+  prepareDirectRunInputs$,
+  type DirectRunDispatchResult,
+  type DirectRunInputsRead,
+} from "./direct-run-dispatch.service";
 import {
   createExecutionBundleCache,
   type AdmittedRunLaunch,
+  type DirectRunInput,
+  type ExecutionBundleUrlsRead,
 } from "./direct-run-preparation.service";
 import type { ExecutionRuntimeResources } from "./execution-runtime-context";
 import { prepareExecutionNetworkPolicy$ } from "./run-execution-publication.service";
@@ -112,6 +117,7 @@ import {
   type PreparedChatEventRow,
 } from "./chat-event-append.service";
 import { recordThreadRunActivationMarkers } from "./chat-first-assistant-event-metric.service";
+import { isAntigravityEnabled } from "./feature-switches.service";
 import {
   queuedThreadInputCondition,
   type QueuedUserMessage,
@@ -225,7 +231,6 @@ import {
   literal,
   object,
   strictObject,
-  string,
   uuid,
   type infer as zInfer,
 } from "zod";
@@ -728,23 +733,6 @@ function claimCommitInput(input: RunPlan): ThreadRunContext["input"] {
   };
 }
 
-/**
- * Generation writes a title only over NULL title and renamed_at, and a rename
- * sets both, so a titled or renamed claim snapshot never needs another read.
- */
-function threadTitled(
-  thread:
-    | { readonly title: string | null; readonly renamedAt: Date | null }
-    | null
-    | undefined,
-) {
-  return (
-    thread !== null &&
-    thread !== undefined &&
-    (thread.title !== null || thread.renamedAt !== null)
-  );
-}
-
 function claimLaunchRecord(
   record: ClaimLaunchRecord,
   integrationContext: string | undefined,
@@ -808,10 +796,12 @@ export interface ThreadClaimRunObjects {
     {
       readonly pending: Promise<PendingClaimRun | null>;
       readonly resources: ExecutionRuntimeResources;
+      readonly early: DirectRunInputsRead | undefined;
     },
     [
       context: ThreadRunContext,
       resources: RunResourcePreparation,
+      bundleUrls: ExecutionBundleUrlsRead,
       signal: AbortSignal,
     ]
   >;
@@ -1293,7 +1283,7 @@ export function createThreadClaimRunObjects(
             triggerSource,
             discordDelivery: delivery.discordDelivery,
             wechatDelivery: delivery.wechatDelivery,
-            titled: threadTitled((await get(pickedEvent$))?.thread),
+            titled: (await get(pickedEvent$))?.thread.titled ?? false,
           },
         },
       };
@@ -1486,14 +1476,7 @@ export function createThreadClaimRunObjects(
         };
       }
       const material = buildWorkflowAutomationQueuedLaunchMaterial({
-        // Staff migration retains queued event bytes while reassigning the live
-        // Automation. Resolve its new execution name without rewriting history.
-        // Remove after every pre-cutover queued input has drained.
-        // https://github.com/okou-ai/okou/issues/46783
-        workflowName:
-          target.workflow.orgId === STAFF_SINGLE_AGENT_ORG_ID
-            ? target.workflow.name
-            : event.workflowName,
+        workflowName: event.workflowName,
         eventType: event.eventType,
         eventPayload: await get(threadContext.automationPayload$),
         automation: target.automation,
@@ -1714,6 +1697,7 @@ export function createThreadClaimRunObjects(
         await Promise.allSettled([
           get(automationModel$),
           get(connectorAdmission$),
+          get(promptResources.suggestionsPrompt$),
         ]);
       }
       return;
@@ -1742,18 +1726,14 @@ export function createThreadClaimRunObjects(
           : ("pi" as const),
     };
   });
-  const runRuntimeInputs$ = computed(async (get) => {
-    const [route, vars, featureSwitchContext, connector] = await Promise.all([
+  const runModelInputs$ = computed(async (get) => {
+    const [route, vars, featureSwitchContext] = await Promise.all([
       get(authorizedRunRoute$),
       get(bootstrap.runVariables$),
       get(bootstrap.featureSwitches$),
-      get(connectorAdmission$),
     ]);
     if (isRouteError(route)) {
       return route;
-    }
-    if (isRouteError(connector)) {
-      return connector;
     }
     const providerPermissions = safeSync(() => {
       return modelProviderPermissionManifest(route.modelProvider, vars);
@@ -1768,15 +1748,7 @@ export function createThreadClaimRunObjects(
       ...route,
       vars,
       featureSwitchContext,
-      connector,
       providerPermissions: providerPermissions.ok,
-      usagePermissions: {
-        firewalls: [
-          ...(providerPermissions.ok?.firewalls ?? []),
-          ...(connector.permissions?.firewalls ?? []),
-        ],
-        billableFirewalls: connector.permissions?.billableFirewalls ?? [],
-      },
     };
   });
   const runIntegration$ = computed(async (get) => {
@@ -1820,30 +1792,51 @@ export function createThreadClaimRunObjects(
         return input;
       }
       const { args, officialWorkflow: officialWorkflowRun, runPrompt } = input;
-      const [runtime, selectedImageModel] = await Promise.all([
-        get(runRuntimeInputs$),
-        get(bootstrap.selectedImageModel$),
-      ]);
+      const usage = (async () => {
+        const runtime = await get(runModelInputs$);
+        if (isRouteError(runtime)) {
+          return runtime;
+        }
+        const [catalog, modelPricing] = await Promise.all([
+          get(claimCatalog$),
+          get(bootstrap.modelPricing$),
+        ]);
+        const usageError = validateModelUsage({
+          catalog,
+          modelProvider: runtime.modelProvider,
+          providerPermissions: runtime.providerPermissions,
+          routePricing: runRoutePricingFromSnapshot(
+            {
+              modelProvider: runtime.modelProvider,
+              serviceTier: args.codexServiceTier,
+            },
+            modelPricing,
+          ),
+        });
+        return usageError === null ? runtime : providerUnavailable(usageError);
+      })();
+      const [route, connector, runtimeResult, selectedImageModel] =
+        await Promise.all([
+          get(authorizedRunRoute$),
+          get(connectorAdmission$),
+          settle(usage),
+          get(bootstrap.selectedImageModel$),
+        ]);
+      // Preserve the existing rejection order when both branches reject admission.
+      if (isRouteError(route)) {
+        return route;
+      }
+      if (isRouteError(connector)) {
+        return connector;
+      }
+      if (!runtimeResult.ok) {
+        throw runtimeResult.error;
+      }
+      const runtime = runtimeResult.value;
       if (isRouteError(runtime)) {
         return runtime;
       }
       const { vars, featureSwitchContext, modelProvider } = runtime;
-      const catalog = await get(claimCatalog$);
-      const usageError = validateModelUsage({
-        catalog,
-        modelProvider,
-        permissionManifest: runtime.usagePermissions,
-        routePricing: runRoutePricingFromSnapshot(
-          {
-            modelProvider,
-            serviceTier: args.codexServiceTier,
-          },
-          await get(bootstrap.modelPricing$),
-        ),
-      });
-      if (usageError !== null) {
-        return providerUnavailable(usageError);
-      }
       const tierError = checkRunServiceTier(
         args.codexServiceTier,
         featureSwitchContext,
@@ -1889,7 +1882,7 @@ export function createThreadClaimRunObjects(
             captureNetworkBodies: args.captureNetworkBodies === true,
             modelProvider,
             modelProviderPermissions: runtime.providerPermissions,
-            connectorEnvironment: runtime.connector.environment,
+            connectorEnvironment: connector.environment,
             userTimezone: runPrompt.userTimezone,
           },
           apiStartTime: await get(runnerApiStartTime$),
@@ -2495,10 +2488,12 @@ export function createThreadClaimRunObjects(
         claim,
         context,
         timing,
+        dispatchInput,
       }: {
         readonly claim: ThreadClaim;
         readonly context: ThreadRunContext;
         readonly timing: ClaimRunTiming;
+        readonly dispatchInput: DirectRunInput;
       },
       signal: AbortSignal,
     ): Promise<PendingClaimRun | null> => {
@@ -2524,6 +2519,7 @@ export function createThreadClaimRunObjects(
       const preparedCommit: PreparedThreadLaunchCommit = {
         ...commit,
         persistence: context.persistence,
+        dispatchInput,
         admissionTiming,
         poolCapture,
       };
@@ -2701,23 +2697,11 @@ export function createThreadClaimRunObjects(
       { get, set },
       error: unknown,
       signal: AbortSignal,
-    ): Promise<null> => {
+    ): Promise<never> => {
       // A durable Run commit is creation success, even if subsequent
       // telemetry or cancellation fails. Never reject its consumed input.
       if (get(internalCommittedRunId$) !== null) {
         throw error;
-      }
-      // Temporary staff cutover reader: a preparation can capture the old
-      // Chat binding just before SQL reassigns it. The atomic binding fence
-      // rolled back publication; keep its input queued for a fresh normal
-      // pick instead of permanently rejecting it. No admission guard is
-      // bypassed. Remove after pre-cutover request preparations have drained
-      // and their rollback consumers are excluded (#46783).
-      if (
-        claim.orgId === STAFF_SINGLE_AGENT_ORG_ID &&
-        error instanceof ChatThreadBindingChanged
-      ) {
-        return null;
       }
       const event = await get(pickedEvent$);
       signal.throwIfAborted();
@@ -2796,6 +2780,7 @@ export function createThreadClaimRunObjects(
       { get, set },
       context: ThreadRunContext,
       { memoryArchive, networkPolicyInputs }: RunResourcePreparation,
+      bundleUrls: ExecutionBundleUrlsRead,
       signal: AbortSignal,
     ) => {
       const memory = (async () => {
@@ -2812,11 +2797,12 @@ export function createThreadClaimRunObjects(
         signal.throwIfAborted();
         return executionMemoryMount(mount, archive);
       })();
+      const dispatchInput = threadDispatchInput(context);
       const pending = (async () => {
         const committed = await settle(
           set(
             createRun$,
-            { claim, context, timing: get(claimRunTiming$) },
+            { claim, context, timing: get(claimRunTiming$), dispatchInput },
             signal,
           ),
           signal,
@@ -2825,7 +2811,18 @@ export function createThreadClaimRunObjects(
           ? committed.value
           : await set(failRunAdmission$, committed.error, signal);
       })();
-      return { pending, resources: { memory, networkPolicyInputs } };
+      const resources = { memory, networkPolicyInputs };
+      const early =
+        requestInput?.id === context.head.id
+          ? set(
+              prepareDirectRunInputs$,
+              dispatchInput,
+              null,
+              { bundleUrls, resources },
+              signal,
+            )
+          : undefined;
+      return { pending, resources, early };
     },
   );
   return {
@@ -2859,6 +2856,7 @@ interface PersistedAtomicLaunchRows {
 }
 
 interface PreparedRunnerLaunch {
+  readonly antigravityEnabled: boolean;
   readonly runnerGroup: string;
   readonly profile: string;
   readonly reuseKey: string;
@@ -3099,6 +3097,7 @@ interface PreparedAtomicLaunchPersistence {
 }
 
 interface PreparedThreadLaunchCommit extends ThreadLaunchCommitInput {
+  readonly dispatchInput: DirectRunInput;
   readonly persistence: PreparedAtomicLaunchPersistence;
   readonly admissionTiming: AdmissionAttemptTiming;
   readonly poolCapture: PgPoolAcquisitionCapture;
@@ -3373,6 +3372,7 @@ function prepareRunnerLaunch(input: {
   };
   return {
     runnerGroup: preparedRunnerGroup(),
+    antigravityEnabled: isAntigravityEnabled(args.featureSwitchContext),
     profile: args.profile,
     reuseKey: runnerReuseKey(args.chatThreadId),
     facts,
@@ -3574,20 +3574,20 @@ async function pendingLaunchCommitResult(
   return {
     kind: "pending",
     marketingRewardEventId: persisted.marketingRewardEventId,
-    admittedLaunch: admittedRunLaunch(args, persisted),
+    admittedLaunch: {
+      ...args.dispatchInput,
+      run: { ...args.dispatchInput.run, isFirstRun: persisted.isFirstRun },
+      createdAt: persisted.createdAt,
+    },
     publicationReturnedAt,
   };
 }
 
-function admittedRunLaunch(
-  args: PreparedThreadLaunchCommit,
-  persisted: PersistedAtomicLaunchRows,
-): AdmittedRunLaunch {
+function threadDispatchInput(args: ThreadRunContext): DirectRunInput {
   const { rowsArgs: rows, metadata } = args.persistence.rows;
   return {
     run: {
       id: args.identity.runId,
-      isFirstRun: persisted.isFirstRun,
       userId: rows.userId,
       orgId: rows.orgId,
       chatThreadId: rows.chatThreadId,
@@ -3608,20 +3608,17 @@ function admittedRunLaunch(
     runnerGroup: args.launch.runnerGroup,
     profile: args.launch.profile,
     reuseKey: args.launch.reuseKey,
-    createdAt: persisted.createdAt,
+    antigravityEnabled: args.launch.antigravityEnabled,
     predecessorRunId:
-      args.createArgs.threadContinuation.expected.frameworkSessionRunId,
+      args.input.args.threadContinuation.expected.frameworkSessionRunId,
   };
 }
 
 const pendingLaunchRowSchema = discriminatedUnion("kind", [
   object({
     kind: literal("pending"),
-    runId: string(),
     createdAt: pgTimestampWithoutTimezoneToDateSchema,
     isFirstRun: boolean(),
-    boundThreadId: string().nullable(),
-    billingAttributionId: string().nullable(),
     marketingRewardEventId: uuid().nullable(),
   }),
   object({ kind: literal("claim-lost") }),
@@ -3635,12 +3632,6 @@ function pendingAtomicLaunchResult(
   }
   if (row.kind === "claim-lost") {
     return { kind: "queue-first-claim-lost" };
-  }
-  if (!row.boundThreadId) {
-    throw new ChatThreadBindingChanged();
-  }
-  if (row.billingAttributionId !== row.runId) {
-    throw new Error("New Run billing attribution conflicts with history");
   }
   return {
     kind: "pending",
@@ -3736,14 +3727,11 @@ function pendingAtomicLaunchPlan(
     SELECT CASE
       WHEN EXISTS (SELECT 1 FROM ${context.insertedRun}) THEN 'pending'
       ELSE 'claim-lost' END AS kind,
-      (SELECT ${attribution.runId} FROM ${attribution}) AS "billingAttributionId",
       (SELECT id FROM launch_workflow_source) AS "marketingRewardEventId",
-      (SELECT ${returnedCteColumn(context.insertedRun, "id")} FROM ${context.insertedRun}) AS "runId",
       (SELECT ${returnedCteColumn(context.insertedRun, "created_at")} FROM ${context.insertedRun})::text AS "createdAt",
       CASE WHEN EXISTS (SELECT 1 FROM ${context.insertedRun}) THEN
         ${notExists(earlierRunEvents)}
-      END AS "isFirstRun",
-      ${returnedCteId(context.updatedThread)} AS "boundThreadId"
+      END AS "isFirstRun"
     WHERE (SELECT ${count()} FROM launch_active) >= 0`;
 }
 

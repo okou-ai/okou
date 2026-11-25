@@ -1,3 +1,4 @@
+import CCStateSwiftUI
 import ChatDomain
 import SwiftUI
 import Textual
@@ -20,6 +21,10 @@ struct ChatDetailView: View {
   @State private var composerHeight: CGFloat = 0
   @State private var activityOwner = UUID()
   @State private var usageDetails: UsageDetails?
+  /// The transcript's graph value, kept in the workspace session's Store.
+  @ResolvedValue private var resolvedTranscript: ConversationProjection.Value?
+  /// Send, Stop and failure state, kept in the workspace session's Store.
+  @ResolvedValue private var resolvedDelivery: ConversationStore.Delivery?
 
   private struct UsageDetails: Identifiable { let id: String }
 
@@ -39,11 +44,23 @@ struct ChatDetailView: View {
     self.onFirstMessagePresented = onFirstMessagePresented
     self.fork = fork
     _scrolling = State(initialValue: ConversationScrollCoordinator(conversation: conversation))
+    _resolvedTranscript = ResolvedValue(conversation.transcript)
+    _resolvedDelivery = ResolvedValue(conversation.delivery)
   }
 
-  private var history: ChatHistory { conversation.history ?? .empty }
+  /// This render's transcript. The synchronous read only covers a missing first resolution.
+  private var transcript: ConversationProjection.Value {
+    resolvedTranscript ?? conversation.currentTranscript
+  }
+  private var history: ChatHistory { transcript.history ?? .empty }
+  /// This render's delivery state, with the same fallback as the transcript.
+  private var delivery: ConversationStore.Delivery {
+    resolvedDelivery ?? conversation.currentDelivery
+  }
   private var rows: [ConversationCollectionRow] {
-    ConversationRowProjection(conversation: conversation).rows
+    ConversationRowProjection(
+      conversation: conversation, transcript: transcript, isSending: delivery.isSending
+    ).rows
   }
 
   var body: some View {
@@ -57,7 +74,7 @@ struct ChatDetailView: View {
       scroll: scrolling.scroll,
       followsBottom: scrolling.followsBottom,
       sendTransition: scrolling.sendTransition,
-      isLoadingHistory: conversation.isLoading && conversation.history == nil,
+      isLoadingHistory: conversation.isLoading && transcript.history == nil,
       phaseChanged: scrolling.phaseChanged, metricsChanged: scrolling.metricsChanged,
       rowsPresented: { id in
         scrolling.rowsPresented(firstItemID: id)
@@ -78,7 +95,7 @@ struct ChatDetailView: View {
     )
     .ignoresSafeArea(.container, edges: .vertical)
     .overlay {
-      if conversation.history == nil && conversation.historySyncError != nil {
+      if transcript.history == nil && conversation.historySyncError != nil {
         OkouEmptyState(
           "Unable to load chat", icon: "message-circle-warning",
           description: Text("Check your connection and try again. Your draft is still here.")
@@ -187,13 +204,13 @@ struct ChatDetailView: View {
     }
     .safeAreaInset(edge: .bottom, spacing: 0) {
       VStack(alignment: .leading, spacing: 0) {
-        if let issue = conversation.stopIssue {
+        if let issue = delivery.stopIssue {
           OkouBanner(Text(issue), icon: "circle-stop") {
             Button("Check status") { Task { await conversation.refresh() } }
               .disabled(conversation.isLoading)
             if conversation.historySyncError == nil && history.canStop {
               Button("Stop again") { Task { await conversation.stop() } }
-                .disabled(conversation.isStopping)
+                .disabled(delivery.isStopping)
             }
           }
           .padding(.horizontal, OkouSpace.lg)
@@ -205,13 +222,11 @@ struct ChatDetailView: View {
             .chatFeedbackContentAnchor()
         } else {
           ChatComposerView(
-            draft: $conversation.draft,
-            isBusy: conversation.isSending || conversation.isStopping
+            isBusy: delivery.isSending || delivery.isStopping
               || conversation.isRecoveringFailure,
-            showsProgress: false, canStop: history.canStop, needsUpgrade: conversation.needsUpgrade,
-            error: conversation.error,
+            showsProgress: false, canStop: history.canStop, needsUpgrade: delivery.needsUpgrade,
+            error: delivery.error,
             attachmentURL: conversation.webURL.appending(path: "chats/\(thread.id)"),
-            attachments: conversation.attachmentDraft,
             draftState: conversation.composer,
             submit: {
               if history.canStop && !conversation.composer.hasContent {
@@ -226,7 +241,7 @@ struct ChatDetailView: View {
             mentionSource: mentionSource,
             workflowSource: conversation.workflowSource,
             sendTransition: scrolling.sendTransition,
-            placeholder: String(localized: "Message Okou")
+            recommendedFollowup: transcript.recommendedFollowups?.followups.first?.prompt
           )
         }
       }
@@ -237,9 +252,10 @@ struct ChatDetailView: View {
       }
       .chatFeedbackAnchor()
     }
-    .animation(
-      reduceMotion ? nil : .easeInOut(duration: 0.22),
-      value: conversation.composer.voice?.phase
+    .modifier(
+      ComposerVoiceAnimation(
+        voice: conversation.composer.voice,
+        animation: reduceMotion ? nil : .easeInOut(duration: 0.22))
     )
     .task(id: thread.id) { await conversation.refresh() }
   }

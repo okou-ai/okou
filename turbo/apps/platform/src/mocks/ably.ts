@@ -87,6 +87,7 @@ let capturedAuthCallback: AuthCallback | null = null;
 let tokenBodies: AuthCallbackToken[] = [];
 let nextSubscribeError: Error | null = null;
 interface SubscribeGate {
+  readonly onSubscribed?: () => void;
   readonly started: ReturnType<typeof createDeferredPromise<void>>;
   readonly release: ReturnType<typeof createDeferredPromise<void>>;
 }
@@ -289,6 +290,7 @@ class FakeChannel {
     if (this.attachOnSubscribe) {
       await this.attach();
     }
+    subscribeGate?.onSubscribed?.();
   }
 
   /**
@@ -856,6 +858,7 @@ export function deferAblySubscribeOnChannel(
   signal: AbortSignal,
 ): {
   readonly started: Promise<void>;
+  readonly completed: () => boolean;
   readonly attach: () => void;
   readonly fail: (error: Error) => void;
 } {
@@ -865,9 +868,17 @@ export function deferAblySubscribeOnChannel(
   }
   const started = createDeferredPromise<void>(signal);
   const release = createDeferredPromise<void>(signal);
-  channelSubscribeGates.set(key, { started, release });
+  let completed = false;
+  channelSubscribeGates.set(key, {
+    started,
+    release,
+    onSubscribed() {
+      completed = true;
+    },
+  });
   return {
     started: started.promise,
+    completed: () => completed,
     attach: () => {
       release.resolve();
     },

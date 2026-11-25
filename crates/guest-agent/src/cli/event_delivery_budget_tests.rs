@@ -66,7 +66,7 @@ fn text_event(framework: Framework, text: &str) -> Value {
 
 fn text_event_at_sequence(framework: Framework, text: &str, sequence: u32) -> Value {
     let event = match framework {
-        Framework::ClaudeCode | Framework::Pi => {
+        Framework::ClaudeCode | Framework::Pi | Framework::Antigravity => {
             json!({"type":"assistant","message":{"id":"message","role":"assistant","model":"test","usage":{"input_tokens":2},"content":[{"type":"text","text":text}]}})
         }
         _ => {
@@ -413,7 +413,7 @@ async fn irreducible_events_are_skipped_and_later_uploads_advance_across_gaps() 
         // A discarded tail must not be reported as successfully uploaded.
         let mut tail = text_event_at_sequence(framework, "tail", 21);
         match framework {
-            Framework::ClaudeCode | Framework::Pi => {
+            Framework::ClaudeCode | Framework::Pi | Framework::Antigravity => {
                 tail["message"]["id"] = Value::String("x".repeat(LIMIT));
             }
             Framework::Codex => tail["item"]["id"] = Value::String("x".repeat(LIMIT)),

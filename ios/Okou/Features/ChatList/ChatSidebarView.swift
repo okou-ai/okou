@@ -88,9 +88,9 @@ struct ChatSidebarView: View {
     List {
       if listRead.state == .loading && !store.list.hasLoadedThreads {
         forYouRow
-        OkouLoadingRow("Loading chats…")
-          .frame(maxWidth: .infinity)
-          .listRowInsets(.horizontal, 0)
+        OkouLoadingRow("Loading chats…", statusColumnWidth: statusColumn)
+          .frame(minHeight: OkouControl.listRow)
+          .listRowInsets(EdgeInsets(top: 0, leading: rowInset, bottom: 0, trailing: rowInset))
           .listRowSeparator(.hidden)
           .listRowBackground(Color.clear)
       } else if !store.list.hasLoadedThreads && listError != nil {
@@ -612,11 +612,39 @@ private struct ChatSidebarThreadLabel: View {
   let showsStatusColumn: Bool
 
   var body: some View {
+    ChatSidebarThreadStates(
+      row: row, composer: workspace.residentComposer(row.id),
+      listedDraft: workspace.hasListedDraft(row.id), showsStatusColumn: showsStatusColumn
+    )
+    .task { await workspace.activateDrafts() }
+  }
+}
+
+/// A resident chat's draft mark follows its composer graph; other chats use the confirmed list.
+private struct ChatSidebarThreadStates: View {
+  let row: ChatSidebarPresentation.Row
+  let listedDraft: Bool
+  let showsStatusColumn: Bool
+  private let isResident: Bool
+  @ResolvedValue private var unsentContent: Bool?
+
+  init(
+    row: ChatSidebarPresentation.Row, composer: ComposerDraftStore?, listedDraft: Bool,
+    showsStatusColumn: Bool
+  ) {
+    self.row = row
+    self.listedDraft = listedDraft
+    self.showsStatusColumn = showsStatusColumn
+    isResident = composer != nil
+    _unsentContent = ResolvedValue(composer?.unsentContent ?? ComposerDraftSignals.noContent)
+  }
+
+  var body: some View {
     var states: OkouChatStates = []
     if row.isWorking { states.insert(.working) }
     if row.isMuted { states.insert(.muted) }
     if row.isUnread { states.insert(.unread) }
-    if workspace.hasDraft(row.id) { states.insert(.draft) }
+    if isResident ? unsentContent == true : listedDraft { states.insert(.draft) }
     if row.isPinned { states.insert(.pinned) }
     return Group {
       if showsStatusColumn {
@@ -627,7 +655,6 @@ private struct ChatSidebarThreadLabel: View {
         OkouChatRowLabel(row.title, states: states)
       }
     }
-    .task { await workspace.activateDrafts() }
   }
 }
 

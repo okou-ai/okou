@@ -3,7 +3,7 @@ import ChatDomain
 import Foundation
 
 extension ConversationStore {
-  struct PendingMessage: Codable, Identifiable {
+  struct PendingMessage: Codable, Equatable, Identifiable {
     let id: String
     let text: String
     let createdAt: Date
@@ -44,7 +44,7 @@ extension ConversationStore {
     let position: ConversationReadingPosition
   }
 
-  enum DeliveryFailure {
+  enum DeliveryFailure: Equatable {
     case notSent(String)
     case unconfirmed
   }

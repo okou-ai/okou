@@ -2,10 +2,7 @@ import { createComposerHomeSignals } from "./composer-home.ts";
 import { command, computed, state } from "ccstate";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ComposerTemplateAttachment } from "./tiptap-workflow-composer.ts";
-import {
-  createWorkflowRecommendationSignals,
-  type WorkflowRecommendationActions,
-} from "./composer-workflow-recommendations.ts";
+import type { WorkflowRecommendationActions } from "./composer-workflow-recommendations.ts";
 import type {
   ComposerCreateMode,
   ComposerCreateSignals,
@@ -33,7 +30,7 @@ export function createComposerTaskChipsSignals(
     "workflow" | "website" | "visualization" | null
   >(null);
   const visualization = createComposerVisualizationSignals();
-  /** The task selected through a capability, slash panel or template picker. */
+  /** The task selected through a capability or slash panel. */
   const task$ = computed((get): ComposerTask | null => {
     return get(create.mode$) ?? get(internalGeneralTask$);
   });
@@ -45,13 +42,6 @@ export function createComposerTaskChipsSignals(
     }
     return await get(customTemplateCatalog$);
   });
-  const workflowVisible$ = computed((get) => {
-    return get(task$) === "workflow";
-  });
-  const workflows = createWorkflowRecommendationSignals(
-    workflowVisible$,
-    workflowActions,
-  );
   const applyTask$ = command(({ set }, task: ComposerTask | null) => {
     set(home.show$);
     if (task === null || isComposerGeneralTask(task)) {
@@ -91,8 +81,7 @@ export function createComposerTaskChipsSignals(
       attachment: ComposerTemplateAttachment,
       type: GenerationTemplateRequest["type"] = template.type,
     ) => {
-      // The picker can leave the category that opened it. Insert before changing
-      // tasks because task activation moves the editor selection to the end.
+      // Insert before changing tasks, which moves the selection to the end.
       set(workflowActions.insertTemplate$, template, attachment);
       if (
         type === "presentation" ||
@@ -114,7 +103,6 @@ export function createComposerTaskChipsSignals(
     selectTask$,
     openTask$,
     selectTemplate$,
-    workflows,
     visualization,
   };
 }

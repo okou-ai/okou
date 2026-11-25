@@ -15,9 +15,32 @@
     <string name="conversation_new_reply">Nouvelle réponse</string>
     <string name="conversation_view_progress">Voir la progression</string>
     <string name="conversation_processing">En cours…</string>
-    <string name="conversation_history_offline">L’historique se chargera lorsque vous serez en ligne.</string>
     <string name="conversation_offline_send">Connectez-vous pour envoyer. Votre brouillon reste ici.</string>
-    <string name="conversation_work">Étapes de travail</string>
+    <string name="conversation_reply_summary">Résumé de la réponse</string>
+    <string name="conversation_turn_continued">Repris au tour suivant</string>
+    <string name="conversation_replying">Réponse en cours…</string>
+    <string name="conversation_turn_done">Terminé</string>
+    <string name="conversation_replies_expanded">Développé</string>
+    <string name="conversation_replies_collapsed">Réduit</string>
+    <string name="conversation_work_elapsed">Travaille depuis %1$s</string>
+    <string name="conversation_work_total">Temps de travail de %1$s</string>
+    <string name="conversation_followup_continue">Continuez</string>
+    <string name="conversation_feedback_pair">%1$s · %2$s</string>
+    <plurals name="conversation_reply_steps">
+        <item quantity="one">%d étape</item>
+        <item quantity="many">%d d’étapes</item>
+        <item quantity="other">%d étapes</item>
+    </plurals>
+    <string-array name="conversation_completion_phrases">
+        <item>Terminé</item>
+        <item>Tout est fait</item>
+        <item>Livré</item>
+        <item>Terminé, à votre service</item>
+        <item>C’était dans la boîte</item>
+        <item>Mission accomplie</item>
+        <item>Signé</item>
+        <item>Terminé et bouclé</item>
+    </string-array>
     <string name="conversation_reply_actions">Actions de la réponse</string>
     <string name="conversation_copy_reply">Copier la réponse</string>
     <string name="conversation_reply_copied">Réponse copiée</string>

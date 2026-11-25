@@ -10,10 +10,9 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 
 import type { ComposerWorkflow } from "@okouai/api-contracts/contracts/workflows";
-import type { PresentationTemplateItem } from "@okouai/core";
-import { screen, waitFor } from "@testing-library/react";
+import { waitFor } from "@testing-library/react";
 import { expect } from "vitest";
-import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
+import { queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
 import {
@@ -27,28 +26,11 @@ import {
   type MockChatEventInput,
 } from "./chat-event-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
-import { clickComposerAddMenuItem } from "./chat-composer-add-menu-test-helpers.ts";
 
 export const THREAD_ID = "b1000000-0000-4000-a000-000000000101";
 
 export const CLAUDE_SUBSCRIPTION_PROVIDER_ID =
   "00000000-0000-4000-a000-000000000002";
-
-function queryTabByText(text: string): HTMLElement | null {
-  return (
-    queryAllByRoleFast("tab").find((candidate) => {
-      return candidate.textContent?.replace(/\s+/g, " ").trim() === text;
-    }) ?? null
-  );
-}
-
-export function tabByText(text: string): HTMLElement {
-  const tab = queryTabByText(text);
-  if (!tab) {
-    throw new Error(`${text} tab not found`);
-  }
-  return tab;
-}
 
 function billingStatus(
   tier: string,
@@ -134,22 +116,6 @@ export async function expectInlineTemplateInComposer(
       }),
     ).toContain(title);
   });
-}
-
-export async function selectTemplate(
-  template: PresentationTemplateItem,
-): Promise<void> {
-  await clickComposerAddMenuItem("Template");
-  await waitFor(() => {
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-  });
-
-  click(screen.getByLabelText(`Select template ${template.title}`));
-
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-  await expectInlineTemplateInComposer(template.title);
 }
 
 // The slash-workflow composer renders a TipTap contenteditable instead of a

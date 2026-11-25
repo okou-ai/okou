@@ -77,6 +77,8 @@ jobs:
       needed: ${{ steps.changes.outputs.needed }}
       scripts-needed: ${{ steps.changes.outputs.scripts-needed }}
       release: ${{ steps.changes.outputs.release }}
+      release-only: ${{ steps.release-only.outputs.release_only }}
+      parallel-tests: ${{ github.event_name == 'pull_request' || steps.release-only.outputs.release_only == 'false' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -84,6 +86,7 @@ jobs:
           fetch-depth: 32
           sparse-checkout: |
             /ios/scripts/ci-changed.sh
+            /ios/scripts/archive-promotion.py
             /.github/scripts/checks/changed-base-ref.sh
           sparse-checkout-cone-mode: false
       - name: Detect iOS changes
@@ -105,6 +108,14 @@ jobs:
             release=true
           fi
           echo "release=$release" >> "$GITHUB_OUTPUT"
+      - name: Classify the whole merge group
+        id: release-only
+        if: github.event_name == 'merge_group' && steps.changes.outputs.needed == 'true'
+        env:
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: |
+          release_only=$(python3 ios/scripts/archive-promotion.py release-only --base "$MERGE_GROUP_BASE_SHA")
+          echo "release_only=$release_only" >> "$GITHUB_OUTPUT"
 
   script-checks:
     needs: detect
@@ -235,7 +246,7 @@ jobs:
     runs-on: xcode-27
     timeout-minutes: 15
     env:
-      IOS_PARALLEL_PR_TESTS: ${{ github.event_name == 'pull_request' && needs.detect.outputs.attempt == github.run_attempt && 'true' || 'false' }}
+      IOS_PARALLEL_APP_TESTS: ${{ needs.detect.outputs.parallel-tests == 'true' && needs.detect.outputs.attempt == github.run_attempt && 'true' || 'false' }}
       DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
       IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
     steps:
@@ -243,23 +254,23 @@ jobs:
         id: checkout
       - name: Restore native build caches for the parallel build
         id: producer-cache
-        if: env.IOS_PARALLEL_PR_TESTS == 'true'
+        if: env.IOS_PARALLEL_APP_TESTS == 'true'
         uses: ./.github/actions/setup-ios-build-cache
       - name: Await locked sources from this run
         id: producer-sources
-        if: env.IOS_PARALLEL_PR_TESTS == 'true'
+        if: env.IOS_PARALLEL_APP_TESTS == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUN_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: python3 ios/scripts/wait-ci-test-artifact.py sources
       - name: Receive locked sources for the parallel build
-        if: env.IOS_PARALLEL_PR_TESTS == 'true'
+        if: env.IOS_PARALLEL_APP_TESTS == 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ${{ steps.producer-sources.outputs.name }}
           path: ${{ runner.temp }}/ios-package-sources
       - name: Compile the complete App test products
-        if: env.IOS_PARALLEL_PR_TESTS == 'true'
+        if: env.IOS_PARALLEL_APP_TESTS == 'true'
         env:
           IOS_BUILD_CACHE_ENABLED: "true"
           IOS_PRODUCT_TOOLCHAIN: ${{ steps.producer-cache.outputs.toolchain-file }}
@@ -270,7 +281,7 @@ jobs:
           bash ios/scripts/ci-test.sh build
           bash ios/scripts/transfer-ci-test-products.sh pack
       - name: Transfer the built App and its test specification
-        if: env.IOS_PARALLEL_PR_TESTS == 'true'
+        if: env.IOS_PARALLEL_APP_TESTS == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ios-ci-products-${{ github.sha }}-${{ github.run_attempt }}
@@ -330,7 +341,7 @@ jobs:
     runs-on: xcode-27
     timeout-minutes: 30
     env:
-      IOS_PARALLEL_PR_TESTS: ${{ github.event_name == 'pull_request' && needs.detect.outputs.attempt == github.run_attempt && 'true' || 'false' }}
+      IOS_PARALLEL_APP_TESTS: ${{ needs.detect.outputs.parallel-tests == 'true' && needs.detect.outputs.attempt == github.run_attempt && 'true' || 'false' }}
       DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
       IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
       IOS_BUILD_CACHE_ENABLED: "true"
@@ -349,16 +360,8 @@ jobs:
           mkdir "$IOS_ARCHIVE_DIR"
           python3 ios/scripts/archive-promotion.py toolchain "$IOS_ARCHIVE_DIR/toolchain.json"
           python3 ios/scripts/archive-promotion.py inputs --toolchain "$IOS_ARCHIVE_DIR/toolchain.json" --output "$IOS_ARCHIVE_DIR/inputs.json"
-      - name: Classify the whole merge group
-        id: release-only
-        if: github.event_name == 'merge_group'
-        env:
-          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
-        run: |
-          release_only=$(python3 ios/scripts/archive-promotion.py release-only --base "$MERGE_GROUP_BASE_SHA")
-          echo "release_only=$release_only" >> "$GITHUB_OUTPUT"
       - name: Install AWS CLI
-        if: github.event_name == 'merge_group' && steps.release-only.outputs.release_only == 'true'
+        if: needs.detect.outputs.release-only == 'true'
         run: |
           if ! command -v aws >/dev/null; then
             HOMEBREW_NO_AUTO_UPDATE=1 brew install awscli
@@ -378,18 +381,18 @@ jobs:
         run: python3 ios/scripts/archive-promotion.py resolve-tests "$IOS_ARCHIVE_DIR"
       - name: Restore native build caches
         id: build-cache
-        if: env.IOS_PARALLEL_PR_TESTS != 'true' && (github.event_name != 'merge_group' || steps.evidence.outputs.run_tests == 'true')
+        if: env.IOS_PARALLEL_APP_TESTS != 'true' && (github.event_name != 'merge_group' || steps.evidence.outputs.run_tests == 'true')
         uses: ./.github/actions/setup-ios-build-cache
         with:
           toolchain-file: ${{ env.IOS_ARCHIVE_DIR }}/toolchain.json
       - name: Receive locked source repositories
-        if: env.IOS_PARALLEL_PR_TESTS != 'true' && (github.event_name != 'merge_group' || steps.evidence.outputs.run_tests == 'true')
+        if: env.IOS_PARALLEL_APP_TESTS != 'true' && (github.event_name != 'merge_group' || steps.evidence.outputs.run_tests == 'true')
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ios-package-sources-${{ github.sha }}
           path: ${{ env.IOS_PACKAGE_SOURCES_DIR }}
       - name: Configure locked package sources
-        if: env.IOS_PARALLEL_PR_TESTS != 'true' && (github.event_name != 'merge_group' || steps.evidence.outputs.run_tests == 'true')
+        if: env.IOS_PARALLEL_APP_TESTS != 'true' && (github.event_name != 'merge_group' || steps.evidence.outputs.run_tests == 'true')
         run: |
           mkdir -p "$RUNNER_TEMP/okou-ios-ci"
           python3 ios/scripts/prepare-package-sources.py ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved "$RUNNER_TEMP/okou-ios-ci" "$IOS_PACKAGE_SOURCES_DIR"
@@ -402,17 +405,17 @@ jobs:
           xcrun swift-format lint --strict --recursive ios/Okou ios/OkouTests ios/Push ios/Widgets
           plutil -lint ios/Okou/Resources/Info.plist ios/Okou/Resources/Okou.entitlements ios/NotificationExtension/Info.plist ios/NotificationExtension/NotificationExtension.entitlements ios/Widgets/Info.plist ios/Widgets/OkouWidgets.entitlements ios/Okou.xcodeproj/project.pbxproj
       - name: Prepare the simulator and receive its test products concurrently
-        if: env.IOS_PARALLEL_PR_TESTS == 'true'
+        if: env.IOS_PARALLEL_APP_TESTS == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUN_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: bash ios/scripts/prepare-parallel-simulator.sh
       - name: Build app and run isolated simulator tests
         if: github.event_name != 'merge_group' || steps.evidence.outputs.run_tests == 'true'
         env:
           IOS_PRODUCT_TOOLCHAIN: ${{ env.IOS_ARCHIVE_DIR }}/toolchain.json
         run: |
-          if [[ "$IOS_PARALLEL_PR_TESTS" == true ]]; then
+          if [[ "$IOS_PARALLEL_APP_TESTS" == true ]]; then
             bash ios/scripts/transfer-ci-test-products.sh unpack
             echo "iOS starting test-without-building"
             bash ios/scripts/ci-test.sh run

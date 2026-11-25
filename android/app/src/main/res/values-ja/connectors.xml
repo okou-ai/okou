@@ -111,4 +111,20 @@
     <string name="chat_connector_saving">コネクターの選択を保存中…</string>
     <string name="chat_connector_save_failed">コネクターの選択を保存できませんでした。</string>
     <string name="chat_connector_first_send_failed">コネクターの選択を適用できませんでした。チャットオプションで確認してから、このメッセージの送信を再試行してください。</string>
+    <string name="connector_device_denied">サービス提供元が認証を拒否しました。</string>
+    <string name="connector_device_expired">デバイスコードの有効期限が切れました。認証をやり直してください。</string>
+    <string name="connector_device_failed">デバイス認証を完了できませんでした。</string>
+    <string name="connector_access_scope">すべてのチャットに適用されます。</string>
+    <string name="connector_access_label">%1$s のアクセス, %2$s</string>
+    <string name="connector_access_allow">許可</string>
+    <string name="connector_access_deny">拒否</string>
+    <string name="connector_access_always">常に</string>
+    <string name="connector_access_expired">期限切れ</string>
+    <string name="connector_access_under_hour">1時間未満</string>
+    <string name="connector_access_hours">%d時間</string>
+    <string name="connector_access_days">%d日</string>
+    <string name="connector_access_allow_always">常に許可</string>
+    <string name="connector_access_allow_hour">1時間許可</string>
+    <string name="connector_access_allow_day">24時間許可</string>
+    <string name="connector_access_allow_week">7日間許可</string>
 </resources>

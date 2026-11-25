@@ -1,3 +1,5 @@
+import { ShareAudienceChoices } from "./share-audience-choices.tsx";
+import { SharePeople } from "./share-people.tsx";
 import { useLoadableSet } from "ccstate-react/experimental";
 import type { ArtifactShareStatus } from "@okouai/api-contracts/contracts/artifact-shares";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
@@ -343,6 +345,8 @@ export function ShareMenuContent({
   errorMessage,
   onChange,
   copy,
+  permissions,
+  className,
 }: {
   readonly label: string;
   readonly selected: ArtifactShareStatus["audience"] | undefined;
@@ -354,6 +358,8 @@ export function ShareMenuContent({
   readonly showPermissions?: boolean;
   readonly errorMessage?: string | null;
   readonly onChange: (audience: ArtifactShareStatus["audience"]) => void;
+  readonly permissions?: ReactNode;
+  readonly className?: string;
   readonly copy?: {
     readonly copied: boolean;
     readonly disabled: boolean;
@@ -369,7 +375,7 @@ export function ShareMenuContent({
     <PopoverContent
       aria-label={label}
       align="end"
-      className="w-80 max-w-[calc(100vw-32px)] p-1.5"
+      className={cn("w-80 max-w-[calc(100vw-32px)] p-1.5", className)}
     >
       {showPermissions && (
         <div
@@ -386,15 +392,16 @@ export function ShareMenuContent({
         <ShareSkeleton showCopyButton={!!copy} />
       ) : (
         <>
-          {showPermissions && (
-            <SharePermissionChoices
-              selected={failed ? undefined : selected}
-              organizationName={failed ? null : organizationName}
-              saving={saving}
-              unavailable={failed || unavailable}
-              onChange={onChange}
-            />
-          )}
+          {showPermissions &&
+            (permissions ?? (
+              <SharePermissionChoices
+                selected={failed ? undefined : selected}
+                organizationName={failed ? null : organizationName}
+                saving={saving}
+                unavailable={failed || unavailable}
+                onChange={onChange}
+              />
+            ))}
           {failed ? (
             <ShareLoadError />
           ) : (
@@ -447,6 +454,47 @@ function ShareButtonPlaceholder({
   );
 }
 
+function ArtifactPeoplePermissions({
+  session,
+  saving,
+  unavailable,
+  onChange,
+}: {
+  readonly session: ArtifactShareSession;
+  readonly saving: boolean;
+  readonly unavailable: boolean;
+  readonly onChange: (audience: ArtifactShareStatus["audience"]) => void;
+}) {
+  const details = useLastResolved(session.details$);
+  const signal = useGet(session.signal$);
+  const [sharing, share] = useLoadableSet(session.people.share$);
+  const [removing, remove] = useLoadableSet(session.people.remove$);
+  if (!signal) {
+    throw new Error("Artifact sharing session is not mounted");
+  }
+  return (
+    <ShareAudienceChoices
+      selected={details?.audience}
+      organizationName={details?.status?.organization.name ?? null}
+      saving={saving}
+      unavailable={unavailable}
+      onChange={onChange}
+    >
+      <SharePeople
+        session={session}
+        busy={sharing.state === "loading" || removing.state === "loading"}
+        failed={sharing.state === "hasError" || removing.state === "hasError"}
+        onShare={(email) => {
+          detach(share(email, signal), Reason.DomCallback);
+        }}
+        onRemove={(id) => {
+          detach(remove(id, signal), Reason.DomCallback);
+        }}
+      />
+    </ShareAudienceChoices>
+  );
+}
+
 function ShareSessionMenu({
   session,
   className,
@@ -458,6 +506,10 @@ function ShareSessionMenu({
   const loadable = useLoadable(session.details$);
   const details = useLastResolved(session.details$);
   const [audienceOperation, change] = useLoadableSet(session.change$);
+  const features = useLastResolved(featureSwitches$);
+  const emailSharing =
+    features?.[FeatureSwitchKey.HostedSiteEmailSharing] &&
+    details?.target.kind === "file";
   const requestedOpen = useGet(session.open$);
   const signal = useGet(session.signal$);
   const open = useSet(session.show$);
@@ -499,6 +551,19 @@ function ShareSessionMenu({
       </PopoverTrigger>
 
       <ShareMenuContent
+        className={emailSharing ? "w-100 p-3" : undefined}
+        permissions={
+          emailSharing ? (
+            <ArtifactPeoplePermissions
+              session={session}
+              saving={audienceOperation.state === "loading"}
+              unavailable={failed}
+              onChange={(audience) => {
+                detach(change(audience, signal), Reason.DomCallback);
+              }}
+            />
+          ) : undefined
+        }
         label={title}
         selected={details?.audience}
         organizationName={details?.status?.organization.name ?? null}

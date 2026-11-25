@@ -44,10 +44,7 @@ class NativeUnparkReportTests(unittest.TestCase):
             for event, offset in zip(terminal,(0,1,40,41,70,100)):
                 event.update(case=case,sandbox_id=owner,backing_generation=generation,
                              monotonic_ns=at(offset),unix_ns=at(offset)+1000)
-                reading = copy.deepcopy(sample)
-                reading["monotonic_ns"] = at(offset)+1
-                reading["processes"][0]["observed_monotonic_ns"] = at(offset)+1
-                self.samples.append(reading)
+                self.samples.append(report_test.residency_sample_at(sample, at(offset) + 1))
             self.events.extend(terminal)
             initial = remap(copy.deepcopy(template[0]["evidence"]))
             initial["status_path"] = str(self.root/f"case-{index}"/"status.json")

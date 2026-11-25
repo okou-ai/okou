@@ -119,4 +119,20 @@
     <string name="chat_connector_saving">Salvando a escolha do conector…</string>
     <string name="chat_connector_save_failed">Não foi possível salvar a escolha do conector.</string>
     <string name="chat_connector_first_send_failed">Não foi possível aplicar as escolhas de conectores. Revise-as nas opções do chat e tente enviar esta mensagem novamente.</string>
+    <string name="connector_device_denied">O provedor negou a autorização.</string>
+    <string name="connector_device_expired">O código do dispositivo expirou. Inicie a autorização novamente.</string>
+    <string name="connector_device_failed">Não foi possível concluir a autorização do dispositivo.</string>
+    <string name="connector_access_scope">Aplica-se a todos os seus chats.</string>
+    <string name="connector_access_label">Acesso para %1$s, %2$s</string>
+    <string name="connector_access_allow">Permitir</string>
+    <string name="connector_access_deny">Negar</string>
+    <string name="connector_access_always">Sempre</string>
+    <string name="connector_access_expired">Expirado</string>
+    <string name="connector_access_under_hour">&lt;1 h</string>
+    <string name="connector_access_hours">%d h</string>
+    <string name="connector_access_days">%d d</string>
+    <string name="connector_access_allow_always">Permitir sempre</string>
+    <string name="connector_access_allow_hour">Permitir por 1 hora</string>
+    <string name="connector_access_allow_day">Permitir por 24 horas</string>
+    <string name="connector_access_allow_week">Permitir por 7 dias</string>
 </resources>

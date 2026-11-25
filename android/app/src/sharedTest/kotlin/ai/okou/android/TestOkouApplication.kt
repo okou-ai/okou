@@ -24,7 +24,6 @@ import ai.okou.android.chat.ChatComposerService
 import ai.okou.android.chat.ChatListService
 import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.chat.RealtimeService
-import ai.okou.android.chat.RunControlJournalStore
 import ai.okou.android.chat.RunControlService
 import ai.okou.android.connectors.ConnectorService
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
@@ -96,6 +95,11 @@ open class TestOkouApplication : OkouApplication() {
     var chatService: ChatListService = TestChatService()
     var workflows: WorkflowService? = null
     var initialPreferences: UserPreferences? = null
+    internal var preferenceWrite:
+        (UpdatePreferencesRequest, () -> UserPreferences) -> UserPreferences =
+        { _, save ->
+            save()
+        }
     var workspaceRole = OrganizationRole.MEMBER
     var connectorService: ConnectorService? = null
     var searchService: ai.okou.android.chat.WorkspaceSearchService = EmptyWorkspaceSearchService
@@ -105,10 +109,6 @@ open class TestOkouApplication : OkouApplication() {
     var controlService: RunControlService? = null
     var recoveryService: ai.okou.android.chat.AssistantRecoveryService =
         TestAssistantRecoveryService()
-    var controlJournalStore: RunControlJournalStore? = null
-    override val runControlJournal
-        get() = controlJournalStore ?: super.runControlJournal
-
     override val composerJournal
         get() = journalStore ?: super.composerJournal
 
@@ -196,28 +196,29 @@ open class TestOkouApplication : OkouApplication() {
 
             override suspend fun updatePreferences(
                 update: UpdatePreferencesRequest,
-            ): UserPreferences {
-                val updated =
-                    stored()
-                        .copy(
-                            timezone = update.timezone ?: stored().timezone,
-                            colorTheme =
-                                update.colorTheme?.let {
-                                    UserPreferencesColorTheme.valueOf(it.name)
-                                } ?: stored().colorTheme,
-                            locale =
-                                update.locale?.let { UserPreferencesLocale.valueOf(it.name) }
-                                    ?: stored().locale,
-                            theme =
-                                update.theme?.let { UserPreferencesTheme.valueOf(it.name) }
-                                    ?: stored().theme,
-                            cloudBrowserEnabledByDefault =
-                                update.cloudBrowserEnabledByDefault
-                                    ?: stored().cloudBrowserEnabledByDefault,
-                        )
-                preferences[key] = updated
-                return updated
-            }
+            ): UserPreferences =
+                preferenceWrite(update) {
+                    val updated =
+                        stored()
+                            .copy(
+                                timezone = update.timezone ?: stored().timezone,
+                                colorTheme =
+                                    update.colorTheme?.let {
+                                        UserPreferencesColorTheme.valueOf(it.name)
+                                    } ?: stored().colorTheme,
+                                locale =
+                                    update.locale?.let { UserPreferencesLocale.valueOf(it.name) }
+                                        ?: stored().locale,
+                                theme =
+                                    update.theme?.let { UserPreferencesTheme.valueOf(it.name) }
+                                        ?: stored().theme,
+                                cloudBrowserEnabledByDefault =
+                                    update.cloudBrowserEnabledByDefault
+                                        ?: stored().cloudBrowserEnabledByDefault,
+                            )
+                    preferences[key] = updated
+                    updated
+                }
 
             override fun close() {
                 if (canonical.isInitialized()) canonical.value.close()

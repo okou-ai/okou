@@ -16,13 +16,26 @@ const CREATED_AT = "2026-11-02T00:00:00.000Z";
 const RECOVERY_NOTICE =
   "Finalizing the cancelled run before queued work continues.";
 
-function fixture() {
+function fixture(message?: string) {
   const thread = continuityThread(121, 1, "Planning conversation");
   const workspace = installContinuityWorkspace(context, {
     caseId: 121,
     threads: [thread],
     chatEventRows: [
-      continuityEventRow(121, 1, thread.id, "input.automation", {
+      ...(message
+        ? [
+            continuityEventRow(121, 1, thread.id, "input.prompt", {
+              runId: crypto.randomUUID(),
+              payload: {
+                userMessage: {
+                  version: 1,
+                  parts: [{ type: "text", text: message }],
+                },
+              },
+            }),
+          ]
+        : []),
+      continuityEventRow(121, message ? 2 : 1, thread.id, "input.automation", {
         payload: {
           userMessage: {
             version: 1,
@@ -170,4 +183,31 @@ test("A realtime continuity gap refreshes thread detail without a notification",
   await waitFor(() => {
     expect(screen.queryByText(RECOVERY_NOTICE)).not.toBeInTheDocument();
   });
+});
+
+test("A private chat keeps its stored message while only its own detail event refreshes the recovery notice", async () => {
+  const content = "Lighthouse crew ready";
+  const workspace = fixture(content);
+  await setupPage({
+    context,
+    ...workspace.pageOptions,
+    path: "/chats/" + workspace.thread.id,
+    sharedWorkerTestTransport: "message-port",
+  });
+  await screen.findByText(content);
+  const notice = await screen.findByText(RECOVERY_NOTICE);
+  const topic = "chatThreadDetailChanged:" + workspace.thread.id;
+  const user = workspace.pageOptions.auth.user.id;
+  workspace.setRecoveryPending(false);
+  context.mocks.ably.triggerOnChannel("user:unrelated-member", topic, {});
+  context.mocks.ably.triggerOnChannel("user:" + user, "newFeature:changed", {});
+  workspace.renameProject("Survey project synchronized");
+  context.mocks.ably.trigger("threadListChanged");
+  await screen.findByText("Survey project synchronized");
+  expect(notice).toBeVisible();
+  context.mocks.ably.triggerOnChannel("user:" + user, topic, {});
+  await waitFor(() => {
+    return expect(notice).not.toBeInTheDocument();
+  });
+  await expect(screen.findByText(content)).resolves.toBeVisible();
 });

@@ -60,6 +60,8 @@ final class WorkspaceStore {
   @ObservationIgnored lazy var forYou = ForYouStore(
     workspace: self, resources: resources, feed: ForYouFeed(client: client), commands: commands)
   var settingsResources: WorkspaceResources { resources }
+  /// The session's graph. The workspace root provides it to every workspace view.
+  var graph: CCState.Store { resources.store }
   private(set) var needsUpgrade = false
   private(set) var isCreating = false
   private(set) var newChatSubmission: NewChatSubmission?
@@ -92,11 +94,12 @@ final class WorkspaceStore {
   private(set) var newChatProjectID: String?
   private(set) var newComposer: ComposerDraftStore
   private let draftStorage: ChatDraftStorage?
-  private let voiceCapture: (@MainActor () -> any VoiceAudioCapture)?
+  private let voiceCapture: (@MainActor (ChatDraftTarget) -> any VoiceAudioCapture)?
   private let measurementScope: ChatCacheScope?
   private let draftRepository: ChatDraftRepository?
   private var workspaceComposerReady = false
   private var composerSyncTask: Task<Void, Never>?
+  private var unverifiedDraftThreads = Set<String>()
   @ObservationIgnored private lazy var sidebarDrafts = SidebarDraftStore(
     resources: resources, lifecycleTasks: lifecycleTasks,
     didFail: { [weak self] in self?.handle($0) })
@@ -139,12 +142,14 @@ final class WorkspaceStore {
   /// Previews of results opened from workspace search, which belong to no chat.
   @ObservationIgnored lazy var searchArtifacts = MessageArtifactStore(
     service: commands.artifacts, threadID: nil, webURL: webURL, markdown: messageMarkdown,
-    didFail: { [weak self] in self?.handle($0) })
+    graph: resources.store, didFail: { [weak self] in self?.handle($0) })
 
   @ObservationIgnored lazy var list = ThreadListStore(
     client: client, sync: sync, commands: commands, resources: resources,
     didRefresh: { [weak self] in self?.applyThreads($0) },
     didFail: { [weak self] in self?.handle($0) },
+    didDelete: { [weak self] in self?.discardDeletedThread($0) ?? false },
+    confirmAbsences: { [weak self] in await self?.confirmAbsences($0) ?? [] },
     didChangeReadState: { [weak self] in self?.notificationReadStateChanged() },
     readRetrySleep: readRetrySleep, indicatorsBootstrap: indicatorsBootstrap,
     lifecycleTasks: lifecycleTasks)
@@ -172,7 +177,7 @@ final class WorkspaceStore {
     sharedSync: ChatSync? = nil, draftStorage: ChatDraftStorage? = nil,
     projectDisclosure: ProjectDisclosureStorage? = nil,
     measurementScope: ChatCacheScope? = nil,
-    voiceCapture: (@MainActor () -> any VoiceAudioCapture)? = nil,
+    voiceCapture: (@MainActor (ChatDraftTarget) -> any VoiceAudioCapture)? = nil,
     readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
     },
@@ -211,15 +216,19 @@ final class WorkspaceStore {
     self.measurementScope = measurementScope
     self.voiceCapture = voiceCapture
     draftRepository = draftStorage.map { _ in ChatDraftRepository(client: client) }
-    let commands = ChatCommands(client: client, sync: sync)
+    let commands = ChatCommands(
+      client: client, sync: sync,
+      voiceInput: VoiceInputClient(
+        client: client, featureSwitches: resources.availableFeatureSwitches))
     self.commands = commands
     self.webURL = webURL
     self.messageMarkdown = MessageMarkdownCache(baseURL: webURL)
     self.conversationLimit = max(0, conversationLimit)
     newComposer = ComposerDraftStore(
-      target: .unassigned, commands: commands, storage: draftStorage,
+      target: .unassigned, commands: commands, graph: resources.store, storage: draftStorage,
       didFail: { _ in }, lifecycleTasks: lifecycleTasks)
-    newComposer.setForeground(false)
+    newComposer.setScenePhase(.inactive)
+    resources.featureSnapshot.didRequireUpgrade = { [weak self] in self?.handle($0) }
   }
 
   func start(userID: String, workspaceID: String) async {
@@ -231,19 +240,27 @@ final class WorkspaceStore {
   /// Whether a chat holds text or files the user has not sent. A chat still in memory answers
   /// from its own composer, so leaving a chat marks it at once; others use the API's list.
   func hasDraft(_ threadID: String) -> Bool {
+    if let composer = residentComposer(threadID) { return composer.hasContent }
+    return hasListedDraft(threadID)
+  }
+
+  /// The composer of a chat held in memory. Views read its `unsentContent` from the session graph.
+  func residentComposer(_ threadID: String) -> ComposerDraftStore? {
     // A row tracks the selected owner before consulting the non-observable resident cache.
     if let conversation = selectedConversation, conversation.thread.id == threadID {
-      return conversation.composer.hasContent
+      return conversation.composer
     }
-    if let composer = conversations[threadID]?.composer { return composer.hasContent }
-    return sidebarDrafts.threadIDs.contains(threadID)
+    return conversations[threadID]?.composer
   }
+
+  /// Whether the API's list marks a chat that is not held in memory as having a draft.
+  func hasListedDraft(_ threadID: String) -> Bool { sidebarDrafts.threadIDs.contains(threadID) }
 
   func conversation(for id: String) -> ConversationStore? {
     guard !closed, let thread = list.threads.first(where: { $0.id == id }) else { return nil }
     return conversations.retain(id) {
       let conversation = ConversationStore(
-        thread: thread, sync: sync, commands: commands, webURL: webURL,
+        thread: thread, sync: sync, commands: commands, graph: resources.store, webURL: webURL,
         messageMarkdown: messageMarkdown,
         isVisible: { [weak self] in
           self?.isForeground == true && self?.selectedThreadID == id
@@ -257,12 +274,13 @@ final class WorkspaceStore {
           models: modelStore, thread: thread, lifecycleTasks: lifecycleTasks),
         workflowSource: composerWorkflows,
         draftRepository: draftRepository, draftStorage: draftStorage,
+        voiceCapture: voiceCapture?(.thread(id)),
         didSaveDraft: { [weak self] draft in await self?.sidebarDrafts.didSave(draft, threadID: id)
         },
         measurementScope: measurementScope,
         didRequestNewChat: { [weak self] in self?.startNewChat() },
         readRetrySleep: readRetrySleep, lifecycleTasks: lifecycleTasks)
-      conversation.composer.setForeground(isForeground)
+      conversation.composer.setScenePhase(synchronization.scenePhase)
       conversation.runOutput = { [weak self] runID, handler in
         self?.realtime?.subscribeRunOutput(runID: runID, handler: handler)
       }
@@ -313,9 +331,9 @@ final class WorkspaceStore {
     composerSyncTask?.cancel()
     let previous = newComposer
     let composer = ComposerDraftStore(
-      target: .workspace, commands: commands,
+      target: .workspace, commands: commands, graph: resources.store,
       repository: draftRepository, storage: draftStorage,
-      didFail: { [weak self] in self?.handle($0) }, voiceCapture: voiceCapture?(),
+      didFail: { [weak self] in self?.handle($0) }, voiceCapture: voiceCapture?(.workspace),
       syncSleep: readRetrySleep, lifecycleTasks: lifecycleTasks)
     // Preserve input entered before the workspace composer was prepared.
     if !isCreating && previous.hasContent {
@@ -324,7 +342,7 @@ final class WorkspaceStore {
     if !isCreating { previous.close() }
     workspaceComposerReady = true
     newComposer = composer
-    composer.setForeground(isForeground)
+    composer.setScenePhase(synchronization.scenePhase)
     composerSyncTask = Task { await composer.synchronize() }
     if let composerSyncTask { lifecycleTasks.track(composerSyncTask) }
   }
@@ -436,7 +454,7 @@ final class WorkspaceStore {
     else {
       return
     }
-    let options = newModelSelection.connectors.pendingOptions
+    let options = newModelSelection.connectors.submissionOptions
     let messageID = UUID().uuidString.lowercased()
     let transition = sendTransition ?? ConversationSendTransition()
     if sendTransition != nil, !reduceMotion, sourceComposer.attachments.items.isEmpty,
@@ -453,9 +471,10 @@ final class WorkspaceStore {
         text: sourceComposer.text.trimmingCharacters(in: .whitespacesAndNewlines),
         createdAt: .now, attachments: sourceComposer.attachments.uploaded,
         document: sourceComposer.value.draftUserMessage?.trimmingWhitespace()),
-      composer: ComposerDraftStore(target: .unassigned, commands: commands, didFail: { _ in }),
+      composer: ComposerDraftStore(
+        target: .unassigned, commands: commands, graph: resources.store, didFail: { _ in }),
       viewer: MessageAttachmentStore(
-        commands: commands, didFail: { [weak self] in self?.handle($0) }),
+        commands: commands, graph: resources.store, didFail: { [weak self] in self?.handle($0) }),
       transition: transition)
     newChatSubmission = submission
     defer {
@@ -491,10 +510,13 @@ final class WorkspaceStore {
     notificationReadState = state
     if changed { notificationReadStateChanged() }
     for thread in threads { conversations[thread.id]?.thread = thread }
+    // A shared snapshot can omit an open chat before its parent check finishes.
     if let selectedThreadID {
       if threads.contains(where: { $0.id == selectedThreadID }) {
         selectedConversation = conversation(for: selectedThreadID)
-      } else {
+      } else if !list.awaitsParentCheck(selectedThreadID)
+        && !unverifiedDraftThreads.contains(selectedThreadID)
+      {
         self.selectedThreadID = nil
       }
     }
@@ -514,9 +536,64 @@ final class WorkspaceStore {
   func reportWorkspaceFailure(_ failure: Error) { handle(failure) }
 
   private func handle(_ failure: Error) {
-    guard !closed, (failure as? APIClientError)?.statusCode == 426 else { return }
-    needsUpgrade = true
-    close()
+    guard !closed else { return }
+    if let unavailable = failure as? UnavailableChatThread {
+      if list.confirmUnavailable(unavailable.id) { requestRefresh(.threadList) }
+    } else if (failure as? APIClientError)?.statusCode == 426 {
+      needsUpgrade = true
+      close()
+    }
   }
 
+}
+
+extension WorkspaceStore {
+  /// A complete list can omit a chat after rollback. Only the parent can authorize draft cleanup.
+  private func confirmAbsences(_ absent: Set<String>) async -> Set<String> {
+    let pending = await sync.pendingThreadAbsences()
+    unverifiedDraftThreads.formUnion(absent.union(pending))
+    var confirmed = Set<String>()
+    var dismissed = Set<String>()
+    for id in unverifiedDraftThreads {
+      guard !closed, !Task.isCancelled else { break }
+      guard selectedThreadID == id || hasDraft(id) || draftStorage?.hasThreadDraft(id) == true
+      else {
+        dismissed.insert(id)
+        continue
+      }
+      do {
+        _ = try await sync.cancellationRecoveryPending(threadID: id)
+        dismissed.insert(id)
+      } catch is UnavailableChatThread {
+        confirmed.insert(id)
+      } catch {
+        handle(error)
+        // An omitted chat with a local draft stays pending across relaunches.
+      }
+    }
+    unverifiedDraftThreads.subtract(confirmed.union(dismissed))
+    await sync.resolveThreadAbsences(
+      dismissing: dismissed.intersection(pending), unavailable: confirmed)
+    return confirmed
+  }
+
+  private func discardDeletedThread(_ id: String) -> Bool {
+    guard !closed else { return false }
+    unverifiedDraftThreads.remove(id)
+    let wasSelected = selectedThreadID == id
+    conversations.discardDeletedThread(id)
+    if wasSelected { selectedThreadID = nil }
+    navigation.threadUnavailable(id, wasSelected: wasSelected)
+    sidebarDrafts.noteReleased(id, hasDraft: false)
+    guard let draftStorage else { return true }
+    do {
+      try ComposerDraftStore.removeStoredDraft(id, from: draftStorage)
+      return true
+    } catch {
+      Logger(subsystem: "ai.okou.ios", category: "ChatDraft")
+        .error(
+          "event=chat.draft.remove.failed error=\(error.localizedDescription, privacy: .private)")
+      return false
+    }
+  }
 }

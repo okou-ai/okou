@@ -8,7 +8,6 @@ import ai.okou.android.OkouTheme
 import ai.okou.android.R
 import ai.okou.android.RecoveryApiFixture
 import ai.okou.android.TestOkouApplication
-import ai.okou.android.TestRealtimeService
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.HistorySnapshot
@@ -18,21 +17,25 @@ import ai.okou.android.historyEventWire
 import ai.okou.android.jsonResponse
 import android.content.ClipboardManager
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.longClick
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -335,20 +338,130 @@ class ConversationRouteTest {
         val successfulRead = fixture.historyMarkRead
         fixture.historyMarkRead = { MockResponse().setResponseCode(503) }
         compose.runOnIdle { visible.value = true }
-        val readFailed = compose.activity.getString(R.string.history_read_failed)
         compose.waitUntil(10_000) {
-            compose.onAllNodesWithText(readFailed).fetchSemanticsNodes().isNotEmpty()
+            compose.runOnIdle {
+                model.history.readSessionFor(CHAT_IN_PROJECT)?.readState?.value ==
+                    HistoryReadState.Failed
+            }
         }
-        compose.onNodeWithText(readFailed).assertExists()
-        compose.waitForIdle()
+        compose.onNodeWithText(compose.activity.getString(R.string.retry)).assertDoesNotExist()
+        compose.onNodeWithText("Native history", substring = true).assertExists()
         assertEquals(5, fixture.readRequests.get())
         fixture.historyMarkRead = successfulRead
-        compose.onNodeWithText(compose.activity.getString(R.string.retry)).performClick()
-        compose.waitUntil(10_000) {
-            compose.onAllNodesWithText(readFailed).fetchSemanticsNodes().isEmpty() &&
-                fixture.readRequests.get() >= 6
-        }
+        compose.runOnIdle { model.history.invalidate() }
+        compose.waitUntil(10_000) { compose.runOnIdle { fixture.readRequests.get() >= 6 } }
         assertEquals(6, fixture.readRequests.get())
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w360dp-h400dp")
+    fun jumpRevealsAndAcknowledgesTheLatestReplyWhenSuggestionsFillTheViewport() {
+        fixture.indicators = {
+            jsonResponse(
+                """{"threads":{"$CHAT_PERSONAL":"unread"},"unreadAt":{"$CHAT_PERSONAL":"$CHAT_DATE"}}""",
+            )
+        }
+        val followups =
+            """{"version":1,"followups":[{"kind":"talk","prompt":"Summarize the release notes"},{"kind":"email","prompt":"Draft the announcement"},{"kind":"workflow","prompt":"Set up a release checklist"}]}"""
+        serveConversationRows(
+            listOf(
+                historyEventWire(
+                    scrollEventId(1),
+                    1,
+                    payload = """{"content":"The release is ready."}""",
+                ),
+                historyEventWire(scrollEventId(2), 2, type = "run.completed", payload = "null"),
+                historyEventWire(
+                    scrollEventId(3),
+                    3,
+                    type = "output.followups",
+                    payload = """{"content":${JsonPrimitive(followups)}}""",
+                ),
+            ),
+        )
+        val model = createListModel()
+        compose.setContent {
+            val list by model.uiState.collectAsStateWithLifecycle()
+            OkouTheme {
+                ConversationRoute(
+                    model.history,
+                    CHAT_PERSONAL,
+                    list,
+                    modifier = Modifier.height(160.dp),
+                    onFollowup = {},
+                )
+            }
+        }
+        openPersonalHistory(model)
+        compose.onNodeWithText("Set up a release checklist").assertIsDisplayed()
+        compose.onNodeWithText("The release is ready.").assertIsNotDisplayed()
+        assertEquals(0, fixture.readRequests.get())
+
+        val jump =
+            hasTestTag("conversation_jump") and
+                hasContentDescription(compose.activity.getString(R.string.conversation_new_reply))
+        compose.waitUntilExactlyOneExists(jump, 5_000)
+        compose.onNode(jump).performClick()
+        compose.onNodeWithText("The release is ready.").assertIsDisplayed()
+        compose.onNode(jump).assertDoesNotExist()
+        compose.waitUntil("reading the latest reply is acknowledged", 5_000) {
+            fixture.readRequests.get() > 0
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun returningFromAnArtifactRestoresItsFocusAfterANewReply() {
+        val artifact = "/artifacts/aaaaaaaaaa.md"
+        val replies =
+            listOf(
+                historyEventWire(
+                    scrollEventId(1),
+                    1,
+                    payload = """{"content":"[Release checklist]($artifact)"}""",
+                ),
+                historyEventWire(
+                    scrollEventId(2),
+                    2,
+                    payload = """{"content":"The rollout is now scheduled."}""",
+                ),
+            )
+        val available = AtomicInteger(1)
+        serveConversationRows(replies, available::get)
+        val model = createListModel()
+        var opened: Pair<String, String>? = null
+        val restoreKey = mutableStateOf<String?>(null)
+        compose.setContent {
+            val list by model.uiState.collectAsStateWithLifecycle()
+            OkouTheme {
+                ConversationRoute(
+                    model.history,
+                    CHAT_PERSONAL,
+                    list,
+                    artifactActions =
+                        ChatArtifactActions(
+                            open = { link, key -> opened = link to key },
+                            restoreKey = restoreKey.value,
+                            restored = { restoreKey.value = null },
+                        ),
+                )
+            }
+        }
+        openPersonalHistory(model)
+        val card = hasText("Release checklist") and hasClickAction()
+        compose.waitUntilExactlyOneExists(card, 5_000)
+        compose.onNode(card).performClick()
+        val source = compose.runOnIdle { checkNotNull(opened) }
+        assertEquals(artifact, source.first)
+
+        compose.runOnIdle {
+            available.set(2)
+            model.history.refresh()
+        }
+        compose.waitUntilExactlyOneExists(hasText("The rollout is now scheduled."), 5_000)
+        compose.waitUntilExactlyOneExists(card, 5_000)
+        compose.runOnIdle { restoreKey.value = source.second }
+        compose.onNode(card).assertIsFocused()
     }
 
     @Test
@@ -650,54 +763,59 @@ class ConversationRouteTest {
 
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
-    fun conversationRecoversAnInitialHistoryFailureAndKeepsRealtimeRetryReachable() {
-        val realtime = TestRealtimeService()
-        val model = createListModel(realtime)
+    fun conversationKeepsOneSkeletonAcrossTheFirstReadAndVisitRetry() {
+        val visible = mutableStateOf(false)
+        val model = createListModel()
         val historyRows = fixture.historyRows
-        val markRead = fixture.historyMarkRead
         fixture.historyRows = { MockResponse().setResponseCode(503) }
         fixture.historyCatchUp = { MockResponse().setResponseCode(503) }
-        compose.runOnIdle { model.updates.foreground(true) }
         compose.setContent {
             val list by model.uiState.collectAsStateWithLifecycle()
             OkouTheme {
-                ConversationRoute(model.history, CHAT_IN_PROJECT, list, realtime = model.updates)
+                ConversationRoute(model.history, CHAT_IN_PROJECT, list, visible = visible.value)
             }
         }
         compose.waitUntil(10_000) {
-            compose.runOnIdle {
-                model.uiState.value.listPhase == ChatReadPhase.Ready &&
-                    model.updates.phase.value == RealtimePhase.Connected
-            }
+            compose.runOnIdle { model.uiState.value.listPhase == ChatReadPhase.Ready }
         }
         compose.runOnIdle {
             model.history.open(model.uiState.value.threads.single { it.id == CHAT_IN_PROJECT })
         }
         val retryLabel = compose.activity.getString(R.string.retry)
         val skeleton = hasContentDescription(compose.activity.getString(R.string.history_loading))
+        compose.waitUntil(5_000) {
+            compose.runOnIdle { model.history.uiState.value.phase == HistoryPhase.Failed }
+        }
         compose.waitUntilExactlyOneExists(skeleton, 5_000)
+        compose.onNode(skeleton).assertIsDisplayed()
+        val bounds = compose.onNode(skeleton).getUnclippedBoundsInRoot()
+        compose.onNodeWithText(retryLabel).assertDoesNotExist()
+        compose.runOnIdle { visible.value = true }
         compose.waitUntil(5_000) {
             compose.runOnIdle { model.history.uiState.value.consecutiveReadFailures > 0 }
         }
         compose.onNode(skeleton).assertIsDisplayed()
-        fixture.historyMarkRead = { MockResponse().setResponseCode(503) }
-        fixture.historyRows = historyRows
-        compose.waitUntilDoesNotExist(skeleton, 10_000)
-        val readFailure = compose.activity.getString(R.string.history_read_failed)
-        compose.waitUntilExactlyOneExists(hasText(readFailure), 5_000)
-        compose.onNodeWithText("Hello history").assertExists()
-
-        realtime.snapshot.value = RealtimeSnapshot(RealtimePhase.Unavailable)
-        val realtimeFailure = compose.activity.getString(R.string.realtime_unavailable)
-        compose.waitUntilExactlyOneExists(hasText(realtimeFailure), 5_000)
-        val opened = realtime.opened.get()
-        fixture.historyMarkRead = markRead
-        compose.onNodeWithText(retryLabel).performClick()
-        compose.waitUntil(5_000) { realtime.opened.get() > opened }
-        realtime.snapshot.value = RealtimeSnapshot(RealtimePhase.Connected)
-        compose.waitUntilDoesNotExist(hasText(realtimeFailure), 5_000)
-        compose.waitUntilDoesNotExist(hasText(readFailure), 5_000)
-        compose.onNodeWithText("Hello history").assertExists()
+        assertEquals(bounds, compose.onNode(skeleton).getUnclippedBoundsInRoot())
+        compose.onNodeWithText(retryLabel).assertDoesNotExist()
+        compose.mainClock.autoAdvance = false
+        try {
+            fixture.historyRows = historyRows
+            compose.waitUntil(10_000) {
+                compose.runOnIdle { model.history.uiState.value.phase == HistoryPhase.Ready }
+            }
+            val message = hasText("Hello history")
+            compose.mainClock.advanceTimeUntil(1_000) {
+                if (compose.onAllNodes(message).fetchSemanticsNodes().isNotEmpty()) true
+                else {
+                    compose.onNode(skeleton).assertIsDisplayed()
+                    false
+                }
+            }
+            compose.onNode(message).assertIsDisplayed()
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+        compose.onNode(skeleton).assertDoesNotExist()
     }
 
     @Test
@@ -784,11 +902,24 @@ class ConversationRouteTest {
         val anchorTag = "message_${scrollEventId(6)}"
         val anchor = compose.onNodeWithTag(anchorTag).assertIsDisplayed()
         val bounds = anchor.getUnclippedBoundsInRoot()
+        compose.waitUntil("the older anchor is recorded", 5_000) {
+            compose.runOnIdle {
+                runBlocking { model.history.restoreReadingAnchor(CHAT_IN_PROJECT) } != null
+            }
+        }
 
         compose.runOnIdle { showConversation.value = false }
         compose.waitUntilDoesNotExist(hasTestTag("conversation"), 5_000)
-        compose.runOnIdle { showConversation.value = true }
-        compose.waitUntilExactlyOneExists(hasTestTag(anchorTag), 10_000)
+        compose.mainClock.autoAdvance = false
+        try {
+            compose.runOnIdle { showConversation.value = true }
+            compose.mainClock.advanceTimeUntil(1_000) {
+                compose.onNodeWithText("The first reply").assertIsNotDisplayed()
+                compose.onAllNodes(hasTestTag(anchorTag)).fetchSemanticsNodes().isNotEmpty()
+            }
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
         compose.waitUntilExactlyOneExists(jump, 10_000)
         assertEquals(bounds, anchor.getUnclippedBoundsInRoot())
         compose.onNode(newReply).assertDoesNotExist()
@@ -851,8 +982,92 @@ class ConversationRouteTest {
         compose.waitUntil(10_000) { fixture.readRequests.get() == readCount + 1 }
     }
 
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h320dp")
+    fun losingConversationAccessClearsAnActivelyDraggedTimeline() {
+        val model = openScrollHistory(AtomicInteger(12))
+        val conversation = compose.onNodeWithTag("conversation")
+        val working =
+            compose.onNodeWithText(compose.activity.getString(R.string.conversation_processing))
+        conversation.performScrollToIndex(1)
+        conversation.performTouchInput {
+            down(center)
+            moveBy(Offset(x = 0f, y = 22.dp.toPx()))
+        }
+        try {
+            working.assertIsDisplayed()
+            fixture.historyDetail = { MockResponse().setResponseCode(403) }
+            compose.runOnIdle { model.history.invalidateDetail(CHAT_IN_PROJECT) }
+            compose.waitUntil(5_000) {
+                compose.runOnIdle { model.history.uiState.value.phase == HistoryPhase.Missing }
+            }
+            compose
+                .onNodeWithText(compose.activity.getString(R.string.history_missing))
+                .assertIsDisplayed()
+            working.assertDoesNotExist()
+        } finally {
+            conversation.performTouchInput { cancel() }
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h320dp")
+    fun confirmedAccessLossRemainsVisibleUntilAnAuthorizedHistoryRead() {
+        val model = openScrollHistory(AtomicInteger(12))
+        val originalRows = fixture.historyRows
+        val missing = hasText(compose.activity.getString(R.string.history_missing))
+        val lastMessage = hasText("Prompt number 12")
+        fixture.historyRows = { MockResponse().setResponseCode(403) }
+        compose.runOnIdle { model.history.invalidate(CHAT_IN_PROJECT) }
+        compose.waitUntilExactlyOneExists(missing, 5_000)
+
+        val recheckRequested = CountDownLatch(1)
+        val completeRecheck = CountDownLatch(1)
+        fixture.historyRows = { request ->
+            recheckRequested.countDown()
+            completeRecheck.await()
+            originalRows(request)
+        }
+        try {
+            compose.runOnIdle { model.history.invalidate(CHAT_IN_PROJECT) }
+            compose.waitUntil("the history recheck has reached the server", 5_000) {
+                compose.runOnIdle { recheckRequested.count == 0L }
+            }
+            compose.onNode(missing).assertIsDisplayed()
+            compose.onNode(lastMessage).assertDoesNotExist()
+        } finally {
+            completeRecheck.countDown()
+        }
+
+        compose.waitUntilExactlyOneExists(lastMessage, 5_000)
+        compose.onNode(missing).assertDoesNotExist()
+    }
+
     private fun scrollEventId(sequence: Int) =
         "aaaaaaaa-aaaa-4aaa-8aaa-${sequence.toString().padStart(12, '0')}"
+
+    private fun serveConversationRows(rows: List<String>, published: () -> Int = { rows.size }) {
+        fixture.historyRows = { request ->
+            val after = request.requestUrl?.queryParameter("sinceSeqId")?.toInt() ?: 0
+            val last = published()
+            val tail = rows.subList(after, last).joinToString(",")
+            jsonResponse(
+                """{"rows":[$tail],"cursor":{"lastEventId":"${scrollEventId(last)}","lastSeqId":$last},"hasMore":false}""",
+            )
+        }
+    }
+
+    private fun openPersonalHistory(model: ChatListModel) {
+        compose.waitUntil(5_000) {
+            compose.runOnIdle { model.uiState.value.listPhase == ChatReadPhase.Ready }
+        }
+        compose.runOnIdle {
+            model.history.open(model.uiState.value.threads.single { it.id == CHAT_PERSONAL })
+        }
+        compose.waitUntil(5_000) {
+            compose.runOnIdle { model.history.uiState.value.phase == HistoryPhase.Ready }
+        }
+    }
 
     private fun openScrollHistory(
         received: AtomicInteger,
@@ -917,7 +1132,6 @@ class ConversationRouteTest {
     }
 
     private fun createListModel(
-        realtime: RealtimeService? = null,
         wallMillis: () -> Long = System::currentTimeMillis,
     ): ChatListModel = compose.runOnIdle {
         val storage = ChatCacheStore(compose.activity.application, temporary.newFolder())
@@ -932,7 +1146,6 @@ class ConversationRouteTest {
                             fixture.identity,
                             { true },
                             {},
-                            realtime = realtime,
                             wallMillis = wallMillis,
                         )
                     }

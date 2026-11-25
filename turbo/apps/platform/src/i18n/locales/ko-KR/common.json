@@ -253,6 +253,11 @@
         "modelCatalogCacheValidationLatency": "모델 카탈로그 캐시 검증 지연 시간",
         "modelCatalogPrefetchRole": "모델 카탈로그 사전 가져오기 역할",
         "modelCatalogUpstreamEncoding": "모델 카탈로그 업스트림 인코딩",
+        "openrouterAttempts": "OpenRouter 공급자 시도",
+        "openrouterAttemptsIncomplete": "OpenRouter 불완전한 시도 기록",
+        "openrouterGenerationId": "OpenRouter 생성 ID",
+        "openrouterModel": "OpenRouter 모델",
+        "openrouterProvider": "OpenRouter 공급자",
         "params": "매개변수",
         "permission": "권한",
         "permissionError": "권한 오류",
@@ -501,6 +506,40 @@
       "kindIcon": "{{kind}} 아티팩트",
       "loading": "아티팩트 로딩 중"
     },
+    "customDomain": {
+      "addressHint": "Choose the full address used when you share this website.",
+      "checks": {
+        "certificate": "HTTPS",
+        "dns": "DNS connection",
+        "ownership": "Ownership"
+      },
+      "connect": "Connect a domain",
+      "continue": "Continue",
+      "copied": "Copied",
+      "copyFailed": "Could not copy. Select the value to copy it.",
+      "copyRecord": "Copy {{type}} value",
+      "disconnectConfirm": "This domain will be disconnected from this website.",
+      "dnsHelp": "Add these records at your DNS provider, then click Verify",
+      "domain": "Domain",
+      "hostnameExample": "www.example.com",
+      "httpsReady": "HTTPS ready",
+      "lastChecked": "Last checked {{time}}",
+      "manage": "Manage {{hostname}}",
+      "needsSetup": "Finish setup",
+      "notChecked": "No verification yet",
+      "okouUrl": "Okou URL",
+      "ownDomain": "Enter a domain you own",
+      "remove": "Remove",
+      "removeConfirm": "Your sharing link will return to {{url}}.",
+      "removeHostname": "Remove {{hostname}}",
+      "removeTitle": "Remove custom domain?",
+      "removing": "This domain is disconnected. Click Remove to finish cleaning up its configuration.",
+      "title": "Custom domain",
+      "urlPreview": "https://{{hostname}}",
+      "verified": "Domain verified. Save to use this address.",
+      "verify": "Verify",
+      "yourDomains": "Connected domains"
+    },
     "deletion": {
       "cancel": "취소",
       "delete": "삭제",
@@ -581,7 +620,6 @@
       "name": "이름",
       "retry": "다시 시도",
       "search": "아티팩트 검색",
-      "sort": "아티팩트 정렬",
       "sortAscending": "오름차순 정렬",
       "sortDescending": "내림차순 정렬",
       "type": "유형"
@@ -681,15 +719,9 @@
       "updated": "웹사이트 URL이 업데이트되었습니다"
     },
     "templates": {
-      "activeHtmlPreview": "{{title}} 활성 HTML 미리보기",
-      "all": "전체",
       "avatar": "아바타",
-      "categories": "템플릿 카테고리",
-      "category": "템플릿 카테고리",
       "fullPreview": "{{title}} 웹사이트 전체 미리보기",
       "htmlPreview": "{{title}} HTML 미리보기",
-      "illustration": "일러스트레이션",
-      "illustrationPreview": "{{title}} 일러스트레이션 미리보기",
       "importDeck": "내 덱 가져오기",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importDocument": "내 문서 가져오기",
@@ -700,18 +732,10 @@
       "importImageHint": "스타일로 저장",
       "multiAccent": "다중 악센트",
       "nextSlide": "다음 슬라이드 미리보기",
-      "noMatches": "일치하는 항목 없음",
-      "previewCurrentSlide": "현재 슬라이드에서 {{title}} 미리보기",
       "previewSlide": "슬라이드 {{slideNumber}} 미리보기",
-      "previewWebsite": "웹사이트 템플릿 {{title}} 미리보기",
       "previousSlide": "이전 슬라이드 미리보기",
-      "searchConnector": "템플릿 검색",
-      "searchConnectors": "템플릿 검색",
       "selectStyle": "스타일 선택 {{style}}",
       "selectTemplate": "템플릿 선택 {{title}}",
-      "selectWebsite": "웹사이트 템플릿 선택 {{title}}",
-      "selectWorkflow": "워크플로 템플릿 선택 {{title}}",
-      "showVariant": "변형 보기 {{variantNumber}}",
       "singleAccent": "단일 악센트",
       "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "{{title}} 슬라이드 미리보기",
@@ -739,15 +763,11 @@
         "terracottaClay": "점토 냄비",
         "warmSand": "아침 신문"
       },
-      "tryDifferentSearch": "다른 검색어를 시도해 보세요.",
-      "use": "사용",
       "useThisTemplate": "이 템플릿 사용",
       "visibility": {
         "changeLabel": "템플릿 공개 범위 변경"
       },
       "website": "웹사이트",
-      "websitePreview": "{{title}} 웹사이트 템플릿 미리보기",
-      "workflow": "워크플로",
       "workflowCatalog": {
         "auto-inbox-label": {
           "description": "Gmail 라벨이 지정되면 실행되어 해당 메일을 처리하는 워크플로를 만듭니다.",
@@ -1182,6 +1202,9 @@
       "teamWarning": "Team 액세스는 현재 청구 기간 종료 시까지 유지됩니다. 이후 이 워크스페이스는 {{plan}}으로 전환됩니다.",
       "title": "플랜 다운그레이드"
     },
+    "feedback": {
+      "shareFeedback": "의견 보내기"
+    },
     "invoices": {
       "amount": "금액",
       "date": "날짜",
@@ -1325,40 +1348,6 @@
     "sidebar": {
       "description": "더 많은 크레딧 및 동시 실행",
       "getPlan": "{{plan}} 받기"
-    },
-    "survey": {
-      "checkoutAbandoned": {
-        "answers": {
-          "just_checking_price": "가격만 확인하고 있었어요",
-          "needs_approval": "다른 사람의 승인이 필요해요",
-          "not_ready_yet": "아직 결정할 준비가 안 됐어요",
-          "not_seeing_value": "아직 가치를 느끼지 못했어요",
-          "other": "기타",
-          "payment_issue": "결제 중 문제가 있었어요",
-          "price_higher_than_expected": "가격이 예상보다 높았어요",
-          "results_not_good_enough": "결과가 만족스럽지 않았어요"
-        },
-        "description": "질문은 하나뿐이에요. 답변은 서비스 개선에 도움이 됩니다.",
-        "question": "구매를 완료하지 않은 이유가 무엇인가요?"
-      },
-      "creditsExhausted": {
-        "answers": {
-          "no_need_now": "지금은 더 필요하지 않아요",
-          "not_sure_worth_it": "아직 그만한 가치가 있는지 모르겠어요",
-          "other": "기타",
-          "still_trying": "좀 더 써 보고 싶어요",
-          "too_expensive": "너무 비싸요"
-        },
-        "question": "오늘 업그레이드하지 않는 이유가 무엇인가요?",
-        "reward": "이 워크스페이스에서 조건을 충족하는 첫 답변에 30일 동안 유효한 보너스 크레딧 {{credits}}개가 지급됩니다.",
-        "thanksWithCredits": "감사합니다! 크레딧 {{credits}}개가 추가되어 계속 사용할 수 있어요."
-      },
-      "error": "답변을 보내지 못했어요. 다시 시도해 주세요.",
-      "notNow": "나중에",
-      "otherLabel": "답변",
-      "otherPlaceholder": "자세히 알려 주세요(선택)",
-      "submit": "제출",
-      "thanks": "알려 주셔서 감사합니다."
     },
     "toasts": {
       "autoRechargeUpdated": "자동 충전이 업데이트되었습니다",
@@ -1923,8 +1912,6 @@
       "add": "추가",
       "configureModel": "모델 구성",
       "create": {
-        "addStyle": "스타일 추가",
-        "addTemplate": "템플릿 추가",
         "documentPlaceholder": "문서에 어떤 내용을 포함하고 싶으신가요?",
         "imagePlaceholder": "만들고 싶은 이미지를 설명하세요…",
         "presentationPlaceholder": "프레젠테이션의 주제는 무엇인가요?",
@@ -1938,6 +1925,14 @@
       "message": "메시지",
       "modelForThisChat": "이 채팅의 모델",
       "placeholder": "워크플로 자동화, 작업 관리 등을 요청하세요...",
+      "presentationFormatSetup": {
+        "description": "기본 형식을 저장한 후 프레젠테이션을 생성합니다. 이번 요청에서 명시한 형식이 있으면 우선 적용됩니다.",
+        "htmlDescription": "브라우저에서 공유하기에 적합",
+        "pptxDescription": "PowerPoint에서 편집 가능한 슬라이드",
+        "saveAndGenerate": "저장하고 생성",
+        "settingsHint": "설정 → 환경설정 → 채팅에서 언제든 변경할 수 있습니다.",
+        "title": "기본 프레젠테이션 형식 선택"
+      },
       "selectedModelUnavailable": "선택한 모델을 사용할 수 없습니다. 전송 전에 구성하세요.",
       "selectedModelUnavailableToast": "선택한 모델을 사용할 수 없습니다",
       "selectModel": "모델 선택",
@@ -1964,11 +1959,9 @@
         "scheduleHint": "일정에 따라 실행",
         "share": "채팅 공유",
         "shareHint": "이 대화의 링크 공유",
-        "templates": "템플릿",
         "unpin": "고정 해제"
       },
       "slashPanel": {
-        "browseAll": "모든 템플릿 보기",
         "hint": "작업 선택",
         "useTemplate": "템플릿 {{title}} 사용"
       },
@@ -2011,8 +2004,10 @@
     "connectorAccountSwitch": {
       "accountFallback": "커넥터 계정",
       "actionFailed": "계정을 전환할 수 없습니다.",
+      "allowForHour": "1시간 동안 허용",
       "customConnector": "사용자 지정 커넥터",
       "loadFailed": "이 커넥터 계정을 불러올 수 없습니다.",
+      "memberScope": "모든 채팅에서 허용하고 이 채팅에서 이 계정을 선택합니다.",
       "reconnectRequired": "다시 연결해야 합니다. 이후 실행에서는 기존 대체 계정을 사용할 수 있습니다.",
       "selected": "{{account}}(으)로 전환됨",
       "switch": "전환",
@@ -2605,11 +2600,6 @@
       "unsupported": "수동 초기화는 지원되지 않으며 사용량은 자동으로 복구됩니다."
     },
     "taskChips": {
-      "presentationFormat": "프레젠테이션 형식",
-      "presentationFormats": {
-        "html": "HTML",
-        "pptx": "PPTX"
-      },
       "presentationTemplates": "프레젠테이션 템플릿",
       "removeTask": "{{task}} 제거",
       "shelf": {
@@ -2627,7 +2617,6 @@
         "website": "웹사이트",
         "workflow": "워크플로"
       },
-      "viewAll": "모두 보기",
       "visualization": {
         "allCharts": "모든 차트",
         "back": "Back to visualization options",
@@ -2809,8 +2798,6 @@
         "workflow": "워크플로"
       },
       "previewTemplate": "템플릿 미리보기 {{title}}",
-      "previewWebsite": "웹사이트 템플릿 미리보기 {{title}}",
-      "previewWorkflow": "워크플로 템플릿 미리보기 {{title}}",
       "removeTemplate": "템플릿 삭제 {{title}}",
       "removeWebsite": "웹사이트 템플릿 삭제 {{title}}",
       "removeWorkflow": "워크플로 템플릿 삭제 {{title}}"
@@ -2961,6 +2948,8 @@
     "accountsInChat": "이 채팅에서 켤 계정을 선택하세요.",
     "enableByDefault": "{{account}} 기본 활성화",
     "manageAccounts": "계정 관리",
+    "memberPolicyLoadFailed": "계정 액세스 설정을 불러오지 못했습니다.",
+    "memberSettingsDescription": "Okou가 모든 채팅에서 사용할 수 있는 {{connector}} 계정을 선택하세요.",
     "permissions": "권한",
     "permissionsDescription": "이 규칙은 모든 채팅과 계정에서 이 커넥터에 적용됩니다.",
     "settingsDescription": "Okou가 채팅에서 사용할 수 있는 {{connector}} 계정을 선택하세요. 각 채팅에서 액세스를 변경할 수 있습니다.",
@@ -3900,7 +3889,6 @@
         "overview": "공급자 및 고객 정보"
       }
     },
-    "filter": "문서 분류",
     "formats": {
       "pdf": "PDF",
       "word": "Word 문서"
@@ -3910,10 +3898,8 @@
     "nextPage": "다음 샘플 페이지",
     "openLarger": "큰 미리보기 열기",
     "page": "{{page}} 페이지",
-    "preview": "{{title}} 미리 보기",
     "previousPage": "이전 샘플 페이지",
-    "title": "문서",
-    "useNamed": "{{title}} 사용"
+    "title": "문서"
   },
   "featureGuide": {
     "close": "새 기능 가이드 닫기",
@@ -5778,6 +5764,16 @@
       "actions": {
         "resetUsage": "사용량 초기화"
       },
+      "antigravity": {
+        "check": "로그인 확인",
+        "error": "할당된 로그인 환경을 확인한 후 다시 시도하세요.",
+        "expired": "로그인이 만료되었습니다. 계정을 다시 연결하세요.",
+        "openTerminal": "Google 로그인 터미널 열기",
+        "terminal": "터미널에서 이 명령을 실행한 후 개인 Google AI 계정으로 로그인하세요.",
+        "title": "Google AI (Antigravity)",
+        "unassigned": "관리자에게 로그인 터미널 할당을 요청하세요.",
+        "verify": "이 명령은 구독 할당량을 사용해 Neon, Carbon, Hydrogen에 각각 한 번씩 요청을 보냅니다."
+      },
       "deviceAuth": {
         "claude": {
           "authorizationCode": "승인 코드",
@@ -5977,6 +5973,13 @@
           "title": "기본 모델"
         },
         "description": "새 채팅의 기본값과 메시지 전송 방식을 선택하세요.",
+        "presentationFormat": {
+          "description": "새 프레젠테이션의 기본 형식을 선택하세요",
+          "saveFailed": "기본 형식을 저장하지 못했습니다. 다시 시도해 주세요.",
+          "title": "기본 프레젠테이션 형식",
+          "unavailable": "사용할 수 없음",
+          "unset": "설정되지 않음"
+        },
         "sectionTitle": "채팅"
       },
       "debug": {
@@ -6539,11 +6542,8 @@
   "templates": {
     "actions": {
       "delete": "삭제",
-      "menu": "{{title}} 작업",
-      "preview": "{{title}} 미리보기",
       "rename": "템플릿 이름 바꾸기"
     },
-    "builtIn": "기본 제공",
     "custom": "커스텀",
     "delete": {
       "cancel": "취소",
@@ -6558,11 +6558,6 @@
       "page": "{{number}}페이지"
     },
     "loadFailed": "템플릿을 불러오지 못했습니다.",
-    "rename": {
-      "action": "이름 변경",
-      "cancel": "취소",
-      "save": "저장"
-    },
     "renameFailed": "템플릿의 이름을 바꾸지 못했습니다.",
     "sharedBy": "{{owner}} 님이 공유함",
     "sharedByMember": "조직 구성원이 공유함",

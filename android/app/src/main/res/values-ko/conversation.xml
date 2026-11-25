@@ -13,9 +13,30 @@
     <string name="conversation_new_reply">새 답변</string>
     <string name="conversation_view_progress">진행 상태 보기</string>
     <string name="conversation_processing">처리 중…</string>
-    <string name="conversation_history_offline">온라인 상태가 되면 채팅 기록을 불러옵니다.</string>
     <string name="conversation_offline_send">전송하려면 인터넷에 연결하세요. 초안은 여기에 남습니다.</string>
-    <string name="conversation_work">작업 과정</string>
+    <string name="conversation_reply_summary">응답 요약</string>
+    <string name="conversation_turn_continued">다음 차례에서 계속됨</string>
+    <string name="conversation_replying">답변 중…</string>
+    <string name="conversation_turn_done">완료됨</string>
+    <string name="conversation_replies_expanded">펼침</string>
+    <string name="conversation_replies_collapsed">접힘</string>
+    <string name="conversation_work_elapsed">%1$s 동안 작업 중</string>
+    <string name="conversation_work_total">총 %1$s 작업</string>
+    <string name="conversation_followup_continue">계속 진행</string>
+    <string name="conversation_feedback_pair">%1$s · %2$s</string>
+    <plurals name="conversation_reply_steps">
+        <item quantity="other">%d단계</item>
+    </plurals>
+    <string-array name="conversation_completion_phrases">
+        <item>마무리됨</item>
+        <item>모두 완료</item>
+        <item>전달됨</item>
+        <item>완료되었습니다. 도와드리겠습니다</item>
+        <item>마무리</item>
+        <item>임무 완료</item>
+        <item>서명 완료</item>
+        <item>완료</item>
+    </string-array>
     <string name="conversation_reply_actions">답변 작업</string>
     <string name="conversation_copy_reply">답변 복사</string>
     <string name="conversation_reply_copied">답변을 복사했어요</string>

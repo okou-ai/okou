@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.28.17](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.28.16...runner-supervisor-v0.28.17) (2026-11-25)
+
+
+### Refactoring
+
+* **runner-supervisor:** share idle-pool transfer cancellation cleanup ([#50680](https://github.com/okou-ai/okou/issues/50680)) ([048ac40](https://github.com/okou-ai/okou/commit/048ac40028ae5241b39a90688e354929c4b9cd34))
+
+## [0.28.16](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.28.15...runner-supervisor-v0.28.16) (2026-11-24)
+
+
+### Refactoring
+
+* **runner-supervisor:** share post-create blank sandbox cleanup ([#50663](https://github.com/okou-ai/okou/issues/50663)) ([c8d3afc](https://github.com/okou-ai/okou/commit/c8d3afceac25a382518808d8d63234e0d9057a8b))
+
+## [0.28.15](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.28.14...runner-supervisor-v0.28.15) (2026-11-24)
+
+## [0.28.14](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.28.13...runner-supervisor-v0.28.14) (2026-11-24)
+
+## [0.28.13](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.28.12...runner-supervisor-v0.28.13) (2026-11-24)
+
+## [0.28.12](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.28.11...runner-supervisor-v0.28.12) (2026-11-24)
+
+## [0.28.11](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.28.10...runner-supervisor-v0.28.11) (2026-11-24)
+
+## [0.28.10](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.28.9...runner-supervisor-v0.28.10) (2026-11-24)
+
+
+### Bug Fixes
+
+* **runner:** reuse finalizing home for new native sessions ([#50441](https://github.com/okou-ai/okou/issues/50441)) ([7b1d40e](https://github.com/okou-ai/okou/commit/7b1d40ea54326a99bf2140381261f8e8cb301939))
+
+## [0.28.9](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.28.8...runner-supervisor-v0.28.9) (2026-11-24)
+
+## [0.28.8](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.28.7...runner-supervisor-v0.28.8) (2026-11-24)
+
 ## [0.28.7](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.28.6...runner-supervisor-v0.28.7) (2026-11-24)
 
 ## [0.28.6](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.28.5...runner-supervisor-v0.28.6) (2026-11-23)

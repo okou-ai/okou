@@ -109,10 +109,26 @@
     <string name="chat_options_title">Chat options</string>
     <string name="chat_options_settings">Conversation settings</string>
     <string name="chat_connector_scope">Applies to this chat. Accounts initially follow the workspace defaults.</string>
+    <string name="connector_access_scope">Applies across your chats.</string>
+    <string name="connector_access_label">Access for %1$s, %2$s</string>
+    <string name="connector_access_allow">Allow</string>
+    <string name="connector_access_deny">Deny</string>
+    <string name="connector_access_always">Always</string>
+    <string name="connector_access_expired">Expired</string>
+    <string name="connector_access_under_hour">&lt;1h</string>
+    <string name="connector_access_hours">%dh</string>
+    <string name="connector_access_days">%dd</string>
+    <string name="connector_access_allow_always">Allow always</string>
+    <string name="connector_access_allow_hour">Allow for 1h</string>
+    <string name="connector_access_allow_day">Allow for 24h</string>
+    <string name="connector_access_allow_week">Allow for 7d</string>
     <string name="chat_connector_empty">There are no connected accounts in this workspace.</string>
     <string name="chat_connector_manage">Manage connectors</string>
     <string name="chat_connector_restore_defaults">Restore workspace defaults</string>
     <string name="chat_connector_saving">Saving connector choice…</string>
     <string name="chat_connector_save_failed">Could not save the connector choice.</string>
     <string name="chat_connector_first_send_failed">Could not apply the connector choices. Review them in Chat options, then retry this message.</string>
+    <string name="connector_device_denied">The provider denied authorization.</string>
+    <string name="connector_device_expired">The device code expired. Start authorization again.</string>
+    <string name="connector_device_failed">Could not complete device authorization.</string>
 </resources>

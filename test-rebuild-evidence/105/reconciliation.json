@@ -1,0 +1,43 @@
+{
+  "baseline": "0ae329193d8cf7c998773caa85f88ff925ca458e",
+  "starting": 139,
+  "handled": 20,
+  "remaining": 131,
+  "netDecrease": 8,
+  "added": [],
+  "removed": [
+    "browser-response-deadlines-024",
+    "browser-response-deadlines-026",
+    "browser-response-deadlines-029",
+    "browser-response-deadlines-031",
+    "browser-response-deadlines-034",
+    "browser-response-deadlines-051",
+    "message-port-022",
+    "message-port-034"
+  ],
+  "remainingOwners": 46,
+  "firstOriginalAcceptances": [
+    "browser-response-deadlines-024",
+    "browser-response-deadlines-026",
+    "browser-response-deadlines-029",
+    "browser-response-deadlines-031",
+    "browser-response-deadlines-034",
+    "browser-response-deadlines-051",
+    "message-port-022",
+    "message-port-034"
+  ],
+  "restorations": [],
+  "revisions": [],
+  "retirements": [],
+  "ownerLinks": 131,
+  "decisions": [
+    "platform-direct-bridge-002",
+    "shared-database-browser-006",
+    "unread-through-at-001",
+    "chat-continuity-uploads-003",
+    "connector-provider-pages-013",
+    "paid-media-creation-002"
+  ],
+  "upstream": 68,
+  "firstPassOwners": 485
+}

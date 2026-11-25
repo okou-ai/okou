@@ -121,4 +121,12 @@
     <string name="workflow_history_trigger_unavailable">Activador no disponible</string>
     <string name="workflow_history_scheduled">Activación programada</string>
     <string name="workflow_history_manual">Ejecución manual</string>
+    <string name="workflow_catalog_refresh_failed">No se pudo actualizar el directorio de flujos. Se muestran los flujos cargados.</string>
+    <string name="workflow_history_earlier_failed">No se pudieron cargar las ejecuciones anteriores.</string>
+    <string name="workflow_rule_checking">Comprobando el resultado…</string>
+    <string name="workflow_rule_unconfirmed">El resultado aún no se ha confirmado.</string>
+    <string name="workflow_event">Evento</string>
+    <string name="workflow_event_source">Origen del evento</string>
+    <string name="workflow_source_gmail">Gmail · Correo recibido</string>
+    <string name="workflow_source_calendar">Google Calendar · Evento creado</string>
 </resources>

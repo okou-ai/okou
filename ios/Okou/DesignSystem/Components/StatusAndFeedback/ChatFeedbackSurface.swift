@@ -5,7 +5,8 @@ import UIKit
 /// sync failure with Retry — above the bottom bar: Liquid Glass, a 16 pt Lucide glyph (a
 /// small spinner while it works), one 15 pt line, an optional text action and a ✕. Routine
 /// updates never show here. At accessibility sizes the action moves under the text.
-/// Swipe horizontally to dismiss without competing with bottom-edge system gestures.
+/// Swipe horizontally to dismiss without competing with bottom-edge system gestures. For you
+/// floats it under its header instead, where it never covers a card's directions.
 struct ChatFeedbackSurface: View {
   let message: String
   let icon: String

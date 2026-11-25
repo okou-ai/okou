@@ -254,10 +254,9 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
     async (input) => {
       const cart = checkoutSchema.parse(input);
       required(customers, cart.customer);
-      const { billingSurveyUserId, ...routingMetadata } = cart.metadata;
+      const routingMetadata = cart.metadata;
       if (
         routingMetadata.orgId !== orgId ||
-        billingSurveyUserId !== admin.userId ||
         JSON.stringify(routingMetadata) !==
           JSON.stringify(cart.subscription_data.metadata)
       ) {

@@ -623,6 +623,127 @@ data class ConnectorAccountDefaultsItem(
 typealias ConnectorAccountDefaults = List<ConnectorAccountDefaultsItem>
 
 @Serializable
+data class ConnectorAccountPoliciesItem(
+    val `connectionId`: String,
+    val `allowed`: Boolean,
+    val `enabled`: Boolean,
+    val `expiresAt`: String?,
+)
+
+typealias ConnectorAccountPolicies = List<ConnectorAccountPoliciesItem>
+
+@Serializable
+data class ConnectorAccountPolicy(
+    val `connectionId`: String,
+    val `allowed`: Boolean,
+    val `enabled`: Boolean,
+    val `expiresAt`: String?,
+)
+
+@Serializable(with = ConnectorAccountPolicyRequestTargetSerializer::class)
+sealed interface ConnectorAccountPolicyRequestTarget
+
+@Serializable
+enum class ConnectorAccountPolicyRequestTargetVariant1Kind {
+    @SerialName("builtin") BUILTIN,
+}
+
+@Serializable
+data class ConnectorAccountPolicyRequestTargetVariant1(
+    val `kind`: ConnectorAccountPolicyRequestTargetVariant1Kind,
+    val `connectorSlug`: String,
+) : ConnectorAccountPolicyRequestTarget
+
+@Serializable
+enum class ConnectorAccountPolicyRequestTargetVariant2Kind {
+    @SerialName("custom") CUSTOM,
+}
+
+@Serializable
+data class ConnectorAccountPolicyRequestTargetVariant2(
+    val `kind`: ConnectorAccountPolicyRequestTargetVariant2Kind,
+    val `customConnectorId`: String,
+) : ConnectorAccountPolicyRequestTarget
+
+object ConnectorAccountPolicyRequestTargetSerializer :
+    KSerializer<ConnectorAccountPolicyRequestTarget> {
+    override val descriptor =
+        buildClassSerialDescriptor(
+            "ai.okou.android.api.generated.ConnectorAccountPolicyRequestTarget",
+        )
+
+    override fun deserialize(decoder: Decoder): ConnectorAccountPolicyRequestTarget {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for ConnectorAccountPolicyRequestTarget",
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException(
+                    "Expected object for ConnectorAccountPolicyRequestTarget",
+                )
+        val matches =
+            listOf(
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("builtin")
+                } == true,
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("custom")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException(
+                "Unknown or ambiguous ConnectorAccountPolicyRequestTarget variant",
+            )
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorAccountPolicyRequestTargetVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorAccountPolicyRequestTargetVariant2.serializer(),
+                    value,
+                )
+            else ->
+                throw SerializationException("Unknown ConnectorAccountPolicyRequestTarget variant")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ConnectorAccountPolicyRequestTarget) {
+        when (value) {
+            is ConnectorAccountPolicyRequestTargetVariant1 ->
+                encoder.encodeSerializableValue(
+                    ConnectorAccountPolicyRequestTargetVariant1.serializer(),
+                    value,
+                )
+            is ConnectorAccountPolicyRequestTargetVariant2 ->
+                encoder.encodeSerializableValue(
+                    ConnectorAccountPolicyRequestTargetVariant2.serializer(),
+                    value,
+                )
+        }
+    }
+}
+
+@Serializable
+enum class ConnectorAccountPolicyRequestPolicy {
+    @SerialName("deny") DENY,
+    @SerialName("allow-always") ALLOW_ALWAYS,
+    @SerialName("allow-1h") ALLOW_1H,
+    @SerialName("allow-24h") ALLOW_24H,
+    @SerialName("allow-7d") ALLOW_7D,
+}
+
+@Serializable
+data class ConnectorAccountPolicyRequest(
+    val `target`: ConnectorAccountPolicyRequestTarget,
+    val `policy`: ConnectorAccountPolicyRequestPolicy,
+)
+
+@Serializable
 data class ConnectorAccountDefault(
     val `connectionId`: String,
     val `displayName`: String?,
@@ -1725,6 +1846,7 @@ data class ConnectorOauthStartNativeAppAuthorization(
 @Serializable
 data class ConnectorOauthStart(
     val `authorizationUrl`: String,
+    val `nativeCallbackUrl`: String? = null,
     val `connectionId`: String? = null,
     val `oauthAttemptId`: String,
     val `nativeAppAuthorization`: ConnectorOauthStartNativeAppAuthorization? = null,
@@ -1733,6 +1855,11 @@ data class ConnectorOauthStart(
 @Serializable
 enum class ConnectorOauthStartRequestCallbackTarget {
     @SerialName("app") APP,
+}
+
+@Serializable
+enum class ConnectorOauthStartRequestNativeCallback {
+    @SerialName("ios-https") IOS_HTTPS,
 }
 
 @Serializable
@@ -1832,6 +1959,7 @@ object ConnectorOauthStartRequestAccountSerializer :
 data class ConnectorOauthStartRequest(
     val `authMethod`: String,
     val `callbackTarget`: ConnectorOauthStartRequestCallbackTarget? = null,
+    val `nativeCallback`: ConnectorOauthStartRequestNativeCallback? = null,
     val `nativeAppAuthorization`: ConnectorOauthStartRequestNativeAppAuthorization? = null,
     val `account`: ConnectorOauthStartRequestAccount,
 )
@@ -9594,6 +9722,14 @@ data class ChatMessageSearchResponse(
 )
 
 @Serializable
+data class CreateProjectRequest(
+    val `id`: String,
+    val `eventId`: String,
+    val `name`: String,
+    val `fromThreadId`: String? = null,
+)
+
+@Serializable
 data class RenameProjectRequest(
     val `eventId`: String,
     val `name`: String? = null,
@@ -9601,7 +9737,7 @@ data class RenameProjectRequest(
 )
 
 @Serializable
-data class RenamedProject(
+data class ProjectRecord(
     val `id`: String,
     val `name`: String,
     val `createdAt`: String,
@@ -13159,6 +13295,7 @@ data class DefaultModelPreference(
     val `selectedModel`: String?,
     val `serviceTier`: DefaultModelPreferenceServiceTier?,
     val `modelSettings`: Map<String, DefaultModelPreferenceModelSettingsValue>,
+    val `selectedImageModel`: String? = null,
 )
 
 @Serializable
@@ -13208,6 +13345,44 @@ data class UpdateDefaultModelPreference(
     val `modelSettingsPatch`: UpdateDefaultModelPreferenceModelSettingsPatch? = null,
     val `selectedImageModel`: CanonicalOptional<UpdateDefaultModelPreferenceSelectedImageModel?> =
         CanonicalOptional.Absent,
+)
+
+@Serializable
+enum class UpdateImageModelPreferenceSelectedImageModel {
+    @SerialName("gpt-image-1") GPT_IMAGE_1,
+    @SerialName("gpt-image-2") GPT_IMAGE_2,
+    @SerialName("gpt-image-2.5-flare") GPT_IMAGE_2_5_FLARE,
+    @SerialName("gpt-image-2.5-sunburst") GPT_IMAGE_2_5_SUNBURST,
+    @SerialName("fal-ai/flux-pro/v1.1") FAL_AI_FLUX_PRO_V1_1,
+    @SerialName("fal-ai/flux-pro/v1.1-ultra") FAL_AI_FLUX_PRO_V1_1_ULTRA,
+    @SerialName("fal-ai/flux-2-pro") FAL_AI_FLUX_2_PRO,
+    @SerialName("alibaba/qwen-image-3/text-to-image") ALIBABA_QWEN_IMAGE_3_TEXT_TO_IMAGE,
+    @SerialName("ideogram/v4") IDEOGRAM_V4,
+    @SerialName("fal-ai/bytedance/seedream/v4/text-to-image")
+    FAL_AI_BYTEDANCE_SEEDREAM_V4_TEXT_TO_IMAGE,
+    @SerialName("fal-ai/nano-banana-2") FAL_AI_NANO_BANANA_2,
+    @SerialName("google/nano-banana-2-lite") GOOGLE_NANO_BANANA_2_LITE,
+}
+
+@Serializable
+data class UpdateImageModelPreference(
+    val `selectedImageModel`: UpdateImageModelPreferenceSelectedImageModel?,
+)
+
+@Serializable
+data class PaidToolPreferences(
+    val `disabledTools`: List<String>,
+)
+
+@Serializable
+data class UpdatePaidTool(
+    val `disabled`: Boolean,
+)
+
+@Serializable
+data class PaidToolUpdate(
+    val `toolId`: String,
+    val `disabled`: Boolean,
 )
 
 @Serializable
@@ -15451,6 +15626,31 @@ data class AcceptedInput(
     val `createdAt`: String? = null,
 )
 
+@Serializable
+data class RunActivityRequest(
+    val `runId`: String,
+)
+
+@Serializable
+data class RunActivitySummaryMessagesItem(
+    val `id`: String,
+    val `text`: String,
+)
+
+@Serializable
+enum class RunActivitySummaryStatus {
+    @SerialName("available") AVAILABLE,
+    @SerialName("ineligible") INELIGIBLE,
+    @SerialName("unavailable") UNAVAILABLE,
+}
+
+@Serializable
+data class RunActivitySummary(
+    val `runId`: String,
+    val `messages`: List<RunActivitySummaryMessagesItem>,
+    val `status`: RunActivitySummaryStatus,
+)
+
 @Serializable(with = InputStatusSerializer::class) sealed interface InputStatus
 
 @Serializable
@@ -16725,6 +16925,88 @@ object ConnectorAccountDefaultsQuerySerializer : KSerializer<ConnectorAccountDef
     }
 }
 
+@Serializable(with = ConnectorAccountPoliciesQuerySerializer::class)
+sealed interface ConnectorAccountPoliciesQuery
+
+@Serializable
+enum class ConnectorAccountPoliciesQueryVariant1Kind {
+    @SerialName("builtin") BUILTIN,
+}
+
+@Serializable
+data class ConnectorAccountPoliciesQueryVariant1(
+    val `kind`: ConnectorAccountPoliciesQueryVariant1Kind,
+    val `connectorSlug`: String,
+) : ConnectorAccountPoliciesQuery
+
+@Serializable
+enum class ConnectorAccountPoliciesQueryVariant2Kind {
+    @SerialName("custom") CUSTOM,
+}
+
+@Serializable
+data class ConnectorAccountPoliciesQueryVariant2(
+    val `kind`: ConnectorAccountPoliciesQueryVariant2Kind,
+    val `customConnectorId`: String,
+) : ConnectorAccountPoliciesQuery
+
+object ConnectorAccountPoliciesQuerySerializer : KSerializer<ConnectorAccountPoliciesQuery> {
+    override val descriptor =
+        buildClassSerialDescriptor("ai.okou.android.api.generated.ConnectorAccountPoliciesQuery")
+
+    override fun deserialize(decoder: Decoder): ConnectorAccountPoliciesQuery {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for ConnectorAccountPoliciesQuery",
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException("Expected object for ConnectorAccountPoliciesQuery")
+        val matches =
+            listOf(
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("builtin")
+                } == true,
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("custom")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException(
+                "Unknown or ambiguous ConnectorAccountPoliciesQuery variant",
+            )
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorAccountPoliciesQueryVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorAccountPoliciesQueryVariant2.serializer(),
+                    value,
+                )
+            else -> throw SerializationException("Unknown ConnectorAccountPoliciesQuery variant")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ConnectorAccountPoliciesQuery) {
+        when (value) {
+            is ConnectorAccountPoliciesQueryVariant1 ->
+                encoder.encodeSerializableValue(
+                    ConnectorAccountPoliciesQueryVariant1.serializer(),
+                    value,
+                )
+            is ConnectorAccountPoliciesQueryVariant2 ->
+                encoder.encodeSerializableValue(
+                    ConnectorAccountPoliciesQueryVariant2.serializer(),
+                    value,
+                )
+        }
+    }
+}
+
 @Serializable(with = ConnectorAccountsQuerySerializer::class)
 sealed interface ConnectorAccountsQuery
 
@@ -17040,12 +17322,6 @@ enum class ArtifactCatalogQueryKind {
 }
 
 @Serializable
-enum class ArtifactCatalogQuerySort {
-    @SerialName("createdAt") CREATEDAT,
-    @SerialName("title") TITLE,
-}
-
-@Serializable
 enum class ArtifactCatalogQueryDirection {
     @SerialName("asc") ASC,
     @SerialName("desc") DESC,
@@ -17058,7 +17334,6 @@ data class ArtifactCatalogQuery(
     val `kind`: ArtifactCatalogQueryKind? = null,
     val `chatThreadId`: String? = null,
     val `keyword`: String? = null,
-    val `sort`: ArtifactCatalogQuerySort? = null,
     val `direction`: ArtifactCatalogQueryDirection? = null,
 )
 

@@ -11,7 +11,7 @@ use tokio::{
     time::{Instant, timeout_at},
 };
 
-use crate::{TERMINAL_BUDGET, connect_vsock, dispatch_request, terminal_response};
+use crate::{TERMINAL_BUDGET, connect_vsock, dispatch_request, publish_terminal};
 
 pub async fn run() -> io::Result<bool> {
     run_with_io(tokio::io::stdin(), tokio::io::stdout(), connect_vsock).await
@@ -41,18 +41,14 @@ where
         ),
     )
     .await;
-    if !output.is_usable() {
-        return Err(io::Error::new(
-            io::ErrorKind::BrokenPipe,
-            "RPC output unavailable",
-        ));
-    }
-    let terminal = terminal_response(result, sent);
-    let succeeded = matches!(terminal, Response::Result { .. });
-    timeout_at(deadline, output.send(&Frame::Control(terminal)))
-        .await
-        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "RPC output deadline"))??;
-    Ok(succeeded)
+    publish_terminal(
+        result,
+        sent,
+        output.is_usable(),
+        deadline,
+        async |terminal| output.send(&Frame::Control(terminal)).await,
+    )
+    .await
 }
 
 async fn exchange<R, W, S, C, F>(

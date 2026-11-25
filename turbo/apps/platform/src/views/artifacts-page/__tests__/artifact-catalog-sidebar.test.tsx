@@ -1,11 +1,8 @@
 import {
   artifactCatalogContract,
   type ArtifactDetail,
+  type ArtifactSummary,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
-import {
-  artifactReferencePath,
-  artifactReferencesContract,
-} from "@okouai/api-contracts/contracts/artifact-references";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
@@ -13,132 +10,212 @@ import userEvent from "@testing-library/user-event";
 import { strToU8, zipSync } from "fflate";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
+
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { fileArtifactDetail } from "../../okou-page/__tests__/chat-navigation-artifact-test-helpers.ts";
 import {
   artifact,
   findArtifactAction,
   getButtonByName,
+  queryButtonByName,
 } from "./artifact-catalog-test-helpers.ts";
 
 const context = testContext();
-const ARTIFACT_ID = "a0000000-0000-4000-a000-000000000001";
 
-function fileDetail(
+function serveCatalog(summary: ArtifactSummary): void {
+  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
+    return respond(200, { artifacts: [summary], nextCursor: null });
+  });
+}
+
+function storedFile(
+  summary: ArtifactSummary,
   filename: string,
   contentType: string,
-): Extract<ArtifactDetail, { kind: "file" }> {
+  fileId = "a0000000-0000-4000-a000-000000000e99",
+): { readonly detail: ArtifactDetail; readonly url: string } {
+  const url = `https://files.example.test/catalog/${filename}`;
   return {
-    ...artifact({ title: filename }),
-    kind: "file",
-    file: {
-      id: "f0000000-0000-4000-a000-000000000001",
+    detail: fileArtifactDetail(summary, {
       filename,
       contentType,
-      size: 1024,
-      url: `https://artifacts.example.com/${filename}`,
-      previewImageUrl: null,
-    },
+      fileId,
+      url,
+    }),
+    url,
   };
 }
 
-function mockCatalog(detail: ArtifactDetail) {
-  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-    return respond(200, { artifacts: [detail], nextCursor: null });
-  });
-  context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
-    return respond(200, detail);
+function openCatalog(path = "/artifacts") {
+  return setupPage({
+    context,
+    path,
   });
 }
 
-test("Text artifacts open and close in the catalog sidebar", async () => {
-  mockCatalog(fileDetail("launch-plan.txt", "text/plain"));
-  context.mocks.http.get(
-    "https://artifacts.example.com/launch-plan.txt",
-    () => {
-      return HttpResponse.text("The launch plan is ready");
-    },
+function sidebar(): HTMLElement | null {
+  return document.querySelector<HTMLElement>(
+    '[data-testid="artifact-sidebar"]',
   );
-  await setupPage({
-    context,
-    path: "/artifacts?tab=file",
+}
+
+test("A reader can return to the catalog after previewing a text artifact", async () => {
+  const summary = artifact({
+    id: "a0000000-0000-4000-a000-000000000e01",
+    title: "launch-plan.txt",
   });
+  serveCatalog(summary);
+  const { detail, url } = storedFile(summary, "launch-plan.txt", "text/plain");
+  context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
+    return respond(200, detail);
+  });
+  context.mocks.http.get(url, () => {
+    return HttpResponse.text("The launch plan is ready");
+  });
+  await openCatalog();
+
   click(await findArtifactAction("launch-plan.txt"));
-  const preview = await screen.findByTestId("artifact-sidebar");
+
+  const lightbox = await screen.findByTestId("artifact-sidebar");
   await expect(
-    within(preview).findByText("The launch plan is ready"),
+    within(lightbox).findByText("The launch plan is ready"),
   ).resolves.toBeInTheDocument();
-  expect(screen.queryByTestId("attachment-lightbox")).not.toBeInTheDocument();
-  click(getButtonByName("Close artifact", preview));
+  click(getButtonByName("Close artifact", lightbox));
+
   await waitFor(() => {
-    expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
+    expect(lightbox).not.toBeInTheDocument();
   });
-  await expect(
-    findArtifactAction("launch-plan.txt"),
-  ).resolves.toBeInTheDocument();
-});
-
-test("HEIC catalog previews convert extensionless image sources", async () => {
-  const detail = fileDetail("iPhone.heic", "image/heic");
-  const source = `https://${"a".repeat(32)}.r2.cloudflarestorage.com/private/opaque?X-Amz-Signature=signature`;
-  mockCatalog({ ...detail, file: { ...detail.file, url: source } });
-  await setupPage({
-    context,
-    path: "/artifacts?tab=file",
-  });
-
-  click(await findArtifactAction("iPhone.heic"));
-  const preview = await screen.findByTestId("artifact-sidebar");
-  await expect(
-    within(preview).findByTestId("artifact-sidebar-body-image"),
-  ).resolves.toHaveAttribute(
-    "src",
-    `https://cdn.vm7.io/cdn-cgi/image/fit=scale-down,format=auto,quality=85,metadata=none/${source}`,
-  );
+  expect(getButtonByName("Preview launch-plan.txt")).toBeEnabled();
 });
 
 test("A routed website preview opens in the sidebar and Close returns to its catalog", async () => {
-  mockCatalog({
-    ...artifact({ title: "Release website", kind: "hosted-site" }),
+  const summary = artifact({
+    id: "a0000000-0000-4000-a000-000000000e11",
     kind: "hosted-site",
-    site: {
-      id: "f0000000-0000-4000-a000-000000000002",
-      slug: "release-website",
-      publicSlug: "release-website",
-      url: "https://release.example.com/",
-      deploymentVersion: 1,
-      entrypoint: "index.html",
-      spaFallback: false,
-    },
+    title: "Release website",
   });
-  await setupPage({
-    context,
-    path: `/artifacts?tab=hosted-site&artifact=${ARTIFACT_ID}`,
+  serveCatalog(summary);
+  context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
+    return respond(200, {
+      ...summary,
+      kind: "hosted-site",
+      site: {
+        id: "a0000000-0000-4000-a000-000000000e12",
+        slug: "release",
+        publicSlug: "release",
+        url: "https://release.example.test/",
+        deploymentVersion: 3,
+        entrypoint: "/index.html",
+        spaFallback: false,
+      },
+    });
   });
-  const preview = await screen.findByTestId("artifact-sidebar");
-  await expect(
-    within(preview).findByTitle("Release website preview"),
-  ).resolves.toHaveAttribute("src", "https://release.example.com/");
-  expect(screen.queryByTestId("attachment-lightbox")).not.toBeInTheDocument();
-  click(getButtonByName("Enter fullscreen", preview));
+  await openCatalog(`/artifacts?tab=hosted-site&artifact=${summary.id}`);
   await waitFor(() => {
-    expect(getButtonByName("Exit fullscreen", preview)).toBeInTheDocument();
+    expect(sidebar()).toBeInTheDocument();
   });
-  click(getButtonByName("Exit fullscreen", preview));
-  click(getButtonByName("Close artifact", preview));
+  const panel = sidebar() as HTMLElement;
+
+  click(getButtonByName("Enter fullscreen", panel));
   await waitFor(() => {
-    expect(window.location.search).toBe("?tab=hosted-site");
-    expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
+    expect(queryButtonByName("Exit fullscreen", panel)).toBeDefined();
   });
+  click(getButtonByName("Exit fullscreen", panel));
+  await waitFor(() => {
+    expect(queryButtonByName("Enter fullscreen", panel)).toBeDefined();
+  });
+
+  click(getButtonByName("Close artifact", panel));
+
+  await waitFor(() => {
+    expect(
+      new URLSearchParams(window.location.search).has("artifact"),
+    ).toBeFalsy();
+  });
+  expect(window.location.pathname).toBe("/artifacts");
+  expect(new URLSearchParams(window.location.search).get("tab")).toBe(
+    "hosted-site",
+  );
+  await waitFor(() => {
+    expect(sidebar()).toBeNull();
+  });
+  expect(getButtonByName("Preview Release website")).toBeEnabled();
+});
+
+test("Binary artifacts open a download-capable sidebar instead of downloading on click", async () => {
+  const summary = artifact({
+    id: "a0000000-0000-4000-a000-000000000e21",
+    title: "release-bundle.zip",
+  });
+  serveCatalog(summary);
+  context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
+    return respond(
+      200,
+      storedFile(summary, "release-bundle.zip", "application/zip").detail,
+    );
+  });
+  const browser = context.mocks.browser.blobDownload();
+  await openCatalog();
+
+  click(await findArtifactAction("release-bundle.zip"));
+
+  await waitFor(() => {
+    expect(sidebar()).toBeInTheDocument();
+  });
+  const panel = sidebar() as HTMLElement;
   await expect(
-    findArtifactAction("Release website"),
-  ).resolves.toBeInTheDocument();
+    within(panel).findAllByText("release-bundle.zip"),
+  ).resolves.not.toHaveLength(0);
+  expect(getButtonByName("Download artifact", panel)).toBeEnabled();
+  expect(browser.downloads).toStrictEqual([]);
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+test("Closing a loading sidebar cancels its preview and allows a later reopen", async () => {
+  const summary = artifact({
+    id: "a0000000-0000-4000-a000-000000000e31",
+    title: "pending.pdf",
+  });
+  serveCatalog(summary);
+  const { detail, url } = storedFile(summary, "pending.pdf", "application/pdf");
+  const firstRead = { held: true };
+  const release = context.mocks.deferred<void>();
+  const answered = context.mocks.deferred<void>();
+  context.mocks.api(artifactCatalogContract.get, async ({ respond }) => {
+    if (firstRead.held) {
+      firstRead.held = false;
+      await release.promise;
+      answered.resolve();
+    }
+    return respond(200, detail);
+  });
+  await openCatalog();
+  const card = await findArtifactAction("pending.pdf");
+
+  click(card);
+
+  const loading = await screen.findByRole("complementary", {
+    name: "Artifact",
+  });
+  click(getButtonByName("Close artifact", loading));
+  await waitFor(() => {
+    expect(loading).not.toBeInTheDocument();
+  });
+
+  release.resolve();
+  await answered.promise;
+  click(card);
+
+  const frame = await screen.findByTestId("artifact-sidebar-body-pdf");
+  expect(frame).toHaveAttribute("src", `${url}#navpanes=0`);
+  expect(screen.queryByRole("dialog")).toBeNull();
 });
 
 test("The catalog sidebar refreshes a private website after publication changes", async () => {
   let version = 1;
   const title = "Private release website";
-  mockCatalog({
+  const detail: ArtifactDetail = {
     ...artifact({ title, kind: "hosted-site" }),
     kind: "hosted-site",
     site: {
@@ -150,6 +227,10 @@ test("The catalog sidebar refreshes a private website after publication changes"
       entrypoint: "index.html",
       spaFallback: false,
     },
+  };
+  serveCatalog(detail);
+  context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
+    return respond(200, detail);
   });
   context.mocks.api(hostContract.sitePreview, ({ respond }) => {
     return respond(200, {
@@ -173,7 +254,7 @@ test("The catalog sidebar refreshes a private website after publication changes"
 
   version = 2;
   await act(() => {
-    context.mocks.ably.trigger("artifact:changed", { artifactId: ARTIFACT_ID });
+    context.mocks.ably.trigger("artifact:changed", { artifactId: detail.id });
   });
   await waitFor(() => {
     expect(screen.getByTitle(`${title} preview`)).toHaveAttribute(
@@ -191,176 +272,129 @@ test("The catalog sidebar refreshes a private website after publication changes"
   );
 });
 
-test("Binary artifacts open a download-capable sidebar instead of downloading on click", async () => {
-  const browser = context.mocks.browser.blobDownload();
-  mockCatalog(fileDetail("release-bundle.zip", "application/zip"));
-  await setupPage({
-    context,
-    path: "/artifacts?tab=file",
+async function inspectArchive(size: number, bytes: Uint8Array<ArrayBuffer>) {
+  const summary = artifact({ title: "Harbor records.zip" });
+  serveCatalog(summary);
+  const { detail, url } = storedFile(summary, "records.zip", "application/zip");
+  if (detail.kind !== "file") {
+    throw new Error("The archive fixture must represent a file");
+  }
+  context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
+    return respond(200, { ...detail, file: { ...detail.file, size } });
   });
-  click(await findArtifactAction("release-bundle.zip"));
-  const preview = await screen.findByTestId("artifact-sidebar");
-  expect(
-    within(preview).getAllByText("release-bundle.zip").length,
-  ).toBeGreaterThan(0);
-  expect(getButtonByName("Download artifact", preview)).toBeInTheDocument();
-  expect(browser.downloads).toHaveLength(0);
-  expect(screen.queryByTestId("attachment-lightbox")).not.toBeInTheDocument();
-});
-
-test("A ZIP lists nested files and lets a selected entry's preview be dismissed", async () => {
-  const user = userEvent.setup();
-  const archive = zipSync({
-    "docs/notes.txt": strToU8("Notes from inside the archive"),
-    "docs/report.md": strToU8("# Inside the release report"),
-    "index.html": strToU8("<p>Website source</p>"),
-  });
-  const detail = fileDetail("release-bundle.zip", "application/zip");
-  mockCatalog({
-    ...detail,
-    file: { ...detail.file, size: archive.byteLength },
-  });
-  context.mocks.http.get(detail.file.url, () => {
-    return new HttpResponse(archive.slice().buffer, {
+  context.mocks.http.get(url, () => {
+    return new HttpResponse(bytes.buffer, {
       headers: { "Content-Type": "application/zip" },
     });
   });
   await setupPage({
     context,
-    path: "/artifacts?tab=file",
+    path: "/artifacts",
     featureSwitches: { [FeatureSwitchKey.ZipArtifactPreview]: true },
   });
+  click(await findArtifactAction(summary.title));
+  return within(await screen.findByTestId("artifact-sidebar"));
+}
 
-  click(await findArtifactAction("release-bundle.zip"));
-  const preview = await screen.findByTestId("artifact-sidebar");
-  const notes = await within(preview).findByText("docs/notes.txt");
-  expect(within(preview).getByText("index.html").closest("button")).toBeNull();
-  expect(
-    within(preview).queryByText("Notes from inside the archive"),
-  ).not.toBeInTheDocument();
-  click(notes);
+test("Opening entries in a catalog ZIP changes the document shown in its sidebar", async () => {
+  const archive = zipSync({
+    "logs/departure.txt": strToU8("The ferry left at noon."),
+    "logs/arrival.md": strToU8("# Arrival manifest"),
+    "private.html": strToU8("<p>Not an interactive archive entry.</p>"),
+  }).slice();
+  const panel = await inspectArchive(archive.byteLength, archive);
+  const first = await panel.findByText("logs/departure.txt");
+  expect(panel.getByText("private.html").closest("button")).toBeNull();
+  expect(panel.queryByText("The ferry left at noon.")).toBeNull();
+  click(first);
   await expect(
-    within(preview).findByText("Notes from inside the archive"),
-  ).resolves.toBeInTheDocument();
-  const report = getButtonByName("docs/report.md", preview);
-  const reportHeading = { name: "Inside the release report" };
-  await user.click(report);
-  await within(preview).findByRole("heading", reportHeading);
-  expect(
-    within(preview).queryByText("Notes from inside the archive"),
-  ).not.toBeInTheDocument();
-  expect(getButtonByName("Download artifact", preview)).toBeInTheDocument();
-
-  await user.click(report);
-  expect(report).toHaveAttribute("aria-pressed", "false");
-  expect(report).toHaveFocus();
-  expect(within(preview).queryByRole("heading", reportHeading)).toBeNull();
-  expect(notes).toBeInTheDocument();
-
+    panel.findByText("The ferry left at noon."),
+  ).resolves.toBeVisible();
+  const user = userEvent.setup();
+  const arrival = getButtonByName("logs/arrival.md");
+  await user.click(arrival);
+  await expect(
+    panel.findByRole("heading", { name: "Arrival manifest" }),
+  ).resolves.toBeVisible();
+  expect(panel.queryByText("The ferry left at noon.")).toBeNull();
+  expect(getButtonByName("Download artifact")).toBeEnabled();
+  await user.click(arrival);
+  expect(arrival).toHaveFocus();
+  expect(arrival).toHaveAttribute("aria-pressed", "false");
+  expect(panel.queryByRole("heading", { name: "Arrival manifest" })).toBeNull();
   await user.keyboard("{Enter}");
   await expect(
-    within(preview).findByRole("heading", reportHeading),
+    panel.findByRole("heading", { name: "Arrival manifest" }),
   ).resolves.toBeInTheDocument();
 });
 
-test("A ZIP larger than 5 MiB keeps the download fallback without fetching the archive", async () => {
-  const detail = fileDetail("large.zip", "application/zip");
-  mockCatalog({
-    ...detail,
-    file: { ...detail.file, size: 5 * 1024 * 1024 + 1 },
-  });
-  let requests = 0;
-  context.mocks.http.get(detail.file.url, () => {
-    requests += 1;
-    return HttpResponse.text("Unexpected archive request");
-  });
-  await setupPage({
-    context,
-    path: "/artifacts?tab=file",
-    featureSwitches: { [FeatureSwitchKey.ZipArtifactPreview]: true },
-  });
-
-  click(await findArtifactAction("large.zip"));
-  const preview = await screen.findByTestId("artifact-sidebar");
+test("The catalog offers the download fallback for a ZIP whose declared size exceeds the preview limit", async () => {
+  const archive = zipSync({
+    "small.txt": strToU8("Previewable if admitted"),
+  }).slice();
+  const panel = await inspectArchive(5 * 1024 * 1024 + 1, archive);
   await expect(
-    within(preview).findByText("No inline preview available for this file."),
-  ).resolves.toBeInTheDocument();
-  expect(getButtonByName("Download artifact", preview)).toBeInTheDocument();
-  expect(requests).toBe(0);
+    panel.findByText("No inline preview available for this file."),
+  ).resolves.toBeVisible();
+  expect(panel.queryByText("small.txt")).toBeNull();
+  expect(getButtonByName("Download artifact")).toBeEnabled();
 });
 
-test("An avatar sidebar reuses the private video URL already shown by its card", async () => {
-  const fileId = "f0000000-0000-4000-a000-000000000004";
-  const url = artifactReferencePath(fileId, "avatar.mp4");
-  const firstUrl = "https://private.example/avatar.mp4?signature=first";
-  const nextUrl = "https://private.example/avatar.mp4?signature=next";
-  const file = fileDetail("avatar.mp4", "video/mp4").file;
-  mockCatalog({
-    ...artifact({ kind: "avatar", title: "avatar.mp4", videoSourceUrl: url }),
-    kind: "avatar",
-    file: { ...file, id: fileId, url },
-    model: "joggai-talking-avatar",
-    durationSeconds: 12,
+test("Reopening a catalog item reads the file selected by its publication update", async () => {
+  const item = artifact({
+    id: "c0000000-0000-4000-a000-000000000189",
+    title: "Field journal",
   });
-  let resolveCount = 0;
-  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
-    const resolved = resolveCount++ === 0 ? firstUrl : nextUrl;
-    return respond(200, {
-      downloadUrl: new URL("?download=1", resolved).href,
-      url: resolved,
-      expiresAt: "2099-01-01T00:00:00.000Z",
-      filename: "avatar.mp4",
-      contentType: "video/mp4",
-      target: { kind: "file", id: fileId },
-    });
-  });
-  await setupPage({
-    context,
-    path: "/artifacts?tab=avatar",
-  });
-  const card = await findArtifactAction("avatar.mp4");
-  await expect(
-    within(card).findByTestId("artifact-catalog-video-source"),
-  ).resolves.toHaveAttribute("src", `${firstUrl}#t=0.001`);
-  click(card);
-  const sidebar = await screen.findByTestId("artifact-sidebar");
-  await expect(
-    within(sidebar).findByLabelText("Video preview for avatar.mp4"),
-  ).resolves.toHaveAttribute("src", firstUrl);
-  expect(screen.queryByTestId("attachment-lightbox")).not.toBeInTheDocument();
-});
-
-test("Closing a loading sidebar cancels its preview and allows a later reopen", async () => {
-  const release = context.mocks.deferred<void>();
-  const detail = fileDetail("pending.pdf", "application/pdf");
+  const first = storedFile(item, "field-notes.txt", "text/plain");
+  const second = storedFile(
+    { ...item, title: "field-notes-approved.txt" },
+    "field-notes-approved.txt",
+    "text/plain",
+    "c0000000-0000-4000-a000-000000000190",
+  );
+  let current = first;
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-    return respond(200, { artifacts: [detail], nextCursor: null });
+    return respond(200, { artifacts: [current.detail], nextCursor: null });
   });
-  context.mocks.api(artifactCatalogContract.get, async ({ respond }) => {
-    await release.promise;
-    return respond(200, detail);
+  context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
+    return respond(200, current.detail);
   });
-  await setupPage({
-    context,
-    path: "/artifacts?tab=file",
+  context.mocks.http.get(first.url, () => {
+    return HttpResponse.text("Draft observations from the estuary");
   });
-  const card = await findArtifactAction("pending.pdf");
-  click(card);
-  const preview = await screen.findByRole("complementary", {
-    name: "Artifact",
+  context.mocks.http.get(second.url, () => {
+    return HttpResponse.text("Approved observations from the estuary");
   });
-  click(getButtonByName("Close artifact", preview));
+  await openCatalog("/artifacts?tab=file");
   await waitFor(() => {
-    expect(preview).not.toBeInTheDocument();
+    expect(context.mocks.ably.hasSubscription("artifact:changed")).toBeTruthy();
   });
-  release.resolve();
-  click(card);
+  click(await findArtifactAction(item.title));
+  const panel = await screen.findByTestId("artifact-sidebar");
+  await expect(
+    within(panel).findByText("Draft observations from the estuary"),
+  ).resolves.toBeVisible();
+  current = second;
+  await act(() => {
+    context.mocks.ably.trigger("artifact:changed", { artifactId: item.id });
+  });
+  await expect(
+    within(await screen.findByTestId("artifact-sidebar")).findByText(
+      "field-notes-approved.txt",
+    ),
+  ).resolves.toBeVisible();
+  click(
+    getButtonByName(
+      "Close artifact",
+      await screen.findByTestId("artifact-sidebar"),
+    ),
+  );
+  await waitFor(() => {
+    expect(sidebar()).toBeNull();
+  });
+  click(await findArtifactAction(second.detail.title));
   const reopened = await screen.findByTestId("artifact-sidebar");
   await expect(
-    within(reopened).findByTitle("pending.pdf preview"),
-  ).resolves.toHaveAttribute(
-    "src",
-    "https://artifacts.example.com/pending.pdf#navpanes=0",
-  );
-  expect(screen.queryByTestId("attachment-lightbox")).not.toBeInTheDocument();
+    within(reopened).findByText("Approved observations from the estuary"),
+  ).resolves.toBeVisible();
 });

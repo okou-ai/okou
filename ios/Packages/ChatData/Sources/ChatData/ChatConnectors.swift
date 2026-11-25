@@ -100,6 +100,7 @@ public struct ChatConnectorReceipt: Decodable, Sendable {
   public let result: String?
   public let status: String?
   public let authorizationUrl: URL?
+  public let nativeCallbackUrl: URL?
   public let oauthAttemptId: String?
   public let nativeAppAuthorization: NativeAppAuthorization?
   public let connectionId: String?
@@ -181,7 +182,7 @@ public struct ChatConnectorService: Sendable {
     case .reconnect(let slug, let id):
       target = .builtin(slug)
       exactID = id
-    case .select(let selectedTarget, let id):
+    case .select(let selectedTarget, let id, _):
       target = selectedTarget
       exactID = id
     case .configuration(let selectedTarget, let id):
@@ -259,15 +260,22 @@ public struct ChatConnectorService: Sendable {
     return account
   }
   public func select(_ action: ChatConnectorAction, status: ChatConnectorStatus) async throws {
-    guard case .select(let target, let id) = action.kind, target == status.target,
+    guard case .select(let target, let id, let memberWide) = action.kind, target == status.target,
       let threadID = action.threadID
     else {
       throw APIClientError.invalidResponse
     }
     let selection = ChatConnectorSelection(target: target, connectionId: id)
-    let result: ChatConnectorSelection = try await client.request(
-      "/api/chat-threads/\(threadID)/connector-account-approval", method: "POST",
-      body: JSONEncoder().encode(selection))
+    let body = try JSONEncoder().encode(selection)
+    let result: ChatConnectorSelection
+    if memberWide {
+      result = try await client.request(
+        "/api/chat-threads/\(threadID)/member-connector-account-approval", method: "POST",
+        body: body)
+    } else {
+      result = try await client.request(
+        "/api/chat-threads/\(threadID)/connector-account-approval", method: "POST", body: body)
+    }
     guard result.target == target, result.connectionId.lowercased() == id.lowercased() else {
       throw APIClientError.invalidResponse
     }
@@ -284,6 +292,7 @@ public struct ChatConnectorService: Sendable {
       let account: Account
       let authMethod: String
       var callbackTarget: String?
+      var nativeCallback: String?
       var nativeAppAuthorization: String?
       var values: [String: String]?
       var options: [String: String]?
@@ -299,6 +308,7 @@ public struct ChatConnectorService: Sendable {
       let body = Body(
         account: account, authMethod: method.id,
         callbackTarget: method.grantKind == "auth-code" ? "app" : nil,
+        nativeCallback: method.grantKind == "auth-code" ? "ios-https" : nil,
         nativeAppAuthorization: nativeAppAuthorization && method.grantKind == "auth-code"
           ? "ios" : nil,
         values: method.grantKind == "manual" ? method.manualValues(values) : nil,

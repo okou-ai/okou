@@ -253,6 +253,11 @@
         "modelCatalogCacheValidationLatency": "मॉडल कैटलॉग कैश सत्यापन विलंबता",
         "modelCatalogPrefetchRole": "मॉडल कैटलॉग प्रीफ़ेच भूमिका",
         "modelCatalogUpstreamEncoding": "मॉडल कैटलॉग अपस्ट्रीम एन्कोडिंग",
+        "openrouterAttempts": "OpenRouter प्रदाता प्रयास",
+        "openrouterAttemptsIncomplete": "OpenRouter अधूरे प्रयास",
+        "openrouterGenerationId": "OpenRouter जनरेशन आईडी",
+        "openrouterModel": "OpenRouter मॉडल",
+        "openrouterProvider": "OpenRouter प्रदाता",
         "params": "पैरामीटर",
         "permission": "अनुमति",
         "permissionError": "अनुमति त्रुटि",
@@ -502,6 +507,40 @@
       "kindIcon": "{{kind}} आर्टिफ़ैक्ट",
       "loading": "आर्टिफ़ैक्ट लोड हो रहे हैं"
     },
+    "customDomain": {
+      "addressHint": "Choose the full address used when you share this website.",
+      "checks": {
+        "certificate": "HTTPS",
+        "dns": "DNS connection",
+        "ownership": "Ownership"
+      },
+      "connect": "Connect a domain",
+      "continue": "Continue",
+      "copied": "Copied",
+      "copyFailed": "Could not copy. Select the value to copy it.",
+      "copyRecord": "Copy {{type}} value",
+      "disconnectConfirm": "This domain will be disconnected from this website.",
+      "dnsHelp": "Add these records at your DNS provider, then click Verify",
+      "domain": "Domain",
+      "hostnameExample": "www.example.com",
+      "httpsReady": "HTTPS ready",
+      "lastChecked": "Last checked {{time}}",
+      "manage": "Manage {{hostname}}",
+      "needsSetup": "Finish setup",
+      "notChecked": "No verification yet",
+      "okouUrl": "Okou URL",
+      "ownDomain": "Enter a domain you own",
+      "remove": "Remove",
+      "removeConfirm": "Your sharing link will return to {{url}}.",
+      "removeHostname": "Remove {{hostname}}",
+      "removeTitle": "Remove custom domain?",
+      "removing": "This domain is disconnected. Click Remove to finish cleaning up its configuration.",
+      "title": "Custom domain",
+      "urlPreview": "https://{{hostname}}",
+      "verified": "Domain verified. Save to use this address.",
+      "verify": "Verify",
+      "yourDomains": "Connected domains"
+    },
     "deletion": {
       "cancel": "रद्द करें",
       "delete": "हटाएँ",
@@ -582,7 +621,6 @@
       "name": "नाम",
       "retry": "फिर से कोशिश करें",
       "search": "आर्टिफ़ैक्ट खोजें",
-      "sort": "आर्टिफ़ैक्ट क्रमबद्ध करें",
       "sortAscending": "आरोही क्रम में लगाएँ",
       "sortDescending": "अवरोही क्रम में लगाएँ",
       "type": "प्रकार"
@@ -682,15 +720,9 @@
       "updated": "वेबसाइट URL अपडेट किया गया"
     },
     "templates": {
-      "activeHtmlPreview": "{{title}} सक्रिय HTML पूर्वावलोकन",
-      "all": "सभी",
       "avatar": "अवतार",
-      "categories": "टेम्पलेट श्रेणियां",
-      "category": "टेम्पलेट श्रेणी",
       "fullPreview": "{{title}} वेबसाइट पूर्ण पूर्वावलोकन",
       "htmlPreview": "{{title}} HTML पूर्वावलोकन",
-      "illustration": "चित्रण",
-      "illustrationPreview": "{{title}} चित्रण पूर्वावलोकन",
       "importDeck": "अपना डेक इंपोर्ट करें",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importDocument": "अपना दस्तावेज़ आयात करें",
@@ -701,18 +733,10 @@
       "importImageHint": "स्टाइल के रूप में सहेजें",
       "multiAccent": "बहु-उच्चारण",
       "nextSlide": "अगली स्लाइड का पूर्वावलोकन करें",
-      "noMatches": "कोई मेल नहीं",
-      "previewCurrentSlide": "वर्तमान स्लाइड पर {{title}} का पूर्वावलोकन करें",
       "previewSlide": "पूर्वावलोकन स्लाइड {{slideNumber}}",
-      "previewWebsite": "वेबसाइट टेम्पलेट {{title}} का पूर्वावलोकन करें",
       "previousSlide": "पिछली स्लाइड का पूर्वावलोकन करें",
-      "searchConnector": "टेम्पलेट खोजें",
-      "searchConnectors": "टेम्पलेट खोजें",
       "selectStyle": "शैली {{style}} चुनें",
       "selectTemplate": "टेम्पलेट {{title}} चुनें",
-      "selectWebsite": "वेबसाइट टेम्पलेट {{title}} चुनें",
-      "selectWorkflow": "वर्कफ़्लो टेम्पलेट {{title}} चुनें",
-      "showVariant": "वैरिएंट {{variantNumber}} दिखाएँ",
       "singleAccent": "एकल-उच्चारण",
       "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "{{title}} स्लाइड पूर्वावलोकन",
@@ -740,15 +764,11 @@
         "terracottaClay": "मिट्टी के बर्तन",
         "warmSand": "सुबह का अखबार"
       },
-      "tryDifferentSearch": "भिन्न खोज का प्रयास करें.",
-      "use": "उपयोग",
       "useThisTemplate": "इस टेम्पलेट का उपयोग करें",
       "visibility": {
         "changeLabel": "टेम्पलेट की दृश्यता बदलें"
       },
       "website": "वेबसाइट",
-      "websitePreview": "{{title}} वेबसाइट टेम्पलेट पूर्वावलोकन",
-      "workflow": "वर्कफ़्लो",
       "workflowCatalog": {
         "auto-inbox-label": {
           "description": "ऐसा वर्कफ़्लो बनाएँ जो Gmail लेबल लगते ही चले और उस ईमेल को संभाले।",
@@ -1186,6 +1206,9 @@
       "teamWarning": "वर्तमान बिलिंग अवधि समाप्त होने तक आपकी टीम की पहुंच सक्रिय रहती है। उसके बाद, यह वर्कस्पेस {{plan}} पर चला जाता है।",
       "title": "डाउनग्रेड योजना"
     },
+    "feedback": {
+      "shareFeedback": "प्रतिक्रिया साझा करें"
+    },
     "invoices": {
       "amount": "मात्रा",
       "date": "तारीख",
@@ -1329,40 +1352,6 @@
     "sidebar": {
       "description": "अधिक क्रेडिट और समवर्ती रन",
       "getPlan": "{{plan}} प्राप्त करें"
-    },
-    "survey": {
-      "checkoutAbandoned": {
-        "answers": {
-          "just_checking_price": "बस कीमत देख रहा था",
-          "needs_approval": "किसी और की मंज़ूरी चाहिए",
-          "not_ready_yet": "अभी तय करने के लिए तैयार नहीं हूँ",
-          "not_seeing_value": "अभी तक इसकी उपयोगिता नहीं दिखी",
-          "other": "कुछ और",
-          "payment_issue": "भुगतान में समस्या आई",
-          "price_higher_than_expected": "कीमत उम्मीद से ज़्यादा थी",
-          "results_not_good_enough": "नतीजों से संतुष्ट नहीं था"
-        },
-        "description": "बस एक सवाल। आपका जवाब हमें बेहतर बनने में मदद करता है।",
-        "question": "आपको खरीदारी पूरी करने से किस बात ने रोका?"
-      },
-      "creditsExhausted": {
-        "answers": {
-          "no_need_now": "अभी और की ज़रूरत नहीं है",
-          "not_sure_worth_it": "अभी पक्का नहीं कि यह इसके लायक है",
-          "other": "कुछ और",
-          "still_trying": "पहले इसे और आज़माना चाहता हूँ",
-          "too_expensive": "यह बहुत महंगा है"
-        },
-        "question": "आज अपग्रेड करने से आपको क्या रोक रहा है?",
-        "reward": "इस कार्यक्षेत्र में पहले पात्र उत्तर पर {{credits}} बोनस क्रेडिट मिलते हैं, जो 30 दिनों तक मान्य हैं।",
-        "thanksWithCredits": "धन्यवाद! {{credits}} क्रेडिट जोड़ दिए गए हैं, आप जारी रख सकते हैं।"
-      },
-      "error": "आपका जवाब नहीं भेजा जा सका। फिर से कोशिश करें।",
-      "notNow": "अभी नहीं",
-      "otherLabel": "आपका जवाब",
-      "otherPlaceholder": "और बताएँ (वैकल्पिक)",
-      "submit": "भेजें",
-      "thanks": "बताने के लिए धन्यवाद।"
     },
     "toasts": {
       "autoRechargeUpdated": "स्वतः-रिचार्ज अद्यतन किया गया",
@@ -1929,8 +1918,6 @@
       "add": "जोड़ें",
       "configureModel": "मॉडल कॉन्फ़िगर करें",
       "create": {
-        "addStyle": "शैली जोड़ें",
-        "addTemplate": "टेम्पलेट जोड़ें",
         "documentPlaceholder": "आप अपने दस्तावेज़ में क्या शामिल करना चाहते हैं?",
         "imagePlaceholder": "आप जो छवि बनाना चाहते हैं उसका वर्णन करें…",
         "presentationPlaceholder": "आपकी प्रस्तुति का विषय क्या है?",
@@ -1944,6 +1931,14 @@
       "message": "संदेश",
       "modelForThisChat": "इस चैट के लिए मॉडल",
       "placeholder": "मुझसे वर्कफ़्लो ऑटोमेट करने और टास्क मैनेज करने के लिए कहें...",
+      "presentationFormatSetup": {
+        "description": "हम यह डिफ़ॉल्ट सहेजकर आपकी प्रस्तुति बनाएँगे। आपके अनुरोध में स्पष्ट रूप से बताए गए फ़ॉर्मैट को प्राथमिकता मिलेगी।",
+        "htmlDescription": "ब्राउज़र में साझा करने के लिए उपयुक्त",
+        "pptxDescription": "PowerPoint में संपादन योग्य स्लाइड",
+        "saveAndGenerate": "सहेजें और बनाएँ",
+        "settingsHint": "इसे कभी भी सेटिंग → प्राथमिकताएँ → चैट में बदलें।",
+        "title": "डिफ़ॉल्ट प्रस्तुति फ़ॉर्मैट चुनें"
+      },
       "selectedModelUnavailable": "चयनित मॉडल उपलब्ध नहीं है. भेजने से पहले इसे कॉन्फ़िगर करें.",
       "selectedModelUnavailableToast": "चयनित मॉडल उपलब्ध नहीं है",
       "selectModel": "मॉडल चुनें",
@@ -1970,11 +1965,9 @@
         "scheduleHint": "शेड्यूल पर चलाएँ",
         "share": "चैट शेयर करें",
         "shareHint": "इस बातचीत का लिंक शेयर करें",
-        "templates": "टेम्पलेट",
         "unpin": "पिन हटाएँ"
       },
       "slashPanel": {
-        "browseAll": "सभी टेम्पलेट देखें",
         "hint": "कोई कार्रवाई चुनें",
         "useTemplate": "टेम्पलेट {{title}} इस्तेमाल करें"
       },
@@ -2017,8 +2010,10 @@
     "connectorAccountSwitch": {
       "accountFallback": "कनेक्टर खाता",
       "actionFailed": "खाता स्विच नहीं किया जा सका।",
+      "allowForHour": "1 घंटे के लिए अनुमति दें",
       "customConnector": "कस्टम कनेक्टर",
       "loadFailed": "यह कनेक्टर खाता लोड नहीं हो सका।",
+      "memberScope": "अपनी सभी चैट में अनुमति दें। यहाँ यह खाता चुनें।",
       "reconnectRequired": "फिर से कनेक्ट करना आवश्यक है। बाद के रन मौजूदा फ़ॉलबैक का उपयोग कर सकते हैं।",
       "selected": "{{account}} पर स्विच किया गया",
       "switch": "स्विच करें",
@@ -2620,11 +2615,6 @@
       "unsupported": "मैन्युअल रीसेट समर्थित नहीं है; उपयोग अपने आप पुनः उपलब्ध होगा।"
     },
     "taskChips": {
-      "presentationFormat": "प्रस्तुति का प्रारूप",
-      "presentationFormats": {
-        "html": "HTML",
-        "pptx": "PPTX"
-      },
       "presentationTemplates": "प्रस्तुति टेम्पलेट",
       "removeTask": "{{task}} हटाएँ",
       "shelf": {
@@ -2642,7 +2632,6 @@
         "website": "वेबसाइट",
         "workflow": "वर्कफ़्लो"
       },
-      "viewAll": "सभी देखें",
       "visualization": {
         "allCharts": "सभी चार्ट",
         "back": "Back to visualization options",
@@ -2824,8 +2813,6 @@
         "workflow": "वर्कफ़्लो"
       },
       "previewTemplate": "पूर्वावलोकन टेम्पलेट {{title}}",
-      "previewWebsite": "वेबसाइट टेम्पलेट {{title}} का पूर्वावलोकन करें",
-      "previewWorkflow": "वर्कफ़्लो टेम्पलेट {{title}} का पूर्वावलोकन करें",
       "removeTemplate": "टेम्प्लेट {{title}} हटाएँ",
       "removeWebsite": "वेबसाइट टेम्पलेट {{title}} हटाएँ",
       "removeWorkflow": "वर्कफ़्लो टेम्पलेट {{title}} हटाएँ"
@@ -2978,6 +2965,8 @@
     "accountsInChat": "चुनें कि इस चैट में कौन-से खाते चालू हैं।",
     "enableByDefault": "{{account}} को डिफ़ॉल्ट रूप से चालू करें",
     "manageAccounts": "खाते प्रबंधित करें",
+    "memberPolicyLoadFailed": "खातों की पहुँच लोड नहीं हो सकी।",
+    "memberSettingsDescription": "चुनें कि Okou आपकी चैट में किन {{connector}} खातों का उपयोग कर सकता है।",
     "permissions": "अनुमतियाँ",
     "permissionsDescription": "ये नियम आपकी सभी चैट और खातों में इस कनेक्टर पर लागू होते हैं।",
     "settingsDescription": "चुनें कि Okou आपकी चैट में कौन-से {{connector}} खाते इस्तेमाल कर सकता है। आप हर चैट में ऐक्सेस बदल सकते हैं।",
@@ -3918,7 +3907,6 @@
         "overview": "विक्रेता और ग्राहक का विवरण"
       }
     },
-    "filter": "दस्तावेज़ श्रेणी",
     "formats": {
       "pdf": "PDF",
       "word": "Word दस्तावेज़"
@@ -3928,10 +3916,8 @@
     "nextPage": "अगला नमूना पृष्ठ",
     "openLarger": "बड़ा पूर्वावलोकन खोलें",
     "page": "पृष्ठ {{page}}",
-    "preview": "{{title}} का पूर्वावलोकन",
     "previousPage": "पिछला नमूना पृष्ठ",
-    "title": "दस्तावेज़",
-    "useNamed": "{{title}} इस्तेमाल करें"
+    "title": "दस्तावेज़"
   },
   "featureGuide": {
     "close": "नई सुविधाओं की गाइड बंद करें",
@@ -5801,6 +5787,16 @@
       "actions": {
         "resetUsage": "उपयोग रीसेट करें"
       },
+      "antigravity": {
+        "check": "साइन इन जाँचें",
+        "error": "अपने लिए तय साइन-इन परिवेश की जाँच करें और फिर कोशिश करें।",
+        "expired": "साइन इन की अवधि समाप्त हो गई है। खाता फिर से कनेक्ट करें।",
+        "openTerminal": "Google साइन-इन टर्मिनल खोलें",
+        "terminal": "अपने टर्मिनल में यह कमांड चलाएँ और अपने व्यक्तिगत Google AI खाते से साइन इन करें।",
+        "title": "Google AI (Antigravity)",
+        "unassigned": "किसी व्यवस्थापक से अपने लिए साइन-इन टर्मिनल निर्धारित करने को कहें।",
+        "verify": "यह कमांड आपके सब्सक्रिप्शन कोटे का उपयोग करके Neon, Carbon और Hydrogen को एक-एक अनुरोध भेजती है।"
+      },
       "deviceAuth": {
         "claude": {
           "authorizationCode": "प्राधिकरण संकेत - लिपि",
@@ -6001,6 +5997,13 @@
           "title": "डिफ़ॉल्ट मॉडल"
         },
         "description": "नए चैट के लिए डिफ़ॉल्ट सेटिंग और संदेश भेजने का तरीका चुनें।",
+        "presentationFormat": {
+          "description": "नई प्रस्तुतियों के लिए डिफ़ॉल्ट फ़ॉर्मैट चुनें",
+          "saveFailed": "डिफ़ॉल्ट फ़ॉर्मैट सहेजा नहीं जा सका। फिर से कोशिश करें।",
+          "title": "डिफ़ॉल्ट प्रस्तुति फ़ॉर्मैट",
+          "unavailable": "उपलब्ध नहीं",
+          "unset": "सेट नहीं है"
+        },
         "sectionTitle": "चैट"
       },
       "debug": {
@@ -6566,11 +6569,8 @@
   "templates": {
     "actions": {
       "delete": "हटाएँ",
-      "menu": "{{title}} के लिए क्रियाएँ",
-      "preview": "{{title}} का पूर्वावलोकन करें",
       "rename": "टेम्पलेट का नाम बदलें"
     },
-    "builtIn": "बिल्ट-इन",
     "custom": "कस्टम",
     "delete": {
       "cancel": "रद्द करें",
@@ -6585,11 +6585,6 @@
       "page": "पृष्ठ {{number}}"
     },
     "loadFailed": "टेम्पलेट लोड नहीं हो सके।",
-    "rename": {
-      "action": "नाम बदलें",
-      "cancel": "रद्द करें",
-      "save": "सहेजें"
-    },
     "renameFailed": "टेम्पलेट का नाम नहीं बदला जा सका।",
     "sharedBy": "{{owner}} द्वारा साझा किया गया",
     "sharedByMember": "संगठन के एक सदस्य द्वारा साझा किया गया",

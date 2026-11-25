@@ -169,7 +169,7 @@ private struct ConnectorActionCardContent: View {
   private func button(_ status: ChatConnectorStatus) -> LocalizedStringKey {
     if complete(status) { return "Connected" }
     switch action.kind {
-    case .select: return "Use this account"
+    case .select: return action.isMemberApproval ? "Allow for 1h" : "Use this account"
     case .reconnect: return "Reconnect"
     default:
       return status.account == nil ? "Connect" : "Reconnect"
@@ -177,7 +177,10 @@ private struct ConnectorActionCardContent: View {
   }
   private func reason(_ status: ChatConnectorStatus) -> LocalizedStringKey {
     switch action.kind {
-    case .select: return "Confirm this account for the chat and continue."
+    case .select:
+      return action.isMemberApproval
+        ? "Allow across your chats. Select this account here."
+        : "Confirm this account for the chat and continue."
     case .reconnect: return "Reconnect this exact account to continue."
     default:
       if status.connected { return "Account connected." }
@@ -215,8 +218,13 @@ struct ConnectorAuthorizationSheet: View {
             }
           }
         } footer: {
-          Text("Connect this account to make it available in your account settings.")
-            .okouSectionNote()
+          if flow.action.isMemberApproval {
+            Text("Allow across your chats. Select this account here.")
+              .okouSectionNote()
+          } else {
+            Text("Connect this account to make it available in your account settings.")
+              .okouSectionNote()
+          }
         }
         if flow.needsConnection {
           if flow.status.builtin != nil {
@@ -314,7 +322,7 @@ struct ConnectorAuthorizationSheet: View {
       }
       .okouGroupedBackground()
       .listSectionSpacing(OkouSpace.lg)
-      .navigationTitle("Connect service")
+      .navigationTitle(flow.action.isMemberApproval ? Text("Account") : Text("Connect service"))
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         OkouCloseToolbarItem { store.cancel() }
@@ -332,9 +340,10 @@ struct ConnectorAuthorizationSheet: View {
       }
       .background {
         ConnectorAuthenticationSessionView(
-          url: flow.usesSystemAuthenticationSession ? flow.browserURL : nil
-        ) { url, error in
-          store.authenticationFinished(flow: flow, url: url, error: error)
+          url: flow.usesSystemAuthenticationSession ? flow.browserURL : nil,
+          callbackURL: flow.session?.nativeCallbackUrl
+        ) { url, callbackURL, error in
+          store.authenticationFinished(flow: flow, url: url, callbackURL: callbackURL, error: error)
         }
         .frame(width: 0, height: 0)
         .accessibilityHidden(true)
@@ -351,6 +360,7 @@ struct ConnectorAuthorizationSheet: View {
       return flow.isExternalCode ? "Submitting code…" : "Connecting…"
     }
     if flow.operatedID != nil { return "Retry continuation" }
+    if flow.action.isMemberApproval { return "Allow for 1h" }
     return flow.isExternalCode ? "Submit code" : "Confirm and continue"
   }
 

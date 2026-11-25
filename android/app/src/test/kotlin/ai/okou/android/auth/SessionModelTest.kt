@@ -18,7 +18,7 @@ import ai.okou.android.chat.ChatComposerService
 import ai.okou.android.chat.ChatListService
 import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.chat.ProjectExpansionStore
-import ai.okou.android.chat.RunControlJournalStore
+import ai.okou.android.chat.RunControlOwners
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import ai.okou.android.preferences.MemberAppearance
 import ai.okou.android.preferences.MemberAppearanceCache
@@ -147,12 +147,7 @@ abstract class SessionModelTestFixture {
                 temporary.newFolder(),
                 dispatcher,
             )
-        val controls =
-            RunControlJournalStore(
-                ApplicationProvider.getApplicationContext(),
-                temporary.newFolder(),
-                dispatcher,
-            )
+        val controls = RunControlOwners()
         val appearanceDirectory = temporary.newFolder()
         val appearance = MemberAppearanceCache({ appearanceDirectory }, dispatcher)
         val expansionFile = temporary.newFolder().resolve("project-expansion.preferences_pb")
@@ -201,7 +196,6 @@ abstract class SessionModelTestFixture {
             cache.close()
             drafts.close()
             journal.close()
-            controls.close()
             runCurrent()
             Dispatchers.resetMain()
         }
@@ -596,6 +590,47 @@ class SessionModelTest : SessionModelTestFixture() {
     }
 
     @Test
+    fun workspaceSwitchKeepsTheAuthorizedOriginOnFailureAndReplacesItOnRetry() {
+        val auth = TestAuthentication()
+        val activate = auth.selectAction
+        val reject = CompletableDeferred<Unit>()
+        var attempts = 0
+        auth.selectAction = { _, _ ->
+            attempts++
+            reject.await()
+            error("Selection failed")
+        }
+        check(auth) { model, resources ->
+            runCurrent()
+            val original = requireNotNull(model.uiState.value.ready)
+            val generation = model.uiState.value.generation
+            model.chooseWorkspace("org-b", generation)
+            model.chooseWorkspace("org-b", generation)
+            runCurrent()
+            assertEquals(1, attempts)
+            assertSame(original, model.uiState.value.ready)
+            assertFalse(resources.first().closed)
+            assertEquals(WorkspaceSwitch("org-b"), model.uiState.value.workspaceSwitch)
+
+            reject.complete(Unit)
+            runCurrent()
+            assertSame(original, model.uiState.value.ready)
+            assertFalse(resources.first().closed)
+            assertEquals(
+                WorkspaceSwitch("org-b", failed = true),
+                model.uiState.value.workspaceSwitch,
+            )
+
+            auth.selectAction = activate
+            model.chooseWorkspace("org-b", generation)
+            runCurrent()
+            assertEquals("org-b", model.uiState.value.ready?.identity?.workspaceId)
+            assertTrue(resources.first().closed)
+            assertNull(model.uiState.value.workspaceSwitch)
+        }
+    }
+
+    @Test
     fun lateTokenCannotEscapeAReplacedWorkspaceAndItsFilterRestoresOnlyOnReturn() {
         val auth = TestAuthentication()
         val token = CompletableDeferred<String>()
@@ -681,19 +716,60 @@ class SessionModelTest : SessionModelTestFixture() {
                     ),
             )
         auth.refreshedMembership = { MembershipAccess("org-a", "org:member", emptyList()) }
+        val verification = CompletableDeferred<Unit>()
+        var refreshResponse = verification
+        auth.refreshAction = { refreshResponse.await() }
         val memberships = CompletableDeferred<List<WorkspaceMembership>>()
         auth.membershipsAction = { memberships.await() }
         check(auth) { model, resources ->
             runCurrent()
+            assertTrue(model.uiState.value.opening is OpeningWorkspace.Cached)
+            val cachedOwner = resources.single()
+            refreshResponse = CompletableDeferred()
+            verification.complete(Unit)
+            runCurrent()
             assertEquals(SessionStage.Ready, model.uiState.value.stage)
+            assertTrue(cachedOwner.closed)
             assertEquals(
                 scopeHash(listOf("org:member", "org:member", "known")),
-                resources.single().identity.authorizationScope,
+                resources.last().identity.authorizationScope,
             )
             assertEquals(listOf("org-a"), model.uiState.value.memberships.map { it.id })
             memberships.complete(auth.available)
             runCurrent()
             assertEquals(auth.available, model.uiState.value.memberships)
+        }
+    }
+
+    @Test
+    fun removedSelectedMembershipReturnsToThePickerWhileFurtherRefreshIsHeld() {
+        val auth =
+            TestAuthentication(
+                testAuthenticationState()
+                    .copy(
+                        membershipAccess =
+                            listOf(MembershipAccess("org-a", "org:member", emptyList())),
+                    ),
+            )
+        auth.refreshedMembership = { null }
+        auth.available = auth.available.filter { it.id != "org-a" }
+        val verification = CompletableDeferred<Unit>()
+        var refreshResponse = verification
+        auth.refreshAction = { refreshResponse.await() }
+        check(auth) { model, resources ->
+            runCurrent()
+            assertTrue(model.uiState.value.opening is OpeningWorkspace.Cached)
+            val cachedOwner = resources.single()
+
+            refreshResponse = CompletableDeferred()
+            verification.complete(Unit)
+            runCurrent()
+
+            assertTrue(cachedOwner.closed)
+            val state = model.uiState.value
+            assertEquals(SessionStage.ChooseWorkspace, state.stage)
+            assertNull(state.opening)
+            assertEquals(auth.available, state.memberships)
         }
     }
 
@@ -859,7 +935,7 @@ class SessionModelTest : SessionModelTestFixture() {
     }
 
     @Test
-    fun failedOrganizationCheckCanRetryButSignOutRetiresBeforeTheProviderResponds() {
+    fun failedOrganizationCheckCanRetryAndSignOutRetiresAfterClerkPublishes() {
         val auth = TestAuthentication()
         val signOut = CompletableDeferred<Unit>()
         var fail = true
@@ -879,16 +955,215 @@ class SessionModelTest : SessionModelTestFixture() {
             model.retry(model.uiState.value.generation)
             runCurrent()
             assertEquals(SessionStage.Ready, model.uiState.value.stage)
-            auth.signOutAction = {
-                signOut.await()
-                auth.state.value = AuthenticationState(initialized = true)
-            }
+            auth.signOutAction = { signOut.await() }
             model.signOut(model.uiState.value.generation)
+            assertTrue(model.uiState.value.signingOut)
+            assertFalse(resources.last().closed)
+            signOut.complete(Unit)
+            runCurrent()
+            assertTrue(model.uiState.value.signingOut)
+            assertFalse(resources.last().closed)
+            auth.state.value = AuthenticationState(initialized = true)
+            runCurrent()
             assertTrue(resources.last().closed)
             assertNull(model.uiState.value.ready)
+            assertFalse(model.uiState.value.signingOut)
+            assertEquals(SessionStage.SignIn, model.uiState.value.stage)
+        }
+    }
+
+    @Test
+    fun signOutFailureKeepsTheCachedOwnerAndItsPendingVerification() {
+        val auth =
+            TestAuthentication(
+                testAuthenticationState()
+                    .copy(
+                        membershipAccess =
+                            listOf(MembershipAccess("org-a", "org:member", emptyList())),
+                    ),
+            )
+        val verification = CompletableDeferred<Unit>()
+        auth.refreshAction = { verification.await() }
+        val reply = CompletableDeferred<Unit>()
+        auth.signOutAction = {
+            reply.await()
+            error("sign-out rejected")
+        }
+        check(auth) { model, resources ->
+            runCurrent()
+            val original = model.uiState.value
+            val cached = original.opening as OpeningWorkspace.Cached
+            model.signOut(original.generation)
+            runCurrent()
+            assertTrue(model.uiState.value.signingOut)
+
+            reply.complete(Unit)
+            runCurrent()
+            assertEquals(
+                original.copy(entryFailure = SessionEntryFailure.SignOut),
+                model.uiState.value,
+            )
+            assertFalse(resources.single().closed)
+
+            verification.complete(Unit)
+            runCurrent()
+            assertSame(cached.chats, model.uiState.value.ready?.chats)
+        }
+    }
+
+    @Test
+    fun signOutFailureKeepsTheAuthorizedOwnerAndAllowsAnExplicitRetry() {
+        val auth = TestAuthentication()
+        val reply = CompletableDeferred<Unit>()
+        var calls = 0
+        auth.signOutAction = {
+            calls++
+            reply.await()
+            error("sign-out rejected")
+        }
+        check(auth) { model, resources ->
+            runCurrent()
+            val original = model.uiState.value
+            model.signOut(original.generation)
+            model.signOut(original.generation)
+            model.chooseWorkspace("org-b", original.generation)
+            model.retry(original.generation)
+            runCurrent()
+            assertEquals(1, calls)
+            assertTrue(model.uiState.value.signingOut)
+            assertSame(original.ready, model.uiState.value.ready)
+
+            reply.complete(Unit)
+            runCurrent()
+            assertEquals(
+                original.copy(entryFailure = SessionEntryFailure.SignOut),
+                model.uiState.value,
+            )
+            assertFalse(resources.single().closed)
+
+            auth.signOutAction = {
+                calls++
+                auth.state.value = AuthenticationState(initialized = true)
+            }
+            model.signOut(original.generation)
+            runCurrent()
+            assertEquals(2, calls)
+            assertTrue(resources.single().closed)
+            assertEquals(SessionStage.SignIn, model.uiState.value.stage)
+        }
+    }
+
+    @Test
+    fun workspaceAccessLossRetiresContentWhileSignOutKeepsWaitingForClerk() {
+        val auth = TestAuthentication()
+        val preferences = CompletableDeferred<Unit>()
+        val signOut = CompletableDeferred<Unit>()
+        var signOutRequests = 0
+        auth.signOutAction = {
+            signOutRequests++
+            signOut.await()
+            auth.state.value = AuthenticationState(initialized = true)
+        }
+        check(
+            auth,
+            configure = { resource ->
+                resource.update = {
+                    preferences.await()
+                    throw ApiFailure.Unauthenticated()
+                }
+            },
+        ) { model, resources ->
+            runCurrent()
+            val original = model.uiState.value
+            requireNotNull(original.ready)
+                .preferences
+                .selectColorTheme(UserPreferencesColorTheme.BLUE_HORIZON)
+            runCurrent()
+            model.signOut(original.generation)
+            runCurrent()
+            assertTrue(model.uiState.value.signingOut)
+
+            preferences.complete(Unit)
+            runCurrent()
+            val removed = model.uiState.value
+            assertTrue(resources.single().closed)
+            assertEquals(SessionStage.AccessRemoved, removed.stage)
+            assertNull(removed.ready)
+            assertTrue(removed.signingOut)
+            model.signOut(removed.generation)
+            runCurrent()
+            assertEquals(1, signOutRequests)
+
             signOut.complete(Unit)
             runCurrent()
             assertEquals(SessionStage.SignIn, model.uiState.value.stage)
+            assertFalse(model.uiState.value.signingOut)
+        }
+    }
+
+    @Test
+    fun signOutFailureAfterPermissionsChangeKeepsTheRevalidatedWorkspace() {
+        val auth = TestAuthentication()
+        val signOut = CompletableDeferred<Unit>()
+        auth.signOutAction = {
+            signOut.await()
+            error("sign-out rejected")
+        }
+        check(auth) { model, resources ->
+            runCurrent()
+            val original = model.uiState.value
+            model.signOut(original.generation)
+            runCurrent()
+
+            auth.state.value =
+                auth.state.value.copy(
+                    membershipAccess = listOf(MembershipAccess("org-a", "org:member", emptyList())),
+                )
+            runCurrent()
+            val revalidated = model.uiState.value
+            assertEquals(SessionStage.Ready, revalidated.stage)
+            assertTrue(resources.first().closed)
+            assertFalse(resources.last().closed)
+            assertTrue(revalidated.signingOut)
+            assertNotEquals(original.ready?.identity, revalidated.ready?.identity)
+
+            signOut.complete(Unit)
+            runCurrent()
+            assertEquals(
+                revalidated.copy(signingOut = false, entryFailure = SessionEntryFailure.SignOut),
+                model.uiState.value,
+            )
+        }
+    }
+
+    @Test
+    fun signOutFailureAfterAccountReplacementCannotRestoreTheOldWorkspace() {
+        val auth = TestAuthentication()
+        val reply = CompletableDeferred<Unit>()
+        auth.signOutAction = {
+            withContext(NonCancellable) { reply.await() }
+            error("sign-out rejected")
+        }
+        check(auth) { model, resources ->
+            runCurrent()
+            val original = model.uiState.value
+            try {
+                model.signOut(original.generation)
+                runCurrent()
+                auth.state.value = testAuthenticationState("user-b", "session-b", "org-b")
+                runCurrent()
+                val replacement = model.uiState.value
+                assertTrue(resources.first().closed)
+                assertEquals("user-b", replacement.ready?.identity?.userId)
+                assertFalse(replacement.signingOut)
+
+                reply.complete(Unit)
+                runCurrent()
+                assertSame(replacement, model.uiState.value)
+                assertFalse(resources.last().closed)
+            } finally {
+                reply.complete(Unit)
+            }
         }
     }
 }

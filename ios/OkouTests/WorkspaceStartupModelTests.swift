@@ -115,9 +115,9 @@ final class WorkspaceStartupModelTests: XCTestCase {
       await models.value
     }
     await fulfillment(of: [began], timeout: 3)
-    try await waitForBusinessResult {
-      workspace.selectedConversation?.messages.count == 2
-    }
+    try await waitForBusinessResult { workspace.selectedConversation != nil }
+    let selected = try XCTUnwrap(workspace.selectedConversation)
+    try await waitForBusinessResult(watching: selected) { selected.messages.count == 2 }
     XCTAssertEqual(workspace.list.threads.map(\.id), [ConversationHistoryFixture.threadID])
     release.open()
     await startup.value
@@ -186,7 +186,7 @@ final class WorkspaceStartupFixture: Sendable {
           try await beforeIndicatorsRead?()
           return ChatHTTPResponse(body: #"{"unreadAt":{},"threads":{}}"#)
         case "/api/chat-drafts/composer",
-          "/api/chat-threads/\(ConversationHistoryFixture.threadID)/draft":
+          "/api/chat-threads/\(ConversationHistoryFixture.threadID)/composer-draft":
           return ChatHTTPResponse(
             body: #"{"revision":"0","document":null,"clientMutationId":null}"#)
         case "/api/realtime/token":

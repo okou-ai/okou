@@ -23,6 +23,7 @@ final class WorkspaceResources {
   private let preference: WorkspaceRead<ModelPreference>
   private let available: WorkspaceRead<AvailableRunModels>
   private let catalog: WorkspaceRead<ModelCatalog>
+  let featureSnapshot: WorkspaceFeatureSwitches
   private let features: WorkspaceRead<SidebarFeatureSwitches>
   private let projects: WorkspaceRead<[ChatProject]>
   private let sidebarDrafts: WorkspaceRead<Set<String>>
@@ -58,9 +59,12 @@ final class WorkspaceResources {
     let catalog = WorkspaceRead(
       "model catalog", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
       readiness: modelReadiness, read: service.catalog)
+    let featureSnapshot = WorkspaceFeatureSwitches(
+      sync: sync, service: service, lifecycleTasks: lifecycleTasks)
+    self.featureSnapshot = featureSnapshot
     let features = WorkspaceRead(
       "model feature switches", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
-      readiness: modelReadiness, read: service.featureSwitches)
+      readiness: modelReadiness, read: featureSnapshot.refresh)
     self.preference = preference
     self.available = available
     self.catalog = catalog
@@ -110,7 +114,7 @@ final class WorkspaceResources {
       let features = try get(featureValue)
       let value = try await ChatModelConfiguration(
         preference: preference.value, available: available.value, catalog: catalog.value,
-        switches: features.value.effectiveSwitches)
+        switches: featureSnapshot.available(whileRefreshing: features).effectiveSwitches)
       try Task.checkCancellation()
       try options.signal.checkCancellation()
       return value
@@ -153,6 +157,11 @@ final class WorkspaceResources {
     try features.retryFailed(in: store)
     return try store.get(configuration)
   }
+  func availableFeatureSwitches() async throws -> SidebarFeatureSwitches {
+    try features.retryFailed(in: store)
+    return try await featureSnapshot.available(whileRefreshing: store.get(features.value))
+  }
+
   func loadCatalog() throws -> Task<ModelCatalog, Error> {
     try catalog.retryFailed(in: store)
     return try store.get(catalog.value)
@@ -192,6 +201,7 @@ final class WorkspaceResources {
     available.close()
     catalog.close()
     features.close()
+    featureSnapshot.close()
     projects.close()
     sidebarDrafts.close()
     do { try store.set(lifetime, false) } catch {

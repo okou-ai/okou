@@ -1,0 +1,5 @@
+/* Emit production card utilities outside cascade layers for happy-dom. */
+@reference "../../css/index.css";
+@tailwind utilities source(none);
+@source "../browser-session-card.tsx";
+@source "../components/chat-card.tsx";

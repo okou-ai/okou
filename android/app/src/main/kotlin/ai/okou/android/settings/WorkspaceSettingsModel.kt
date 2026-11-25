@@ -7,6 +7,7 @@ import ai.okou.android.api.generated.RecoverySubscriptionsSubscriptionsItemType
 import ai.okou.android.api.generated.UsagePackCredits
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.WorkspaceSession
+import ai.okou.android.contentReadStaleDelayMillis
 import ai.okou.android.state.SettingsDestination
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -53,8 +54,8 @@ internal data class SettingsRead<T>(
 }
 
 internal fun SettingsRead<*>.isStale(nowMillis: Long): Boolean {
-    val age = nowMillis - (readAt ?: return false)
-    return age < 0 || age > 10 * 60_000L
+    val confirmedAt = readAt ?: return false
+    return confirmedAt > nowMillis || contentReadStaleDelayMillis(confirmedAt, nowMillis) == 0L
 }
 
 internal const val settingsReadAttempts = 3
@@ -138,6 +139,19 @@ internal constructor(
         DefaultModelSettings(viewModelScope, service, identity, defaultModelStore, authorized) {
             reportSessionFailure(it)
         }
+    internal val builtInTools =
+        service.builtInTools?.let {
+            BuiltInToolsSettings(
+                viewModelScope,
+                it,
+                identity,
+                cache,
+                authorized,
+                ::reportSessionFailure,
+            ) {
+                messages.trySend(it)
+            }
+        }
 
     private var visible: SettingsDestination? = null
     private var restore: Job? = null
@@ -155,6 +169,7 @@ internal constructor(
                 proactive?.online(online)
                 val changed = mutable.value.offline == online
                 mutable.update { it.copy(offline = !online) }
+                if (changed && online) builtInTools?.refresh()
                 if (changed) {
                     if (online) refresh()
                     else {

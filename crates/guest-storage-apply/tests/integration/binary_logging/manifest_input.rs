@@ -91,6 +91,8 @@ fn binary_applies_decoded_files_without_remote_attribution() {
         std::fs::read(target.join("file")).unwrap(),
         files[0].content
     );
+    let system_log = fixture.read_system_log().unwrap();
+    assert!(system_log.contains(" downloaded in "));
     let ops = fixture.ops_entries().unwrap();
     let payload_rows: Vec<_> = ops
         .iter()
@@ -116,6 +118,59 @@ fn binary_applies_decoded_files_without_remote_attribution() {
             .unwrap()
             .starts_with("storage_download_remote_")
     }));
+    assert_single_download_total_success(&ops, true);
+}
+
+#[test]
+fn packed_decoded_files_keep_batch_progress_and_mount_telemetry() {
+    use guest_contracts::storage_files::{
+        PACKED_BATCH_FILE_URL, PACKED_BATCH_START_URL, StorageFile, encode_input,
+    };
+
+    let fixture = BinaryLoggingFixture::new("packed-decoded-files").unwrap();
+    let first = fixture.dir.path().join("first");
+    let second = fixture.dir.path().join("second");
+    let third = fixture.dir.path().join("third");
+    let json = serde_json::to_vec(&serde_json::json!({"storageMounts": [
+        {"mountPath": first, "archiveUrl": PACKED_BATCH_START_URL},
+        {"mountPath": second, "archiveUrl": PACKED_BATCH_FILE_URL},
+        {"mountPath": third, "archiveUrl": PACKED_BATCH_START_URL},
+    ]}))
+    .unwrap();
+    let files = [StorageFile {
+        path: "file".into(),
+        mode: 0o644,
+        mtime: 100,
+        content: b"decoded".to_vec(),
+    }];
+    let groups =
+        [&first, &second, &third].map(|target| (target.to_str().unwrap(), files.as_slice()));
+    let input = encode_input(&json, &groups).unwrap();
+    let output = process::CommandExecution::spawn(
+        fixture.command().arg("--storage-files-stdin"),
+        Some(&input),
+    )
+    .unwrap()
+    .wait()
+    .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{stderr}");
+    let system_log = fixture.read_system_log().unwrap();
+    for log in [stderr.as_ref(), system_log.as_str()] {
+        assert!(log.contains("Downloading 2 items"), "{log}");
+        assert!(log.contains("Downloading 1 items"), "{log}");
+        assert!(!log.contains("delivery=decoded_files"), "{log}");
+    }
+    let ops = fixture.ops_entries().unwrap();
+    let mount_results: Vec<_> = ops
+        .iter()
+        .filter(|op| op["action_type"] == "storage_download")
+        .collect();
+    assert_eq!(mount_results.len(), 3);
+    for op in mount_results {
+        assert_eq!(op["outcome"], "decoded_files");
+        assert_eq!(op["success"], true);
+    }
     assert_single_download_total_success(&ops, true);
 }
 

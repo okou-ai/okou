@@ -1,172 +1,193 @@
+import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
+import { thirdPartySubscriptionsMainContract } from "@okouai/api-contracts/contracts/third-party-subscriptions";
+import { personalAccount } from "./personal-account-settings-fixtures.ts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { mockNow } from "../../../lib/time.ts";
+import { screen, within } from "@testing-library/react";
+import { test, expect } from "vitest";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { defaultBillingStatus } from "../../../mocks/handlers/api-billing.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  billingStatusContract,
-  type BillingStatusResponse,
-} from "@okouai/api-contracts/contracts/billing";
-import { thirdPartySubscriptionsMainContract } from "@okouai/api-contracts/contracts/third-party-subscriptions";
-import { act, screen, waitFor, within } from "@testing-library/react";
-import { expect, test } from "vitest";
-
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
-import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
-import {
-  findEnabledButton,
-  NEW_CHAT_PATH,
-  createChatRunFixtures,
-} from "./chat-run-test-fixtures.ts";
+  findAction,
+  getAction,
+} from "./connector-integrations-test-helpers.ts";
 
 const context = testContext();
-const { installRunChat } = createChatRunFixtures(context);
-
-function billingResponse(credits: number): BillingStatusResponse {
-  return {
-    showUsagePack: false,
-    tier: "pro",
-    ...billingPlanCapabilities("pro"),
-    credits,
-    onboardingPaymentPending: false,
-    subscriptionStatus: null,
-    currentPeriodEnd: null,
-    cancelAtPeriodEnd: false,
-    scheduledChange: null,
-    hasSubscription: false,
-    autoRecharge: { enabled: false, threshold: null, amount: null },
-    creditExpiry: { expiringNextCycle: 0, nextExpiryDate: null },
-    creditBreakdown: [],
-    creditGrants: [],
-    concurrencyLimit: 0,
-    concurrencySubscriptions: [],
-  };
+async function accountMenu() {
+  click(await findAction("button", "Test User"));
+  return screen.findByRole("menu");
 }
-
-async function openAccountMenu(
-  credits = "20,000 credits",
-): Promise<HTMLElement> {
-  const rail = await screen.findByTestId("labeled-nav-rail");
-  click(within(rail).getByLabelText("Test User"));
-  const menu = await screen.findByRole("menu");
-  await within(menu).findByText(credits);
-  return menu;
-}
-
-async function showModels(settings: HTMLElement): Promise<void> {
-  click(await findEnabledButton("Models", settings));
-  await within(settings).findByRole("heading", { name: "Use more models" });
-  await within(settings).findAllByText("No accounts connected.");
-}
-
-interface SettingsResponses {
-  credits: number;
-  holdPoliciesAndBilling: boolean;
-  holdSubscriptions: boolean;
-}
-
-async function openModelsSettings(menu: HTMLElement): Promise<HTMLElement> {
+test("settings-model-loading-003 a billing notification updates the reopened balance view and the account menu", async () => {
+  let credits = 20_000;
+  let paused = false;
+  const reading = context.mocks.deferred<void>();
+  const resume = context.mocks.deferred<void>();
+  context.mocks.api(billingStatusContract.get, async ({ respond }) => {
+    const balance = credits;
+    if (paused) {
+      reading.resolve();
+      await resume.promise;
+    }
+    return respond(200, { ...defaultBillingStatus(), credits: balance });
+  });
+  await setupPage({ context, path: "/?settings=model" });
+  const initial = await screen.findByRole("dialog", { name: "Settings" });
+  await within(initial).findByRole("heading", { name: "Use more models" });
+  click(getAction("button", "Close", initial));
+  const menu = await accountMenu();
+  await within(menu).findByText("20,000 credits");
   click(within(menu).getByText("Settings"));
   const settings = await screen.findByRole("dialog", { name: "Settings" });
-  await showModels(settings);
-  return settings;
-}
-
-async function closeSettings(settings: HTMLElement): Promise<void> {
-  click(within(settings).getByLabelText("Close"));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
-  });
-}
-
-async function setupLoadedModelsSettings() {
-  const responses: SettingsResponses = {
-    credits: 20_000,
-    holdPoliciesAndBilling: false,
-    holdSubscriptions: false,
-  };
-  const release = context.mocks.deferred<void>();
-  installRunChat({ selectedModel: null });
-  context.mocks.api(billingStatusContract.get, async ({ respond }) => {
-    if (responses.holdPoliciesAndBilling) {
-      await release.promise;
-    }
-    return respond(200, billingResponse(responses.credits));
-  });
-  context.mocks.api(
-    thirdPartySubscriptionsMainContract.list,
-    async ({ respond }) => {
-      if (responses.holdSubscriptions) {
-        await release.promise;
-      }
-      return respond(200, { subscriptions: [] });
-    },
-  );
-  await setupPage({
-    context,
-    path: `${NEW_CHAT_PATH}?settings=model`,
-  });
-  const settings = await screen.findByRole("dialog", { name: "Settings" });
+  click(await findAction("button", "Models", settings));
   await within(settings).findByRole("heading", { name: "Use more models" });
-  await within(settings).findAllByText("No accounts connected.");
+  paused = true;
+  context.mocks.ably.trigger("billing:changed");
+  await reading.promise;
+  click(getAction("button", "Credit balance", settings));
+  await within(settings).findByRole("heading", { name: "Credit balance" });
+  paused = false;
+  resume.resolve();
+  await within(settings).findByText("20,000", { exact: true });
+  credits = 25_000;
+  context.mocks.ably.trigger("billing:changed");
   await expect(
-    findEnabledButton("Connect account", settings),
-  ).resolves.toBeEnabled();
-  responses.holdPoliciesAndBilling = true;
-  responses.holdSubscriptions = true;
-  return { settings, responses, release };
-}
-
-async function reopenModelsSettings(
-  settings: HTMLElement,
-  responses: SettingsResponses,
-): Promise<HTMLElement> {
-  await closeSettings(settings);
-  // Account-menu balance reads have their own freshness contract; only hold
-  // subsequent responses once navigation enters Settings again.
-  responses.holdPoliciesAndBilling = false;
-  responses.holdSubscriptions = false;
-  const menu = await openAccountMenu();
-  responses.holdPoliciesAndBilling = true;
-  responses.holdSubscriptions = true;
-  return openModelsSettings(menu);
-}
-
-test("Keep loaded model controls usable when switching Settings sections", async () => {
-  const { settings } = await setupLoadedModelsSettings();
-  click(await findEnabledButton("Preference", settings));
-  await within(settings).findByRole("heading", { name: "Preference" });
-  await showModels(settings);
+    within(settings).findByText("25,000", { exact: true }),
+  ).resolves.toBeVisible();
+  click(getAction("button", "Close", settings));
+  const after = await accountMenu();
   await expect(
-    findEnabledButton("Connect account", settings),
-  ).resolves.toBeEnabled();
+    within(after).findByText("25,000 credits"),
+  ).resolves.toBeVisible();
 });
 
-test("Keep loaded model controls usable after reopening Settings", async () => {
-  const { settings, responses } = await setupLoadedModelsSettings();
-  const reopened = await reopenModelsSettings(settings, responses);
-  await expect(
-    findEnabledButton("Connect account", reopened),
-  ).resolves.toBeEnabled();
-});
+test.each(["billing", "subscriptions"] as const)(
+  "Reopening Models waits for the subscription even when %s settles first",
+  async (first) => {
+    const resume = context.mocks.deferred<void>();
+    const refreshing = context.mocks.deferred<void>();
+    const accountRead = context.mocks.deferred<void>();
+    const confirmAccount = context.mocks.deferred<void>();
+    const member = personalAccount("ChatGPT", 4);
+    let clock = new Date("2026-06-18T10:00:00Z").getTime();
+    mockNow(() => {
+      return clock;
+    }, context.signal);
+    let suspend = false;
+    context.mocks.api(
+      thirdPartySubscriptionsMainContract.list,
+      async ({ respond }) => {
+        if (!suspend) {
+          return respond(200, { subscriptions: [] });
+        }
+        accountRead.resolve();
+        await confirmAccount.promise;
+        return respond(200, { subscriptions: [member] });
+      },
+    );
+    context.mocks.api(billingStatusContract.get, async ({ respond }) => {
+      if (suspend) {
+        refreshing.resolve();
+        await resume.promise;
+      }
+      return respond(200, defaultBillingStatus());
+    });
+    try {
+      await setupPage({
+        context,
+        path: "/?settings=model",
+        featureSwitches: { [FeatureSwitchKey.SubscriptionLinkingEntry]: true },
+      });
+      const dialog = await screen.findByRole("dialog", { name: "Settings" });
+      await expect(
+        findAction("button", "Connect account", dialog),
+      ).resolves.toBeEnabled();
+      click(getAction("button", "Close", dialog));
+      clock += 120_000;
+      suspend = true;
+      const menu = await accountMenu();
+      await accountRead.promise;
+      click(within(menu).getByText("Settings"));
+      const reopened = await screen.findByRole("dialog", { name: "Settings" });
+      click(getAction("button", "Preference", reopened));
+      await within(reopened).findByRole("heading", { name: "Preference" });
+      context.mocks.ably.trigger("billing:changed");
+      click(getAction("button", "Models", reopened));
+      await refreshing.promise;
+      expect(
+        within(reopened).queryByRole("heading", { name: "Models" }),
+      ).toBeNull();
+      await expect(
+        within(reopened).findByRole("heading", { name: "Use more models" }),
+      ).resolves.toBeInTheDocument();
+      await within(reopened).findByRole("status", {
+        name: "Loading accounts…",
+      });
+      expect(within(reopened).queryByText("No accounts connected.")).toBeNull();
+      expect(within(reopened).queryAllByText("Connect account")).toHaveLength(
+        0,
+      );
+      if (first === "billing") {
+        resume.resolve();
+      }
+      await within(reopened).findByRole("status", {
+        name: "Loading accounts…",
+      });
+      expect(within(reopened).queryByText("No accounts connected.")).toBeNull();
+      confirmAccount.resolve();
+      await within(reopened).findByText("member4@example.test");
+    } finally {
+      if (!confirmAccount.settled()) {
+        confirmAccount.resolve();
+      }
+      if (!resume.settled()) {
+        resume.resolve();
+      }
+    }
+  },
+);
 
-test("Apply realtime billing changes after reopening Settings", async () => {
-  const { settings, responses, release } = await setupLoadedModelsSettings();
-  const reopened = await reopenModelsSettings(settings, responses);
-  await expect(
-    findEnabledButton("Connect account", reopened),
-  ).resolves.toBeEnabled();
-  responses.holdPoliciesAndBilling = false;
-  responses.holdSubscriptions = false;
-  act(() => {
-    release.resolve();
+test("Returning to model settings presents account setup while the updated balance is held", async () => {
+  const resume = context.mocks.deferred<void>();
+  const refreshing = context.mocks.deferred<void>();
+  let suspend = false;
+  context.mocks.api(billingStatusContract.get, async ({ respond }) => {
+    if (suspend) {
+      refreshing.resolve();
+      await resume.promise;
+    }
+    return respond(200, defaultBillingStatus());
   });
-  click(await findEnabledButton("Credit balance", reopened));
-  await within(reopened).findByRole("heading", { name: "Credit balance" });
-  await within(reopened).findByText("20,000");
-  responses.credits = 25_000;
-  act(() => {
+  try {
+    await setupPage({ context, path: "/?settings=model" });
+    const dialog = await screen.findByRole("dialog", { name: "Settings" });
+    await expect(
+      findAction("button", "Connect account", dialog),
+    ).resolves.toBeEnabled();
+    click(getAction("button", "Preference", dialog));
+    await within(dialog).findByRole("heading", { name: "Preference" });
+    suspend = true;
     context.mocks.ably.trigger("billing:changed");
-  });
-  await expect(
-    within(reopened).findByText("25,000"),
-  ).resolves.toBeInTheDocument();
-  await closeSettings(reopened);
-  await openAccountMenu("25,000 credits");
+    click(getAction("button", "Models", dialog));
+    await refreshing.promise;
+    expect(
+      within(dialog).queryByRole("heading", { name: "Models" }),
+    ).toBeNull();
+    await expect(
+      within(dialog).findByRole("heading", { name: "Use more models" }),
+    ).resolves.toBeInTheDocument();
+    await expect(
+      findAction("button", "Connect account", dialog),
+    ).resolves.toBeEnabled();
+    for (const name of ["Claude", "ChatGPT (Codex)"]) {
+      const provider = within(dialog).getByRole("heading", {
+        name,
+      }).parentElement!;
+      expect(
+        within(provider).getByText("No accounts connected."),
+      ).toBeInTheDocument();
+    }
+  } finally {
+    resume.resolve();
+  }
 });

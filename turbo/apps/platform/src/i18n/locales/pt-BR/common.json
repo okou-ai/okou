@@ -266,6 +266,11 @@
         "modelCatalogCacheValidationLatency": "Latência de validação do cache do catálogo de modelos",
         "modelCatalogPrefetchRole": "Função de pré-carregamento do catálogo de modelos",
         "modelCatalogUpstreamEncoding": "Codificação upstream do catálogo de modelos",
+        "openrouterAttempts": "OpenRouter Tentativas de provedor",
+        "openrouterAttemptsIncomplete": "OpenRouter Tentativas incompletas",
+        "openrouterGenerationId": "OpenRouter ID de geração",
+        "openrouterModel": "OpenRouter Modelo",
+        "openrouterProvider": "OpenRouter Provedor",
         "params": "Parâmetros",
         "permission": "Permissão",
         "permissionError": "Erro de permissão",
@@ -517,6 +522,40 @@
       "kindIcon": "Artefato do tipo {{kind}}",
       "loading": "Carregando artefatos"
     },
+    "customDomain": {
+      "addressHint": "Choose the full address used when you share this website.",
+      "checks": {
+        "certificate": "HTTPS",
+        "dns": "DNS connection",
+        "ownership": "Ownership"
+      },
+      "connect": "Connect a domain",
+      "continue": "Continue",
+      "copied": "Copied",
+      "copyFailed": "Could not copy. Select the value to copy it.",
+      "copyRecord": "Copy {{type}} value",
+      "disconnectConfirm": "This domain will be disconnected from this website.",
+      "dnsHelp": "Add these records at your DNS provider, then click Verify",
+      "domain": "Domain",
+      "hostnameExample": "www.example.com",
+      "httpsReady": "HTTPS ready",
+      "lastChecked": "Last checked {{time}}",
+      "manage": "Manage {{hostname}}",
+      "needsSetup": "Finish setup",
+      "notChecked": "No verification yet",
+      "okouUrl": "Okou URL",
+      "ownDomain": "Enter a domain you own",
+      "remove": "Remove",
+      "removeConfirm": "Your sharing link will return to {{url}}.",
+      "removeHostname": "Remove {{hostname}}",
+      "removeTitle": "Remove custom domain?",
+      "removing": "This domain is disconnected. Click Remove to finish cleaning up its configuration.",
+      "title": "Custom domain",
+      "urlPreview": "https://{{hostname}}",
+      "verified": "Domain verified. Save to use this address.",
+      "verify": "Verify",
+      "yourDomains": "Connected domains"
+    },
     "deletion": {
       "cancel": "Cancelar",
       "delete": "Excluir",
@@ -598,7 +637,6 @@
       "name": "Nome",
       "retry": "Tentar novamente",
       "search": "Buscar artefatos",
-      "sort": "Ordenar artefatos",
       "sortAscending": "Ordenar em ordem crescente",
       "sortDescending": "Ordenar em ordem decrescente",
       "type": "Tipo"
@@ -698,15 +736,9 @@
       "updated": "URL do site atualizada"
     },
     "templates": {
-      "activeHtmlPreview": "Visualização HTML ativa de {{title}}",
-      "all": "Todos",
       "avatar": "Avatar",
-      "categories": "Categorias de modelo",
-      "category": "Categoria de modelo",
       "fullPreview": "Visualização completa do site {{title}}",
       "htmlPreview": "Visualização HTML de {{title}}",
-      "illustration": "Ilustração",
-      "illustrationPreview": "Visualização da ilustração {{title}}",
       "importDeck": "Importe sua própria apresentação",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importDocument": "Importar seu próprio documento",
@@ -718,18 +750,10 @@
       "importImageHint": "Salvar como estilo",
       "multiAccent": "Várias cores de destaque",
       "nextSlide": "Visualizar próximo slide",
-      "noMatches": "Nenhum resultado",
-      "previewCurrentSlide": "Visualizar {{title}} no slide atual",
       "previewSlide": "Visualizar slide {{slideNumber}}",
-      "previewWebsite": "Visualizar o modelo de site {{title}}",
       "previousSlide": "Visualizar slide anterior",
-      "searchConnector": "Buscar modelos",
-      "searchConnectors": "Buscar modelos",
       "selectStyle": "Selecionar estilo {{style}}",
       "selectTemplate": "Selecionar modelo {{title}}",
-      "selectWebsite": "Selecionar modelo de site {{title}}",
-      "selectWorkflow": "Selecionar modelo de fluxo de trabalho {{title}}",
-      "showVariant": "Mostrar variação {{variantNumber}}",
       "singleAccent": "Uma cor de destaque",
       "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "Visualização dos slides de {{title}}",
@@ -757,15 +781,11 @@
         "terracottaClay": "Vaso de barro",
         "warmSand": "Jornal da manhã"
       },
-      "tryDifferentSearch": "Tente outra busca.",
-      "use": "Usar",
       "useThisTemplate": "Usar este modelo",
       "visibility": {
         "changeLabel": "Alterar a visibilidade do modelo"
       },
       "website": "Site",
-      "websitePreview": "Visualização do modelo de site {{title}}",
-      "workflow": "Fluxo de trabalho",
       "workflowCatalog": {
         "auto-inbox-label": {
           "description": "Crie um fluxo que roda quando um marcador do Gmail é aplicado e cuida da mensagem marcada.",
@@ -1210,6 +1230,9 @@
       "teamWarning": "Seu acesso Team permanece ativo até o fim do período de cobrança atual. Depois disso, este workspace passará para {{plan}}.",
       "title": "Fazer downgrade do plano"
     },
+    "feedback": {
+      "shareFeedback": "Enviar feedback"
+    },
     "invoices": {
       "amount": "Valor",
       "date": "Data",
@@ -1353,40 +1376,6 @@
     "sidebar": {
       "description": "Mais créditos e execuções simultâneas",
       "getPlan": "Obter {{plan}}"
-    },
-    "survey": {
-      "checkoutAbandoned": {
-        "answers": {
-          "just_checking_price": "Só estava conferindo o preço",
-          "needs_approval": "Preciso da aprovação de outra pessoa",
-          "not_ready_yet": "Ainda não estou pronto para assinar",
-          "not_seeing_value": "Ainda não vi o valor",
-          "other": "Outro motivo",
-          "payment_issue": "Tive problemas com o pagamento",
-          "price_higher_than_expected": "O preço foi maior do que eu esperava",
-          "results_not_good_enough": "Não fiquei satisfeito com os resultados"
-        },
-        "description": "É só uma pergunta. Sua resposta nos ajuda a melhorar.",
-        "question": "O que impediu você de concluir a compra?"
-      },
-      "creditsExhausted": {
-        "answers": {
-          "no_need_now": "No momento não preciso de mais",
-          "not_sure_worth_it": "Ainda não sei se vale a pena",
-          "other": "Outro motivo",
-          "still_trying": "Quero testar mais antes",
-          "too_expensive": "É caro demais"
-        },
-        "question": "O que impede você de fazer o upgrade hoje?",
-        "reward": "A primeira resposta elegível neste espaço de trabalho recebe {{credits}} créditos de bônus, válidos por 30 dias.",
-        "thanksWithCredits": "Obrigado! Adicionamos {{credits}} créditos para você continuar."
-      },
-      "error": "Não foi possível enviar sua resposta. Tente novamente.",
-      "notNow": "Agora não",
-      "otherLabel": "Sua resposta",
-      "otherPlaceholder": "Conte mais (opcional)",
-      "submit": "Enviar",
-      "thanks": "Obrigado por nos contar."
     },
     "toasts": {
       "autoRechargeUpdated": "Recarga automática atualizada",
@@ -1959,8 +1948,6 @@
       "add": "Adicionar",
       "configureModel": "Configurar modelo",
       "create": {
-        "addStyle": "Adicionar estilo",
-        "addTemplate": "Adicionar modelo",
         "documentPlaceholder": "O que você gostaria de incluir no seu documento?",
         "imagePlaceholder": "Descreva a imagem que você quer criar…",
         "presentationPlaceholder": "Qual é o tema da sua apresentação?",
@@ -1974,6 +1961,14 @@
       "message": "Mensagem",
       "modelForThisChat": "Modelo para este chat",
       "placeholder": "Peça para automatizar fluxos de trabalho, gerenciar tarefas...",
+      "presentationFormatSetup": {
+        "description": "Salvaremos este padrão e geraremos sua apresentação. Um formato solicitado explicitamente continua tendo prioridade.",
+        "htmlDescription": "Ideal para compartilhar no navegador",
+        "pptxDescription": "Slides editáveis no PowerPoint",
+        "saveAndGenerate": "Salvar e gerar",
+        "settingsHint": "Altere em Configurações → Preferências → Chat a qualquer momento.",
+        "title": "Escolha um formato padrão de apresentação"
+      },
       "selectedModelUnavailable": "O modelo selecionado não está disponível. Configure-o antes de enviar.",
       "selectedModelUnavailableToast": "O modelo selecionado não está disponível",
       "selectModel": "Selecionar modelo",
@@ -2000,11 +1995,9 @@
         "scheduleHint": "Executar em um agendamento",
         "share": "Compartilhar conversa",
         "shareHint": "Compartilhe um link para esta conversa",
-        "templates": "Modelos",
         "unpin": "Desafixar conversa"
       },
       "slashPanel": {
-        "browseAll": "Ver todos os modelos",
         "hint": "Escolha uma ação",
         "useTemplate": "Usar o modelo {{title}}"
       },
@@ -2047,8 +2040,10 @@
     "connectorAccountSwitch": {
       "accountFallback": "Conta do conector",
       "actionFailed": "Não foi possível mudar de conta.",
+      "allowForHour": "Permitir por 1 hora",
       "customConnector": "Conector personalizado",
       "loadFailed": "Não foi possível carregar esta conta do conector.",
+      "memberScope": "Permita em todos os seus chats. Selecione esta conta aqui.",
       "reconnectRequired": "É necessário reconectar. Execuções posteriores podem usar a alternativa existente.",
       "selected": "Conta alterada para {{account}}",
       "switch": "Mudar",
@@ -2670,11 +2665,6 @@
       "unsupported": "A redefinição manual não é compatível; o uso se recupera automaticamente."
     },
     "taskChips": {
-      "presentationFormat": "Formato da apresentação",
-      "presentationFormats": {
-        "html": "HTML",
-        "pptx": "PPTX"
-      },
       "presentationTemplates": "Modelos de apresentação",
       "removeTask": "Remover {{task}}",
       "shelf": {
@@ -2692,7 +2682,6 @@
         "website": "Site",
         "workflow": "Fluxo de trabalho"
       },
-      "viewAll": "Ver tudo",
       "visualization": {
         "allCharts": "Todos os gráficos",
         "back": "Back to visualization options",
@@ -2874,8 +2863,6 @@
         "workflow": "Fluxo de trabalho"
       },
       "previewTemplate": "Visualizar template {{title}}",
-      "previewWebsite": "Visualizar template de site {{title}}",
-      "previewWorkflow": "Visualizar template de fluxo de trabalho {{title}}",
       "removeTemplate": "Remover template {{title}}",
       "removeWebsite": "Remover template de site {{title}}",
       "removeWorkflow": "Remover template de fluxo de trabalho {{title}}"
@@ -3030,6 +3017,8 @@
     "accountsInChat": "Escolha quais contas ficam ativadas neste chat.",
     "enableByDefault": "Ativar {{account}} por padrão",
     "manageAccounts": "Gerenciar contas",
+    "memberPolicyLoadFailed": "Não foi possível carregar o acesso às contas.",
+    "memberSettingsDescription": "Escolha quais contas do {{connector}} o Okou pode usar em seus chats.",
     "permissions": "Permissões",
     "permissionsDescription": "Estas regras se aplicam a este conector em todos os seus chats e contas.",
     "settingsDescription": "Escolha quais contas do {{connector}} o Okou pode usar nos seus chats. Você pode alterar o acesso em cada chat.",
@@ -3975,7 +3964,6 @@
         "overview": "Dados do fornecedor e do cliente"
       }
     },
-    "filter": "Categoria do documento",
     "formats": {
       "pdf": "PDF",
       "word": "Documento do Word"
@@ -3985,10 +3973,8 @@
     "nextPage": "Próxima página de exemplo",
     "openLarger": "Abrir prévia ampliada",
     "page": "Página {{page}}",
-    "preview": "Visualizar {{title}}",
     "previousPage": "Página de exemplo anterior",
-    "title": "Documento",
-    "useNamed": "Usar {{title}}"
+    "title": "Documento"
   },
   "featureGuide": {
     "close": "Fechar guia de novidades",
@@ -5869,6 +5855,16 @@
       "actions": {
         "resetUsage": "Redefinir uso"
       },
+      "antigravity": {
+        "check": "Verificar login",
+        "error": "Confira o ambiente de login atribuído a você e tente novamente.",
+        "expired": "O login expirou. Conecte a conta novamente.",
+        "openTerminal": "Abrir o terminal de login do Google",
+        "terminal": "Execute este comando no terminal e faça login com sua conta pessoal do Google AI.",
+        "title": "Google AI (Antigravity)",
+        "unassigned": "Peça a um administrador para atribuir um terminal de login a você.",
+        "verify": "Este comando usa sua assinatura para enviar uma solicitação a cada um dos modelos Neon, Carbon e Hydrogen."
+      },
       "deviceAuth": {
         "claude": {
           "authorizationCode": "Código de autorização",
@@ -6071,6 +6067,13 @@
           "title": "Modelo padrão"
         },
         "description": "Escolha os padrões para novos chats e como as mensagens são enviadas.",
+        "presentationFormat": {
+          "description": "Escolha o padrão para novas apresentações",
+          "saveFailed": "Não foi possível salvar o formato padrão. Tente novamente.",
+          "title": "Formato padrão de apresentação",
+          "unavailable": "Indisponível",
+          "unset": "Não definido"
+        },
         "sectionTitle": "Chat"
       },
       "debug": {
@@ -6640,11 +6643,8 @@
   "templates": {
     "actions": {
       "delete": "Excluir",
-      "menu": "Ações para {{title}}",
-      "preview": "Visualizar {{title}}",
       "rename": "Renomear modelo"
     },
-    "builtIn": "Integrados",
     "custom": "Personalizados",
     "delete": {
       "cancel": "Cancelar",
@@ -6659,11 +6659,6 @@
       "page": "Página {{number}}"
     },
     "loadFailed": "Não foi possível carregar os modelos.",
-    "rename": {
-      "action": "Renomear",
-      "cancel": "Cancelar",
-      "save": "Salvar"
-    },
     "renameFailed": "Não foi possível renomear o modelo.",
     "sharedBy": "Compartilhado por {{owner}}",
     "sharedByMember": "Compartilhado por um membro da organização",

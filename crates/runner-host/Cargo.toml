@@ -1,11 +1,11 @@
 [package]
 name = "runner-host"
-version = "0.12.14"
+version = "0.12.18"
 edition.workspace = true
 description = "Runner host filesystem, process, registry, control IPC, lock, path, and logging primitives"
 
 [features]
-test-support = ["nix/inotify", "nix/resource", "tokio/signal"]
+test-support = ["dep:cli-test-support", "nix/resource", "tokio/signal"]
 
 [dependencies]
 runner-types.workspace = true
@@ -13,7 +13,7 @@ runner-types.workspace = true
 chrono = { workspace = true, features = ["now", "serde"] }
 hex = { workspace = true, features = ["std"] }
 libc = { workspace = true, features = ["std"] }
-nix = { workspace = true, features = ["fs", "process", "signal", "socket", "user"] }
+nix = { workspace = true, features = ["fs", "inotify", "process", "signal", "socket", "user"] }
 rustix = { workspace = true, features = ["fs", "process", "std"] }
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
@@ -24,10 +24,13 @@ tokio-util = { workspace = true, features = ["io", "rt"] }
 tracing = { workspace = true, features = ["attributes", "std"] }
 uuid = { workspace = true, features = ["serde", "std", "v4"] }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+cli-test-support = { workspace = true, optional = true, features = ["test-support"] }
+
 [dev-dependencies]
 cli-test-support = { workspace = true, features = ["test-support"] }
 futures-util = { workspace = true, features = ["async-await"] }
-nix = { workspace = true, features = ["inotify", "resource"] }
+nix = { workspace = true, features = ["resource"] }
 tempfile = { workspace = true, features = ["getrandom"] }
 tokio = { workspace = true, features = ["net", "signal", "test-util"] }
 tracing-subscriber = { workspace = true, features = ["registry"] }

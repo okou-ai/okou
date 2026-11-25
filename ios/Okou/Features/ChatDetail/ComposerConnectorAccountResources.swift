@@ -10,6 +10,9 @@ final class ComposerConnectorAccountResources {
     case access(String, Bool?)
     case defaultAccount(String)
     case defaultEnabled(String, Bool)
+    case policy(String, ChatConnectorAccountPolicyChoice)
+    case rename(String, String?)
+    case disconnect(String)
   }
 
   struct Page: Sendable {
@@ -17,6 +20,12 @@ final class ComposerConnectorAccountResources {
     let nextCursor: String?
     let access: ChatConnectorAccess
     let defaults: [ChatConnectorAccountDefault]
+    let policies: [ChatConnectorAccountPolicy]?
+  }
+
+  private enum Controls: Sendable {
+    case legacy([ChatConnectorAccountDefault])
+    case member([ChatConnectorAccountPolicy])
   }
 
   /// Pagination accumulation is canonical returned data, not a second request phase.
@@ -31,8 +40,12 @@ final class ComposerConnectorAccountResources {
   let store = CCState.Store()
   let search: Computed<String>
   let pagination: Computed<Task<Void, Error>>
+  private let deletionID = CCState.State<String?>(nil)
+  private let selectDeletion: Command<Void, String?>
   private let keyword = CCState.State("")
   private let revision = CCState.State(0)
+  private let catalogRevision = CCState.State(0)
+  private let reloadCatalog: Command<Void, Void>
   private let contextRevision = CCState.State(0)
   private let lifetime = CCState.State(true)
   private let tail = CCState.State<Tail?>(nil)
@@ -48,8 +61,10 @@ final class ComposerConnectorAccountResources {
   // Native navigation observes retirement; all request phases remain in the resource Tasks.
   private(set) var isClosed = false
   @ObservationIgnored private var generation = UUID()
+  @ObservationIgnored private var catalogTask: Task<ChatCatalogConnector, Error>?
+  @ObservationIgnored private var impactTask: Task<ChatConnectorDeletionImpact?, Error>?
   @ObservationIgnored private var firstTask: Task<ChatConnectorAccounts, Error>?
-  @ObservationIgnored private var detailsTask: Task<[ChatConnectorAccountDefault], Error>?
+  @ObservationIgnored private var detailsTask: Task<Controls, Error>?
   @ObservationIgnored private var moreTask: Task<Void, Error>?
 
   init(
@@ -61,6 +76,12 @@ final class ComposerConnectorAccountResources {
     self.managesDefaults = managesDefaults
     service = composer.service
     self.didFail = didFail
+    let deletionID = deletionID
+    selectDeletion = Command { context, value in try context.set(deletionID, value) }
+    let catalogRevision = catalogRevision
+    reloadCatalog = Command { context in
+      try context.set(catalogRevision, update: { $0 + 1 })
+    }
     let keyword = keyword
     let revision = revision
     let contextRevision = contextRevision
@@ -83,6 +104,31 @@ final class ComposerConnectorAccountResources {
     }
     append = Command { context, value in try context.set(tail, value) }
     setPagination = Command { context, value in try context.set(more, value) }
+  }
+
+  @ObservationIgnored lazy var catalog = makeCatalog()
+
+  private func makeCatalog() -> Computed<Task<ChatCatalogConnector, Error>> {
+    Computed { [weak self] get, options in
+      guard let self, !isClosed, try get(lifetime), let slug = connector.target.connectorSlug
+      else { throw CancellationError() }
+      _ = try get(catalogRevision)
+      let signal = options.signal
+      let task = Task<ChatCatalogConnector, Error> { @MainActor [weak self, service] in
+        do {
+          let result = try await service.catalogConnector(slug: slug)
+          try Task.checkCancellation()
+          try signal.checkCancellation()
+          return result
+        } catch {
+          if let self, !isClosed, !Task.isCancelled, !signal.isCancelled { didFail(error) }
+          throw error
+        }
+      }
+      catalogTask = task
+      signal.onCancel { task.cancel() }
+      return task
+    }
   }
 
   @ObservationIgnored private lazy var first = makeFirst()
@@ -114,20 +160,27 @@ final class ComposerConnectorAccountResources {
 
   @ObservationIgnored private lazy var details = makeDetails()
 
-  private func makeDetails() -> Computed<Task<[ChatConnectorAccountDefault], Error>> {
+  private func makeDetails() -> Computed<Task<Controls, Error>> {
     Computed { [weak self] get, options in
       guard let self, !isClosed, try get(lifetime) else { throw CancellationError() }
       _ = try get(revision)
+      _ = try get(contextRevision)
       let signal = options.signal
       let target = connector.target
-      let task: Task<[ChatConnectorAccountDefault], Error> =
+      let memberAccess = composer?.usesMemberAccess == true
+      let task: Task<Controls, Error> =
         Task { @MainActor [weak self, service] in
           do {
             try Task.checkCancellation()
-            let defaults = try await service.accountDefaults(target: target)
+            let controls: Controls
+            if memberAccess {
+              controls = .member(try await service.accountPolicies(target: target))
+            } else {
+              controls = .legacy(try await service.accountDefaults(target: target))
+            }
             try Task.checkCancellation()
             try signal.checkCancellation()
-            return defaults
+            return controls
           } catch {
             if let self, !isClosed, !Task.isCancelled, !signal.isCancelled { didFail(error) }
             throw error
@@ -150,24 +203,85 @@ final class ComposerConnectorAccountResources {
       let search = try get(keyword)
       let tail = try get(tail)
       let first = try get(first)
-      let details = managesDefaults ? try get(details) : nil
-      guard let current = composer.connectors.first(where: { $0.target == connector.target }) else {
+      let memberAccess = composer.usesMemberAccess
+      let details = managesDefaults || memberAccess ? try get(details) : nil
+      let current = composer.connectors.first(where: { $0.target == connector.target })
+      guard managesDefaults || current != nil else {
         throw APIClientError.http(status: 404, message: "Connector unavailable.")
       }
-      let (result, defaults) = try await (first.value, details?.value)
+      let (result, controls) = try await (first.value, details?.value)
       try Task.checkCancellation()
       try options.signal.checkCancellation()
       var accounts = result.connections + (tail?.accounts ?? [])
-      if !managesDefaults, search.isEmpty, let pinned = current.currentAccount,
+      if !managesDefaults, search.isEmpty, let pinned = current?.currentAccount,
         !accounts.contains(where: { $0.id == pinned.id })
       {
         accounts.insert(pinned, at: 0)
       }
       let cursor: String?
       if let tail { cursor = tail.nextCursor } else { cursor = result.nextCursor }
+      let access: ChatConnectorAccess
+      if let current {
+        access = current.access
+      } else {
+        access = try await service.connectorAccess(
+          target: connector.target, threadID: nil, memberAccess: memberAccess)
+        try Task.checkCancellation()
+        try options.signal.checkCancellation()
+      }
+      let defaults: [ChatConnectorAccountDefault]
+      let policies: [ChatConnectorAccountPolicy]?
+      switch controls {
+      case .member(let value):
+        policies = value
+        defaults = []
+      case .legacy(let value):
+        policies = nil
+        defaults = value
+      case nil:
+        policies = nil
+        defaults = []
+      }
       return Page(
-        accounts: accounts, nextCursor: cursor, access: current.access, defaults: defaults ?? [])
+        accounts: accounts, nextCursor: cursor, access: access, defaults: defaults,
+        policies: policies)
     }
+  }
+
+  @ObservationIgnored lazy var deletionImpact = makeDeletionImpact()
+
+  private func makeDeletionImpact() -> Computed<Task<ChatConnectorDeletionImpact?, Error>> {
+    Computed { [weak self] get, options in
+      guard let self, !isClosed, try get(lifetime) else { throw CancellationError() }
+      let id = try get(deletionID)
+      let target = connector.target
+      let signal = options.signal
+      let task = Task<ChatConnectorDeletionImpact?, Error> { @MainActor [weak self, service] in
+        do {
+          guard let id else { return nil }
+          let result = try await service.deletionImpact(target: target, connectionID: id)
+          try Task.checkCancellation()
+          try signal.checkCancellation()
+          return result
+        } catch {
+          if let self, !isClosed, !Task.isCancelled, !signal.isCancelled { didFail(error) }
+          throw error
+        }
+      }
+      impactTask = task
+      signal.onCancel { task.cancel() }
+      return task
+    }
+  }
+
+  func prepareDisconnect(_ id: String?) {
+    guard !isClosed else { return }
+    do { try store.set(selectDeletion, id) } catch { didFail(error) }
+  }
+
+  func retryCatalog() {
+    guard !isClosed else { return }
+    do { try store.set(reloadCatalog) } catch { didFail(error) }
   }
 
   func update(search: String) {
@@ -256,9 +370,13 @@ final class ComposerConnectorAccountResources {
     guard !isClosed else { return }
     isClosed = true
     generation = UUID()
+    catalogTask?.cancel()
+    impactTask?.cancel()
     firstTask?.cancel()
     detailsTask?.cancel()
     moreTask?.cancel()
+    catalogTask = nil
+    impactTask = nil
     firstTask = nil
     detailsTask = nil
     moreTask = nil
@@ -267,6 +385,8 @@ final class ComposerConnectorAccountResources {
   }
 
   isolated deinit {
+    catalogTask?.cancel()
+    impactTask?.cancel()
     firstTask?.cancel()
     detailsTask?.cancel()
     moreTask?.cancel()

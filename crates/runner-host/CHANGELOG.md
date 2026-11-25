@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.12.18](https://github.com/okou-ai/okou/compare/runner-host-v0.12.17...runner-host-v0.12.18) (2026-11-24)
+
+
+### Refactoring
+
+* **runner:** share bounded inotify readiness handling ([#50579](https://github.com/okou-ai/okou/issues/50579)) ([1920abe](https://github.com/okou-ai/okou/commit/1920abef18cfd8340f86c5294de511cb139320f6))
+
+## [0.12.17](https://github.com/okou-ai/okou/compare/runner-host-v0.12.16...runner-host-v0.12.17) (2026-11-24)
+
+## [0.12.16](https://github.com/okou-ai/okou/compare/runner-host-v0.12.15...runner-host-v0.12.16) (2026-11-24)
+
+
+### Refactoring
+
+* **rust:** share test process session retirement ([#50511](https://github.com/okou-ai/okou/issues/50511)) ([7c9025a](https://github.com/okou-ai/okou/commit/7c9025af98e840271151001a11aa98a8ea7c76cc))
+
+## [0.12.15](https://github.com/okou-ai/okou/compare/runner-host-v0.12.14...runner-host-v0.12.15) (2026-11-24)
+
 ## [0.12.14](https://github.com/okou-ai/okou/compare/runner-host-v0.12.13...runner-host-v0.12.14) (2026-11-23)
 
 ## [0.12.13](https://github.com/okou-ai/okou/compare/runner-host-v0.12.12...runner-host-v0.12.13) (2026-11-22)

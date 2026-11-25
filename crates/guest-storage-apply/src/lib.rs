@@ -23,6 +23,8 @@
 //! does not cancel its siblings, so a `false` result can coexist with targets
 //! successfully materialized by other tasks. Archives extract in place, so a
 //! failed task may also leave changes written by an earlier entry.
+//! A packed decoded request finishes each batch before the next batch prepares
+//! its targets. A failed batch stops later batches in the request.
 //!
 //! Required cleanup, target preparation, or download failure returns `false`,
 //! preventing launch with incomplete inputs. Earlier filesystem effects are not
@@ -67,6 +69,7 @@ mod http_failure;
 pub mod input_telemetry;
 mod instructions;
 mod manifest;
+mod packed_files;
 mod plan;
 mod quarantine;
 mod readiness;
@@ -186,7 +189,13 @@ fn run_storage_files_in_context(input: &[u8], runtime_dir: Option<&Path>) -> boo
         Ok::<_, std::io::Error>((manifest, files))
     })();
     match parsed {
-        Ok((manifest, files)) => run_manifest_with_files_in_runtime(manifest, files, runtime_dir),
+        Ok((manifest, files)) => {
+            if packed_files::is_packed(&manifest) {
+                packed_files::apply(manifest, files, runtime_dir)
+            } else {
+                run_manifest_with_files_in_runtime(manifest, files, runtime_dir)
+            }
+        }
         Err(error) => {
             log_error!(LOG_TAG, "Invalid decoded storage input: {error}");
             false

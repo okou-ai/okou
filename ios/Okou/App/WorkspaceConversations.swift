@@ -61,6 +61,11 @@ final class WorkspaceConversations {
     return conversation
   }
 
+  func discardDeletedThread(_ id: String) {
+    lastUse[id] = nil
+    conversations.removeValue(forKey: id)?.close(discardingDraft: true)
+  }
+
   func noteHistoryChange() { warmAgain = true }
 
   func suspendWarming() {

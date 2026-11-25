@@ -1165,13 +1165,6 @@ export const setAblyLoop$ = command(
   },
 );
 
-/** Wait until the subscription finishes, fails, or is cancelled. */
-export const waitAblyLoopUntil$ = command(
-  ({ set }, args: SetAblyLoopArgs, signal: AbortSignal): Promise<void> => {
-    return set(internalSetAblyLoop$, args, signal);
-  },
-);
-
 /** Start a subscription owned by signal and return immediately. */
 export const setAblyInvalidationLoop$ = command(
   ({ set }, args: SetAblyInvalidationLoopArgs, signal: AbortSignal): void => {
@@ -1184,17 +1177,6 @@ export const setAblyInvalidationLoop$ = command(
       Reason.Daemon,
       "ably subscription",
     );
-  },
-);
-
-/** Wait until the subscription finishes, fails, or is cancelled. */
-export const waitAblyInvalidationLoopUntil$ = command(
-  (
-    { set },
-    args: SetAblyInvalidationLoopArgs,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    return set(internalSetAblyInvalidationLoop$, args, signal);
   },
 );
 

@@ -453,8 +453,12 @@ function createCatalogConnectorActivation(
       return;
     }
 
-    const directConnectMethod =
-      getBuiltinConnectorStatusDirectConnectMethod(connector);
+    const directConnectMethod = getBuiltinConnectorStatusDirectConnectMethod(
+      connector,
+      accountOptions.account.intent === "reconnect"
+        ? connector.connection?.authMethod
+        : undefined,
+    );
     if (!directConnectMethod) {
       set(resetBuiltinManualGrantForm$, connector.slug);
       set(activeChatConnectorActionState$, {
@@ -654,6 +658,27 @@ function createExactReconnectConnectorSignals(
     const status = await get(status$);
     signal.throwIfAborted();
     if (status.kind !== "ready") {
+      return;
+    }
+    const directConnectMethod = getBuiltinConnectorStatusDirectConnectMethod(
+      status.catalogItem,
+      status.account.authMethod,
+    );
+    if (directConnectMethod?.kind === "browser-auth") {
+      await set(
+        connectBuiltinConnectorOAuthAuthCode$,
+        descriptor.connectorSlug,
+        directConnectMethod.authMethod,
+        {
+          account: { intent: "reconnect", connectionId: status.account.id },
+          connectorLabel: status.catalogItem.label,
+          connectorIcon: status.catalogItem.icon,
+          onSuccess: (_connectionId, attemptSignal) => {
+            return set(runConnectorActionCallback$, descriptor, attemptSignal);
+          },
+        },
+        signal,
+      );
       return;
     }
     set(resetBuiltinManualGrantForm$, descriptor.connectorSlug);

@@ -1,14 +1,15 @@
 package ai.okou.android.artifacts
 
 import ai.okou.android.R
+import ai.okou.android.WorkspaceFilterRow
 import ai.okou.android.WorkspaceSearchField
-import ai.okou.android.chat.ChatListSkeletonDelayMillis
-import ai.okou.android.chat.rememberChatWaitIndicator
+import ai.okou.android.chat.ChatListTextAction
+import ai.okou.android.rememberContentReadSkeleton
+import ai.okou.android.workspaceSearchFocusOutline
 import android.text.format.DateFormat
 import androidx.annotation.StringRes
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,9 +28,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -76,7 +76,6 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -116,6 +115,7 @@ internal fun ArtifactCatalogList(
                 .orEmpty()
         }
     val searchFocus = remember { FocusRequester() }
+    val allFilterFocus = remember { FocusRequester() }
     val rowFocus = remember { FocusRequester() }
     val noticePadding = Modifier.padding(16.dp)
 
@@ -141,7 +141,18 @@ internal fun ArtifactCatalogList(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             ArtifactSearch(input, searchFocus)
-            ArtifactFilters(filter, onFilter)
+            WorkspaceFilterRow(
+                ArtifactFilter.entries,
+                filter,
+                Role.RadioButton,
+                label = { stringResource(it.label()) },
+                modifier = Modifier.fillMaxWidth(),
+                optionModifier = {
+                    if (it == ArtifactFilter.All) Modifier.focusRequester(allFilterFocus)
+                    else Modifier
+                },
+                onSelect = onFilter,
+            )
         }
         if (page == null && failure != null) {
             ArtifactInitialReadFailure(
@@ -150,7 +161,7 @@ internal fun ArtifactCatalogList(
             )
             return@Column
         }
-        val showSkeleton = rememberChatWaitIndicator(page == null, ChatListSkeletonDelayMillis)
+        val showSkeleton = rememberContentReadSkeleton(hasContent = page != null)
         val restoreAfterLayout =
             if (restoreRow != null && page != null) {
                 Modifier.onGloballyPositioned {
@@ -173,33 +184,31 @@ internal fun ArtifactCatalogList(
             if (showSkeleton) items(4) { ArtifactRowSkeleton() }
             if (page?.items?.isEmpty() == true) {
                 item {
-                    when {
-                        query.keyword.isNotBlank() ->
-                            ArtifactEmpty(
-                                R.string.artifact_no_matches,
-                                R.string.chat_search_clear,
-                            ) {
-                                input.clearText()
-                            }
-                        filter != ArtifactFilter.All ->
-                            ArtifactEmpty(
-                                R.string.artifact_empty_type,
-                                R.string.artifact_show_all,
-                            ) {
-                                onFilter(ArtifactFilter.All)
-                            }
-                        else -> ArtifactListNotice(R.string.artifact_empty, noticePadding)
-                    }
+                    ArtifactEmpty(
+                        hasKeyword = query.keyword.isNotBlank(),
+                        filtered = filter != ArtifactFilter.All,
+                        onClear = {
+                            input.clearText()
+                            searchFocus.requestFocus()
+                        },
+                        onShowAll = {
+                            onFilter(ArtifactFilter.All)
+                            allFilterFocus.requestFocus()
+                        },
+                    )
                 }
             }
-            groups.forEach { (day, rows) ->
+            groups.entries.forEachIndexed { index, (day, rows) ->
                 if (day != ArtifactDay.Search) {
                     item(key = day.name) {
                         Text(
                             stringResource(day.label),
-                            Modifier.padding(start = 12.dp, top = 8.dp, bottom = 4.dp).semantics {
-                                heading()
-                            },
+                            Modifier.padding(
+                                    start = 12.dp,
+                                    top = if (index == 0) 8.dp else 16.dp,
+                                    bottom = 4.dp,
+                                )
+                                .semantics { heading() },
                             style = artifactSmallText(),
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -248,7 +257,10 @@ internal fun ArtifactToolbar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
+        IconButton(
+            onClick = onBack,
+            modifier = Modifier.size(48.dp).workspaceSearchFocusOutline(CircleShape),
+        ) {
             Icon(painterResource(R.drawable.ic_arrow_back), stringResource(back))
         }
         Text(
@@ -261,7 +273,7 @@ internal fun ArtifactToolbar(
             overflow = TextOverflow.Ellipsis,
         )
     }
-    HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 }
 
 @Composable
@@ -306,6 +318,7 @@ private fun ArtifactSearch(input: TextFieldState, focus: FocusRequester) {
                 }
                 if (input.text.isNotEmpty()) {
                     IconButton(
+                        modifier = Modifier.workspaceSearchFocusOutline(CircleShape),
                         onClick = {
                             input.clearText()
                             focus.requestFocus()
@@ -325,35 +338,6 @@ private fun ArtifactSearch(input: TextFieldState, focus: FocusRequester) {
 }
 
 @Composable
-private fun ArtifactFilters(selected: ArtifactFilter, onFilter: (ArtifactFilter) -> Unit) {
-    val colors = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(12.dp)
-    Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).selectableGroup(),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        for (filter in ArtifactFilter.entries) {
-            val current = filter == selected
-            Box(
-                Modifier.heightIn(min = 48.dp)
-                    .widthIn(min = 48.dp)
-                    .clip(shape)
-                    .background(if (current) colors.secondaryContainer else colors.background)
-                    .selectable(selected = current, role = Role.RadioButton) { onFilter(filter) }
-                    .padding(8.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    stringResource(filter.label()),
-                    style = artifactSmallText(),
-                    color = if (current) colors.onSecondaryContainer else colors.onSurface,
-                )
-            }
-        }
-    }
-}
-
-@Composable
 private fun ArtifactRow(
     item: ArtifactItem,
     date: String,
@@ -366,20 +350,22 @@ private fun ArtifactRow(
     val colors = MaterialTheme.colorScheme
     val foreground = if (selected) colors.onSecondaryContainer else colors.onSurface
     val meta = if (selected) foreground else colors.onSurfaceVariant
+    val shape = RoundedCornerShape(8.dp)
     Row(
         modifier
             .fillMaxWidth()
             .heightIn(min = 80.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .clip(shape)
             .then(if (selected) Modifier.background(colors.secondaryContainer) else Modifier)
+            .workspaceSearchFocusOutline(shape)
             .selectable(selected = selected, role = Role.Button, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 8.dp)
             .testTag("artifact_row"),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalAlignment = Alignment.Top,
     ) {
         ArtifactThumbnail(item, offline, thumbnail)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
                 item.title,
                 style = MaterialTheme.typography.bodyLarge,
@@ -454,14 +440,42 @@ internal fun ArtifactRowSkeleton(height: Dp = 80.dp, horizontalPadding: Dp = 12.
 }
 
 @Composable
-private fun ArtifactEmpty(@StringRes label: Int, @StringRes action: Int, onClick: () -> Unit) {
+private fun ArtifactEmpty(
+    hasKeyword: Boolean,
+    filtered: Boolean,
+    onClear: () -> Unit,
+    onShowAll: () -> Unit,
+) {
+    val label =
+        when {
+            hasKeyword -> R.string.artifact_no_matches
+            filtered -> R.string.artifact_empty_type
+            else -> R.string.artifact_empty
+        }
+    val actionModifier = Modifier.workspaceSearchFocusOutline(RoundedCornerShape(12.dp))
     Column(
-        Modifier.fillMaxWidth().padding(top = 24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
+        Modifier.fillMaxWidth().padding(vertical = 24.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        ArtifactListNotice(label)
-        ArtifactAction(action, onClick = onClick)
+        Text(
+            stringResource(label),
+            Modifier.padding(horizontal = 12.dp).semantics {
+                heading()
+                liveRegion = LiveRegionMode.Polite
+            },
+            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        when {
+            hasKeyword ->
+                ChatListTextAction(
+                    R.string.artifact_clear_keyword,
+                    actionModifier,
+                    onClick = onClear,
+                )
+            filtered ->
+                ChatListTextAction(R.string.artifact_show_all, actionModifier, onClick = onShowAll)
+        }
     }
 }
 
@@ -492,17 +506,6 @@ internal fun ArtifactReadNotice(@StringRes label: Int, modifier: Modifier = Modi
         modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite },
         style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp),
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-}
-
-@Composable
-private fun ArtifactListNotice(@StringRes label: Int, modifier: Modifier = Modifier) {
-    Text(
-        stringResource(label),
-        Modifier.fillMaxWidth().then(modifier).semantics { liveRegion = LiveRegionMode.Polite },
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        textAlign = TextAlign.Center,
     )
 }
 

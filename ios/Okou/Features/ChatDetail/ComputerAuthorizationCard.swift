@@ -9,14 +9,7 @@ struct ComputerAuthorizationCard: View {
 
   var body: some View {
     StoreProvider(store.stateStore) {
-      if loadsState && store.isActive {
-        ComputerAuthorizationCardValue(store: store)
-      } else {
-        ComputerAuthorizationCardContent(
-          kind: store.action.kind, request: nil, loading: true, error: nil,
-          isWorking: false, needsContinuation: false, hasContinued: false,
-          selectedHostID: .constant(nil), decide: { _ in }, retry: {})
-      }
+      ComputerAuthorizationCardPhase(store: store, loadsState: loadsState)
     }
     .onChange(of: scenePhase) { _, phase in
       if phase == .active && loadsState { Task { await store.refresh() } }
@@ -25,23 +18,52 @@ struct ComputerAuthorizationCard: View {
   }
 }
 
+private struct ComputerAuthorizationCardPhase: View {
+  let store: ComputerAuthorizationStore
+  let loadsState: Bool
+  @LoadableValue private var presentation: Loadable<ComputerAuthorizationStore.Presentation>
+
+  init(store: ComputerAuthorizationStore, loadsState: Bool) {
+    self.store = store
+    self.loadsState = loadsState
+    _presentation = LoadableValue(store.presentation)
+  }
+
+  var body: some View {
+    if loadsState, let current = presentation.data, current.isActive {
+      ComputerAuthorizationCardValue(store: store, attempt: current.attempt)
+    } else {
+      ComputerAuthorizationCardContent(
+        kind: store.action.kind, request: nil, loading: true, error: nil,
+        isWorking: false, needsContinuation: false, hasContinued: false,
+        selectedHostID: .constant(nil), decide: { _ in }, retry: {})
+    }
+  }
+}
+
 private struct ComputerAuthorizationCardValue: View {
   let store: ComputerAuthorizationStore
+  let attempt: ComputerAuthorizationStore.Attempt
   @LoadableValue private var value: Loadable<ChatComputerAuthorizationRequest>
 
-  init(store: ComputerAuthorizationStore) {
+  init(store: ComputerAuthorizationStore, attempt: ComputerAuthorizationStore.Attempt) {
     self.store = store
+    self.attempt = attempt
     _value = LoadableValue(task: store.request, keepLast: true)
   }
 
   var body: some View {
     ComputerAuthorizationCardContent(
       kind: store.action.kind, request: value.data, loading: value.state == .loading,
-      error: store.error ?? value.error.map(ChatRequestFailure.message(for:)),
-      isWorking: store.isWorking, needsContinuation: store.needsContinuation,
-      hasContinued: store.hasContinued,
+      error: attempt.error ?? value.error.map(ChatRequestFailure.message(for:)),
+      isWorking: attempt.isWorking, needsContinuation: attempt.needsContinuation,
+      hasContinued: attempt.hasContinued,
       selectedHostID: Binding(
-        get: { value.data.flatMap(store.selectedHost(in:)) },
+        get: {
+          value.data.flatMap {
+            ComputerAuthorizationStore.selectedHost(in: $0, chosen: attempt.chosenHostID)
+          }
+        },
         set: { store.selectHost($0) }),
       decide: { decision in Task { await store.decide(decision) } },
       retry: { Task { await store.refresh() } })

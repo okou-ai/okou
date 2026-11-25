@@ -4,13 +4,7 @@
     <string name="auth_check_failed">Impossibile verificare l’accesso.</string>
     <string name="auth_selection_failed">Impossibile aprire questo spazio di lavoro.</string>
     <string name="auth_sign_out_failed">Impossibile uscire.</string>
-    <string name="composer_sync_loading">Caricamento bozza salvata…</string>
-    <string name="composer_sync_saving">Sincronizzazione bozza…</string>
-    <string name="composer_sync_failed">Sincronizzazione non riuscita. Il testo rimane su questo dispositivo.</string>
-    <string name="composer_sync_unsupported">Questa bozza contiene contenuti modificabili sul Web. Il testo rimane su questo dispositivo; la sincronizzazione automatica è in pausa.</string>
-    <string name="composer_sync_retry">Riprova sincronizzazione</string>
     <string name="composer_restore_draft">Ripristina bozza conservata</string>
-    <string name="controls_storage_failed">Impossibile salvare i comandi in attesa.</string>
     <string name="controls_stop">Interrompi il lavoro in corso</string>
     <string name="controls_stop_failed">Impossibile arrestare l’attività.</string>
     <string name="settings">Impostazioni</string>
@@ -37,9 +31,9 @@
     <string name="auth_signing_out">Disconnessione…</string>
     <string name="auth_workspace">Spazio di lavoro attuale</string>
     <string name="auth_switch_workspace">Cambia spazio di lavoro</string>
+    <string name="auth_switch_workspace_pending">Cambio dello spazio di lavoro</string>
+    <string name="auth_switch_workspace_failed">Impossibile passare a questo spazio di lavoro.</string>
     <string name="auth_browser_unavailable">Installa un browser per configurare lo spazio di lavoro.</string>
-    <string name="preference_save_failed">Impossibile salvare le preferenze. Le tue scelte sono ancora attive.</string>
-    <string name="preference_refresh_failed">Impossibile aggiornare le preferenze. Riprova.</string>
     <string name="preference_color_theme">Tema colore</string>
     <string name="preference_language">Lingua</string>
     <string name="palette_default">Predefinito</string>
@@ -89,7 +83,6 @@
     <string name="composer_retry">Riprova lo stesso messaggio</string>
     <string name="composer_not_observed">Il messaggio non è ancora visibile. La consegna resta non confermata.</string>
     <string name="composer_request_failed">Richiesta non riuscita. La bozza e il messaggio in attesa vengono conservati.</string>
-    <string name="composer_saving">Salvataggio bozza su questo dispositivo…</string>
     <string name="updates_title">Aggiornamenti app</string>
     <string name="updates_installed">Versione corrente: %1$s</string>
     <string name="updates_current">Hai la versione più recente</string>
@@ -103,6 +96,7 @@
     <string name="updates_download_failed">Download non riuscito</string>
     <string name="updates_check_compatible">Controlla le versioni</string>
     <string name="updates_required_incompatible">Questo dispositivo non può aggiornare Okou</string>
+    <string name="updates_required_incompatible_short">Impossibile aggiornare</string>
     <string name="updates_required_short">Aggiornamento necessario</string>
     <string name="updates_ready">Continua l’installazione</string>
     <string name="updates_later">Più tardi</string>
@@ -127,9 +121,7 @@
     <string name="updates_error_interrupted">Il download è stato interrotto.</string>
     <string name="updates_error_install">Android non ha potuto installare l’aggiornamento.</string>
     <string name="updates_unavailable">Non è ancora disponibile un aggiornamento adatto.</string>
-    <string name="updates_android_unsupported">Questo aggiornamento richiede una versione Android più recente.</string>
-    <string name="realtime_connecting">Connessione agli aggiornamenti in tempo reale…</string>
-    <string name="realtime_unavailable">Gli aggiornamenti in tempo reale non sono disponibili. Puoi aggiornare manualmente.</string>
+    <string name="updates_android_unsupported">Aggiorna Android a una versione più recente e controlla di nuovo.</string>
     <string name="settings_account">Account</string>
     <string name="settings_cancel">Annulla</string>
     <string name="settings_saving">Salvataggio…</string>
@@ -137,11 +129,12 @@
     <string name="settings_sign_out_body">Per usare di nuovo Okou su questo dispositivo, accedi di nuovo. Le bozze restano associate a questo account.</string>
     <string name="updates_waiting_to_check">Verifica in attesa</string>
     <string name="updates_waiting_to_install">In attesa di installazione</string>
+    <string name="updates_retry_download">Riprova il download</string>
+    <string name="updates_retry_check">Controlla di nuovo</string>
     <string name="updates_waiting_to_download">Download in attesa</string>
     <string name="instructions_placeholder">Che cosa vuoi che Okou tenga a mente?</string>
     <string name="instructions_save_when_online">Connettiti per salvare le modifiche.</string>
     <string name="settings_timezone">Fuso orario</string>
-    <string name="settings_timezone_hint">Fuso orario predefinito per le nuove attività pianificate.</string>
     <string name="settings_timezone_utc">Tempo coordinato universale</string>
     <string name="settings_timezone_format">%1$s (UTC%2$s)</string>
 </resources>

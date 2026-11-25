@@ -4,7 +4,10 @@ import { runConnectorAccountsContract } from "@okouai/api-contracts/contracts/ru
 import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
 import { connectorPermissionsContract } from "@okouai/api-contracts/contracts/connector-permissions";
 import { mcpConnectorsContract } from "@okouai/api-contracts/contracts/mcp-connectors";
-import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/connector-accounts";
+import type {
+  ConnectorAccountSelection,
+  ConnectorAccountTarget,
+} from "@okouai/api-contracts/contracts/connector-accounts";
 import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-types";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { mockNow, now } from "../../../lib/time";
@@ -220,6 +223,18 @@ describe("Chat connector execution", () => {
       client().list({ headers: run.headers }),
       [200],
     );
+    expect(inventory.body).not.toHaveProperty("approvalScope");
+    const scopedInventory = await accept(
+      client().list({
+        headers: run.headers,
+        query: { includeApprovalScope: "true" },
+      }),
+      [200],
+    );
+    expect(scopedInventory.body).toStrictEqual({
+      ...inventory.body,
+      approvalScope: "member",
+    });
     expect(inventory.body.accounts).toStrictEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -236,6 +251,14 @@ describe("Chat connector execution", () => {
     );
     session(value.actor);
     await accept(
+      client().approveMember({
+        headers: run.headers,
+        params: thread,
+        body: { target: builtin, connectionId: selected.id },
+      }),
+      [403],
+    );
+    await accept(
       client().approve({
         headers: sessionHeaders,
         params: thread,
@@ -247,6 +270,170 @@ describe("Chat connector execution", () => {
     expect((await current(value, builtin)).currentConnectionId).toBe(
       selected.id,
     );
+  });
+
+  it("approves the exact account member-wide and selects it only in the requesting Chat", async () => {
+    const value = await owner();
+    const fallback = await addAccount(value.actor, "Fallback");
+    const requested = await addAccount(value.actor, "Requested");
+    const sibling = await chat.createThread(value.actor, {});
+    const otherActor = { ...value.actor, userId: `user_${randomUUID()}` };
+    const otherChat = await chat.createThread(otherActor, {});
+    const selection = { target: builtin, connectionId: requested.id };
+    const approve = (
+      threadId = value.threadId,
+      body: ConnectorAccountSelection = selection,
+    ) => {
+      return client().approveMember({
+        headers: sessionHeaders,
+        params: { threadId },
+        body,
+      });
+    };
+    session(value.actor);
+    await accept(approve(), [404]);
+    await accept(
+      access().setThreadCurrent({
+        headers: sessionHeaders,
+        params: { threadId: sibling.id },
+        body: { target: builtin, connectionId: fallback.id },
+      }),
+      [200],
+    );
+    await connectors.updateFeatureSwitches(value.actor, {
+      [FeatureSwitchKey.MemberConnectorAccountAccess]: true,
+    });
+    session(value.actor);
+    await accept(
+      access().updateAccountPolicy({
+        headers: sessionHeaders,
+        params: { connectionId: requested.id },
+        body: { target: builtin, policy: "deny" },
+      }),
+      [200],
+    );
+    await accept(approve(otherChat.id), [404]);
+    await accept(
+      approve(value.threadId, {
+        ...selection,
+        target: { kind: "custom", customConnectorId: randomUUID() },
+      }),
+      [404],
+    );
+    const policies = () => {
+      return access().accountPolicies({
+        headers: sessionHeaders,
+        query: builtin,
+      });
+    };
+    expect((await accept(policies(), [200])).body).toContainEqual({
+      connectionId: requested.id,
+      allowed: false,
+      enabled: false,
+      expiresAt: null,
+    });
+
+    const approvedAt = now();
+    mockNow(approvedAt);
+    expect((await accept(approve(), [200])).body).toStrictEqual(selection);
+    expect((await current(value, builtin)).currentConnectionId).toBe(
+      requested.id,
+    );
+    const siblingAccess = await current(
+      { ...value, threadId: sibling.id },
+      builtin,
+    );
+    expect(siblingAccess.currentConnectionId).toBe(fallback.id);
+    expect(siblingAccess.accounts).toContainEqual(
+      expect.objectContaining({
+        connectionId: requested.id,
+        enabled: true,
+      }),
+    );
+    expect((await accept(policies(), [200])).body).toContainEqual({
+      connectionId: requested.id,
+      allowed: true,
+      enabled: true,
+      expiresAt: new Date(approvedAt + 3_600_000).toISOString(),
+    });
+    const longer = await accept(
+      access().updateAccountPolicy({
+        headers: sessionHeaders,
+        params: { connectionId: requested.id },
+        body: { target: builtin, policy: "allow-24h" },
+      }),
+      [200],
+    );
+    await accept(approve(), [200]);
+    expect((await accept(policies(), [200])).body).toContainEqual(longer.body);
+  });
+
+  it("applies member eligibility on the existing Run refresh and MCP reads", async () => {
+    const value = await owner();
+    const selected = await addAccount(value.actor, "Selected");
+    const fallback = await addAccount(value.actor, "Fallback");
+    await connectors.updateFeatureSwitches(value.actor, {
+      [FeatureSwitchKey.MemberConnectorAccountAccess]: true,
+    });
+    const admittedAt = now();
+    mockNow(admittedAt);
+    session(value.actor);
+    await accept(
+      access().updateAccountPolicy({
+        headers: sessionHeaders,
+        params: { connectionId: selected.id },
+        body: { target: builtin, policy: "allow-1h" },
+      }),
+      [200],
+    );
+    const run = await start(value);
+    expect(run.execution.connectorRuntimeTargets).toContainEqual(
+      expect.objectContaining({ ...builtin, sourceId: selected.id }),
+    );
+
+    mockNow(admittedAt + 3_600_000);
+    const targets = [{ ...builtin, sourceId: selected.id }];
+    await expect(
+      runs.syncConnectorRuntime(run.runId, { targets }),
+    ).resolves.toContainEqual(
+      expect.objectContaining({
+        target: builtin,
+        state: "available",
+        accountBinding: { connectionId: fallback.id, baseUrlVars: {} },
+      }),
+    );
+    const listed = await accept(mcp().list({ headers: run.headers }), [200]);
+    expect(listed.body.connectors).toStrictEqual([
+      expect.objectContaining({ connectionId: fallback.id }),
+    ]);
+    const reauthorized = await accept(
+      mcp().reauthorizeOAuth({
+        headers: run.headers,
+        body: { target: builtin, scopes: ["read"] },
+      }),
+      [200],
+    );
+    expect(reauthorized.body).toMatchObject({
+      kind: "reconnect",
+      connectionId: fallback.id,
+    });
+
+    session(value.actor);
+    await accept(
+      access().updateAccountPolicy({
+        headers: sessionHeaders,
+        params: { connectionId: fallback.id },
+        body: { target: builtin, policy: "deny" },
+      }),
+      [200],
+    );
+    await expect(
+      runs.syncConnectorRuntime(run.runId, { targets }),
+    ).resolves.toContainEqual({
+      target: builtin,
+      state: "absent",
+      reason: "connector-unavailable",
+    });
   });
 
   it("resolves the Chat's selected native credentials alongside a registered MCP account", async () => {
@@ -347,6 +534,14 @@ describe("Chat connector execution", () => {
       isDefault: false,
     });
     expect(JSON.stringify(inventory.body)).not.toContain("key-B");
+    const scopedInventory = await accept(
+      client().list({
+        headers: run.headers,
+        query: { includeApprovalScope: "true" },
+      }),
+      [200],
+    );
+    expect(scopedInventory.body.approvalScope).toBe("chat");
     expect(
       (await accept(mcp().list({ headers: run.headers }), [200])).body
         .connectors,

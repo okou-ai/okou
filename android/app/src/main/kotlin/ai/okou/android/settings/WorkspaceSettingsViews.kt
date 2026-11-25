@@ -1,6 +1,7 @@
 package ai.okou.android.settings
 
 import ai.okou.android.BuildConfig
+import ai.okou.android.ContentReadProgress
 import ai.okou.android.R
 import ai.okou.android.SettingsGroup
 import ai.okou.android.SettingsSection
@@ -8,6 +9,7 @@ import ai.okou.android.api.generated.CanonicalOptional
 import ai.okou.android.api.generated.RecoveryBillingCreditBreakdownItemCategory
 import ai.okou.android.api.generated.RecoverySubscriptionsSubscriptionsItem
 import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.state.SettingsDestination
 import android.icu.util.Calendar
 import android.widget.Toast
@@ -18,13 +20,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.progressSemantics
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -39,18 +39,10 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLocale
@@ -76,7 +68,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.time.Instant
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import okhttp3.HttpUrl.Companion.toHttpUrl
 
@@ -98,36 +89,7 @@ internal fun WorkspaceSettingsProgress(
             else -> state.usagePack.refreshing || state.workspaceCredits.refreshing
         }
     if (refreshing && !state.offline) {
-        SettingsRefreshProgress(stringResource(label))
-    }
-}
-
-@Composable
-internal fun SettingsRefreshProgress(
-    description: String,
-    background: Color = MaterialTheme.colorScheme.background,
-) {
-    val colors = MaterialTheme.colorScheme
-    val track = colors.primary.copy(alpha = 0.18f).compositeOver(background)
-    val modifier =
-        Modifier.fillMaxWidth().height(4.dp).semantics { contentDescription = description }
-    var animate by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        val motion = coroutineContext[MotionDurationScale]
-        snapshotFlow { motion?.scaleFactor != 0f }.collect { animate = it }
-    }
-    if (animate) {
-        LinearProgressIndicator(
-            modifier = modifier,
-            color = colors.primary,
-            trackColor = track,
-            strokeCap = StrokeCap.Round,
-        )
-    } else {
-        val shape = RoundedCornerShape(2.dp)
-        Box(modifier.progressSemantics().background(track, shape)) {
-            Box(Modifier.fillMaxWidth(0.3f).fillMaxHeight().background(colors.primary, shape))
-        }
+        ContentReadProgress(label)
     }
 }
 
@@ -144,6 +106,9 @@ internal fun WorkspaceSettingsFeedback(
     val emailFailed by rememberUpdatedState(stringResource(R.string.settings_email_save_failed))
     val emailUnconfirmed by
         rememberUpdatedState(stringResource(R.string.settings_email_save_unconfirmed))
+    val toolFailed by
+        rememberUpdatedState(stringResource(R.string.settings_preferences_save_rolled_back))
+    val toolUnconfirmed by rememberUpdatedState(stringResource(R.string.settings_tool_save_failed))
     LaunchedEffect(model, snackbar, lifecycle, destination, inOverlay) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             model.notices.collectLatest { notice ->
@@ -152,6 +117,8 @@ internal fun WorkspaceSettingsFeedback(
                         SettingsNotice.ModelAccountSwitchFailed -> switchFailed
                         SettingsNotice.EmailSubscriptionFailed -> emailFailed
                         SettingsNotice.EmailSubscriptionUnconfirmed -> emailUnconfirmed
+                        SettingsNotice.ToolSaveFailed -> toolFailed
+                        SettingsNotice.ToolSaveUnconfirmed -> toolUnconfirmed
                     }
                 snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
             }
@@ -237,11 +204,7 @@ private fun SettingsPageIntro(workspace: String, @StringRes scope: Int, @StringR
 
 @Composable
 internal fun SettingsPlaceholder(loadingLabel: String? = null) {
-    var visible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        delay(250)
-        visible = true
-    }
+    val visible = rememberContentReadSkeleton()
     val semantics =
         if (visible && loadingLabel != null)
             Modifier.semantics { contentDescription = loadingLabel }

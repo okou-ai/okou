@@ -1,30 +1,81 @@
+import CCState
 import ChatData
 import Foundation
-import Observation
 
 /// Capture, transcription and insertion belong to one draft, including while its view unmounts.
-@MainActor @Observable
+/// Its presented state lives in the owning composer's graph.
+@MainActor
 final class ComposerVoiceInputStore {
   enum Phase: Equatable { case idle, starting, recording, processing, saved }
-  private(set) var phase = Phase.idle
-  private(set) var duration: Double = 0
-  private(set) var levels: [Float] = []
-  private(set) var error: String?
-  private(set) var microphoneDenied = false
-  var isWorking: Bool { phase == .starting || phase == .recording || phase == .processing }
-  var canUseRecording: Bool { session != nil && recordingID != nil }
+
+  /// What the voice controls read.
+  struct Content: Equatable {
+    var phase = Phase.idle
+    var duration: Double = 0
+    var levels: [Float] = []
+    var error: String?
+    var microphoneDenied = false
+    var asVoiceMessage = false
+    var recordingID: UUID?
+    var hasSession = false
+
+    var isWorking: Bool { phase == .starting || phase == .recording || phase == .processing }
+    var canUseRecording: Bool { hasSession && recordingID != nil }
+  }
+
+  private(set) var phase: Phase {
+    get { snapshot.phase }
+    set { update { $0.phase = newValue } }
+  }
+  private(set) var duration: Double {
+    get { snapshot.duration }
+    set { update { $0.duration = newValue } }
+  }
+  private(set) var levels: [Float] {
+    get { snapshot.levels }
+    set { update { $0.levels = newValue } }
+  }
+  private(set) var error: String? {
+    get { snapshot.error }
+    set { update { $0.error = newValue } }
+  }
+  private(set) var microphoneDenied: Bool {
+    get { snapshot.microphoneDenied }
+    set { update { $0.microphoneDenied = newValue } }
+  }
+  var isWorking: Bool { snapshot.isWorking }
+  var canUseRecording: Bool { snapshot.canUseRecording }
   weak var composer: ComposerDraftStore?
+  private let store: CCState.Store
+  private let content: CCState.State<Content>
+  /// The full voice state, for the recording tray.
+  let value: Computed<Content>
+  /// Only the phase, for readers that must not refresh with every audio level.
+  let phaseValue: Computed<Phase>
+  /// The phase of a composer without voice input.
+  static let idlePhase = Computed { _ in Phase.idle }
   private let client: VoiceInputClient
   private let storage: VoiceDraftStorage
   private let capture: any VoiceAudioCapture
   private let didRequireUpgrade: @MainActor (Error) -> Void
   private var session: VoiceDraftSession?
-  private var recordingID: UUID?
+  private var recordingID: UUID? {
+    get { snapshot.recordingID }
+    set { update { $0.recordingID = newValue } }
+  }
   private var insertion: ComposerEditor.VoiceInsertion?
   private var generation = UUID()
   private var startingTask: Task<Void, Never>?
+  private var startActivation: AsyncStream<Void>.Continuation?
+  var isWaitingToStartCapture: Bool { phase == .starting && startActivation != nil }
+
+  func resumePendingStart() { startActivation?.yield(()) }
+
   private var quotaTask: Task<Void, Error>?
-  private(set) var asVoiceMessage = false
+  private(set) var asVoiceMessage: Bool {
+    get { snapshot.asVoiceMessage }
+    set { update { $0.asVoiceMessage = newValue } }
+  }
   private var quotaAllowed = false
   private var captureTask: Task<Void, Error>?
   private var transcriptionTask: Task<Void, Never>?
@@ -35,13 +86,37 @@ final class ComposerVoiceInputStore {
   init(
     client: VoiceInputClient, storage: VoiceDraftStorage,
     capture: any VoiceAudioCapture = NativeVoiceAudioCapture(),
+    store: CCState.Store,
     didRequireUpgrade: @escaping @MainActor (Error) -> Void
   ) {
     self.client = client
     self.storage = storage
     self.capture = capture
     self.didRequireUpgrade = didRequireUpgrade
+    self.store = store
+    let content = CCState.State(Content())
+    self.content = content
+    value = Computed { get in try get(content) }
+    phaseValue = Computed { get in try get(content).phase }
     restore()
+  }
+
+  var snapshot: Content {
+    do { return try store.get(content) } catch {
+      preconditionFailure("Cannot read the voice input graph: \(error)")
+    }
+  }
+
+  private func update(_ mutation: (inout Content) -> Void) {
+    do {
+      try store.set(
+        content,
+        update: { previous in
+          var next = previous
+          mutation(&next)
+          return next
+        })
+    } catch { preconditionFailure("Cannot update the voice input graph: \(error)") }
   }
 
   private func report(_ failure: Error) {
@@ -54,6 +129,7 @@ final class ComposerVoiceInputStore {
       let session = try VoiceDraftSession(
         client: client, storage: storage, activityDetection: NativeVoiceActivityDetection())
       self.session = session
+      update { $0.hasSession = true }
       recordingID = session.restoredRecordingID
       asVoiceMessage = session.restoredAsVoiceMessage
       duration = session.restoredDuration
@@ -100,29 +176,42 @@ final class ComposerVoiceInputStore {
     quotaAllowed = false
     error = nil
     microphoneDenied = false
+    let (activations, activation) = AsyncStream<Void>.makeStream(
+      bufferingPolicy: .bufferingNewest(1))
+    startActivation = activation
     let starting = Task {
-      await begin(composer: composer, target: target, owner: owner)
-      if generation == owner { startingTask = nil }
+      await begin(composer: composer, target: target, owner: owner, activations: activations)
+      activation.finish()
+      if generation == owner {
+        startActivation = nil
+        startingTask = nil
+        if phase == .starting { phase = .idle }
+      }
     }
     startingTask = starting
     return starting
   }
 
   private func begin(
-    composer: ComposerDraftStore, target: ComposerEditor.VoiceInsertion, owner: UUID
+    composer: ComposerDraftStore, target: ComposerEditor.VoiceInsertion, owner: UUID,
+    activations: AsyncStream<Void>
   ) async {
-    guard generation == owner, !Task.isCancelled, composer.canEditVoice else {
-      if generation == owner { phase = .idle }
-      return
-    }
+    guard generation == owner, !Task.isCancelled else { return }
     do {
       let asMessage = try await client.recordAsMessage()
-      guard generation == owner, !Task.isCancelled, composer.canEditVoice else {
-        if generation == owner { phase = .idle }
+      guard await canStartCapture(in: composer, activations: activations, owner: owner) else {
         return
       }
       asVoiceMessage = asMessage
       quotaTask = asMessage ? nil : checkQuota()
+      try await capture.requestPermission()
+      // Allow can arrive before the scene becomes active again. Keep the same tap,
+      // but wait to open the microphone until the composer is back in the foreground.
+      guard await canStartCapture(in: composer, activations: activations, owner: owner) else {
+        if generation == owner { quotaTask?.cancel() }
+        return
+      }
+      startActivation = nil
       let stream = try await capture.start()
       guard generation == owner, composer.canEditVoice else {
         quotaTask?.cancel()
@@ -180,6 +269,16 @@ final class ComposerVoiceInputStore {
     }
   }
 
+  private func canStartCapture(
+    in composer: ComposerDraftStore, activations: AsyncStream<Void>, owner: UUID
+  ) async -> Bool {
+    var iterator = activations.makeAsyncIterator()
+    while generation == owner, !Task.isCancelled, !composer.isForeground {
+      guard await iterator.next() != nil else { return false }
+    }
+    return generation == owner && !Task.isCancelled && composer.canEditVoice
+  }
+
   /// Returns the original stream Task to the draft owner for cancellation and draining.
   private func captureStream(
     _ stream: AsyncThrowingStream<VoiceAudioChunk, Error>, session: VoiceDraftSession,
@@ -189,7 +288,8 @@ final class ComposerVoiceInputStore {
       do {
         for try await chunk in stream {
           let duration = try await session.append(chunk.pcm, recordingID: id)
-          guard let self else { return }
+          // Suspension drains the final audio; only a cancelled capture stops publishing.
+          guard let self, !Task.isCancelled else { return }
           self.duration = duration
           levels = Array((levels + [chunk.level]).suffix(32))
           if phase == .recording { transcribeAvailable(id: id, owner: owner) }
@@ -346,6 +446,7 @@ final class ComposerVoiceInputStore {
 
   func discard() async {
     startRequested = false
+    startActivation = nil
     generation = UUID()
     let owner = generation
     phase = .processing
@@ -382,6 +483,7 @@ final class ComposerVoiceInputStore {
   @discardableResult
   func suspend() -> Task<Void, Never> {
     startRequested = false
+    startActivation = nil
     generation = UUID()
     let owner = generation
     capture.stop()

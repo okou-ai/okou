@@ -8,20 +8,19 @@ export interface ProjectReferenceRow {
 }
 
 export const pickedThreadColumns = Object.freeze({
-  id: chatThreads.id,
-  userId: chatThreads.userId,
-  projectId: chatThreads.projectId,
-  computerUseHostId: chatThreads.computerUseHostId,
+  // Drizzle uses the first column to detect an absent left-joined Chat.
   cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
+  projectId: chatThreads.projectId,
   framework: chatThreads.framework,
   frameworkSessionId: chatThreads.frameworkSessionId,
   frameworkSessionRunId: chatThreads.frameworkSessionRunId,
-  title: chatThreads.title,
-  renamedAt: chatThreads.renamedAt,
 });
 
 export type PickedChatThread = Readonly<
-  Pick<typeof chatThreads.$inferSelect, keyof typeof pickedThreadColumns>
+  Pick<
+    typeof chatThreads.$inferSelect,
+    keyof typeof pickedThreadColumns | "id" | "userId"
+  > & { titled: boolean }
 >;
 
 /** Preparation facts only: neither a connector grant nor commit-time authority. */

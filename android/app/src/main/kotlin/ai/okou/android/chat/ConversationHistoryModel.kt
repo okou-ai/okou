@@ -5,6 +5,7 @@ import ai.okou.android.api.generated.ThreadDetail
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -110,6 +111,9 @@ class ConversationHistoryModel(
         confirmed?.history?.checkpoint?.takeIf { current(generation) && it.threadId == threadId }
 
     private val dirty = mutableMapOf<String, CachedHistory>()
+    // Confirmed access loss survives navigation until a successful history read. A new cache
+    // commit waits for the workspace-owned eviction of the denied history.
+    private val accessEvictions = mutableMapOf<String, Job>()
     private val invalidations = Channel<Long>(Channel.CONFLATED)
     private val invalidationJob = scope.launch { for (ticket in invalidations) catchUp(ticket) }
     private val detailInvalidations = Channel<Long>(Channel.CONFLATED)
@@ -151,6 +155,9 @@ class ConversationHistoryModel(
             ConversationUiState(
                 thread = thread,
                 transcript = restored?.transcript,
+                phase =
+                    if (thread.id in accessEvictions) HistoryPhase.Missing
+                    else HistoryPhase.Loading,
                 source = restored?.let { ChatListSource.Cache },
                 cacheUnavailable = thread.id in dirty,
                 generation = generation,
@@ -198,12 +205,14 @@ class ConversationHistoryModel(
     }
 
     private fun refreshHistory() {
-        val thread = mutable.value.thread ?: return
+        val state = mutable.value
+        val thread = state.thread ?: return
         if (retired || !authorized() || job?.isActive == true) return
         val ticket = generation
+        val eviction = accessEvictions[thread.id]
         publish(
-            mutable.value.copy(
-                phase = HistoryPhase.Loading,
+            state.copy(
+                phase = if (eviction == null) HistoryPhase.Loading else HistoryPhase.Missing,
                 confirmation = null,
                 syncProgressDelayMillis = confirmed?.history?.progressDelayMillis(),
                 consecutiveReadFailures = 0,
@@ -211,8 +220,8 @@ class ConversationHistoryModel(
             ),
         )
         job = scope.launch {
-            var saved = dirty[thread.id] ?: confirmed?.history
-            if (saved == null) {
+            var saved = if (eviction == null) dirty[thread.id] ?: confirmed?.history else null
+            if (saved == null && eviction == null) {
                 try {
                     saved = cache.loadHistory(thread.id)
                 } catch (cancelled: CancellationException) {
@@ -241,6 +250,7 @@ class ConversationHistoryModel(
                         readWithRetry(thread.id, saved?.checkpoint, ticket),
                         wallMillis(),
                     )
+                eviction?.join()
                 requireCurrent(ticket)
                 dirty[thread.id] = next
                 var diskFailed = false
@@ -262,6 +272,7 @@ class ConversationHistoryModel(
                         ?: withContext(dispatcher) { projectHistory(next.checkpoint) }
                 requireCurrent(ticket)
                 confirmed = ConfirmedTimeline(next, transcript)
+                accessEvictions.remove(thread.id)
                 publish(
                     mutable.value.copy(
                         transcript = transcript,
@@ -285,12 +296,16 @@ class ConversationHistoryModel(
                     missing(thread.id, ticket, error)
                 } else {
                     reportAuthorization(error)
-                    if (current(ticket)) {
+                    if (current(ticket) && eviction == null) {
                         val state = mutable.value
                         publish(
                             state.copy(
                                 phase = HistoryPhase.Failed,
-                                initialReadFailed = state.transcript == null,
+                                // A transient read can end before the visible visit starts its
+                                // retries. Keep the same initial feedback across that handoff.
+                                initialReadFailed =
+                                    state.transcript == null &&
+                                        chatReadRetryAfterMillis(error) == null,
                                 syncProgressDelayMillis = null,
                                 consecutiveReadFailures = 0,
                             ),
@@ -359,10 +374,24 @@ class ConversationHistoryModel(
         }
     }
 
-    private suspend fun missing(threadId: String, ticket: Long, error: Exception) {
+    private fun missing(threadId: String, ticket: Long, error: Exception) {
         confirmed = null
         recent.remove(threadId)
         dirty.remove(threadId)
+        val eviction =
+            accessEvictions[threadId]?.takeUnless { it.isCompleted }
+                ?: scope
+                    .launch(start = CoroutineStart.LAZY) {
+                        try {
+                            cache.deleteHistory(threadId)
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) {
+                            if (current(ticket))
+                                publish(mutable.value.copy(cacheUnavailable = true))
+                        }
+                    }
+                    .also { accessEvictions[threadId] = it }
         publish(
             mutable.value.copy(
                 transcript = null,
@@ -377,14 +406,7 @@ class ConversationHistoryModel(
                 detailFailure = error,
             ),
         )
-        try {
-            cache.deleteHistory(threadId)
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            requireCurrent(ticket)
-            publish(mutable.value.copy(cacheUnavailable = true))
-        }
+        eviction.start()
     }
 
     internal fun forgetWarmedHistory(threadId: String) {
@@ -470,6 +492,8 @@ class ConversationHistoryModel(
         confirmed = null
         recent.clear()
         dirty.clear()
+        accessEvictions.values.forEach { it.cancel() }
+        accessEvictions.clear()
         mutable.value = ConversationUiState(generation = generation)
     }
 }

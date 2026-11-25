@@ -13,9 +13,30 @@
     <string name="conversation_new_reply">Balasan baru</string>
     <string name="conversation_view_progress">Lihat progres</string>
     <string name="conversation_processing">Sedang memproses…</string>
-    <string name="conversation_history_offline">Riwayat chat akan dimuat saat Anda kembali online.</string>
     <string name="conversation_offline_send">Sambungkan internet untuk mengirim. Draf Anda tetap di sini.</string>
-    <string name="conversation_work">Proses kerja</string>
+    <string name="conversation_reply_summary">Ringkasan balasan</string>
+    <string name="conversation_turn_continued">Dilanjutkan di giliran berikutnya</string>
+    <string name="conversation_replying">Sedang membalas…</string>
+    <string name="conversation_turn_done">Selesai</string>
+    <string name="conversation_replies_expanded">Diperluas</string>
+    <string name="conversation_replies_collapsed">Diciutkan</string>
+    <string name="conversation_work_elapsed">Sudah bekerja %1$s</string>
+    <string name="conversation_work_total">Total bekerja %1$s</string>
+    <string name="conversation_followup_continue">Lanjutkan</string>
+    <string name="conversation_feedback_pair">%1$s · %2$s</string>
+    <plurals name="conversation_reply_steps">
+        <item quantity="other">%d langkah</item>
+    </plurals>
+    <string-array name="conversation_completion_phrases">
+        <item>Diselesaikan</item>
+        <item>Semua selesai</item>
+        <item>Dikirim</item>
+        <item>Selesai, siap melayani</item>
+        <item>Tuntas</item>
+        <item>Misi selesai</item>
+        <item>Ditutup</item>
+        <item>Selesai tuntas</item>
+    </string-array>
     <string name="conversation_reply_actions">Tindakan balasan</string>
     <string name="conversation_copy_reply">Salin balasan</string>
     <string name="conversation_reply_copied">Balasan disalin</string>

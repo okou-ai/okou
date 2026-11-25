@@ -9,7 +9,9 @@ import ai.okou.android.artifacts.ArtifactItem
 import ai.okou.android.artifacts.ArtifactKind
 import ai.okou.android.artifacts.ArtifactPage
 import ai.okou.android.artifacts.ConfirmedArtifactCatalog
+import ai.okou.android.artifacts.ConfirmedRelatedChatRead
 import ai.okou.android.artifacts.ConfirmedRelatedChats
+import ai.okou.android.artifacts.ConfirmedWorkflowResources
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.scopeHash
 import ai.okou.android.auth.workspaceStorageKey
@@ -39,9 +41,19 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 
+private const val HISTORY_RECORD_BATCH_SIZE = 128
+
 data class CachedChats(val checkpoint: ChatCheckpoint, val confirmedAt: Long)
 
 data class CachedProjects(val checkpoint: ProjectCheckpoint, val confirmedAt: Long)
+
+// Keep the existing related chat fields at the top level for older cache records.
+@Serializable
+private data class CachedChatRelations(
+    val created: ConfirmedRelatedChatRead? = null,
+    val communicating: ConfirmedRelatedChatRead? = null,
+    val workflows: ConfirmedWorkflowResources? = null,
+)
 
 internal data class PreparedChatList(
     val identity: WorkspaceIdentity,
@@ -285,23 +297,55 @@ internal constructor(
             }
 
         internal suspend fun loadRelatedResources(threadId: String): ConfirmedRelatedChats? =
+            loadChatRelations(threadId)?.let {
+                ConfirmedRelatedChats(it.created, it.communicating).takeIf { related ->
+                    related.oldestConfirmation != null
+                }
+            }
+
+        internal suspend fun loadWorkflowResources(threadId: String): ConfirmedWorkflowResources? =
+            loadChatRelations(threadId)?.workflows
+
+        private suspend fun loadChatRelations(threadId: String): CachedChatRelations? =
             withContext(dispatcher) {
                 lock.withLock {
                     checkCurrent()
                     if (database == null && !file.exists()) return@withLock null
-                    val record = database().chats().relatedResources(key, threadId)
+                    val record = readChatRelations(database().chats(), threadId)
                     checkCurrent()
                     record
-                        ?.takeIf { it.authorization == authorization }
-                        ?.let {
-                            json.decodeFromString<ConfirmedRelatedChats>(it.payload)
-                        }
                 }
             }
 
-        internal suspend fun saveRelatedResources(threadId: String, data: ConfirmedRelatedChats) =
+        private suspend fun readChatRelations(dao: ChatCacheDao, threadId: String) =
+            dao.relatedResources(key, threadId)
+                ?.takeIf { it.authorization == authorization }
+                ?.let {
+                    try {
+                        json.decodeFromString<CachedChatRelations>(it.payload)
+                    } catch (_: SerializationException) {
+                        Log.w("ChatCacheStore", "Ignoring unreadable chat resource cache")
+                        null
+                    }
+                }
+
+        internal suspend fun saveRelatedResources(threadId: String, data: ConfirmedRelatedChats?) =
+            updateChatRelations(threadId) {
+                it.copy(created = data?.created, communicating = data?.communicating)
+            }
+
+        internal suspend fun saveWorkflowResources(
+            threadId: String,
+            data: ConfirmedWorkflowResources,
+        ) = updateChatRelations(threadId) { it.copy(workflows = data) }
+
+        private suspend fun updateChatRelations(
+            threadId: String,
+            update: (CachedChatRelations) -> CachedChatRelations,
+        ) =
             withContext(dispatcher) {
                 persist(clear = { it.deleteRelatedResources(key, threadId) }, saved = {}) { dao ->
+                    val data = update(readChatRelations(dao, threadId) ?: CachedChatRelations())
                     dao.putRelatedResources(
                         ChatRelatedResourceRecord(
                             key,
@@ -455,20 +499,14 @@ internal constructor(
                                     }
                                 val checkpoint =
                                     reusable
-                                        ?: run {
-                                            val rows =
-                                                dao.historyEvents(key, threadId).map { entry ->
-                                                    HistoryEvent.decode(entry.payload).also {
-                                                        requireChatWire(
-                                                            it.id == entry.id &&
-                                                                it.seqId == entry.seqId,
-                                                        )
-                                                    }
-                                                }
-                                            HistoryCheckpoint(threadId, rows, cursor).also {
+                                        ?: HistoryCheckpoint(
+                                                threadId,
+                                                dao.readHistoryRows(threadId),
+                                                cursor,
+                                            )
+                                            .also {
                                                 it.validate()
                                             }
-                                        }
                                 currentCoroutineContext().ensureActive()
                                 checkCurrent()
                                 CachedHistory(checkpoint, stored.confirmedAt, historyRevision)
@@ -570,11 +608,7 @@ internal constructor(
                                 last.seqId,
                             ),
                         )
-                        dao.putHistoryEvents(
-                            rows.map {
-                                HistoryEventRecord(key, threadId, it.id, it.seqId, it.archiveJson())
-                            },
-                        )
+                        dao.writeHistoryRows(threadId, rows.asSequence())
                         written.add(threadId)
                     }
                     written.isNotEmpty()
@@ -645,12 +679,11 @@ internal constructor(
                             checkpoint.cursor.seqId,
                         ),
                     )
-                    dao.putHistoryEvents(
-                        checkpoint.rows
-                            .filter { replacement || it.seqId > checkNotNull(stored).seqId }
-                            .map {
-                                HistoryEventRecord(key, threadId, it.id, it.seqId, it.archiveJson())
-                            },
+                    dao.writeHistoryRows(
+                        threadId,
+                        checkpoint.rows.asSequence().filter {
+                            replacement || it.seqId > checkNotNull(stored).seqId
+                        },
                     )
                     true
                 }
@@ -660,6 +693,38 @@ internal constructor(
                     CachedHistory(persisted, confirmedAt, it)
                 }
             }
+
+        // Each page is read in the caller's transaction. Keep only the decoded rows across pages.
+        private suspend fun ChatCacheDao.readHistoryRows(threadId: String): List<HistoryEvent> {
+            val rows = mutableListOf<HistoryEvent>()
+            var start = Long.MIN_VALUE
+            while (true) {
+                currentCoroutineContext().ensureActive()
+                val page = historyEventsPage(key, threadId, start, HISTORY_RECORD_BATCH_SIZE)
+                for (entry in page) {
+                    val decoded = HistoryEvent.decode(entry.payload)
+                    requireChatWire(decoded.id == entry.id && decoded.seqId == entry.seqId)
+                    rows.add(decoded)
+                }
+                if (page.size < HISTORY_RECORD_BATCH_SIZE) return rows
+                val last = page.last().seqId
+                if (last == Long.MAX_VALUE) return rows
+                start = last + 1
+            }
+        }
+
+        private suspend fun ChatCacheDao.writeHistoryRows(
+            threadId: String,
+            rows: Sequence<HistoryEvent>,
+        ) {
+            for (batch in rows.chunked(HISTORY_RECORD_BATCH_SIZE)) {
+                putHistoryEvents(
+                    batch.map {
+                        HistoryEventRecord(key, threadId, it.id, it.seqId, it.archiveJson())
+                    },
+                )
+            }
+        }
 
         suspend fun deleteHistory(threadId: String) = removeHistory(threadId) { true }
 

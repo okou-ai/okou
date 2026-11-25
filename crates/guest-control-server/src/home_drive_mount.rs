@@ -9,11 +9,11 @@ use std::time::{Duration, Instant};
 use guest_contracts::home_mount::{HOME_DRIVE_MOUNT_TIMEOUT_MS, HOME_MOUNT_PATH};
 use guest_control_proto::{ExecTermination, HOME_DRIVE_MOUNT_OUTPUT_LIMIT_BYTES};
 
-use crate::drain::{BoundedDrainHandle, DrainCancellation};
+use crate::drain::{DrainCancellation, FixedGroupOutput, FixedGroupOutputError};
 use crate::error::to_io_error;
 use crate::helper_output::{CapturedHelperOutput, captured_or_empty};
 use crate::helper_program::TestHelperProgram;
-use crate::process::{kill_and_reap_child, spawn_in_own_process_group};
+use crate::process::spawn_in_own_process_group;
 use crate::quiesce::OperationGuard;
 use crate::wait::{WaitOutcome, collect_bounded_output, wait_for_helper_with_group_cleanup};
 pub(crate) use crate::worker_ownership::LazyConnectionWorkerSubmitError as HomeDriveMountSubmitError;
@@ -227,7 +227,7 @@ fn run_mount(input: RunMountInput<'_>) -> CapturedHelperOutput {
             );
         }
     };
-    let mut child = match program.spawn(operation) {
+    let child = match program.spawn(operation) {
         Ok(spawned) => spawned,
         Err(error) => {
             return CapturedHelperOutput::failed(
@@ -237,54 +237,37 @@ fn run_mount(input: RunMountInput<'_>) -> CapturedHelperOutput {
             );
         }
     };
-    let Some(stdout) = child.stdout.take() else {
-        return abort_spawned(child, started, "home mount helper stdout pipe missing");
-    };
-    let Some(stderr) = child.stderr.take() else {
-        drop(stdout);
-        return abort_spawned(child, started, "home mount helper stderr pipe missing");
-    };
-
-    let (drain_done_tx, drain_done_rx) = mpsc::channel();
-    let stdout_drain = match BoundedDrainHandle::spawn(
-        stdout,
-        HOME_DRIVE_MOUNT_OUTPUT_LIMIT_BYTES,
-        Arc::clone(&drain_cancel),
-        drain_done_tx.clone(),
-        THREAD_STDOUT,
+    let FixedGroupOutput {
+        child,
+        drains,
+        done_rx,
+    } = match FixedGroupOutput::start(
+        child,
+        &drain_cancel,
+        [
+            (HOME_DRIVE_MOUNT_OUTPUT_LIMIT_BYTES, THREAD_STDOUT),
+            (HOME_DRIVE_MOUNT_OUTPUT_LIMIT_BYTES, THREAD_STDERR),
+        ],
     ) {
-        Ok(drain) => drain,
+        Ok(output) => output,
         Err(error) => {
-            drop(stderr);
-            kill_and_reap_child(child);
-            return CapturedHelperOutput::failed(
-                ExecTermination::WaitFailed,
-                started,
-                format!("Failed to start home mount stdout drain: {error}"),
-            );
+            let diagnostic = match error {
+                FixedGroupOutputError::MissingStdout => {
+                    "home mount helper stdout pipe missing".to_string()
+                }
+                FixedGroupOutputError::MissingStderr => {
+                    "home mount helper stderr pipe missing".to_string()
+                }
+                FixedGroupOutputError::StartStdout(error) => {
+                    format!("Failed to start home mount stdout drain: {error}")
+                }
+                FixedGroupOutputError::StartStderr(error) => {
+                    format!("Failed to start home mount stderr drain: {error}")
+                }
+            };
+            return CapturedHelperOutput::failed(ExecTermination::WaitFailed, started, diagnostic);
         }
     };
-    let stderr_drain = match BoundedDrainHandle::spawn(
-        stderr,
-        HOME_DRIVE_MOUNT_OUTPUT_LIMIT_BYTES,
-        Arc::clone(&drain_cancel),
-        drain_done_tx.clone(),
-        THREAD_STDERR,
-    ) {
-        Ok(drain) => drain,
-        Err(error) => {
-            drain_cancel.cancel();
-            kill_and_reap_child(child);
-            drop(drain_done_tx);
-            let _ = stdout_drain.join();
-            return CapturedHelperOutput::failed(
-                ExecTermination::WaitFailed,
-                started,
-                format!("Failed to start home mount stderr drain: {error}"),
-            );
-        }
-    };
-    drop(drain_done_tx);
 
     program.await_test_timeout_gate(child.id());
     let outcome =
@@ -293,19 +276,9 @@ fn run_mount(input: RunMountInput<'_>) -> CapturedHelperOutput {
     if !matches!(outcome, WaitOutcome::Exited(_)) || cancellation_observed {
         drain_cancel.cancel();
     }
-    let [stdout, stderr] = collect_bounded_output(
-        [stdout_drain, stderr_drain],
-        &drain_done_rx,
-        &drain_cancel,
-        drain_deadline,
-    );
+    let [stdout, stderr] = collect_bounded_output(drains, &done_rx, &drain_cancel, drain_deadline);
 
     let (termination, diagnostic) =
         outcome.into_exec_result("Failed to wait for home mount helper");
     CapturedHelperOutput::new(termination, started, stdout, stderr, diagnostic)
-}
-
-fn abort_spawned(child: Child, started: Instant, diagnostic: &str) -> CapturedHelperOutput {
-    kill_and_reap_child(child);
-    CapturedHelperOutput::failed(ExecTermination::WaitFailed, started, diagnostic.to_string())
 }

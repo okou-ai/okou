@@ -1,3 +1,4 @@
+import { resolveInvitedArtifactFile$ } from "./artifact-file-share-access.service";
 import { command } from "ccstate";
 import type { ArtifactDownloadResponse } from "@okouai/api-contracts/contracts/artifact-downloads";
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
@@ -162,6 +163,19 @@ export const resolveArtifactDownload$ = command(
       signal.throwIfAborted();
       if (file) {
         if (file.userId !== args.userId || file.orgId !== args.orgId) {
+          const invited = await set(
+            resolveInvitedArtifactFile$,
+            { file, userId: args.userId },
+            signal,
+          );
+          if (invited) {
+            return {
+              kind: "file",
+              url: invited.downloadUrl,
+              filename: invited.filename,
+              contentType: invited.contentType,
+            };
+          }
           return await set(
             resolveArtifactShareDownload$,
             {

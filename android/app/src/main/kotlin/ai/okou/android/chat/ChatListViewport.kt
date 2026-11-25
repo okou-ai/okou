@@ -1,5 +1,6 @@
 package ai.okou.android.chat
 
+import ai.okou.android.ContentReadProgress
 import ai.okou.android.R
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
@@ -16,21 +17,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -44,14 +40,12 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 
 internal val ChatListRowHeight = 52.dp
 internal val ChatListRowShape = RoundedCornerShape(8.dp)
 internal val ChatListRowPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
 internal val ChatPaneBottomInset = 16.dp
-internal const val ChatListSkeletonDelayMillis = 250L
 
 internal fun Density.chatInlineFeedbackHeight() = maxOf(216.dp, 16.sp.toDp() * 9)
 
@@ -126,7 +120,7 @@ internal fun ChatListViewport(
                 .measure(loose)
         val progress =
             if (syncing) {
-                subcompose(ListLayer.Sync) { ChatReadProgress(R.string.chat_syncing) }
+                subcompose(ListLayer.Sync) { ContentReadProgress(R.string.chat_syncing) }
                     .single()
                     .measure(loose.copy(maxWidth = rows.width))
             } else null
@@ -138,17 +132,6 @@ internal fun ChatListViewport(
             feedbackLayer.placeRelative((bounds.maxWidth - feedbackLayer.width) / 2, feedbackTop)
         }
     }
-}
-
-@Composable
-internal fun ChatReadProgress(@StringRes label: Int) {
-    val description = stringResource(label)
-    val colors = MaterialTheme.colorScheme
-    LinearProgressIndicator(
-        Modifier.fillMaxWidth().height(4.dp).semantics { contentDescription = description },
-        color = colors.primary,
-        trackColor = colors.primary.copy(alpha = 0.18f).compositeOver(colors.background),
-    )
 }
 
 @Composable
@@ -202,18 +185,6 @@ private fun NewChatAction(enabled: Boolean, onClick: () -> Unit) {
             )
         }
     }
-}
-
-@Composable
-internal fun rememberChatWaitIndicator(waiting: Boolean, delayMillis: Long = 100): Boolean {
-    var visible by remember(waiting, delayMillis) { mutableStateOf(false) }
-    LaunchedEffect(waiting, delayMillis) {
-        if (waiting) {
-            delay(delayMillis)
-            visible = true
-        }
-    }
-    return visible
 }
 
 @Composable

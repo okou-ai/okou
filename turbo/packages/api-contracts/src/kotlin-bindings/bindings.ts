@@ -1,4 +1,4 @@
-import type { ZodType } from "zod";
+import { string, type ZodType } from "zod";
 import type { NoBodyMarker } from "../contracts/trpc-contract";
 import { orgContract } from "../contracts/org-routes";
 import { userPreferencesContract } from "../contracts/user-preferences";
@@ -28,13 +28,18 @@ import { projectsContract } from "../contracts/projects";
 import { projectSnapshotArchiveSchema } from "../validators/projects";
 import { instructionsContract } from "../contracts/instructions";
 import { chatEventsContract } from "../contracts/chat-event-send";
+import { chatThreadActivitySummaryContract } from "../contracts/chat-thread-activity-summary";
 import { chatInputStatusContract } from "../contracts/chat-input-status";
 import { onboardingStatusContract } from "../contracts/onboarding";
 import { platformRealtimeTokenContract } from "../contracts/realtime";
 import { sessionOutputDeltaSchema } from "../validators/realtime";
 import { modelCatalogContract } from "../contracts/model-catalog";
 import { runModelsMainContract } from "../contracts/run-models";
-import { userModelPreferenceContract } from "../contracts/user-model-preference";
+import {
+  imageModelPreferenceSchema,
+  userModelPreferenceContract,
+} from "../contracts/user-model-preference";
+import { paidToolsContract } from "../contracts/paid-tools";
 import { featureSwitchesContract } from "../contracts/feature-switches";
 import { feedContract } from "../contracts/feed";
 import { morningBriefPreferenceContract } from "../contracts/morning-brief-preference";
@@ -195,6 +200,17 @@ const connectorBindings = [
     name: "connectorAccountDefaults",
     response: "ConnectorAccountDefaults",
     route: chatConnectorAccessContract.accountDefaults,
+  },
+  {
+    name: "connectorAccountPolicies",
+    response: "ConnectorAccountPolicies",
+    route: chatConnectorAccessContract.accountPolicies,
+  },
+  {
+    name: "connectorAccountPolicyUpdate",
+    response: "ConnectorAccountPolicy",
+    request: "ConnectorAccountPolicyRequest",
+    route: chatConnectorAccessContract.updateAccountPolicy,
   },
   {
     name: "connectorAccountDefaultUpdate",
@@ -426,6 +442,23 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     route: userModelPreferenceContract.update,
   },
   {
+    name: "updateImageModelPreference",
+    request: "UpdateImageModelPreference",
+    response: "DefaultModelPreference",
+    route: userModelPreferenceContract.updateImageModel,
+  },
+  {
+    name: "paidToolPreferences",
+    response: "PaidToolPreferences",
+    route: paidToolsContract.get,
+  },
+  {
+    name: "updatePaidTool",
+    request: "UpdatePaidTool",
+    response: "PaidToolUpdate",
+    route: paidToolsContract.update,
+  },
+  {
     name: "emailSubscription",
     response: "EmailSubscription",
     route: emailSubscriptionContract.get,
@@ -514,6 +547,12 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     route: chatEventsContract.send,
   },
   {
+    name: "summarizeRunActivity",
+    request: "RunActivityRequest",
+    response: "RunActivitySummary",
+    route: chatThreadActivitySummaryContract.summarize,
+  },
+  {
     name: "inputStatus",
     response: "InputStatus",
     route: chatInputStatusContract.get,
@@ -592,9 +631,20 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     route: chatThreadRenameContract.rename,
   },
   {
+    name: "createProject",
+    request: "CreateProjectRequest",
+    response: "ProjectRecord",
+    route: projectsContract.create,
+  },
+  {
+    name: "projectDetail",
+    response: "ProjectRecord",
+    route: projectsContract.get,
+  },
+  {
     name: "renameProject",
     request: "RenameProjectRequest",
-    response: "RenamedProject",
+    response: "ProjectRecord",
     route: projectsContract.update,
   },
   {
@@ -777,12 +827,17 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
     direction: "output",
   },
   {
+    name: "CreateProjectRequest",
+    schema: projectsContract.create.body,
+    direction: "input",
+  },
+  {
     name: "RenameProjectRequest",
     schema: projectsContract.update.body,
     direction: "input",
   },
   {
-    name: "RenamedProject",
+    name: "ProjectRecord",
     schema: projectsContract.update.responses[200],
     direction: "output",
   },
@@ -846,17 +901,36 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
   {
     name: "DefaultModelPreference",
     schema: userModelPreferenceContract.get.responses[200],
-    readSchema: userModelPreferenceContract.get.responses[200].pick({
-      selectedModel: true,
-      serviceTier: true,
-      modelSettings: true,
-    }),
+    readSchema: userModelPreferenceContract.get.responses[200]
+      .pick({ selectedModel: true, serviceTier: true, modelSettings: true })
+      // Image catalog changes must remain decodable by the chat-model picker.
+      .extend({ selectedImageModel: string().nullish() }),
     direction: "output",
   },
   {
     name: "UpdateDefaultModelPreference",
     schema: userModelPreferenceContract.update.body,
     direction: "input",
+  },
+  {
+    name: "UpdateImageModelPreference",
+    schema: imageModelPreferenceSchema,
+    direction: "input",
+  },
+  {
+    name: "PaidToolPreferences",
+    schema: paidToolsContract.get.responses[200],
+    direction: "output",
+  },
+  {
+    name: "UpdatePaidTool",
+    schema: paidToolsContract.update.body,
+    direction: "input",
+  },
+  {
+    name: "PaidToolUpdate",
+    schema: paidToolsContract.update.responses[200],
+    direction: "output",
   },
   {
     name: "EmailSubscription",
@@ -999,6 +1073,16 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
   {
     name: "AcceptedInput",
     schema: chatEventsContract.send.responses[201],
+    direction: "output",
+  },
+  {
+    name: "RunActivityRequest",
+    schema: chatThreadActivitySummaryContract.summarize.body,
+    direction: "input",
+  },
+  {
+    name: "RunActivitySummary",
+    schema: chatThreadActivitySummaryContract.summarize.responses[200],
     direction: "output",
   },
   {

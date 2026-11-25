@@ -1,0 +1,27 @@
+{
+  "files": 12,
+  "tests": 120,
+  "suites": {
+    "src/views/artifacts-page/__tests__/artifact-library-page.test.tsx": 26,
+    "src/views/browser-session/__tests__/browser-response-deadlines.test.tsx": 22,
+    "src/views/okou-page/__tests__/chat-attachment-annotation.test.tsx": 11,
+    "src/views/okou-page/__tests__/chat-attachment-artifact-viewer.test.tsx": 13,
+    "src/views/okou-page/__tests__/chat-attachment-composer.test.tsx": 3,
+    "src/views/okou-page/__tests__/chat-attachment-message-previews.test.tsx": 9,
+    "src/views/okou-page/__tests__/chat-scroll.test.tsx": 13,
+    "src/views/okou-page/__tests__/chat-search-debounce.test.tsx": 1,
+    "src/views/okou-page/__tests__/composer-custom-template-recommendations.test.tsx": 9,
+    "src/views/okou-page/__tests__/connector-directory.test.tsx": 6,
+    "src/views/okou-page/__tests__/settings-model-loading.test.tsx": 4,
+    "src/views/shared-thread-page/__tests__/shared-thread-attachments.test.tsx": 3
+  },
+  "checks": [
+    "production types",
+    "test types",
+    "build config types",
+    "Prettier",
+    "ESLint",
+    "Oxlint",
+    "type-aware Oxlint"
+  ]
+}

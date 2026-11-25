@@ -1,355 +1,227 @@
-import {
-  type PublicConnectorCatalogIcon,
-  connectorCatalogContract,
-} from "@okouai/api-contracts/contracts/connector-catalog";
-import { customConnectorOAuth2Contract } from "@okouai/api-contracts/contracts/custom-connectors";
-import { builtinConnectorsSlugCallbackContract } from "@okouai/api-contracts/contracts/connectors-slug-callback";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
+import { builtinConnectorsSlugCallbackContract } from "@okouai/api-contracts/contracts/connectors-slug-callback";
+import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { screen, waitFor } from "@testing-library/react";
-import { expect, test } from "vitest";
-
-import { setupPage } from "../../../__tests__/page-helper.ts";
-import { pathname, search } from "../../../signals/location.ts";
+import { test, expect } from "vitest";
+import { setupPage, startPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  getConnectorAction,
-  publicStatusItem,
-} from "./connector-page-test-helpers.ts";
+  browserAuthMethod,
+  catalogConnector,
+} from "./chat-capability-connector-test-helpers.ts";
+import { findNamedLink } from "./chat-attachment-test-helpers.ts";
 
 const context = testContext();
 
-test("returns a backend-confirmed native attempt to Okou without carrying provider credentials", async () => {
-  const navigation = context.mocks.browser.locationAssign();
-  const attemptId = "98000000-0000-4000-8000-000000000005";
+test("connector-callbacks-007 a completed Mercury connection identifies its banking providers", async () => {
+  const connector = catalogConnector({
+    slug: "mercury",
+    label: "Mercury",
+    method: browserAuthMethod(),
+  });
   context.mocks.api(connectorCatalogContract.get, ({ respond }) => {
-    return respond(200, {
-      connector: publicStatusItem({ connectorSlug: "strava", label: "Strava" }),
-    });
+    return respond(200, { connector });
   });
-  context.mocks.api(
-    builtinConnectorsSlugCallbackContract.callback,
-    ({ query, respond }) => {
-      expect(query).toMatchObject({
-        code: "oauth-code",
-        state: "oauth-state",
-        scope: "read",
-        responseMode: "json",
-      });
-      return respond(200, {
-        status: "success",
-        username: null,
-        nativeAppReturn: { platform: "ios", attemptId },
-      });
-    },
-  );
   await setupPage({
     context,
-    path: "/connectors/strava/callback?code=oauth-code&state=oauth-state&scope=read",
     auth: null,
+    host: "app.okou.ai",
+    path: "/connectors/mercury/callback/success?username=cargo-finance",
   });
-  const url = `ai.okou.ios://connector-authorization/${attemptId}`;
-  await waitFor(() => {
-    expect(navigation.calls).toContain(url);
+  await screen.findByRole("heading", { name: "Mercury connected" });
+  const disclosure = await screen.findByRole("region", {
+    name: "Mercury banking disclosure",
   });
-  await waitFor(() => {
-    expect(getConnectorAction("link", "Return to Okou")).toHaveAttribute(
-      "href",
-      url,
-    );
-  });
-});
-
-test("keeps an explicit native return action after a denied callback page is refreshed", async () => {
-  const attemptId = "98000000-0000-4000-8000-000000000005";
-  context.mocks.api(connectorCatalogContract.get, ({ respond }) => {
-    return respond(200, {
-      connector: publicStatusItem({ connectorSlug: "strava", label: "Strava" }),
-    });
-  });
-  context.mocks.api(
-    builtinConnectorsSlugCallbackContract.callback,
-    ({ never }) => {
-      return never();
-    },
-  );
-  await setupPage({
-    context,
-    path: `/connectors/strava/callback/error?nativeAppAttemptId=${attemptId}&message=Access+denied`,
-    auth: null,
-  });
-  await waitFor(() => {
-    expect(getConnectorAction("link", "Return to Okou")).toHaveAttribute(
-      "href",
-      `ai.okou.ios://connector-authorization/${attemptId}`,
-    );
-  });
-});
-
-function githubIcon(): PublicConnectorCatalogIcon {
-  return {
-    url: "https://icons.example.test/github.svg",
-    invertInDarkMode: true,
-  };
-}
-
-test("Complete a custom connector authorization", async () => {
-  context.mocks.api(
-    customConnectorOAuth2Contract.callback,
-    ({ query, respond }) => {
-      expect(query).toMatchObject({
-        code: "oauth-code",
-        state: "oauth-state",
-        responseMode: "json",
-        integration: "provider-context",
-      });
-      return respond(200, { status: "success", username: null });
-    },
-  );
-
-  await setupPage({
-    context,
-    path: "/connectors/custom/callback?code=oauth-code&state=oauth-state&integration=provider-context",
-    auth: null,
-  });
-
   await expect(
-    screen.findByRole("heading", { name: "Custom connector connected" }),
-  ).resolves.toBeInTheDocument();
-  await waitFor(() => {
-    expect(pathname()).toBe("/connectors/custom/callback/success");
-    expect(search()).toBe("");
-  });
+    findNamedLink("Powered by Mercury", disclosure),
+  ).resolves.toHaveAttribute("href", "https://mercury.com");
+  expect(disclosure).toHaveTextContent(
+    "Mercury is a fintech company, not an FDIC-insured bank. Banking services provided through Choice Financial Group and Column N.A., Members FDIC.",
+  );
 });
 
-test("Complete a GitHub connector authorization", async () => {
-  context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
-    return respond(401, {
-      error: {
-        code: "UNAUTHORIZED",
-        message: "Sign in to view saved accounts",
-      },
-    });
-  });
-  const icon = githubIcon();
-  const catalogStarted = context.mocks.deferred<void>();
-  const releaseCatalog = context.mocks.deferred<void>();
-  const callbackStarted = context.mocks.deferred<void>();
-  const requestOrder: string[] = [];
-  context.mocks.api(
-    connectorCatalogContract.get,
-    async ({ params, respond, withSignal }) => {
-      requestOrder.push("catalog");
-      catalogStarted.resolve(undefined);
-      expect(params.connectorSlug).toBe("github");
-      await withSignal(releaseCatalog.promise);
-      return respond(200, {
-        connector: publicStatusItem({
-          connectorSlug: "github",
-          label: "GitHub",
-          icon,
-        }),
-      });
-    },
-  );
-  context.mocks.api(
-    builtinConnectorsSlugCallbackContract.callback,
-    ({ params, query, respond }) => {
-      requestOrder.push("callback");
-      callbackStarted.resolve(undefined);
-      expect(params.connectorSlug).toBe("github");
-      expect(query).toMatchObject({
-        code: "oauth-code",
-        state: "oauth-state",
-        responseMode: "json",
-      });
-      return respond(200, { status: "success", username: "octocat" });
-    },
-  );
-
-  const page = setupPage({
-    context,
-    path: "/connectors/github/callback?code=oauth-code&state=oauth-state",
-    auth: null,
-  });
-  await callbackStarted.promise;
-  expect(requestOrder).toStrictEqual(["callback"]);
-  await catalogStarted.promise;
-  expect(releaseCatalog.settled()).toBeFalsy();
-  expect(requestOrder).toStrictEqual(["callback", "catalog"]);
-  releaseCatalog.resolve(undefined);
-  await page;
-
-  const heading = await screen.findByRole("heading", {
-    name: "GitHub connected",
-  });
-  expect(heading).toBeInTheDocument();
-  const image = document.querySelector<HTMLImageElement>(
-    `img[src="${icon.url}"]`,
-  );
-  expect(image).toHaveAttribute("src", icon.url);
-  expect(
-    screen.getByText(
-      "Connected as octocat. Close this window and return to the original page to continue.",
-    ),
-  ).toBeInTheDocument();
-  await waitFor(() => {
-    expect(pathname()).toBe("/connectors/github/callback/success");
-  });
-  const result = new URLSearchParams(search());
-  expect(result.has("code")).toBeFalsy();
-  expect(result.has("state")).toBeFalsy();
-});
-
-test("Refreshing a completed connector callback does not reconnect it", async () => {
-  context.mocks.api(
-    builtinConnectorsSlugCallbackContract.callback,
-    ({ never }) => {
-      return never();
-    },
-  );
-
-  await setupPage({
-    context,
-    path: "/connectors/github/callback/success?username=octocat",
-    auth: null,
-  });
-
-  await expect(
-    screen.findByRole("heading", { name: "GitHub connected" }),
-  ).resolves.toBeInTheDocument();
-  expect(
-    screen.getByText(
-      "Connected as octocat. Close this window and return to the original page to continue.",
-    ),
-  ).toBeInTheDocument();
-});
-
-test("Complete a native Link wallet authorization without a catalog entry", async () => {
+test("connector-callbacks-005 a refreshed Link receipt identifies the wallet while services are pending", async () => {
   context.mocks.api(connectorCatalogContract.get, ({ never }) => {
     return never();
   });
   context.mocks.api(
     builtinConnectorsSlugCallbackContract.callback,
-    ({ params, query, respond }) => {
-      expect(params.connectorSlug).toBe("link");
-      expect(query).toMatchObject({
-        code: "oauth-code",
-        state: "oauth-state",
-        responseMode: "json",
-      });
-      return respond(200, { status: "success", username: null });
+    ({ never }) => {
+      return never();
     },
   );
-
-  await setupPage({
+  const page = await startPage({
     context,
-    path: "/connectors/link/callback?code=oauth-code&state=oauth-state",
     auth: null,
+    host: "app.okou.ai",
+    path: "/connectors/link/callback/success",
   });
-
-  await expect(
-    screen.findByRole("heading", { name: "Link connected" }),
-  ).resolves.toBeInTheDocument();
+  await page.content;
+  await screen.findByRole("heading", { name: "Link connected" });
   expect(screen.getByRole("img", { name: "Link" })).toBeInTheDocument();
-  await waitFor(() => {
-    expect(pathname()).toBe("/connectors/link/callback/success");
-    expect(search()).toBe("");
-  });
 });
 
-test.each([
-  ["success", "Link connected"],
-  ["error", "Couldn’t connect Link"],
-])(
-  "Show the Link wallet icon on a refreshed %s page",
-  async (status, title) => {
-    context.mocks.api(connectorCatalogContract.get, ({ never }) => {
-      return never();
+test("connector-callbacks-008 a denied Notion callback replaces the provider query with a recoverable error", async () => {
+  context.mocks.api(
+    builtinConnectorsSlugCallbackContract.callback,
+    ({ params, query, respond }) => {
+      return respond(200, {
+        status: "error",
+        message:
+          params.connectorSlug === "notion" && query.error === "access_denied"
+            ? "Provider denied access."
+            : "Unknown response",
+      });
+    },
+  );
+  await setupPage({
+    context,
+    auth: null,
+    host: "app.okou.ai",
+    path: "/connectors/notion/callback?error=access_denied&state=notion-reply",
+  });
+  await screen.findByRole("heading", { name: "Couldn’t connect NOTION" });
+  expect(
+    screen.getByText(
+      "Provider denied access. Close this window and try again.",
+    ),
+  ).toBeInTheDocument();
+  const result = new URL(window.location.href);
+  expect(result.pathname).toBe("/connectors/notion/callback/error");
+  expect(result.searchParams.has("error")).toBeFalsy();
+  expect(result.searchParams.has("state")).toBeFalsy();
+});
+
+test("connector-callbacks-002 GitHub publishes its account and catalog mark after the public callback", async () => {
+  const mark = "https://icons.example.test/authorized-github.svg";
+  let authorized = false;
+  context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
+    return respond(401, {
+      error: { code: "UNAUTHORIZED", message: "Sign in" },
     });
+  });
+  context.mocks.api(
+    builtinConnectorsSlugCallbackContract.callback,
+    ({ query, params, respond }) => {
+      authorized =
+        params.connectorSlug === "github" &&
+        query.code === "port-code" &&
+        query.state === "review";
+      return respond(200, { status: "success", username: "octocat" });
+    },
+  );
+  context.mocks.api(connectorCatalogContract.get, ({ respond }) => {
+    const connector = catalogConnector({
+      slug: "github",
+      label: "GitHub",
+      method: browserAuthMethod(),
+    });
+    return respond(200, {
+      connector: {
+        ...connector,
+        icon: {
+          ...connector.icon,
+          url: authorized ? mark : "https://icons.example.test/pending.svg",
+        },
+      },
+    });
+  });
+  await setupPage({
+    context,
+    auth: null,
+    path: "/connectors/github/callback?state=review&code=port-code",
+    host: "app.okou.ai",
+  });
+  await screen.findByRole("heading", { name: "GitHub connected" });
+  expect(screen.getByText(/^Connected as octocat\./)).toBeInTheDocument();
+  expect(screen.getByAltText("")).toHaveAttribute("src", mark);
+  expect(location.pathname).toBe("/connectors/github/callback/success");
+  const query = new URLSearchParams(location.search);
+  expect(query.has("code")).toBeFalsy();
+  expect(query.has("state")).toBeFalsy();
+});
+
+function serveStravaCatalog() {
+  const connector = catalogConnector({
+    slug: "strava",
+    label: "Strava",
+    method: browserAuthMethod(),
+  });
+  context.mocks.api(connectorCatalogContract.get, ({ respond }) => {
+    return respond(200, { connector });
+  });
+}
+test.each([null, "app.okou.ai"] as const)(
+  "A Strava confirmation returns to iOS with the attempt identifier over %s",
+  async (host) => {
+    serveStravaCatalog();
+    const attempt = "b86a89e2-052a-4c88-ae3e-1d71aa1631d2";
+    const destination = host
+      ? `https://${host}/native/connector-authorization?attemptId=${attempt}`
+      : "ai.okou.ios://connector-authorization/" + attempt;
+    const navigation = context.mocks.browser.locationAssign();
+    context.mocks.api(
+      builtinConnectorsSlugCallbackContract.callback,
+      ({ query, respond }) => {
+        expect(query).toMatchObject({
+          code: "activity-read",
+          state: "trail-return",
+          scope: "read",
+          responseMode: "json",
+        });
+        return respond(200, {
+          status: "success",
+          username: null,
+          nativeAppReturn: {
+            platform: "ios",
+            attemptId: attempt,
+            ...(host ? { httpsHost: host } : {}),
+          },
+        });
+      },
+    );
+    await setupPage({
+      context,
+      auth: null,
+      path: "/connectors/strava/callback?code=activity-read&state=trail-return&scope=read",
+    });
+    const link = await findNamedLink("Return to Okou");
+    expect(link).toHaveAttribute("href", destination);
+    expect(new URLSearchParams(location.search).has("code")).toBeFalsy();
+    expect(new URLSearchParams(location.search).has("state")).toBeFalsy();
+    await waitFor(() => {
+      expect(navigation.calls).toContain(destination);
+    });
+  },
+);
+test.each([null, "staging-app.omby.ai"] as const)(
+  "Refreshing the denied Strava page retains the iOS return over %s",
+  async (host) => {
+    serveStravaCatalog();
+    const attempt = "b9a238d5-0fb4-43ec-9cd2-d8d5547911a9";
     context.mocks.api(
       builtinConnectorsSlugCallbackContract.callback,
       ({ never }) => {
         return never();
       },
     );
-
     await setupPage({
       context,
-      path: `/connectors/link/callback/${status}`,
       auth: null,
+      path:
+        "/connectors/strava/callback/error?message=Access+denied&nativeAppAttemptId=" +
+        attempt +
+        (host ? "&nativeAppHttpsHost=" + host : ""),
     });
-
-    await expect(
-      screen.findByRole("heading", { name: title }),
-    ).resolves.toBeInTheDocument();
-    expect(screen.getByRole("img", { name: "Link" })).toBeInTheDocument();
+    const link = await findNamedLink("Return to Okou");
+    expect(link).toHaveAttribute(
+      "href",
+      host
+        ? `https://${host}/native/connector-authorization?attemptId=${attempt}`
+        : "ai.okou.ios://connector-authorization/" + attempt,
+    );
+    expect(
+      screen.getByText("Access denied Close this window and try again."),
+    ).toBeVisible();
   },
 );
-
-test("Show Mercury attribution on a completed connector callback", async () => {
-  context.mocks.api(connectorCatalogContract.get, ({ params, respond }) => {
-    expect(params.connectorSlug).toBe("mercury");
-    return respond(200, {
-      connector: publicStatusItem({
-        connectorSlug: "mercury",
-        label: "Mercury",
-      }),
-    });
-  });
-
-  await setupPage({
-    context,
-    path: "/connectors/mercury/callback/success?username=Not+A+Real+Company+Inc.",
-    auth: null,
-  });
-
-  await expect(
-    screen.findByRole("heading", { name: "Mercury connected" }),
-  ).resolves.toBeInTheDocument();
-  expect(getConnectorAction("link", "Powered by Mercury")).toHaveAttribute(
-    "href",
-    "https://mercury.com",
-  );
-  expect(
-    screen.getByText(
-      "Mercury is a fintech company, not an FDIC-insured bank. Banking services provided through Choice Financial Group and Column N.A., Members FDIC.",
-    ),
-  ).toBeInTheDocument();
-});
-
-test("Show a provider error safely without an authenticated session", async () => {
-  context.mocks.api(
-    builtinConnectorsSlugCallbackContract.callback,
-    ({ query, respond }) => {
-      expect(query).toMatchObject({
-        error: "access_denied",
-        state: "oauth-state",
-        responseMode: "json",
-      });
-      return respond(200, {
-        status: "error",
-        message: "Provider denied access",
-      });
-    },
-  );
-
-  await setupPage({
-    context,
-    path: "/connectors/notion/callback?error=access_denied&state=oauth-state",
-    auth: null,
-  });
-
-  await expect(
-    screen.findByRole("heading", { name: "Couldn’t connect NOTION" }),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByText(/Provider denied access/u)).toBeInTheDocument();
-  expect(
-    screen.getByText(/Close this window and try again\./u),
-  ).toBeInTheDocument();
-  await waitFor(() => {
-    expect(pathname()).toBe("/connectors/notion/callback/error");
-  });
-  const result = new URLSearchParams(search());
-  expect(result.has("error")).toBeFalsy();
-  expect(result.has("state")).toBeFalsy();
-});

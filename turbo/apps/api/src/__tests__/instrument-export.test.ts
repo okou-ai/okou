@@ -3,6 +3,7 @@ import { IncomingMessage, request } from "node:http";
 import { once } from "node:events";
 import { promisify } from "node:util";
 import { serve } from "@hono/node-server";
+import { mailContract } from "@okouai/api-contracts/contracts/mail";
 import {
   context as otelContext,
   ProxyTracerProvider,
@@ -18,6 +19,13 @@ import { server } from "../mocks/server";
 import { createApp } from "../app-factory";
 import { integrationsTelegramRoutes } from "../signals/routes/integrations-telegram";
 import { healthRoutes } from "../signals/routes/health";
+import { mailRoutes } from "../signals/routes/mail";
+import { createBddApi } from "../signals/routes/__tests__/helpers/api-bdd";
+import { createChatFilesBddApi } from "../signals/routes/__tests__/helpers/api-bdd-chat-files";
+import {
+  createConnectorBddApi,
+  mockGmailConnectorOAuth,
+} from "../signals/routes/__tests__/helpers/api-bdd-connectors";
 
 import { testContext } from "./test-context";
 
@@ -274,7 +282,7 @@ describe("API telemetry exports", () => {
     otelContext.disable();
   });
 
-  it("exports ordinary API telemetry but excludes Telegram credentials with the configured real SDKs", async () => {
+  it("exports ordinary API telemetry while excluding sensitive provider data", async () => {
     const Sentry =
       await vi.importActual<typeof import("@sentry/node")>("@sentry/node");
     const otel =
@@ -371,7 +379,7 @@ describe("API telemetry exports", () => {
     // production Hono middleware/handlers, without replacing the request path.
     const app = createApp({
       signal: context.signal,
-      routes: [...integrationsTelegramRoutes, ...healthRoutes],
+      routes: [...integrationsTelegramRoutes, ...healthRoutes, ...mailRoutes],
     });
     const listener = serve({
       fetch: app.fetch,
@@ -469,6 +477,76 @@ describe("API telemetry exports", () => {
       message: "Ordinary request metadata positive control",
       request: { url: `${origin}/health` },
     });
+    mockEnv("APP_URL", "https://app.okou.ai");
+    const bdd = createBddApi(context);
+    const actor = bdd.user();
+    bdd.acceptStorageWrites();
+    const thread = await createChatFilesBddApi(context).createThread(actor, {
+      title: "Draft link telemetry",
+    });
+    mockGmailConnectorOAuth();
+    const connectors = createConnectorBddApi(context);
+    const gmailOAuth = await connectors.startOauth(actor, "gmail", "oauth");
+    const state = new URL(gmailOAuth.authorizationUrl).searchParams.get(
+      "state",
+    );
+    if (!state) {
+      throw new Error("Expected Gmail OAuth state");
+    }
+    await connectors.completeOauthCallback("gmail", {
+      code: "fixture-gmail-code",
+      state,
+    });
+
+    const gmailDraftId = "synthetic-private-gmail-draft-id+encoded";
+    const gmailDraftBase =
+      "https://gmail.googleapis.com/gmail/v1/users/me/drafts";
+    const gmailDraftUrl = `${gmailDraftBase}/${encodeURIComponent(gmailDraftId)}`;
+    const gmailSendUrl = `${gmailDraftBase}/send`;
+    const privateGmailMessage = "synthetic-private-gmail-error-text";
+    const privateGmailReason = "synthetic-private-reason@example.invalid";
+    server.use(
+      http.get(gmailDraftUrl, () => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: 400,
+              status: "INVALID_ARGUMENT",
+              message: privateGmailMessage,
+              errors: [{ reason: "invalid" }, { reason: privateGmailReason }],
+            },
+          },
+          { status: 400 },
+        );
+      }),
+      http.post(gmailSendUrl, () => {
+        return HttpResponse.json({});
+      }),
+    );
+    await trace
+      .getTracer("dependency-upgrade")
+      .startActiveSpan("gmail-calls", async (span) => {
+        const send = await fetch(gmailSendUrl, {
+          method: "POST",
+          signal: context.signal,
+        });
+        expect(send.status).toBe(200);
+        Sentry.addBreadcrumb({
+          category: "http",
+          data: { url: gmailDraftUrl },
+        });
+        Sentry.addBreadcrumb({ category: "http", data: { url: gmailSendUrl } });
+        const response = await app.request(mailContract.linkDraft.path, {
+          method: mailContract.linkDraft.method,
+          headers: {
+            authorization: "Bearer clerk-session",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ threadId: thread.id, gmailDraftId }),
+        });
+        expect(response.status).toBe(500);
+        span.end();
+      });
     trace
       .getTracer("dependency-upgrade")
       .startActiveSpan("api-regression", (span) => {
@@ -598,6 +676,30 @@ describe("API telemetry exports", () => {
       "fetch POST https://api.axiom.co/v1/datasets/_apl",
     );
     expect(exportedTraces).not.toContain("/ingest");
+    expect(exportedTraces).toContain(`fetch POST ${gmailSendUrl}`);
+    expect(errors.join("\n")).toContain(gmailSendUrl);
+    expect(errorEvents).toContainEqual(
+      expect.objectContaining({
+        exception: expect.objectContaining({
+          values: expect.arrayContaining([
+            expect.objectContaining({
+              value: expect.stringMatching(
+                /Failed to read Gmail draft.*\binvalid\b/u,
+              ),
+            }),
+          ]),
+        }),
+      }),
+    );
+    for (const privateValue of [
+      gmailDraftId,
+      encodeURIComponent(gmailDraftId),
+      privateGmailMessage,
+      privateGmailReason,
+    ]) {
+      expect(exportedTraces).not.toContain(privateValue);
+      expect(errors.join("\n")).not.toContain(privateValue);
+    }
     for (const secret of [proof, identity, botToken]) {
       expect(exportedTraces).not.toContain(secret);
       expect(errors.join("\n")).not.toContain(secret);

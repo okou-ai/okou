@@ -1,3 +1,4 @@
+import * as artifactFileShareSchema from "./schema/artifact-file-share";
 import * as voiceTranscriptionSchema from "./schema/voice-transcription";
 import * as hostedSiteShareSchema from "./schema/hosted-site-share";
 import * as hostedSiteShareRateLimitSchema from "./schema/hosted-site-share-rate-limit";
@@ -47,6 +48,7 @@ import * as discordGatewayReceiptSchema from "./schema/discord-gateway-receipt";
 import * as chatTeamsContextSchema from "./schema/chat-teams-context";
 import * as chatTelegramContextSchema from "./schema/chat-telegram-context";
 import * as secretSchema from "./schema/secret";
+import * as antigravityMemberProfileSchema from "./schema/antigravity-member-profile";
 import * as modelProviderSchema from "./schema/model-provider";
 import * as modelProviderAccountSchema from "./schema/model-provider-account";
 import * as runModelCatalogSchema from "./schema/run-model-catalog";
@@ -148,6 +150,7 @@ import * as orgCustomConnectorDcrRegistrationSchema from "./schema/org-custom-co
 import * as customConnectorAccountOauthBindingSchema from "./schema/custom-connector-account-oauth-binding";
 import * as builtinConnectorDcrRegistrationSchema from "./schema/connector-dcr-registration";
 import * as builtinConnectorAccountOauthBindingSchema from "./schema/connector-account-oauth-binding";
+import * as hostedSiteDomainSchema from "./schema/hosted-site-domain";
 import * as hostedSiteSchema from "./runtime/hosted-site";
 import * as hostedSiteBrowserSessionSchema from "./schema/hosted-site-browser-session";
 import * as artifactSchema from "./schema/artifact";
@@ -224,6 +227,7 @@ export const schema = {
   ...discordGatewayReceiptSchema,
   ...chatTelegramContextSchema,
   ...secretSchema,
+  ...antigravityMemberProfileSchema,
   ...modelProviderSchema,
   ...modelProviderAccountSchema,
   ...runModelCatalogSchema,
@@ -328,6 +332,8 @@ export const schema = {
   ...builtinConnectorDcrRegistrationSchema,
   ...builtinConnectorAccountOauthBindingSchema,
   ...hostedSiteSchema,
+  ...hostedSiteDomainSchema,
+  ...artifactFileShareSchema,
   ...hostedSiteShareSchema,
   ...hostedSiteShareRateLimitSchema,
   ...hostedSiteBrowserSessionSchema,

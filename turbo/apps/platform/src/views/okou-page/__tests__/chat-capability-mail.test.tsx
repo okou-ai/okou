@@ -1,848 +1,438 @@
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { mockOAuthCompletions } from "./connector-page-test-helpers.ts";
-import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
-import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
-import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
 import {
   mailContract,
   type MailDraft,
 } from "@okouai/api-contracts/contracts/mail";
 import { screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
-import { describe, expect, it, test } from "vitest";
+import { expect, test } from "vitest";
 
 import {
   click,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   completedConversation,
+  createChatCapabilityHelpers,
   readyChat,
   RUN_PATH,
-  createChatCapabilityHelpers,
 } from "./chat-capability-test-helpers.ts";
-import { createDeferredPromise } from "../../../signals/utils.ts";
 
 const context = testContext();
 const { installCapabilityChat } = createChatCapabilityHelpers(context);
+const TIMESTAMP = "2026-08-01T10:00:00.000Z";
+const PRIVATE_TOKEN = "private-token-5f2a91";
 
-const RECONNECT_MAIL_ID = "e0000000-0000-4000-a000-000000000851";
-const FIRST_MAIL_ID = "e0000000-0000-4000-a000-000000000853";
-const SECOND_MAIL_ID = "e0000000-0000-4000-a000-000000000854";
-const DETAILS_MAIL_ID = "e0000000-0000-4000-a000-000000000855";
-const GMAIL_CONNECTION_ID = "e0000000-0000-4000-a000-000000000856";
-const DEFAULT_GMAIL_CONNECTION_ID = "e0000000-0000-4000-a000-000000000857";
-const APP_HOST = "app.okou.ai";
-
-function mailUrl(mailDraftId: string): string {
-  return `https://${APP_HOST}/mail/drafts/${mailDraftId}`;
+function mailUrl(id: string): string {
+  return `https://app.okou.ai/mail/drafts/${id}`;
 }
 
-function mailCard(mailDraftId: string, label: string): string {
-  return `[${label}](${mailUrl(mailDraftId)})`;
-}
-
-function mailDraft(
-  mailDraftId: string,
-  overrides: Partial<Extract<MailDraft, { provider: "gmail" }>> = {},
-): Extract<MailDraft, { provider: "gmail" }> {
+function gmailDraft(overrides: Partial<MailDraft> = {}): MailDraft {
   return {
-    version: 3,
     provider: "gmail",
-    from: "sender@example.com",
-    fromName: "Example Sender",
-    to: ["recipient@example.com"],
-    cc: [],
-    bcc: [],
-    subject: `Mail ${mailDraftId.slice(-3)}`,
-    body: "A persisted email message.",
-    accessStatus: "ready",
-    references: [],
+    version: 3,
+    gmailDraftId: "draft-1",
+    gmailThreadId: "thread-1",
+    gmailMessageId: "message-1",
     status: "draft",
     detailAvailable: true,
-    gmailDraftId: `gmail-draft-${mailDraftId}`,
-    gmailThreadId: `gmail-thread-${mailDraftId}`,
-    gmailMessageId: `gmail-message-${mailDraftId}`,
+    from: "sender@example.com",
+    to: ["reviewer@example.com"],
+    cc: [],
+    bcc: [],
+    references: [],
     attachments: [],
-    createdAt: "2026-08-01T10:00:00.000Z",
-    updatedAt: "2026-08-01T10:01:00.000Z",
+    subject: "Untitled",
+    body: "",
+    createdAt: TIMESTAMP,
+    updatedAt: TIMESTAMP,
     ...overrides,
-  };
+  } as MailDraft;
 }
 
-function mailResponse(mailDraftId: string, draft: MailDraft) {
-  return {
-    mailDraftId,
-    mailDraftUrl: mailUrl(mailDraftId),
-    mailDraft: draft,
-  };
-}
-
-function normalizedText(element: HTMLElement): string {
-  return element.textContent?.replace(/\s+/gu, " ").trim() ?? "";
-}
-
-function queryControl(
-  role: "button" | "link",
-  name: string,
-  container: ParentNode = document.body,
-): HTMLElement | null {
-  return (
-    queryAllByRoleFast(role, container).find((element) => {
-      return (
-        element.getAttribute("aria-label") === name ||
-        normalizedText(element) === name
-      );
-    }) ?? null
-  );
-}
-
-function findControl(
-  role: "button" | "link",
-  name: string,
-  container: ParentNode = document.body,
-): Promise<HTMLElement> {
-  return waitFor(() => {
-    const control = queryControl(role, name, container);
-    if (!control) {
-      throw new Error(`${name} ${role} was not visible`);
-    }
-    return control;
-  });
-}
-
-function findMailCard(subject: string): Promise<HTMLElement> {
-  return waitFor(() => {
-    const card = queryAllByRoleFast("button").find((candidate) => {
-      return candidate.getAttribute("aria-label")?.includes(subject) === true;
-    });
-    if (!card) {
-      throw new Error(`Mail card ${subject} was not usable`);
-    }
-    return card;
-  });
-}
-
-function findOpenMailCard(subject: string): Promise<HTMLElement> {
-  return waitFor(() => {
-    const cards = queryAllByRoleFast("button").filter((candidate) => {
-      return candidate.getAttribute("aria-label")?.includes(subject) === true;
-    });
-    const card = cards.find((candidate) => {
-      return candidate.getAttribute("aria-label")?.startsWith("Open ") === true;
-    });
-    if (!card) {
-      const labels = cards.map((candidate) => {
-        return candidate.getAttribute("aria-label");
-      });
-      throw new Error(`Open mail card was not visible: ${labels.join(", ")}`);
-    }
-    return card;
-  });
-}
-
-function connectorResponse(args: {
-  readonly connectionId: string;
-  readonly email: string;
-  readonly reconnectRequired: boolean;
-  readonly updatedAt: string;
-}): BuiltinConnectorResponse {
-  return {
-    id: args.connectionId,
-    slug: "gmail",
-    authMethod: "oauth",
-    externalId: `gmail-${args.connectionId}`,
-    externalUsername: args.email,
-    externalEmail: args.email,
-    oauthScopes: ["https://www.googleapis.com/auth/gmail.modify"],
-    connectionStatus: args.reconnectRequired
-      ? "reconnect-required"
-      : "connected",
-    reconnectReason: args.reconnectRequired
-      ? "authorization_expired_or_revoked"
-      : null,
-    tokenExpiresAt: null,
-    createdAt: "2026-08-01T09:00:00.000Z",
-    updatedAt: args.updatedAt,
-  };
-}
-
-function openedAuthorizationWindow(): {
-  readonly calls: ReturnType<typeof context.mocks.browser.open>["calls"];
-  readonly complete: () => void;
-  readonly navigations: string[];
-} {
-  const navigations: string[] = [];
-  const authorizationWindow = context.mocks.browser.authWindow();
-  const location = {
-    hrefValue: "about:blank",
-    get href(): string {
-      return this.hrefValue;
-    },
-    set href(value: string) {
-      this.hrefValue = value;
-      navigations.push(value);
-    },
-  };
-  Object.defineProperty(authorizationWindow, "location", {
-    configurable: true,
-    value: location,
-  });
-  const opened = context.mocks.browser.open(authorizationWindow);
-  return {
-    calls: opened.calls,
-    complete: () => {
-      authorizationWindow.close();
-    },
-    navigations,
-  };
-}
-
-describe("reconnecting the exact Gmail account required by a persisted mail card", () => {
-  async function prepareReconnect() {
-    const subject = "Reconnect project mail";
-    const attempt = {
-      gmailReady: false,
-      oauthAttemptId: crypto.randomUUID(),
-      authorization: openedAuthorizationWindow(),
-    };
-    installCapabilityChat({
-      events: completedConversation(mailCard(RECONNECT_MAIL_ID, subject)),
-    });
-    context.mocks.data.connectors([
-      connectorResponse({
-        connectionId: DEFAULT_GMAIL_CONNECTION_ID,
-        email: "default@example.com",
-        reconnectRequired: false,
-        updatedAt: "2026-08-01T09:00:00.000Z",
-      }),
-      connectorResponse({
-        connectionId: GMAIL_CONNECTION_ID,
-        email: "sender@example.com",
-        reconnectRequired: true,
-        updatedAt: "2026-08-01T09:00:00.000Z",
-      }),
-    ]);
-    context.mocks.api(mailContract.getDraft, ({ respond }) => {
-      return respond(
-        200,
-        mailResponse(
-          RECONNECT_MAIL_ID,
-          mailDraft(RECONNECT_MAIL_ID, {
-            subject,
-            accessStatus: attempt.gmailReady ? "ready" : "reconnect",
-            reconnectConnectionId: attempt.gmailReady
-              ? undefined
-              : GMAIL_CONNECTION_ID,
-          }),
-        ),
-      );
-    });
-    const completedAttempts = mockOAuthCompletions(context);
-    const oauthAccounts: ConnectorAccountMutationIntent[] = [];
-    context.mocks.api(
-      builtinConnectorOauthStartContract.start,
-      ({ body, respond }) => {
-        oauthAccounts.push(body.account);
-        return respond(200, {
-          authorizationUrl: "https://accounts.example.test/gmail/authorize",
-          oauthAttemptId: attempt.oauthAttemptId,
-        });
-      },
-    );
-    await setupPage({ context, path: RUN_PATH, host: APP_HOST });
-
-    await readyChat();
-    const reconnectCard = await findMailCard(subject);
-    expect(reconnectCard).toHaveTextContent(subject);
-    click(reconnectCard);
-
-    await waitFor(() => {
-      expect(attempt.authorization.calls).toHaveLength(1);
-      expect(attempt.authorization.navigations).toContain(
-        "https://accounts.example.test/gmail/authorize",
-      );
-      expect(oauthAccounts).toStrictEqual([
-        { intent: "reconnect", connectionId: GMAIL_CONNECTION_ID },
-      ]);
-    });
-    return {
-      subject,
-      attempt,
-      reconnectCard,
-      completedAttempts,
-    };
-  }
-
-  it("reconnecting opens mail from the same required account", async () => {
-    const { subject, attempt, reconnectCard, completedAttempts } =
-      await prepareReconnect();
-    expect(reconnectCard).toHaveTextContent("Reconnecting…");
-    expect(reconnectCard).toBeDisabled();
-
-    attempt.gmailReady = true;
-    context.mocks.data.connectors([
-      connectorResponse({
-        connectionId: DEFAULT_GMAIL_CONNECTION_ID,
-        email: "default@example.com",
-        reconnectRequired: false,
-        updatedAt: "2026-08-01T09:00:00.000Z",
-      }),
-      connectorResponse({
-        connectionId: GMAIL_CONNECTION_ID,
-        email: "sender@example.com",
-        reconnectRequired: false,
-        updatedAt: "2026-08-01T10:00:00.000Z",
-      }),
-    ]);
-    completedAttempts.set(attempt.oauthAttemptId, GMAIL_CONNECTION_ID);
-    attempt.authorization.complete();
-    context.mocks.ably.trigger("connector:changed", { connectorSlug: "gmail" });
-
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).toBeNull();
-    });
-    click(await findOpenMailCard(subject));
-    const sidebar = await screen.findByRole("complementary", {
-      name: "Email details",
-    });
-    expect(within(sidebar).getByText(subject)).toBeVisible();
-    expect(
-      within(sidebar).getByText("A persisted email message."),
-    ).toBeVisible();
-  });
-});
-
-test("Inline, table, and nested mail links keep their labels and open email details", async () => {
-  const firstDraft = mailDraft(FIRST_MAIL_ID, {
-    subject: "First candidate invitation",
-    body: "The first candidate's email.",
-  });
-  const secondDraft = mailDraft(SECOND_MAIL_ID, {
-    subject: "Second candidate invitation",
-    body: "The second candidate's email.",
-  });
-  const chineseDraft = mailDraft(DETAILS_MAIL_ID, {
-    subject: "Invitation from a Chinese sentence",
-    body: "The email linked before Chinese punctuation.",
-  });
-  const relativeUrl = `/mail/drafts/${SECOND_MAIL_ID}`;
-  const foreignUrl = `https://untrusted.example/mail/drafts/${SECOND_MAIL_ID}`;
-  installCapabilityChat({
-    events: completedConversation(
-      [
-        ` ${mailCard(FIRST_MAIL_ID, "Standalone draft")} `,
-        "",
-        `Review [**Inline draft**](${mailUrl(SECOND_MAIL_ID)}) before sending.`,
-        "",
-        "| Candidate | Email |",
-        "| --- | --- |",
-        `| First candidate | ${mailUrl(FIRST_MAIL_ID)} |`,
-        "",
-        `- [List draft](${mailUrl(SECOND_MAIL_ID)})`,
-        "",
-        `> [Quoted draft](${mailUrl(SECOND_MAIL_ID)})`,
-        "",
-        "A paragraph starts here",
-        mailUrl(SECOND_MAIL_ID),
-        "and continues after the URL.",
-        "",
-        `Also review [Relative draft](${relativeUrl}).`,
-        "",
-        `Relative path: **${relativeUrl}**`,
-        "",
-        `请查看 **${mailUrl(DETAILS_MAIL_ID)}。然后确认内容。**`,
-        "",
-        `A code example: \`${mailUrl(SECOND_MAIL_ID)}\`.`,
-        "",
-        `Untrusted: [External link](${foreignUrl}).`,
-      ].join("\n"),
-    ),
-  });
-  const drafts = new Map([
-    [FIRST_MAIL_ID, firstDraft],
-    [SECOND_MAIL_ID, secondDraft],
-    [DETAILS_MAIL_ID, chineseDraft],
-  ]);
+/** The Gmail drafts the API stores, by mail draft ID. */
+function mockMailDrafts(drafts: Map<string, MailDraft>): void {
   context.mocks.api(mailContract.getDraft, ({ params, respond }) => {
     const draft = drafts.get(params.mailDraftId);
     if (!draft) {
       return respond(404, {
-        error: { code: "NOT_FOUND", message: "Email not found" },
+        error: { code: "NOT_FOUND", message: "Mail draft not found" },
       });
     }
-    return respond(200, mailResponse(params.mailDraftId, draft));
+    return respond(200, {
+      mailDraftId: params.mailDraftId,
+      mailDraftUrl: mailUrl(params.mailDraftId),
+      mailDraft: draft,
+    });
+  });
+}
+
+/** Attachment bytes as the API streams them for each Gmail part. */
+function mockAttachments(parts: Record<string, BlobPart>): void {
+  context.mocks.http.get(
+    /\/api\/mail\/drafts\/[^/]+\/attachments\/[^/]+$/u,
+    ({ request }) => {
+      const partId = new URL(request.url).pathname.split("/").at(-1) ?? "";
+      return new HttpResponse(new Blob([parts[partId] ?? ""]), {
+        headers: { "Content-Type": "application/octet-stream" },
+      });
+    },
+  );
+}
+
+function mailCard(label: string): HTMLElement | undefined {
+  return queryAllByRoleFast("button").find((candidate) => {
+    return candidate.getAttribute("aria-label") === label;
+  });
+}
+
+async function openMail(label: string): Promise<HTMLElement> {
+  const card = await waitFor(() => {
+    const found = mailCard(label);
+    if (!found) {
+      throw new Error(`Expected the mail card ${label}`);
+    }
+    return found;
+  });
+  click(card);
+  return await screen.findByTestId("mail-draft-sidebar");
+}
+
+async function closeMail(details: HTMLElement): Promise<void> {
+  click(labelledButton("Close email details", details));
+  await waitFor(() => {
+    expect(details).not.toBeInTheDocument();
+  });
+}
+
+function labelledButton(label: string, container: ParentNode): HTMLElement {
+  const found = queryAllByRoleFast("button", container).find((candidate) => {
+    return candidate.getAttribute("aria-label") === label;
+  });
+  if (!found) {
+    throw new Error(`Expected the ${label} button`);
+  }
+  return found;
+}
+
+function action(name: string, container: ParentNode): HTMLElement {
+  const found = queryAllByRoleFast("button", container).find((candidate) => {
+    return candidate.textContent?.trim() === name;
+  });
+  if (!found) {
+    throw new Error(`Expected the ${name} action`);
+  }
+  return found;
+}
+
+test("Open a trusted email card with safe, complete details", async () => {
+  const id = "a0000000-0000-4000-a000-000000000721";
+  mockMailDrafts(
+    new Map([
+      [
+        id,
+        gmailDraft({
+          status: "sent",
+          gmailThreadId: "thread-quarterly",
+          sentGmailMessageId: "sent-quarterly",
+          sentAt: TIMESTAMP,
+          fromName: "Sam Sender",
+          to: ["reviewer@example.com"],
+          cc: ["finance@example.com"],
+          bcc: ["audit@example.com"],
+          subject: "Quarterly launch",
+          body: "Hello team",
+          bodyHtml: [
+            "<p>Hello <strong>team</strong></p>",
+            '<img src="cid:logo@okou" alt="Okou logo">',
+            '<img src="https://images.example.com/chart.png" alt="Launch chart">',
+            `<script>window.__mailScriptRan = "${PRIVATE_TOKEN}"</script>`,
+            `<iframe srcdoc="${PRIVATE_TOKEN}"></iframe>`,
+            `<input value="${PRIVATE_TOKEN}">`,
+            '<a href="javascript:alert(1)">Run setup</a>',
+            `<img src="x" alt="Tracker" onerror="window.__mailScriptRan='${PRIVATE_TOKEN}'">`,
+          ].join(""),
+          inlineImages: [
+            { contentId: "logo@okou", partId: "4", alt: "Okou logo" },
+          ],
+          attachments: [
+            {
+              filename: "plan.pdf",
+              contentType: "application/pdf",
+              size: 1200,
+              partId: "2",
+            },
+            {
+              filename: "notes.txt",
+              contentType: "text/plain",
+              size: 21,
+              partId: "3",
+            },
+          ],
+        }),
+      ],
+    ]),
+  );
+  mockAttachments({
+    "2": "%PDF-1.4 launch plan",
+    "3": "Launch notes for Q3",
+    "4": new Uint8Array([137, 80, 78, 71]),
+  });
+  installCapabilityChat({ events: completedConversation(mailUrl(id)) });
+  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
+  await readyChat();
+
+  const details = await openMail("Open sent email: Quarterly launch");
+
+  await expect(
+    within(details).findByRole("heading", { name: "Quarterly launch" }),
+  ).resolves.toBeInTheDocument();
+  for (const text of [
+    "Sam Sender",
+    "sender@example.com",
+    "to reviewer@example.com",
+    "cc finance@example.com",
+    "bcc audit@example.com",
+  ]) {
+    expect(within(details).getByText(text)).toBeInTheDocument();
+  }
+  expect(within(details).getByText("team").closest("strong")).not.toBeNull();
+  await expect(
+    within(details).findByRole("img", { name: "Okou logo" }),
+  ).resolves.toHaveAttribute("src", expect.stringMatching(/^blob:/u));
+  expect(
+    within(details).getByRole("img", { name: "Launch chart" }),
+  ).toHaveAttribute("referrerpolicy", "no-referrer");
+  expect(
+    queryAllByRoleFast("link", details).find((link) => {
+      return link.textContent?.trim() === "Open in Gmail";
+    }),
+  ).toHaveAttribute("href", expect.stringContaining("#all/thread-quarterly"));
+  expect(within(details).getByText("Run setup")).not.toHaveAttribute("href");
+  expect(within(details).queryByRole("img", { name: "Tracker" })).toBeNull();
+  expect(details.querySelector("script, iframe, input")).toBeNull();
+  expect(document.body).not.toHaveTextContent(PRIVATE_TOKEN);
+  expect(Reflect.get(window, "__mailScriptRan")).toBeUndefined();
+
+  click(await findPreview(details, "Open pdf preview for plan.pdf"));
+
+  const pdf = await screen.findByRole("dialog", { name: "plan.pdf preview" });
+  // The document frame loads the downloaded attachment, not a remote URL.
+  expect(within(pdf).getByTitle("plan.pdf preview")).toHaveAttribute(
+    "src",
+    expect.stringMatching(/^blob:/u),
+  );
+  click(labelledButton("Close", pdf));
+  await waitFor(() => {
+    expect(pdf).not.toBeInTheDocument();
   });
 
-  await setupPage({ context, path: RUN_PATH, host: APP_HOST });
-  await readyChat();
-  const card = await findMailCard(firstDraft.subject);
-  expect(card).toBeInTheDocument();
-  const inlineLink = await findControl("link", "Inline draft");
-  expect(inlineLink.querySelector("strong")).toHaveTextContent("Inline draft");
-  expect(inlineLink.closest("p")).toHaveTextContent(
-    "Review Inline draft before sending.",
-  );
-  expect(
-    queryAllByRoleFast("button").filter((button) => {
-      return button.getAttribute("aria-label")?.includes(secondDraft.subject);
-    }),
-  ).toHaveLength(0);
-  const externalLink = await findControl("link", "External link");
-  expect(externalLink).toHaveAttribute("href", foreignUrl);
-  let nativeLinkNavigation = false;
-  document.addEventListener(
-    "click",
-    (event) => {
-      nativeLinkNavigation = !event.defaultPrevented;
-      // Observe React's handling without leaving the test page.
-      event.preventDefault();
-    },
-    { once: true },
-  );
-  click(externalLink);
-  expect(nativeLinkNavigation).toBeTruthy();
-  expect(
-    screen.queryByRole("complementary", { name: "Email details" }),
-  ).not.toBeInTheDocument();
-  const chineseLink = await findControl("link", mailUrl(DETAILS_MAIL_ID));
-  expect(chineseLink.closest("p")).toHaveTextContent(
-    `请查看 ${mailUrl(DETAILS_MAIL_ID)}。然后确认内容。`,
-  );
+  click(await findPreview(details, "Open text preview for notes.txt"));
 
-  const links = [
-    {
-      label: mailUrl(FIRST_MAIL_ID),
-      href: mailUrl(FIRST_MAIL_ID),
-      tag: "table",
-      draft: firstDraft,
-    },
-    {
-      label: "Inline draft",
-      href: mailUrl(SECOND_MAIL_ID),
-      tag: "p",
-      draft: secondDraft,
-    },
-    {
-      label: "List draft",
-      href: mailUrl(SECOND_MAIL_ID),
-      tag: "li",
-      draft: secondDraft,
-    },
-    {
-      label: "Quoted draft",
-      href: mailUrl(SECOND_MAIL_ID),
-      tag: "blockquote",
-      draft: secondDraft,
-    },
-    {
-      label: mailUrl(SECOND_MAIL_ID),
-      href: mailUrl(SECOND_MAIL_ID),
-      tag: "p",
-      draft: secondDraft,
-    },
-    {
-      label: "Relative draft",
-      href: relativeUrl,
-      tag: "p",
-      draft: secondDraft,
-    },
-    {
-      label: relativeUrl,
-      href: relativeUrl,
-      tag: "p",
-      draft: secondDraft,
-    },
-    {
-      label: mailUrl(DETAILS_MAIL_ID),
-      href: mailUrl(DETAILS_MAIL_ID),
-      tag: "p",
-      draft: chineseDraft,
-    },
-  ];
-  for (const { label, href, tag, draft } of links) {
-    const link = await findControl("link", label);
-    expect(link).toHaveAttribute("href", href);
-    expect(link.closest(tag)).toBeInTheDocument();
-    click(link);
-    const sidebar = await screen.findByRole("complementary", {
-      name: "Email details",
-    });
-    await expect(
-      within(sidebar).findByText(draft.body),
-    ).resolves.toBeInTheDocument();
-    expect(within(sidebar).getByText(draft.subject)).toBeInTheDocument();
-    expect(window.location.pathname).toBe(RUN_PATH);
-  }
+  const text = await screen.findByRole("dialog", { name: "notes.txt preview" });
+  await expect(
+    within(text).findByText("Launch notes for Q3"),
+  ).resolves.toBeInTheDocument();
 });
 
+async function findPreview(
+  details: HTMLElement,
+  label: string,
+): Promise<HTMLElement> {
+  return await waitFor(() => {
+    const preview = queryAllByRoleFast("button", details).find((button) => {
+      return button.getAttribute("aria-label") === label;
+    });
+    if (!preview) {
+      throw new Error(`Expected ${label}`);
+    }
+    return preview;
+  });
+}
+
 test("Send, revisit, and delete mail drafts from chat", async () => {
-  const firstSubject = "Launch approval";
-  const secondSubject = "Vendor follow-up";
-  const firstBody = "Approve the launch plan before Friday.";
-  const secondBody = "Confirm the vendor delivery date.";
-  const sentThreadId = "gmail-sent-thread-853";
-  const drafts = new Map<string, Extract<MailDraft, { provider: "gmail" }>>([
+  const launchId = "a0000000-0000-4000-a000-000000000731";
+  const vendorId = "a0000000-0000-4000-a000-000000000732";
+  const drafts = new Map([
     [
-      FIRST_MAIL_ID,
-      mailDraft(FIRST_MAIL_ID, { subject: firstSubject, body: firstBody }),
+      launchId,
+      gmailDraft({
+        gmailThreadId: "thread-launch",
+        subject: "Launch approval",
+        body: "Please approve the launch.",
+      }),
     ],
     [
-      SECOND_MAIL_ID,
-      mailDraft(SECOND_MAIL_ID, { subject: secondSubject, body: secondBody }),
+      vendorId,
+      gmailDraft({
+        gmailDraftId: "draft-2",
+        gmailThreadId: "thread-vendor",
+        gmailMessageId: "message-2",
+        subject: "Vendor follow-up",
+        body: "Checking in on the contract.",
+      }),
     ],
   ]);
-  installCapabilityChat({
-    events: completedConversation(
-      `${mailCard(FIRST_MAIL_ID, firstSubject)}\n\n${mailCard(SECOND_MAIL_ID, secondSubject)}`,
-    ),
-  });
-  context.mocks.api(mailContract.getDraft, ({ params, respond }) => {
-    const draft = drafts.get(params.mailDraftId);
-    return draft
-      ? respond(200, mailResponse(params.mailDraftId, draft))
-      : respond(404, {
-          error: { code: "NOT_FOUND", message: "Email not found" },
-        });
-  });
+  mockMailDrafts(drafts);
   context.mocks.api(mailContract.sendDraft, ({ params, respond }) => {
-    const current = drafts.get(params.mailDraftId);
-    if (!current) {
-      return respond(404, {
-        error: { code: "NOT_FOUND", message: "Email not found" },
-      });
-    }
-    const sent: Extract<MailDraft, { provider: "gmail" }> = {
-      ...current,
+    const sent = {
+      ...drafts.get(params.mailDraftId),
       status: "sent",
-      gmailThreadId: sentThreadId,
-      sentGmailMessageId: "gmail-sent-message-853",
-      sentAt: "2026-08-01T10:05:00.000Z",
-      updatedAt: "2026-08-01T10:05:00.000Z",
-    };
+      sentGmailMessageId: "sent-launch",
+      sentAt: TIMESTAMP,
+    } as MailDraft;
     drafts.set(params.mailDraftId, sent);
-    return respond(200, mailResponse(params.mailDraftId, sent));
+    return respond(200, {
+      mailDraftId: params.mailDraftId,
+      mailDraftUrl: mailUrl(params.mailDraftId),
+      mailDraft: sent,
+    });
   });
   context.mocks.api(mailContract.deleteDraft, ({ params, respond }) => {
     drafts.delete(params.mailDraftId);
     return respond(204);
   });
-
-  await setupPage({ context, path: RUN_PATH, host: APP_HOST });
-
-  await readyChat();
-  click(await findMailCard(firstSubject));
-  let sidebar = await screen.findByRole("complementary", {
-    name: "Email details",
-  });
-  expect(within(sidebar).getByText(firstBody)).toBeVisible();
-  click(await findControl("button", "Send", sidebar));
-
-  await findMailCard(firstSubject);
-  sidebar = await screen.findByRole("complementary", {
-    name: "Email details",
-  });
-  expect(within(sidebar).getByText("Sent")).toBeVisible();
-  await expect(
-    findControl("link", "Open in Gmail", sidebar),
-  ).resolves.toHaveAttribute(
-    "href",
-    `https://mail.google.com/mail/?authuser=sender%40example.com#all/${sentThreadId}`,
-  );
-
-  click(await findMailCard(secondSubject));
-  sidebar = await screen.findByRole("complementary", {
-    name: "Email details",
-  });
-  expect(within(sidebar).getByText(secondBody)).toBeVisible();
-  expect(within(sidebar).getByText("Draft")).toBeVisible();
-
-  click(await findMailCard(firstSubject));
-  sidebar = await screen.findByRole("complementary", {
-    name: "Email details",
-  });
-  expect(within(sidebar).getByText(firstBody)).toBeVisible();
-  expect(within(sidebar).getByText("Sent")).toBeVisible();
-
-  click(await findMailCard(secondSubject));
-  sidebar = await screen.findByRole("complementary", {
-    name: "Email details",
-  });
-  click(await findControl("button", "Delete", sidebar));
-
-  await waitFor(() => {
-    expect(screen.queryByText(secondSubject)).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("complementary", { name: "Email details" }),
-    ).not.toBeInTheDocument();
-  });
-  await expect(findMailCard(firstSubject)).resolves.toHaveTextContent("Sent");
-});
-
-test("An accepted Outlook send appears as sent immediately in chat", async () => {
-  const confirmation = createDeferredPromise<void>(context.signal);
-  const {
-    gmailDraftId: _gmailDraftId,
-    gmailThreadId: _gmailThreadId,
-    gmailMessageId: _gmailMessageId,
-    ...common
-  } = mailDraft(FIRST_MAIL_ID);
-  let current: MailDraft = {
-    ...common,
-    provider: "outlook",
-    outlookMessageId: "outlook-immutable-id",
-    outlookConversationId: "outlook-conversation",
-    outlookWebLink: "https://outlook.live.com/mail/0/drafts/id/outlook-draft",
-    subject: "Outlook launch approval",
-    body: "Review the launch proposal in Outlook.",
-  };
-  installCapabilityChat({
-    events: completedConversation(mailCard(FIRST_MAIL_ID, current.subject)),
-  });
-  context.mocks.api(mailContract.getDraft, ({ respond }) => {
-    return respond(200, mailResponse(FIRST_MAIL_ID, current));
-  });
-  context.mocks.api(mailContract.sendDraft, async ({ respond }) => {
-    await confirmation.promise;
-    current = {
-      ...current,
-      status: "sent",
-      sentAt: "2026-10-28T10:00:00.000Z",
-    };
-    return respond(200, mailResponse(FIRST_MAIL_ID, current));
-  });
-  await setupPage({ context, path: RUN_PATH, host: APP_HOST });
-  await readyChat();
-  click(await findMailCard(current.subject));
-  const sidebar = await screen.findByRole("complementary", {
-    name: "Email details",
-  });
-  expect(within(sidebar).getByText(current.body)).toBeInTheDocument();
-  await expect(
-    findControl("link", "Open in Outlook", sidebar),
-  ).resolves.toHaveAttribute("href", current.outlookWebLink);
-  click(await findControl("button", "Send", sidebar));
-  await expect(findControl("button", "Send", sidebar)).resolves.toBeDisabled();
-  expect(within(sidebar).queryByText("Sent")).not.toBeInTheDocument();
-  confirmation.resolve();
-  await expect(within(sidebar).findByText("Sent")).resolves.toBeInTheDocument();
-  await expect(findMailCard(current.subject)).resolves.toHaveTextContent(
-    "Sent",
-  );
-  expect(queryControl("button", "Send", sidebar)).toBeNull();
-});
-
-test("Open a trusted email card with safe, complete details", async () => {
-  const subject = "Quarterly security summary";
-  const remoteImageUrl = "https://cdn.example.test/security-chart.png";
-  const gmailThreadId = "gmail-thread-details-855";
-  context.mocks.browser.blobDownload();
-  const bodyHtml = `
-    <h2>Quarterly summary</h2>
-    <p>Review the <strong>approved findings</strong>.</p>
-    <img src="cid:security-chart" alt="Inline security chart">
-    <img src="${remoteImageUrl}" alt="Remote security chart">
-    <a href="javascript:globalThis.__privateMailExecuted = true">Unsafe action</a>
-    <img src="javascript:globalThis.__privateMailExecuted = true" alt="Unsafe image">
-    <script>globalThis.__privateMailExecuted = "LEAKED_PRIVATE_TOKEN"</script>
-    <iframe srcdoc="LEAKED_PRIVATE_TOKEN"></iframe>
-    <input value="LEAKED_PRIVATE_TOKEN">
-  `;
-  installCapabilityChat({
-    events: completedConversation(mailCard(DETAILS_MAIL_ID, subject)),
-  });
-  context.mocks.api(mailContract.getDraft, ({ respond }) => {
-    return respond(
-      200,
-      mailResponse(
-        DETAILS_MAIL_ID,
-        mailDraft(DETAILS_MAIL_ID, {
-          from: "security@example.com",
-          fromName: "Security Team",
-          to: ["owner@example.com", "reviewer@example.com"],
-          cc: ["audit@example.com"],
-          bcc: ["archive@example.com"],
-          subject,
-          body: "Quarterly summary fallback",
-          bodyHtml,
-          status: "sent",
-          sentGmailMessageId: "gmail-sent-details-855",
-          gmailThreadId,
-          inlineImages: [
-            {
-              contentId: "security-chart",
-              partId: "inline-security-chart",
-              alt: "Inline security chart",
-            },
-          ],
-          attachments: [
-            {
-              filename: "brief.pdf",
-              contentType: "application/pdf",
-              size: 512,
-              partId: "attachment-pdf",
-            },
-            {
-              filename: "notes.txt",
-              contentType: "text/plain",
-              size: 128,
-              partId: "attachment-text",
-            },
-          ],
-        }),
-      ),
-    );
-  });
-  context.mocks.http.get(
-    `*/api/mail/drafts/${DETAILS_MAIL_ID}/attachments/:partId`,
-    ({ params }) => {
-      const content =
-        params.partId === "attachment-text"
-          ? "Approved text attachment"
-          : params.partId === "attachment-pdf"
-            ? "%PDF-1.4 test preview"
-            : "inline image bytes";
-      return new HttpResponse(content, {
-        headers: { "Content-Type": "application/octet-stream" },
-      });
-    },
-  );
-
-  await setupPage({ context, path: RUN_PATH, host: APP_HOST });
-
-  await readyChat();
-  const card = await findMailCard(subject);
-  expect(card).toHaveTextContent("owner@example.com +1");
-  click(card);
-
-  const sidebar = await screen.findByRole("complementary", {
-    name: "Email details",
-  });
-  expect(within(sidebar).getByText(subject)).toBeVisible();
-  expect(within(sidebar).getByText("Security Team")).toBeVisible();
-  expect(within(sidebar).getByText("security@example.com")).toBeVisible();
-  expect(
-    within(sidebar).getByText(/owner@example\.com, reviewer@example\.com/u),
-  ).toBeVisible();
-  expect(within(sidebar).getByText(/cc audit@example\.com/iu)).toBeVisible();
-  expect(within(sidebar).getByText(/bcc archive@example\.com/iu)).toBeVisible();
-  expect(
-    within(sidebar).getByRole("heading", { name: "Quarterly summary" }),
-  ).toBeVisible();
-  expect(within(sidebar).getByText("approved findings")).toBeVisible();
-
-  const inlineImage = await within(sidebar).findByRole("img", {
-    name: "Inline security chart",
-  });
-  expect(inlineImage.getAttribute("src")).toMatch(/^blob:/u);
-  const remoteImage = within(sidebar).getByRole("img", {
-    name: "Remote security chart",
-  });
-  expect(remoteImage).toHaveAttribute("src", remoteImageUrl);
-  expect(remoteImage).toHaveAttribute("referrerpolicy", "no-referrer");
-  await expect(
-    findControl("link", "Open in Gmail", sidebar),
-  ).resolves.toHaveAttribute(
-    "href",
-    `https://mail.google.com/mail/?authuser=security%40example.com#all/${gmailThreadId}`,
-  );
-  click(await findControl("button", "Open pdf preview for brief.pdf", sidebar));
-  const pdfStage = await screen.findByTestId("artifact-dialog-document-frame");
-  await waitFor(() => {
-    const source = pdfStage.querySelector("iframe")?.getAttribute("src");
-    if (!source) {
-      throw new Error("PDF preview source was not ready");
-    }
-    expect(source.startsWith("blob:")).toBeTruthy();
-  });
-  click(await findControl("button", "Close"));
-  await waitFor(() => {
-    expect(screen.queryByTestId("attachment-lightbox")).toBeNull();
-  });
-
-  click(
-    await findControl("button", "Open text preview for notes.txt", sidebar),
-  );
-  const textPreview = await screen.findByRole("dialog", {
-    name: "notes.txt preview",
-  });
-  await expect(
-    within(textPreview).findByText("Approved text attachment"),
-  ).resolves.toBeVisible();
-  click(await findControl("button", "Close", textPreview));
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("dialog", { name: "notes.txt preview" }),
-    ).toBeNull();
-  });
-
-  expect(sidebar.querySelector("script")).toBeNull();
-  expect(sidebar.querySelector("iframe")).toBeNull();
-  expect(sidebar.querySelector("input")).toBeNull();
-  expect(sidebar).not.toHaveTextContent("LEAKED_PRIVATE_TOKEN");
-  expect(within(sidebar).getByText("Unsafe action")).not.toHaveAttribute(
-    "href",
-  );
-  expect(
-    within(sidebar).queryByRole("img", { name: "Unsafe image" }),
-  ).not.toBeInTheDocument();
-  expect(Reflect.get(globalThis, "__privateMailExecuted")).toBeUndefined();
-});
-
-test("Deleting an earlier mail draft preserves the currently open mail", async () => {
-  const firstSubject = "First pending deletion";
-  const secondSubject = "Second current email";
-  const drafts = new Map<string, Extract<MailDraft, { provider: "gmail" }>>([
-    [FIRST_MAIL_ID, mailDraft(FIRST_MAIL_ID, { subject: firstSubject })],
-    [
-      SECOND_MAIL_ID,
-      mailDraft(SECOND_MAIL_ID, {
-        subject: secondSubject,
-        body: "Keep this email open.",
-      }),
-    ],
-  ]);
   installCapabilityChat({
     events: completedConversation(
-      `${mailCard(FIRST_MAIL_ID, firstSubject)}\n\n${mailCard(SECOND_MAIL_ID, secondSubject)}`,
+      `${mailUrl(launchId)}\n\n${mailUrl(vendorId)}`,
     ),
   });
-  context.mocks.api(mailContract.getDraft, ({ params, respond }) => {
-    const draft = drafts.get(params.mailDraftId);
-    return draft
-      ? respond(200, mailResponse(params.mailDraftId, draft))
-      : respond(404, {
-          error: { code: "NOT_FOUND", message: "Email not found" },
-        });
-  });
-  const started = context.mocks.deferred<void>();
-  const response = context.mocks.deferred<void>();
-  context.mocks.api(mailContract.deleteDraft, async ({ params, respond }) => {
-    started.resolve();
-    await response.promise;
-    drafts.delete(params.mailDraftId);
-    return respond(204);
-  });
-  await setupPage({ context, path: RUN_PATH, host: APP_HOST });
+  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
   await readyChat();
-  click(await findMailCard(firstSubject));
-  const first = await screen.findByRole("complementary", {
-    name: "Email details",
-  });
-  click(await findControl("button", "Delete", first));
-  await started.promise;
-  click(await findMailCard(secondSubject));
-  await screen.findByText("Keep this email open.");
-  response.resolve();
+  const launch = await openMail("Open draft email: Launch approval");
+
+  click(action("Send", launch));
+
+  await expect(screen.findByText("Email sent")).resolves.toBeInTheDocument();
   await waitFor(() => {
-    expect(screen.queryByText(firstSubject)).not.toBeInTheDocument();
+    expect(mailCard("Open sent email: Launch approval")).toBeDefined();
   });
-  const current = await screen.findByRole("complementary", {
-    name: "Email details",
-  });
+  await closeMail(launch);
+
+  const vendor = await openMail("Open draft email: Vendor follow-up");
+  expect(within(vendor).getByText("Draft")).toBeInTheDocument();
+  await closeMail(vendor);
+  const revisited = await openMail("Open sent email: Launch approval");
+  expect(within(revisited).getByText("Sent")).toBeInTheDocument();
   expect(
-    within(current).getByText("Keep this email open."),
-  ).toBeInTheDocument();
-  expect(within(current).getByText(secondSubject)).toBeInTheDocument();
+    queryAllByRoleFast("link", revisited).find((link) => {
+      return link.textContent?.trim() === "Open in Gmail";
+    }),
+  ).toHaveAttribute("href", expect.stringContaining("#all/thread-launch"));
+  await closeMail(revisited);
+  const vendorAgain = await openMail("Open draft email: Vendor follow-up");
+
+  click(action("Delete", vendorAgain));
+
+  await waitFor(() => {
+    expect(vendorAgain).not.toBeInTheDocument();
+  });
+  expect(mailCard("Open draft email: Vendor follow-up")).toBeUndefined();
+  expect(mailCard("Open sent email: Launch approval")).toBeDefined();
+});
+
+test("Inline, table, and nested mail links keep their labels and open email details", async () => {
+  const id = (suffix: number): string => {
+    return `a0000000-0000-4000-a000-0000000007${suffix}`;
+  };
+  const subjects = new Map([
+    [id(41), "Launch approval"],
+    [id(42), "Launch draft"],
+    [id(43), "Vendor note"],
+    [id(44), "Budget review"],
+    [id(45), "List follow-up"],
+    [id(46), "Quoted reply"],
+    [id(47), "Bare link mail"],
+    [id(48), "Chinese sentence mail"],
+  ]);
+  mockMailDrafts(
+    new Map(
+      [...subjects].map(([draftId, subject]) => {
+        return [draftId, gmailDraft({ subject, body: `${subject} body` })];
+      }),
+    ),
+  );
+  installCapabilityChat({
+    events: completedConversation(
+      [
+        mailUrl(id(41)),
+        `Please review [the launch draft](${mailUrl(id(42))}) and **[the vendor note](${mailUrl(id(43))})**.`,
+        "| Mail | Owner |\n| --- | --- |",
+        `| [Budget mail](${mailUrl(id(44))}) | Finance |`,
+        `- Follow up with [the list mail](/mail/drafts/${id(45)})`,
+        `> Quoted: ${mailUrl(id(46))}`,
+        `Bare: ${mailUrl(id(47))} done`,
+        `请查看 ${mailUrl(id(48))}。然后确认内容。`,
+        `\`${mailUrl(id(49))}\``,
+        `[Untrusted mail](https://mail.example.org/mail/drafts/${id(50)})`,
+      ]
+        .join("\n\n")
+        .replace("|\n\n|", "|\n|"),
+    ),
+  });
+  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
+  const transcript = await readyChat();
+  await waitFor(() => {
+    expect(mailCard("Open draft email: Launch approval")).toBeDefined();
+  });
+  // Only the standalone URL becomes a card; inline links stay links.
+  expect(
+    queryAllByRoleFast("button").filter((button) => {
+      return button.getAttribute("aria-label")?.startsWith("Open draft email:");
+    }),
+  ).toHaveLength(1);
+  const chatPath = location.pathname;
+
+  for (const [label, subject] of [
+    ["the launch draft", "Launch draft"],
+    ["the vendor note", "Vendor note"],
+    ["Budget mail", "Budget review"],
+    ["the list mail", "List follow-up"],
+    [mailUrl(id(46)), "Quoted reply"],
+    [mailUrl(id(47)), "Bare link mail"],
+    [mailUrl(id(48)), "Chinese sentence mail"],
+  ] as const) {
+    const link = queryAllByRoleFast("link", transcript).find((candidate) => {
+      return candidate.textContent?.trim() === label;
+    });
+    if (!link) {
+      throw new Error(`Expected the mail link ${label}`);
+    }
+    click(link);
+    const details = await screen.findByTestId("mail-draft-sidebar");
+    await expect(
+      within(details).findByRole("heading", { name: subject }),
+    ).resolves.toBeInTheDocument();
+    expect(location.pathname).toBe(chatPath);
+    await closeMail(details);
+  }
+
+  const untrusted = queryAllByRoleFast("link", transcript).find((link) => {
+    return link.textContent?.trim() === "Untrusted mail";
+  });
+  if (!untrusted) {
+    throw new Error("Expected the untrusted link");
+  }
+  // The page leaves an untrusted link to the browser's own navigation.
+  const navigation: { defaultPrevented?: boolean } = {};
+  window.addEventListener(
+    "click",
+    (event) => {
+      if (event.target instanceof Node && untrusted.contains(event.target)) {
+        navigation.defaultPrevented = event.defaultPrevented;
+      }
+    },
+    { signal: context.signal },
+  );
+
+  click(untrusted);
+
+  expect(navigation).toStrictEqual({ defaultPrevented: false });
+  expect(untrusted).toHaveAttribute(
+    "href",
+    `https://mail.example.org/mail/drafts/${id(50)}`,
+  );
+  expect(screen.queryByTestId("mail-draft-sidebar")).toBeNull();
+  expect(location.pathname).toBe(chatPath);
 });

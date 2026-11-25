@@ -44,6 +44,8 @@ data class HistoryMessage(
     val queueSequence: Long? = null,
     val queuedWorkflow: QueuedWorkflow? = null,
     val sourceSeqId: Long? = null,
+    val occurredAtMillis: Long? = null,
+    val followups: List<ConversationFollowup>? = null,
 )
 
 data class QueuedWorkflow(val name: String?, val triggerBrief: String?)
@@ -55,7 +57,9 @@ internal fun HistoryMessage.visibleInConversation() =
         else -> true
     }
 
-data class HistoryTranscript(
+@ConsistentCopyVisibility
+data class HistoryTranscript
+internal constructor(
     val messages: List<HistoryMessage>,
     val execution: HistoryExecution,
     val workSteps: Int,
@@ -65,6 +69,7 @@ data class HistoryTranscript(
     val terminatedRunIds: Set<String> = emptySet(),
     val pendingInputIds: Set<String> = emptySet(),
     val revocableInputIds: Set<String> = emptySet(),
+    internal val resources: ChatResourceReferences? = null,
 ) {
     internal fun searchMessage(sequence: Long): HistoryMessage? = messages.firstOrNull {
         it.sourceSeqId == sequence && it.visibleInConversation() && it.id !in pendingInputIds
@@ -217,6 +222,16 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
                     QueuedWorkflow(part?.text("workflowName"), part?.text("automationBrief"))
                 } else null,
             sourceSeqId = row.seqId,
+            occurredAtMillis =
+                if (
+                    role == HistoryRole.User && row.runId != null ||
+                        row.terminal ||
+                        row.type == "control.interrupt"
+                )
+                    row.timeMillis()
+                else null,
+            followups =
+                if (row.type == "output.followups") conversationFollowups(row.content) else null,
         )
     }
     val endedRuns = terminals + interrupted
@@ -254,6 +269,7 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
         controls.terminatedRunIds,
         pending,
         controls.revocableInputIds,
+        chatResourceReferences(checkpoint.rows),
     )
 }
 

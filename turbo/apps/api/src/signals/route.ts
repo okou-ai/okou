@@ -1,3 +1,4 @@
+import { artifactSharingRoutes } from "./routes/artifact-sharing";
 import { larkOfficialReadRoutes } from "./routes/lark-official-read";
 import { larkOfficialEventsRoutes } from "./routes/lark-official-events";
 import { larkOfficialRoutes } from "./routes/lark-official";
@@ -31,7 +32,7 @@ import { billingInvoicesRoutes } from "./routes/billing-invoices";
 import { billingPortalRoutes } from "./routes/billing-portal";
 import { billingRedeemRoutes } from "./routes/billing-redeem";
 import { billingRedeemCodeRoutes } from "./routes/billing-redeem-code";
-import { billingSurveyRoutes } from "./routes/billing-survey";
+import { billingFeedbackRoutes } from "./routes/billing-feedback";
 import { billingRestoreRoutes } from "./routes/billing-restore";
 import { billingStatusRoutes } from "./routes/billing-status";
 import { billingUsagePackCreditsRoutes } from "./routes/billing-usage-pack-credits";
@@ -46,6 +47,7 @@ import { chatRemoteAccessRoutes } from "./routes/chat-remote-access";
 import { projectChatRoutes } from "./routes/project-chat";
 import { projectRoutes } from "./routes/projects";
 import { chatThreadRoutes } from "./routes/chat-threads";
+import { antigravityPersonalSubscriptionRoutes } from "./routes/antigravity-personal-subscription";
 import { claudeCodeDeviceAuthRoutes } from "./routes/claude-code-device-auth";
 import { cliAuthRoutes } from "./routes/cli-auth";
 import { cloudflareAccessRoutes } from "./routes/cloudflare-access";
@@ -337,7 +339,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...billingInvoicesRoutes,
   ...billingPortalRoutes,
   ...billingRedeemCodeRoutes,
-  ...billingSurveyRoutes,
+  ...billingFeedbackRoutes,
   ...billingRedeemRoutes,
   ...billingRestoreRoutes,
   ...billingStatusRoutes,
@@ -350,6 +352,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...chatEventsRoutes,
   ...sharedThreadRoutes,
   ...chatThreadPdfFilenameRoutes,
+  ...antigravityPersonalSubscriptionRoutes,
   ...claudeCodeDeviceAuthRoutes,
   ...computerUseAuthorizationRoutes,
   ...desktopShellAuthorizationRoutes,
@@ -379,6 +382,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...featureGuidesRoutes,
   ...hostRoutes,
   ...artifactShareRoutes,
+  ...artifactSharingRoutes,
   ...artifactReferenceRoutes,
   ...artifactOgRoutes,
   ...artifactDownloadRoutes,

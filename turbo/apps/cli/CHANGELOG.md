@@ -1,5 +1,192 @@
 # Changelog
 
+## [10.40.0](https://github.com/okou-ai/okou/compare/cli-v10.39.4...cli-v10.40.0) (2026-11-25)
+
+
+### Features
+
+* **cli:** add gated custom domain configuration ([#50696](https://github.com/okou-ai/okou/issues/50696)) ([6792328](https://github.com/okou-ai/okou/commit/679232832d580bf2b7545ed5ab99bb6ed4ce8159))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.876.0
+    * @okouai/pi-agent-runtime bumped to 1.52.70
+
+## [10.39.4](https://github.com/okou-ai/okou/compare/cli-v10.39.3...cli-v10.39.4) (2026-11-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.875.0
+    * @okouai/pi-agent-runtime bumped to 1.52.69
+
+## [10.39.3](https://github.com/okou-ai/okou/compare/cli-v10.39.2...cli-v10.39.3) (2026-11-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.125.0
+    * @okouai/connectors bumped to 3.24.0
+    * @okouai/core bumped to 8.874.0
+    * @okouai/pi-agent-runtime bumped to 1.52.68
+
+## [10.39.2](https://github.com/okou-ai/okou/compare/cli-v10.39.1...cli-v10.39.2) (2026-11-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.873.0
+    * @okouai/pi-agent-runtime bumped to 1.52.67
+
+## [10.39.1](https://github.com/okou-ai/okou/compare/cli-v10.39.0...cli-v10.39.1) (2026-11-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.124.0
+    * @okouai/core bumped to 8.872.0
+    * @okouai/pi-agent-runtime bumped to 1.52.66
+
+## [10.39.0](https://github.com/okou-ai/okou/compare/cli-v10.38.1...cli-v10.39.0) (2026-11-24)
+
+
+### Features
+
+* bind internal antigravity sign-in to member profiles ([#50523](https://github.com/okou-ai/okou/issues/50523)) ([ab93ff8](https://github.com/okou-ai/okou/commit/ab93ff8c008746117d5d90211f58425c1f6a0ae8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.123.0
+    * @okouai/core bumped to 8.871.0
+    * @okouai/pi-agent-runtime bumped to 1.52.65
+
+## [10.38.1](https://github.com/okou-ai/okou/compare/cli-v10.38.0...cli-v10.38.1) (2026-11-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.122.0
+    * @okouai/core bumped to 8.870.2
+    * @okouai/pi-agent-runtime bumped to 1.52.64
+
+## [10.38.0](https://github.com/okou-ai/okou/compare/cli-v10.37.2...cli-v10.38.0) (2026-11-24)
+
+
+### Features
+
+* add member-wide connector account approval ([#50516](https://github.com/okou-ai/okou/issues/50516)) ([ff76d52](https://github.com/okou-ai/okou/commit/ff76d52e21a55cd8f3e34a513e7e5fcfd8ab1e1b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.121.0
+    * @okouai/core bumped to 8.870.1
+    * @okouai/pi-agent-runtime bumped to 1.52.63
+
+## [10.37.2](https://github.com/okou-ai/okou/compare/cli-v10.37.1...cli-v10.37.2) (2026-11-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.120.0
+    * @okouai/core bumped to 8.870.0
+    * @okouai/pi-agent-runtime bumped to 1.52.62
+
+## [10.37.1](https://github.com/okou-ai/okou/compare/cli-v10.37.0...cli-v10.37.1) (2026-11-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.119.0
+    * @okouai/core bumped to 8.869.1
+    * @okouai/pi-agent-runtime bumped to 1.52.61
+
+## [10.37.0](https://github.com/okou-ai/okou/compare/cli-v10.36.29...cli-v10.37.0) (2026-11-24)
+
+
+### Features
+
+* use saved presentation format for generation ([#50260](https://github.com/okou-ai/okou/issues/50260)) ([ad98aaa](https://github.com/okou-ai/okou/commit/ad98aaa608c934f8eac3325ab079b3ee8fc50dd1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.118.0
+    * @okouai/core bumped to 8.869.0
+    * @okouai/pi-agent-runtime bumped to 1.52.60
+
+## [10.36.29](https://github.com/okou-ai/okou/compare/cli-v10.36.28...cli-v10.36.29) (2026-11-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.117.0
+    * @okouai/core bumped to 8.868.1
+    * @okouai/pi-agent-runtime bumped to 1.52.59
+
+## [10.36.28](https://github.com/okou-ai/okou/compare/cli-v10.36.27...cli-v10.36.28) (2026-11-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.116.0
+    * @okouai/core bumped to 8.868.0
+    * @okouai/pi-agent-runtime bumped to 1.52.58
+
+## [10.36.27](https://github.com/okou-ai/okou/compare/cli-v10.36.26...cli-v10.36.27) (2026-11-24)
+
+
+### Bug Fixes
+
+* **app:** remove standalone template picker ([#50365](https://github.com/okou-ai/okou/issues/50365)) ([6a20b9e](https://github.com/okou-ai/okou/commit/6a20b9e686f663c0f71403cf4d52c6d77820e7a6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.867.1
+    * @okouai/pi-agent-runtime bumped to 1.52.57
+
+## [10.36.26](https://github.com/okou-ai/okou/compare/cli-v10.36.25...cli-v10.36.26) (2026-11-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.115.0
+    * @okouai/core bumped to 8.867.0
+    * @okouai/pi-agent-runtime bumped to 1.52.56
+
 ## [10.36.25](https://github.com/okou-ai/okou/compare/cli-v10.36.24...cli-v10.36.25) (2026-11-24)
 
 

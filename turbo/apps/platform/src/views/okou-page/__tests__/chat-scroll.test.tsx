@@ -1,5 +1,9 @@
 import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import {
+  mockChatEventRows,
+  normalizeMockChatEvents,
+} from "./chat-event-test-helpers.ts";
+import {
   act,
   fireEvent,
   screen,
@@ -7,623 +11,252 @@ import {
   within,
 } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
-
+import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  click,
-  fill,
-  queryAllByRoleFast,
-} from "../../../__tests__/page-helper.ts";
-import { createChatEvent } from "../../../mocks/mock-helpers.ts";
+  findFastControl,
+  queryFastControl,
+} from "./chat-message-experience-test-helpers.ts";
+import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import {
-  chatEventRowsResponse,
-  testContext,
-} from "../../../signals/__tests__/test-helpers.ts";
+  publishRunUpdate,
+  RUN_THREAD_ID,
+  RUN_PATH,
+} from "./chat-run-test-fixtures.ts";
+import { findComposerEditor } from "./chat-composer-test-helpers.ts";
 import {
-  mockChatEventRows,
-  normalizeMockChatEvents,
-  type MockChatEventInput,
-} from "./chat-event-test-helpers.ts";
-import {
-  chatScrollContainer,
-  chatComposerTextarea,
-  setupPage,
-  createChatLifecycleHelpers,
-} from "./chat-lifecycle-test-helpers.ts";
-
-import {
-  createThread,
-  mockChatThreadSnapshot,
-} from "./sidebar-test-helpers.tsx";
-
-// Exercise the checked-in renderer rather than the global SVG render stub.
+  conversationEvents,
+  mockChatGeometry,
+  requiredElement,
+  messageOffset,
+} from "./chat-conversation-locator-test-helpers.ts";
+// Render real diagrams so a skipped page cannot silently decode the test image.
 vi.mock("@okouai/mermaid-lite", async () => {
   return await import("mermaid-lite-real");
 });
 
 const context = testContext();
-const { mockChatLifecycleWithoutBrowserSession } =
-  createChatLifecycleHelpers(context);
-
-// Keep the transcript scrollable even with the compact initial window.
-const ROW_HEIGHT_PX = 200;
-const ROW_CONTENT_HEIGHT_PX = 180;
-const CONTENT_BOTTOM_PADDING_PX = 100;
-const INITIAL_VIEWPORT_HEIGHT_PX = 300;
-
-const THREAD_IDS = {
-  growingHistory: "b0000000-0000-4000-a000-000000000921",
-  incomingLatest: "b0000000-0000-4000-a000-000000000922",
-  incomingHistory: "b0000000-0000-4000-a000-000000000923",
-  prependedHistory: "b0000000-0000-4000-a000-000000000929",
-  expandedWork: "b0000000-0000-4000-a000-000000000932",
-  unfilledViewport: "b0000000-0000-4000-a000-000000000941",
-  runWindowStart: "b0000000-0000-4000-a000-000000000942",
-  settledHistory: "b0000000-0000-4000-a000-000000000944",
-  capabilityTail: "b0000000-0000-4000-a000-000000000945",
-  capabilityHistory: "b0000000-0000-4000-a000-000000000946",
-} as const;
-
-interface ChatScrollGeometry {
-  readonly bottomScrollTop: () => number;
-  readonly firstVisibleAnchor: () => HTMLElement;
-  readonly growBeforeMessages: (height: number) => void;
-}
-
-type PublishedChatEvent = MockChatEventInput & { readonly seqId: number };
-
-interface MutableConversation {
-  readonly publish: (events: readonly PublishedChatEvent[]) => Promise<void>;
-}
-
-function rect(top: number, height: number, width = 800, left = 0): DOMRect {
-  return {
-    bottom: top + height,
-    height,
-    left,
-    right: left + width,
-    toJSON: () => {
-      return {};
+async function transcript() {
+  context.mocks.browser.standaloneDisplayMode(true);
+  mockChatGeometry();
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(
+    function (this: HTMLElement) {
+      return Object.hasOwn(this.dataset, "scrollContainer") ? 390 : 0;
     },
-    top,
-    width,
-    x: left,
-    y: top,
-  } as DOMRect;
-}
-
-function renderedAnchors(container: HTMLElement): HTMLElement[] {
-  return Array.from(
-    container.querySelectorAll<HTMLElement>(
-      "[data-chat-scroll-anchor-event-id]",
-    ),
   );
-}
-
-function installChatScrollGeometry(
-  container: HTMLElement,
-  viewportHeight = () => {
-    return INITIAL_VIEWPORT_HEIGHT_PX;
-  },
-  viewportTop = () => {
-    return 0;
-  },
-): ChatScrollGeometry {
-  const prototypeRectDescriptor = Object.getOwnPropertyDescriptor(
-    HTMLElement.prototype,
-    "getBoundingClientRect",
+  vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(
+    function (this: HTMLElement) {
+      return Object.hasOwn(this.dataset, "scrollContainer")
+        ? this.querySelectorAll("[data-chat-scroll-anchor-event-id]").length *
+            240
+        : 0;
+    },
   );
-  let scrollTop = 0;
-  let heightBeforeMessages = 0;
-
-  const spacerHeight = (side: "before" | "after") => {
-    const spacer = container.querySelector<HTMLElement>(
-      `[data-transcript-spacer="${side}"]`,
-    );
-    return spacer ? Number.parseFloat(spacer.style.height) : 0;
-  };
-  const scrollHeight = (): number => {
-    return (
-      heightBeforeMessages +
-      spacerHeight("before") +
-      spacerHeight("after") +
-      renderedAnchors(container).length * ROW_HEIGHT_PX +
-      CONTENT_BOTTOM_PADDING_PX
-    );
-  };
-  const clampScrollTop = (top: number): number => {
-    return Math.max(0, Math.min(top, scrollHeight() - viewportHeight()));
-  };
-
-  Object.defineProperties(container, {
-    clientHeight: {
-      configurable: true,
-      get: () => {
-        return viewportHeight();
-      },
-    },
-    scrollHeight: {
-      configurable: true,
-      get: scrollHeight,
-    },
-    scrollTop: {
-      configurable: true,
-      get: () => {
-        return scrollTop;
-      },
-      set: (top: number) => {
-        scrollTop = clampScrollTop(top);
-      },
-    },
+  mockChatLifecycle(context, {
+    threadId: RUN_THREAD_ID,
+    chatEvents: conversationEvents(6),
   });
-  Object.defineProperty(HTMLElement.prototype, "getBoundingClientRect", {
+  await setupPage({ context, path: RUN_PATH });
+  await screen.findByText("Locator answer 6");
+  const pane = requiredElement("[data-scroll-container]");
+  await waitFor(() => {
+    expect(pane.scrollTop).toBe(pane.scrollHeight - pane.clientHeight);
+  });
+  return pane;
+}
+test("chat-scroll-002 revealing the transcript restores the visible tail message with a single adjustment", async () => {
+  const pane = await transcript(),
+    last = "Locator answer 6",
+    position = messageOffset(last, pane);
+  expect(position).toBeGreaterThanOrEqual(0);
+  expect(position).toBeLessThan(pane.clientHeight);
+  click(await findFastControl("button", "More actions"));
+  click(
+    await within(await screen.findByRole("menu")).findByText("Automations"),
+  );
+  const close = await findFastControl("button", "Close automations"),
+    writes = vi.spyOn(HTMLElement.prototype, "scrollTop", "set");
+  click(close);
+  await waitFor(() => {
+    expect(close).not.toBeInTheDocument();
+    expect(messageOffset(last, pane)).toBe(position);
+  });
+  expect(
+    writes.mock.contexts.filter((target) => {
+      return target === pane;
+    }),
+  ).toHaveLength(1);
+});
+test("chat-scroll-016 the focused multiline draft and transcript tail survive three keyboard viewport cycles and layout resize", async () => {
+  const viewport = Object.assign(new EventTarget(), {
+      height: 600,
+      width: 390,
+      offsetTop: 0,
+    }),
+    previous = Object.getOwnPropertyDescriptor(window, "visualViewport");
+  Object.defineProperty(window, "visualViewport", {
     configurable: true,
-    value(this: HTMLElement): DOMRect {
-      if (this === container) {
-        return rect(viewportTop(), viewportHeight());
-      }
-      if (this.dataset.transcriptSpacer === "before") {
-        return rect(
-          viewportTop() + heightBeforeMessages - scrollTop,
-          spacerHeight("before"),
-        );
-      }
-      if (this.dataset.transcriptSpacer === "after") {
-        return rect(
-          viewportTop() +
-            heightBeforeMessages +
-            spacerHeight("before") +
-            renderedAnchors(container).length * ROW_HEIGHT_PX -
-            scrollTop,
-          spacerHeight("after"),
-        );
-      }
-      if (this.dataset.transcriptPage) {
-        return rect(0, renderedAnchors(this).length * ROW_HEIGHT_PX);
-      }
-      if (Object.hasOwn(this.dataset, "chatScrollAnchorEventId")) {
-        const index = renderedAnchors(container).indexOf(this);
-        if (index !== -1) {
-          return rect(
-            viewportTop() +
-              heightBeforeMessages +
-              spacerHeight("before") +
-              index * ROW_HEIGHT_PX -
-              scrollTop,
-            ROW_CONTENT_HEIGHT_PX,
-          );
-        }
-      }
-      return rect(0, 0);
-    },
+    value: viewport,
   });
-  scrollTop = clampScrollTop(Number.POSITIVE_INFINITY);
   context.signal.addEventListener(
     "abort",
     () => {
-      if (prototypeRectDescriptor) {
-        Object.defineProperty(
-          HTMLElement.prototype,
-          "getBoundingClientRect",
-          prototypeRectDescriptor,
-        );
-        return;
+      if (previous) {
+        Object.defineProperty(window, "visualViewport", previous);
+      } else {
+        Reflect.deleteProperty(window, "visualViewport");
       }
-      Reflect.deleteProperty(HTMLElement.prototype, "getBoundingClientRect");
     },
     { once: true },
   );
+  const pane = await transcript();
+  let height = 600;
+  Object.defineProperty(pane, "clientHeight", {
+    configurable: true,
+    get() {
+      return height;
+    },
+  });
+  const editor = await findComposerEditor(),
+    lines = ["Harbor plan", "Retain this next line"];
+  await fill(editor, lines.join("\n"));
+  editor.focus();
+  async function read() {
+    await waitFor(() => {
+      expect(pane.scrollTop).toBe(pane.scrollHeight - pane.clientHeight);
+      expect(editor).toHaveFocus();
+      expect(
+        Array.from(editor.querySelectorAll("p")).map((line) => {
+          return line.textContent;
+        }),
+      ).toStrictEqual(lines);
+    });
+  }
+  for (const reduction of [145, 175, 160]) {
+    height = 600 - reduction;
+    viewport.height = height;
+    viewport.dispatchEvent(new Event("resize"));
+    await read();
+    viewport.offsetTop = 50;
+    viewport.dispatchEvent(new Event("scroll"));
+    await read();
+    height = 600;
+    viewport.height = height;
+    viewport.offsetTop = 0;
+    viewport.dispatchEvent(new Event("resize"));
+    await read();
+  }
+  height = 550;
+  fireEvent.resize(window);
+  await read();
+  expect(viewport.offsetTop).toBe(0);
+});
 
-  return {
-    bottomScrollTop: () => {
-      return scrollHeight() - viewportHeight();
-    },
-    firstVisibleAnchor: () => {
-      const anchor = renderedAnchors(container).find((candidate) => {
-        const candidateRect = candidate.getBoundingClientRect();
-        return (
-          candidateRect.bottom > viewportTop() &&
-          candidateRect.top < viewportTop() + viewportHeight()
-        );
-      });
-      if (!anchor) {
-        throw new Error("No chat message is visible in the mocked viewport");
-      }
-      return anchor;
-    },
-    growBeforeMessages: (height) => {
-      heightBeforeMessages += height;
-    },
+function pagedTurn(turn: number, answer = "Locator answer " + turn) {
+  const runId = "ae000000-0000-4000-a000-" + String(turn).padStart(12, "0");
+  const seqId = 3 * turn - 2;
+  const event = (seq: number) => {
+    return {
+      id: "af000000-0000-4000-a000-" + String(seq).padStart(12, "0"),
+      seqId: seq,
+      runId,
+      createdAt: new Date(Date.UTC(2026, 9, 1, 11, 0, seq)).toISOString(),
+    };
   };
-}
-
-/**
- * Gives every chat viewport a fixed height and a content height derived from
- * its rendered messages from the first render, before a test can reach the
- * mounted container.
- */
-function installViewportHeightBeforeOpen(viewportHeight: number): void {
-  const clientHeight = Object.getOwnPropertyDescriptor(
-    HTMLElement.prototype,
-    "clientHeight",
-  );
-  const scrollHeight = Object.getOwnPropertyDescriptor(
-    Element.prototype,
-    "scrollHeight",
-  );
-  Object.defineProperties(HTMLElement.prototype, {
-    clientHeight: {
-      configurable: true,
-      get(this: HTMLElement): number {
-        return Object.hasOwn(this.dataset, "scrollContainer")
-          ? viewportHeight
-          : Number(clientHeight?.get?.call(this) ?? 0);
-      },
-    },
-    scrollHeight: {
-      configurable: true,
-      get(this: HTMLElement): number {
-        return Object.hasOwn(this.dataset, "scrollContainer")
-          ? renderedAnchors(this).length * ROW_HEIGHT_PX +
-              CONTENT_BOTTOM_PADDING_PX
-          : Number(scrollHeight?.get?.call(this) ?? 0);
-      },
-    },
-  });
-  context.signal.addEventListener(
-    "abort",
-    () => {
-      if (clientHeight) {
-        Object.defineProperty(
-          HTMLElement.prototype,
-          "clientHeight",
-          clientHeight,
-        );
-      }
-      Reflect.deleteProperty(HTMLElement.prototype, "scrollHeight");
-    },
-    { once: true },
-  );
-}
-
-function completedTurn(turn: number): PublishedChatEvent[] {
-  const runId = `scroll-run-${turn.toString()}`;
-  const minute = turn.toString().padStart(2, "0");
-  const firstSeqId = (turn - 1) * 3 + 1;
   return [
     {
-      id: `scroll-user-${turn.toString()}`,
-      role: "user",
-      content: `History question ${turn.toString()}`,
-      runId,
-      seqId: firstSeqId,
-      createdAt: `2026-08-20T12:${minute}:00.000Z`,
+      ...event(seqId),
+      role: "user" as const,
+      content: "Locator question " + turn,
     },
     {
-      id: `scroll-assistant-${turn.toString()}`,
-      role: "assistant",
-      content: `History answer ${turn.toString()}`,
-      runId,
-      seqId: firstSeqId + 1,
-      createdAt: `2026-08-20T12:${minute}:01.000Z`,
+      ...event(seqId + 1),
+      role: "assistant" as const,
+      content: answer,
     },
     {
-      id: `scroll-completed-${turn.toString()}`,
-      role: "assistant",
+      ...event(seqId + 2),
+      role: "assistant" as const,
       content: null,
-      runId,
-      runLifecycleEvent: "completed",
-      seqId: firstSeqId + 2,
-      createdAt: `2026-08-20T12:${minute}:02.000Z`,
+      runLifecycleEvent: "completed" as const,
     },
   ];
 }
 
-function completedHistoryEvents(turnCount: number): MockChatEventInput[] {
-  return Array.from({ length: turnCount }, (_, index) => {
-    return completedTurn(index + 1);
+function pagedTurns(
+  turns: number,
+  diagram?: { turn: number; markdown: string },
+) {
+  return Array.from({ length: turns }, (_, i) => {
+    return pagedTurn(
+      i + 1,
+      diagram?.turn === i + 1 ? diagram.markdown : undefined,
+    );
   }).flat();
 }
 
-function historyWithLateImage(turnCount: number): MockChatEventInput[] {
-  return completedHistoryEvents(turnCount).map((event) => {
-    return event.id === "scroll-assistant-6"
-      ? {
-          ...event,
-          content: `${event.content}\n\n![Late history image](https://example.com/history.png)`,
-        }
-      : event;
-  });
-}
-
-function mockMutableConversation(
-  threadId: string,
-  initialEvents: readonly MockChatEventInput[],
-  activeRunIds: readonly string[] = [],
-): MutableConversation {
-  const events = [...initialEvents];
-  mockChatLifecycleWithoutBrowserSession({
-    threadId,
-    threadTitle: "Scroll behavior conversation",
-    chatEvents: [...initialEvents],
-    activeRunIds: [...activeRunIds],
-  });
-  let acknowledgeRows:
-    ((rows: readonly { seqId: number }[]) => void) | undefined;
-  const rowsSince = (sinceSeqId: number) => {
-    return mockChatEventRows(normalizeMockChatEvents(events, threadId))
-      .filter((row) => {
-        return row.seqId > sinceSeqId;
-      })
-      .map((row) => {
-        // The batched catch-up stores the last row ID as the next rows cursor.
-        // Use real UUID IDs in both paths so that cursor is valid on replay.
-        return {
-          ...row,
-          id: `00000000-0000-4000-8000-${row.seqId.toString(16).padStart(12, "0")}`,
-        };
-      });
-  };
-  context.mocks.api(
-    chatThreadEventsContract.rows,
-    ({ params, query, respond }) => {
-      const remaining =
-        params.threadId === threadId ? rowsSince(query.sinceSeqId) : [];
-      const rows = remaining.slice(0, query.limit ?? 50);
-      const response = respond(
-        200,
-        chatEventRowsResponse(rows, query, {
-          hasMore: rows.length < remaining.length,
-        }),
-      );
-      acknowledgeRows?.(rows);
-      return response;
-    },
-  );
-  // The Worker may warm its cache through the batched endpoint before the
-  // page fetches rows. Both endpoints must describe the same persisted events.
+async function openPagedHistory(
+  events: ReturnType<typeof pagedTurns>,
+  height = () => {
+    return 600;
+  },
+) {
+  mockChatGeometry(height, 100);
   context.mocks.api(chatThreadEventsContract.catchUp, ({ body, respond }) => {
-    const eventRows = body.map(([id, sinceSeqId]) => {
-      return [id, id === threadId ? rowsSince(sinceSeqId) : []] as const;
-    });
-    const response = respond(200, {
-      events: Object.fromEntries(eventRows),
+    const rows = mockChatEventRows(
+      normalizeMockChatEvents(events, RUN_THREAD_ID),
+    );
+    return respond(200, {
+      events: Object.fromEntries(
+        body.map(([thread, after]) => {
+          return [
+            thread,
+            thread === RUN_THREAD_ID
+              ? rows.filter((row) => {
+                  return row.seqId > after;
+                })
+              : [],
+          ];
+        }),
+      ),
       notFoundThreads: [],
     });
-    for (const [, rows] of eventRows) {
-      acknowledgeRows?.(rows);
-    }
-    return response;
   });
-  return {
-    publish: async (nextEvents) => {
-      const pendingSeqIds = new Set(
-        nextEvents.map((event) => {
-          return event.seqId;
-        }),
-      );
-      const returned = context.mocks.deferred<void>();
-      acknowledgeRows = (rows) => {
-        for (const row of rows) {
-          pendingSeqIds.delete(row.seqId);
-        }
-        if (pendingSeqIds.size === 0) {
-          acknowledgeRows = undefined;
-          returned.resolve();
-        }
-      };
-      // The notification starts an asynchronous catch-up. Wait for the mock
-      // API to return this batch before asserting its effect on the page.
-      await act(async () => {
-        events.push(...nextEvents);
-        createChatEvent(threadId);
-        await returned.promise;
-      });
-    },
-  };
+  mockChatLifecycle(context, { threadId: RUN_THREAD_ID, chatEvents: events });
+  await setupPage({ context, path: RUN_PATH });
+  return requiredElement("[data-scroll-container]");
 }
 
-async function openConversation(
-  threadId: string,
-  loadedText: string,
-): Promise<HTMLElement> {
-  await setupPage({
-    context,
-    path: `/chats/${threadId}`,
-    host: "app.okou.ai",
-  });
-  const loadedMessage = await screen.findByText(loadedText);
-  expect(loadedMessage).toBeVisible();
-  await waitFor(() => {
-    expect(
-      document.querySelector("[data-chat-skeleton]"),
-    ).not.toBeInTheDocument();
-  });
-  return chatScrollContainer();
-}
-
-function scrollFromUser(container: HTMLElement, top: number): void {
-  fireEvent.scroll(container); // Deliver the previous layout offset before the gesture.
-  fireEvent.wheel(container, { deltaY: top - container.scrollTop });
-  container.scrollTop = top;
-  fireEvent.scroll(container);
-  fireEvent(container, new Event("scrollend"));
-}
-
-function anchorId(anchor: HTMLElement): string {
-  const id = anchor.dataset.chatScrollAnchorEventId;
-  if (!id) {
-    throw new Error("Chat scroll anchor has no event id");
-  }
-  return id;
-}
-
-function anchorById(container: HTMLElement, id: string): HTMLElement {
-  const anchor = container.querySelector<HTMLElement>(
-    `[data-chat-scroll-anchor-event-id="${id}"]`,
-  );
-  if (!anchor) {
-    throw new Error(`Chat scroll anchor ${id} is not rendered`);
-  }
-  return anchor;
-}
-
-function queryButtonByLabel(label: string): HTMLElement | null {
-  return (
-    queryAllByRoleFast("button").find((candidate) => {
-      return candidate.getAttribute("aria-label") === label;
-    }) ?? null
-  );
-}
-
-function buttonByLabel(label: string): HTMLElement {
-  const button = queryButtonByLabel(label);
-  if (!button) {
-    throw new Error(`${label} button not found`);
-  }
-  return button;
-}
-
-async function expectHistoryPositionHeld(): Promise<void> {
-  await waitFor(() => {
-    expect(queryButtonByLabel("Scroll to bottom")).toBeVisible();
+function expectTail(pane: HTMLElement) {
+  return waitFor(() => {
+    expect(pane.scrollTop).toBe(pane.scrollHeight - pane.clientHeight);
   });
 }
 
-class KeyboardViewport extends EventTarget {
-  height = 844;
-  offsetTop = 0;
-  pageTop = 0;
-  scale = 1;
-
-  resize(height: number, pageTop: number): void {
-    this.height = height;
-    this.offsetTop = pageTop;
-    this.pageTop = pageTop;
-    this.dispatchEvent(new Event("resize"));
-  }
-}
-
-function installKeyboardViewport(): KeyboardViewport {
-  context.mocks.browser.standaloneDisplayMode(true);
-  const viewport = new KeyboardViewport();
-  vi.stubGlobal("innerHeight", viewport.height);
-  vi.stubGlobal("visualViewport", viewport);
-  return viewport;
-}
-
-function installKeyboardChatGeometry(
-  container: HTMLElement,
-  viewport: KeyboardViewport,
-): ChatScrollGeometry {
-  // happy-dom has no layout engine. Model the layout viewport and native
-  // focus pan; bootstrap, editor and transcript scroll ownership run unchanged.
-  return installChatScrollGeometry(
-    container,
-    () => {
-      return window.innerHeight - 200;
-    },
-    () => {
-      return 64 - viewport.pageTop;
-    },
-  );
-}
-
-/** Model CSS hiding and the browser's native reveal reset, not application repair. */
-function installUtilitySidebarGeometry(container: HTMLElement, wide = false) {
-  const covered = () => {
-    return (
-      !wide &&
-      document.querySelector(
-        '[data-testid="chat-thread-sidebar-pane"][aria-hidden="false"]',
-      ) !== null
+test.each([19, 20])(
+  "Opening a %i-group transcript pins its latest answer",
+  async (groups) => {
+    const records = pagedTurns(10);
+    const pane = await openPagedHistory(records.slice(20 - groups));
+    await within(pane).findByText("Locator answer 10");
+    expect(Boolean(within(pane).queryByText("Locator question 6"))).toBe(
+      groups === 20,
     );
-  };
-  const geometry = installChatScrollGeometry(container, () => {
-    return covered() ? 0 : INITIAL_VIEWPORT_HEIGHT_PX;
-  });
-  Object.defineProperty(container, "clientWidth", {
-    configurable: true,
-    get: () => {
-      return wide ? 1280 : 390;
-    },
-  });
-  const descriptor = Object.getOwnPropertyDescriptor(container, "scrollTop");
-  if (!descriptor?.get || !descriptor.set) {
-    throw new Error("Expected controlled scroll geometry");
-  }
-  const read = descriptor.get;
-  const write = descriptor.set;
-  const writes: number[] = [];
-  Object.defineProperty(container, "scrollTop", {
-    configurable: true,
-    get: () => {
-      return read.call(container);
-    },
-    set: (top: number) => {
-      writes.push(top);
-      write.call(container, top);
-    },
-  });
-  Object.defineProperty(container, "scrollTo", {
-    configurable: true,
-    value: (options: ScrollToOptions | number, y?: number) => {
-      container.scrollTop =
-        typeof options === "number"
-          ? (y ?? container.scrollTop)
-          : (options.top ?? container.scrollTop);
-      fireEvent.scroll(container);
-      fireEvent(container, new Event("scrollend"));
-    },
-  });
-  let wasCovered = covered();
-  const observer = new MutationObserver(() => {
-    const isCovered = covered();
-    if (wasCovered && !isCovered) {
-      // Native layout updates do not go through JavaScript's scrollTop setter.
-      write.call(container, 0);
-      fireEvent.scroll(container);
-    }
-    wasCovered = isCovered;
-  });
-  observer.observe(document.body, {
-    subtree: true,
-    attributes: true,
-    attributeFilter: ["aria-hidden"],
-    childList: true,
-  });
-  context.signal.addEventListener(
-    "abort",
-    () => {
-      observer.disconnect();
-    },
-    { once: true },
-  );
-  return { ...geometry, writes };
-}
+    await expectTail(pane);
+  },
+);
 
 function controlRevealFrames() {
   let nextId = 0;
   const callbacks = new Map<number, FrameRequestCallback>();
-  const request = vi
-    .spyOn(window, "requestAnimationFrame")
-    .mockImplementation((callback) => {
-      const id = ++nextId;
-      callbacks.set(id, callback);
-      return id;
-    });
-  const cancel = vi
-    .spyOn(window, "cancelAnimationFrame")
-    .mockImplementation((id) => {
-      callbacks.delete(id);
-    });
-  context.signal.addEventListener(
-    "abort",
-    () => {
-      request.mockRestore();
-      cancel.mockRestore();
-    },
-    { once: true },
-  );
+  vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+    const id = ++nextId;
+    callbacks.set(id, callback);
+    return id;
+  });
+  vi.spyOn(window, "cancelAnimationFrame").mockImplementation((id) => {
+    callbacks.delete(id);
+  });
   return {
     paint: async () => {
       await act(() => {
@@ -638,1212 +271,227 @@ function controlRevealFrames() {
   };
 }
 
-async function openUtilityAutomations(): Promise<void> {
-  click(buttonByLabel("More actions"));
-  const menu = await screen.findByRole("menu");
-  const automations = queryAllByRoleFast("menuitem", menu).find((item) => {
-    return item.textContent?.trim() === "Automations";
+test("A tall transcript fills its visible history and remains pinned when a new reply arrives", async () => {
+  const events = pagedTurns(26);
+  let height = 600;
+  const pane = await openPagedHistory(events, () => {
+    return height;
   });
-  if (!automations) {
-    throw new Error("Automations menu item not found");
+  const transcript = within(pane);
+  await transcript.findByText("Locator answer 26");
+  expect(transcript.queryByText("Locator answer 20")).toBeNull();
+  expect(transcript.queryByText("Locator answer 13")).toBeNull();
+  await expectTail(pane);
+  await waitFor(() => {
+    expect(context.mocks.ably.hasSharedDatabaseSubscription()).toBeTruthy();
+  });
+  const frames = controlRevealFrames();
+  height = 7200;
+  fireEvent.resize(window);
+  events.push(...pagedTurn(27));
+  publishRunUpdate();
+  await transcript.findByText("Locator answer 27");
+  for (const turn of [20, 13]) {
+    await frames.paint();
+    await frames.paint();
+    expect(transcript.getByText("Locator answer " + turn)).toBeVisible();
   }
-  click(automations);
-  await screen.findByRole("complementary", { name: "Automations" });
-}
-
-async function setupUtilitySidebarScroll(wide = false) {
-  context.mocks.browser.matchMedia((query) => {
-    return query === "(min-width: 80rem)" && wide;
-  });
-  const conversation = mockMutableConversation(
-    THREAD_IDS.incomingHistory,
-    completedHistoryEvents(8),
-  );
-  const container = await openConversation(
-    THREAD_IDS.incomingHistory,
-    "History answer 8",
-  );
-  const geometry = installUtilitySidebarGeometry(container, wide);
-  scrollFromUser(container, 240);
-  await expectHistoryPositionHeld();
-  return { container, geometry, conversation };
-}
-
-test.each(["history", "tail", "history after tail"] as const)(
-  "Restore %s once after a narrow automation sidebar reveals the transcript",
-  async (position) => {
-    const { container, geometry } = await setupUtilitySidebarScroll();
-    if (position !== "history") {
-      scrollFromUser(container, geometry.bottomScrollTop());
-      fireEvent(container, new Event("scrollend"));
-    }
-    await waitFor(() => {
-      expect(queryButtonByLabel("Scroll to bottom") === null).toBe(
-        position !== "history",
-      );
-    });
-    // No scroll event: capture the latest rendered offset, not the last saved one.
-    if (position !== "tail") {
-      container.scrollTop = 275;
-    }
-    const readingId = anchorId(geometry.firstVisibleAnchor());
-    const anchorY = anchorById(container, readingId).getBoundingClientRect()
-      .top;
-    await openUtilityAutomations();
-    expect(container.clientWidth).toBe(390);
-    expect(container.clientHeight).toBe(0);
-    const frames = controlRevealFrames();
-    geometry.writes.length = 0;
-    click(buttonByLabel("Close automations"));
-    await waitFor(() => {
-      expect(container.clientHeight).toBe(INITIAL_VIEWPORT_HEIGHT_PX);
-      expect(container.scrollTop).toBe(0);
-    });
-    await frames.paint();
-    expect(container.scrollTop).toBe(0);
-    expect(geometry.writes).toStrictEqual([]);
-    await frames.paint();
-    await waitFor(() => {
-      expect(anchorById(container, readingId).getBoundingClientRect().top).toBe(
-        anchorY,
-      );
-      expect(geometry.writes).toHaveLength(1);
-    });
-    await frames.paint();
-    expect(geometry.writes).toHaveLength(1);
-  },
-);
-
-test("Keep the wide transcript in place without reveal compensation", async () => {
-  const { container, geometry } = await setupUtilitySidebarScroll(true);
-  const initialTop = container.scrollTop;
-  const readingId = anchorId(geometry.firstVisibleAnchor());
-  const anchorY = anchorById(container, readingId).getBoundingClientRect().top;
-  await openUtilityAutomations();
-  expect(container.clientHeight).toBe(INITIAL_VIEWPORT_HEIGHT_PX);
-  const frames = controlRevealFrames();
-  geometry.writes.length = 0;
-  click(buttonByLabel("Close automations"));
   await frames.paint();
   await frames.paint();
-  expect(container.scrollTop).toBe(initialTop);
-  expect(anchorById(container, readingId).getBoundingClientRect().top).toBe(
-    anchorY,
-  );
-  expect(geometry.writes).toStrictEqual([]);
+  const leading = requiredElement('[data-transcript-spacer="before"]', pane);
+  expect(leading.getBoundingClientRect().bottom).toBeLessThanOrEqual(0);
+  expect(pane.scrollTop).toBe(pane.scrollHeight - pane.clientHeight);
+  expect(transcript.queryByText("Locator answer 1")).toBeNull();
 });
 
-test("Keep the pre-hide anchor when incoming messages arrive behind automations", async () => {
-  const { container, geometry, conversation } =
-    await setupUtilitySidebarScroll();
-  container.scrollTop = 275;
-  const readingId = anchorId(geometry.firstVisibleAnchor());
-  const anchorY = anchorById(container, readingId).getBoundingClientRect().top;
-  await openUtilityAutomations();
-  const frames = controlRevealFrames();
-  await conversation.publish(completedTurn(9));
-  await screen.findByText("History answer 9");
-  geometry.writes.length = 0;
-  click(buttonByLabel("Close automations"));
-  await waitFor(() => {
-    expect(container.scrollTop).toBe(0);
-  });
-  await frames.paint();
-  await frames.paint();
-  await waitFor(() => {
-    expect(anchorById(container, readingId).getBoundingClientRect().top).toBe(
-      anchorY,
-    );
-    expect(geometry.writes).toStrictEqual([container.scrollTop]);
-  });
-});
-
-test("Hand the retained primary transcript restore to the new Router page when the chat list opens a side conversation", async () => {
-  context.mocks.browser.matchMedia((query) => {
-    return query === "(min-width: 48rem)";
-  });
-  const primaryId = THREAD_IDS.incomingHistory;
-  const secondaryId = THREAD_IDS.incomingLatest;
-  const conversation = mockMutableConversation(
-    primaryId,
-    historyWithLateImage(8),
-  );
-  mockChatThreadSnapshot(context, () => {
-    return [
-      createThread(primaryId, "Primary reading conversation"),
-      createThread(secondaryId, "Side conversation"),
-    ];
-  });
-  const container = await openConversation(primaryId, "History answer 8");
-  const geometry = installUtilitySidebarGeometry(container);
-  scrollFromUser(container, 275);
-  await expectHistoryPositionHeld();
-  const readingAnchor = geometry.firstVisibleAnchor();
-  const readingId = anchorId(readingAnchor);
-  const anchorY = readingAnchor.getBoundingClientRect().top;
-  const sideLink = await waitFor(() => {
-    const link = document.querySelector(
-      `[data-sidebar-chat-thread-id="${secondaryId}"]`,
-    );
-    if (!(link instanceof HTMLElement)) {
-      throw new Error("Side conversation link not rendered in the chat list");
-    }
-    return link;
-  });
-  await openUtilityAutomations();
-  expect(container.clientHeight).toBe(0);
-  const frames = controlRevealFrames();
-  // This is the production chat-list selection command: Alt-click requests
-  // loadRightThread, dismisses the covering utility pane and navigates Router.
-  fireEvent.click(sideLink, { altKey: true });
-  await waitFor(() => {
-    expect(window.location.pathname).toBe(`/chats/${primaryId}`);
-    expect(new URLSearchParams(window.location.search).get("sidebar")).toBe(
-      secondaryId,
-    );
-    // The empty side conversation renders discovery rather than a transcript.
-    expect(document.querySelectorAll("[data-scroll-container]")).toHaveLength(
-      1,
-    );
-    expect(
-      screen.getByRole("group", { name: "Explore Okou capabilities" }),
-    ).toBeVisible();
-    expect(document.querySelector("[data-chat-skeleton]")).toBeNull();
-    expect(container.clientHeight).toBe(INITIAL_VIEWPORT_HEIGHT_PX);
-    expect(container.scrollTop).toBe(0);
-  });
-  await frames.paint();
-  await frames.paint();
-  await waitFor(() => {
-    expect(
-      anchorById(chatScrollContainer(), readingId).getBoundingClientRect().top,
-    ).toBe(anchorY);
-    expect(chatScrollContainer().scrollTop).toBe(275);
-  });
-  // No pointer/wheel takeover or second sidebar cycle may be needed to
-  // release the old page's snapshot. Normal reading and layout repair work.
-  await act(() => {
-    scrollFromUser(container, 475);
-  });
-  const nextReadingId = anchorId(geometry.firstVisibleAnchor());
-  const nextAnchorY = anchorById(
-    chatScrollContainer(),
-    nextReadingId,
-  ).getBoundingClientRect().top;
-  geometry.growBeforeMessages(75);
-  act(() => {
-    fireEvent.load(screen.getByAltText("Late history image"));
-  });
-  await waitFor(() => {
-    expect(
-      anchorById(chatScrollContainer(), nextReadingId).getBoundingClientRect()
-        .top,
-    ).toBe(nextAnchorY);
-    expect(container.scrollTop).toBe(550);
-  });
-  await conversation.publish(completedTurn(9));
-  // Avoid building full-page diagnostics while the realtime row is pending.
-  const transcript = within(container);
-  await waitFor(
-    () => {
-      expect(transcript.queryByText("History answer 9")).toBeInTheDocument();
-    },
-    { container },
-  );
-  await frames.paint();
-  await frames.paint();
-  await waitFor(() => {
-    expect(
-      anchorById(chatScrollContainer(), nextReadingId).getBoundingClientRect()
-        .top,
-    ).toBe(nextAnchorY);
-    // The render window may trim preceding rows; reader position is the
-    // message's screen offset, not an absolute scrollTop across batches.
-    expect(container.scrollTop).toBeLessThan(geometry.bottomScrollTop());
-  });
-});
-
-test("Keep a fresh live history capture after tail when incoming messages arrive while hidden", async () => {
-  const { container, geometry, conversation } =
-    await setupUtilitySidebarScroll();
-  scrollFromUser(container, geometry.bottomScrollTop());
-  fireEvent(container, new Event("scrollend"));
-  await waitFor(() => {
-    expect(queryButtonByLabel("Scroll to bottom")).toBeNull();
-  });
-  // Native scrolling can precede its scroll event. The held intent is still
-  // tail, but opening the utility pane must capture this live history offset.
-  container.scrollTop = 275;
-  const readingId = anchorId(geometry.firstVisibleAnchor());
-  const anchorY = anchorById(container, readingId).getBoundingClientRect().top;
-  await openUtilityAutomations();
-  expect(container.clientHeight).toBe(0);
-  const frames = controlRevealFrames();
-  await conversation.publish(completedTurn(9));
-  await screen.findByText("History answer 9");
-  click(buttonByLabel("Close automations"));
-  await waitFor(() => {
-    expect(container.scrollTop).toBe(0);
-  });
-  await frames.paint();
-  await frames.paint();
-  await waitFor(() => {
-    expect(container.scrollTop).toBe(275);
-    expect(anchorById(container, readingId).getBoundingClientRect().top).toBe(
-      anchorY,
-    );
-  });
-});
-
-test("Keep the captured oldest message when automations closes during incoming Mermaid image preparation", async () => {
-  // happy-dom has no SVG layout engine. Supply only the browser measurement
-  // capability; parsing, rendering and asynchronous image preparation are real.
-  const bboxDescriptor = Object.getOwnPropertyDescriptor(
-    SVGElement.prototype,
-    "getBBox",
-  );
-  Object.defineProperty(SVGElement.prototype, "getBBox", {
-    configurable: true,
-    value: () => {
-      return rect(0, 80, 120);
-    },
-  });
-  context.signal.addEventListener(
-    "abort",
-    () => {
-      if (bboxDescriptor) {
-        Object.defineProperty(SVGElement.prototype, "getBBox", bboxDescriptor);
-      } else {
-        Reflect.deleteProperty(SVGElement.prototype, "getBBox");
-      }
-    },
-    { once: true },
-  );
-  const imageUrl = "https://example.com/incoming-scroll-diagram.png";
-  const imageReady = context.mocks.deferred<void>();
-  let imagePending = false;
+test("Scrolling back to the beginning keeps that turn mounted until the reader returns to the new reply", async () => {
+  const image = "https://diagram.example.test/freight.png";
+  const decodedImages: string[] = [];
   vi.spyOn(HTMLImageElement.prototype, "decode").mockImplementation(function (
     this: HTMLImageElement,
   ) {
-    Object.defineProperties(this, {
-      naturalWidth: { configurable: true, value: 120 },
-      naturalHeight: { configurable: true, value: 80 },
-    });
-    if (this.src === imageUrl) {
-      imagePending = true;
-      return imageReady.promise.then(() => {
-        imagePending = false;
-      });
-    }
+    decodedImages.push(this.src);
     return Promise.resolve();
   });
-  const { container, geometry, conversation } =
-    await setupUtilitySidebarScroll();
-  scrollFromUser(container, geometry.bottomScrollTop());
-  fireEvent(container, new Event("scrollend"));
-  await waitFor(() => {
-    expect(queryButtonByLabel("Scroll to bottom")).toBeNull();
+  const events = pagedTurns(26, {
+    turn: 13,
+    markdown:
+      '```mermaid\nflowchart LR\n  Port@{ img: "' + image + '", h: 80 }\n```',
   });
-  // The native offset changed before its scroll event. The saved intent is
-  // still tail; opening the pane must retain the actual oldest reading row.
-  container.scrollTop = 275;
-  const readingId = anchorId(geometry.firstVisibleAnchor());
-  const anchorY = anchorById(container, readingId).getBoundingClientRect().top;
-  await openUtilityAutomations();
-  const frames = controlRevealFrames();
-  await conversation.publish(
-    completedTurn(9).map((event) => {
-      return event.id === "scroll-assistant-9"
-        ? {
-            ...event,
-            content: [
-              "History answer 9",
-              "",
-              "```mermaid",
-              "flowchart TD",
-              `  Incoming@{ img: "${imageUrl}", h: 80 }`,
-              "```",
-            ].join("\n"),
-          }
-        : event;
-    }),
-  );
-  // This gate is the real renderer's external Image.decode, not an internal
-  // presentation mock. Close only once preparation has genuinely suspended.
-  await waitFor(() => {
-    expect(imagePending).toBeTruthy();
-    expect(screen.getByText("History answer 9")).toBeInTheDocument();
-  });
-  click(buttonByLabel("Close automations"));
-  await waitFor(() => {
-    expect(container.clientHeight).toBe(INITIAL_VIEWPORT_HEIGHT_PX);
-    expect(container.scrollTop).toBe(0);
-  });
-  await frames.paint();
-  await frames.paint();
-  await waitFor(() => {
-    expect(imagePending).toBeTruthy();
-    expect(
-      anchorById(chatScrollContainer(), readingId).getBoundingClientRect().top,
-    ).toBe(anchorY);
-  });
-  imageReady.resolve();
-  await screen.findByRole("img", { name: "Diagram" });
-  await frames.paint();
-  await waitFor(() => {
-    expect(imagePending).toBeFalsy();
-    expect(
-      anchorById(chatScrollContainer(), readingId).getBoundingClientRect().top,
-    ).toBe(anchorY);
-    expect(container.scrollTop).toBeLessThan(geometry.bottomScrollTop());
-  });
-});
-
-test("A pointer press on the rendered scrollbar thumb takes over before the final reveal frame", async () => {
-  const { container, geometry } = await setupUtilitySidebarScroll();
-  // Base UI only mounts an overflowing scrollbar after both scroll extents
-  // are nonzero. happy-dom otherwise reports scrollWidth = 0.
-  Object.defineProperty(container, "scrollWidth", {
-    configurable: true,
-    value: container.clientWidth,
-  });
-  act(() => {
-    fireEvent.scroll(container);
-  });
-  const scrollbar = await screen.findByTestId("chat-message-scrollbar");
-  const thumb = scrollbar.querySelector('[data-slot="scroll-area-thumb"]');
-  if (!(thumb instanceof HTMLElement)) {
-    throw new Error("Rendered chat scrollbar thumb not found");
-  }
-  scrollbar.style.paddingBlockStart = "0px";
-  scrollbar.style.paddingBlockEnd = "0px";
-  thumb.style.marginBlockStart = "0px";
-  thumb.style.marginBlockEnd = "0px";
-  Object.defineProperty(scrollbar, "offsetHeight", {
-    configurable: true,
-    value: INITIAL_VIEWPORT_HEIGHT_PX,
-  });
-  Object.defineProperty(thumb, "offsetHeight", {
-    configurable: true,
-    value: 30,
-  });
-  let capturedPointer: number | null = null;
-  Object.defineProperties(thumb, {
-    setPointerCapture: {
-      configurable: true,
-      value: (id: number) => {
-        capturedPointer = id;
-      },
-    },
-    hasPointerCapture: {
-      configurable: true,
-      value: (id: number) => {
-        return capturedPointer === id;
-      },
-    },
-    releasePointerCapture: {
-      configurable: true,
-      value: () => {
-        capturedPointer = null;
-      },
-    },
-  });
-  context.signal.addEventListener(
-    "abort",
-    () => {
-      for (const property of [
-        "setPointerCapture",
-        "hasPointerCapture",
-        "releasePointerCapture",
-        "offsetHeight",
-      ]) {
-        Reflect.deleteProperty(thumb, property);
-      }
-      Reflect.deleteProperty(scrollbar, "offsetHeight");
-      Reflect.deleteProperty(container, "scrollWidth");
-    },
-    { once: true },
-  );
-  expect(container.contains(scrollbar)).toBeFalsy();
-  expect(scrollbar.parentElement).toBe(container.parentElement);
-  await openUtilityAutomations();
-  const frames = controlRevealFrames();
-  click(buttonByLabel("Close automations"));
-  await waitFor(() => {
-    expect(container.scrollTop).toBe(0);
-  });
-  await frames.paint();
-  // Use Base UI's real drag handler with browser-capability geometry and
-  // pointer capture, not a viewport pointer event or application command.
-  fireEvent.pointerDown(thumb, {
-    pointerId: 1,
-    pointerType: "mouse",
-    button: 0,
-    buttons: 1,
-    clientY: 20,
-  });
-  expect(capturedPointer).toBe(1);
-  fireEvent.pointerMove(thumb, {
-    pointerId: 1,
-    pointerType: "mouse",
-    buttons: 1,
-    clientY: 20 + (INITIAL_VIEWPORT_HEIGHT_PX - 30) / 10,
-  });
-  fireEvent.scroll(container);
-  fireEvent.pointerUp(thumb, { pointerId: 1, pointerType: "mouse", button: 0 });
-  expect(capturedPointer).toBeNull();
-  const chosenTop = geometry.bottomScrollTop() / 10;
-  expect(container.scrollTop).toBe(chosenTop);
-  geometry.writes.length = 0;
-  await frames.paint();
-  expect(container.scrollTop).toBe(chosenTop);
-  expect(geometry.writes).toStrictEqual([]);
-});
-
-test("Reopening automations cancels the first reveal and restores only the final close", async () => {
-  const { container, geometry } = await setupUtilitySidebarScroll();
-  container.scrollTop = 275;
-  const readingId = anchorId(geometry.firstVisibleAnchor());
-  const anchorY = anchorById(container, readingId).getBoundingClientRect().top;
-  await openUtilityAutomations();
-  const frames = controlRevealFrames();
-  geometry.writes.length = 0;
-  click(buttonByLabel("Close automations"));
-  await waitFor(() => {
-    expect(container.scrollTop).toBe(0);
-  });
-  await frames.paint();
-  await openUtilityAutomations();
-  await frames.paint();
-  expect(container.clientHeight).toBe(0);
-  expect(geometry.writes).toStrictEqual([]);
-  click(buttonByLabel("Close automations"));
-  await waitFor(() => {
-    expect(container.clientHeight).toBe(INITIAL_VIEWPORT_HEIGHT_PX);
-  });
-  await frames.paint();
-  expect(container.scrollTop).toBe(0);
-  await frames.paint();
-  await waitFor(() => {
-    expect(anchorById(container, readingId).getBoundingClientRect().top).toBe(
-      anchorY,
-    );
-    expect(geometry.writes).toStrictEqual([container.scrollTop]);
-  });
-});
-
-test.each(["wheel", "touchmove", "keydown"] as const)(
-  "Reader %s input takes over before the narrow sidebar reveal finishes",
-  async (input) => {
-    const { container, geometry } = await setupUtilitySidebarScroll();
-    await openUtilityAutomations();
-    const frames = controlRevealFrames();
-    click(buttonByLabel("Close automations"));
-    await waitFor(() => {
-      expect(container.scrollTop).toBe(0);
-    });
-    await frames.paint();
-    if (input === "keydown") {
-      fireEvent.keyDown(container, { key: "PageDown" });
-    } else if (input === "wheel") {
-      fireEvent.wheel(container, { deltaY: 125 });
-    } else {
-      fireEvent.touchStart(container, {
-        touches: [{ clientX: 40, clientY: 200 }],
-      });
-      fireEvent.touchMove(container, {
-        touches: [{ clientX: 40, clientY: 75 }],
-      });
-    }
-    container.scrollTop = 125;
-    fireEvent.scroll(container);
-    geometry.writes.length = 0;
-    await frames.paint();
-    expect(container.scrollTop).toBe(125);
-    expect(geometry.writes).toStrictEqual([]);
-  },
-);
-
-test("A reader jump to the latest message wins over pending sidebar restoration", async () => {
-  const { container, geometry } = await setupUtilitySidebarScroll();
-  await openUtilityAutomations();
-  const frames = controlRevealFrames();
-  click(buttonByLabel("Close automations"));
-  await waitFor(() => {
-    expect(container.scrollTop).toBe(0);
-  });
-  await frames.paint();
-  click(buttonByLabel("Scroll to bottom"));
-  await waitFor(() => {
-    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
-  });
-  geometry.writes.length = 0;
-  await frames.paint();
-  expect(container.scrollTop).toBe(geometry.bottomScrollTop());
-  expect(geometry.writes).toStrictEqual([]);
-});
-
-test.each(["tail", "history"])(
-  "Keep %s through PWA keyboard cycles",
-  async (position) => {
-    const viewport = installKeyboardViewport();
-    const threadId = THREAD_IDS.growingHistory;
-    mockMutableConversation(threadId, completedHistoryEvents(8));
-    const container = await openConversation(threadId, "History answer 8");
-    const geometry = installKeyboardChatGeometry(container, viewport);
-    const editor = chatComposerTextarea();
-    await fill(editor, "Keep this multiline draft\nand its second line");
-    editor.focus();
-    if (position === "history") {
-      scrollFromUser(container, 240);
-      await expectHistoryPositionHeld();
-    }
-    const readingId = anchorId(geometry.firstVisibleAnchor());
-    const readingOffset = () => {
-      return (
-        anchorById(container, readingId).getBoundingClientRect().top -
-        container.getBoundingClientRect().top
-      );
-    };
-    const initialOffset = readingOffset();
-    const initialScrollTop = container.scrollTop;
-    const expectPosition = () => {
-      const expectedScrollTop =
-        position === "tail" ? geometry.bottomScrollTop() : initialScrollTop;
-      expect(container.scrollTop).toBe(expectedScrollTop);
-      expect(readingOffset()).toBe(
-        initialOffset - (expectedScrollTop - initialScrollTop),
-      );
-    };
-
-    for (let cycle = 0; cycle < 3; cycle += 1) {
-      editor.focus();
-      act(() => {
-        viewport.resize(420, 180);
-        // WebKit can expose its final pan without a second viewport event.
-        viewport.pageTop = 240;
-        vi.stubGlobal("scrollY", 240);
-      });
-      await waitFor(() => {
-        expect(container.clientHeight).toBe(644);
-        expect(container.getBoundingClientRect().top).toBe(
-          64 - viewport.pageTop,
-        );
-        expectPosition();
-      });
-
-      act(() => {
-        viewport.pageTop = 280;
-        // Document scrolling and offsetTop are not additive on iOS.
-        vi.stubGlobal("scrollY", 280);
-        fireEvent.scroll(window);
-        viewport.dispatchEvent(new Event("scroll"));
-      });
-      await waitFor(() => {
-        expect(container.getBoundingClientRect().top).toBe(
-          64 - viewport.pageTop,
-        );
-        expectPosition();
-      });
-      expect(editor).toHaveFocus();
-      expect(editor).toHaveTextContent("Keep this multiline draft");
-      expect(editor).toHaveTextContent("and its second line");
-
-      act(() => {
-        editor.blur();
-        viewport.resize(844, 0);
-        vi.stubGlobal("scrollY", 0);
-      });
-      await waitFor(() => {
-        expect(container.clientHeight).toBe(644);
-        expect(container.getBoundingClientRect().top).toBe(64);
-        expectPosition();
-      });
-    }
-
-    // A layout-viewport resize must also preserve the reading position.
-    act(() => {
-      vi.stubGlobal("innerHeight", 740);
-      viewport.resize(740, 0);
-      fireEvent.resize(window);
-    });
-    await waitFor(() => {
-      expect(container.clientHeight).toBe(540);
-      expectPosition();
-    });
-  },
-);
-
-test.each([
-  {
-    position: "tail",
-    status: "completed",
-    threadId: THREAD_IDS.capabilityTail,
-  },
-  {
-    position: "history",
-    status: "stopped",
-    threadId: THREAD_IDS.capabilityHistory,
-  },
-] as const)(
-  "Keep $position when opening and closing capabilities in a $status conversation",
-  async ({ position, status, threadId }) => {
-    const events = completedHistoryEvents(8).map(
-      (event): MockChatEventInput => {
-        return status === "stopped" && event.id === "scroll-completed-8"
-          ? {
-              ...event,
-              runLifecycleEvent: "cancelled",
-            }
-          : event;
-      },
-    );
-    mockMutableConversation(threadId, events);
-    const container = await openConversation(threadId, "History answer 8");
-    // happy-dom has no layout engine. The tray takes space only once the
-    // user's menu selection has actually rendered it beside the transcript.
-    const geometry = installChatScrollGeometry(container, () => {
-      return document.querySelector('[data-slot="capability-tray"]')
-        ? INITIAL_VIEWPORT_HEIGHT_PX - 120
-        : INITIAL_VIEWPORT_HEIGHT_PX;
-    });
-    const editor = chatComposerTextarea();
-    // Keep the draft untouched: editor transactions must not restore this
-    // layout change on behalf of the capability action.
-    expect(editor.textContent).toBe("");
-    if (position === "history") {
-      scrollFromUser(container, 240);
-      await expectHistoryPositionHeld();
-    }
-    const readingAnchorId = anchorId(geometry.firstVisibleAnchor());
-    const readingOffset = () => {
-      return (
-        anchorById(container, readingAnchorId).getBoundingClientRect().top -
-        container.getBoundingClientRect().top
-      );
-    };
-    const initialOffset = readingOffset();
-    const initialScrollTop = container.scrollTop;
-    const expectPosition = () => {
-      expect(container.scrollTop).toBe(
-        position === "tail" ? geometry.bottomScrollTop() : initialScrollTop,
-      );
-      expect(readingOffset()).toBe(
-        position === "tail"
-          ? initialOffset + container.clientHeight - INITIAL_VIEWPORT_HEIGHT_PX
-          : initialOffset,
-      );
-      expect(editor.textContent).toBe("");
-    };
-    expectPosition();
-
-    click(buttonByLabel("Add"));
-    const menu = await screen.findByRole("menu", { name: "Add" });
-    const research = queryAllByRoleFast("menuitem", menu).find((candidate) => {
-      return candidate.textContent?.trim() === "Research";
-    });
-    if (!research) {
-      throw new Error("Research menu item not found");
-    }
-    expect(container.clientHeight).toBe(INITIAL_VIEWPORT_HEIGHT_PX);
-    click(research);
-    await screen.findByRole("region", { name: "Research" });
-    await waitFor(() => {
-      expect(container.clientHeight).toBe(INITIAL_VIEWPORT_HEIGHT_PX - 120);
-      expectPosition();
-    });
-
-    click(buttonByLabel("All capabilities"));
-    await waitFor(() => {
-      expect(container.clientHeight).toBe(INITIAL_VIEWPORT_HEIGHT_PX);
-      expectPosition();
-    });
-    expect(screen.getByText("History answer 8")).toBeInTheDocument();
-    expect(window.location.pathname).toBe(`/chats/${threadId}`);
-  },
-);
-
-test("Preserve the visible message as content grows", async () => {
-  mockMutableConversation(THREAD_IDS.growingHistory, historyWithLateImage(8));
-  const container = await openConversation(
-    THREAD_IDS.growingHistory,
-    "History answer 8",
-  );
-  const geometry = installChatScrollGeometry(container);
-  scrollFromUser(container, 240);
-  await expectHistoryPositionHeld();
-  const readingAnchor = geometry.firstVisibleAnchor();
-  const readingAnchorId = anchorId(readingAnchor);
-  const readingTop = readingAnchor.getBoundingClientRect().top;
-
-  geometry.growBeforeMessages(75);
-  act(() => {
-    fireEvent.load(screen.getByAltText("Late history image"));
-  });
-
-  await waitFor(() => {
-    expect(
-      anchorById(container, readingAnchorId).getBoundingClientRect().top,
-    ).toBe(readingTop);
-  });
-});
-
-test("Keep expanded work history and its duration visible after the run completes", async () => {
-  // A live run demands activity summaries, whose contract requires a UUID run ID.
-  const activeRunId = "a0000000-0000-4000-a000-000000000937";
-  const conversation = mockMutableConversation(
-    THREAD_IDS.expandedWork,
-    [
-      ...completedHistoryEvents(6),
-      {
-        id: "scroll-expanded-work-user",
-        role: "user",
-        content: "Inspect the rollout",
-        runId: activeRunId,
-        seqId: 19,
-        createdAt: "2026-08-20T12:20:00.000Z",
-      },
-      {
-        id: "scroll-expanded-work-earlier",
-        role: "assistant",
-        content: "Checked the first rollout stage",
-        runId: activeRunId,
-        seqId: 20,
-        createdAt: "2026-08-20T12:20:20.000Z",
-      },
-      {
-        id: "scroll-expanded-work-reading",
-        role: "assistant",
-        content: "Reading the rollout health report",
-        runId: activeRunId,
-        seqId: 21,
-        createdAt: "2026-08-20T12:20:40.000Z",
-      },
-    ],
-    [activeRunId],
-  );
-  const container = await openConversation(
-    THREAD_IDS.expandedWork,
-    "Reading the rollout health report",
-  );
-  const transcript = within(container);
-
-  click(buttonByLabel("Expand work history"));
-  await transcript.findByText("Checked the first rollout stage");
-  const geometry = installChatScrollGeometry(container);
-  scrollFromUser(container, geometry.bottomScrollTop() - 150);
-  await expectHistoryPositionHeld();
-  const readingAnchor = geometry.firstVisibleAnchor();
-  const readingAnchorId = anchorId(readingAnchor);
-  const readingTop = readingAnchor.getBoundingClientRect().top;
-
-  await conversation.publish([
-    {
-      id: "scroll-expanded-work-final",
-      role: "assistant",
-      content: "The rollout is healthy",
-      runId: activeRunId,
-      seqId: 22,
-      createdAt: "2026-08-20T12:21:00.000Z",
-    },
-    {
-      id: "scroll-expanded-work-complete",
-      role: "assistant",
-      content: null,
-      runId: activeRunId,
-      runLifecycleEvent: "completed",
-      seqId: 23,
-      createdAt: "2026-08-20T12:21:01.000Z",
-    },
-  ]);
-
-  await expect(
-    transcript.findByText("The rollout is healthy"),
-  ).resolves.toBeInTheDocument();
-  expect(transcript.getByText("Checked the first rollout stage")).toBeVisible();
-  expect(buttonByLabel("Collapse work history")).toBeVisible();
-  expect(transcript.getByText("Worked for 1 min")).toBeVisible();
+  const pane = await openPagedHistory(events);
+  await within(pane).findByText("Locator answer 26");
+  await expectTail(pane);
+  const leading = requiredElement('[data-transcript-spacer="before"]', pane);
+  const estimated = leading.getBoundingClientRect().height;
   expect(
-    anchorById(container, readingAnchorId).getBoundingClientRect().top,
-  ).toBe(readingTop);
-});
-
-function observeIncomingReply(
-  container: HTMLElement,
-  text: string,
-): Promise<HTMLElement> {
-  const transcript = within(container);
-  const reply = context.mocks.deferred<HTMLElement>();
-  const signal = context.signal;
-  const observer = new MutationObserver(() => {
-    const answer = transcript.queryByText(text);
-    if (answer) {
-      stopObserving();
-      reply.resolve(answer);
-    }
-  });
-  function stopObserving(): void {
-    observer.disconnect();
-    signal.removeEventListener("abort", stopObserving);
-  }
-  observer.observe(container, {
-    childList: true,
-    characterData: true,
-    subtree: true,
-  });
-  signal.addEventListener("abort", stopObserving, { once: true });
-  return reply.promise;
-}
-
-test.each(["layout", "tap"])(
-  "Follow new messages after a %s changes the viewport without a reading gesture",
-  async (cause) => {
-    const conversation = mockMutableConversation(
-      THREAD_IDS.incomingLatest,
-      // Ten complete turns enter the virtualized transcript at 20 groups.
-      completedHistoryEvents(10),
-    );
-    const container = await openConversation(
-      THREAD_IDS.incomingLatest,
-      "History answer 10",
-    );
-    const geometry = installChatScrollGeometry(container);
-    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
-
-    if (cause === "tap") {
-      fireEvent.pointerDown(container);
-      fireEvent.pointerUp(container);
-    }
-    // The browser can clamp the offset when the preceding follow-up panel disappears.
-    container.scrollTop -= 80;
-    fireEvent.scroll(container);
-    expect(queryButtonByLabel("Scroll to bottom")).toBeNull();
-
-    // The mock API response can precede the transcript's React commit.
-    const [incomingAnswer] = await Promise.all([
-      observeIncomingReply(container, "History answer 11"),
-      conversation.publish(completedTurn(11)),
-    ]);
-    expect(incomingAnswer).toBeVisible();
-    await waitFor(
-      () => {
-        expect(container.scrollTop).toBe(geometry.bottomScrollTop());
-      },
-      { container },
-    );
-    expect(queryButtonByLabel("Scroll to bottom")).toBeNull();
-  },
-);
-
-test("Follow the tail before and during both render frames as the layout changes", async () => {
-  const id = THREAD_IDS.incomingLatest;
-  const conversation = mockMutableConversation(id, completedHistoryEvents(7));
-  const container = await openConversation(id, "History answer 7");
-  const geometry = installChatScrollGeometry(container);
-  const frames = controlRevealFrames();
-  geometry.growBeforeMessages(40);
-  await conversation.publish(completedTurn(8));
-  await screen.findByText("History answer 8");
+    within(pane).queryByText("Locator question 1"),
+  ).not.toBeInTheDocument();
+  fireEvent.scroll(pane);
+  fireEvent.wheel(pane, { deltaY: 48 - pane.scrollTop });
+  pane.scrollTop = 48;
+  fireEvent.scroll(pane);
+  fireEvent(pane, new Event("scrollend"));
+  await within(pane).findByText("Locator question 1");
   await waitFor(() => {
-    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
+    expect(
+      within(pane).queryByText("Locator answer 26"),
+    ).not.toBeInTheDocument();
+    expect(messageOffset("Locator question 1", pane)).toBeGreaterThan(-80);
+    expect(messageOffset("Locator question 1", pane)).toBeLessThanOrEqual(0);
   });
-  for (const growth of [55, 70]) {
-    geometry.growBeforeMessages(growth);
-    expect(container.scrollTop).toBe(geometry.bottomScrollTop() - growth);
-    await frames.paint();
-    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
-  }
-});
-
-test.each([19, 20])(
-  "Open a transcript with %i message groups at the latest reply",
-  async (groupCount) => {
-    const threadId = THREAD_IDS.incomingLatest;
-    const turns = completedHistoryEvents(10);
-    // An assistant-only opening turn contributes one group instead of two.
-    mockMutableConversation(
-      threadId,
-      groupCount === 19 ? turns.slice(1) : turns,
-    );
-    const container = await openConversation(threadId, "History answer 10");
-    const geometry = installChatScrollGeometry(container);
-
-    // The compact tail contains three turns. The virtual tail also mounts its neighboring page.
-    expect(screen.queryByText("History question 6") !== null).toBe(
-      groupCount === 20,
-    );
-    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
-  },
-);
-
-test("Fill a tall viewport from a virtual tail while keeping the latest reply pinned", async () => {
-  const id = THREAD_IDS.unfilledViewport;
-  const conversation = mockMutableConversation(id, completedHistoryEvents(26));
-  const container = await openConversation(id, "History answer 26");
-  const transcript = within(container);
-  expect(transcript.queryByText("History answer 20")).toBeNull();
-  expect(transcript.queryByText("History answer 13")).toBeNull();
-  const frames = controlRevealFrames();
-  const geometry = installChatScrollGeometry(container, () => {
-    return 6000;
-  });
-  await conversation.publish(completedTurn(27));
-  await expect(
-    transcript.findByText("History answer 27"),
-  ).resolves.toBeInTheDocument();
-
-  // Each pair of paints lets the scroll handler fill the visible spacer once.
-  for (const answer of ["History answer 20", "History answer 13"]) {
-    await frames.paint();
-    await frames.paint();
-    expect(transcript.getByText(answer)).toBeInTheDocument();
-  }
-
-  // The final page changed the scroll height. Align after its layout commits.
-  await frames.paint();
-  await frames.paint();
-  const before = container.querySelector<HTMLElement>(
-    '[data-transcript-spacer="before"]',
-  );
-  expect(before?.getBoundingClientRect().bottom).toBeLessThanOrEqual(0);
-  expect(container.scrollTop).toBe(geometry.bottomScrollTop());
-  expect(transcript.queryByText("History answer 1")).toBeNull();
-});
-
-test("Drag into unmounted history, retain the message through new output, and return to the latest reply", async () => {
-  const id = THREAD_IDS.incomingHistory;
-  const diagramImage = "https://example.com/skipped-history.png";
-  const decoded: string[] = [];
-  vi.spyOn(HTMLImageElement.prototype, "decode").mockImplementation(function (
-    this: HTMLImageElement,
-  ) {
-    decoded.push(this.src);
-    return Promise.resolve();
-  });
-  const history = completedHistoryEvents(26).map((event) => {
-    if (event.id !== "scroll-assistant-13") {
-      return event;
-    }
-    return {
-      ...event,
-      content: [
-        "```mermaid",
-        "flowchart TD",
-        `  Skipped@{ img: "${diagramImage}", h: 80 }`,
-        "```",
-      ].join("\n"),
-    };
-  });
-  const conversation = mockMutableConversation(id, history);
-  const container = await openConversation(id, "History answer 26");
-  const geometry = installChatScrollGeometry(container);
-  expect(screen.queryByText("History question 1")).toBeNull();
-  const beforeSpacer = container.querySelector<HTMLElement>(
-    '[data-transcript-spacer="before"]',
-  )!;
-  const estimatedHistoryHeight = beforeSpacer.getBoundingClientRect().height;
-  scrollFromUser(container, 48);
-  await screen.findByText("History question 1");
-  await waitFor(() => {
-    expect(screen.queryByText("History answer 26")).toBeNull();
-    expect(geometry.firstVisibleAnchor()).toHaveTextContent(
-      "History question 1",
-    );
-  });
-  await conversation.publish(completedTurn(27));
+  events.push(...pagedTurn(27));
+  publishRunUpdate();
   await waitFor(() => {
     expect(
       document.querySelector('[data-locator-tick][data-turn-index="26"]'),
     ).toBeInTheDocument();
   });
-  expect(screen.queryByText("History answer 27")).toBeNull();
-  expect(geometry.firstVisibleAnchor()).toHaveTextContent("History question 1");
-  click(buttonByLabel("Scroll to bottom"));
-  await screen.findByText("History answer 27");
+  expect(within(pane).queryByText("Locator answer 27")).not.toBeInTheDocument();
+  expect(messageOffset("Locator question 1", pane)).toBeGreaterThan(-80);
+  expect(messageOffset("Locator question 1", pane)).toBeLessThanOrEqual(0);
+  click(await findFastControl("button", "Scroll to bottom"));
+  await within(pane).findByText("Locator answer 27");
+  await expectTail(pane);
+  expect(leading.getBoundingClientRect().height).toBeGreaterThan(estimated);
+  expect(decodedImages).not.toContain(image);
+});
+
+test("Closing Automations preserves a history reader's visible answer and distance from the bottom", async () => {
+  const pane = await transcript();
+  const answer = "Locator answer 5";
+  await within(pane).findByText(answer);
+  pane.scrollTop += messageOffset(answer, pane) - 73;
+  fireEvent.scroll(pane);
+  const at = messageOffset(answer, pane);
+  const tail = pane.scrollHeight - pane.scrollTop - pane.clientHeight;
+  expect(at).toBeGreaterThanOrEqual(0);
+  expect(at).toBeLessThan(pane.clientHeight);
+  expect(tail).toBeGreaterThan(0);
+  click(await findFastControl("button", "More actions"));
+  click(
+    await within(await screen.findByRole("menu")).findByText("Automations"),
+  );
+  const close = await findFastControl("button", "Close automations");
+  click(close);
   await waitFor(() => {
-    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
-    // The history rows were taller than their initial estimates. Leaving
-    // history must preserve their measured height in the leading spacer.
-    expect(beforeSpacer.getBoundingClientRect().height).toBeGreaterThan(
-      estimatedHistoryHeight,
+    expect(close).not.toBeInTheDocument();
+    expect(messageOffset(answer, pane)).toBe(at);
+    expect(pane.scrollHeight - pane.scrollTop - pane.clientHeight).toBe(tail);
+  });
+});
+
+test.each(["layout change", "tap"])(
+  "The transcript shows the incoming reply at the bottom after a %s without a reading gesture",
+  async (cause) => {
+    const history = pagedTurns(10);
+    const pane = await openPagedHistory(history);
+    const messages = within(pane);
+    await messages.findByText("Locator answer 10");
+    await expectTail(pane);
+    await waitFor(() => {
+      expect(context.mocks.ably.hasSharedDatabaseSubscription()).toBeTruthy();
+    });
+    if (cause === "tap") {
+      fireEvent.pointerDown(pane);
+      fireEvent.pointerUp(pane);
+    }
+    const before = pane.scrollTop;
+    pane.scrollTop = before - 80;
+    fireEvent.scroll(pane);
+    expect(queryFastControl("button", "Scroll to bottom")).toBeNull();
+    const incoming = messages.findByText("The dispatch ledger is ready");
+    history.push(...pagedTurn(11, "The dispatch ledger is ready"));
+    publishRunUpdate();
+    await expect(incoming).resolves.toBeVisible();
+    await waitFor(
+      () => {
+        expect(pane.scrollTop).toBe(pane.scrollHeight - pane.clientHeight);
+        expect(queryFastControl("button", "Scroll to bottom")).toBeNull();
+      },
+      { container: pane },
     );
-  });
-  expect(decoded).not.toContain(diagramImage);
-});
+  },
+);
 
-test("A reader who scrolls between paints keeps their new position", async () => {
-  const id = THREAD_IDS.incomingLatest;
-  const conversation = mockMutableConversation(id, completedHistoryEvents(7));
-  const container = await openConversation(id, "History answer 7");
-  const geometry = installChatScrollGeometry(container);
-  scrollFromUser(container, geometry.bottomScrollTop());
-  const frames = controlRevealFrames();
-  await conversation.publish(completedTurn(8));
-  await screen.findByText("History answer 8");
-  // The browser has not painted yet, but incoming batches must keep flowing.
-  await conversation.publish(completedTurn(9));
-  await screen.findByText("History answer 9");
-  await frames.paint();
-  scrollFromUser(container, 275);
-  const anchor = geometry.firstVisibleAnchor();
-  const offset = anchor.getBoundingClientRect().top;
-  await frames.paint();
-  await expectHistoryPositionHeld();
-  expect(anchor.getBoundingClientRect().top).toBe(offset);
-});
-
-test("Preserve the reading position when new messages are added", async () => {
-  const conversation = mockMutableConversation(
-    THREAD_IDS.incomingHistory,
-    completedHistoryEvents(7),
+test("A completed turn delivered behind Automations stays accessible after the reader returns to history", async () => {
+  context.mocks.browser.standaloneDisplayMode(true);
+  const records = pagedTurns(26);
+  const pane = await openPagedHistory(records);
+  await within(pane).findByText("Locator answer 26");
+  await expectTail(pane);
+  fireEvent.scroll(pane);
+  fireEvent.wheel(pane, { deltaY: 32 - pane.scrollTop });
+  pane.scrollTop = 32;
+  fireEvent.scroll(pane);
+  fireEvent(pane, new Event("scrollend"));
+  const anchor = "Locator question 1";
+  await within(pane).findByText(anchor);
+  const y = messageOffset(anchor, pane);
+  click(await findFastControl("button", "More actions"));
+  click(
+    await within(await screen.findByRole("menu")).findByText("Automations"),
   );
-  const container = await openConversation(
-    THREAD_IDS.incomingHistory,
-    "History answer 7",
-  );
-  const geometry = installChatScrollGeometry(container);
-  scrollFromUser(container, 240);
-  await expectHistoryPositionHeld();
-  const readingAnchor = geometry.firstVisibleAnchor();
-  const readingAnchorId = anchorId(readingAnchor);
-  const readingTop = readingAnchor.getBoundingClientRect().top;
-
-  await conversation.publish(completedTurn(8));
-
-  const liveAnswer = await screen.findByText("History answer 8");
-  expect(liveAnswer).toBeVisible();
+  const close = await findFastControl("button", "Close automations");
+  records.push(...pagedTurn(27, "Harbor inspection completed"));
+  publishRunUpdate();
   await waitFor(() => {
     expect(
-      anchorById(container, readingAnchorId).getBoundingClientRect().top,
-    ).toBe(readingTop);
+      document.querySelector('[data-locator-tick][data-turn-index="26"]'),
+    ).toBeInTheDocument();
   });
-
-  await conversation.publish(completedTurn(9));
-
-  const nextAnswer = await screen.findByText("History answer 9");
-  expect(nextAnswer).toBeVisible();
+  click(close);
   await waitFor(() => {
-    expect(
-      anchorById(container, readingAnchorId).getBoundingClientRect().top,
-    ).toBe(readingTop);
+    expect(close).not.toBeInTheDocument();
+    expect(messageOffset(anchor, pane)).toBe(y);
   });
-});
-
-test("Loading older messages preserves the reading position", async () => {
-  mockMutableConversation(
-    THREAD_IDS.prependedHistory,
-    completedHistoryEvents(9),
-  );
-  const container = await openConversation(
-    THREAD_IDS.prependedHistory,
-    "History answer 9",
-  );
-  const geometry = installChatScrollGeometry(container);
-  expect(screen.queryByText("History question 3")).toBeNull();
-  scrollFromUser(container, 40);
-  const readingAnchor = geometry.firstVisibleAnchor();
-  const readingAnchorId = anchorId(readingAnchor);
-  const readingTop = readingAnchor.getBoundingClientRect().top;
-
-  const olderMessage = await screen.findByText("History question 3");
-  expect(olderMessage).toBeVisible();
-  await waitFor(() => {
-    expect(
-      anchorById(container, readingAnchorId).getBoundingClientRect().top,
-    ).toBe(readingTop);
-  });
-});
-
-test("Load earlier messages once scrolling stops near the top", async () => {
-  mockMutableConversation(THREAD_IDS.settledHistory, completedHistoryEvents(9));
-  const container = await openConversation(
-    THREAD_IDS.settledHistory,
-    "History answer 9",
-  );
-  const geometry = installChatScrollGeometry(container);
-  // One gesture passes the top, moves away, and stops near the top again.
-  // Earlier groups load once, after the last scroll, from where it stopped.
-  scrollFromUser(container, 40);
-  scrollFromUser(container, 500);
-  scrollFromUser(container, 60);
-  const readingAnchor = geometry.firstVisibleAnchor();
-  const readingAnchorId = anchorId(readingAnchor);
-  const readingTop = readingAnchor.getBoundingClientRect().top;
-
-  const olderMessage = await screen.findByText("History question 3");
-  expect(olderMessage).toBeVisible();
-  await waitFor(() => {
-    expect(
-      anchorById(container, readingAnchorId).getBoundingClientRect().top,
-    ).toBe(readingTop);
-  });
-  expect(screen.queryByText("History question 1")).not.toBeInTheDocument();
-});
-
-test("Load earlier messages while the latest ones do not fill the viewport", async () => {
-  // The six messages of the initial window are shorter than this viewport.
-  installViewportHeightBeforeOpen(1500);
-  mockMutableConversation(
-    THREAD_IDS.unfilledViewport,
-    completedHistoryEvents(9),
-  );
-  await openConversation(THREAD_IDS.unfilledViewport, "History answer 9");
-
+  click(await findFastControl("button", "Scroll to bottom"));
   await expect(
-    screen.findByText("History question 2"),
-  ).resolves.toBeInTheDocument();
+    within(pane).findByText("Harbor inspection completed"),
+  ).resolves.toBeVisible();
 });
 
-test("Show the prompt and full work duration of the oldest visible answer", async () => {
-  mockMutableConversation(THREAD_IDS.runWindowStart, [
-    ...completedHistoryEvents(1),
-    {
-      id: "scroll-window-run-user",
-      role: "user",
-      content: "Review the release checklist",
-      runId: "scroll-window-run",
-      seqId: 4,
-      createdAt: "2026-08-20T12:02:00.000Z",
-    },
-    {
-      id: "scroll-window-run-work",
-      role: "assistant",
-      content: "Checked the release notes",
-      runId: "scroll-window-run",
-      seqId: 5,
-      createdAt: "2026-08-20T12:02:30.000Z",
-    },
-    {
-      id: "scroll-window-run-answer",
-      role: "assistant",
-      content: "The release checklist is complete",
-      runId: "scroll-window-run",
-      seqId: 6,
-      createdAt: "2026-08-20T12:03:00.000Z",
-    },
-    {
-      id: "scroll-window-run-completed",
-      role: "assistant",
-      content: null,
-      runId: "scroll-window-run",
-      runLifecycleEvent: "completed",
-      seqId: 7,
-      createdAt: "2026-08-20T12:03:00.000Z",
-    },
-    ...completedHistoryEvents(4)
-      .slice(6)
-      .map((event) => {
-        return { ...event, seqId: (event.seqId ?? 0) + 1 };
-      }),
-  ]);
-  await openConversation(THREAD_IDS.runWindowStart, "History answer 4");
+test("Avatar loading preserves a wheel movement before scroll delivery", async () => {
+  const pane = await transcript();
+  const reading = pane.scrollTop - 320;
+  fireEvent.wheel(pane, { deltaY: -320 });
+  pane.scrollTop = reading;
+  fireEvent.scroll(pane);
+  const avatar = requiredElement("svg[data-okou-avatar] image", pane);
+  fireEvent.wheel(pane, { deltaY: 60 });
+  pane.scrollTop = reading + 60;
+  fireEvent.load(avatar);
+  expect(pane.scrollTop).toBe(reading + 60);
+});
 
-  expect(
-    screen.getByText("The release checklist is complete"),
-  ).toBeInTheDocument();
-  expect(screen.getByText("Review the release checklist")).toBeInTheDocument();
-  await expect(
-    screen.findByText("Worked for 1 min"),
-  ).resolves.toBeInTheDocument();
-  expect(screen.queryByText("History question 1")).not.toBeInTheDocument();
+test("A browser without overflow anchoring keeps its reading offset when the preceding page mounts", async () => {
+  const css = CSS;
+  vi.stubGlobal("CSS", css);
+  const supported = css.supports.bind(css);
+  vi.spyOn(css, "supports").mockImplementation((property, value?: string) => {
+    if (property === "overflow-anchor") {
+      return false;
+    }
+    return value === undefined
+      ? supported(property)
+      : supported(property, value);
+  });
+  const pane = await openPagedHistory(pagedTurns(26));
+  await within(pane).findByText("Locator answer 26");
+  await expectTail(pane);
+  const selector = "[data-chat-scroll-anchor-event-id]";
+  const first = requiredElement(selector, pane);
+  const delta =
+    first.getBoundingClientRect().top - pane.getBoundingClientRect().top + 30;
+  fireEvent.scroll(pane);
+  fireEvent.wheel(pane, { deltaY: delta });
+  pane.scrollTop += delta;
+  fireEvent.scroll(pane);
+  fireEvent(pane, new Event("scrollend"));
+  await waitFor(() => {
+    expect(pane.querySelector(selector)).not.toBe(first);
+    expect(first).toBeInTheDocument();
+    expect(
+      first.getBoundingClientRect().top - pane.getBoundingClientRect().top,
+    ).toBe(-30);
+  });
 });

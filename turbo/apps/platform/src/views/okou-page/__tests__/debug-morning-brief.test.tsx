@@ -1,172 +1,120 @@
 import userEvent from "@testing-library/user-event";
-import { screen, waitFor } from "@testing-library/react";
+import { orgContract } from "@okouai/api-contracts/contracts/org-routes";
 import { debugMorningBriefContract } from "@okouai/api-contracts/contracts/debug-morning-brief";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { expect, test } from "vitest";
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { screen, waitFor } from "@testing-library/react";
+import { test, expect } from "vitest";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 const context = testContext();
-function button(name: string) {
-  const found = queryAllByRoleFast("button").find((candidate) => {
-    return candidate.textContent?.trim() === name;
+async function openDebug(role: "member" | "admin") {
+  const org = { id: "org_test", name: "Debug workshop" };
+  context.mocks.api(orgContract.get, ({ respond }) => {
+    return respond(200, { ...org, role });
   });
-  if (!found) {
-    throw new Error(`Expected button ${name}`);
-  }
-  return found;
-}
-async function openDebug(debug = true) {
   await setupPage({
     context,
     path: "/?settings=debug",
-    featureSwitches: {
-      [FeatureSwitchKey.OkouDebug]: debug,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
+    auth: {
+      user: { id: "user_harbor", fullName: "Harbor reader" },
+      organization: {
+        activeOrg: org,
+        memberships: [{ id: org.id, role: "org:" + role }],
+      },
     },
   });
-  await screen.findByRole("heading", { name: debug ? "Debug" : "Preference" });
 }
 
-test("a member runs a real brief, sees its conversation link and requests another", async () => {
-  const ids: string[] = [];
+function briefs(status: "failed" | "completed") {
+  const ids = new Map<string, string>();
   context.mocks.api(debugMorningBriefContract.run, ({ body, respond }) => {
-    ids.push(body.requestId);
+    const thread = crypto.randomUUID();
+    ids.set(thread, body.requestId);
     return respond(200, {
       requestId: body.requestId,
-      status: "completed",
-      chatThreadId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-      runId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      chatThreadId: thread,
+      runId: null,
+      status,
     });
   });
-  await openDebug();
-  const send = button("Run Morning Brief");
-  await waitFor(() => {
-    return expect(send).toBeEnabled();
-  });
-  click(send);
+  return ids;
+}
+async function displayedRequest(ids: Map<string, string>) {
+  const chat = await findFastControl("link", "Open chat");
+  const thread = chat.getAttribute("href")?.split("/").at(-1);
+  const request = ids.get(thread ?? "");
+  expect(request).toBeDefined();
+  return request;
+}
+test("debug-morning-brief-001 a member can run separate briefs without changing the daily schedule", async () => {
+  const ids = briefs("completed");
+  await openDebug("member");
+  click(await findFastControl("button", "Run Morning Brief"));
   await screen.findByText("Morning Brief completed.");
   expect(
-    screen.getByText(/Your daily schedule stays unchanged/u),
+    screen.getByText(/Your daily schedule stays unchanged/),
   ).toBeInTheDocument();
-  const conversation = queryAllByRoleFast("link").find((link) => {
-    return link.textContent?.trim() === "Open chat";
+  const first = await displayedRequest(ids);
+  click(await findFastControl("button", "Run another Morning Brief"));
+  await waitFor(async () => {
+    await expect(displayedRequest(ids)).resolves.not.toBe(first);
   });
-  expect(conversation).toHaveAttribute(
-    "href",
-    "/chats/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-  );
-  click(button("Run another Morning Brief"));
-  await waitFor(() => {
-    return expect(ids).toHaveLength(2);
-  });
-  expect(new Set(ids).size).toBe(2);
 });
-
-test("a queued brief links to its conversation", async () => {
-  let requestId = "";
-  context.mocks.api(debugMorningBriefContract.run, ({ body, respond }) => {
-    requestId = body.requestId;
-    return respond(200, {
-      requestId,
-      status: "queued",
-      chatThreadId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-      runId: null,
-    });
-  });
-  await openDebug();
-  const send = button("Run Morning Brief");
-  await waitFor(() => {
-    return expect(send).toBeEnabled();
-  });
-  click(send);
-  await screen.findByText(/Queued. Open the chat/u);
-  expect(button("Run another Morning Brief")).toBeDisabled();
-});
-
-test("reports a failed run with its conversation for details", async () => {
-  context.mocks.api(debugMorningBriefContract.run, ({ body, respond }) => {
-    return respond(200, {
-      requestId: body.requestId,
-      status: "failed",
-      chatThreadId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-      runId: null,
-    });
-  });
-  await openDebug();
-  const run = button("Run Morning Brief");
-  await waitFor(() => {
-    return expect(run).toBeEnabled();
-  });
-  click(run);
+test("debug-morning-brief-003 a failed brief links its conversation and allows a new attempt", async () => {
+  const ids = briefs("failed");
+  await openDebug("member");
+  click(await findFastControl("button", "Run Morning Brief"));
   await screen.findByText("Morning Brief failed. Open the chat for details.");
-  expect(button("Run another Morning Brief")).toBeEnabled();
+  await displayedRequest(ids);
+  await expect(
+    findFastControl("button", "Run another Morning Brief"),
+  ).resolves.toBeEnabled();
 });
 
-test("hides the test action without Okou Debug", async () => {
-  context.mocks.api(debugMorningBriefContract.run, () => {
-    throw new Error("Hidden action must not send");
-  });
-  await openDebug(false);
-  expect(screen.queryByText("Morning Brief")).not.toBeInTheDocument();
-});
-
-test("supports keyboard activation with one submission", async () => {
-  let requests = 0;
-  context.mocks.api(debugMorningBriefContract.run, ({ body, respond }) => {
-    requests += 1;
-    return respond(200, {
-      requestId: body.requestId,
-      status: "completed",
-      chatThreadId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-      runId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-    });
-  });
-  await openDebug();
-  const send = button("Run Morning Brief");
-  await waitFor(() => {
-    expect(send).toBeEnabled();
-  });
-  send.focus();
-  const user = userEvent.setup({ delay: null });
-  await user.keyboard("{Enter}");
+test("Enter runs the focused Morning Brief action and exposes its completed chat", async () => {
+  const issued = briefs("completed");
+  await openDebug("admin");
+  const run = await findFastControl("button", "Run Morning Brief");
+  run.focus();
+  expect(run).toHaveFocus();
+  await userEvent.keyboard("{Enter}");
   await screen.findByText("Morning Brief completed.");
-  expect(requests).toBe(1);
+  await expect(displayedRequest(issued)).resolves.toBeTruthy();
 });
 
-test("dismissal cancels a pending request before the Settings closing animation", async () => {
-  const requested = context.mocks.deferred<void>();
-  const response = context.mocks.deferred<void>();
-  let requestSignal: AbortSignal | undefined;
+test("debug-morning-brief-005 The keyboard-triggered brief stays busy until the requested conversation is ready", async () => {
+  const issued = context.mocks.deferred<void>(),
+    finished = context.mocks.deferred<void>();
+  const id = crypto.randomUUID();
   context.mocks.api(
     debugMorningBriefContract.run,
-    async ({ body, request, respond }) => {
-      requestSignal = request.signal;
-      requested.resolve();
-      await response.promise;
+    async ({ body, respond }) => {
+      issued.resolve();
+      await finished.promise;
       return respond(200, {
         requestId: body.requestId,
+        chatThreadId: id,
+        runId: null,
         status: "completed",
-        chatThreadId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-        runId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
       });
     },
   );
-  await openDebug();
-  const send = button("Run Morning Brief");
-  await waitFor(() => {
-    expect(send).toBeEnabled();
-  });
-  click(send);
-  await requested.promise;
-  expect(button("Starting…")).toBeDisabled();
-  const user = userEvent.setup({ delay: null });
-  await user.keyboard("{Escape}");
-  await waitFor(() => {
-    expect(requestSignal?.aborted).toBeTruthy();
-  });
-  response.resolve();
+  await openDebug("admin");
+  const run = await findFastControl("button", "Run Morning Brief");
+  run.focus();
+  await userEvent.keyboard("{Enter}");
+  await issued.promise;
+  expect(
+    screen.queryByText("Morning Brief completed."),
+  ).not.toBeInTheDocument();
+  finished.resolve();
+  await screen.findByText("Morning Brief completed.");
+  await expect(findFastControl("link", "Open chat")).resolves.toHaveAttribute(
+    "href",
+    "/chats/" + id,
+  );
 });

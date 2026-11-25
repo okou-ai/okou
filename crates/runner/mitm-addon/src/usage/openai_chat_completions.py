@@ -19,9 +19,10 @@ from .model_tokens import (
     MODEL_USAGE_CATEGORY_CACHE_READ,
     MODEL_USAGE_CATEGORY_INPUT,
     MODEL_USAGE_CATEGORY_OUTPUT,
+    MODEL_USAGE_QUANTITY_FIELD,
 )
 from .openai_tokens import partition_input_tokens
-from .quantities import MAX_USAGE_QUANTITY, is_usage_quantity
+from .quantities import is_usage_quantity
 from .sse import SseUsageScanner
 
 _CHAT_COMPLETIONS_MAX_WORK_UNITS = 65_536
@@ -60,11 +61,7 @@ _CHAT_COMPLETIONS_SCALAR_FIELDS = {
     ("model",): ScalarField("string", max_bytes=1024),
     ("service_tier",): ScalarField("string", max_bytes=1024),
     **{
-        (*prefix, field): ScalarField(
-            "int",
-            max_bytes=64,
-            max_int_value=MAX_USAGE_QUANTITY,
-        )
+        (*prefix, field): MODEL_USAGE_QUANTITY_FIELD
         for prefix in _USAGE_PATHS
         for field in (
             "prompt_tokens",
@@ -73,11 +70,7 @@ _CHAT_COMPLETIONS_SCALAR_FIELDS = {
         )
     },
     **{
-        (*prefix, "prompt_tokens_details", field): ScalarField(
-            "int",
-            max_bytes=64,
-            max_int_value=MAX_USAGE_QUANTITY,
-        )
+        (*prefix, "prompt_tokens_details", field): MODEL_USAGE_QUANTITY_FIELD
         for prefix in _USAGE_PATHS
         for field in ("cached_tokens", "cache_write_tokens")
     },

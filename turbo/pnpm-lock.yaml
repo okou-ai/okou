@@ -273,6 +273,12 @@ importers:
       tar:
         specifier: '>=7.5.21'
         version: 7.5.22
+      tldts:
+        specifier: 7.0.28
+        version: 7.0.28
+      undici:
+        specifier: 7.30.2
+        version: 7.30.2
       uuid:
         specifier: ^14.0.0
         version: 14.0.0
@@ -958,6 +964,9 @@ importers:
       '@fontsource/noto-emoji':
         specifier: 5.3.2
         version: 5.3.2
+      '@napi-rs/canvas':
+        specifier: 1.0.13
+        version: 1.0.13
       '@okouai/eslint-config':
         specifier: workspace:*
         version: link:../../packages/eslint-config
@@ -1027,6 +1036,9 @@ importers:
       i18next-cli:
         specifier: 1.74.0
         version: 1.74.0(@swc/helpers@0.5.21)(@types/node@24.13.4)(@typescript/typescript6@6.0.2)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      jsqr:
+        specifier: 1.4.0
+        version: 1.4.0
       msw:
         specifier: ^2.13.2
         version: 2.13.2(@types/node@24.13.4)(@typescript/typescript6@6.0.2)
@@ -7620,6 +7632,9 @@ packages:
     resolution: {integrity: sha512-POQXvpdL69+CluYsillJ7SUhKvytYjW9vG/GKpnf+xP8UWgYEM/RaMzHHofbALDiKbbP1W8UEYmgGl39WkPZsg==}
     engines: {'0': node >= 0.2.0}
 
+  jsqr@1.4.0:
+    resolution: {integrity: sha512-dxLob7q65Xg2DvstYkRpkYtmKm2sPJ9oFhrhmudT1dZvNFFTlroai3AWSpLey/w5vMcLBXRgOJsbXpdN9HzU/A==}
+
   jsx-ast-utils@3.3.5:
     resolution: {integrity: sha512-ZZow9HBI5O6EPgSJLUb8n2NKgmVWTwCvHGwFuJlMjvLFqlGG6pjirPhtdsseaLZjSibD8eegzmYpUZwoIlj2cQ==}
     engines: {node: '>=4.0'}
@@ -9530,6 +9545,10 @@ packages:
 
   undici@7.30.1:
     resolution: {integrity: sha512-03KrMbjIFDWQR5RNPrSw3bd1r12JpyFQl9/yxjUbJtqkjmllqC5lFjZh6ujeuJCKr8EOQvRW872Oy/az+nLYxg==}
+    engines: {node: '>=20.18.1'}
+
+  undici@7.30.2:
+    resolution: {integrity: sha512-mLyPQnHwUxaM/rideoK/+KL8DaAJLRl4aBCfmX444aCSLnIaomqPLtNRe2jdCYcsk5wZzXrDIQC8ZeYNRAYyIA==}
     engines: {node: '>=20.18.1'}
 
   undici@8.12.3:
@@ -11612,7 +11631,6 @@ snapshots:
       '@napi-rs/canvas-linux-x64-musl': 1.0.13
       '@napi-rs/canvas-win32-arm64-msvc': 1.0.13
       '@napi-rs/canvas-win32-x64-msvc': 1.0.13
-    optional: true
 
   '@napi-rs/wasm-runtime@1.2.4(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)':
     dependencies:
@@ -15978,6 +15996,8 @@ snapshots:
 
   jsonparse@1.3.1: {}
 
+  jsqr@1.4.0: {}
+
   jsx-ast-utils@3.3.5:
     dependencies:
       array-includes: 3.1.9
@@ -18254,6 +18274,8 @@ snapshots:
   undici-types@8.10.2: {}
 
   undici@7.30.1: {}
+
+  undici@7.30.2: {}
 
   undici@8.12.3: {}
 

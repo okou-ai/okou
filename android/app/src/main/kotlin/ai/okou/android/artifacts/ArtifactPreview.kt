@@ -3,8 +3,9 @@ package ai.okou.android.artifacts
 import ai.okou.android.R
 import ai.okou.android.chat.ConfirmedChat
 import ai.okou.android.chat.HistoryMarkdown
-import ai.okou.android.chat.rememberChatWaitIndicator
+import ai.okou.android.rememberContentReadFeedbackAfter
 import ai.okou.android.state.rememberArtifactWebScroll
+import ai.okou.android.workspaceSearchFocusOutline
 import android.annotation.SuppressLint
 import android.content.Context
 import android.webkit.RenderProcessGoneDetail
@@ -23,6 +24,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -72,6 +74,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -84,7 +87,8 @@ import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.delay
 import okhttp3.HttpUrl
 
-private const val HostedPreviewAspectRatio = 16f / 9f
+private const val PreviewAspectRatio = 16f / 9f
+private val AudioPreviewHeight = 96.dp
 
 /** One preview layout for catalog entries and future chat/search entry points. */
 @Composable
@@ -135,7 +139,10 @@ internal fun ArtifactPreview(
                     Text(
                         item.title,
                         Modifier.semantics { heading() }.testTag("artifact_preview_title"),
-                        style = MaterialTheme.typography.titleLarge,
+                        style =
+                            MaterialTheme.typography.titleLarge.copy(
+                                fontWeight = FontWeight.SemiBold,
+                            ),
                         color = colors.onSurface,
                     )
                     val kind = stringResource(item.kind.label())
@@ -158,16 +165,16 @@ internal fun ArtifactPreview(
                         style = MaterialTheme.typography.bodyMedium,
                         color = colors.onSurfaceVariant,
                     )
-                    if (source != null) {
-                        val title =
-                            source.title?.takeIf { it.isNotBlank() }
-                                ?: stringResource(R.string.chat_untitled)
-                        Text(
-                            stringResource(R.string.artifact_source_name, title),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = colors.onSurfaceVariant,
-                        )
-                    }
+                    source
+                        ?.title
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let { title ->
+                            Text(
+                                stringResource(R.string.artifact_source_name, title),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = colors.onSurfaceVariant,
+                            )
+                        }
                 }
             }
             val save = preview?.access?.save
@@ -269,7 +276,7 @@ private fun KeepSpaceWhenHidden(visible: Boolean, content: @Composable () -> Uni
 }
 
 @Composable
-internal fun ArtifactAction(
+private fun ArtifactAction(
     @StringRes label: Int,
     modifier: Modifier = Modifier,
     @DrawableRes icon: Int? = null,
@@ -277,11 +284,13 @@ internal fun ArtifactAction(
     onClick: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(12.dp)
     OutlinedButton(
         onClick = onClick,
-        modifier = modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+        modifier =
+            modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).workspaceSearchFocusOutline(shape),
         enabled = enabled,
-        shape = RoundedCornerShape(12.dp),
+        shape = shape,
         border = BorderStroke(1.dp, colors.outline),
         colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.onSurface),
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
@@ -291,7 +300,10 @@ internal fun ArtifactAction(
             itemVerticalAlignment = Alignment.CenterVertically,
         ) {
             if (icon != null) Icon(painterResource(icon), null, Modifier.size(18.dp))
-            Text(stringResource(label), style = artifactSmallText())
+            Text(
+                stringResource(label),
+                style = artifactSmallText().copy(fontWeight = FontWeight(550)),
+            )
         }
     }
 }
@@ -302,16 +314,17 @@ private fun PreviewContent(preview: ArtifactPreviewState?, offline: Boolean) {
     val problem = preview?.problem
     val hosted = preview?.isHosted == true
     val waiting = content == null && problem == null
-    val showLoading = rememberChatWaitIndicator(waiting)
+    val showLoading = rememberContentReadFeedbackAfter(100L.takeIf { waiting })
     if (!hosted && waiting && !showLoading) return
     val colors = MaterialTheme.colorScheme
+    val documentSurface = content is ArtifactContent.Text || content is ArtifactContent.Image
     Surface(
         Modifier.fillMaxWidth()
-            .then(if (hosted) Modifier.aspectRatio(HostedPreviewAspectRatio) else Modifier)
+            .then(if (hosted) Modifier.aspectRatio(PreviewAspectRatio) else Modifier)
             .testTag("artifact_preview_surface"),
         shape = RoundedCornerShape(16.dp),
-        color = if (hosted) colors.surfaceVariant else colors.surface,
-        border = BorderStroke(1.dp, colors.outline),
+        color = if (!hosted && documentSurface) colors.surface else colors.surfaceVariant,
+        border = BorderStroke(1.dp, colors.outlineVariant),
     ) {
         if (hosted) {
             HostedPreviewContent(content, problem, offline, showLoading)
@@ -351,13 +364,7 @@ private fun PreviewContent(preview: ArtifactPreviewState?, offline: Boolean) {
                         problem != null -> PreviewStatus(problem.previewLabel())
                         content == ArtifactContent.Unsupported ->
                             PreviewStatus(R.string.artifact_preview_unsupported)
-                        else ->
-                            Box(
-                                Modifier.fillMaxWidth().heightIn(min = 96.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                PreviewLoading()
-                            }
+                        else -> PreviewStatusFrame(ratio = true) { PreviewLoading() }
                     }
             }
         }
@@ -406,17 +413,20 @@ private fun PreviewLoading() {
 }
 
 @Composable
-private fun PreviewStatus(@StringRes label: Int, ratio: Boolean = false) {
-    Box(
-        Modifier.fillMaxWidth()
-            .then(
-                if (ratio) Modifier.aspectRatio(16f / 9f, matchHeightConstraintsFirst = false)
-                else Modifier.heightIn(min = 96.dp),
-            )
-            .padding(16.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        PreviewStatusText(label)
+private fun PreviewStatus(@StringRes label: Int, ratio: Boolean = true) {
+    PreviewStatusFrame(ratio) { PreviewStatusText(label) }
+}
+
+@Composable
+private fun PreviewStatusFrame(ratio: Boolean, content: @Composable BoxScope.() -> Unit) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val height = if (ratio) maxWidth / PreviewAspectRatio else AudioPreviewHeight
+        val inset = if (maxWidth >= 600.dp) 32.dp else 16.dp
+        Box(
+            Modifier.fillMaxWidth().heightIn(min = height).padding(inset),
+            contentAlignment = Alignment.Center,
+            content = content,
+        )
     }
 }
 
@@ -604,29 +614,39 @@ private fun isolatedPreview(
 
 @Composable
 private fun MediaArtifactPreview(content: ArtifactContent.Media) {
+    var playRequested by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf(false) }
-    var player by remember { mutableStateOf<VideoView?>(null) }
-    LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { player?.pause() }
     if (failed) {
         PreviewStatus(R.string.artifact_preview_unavailable, ratio = content.video)
+    } else if (!playRequested) {
+        PreviewStatusFrame(ratio = content.video) {
+            ArtifactAction(R.string.artifact_play, icon = R.drawable.ic_play_arrow) {
+                playRequested = true
+            }
+        }
     } else {
-        val playLabel = stringResource(R.string.artifact_play_media)
+        var player by remember { mutableStateOf<VideoView?>(null) }
+        val lifecycle = LocalLifecycleOwner.current.lifecycle
+        LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { player?.pause() }
+        val playbackLabel = stringResource(R.string.artifact_play_media)
         AndroidView(
             modifier =
                 Modifier.fillMaxWidth()
                     .then(
-                        if (content.video) Modifier.aspectRatio(16f / 9f)
-                        else Modifier.height(96.dp),
+                        if (content.video) Modifier.aspectRatio(PreviewAspectRatio)
+                        else Modifier.height(AudioPreviewHeight),
                     ),
             factory = { context ->
                 VideoView(context).apply {
-                    contentDescription = playLabel
+                    contentDescription = playbackLabel
                     setMediaController(MediaController(context))
                     setOnErrorListener { _, _, _ ->
                         failed = true
                         true
                     }
                     setVideoURI(content.url.toString().toUri())
+                    // The Play action may have scheduled this frame before the activity paused.
+                    if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) start()
                     player = this
                 }
             },

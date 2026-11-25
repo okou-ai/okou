@@ -214,6 +214,7 @@ final class ConnectorActionStore {
     if let attemptID = result.oauthAttemptId {
       guard UUID(uuidString: attemptID) != nil else { throw APIClientError.invalidResponse }
       let webURL = try browserURL(result.authorizationUrl)
+      try ConnectorProviderAuthorization.validateCallback(result)
       let appURL =
         nativeAppAuthorization
         ? try ConnectorProviderAuthorization.appURL(
@@ -375,7 +376,9 @@ final class ConnectorActionStore {
   }
 
   func receiveProviderReturn(_ url: URL) {
-    guard !closed, let flow = active, flow.session?.nativeAppAuthorization?.provider == "strava",
+    guard !closed, let flow = active,
+      flow.session?.nativeAppAuthorization?.provider == "strava"
+        || flow.session?.nativeCallbackUrl != nil,
       let attemptID = ConnectorProviderAuthorization.returnAttemptID(url),
       flow.session?.oauthAttemptId?.lowercased() == attemptID
     else { return }
@@ -399,10 +402,14 @@ final class ConnectorActionStore {
   }
 
   func authenticationFinished(
-    flow: ConnectorAuthorizationFlow, url: URL, error: Error?
+    flow: ConnectorAuthorizationFlow, url: URL, callbackURL: URL? = nil, error: Error?
   ) {
     guard !closed, active === flow, flow.browserURL == url else { return }
-    if let error, !(error is CancellationError) {
+    let failure: Error? =
+      error == nil && flow.session?.nativeCallbackUrl != nil
+        && callbackURL != flow.session?.nativeCallbackUrl
+      ? APIClientError.invalidResponse : error
+    if let error = failure, !(error is CancellationError) {
       task?.cancel()
       task = nil
       flow.session = nil

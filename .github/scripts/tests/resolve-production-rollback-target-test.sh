@@ -674,7 +674,7 @@ fi
 
 if [ "${MOCK_RUNNER_ASSETS_VALID:-1}" = "1" ]; then
   jq -n --arg version "${MOCK_RUNNER_VERSION:-1.2.3}" '{assets: [
-    {name: ("runner-v" + $version + "-aarch64-linux")},
+    {name: ("runner-v" + $version + "-aarch64-linux"), digest: ("sha256:" + ("1" * 64))},
     {name: ("runner-v" + $version + "-x86_64-linux")}
   ]}'
 else
@@ -1062,6 +1062,11 @@ grep -Fxq "git merge-base --is-ancestor 430cb92b5431e1554d0a1dceed6d9cfb27762921
 grep -Fxq "git merge-base --is-ancestor b610ff61043274157618e3925b13a66dc56ef84b bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" "${tmp_dir}/boundaries.log" || fail "selected Runner tag must independently include the finalizing source reader"
 runner_matrix=$(sed -n 's/^runner_matrix=//p' "$output_file")
 jq -e 'length == 2 and .[0].id == "arm64" and .[1].id == "x86_64"' >/dev/null <<<"$runner_matrix" || fail "unexpected Runner matrix"
+jq -e '
+  .[0].asset_url == "https://github.com/okou-ai/okou/releases/download/runner-rs-v1.2.3/runner-v1.2.3-aarch64-linux"
+  and .[0].asset_checksum == ("sha256:" + ("1" * 64))
+  and .[1].asset_checksum == ""
+' >/dev/null <<<"$runner_matrix" || fail "unexpected Runner asset metadata"
 
 grep -Fxq "git merge-base --is-ancestor a635ec3afa20cdb5df9c8125afe6cec24ef53e16 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the versioned Pi OpenRouter writer floor"
 grep -Fxq "git merge-base --is-ancestor b6919718b6d856dfa3a7c500b6e899dd3fde7674 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the model execution capture writer floor"

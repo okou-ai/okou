@@ -1,8 +1,13 @@
 package ai.okou.android.chat
 
+import ai.okou.android.ContentReadProgress
 import ai.okou.android.R
 import ai.okou.android.WorkspaceFeedbackHost
+import ai.okou.android.WorkspaceFeedbackTimeout
 import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.rememberContentReadFeedbackAfter
+import ai.okou.android.rememberContentReadSkeleton
+import ai.okou.android.updates.updateFocusOutline
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
@@ -30,6 +35,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarVisuals
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -79,15 +85,25 @@ import kotlinx.coroutines.launch
 
 internal val ConversationContentMaxWidth = 768.dp
 
-private const val HistoryFeedbackDelayMillis = 250L
 private const val TimelineEnd = "conversation_end"
+private const val TimelineStart = "conversation_start"
 private const val TimelineInitial = "conversation_initial"
 private const val TimelineActivity = "conversation_activity"
 private val TimelineEndPadding = 16.dp
 
-private data class ConversationActivityRow(@StringRes val label: Int, val showHeader: Boolean) :
-    ConversationTimelineRow {
+private data class ConversationActivityRow(
+    @StringRes val label: Int,
+    val showHeader: Boolean,
+    val runId: String?,
+) : ConversationTimelineRow {
     override val key = TimelineActivity
+}
+
+private class ControlFailureSnackbar(override val message: String, val kind: RunControlKind) :
+    SnackbarVisuals {
+    override val actionLabel: String? = null
+    override val withDismissAction = false
+    override val duration = SnackbarDuration.Indefinite
 }
 
 @Composable
@@ -99,10 +115,9 @@ internal fun ConversationRoute(
     visible: Boolean = true,
     composer: ChatComposerModel? = null,
     historyAvailable: Boolean = true,
-    realtime: ChatUpdatesModel? = null,
     controls: ConversationRunControls? = null,
-    showComposerStatus: Boolean = false,
     stopPlacement: ConversationStopPlacement? = null,
+    paneFeedbackVisible: Boolean = false,
     queueOpen: Boolean = false,
     dismissQueue: () -> Unit = {},
     artifactActions: ChatArtifactActions? = null,
@@ -114,7 +129,8 @@ internal fun ConversationRoute(
     onLinkUnavailable: (() -> Unit)? = null,
     messageSequence: Long? = null,
     onSearchMessageResolved: (Long, Boolean) -> Unit = { _, _ -> },
-    recovery: @Composable (failureId: String) -> Unit = {},
+    onFollowup: ((String) -> Unit)? = null,
+    recovery: @Composable (HistoryMessage) -> Unit = { AssistantFailureText(it.failureReason) },
 ) {
     // Deferred work must acknowledge this composition's confirmation, never a newer State.value.
     val state = model.uiState.collectAsStateWithLifecycle().value
@@ -125,36 +141,18 @@ internal fun ConversationRoute(
             derivedStateOf { input?.value?.messagesFor(threadId).orEmpty() }
         }
     val thread = state.thread?.takeIf { historyAvailable && it.id == threadId }
+    val missing = thread != null && state.phase == HistoryPhase.Missing
     val transcript = state.transcript.takeIf { thread != null }
     val presentation =
         controls?.presentation
             ?: remember(transcript, output, threadId, localMessages) {
                 conversationContent(transcript, output, threadId, localMessages, emptySet())
             }
-    val content = presentation.messages
-    val queue = presentation.queue
+    val content = presentation.messages.takeUnless { missing }.orEmpty()
+    val queue = presentation.queue.takeUnless { missing }.orEmpty()
     val hasContent = transcript != null || content.isNotEmpty() || queue.isNotEmpty()
-    val missing = thread != null && state.phase == HistoryPhase.Missing
     val firstReadFailed = !hasContent && thread != null && state.initialReadFailed
-    val waitingForHistory =
-        historyAvailable &&
-            !hasContent &&
-            !firstReadFailed &&
-            (thread == null || state.phase == HistoryPhase.Loading)
-    val showSkeleton =
-        key(threadId) { rememberChatWaitIndicator(waitingForHistory, HistoryFeedbackDelayMillis) }
-    val realtimePhase = realtime?.phase?.collectAsStateWithLifecycle()?.value
-    val reconnect = realtime.takeIf { !list.offline && realtimePhase == RealtimePhase.Unavailable }
-    val showRealtimeConnecting =
-        key(threadId) {
-            rememberChatWaitIndicator(
-                realtimePhase == RealtimePhase.Connecting &&
-                    !waitingForHistory &&
-                    !firstReadFailed &&
-                    !list.offline,
-                delayMillis = HistoryFeedbackDelayMillis,
-            )
-        }
+    val waitingForHistory = historyAvailable && !hasContent && !firstReadFailed && !missing
     val visit =
         rememberConversationReadVisit(
             model,
@@ -162,38 +160,44 @@ internal fun ConversationRoute(
             state.generation,
             visible && historyAvailable,
         )
-    val readState = visit?.readState?.collectAsStateWithLifecycle()?.value
-    val historyNotice =
-        when {
-            thread == null || list.offline || firstReadFailed -> null
-            state.phase == HistoryPhase.Failed -> R.string.history_failed
-            readState == HistoryReadState.Failed -> R.string.history_read_failed
-            state.cacheUnavailable && hasContent -> R.string.chat_cache_unavailable
-            else -> null
-        }
     val activeRun = controls?.currentRunId ?: transcript?.activeRunId
-    val execution = transcript?.execution?.takeUnless { list.offline || missing }
-    val activity =
-        when (execution) {
-            HistoryExecution.Running -> R.string.conversation_processing
-            HistoryExecution.Queued -> R.string.conversation_run_queued
-            else -> null
-        }
+    val execution = transcript?.execution
     val activeMessage =
         remember(content, activeRun) {
             activeRun?.let { runId ->
                 content.lastOrNull {
-                    it.message.runId == runId && it.message.role == HistoryRole.Assistant
-                } ?: content.lastOrNull { it.message.runId == runId }
+                    it.message.runId == runId &&
+                        (it.message.isOutputReply() || it.message.role == HistoryRole.User)
+                }
             }
         }
+    val replying = activeMessage?.message?.isOutputReply() == true
+    val activity =
+        when (execution) {
+            HistoryExecution.Running ->
+                if (replying) R.string.conversation_replying else R.string.conversation_processing
+            HistoryExecution.Queued -> R.string.conversation_run_queued
+            else -> null
+        }
+    val summarizeRun = activeRun.takeIf {
+        execution == HistoryExecution.Running && !missing && !list.offline
+    }
+    SideEffect { visit?.showRunActivity(summarizeRun) }
+    val activityText =
+        visit?.activityText?.collectAsStateWithLifecycle()?.value?.takeIf {
+            it.runId == summarizeRun
+        }
+    val completion = presentation.completion.takeIf { !missing && activity == null }
     val incomingTimeline =
-        remember(content, activity, activeMessage) {
+        remember(content, activity, activeMessage, completion, activeRun) {
             val messages = content.asReversed()
-            if (activity == null) messages
-            else
-                buildList<ConversationTimelineRow> {
-                    addAll(messages)
+            buildList<ConversationTimelineRow> {
+                addAll(messages)
+                if (completion != null) {
+                    val index = messages.indexOfFirst { it.key == completion.anchorKey }
+                    add(index.coerceAtLeast(0), completion)
+                }
+                if (activity != null) {
                     // Reverse layout places the status below its owning message.
                     val index =
                         messages.indexOfFirst { it.key == activeMessage?.key }.coerceAtLeast(0)
@@ -201,44 +205,23 @@ internal fun ConversationRoute(
                         index,
                         ConversationActivityRow(
                             activity,
-                            activeMessage?.message?.role != HistoryRole.Assistant,
+                            !replying,
+                            activeRun,
                         ),
                     )
                 }
+            }
         }
     val syncDelay = state.syncProgressDelayMillis.takeIf { transcript != null }
-    val syncDelayReached =
-        key(threadId) {
-            rememberChatWaitIndicator(syncDelay != null && syncDelay > 0L, syncDelay ?: 0L)
-        }
+    val syncDelayReached = key(threadId) { rememberContentReadFeedbackAfter(syncDelay) }
     val showHistoryProgress =
         transcript != null &&
             state.phase == HistoryPhase.Loading &&
             (state.consecutiveReadFailures >= 3 ||
-                (syncDelay == 0L || syncDelayReached) &&
+                syncDelayReached &&
                     activity == null &&
-                    controls?.storageFailed != true &&
                     queue.isEmpty() &&
                     content.none { it.preview?.pendingDelivery != null })
-    val feedback: @Composable (() -> Unit)? =
-        when {
-            reconnect != null && !firstReadFailed -> ({
-                    RealtimeNotice(reconnect, RealtimePhase.Unavailable)
-                })
-            historyNotice != null -> ({
-                    ChatContentLoadNotice(
-                        historyNotice,
-                        horizontalPadding = 0.dp,
-                        retry =
-                            if (historyNotice == R.string.chat_cache_unavailable) null
-                            else model::refresh,
-                    )
-                })
-            realtime != null && showRealtimeConnecting -> ({
-                    RealtimeNotice(realtime, RealtimePhase.Connecting)
-                })
-            else -> null
-        }
     val window = currentWindowSizeDp()
     val messageInset = if (window.width >= 600) 32.dp else 24.dp
     val linkTarget = linkPosition?.destination
@@ -313,26 +296,27 @@ internal fun ConversationRoute(
         // Compose anchors to the first row's key. If that key is a status row, defer row changes
         // until its message can be re-anchored without cancelling the reader's gesture.
         var presentedTimeline by remember { mutableStateOf(incomingTimeline) }
-        val timeline = if (holdTimeline) presentedTimeline else incomingTimeline
+        val timeline = if (holdTimeline && !missing) presentedTimeline else incomingTimeline
         SideEffect { presentedTimeline = timeline }
         val runningRows =
-            if (activity == R.string.conversation_processing) setOf(TimelineActivity)
-            else emptySet()
+            if (execution == HistoryExecution.Running) setOf(TimelineActivity) else emptySet()
         val runningFrame = rememberRunningWaveFrame(position, runningRows)
         val scope = rememberCoroutineScope()
-        val stopSnackbar = remember { SnackbarHostState() }
-        val queueSnackbar = remember { SnackbarHostState() }
-        val detailSnackbar =
-            if (!queueOpen && queueSnackbar.currentSnackbarData != null) queueSnackbar
-            else stopSnackbar
-        val stopFeedbackVisible = detailSnackbar.currentSnackbarData != null
+        val controlSnackbar = remember { SnackbarHostState() }
+        // The notice can move with the queue panel. Its lifetime belongs to the conversation.
+        WorkspaceFeedbackTimeout(controlSnackbar)
+        val controlFeedback =
+            controlSnackbar.currentSnackbarData?.visuals as? ControlFailureSnackbar
+        val showQueueFeedback =
+            queueOpen && !missing && controlFeedback?.kind == RunControlKind.Revoke
+        val feedbackInConversation = controlFeedback != null && !showQueueFeedback
         val stopFeedbackBounds =
-            if (stopPlacement != null && stopFeedbackVisible) {
+            if (stopPlacement != null && feedbackInConversation) {
                 DisposableEffect(stopPlacement) {
-                    onDispose { stopPlacement.reportFeedbackTop(null) }
+                    onDispose { stopPlacement.reportFeedbackBounds(null) }
                 }
                 Modifier.onGloballyPositioned {
-                    stopPlacement.reportFeedbackTop(it.boundsInRoot().top)
+                    stopPlacement.reportFeedbackBounds(it.boundsInRoot())
                 }
             } else Modifier
         val failure = controls?.state?.actionFailures?.firstOrNull { it.threadId == threadId }
@@ -356,17 +340,17 @@ internal fun ConversationRoute(
             LaunchedEffect(failure) {
                 if (controls.model.consumeActionFailure(failure) && message != null) {
                     scope.launch {
-                        val snackbar =
-                            if (failure.kind == RunControlKind.Revoke) queueSnackbar
-                            else stopSnackbar
-                        snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
+                        controlSnackbar.showSnackbar(ControlFailureSnackbar(message, failure.kind))
                     }
                 }
             }
         }
-        var restored by remember(linkPosition) { mutableStateOf(false) }
-        var restoredAnchor by remember(linkPosition) { mutableStateOf<ConversationAnchor?>(null) }
+        var initialReadingPosition by
+            remember(linkPosition) {
+                mutableStateOf<ReadingPosition?>(null)
+            }
         var positioned by remember(linkPosition, searchTarget) { mutableStateOf(false) }
+        var transcriptShown by remember { mutableStateOf(false) }
         var findViewport by remember { mutableStateOf<LayoutCoordinates?>(null) }
         var hasSeenLatest by remember { mutableStateOf(false) }
         var newReply by remember { mutableStateOf(false) }
@@ -401,9 +385,10 @@ internal fun ConversationRoute(
         SideEffect { recentSizes.keys.retainAll(recentKeys.toSet()) }
         LaunchedEffect(model, threadId, linkPosition) {
             val source = linkPosition?.source
-            restoredAnchor =
-                if (source != null) source.anchor else model.restoreReadingAnchor(threadId)
-            restored = true
+            initialReadingPosition =
+                ReadingPosition(
+                    if (source != null) source.anchor else model.restoreReadingAnchor(threadId),
+                )
         }
         val foundIndex =
             remember(targetMessageId, timeline) {
@@ -414,34 +399,68 @@ internal fun ConversationRoute(
                     }
             }
         val pendingFind = readingTarget?.takeUnless { it.positioned }
-        LaunchedEffect(
-            restored,
-            positioned,
-            timeline,
-            state.phase,
-            list.offline,
-            readingTarget,
-            waitingForSearch,
-        ) {
-            if (!restored || positioned || waitingForSearch || (!hasContent && !missing))
-                return@LaunchedEffect
-            val anchor = restoredAnchor
-            val index = timeline.indexOfFirst {
-                it is ConversationMessage && it.includes(anchor?.eventId)
+        val restored = initialReadingPosition
+        val restoredAnchor = restored?.anchor.takeUnless { positioned }
+        val restoredIndex =
+            remember(restoredAnchor, timeline) {
+                restoredAnchor?.let { anchor ->
+                    timeline.indexOfFirst {
+                        it is ConversationMessage && it.includes(anchor.eventId)
+                    }
+                } ?: -1
             }
-            val jumpIndex = if (pendingFind == null) -1 else foundIndex
-            // A cached checkpoint can be older than the saved anchor. Give catch-up a chance first.
-            if (
-                (pendingFind != null && jumpIndex < 0 || anchor != null && index < 0) &&
-                    state.phase == HistoryPhase.Loading &&
-                    !list.offline
-            )
-                return@LaunchedEffect
-            val row = (if (jumpIndex >= 0) jumpIndex else index) + 1
-            val offset =
-                if (jumpIndex < 0 && index >= 0 && anchor != null)
-                    with(density) { anchor.offsetDp.dp.roundToPx() }
-                else 0
+        // Keep cached rows readable while an absent target waits for catch-up.
+        val waitingForAnchor =
+            (pendingFind != null && foundIndex < 0 ||
+                restoredAnchor != null && restoredIndex < 0) &&
+                state.phase == HistoryPhase.Loading &&
+                !list.offline
+        val canPosition =
+            restored != null &&
+                !positioned &&
+                !waitingForAnchor &&
+                !waitingForSearch &&
+                (hasContent || missing)
+        val positionOnFirstMeasure =
+            canPosition && hasContent && !missing && !transcriptShown && pendingFind == null
+        val showTimeline =
+            !hasContent ||
+                missing ||
+                pendingFind != null ||
+                transcriptShown ||
+                positioned ||
+                positionOnFirstMeasure ||
+                restored != null && (waitingForAnchor || waitingForSearch)
+        val visibleTimeline = if (showTimeline) timeline else emptyList()
+        val waitingForTimeline = waitingForHistory || !showTimeline
+        val showSkeleton = rememberContentReadSkeleton(awaitingRead = waitingForTimeline)
+        val jumpIndex = if (pendingFind == null) -1 else foundIndex
+        val row = (if (jumpIndex >= 0) jumpIndex else restoredIndex) + 1
+        val offset =
+            if (jumpIndex < 0 && restoredIndex >= 0 && restoredAnchor != null)
+                with(density) { restoredAnchor.offsetDp.dp.roundToPx() }
+            else 0
+        if (showTimeline && hasContent && !missing && !transcriptShown) {
+            SideEffect {
+                if (positionOnFirstMeasure) {
+                    // Set the scroll request as the transcript replaces the loading rows.
+                    position.requestScrollToItem(row, offset)
+                    positioned = true
+                }
+                transcriptShown = true
+            }
+        }
+        LaunchedEffect(
+            linkPosition,
+            searchTarget,
+            canPosition,
+            positionOnFirstMeasure,
+            pendingFind,
+            jumpIndex,
+            row,
+            offset,
+        ) {
+            if (!canPosition || positionOnFirstMeasure) return@LaunchedEffect
             if (pendingFind == null) {
                 position.scrollToItem(row, offset)
             } else {
@@ -520,27 +539,42 @@ internal fun ConversationRoute(
                         ?.id
                 content.lastOrNull { it.includes(id) }?.key
             }
-        val latestDisplayed by
-            remember(position, latestConfirmed) {
+        val completionAnchor = completion?.anchorKey
+        val completingReply = latestConfirmed?.takeIf { it == completionAnchor }
+        val latestAtReadingEdge by
+            remember(position, latestConfirmed, completionAnchor) {
                 derivedStateOf {
                     val laidOut = position.layoutInfo.visibleItemsInfo
-                    laidOut.any { it.key == TimelineEnd } &&
-                        (latestConfirmed == null || laidOut.any { it.key == latestConfirmed })
+                    val latest = laidOut.firstOrNull { it.key == latestConfirmed }
+                    when {
+                        latest == null && latestConfirmed != null -> false
+                        atEnd -> laidOut.any { it.key == TimelineEnd }
+                        latest != null && latest.key == completionAnchor ->
+                            // Suggestions can fill a short viewport below the newest reply.
+                            position.firstVisibleItemIndex < latest.index ||
+                                position.firstVisibleItemIndex == latest.index &&
+                                    position.firstVisibleItemScrollOffset == 0
+                        else -> false
+                    }
                 }
             }
         val displayedConfirmation =
-            state.confirmation.takeIf { readingReady && atEnd && latestDisplayed && !list.offline }
+            state.confirmation.takeIf { readingReady && latestAtReadingEdge && !list.offline }
         LaunchedEffect(visit, displayedConfirmation) {
             displayedConfirmation?.let { visit?.confirmDisplayed(it) }
         }
         SideEffect {
             if (readingReady) {
-                if (atEnd && visible && latestDisplayed) {
+                if (!atEnd) position.keepMessageWhenStatusMoves(timeline)
+                if (visible && latestAtReadingEdge) {
                     hasSeenLatest = true
                     newReply = false
-                } else if (!atEnd) {
-                    position.keepMessageWhenStatusMoves(timeline)
-                    if (newestReply != null && newestReply != lastReply) newReply = true
+                } else if (
+                    (!atEnd || completingReply != null) &&
+                        newestReply != null &&
+                        newestReply != lastReply
+                ) {
+                    newReply = true
                 }
             }
             lastReply = newestReply
@@ -560,11 +594,14 @@ internal fun ConversationRoute(
                 .filterNotNull()
                 .collect { model.rememberReadingAnchor(threadId, it.anchor) }
         }
+        val revealHiddenReply = atEnd && completingReply != null && !latestAtReadingEdge
+        val newReplyUnseen = newReply || (!hasSeenLatest && list.isUnread(threadId))
         val jump =
             when {
-                !readingReady || atEnd || !position.canScrollBackward -> null
-                newReply || (!hasSeenLatest && list.isUnread(threadId)) ->
+                missing || !readingReady -> null
+                newReplyUnseen && (position.canScrollBackward || revealHiddenReply) ->
                     R.string.conversation_new_reply
+                atEnd || !position.canScrollBackward -> null
                 !pastJumpThreshold -> null
                 activity != null -> R.string.conversation_view_progress
                 else -> R.string.conversation_jump_latest
@@ -583,6 +620,22 @@ internal fun ConversationRoute(
                 onLinkFocusRestored,
             )
         }
+        val sourceFocus = artifactActions?.restoreKey ?: linkFocusKey
+        val imageReply = imageFocusReply(sourceFocus)
+        if (imageReply != null && readingReady) {
+            LaunchedEffect(sourceFocus, timeline) {
+                if (
+                    timeline.none { it is ConversationMessage && it.includes(imageReply) } &&
+                        timelineFocus.requestFocus()
+                ) {
+                    if (artifactActions?.restoreKey != null) artifactActions.restored()
+                    else onLinkFocusRestored()
+                }
+            }
+        }
+        val visibleArtifacts =
+            if (imageReply != null && !readingReady) artifactActions?.copy(restoreKey = null)
+            else artifactActions
         val contentWidth = Modifier.widthIn(max = ConversationContentMaxWidth)
         Column(modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
@@ -611,20 +664,24 @@ internal fun ConversationRoute(
                     // A stable last item anchors the viewport even when a stream grows or the IME
                     // resizes it.
                     item(key = TimelineEnd) {
-                        Column(
+                        Box(
                             Modifier.fillMaxWidth().onSizeChanged {
                                 recentSizes[TimelineEnd] = it.height
                             },
-                        ) {
-                            if (feedback != null) Box(Modifier.padding(top = 8.dp)) { feedback() }
-                        }
+                        )
                     }
-                    itemsIndexed(timeline, key = { _, entry -> entry.key }) { index, entry ->
+                    itemsIndexed(visibleTimeline, key = { _, entry -> entry.key }) { index, entry ->
                         val trackSize =
                             if (index < 4)
                                 Modifier.onSizeChanged { recentSizes[entry.key] = it.height }
                             else Modifier
                         when (entry) {
+                            is ConversationCompletion ->
+                                ConversationCompletionRow(
+                                    entry,
+                                    trackSize.padding(top = 20.dp),
+                                    onFollowup.takeIf { entry.eventId == completion?.eventId },
+                                )
                             is ConversationActivityRow ->
                                 Column(
                                     trackSize
@@ -633,10 +690,13 @@ internal fun ConversationRoute(
                                 ) {
                                     if (entry.showHeader) ConversationReplyHeader()
                                     ConversationActivity(
-                                        entry.label,
+                                        activityText?.takeIf { it.runId == entry.runId }?.text
+                                            ?: stringResource(entry.label),
+                                        queued = entry.label == R.string.conversation_run_queued,
                                         runningFrame = runningFrame,
-                                        controls = controls,
-                                        stopPlacement = stopPlacement,
+                                        controls =
+                                            controls.takeIf { it?.currentRunId == entry.runId },
+                                        stopPlacement = stopPlacement.takeUnless { list.offline },
                                     )
                                 }
                             is ConversationMessage -> {
@@ -650,44 +710,55 @@ internal fun ConversationRoute(
                                                 checkNotNull(targetMessageId),
                                             )
                                         }
+                                val previous = timeline.getOrNull(index + 1) as? ConversationMessage
+                                val statusWithReply =
+                                    entry.message.runId != null &&
+                                        entry.message.runId == previous?.message?.runId &&
+                                        previous.message.isOutputReply() &&
+                                        entry.message.status in
+                                            listOf("run.failed", "run.cancelled")
                                 // Keep a message's lower edge independent of a new reply below it.
                                 Column(
                                     trackSize.padding(
-                                        top = if (index == timeline.lastIndex) 0.dp else 20.dp,
+                                        top =
+                                            when {
+                                                index == timeline.lastIndex -> 0.dp
+                                                statusWithReply -> 8.dp
+                                                else -> 20.dp
+                                            },
                                     ),
                                 ) {
                                     ConversationMessageRow(
                                         entry,
-                                        artifactActions = artifactActions,
+                                        artifactActions = visibleArtifacts,
                                         findHighlight = highlight,
                                         links = links,
+                                        beforeEarlierRepliesResize = {
+                                            if (
+                                                !awaitingFindPosition &&
+                                                    !position.isScrollInProgress
+                                            )
+                                                position.keepReplyTop(entry.key)
+                                        },
+                                        failureContent = recovery,
                                     )
-                                    if (entry.message.status == "run.failed")
-                                        recovery(entry.message.id)
                                 }
                             }
                         }
                     }
-                    if (timeline.isEmpty()) {
+                    if (visibleTimeline.isEmpty()) {
                         item(key = TimelineInitial) {
                             when {
-                                missing -> Text(stringResource(R.string.history_missing))
-                                waitingForHistory -> if (showSkeleton) ConversationSkeleton()
-                                list.offline && !hasContent ->
-                                    Text(stringResource(R.string.conversation_history_offline))
-                                firstReadFailed ->
-                                    ChatContentLoadNotice(
-                                        R.string.chat_list_first_load_failed,
-                                        horizontalPadding = 0.dp,
-                                        retry = reconnect?.let { it::retry } ?: model::refresh,
-                                        retryEnabled =
-                                            reconnect != null ||
-                                                state.phase != HistoryPhase.Loading,
-                                    )
+                                missing -> ContentReadFeedback(R.string.history_missing)
+                                waitingForTimeline -> if (showSkeleton) ConversationSkeleton()
+                                firstReadFailed -> ContentReadFeedback(R.string.history_failed)
                                 transcript != null && queue.isEmpty() ->
                                     Text(stringResource(R.string.history_empty))
                             }
                         }
+                    } else {
+                        // Keep an anchor above the oldest reply, too.
+                        item(key = TimelineStart) {}
                     }
                 }
                 if (positioned && !atEnd && position.canScrollBackward) {
@@ -708,23 +779,61 @@ internal fun ConversationRoute(
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     if (jump != null) {
-                        Box(Modifier.fillMaxWidth()) {
+                        val compactJump = window.height < 480
+                        val reportJumpPosition =
+                            stopPlacement?.let { placement ->
+                                DisposableEffect(placement) {
+                                    onDispose { placement.reportJumpBounds(null) }
+                                }
+                                Modifier.onGloballyPositioned {
+                                    placement.reportJumpBounds(it.boundsInRoot())
+                                }
+                            } ?: Modifier
+                        Box(
+                            Modifier.fillMaxWidth()
+                                .padding(
+                                    bottom =
+                                        if (feedbackInConversation || paneFeedbackVisible) 8.dp
+                                        else 4.dp,
+                                    end = if (compactJump) 12.dp else 0.dp,
+                                ),
+                            contentAlignment =
+                                if (compactJump) Alignment.BottomEnd else Alignment.BottomCenter,
+                        ) {
                             ConversationJump(
                                 jump,
-                                modifier =
-                                    Modifier.align(
-                                            if (window.height < 480) Alignment.BottomEnd
-                                            else Alignment.BottomCenter,
-                                        )
-                                        .padding(
-                                            bottom = if (stopFeedbackVisible) 8.dp else 4.dp,
-                                            end = if (window.height < 480) 12.dp else 0.dp,
-                                        ),
-                                onClick = { scope.launch { position.scrollToItem(0) } },
+                                modifier = reportJumpPosition,
+                                onClick = {
+                                    scope.launch {
+                                        position.scrollToItem(0)
+                                        if (
+                                            jump == R.string.conversation_new_reply &&
+                                                completingReply != null &&
+                                                position.layoutInfo.visibleItemsInfo.none {
+                                                    it.key == completingReply
+                                                }
+                                        ) {
+                                            val replyIndex = timeline.indexOfFirst {
+                                                it.key == completingReply
+                                            }
+                                            if (replyIndex >= 0)
+                                                position.scrollToItem(replyIndex + 1)
+                                        }
+                                    }
+                                },
                             )
                         }
                     }
-                    WorkspaceFeedbackHost(detailSnackbar, stopFeedbackBounds.padding(bottom = 8.dp))
+                    if (!showQueueFeedback) {
+                        val composerTopInset =
+                            if (composer != null && !missing) ChatComposerTopInset else 0.dp
+                        WorkspaceFeedbackHost(
+                            controlSnackbar,
+                            Modifier.padding(bottom = 8.dp - composerTopInset),
+                            manageTimeout = false,
+                            surfaceModifier = stopFeedbackBounds,
+                        )
+                    }
                 }
                 if (positioned && findTarget != null && foundIndex < 0) {
                     Text(
@@ -737,27 +846,33 @@ internal fun ConversationRoute(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
-                if (showHistoryProgress) {
+                if (showTimeline && showHistoryProgress) {
                     Box(Modifier.fillMaxWidth().testTag("history_sync_progress")) {
-                        ChatReadProgress(R.string.history_syncing)
+                        ContentReadProgress(R.string.history_syncing)
                     }
                 }
             }
-            if (!missing) {
-                Column(contentWidth) {
-                    if (showComposerStatus && list.offline) ConversationOffline(short = false)
-                    if (controls?.storageFailed == true)
-                        ConversationControlStorageFailure(controls.model::retryLocal)
-                }
-            }
         }
-        if (queueOpen) ConversationQueueModal(queue, controls, queueSnackbar, dismissQueue)
+        if (queueOpen && !missing)
+            ConversationQueueModal(
+                queue,
+                controls,
+                controlSnackbar.takeIf { showQueueFeedback },
+                dismissQueue,
+            )
     }
 }
 
-private val TimelineFixedKeys = setOf(TimelineEnd, TimelineInitial, TimelineActivity)
+private val TimelineFixedKeys =
+    setOf(TimelineEnd, TimelineStart, TimelineInitial, TimelineActivity, ConversationCompletionKey)
 
 private data class ReadingPosition(val anchor: ConversationAnchor?)
+
+private fun LazyListState.keepReplyTop(key: String) {
+    val reply = layoutInfo.visibleItemsInfo.firstOrNull { it.key == key } ?: return
+    // The next item in reverse order starts at the reply's top edge.
+    requestScrollToItem(reply.index + 1, -(reply.offset + reply.size))
+}
 
 private fun LazyListItemInfo.readingAnchor(density: Density): ConversationAnchor =
     ConversationAnchor(key as String, with(density) { (-offset).toDp().value })
@@ -833,6 +948,7 @@ private fun ConversationJump(labelId: Int, modifier: Modifier, onClick: () -> Un
         modifier =
             modifier
                 .heightIn(min = 48.dp)
+                .updateFocusOutline(CircleShape, colors.onSurface)
                 .semantics {
                     contentDescription = label
                     if (labelId == R.string.conversation_new_reply)

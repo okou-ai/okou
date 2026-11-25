@@ -1,586 +1,383 @@
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-
-import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test, describe, beforeEach, it } from "vitest";
-
-import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import { expect, test } from "vitest";
 import {
-  ACME_CONNECTOR_ID,
+  chatConnectorAccessContract,
+  type ChatConnectorAccess,
+} from "@okouai/api-contracts/contracts/chat-connector-access";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
+  click,
+  fill,
+  setupPage,
+  queryAllByRoleFast,
+} from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
   builtinConnector,
   connectorAccount,
-  FEISHU_CONNECTOR_ID,
-  httpConnector,
-  manualAuthMethod,
-  noAuthMethod,
-  oauthAuthMethod,
-  ORDINARY_CONNECTOR_ID,
-  permissionDetail,
   createComposerConnectorHelpers,
+  permissionDetail,
+  SCOUT_THREAD_ID,
+  chatConnectorOverviewFixture,
 } from "./chat-composer-connectors-test-helpers.ts";
 import {
+  findComposer,
   findFastControl,
   queryFastControl,
 } from "./chat-message-experience-test-helpers.ts";
+import {
+  namedMenuAccounts,
+  openChatMenu,
+} from "./composer-menu-page-fixture.ts";
 
 const context = testContext();
+
 const { installComposerConnectorFixture } =
   createComposerConnectorHelpers(context);
 
-const GITHUB_SLUG = "github" as ConnectorSlug;
-const AXIOM_SLUG = "axiom" as ConnectorSlug;
-const GOOGLE_ANALYTICS_SLUG = "google-analytics" as ConnectorSlug;
-const PUBLIC_STRIPE_SLUG = "stripe-public" as ConnectorSlug;
+const target = Object.freeze({
+  kind: "builtin" as const,
+  connectorSlug: "github",
+});
 
-async function loadComposer(): Promise<void> {
-  await expect(findFastControl("button", "Connectors")).resolves.toBeVisible();
-}
+const work = connectorAccount({
+  id: "f0000000-0000-4000-a000-000000000091",
+  target,
+  displayName: "Work",
+  isDefault: true,
+});
 
-async function openConnectors(
-  user: ReturnType<typeof userEvent.setup>,
-): Promise<void> {
-  await user.click(await findFastControl("button", "Connectors"));
-  await expect(
-    findFastControl("button", "Add connectors"),
-  ).resolves.toBeVisible();
-}
+const personal = connectorAccount({
+  id: "f0000000-0000-4000-a000-000000000092",
+  target,
+  displayName: "Personal",
+  isDefault: false,
+});
 
-async function ensureConnectorsOpen(
-  user: ReturnType<typeof userEvent.setup>,
-): Promise<void> {
-  if (!queryFastControl("button", "Add connectors")) {
-    await openConnectors(user);
-  }
-}
-
-async function openAddConnectors(
-  user: ReturnType<typeof userEvent.setup>,
-): Promise<HTMLElement> {
-  await user.click(await findFastControl("button", "Add connectors"));
-  const search = await screen.findByPlaceholderText("Find connectors...");
-  const dialog = search.closest('[role="dialog"]');
-  if (!(dialog instanceof HTMLElement)) {
-    throw new Error("Available connector dialog not found");
-  }
-  return dialog;
-}
-
-async function openCustomConnectors(
-  user: ReturnType<typeof userEvent.setup>,
-): Promise<HTMLElement> {
-  const dialog = await openAddConnectors(user);
-  await user.click(within(dialog).getByRole("radio", { name: "Custom" }));
-  return dialog;
-}
-
-function createAuthWindow(): Window {
-  const authWindow = context.mocks.browser.authWindow();
-  Object.defineProperty(authWindow, "location", {
-    configurable: true,
-    value: { href: "about:blank" },
-  });
-  return authWindow;
-}
-
-test("Configure connector permissions from the composer", async () => {
-  const axiom = builtinConnector({
-    slug: AXIOM_SLUG,
-    label: "Axiom",
-    hasPermissions: true,
-  });
+function installAccounts(personalEnabled: boolean): ChatConnectorAccess {
   installComposerConnectorFixture({
-    catalog: [axiom],
+    catalog: [
+      builtinConnector({
+        slug: "github",
+        label: "GitHub",
+        hasPermissions: true,
+      }),
+    ],
+    accounts: [work, personal],
     permissionDetails: new Map([
       [
-        AXIOM_SLUG,
-        permissionDetail(AXIOM_SLUG, "Axiom", ["annotations|create"]),
+        "github",
+        permissionDetail("github", "GitHub", ["repos|read", "repos|write"]),
       ],
     ]),
   });
-
-  await setupPage({ context, path: `/` });
-
-  click(await findFastControl("button", "Connectors"));
-  click(await findFastControl("button", /^Axiom/u));
-  click(await findFastControl("button", "Permissions"));
-  const dialog = await screen.findByRole("dialog", {
-    name: "Axiom permissions",
-  });
-  expect(queryFastControl("button", "Add connectors")).toBeNull();
-  const permission = within(dialog).getByText("annotations|create");
-  const row = permission.closest(".flex.items-center");
-  if (!(row instanceof HTMLElement)) {
-    throw new Error("Permission row not found");
-  }
-  click(await findFastControl("button", "Deny", row));
-  await expect(
-    findFastControl("button", "Apply", dialog),
-  ).resolves.toBeEnabled();
-  click(await findFastControl("button", "Cancel", dialog));
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("dialog", { name: "Axiom permissions" }),
-    ).toBeNull();
-    expect(queryFastControl("button", "Add connectors")).toBeNull();
-  });
-});
-
-describe("connecting a custom connector from Chat", () => {
-  let user: ReturnType<typeof userEvent.setup>;
-  let fixture: ReturnType<typeof installComposerConnectorFixture>;
-  beforeEach(async () => {
-    user = userEvent.setup({ delay: null });
-    fixture = installComposerConnectorFixture({
-      customConnectors: [
-        httpConnector({
-          id: ACME_CONNECTOR_ID,
-          slug: "acme-search",
-          displayName: "Acme Search",
-          hasAccount: false,
-        }),
-      ],
-    });
-
-    await setupPage({ context, path: `/` });
-
-    await loadComposer();
-    await openConnectors(user);
-  });
-
-  async function prepareCustomConnection() {
-    const catalog = await openCustomConnectors(user);
-    expect(
-      within(catalog).getByText("https://api.example.test/"),
-    ).toBeVisible();
-    click(await findFastControl("button", "Connect Acme Search", catalog));
-    const secret = await screen.findByLabelText("Secret");
-    expect(secret).toHaveValue("");
-    return { catalog, secret };
-  }
-
-  it("cancel a custom connector from Chat", async () => {
-    const { secret } = await prepareCustomConnection();
-    await fill(secret, "discarded-secret");
-    click(await findFastControl("button", "Cancel"));
-    await ensureConnectorsOpen(user);
-    const catalog = await openCustomConnectors(user);
-    click(await findFastControl("button", "Connect Acme Search", catalog));
-    const reopenedSecret = await screen.findByLabelText("Secret");
-    expect(reopenedSecret).toHaveValue("");
-    expect(fixture.customValueRequests).toStrictEqual([]);
-  });
-
-  it("connect a custom connector from Chat", async () => {
-    const { secret } = await prepareCustomConnection();
-    await fill(secret, "scout-secret");
-    click(await findFastControl("button", "Save"));
-    await waitFor(() => {
-      expect(fixture.customValueRequests).toStrictEqual([
-        {
-          connectorId: ACME_CONNECTOR_ID,
-          account: { intent: "add" },
-          values: [{ key: "secret", kind: "secret", value: "scout-secret" }],
-        },
-      ]);
-    });
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).toBeNull();
-    });
-    await ensureConnectorsOpen(user);
-    await expect(screen.findByText("Acme Search")).resolves.toBeVisible();
-  });
-});
-
-test("Reconnect the expired custom default from the composer with healthy siblings", async () => {
-  const user = userEvent.setup({ delay: null });
-  const target = {
-    kind: "custom" as const,
-    customConnectorId: ACME_CONNECTOR_ID,
-  };
-  const expired = {
-    ...connectorAccount({
-      id: crypto.randomUUID(),
-      target,
-      displayName: "Expired default",
-      isDefault: true,
-    }),
-    connectionStatus: "reconnect-required" as const,
-    reconnectReason: "authorization_expired_or_revoked" as const,
-  };
-  const sibling = connectorAccount({
-    id: crypto.randomUUID(),
+  return {
     target,
-    displayName: "Healthy sibling",
-    isDefault: false,
+    currentConnectionId: work.id,
+    available: true,
+    accounts: [work, personal].map((account) => {
+      const enabled = account.id === work.id || personalEnabled;
+      return {
+        connectionId: account.id,
+        displayName: account.displayName,
+        isDefault: account.isDefault,
+        defaultEnabled: enabled,
+        enabled,
+        overrideEnabled: null,
+      };
+    }),
+  };
+}
+
+async function openMenu(label = "GitHub") {
+  click(await findFastControl("button", "Connectors"));
+  return await waitFor(() => {
+    const row = queryAllByRoleFast("button").find((button) => {
+      return button.textContent?.includes(label);
+    });
+    if (!row) {
+      throw new Error(`${label} account row not found`);
+    }
+    return row;
   });
-  const fixture = installComposerConnectorFixture({
-    customConnectors: [
-      httpConnector({
-        id: ACME_CONNECTOR_ID,
-        slug: "acme-search",
-        displayName: "Acme Search",
-        hasAccount: false,
-      }),
-    ],
-    accounts: [expired, sibling],
-  });
-  await setupPage({ context, path: `/` });
-  await loadComposer();
-  await openConnectors(user);
-  const catalog = await openCustomConnectors(user);
-  click(await findFastControl("button", "Connect Acme Search", catalog));
-  const dialog = await screen.findByRole("dialog", {
-    name: "Connect Acme Search",
-  });
-  await fill(within(dialog).getByLabelText("Secret"), "replacement-secret");
-  click(await findFastControl("button", "Save", dialog));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  expect(fixture.customValueRequests).toStrictEqual([
-    {
-      connectorId: ACME_CONNECTOR_ID,
-      account: { intent: "reconnect", connectionId: expired.id },
-      values: [{ key: "secret", kind: "secret", value: "replacement-secret" }],
+}
+
+test("Edit member account policy in Composer and send the first message without Chat overrides", async () => {
+  const user = userEvent.setup({ delay: null });
+  const access = installAccounts(false);
+  let personalPolicy = {
+    connectionId: personal.id,
+    allowed: false,
+    enabled: false,
+    expiresAt: null,
+  };
+  context.mocks.api(
+    chatConnectorAccessContract.accountPolicies,
+    ({ respond }) => {
+      return respond(200, [
+        {
+          connectionId: work.id,
+          allowed: true,
+          enabled: true,
+          expiresAt: null,
+        },
+        personalPolicy,
+      ]);
     },
-  ]);
-});
-
-test("Show only the connector actions that are useful in chat", async () => {
-  const user = userEvent.setup({ delay: null });
-  const axiom = builtinConnector({
-    slug: AXIOM_SLUG,
-    label: "Axiom",
-    hasPermissions: true,
-  });
-  const github = builtinConnector({ slug: GITHUB_SLUG, label: "GitHub" });
-  const axiomTarget = { kind: "builtin" as const, connectorSlug: AXIOM_SLUG };
-  const githubTarget = {
-    kind: "builtin" as const,
-    connectorSlug: GITHUB_SLUG,
-  };
-  const axiomAccounts = [
-    connectorAccount({
-      id: "f0000000-0000-4000-a000-000000000071",
-      target: axiomTarget,
-      displayName: "Work",
-      isDefault: true,
-    }),
-    connectorAccount({
-      id: "f0000000-0000-4000-a000-000000000072",
-      target: axiomTarget,
-      displayName: "Personal",
-      isDefault: false,
-    }),
-  ];
-  const githubAccount = connectorAccount({
-    id: "f0000000-0000-4000-a000-000000000073",
-    target: githubTarget,
-    displayName: "Work",
-    isDefault: true,
-  });
-  installComposerConnectorFixture({
-    catalog: [axiom, github],
-    accounts: [...axiomAccounts, githubAccount],
-  });
-
-  await setupPage({
-    context,
-    path: `/`,
-  });
-
-  await loadComposer();
-  await openConnectors(user);
-  await user.click(await findFastControl("button", /^Axiom/u));
-  const axiomMenu = await screen.findByRole("dialog", { name: "Axiom" });
-  expect(queryFastControl("button", "Permissions", axiomMenu)).toBeVisible();
-  expect(
-    within(axiomMenu).getByRole("switch", { name: "Work access" }),
-  ).toBeChecked();
-  expect(
-    within(axiomMenu).getByRole("switch", { name: "Personal access" }),
-  ).toBeChecked();
-  await user.keyboard("{Escape}");
-  await user.click(await findFastControl("button", /^GitHub/u));
-  const githubMenu = await screen.findByRole("dialog", { name: "GitHub" });
-  expect(queryFastControl("button", "Permissions", githubMenu)).toBeNull();
-  expect(
-    within(githubMenu).getByRole("switch", { name: "Work access" }),
-  ).toBeVisible();
-});
-
-test("Start connector setup from chat", async () => {
-  const user = userEvent.setup({ delay: null });
-  const fixture = installComposerConnectorFixture({
-    catalog: [
-      builtinConnector({
-        slug: GOOGLE_ANALYTICS_SLUG,
-        label: "Google Analytics",
-        hasAccount: false,
-        authMethods: [oauthAuthMethod()],
-      }),
-    ],
-  });
-  const authWindow = createAuthWindow();
-  const browserOpen = context.mocks.browser.open(authWindow);
-
-  await setupPage({
-    context,
-    path: `/`,
-    featureSwitches: {},
-  });
-
-  await loadComposer();
-  await openConnectors(user);
-  const catalog = await openAddConnectors(user);
-  await user.type(
-    within(catalog).getByPlaceholderText("Find connectors..."),
-    "Google Analytics",
   );
-  const connect = await findFastControl(
-    "button",
-    "Connect Google Analytics",
-    catalog,
+  context.mocks.api(
+    chatConnectorAccessContract.updateAccountPolicy,
+    ({ params, body, respond }) => {
+      expect(params.connectionId).toBe(personal.id);
+      expect(body.target).toStrictEqual(target);
+      expect(body.policy).toBe("allow-always");
+      personalPolicy = { ...personalPolicy, allowed: true, enabled: true };
+      return respond(200, personalPolicy);
+    },
   );
-  expect(authWindow.location.href).toBe("about:blank");
-  await user.click(connect);
-  await waitFor(() => {
-    expect(fixture.oauthConnectionRequests).toHaveLength(1);
-    expect(fixture.oauthConnectionRequests[0]).toMatchObject({
-      connectorSlug: GOOGLE_ANALYTICS_SLUG,
-      authMethod: "oauth",
-    });
-    expect(authWindow.location.href).toBe(
-      "https://accounts.example.test/google-analytics",
-    );
-  });
-  expect(browserOpen.calls).toHaveLength(1);
-  authWindow.close();
-  await waitFor(() => {
-    expect(
-      queryFastControl("button", "Connect Google Analytics", catalog),
-    ).toBeEnabled();
-  });
-  expect(
-    within(catalog).getByPlaceholderText("Find connectors..."),
-  ).toHaveValue("Google Analytics");
-});
-
-test.each([null, "Close"] as const)(
-  "Complete or cancel connector authorization from chat (%s)",
-  async (dismissal) => {
-    const user = userEvent.setup({ delay: null });
-    const fixture = installComposerConnectorFixture({
-      catalog: [
-        builtinConnector({
-          slug: GOOGLE_ANALYTICS_SLUG,
-          label: "Google Analytics",
-          hasAccount: false,
-          authMethods: [oauthAuthMethod()],
-        }),
-      ],
-    });
-    const authWindow = createAuthWindow();
-    const browserOpen = context.mocks.browser.open(authWindow);
-    await setupPage({ context, path: `/` });
-
-    await loadComposer();
-    await openConnectors(user);
-    const catalog = await openAddConnectors(user);
-    await fill(
-      within(catalog).getByPlaceholderText("Find connectors..."),
-      "Google Analytics",
-    );
-    await user.click(
-      await findFastControl("button", "Connect Google Analytics", catalog),
-    );
-    await waitFor(() => {
-      expect(authWindow.location.href).toBe(
-        "https://accounts.example.test/google-analytics",
-      );
-    });
-    if (dismissal === "Close") {
-      await user.click(within(catalog).getByLabelText("Close"));
-    }
-    const cancelled = dismissal === "Close";
-    expect(authWindow.closed).toBe(cancelled);
-
-    const account = connectorAccount({
-      id: "f0000000-0000-4000-a000-000000000064",
-      target: { kind: "builtin", connectorSlug: GOOGLE_ANALYTICS_SLUG },
-      displayName: "Work",
-      isDefault: true,
-    });
-    context.mocks.data.connectors([
-      { ...account, slug: GOOGLE_ANALYTICS_SLUG },
-    ]);
-    fixture.completeOAuth(account.id);
-    if (cancelled) {
-      return;
-    }
-    authWindow.close();
-    await waitFor(() => {
-      expect(catalog).not.toBeInTheDocument();
-    });
-    expect(browserOpen.calls).toHaveLength(1);
-  },
-);
-
-test("Respect integration-managed connector availability in chat", async () => {
-  const user = userEvent.setup({ delay: null });
-  const feishu = httpConnector({
-    id: FEISHU_CONNECTOR_ID,
-    slug: "feishu",
-    displayName: "Feishu",
-    hasAccount: true,
-    authMode: "oauth",
-    providerAdapter: "feishu",
-  });
-  const target = {
-    kind: "custom" as const,
-    customConnectorId: FEISHU_CONNECTOR_ID,
-  };
-  const accounts = [
-    connectorAccount({
-      id: "f0000000-0000-4000-a000-000000000081",
+  context.mocks.api(chatConnectorAccessContract.overview, ({ respond }) => {
+    const overview = chatConnectorOverviewFixture({
       target,
-      displayName: "Primary",
-      isDefault: true,
-    }),
-    connectorAccount({
-      id: "f0000000-0000-4000-a000-000000000082",
-      target,
-      displayName: "Secondary",
-      isDefault: false,
-    }),
-  ];
-  installComposerConnectorFixture({
-    customConnectors: [feishu],
-    accounts,
-  });
-
-  await setupPage({
-    context,
-    path: `/`,
-  });
-
-  await loadComposer();
-  await openConnectors(user);
-  click(await screen.findByText("Feishu"));
-  const menu = await screen.findByRole("dialog", { name: "Feishu" });
-  await expect(
-    within(menu).findByRole("switch", { name: "Primary access" }),
-  ).resolves.toBeChecked();
-  await expect(
-    within(menu).findByRole("switch", { name: "Secondary access" }),
-  ).resolves.toBeChecked();
-});
-
-test("Search beyond featured connectors from chat", async () => {
-  const user = userEvent.setup({ delay: null });
-  installComposerConnectorFixture({
-    catalog: [
-      builtinConnector({
-        slug: GITHUB_SLUG,
-        label: "GitHub",
-        hasAccount: false,
-      }),
-      builtinConnector({
-        slug: AXIOM_SLUG,
-        label: "Axiom",
-        hasAccount: false,
-        authMethods: [manualAuthMethod()],
-      }),
-    ],
-    featuredConnectorSlugs: [GITHUB_SLUG],
-  });
-
-  await setupPage({ context, path: `/` });
-
-  await loadComposer();
-  await openConnectors(user);
-  const catalog = await openAddConnectors(user);
-  expect(queryFastControl("button", "Connect Axiom", catalog)).toBeNull();
-  await user.type(
-    within(catalog).getByPlaceholderText("Find connectors..."),
-    "Axiom",
-  );
-  await user.click(await findFastControl("button", "Connect Axiom", catalog));
-  const dialog = await screen.findByRole("dialog", { name: "Axiom" });
-  expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
-  expect(
-    within(dialog).getByText("API Token", { selector: "label" }),
-  ).toBeVisible();
-});
-
-test("Exclude unconnected integration-managed connectors from chat setup", async () => {
-  const user = userEvent.setup({ delay: null });
-  installComposerConnectorFixture({
-    customConnectors: [
-      httpConnector({
-        id: FEISHU_CONNECTOR_ID,
-        slug: "feishu",
-        displayName: "Feishu",
-        hasAccount: false,
-        authMode: "oauth",
-        providerAdapter: "feishu",
-      }),
-      httpConnector({
-        id: ORDINARY_CONNECTOR_ID,
-        slug: "acme-search",
-        displayName: "Acme Search",
-        hasAccount: false,
-      }),
-    ],
-  });
-
-  await setupPage({ context, path: `/` });
-
-  await loadComposer();
-  await openConnectors(user);
-  const catalog = await openCustomConnectors(user);
-  await expect(
-    findFastControl("button", "Connect Acme Search", catalog),
-  ).resolves.toBeVisible();
-  expect(queryFastControl("button", "Connect Feishu", catalog)).toBeNull();
-  expect(within(catalog).queryByText("Feishu")).toBeNull();
-});
-
-test("Enable a credential-free connector directly from chat", async () => {
-  const user = userEvent.setup({ delay: null });
-  const fixture = installComposerConnectorFixture({
-    catalog: [
-      builtinConnector({
-        slug: PUBLIC_STRIPE_SLUG,
-        label: "Public Stripe",
-        hasAccount: false,
-        authMethods: [noAuthMethod()],
-      }),
-    ],
-  });
-  const browserOpen = context.mocks.browser.open(null);
-
-  await setupPage({ context, path: `/` });
-
-  await loadComposer();
-  await openConnectors(user);
-  const catalog = await openAddConnectors(user);
-  await user.click(
-    await findFastControl("button", "Connect Public Stripe", catalog),
-  );
-  await waitFor(() => {
-    expect(fixture.noAuthConnectionRequests).toStrictEqual([
+      label: "GitHub",
+      accounts: [work, personal],
+      access,
+      hasPermissions: true,
+    });
+    return respond(200, [
       {
-        connectorSlug: PUBLIC_STRIPE_SLUG,
-        authMethod: "public",
+        ...overview,
+        accounts: overview.accounts.map((account) => {
+          return {
+            ...account,
+            defaultEnabled: true,
+            enabled:
+              account.connectionId === personal.id
+                ? personalPolicy.enabled
+                : account.enabled,
+          };
+        }),
       },
     ]);
-    expect(screen.queryByRole("dialog")).toBeNull();
   });
-  await ensureConnectorsOpen(user);
+  context.mocks.api(
+    chatConnectorAccessContract.setThreadOverride,
+    ({ respond }) => {
+      return respond(400, {
+        error: {
+          code: "BAD_REQUEST",
+          message: "Legacy overrides are disabled",
+        },
+      });
+    },
+  );
+  await setupPage({
+    context,
+    path: "/",
+    locale: "en-US",
+    featureSwitches: { [FeatureSwitchKey.MemberConnectorAccountAccess]: true },
+  });
+  const editor = await findComposer();
+  await user.click(await openMenu());
+  const panel = await screen.findByRole("group", { name: "GitHub" });
+  expect(within(panel).queryByRole("switch")).toBeNull();
+  await user.click(
+    await findFastControl("button", "Personal access, Deny", panel),
+  );
+  await user.click(
+    within(await screen.findByRole("menu")).getByText("Allow always"),
+  );
   await expect(
-    findFastControl("button", /^Public Stripe/u),
+    findFastControl("button", "Personal access, Allow, Always", panel),
+  ).resolves.toBeEnabled();
+  await user.keyboard("{Escape}{Escape}");
+  await fill(editor, "Use my GitHub account");
+  click(await findFastControl("button", "Send"));
+  await waitFor(() => {
+    expect(window.location.pathname).toMatch(/^\/chats\//u);
+  });
+});
+
+test("Refresh Composer eligibility when a member policy save finishes after closing the account manager", async () => {
+  const user = userEvent.setup({ delay: null });
+  const committed = context.mocks.deferred<void>();
+  const response = context.mocks.deferred<void>();
+  const chat = installAccounts(true);
+  let workPolicy = {
+    connectionId: work.id,
+    allowed: true,
+    enabled: true,
+    expiresAt: null,
+  };
+  context.mocks.api(
+    chatConnectorAccessContract.accountPolicies,
+    ({ respond }) => {
+      return respond(200, [
+        workPolicy,
+        {
+          connectionId: personal.id,
+          allowed: true,
+          enabled: true,
+          expiresAt: null,
+        },
+      ]);
+    },
+  );
+  context.mocks.api(chatConnectorAccessContract.overview, ({ respond }) => {
+    const overview = chatConnectorOverviewFixture({
+      target,
+      label: "GitHub",
+      accounts: [work, personal],
+      access: {
+        ...chat,
+        accounts: chat.accounts.map((account) => {
+          return account.connectionId === work.id
+            ? { ...account, enabled: workPolicy.enabled }
+            : account;
+        }),
+        currentConnectionId: workPolicy.enabled ? work.id : personal.id,
+      },
+      hasPermissions: true,
+    });
+    return respond(200, [overview]);
+  });
+  context.mocks.api(
+    chatConnectorAccessContract.updateAccountPolicy,
+    async ({ params, body, respond }) => {
+      expect(params.connectionId).toBe(work.id);
+      expect(body.policy).toBe("deny");
+      committed.resolve();
+      await response.promise;
+      workPolicy = { ...workPolicy, allowed: false, enabled: false };
+      return respond(200, workPolicy);
+    },
+  );
+  await setupPage({
+    context,
+    path: `/chats/${SCOUT_THREAD_ID}`,
+    locale: "en-US",
+    featureSwitches: { [FeatureSwitchKey.MemberConnectorAccountAccess]: true },
+  });
+  await user.click(await openMenu());
+  await user.click(await findFastControl("button", "Manage accounts"));
+  const manager = await screen.findByRole("dialog", {
+    name: "Manage GitHub accounts",
+  });
+  await user.click(
+    await findFastControl("button", "Work access, Allow, Always", manager),
+  );
+  await user.click(within(await screen.findByRole("menu")).getByText("Deny"));
+  await committed.promise;
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Manage GitHub accounts" }),
+    ).toBeNull();
+  });
+  await user.click(await openMenu());
+  const accounts = within(await screen.findByRole("group", { name: "GitHub" }));
+  await expect(accounts.findAllByText("Allow")).resolves.toHaveLength(2);
+  response.resolve();
+  await expect(accounts.findByText("Deny")).resolves.toBeInTheDocument();
+});
+
+test("chat-composer-connector-focus-011 Filtering after inspecting an account closes its panel and restores the launcher on Escape", async () => {
+  namedMenuAccounts(context, "Focus app", 21);
+  const trigger = await openChatMenu(context);
+  const filter = await screen.findByRole("textbox", {
+    name: "Find connectors...",
+  });
+  await fill(filter, "Focus app 20");
+  click(await findFastControl("button", /Focus app 20\b/));
+  await expect(
+    screen.findByRole("switch", { name: "Focus app 20 account access" }),
   ).resolves.toBeVisible();
-  expect(browserOpen.calls).toHaveLength(0);
+  await fill(filter, "Focus app 1");
+  const results = screen.getByRole("list", { name: "Connectors" });
+  await expect(
+    findFastControl("button", /Focus app 1\b/, results),
+  ).resolves.toBeVisible();
+  expect(queryFastControl("button", /Focus app 20\b/, results)).toBeNull();
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    return expect(trigger).toHaveFocus();
+  });
+  expect(screen.queryByRole("dialog", { name: "Connectors" })).toBeNull();
+});
+
+test("chat-composer-connector-focus-009 A closed menu keeps the launcher focused after the pending overview is consumed", async () => {
+  const overview = namedMenuAccounts(context, "Focus app", 21);
+  const loading = context.mocks.deferred<void>();
+  const began = context.mocks.deferred<void>();
+  const consumed = context.mocks.deferred<void>();
+  context.mocks.api(
+    chatConnectorAccessContract.overview,
+    async ({ respond }) => {
+      began.resolve();
+      await loading.promise;
+      return respond(200, overview);
+    },
+  );
+  context.mocks.api(
+    chatConnectorAccessContract.overviewTarget,
+    ({ query, respond }) => {
+      if (query.kind === "builtin" && query.connectorSlug === "github") {
+        consumed.resolve();
+      }
+      return respond(200, { connector: null });
+    },
+  );
+  const trigger = await openChatMenu(context);
+  await began.promise;
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    return expect(trigger).toHaveFocus();
+  });
+  // The target refresh waits for this page's baseline before issuing its GET.
+  context.mocks.ably.trigger("connector:changed", { connectorSlug: "github" });
+  loading.resolve();
+  await consumed.promise;
+  expect(screen.queryByRole("dialog", { name: "Connectors" })).toBeNull();
+  expect(trigger).toHaveFocus();
+  click(trigger);
+  await expect(
+    findFastControl("button", /Focus app 20\b/),
+  ).resolves.toBeVisible();
+});
+
+test("Opening the connector directory keeps Add connectors focused as accounts arrive and resets the search on reentry", async () => {
+  const rows = namedMenuAccounts(context, "Archive", 21);
+  const inventory = context.mocks.deferred<void>();
+  context.mocks.api(
+    chatConnectorAccessContract.overview,
+    async ({ respond }) => {
+      await inventory.promise;
+      return respond(200, rows);
+    },
+  );
+  const trigger = await openChatMenu(context);
+  const add = await findFastControl("button", "Add connectors");
+  await waitFor(() => {
+    return expect(add).toHaveFocus();
+  });
+  inventory.resolve();
+  const filter = await screen.findByRole("textbox", {
+    name: "Find connectors...",
+  });
+  expect(add).toHaveFocus();
+  await fill(filter, "Archive 20");
+  await expect(findFastControl("button", /Archive 20/)).resolves.toBeVisible();
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    return expect(trigger).toHaveFocus();
+  });
+  click(trigger);
+  const menu = await screen.findByRole("dialog", { name: "Connectors" });
+  const freshFilter = await within(menu).findByRole("textbox", {
+    name: "Find connectors...",
+  });
+  expect(freshFilter).toHaveValue("");
+  await waitFor(() => {
+    return expect(menu).toContainElement(document.activeElement as HTMLElement);
+  });
 });

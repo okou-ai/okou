@@ -1,3 +1,4 @@
+import { createHostedSiteDomainSignals } from "./hosted-site-domains.ts";
 import { command, computed, state, type Computed, type State } from "ccstate";
 import type { infer as zInfer } from "zod";
 import { hostContract } from "@okouai/api-contracts/client/host";
@@ -17,7 +18,6 @@ import {
   recordHostedSiteUrlChange$,
 } from "./hosted-site-url-changes.ts";
 import { createShareLinkCopy } from "./share-link-copy.ts";
-import { recordHostedSiteVisibilityChange$ } from "./hosted-site-visibility-changes.ts";
 import {
   debounceCommand,
   onRef,
@@ -26,16 +26,13 @@ import {
 } from "./utils.ts";
 import { createHostedSiteBannerSignals } from "./hosted-site-banner.ts";
 import { passArtifactPaywall$ } from "./okou-page/artifact-paywall.ts";
-import { createHostedSitePeopleSignals } from "./hosted-site-people.ts";
+import { createSharePeopleSignals } from "./share-people.ts";
 
 type SiteUrl = zInfer<typeof hostedSiteUrlSchema>;
 type Validation = "unchanged" | "invalid" | "available" | "taken";
 type Visibility = zInfer<typeof hostedSiteVisibilitySchema>;
 
-function createSiteVisibilitySignals(
-  sourceUrl: string,
-  site$: Computed<Promise<SiteUrl | null>>,
-) {
+function createSiteVisibilitySignals(site$: Computed<Promise<SiteUrl | null>>) {
   const reload$ = state(0);
   const details$ = computed(async (get) => {
     const site = await get(site$);
@@ -64,7 +61,7 @@ function createSiteVisibilitySignals(
       if (!details || details.visibility === visibility) {
         return false;
       }
-      const updated = await accept(
+      await accept(
         get(apiClient$)(hostContract).updateSiteVisibility({
           params: { siteId: details.siteId },
           body: { visibility, expectedRevision: details.revision },
@@ -76,10 +73,6 @@ function createSiteVisibilitySignals(
       signal.throwIfAborted();
       set(reload$, (value) => {
         return value + 1;
-      });
-      set(recordHostedSiteVisibilityChange$, {
-        url: sourceUrl,
-        revision: updated.body.revision,
       });
       await get(details$);
       signal.throwIfAborted();
@@ -262,19 +255,22 @@ function createSiteUrlSignals(sourceUrl: string) {
   const copyUrl$ = computed(async (get) => {
     const details = await get(details$);
     return details?.isActive
-      ? details.url
+      ? (details.effectiveUrl ?? details.url)
       : currentHostedSiteUrl(sourceUrl, get(hostedSiteUrlChanges$));
   });
   return { saved$, details$, copyUrl$ };
 }
 
-function createHostedSiteShareSession(sourceUrl: string) {
-  const signal$ = state<AbortSignal | null>(null);
-  const { saved$, details$, copyUrl$ } = createSiteUrlSignals(sourceUrl);
-  const open$ = state(false);
-  const editor = createSiteUrlEditorSignals(details$, saved$);
-  const visibility = createSiteVisibilitySignals(sourceUrl, details$);
-  const people = createHostedSitePeopleSignals(visibility.visibility$, open$);
+function createSiteSharingSettings(
+  details$: Computed<Promise<SiteUrl | null>>,
+  open$: State<boolean>,
+) {
+  const visibility = createSiteVisibilitySignals(details$);
+  const peopleTarget$ = computed(async (get) => {
+    const site = await get(visibility.visibility$);
+    return site ? { kind: "site" as const, id: site.siteId } : null;
+  });
+  const people = createSharePeopleSignals(peopleTarget$, open$);
   const banner = createHostedSiteBannerSignals(visibility.visibility$);
   const hasSettings$ = computed(async (get) => {
     const [details, permissions] = await Promise.all([
@@ -289,6 +285,34 @@ function createHostedSiteShareSession(sourceUrl: string) {
         ))
     );
   });
+  return { visibility, people, banner, hasSettings$ };
+}
+
+function createHostedSiteShareSession(sourceUrl: string) {
+  const signal$ = state<AbortSignal | null>(null);
+  const {
+    saved$,
+    details$,
+    copyUrl$: platformCopyUrl$,
+  } = createSiteUrlSignals(sourceUrl);
+  const open$ = state(false);
+  const editor = createSiteUrlEditorSignals(details$, saved$);
+  const domains = createHostedSiteDomainSignals(details$);
+  const copyUrl$ = computed(async (get) => {
+    return get(domains.effectiveUrl$) ?? (await get(platformCopyUrl$));
+  });
+  const edit$ = command(async ({ get, set }, signal: AbortSignal) => {
+    await set(editor.edit$, signal);
+    if (get(editor.editing$)) {
+      await set(domains.begin$, signal);
+    }
+  });
+  const cancel$ = command(({ set }) => {
+    set(domains.back$);
+    set(editor.cancel$);
+  });
+  const { visibility, people, banner, hasSettings$ } =
+    createSiteSharingSettings(details$, open$);
   const resetOpenSignal$ = resetSignal();
   const linkCopy = createShareLinkCopy();
   const setOpen$ = command(({ set }, open: boolean) => {
@@ -296,7 +320,7 @@ function createHostedSiteShareSession(sourceUrl: string) {
     if (!open) {
       set(people.clear$);
       set(resetOpenSignal$);
-      set(editor.cancel$);
+      set(cancel$);
       set(editor.returnFocus$, false);
       set(linkCopy.clear$);
     }
@@ -326,9 +350,40 @@ function createHostedSiteShareSession(sourceUrl: string) {
     0,
   );
   const save$ = throttleCommand(
-    command(({ set }, signal: AbortSignal) => {
+    command(async ({ get, set }, signal: AbortSignal) => {
       set(linkCopy.clear$);
-      return set(editor.save$, signal);
+      const configuration = await get(domains.settings$);
+      signal.throwIfAborted();
+      if (!configuration) {
+        return set(editor.save$, signal);
+      }
+      const details = await get(details$);
+      signal.throwIfAborted();
+      const draft = get(editor.draft$);
+      if (!details || draft === null) {
+        return;
+      }
+      const result = await set(domains.persist$, draft, signal);
+      signal.throwIfAborted();
+      if (!result) {
+        return;
+      }
+      const url = result.defaultUrl;
+      if (url !== details.url) {
+        set(recordHostedSiteUrlChange$, details.url, url);
+      }
+      set(saved$, {
+        ...details,
+        url,
+        publicSlug: new URL(url).hostname.split(".")[0]!,
+        effectiveUrl: result.effectiveUrl,
+      });
+      set(cancel$);
+      toast.success(
+        i18n.t(($) => {
+          return $.artifacts.siteUrl.updated;
+        }),
+      );
     }),
     0,
   );
@@ -344,6 +399,9 @@ function createHostedSiteShareSession(sourceUrl: string) {
     changeVisibility$,
     open$,
     ...editor,
+    domains,
+    edit$,
+    cancel$,
     save$,
     inputId: `hosted-site-url-${crypto.randomUUID()}`,
     peopleInputId: `hosted-site-people-${crypto.randomUUID()}`,

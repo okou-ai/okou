@@ -12,6 +12,7 @@ import ai.okou.android.api.generated.CanonicalZero
 import ai.okou.android.api.generated.ChatEvents
 import ai.okou.android.api.generated.ChatSnapshot
 import ai.okou.android.api.generated.ComposerDraft
+import ai.okou.android.api.generated.CreateProjectRequest
 import ai.okou.android.api.generated.CreateThreadRequest
 import ai.okou.android.api.generated.CreateWorkflowAutomationRequest
 import ai.okou.android.api.generated.DeleteProjectRequest
@@ -30,6 +31,7 @@ import ai.okou.android.api.generated.RenameProjectRequest
 import ai.okou.android.api.generated.RenameThreadRequest
 import ai.okou.android.api.generated.ReorderPinnedThreadRequest
 import ai.okou.android.api.generated.ResolveArtifactReferenceQuery
+import ai.okou.android.api.generated.RunActivityRequest
 import ai.okou.android.api.generated.SaveThreadDraft
 import ai.okou.android.api.generated.SaveWorkspaceDraft
 import ai.okou.android.api.generated.SendRequest
@@ -322,6 +324,10 @@ class ApiClient(
 
     suspend fun threadDetail(threadId: String) = read { threadDetail(it, threadId) }
 
+    internal suspend fun summarizeRunActivity(threadId: String, runId: String) = read {
+        summarizeRunActivity(it, threadId, RunActivityRequest(runId))
+    }
+
     internal suspend fun relatedCreatedChats(threadId: String) = read {
         relatedCreatedChats(it, threadId)
     }
@@ -374,6 +380,16 @@ class ApiClient(
     suspend fun deleteThread(threadId: String, eventId: String) {
         writeNoContent { deleteThread(it, threadId, eventId) }
     }
+
+    internal suspend fun createProject(projectId: String, name: String) =
+        write(201) {
+            createProject(
+                it,
+                CreateProjectRequest(id = projectId, eventId = projectId, name = name),
+            )
+        }
+
+    internal suspend fun projectDetail(projectId: String) = read { projectDetail(it, projectId) }
 
     suspend fun renameProject(projectId: String, name: String, eventId: String) {
         write {

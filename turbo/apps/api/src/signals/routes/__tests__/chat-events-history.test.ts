@@ -304,9 +304,11 @@ describe("CHAT-02: prior rounds and thread titles", () => {
     });
 
     await chat.renameThread(actor, first.threadId, "Manual Migration Title");
+    const ordinaryInputId = randomUUID();
     const third = await sendChatRun(actor, {
       threadId: first.threadId,
       prompt: "manual title should stay",
+      clientEventId: ordinaryInputId,
     });
     await expect(
       readThreadTitleFromEvents(actor, first.threadId),
@@ -316,27 +318,79 @@ describe("CHAT-02: prior rounds and thread titles", () => {
       authorization: `Bearer ${(await api.executionInput(third.runId)).sandboxToken}`,
     });
 
-    const recommendedFollowupQueueEventId = randomUUID();
     const recommendedFollowupRequest = {
       threadId: first.threadId,
       prompt: "use the recommended follow-up",
       revokesEventId: recommender.id,
-      clientEventId: recommendedFollowupQueueEventId,
+      clientEventId: randomUUID(),
     };
-    const normalFollowup = await chat.requestSendEvent(
+    const unrelatedId = await chat.requestSendEvent(
       actor,
-      recommendedFollowupRequest,
-      [201],
+      { ...recommendedFollowupRequest, clientEventId: ordinaryInputId },
+      [409],
     );
+    expect(unrelatedId.body).toMatchObject({
+      error: { message: "clientEventId is already in use" },
+    });
+    const competingFollowupRequest = {
+      ...recommendedFollowupRequest,
+      clientEventId: randomUUID(),
+    };
+    const attempts = await Promise.all(
+      [
+        recommendedFollowupRequest,
+        competingFollowupRequest,
+        recommendedFollowupRequest,
+        competingFollowupRequest,
+      ].map(async (request) => {
+        return {
+          request,
+          response: await chat.requestSendEvent(actor, request, [201, 409]),
+        };
+      }),
+    );
+    expect(
+      attempts
+        .map(({ response }) => {
+          return response.status;
+        })
+        .sort(),
+    ).toStrictEqual([201, 201, 409, 409]);
+    const acceptedAttempt = attempts.find(({ response }) => {
+      return response.status === 201;
+    });
+    if (!acceptedAttempt) {
+      throw new Error("Expected a recommended follow-up send to succeed");
+    }
+    const { response: normalFollowup, request: acceptedRequest } =
+      acceptedAttempt;
+    for (const { request, response } of attempts) {
+      if (request.clientEventId === acceptedRequest.clientEventId) {
+        expect(response.status).toBe(201);
+        expect(response.body).toStrictEqual(normalFollowup.body);
+      } else {
+        expect(response.status).toBe(409);
+      }
+    }
+    const recommendedFollowupQueueEventId = acceptedRequest.clientEventId;
     if (normalFollowup.status !== 201) {
       throw new Error("Expected recommended follow-up send to succeed");
     }
     const retriedFollowup = await chat.requestSendEvent(
       actor,
-      recommendedFollowupRequest,
+      acceptedRequest,
       [201],
     );
     expect(retriedFollowup.body).toStrictEqual(normalFollowup.body);
+    const rejectedAttempt = attempts.find(({ response }) => {
+      return response.status === 409;
+    });
+    if (!rejectedAttempt) {
+      throw new Error(
+        "Expected a competing recommended follow-up to be rejected",
+      );
+    }
+    await chat.requestSendEvent(actor, rejectedAttempt.request, [409]);
     await flushWaitUntilForTest();
     const afterFollowup = await waitForThreadMessages(
       actor,
@@ -358,6 +412,11 @@ describe("CHAT-02: prior rounds and thread titles", () => {
     if (normalFollowupRunId === undefined) {
       throw new Error("Expected the recommended follow-up to launch a run");
     }
+    expect(
+      afterFollowup.events.filter((event) => {
+        return event.revokesEventId === recommender.id;
+      }),
+    ).toHaveLength(1);
     expect(afterFollowup.events).toContainEqual(
       expect.objectContaining({
         id: recommendedFollowupQueueEventId,

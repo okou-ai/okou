@@ -97,10 +97,10 @@ class FixedRestoreReportTests(unittest.TestCase):
             "original_history_sha256":hashlib.sha256(self.original).hexdigest(),"original_history_bytes":len(self.original),
             "exit_code":0,"final_identity_verified":True,"full_original_prefix_verified":True,
             "preparation_observed_by_native_process":True,"original_full_lease_witness":True})
-        sample=copy.deepcopy(self.samples[0]);self.samples=[]
+        sample = self.samples[0]
+        self.samples = []
         for n in (6.5,12,19,22,24.5):
-            reading=copy.deepcopy(sample);reading["monotonic_ns"]=at(n);reading["processes"][0]["observed_monotonic_ns"]=at(n)
-            self.samples.append(reading)
+            self.samples.append(report_test.residency_sample_at(sample, at(n)))
         self.select("FixedRestore-capture-drop-fresh")
 
     def select(self,case):

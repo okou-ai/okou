@@ -93,12 +93,18 @@ const linkDraftInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!bodyResult.ok) {
     return bodyResult.response;
   }
+  const input = bodyResult.data;
+  if (input.provider !== "outlook" && /\s/u.test(input.gmailDraftId)) {
+    return badRequestMessage(
+      "Invalid Gmail draft ID. Pass only the top-level id returned by Gmail when creating the draft.",
+    );
+  }
   const result = await set(
     linkMailDraft$,
     {
       orgId: auth.orgId,
       userId: auth.userId,
-      ...bodyResult.data,
+      ...input,
       ...(auth.tokenType === "agent" ? { runId: auth.runId } : {}),
     },
     signal,

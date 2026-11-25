@@ -102,6 +102,10 @@ private val searchIconGap = 8.dp
 @Composable internal fun workspaceSearchTextStyle() = MaterialTheme.typography.bodyLarge
 
 @Composable
+internal fun Modifier.workspaceSearchFocusOutline(shape: Shape): Modifier =
+    updateFocusOutline(shape, MaterialTheme.colorScheme.onBackground, keyboardOnly = true)
+
+@Composable
 internal fun workspaceSearchControlHeight(): Dp {
     val lineHeight = workspaceSearchTextStyle().lineHeight
     return with(LocalDensity.current) { maxOf(48.dp, lineHeight.toDp() + 16.dp) }
@@ -156,7 +160,7 @@ internal fun WorkspaceSearchField(
     val colors = MaterialTheme.colorScheme
     val outline =
         when (focused) {
-            true -> Modifier.border(2.dp, LocalActivityStatusColor.current, shape)
+            true -> Modifier.border(2.dp, colors.onBackground, shape)
             false -> Modifier.border(1.dp, colors.outline, shape)
             null -> Modifier
         }
@@ -221,7 +225,9 @@ internal fun WorkspaceListToolbar(
                 WorkspaceSearchField(
                     Modifier.fillMaxWidth()
                         .focusRequester(searchFocus)
+                        .focusProperties { canFocus = openSearch != null }
                         .onFocusChanged { onSearchFocusChanged(it.isFocused) }
+                        .workspaceSearchFocusOutline(CircleShape)
                         .testTag("workspace_search_entry")
                         .semantics { if (openSearch != null) contentDescription = label },
                     onClick = openSearch,
@@ -291,7 +297,7 @@ internal fun WorkspaceToolEntries(
             )
         }
     }
-    HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 }
 
 @Composable
@@ -306,7 +312,7 @@ private fun WorkspaceToolEntry(
     val color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (onClick == null) 0.4f else 1f)
     val interaction =
         if (onClick != null) {
-            Modifier.updateFocusOutline(ChatListRowShape, LocalActivityStatusColor.current)
+            Modifier.updateFocusOutline(ChatListRowShape, MaterialTheme.colorScheme.onSurface)
                 .clickable(role = Role.Button, onClick = onClick)
                 .clearAndSetSemantics { contentDescription = title }
         } else {
@@ -371,15 +377,17 @@ internal fun WorkspaceToolbarActions(
     showFilter: Boolean,
     list: ChatListUiState,
     selectFilter: ((ChatListFilter) -> Unit)?,
-    markAllRead: () -> Unit,
+    markAllRead: (() -> Unit)?,
     update: UpdateToolbarAction?,
     settingsFocus: FocusRequester,
     openSettings: ((restoreFocus: Boolean) -> Unit)?,
+    openProjectCreation: ((restoreFocus: Boolean) -> Unit)?,
 ) {
     val hasUpdate = update != null
     var menu by remember(showFilter, hasUpdate) { mutableStateOf<WorkspaceMenuPage?>(null) }
     val filterFocus = remember { FocusRequester() }
-    var restoreMenuFocus by remember(showFilter, hasUpdate) { mutableStateOf(false) }
+    var restoreMenuFocus by
+        remember(showFilter, hasUpdate) { mutableStateOf<FocusRequester?>(null) }
     var anchorFocused by remember { mutableStateOf(false) }
     var restoreSettingsAnchor by remember { mutableStateOf(false) }
     val settingsAnchor =
@@ -395,13 +403,14 @@ internal fun WorkspaceToolbarActions(
     val filterTint = if (filterApplied) colors.onSecondaryContainer else colors.onSurface
 
     fun closeMenu() {
-        restoreMenuFocus = true
+        restoreMenuFocus =
+            if (hasUpdate || menu == WorkspaceMenuPage.Overflow) settingsFocus else filterFocus
         menu = null
     }
     LaunchedEffect(menu, showFilter, hasUpdate) {
-        if (menu == null && restoreMenuFocus) {
-            restoreMenuFocus = false
-            (if (hasUpdate) settingsFocus else filterFocus).requestFocus()
+        if (menu == null) {
+            restoreMenuFocus?.requestFocus()
+            restoreMenuFocus = null
         }
     }
 
@@ -410,7 +419,7 @@ internal fun WorkspaceToolbarActions(
             menu?.let { page ->
                 val items = buildList {
                     if (page == WorkspaceMenuPage.Overflow) {
-                        if (showFilter) {
+                        if (hasUpdate && showFilter) {
                             add(
                                 WorkspaceMenuItem(
                                     stringResource(R.string.chat_filter),
@@ -418,6 +427,18 @@ internal fun WorkspaceToolbarActions(
                                     enabled = selectFilter != null,
                                 ) {
                                     menu = WorkspaceMenuPage.Filter
+                                },
+                            )
+                        }
+                        if (showFilter) {
+                            add(
+                                WorkspaceMenuItem(
+                                    stringResource(R.string.chat_project_create),
+                                    R.drawable.ic_create_new_folder,
+                                    enabled = openProjectCreation != null,
+                                ) {
+                                    menu = null
+                                    openProjectCreation?.invoke(restoreSettingsAnchor)
                                 },
                             )
                         }
@@ -436,10 +457,12 @@ internal fun WorkspaceToolbarActions(
                             WorkspaceMenuItem(
                                 stringResource(R.string.chat_mark_all_read),
                                 R.drawable.ic_done_all,
-                                enabled = remember(list) { list.markAllReadTargets().isNotEmpty() },
+                                enabled =
+                                    markAllRead != null &&
+                                        remember(list) { list.markAllReadTargets().isNotEmpty() },
                             ) {
                                 closeMenu()
-                                markAllRead()
+                                markAllRead?.invoke()
                             },
                         )
                         for (choice in ChatListFilter.entries) {
@@ -486,25 +509,20 @@ internal fun WorkspaceToolbarActions(
                         stringResource(R.string.chat_filter),
                     )
                 }
-                menuContent()
+                if (menu == WorkspaceMenuPage.Filter) menuContent()
             }
-        }
-        IconButton(
-            modifier = settingsAnchor,
-            onClick = { openSettings?.invoke(anchorFocused) },
-            enabled = openSettings != null,
-            colors = IconButtonDefaults.iconButtonColors(contentColor = colors.onSurface),
-        ) {
-            Icon(painterResource(R.drawable.ic_settings), stringResource(R.string.settings))
         }
     } else {
         UpdateToolbarButton(update)
+    }
+    if (showFilter || hasUpdate) {
         Box {
             IconButton(
                 modifier =
-                    settingsAnchor.then(filterTreatment).semantics {
-                        if (showFilter) stateDescription = currentFilter
+                    settingsAnchor.then(if (hasUpdate) filterTreatment else Modifier).semantics {
+                        if (hasUpdate && showFilter) stateDescription = currentFilter
                     },
+                enabled = hasUpdate || openSettings != null || openProjectCreation != null,
                 onClick = {
                     restoreSettingsAnchor = anchorFocused
                     menu = WorkspaceMenuPage.Overflow
@@ -513,10 +531,19 @@ internal fun WorkspaceToolbarActions(
                 Icon(
                     painterResource(R.drawable.ic_more_horiz),
                     stringResource(R.string.chat_more_actions),
-                    tint = filterTint,
+                    tint = if (hasUpdate) filterTint else colors.onSurface,
                 )
             }
-            menuContent()
+            if (hasUpdate || menu == WorkspaceMenuPage.Overflow) menuContent()
+        }
+    } else {
+        IconButton(
+            modifier = settingsAnchor,
+            onClick = { openSettings?.invoke(anchorFocused) },
+            enabled = openSettings != null,
+            colors = IconButtonDefaults.iconButtonColors(contentColor = colors.onSurface),
+        ) {
+            Icon(painterResource(R.drawable.ic_settings), stringResource(R.string.settings))
         }
     }
 }
@@ -566,7 +593,7 @@ internal fun WorkspaceMenu(
             shape = RoundedCornerShape(16.dp),
             color = colors.surface,
             shadowElevation = 6.dp,
-            border = BorderStroke(1.dp, colors.outline),
+            border = BorderStroke(1.dp, colors.outlineVariant),
         ) {
             key(filter) { WorkspaceMenuItems(items, filter, close, back, separatorBefore) }
         }
@@ -694,7 +721,7 @@ private fun WorkspaceMenuRow(item: WorkspaceMenuItem, modifier: Modifier, focuse
             .fillMaxWidth()
             .heightIn(min = 48.dp)
             .clip(shape)
-            .then(if (focused) Modifier.border(2.dp, colors.onSurfaceVariant, shape) else Modifier)
+            .then(if (focused) Modifier.border(2.dp, colors.onSurface, shape) else Modifier)
             .then(gesture)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),

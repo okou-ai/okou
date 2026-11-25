@@ -647,7 +647,7 @@ private final class ComputerAuthorizationFixture: Sendable {
       updatedAt: .now, sortAt: .now, pinnedAt: nil, pinOrder: nil)
     return ComputerAuthorizationStore(
       action: action, thread: thread, commands: commands, sync: sync,
-      didFail: { _ in }, didContinue: {})
+      graph: makeTestWorkspaceGraph(), didFail: { _ in }, didContinue: {})
   }
 
   @MainActor func action(
@@ -674,7 +674,8 @@ private final class ComputerAuthorizationFixture: Sendable {
       id: Self.threadID, title: "Access", createdAt: .now,
       updatedAt: .now, sortAt: .now, pinnedAt: nil, pinOrder: nil)
     return ConversationStore(
-      thread: thread, sync: sync, commands: commands, webURL: http.baseURL,
+      thread: thread, sync: sync, commands: commands, graph: makeTestWorkspaceGraph(),
+      webURL: http.baseURL,
       messageMarkdown: MessageMarkdownCache(baseURL: http.baseURL), isVisible: { true },
       didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {})
   }

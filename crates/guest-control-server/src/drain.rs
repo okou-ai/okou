@@ -4,6 +4,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::{self, JoinHandle};
 
+mod fixed_group;
+
+pub(crate) use fixed_group::{FixedGroupOutput, FixedGroupOutputError};
+
 /// Default buffer size for reading process output from stdout/stderr pipes.
 const DEFAULT_DRAIN_READ_BYTES: usize = 64 * 1024;
 /// Initial allocation for captured output, independent of the drain read size.

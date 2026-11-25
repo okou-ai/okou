@@ -111,4 +111,20 @@
     <string name="chat_connector_saving">正在儲存連接器選擇…</string>
     <string name="chat_connector_save_failed">暫時無法儲存連接器選擇。</string>
     <string name="chat_connector_first_send_failed">無法套用連接器選擇。請在「聊天選項」中檢查後重試這則訊息。</string>
+    <string name="connector_device_denied">服務提供者已拒絕授權。</string>
+    <string name="connector_device_expired">裝置碼已過期，請重新發起授權。</string>
+    <string name="connector_device_failed">暫時無法完成裝置授權。</string>
+    <string name="connector_access_scope">適用於你的所有聊天。</string>
+    <string name="connector_access_label">%1$s 的存取權限, %2$s</string>
+    <string name="connector_access_allow">允許</string>
+    <string name="connector_access_deny">拒絕</string>
+    <string name="connector_access_always">始終</string>
+    <string name="connector_access_expired">已過期</string>
+    <string name="connector_access_under_hour">&lt;1小時</string>
+    <string name="connector_access_hours">%d小時</string>
+    <string name="connector_access_days">%d天</string>
+    <string name="connector_access_allow_always">始終允許</string>
+    <string name="connector_access_allow_hour">允許 1 小時</string>
+    <string name="connector_access_allow_day">允許 24 小時</string>
+    <string name="connector_access_allow_week">允許 7 天</string>
 </resources>

@@ -15,7 +15,7 @@ import cleanup_report as cleanup
 import report
 import report_test
 import status_failure_report_test as failure_test
-from progress_report_fixture import foreground_heartbeat, joined_observer
+from progress_report_fixture import foreground_heartbeat, joined_observer, memory_read_receipt
 
 
 class ReplacementReportTests(unittest.TestCase):
@@ -34,10 +34,7 @@ class ReplacementReportTests(unittest.TestCase):
             for event, offset in zip(terminal,(0,1,9,10,26,65)):
                 event.update(case=case,sandbox_id=old,backing_generation=backing,
                              monotonic_ns=at(offset),unix_ns=at(offset)+1000)
-                reading = copy.deepcopy(sample)
-                reading["monotonic_ns"] = at(offset)+1
-                reading["processes"][0]["observed_monotonic_ns"] = at(offset)+1
-                self.samples.append(reading)
+                self.samples.append(report_test.residency_sample_at(sample, at(offset) + 1))
             self.events.extend(terminal)
             zero = dict.fromkeys(cleanup.COUNTS,0) | {"closed":False}
             active = zero | {"registered_operations":3,"queued":2,"started":1,"tracked_tasks":1,
@@ -53,9 +50,10 @@ class ReplacementReportTests(unittest.TestCase):
                            idle_sandboxes=[{"reuse_key":reuse,"sandbox_id":new}])
             empty = {k:v for k,v in current.items() if k != "idle_sandboxes"}
             empty["updated_at"] = "2026-10-19T01:00:03Z"
-            reads = [{"started_ns":at(offset),"finished_ns":at(offset)+1000,
-                "read_start_offset_ns":offset*1_000_000,"available_bytes":32*1024**3,
-                "age_ns":2,"read_duration_ns":1} for offset in (7,8,33)]
+            reads = [
+                memory_read_receipt(at(offset), at(offset) + 1000, offset * 1_000_000)
+                for offset in (7, 8, 33)
+            ]
             values = (
                 {"policy":self.policy,"status_path":str(self.root/f"case-{index}"/"status.json"),
                  "published_status":initial,"selected_revision":1,

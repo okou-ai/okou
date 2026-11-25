@@ -72,6 +72,29 @@ class SavedUiStateTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
     @Test
+    fun workflowRouteRestoresItsAutomationTabAndResourcesReturnRow() {
+        val restoration = StateRestorationTester(compose)
+        val expected =
+            WorkflowsRoute(
+                mode = WorkflowsMode.Directory,
+                id = "release-workflow",
+                tab = WorkflowTab.Automations,
+                resourceReturnRow = "workflow:release-workflow",
+            )
+        var observed = WorkflowsRoute()
+        restoration.setContent {
+            var route by rememberWorkflowsRoute()
+            SideEffect { observed = route }
+            OkouTheme(false) {
+                Button(onClick = { route = expected }) { Text("Open automation resources") }
+            }
+        }
+        compose.onNodeWithText("Open automation resources").performClick()
+        restoration.emulateSavedInstanceStateRestore()
+        compose.runOnIdle { assertEquals(expected, observed) }
+    }
+
+    @Test
     fun searchWaitsForTheImeToCommitTheNewKeyword() {
         val search = ChatSearchState(TextFieldValue("发"))
         val composing = TextFieldValue("发bu", composition = TextRange(1, 3))
@@ -205,9 +228,7 @@ class SavedUiStateTest {
             }
         }
         compose.onNodeWithText("Release notes").assertIsDisplayed()
-        compose
-            .onNodeWithText("Some results couldn’t load. Showing saved chats only.")
-            .assertIsDisplayed()
+        compose.onNodeWithText("Some results couldn’t load").assertIsDisplayed()
         val retry = compose.onNodeWithText(compose.activity.getString(R.string.retry))
         retry.assertDoesNotExist()
         compose.onNodeWithTag("search_type_Messages").performClick()

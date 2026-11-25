@@ -1441,6 +1441,8 @@ async def _try_firewall_request_stream_from_headers(
                     flow, classification, managed_openrouter.RequestRejectedError(reason)
                 )
                 flow.request.stream = upload
+            if allow.name == managed_openrouter.OWNER:
+                managed_openrouter.enable_routing_log(flow)
     except asyncio.CancelledError, Exception:
         _release_terminal_flow_state(flow, release_tracking=True)
         restore_request_state()
@@ -1832,6 +1834,8 @@ async def request(flow: http.HTTPFlow) -> None:
                     expected_request=expected_request,
                     request_end_stream=True,
                 )
+                if allow.name == managed_openrouter.OWNER:
+                    managed_openrouter.enable_routing_log(flow)
             return
 
         if classification.kind == "allow":

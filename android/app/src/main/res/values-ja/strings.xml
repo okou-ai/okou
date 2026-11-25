@@ -4,13 +4,7 @@
     <string name="auth_check_failed">アクセス権を確認できませんでした。</string>
     <string name="auth_selection_failed">このワークスペースを開けませんでした。</string>
     <string name="auth_sign_out_failed">ログアウトできませんでした。</string>
-    <string name="composer_sync_loading">保存済みの下書きを読み込み中…</string>
-    <string name="composer_sync_saving">下書きを同期中…</string>
-    <string name="composer_sync_failed">下書きを同期できませんでした。入力内容はこの端末に保存されています。</string>
-    <string name="composer_sync_unsupported">この下書きには Web で編集できる内容が含まれています。入力内容はこの端末に保存され、自動同期は一時停止しています。</string>
-    <string name="composer_sync_retry">下書きの同期を再試行</string>
     <string name="composer_restore_draft">保持した下書きを復元</string>
-    <string name="controls_storage_failed">保留中の操作リクエストを保存できません。</string>
     <string name="controls_stop">実行中の作業を停止</string>
     <string name="controls_stop_failed">タスクを停止できませんでした。</string>
     <string name="settings">設定</string>
@@ -37,9 +31,9 @@
     <string name="auth_signing_out">ログアウトしています…</string>
     <string name="auth_workspace">現在のワークスペース</string>
     <string name="auth_switch_workspace">ワークスペースを切り替え</string>
+    <string name="auth_switch_workspace_pending">ワークスペースを切り替え中</string>
+    <string name="auth_switch_workspace_failed">このワークスペースに切り替えられませんでした。</string>
     <string name="auth_browser_unavailable">ワークスペースの設定を開くにはブラウザをインストールしてください。</string>
-    <string name="preference_save_failed">設定を保存できませんでした。選択した設定は引き続き有効です。</string>
-    <string name="preference_refresh_failed">設定を更新できませんでした。再試行してください。</string>
     <string name="preference_color_theme">カラーテーマ</string>
     <string name="preference_language">言語</string>
     <string name="palette_default">デフォルト</string>
@@ -89,7 +83,6 @@
     <string name="composer_retry">同じメッセージを再送</string>
     <string name="composer_not_observed">まだメッセージを確認できません。送信結果は未確定です。</string>
     <string name="composer_request_failed">リクエストに失敗しました。下書きと未確認のメッセージは保持されています。</string>
-    <string name="composer_saving">この端末に下書きを保存中…</string>
     <string name="updates_title">アプリの更新</string>
     <string name="updates_installed">現在のバージョン %1$s</string>
     <string name="updates_current">最新バージョンです</string>
@@ -103,6 +96,7 @@
     <string name="updates_download_failed">ダウンロードに失敗</string>
     <string name="updates_check_compatible">バージョンを確認</string>
     <string name="updates_required_incompatible">この端末では Okou を更新できません</string>
+    <string name="updates_required_incompatible_short">更新できません</string>
     <string name="updates_required_short">アップデートが必要</string>
     <string name="updates_ready">インストールを続ける</string>
     <string name="updates_later">後で</string>
@@ -127,9 +121,7 @@
     <string name="updates_error_interrupted">ダウンロードが中断されました。</string>
     <string name="updates_error_install">Android が更新をインストールできませんでした。</string>
     <string name="updates_unavailable">適切な更新がまだありません。</string>
-    <string name="updates_android_unsupported">この更新には、より新しい Android が必要です。</string>
-    <string name="realtime_connecting">リアルタイム更新に接続中…</string>
-    <string name="realtime_unavailable">リアルタイム更新を利用できません。手動で更新できます。</string>
+    <string name="updates_android_unsupported">Android を新しいバージョンに更新してから、もう一度確認してください。</string>
     <string name="settings_account">アカウント</string>
     <string name="settings_cancel">キャンセル</string>
     <string name="settings_saving">保存中…</string>
@@ -137,11 +129,12 @@
     <string name="settings_sign_out_body">この端末で Okou を使用するには、再度ログインしてください。下書きはこのアカウントに保持されます。</string>
     <string name="updates_waiting_to_check">確認待ち</string>
     <string name="updates_waiting_to_install">インストール待ち</string>
+    <string name="updates_retry_download">ダウンロードを再試行</string>
+    <string name="updates_retry_check">再確認</string>
     <string name="updates_waiting_to_download">ダウンロード待ち</string>
     <string name="instructions_placeholder">Okou に覚えておいてほしいことはありますか？</string>
     <string name="instructions_save_when_online">接続すると変更を保存できます。</string>
     <string name="settings_timezone">タイムゾーン</string>
-    <string name="settings_timezone_hint">新しいスケジュールタスクのデフォルトのタイムゾーン。</string>
     <string name="settings_timezone_utc">協定世界時</string>
     <string name="settings_timezone_format">%1$s（UTC%2$s）</string>
 </resources>

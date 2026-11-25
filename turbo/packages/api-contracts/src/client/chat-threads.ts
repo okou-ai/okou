@@ -184,6 +184,26 @@ export const chatThreadDraftContract: ClientDescriptor<
       401: true,
     },
   },
+  readComposer: {
+    method: "GET",
+    path: "/api/chat-threads/:id/composer-draft",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      404: true,
+    },
+  },
+  saveComposer: {
+    method: "PATCH",
+    path: "/api/chat-threads/:id/composer-draft",
+    statuses: {
+      204: true,
+      400: true,
+      401: true,
+      404: true,
+    },
+  },
 };
 
 export const chatThreadEventsContract: ClientDescriptor<

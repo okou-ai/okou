@@ -22,6 +22,7 @@ import {
   runnerDispatchPath,
   type RunnerDispatchEncoding,
   type RunnerDispatchTiming,
+  type RunnerDispatchTransport,
   type TakenRunnerDispatch,
 } from "./runner-dispatch-transport";
 
@@ -29,7 +30,7 @@ type DispatchObservation =
   "accepted" | "rejected" | "busy" | "unknown" | "not-delivered";
 
 const dispatchTimingHeader = "x-okou-runner-dispatch-timing";
-const gzipMinBodyBytes = 256 * 1024;
+const gzipMinBodyBytes = 160 * 1024;
 const gzipAsync = promisify(gzip);
 
 export function runnerDispatchEncoding(
@@ -187,7 +188,7 @@ export function reserveRunnerDispatch(
       };
       return {
         response: dispatchTransport().run(timing, () => {
-          return fetch(origin + path, options);
+          return transport.request(origin + path, options);
         }),
         timing,
       };
@@ -195,6 +196,36 @@ export function reserveRunnerDispatch(
     signal,
     encoding,
   );
+}
+
+export interface RunnerDispatchPreparationTiming {
+  readonly candidateStartedAt: number;
+  readonly candidateReadyAt: number;
+  readonly contextStartedAt: number;
+  readonly contextReadyAt: number;
+  readonly ownerWriteMs: number;
+  readonly early: boolean;
+  readonly candidateRefreshed: boolean;
+}
+
+function dispatchPreparationDimensions(
+  timing: RunnerDispatchPreparationTiming | undefined,
+  startedAt: number,
+) {
+  if (!timing) {
+    return {};
+  }
+  return {
+    first_candidate_lead_ms: startedAt - timing.candidateReadyAt,
+    first_candidate_read_ms:
+      timing.candidateReadyAt - timing.candidateStartedAt,
+    execution_context_lead_ms: startedAt - timing.contextReadyAt,
+    execution_context_prepare_ms:
+      timing.contextReadyAt - timing.contextStartedAt,
+    first_owner_write_ms: timing.ownerWriteMs,
+    early_runner_preparation: timing.early,
+    early_runner_candidate_refreshed: timing.candidateRefreshed,
+  };
 }
 
 interface RunnerDispatchPost {
@@ -206,7 +237,21 @@ interface RunnerDispatchPost {
   readonly serviceToken: string;
   readonly timeoutMs: number;
   readonly firstRankedTarget: boolean;
-  readonly firstCandidateReadyAt: number | undefined;
+  readonly preparationTiming: RunnerDispatchPreparationTiming | undefined;
+}
+
+function dispatchPoolDimensions(
+  transport: RunnerDispatchTransport | undefined,
+  origin: string,
+) {
+  const stats = transport?.poolStats?.(origin);
+  return (
+    stats && {
+      api_dispatch_pool: "retained_http1",
+      api_dispatch_pool_connected: stats.connected,
+      api_dispatch_pool_pending: stats.pending,
+    }
+  );
 }
 
 /** A failed response is never made into evidence against an earlier attempt. */
@@ -230,21 +275,17 @@ export async function postRunnerDispatch(
     startedAt,
     sendCount: 0,
   };
+  const requestTransport = currentRunnerDispatchTransport();
   return await (async () => {
     const deadline = AbortSignal.any([
       signal,
       AbortSignal.timeout(Math.max(1, Math.ceil(timeoutMs))),
     ]);
     const url = origin + path;
-    reserved = currentRunnerDispatchTransport()?.take(
-      url,
-      body,
-      startedAt,
-      deadline,
-      encoding,
-    );
+    reserved = requestTransport?.take(url, body, startedAt, deadline, encoding);
     const dispatch = () => {
-      return fetch(url, {
+      const request = requestTransport?.request ?? fetch;
+      return request(url, {
         ...dispatchRequestOptions(serviceToken, encoding),
         body,
         signal: deadline,
@@ -302,10 +343,7 @@ export async function postRunnerDispatch(
           body_encoding: encoding,
           api_body_gzip_encode_ms: args.gzipEncodeMs,
           first_ranked_target: args.firstRankedTarget,
-          first_candidate_lead_ms:
-            args.firstCandidateReadyAt === undefined
-              ? undefined
-              : startedAt - args.firstCandidateReadyAt,
+          ...dispatchPreparationDimensions(args.preparationTiming, startedAt),
           api_socket_use:
             timing.sendCount === 1
               ? (timing.connection ?? "unknown")
@@ -314,6 +352,7 @@ export async function postRunnerDispatch(
             timing.sendCount === 1 ? timing.sendHeadersMs : undefined,
           api_preconnect_used:
             reserved === undefined ? undefined : timing.sendCount === 1,
+          ...dispatchPoolDimensions(requestTransport, origin),
           response_headers_ms: responseHeadersMs,
           http_status: response?.status,
           dispatch_outcome:

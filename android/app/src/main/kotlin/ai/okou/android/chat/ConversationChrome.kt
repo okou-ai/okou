@@ -18,6 +18,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -37,6 +38,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+// Keep each control's existing hover and keyboard focus treatment.
+internal val ChatPressRipple = ripple(enableHoverIndication = false, enableFocusIndication = false)
+
 @Composable
 internal fun ConversationToolbarActions(
     state: ChatListUiState,
@@ -46,17 +50,16 @@ internal fun ConversationToolbarActions(
     onRename: (String, Boolean) -> Unit,
     renameFocus: WorkspaceRenameTarget.Chat?,
     onRenameFocusFinished: (WorkspaceRenameTarget) -> Unit,
-    openSettings: ((restoreFocus: Boolean) -> Unit)?,
     openResources: ((restoreFocus: Boolean) -> Unit)? = null,
-    settingsFocus: FocusRequester? = null,
+    actionsFocus: FocusRequester? = null,
     onFind: ((restoreFocus: Boolean) -> Unit)? = null,
 ) {
     val actions = thread?.let { state.rowActions(it) }.orEmpty()
-    if (actions.isEmpty() && openSettings == null && openResources == null && onFind == null) return
+    if (actions.isEmpty() && openResources == null && onFind == null) return
     key(thread?.id) {
         var menu by remember { mutableStateOf(false) }
         var delete by remember { mutableStateOf(false) }
-        val focus = settingsFocus ?: remember { FocusRequester() }
+        val focus = actionsFocus ?: remember { FocusRequester() }
         if (renameFocus != null) RestoreRenameOriginFocus(renameFocus, focus, onRenameFocusFinished)
         var keyboardFocused by remember { mutableStateOf(false) }
         var restoreFocus by remember { mutableStateOf(false) }
@@ -103,17 +106,6 @@ internal fun ConversationToolbarActions(
                 WorkspaceMenu(
                     items =
                         readingActions +
-                            listOfNotNull(
-                                openSettings?.let {
-                                    WorkspaceMenuItem(
-                                        stringResource(R.string.settings),
-                                        R.drawable.ic_settings,
-                                    ) {
-                                        menu = false
-                                        it(restoreFocus)
-                                    }
-                                },
-                            ) +
                             actions.map { action ->
                                 WorkspaceMenuItem(
                                     if (action == ChatRowAction.MoveProject)

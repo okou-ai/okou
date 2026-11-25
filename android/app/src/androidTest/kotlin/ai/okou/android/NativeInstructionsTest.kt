@@ -130,17 +130,7 @@ class NativeInstructionsTest {
                 )
             }
             device.awaitChatList(app)
-            checkNotNull(
-                    device.wait(
-                        Until.findObject(
-                            By.pkg(app.packageName)
-                                .desc(app.getString(R.string.settings))
-                                .enabled(true),
-                        ),
-                        10_000,
-                    ),
-                )
-                .click()
+            device.openChatListSettings(app)
             reveal(app.getString(R.string.appearance))
             click(R.string.instructions_title)
             assertTrue(entered.await(10, TimeUnit.SECONDS))
@@ -169,6 +159,10 @@ class NativeInstructionsTest {
             assertTrue(editor(requireFocus = true).text.contains("Native **instructions** 👋"))
             device.waitForIdle()
             assertFalse("Recreation reopened the dismissed keyboard", imeVisible())
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            reveal(app.getString(R.string.instructions_unsaved))
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            assertTrue(editor(requireFocus = true).text.contains("Native **instructions** 👋"))
 
             editor().click()
             awaitIme(true)
@@ -202,6 +196,7 @@ class NativeInstructionsTest {
             assertEquals("Keep this local draft", editor().text)
             assertEquals(1, fixture.requests.count { it.method == "PUT" })
             click(R.string.instructions_reload)
+            click(R.string.instructions_discard)
             assertEquals(webText, editor(expectedText = webText).text)
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             reveal(app.getString(R.string.appearance))

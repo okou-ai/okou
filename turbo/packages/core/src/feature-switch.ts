@@ -11,7 +11,12 @@
  */
 
 import { FeatureSwitchKey } from "./feature-switch-key";
-import { STAFF_ORG_ID_HASHES, fnv1a } from "./identity-hash";
+import {
+  STAFF_ORG_ID_FINGERPRINTS,
+  STAFF_ORG_ID_HASHES,
+  fnv1a,
+} from "./identity-hash";
+import { isStaffOrg } from "./staff-org";
 
 export interface FeatureSwitch {
   readonly maintainer: string;
@@ -23,6 +28,8 @@ export interface FeatureSwitch {
   readonly enabledOrgIdHashes?: readonly string[];
   /** Keep opt-in overrides within the configured rollout audience. */
   readonly restrictOverridesToAudience?: boolean;
+  /** Allow staff to opt in without enabling the switch by default for staff. */
+  readonly staffOptInOnly?: boolean;
 }
 
 export interface FeatureSwitchMetadata {
@@ -46,12 +53,21 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.IosConnectorManagement]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "iOS connector management",
+    description:
+      "Manage connector accounts and permissions in native iOS Settings.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.ComposerVoiceMessages]: {
     maintainer: "ethan@okou.ai",
     displayName: "Voice recordings in the composer",
     description:
-      "Attach recordings to chat messages instead of dictating text.",
+      "Use recordings as chat attachments instead of dictation for everyone in this workspace.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ChatShareRefresh]: {
     maintainer: "ming@okou.ai",
@@ -68,7 +84,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.ArtifactThreePointTiming]: {
     maintainer: "bingjie@okou.ai",
-    displayName: "Artifact three-point phase timing",
     description:
       "Record versioned research, generation, and authenticated completion observations in Axiom.",
     enabled: false,
@@ -78,7 +93,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.PhoneUse]: {
     maintainer: "lancy@okou.ai",
-    displayName: "Phone Use",
     description: "Internal cloud-controlled iOS device automation.",
     enabled: false,
   },
@@ -95,6 +109,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Member-wide connector account access",
     description: "Apply connector account eligibility across a member's chats.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.EmailIntegration]: {
     maintainer: "yuma@okou.ai",
@@ -112,20 +127,18 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "bingjie@okou.ai",
     displayName: "Presentation output format",
     description:
-      "Choose HTML or PPTX for presentations and remember the preference on this device.",
+      "Choose HTML or PPTX for presentations and remember your default in this workspace.",
     enabled: false,
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-    restrictOverridesToAudience: true,
   },
   [FeatureSwitchKey.MarkdownFirstOutput]: {
     maintainer: "bingjie@okou.ai",
     displayName: "Markdown-first document output",
     description:
-      "Prefer Markdown for unformatted text documents, use a clearer heading hierarchy in document previews, and offer DOCX and PDF exports.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+      "Use Markdown for text-focused documents and HTML for visual or interactive deliverables, with structured Markdown previews and DOCX and PDF exports.",
+    enabled: true,
   },
   [FeatureSwitchKey.MarkdownArtifactQuote]: {
     maintainer: "bingjie@okou.ai",
@@ -133,6 +146,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Copy or quote selected Markdown passages into the owning chat in desktop split view.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ProjectArchive]: {
     maintainer: "ethan@okou.ai",
@@ -174,14 +188,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.WorkflowRecencySync]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Workflow recency sync",
-    description:
-      "Sync recently used workflows across devices in each workspace.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.ZipArtifactPreview]: {
     maintainer: "liangyou@okou.ai",
     displayName: "ZIP artifact preview",
@@ -193,14 +199,15 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "bingjie@okou.ai",
     displayName: "Artifact library list",
     description:
-      "Browse artifacts in a searchable list with type filters, creation and name sorting, and the existing sidebar previews.",
+      "Browse artifacts in a searchable list with type filters, creation-time sorting, and the existing sidebar previews.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.SlashActions]: {
     maintainer: "tongx@okou.ai",
     displayName: "Slash actions",
     description:
-      "Lead the composer's slash menu with chat actions, and open Workflows and Templates as second-level lists.",
+      "Lead the composer's slash menu with chat actions, and open Workflows and action settings as second-level lists.",
     enabled: false,
   },
   [FeatureSwitchKey.FollowupPlaceholder]: {
@@ -256,9 +263,17 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.HostedSiteEmailSharing]: {
     maintainer: "yuma@okou.ai",
-    displayName: "Website email sharing",
+    displayName: "Artifact email sharing",
     description:
-      "Share websites with existing accounts or invite verified email recipients.",
+      "Share websites and files with existing accounts or invite verified email recipients.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.HostedSiteCustomDomains]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Custom domains",
+    description:
+      "Connect verified custom domains from Customize URL with a subscription.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -268,14 +283,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Reserve artifact downloads, Customize URL, and hiding the website banner for paid plans; free-plan workspaces see an upgrade prompt instead.",
     enabled: true,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.BillingSurvey]: {
-    maintainer: "ming@okou.ai",
-    displayName: "Billing one-question surveys",
-    description:
-      "Ask one single-choice question where members are closest to paying: under the upgrade action when credits run out (with a one-time credit thank-you), and after leaving a Stripe Checkout without paying.",
-    enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
@@ -290,8 +297,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Suggestions",
     description:
       "Update the user profile daily and curate useful next-step suggestions.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.PresentationConvert]: {
     maintainer: "bingjie@okou.ai",
@@ -312,6 +318,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "yuma@okou.ai",
     description: "Enable the DocuSign e-signature connector",
     enabled: false,
+  },
+  [FeatureSwitchKey.AppStoreConnect]: {
+    maintainer: "lancy@okou.ai",
+    displayName: "App Store Connect",
+    description:
+      "Manage Apple app listings, TestFlight builds, reviews and releases.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.PayPalConnector]: {
     maintainer: "yuma@okou.ai",
@@ -367,10 +381,16 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.CodexExecution]: {
     maintainer: "liangyou@okou.ai",
-    displayName: "Codex execution (test only)",
     description:
       "Test-only override to use Codex instead of Pi for supported ChatGPT subscription runs. Auto always stays on Pi.",
     enabled: false,
+  },
+  [FeatureSwitchKey.GeminiAntigravity]: {
+    maintainer: "lancy@okou.ai",
+    description:
+      "Opt into Neon, Carbon, and Hydrogen with a personal Google AI subscription.",
+    enabled: false,
+    staffOptInOnly: true,
   },
   [FeatureSwitchKey.CodexSubscriptionUltrafast]: {
     maintainer: "ethan@okou.ai",
@@ -438,12 +458,25 @@ function evaluateSwitch(fs: FeatureSwitch, hashes: ResolvedHashes): boolean {
   return false;
 }
 
+/** Digests for evaluating a switch's staff organization audience in PostgreSQL. */
+export function getStaffOrgRolloutDigests(key: FeatureSwitchKey): string[] {
+  const orgHashes = FEATURE_SWITCHES[key].enabledOrgIdHashes;
+  return STAFF_ORG_ID_FINGERPRINTS.filter(({ hash }) => {
+    return orgHashes?.includes(hash);
+  }).map(({ sha256 }) => {
+    return sha256;
+  });
+}
+
 /** Whether this identity may opt into or manage a switch in Lab. */
 export function isFeatureSwitchAvailable(
   key: FeatureSwitchKey,
   ctx: FeatureSwitchContext,
 ): boolean {
   const feature = FEATURE_SWITCHES[key];
+  if (feature.staffOptInOnly) {
+    return isStaffOrg(ctx.orgId);
+  }
   return (
     !feature.restrictOverridesToAudience ||
     evaluateSwitch(feature, {

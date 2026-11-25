@@ -1,407 +1,256 @@
-import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { screen, within } from "@testing-library/react";
+import { expect, test, vi } from "vitest";
 import {
-  chatEventRowsResponse,
-  testContext,
-} from "../../../signals/__tests__/test-helpers.ts";
+  setupPage,
+  queryAllByRoleFast,
+  click,
+} from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { action, findAction } from "./workspace-billing-fixtures.ts";
 import {
-  mockChatEventRows,
-  normalizeMockChatEvents,
-  type MockChatEventInput,
-} from "./chat-event-test-helpers.ts";
-import { screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
-
-import { setupPage } from "./chat-lifecycle-test-helpers.ts";
-import {
-  parseChatClipboardPayload,
-  readClipboardItemText,
-  readSingleRichClipboardWrite,
-} from "./chat-clipboard-test-helpers.ts";
-import {
+  RUN_PATH,
+  createChatRunFixtures,
+  promptEvent,
   assistantEvent,
   completedEvent,
   creditUsage,
-  findButton,
-  findLink,
-  promptEvent,
-  queryButton,
-  RUN_PATH,
-  RUN_THREAD_ID,
   usageEvent,
-  createChatRunFixtures,
 } from "./chat-run-test-fixtures.ts";
-
+import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 const context = testContext();
-const { installRunChat } = createChatRunFixtures(context);
-
-const RUN_A = "a0000000-0000-4000-a000-000000000401";
-const RUN_B = "a0000000-0000-4000-a000-000000000402";
-
-test("Return to the conversation that started a chat message", async () => {
-  const user = userEvent.setup({ delay: null });
-  const sources = [
-    {
-      id: "source-slack",
-      kind: "slack" as const,
-      label: "Open original message in Slack",
-      href: "https://slack.com/archives/C123/p456",
-    },
-    {
-      id: "source-feishu",
-      kind: "feishu" as const,
-      label: "Open original chat in Feishu",
-      href: "https://open.feishu.cn/chat/ch_123",
-    },
-    {
-      id: "source-teams",
-      kind: "teams" as const,
-      label: "Open original message in Microsoft Teams",
-      href: "https://teams.microsoft.com/l/message/19:abc/123",
-    },
-    {
-      id: "source-github",
-      kind: "github" as const,
-      label: "Open original issue or pull request in GitHub",
-      href: "https://github.com/okou-ai/okou/issues/123",
-    },
-    {
-      id: "source-telegram",
-      kind: "telegram" as const,
-      label: "Open original message in Telegram",
-      href: "https://t.me/example/123",
-    },
-    {
-      id: "source-telegram-dm",
-      kind: "telegram" as const,
-      label: "Open chat in Telegram",
-      href: "https://t.me/okou_bot",
-    },
-    {
-      id: "source-teams-personal",
-      kind: "teams" as const,
-      label: "Open chat in Microsoft Teams",
-      href: "https://teams.microsoft.com/l/chat/0/0?tenantId=tenant-1&users=28%3Abot-1",
-    },
-    {
-      id: "source-agentphone-dm",
-      kind: "agentphone" as const,
-      label: "Open Messages",
-      href: "sms:+15551234567",
-    },
-    {
-      id: "source-whatsapp-dm",
-      kind: "agentphone" as const,
-      label: "Open chat in WhatsApp",
-      href: "https://wa.me/12025550199",
-    },
-  ];
-  const events: MockChatEventInput[] = sources.map((source, index) => {
-    return {
-      id: source.id,
-      eventType: "input.prompt",
-      role: "user",
-      content: null,
-      runId: RUN_A,
-      seqId: index + 1,
-      createdAt: `2026-08-01T10:00:0${String(index)}.000Z`,
-      userMessage: {
-        version: 1,
-        parts: [
-          { type: "text", text: `Request from ${source.kind}` },
-          { type: "source", kind: source.kind, href: source.href },
-        ],
-      },
-    };
+function visit() {
+  return setupPage({
+    context,
+    path: RUN_PATH,
+    host: "app.okou.ai",
+    sharedWorkerTestTransport: "message-port",
   });
-  events.push(
-    {
-      id: "source-agentphone",
-      eventType: "input.prompt",
-      role: "user",
-      content: null,
-      runId: RUN_A,
-      seqId: sources.length + 1,
-      createdAt: "2026-08-01T10:00:08.000Z",
-      userMessage: {
-        version: 1,
-        parts: [
-          { type: "text", text: "Request from agentphone" },
-          { type: "source", kind: "agentphone" },
-        ],
-      },
+}
+type Origin =
+  "slack" | "feishu" | "teams" | "github" | "telegram" | "agentphone" | "lark";
+interface Source {
+  kind: Origin;
+  href?: string;
+  name: string;
+  action?: string;
+  label?: string;
+}
+async function enterConversation(sources: Source[]) {
+  const height = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    "clientHeight",
+  )?.get;
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(
+    function (this: HTMLElement) {
+      return Object.hasOwn(this.dataset, "scrollContainer")
+        ? 1200
+        : Number(height?.call(this) ?? 0);
     },
-    assistantEvent({
-      id: "source-answer",
-      runId: RUN_A,
-      seqId: sources.length + 2,
-      text: "All imported requests were reviewed.",
-    }),
-    completedEvent({
-      id: "source-complete",
-      runId: RUN_A,
-      seqId: sources.length + 3,
-    }),
   );
-  installRunChat({ chatEvents: events });
-
-  await setupPage({ context, path: RUN_PATH });
-
-  await expect(
-    screen.findByText("All imported requests were reviewed."),
-  ).resolves.toBeVisible();
-  for (const source of sources) {
-    const link = await findLink(source.label);
-    expect(link).toHaveAttribute("href", source.href);
-    expect(link).toHaveAttribute("target", "_blank");
-  }
-  const slackLink = await findLink("Open original message in Slack");
-  await user.click(slackLink);
-  expect(slackLink).toHaveAttribute(
-    "href",
-    "https://slack.com/archives/C123/p456",
-  );
-
-  await expect(findLink("Open chat in Telegram")).resolves.toHaveTextContent(
-    "Open chat",
-  );
-  await expect(
-    findLink("Open chat in Microsoft Teams"),
-  ).resolves.toHaveTextContent("Open chat");
-  await expect(
-    findLink("Open original message in Telegram"),
-  ).resolves.toHaveTextContent("Open message");
-  const unlinkedPhoneLabel = screen.getAllByText("iMessage").find((label) => {
-    return label.closest("a") === null;
-  });
-  expect(unlinkedPhoneLabel).toBeInTheDocument();
-});
-
-test("Label existing Email messages from their raw context without adding a mail-provider link", async () => {
-  const user = userEvent.setup({ delay: null });
-  const clipboard = context.mocks.browser.clipboardWrite();
-  const events: MockChatEventInput[] = [
-    promptEvent({
-      id: "email-source-prompt",
-      runId: RUN_A,
-      seqId: 1,
-      text: "Subject: Travel report\n\nPlease review this email.",
-    }),
-    promptEvent({
-      id: "web-source-prompt",
-      runId: RUN_B,
-      seqId: 2,
-      text: "A follow-up sent from the Web app.",
-    }),
-    completedEvent({ id: "email-source-complete", runId: RUN_B, seqId: 3 }),
-  ];
-  installRunChat({ chatEvents: events });
-  const rows = mockChatEventRows(
-    normalizeMockChatEvents(events, RUN_THREAD_ID),
-  ).map((row) => {
-    return row.id === "email-source-prompt"
-      ? { ...row, contextType: "email" as const, contextId: "email-context" }
-      : row;
-  });
-  context.mocks.api(chatThreadEventsContract.rows, ({ query, respond }) => {
-    return respond(
-      200,
-      chatEventRowsResponse(
-        rows.filter((row) => {
-          return row.seqId > query.sinceSeqId;
-        }),
-        query,
-      ),
-    );
-  });
-
-  await setupPage({ context, path: RUN_PATH });
-
-  const label = await screen.findByText("Email");
-  const emailMessage = label.closest<HTMLElement>("[data-role='user']");
-  if (!emailMessage) {
-    throw new Error("Email user message was not available");
-  }
-  expect(emailMessage).toHaveTextContent("Please review this email.");
-  expect(label.closest("a")).toBeNull();
-  const webMessage = screen.getByText("A follow-up sent from the Web app.");
-  expect(webMessage.closest("[data-role='user']")).not.toHaveTextContent(
-    "Email",
-  );
-  const copyButton = queryButton("Copy message", emailMessage);
-  if (!copyButton) {
-    throw new Error("Email copy action was not available");
-  }
-  await user.click(copyButton);
-  const item = await readSingleRichClipboardWrite(clipboard);
-  const copied = parseChatClipboardPayload(
-    await readClipboardItemText(item, "text/html"),
-  );
-  expect(copied.userMessage).toStrictEqual({
-    version: 1,
-    parts: [
+  const events: MockChatEventInput[] = [];
+  for (const [index, source] of sources.entries()) {
+    const seqId = index * 3 + 1,
+      runId = crypto.randomUUID(),
+      text = "Dispatch " + String(index + 1);
+    events.push(
       {
-        type: "text",
-        text: "Subject: Travel report\n\nPlease review this email.",
-      },
-    ],
-  });
-});
-
-test.each([
-  {
-    description: "canonical Lark source with a chat link",
-    kind: "lark" as const,
-    href: "https://open.larksuite.com/chat/ch_123",
-    label: "Lark",
-  },
-  {
-    description: "historical Feishu source with a Lark chat link",
-    kind: "feishu" as const,
-    href: "https://applink.larksuite.com/client/chat/open?openChatId=oc_123",
-    label: "Lark",
-  },
-])("Show the $description", async ({ kind, href, label }) => {
-  installRunChat({
-    chatEvents: [
-      {
-        id: "platform-source-prompt",
-        eventType: "input.prompt",
-        role: "user",
-        content: null,
-        runId: RUN_A,
-        seqId: 1,
-        createdAt: "2026-08-01T10:00:01.000Z",
+        ...promptEvent({ id: crypto.randomUUID(), seqId, runId, text }),
         userMessage: {
           version: 1,
           parts: [
-            { type: "text", text: "A platform-specific message." },
-            { type: "source", kind, ...(href ? { href } : {}) },
+            {
+              type: "source",
+              kind: source.kind,
+              ...(source.href ? { href: source.href } : {}),
+            },
+            { type: "text", text },
           ],
         },
       },
-      completedEvent({
-        id: "platform-source-complete",
-        runId: RUN_A,
-        seqId: 2,
-      }),
-    ],
-  });
-
-  await setupPage({ context, path: RUN_PATH });
-
-  await expect(
-    screen.findByText("A platform-specific message."),
-  ).resolves.toBeInTheDocument();
-  const sourceLabel = screen.getByText(label);
-  expect(sourceLabel).toBeInTheDocument();
-  const link = sourceLabel.closest("a");
-  expect(Boolean(link)).toBe(Boolean(href));
-  expect(link?.getAttribute("href")).toBe(href);
-  expect(link?.getAttribute("aria-label")).toBe(
-    href ? `Open original chat in ${label}` : undefined,
-  );
-});
-
-test("Show the current usage settlement on the correct run", async () => {
-  const user = userEvent.setup({ delay: null });
-  installRunChat({
-    runUsage: {
-      [RUN_A]: creditUsage(8, [
-        {
-          kind: "model",
-          credits: 8,
-          providers: [{ provider: "gpt-5.6-sol", credits: 8 }],
-        },
-      ]),
-      [RUN_B]: creditUsage(3, [
-        {
-          kind: "connector",
-          credits: 3,
-          providers: [{ provider: "slack", credits: 3 }],
-        },
-      ]),
+      completedEvent({ id: crypto.randomUUID(), runId, seqId: seqId + 2 }),
+    );
+  }
+  createChatRunFixtures(context).installRunChat({ chatEvents: events });
+  await visit();
+}
+async function dispatchRow(index: number) {
+  const prompt = await screen.findByText("Dispatch " + String(index + 1));
+  const row = prompt.closest<HTMLElement>('[data-role="user"]');
+  if (!row) {
+    throw new Error("Missing dispatch message");
+  }
+  return row;
+}
+test("chat-run-usage-localization-001 Each completed dispatch identifies its service and distinguishes chat from message links", async () => {
+  const sources = [
+    {
+      kind: "github",
+      name: "GitHub",
+      href: "https://github.com/example/local/issues/42",
+      label: "Open original issue or pull request in GitHub",
+      action: "Open message",
     },
+    {
+      kind: "telegram",
+      name: "Telegram",
+      href: "https://t.me/ledger_test",
+      label: "Open chat in Telegram",
+      action: "Open chat",
+    },
+    {
+      kind: "slack",
+      name: "Slack",
+      href: "https://local.slack.com/archives/C123/p456",
+      label: "Open original message in Slack",
+      action: "Open message",
+    },
+    {
+      kind: "teams",
+      name: "Microsoft Teams",
+      href: "https://teams.microsoft.com/l/chat/19:ledger",
+      label: "Open chat in Microsoft Teams",
+      action: "Open chat",
+    },
+    {
+      kind: "feishu",
+      name: "Feishu",
+      href: "https://open.feishu.cn/chat/ledger",
+      label: "Open original chat in Feishu",
+      action: "Open chat",
+    },
+    {
+      kind: "telegram",
+      name: "Telegram",
+      href: "https://t.me/ledger_test/7",
+      label: "Open original message in Telegram",
+      action: "Open message",
+    },
+    {
+      kind: "teams",
+      name: "Microsoft Teams",
+      href: "https://teams.microsoft.com/l/message/19:ledger/7",
+      label: "Open original message in Microsoft Teams",
+      action: "Open message",
+    },
+  ] as const;
+  await enterConversation([
+    ...sources,
+    { kind: "agentphone", name: "iMessage" },
+  ]);
+  for (const [index, source] of sources.entries()) {
+    const row = await dispatchRow(index);
+    const link = queryAllByRoleFast("link", row).find((el) => {
+      return el.getAttribute("href") === source.href;
+    });
+    expect(link).toHaveAccessibleName(source.label);
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveTextContent(source.name);
+    expect(link).toHaveTextContent(source.action);
+  }
+  const sms = await dispatchRow(sources.length);
+  expect(within(sms).getByText("iMessage")).toBeInTheDocument();
+  expect(queryAllByRoleFast("link", sms)).toHaveLength(0);
+});
+test("chat-run-usage-localization-003 The canonical Lark dispatch links back to its own chat", async () => {
+  const source = {
+    kind: "lark",
+    name: "Lark",
+    href: "https://open.larksuite.com/chat/ch_123",
+    label: "Open original chat in Lark",
+    action: "Open chat",
+  } as const;
+  await enterConversation([source]);
+  const row = await dispatchRow(0);
+  const link = queryAllByRoleFast("link", row).find((el) => {
+    return el.getAttribute("aria-label") === source.label;
+  });
+  expect(link).toHaveTextContent("Lark");
+  expect(link).toHaveAttribute("href", source.href);
+  expect(link).toHaveAttribute("target", "_blank");
+});
+test("chat-run-usage-localization-005 The current settlement belongs to its run and Slack's breakdown opens independently", async () => {
+  const forecast = crypto.randomUUID(),
+    delivery = crypto.randomUUID(),
+    first = crypto.randomUUID();
+  const model = (amount: number) => {
+    return creditUsage(amount, [
+      {
+        kind: "model",
+        credits: amount,
+        providers: [{ provider: "gpt-5.6-sol", credits: amount }],
+      },
+    ]);
+  };
+  const slack = creditUsage(3, [
+    {
+      kind: "connector",
+      credits: 3,
+      providers: [{ provider: "slack", credits: 3 }],
+    },
+  ]);
+  createChatRunFixtures(context).installRunChat({
+    runUsage: { [forecast]: model(8), [delivery]: slack },
     chatEvents: [
       promptEvent({
-        id: "settlement-a-user",
-        runId: RUN_A,
+        id: crypto.randomUUID(),
+        runId: forecast,
         seqId: 1,
-        text: "First costed run",
+        text: "Compute forecast",
       }),
       assistantEvent({
-        id: "settlement-a-answer",
-        runId: RUN_A,
+        id: crypto.randomUUID(),
+        runId: forecast,
         seqId: 2,
-        text: "First answer",
+        text: "Forecast complete",
       }),
-      completedEvent({ id: "settlement-a-complete", runId: RUN_A, seqId: 3 }),
+      completedEvent({ id: crypto.randomUUID(), runId: forecast, seqId: 3 }),
+      usageEvent({ id: first, runId: forecast, seqId: 4, usage: model(5) }),
       usageEvent({
-        id: "settlement-old",
-        runId: RUN_A,
-        seqId: 4,
-        usage: creditUsage(5, [
-          {
-            kind: "model",
-            credits: 5,
-            providers: [{ provider: "gpt-5.6-sol", credits: 5 }],
-          },
-        ]),
-      }),
-      usageEvent({
-        id: "settlement-replacement",
-        runId: RUN_A,
+        id: crypto.randomUUID(),
+        revokesEventId: first,
+        runId: forecast,
         seqId: 5,
-        usage: creditUsage(999, [
-          {
-            kind: "model",
-            credits: 8,
-            providers: [{ provider: "gpt-5.6-sol", credits: 8 }],
-          },
-        ]),
+        usage: model(999),
       }),
       promptEvent({
-        id: "settlement-b-user",
-        runId: RUN_B,
+        id: crypto.randomUUID(),
+        runId: delivery,
         seqId: 6,
-        text: "Second connector run",
+        text: "Share to Slack",
       }),
       assistantEvent({
-        id: "settlement-b-answer",
-        runId: RUN_B,
+        id: crypto.randomUUID(),
+        runId: delivery,
         seqId: 7,
-        text: "Second answer",
+        text: "Posted the forecast",
       }),
-      completedEvent({ id: "settlement-b-complete", runId: RUN_B, seqId: 8 }),
+      completedEvent({ id: crypto.randomUUID(), runId: delivery, seqId: 8 }),
       usageEvent({
-        id: "settlement-b-usage",
-        runId: RUN_B,
+        id: crypto.randomUUID(),
+        runId: delivery,
         seqId: 9,
-        usage: creditUsage(3, [
-          {
-            kind: "connector",
-            credits: 3,
-            providers: [{ provider: "slack", credits: 3 }],
-          },
-        ]),
+        usage: slack,
       }),
     ],
   });
-
-  await setupPage({ context, path: RUN_PATH });
-
-  await expect(screen.findByText("First answer")).resolves.toBeVisible();
-  await expect(screen.findByText("Second answer")).resolves.toBeVisible();
-  expect(queryButton("Credit usage 5")).toBeNull();
-  expect(queryButton("Credit usage 999")).toBeNull();
-  await expect(findButton("Credit usage 8")).resolves.toBeVisible();
-  const secondUsage = await findButton("Credit usage 3");
-  expect(secondUsage).toBeVisible();
-
-  await user.click(secondUsage);
-
-  const slackUsage = await screen.findByText("Slack");
-  expect(slackUsage).toBeVisible();
-  expect(slackUsage.parentElement).toHaveTextContent("3");
-  expect(screen.queryByText("GPT 5.6 Sol")).not.toBeInTheDocument();
+  await visit();
+  const firstAnswer = await screen.findByText("Forecast complete"),
+    secondAnswer = await screen.findByText("Posted the forecast");
+  const forecastGroup = firstAnswer.closest<HTMLElement>(
+    '[data-role="assistant"]',
+  );
+  const deliveryGroup = secondAnswer.closest<HTMLElement>(
+    '[data-role="assistant"]',
+  );
+  if (!forecastGroup || !deliveryGroup) {
+    throw new Error("Missing conversation turn");
+  }
+  await expect(action("Credit usage 8", forecastGroup)).resolves.toBeEnabled();
+  const later = await action("Credit usage 3", deliveryGroup);
+  expect(findAction("Credit usage 5")).toBeUndefined();
+  expect(findAction("Credit usage 999")).toBeUndefined();
+  click(later);
+  const detail = await screen.findByText("Slack");
+  expect(detail.nextElementSibling).toHaveTextContent(/^3$/u);
+  expect(screen.queryByText("GPT 5.6 Sol")).toBeNull();
 });

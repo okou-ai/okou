@@ -19,11 +19,14 @@ import {
   postRunnerDispatch,
   reserveRunnerDispatch,
   runnerDispatchEncoding,
+  type RunnerDispatchPreparationTiming,
 } from "../external/runner-ingress";
 import { failUnacceptedRun$ } from "./agent-run-terminal-transition.service";
 import {
-  prepareDirectRun$,
+  completeDirectRunPreparation,
+  prepareDirectRunContext$,
   type AdmittedRunLaunch,
+  type DirectRunInput,
   type DirectRunCachePublication,
   type ExecutionBundleUrlsRead,
 } from "./direct-run-preparation.service";
@@ -33,15 +36,16 @@ import {
   readDirectRunState$,
   type DirectRunTarget,
 } from "./direct-run-ownership.service";
-import { readDirectRunCandidates$ } from "./runner-reuse-preference";
+import {
+  rankDirectRunCandidates,
+  readDirectRunCandidateSnapshot$,
+} from "./runner-reuse-preference";
 import { joinAll, safeSync, settleIncludingAbort } from "../utils";
 import { recordRunContextSnapshot } from "./run-context-snapshot.service";
 
 type PlacementPreference = Extract<RunnerPreference, { kind: "preference" }>;
 
-type DirectRunCandidates = Awaited<
-  ReturnType<(typeof readDirectRunCandidates$)["write"]>
->;
+type DirectRunCandidates = ReturnType<typeof rankDirectRunCandidates>;
 const MAX_HOME_DEFERRAL_MS = 1000;
 const FINAL_HOME_DELIVERY_MARGIN_MS = 1000;
 type UnacceptedRunResult =
@@ -63,27 +67,109 @@ type DirectRunDispatchPreparation =
     }
   | { readonly kind: "failed"; readonly result: DirectRunDispatchResult };
 
+async function timedPreparation<T>(operation: () => Promise<T>) {
+  const startedAt = monotonicNow();
+  const value = await operation();
+  return { value, startedAt, readyAt: monotonicNow() };
+}
+
+interface DirectRunPreparationResources {
+  readonly bundleUrls: ExecutionBundleUrlsRead;
+  readonly resources: ExecutionRuntimeResources;
+}
+
+/** Begin preparation without a durable Run or any delivery side effects. */
+export const prepareDirectRunInputs$ = command(
+  (
+    { set },
+    input: DirectRunInput,
+    createdAt: Date | null,
+    { bundleUrls, resources }: DirectRunPreparationResources,
+    signal: AbortSignal,
+  ) => {
+    return settleIncludingAbort(
+      joinAll([
+        timedPreparation(() => {
+          return set(readDirectRunCandidateSnapshot$, input, createdAt, signal);
+        }),
+        timedPreparation(() => {
+          return set(
+            prepareDirectRunContext$,
+            input,
+            bundleUrls,
+            resources,
+            signal,
+          );
+        }),
+      ]),
+    );
+  },
+);
+
+export type DirectRunInputsRead = ReturnType<
+  (typeof prepareDirectRunInputs$)["write"]
+>;
+
 /** Return prepared facts so the pick entry can own publication and delivery. */
 export const prepareDirectRunDispatch$ = command(
   async (
     { set },
     input: AdmittedRunLaunch,
-    bundleUrls: ExecutionBundleUrlsRead,
-    resources: ExecutionRuntimeResources,
+    preparationResources: DirectRunPreparationResources,
+    early: DirectRunInputsRead | undefined,
     signal: AbortSignal,
   ): Promise<DirectRunDispatchPreparation> => {
     signal.throwIfAborted();
     const prepared = await settleIncludingAbort(async () => {
-      const [publication, placement] = await joinAll([
-        set(prepareDirectRun$, input, bundleUrls, resources, signal),
-        (async () => {
-          const candidates = await set(readDirectRunCandidates$, input, signal);
-          const candidatesReadyAt = monotonicNow();
-          return { candidates, candidatesReadyAt };
-        })(),
-      ]);
+      const preparation = await (early ??
+        set(
+          prepareDirectRunInputs$,
+          input,
+          input.createdAt,
+          preparationResources,
+          signal,
+        ));
       signal.throwIfAborted();
-      return { input, ...publication, ...placement };
+      if (!preparation.ok) {
+        throw preparation.error;
+      }
+      const [snapshot, context] = preparation.value;
+      let placement = snapshot;
+      let candidates = rankDirectRunCandidates(
+        placement.value,
+        input,
+        early ? nowDate() : placement.value.observedAt,
+      );
+      // An empty early observation can miss a Runner becoming ready during commit.
+      if (early && candidates.length === 0) {
+        placement = await timedPreparation(() => {
+          return set(
+            readDirectRunCandidateSnapshot$,
+            input,
+            input.createdAt,
+            signal,
+          );
+        });
+        signal.throwIfAborted();
+        candidates = rankDirectRunCandidates(
+          placement.value,
+          input,
+          placement.value.observedAt,
+        );
+      }
+      return {
+        input,
+        ...completeDirectRunPreparation(input, context.value),
+        candidates,
+        preparationTiming: {
+          candidateStartedAt: placement.startedAt,
+          candidateReadyAt: placement.readyAt,
+          contextStartedAt: context.startedAt,
+          contextReadyAt: context.readyAt,
+          early: early !== undefined,
+          candidateRefreshed: placement !== snapshot,
+        },
+      };
     });
     signal.throwIfAborted();
     if (!prepared.ok) {
@@ -159,6 +245,18 @@ function serializeDispatch(envelope: DispatchEnvelope): SerializedDispatch {
   return { body, bodyBytes: Buffer.byteLength(body, "utf8") };
 }
 
+function hasPreferredHomeWait(
+  preference: PlacementPreference | undefined,
+): preference is Extract<PlacementPreference, { tier: "predecessorHome" }> & {
+  home: { homeWaitUntil: string };
+} {
+  return (
+    preference?.tier === "predecessorHome" &&
+    "homeWaitUntil" in preference.home &&
+    preference.home.homeWaitUntil !== undefined
+  );
+}
+
 function createDispatchOffer(
   envelope: DispatchEnvelope,
   ordinaryBody: SerializedDispatch,
@@ -173,11 +271,7 @@ function createDispatchOffer(
     ...ordinaryBody,
     busyRetry: { until: expiresAt, retryAtExpiry: false },
   };
-  if (
-    preference.tier !== "predecessorHome" ||
-    !("homeWaitUntil" in preference.home) ||
-    preference.home.homeWaitUntil === undefined
-  ) {
+  if (!hasPreferredHomeWait(preference)) {
     return ordinaryOffer;
   }
   const sentAt = now();
@@ -281,16 +375,17 @@ const offerToProcess$ = command(
       readonly body: SerializedDispatch;
       readonly envelope: DispatchEnvelope;
       readonly preparedFirstOffer: WireDispatchOffer | undefined;
+      readonly firstOwner: boolean;
       readonly token: string;
       readonly window: DeliveryWindow;
-      readonly firstCandidateReadyAt: number | undefined;
+      readonly preparationTiming: RunnerDispatchPreparationTiming | undefined;
     },
     signal: AbortSignal,
   ) => {
     signal.throwIfAborted();
     let uncertain = false;
     let retry = 0;
-    let firstCandidateReadyAt = args.firstCandidateReadyAt;
+    let preparationTiming = args.preparationTiming;
     const offer =
       args.preparedFirstOffer ??
       (await encodeDispatchOffer(
@@ -304,7 +399,9 @@ const offerToProcess$ = command(
       ));
     signal.throwIfAborted();
     let gzipEncodeMs = offer.gzipEncodeMs;
-    let checkOwner = args.preparedFirstOffer === undefined;
+    // The first assignment is the final owner observation before its first POST.
+    // The Runner reconciles any cancellation committed after that write.
+    let checkOwner = !args.firstOwner;
     for (;;) {
       if (checkOwner) {
         const state = await set(readDirectRunState$, args.runId, signal);
@@ -329,13 +426,13 @@ const offerToProcess$ = command(
           gzipEncodeMs,
           serviceToken: args.token,
           timeoutMs: Math.min(15_000, remaining),
-          firstRankedTarget: args.firstCandidateReadyAt !== undefined,
-          firstCandidateReadyAt,
+          firstRankedTarget: args.preparationTiming !== undefined,
+          preparationTiming,
         },
         signal,
       );
       gzipEncodeMs = undefined;
-      firstCandidateReadyAt = undefined;
+      preparationTiming = undefined;
       if (observation === "accepted") {
         return "accepted" as const;
       }
@@ -369,12 +466,33 @@ interface PreparedRunDelivery {
   readonly input: AdmittedRunLaunch;
   readonly executionContext: ExecutionContext;
   readonly candidates: DirectRunCandidates;
-  readonly candidatesReadyAt: number;
+  readonly preparationTiming: Omit<
+    RunnerDispatchPreparationTiming,
+    "ownerWriteMs"
+  >;
   readonly contextSnapshot: Omit<
     Parameters<typeof recordRunContextSnapshot>[0],
     "recordedAt"
   >;
 }
+
+const rejectRestrictedAntigravityRun$ = command(
+  async (
+    { set },
+    input: AdmittedRunLaunch,
+    signal: AbortSignal,
+  ): Promise<DirectRunDispatchResult> => {
+    const terminal = await set(
+      failUnacceptedRun$,
+      {
+        ...failureInput(input, null),
+        failureReason: "provider_model_restricted",
+      },
+      signal,
+    );
+    return { kind: "failed", terminal, failure: undefined };
+  },
+);
 
 export const dispatchPreparedRun$ = command(
   async ({ get, set }, args: PreparedRunDelivery, signal: AbortSignal) => {
@@ -384,6 +502,12 @@ export const dispatchPreparedRun$ = command(
     let uncertain = false;
     const outcome = await settleIncludingAbort(async () => {
       const { executionContext, candidates } = args;
+      if (
+        executionContext.cliAgentType === "antigravity" &&
+        !input.antigravityEnabled
+      ) {
+        return await set(rejectRestrictedAntigravityRun$, input, signal);
+      }
       const window = createDeliveryWindow(get(apiStartTime$));
       const token = `${OFFICIAL_RUNNER_TOKEN_PREFIX}${env("OFFICIAL_RUNNER_SECRET")}`;
       for (const target of candidates) {
@@ -401,18 +525,22 @@ export const dispatchPreparedRun$ = command(
         if (body.bodyBytes > RUNNER_DISPATCH_MAX_BODY_BYTES) {
           break;
         }
-        if (owner === null) {
+        const firstOwner = owner === null;
+        if (firstOwner) {
           reserveFirstOffer(target, input.run.id, body.bodyBytes, signal);
         }
-        // Finish ordinary first-send preparation before the conditional write.
-        // The Runner reconciles cancellations committed after that write.
+        // Start a timed Home wait after the owner write.
         const preparedFirstOffer =
-          owner === null && !target.preference
-            ? await encodeDispatchOffer(body, window)
+          firstOwner && !hasPreferredHomeWait(target.preference)
+            ? await encodeDispatchOffer(
+                createDispatchOffer(envelope, body, target.preference, window),
+                window,
+              )
             : undefined;
         if (preparedFirstOffer && remainingDelivery(window) <= 0) {
           break;
         }
+        const ownerWriteStartedAt = monotonicNow();
         const selected = await set(
           selectDirectRunOwner$,
           {
@@ -427,7 +555,7 @@ export const dispatchPreparedRun$ = command(
         if (!selected) {
           break;
         }
-        const firstOwner = owner === null;
+        const ownerWriteMs = monotonicNow() - ownerWriteStartedAt;
         owner = target;
         if (firstOwner) {
           recordRunContextSnapshot({
@@ -445,25 +573,19 @@ export const dispatchPreparedRun$ = command(
             body,
             envelope,
             preparedFirstOffer,
+            firstOwner,
             token,
             window,
-            firstCandidateReadyAt: firstOwner
-              ? args.candidatesReadyAt
+            preparationTiming: firstOwner
+              ? { ...args.preparationTiming, ownerWriteMs }
               : undefined,
           },
           signal,
         );
         uncertain = delivery === "uncertain";
-        if (delivery === "accepted") {
+        if (delivery === "accepted" || delivery === "uncertain") {
           return {
-            kind: "accepted" as const,
-            terminal: null,
-            failure: undefined,
-          };
-        }
-        if (uncertain) {
-          return {
-            kind: "uncertain" as const,
+            kind: delivery,
             terminal: null,
             failure: undefined,
           };

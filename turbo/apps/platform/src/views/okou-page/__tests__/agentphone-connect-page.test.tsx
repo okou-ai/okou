@@ -1,459 +1,227 @@
+import { screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { act, screen, waitFor } from "@testing-library/react";
-import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
-import { integrationsWhatsappContract } from "@okouai/api-contracts/contracts/integrations-whatsapp";
+import { expect, test, vi } from "vitest";
+import { integrationsAgentPhoneContract as phoneApi } from "@okouai/api-contracts/contracts/integrations-agentphone";
+import { integrationsWhatsappContract as whatsAppApi } from "@okouai/api-contracts/contracts/integrations-whatsapp";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { expect, test } from "vitest";
-
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { externalProtocolHandler } from "../../../test/mocks/external-protocol-handler.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { DetachedBrowserContext } from "happy-dom";
 
 const context = testContext();
-const PHONE_HANDLE = "+15555550123";
-const AGENT_ID = "agt_provider_identity";
-const TIMESTAMP = 1_784_880_000;
-const SIGNATURE = "a".repeat(64);
-
-function connectPath(signature: string): string {
-  const search = new URLSearchParams({
-    handle: PHONE_HANDLE,
-    agent: AGENT_ID,
-    ts: String(TIMESTAMP),
-    sig: signature,
-    channel: "sms",
-  });
-  return `/settings/agentphone?${search.toString()}`;
-}
-
-function findConnectButton(): HTMLElement | undefined {
-  return queryAllByRoleFast("button").find((candidate) => {
-    return candidate.textContent?.replace(/\s+/gu, " ").trim() === "Connect";
-  });
-}
-
-function getControl(role: "button" | "link", text: string): HTMLElement {
-  const control = queryAllByRoleFast(role).find((candidate) => {
-    return candidate.textContent?.replace(/\s+/gu, " ").trim() === text;
-  });
-  if (!control) {
-    throw new Error(`Expected ${role} named "${text}"`);
-  }
-  return control;
-}
-
-function getConnectButton(): HTMLElement {
-  const button = findConnectButton();
-  if (!button) {
-    throw new Error('Expected button named "Connect"');
-  }
-  return button;
-}
-
-test("rejects connection links with a malformed signature", async () => {
-  await setupPage({
-    context,
-    host: "app.okou.ai",
-    path: connectPath("not-a-signature"),
-  });
-
-  await expect(
-    screen.findByText("The signature on this link is not valid."),
-  ).resolves.toBeInTheDocument();
-  expect(findConnectButton()).toBeUndefined();
-});
-
-test("connects a signed link without sending brand fields", async () => {
-  const requests: unknown[] = [];
-  context.mocks.api(
-    integrationsAgentPhoneContract.connectAgentPhone,
-    ({ body, respond }) => {
-      requests.push(body);
-      return respond(200, { phoneHandle: PHONE_HANDLE });
-    },
+const requested = "+15555550123";
+const previous = "+15555550456";
+const service = "+19039853128";
+const code = {
+  code: "12345678",
+  expiresAt: "2030-02-01T12:00:00.000Z",
+} as const;
+const phonePath = "/settings/agentphone";
+const whatsAppPath = "/settings/whatsapp";
+function signed(channel = "sms", sig = "42".repeat(32)) {
+  return (
+    "?" +
+    new URLSearchParams({
+      channel,
+      handle: requested,
+      agent: "local-device",
+      ts: "1795159200",
+      sig,
+    })
   );
-  await setupPage({
-    context,
-    host: "app.okou.ai",
-    path: connectPath(SIGNATURE),
-  });
-
-  await expect(
-    screen.findByText("Connect phone number"),
-  ).resolves.toBeInTheDocument();
-  click(getConnectButton());
-
-  await expect(
-    screen.findByText("Phone number connected"),
-  ).resolves.toBeInTheDocument();
-  expect(getControl("link", "Open Messages")).toHaveAttribute(
-    "href",
-    "sms:+19039853128",
-  );
-  expect(getControl("link", "Back to settings")).toHaveAttribute(
-    "href",
-    "/works",
-  );
-  expect(requests).toStrictEqual([
-    {
-      phoneHandle: PHONE_HANDLE,
-      agentphoneAgentId: AGENT_ID,
-      timestamp: TIMESTAMP,
-      signature: SIGNATURE,
-      channel: "sms",
-    },
-  ]);
-});
-
-function connectedTo(phoneHandle: string) {
+}
+function linked(phoneHandle: string) {
   context.mocks.data.agentPhoneIntegration({
     linked: true,
     phoneHandle,
-    agentPhoneNumber: "+19039853128",
+    agentPhoneNumber: service,
     configured: true,
   });
 }
-
-test("shows the existing connection without another Connect action", async () => {
-  connectedTo(PHONE_HANDLE);
-  await setupPage({ context, path: connectPath(SIGNATURE) });
-  await expect(
-    screen.findByText("Phone number connected"),
-  ).resolves.toBeInTheDocument();
-  expect(findConnectButton()).toBeUndefined();
-});
-
-test("offers an explicit switch and sends the confirmed previous number", async () => {
-  const previousPhone = "+15555550456";
-  connectedTo(previousPhone);
-  const requests: unknown[] = [];
-  context.mocks.api(
-    integrationsAgentPhoneContract.connectAgentPhone,
-    ({ body, respond }) => {
-      requests.push(body);
-      return respond(200, { phoneHandle: PHONE_HANDLE });
-    },
-  );
-  await setupPage({ context, path: connectPath(SIGNATURE) });
-  const switchButton = await waitFor(() => {
-    return getControl("button", `Switch to ${PHONE_HANDLE}`);
+function open(path: string) {
+  return setupPage({
+    context,
+    path,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.WhatsappIntegration]: true },
+    sharedWorkerTestTransport: "message-port",
   });
-  expect(getControl("link", `Keep ${previousPhone}`)).toHaveAttribute(
-    "href",
-    "/works",
-  );
-  expect(requests).toHaveLength(0);
-  click(switchButton);
-  await expect(
-    screen.findByText("Phone number connected"),
-  ).resolves.toBeInTheDocument();
-  expect(requests).toStrictEqual([
-    {
-      phoneHandle: PHONE_HANDLE,
-      agentphoneAgentId: AGENT_ID,
-      timestamp: TIMESTAMP,
-      signature: SIGNATURE,
-      channel: "sms",
-      replacePhoneHandle: previousPhone,
-    },
-  ]);
-});
-
-test("shows an occupied number before offering a connection", async () => {
-  context.mocks.api(
-    integrationsAgentPhoneContract.getConnectStatus,
-    ({ respond }) => {
-      return respond(200, { kind: "phone_in_use" });
-    },
-  );
-  await setupPage({ context, path: connectPath(SIGNATURE) });
-  await expect(
-    screen.findByText("Phone number already connected"),
-  ).resolves.toBeInTheDocument();
-  expect(findConnectButton()).toBeUndefined();
-});
-
-test("keeps the switch confirmation when its signed link expires", async () => {
-  const previousPhone = "+15555550456";
-  connectedTo(previousPhone);
-  context.mocks.api(
-    integrationsAgentPhoneContract.connectAgentPhone,
-    ({ respond }) => {
-      return respond(400, {
-        error: {
-          code: "BAD_REQUEST",
-          message: "Invalid or expired connection link. Send /connect again.",
-        },
-      });
-    },
-  );
-  await setupPage({ context, path: connectPath(SIGNATURE) });
-  click(
-    await waitFor(() => {
-      return getControl("button", `Switch to ${PHONE_HANDLE}`);
-    }),
-  );
-  await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
-    "Invalid or expired connection link",
-  );
-  expect(getControl("link", `Keep ${previousPhone}`)).toBeInTheDocument();
-});
-
-test("shows a connection-status read failure without a Connect action", async () => {
-  context.mocks.api(
-    integrationsAgentPhoneContract.getConnectStatus,
-    ({ respond }) => {
-      return respond(400, {
-        error: {
-          code: "BAD_REQUEST",
-          message: "This connection link has expired.",
-        },
-      });
-    },
-  );
-  await setupPage({ context, path: connectPath(SIGNATURE) });
-  await expect(
-    screen.findByText("This connection link has expired.", { selector: "p" }),
-  ).resolves.toBeInTheDocument();
-  expect(findConnectButton()).toBeUndefined();
-});
-
-test.each([PHONE_HANDLE, "sender@example.com"])(
-  "shows the connected overview and opens the official conversation for %s",
-  async (phone) => {
-    connectedTo(phone);
-    await setupPage({ context, path: "/settings/agentphone" });
-    await expect(
-      screen.findByText("Phone number connected"),
-    ).resolves.toBeInTheDocument();
-    expect(
-      screen.getByText(
-        `${phone} is connected. Send a text message to start chatting with Okou.`,
-      ),
-    ).toBeInTheDocument();
-    expect(getControl("link", "Open Messages")).toHaveAttribute(
-      "href",
-      "sms:+19039853128",
-    );
-    expect(getControl("link", "Back to settings")).toHaveAttribute(
-      "href",
-      "/works",
-    );
-  },
-);
-
-test("opens the shared connection dialog from the unlinked overview and shows completion", async () => {
-  context.mocks.api(
-    integrationsAgentPhoneContract.createLinkCode,
-    ({ respond }) => {
-      return respond(200, {
-        code: "12345678",
-        expiresAt: "2026-10-28T10:00:00Z",
-      });
-    },
-  );
-  await setupPage({ context, path: "/settings/agentphone" });
-  await expect(
-    screen.findByText("Connect phone number"),
-  ).resolves.toBeInTheDocument();
-  click(getConnectButton());
-  await screen.findByRole("dialog");
-  await expect(
-    screen.findByTestId("agentphone-link-qr"),
-  ).resolves.toHaveAttribute("data-sms-href", "sms:+19039853128?body=12345678");
-  connectedTo(PHONE_HANDLE);
-  act(() => {
-    return context.mocks.ably.trigger("agentphone:changed");
+}
+async function followSettings(label: string) {
+  click(screen.getByText(label));
+  await waitFor(() => {
+    expect(location.pathname).toBe("/works");
   });
   await expect(
-    screen.findByText("Phone number connected"),
+    screen.findByRole("heading", { name: /Where .+ works/u }),
   ).resolves.toBeInTheDocument();
-  expect(getControl("link", "Open Messages")).toHaveAttribute(
-    "href",
-    "sms:+19039853128",
-  );
-});
-
-test("shows when phone connection is unavailable", async () => {
-  context.mocks.data.agentPhoneIntegration({
-    linked: false,
-    configured: false,
-    agentPhoneNumber: null,
-  });
-  await setupPage({ context, path: "/settings/agentphone" });
-  await expect(
-    screen.findByText("Phone connection is currently unavailable."),
-  ).resolves.toBeInTheDocument();
-  expect(findConnectButton()).toBeUndefined();
-  expect(getControl("link", "Back to settings")).toBeInTheDocument();
-});
-
-function whatsappPath() {
-  return connectPath(SIGNATURE)
-    .replace("/settings/agentphone", "/settings/whatsapp")
-    .replace("channel=sms", "channel=whatsapp");
 }
 
-test("connects a signed WhatsApp link through its own API and opens WhatsApp", async () => {
-  const requests: unknown[] = [];
-  context.mocks.api(
-    integrationsWhatsappContract.getConnectStatus,
-    ({ respond }) => {
-      return respond(200, { kind: "connect" });
-    },
-  );
-  context.mocks.api(
-    integrationsWhatsappContract.getLinkStatus,
-    ({ respond }) => {
-      return respond(200, {
-        linked: false,
-        agentPhoneNumber: "+19039853128",
-        configured: true,
-      });
-    },
-  );
-  context.mocks.api(
-    integrationsWhatsappContract.connectWhatsapp,
-    ({ body, respond }) => {
-      requests.push(body);
-      return respond(200, { phoneHandle: PHONE_HANDLE });
-    },
-  );
-  await setupPage({
-    context,
-    path: whatsappPath(),
-    featureSwitches: { [FeatureSwitchKey.WhatsappIntegration]: true },
-  });
+test("agentphone-connect-page-001 A malformed local proof explains why linking cannot start", async () => {
+  await open(phonePath + signed("sms", "local-invalid"));
   await expect(
-    screen.findByText("Connect WhatsApp"),
+    screen.findByText("The signature on this link is not valid."),
   ).resolves.toBeInTheDocument();
-  click(getConnectButton());
-  await expect(
-    screen.findByText("WhatsApp connected"),
-  ).resolves.toBeInTheDocument();
-  expect(getControl("link", "Open WhatsApp")).toHaveAttribute(
-    "href",
-    "https://wa.me/19039853128",
-  );
-  expect(requests).toStrictEqual([
-    {
-      phoneHandle: PHONE_HANDLE,
-      agentphoneAgentId: AGENT_ID,
-      timestamp: TIMESTAMP,
-      signature: SIGNATURE,
-      channel: "whatsapp",
-    },
-  ]);
+  expect(
+    screen.queryByText("Connect", { selector: "button" }),
+  ).not.toBeInTheDocument();
 });
-
-test("confirms the current WhatsApp number before replacing it", async () => {
-  const previous = "+4915123456789";
-  const requests: unknown[] = [];
-  context.mocks.api(
-    integrationsWhatsappContract.getConnectStatus,
-    ({ respond }) => {
-      return respond(200, {
-        kind: "phone_mismatch",
-        currentPhoneHandle: previous,
-      });
-    },
-  );
-  context.mocks.api(
-    integrationsWhatsappContract.getLinkStatus,
-    ({ respond }) => {
-      return respond(200, {
-        linked: true,
-        phoneHandle: previous,
-        agentPhoneNumber: "+19039853128",
-        configured: true,
-      });
-    },
-  );
-  context.mocks.api(
-    integrationsWhatsappContract.connectWhatsapp,
-    ({ body, respond }) => {
-      requests.push(body);
-      return respond(200, { phoneHandle: PHONE_HANDLE });
-    },
-  );
-  await setupPage({
-    context,
-    path: whatsappPath(),
-    featureSwitches: { [FeatureSwitchKey.WhatsappIntegration]: true },
-  });
-  const action = await waitFor(() => {
-    return getControl("button", `Switch to ${PHONE_HANDLE}`);
-  });
-  expect(requests).toHaveLength(0);
-  click(action);
+test("agentphone-connect-page-003 The signed recipient recognizes the number already linked", async () => {
+  linked(requested);
+  await open(phonePath + signed());
   await expect(
-    screen.findByText("WhatsApp connected"),
+    screen.findByRole("heading", { name: "Phone number connected" }),
   ).resolves.toBeInTheDocument();
-  expect(requests).toStrictEqual([
-    expect.objectContaining({
-      replacePhoneHandle: previous,
-      channel: "whatsapp",
-    }),
-  ]);
+  expect(
+    screen.queryByText("Connect", { selector: "button" }),
+  ).not.toBeInTheDocument();
 });
-
-test("keeps the WhatsApp connection page unavailable when its switch is off", async () => {
-  await setupPage({
-    context,
-    path: whatsappPath(),
-    featureSwitches: { [FeatureSwitchKey.WhatsappIntegration]: false },
+test("agentphone-connect-page-004 Keeping the old number returns to Works and switching replaces that number", async () => {
+  const replacements: (string | undefined)[] = [];
+  linked(previous);
+  context.mocks.api(phoneApi.connectAgentPhone, ({ body, respond }) => {
+    replacements.push(body.replacePhoneHandle);
+    return respond(200, { phoneHandle: body.phoneHandle });
   });
+  await open(phonePath + signed());
+  await screen.findByText("Switch to " + requested);
+  await followSettings("Keep " + previous);
+  expect(replacements).toStrictEqual([]);
+  history.back();
+  const switchPhone = await screen.findByText("Switch to " + requested);
+  expect(replacements).toStrictEqual([]);
+  click(switchPhone);
   await expect(
-    screen.findByText("WhatsApp is not configured yet"),
+    screen.findByRole("heading", { name: "Phone number connected" }),
   ).resolves.toBeInTheDocument();
-  expect(findConnectButton()).toBeUndefined();
+  expect(
+    screen.getByText(requested + " is connected.", { exact: false }),
+  ).toBeInTheDocument();
+  expect(new Set(replacements)).toStrictEqual(new Set([previous]));
 });
-
-test("offers the existing WhatsApp QR flow from its dedicated settings page", async () => {
-  context.mocks.api(
-    integrationsWhatsappContract.getLinkStatus,
-    ({ respond }) => {
-      return respond(200, {
-        linked: false,
-        agentPhoneNumber: "+19039853128",
-        configured: true,
-      });
-    },
-  );
-  context.mocks.api(
-    integrationsWhatsappContract.createLinkCode,
-    ({ respond }) => {
-      return respond(200, {
-        code: "12345678",
-        expiresAt: "2026-10-29T01:10:00.000Z",
-      });
-    },
-  );
-  await setupPage({
-    context,
-    path: "/settings/whatsapp",
-    featureSwitches: { [FeatureSwitchKey.WhatsappIntegration]: true },
+test("agentphone-connect-page-006 A rejected switch preserves a working exit for the current number", async () => {
+  linked(previous);
+  const message = "This connection link is invalid or expired.";
+  context.mocks.api(phoneApi.connectAgentPhone, ({ respond }) => {
+    return respond(400, { error: { code: "BAD_REQUEST", message } });
   });
+  await open(phonePath + signed());
+  click(await screen.findByText("Switch to " + requested));
+  await expect(screen.findByRole("alert")).resolves.toHaveTextContent(message);
+  await followSettings("Keep " + previous);
+});
+test("agentphone-connect-page-008 The linked overview addresses Messages to the service number and returns to Works", async () => {
+  linked(requested);
+  const messages = externalProtocolHandler("sms:");
+  await open(phonePath);
   await expect(
-    screen.findByText("Connect WhatsApp"),
+    screen.findByText(
+      requested +
+        " is connected. Send a text message to start chatting with Okou.",
+    ),
   ).resolves.toBeInTheDocument();
-  const connectButton = getConnectButton();
-  connectButton.focus();
+  click(screen.getByText("Open Messages"));
+  expect(messages).toStrictEqual(["sms:" + service]);
+  await followSettings("Back to settings");
+});
+test("agentphone-connect-page-010 A live phone connection replaces the code dialog with the plain Messages destination", async () => {
+  const messages = externalProtocolHandler("sms:");
+  context.mocks.data.agentPhoneIntegration({
+    linked: false,
+    configured: true,
+    agentPhoneNumber: service,
+  });
+  context.mocks.api(phoneApi.createLinkCode, ({ respond }) => {
+    return respond(200, code);
+  });
+  await open(phonePath);
+  click(await screen.findByText("Connect", { selector: "button" }));
+  const dialog = within(await screen.findByRole("dialog"));
+  await dialog.findByText(code.code);
+  const sms = "sms:" + service;
+  expect(dialog.getByTestId("agentphone-link-qr")).toHaveAttribute(
+    "data-sms-href",
+    sms + "?body=" + code.code,
+  );
+  click(dialog.getByText("Open Messages"));
+  expect(messages).toStrictEqual([sms + "?body=" + code.code]);
+  linked(requested);
+  context.mocks.ably.trigger("agentphone:changed");
+  await expect(
+    screen.findByRole("heading", { name: "Phone number connected" }),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  click(screen.getByText("Open Messages"));
+  expect(messages).toStrictEqual([sms + "?body=" + code.code, sms]);
+});
+test("agentphone-connect-page-013 WhatsApp replaces the verified old number after explicit consent", async () => {
+  const old = "+4915123456789";
+  const requests: (string | undefined)[] = [];
+  context.mocks.api(whatsAppApi.getLinkStatus, ({ respond }) => {
+    return respond(200, {
+      linked: true,
+      phoneHandle: old,
+      agentPhoneNumber: service,
+      configured: true,
+    });
+  });
+  context.mocks.api(whatsAppApi.getConnectStatus, ({ respond }) => {
+    return respond(200, { kind: "phone_mismatch", currentPhoneHandle: old });
+  });
+  context.mocks.api(whatsAppApi.connectWhatsapp, ({ body, respond }) => {
+    requests.push(body.replacePhoneHandle);
+    return respond(200, { phoneHandle: body.phoneHandle });
+  });
+  await open(whatsAppPath + signed("whatsapp"));
+  const change = await screen.findByText("Switch to " + requested);
+  expect(requests).toStrictEqual([]);
+  click(change);
+  await expect(
+    screen.findByRole("heading", { name: "WhatsApp connected" }),
+  ).resolves.toBeInTheDocument();
+  expect(new Set(requests)).toStrictEqual(new Set([old]));
+});
+test("agentphone-connect-page-015 Keyboard connection opens the verified WhatsApp conversation and restores focus on Escape", async () => {
+  context.mocks.api(whatsAppApi.getLinkStatus, ({ respond }) => {
+    return respond(200, {
+      linked: false,
+      agentPhoneNumber: service,
+      configured: true,
+    });
+  });
+  context.mocks.api(whatsAppApi.createLinkCode, ({ respond }) => {
+    return respond(200, code);
+  });
+  const conversation = "https://wa.me/19039853128";
+  context.mocks.http.get(conversation, () => {
+    return new Response("<title>Local conversation</title>", {
+      headers: { "content-type": "text/html" },
+    });
+  });
+  await open(whatsAppPath);
+  const connect = await screen.findByText("Connect", { selector: "button" });
+  connect.focus();
+  expect(connect).toHaveFocus();
   await userEvent.keyboard("{Enter}");
-  await expect(
-    screen.findByRole("dialog", { name: "Connect WhatsApp" }),
-  ).resolves.toBeInTheDocument();
-  await expect(
-    waitFor(() => {
-      return getControl("link", "Open WhatsApp");
-    }),
-  ).resolves.toHaveAttribute("href", "https://wa.me/19039853128?text=12345678");
+  const dialog = await screen.findByRole("dialog", {
+    name: "Connect WhatsApp",
+  });
+  await within(dialog).findByText(code.code);
+  const tabs = vi.spyOn(DetachedBrowserContext.prototype, "newPage");
+  click(within(dialog).getByText("Open WhatsApp"));
+  const tab = tabs.mock.results.at(-1)?.value;
+  try {
+    await waitFor(() => {
+      expect(tab?.url).toBe(conversation + "?text=" + code.code);
+      expect(tab?.mainFrame.document.title).toBe("Local conversation");
+    });
+  } finally {
+    await tab?.close();
+  }
   await userEvent.keyboard("{Escape}");
   await waitFor(() => {
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(dialog).not.toBeInTheDocument();
   });
-  expect(connectButton).toHaveFocus();
+  expect(connect).toHaveFocus();
 });

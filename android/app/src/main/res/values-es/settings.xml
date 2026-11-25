@@ -1,5 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="settings_built_in_tools">Herramientas integradas</string>
+    <string name="settings_tool_scope">Las herramientas que usas en %1$s consumen créditos.</string>
+    <string name="settings_common_tools">Herramientas comunes</string>
+    <string name="settings_data_tools">Herramientas de datos</string>
+    <string name="settings_tool_web_search">Búsqueda web</string>
+    <string name="settings_tool_image_generation">Generación de imágenes</string>
+    <string name="settings_tool_image_model">Modelo de generación de imágenes</string>
+    <string name="settings_tools_unavailable">Herramientas temporalmente no disponibles.</string>
+    <string name="settings_tool_save_failed">No se pudo confirmar el cambio.</string>
+    <string name="settings_tool_image_save_failed">No se pudo guardar el modelo de generación de imágenes</string>
+    <string name="settings_preferences_save_rolled_back">No se pudieron guardar los ajustes. Se restauraron los valores anteriores.</string>
+    <string name="settings_appearance_sync_failed">No se pudo sincronizar la apariencia. Se aplicó en este dispositivo.</string>
     <string name="settings_email_updates">Novedades por correo</string>
     <string name="settings_email_scope">Recibe resúmenes, recordatorios y novedades de todos los espacios de trabajo.</string>
     <string name="settings_email_receive">Recibir correos</string>
@@ -70,7 +82,7 @@
     <string name="settings_auto_model_detail">Okou elige un modelo disponible</string>
     <string name="settings_model_plan_restricted">Requiere otro plan</string>
     <string name="settings_model_fast">Modo rápido</string>
-    <string name="settings_model_fast_usage">Consume aproximadamente %1$s veces la cuota</string>
+    <string name="settings_model_fast_usage">Al activarlo, el consumo de tu suscripción a ChatGPT se multiplica por %1$s respecto al modo estándar</string>
     <string name="settings_model_load_when_online">El contenido se cargará cuando vuelvas a conectarte.</string>
     <string name="settings_model_save_rolled_back">No se pudo guardar el modelo predeterminado. Se restauró la configuración anterior.</string>
     <string name="settings_model_save_unconfirmed">El guardado del modelo predeterminado aún no se ha confirmado.</string>
@@ -104,4 +116,6 @@
     <string name="settings_suggestions_enable_both">Activar ambas opciones</string>
     <string name="settings_suggestions_disable_both">Desactivar ambas opciones</string>
     <string name="settings_suggestions_save_failed">No se pudieron guardar las sugerencias. Se restauró el ajuste anterior.</string>
+    <string name="settings_timezone_save_rejected">No se pudo guardar la zona horaria. Se restauró la zona anterior.</string>
+    <string name="settings_timezone_schedule_update_failed">Se guardó la zona horaria, pero no se pudo actualizar el horario del resumen matutino.</string>
 </resources>

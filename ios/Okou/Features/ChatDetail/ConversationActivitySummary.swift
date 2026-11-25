@@ -1,53 +1,63 @@
 import CCState
 import ChatData
 import Foundation
-import Observation
 
 struct ConversationActivitySummaryValue: Equatable, Sendable {
   fileprivate let demandID: UUID
   let summary: ChatActivitySummary
 }
 
-/// A visible Run owns the original read Task; phrase selection is native presentation state.
-@MainActor @Observable
+/// A visible Run owns the original read Task. The read's demand and the rotating phrase live in
+/// the workspace session's Store. The commands that change the demand reconcile the phrase
+/// rotation themselves, so nothing subscribes to the graph.
+@MainActor
 final class ConversationActivitySummary {
+  /// Which Run's read may supply a phrase, and the phrase the rotation selected.
+  struct Selection: Equatable {
+    let demandID: UUID?
+    let phraseID: String?
+  }
+
   private let lifecycleTasks: LifecycleTasks
   private struct Demand: Equatable, Sendable {
     let runID: String
     let id = UUID()
   }
 
-  let stateStore = CCState.Store()
-  @ObservationIgnored private let activeRun = CCState.State<Demand?>(nil)
-  @ObservationIgnored private let revision = CCState.State(0)
-  @ObservationIgnored private let lifetime = CCState.State(true)
-  @ObservationIgnored private let selectRun: Command<Void, Demand?>
-  @ObservationIgnored private let reload: Command<Void, Void>
-  @ObservationIgnored private let retire: Command<Void, Void>
-  private var currentID: String?
+  /// The workspace session's Store, which keeps this summary's demand.
+  let store: CCState.Store
+  private let activeRun = CCState.State<Demand?>(nil)
+  private let revision = CCState.State(0)
+  private let lifetime = CCState.State(true)
+  private let selectRun: Command<Void, Demand?>
+  private let reload: Command<Void, Void>
+  private let retire: Command<Void, Void>
+  private let phrase = CCState.State<String?>(nil)
+  let selection: Computed<Selection>
 
   private let sync: ChatSync
   private let didRequireUpgrade: @MainActor (Error) -> Void
   private let threadID: String
   private let sleep: @Sendable (Duration) async throws -> Void
-  @ObservationIgnored private var subscription: Subscription?
-  @ObservationIgnored private var current: Task<ConversationActivitySummaryValue?, Error>?
-  @ObservationIgnored private var publication: Task<Void, Never>?
+  private var current: Task<ConversationActivitySummaryValue?, Error>?
+  private var publication: Task<Void, Never>?
   private var generation = UUID()
   private var readID = UUID()
   private var polling: Task<Void, Never>?
   private var rotation: Task<Void, Never>?
   // The original successful Task supplies the native carousel during a pending refresh.
-  @ObservationIgnored private var rotationRead: Task<ConversationActivitySummaryValue?, Error>?
+  private var rotationRead: Task<ConversationActivitySummaryValue?, Error>?
   private var phraseCount = 0
   private var rotates = true
   private var closed = false
 
   init(
-    sync: ChatSync, threadID: String, didRequireUpgrade: @escaping @MainActor (Error) -> Void,
+    sync: ChatSync, threadID: String, graph: CCState.Store,
+    didRequireUpgrade: @escaping @MainActor (Error) -> Void,
     sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
     lifecycleTasks: LifecycleTasks? = nil
   ) {
+    store = graph
     self.lifecycleTasks = lifecycleTasks ?? LifecycleTasks()
     self.didRequireUpgrade = didRequireUpgrade
     self.sync = sync
@@ -62,9 +72,16 @@ final class ConversationActivitySummary {
       try context.set(revision, update: { $0 + 1 })
     }
     retire = Command { context in try context.set(lifetime, false) }
+    let phrase = phrase
+    selection = Computed { get in
+      guard try get(lifetime) else { return Selection(demandID: nil, phraseID: nil) }
+      let demand = try get(activeRun)
+      let phraseID = try get(phrase)
+      return Selection(demandID: demand?.id, phraseID: phraseID)
+    }
   }
 
-  @ObservationIgnored lazy var value = makeValue()
+  lazy var value = makeValue()
 
   private func makeValue() -> Computed<Task<ConversationActivitySummaryValue?, Error>> {
     Computed { [weak self] get, options in
@@ -89,24 +106,25 @@ final class ConversationActivitySummary {
   }
 
   func text(in value: ConversationActivitySummaryValue?) -> String? {
+    Self.text(in: value, selection: snapshot(of: selection))
+  }
+
+  static func text(in value: ConversationActivitySummaryValue?, selection: Selection) -> String? {
     // keepLast is only a same-demand presentation; an old Run cannot supply its phrase.
-    _ = generation
-    guard !closed, let value, value.summary.status == .available else { return nil }
-    do {
-      guard try stateStore.get(activeRun)?.id == value.demandID else { return nil }
-    } catch { preconditionFailure("Cannot read the local activity demand: \(error)") }
-    let summary = value.summary
-    return (summary.messages.first { $0.id == currentID } ?? summary.messages.first)?.text
+    guard let value, value.summary.status == .available, selection.demandID == value.demandID
+    else { return nil }
+    let messages = value.summary.messages
+    return (messages.first { $0.id == selection.phraseID } ?? messages.first)?.text
   }
 
   func demand(_ next: String?) {
     guard !closed else { return }
     do {
-      guard try stateStore.get(activeRun)?.runID != next else { return }
+      guard try store.get(activeRun)?.runID != next else { return }
       stopWork()
-      try stateStore.set(selectRun, next.map { Demand(runID: $0) })
+      try store.set(selectRun, next.map { Demand(runID: $0) })
       guard next != nil else { return }
-      subscription = try stateStore.watch(value) { [weak self] in self?.reconcileRead() }
+      // Selecting a Run starts its read here; no subscription relays the change.
       reconcileRead()
       let owner = generation
       polling = Task { [weak self, sleep] in
@@ -128,9 +146,14 @@ final class ConversationActivitySummary {
 
   func retry() {
     guard !closed else { return }
-    do { try stateStore.set(reload) } catch {
+    do {
+      guard try store.get(activeRun) != nil else { return }
+      try store.set(reload)
+    } catch {
       preconditionFailure("Cannot refresh the local activity resource: \(error)")
     }
+    // The reload replaced the read; the phrase rotation follows the new one.
+    reconcileRead()
   }
 
   func setRotates(_ enabled: Bool) {
@@ -143,7 +166,7 @@ final class ConversationActivitySummary {
     stopWork()
     guard !closed else { return }
     closed = true
-    do { try stateStore.set(retire) } catch {
+    do { try store.set(retire) } catch {
       preconditionFailure("Cannot retire the local activity resource: \(error)")
     }
   }
@@ -160,12 +183,8 @@ final class ConversationActivitySummary {
     publication = nil
     rotation = nil
     rotationRead = nil
-    do { try subscription?.cancel() } catch {
-      preconditionFailure("Cannot detach the local activity subscription: \(error)")
-    }
-    subscription = nil
     phraseCount = 0
-    currentID = nil
+    write(phrase, nil)
   }
 
   /// This waiter owns only native phrase selection/cadence, never a second read snapshot.
@@ -174,7 +193,7 @@ final class ConversationActivitySummary {
     let id = UUID()
     readID = id
     do {
-      let read = try stateStore.get(value)
+      let read = try store.get(value)
       publication = Task { [weak self] in
         do {
           let value = try await read.value
@@ -189,7 +208,8 @@ final class ConversationActivitySummary {
           rotationRead = read
           let previousCount = phraseCount
           phraseCount = messages.count
-          if !messages.contains(where: { $0.id == currentID }) { currentID = messages.first?.id }
+          let selected = snapshot(of: phrase)
+          if !messages.contains(where: { $0.id == selected }) { write(phrase, messages.first?.id) }
           // A same-size refresh preserves both phrase selection and the running clock.
           if previousCount != phraseCount { reconcileRotation() }
         } catch is CancellationError {
@@ -197,7 +217,7 @@ final class ConversationActivitySummary {
           guard !Task.isCancelled, let self, !closed, readID == id else { return }
           rotationRead = nil
           phraseCount = 0
-          currentID = nil
+          write(phrase, nil)
           reconcileRotation()
           if (error as? APIClientError)?.statusCode == 426 { didRequireUpgrade(error) }
         }
@@ -225,8 +245,9 @@ final class ConversationActivitySummary {
             value.summary.messages.count > 1
           else { return }
           let messages = value.summary.messages
-          let index = messages.firstIndex { $0.id == self.currentID } ?? 0
-          self.currentID = messages[(index + 1) % messages.count].id
+          let selected = self.snapshot(of: self.phrase)
+          let index = messages.firstIndex { $0.id == selected } ?? 0
+          self.write(self.phrase, messages[(index + 1) % messages.count].id)
         }
       } catch is CancellationError {
       } catch {
@@ -236,14 +257,26 @@ final class ConversationActivitySummary {
     if let rotation { lifecycleTasks.track(rotation) }
   }
 
+  // The demand and phrase are synchronous in-process values; reads and writes cannot fail.
+  private func snapshot<Value>(of signal: Signal<Value>) -> Value {
+    do { return try store.get(signal) } catch {
+      preconditionFailure("Cannot read the local activity graph: \(error)")
+    }
+  }
+
+  private func write<Value>(_ state: CCState.State<Value>, _ value: Value) {
+    do { try store.set(state, value) } catch {
+      preconditionFailure("Cannot update the local activity graph: \(error)")
+    }
+  }
+
   isolated deinit {
     polling?.cancel()
     current?.cancel()
     publication?.cancel()
     rotation?.cancel()
-    do {
-      try subscription?.cancel()
-      try stateStore.set(retire)
-    } catch { preconditionFailure("Cannot retire the activity summary: \(error)") }
+    do { try store.set(retire) } catch {
+      preconditionFailure("Cannot retire the activity summary: \(error)")
+    }
   }
 }

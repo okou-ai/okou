@@ -16,10 +16,7 @@ struct PermissionBatchCard: View {
 
   var body: some View {
     PermissionCardReadView(read: read) { phase in
-      PermissionBatchCardContent(store: store, phase: phase)
-    }
-    .task(id: store.isActive) {
-      if loadsState && store.isActive { await store.loadIfNeeded() }
+      PermissionBatchCardContent(store: store, phase: phase, loadsState: loadsState)
     }
     .onChange(of: scenePhase) { _, phase in
       if phase == .active && store.isActive && loadsState {
@@ -30,31 +27,45 @@ struct PermissionBatchCard: View {
 }
 
 private struct PermissionBatchCardContent: View {
-  @Bindable var store: PermissionBatchStore
+  let store: PermissionBatchStore
   let phase: Loadable<ChatPermissionBatchSnapshot>
+  let loadsState: Bool
+  @LoadableValue private var presentation: Loadable<PermissionBatchStore.Presentation>
   @State private var showsDetails = false
 
+  init(
+    store: PermissionBatchStore, phase: Loadable<ChatPermissionBatchSnapshot>, loadsState: Bool
+  ) {
+    self.store = store
+    self.phase = phase
+    self.loadsState = loadsState
+    _presentation = LoadableValue(store.presentation)
+  }
+
+  private var current: PermissionBatchStore.Presentation {
+    presentation.data ?? PermissionBatchStore.Presentation(duration: store.action.duration)
+  }
   private var isLoading: Bool { phase.state == .loading }
-  private var snapshot: ChatPermissionBatchSnapshot? { store.displayedSnapshot(phase.data) }
-  private var requiresReadback: Bool { store.requiresReadback || phase.error != nil }
+  private var snapshot: ChatPermissionBatchSnapshot? { current.displayedSnapshot(phase.data) }
+  private var requiresReadback: Bool { current.requiresReadback || phase.error != nil }
   private var allAllowed: Bool { snapshot?.allAllowed == true && !requiresReadback }
   private var needsContinuation: Bool {
-    allAllowed && store.action.callbackPrompt != nil && !store.hasContinued
+    allAllowed && store.action.callbackPrompt != nil && !current.hasContinued
   }
   private var error: String? {
-    phase.error.map(ChatRequestFailure.message(for:)) ?? store.error
+    phase.error.map(ChatRequestFailure.message(for:)) ?? current.error
   }
 
   private var status: String {
-    if store.isContinuing { return String(localized: "Continuing chat…") }
-    if store.isSaving { return String(localized: "Saving permissions…") }
+    if current.isContinuing { return String(localized: "Continuing chat…") }
+    if current.isSaving { return String(localized: "Saving permissions…") }
     if isLoading { return String(localized: "Checking permissions…") }
     if requiresReadback { return String(localized: "Check permission status") }
     guard let snapshot = snapshot else {
       return String(localized: "Checking permissions…")
     }
     if !snapshot.complete { return String(localized: "Permission request unavailable") }
-    if store.hasContinued && allAllowed {
+    if current.hasContinued && allAllowed {
       return String(localized: "Permissions allowed · Chat continued")
     }
     if needsContinuation {
@@ -92,6 +103,10 @@ private struct PermissionBatchCardContent: View {
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
     }
+    // Each activation is a new load request, including one whose inactive state never rendered.
+    .task(id: loadsState && current.isActive ? current.activation : 0) {
+      if loadsState && current.isActive { await store.loadIfNeeded() }
+    }
   }
 }
 
@@ -113,20 +128,30 @@ struct PermissionBatchDetails: View {
 }
 
 private struct PermissionBatchDetailsContent: View {
-  @Bindable var store: PermissionBatchStore
+  let store: PermissionBatchStore
   let phase: Loadable<ChatPermissionBatchSnapshot>
+  @LoadableValue private var presentation: Loadable<PermissionBatchStore.Presentation>
   @Environment(\.dismiss) private var dismiss
   @Environment(\.permissionWorkspaceName) private var workspaceName
 
+  init(store: PermissionBatchStore, phase: Loadable<ChatPermissionBatchSnapshot>) {
+    self.store = store
+    self.phase = phase
+    _presentation = LoadableValue(store.presentation)
+  }
+
+  private var current: PermissionBatchStore.Presentation {
+    presentation.data ?? PermissionBatchStore.Presentation(duration: store.action.duration)
+  }
   private var isLoading: Bool { phase.state == .loading }
-  private var snapshot: ChatPermissionBatchSnapshot? { store.displayedSnapshot(phase.data) }
-  private var requiresReadback: Bool { store.requiresReadback || phase.error != nil }
+  private var snapshot: ChatPermissionBatchSnapshot? { current.displayedSnapshot(phase.data) }
+  private var requiresReadback: Bool { current.requiresReadback || phase.error != nil }
   private var allAllowed: Bool { snapshot?.allAllowed == true && !requiresReadback }
   private var needsContinuation: Bool {
-    allAllowed && store.action.callbackPrompt != nil && !store.hasContinued
+    allAllowed && store.action.callbackPrompt != nil && !current.hasContinued
   }
   private var error: String? {
-    phase.error.map(ChatRequestFailure.message(for:)) ?? store.error
+    phase.error.map(ChatRequestFailure.message(for:)) ?? current.error
   }
 
   var body: some View {
@@ -174,7 +199,7 @@ private struct PermissionBatchDetailsContent: View {
           Text("\(snapshot.allowedCount) of \(store.action.items.count) permissions allowed")
             .font(.footnote).foregroundStyle(.secondary)
         }
-        if store.hasContinued {
+        if current.hasContinued {
           Text("Your chat has continued.").font(.footnote).foregroundStyle(.secondary)
         } else if needsContinuation && error != nil {
           Text("Permissions allowed · Chat not continued")
@@ -194,30 +219,33 @@ private struct PermissionBatchDetailsContent: View {
             .font(.footnote).foregroundStyle(.secondary)
         }
         Button("Check permissions") { Task { await store.refresh() } }
-          .frame(minHeight: 44).disabled(isLoading || store.isSaving || store.isContinuing)
+          .frame(minHeight: 44).disabled(isLoading || current.isSaving || current.isContinuing)
       } else if snapshot?.complete != true {
         Text("These permissions are no longer available.")
           .font(.footnote).foregroundStyle(.secondary)
-      } else if allAllowed && !needsContinuation && !store.isSaving && !store.isContinuing {
+      } else if allAllowed && !needsContinuation && !current.isSaving && !current.isContinuing {
         Button("Done") { dismiss() }
           .buttonStyle(OkouButtonStyle(isPrimary: true))
       } else {
-        if !allAllowed && !store.isContinuing {
+        if !allAllowed && !current.isContinuing {
           HStack {
             Text("Allow new permissions for").font(.subheadline)
             Spacer(minLength: 12)
-            Picker("Allow new permissions for", selection: $store.duration) {
+            Picker(
+              "Allow new permissions for",
+              selection: Binding(get: { current.duration }, set: { store.duration = $0 })
+            ) {
               Text("1 hour").tag(ChatPermissionAction.Duration.hour)
               Text("24 hours").tag(ChatPermissionAction.Duration.day)
               Text("7 days").tag(ChatPermissionAction.Duration.week)
               Text("Always").tag(ChatPermissionAction.Duration.always)
             }
             .pickerStyle(.menu).labelsHidden()
-            .disabled(store.isSaving || isLoading)
+            .disabled(current.isSaving || isLoading)
             .accessibilityIdentifier("permission-batch-duration")
           }
           .frame(minHeight: 44)
-          if store.duration == .always {
+          if current.duration == .always {
             Text("New permissions won’t expire automatically.")
               .font(.footnote).foregroundStyle(.secondary)
           }
@@ -226,10 +254,13 @@ private struct PermissionBatchDetailsContent: View {
           Task { [snapshot] in await store.confirm(reviewing: snapshot) }
         } label: {
           ChatSettingsActionLabel(
-            title: confirmationTitle, isBusy: store.isSaving || store.isContinuing)
+            title: confirmationTitle, isBusy: current.isSaving || current.isContinuing)
         }
         .buttonStyle(OkouButtonStyle(isPrimary: true))
-        .disabled(!store.canConfirm(reviewing: snapshot) || isLoading || phase.error != nil)
+        .disabled(
+          !current.canConfirm(store.action, reviewing: snapshot) || isLoading
+            || phase.error != nil
+        )
         .accessibilityIdentifier("permission-batch-confirm")
         if store.action.callbackPrompt != nil {
           Text("The chat will continue after confirmation.")
@@ -244,8 +275,8 @@ private struct PermissionBatchDetailsContent: View {
   }
 
   private var confirmationTitle: LocalizedStringKey {
-    if store.isContinuing { return "Continuing chat…" }
-    if store.isSaving { return "Saving permissions…" }
+    if current.isContinuing { return "Continuing chat…" }
+    if current.isSaving { return "Saving permissions…" }
     if needsContinuation { return "Continue chat" }
     let missing = store.action.items.count - (snapshot?.allowedCount ?? 0)
     return "Allow \(missing) permissions"

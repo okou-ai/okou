@@ -364,7 +364,6 @@ export {
   type ArtifactCatalogContract,
   type ArtifactCatalogDirection,
   type ArtifactCatalogKind,
-  type ArtifactCatalogSort,
   type ArtifactDetail,
   type ArtifactSummary,
 } from "./artifact-catalog";
@@ -866,6 +865,7 @@ export {
   type CodexDeviceAuthScope,
   type CodexDeviceAuthContract,
 } from "./codex-device-auth";
+export { antigravityPersonalSubscriptionContract } from "./antigravity-personal-subscription";
 export { atomSubscriptionGrantsContract } from "./atom-subscription-grants";
 export {
   claudeCodeDeviceAuthScopeSchema,
@@ -1406,3 +1406,9 @@ export {
   integrationsEmailUploadContract,
   MAX_EMAIL_ATTACHMENT_SIZE_BYTES,
 } from "./integrations-email";
+
+export {
+  artifactSharingContract,
+  artifactSharingResourceSchema,
+  type ArtifactSharingTarget,
+} from "./artifact-sharing";

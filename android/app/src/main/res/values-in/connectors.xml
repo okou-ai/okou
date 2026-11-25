@@ -111,4 +111,20 @@
     <string name="chat_connector_saving">Menyimpan pilihan konektor…</string>
     <string name="chat_connector_save_failed">Pilihan konektor tidak dapat disimpan.</string>
     <string name="chat_connector_first_send_failed">Pilihan konektor tidak dapat diterapkan. Periksa di Opsi chat, lalu coba kirim ulang pesan ini.</string>
+    <string name="connector_device_denied">Penyedia menolak otorisasi.</string>
+    <string name="connector_device_expired">Kode perangkat telah kedaluwarsa. Mulai otorisasi lagi.</string>
+    <string name="connector_device_failed">Otorisasi perangkat tidak dapat diselesaikan.</string>
+    <string name="connector_access_scope">Berlaku di semua chat Anda.</string>
+    <string name="connector_access_label">Akses untuk %1$s, %2$s</string>
+    <string name="connector_access_allow">Izinkan</string>
+    <string name="connector_access_deny">Tolak</string>
+    <string name="connector_access_always">Selalu</string>
+    <string name="connector_access_expired">Kedaluwarsa</string>
+    <string name="connector_access_under_hour">&lt;1 jam</string>
+    <string name="connector_access_hours">%d jam</string>
+    <string name="connector_access_days">%d hr</string>
+    <string name="connector_access_allow_always">Selalu izinkan</string>
+    <string name="connector_access_allow_hour">Izinkan selama 1 jam</string>
+    <string name="connector_access_allow_day">Izinkan selama 24 jam</string>
+    <string name="connector_access_allow_week">Izinkan selama 7 hari</string>
 </resources>

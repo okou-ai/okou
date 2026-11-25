@@ -1,320 +1,281 @@
-import {
-  browserContract,
-  type BrowserSession,
-} from "@okouai/api-contracts/contracts/browser";
-import { act, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { browserContract } from "@okouai/api-contracts/contracts/browser";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
-import { fill, setupPage } from "../../../__tests__/page-helper.ts";
 import {
-  mockBrowserCdp,
-  TEST_BROWSER_EXTENSION,
-} from "../../../__tests__/browser-cdp-fixture.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+  assistantEvent,
+  completedEvent,
+  createChatRunFixtures,
+} from "../../okou-page/__tests__/chat-run-test-fixtures.ts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { initSentry } from "../../../lib/sentry.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  arrangeNativePage,
+  expectStreamingAt,
+} from "./browser-native-page-fixture.ts";
 
 const context = testContext();
-const threadId = "11111111-1111-4111-8111-111111111111";
-const endpoint = "wss://browser.example/private-session?token=private-token";
-
-async function setupViewer(
-  autoOpen: boolean,
-  options: {
-    readonly empty?: boolean;
-    readonly configure?: (browser: ReturnType<typeof mockBrowserCdp>) => void;
-  } = {},
-) {
-  const sentry = context.mocks.sentry();
+function observeDiagnostics() {
+  const destination = context.mocks.sentry();
   initSentry();
-  const browser = mockBrowserCdp(context, endpoint, {
-    autoOpen,
-    ...(options.empty ? { targets: [] } : {}),
+  return destination;
+}
+function submit(url: string) {
+  fireEvent.change(screen.getByLabelText("Address"), {
+    target: { value: url },
   });
-  options.configure?.(browser);
-  const session: BrowserSession = {
-    threadId,
-    name: "booking",
-    status: "active",
-    viewerUrl: `https://viewer.example/browsers/${threadId}`,
-    liveUrl: "https://viewer.example/live",
-    screenshotUrl: null,
-    timeoutMinutes: 240,
-    idleExpiresAt: "2026-09-01T10:10:00.000Z",
-    suspendedAt: null,
-    suspensionReason: null,
-    createdAt: "2026-09-01T10:00:00.000Z",
-    updatedAt: "2026-09-01T10:00:00.000Z",
-    window: {
-      instanceId: "22222222-2222-4222-8222-222222222222",
-      primaryWindowId: 0,
-    },
-  };
-  context.mocks.api(browserContract.get, ({ respond }) => {
-    return respond(200, {
-      browser: session,
-      viewer: {
-        browser: session,
-        cdpUrl: endpoint,
-        extension: TEST_BROWSER_EXTENSION,
-      },
-    });
-  });
-  context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
-    return respond(200, { browser: session });
-  });
-  await setupPage({ context, path: `/browsers/${threadId}` });
-  return { browser, sentry, session };
+  click(screen.getByLabelText("Open address"));
 }
 
-async function expectInputReady() {
-  await waitFor(() => {
-    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+// Include the normally non-enumerable Error details when checking the external report.
+function reportText(report: unknown) {
+  return JSON.stringify(report, (_key, value: unknown) => {
+    if (value instanceof Error) {
+      return {
+        ...value,
+        message: value.message,
+        stack: value.stack,
+        cause: value.cause,
+      };
+    }
+    return value;
   });
 }
 
-test("A bridge bootstrap failure keeps safe CDP facts in its semantic startup report", async () => {
-  const { sentry } = await setupViewer(true, {
-    configure: (browser) => {
-      browser.failNext("Runtime.addBinding", endpoint, -32_001);
-    },
-  });
+test("browser-connection-diagnostics-01 event binding refusal disables the viewer and reports sanitized startup attribution", async () => {
+  const telemetry = observeDiagnostics();
+  const { cdp, viewer, openPage } = arrangeNativePage(context);
+  const privateWorker = "worker-secret-758";
+  cdp.failNext(
+    "Runtime.addBinding",
+    privateWorker + " at " + viewer.cdpUrl,
+    -32_603,
+  );
+  await openPage();
   await screen.findByText("Browser view unavailable");
   expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
   await waitFor(() => {
-    expect(sentry.reports).toHaveLength(1);
+    expect(telemetry.reports).toContainEqual(
+      expect.objectContaining({
+        type: "exception",
+        context: expect.objectContaining({
+          contexts: expect.objectContaining({
+            browser_bridge: expect.objectContaining({
+              stage: "bind-events",
+              request: { method: "Runtime.addBinding", code: -32_603 },
+            }),
+          }),
+        }),
+      }),
+    );
   });
-  const failure = sentry.reports[0];
-  expect(failure).toMatchObject({
-    type: "exception",
-    error: {
-      name: "CdpFault",
-      kind: "extension",
-      request: { method: "Runtime.addBinding", code: -32_001 },
+  const worker = cdp.requests.find((entry) => {
+    return entry.method === "Runtime.addBinding";
+  })?.sessionId;
+  if (!worker) {
+    throw new Error("Expected a worker session for the failed native binding");
+  }
+  const external = reportText(telemetry.reports);
+  for (const sensitive of [
+    privateWorker,
+    viewer.cdpUrl,
+    worker,
+    "okou-worker",
+    viewer.extension.runtimeId,
+  ]) {
+    expect(external).not.toContain(sensitive);
+  }
+});
+
+test("browser-connection-diagnostics-02 refreshed session details admit input through the original pending native socket", async () => {
+  const telemetry = observeDiagnostics();
+  const first = context.mocks.deferred<{ open(): void }>();
+  const nativeSockets = new Set<{ open(): void }>();
+  const page = arrangeNativePage(context, {
+    autoOpen: false,
+    onConnecting: (_url, socket) => {
+      nativeSockets.add(socket);
+      if (!first.settled()) {
+        first.resolve(socket);
+      }
     },
-    context: {
-      tags: { browser_event: "recovery-stopped", logger: "Browser" },
-      contexts: {
-        browser_recovery: { outcome: "terminal" },
-        browser_bridge: {
-          stage: "bind-events",
-          reason: "cdp-protocol-failed",
-          request: { method: "Runtime.addBinding", code: -32_001 },
-        },
-      },
-    },
   });
-  const diagnostic = JSON.stringify(failure, (_key, value: unknown) => {
-    return value instanceof Error
-      ? {
-          ...value,
-          message: value.message,
-          stack: value.stack,
-          cause: value.cause,
-        }
-      : value;
+  const { browser } = page.viewer;
+  const runId = "b0000000-0000-4000-a000-000000000803";
+  createChatRunFixtures(context).installRunChat({
+    threadId: browser.threadId,
+    cloudBrowserEnabled: true,
+    chatEvents: [
+      assistantEvent({
+        id: "session-card",
+        runId,
+        seqId: 1,
+        text: browser.viewerUrl,
+      }),
+      completedEvent({ id: "plan-complete", runId, seqId: 2 }),
+    ],
   });
-  expect(diagnostic).not.toMatch(
-    /private-|fixture-worker|native-browser-|worker-\d/,
+  let details = browser;
+  function snapshot() {
+    return { browser: details, viewer: { ...page.viewer, browser: details } };
+  }
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return respond(200, snapshot());
+  });
+  context.mocks.api(browserContract.open, ({ respond }) => {
+    return respond(200, snapshot());
+  });
+  // Only the lifecycle refresh can supply the new card label during this check.
+  const heartbeat = context.mocks.deferred<void>();
+  context.mocks.api(browserContract.leaseByThread, async ({ respond }) => {
+    await heartbeat.promise;
+    return respond(200, { browser });
+  });
+  await setupPage({
+    context,
+    path: "/chats/" + browser.threadId,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CloudBrowserPanel]: true },
+  });
+  const card = await screen.findByLabelText("Open Shared browser browser");
+  const beforeOpening = [...telemetry.reports];
+  click(card);
+  const original = await first.promise;
+  details = { ...browser, name: "Refreshed plan" };
+  context.mocks.ably.trigger("browserSessionChanged", {
+    threadId: browser.threadId,
+  });
+  await screen.findByLabelText("Open Refreshed plan browser");
+  const input = screen.getByLabelText("Remote browser input");
+  expect(input).toBeDisabled();
+  await act(() => {
+    original.open();
+  });
+  await expectStreamingAt("https://example.com");
+  const text = "Continue session";
+  input.focus();
+  fireEvent.input(input, {
+    data: text,
+    inputType: "insertText",
+    target: { value: text },
+  });
+  await waitFor(() => {
+    expect(page.cdp.input).toContainEqual({
+      sessionId: page.cdp.pageSession("example-page"),
+      method: "Input.insertText",
+      params: { text },
+    });
+  });
+  expect(nativeSockets).toStrictEqual(new Set([original]));
+  expect(telemetry.reports).toStrictEqual(beforeOpening);
+});
+
+test("browser-connection-diagnostics-03 a failed duplicate-page lookup leaves the selected document navigable without an exception", async () => {
+  const telemetry = observeDiagnostics();
+  const { cdp, openPage } = arrangeNativePage(context);
+  await openPage();
+  await expectStreamingAt("https://example.com");
+  const beforeLookup = [...telemetry.reports];
+  cdp.duplicate("example-page");
+  const copy = await screen.findByLabelText(/.+/, {
+    selector: '[role="tab"][aria-selected="false"]',
+  });
+  const duplicate = cdp.holdNextMembership("created-1");
+  cdp.nativeEvent(
+    "tab-attached",
+    cdp.targets.find((target) => {
+      return target.targetId === "created-1";
+    }),
   );
+  await duplicate.received;
+  expect(copy).toBeInTheDocument();
+  await act(() => {
+    return duplicate.releaseFailure("Duplicate page vanished");
+  });
+  await waitFor(() => {
+    expect(
+      screen.queryByLabelText(/.+/, {
+        selector: '[role="tab"][aria-selected="false"]',
+      }),
+    ).not.toBeInTheDocument();
+  });
+  const destination = "https://maps.example/selected";
+  submit(destination);
+  await screen.findByLabelText("maps.example", {
+    selector: '[role="tab"][aria-selected="true"]',
+  });
+  await expectStreamingAt(destination);
+  expect(cdp.targets).toContainEqual(
+    expect.objectContaining({ targetId: "example-page", url: destination }),
+  );
+  expect(telemetry.reports).toStrictEqual(beforeLookup);
 });
 
-test("Revalidating an opening viewer retains its native startup and keeps cancellation quiet", async () => {
-  const { browser, sentry, session } = await setupViewer(false);
-  await waitFor(() => {
-    expect(browser.connections()).toBe(1);
-  });
-  const requested = context.mocks.deferred<void>();
-  const release = context.mocks.deferred<void>();
-  context.mocks.api(browserContract.get, async ({ respond }) => {
-    requested.resolve();
-    await release.promise;
-    return respond(200, {
-      browser: session,
-      viewer: {
-        browser: session,
-        cdpUrl: endpoint,
-        extension: TEST_BROWSER_EXTENSION,
-      },
-    });
-  });
-  act(() => {
-    context.mocks.ably.trigger("browserSessionChanged", { threadId });
-  });
-  await requested.promise;
-  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
-  act(() => {
-    browser.openConnection();
-  });
-  release.resolve();
-  await expectInputReady();
-  expect(browser.connections()).toBe(1);
-  expect(sentry.reports).toStrictEqual([]);
-});
-
-test("A handled background lookup stays quiet while the selected page remains usable", async () => {
-  const { browser, sentry } = await setupViewer(true);
-  await expectInputReady();
-  const lookup = browser.holdNextMembership("created-1");
-  act(() => {
-    browser.duplicate("example-page");
-  });
-  await lookup.received;
-  await act(async () => {
-    await lookup.releaseFailure("private-provider-message");
-  });
-  await fill(screen.getByLabelText("Address"), "next.example");
-  await userEvent.keyboard("{Enter}");
-  await waitFor(() => {
-    expect(screen.getByLabelText("Address")).toHaveValue(
-      "http://next.example/",
-    );
-  });
+test("browser-connection-diagnostics-05.03 a decorated abort token reports unknown and the next destination clears the notice", async () => {
+  const telemetry = observeDiagnostics();
+  const { cdp, openPage } = arrangeNativePage(context);
+  await openPage();
+  await expectStreamingAt("https://example.com");
+  const privateUrl = "https://internal.example/notes?access=private-418";
+  cdp.rejectNextNavigation("net::ERR_ABORTED " + privateUrl);
+  submit(privateUrl);
+  const notice = await screen.findByText(
+    /browser action could not be completed/i,
+  );
   expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
-  expect(sentry.reports).toHaveLength(0);
+  await waitFor(() => {
+    expect(telemetry.reports).toContainEqual(
+      expect.objectContaining({
+        type: "exception",
+        context: expect.objectContaining({
+          contexts: expect.objectContaining({
+            browser_navigation: { method: "Page.navigate", reason: "unknown" },
+          }),
+        }),
+      }),
+    );
+  });
+  submit("https://public.example/start");
+  await screen.findByLabelText("public.example", {
+    selector: '[role="tab"][aria-selected="true"]',
+  });
+  await expectStreamingAt("https://public.example/start");
+  expect(notice).not.toBeInTheDocument();
+  const errors = telemetry.reports.filter((event) => {
+    return event.type === "exception";
+  });
+  expect(errors).toHaveLength(1);
+  expect(reportText(errors)).not.toContain("internal.example");
+  expect(reportText(errors)).not.toContain("private-418");
 });
 
-test.each([
-  "net::ERR_ABORTED",
-  "net::ERR_BLOCKED_BY_CLIENT",
-  "net::ERR_BLOCKED_BY_ADMINISTRATOR",
-])(
-  "A native %s retains local feedback without a product exception",
-  async (reason) => {
-    const { browser, sentry } = await setupViewer(true);
-    await expectInputReady();
-    browser.rejectNextNavigation(reason);
-    await fill(screen.getByLabelText("Address"), "private-page.example");
-    await userEvent.keyboard("{Enter}");
-    await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
-      "The browser action could not be completed. Check the browser before trying again.",
-    );
-    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
-    expect(screen.getByLabelText("Address")).toBeEnabled();
-    expect(sentry.reports).toHaveLength(0);
-    expect(
-      browser.requests.filter((request) => {
-        return request.method === "Page.navigate";
-      }),
-    ).toHaveLength(1);
-
-    await fill(screen.getByLabelText("Address"), "recovered.example");
-    await userEvent.keyboard("{Enter}");
-    await waitFor(() => {
-      expect(screen.getByLabelText("Address")).toHaveValue(
-        "http://recovered.example/",
-      );
-      expect(screen.getByLabelText("Address")).toBeEnabled();
-    });
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(sentry.reports).toHaveLength(0);
-    expect(
-      browser.requests.filter((request) => {
-        return request.method === "Page.navigate";
-      }),
-    ).toHaveLength(2);
-  },
-);
-
-test.each([
-  {
-    label: "A known native failure",
-    errorText: "net::ERR_NAME_NOT_RESOLVED",
-    reason: "net::ERR_NAME_NOT_RESOLVED",
-  },
-  {
-    label: "An unknown native failure",
-    errorText: "Failed at https://private-page.example/?token=private-secret",
-    reason: "unknown",
-  },
-  {
-    label: "An expected token with extra native text",
-    errorText:
-      "net::ERR_ABORTED https://private-page.example/?token=private-secret",
-    reason: "unknown",
-  },
-])(
-  "$label reports safe attribution and leaves the viewer usable",
-  async ({ errorText, reason }) => {
-    const { browser, sentry } = await setupViewer(true);
-    await expectInputReady();
-    browser.rejectNextNavigation(errorText);
-    await fill(screen.getByLabelText("Address"), "private-page.example");
-    await userEvent.keyboard("{Enter}");
-    await screen.findByRole("alert");
-    await waitFor(() => {
-      expect(sentry.reports).toHaveLength(1);
-    });
-    expect(sentry.reports[0]).toMatchObject({
-      type: "exception",
-      error: {
-        name: "NavigationFault",
-        cause: {
-          name: "NativeNavigationFault",
-          reason,
-          request: { method: "Page.navigate" },
-        },
-      },
-      context: {
-        tags: { logger: "Promise" },
-        contexts: { browser_navigation: { method: "Page.navigate", reason } },
-      },
-    });
-    const diagnostic = JSON.stringify(
-      sentry.reports,
-      (_key, value: unknown) => {
-        return value instanceof Error
-          ? {
-              ...value,
-              message: value.message,
-              stack: value.stack,
-              cause: value.cause,
-            }
-          : value;
-      },
-    );
-    expect(diagnostic).not.toContain("private-");
-    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
-    expect(screen.getByLabelText("Address")).toBeEnabled();
-    expect(
-      browser.requests.filter((request) => {
-        return request.method === "Page.navigate";
-      }),
-    ).toHaveLength(1);
-
-    await fill(screen.getByLabelText("Address"), "recovered.example");
-    await userEvent.keyboard("{Enter}");
-    await waitFor(() => {
-      expect(screen.getByLabelText("Address")).toHaveValue(
-        "http://recovered.example/",
-      );
-      expect(screen.getByLabelText("Address")).toBeEnabled();
-    });
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(sentry.reports).toHaveLength(1);
-  },
-);
-
-test("An unhandled navigation request failure still reports without disconnecting", async () => {
-  const { browser, sentry } = await setupViewer(true);
-  await expectInputReady();
-  browser.failNext("Page.navigate", "private-provider-message");
-  await fill(screen.getByLabelText("Address"), "private-page.example");
-  await userEvent.keyboard("{Enter}");
-  await screen.findByRole("alert");
+test("browser-connection-diagnostics-06 a refused navigation reports safe protocol details and the viewer can navigate again", async () => {
+  const telemetry = observeDiagnostics();
+  const { cdp, openPage } = arrangeNativePage(context);
+  await openPage();
+  await expectStreamingAt("https://example.com");
+  const privateReason = "upstream account reference INV-1846";
+  cdp.failNext("Page.navigate", privateReason, -32_083);
+  submit("https://denied.example/invoice");
+  await screen.findByText(/browser action could not be completed/i);
   await waitFor(() => {
-    expect(sentry.reports).toHaveLength(1);
+    expect(telemetry.reports).toContainEqual(
+      expect.objectContaining({
+        type: "exception",
+        error: expect.objectContaining({
+          cause: expect.objectContaining({
+            kind: "protocol",
+            request: { method: "Page.navigate", code: -32_083 },
+          }),
+        }),
+      }),
+    );
   });
-  expect(sentry.reports[0]).toMatchObject({
-    type: "exception",
-    error: {
-      name: "NavigationFault",
-      cause: {
-        name: "CdpFault",
-        request: { method: "Page.navigate", code: -32_000 },
-      },
-    },
-    context: { tags: { logger: "Promise" } },
+  expect(reportText(telemetry.reports)).not.toContain(privateReason);
+  submit("https://receipts.example/next");
+  await screen.findByLabelText("receipts.example", {
+    selector: '[role="tab"][aria-selected="true"]',
   });
-  expect(JSON.stringify(sentry.reports)).not.toContain("private-");
-  expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  await expectStreamingAt("https://receipts.example/next");
 });

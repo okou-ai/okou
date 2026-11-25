@@ -20,7 +20,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -35,6 +34,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 
@@ -184,6 +184,8 @@ class AppUpdates(
     private var checkedAt = 0L
     private var checkJob: Job? = null
     private var transferJob: Job? = null
+    private val checkRetry = RetryDelay()
+    private val downloadRetry = RetryDelay()
     @Volatile private var transferTicket = 0L
 
     init {
@@ -244,8 +246,11 @@ class AppUpdates(
         }
     }
 
-    fun check(manual: Boolean = true) {
-        if (checkJob?.isActive == true) return
+    fun check(manual: Boolean = true, advanceRetry: Boolean = false) {
+        if (checkJob?.isActive == true) {
+            if (advanceRetry && !mutable.value.offline) checkRetry.advance()
+            return
+        }
         checkJob = scope.launch {
             initialized.await()
             connectivityReady.await()
@@ -290,14 +295,14 @@ class AppUpdates(
             } catch (error: Exception) {
                 currentCoroutineContext().ensureActive()
                 classify(error, UpdateProblem.Check)
-                val retry = error.isTemporaryNetworkFailure() && retries < 2
-                mutable.update {
-                    it.copy(check = if (retry) UpdateCheck.Waiting else UpdateCheck.Failed)
+                if (!error.isTemporaryNetworkFailure() || retries == 2) {
+                    mutable.update { it.copy(check = UpdateCheck.Failed) }
+                    return null
                 }
-                if (!retry) return null
                 retries++
-                delay(3_000)
-                state.first { !it.offline }
+                checkRetry.awaitNextAttempt {
+                    mutable.update { it.copy(check = UpdateCheck.Waiting) }
+                }
             }
         }
     }
@@ -321,10 +326,15 @@ class AppUpdates(
         }
     }
 
-    fun download(release: AndroidUpdatesRelease): Boolean {
+    fun download(release: AndroidUpdatesRelease, advanceRetry: Boolean = false): Boolean {
         val offered = mutable.value
-        if (offered.offline || !offered.canDownload || offered.candidate != release) return false
-        if (transferJob?.isActive == true) return false
+        if (offered.offline) return false
+        if (transferJob?.isActive == true) {
+            return advanceRetry &&
+                (offered.transfer as? UpdateTransfer.Waiting)?.release == release &&
+                downloadRetry.advance()
+        }
+        if (!offered.canDownload || offered.candidate != release) return false
         transferJob = scope.launch {
             val snapshot = mutable.value
             if (snapshot.offline || !snapshot.canDownload || snapshot.candidate != release)
@@ -361,22 +371,38 @@ class AppUpdates(
                 currentCoroutineContext().ensureActive()
                 if (ticket != transferTicket) return
                 val failure = classify(error, UpdateProblem.Download)
-                val retry = error.isTemporaryNetworkFailure() && retries < 2
-                mutable.update {
-                    it.copy(
-                        transfer =
-                            if (retry) UpdateTransfer.Waiting(release) else UpdateTransfer.Failed,
-                        problem = failure,
-                    )
+                if (!error.isTemporaryNetworkFailure() || retries == 2) {
+                    mutable.update { it.copy(transfer = UpdateTransfer.Failed, problem = failure) }
+                    return
                 }
-                if (!retry) return
                 retries++
-                delay(3_000)
-                state.first { !it.offline }
+                downloadRetry.awaitNextAttempt {
+                    mutable.update {
+                        it.copy(transfer = UpdateTransfer.Waiting(release), problem = failure)
+                    }
+                }
                 if (ticket != transferTicket) return
                 mutable.update {
                     it.copy(transfer = UpdateTransfer.Downloading(release), problem = null)
                 }
+            }
+        }
+    }
+
+    private inner class RetryDelay {
+        private var pending: CompletableDeferred<Unit>? = null
+
+        fun advance() = pending?.complete(Unit) == true
+
+        suspend fun awaitNextAttempt(showWaiting: () -> Unit) {
+            val signal = CompletableDeferred<Unit>()
+            pending = signal
+            try {
+                showWaiting()
+                withTimeoutOrNull(3_000) { signal.await() }
+                state.first { !it.offline }
+            } finally {
+                if (pending === signal) pending = null
             }
         }
     }

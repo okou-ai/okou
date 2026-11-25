@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.18.38](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.37...runner-lifecycle-v0.18.38) (2026-11-24)
+
+## [0.18.37](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.36...runner-lifecycle-v0.18.37) (2026-11-24)
+
+
+### Refactoring
+
+* **runner:** share bounded inotify readiness handling ([#50579](https://github.com/okou-ai/okou/issues/50579)) ([1920abe](https://github.com/okou-ai/okou/commit/1920abef18cfd8340f86c5294de511cb139320f6))
+
+## [0.18.36](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.35...runner-lifecycle-v0.18.36) (2026-11-24)
+
+## [0.18.35](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.34...runner-lifecycle-v0.18.35) (2026-11-24)
+
+## [0.18.34](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.33...runner-lifecycle-v0.18.34) (2026-11-24)
+
+## [0.18.33](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.32...runner-lifecycle-v0.18.33) (2026-11-24)
+
+
+### Bug Fixes
+
+* **runner:** reuse finalizing home for new native sessions ([#50441](https://github.com/okou-ai/okou/issues/50441)) ([7b1d40e](https://github.com/okou-ai/okou/commit/7b1d40ea54326a99bf2140381261f8e8cb301939))
+
+## [0.18.32](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.31...runner-lifecycle-v0.18.32) (2026-11-24)
+
 ## [0.18.31](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.30...runner-lifecycle-v0.18.31) (2026-11-23)
 
 ## [0.18.30](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.29...runner-lifecycle-v0.18.30) (2026-11-23)

@@ -1,6 +1,5 @@
 package ai.okou.android.chat
 
-import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
 import ai.okou.android.WorkspaceSearchField
 import ai.okou.android.WorkspaceSearchToolbar
@@ -71,7 +70,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -82,9 +84,11 @@ internal class ConversationFindVisit(
     private val rows: List<HistoryEvent>,
     private val artifactCards: Boolean,
     val restoreActionsFocus: Boolean,
+    private val imageNames: Flow<Map<String, String>>? = null,
 ) {
     private val messages = transcript?.messages.orEmpty()
     private val pendingInputIds = transcript?.pendingInputIds.orEmpty()
+    private var indexedImageNames: Map<String, String>? = null
 
     val hasLoadedMessages: Boolean
         get() = messages.isNotEmpty()
@@ -118,11 +122,17 @@ internal class ConversationFindVisit(
     }
 
     suspend fun prepareIndex() {
-        if (index == null) {
+        (imageNames ?: flowOf(emptyMap())).collectLatest { names ->
+            if (index != null && indexedImageNames == names) return@collectLatest
+            // Remove revoked names from the visible results before rebuilding off Main.
+            if (indexedImageNames.orEmpty().any { (source, name) -> names[source] != name }) {
+                index = null
+            }
             index =
                 withContext(Dispatchers.Default) {
-                    findMessages(messages, rows, pendingInputIds, artifactCards)
+                    findMessages(messages, rows, pendingInputIds, artifactCards, names)
                 }
+            indexedImageNames = names
         }
     }
 
@@ -141,6 +151,8 @@ internal class ConversationFindVisit(
             ConversationFindTarget(
                 message.id,
                 result.passage?.index.takeIf { message.role == HistoryRole.Assistant },
+                bodyIndex = result.passage?.bodyIndex,
+                markdownImage = result.passage?.imagePath,
             )
     }
 
@@ -154,6 +166,8 @@ internal class ConversationFindTarget(
     val id: String,
     val markdownBlock: Int?,
     val isRun: Boolean = false,
+    val bodyIndex: Int? = null,
+    val markdownImage: String? = null,
 ) {
     var positioned by mutableStateOf(false)
         private set
@@ -181,7 +195,13 @@ private val findWhitespace = Regex("[\\s\\p{Z}]+")
 
 private fun normalizeFindText(text: String): String = text.replace(findWhitespace, " ").trim()
 
-internal data class FindPassage(val index: Int, val start: Int, val end: Int)
+internal data class FindPassage(
+    val index: Int,
+    val start: Int,
+    val end: Int,
+    val bodyIndex: Int,
+    val imagePath: String?,
+)
 
 internal data class FindMessage(
     val id: String,
@@ -202,29 +222,29 @@ private fun findMessages(
     rows: List<HistoryEvent>,
     pendingInputIds: Set<String>,
     artifactCards: Boolean,
+    imageNames: Map<String, String>,
 ): List<FindMessage> {
     val byId = messages.associateBy { it.id }
     return rows.asReversed().mapNotNull { row ->
         val message = byId[row.id] ?: return@mapNotNull null
         if (message.role == HistoryRole.System || message.rejected || row.id in pendingInputIds)
             return@mapNotNull null
-        val parts =
-            message.blocks
-                .filter { it.kind == HistoryBlockKind.Text }
-                .flatMap {
-                    if (message.role == HistoryRole.Assistant)
-                        conversationMarkdownFindPassages(it.text, artifactCards)
-                    else listOf(it.text)
-                }
         val text = StringBuilder()
         val passages = buildList {
-            for ((index, part) in parts.withIndex()) {
-                val normalized = normalizeFindText(part)
-                if (normalized.isEmpty()) continue
-                if (text.isNotEmpty()) text.append(' ')
-                val start = text.length
-                text.append(normalized)
-                add(FindPassage(index, start, text.length))
+            for ((bodyIndex, block) in message.blocks.withIndex()) {
+                if (block.kind != HistoryBlockKind.Text) continue
+                val parts =
+                    if (message.role == HistoryRole.Assistant)
+                        conversationMarkdownFindPassages(block.text, artifactCards, imageNames)
+                    else listOf(MarkdownFindPassage(0, block.text))
+                for (part in parts) {
+                    val normalized = normalizeFindText(part.text)
+                    if (normalized.isEmpty()) continue
+                    if (text.isNotEmpty()) text.append(' ')
+                    val start = text.length
+                    text.append(normalized)
+                    add(FindPassage(part.block, start, text.length, bodyIndex, part.imagePath))
+                }
             }
         }
         if (text.isNotEmpty()) {
@@ -277,7 +297,7 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
     val keyboard = LocalSoftwareKeyboardController.current
     val inputFocus = remember { FocusRequester() }
     val resultFocus = remember { FocusRequester() }
-    val focusColor = LocalActivityStatusColor.current
+    val focusColor = colors.onSurface
     val keyboardMode = LocalInputModeManager.current.inputMode == InputMode.Keyboard
     val rowShape = RoundedCornerShape(8.dp)
     LaunchedEffect(visit) { visit.prepareIndex() }
@@ -289,14 +309,14 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
     val index = visit.index
     val keyword = visit.keyword
     val filtered by
-        produceState<Pair<String, List<FindResult>>?>(null, index, keyword) {
+        produceState<Triple<List<FindMessage>, String, List<FindResult>>?>(null, index, keyword) {
             value = index?.let { loaded ->
                 withContext(Dispatchers.Default) {
-                    keyword to conversationFindResults(loaded, keyword)
+                    Triple(loaded, keyword, conversationFindResults(loaded, keyword))
                 }
             }
         }
-    val results = filtered?.takeIf { it.first == keyword }?.second
+    val results = filtered?.takeIf { it.first === index && it.second == keyword }?.third
     LaunchedEffect(visit) {
         if (visit.focusPending && visit.focusedResult == null && inputFocus.requestFocus()) {
             visit.focusRestored()

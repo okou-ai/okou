@@ -254,3 +254,44 @@ for (const state of ["allowed", "denied", "redirect"]) {
     assert.equal(html.includes(body), state === "allowed");
   });
 }
+
+for (const kind of ["probe", "resolution"]) {
+  for (const redirect of [false, true]) {
+    test(`Host Worker handles custom hostname ${kind}${redirect ? " redirects" : " responses"} in workerd`, async (t) => {
+      const proof = "a".repeat(64);
+      const result = kind === "probe" ? { proof } : null;
+      const runtime = await createRuntime(t, "host", (request) => {
+        const url = new URL(request.url);
+        if (url.hostname === "redirected.example") {
+          return Response.json(result);
+        }
+        assert.equal(url.origin, "https://api.okou.ai");
+        assert.equal(
+          url.pathname,
+          kind === "probe"
+            ? `/api/host/custom-domain-probes/${siteId}`
+            : "/api/host/custom-domains/www.customer-example.net",
+        );
+        return redirect
+          ? new Response(null, {
+              status: 302,
+              headers: { Location: "https://redirected.example/authority" },
+            })
+          : Response.json(result);
+      });
+      const url =
+        kind === "probe"
+          ? `https://connect.okou.app/.okou/domain-verification?domainId=${siteId}&hostname=www.customer-example.net&proof=${proof}`
+          : "https://www.customer-example.net/";
+      const response = await runtime.dispatchFetch(url);
+      assert.equal(
+        response.status,
+        redirect ? 503 : kind === "probe" ? 200 : 404,
+      );
+      if (!redirect && kind === "probe") {
+        assert.deepEqual(await response.json(), { proof });
+        assert.equal(response.headers.get("X-Okou-Domain-Probe-Version"), "1");
+      }
+    });
+  }
+}

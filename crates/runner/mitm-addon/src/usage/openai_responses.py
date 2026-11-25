@@ -40,6 +40,7 @@ from .model_tokens import (
     MODEL_USAGE_CATEGORY_CACHE_READ,
     MODEL_USAGE_CATEGORY_INPUT,
     MODEL_USAGE_CATEGORY_OUTPUT,
+    MODEL_USAGE_QUANTITY_FIELD,
     update_model_usage_quantity,
 )
 from .openai_tokens import partition_input_tokens
@@ -131,18 +132,20 @@ class OpenAIResponsesEvent:
     _classification: _ResponsesEventTypeClassification
 
 
-_RESPONSES_RESPONSE_SCALAR_FIELDS = {
+_RESPONSES_RESPONSE_TEXT_FIELDS = {
     ("id",): ScalarField("string", max_bytes=1024),
     ("model",): ScalarField("string", max_bytes=1024),
     ("service_tier",): ScalarField("string", max_bytes=1024),
-    ("usage", "input_tokens"): ScalarField("int", max_bytes=64, max_int_value=MAX_USAGE_QUANTITY),
-    ("usage", "output_tokens"): ScalarField("int", max_bytes=64, max_int_value=MAX_USAGE_QUANTITY),
-    ("usage", "input_tokens_details", "cached_tokens"): ScalarField(
-        "int", max_bytes=64, max_int_value=MAX_USAGE_QUANTITY
-    ),
-    ("usage", "input_tokens_details", "cache_write_tokens"): ScalarField(
-        "int", max_bytes=64, max_int_value=MAX_USAGE_QUANTITY
-    ),
+}
+_RESPONSES_USAGE_QUANTITY_PATHS = (
+    ("usage", "input_tokens"),
+    ("usage", "output_tokens"),
+    ("usage", "input_tokens_details", "cached_tokens"),
+    ("usage", "input_tokens_details", "cache_write_tokens"),
+)
+_RESPONSES_RESPONSE_SCALAR_FIELDS = {
+    **_RESPONSES_RESPONSE_TEXT_FIELDS,
+    **dict.fromkeys(_RESPONSES_USAGE_QUANTITY_PATHS, MODEL_USAGE_QUANTITY_FIELD),
 }
 
 _RESPONSES_SSE_RESPONSE_SCALAR_FIELDS = {
@@ -153,12 +156,10 @@ _RESPONSES_SSE_SCALAR_FIELDS = {
     ("type",): ScalarField("string", max_bytes=1024, overflow_policy="discard"),
     **_RESPONSES_SSE_RESPONSE_SCALAR_FIELDS,
 }
+# Retain lifecycle evidence even when a complete frame exceeds the usage quantity ceiling.
 _RESPONSES_WEBSOCKET_RESPONSE_SCALAR_FIELDS = {
-    **_RESPONSES_RESPONSE_SCALAR_FIELDS,
-    ("usage", "input_tokens"): ScalarField("int", max_bytes=128),
-    ("usage", "output_tokens"): ScalarField("int", max_bytes=128),
-    ("usage", "input_tokens_details", "cached_tokens"): ScalarField("int", max_bytes=128),
-    ("usage", "input_tokens_details", "cache_write_tokens"): ScalarField("int", max_bytes=128),
+    **_RESPONSES_RESPONSE_TEXT_FIELDS,
+    **dict.fromkeys(_RESPONSES_USAGE_QUANTITY_PATHS, ScalarField("int", max_bytes=128)),
 }
 _RESPONSES_WEBSOCKET_SSE_RESPONSE_SCALAR_FIELDS = {
     **_RESPONSES_WEBSOCKET_RESPONSE_SCALAR_FIELDS,

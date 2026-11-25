@@ -1,17 +1,20 @@
 package ai.okou.android.chat
 
+import ai.okou.android.ContentReadFeedbackDelayMillis
+import ai.okou.android.ContentReadProgress
 import ai.okou.android.R
+import ai.okou.android.WorkspaceFilterRow
 import ai.okou.android.WorkspaceSearchField
 import ai.okou.android.WorkspaceSearchToolbar
 import ai.okou.android.artifacts.label
+import ai.okou.android.rememberContentReadFeedbackAfter
 import ai.okou.android.state.ChatSearchState
 import ai.okou.android.workspaceSearchControlHeight
+import ai.okou.android.workspaceSearchFocusOutline
 import ai.okou.android.workspaceSearchTextStyle
 import androidx.annotation.StringRes
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,7 +22,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
@@ -27,18 +29,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.relocation.BringIntoViewRequester
-import androidx.compose.foundation.relocation.bringIntoViewRequester
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -53,17 +50,13 @@ import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
@@ -81,7 +74,6 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -147,7 +139,7 @@ internal fun WorkspaceSearchScreen(
     val searchLabel = stringResource(R.string.chat_search_workspace)
     val inputStyle = workspaceSearchTextStyle().copy(color = colors.onSurface)
     val contentWidth = Modifier.widthIn(max = 720.dp).fillMaxWidth()
-    val allTabFocus = remember { FocusRequester() }
+    val typeFocus = remember { WorkspaceSearchType.entries.associateWith { FocusRequester() } }
     fun selectType(type: WorkspaceSearchType) {
         if (inputFocused) {
             focus.clearFocus()
@@ -166,7 +158,9 @@ internal fun WorkspaceSearchScreen(
             leading = {
                 IconButton(
                     onClick = onClose,
-                    modifier = Modifier.size(workspaceSearchControlHeight()),
+                    modifier =
+                        Modifier.size(workspaceSearchControlHeight())
+                            .workspaceSearchFocusOutline(CircleShape),
                 ) {
                     Icon(
                         painterResource(R.drawable.ic_arrow_back),
@@ -213,6 +207,7 @@ internal fun WorkspaceSearchScreen(
                             }
                             if (query.text.isNotEmpty()) {
                                 IconButton(
+                                    modifier = Modifier.workspaceSearchFocusOutline(CircleShape),
                                     onClick = {
                                         search.clearQuery()
                                         inputFocus.requestFocus()
@@ -232,7 +227,7 @@ internal fun WorkspaceSearchScreen(
                 )
             },
         )
-        SearchTypes(search.type, allTabFocus, contentWidth, ::selectType)
+        SearchTypes(search.type, typeFocus, contentWidth, ::selectType)
         SearchResults(
             resultList,
             search,
@@ -248,10 +243,9 @@ internal fun WorkspaceSearchScreen(
             onMoreArtifacts,
             refreshChats,
             restoreResultFocus,
-            onSelectType = ::selectType,
-            onBroaden = {
-                selectType(WorkspaceSearchType.All)
-                allTabFocus.requestFocus()
+            onSelectType = { type ->
+                selectType(type)
+                typeFocus.getValue(type).requestFocus()
             },
         )
     }
@@ -260,73 +254,21 @@ internal fun WorkspaceSearchScreen(
 @Composable
 private fun SearchTypes(
     selectedType: WorkspaceSearchType,
-    allTabFocus: FocusRequester,
+    typeFocus: Map<WorkspaceSearchType, FocusRequester>,
     modifier: Modifier,
     onSelect: (WorkspaceSearchType) -> Unit,
-) {
-    val colors = MaterialTheme.colorScheme
-    val scroll = rememberScrollState()
-    Row(
-        modifier
-            .padding(start = 16.dp, end = 16.dp, bottom = 6.dp)
-            .drawWithContent {
-                drawContent()
-                val rtl = layoutDirection == LayoutDirection.Rtl
-                val fade = 16.dp.toPx()
-                val background = colors.background
-                val transparent = background.copy(alpha = 0f)
-                if (if (rtl) scroll.canScrollForward else scroll.canScrollBackward) {
-                    drawRect(
-                        Brush.horizontalGradient(listOf(background, transparent), endX = fade),
-                        size = Size(fade, size.height),
-                    )
-                }
-                if (if (rtl) scroll.canScrollBackward else scroll.canScrollForward) {
-                    val x = size.width - fade
-                    drawRect(
-                        Brush.horizontalGradient(listOf(transparent, background), startX = x),
-                        topLeft = Offset(x, 0f),
-                        size = Size(fade, size.height),
-                    )
-                }
-            }
-            .horizontalScroll(scroll)
-            .selectableGroup(),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        for (type in WorkspaceSearchType.entries) {
-            val selected = selectedType == type
-            val reveal = remember { BringIntoViewRequester() }
-            var focused by remember { mutableStateOf(false) }
-            LaunchedEffect(selected, focused, scroll.maxValue) {
-                if (selected || focused) reveal.bringIntoView()
-            }
-            Box(
-                Modifier.widthIn(min = 48.dp)
-                    .heightIn(min = 48.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .then(
-                        if (type == WorkspaceSearchType.All)
-                            Modifier.focusRequester(allTabFocus).focusProperties { canFocus = true }
-                        else Modifier,
-                    )
-                    .background(if (selected) colors.secondaryContainer else colors.background)
-                    .bringIntoViewRequester(reveal)
-                    .onFocusChanged { focused = it.isFocused }
-                    .testTag("search_type_${type.name}")
-                    .selectable(selected, role = Role.Tab) { onSelect(type) }
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    stringResource(type.label),
-                    style = searchSecondaryStyle(),
-                    color = if (selected) colors.onSecondaryContainer else colors.onSurface,
-                )
-            }
-        }
-    }
-}
+) =
+    WorkspaceFilterRow(
+        WorkspaceSearchType.entries,
+        selectedType,
+        Role.Tab,
+        label = { stringResource(it.label) },
+        modifier = modifier.padding(start = 16.dp, end = 16.dp, bottom = 6.dp),
+        optionModifier = {
+            Modifier.focusRequester(typeFocus.getValue(it)).testTag("search_type_${it.name}")
+        },
+        onSelect = onSelect,
+    )
 
 private const val GroupKeyPrefix = "group:"
 private const val MessageKeyPrefix = "message:"
@@ -363,7 +305,8 @@ private sealed interface SearchItem {
     data class Group(
         val type: WorkspaceSearchType,
         @StringRes val title: Int,
-        val more: Boolean = false,
+        val more: Boolean,
+        val separated: Boolean,
     ) : SearchItem {
         override val key = "$GroupKeyPrefix${type.name}"
     }
@@ -395,7 +338,14 @@ private fun <T> MutableList<SearchItem>.addGroup(
     item: (T) -> SearchItem,
 ) {
     if (rows.isEmpty()) return
-    add(SearchItem.Group(type, title, compact && (more || rows.size > GroupedSearchResultLimit)))
+    add(
+        SearchItem.Group(
+            type,
+            title,
+            more = compact && (more || rows.size > GroupedSearchResultLimit),
+            separated = isNotEmpty(),
+        ),
+    )
     val count = if (compact) minOf(rows.size, GroupedSearchResultLimit) else rows.size
     for (index in 0 until count) add(item(rows[index]))
 }
@@ -417,7 +367,6 @@ private fun SearchResults(
     refreshChats: () -> Unit,
     restoreResultFocus: Boolean,
     onSelectType: (WorkspaceSearchType) -> Unit,
-    onBroaden: () -> Unit,
 ) {
     val keyword = search.keyword
     val type = search.type
@@ -594,16 +543,27 @@ private fun SearchResults(
             workspacePreparation == null &&
                 onOpenArtifact == null &&
                 type == WorkspaceSearchType.Artifacts
-    val hasRemoteResults =
-        messages.isNotEmpty() || workflowRead is SearchRead.Ready || artifacts.isNotEmpty()
+    val hasUsableRemoteSource =
+        messages.isNotEmpty() ||
+            (messageRead is SearchRead.Ready && !needsMessageChats) ||
+            workflowRead is SearchRead.Ready ||
+            artifactPage != null
+    val onlySavedChats = confirmedChats && !hasUsableRemoteSource
     val readFailure =
         when {
             grouped &&
                 (messageFailure || workflowFailure || artifactFailure || chatRefreshFailed) ->
-                if (confirmedChats && !hasRemoteResults) R.string.chat_search_partial_local
-                else R.string.chat_search_unavailable
+                when {
+                    onlySavedChats && items.isEmpty() -> R.string.chat_search_saved_chats_no_matches
+                    onlySavedChats -> R.string.chat_search_partial_local
+                    items.isEmpty() -> R.string.chat_search_failed
+                    else -> R.string.chat_search_unavailable
+                }
             needsChatList && !confirmedChats && listFailed -> R.string.chat_list_first_load_failed
-            showChats && chatRefreshFailed -> R.string.chat_search_saved_chats
+            showChats && chatRefreshFailed ->
+                if (keyword.isNotEmpty() && items.isEmpty())
+                    R.string.chat_search_saved_chats_no_matches
+                else R.string.chat_search_saved_chats
             grouped -> null
             keyword.isEmpty() -> null
             type == WorkspaceSearchType.Messages && messageFailure ->
@@ -617,7 +577,7 @@ private fun SearchResults(
                 else R.string.chat_search_artifacts_failed
             else -> null
         }
-    val status = readFailure.takeUnless { remotePending }
+    val status = readFailure.takeUnless { pending }
     val showEmpty =
         items.isEmpty() &&
             !waitingForList &&
@@ -626,19 +586,11 @@ private fun SearchResults(
             (!remotePending || reads.all { it == null || it is SearchRead.Ready })
     val showPending =
         key(keyword, type) {
-            rememberChatWaitIndicator(
-                remotePending || waitingForList && items.isEmpty() && status == null,
-                delayMillis = 250,
-            )
+            rememberContentReadFeedbackAfter(ContentReadFeedbackDelayMillis.takeIf { pending })
         }
-    val showSkeleton = showPending && items.isEmpty() && status == null && !showEmpty
-    val showProgress = showPending && items.isNotEmpty() && remotePending
-    val errorTitle =
-        status
-            ?.takeIf { items.isEmpty() }
-            ?.let {
-                if (grouped) R.string.chat_search_failed else it
-            }
+    val showSkeleton = showPending && items.isEmpty() && !showEmpty
+    val showProgress = showPending && items.isNotEmpty()
+    val errorTitle = status.takeIf { items.isEmpty() }
     val inlineStatus = status.takeIf { errorTitle == null }
     val visibleItems =
         remember(inlineStatus, items) {
@@ -704,6 +656,7 @@ private fun SearchResults(
         LazyColumn(
             Modifier.fillMaxSize()
                 .focusRequester(resultFocus)
+                .workspaceSearchFocusOutline(RectangleShape)
                 .focusable()
                 .testTag("chat_search_results"),
             state = search.position,
@@ -712,14 +665,7 @@ private fun SearchResults(
             items(visibleItems, key = { it.key }, contentType = { it.isResult }) { row ->
                 when (row) {
                     is SearchItem.Notice ->
-                        Text(
-                            stringResource(row.message),
-                            Modifier.padding(12.dp).semantics {
-                                liveRegion = LiveRegionMode.Polite
-                            },
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = searchSecondaryStyle(),
-                        )
+                        ContentReadFeedback(row.message, Modifier.padding(12.dp))
                     is SearchItem.Group -> SearchGroup(row) { onSelectType(row.type) }
                     is SearchItem.Chat -> {
                         val chat = row.chat
@@ -823,22 +769,13 @@ private fun SearchResults(
                             style = searchSecondaryStyle(),
                         )
                     } else {
-                        SearchEmpty(
-                            type.emptyLabel,
-                            onBroaden.takeIf { type != WorkspaceSearchType.All },
-                        )
+                        SearchEmpty(type, onSelectType)
                     }
                 }
             }
         }
         if (showProgress) {
-            val colors = MaterialTheme.colorScheme
-            val label = stringResource(R.string.chat_search_loading)
-            LinearProgressIndicator(
-                modifier =
-                    Modifier.fillMaxWidth().height(4.dp).semantics { contentDescription = label },
-                trackColor = lerp(colors.background, colors.primary, 0.18f),
-            )
+            ContentReadProgress(R.string.chat_search_loading)
         }
     }
 }
@@ -852,7 +789,7 @@ private fun SearchGroup(group: SearchItem.Group, onMore: () -> Unit) {
             .padding(
                 start = 12.dp,
                 end = 12.dp,
-                top = if (group.type == WorkspaceSearchType.Chats) 0.dp else 16.dp,
+                top = if (group.separated) 16.dp else 0.dp,
             ),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
@@ -860,14 +797,16 @@ private fun SearchGroup(group: SearchItem.Group, onMore: () -> Unit) {
         Text(
             label,
             modifier =
-                Modifier.weight(1f).padding(top = 8.dp, bottom = 4.dp).semantics { heading() },
+                Modifier.weight(1f).padding(top = 10.dp, bottom = 4.dp).semantics { heading() },
             style = searchSecondaryStyle().copy(fontWeight = FontWeight.SemiBold),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (group.more) {
             Box(
-                Modifier.heightIn(min = 48.dp)
+                Modifier.widthIn(min = 48.dp)
+                    .heightIn(min = 48.dp)
                     .clip(RoundedCornerShape(12.dp))
+                    .workspaceSearchFocusOutline(RoundedCornerShape(12.dp))
                     .clickable(role = Role.Button, onClick = onMore)
                     .semantics { contentDescription = moreLabel }
                     .padding(horizontal = 8.dp, vertical = 4.dp),
@@ -907,6 +846,7 @@ private fun SearchResult(
             .clip(ChatListRowShape)
             .focusRequester(rowFocus)
             .focusProperties { canFocus = true }
+            .workspaceSearchFocusOutline(ChatListRowShape)
             .clickable(role = Role.Button, onClick = onOpen)
             .padding(ChatListRowPadding),
         verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
@@ -935,30 +875,27 @@ private fun SearchResult(
 
 @Composable
 private fun SearchEmpty(
-    @StringRes title: Int,
-    onAction: (() -> Unit)?,
+    type: WorkspaceSearchType,
+    onSelectType: (WorkspaceSearchType) -> Unit,
 ) {
     Column(
         Modifier.padding(top = 24.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
-            stringResource(title),
-            Modifier.padding(horizontal = 12.dp),
+            stringResource(type.emptyLabel),
+            Modifier.padding(horizontal = 12.dp).semantics {
+                heading()
+                liveRegion = LiveRegionMode.Polite
+            },
             style = chatListTitleStyle().copy(fontWeight = FontWeight.SemiBold),
         )
-        if (onAction != null) {
-            Box(
-                Modifier.heightIn(min = 48.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .clickable(role = Role.Button, onClick = onAction)
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                contentAlignment = Alignment.CenterStart,
+        if (type != WorkspaceSearchType.All) {
+            ChatListTextAction(
+                R.string.chat_search_all_types,
+                modifier = Modifier.workspaceSearchFocusOutline(RoundedCornerShape(12.dp)),
             ) {
-                Text(
-                    stringResource(R.string.chat_search_all_types),
-                    style = searchSecondaryStyle().copy(fontWeight = FontWeight.SemiBold),
-                )
+                onSelectType(WorkspaceSearchType.All)
             }
         }
     }
@@ -966,7 +903,11 @@ private fun SearchEmpty(
 
 @Composable
 private fun searchSecondaryStyle() =
-    MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp, lineHeight = 20.sp)
+    MaterialTheme.typography.bodyMedium.copy(
+        fontSize = 13.sp,
+        lineHeight = 20.sp,
+        letterSpacing = 0.sp,
+    )
 
 @get:StringRes
 private val WorkspaceSearchType.label: Int

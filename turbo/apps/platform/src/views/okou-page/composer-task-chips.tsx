@@ -22,20 +22,19 @@ import { ComposerRail } from "./composer-rail.tsx";
 import { TemplateCard } from "./template-card.tsx";
 import { DocumentTemplateCover } from "./document-template-cover.tsx";
 import {
-  slashTemplatePreviews,
+  composerTemplatePreviews,
   toDocumentGenerationTemplate,
-  type SlashTemplatePreviewCategory,
+  type ComposerTemplatePreviewCategory,
 } from "./composer-template-catalog.ts";
 import { useCustomTemplateRecommendations } from "./use-custom-template-recommendations.ts";
 import { ComposerVisualizationOptions } from "./composer-visualization-options.tsx";
-import { ComposerPresentationOutputPicker } from "./composer-presentation-output-picker.tsx";
 import { ComposerTemplateSuggestion } from "./composer-template-suggestion.tsx";
 
 /**
  * Illustration styles run 20 portrait, 9 square and 3 landscape, so their own
  * proportions cannot line up. One 4:5 tile centre-crops them into a single
  * rhythm; a style sample is judged on texture and palette, and the uncropped
- * artwork is still what the picker dialog shows. The other two catalogs are
+ * artwork is used when generating. The other two catalogs are
  * screenshots of 16:9 artifacts and keep that ratio.
  */
 const TASK_TEMPLATE_SHELF = {
@@ -48,7 +47,7 @@ const TASK_TEMPLATE_SHELF = {
 } as const satisfies Record<
   ComposerTemplateTask,
   {
-    readonly category: SlashTemplatePreviewCategory;
+    readonly category: ComposerTemplatePreviewCategory;
     readonly width: number;
     readonly ratio: string;
   }
@@ -71,9 +70,7 @@ function ComposerTemplateCover({
   readonly coverUrl: string | null;
   readonly ratio: string;
   /**
-   * A document cover is drawn as the picker draws it -- the first page as a
-   * sheet on the tile's ground, cropped by the tile's bottom edge -- so one
-   * template looks the same on the shelf, in the slash panel and in the picker.
+   * A document's first page sits on the tile's ground, cropped at the bottom.
    */
   readonly documentPage?: { readonly hasMorePages: boolean };
   readonly onSelect: () => void;
@@ -113,40 +110,6 @@ function ComposerTemplateCover({
   );
 }
 
-/**
- * What a type's "View all" opens: the template picker on the catalog its shelf
- * samples. The capability tray draws the control in its own tab row, so the
- * shelf and the tray read the same answer from here.
- */
-export function useTaskTemplateBrowse(
-  signals: ComposerSignals,
-  task: ComposerTask,
-): (() => void) | null {
-  const openTemplates = useSet(signals.template.openTemplatePicker$);
-  const setPickerCategory = useSet(signals.template.setDocumentCategory$);
-  // Workflows browse the workflow picker instead; Chart has no catalog.
-  if (task === "workflow" || task === "visualization") {
-    return null;
-  }
-  if (task === "presentation") {
-    return () => {
-      openTemplates({ kind: "insert", category: "slides" });
-    };
-  }
-  if (task === "document") {
-    // The tray's document shelf lists every purpose, so its catalog opens on
-    // All rather than on a filter the member never picked.
-    return () => {
-      setPickerCategory("all");
-      openTemplates({ kind: "insert", category: "document" });
-    };
-  }
-  const { category } = TASK_TEMPLATE_SHELF[task];
-  return () => {
-    openTemplates({ kind: "insert", category });
-  };
-}
-
 function ComposerTemplateShelf({
   signals,
   task,
@@ -156,7 +119,7 @@ function ComposerTemplateShelf({
 }) {
   const { t } = useTranslation();
   const { category, width, ratio } = TASK_TEMPLATE_SHELF[task];
-  const previews = slashTemplatePreviews(category);
+  const previews = composerTemplatePreviews(category);
   const custom = useCustomTemplateRecommendations(signals, "illustration");
   const setMode = useSet(signals.create.setMode$);
   const insertTemplate = useSet(signals.template.insertTemplate$);
@@ -189,7 +152,6 @@ function ComposerTemplateShelf({
                   key="import"
                   signals={signals}
                   kind="illustration"
-                  compact
                   onImported={() => {
                     setMode(null);
                   }}
@@ -280,7 +242,6 @@ function ComposerDocumentTemplateRail({
           key="import"
           signals={signals}
           kind="document"
-          compact
           onImported={() => {
             setMode(null);
           }}
@@ -300,7 +261,6 @@ function ComposerDocumentTemplateRail({
                   type: "custom",
                   templateId: template.id,
                   kind: "document",
-                  category: "all",
                 });
               }}
               onSelect={() => {
@@ -335,7 +295,6 @@ function ComposerDocumentTemplateRail({
                 previewRecommendation({
                   type: "document",
                   templateId: item.id,
-                  category: "all",
                 });
               }}
               onSelect={() => {
@@ -388,12 +347,7 @@ export function ComposerTaskTemplates({
   readonly selected: Exclude<ComposerTask, "workflow">;
 }) {
   if (selected === "presentation") {
-    return (
-      <div className="flex min-w-0 snap-start flex-col gap-6">
-        <ComposerPresentationOutputPicker />
-        <ComposerPresentationRecommendations signals={signals} />
-      </div>
-    );
+    return <ComposerPresentationRecommendations signals={signals} />;
   }
   if (selected === "document") {
     return <ComposerDocumentRecommendations signals={signals} />;

@@ -15,6 +15,8 @@ pub mod host_file;
 pub mod host_memory;
 pub mod idle_prune_control;
 pub mod ingress_service_status;
+#[cfg(any(target_os = "linux", target_os = "android"))]
+pub mod inotify;
 pub mod live_runner_instances;
 pub mod lock;
 pub mod log_file;

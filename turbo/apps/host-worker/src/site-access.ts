@@ -18,6 +18,8 @@ export interface SiteAuthEnv {
   readonly HOST_DOMAIN: string;
   readonly OKOU_HOST_DOMAIN: string;
   readonly HOSTED_SITE_API_ORIGIN?: string;
+  /** Supplied only after canonical domain and delivery authority resolution. */
+  readonly customHostname?: string;
 }
 
 const SESSION_COOKIE = "__Host-okou-site-session";
@@ -90,8 +92,11 @@ export function hostedSiteRecoveryResponse(
   const source = new URL(request.url);
   if (
     source.protocol !== "https:" ||
-    !source.hostname.endsWith(`.${env.OKOU_HOST_DOMAIN}`) ||
-    /^(?:pv|ps|sh)-/u.test(source.hostname) ||
+    (!source.hostname.endsWith(`.${env.OKOU_HOST_DOMAIN}`) &&
+      source.hostname !== env.customHostname &&
+      source.pathname !== HOSTED_SITE_AUTH_CALLBACK_PATH) ||
+    (source.hostname.endsWith(`.${env.OKOU_HOST_DOMAIN}`) &&
+      /^(?:pv|ps|sh)-/u.test(source.hostname)) ||
     !env.HOSTED_SITE_AUTH_URL ||
     !URL.canParse(env.HOSTED_SITE_AUTH_URL)
   )
@@ -148,7 +153,8 @@ async function beginLogin(
     url.protocol !== "https:" ||
     bridge.protocol !== "https:" ||
     bridge.origin === url.origin ||
-    !url.hostname.endsWith(`.${env.OKOU_HOST_DOMAIN}`)
+    (!url.hostname.endsWith(`.${env.OKOU_HOST_DOMAIN}`) &&
+      url.hostname !== env.customHostname)
   ) {
     throw new Error("Invalid hosted site sign-in origin");
   }

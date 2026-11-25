@@ -12,7 +12,6 @@
     <string name="chat_undo_failed">未能復原</string>
     <string name="chat_undo_unconfirmed">復原結果尚未確認</string>
     <string name="chat_feedback_dismiss">關閉提示</string>
-    <string name="chat_list_offline">離線</string>
     <string name="chat_list_first_load_failed">暫時無法載入</string>
     <string name="chat_list_load_when_online">連線後載入聊天。</string>
     <string name="chat_list_title">聊天</string>
@@ -24,6 +23,9 @@
     <string name="chat_inbox">收件匣</string>
     <string name="chat_mark_all_read">全部標為已讀</string>
     <string name="chat_mark_all_read_unconfirmed">有些聊天可能仍未讀。</string>
+    <string name="chat_mark_all_read_failed">未能將聊天標為已讀</string>
+    <string name="chat_mark_all_read_partial_failed">已將 %1$d 條聊天標為已讀，%2$d 條未能更新</string>
+    <string name="chat_mark_all_read_mixed">已讀 %1$d 條，失敗 %2$d 條，尚未確認 %3$d 條</string>
     <plurals name="chat_mark_all_read_partial">
         <item quantity="other">已將 %2$d 個聊天中的 %1$d 個標示為已讀。</item>
     </plurals>
@@ -75,6 +77,14 @@
     <string name="chat_delete_description">「%1$s」的訊息與草稿將永久刪除。正在執行的任務會停止，關聯的自動化會暫停。</string>
     <string name="chat_rename_project">重新命名專案</string>
     <string name="chat_project_name">專案名稱</string>
+    <string name="chat_project_create">新增專案</string>
+    <string name="chat_project_create_confirm">建立</string>
+    <string name="chat_project_creating">正在建立…</string>
+    <string name="chat_project_create_close">關閉</string>
+    <string name="chat_project_checking">正在核對…</string>
+    <string name="chat_project_create_failed">無法建立專案，名稱已保留</string>
+    <string name="chat_project_create_unconfirmed">尚未確認專案建立結果</string>
+    <string name="chat_project_name_too_long">專案名稱不得超過 %1$d 個字元</string>
     <string name="chat_project_rename_unconfirmed">無法確認專案名稱。</string>
     <string name="chat_project_rename_rejected">無法重新命名專案。</string>
     <string name="chat_project_rename_save">儲存</string>
@@ -102,4 +112,9 @@
     <string name="chat_rename_save_unconfirmed">尚未確認提交結果。</string>
     <string name="chat_title_saved">已儲存聊天名稱</string>
     <string name="chat_project_name_saved">已儲存專案名稱</string>
+    <string name="inline_image_loading">正在載入圖片</string>
+    <string name="inline_image_no_thumbnail">無縮圖</string>
+    <string name="inline_image_unavailable">圖片無法使用</string>
+    <string name="inline_image_view_original">查看原圖</string>
+    <string name="inline_image_open_link">開啟連結</string>
 </resources>

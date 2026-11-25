@@ -1,143 +1,184 @@
-// @vitest-environment-options {"url":"https://app.okou.ai/"}
-
-import { waitFor } from "@testing-library/react";
-import { expect, test, vi } from "vitest";
-import type { CaptureResult } from "posthog-js/dist/module.slim";
-
-import { setupPage, startPage } from "../../../__tests__/page-helper.ts";
+// @vitest-environment-options {"url":"https://app.okou.ai/","settings":{"disableIframePageLoading":true,"disableCSSFileLoading":true,"handleDisabledFileLoadingAsSuccess":true}}
+import { waitFor, screen, cleanup } from "@testing-library/react";
+import { test, expect, vi } from "vitest";
+import { startPage, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  createTestRuntime,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 import { initPostHog } from "../../../lib/posthog.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-
 const context = testContext();
-const PROOF_PATHS = [
-  "/settings/agentphone",
-  "/settings/telegram",
-  "/telegram/connect",
-  "/SETTINGS/telegram/",
-  "/connectors/slack/callback",
-  "/connectors/microsoft-365/callback",
-  "/connectors/github/callback",
-] as const;
-
-function signedEntry(path: string): string {
-  if (path === "/settings/agentphone") {
-    return `https://app.okou.ai${path}?handle=private-phone&agent=private-agent&ts=1700000000&sig=private-signature-fixture&channel=imessage&context=one&context=two#public-context`;
+const host = "app.okou.ai";
+const markers = {
+  tgUser: "79000888",
+  tgUserName: "river_private",
+  tgDisplayName: "MorganPrivate",
+  ts: "1795059444",
+  sig: "68".repeat(32),
+} as const;
+function destination(path: string, privateFields: Record<string, string>) {
+  const url = new URL(path, "https://" + host);
+  url.searchParams.append("context", "desktop");
+  for (const [key, value] of Object.entries(privateFields)) {
+    url.searchParams.set(key, value);
   }
-  if (path.startsWith("/connectors/")) {
-    return `https://app.okou.ai${path}?integration=${path.includes("microsoft-365") ? "teams" : path.includes("github") ? "github" : "slack"}&code=private-code&state=private-state&context=one&context=two#public-context`;
-  }
-  return `https://app.okou.ai${path}?bot=official&tgUser=99001&ts=1700000000&sig=private-signature-fixture&tgUserName=private-name&tgDisplayName=Private+Display&context=one&context=two#public-context`;
+  url.searchParams.append("context", "follow-up");
+  url.hash = "#public-notes";
+  return url;
 }
-
-function expectRedacted(value: unknown): void {
-  const serialized = JSON.stringify(value);
-  for (const secret of [
-    "99001",
-    "1700000000",
-    "private-signature-fixture",
-    "private-name",
-    "Private",
-    "private-code",
-    "private-state",
-    "private-phone",
-    "private-agent",
-  ]) {
-    // Boolean assertions avoid printing even fixture proof URLs on failure.
-    expect(serialized.includes(secret)).toBeFalsy();
-  }
+async function redirect(url: URL) {
+  await startPage({
+    context,
+    auth: null,
+    host,
+    path: url.pathname + url.search + url.hash,
+    sharedWorkerTestTransport: "message-port",
+  });
+  await waitFor(() => {
+    expect(location.pathname).toBe("/sign-in");
+  });
+  const signin = new URL(location.href);
+  expect(signin.searchParams.get("redirect_url")).toBe(url.href);
+  cleanup();
+  return signin;
 }
-
-test.each(PROOF_PATHS)(
-  "%s redacts actual auth diagnostics while keeping signed browser navigation",
-  async (path) => {
-    const logs = vi.spyOn(console, "info").mockImplementation(() => {});
-    const target = signedEntry(path);
-    await startPage({ context, host: "app.okou.ai", path: target, auth: null });
-    await waitFor(() => {
-      expect(window.location.pathname).toBe("/sign-in");
-    });
-    expect(logs.mock.calls.length).toBeGreaterThan(0);
-    expectRedacted(logs.mock.calls);
-    const authParams = new URL(window.location.href).searchParams;
-    expect(authParams.get("redirect_url") === target).toBeTruthy();
-    expect(JSON.stringify(logs.mock.calls)).toContain(
-      "context=one&context=two",
+function publicContext(value: unknown, path: string) {
+  if (typeof value !== "string") {
+    throw new Error("Expected a diagnostic URL");
+  }
+  const parsed = new URL(value);
+  expect(parsed.pathname).toBe(path);
+  expect(parsed.searchParams.getAll("context")).toStrictEqual([
+    "desktop",
+    "follow-up",
+  ]);
+  expect(parsed.hash).toBe("#public-notes");
+}
+test.each([
+  ["002", "/settings/telegram"],
+  ["003", "/telegram/connect"],
+  ["004", "/SETTINGS/telegram/"],
+])(
+  "integration-url-diagnostics-%s %s preserves the signed sign-in return while protecting its diagnostic copies",
+  async (_id, path) => {
+    const original = destination(path, markers);
+    const info = vi.spyOn(console, "info");
+    await redirect(original);
+    const records = info.mock.calls.flat().filter(
+      (
+        value,
+      ): value is {
+        currentUrl: string;
+        signInUrl: string;
+        redirectUrl: string;
+      } => {
+        return (
+          typeof value === "object" && value !== null && "signInUrl" in value
+        );
+      },
     );
+    expect(records.length).toBeGreaterThan(0);
+    for (const record of records) {
+      publicContext(record.currentUrl, path);
+      publicContext(record.redirectUrl, path);
+      publicContext(
+        new URL(record.signInUrl).searchParams.get("redirect_url"),
+        path,
+      );
+    }
+    for (const privateValue of Object.values(markers)) {
+      expect(JSON.stringify(info.mock.calls)).not.toContain(privateValue);
+    }
   },
 );
-
-test("App redirects redact the emitted redirectUrl diagnostic too", async () => {
-  const logs = vi.spyOn(console, "info").mockImplementation(() => {});
-  const target = signedEntry("/settings/telegram");
-  await startPage({ context, host: "app.okou.ai", path: target, auth: null });
-  await waitFor(() => {
-    expect(window.location.pathname).toBe("/sign-in");
-  });
-  expectRedacted(logs.mock.calls);
-  expect(
-    new URL(window.location.href).searchParams.get("redirect_url") === target,
-  ).toBeTruthy();
-});
-
-test.each(PROOF_PATHS)(
-  "%s proofs stay out of PostHog URL, referrer and person properties",
-  async (path) => {
-    const posthog = context.mocks.posthog();
-    const target = signedEntry(path);
-    await setupPage({
-      context,
-      host: "app.okou.ai",
-      path: `/sign-in#/?redirect_url=${encodeURIComponent(target)}`,
-      auth: null,
-      env: { VITE_POSTHOG_KEY: "phc_platform_test" },
-    });
-    initPostHog();
-    const beforeSend = posthog.initializations.at(-1)?.config?.before_send;
-    if (typeof beforeSend !== "function") {
-      throw new Error("PostHog before_send was not configured");
+const phoneFields = {
+  handle: "15558884731",
+  agent: "private-assistant-argos",
+  ts: "1795059555",
+  sig: "92".repeat(32),
+} as const;
+const callbackFields = {
+  code: "local-slack-response",
+  state: "local-consent-state",
+} as const;
+const analyticsRoutes: readonly [string, string, Record<string, string>][] = [
+  ["009", "/settings/agentphone", phoneFields],
+  ["010", "/settings/telegram", markers],
+  ["011", "/telegram/connect", markers],
+  ["012", "/SETTINGS/telegram/", markers],
+  ["013", "/connectors/slack/callback", callbackFields],
+];
+test.each(analyticsRoutes)(
+  "integration-url-diagnostics-%s %s keeps private analytics fields out of the event while preserving the browser return",
+  async (_id, path, fields) => {
+    const original = destination(path, fields);
+    if (path === "/connectors/slack/callback") {
+      original.searchParams.set("integration", "slack");
     }
-    const queryAuth = `https://app.okou.ai/sign-in/tasks/choose-organization?redirect_url=${encodeURIComponent(target)}`;
-    // These are the installed SDK's event, attribution and person envelopes.
-    const event: CaptureResult = {
-      event: "$pageview",
-      uuid: "public-event-id",
+    const analytics = context.mocks.posthog();
+    const signin = await redirect(original);
+    await setupPage({
+      context: createTestRuntime(context),
+      auth: null,
+      host: signin.host,
+      path: signin.pathname + signin.search + signin.hash,
+      sharedWorkerTestTransport: "message-port",
+    });
+    await screen.findByTestId("clerk-sign-in");
+    // Page setup starts the Router. The deployed document initializes the SDK separately.
+    initPostHog();
+    const process = analytics.initializations.at(-1)?.config?.before_send;
+    if (typeof process !== "function") {
+      throw new Error("Sign-in did not initialize the analytics event filter");
+    }
+    const other = "https://docs.example.org/channels?source=phone";
+    const plain = "Opened channel preferences";
+    const event = {
+      uuid: crypto.randomUUID(),
+      event: "channel continuation",
       properties: {
-        $current_url: window.location.href,
-        $referrer: queryAuth,
-        $initial_current_url: target,
-        $initial_referrer: target,
-        $session_entry_url: queryAuth,
-        $session_entry_referrer: target,
-        return_url: target,
-        $set: { $current_url: target },
-        $set_once: { $initial_referrer: queryAuth },
-        unrelated_url:
-          "https://app.okou.ai/settings/slack?sig=public&context=one&context=two",
-        label: "ordinary text",
+        $current_url: signin.href,
+        $referrer: original.href,
+        $initial_referrer: original.href,
+        $set: { $last_current_url: original.href },
+        $set_once: { $initial_referrer: original.href },
+        help: other,
+        note: plain,
       },
-      $set: { $referrer: target },
-      $set_once: { $initial_current_url: window.location.href },
+      $set: { $referrer: original.href },
+      $set_once: { $initial_current_url: signin.href },
     };
-    const output = beforeSend(event);
-    expectRedacted(output);
-    const publicUrl = new URL(String(output?.properties.$initial_current_url));
-    expect(publicUrl.searchParams.get("bot")).toBe(
-      new URL(target).searchParams.get("bot"),
+    const before = structuredClone(event);
+    const filtered = process(event);
+    expect(event).toStrictEqual(before);
+    if (!filtered) {
+      throw new Error("Expected an analytics event");
+    }
+    expect(filtered.properties).toMatchObject({ help: other, note: plain });
+    for (const privateValue of Object.values(fields)) {
+      expect(JSON.stringify(filtered)).not.toContain(privateValue);
+    }
+    const direct = [
+      filtered.properties.$referrer,
+      filtered.properties.$initial_referrer,
+      filtered.properties.$set?.$last_current_url,
+      filtered.properties.$set_once?.$initial_referrer,
+      filtered.$set?.$referrer,
+    ];
+    for (const value of direct) {
+      publicContext(value, original.pathname);
+    }
+    for (const wrapped of [
+      filtered.properties.$current_url,
+      filtered.$set_once?.$initial_current_url,
+    ]) {
+      publicContext(
+        new URL(String(wrapped)).searchParams.get("redirect_url"),
+        original.pathname,
+      );
+    }
+    expect(new URL(location.href).searchParams.get("redirect_url")).toBe(
+      original.href,
     );
-    expect(publicUrl.searchParams.getAll("context")).toStrictEqual([
-      "one",
-      "two",
-    ]);
-    expect(publicUrl.hash).toBe("#public-context");
-    expect(output?.properties.unrelated_url).toBe(
-      event.properties.unrelated_url,
-    );
-    expect(output?.properties.label).toBe("ordinary text");
-    expect(event.properties.$initial_current_url === target).toBeTruthy();
-    expect(
-      new URLSearchParams(window.location.hash.split("?")[1]).get(
-        "redirect_url",
-      ) === target,
-    ).toBeTruthy();
   },
 );

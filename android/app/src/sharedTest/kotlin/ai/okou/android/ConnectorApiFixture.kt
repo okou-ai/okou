@@ -8,6 +8,8 @@ import java.net.ConnectException
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.hours
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
@@ -30,9 +32,12 @@ internal const val CONNECTOR_SLACK_ACCOUNT = "10000000-0000-4000-8000-0000000000
 internal const val CONNECTOR_GMAIL_ACCOUNT = "10000000-0000-4000-8000-000000000004"
 internal const val CONNECTOR_OAUTH_ATTEMPT = "20000000-0000-4000-8000-000000000001"
 internal const val CONNECTOR_AUTHORIZATION_URL = "https://provider.example/authorize?fixture=one"
+internal const val CONNECTOR_DEVICE_ACCOUNT = "10000000-0000-4000-8000-000000000006"
 internal const val CONNECTOR_DEVICE_EXAMPLE = "device-example"
 internal const val CONNECTOR_MANUAL_EXAMPLE = "manual-example"
 internal const val CONNECTOR_EXAMPLE_DEVICE_CODE = "ABCD-1234"
+private const val DEVICE_POLL_PATH =
+    "/api/connectors/$CONNECTOR_DEVICE_EXAMPLE/oauth/device/sessions/$CONNECTOR_OAUTH_ATTEMPT/poll"
 
 internal data class FixtureConnectorIcon(
     val asset: String,
@@ -63,6 +68,15 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
     @Volatile var failAccountReads = false
     @Volatile var denyAccountReads = false
     @Volatile var denyPermissionReads = false
+    @Volatile var memberAccess = false
+    @Volatile var devicePollStatus = "pending"
+    @Volatile var devicePollInterval = 5
+    @Volatile var deviceExpiresIn = 900
+    @Volatile var loseFirstDevicePollReply = false
+    val devicePollReplyStarted = CountDownLatch(1)
+    @Volatile var devicePollReplyGate: CountDownLatch? = null
+    val devicePollRequests = AtomicInteger()
+    val deviceStartRequests = AtomicInteger()
     @Volatile var loseRenameReply = false
     @Volatile var deferRenameCommit = false
     @Volatile var renameReplyGate: CountDownLatch? = null
@@ -76,6 +90,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
     val chatOverrideRequests = CopyOnWriteArrayList<FixtureChatOverride>()
     val chatOverrideReads = CopyOnWriteArrayList<Pair<String, String>>()
     private val chatOverrides = mutableMapOf<Pair<String, String>, Boolean>()
+    private val memberPolicies = mutableMapOf<String, Pair<Boolean, String?>>()
     @Volatile var failOauthCompletion = false
     @Volatile var oauthCompletion: String? = null
     @Volatile var rejectConnection = false
@@ -203,6 +218,10 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                     val response = synchronized(accounts) { respond(request) }
                     if (url.pathSegments.size == 3 && url.pathSegments[1] == "connector-catalog")
                         detailReplyGate?.await()
+                    if (request.method == "POST" && url.encodedPath == DEVICE_POLL_PATH) {
+                        devicePollReplyStarted.countDown()
+                        devicePollReplyGate?.await()
+                    }
                     if (
                         request.method == "PATCH" &&
                             url.pathSegments.getOrNull(1) == "connector-accounts"
@@ -242,6 +261,14 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
         }
     }
 
+    fun reauthorizeCalendar() {
+        synchronized(accounts) {
+            val id = CONNECTOR_CALENDAR_SECONDARY
+            accounts[id] = accounts.getValue(id).copy(scopeMismatch = false)
+            oauthCompletion = id
+        }
+    }
+
     fun removeAccount(id: String) {
         synchronized(accounts) { accounts.remove(id) }
     }
@@ -266,12 +293,26 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
         }
     }
 
+    private fun policy(id: String): JsonObject {
+        val (allowed, expiresAt) = memberPolicies[id] ?: (accounts.getValue(id).enabled to null)
+        return buildJsonObject {
+            put("connectionId", id)
+            put("allowed", allowed)
+            put("enabled", allowed)
+            put("expiresAt", expiresAt)
+        }
+    }
+
     private fun respond(request: RecordedRequest): MockResponse {
         val url = checkNotNull(request.requestUrl)
         val path = url.encodedPath
         val parts = url.pathSegments
         val querySlug = url.queryParameter("connectorSlug")
         return when {
+            path == "/api/feature-switches" ->
+                jsonResponse(
+                    """{"effectiveSwitches":{"memberConnectorAccountAccess":$memberAccess}}""",
+                )
             path == "/api/chat-connector-overview" ->
                 json(
                     JsonArray(
@@ -412,6 +453,38 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                             .map { (id, account) -> account.defaults(id) },
                     ),
                 )
+            path == "/api/connector-account-access/policies" ->
+                if (!memberAccess || url.queryParameter("kind") != "builtin") rejected(403)
+                else
+                    json(
+                        JsonArray(
+                            accounts.filterValues { it.slug == querySlug }.keys.map(::policy),
+                        ),
+                    )
+            parts.getOrNull(1) == "connector-account-access" && parts.getOrNull(3) == "policy" -> {
+                val id = parts[2]
+                val account = accounts[id] ?: return rejected(404)
+                val requestBody = body(request)
+                if (
+                    !memberAccess ||
+                        request.method != "PUT" ||
+                        requestBody["target"] != target(account.slug)
+                )
+                    return rejected(403)
+                val choice = requestBody["policy"]?.jsonPrimitive?.contentOrNull
+                val hours =
+                    when (choice) {
+                        "deny",
+                        "allow-always" -> null
+                        "allow-1h" -> 1
+                        "allow-24h" -> 24
+                        "allow-7d" -> 168
+                        else -> return rejected(400)
+                    }
+                val expiresAt = hours?.let { (Clock.System.now() + it.hours).toString() }
+                memberPolicies[id] = (choice != "deny") to expiresAt
+                json(policy(id))
+            }
             parts.getOrNull(1) == "connector-account-access" &&
                 parts.getOrNull(3) == "default-enabled" -> {
                 val id = parts[2]
@@ -430,15 +503,19 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                     return rejected(404)
                 jsonResponse("""{"connectionId":"$id"}""")
             }
-            path == "/api/connectors/gmail/oauth/start" && request.method == "POST" -> {
+            request.method == "POST" &&
+                (path == "/api/connectors/gmail/oauth/start" ||
+                    path == "/api/connectors/$CONNECTOR_CALENDAR/oauth/start") -> {
                 val requestBody = body(request)
+                val account = requestBody["account"]?.jsonObject ?: return rejected(400)
+                val reconnect = path == "/api/connectors/$CONNECTOR_CALENDAR/oauth/start"
+                val intent = if (reconnect) "reconnect" else "add"
                 if (
                     requestBody["authMethod"]?.jsonPrimitive?.contentOrNull != "oauth" ||
-                        requestBody["account"]
-                            ?.jsonObject
-                            ?.get("intent")
-                            ?.jsonPrimitive
-                            ?.contentOrNull != "add"
+                        account["intent"]?.jsonPrimitive?.contentOrNull != intent ||
+                        reconnect &&
+                            account["connectionId"]?.jsonPrimitive?.contentOrNull !=
+                                CONNECTOR_CALENDAR_SECONDARY
                 )
                     return rejected(400)
                 jsonResponse(
@@ -449,9 +526,34 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                 request.method == "POST" -> {
                 if (body(request)["authMethod"]?.jsonPrimitive?.content != "device-auth")
                     return rejected(400)
+                deviceStartRequests.incrementAndGet()
                 jsonResponse(
-                    """{"sessionId":"$CONNECTOR_OAUTH_ATTEMPT","sessionToken":"fixture-only","connectorSlug":"$CONNECTOR_DEVICE_EXAMPLE","status":"pending","userCode":"$CONNECTOR_EXAMPLE_DEVICE_CODE","verificationUri":"$CONNECTOR_AUTHORIZATION_URL","expiresIn":900,"interval":5}""",
+                    """{"sessionId":"$CONNECTOR_OAUTH_ATTEMPT","sessionToken":"fixture-only","connectorSlug":"$CONNECTOR_DEVICE_EXAMPLE","status":"pending","userCode":"$CONNECTOR_EXAMPLE_DEVICE_CODE","verificationUri":"$CONNECTOR_AUTHORIZATION_URL","expiresIn":$deviceExpiresIn,"interval":$devicePollInterval}""",
                 )
+            }
+            path == DEVICE_POLL_PATH && request.method == "POST" -> {
+                if (body(request)["sessionToken"]?.jsonPrimitive?.content != "fixture-only")
+                    return rejected(400)
+                val attempt = devicePollRequests.incrementAndGet()
+                val response =
+                    when (val status = devicePollStatus) {
+                        "pending" ->
+                            jsonResponse("""{"status":"pending","interval":$devicePollInterval}""")
+                        "complete" -> {
+                            accounts[CONNECTOR_DEVICE_ACCOUNT] =
+                                FixtureAccount(
+                                    CONNECTOR_DEVICE_EXAMPLE,
+                                    "Device account",
+                                    "device@example.com",
+                                    authMethod = "device-auth",
+                                )
+                            jsonResponse(
+                                """{"status":"complete","connectionId":"$CONNECTOR_DEVICE_ACCOUNT"}""",
+                            )
+                        }
+                        else -> jsonResponse("""{"status":"$status"}""")
+                    }
+                if (attempt == 1 && loseFirstDevicePollReply) rejected(503) else response
             }
             path == "/api/connectors/$CONNECTOR_MANUAL_EXAMPLE/manual-grant" &&
                 request.method == "POST" -> {
@@ -573,6 +675,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
     override fun close() {
         discoveryGate?.countDown()
         detailReplyGate?.countDown()
+        devicePollReplyGate?.countDown()
         renameReplyGate?.countDown()
         defaultReplyGate?.countDown()
         chatOverrideReplyGate?.countDown()

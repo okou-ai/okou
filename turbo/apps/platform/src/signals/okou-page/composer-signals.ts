@@ -58,10 +58,11 @@ import {
   type ComposerUiSignalGroups,
 } from "./chat-composer.ts";
 import { buildComposerAdditionalInfo } from "./composer-additional-info.ts";
+import { presentationOutputFormat$ } from "./presentation-output-format.ts";
 import {
-  presentationOutputFormat$,
-  presentationOutputFormatEnabled$,
-} from "./presentation-output-format.ts";
+  createPresentationFormatSetupSignals,
+  type PresentationFormatSetupSignals,
+} from "./composer-presentation-format-setup.ts";
 import type { ComposerTaskSelection } from "./composer-task-handoff.ts";
 import type { ComposerProjectSignals } from "../projects/composer-project.ts";
 import {
@@ -137,7 +138,7 @@ type ComposerSuggestionSignals = Pick<
 
 type ComposerTemplateEditorSignals = Pick<
   WorkflowComposerSignals,
-  "hasTemplateAttachment$" | "insertTemplate$" | "openTemplatePicker$"
+  "hasTemplateAttachment$" | "insertTemplate$"
 >;
 
 type ComposerModelUiSignals = ComposerUiSignalGroups["model"];
@@ -216,6 +217,7 @@ interface ComposerComputerSignals {
 }
 
 interface ComposerSubmissionSignals {
+  readonly presentationFormatSetup: PresentationFormatSetupSignals;
   readonly sending$: Computed<Promise<boolean>>;
   readonly primaryAction$: Computed<Promise<ComposerPrimaryAction>>;
   readonly hasCurrentInvocation$: Computed<boolean>;
@@ -466,7 +468,6 @@ function composerTemplateSignals(
   return {
     hasTemplateAttachment$: composer.hasTemplateAttachment$,
     insertTemplate$: composer.insertTemplate$,
-    openTemplatePicker$: composer.openTemplatePicker$,
   };
 }
 
@@ -574,7 +575,6 @@ export function createComposerSignals(
   const ui = createComposerUiSignals();
   const workflowComposer = createWorkflowComposerSignals(
     draft,
-    ui.openTemplatePickerDialog$,
     {
       autoFocus: true,
       ...(options.forwardComposer
@@ -588,7 +588,6 @@ export function createComposerSignals(
     insertTemplate$: workflowComposer.insertTemplate$,
     insertPrompt$: workflowComposer.replacePromptText$,
     clearPrompt$: workflowComposer.clearUnchangedPrompt$,
-    openTemplatePicker$: workflowComposer.openTemplatePicker$,
     focusEditor$: workflowComposer.focus$,
     saveDraft$: options.draft.save$,
   });
@@ -660,7 +659,6 @@ export function createComposerSignals(
     template: {
       previewRecommendation$: createTemplateRecommendationPreviewCommand(
         ui.template,
-        workflowComposer.openTemplatePicker$,
       ),
       selectTemplateAndSave$: createComposerTemplateSelection(
         taskChips,
@@ -1015,6 +1013,8 @@ function createSubmitCurrentInput({
       if (voiceState.status !== "idle") {
         return false;
       }
+      const presentationFormat =
+        (await get(presentationOutputFormat$)) ?? undefined;
       const submission = await set(
         workflowComposer.readInputForSubmission$,
         signal,
@@ -1042,11 +1042,6 @@ function createSubmitCurrentInput({
       const visualization =
         taskSelection.task === "visualization"
           ? taskSelection.visualization
-          : undefined;
-      const presentationFormat =
-        (await get(presentationOutputFormatEnabled$)) &&
-        (mode === "presentation" || visualization?.output === "presentation")
-          ? get(presentationOutputFormat$)
           : undefined;
       const composerAdditionalInfo = buildComposerAdditionalInfo(
         mode,
@@ -1136,13 +1131,18 @@ function createComposerSubmissionSignals(
     workflowComposer,
     voiceState$,
   });
-  const submitCurrentInput$ = createSubmitCurrentInput({
-    options,
-    workflowComposer,
-    voice,
-    create,
-    taskChips,
+  const presentationFormatSetup = createPresentationFormatSetupSignals({
+    task$: taskChips.task$,
+    primaryAction$,
+    submitCurrentInput$: createSubmitCurrentInput({
+      options,
+      workflowComposer,
+      voice,
+      create,
+      taskChips,
+    }),
   });
+  const submitCurrentInput$ = presentationFormatSetup.submit$;
   const activatePrimaryAction$ = command(
     async (
       { get, set },
@@ -1165,6 +1165,7 @@ function createComposerSubmissionSignals(
   );
 
   return {
+    presentationFormatSetup,
     hasCurrentInvocation$,
     primaryAction$,
     submitCurrentInput$,

@@ -12,7 +12,6 @@
     <string name="chat_undo_failed">元に戻せませんでした</string>
     <string name="chat_undo_unconfirmed">元に戻せたか確認できませんでした</string>
     <string name="chat_feedback_dismiss">閉じる</string>
-    <string name="chat_list_offline">オフライン</string>
     <string name="chat_list_first_load_failed">一時的に読み込めません</string>
     <string name="chat_list_load_when_online">オンラインに戻るとチャットが読み込まれます。</string>
     <string name="chat_list_title">チャット</string>
@@ -24,6 +23,9 @@
     <string name="chat_inbox">受信トレイ</string>
     <string name="chat_mark_all_read">すべて既読にする</string>
     <string name="chat_mark_all_read_unconfirmed">一部のチャットが未読のままの可能性があります。</string>
+    <string name="chat_mark_all_read_failed">チャットを既読にできませんでした。</string>
+    <string name="chat_mark_all_read_partial_failed">既読にしたチャット: %1$d 件、更新できなかったチャット: %2$d 件</string>
+    <string name="chat_mark_all_read_mixed">既読にしたチャット：%1$d 件。失敗：%2$d 件。未確認：%3$d 件。</string>
     <plurals name="chat_mark_all_read_partial">
         <item quantity="other">%2$d 件のチャットのうち %1$d 件を既読にしました。</item>
     </plurals>
@@ -75,6 +77,14 @@
     <string name="chat_delete_description">「%1$s」のメッセージと下書きは完全に削除されます。実行中のタスクは停止し、関連する自動化は一時停止します。</string>
     <string name="chat_rename_project">プロジェクト名を変更</string>
     <string name="chat_project_name">プロジェクト名</string>
+    <string name="chat_project_create">新しいプロジェクト</string>
+    <string name="chat_project_create_confirm">作成</string>
+    <string name="chat_project_creating">作成中…</string>
+    <string name="chat_project_create_close">閉じる</string>
+    <string name="chat_project_checking">確認中…</string>
+    <string name="chat_project_create_failed">プロジェクトを作成できませんでした。入力した名前は保持されています。</string>
+    <string name="chat_project_create_unconfirmed">プロジェクトの作成結果を確認できていません</string>
+    <string name="chat_project_name_too_long">プロジェクト名は%1$d文字以内で入力してください</string>
     <string name="chat_project_rename_unconfirmed">プロジェクト名を確認できませんでした。</string>
     <string name="chat_project_rename_rejected">プロジェクトの名前を変更できませんでした。</string>
     <string name="chat_project_rename_save">保存</string>
@@ -102,4 +112,9 @@
     <string name="chat_rename_save_unconfirmed">保存結果はまだ確認できていません。</string>
     <string name="chat_title_saved">チャット名を保存しました</string>
     <string name="chat_project_name_saved">プロジェクト名を保存しました</string>
+    <string name="inline_image_loading">画像を読み込み中…</string>
+    <string name="inline_image_no_thumbnail">サムネイルを表示できません</string>
+    <string name="inline_image_unavailable">画像を表示できません</string>
+    <string name="inline_image_view_original">元の画像を表示</string>
+    <string name="inline_image_open_link">リンクを開く</string>
 </resources>

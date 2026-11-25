@@ -1,111 +1,124 @@
-import { waitFor } from "@testing-library/react";
-import { expect, test, vi } from "vitest";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { waitFor } from "@testing-library/react";
+import { expect, test } from "vitest";
 import { startPage } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
-const siteId = "00000000-0000-4000-8000-000000000001";
-const origin = "https://demo.okou.app";
-const state = "a".repeat(43);
-const codeChallenge = "b".repeat(43);
-const path = `/hosted-site-authorize?${new URLSearchParams({ siteId, origin, state, codeChallenge })}`;
-
-// The browser navigation is the external result; it must never carry a Clerk JWT.
-test("the trusted App returns only a one-use authorization code to the exact site", async () => {
-  const callbackUrl = `${origin}/.okou/auth/callback?code=${"c".repeat(64)}&state=${state}`;
-  const redirect = vi
-    .spyOn(window.location, "replace")
-    .mockImplementation(() => {});
-  context.mocks.api(
-    hostContract.authorizeSiteSession,
-    ({ body, params, respond }) => {
-      expect(params.siteId).toBe(siteId);
-      expect(body).toStrictEqual({ origin, state, codeChallenge });
-      return respond(200, { callbackUrl });
-    },
-  );
-  await startPage({ context, host: "app.okou.ai", path });
-  await waitFor(() => {
-    return expect(redirect).toHaveBeenCalledWith(callbackUrl);
+// The bridge leaves this document before rendering a page; the browser destination is its completion signal.
+function verificationPath(origin: string, returnTo?: string) {
+  const query = new URLSearchParams({
+    state: "s".repeat(43),
+    origin,
+    siteId: "9d8fc853-d2b7-489c-b63e-6edb41c52029",
+    codeChallenge: "p".repeat(43),
   });
-});
+  if (returnTo) {
+    query.set("returnTo", returnTo);
+  }
+  return "/hosted-site-authorize?" + query;
+}
 
-test("a denied website navigates to the dedicated access page", async () => {
-  const redirect = vi
-    .spyOn(window.location, "replace")
-    .mockImplementation(() => {});
-  context.mocks.api(hostContract.authorizeSiteSession, ({ respond }) => {
-    return respond(403, {
-      error: { code: "FORBIDDEN", message: "Website access is unavailable" },
-    });
-  });
-  await startPage({ context, host: "app.okou.ai", path });
-  await waitFor(() => {
-    expect(redirect).toHaveBeenCalledWith(
-      `https://app.okou.ai/hosted-site-access?${new URLSearchParams({ url: `${origin}/`, reason: "denied" })}`,
-    );
-  });
-});
-
-test.each([401, 500] as const)(
-  "authorization status %s preserves the website destination for recovery",
-  async (status) => {
-    const redirect = vi
-      .spyOn(window.location, "replace")
-      .mockImplementation(() => {});
+test.each([
+  {
+    id: "002",
+    status: 403,
+    reason: "denied",
+    site: "https://reports.okou.app",
+    returnTo: undefined,
+  },
+  {
+    id: "004",
+    status: 500,
+    reason: "unavailable",
+    site: "https://demo.okou.app",
+    returnTo: "/report?view=summary",
+  },
+] as const)(
+  "hosted-site-authorization-$id redirects the $status response to the website recovery destination",
+  async ({ status, reason, site, returnTo }) => {
     context.mocks.api(hostContract.authorizeSiteSession, ({ respond }) => {
       return respond(status, {
         error: {
-          code: status === 401 ? "UNAUTHORIZED" : "INTERNAL_SERVER_ERROR",
-          message: "Authorization is unavailable",
+          code: status === 403 ? "FORBIDDEN" : "INTERNAL_SERVER_ERROR",
+          message: "Site session could not be issued",
         },
       });
     });
     await startPage({
       context,
       host: "app.okou.ai",
-      path: `${path}&returnTo=${encodeURIComponent("/report?view=summary")}`,
+      path: verificationPath(site, returnTo),
     });
     await waitFor(() => {
-      expect(redirect).toHaveBeenCalledWith(
-        `https://app.okou.ai/hosted-site-access?${new URLSearchParams({ url: `${origin}/report?view=summary`, reason: status === 401 ? "authenticate" : "unavailable" })}`,
-      );
+      return expect(location.pathname).toBe("/hosted-site-access");
+    });
+    const recovery = new URL(location.href);
+    expect(recovery.origin + recovery.pathname).toBe(
+      "https://app.okou.ai/hosted-site-access",
+    );
+    expect(Object.fromEntries(recovery.searchParams)).toStrictEqual({
+      reason,
+      url: site + (returnTo ?? "/"),
     });
   },
 );
 
-test("sign-in returns to the trusted App bridge with the complete browser state", async () => {
-  await startPage({ context, host: "app.okou.ai", path, auth: null });
-  await waitFor(() => {
-    return expect(window.location.pathname).toBe("/sign-in");
-  });
-  expect(
-    new URL(window.location.href).searchParams.get("redirect_url") ??
-      new URLSearchParams(new URL(window.location.href).hash.split("?")[1]).get(
-        "redirect_url",
-      ),
-  ).toBe(`https://app.okou.ai${path}`);
-});
+test.each(["https://archive.okou.app", "https://journal.example.net"])(
+  "An invited website viewer without an organization reaches the signed callback at %s",
+  async (origin) => {
+    const path = verificationPath(origin, "/annual-report");
+    const callback = new URL("/.okou/auth/callback", origin);
+    callback.searchParams.set("code", "d".repeat(64));
+    callback.searchParams.set(
+      "state",
+      new URL(path, origin).searchParams.get("state")!,
+    );
+    context.mocks.api(
+      hostContract.authorizeSiteSession,
+      ({ params, body, respond }) => {
+        expect(params.siteId).toBe("9d8fc853-d2b7-489c-b63e-6edb41c52029");
+        expect(body).toStrictEqual({
+          origin,
+          state: "s".repeat(43),
+          codeChallenge: "p".repeat(43),
+        });
+        return respond(200, { callbackUrl: callback.href });
+      },
+    );
+    await startPage({
+      context,
+      host: "app.okou.ai",
+      path,
+      auth: {
+        user: { id: "invited-reader", fullName: "Invited Reader" },
+        organization: { activeOrg: null, memberships: [] },
+      },
+    });
+    await waitFor(() => {
+      expect(location.href).toBe(callback.href);
+    });
+  },
+);
 
-test("a website viewer without a workspace continues directly after signing in", async () => {
-  const callbackUrl = `${origin}/.okou/auth/callback?code=${"c".repeat(64)}&state=${state}`;
-  const redirect = vi
-    .spyOn(window.location, "replace")
-    .mockImplementation(() => {});
+test("A custom-domain grant denial keeps the original path for recovery", async () => {
+  const site = "https://journal.example.net";
   context.mocks.api(hostContract.authorizeSiteSession, ({ respond }) => {
-    return respond(200, { callbackUrl });
+    return respond(403, {
+      error: { code: "FORBIDDEN", message: "This invitation has expired" },
+    });
   });
   await startPage({
     context,
     host: "app.okou.ai",
-    path,
-    auth: {
-      user: { id: "hosted-site-viewer", fullName: "Website Viewer" },
-      organization: { activeOrg: null, memberships: [] },
-    },
+    path: verificationPath(site, "/issue?edition=7"),
   });
   await waitFor(() => {
-    expect(redirect).toHaveBeenCalledWith(callbackUrl);
+    const dest = new URL(location.href);
+    expect(dest.pathname).toBe("/hosted-site-access");
+    expect(Object.fromEntries(dest.searchParams)).toStrictEqual({
+      url: site + "/issue?edition=7",
+      reason: "denied",
+    });
   });
 });

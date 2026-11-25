@@ -14,9 +14,31 @@
     <string name="conversation_new_reply">नया जवाब</string>
     <string name="conversation_view_progress">प्रगति देखें</string>
     <string name="conversation_processing">काम जारी है…</string>
-    <string name="conversation_history_offline">ऑनलाइन होने पर चैट का इतिहास लोड होगा।</string>
     <string name="conversation_offline_send">भेजने के लिए ऑनलाइन हों। आपका ड्राफ़्ट यहीं रहेगा।</string>
-    <string name="conversation_work">काम के चरण</string>
+    <string name="conversation_reply_summary">जवाब का सारांश</string>
+    <string name="conversation_turn_continued">अगली बारी में जारी</string>
+    <string name="conversation_replying">जवाब दिया जा रहा है…</string>
+    <string name="conversation_turn_done">पूरा हुआ</string>
+    <string name="conversation_replies_expanded">विस्तृत</string>
+    <string name="conversation_replies_collapsed">संक्षिप्त</string>
+    <string name="conversation_work_elapsed">%1$s से काम जारी है</string>
+    <string name="conversation_work_total">कुल %1$s काम किया</string>
+    <string name="conversation_followup_continue">जारी रखें</string>
+    <string name="conversation_feedback_pair">%1$s · %2$s</string>
+    <plurals name="conversation_reply_steps">
+        <item quantity="one">%d चरण</item>
+        <item quantity="other">%d चरण</item>
+    </plurals>
+    <string-array name="conversation_completion_phrases">
+        <item>समाप्त हुआ</item>
+        <item>सब हो गया</item>
+        <item>पहुँचा दिया</item>
+        <item>आपकी सेवा में, काम पूरा</item>
+        <item>काम समेट लिया</item>
+        <item>मिशन पूरा</item>
+        <item>हस्ताक्षर किए</item>
+        <item>सब निपट गया</item>
+    </string-array>
     <string name="conversation_reply_actions">जवाब की कार्रवाइयाँ</string>
     <string name="conversation_copy_reply">जवाब कॉपी करें</string>
     <string name="conversation_reply_copied">जवाब कॉपी हो गया</string>
