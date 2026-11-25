@@ -44,7 +44,6 @@ import androidx.annotation.StringRes
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -80,17 +79,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.clerk.api.ui.ClerkColors
@@ -547,7 +541,7 @@ private fun WorkspaceSettings(
         ) { modifier, open ->
             SettingsRow(
                 workspaceName ?: label,
-                leading = { WorkspaceLogo(workspaceId, workspaceName, Modifier.size(40.dp)) },
+                leading = { WorkspaceLogo(workspaceId, Modifier.size(40.dp)) },
                 modifier =
                     if (message == null) modifier
                     else modifier.semantics { liveRegion = LiveRegionMode.Polite },
@@ -671,7 +665,7 @@ private fun WorkspaceAvatar(
                         contentDescription = workspaceName?.let { "$label, $it" } ?: label
                     },
         ) {
-            WorkspaceLogo(workspaceId, workspaceName, Modifier.size(size))
+            WorkspaceLogo(workspaceId, Modifier.size(size))
         }
     }
     LaunchedEffect(restoreFocus, enabled) {
@@ -682,39 +676,16 @@ private fun WorkspaceAvatar(
     }
 }
 
-/** The bundled brand tile carrying the workspace's initial in the tile's own hue. */
 @Composable
-internal fun WorkspaceLogo(id: String, name: String?, modifier: Modifier) {
-    val colorway = remember(id) { workspaceColorway(id) }
-    val initial = remember(name) { name?.let(::workspaceInitial) }
-    BoxWithConstraints(modifier.clip(CircleShape), contentAlignment = Alignment.Center) {
-        Image(
-            painterResource(workspaceLogos[colorway]),
-            contentDescription = null,
-            modifier = Modifier.matchParentSize(),
-        )
-        if (initial != null) {
-            // Sized to the tile in dp, so it does not grow with the font scale and overflow it.
-            val fontSize =
-                with(LocalDensity.current) { (maxWidth * workspaceInitialScale(initial)).toSp() }
-            Text(
-                initial,
-                color = Color(workspaceLetterColors[colorway]),
-                style =
-                    MaterialTheme.typography.labelLarge.copy(
-                        fontSize = fontSize,
-                        lineHeight = fontSize,
-                        fontWeight = FontWeight.SemiBold,
-                        lineHeightStyle =
-                            LineHeightStyle(
-                                LineHeightStyle.Alignment.Center,
-                                LineHeightStyle.Trim.Both,
-                            ),
-                    ),
-                modifier = Modifier.clearAndSetSemantics {},
-            )
-        }
-    }
+internal fun WorkspaceLogo(id: String, modifier: Modifier) {
+    val logo = remember(id) { workspaceLogo(id) }
+    Image(painterResource(logo), contentDescription = null, modifier = modifier.clip(CircleShape))
+}
+
+// The Web and iOS clients use FNV-1a over UTF-16 to select the same bundled brand tile.
+private fun workspaceLogo(id: String): Int {
+    val hash = id.fold(2_166_136_261u) { hash, char -> (hash xor char.code.toUInt()) * 16_777_619u }
+    return workspaceLogos[(hash % workspaceLogos.size.toUInt()).toInt()]
 }
 
 private val workspaceLogos =
@@ -774,7 +745,7 @@ private fun WorkspaceChooser(
                         }
                     },
                     modifier = if (current) Modifier.bringIntoViewRequester(selected) else Modifier,
-                    leading = { WorkspaceLogo(workspace.id, workspace.name, Modifier.size(28.dp)) },
+                    leading = { WorkspaceLogo(workspace.id, Modifier.size(28.dp)) },
                     trailing = { foreground ->
                         if (pending && workspaceSwitch.target == workspace.id) {
                             CircularProgressIndicator(

@@ -47,7 +47,7 @@ struct ChatSidebarHeader: View {
             Text(workspace.name)
           } icon: {
             OkouWorkspaceMenuLogos.image(
-              workspaceID: workspace.id, name: workspace.name, hasImage: workspace.hasImage,
+              workspaceID: workspace.id, hasImage: workspace.hasImage,
               cachedImage: authentication.presentation?.image("workspace:" + workspace.id))
           }
           .tag(workspace.id)

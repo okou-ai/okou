@@ -7,50 +7,42 @@
     {
       "name": "WorkspaceDefault-0",
       "url": "https://static.vm0.io/platform/views/zero-page/assets/avatar-texture/v1-brand-tiles-20260921/dash-pink-pink.svg",
-      "sha256": "a1e294a84b3a72d05d23d8209d095cba6c022c1b6a4208b9593eee1445dd2bfb",
-      "letter": "#6E485B"
+      "sha256": "a1e294a84b3a72d05d23d8209d095cba6c022c1b6a4208b9593eee1445dd2bfb"
     },
     {
       "name": "WorkspaceDefault-1",
       "url": "https://static.vm0.io/platform/views/zero-page/assets/avatar-texture/v2-tonal-dark-grounds-20261028/dash-coral-red.svg",
-      "sha256": "589b0c153a6cf6e0629464a772d8687b1d7aa00a9f4af9cf3841b7b2b060c83a",
-      "letter": "#480000"
+      "sha256": "589b0c153a6cf6e0629464a772d8687b1d7aa00a9f4af9cf3841b7b2b060c83a"
     },
     {
       "name": "WorkspaceDefault-2",
       "url": "https://static.vm0.io/platform/views/zero-page/assets/avatar-texture/v1-brand-tiles-20260921/drop-lightblue-blue.svg",
-      "sha256": "a20c2b80135a2400b5dd8961c03e2241d8d33dcab37c07b657a5d78ef112fc4e",
-      "letter": "#395766"
+      "sha256": "a20c2b80135a2400b5dd8961c03e2241d8d33dcab37c07b657a5d78ef112fc4e"
     },
     {
       "name": "WorkspaceDefault-3",
       "url": "https://static.vm0.io/platform/views/zero-page/assets/avatar-texture/v2-tonal-dark-grounds-20261028/drop-blue-navy.svg",
-      "sha256": "ae12b64dd820943121bc29b11880fdbef997b4453294df72e216f1ede6b146a1",
-      "letter": "#D9ECFF"
+      "sha256": "ae12b64dd820943121bc29b11880fdbef997b4453294df72e216f1ede6b146a1"
     },
     {
       "name": "WorkspaceDefault-4",
       "url": "https://static.vm0.io/platform/views/zero-page/assets/avatar-texture/v1-brand-tiles-20260921/loop-yellow-orange.svg",
-      "sha256": "aee8bc19cc101291e3ec7e17a6ca2e873cc41d83ede3a351a3d2177f5a03afd7",
-      "letter": "#675900"
+      "sha256": "aee8bc19cc101291e3ec7e17a6ca2e873cc41d83ede3a351a3d2177f5a03afd7"
     },
     {
       "name": "WorkspaceDefault-5",
       "url": "https://static.vm0.io/platform/views/zero-page/assets/avatar-texture/v2-tonal-dark-grounds-20261028/loop-orange-amber.svg",
-      "sha256": "3664520c2e73a7bbecdb2555283e4abec49deb9d115666c215c12c3ebca87b5c",
-      "letter": "#6E2F00"
+      "sha256": "3664520c2e73a7bbecdb2555283e4abec49deb9d115666c215c12c3ebca87b5c"
     },
     {
       "name": "WorkspaceDefault-6",
       "url": "https://static.vm0.io/platform/views/zero-page/assets/avatar-texture/v1-brand-tiles-20260921/stripe-lime-green.svg",
-      "sha256": "417b81eb34680d3a8722137c97f8019ffda9ef353cc80c054d518c8d5384cd1a",
-      "letter": "#465900"
+      "sha256": "417b81eb34680d3a8722137c97f8019ffda9ef353cc80c054d518c8d5384cd1a"
     },
     {
       "name": "WorkspaceDefault-7",
       "url": "https://static.vm0.io/platform/views/zero-page/assets/avatar-texture/v2-tonal-dark-grounds-20261028/stripe-teal-pine.svg",
-      "sha256": "ab9fe8516211cfc7419a0620b59a31aff5bcca299e8468ba07283cb6bc162ba7",
-      "letter": "#EAFFFE"
+      "sha256": "ab9fe8516211cfc7419a0620b59a31aff5bcca299e8468ba07283cb6bc162ba7"
     }
   ]
 }
