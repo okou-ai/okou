@@ -5,7 +5,11 @@ FROM connector_account_oauth_bindings binding WHERE binding.connector_account_id
 UPDATE connectors account SET external_issuer = binding.issuer
 FROM custom_connector_account_oauth_bindings binding WHERE binding.connector_account_id = account.id;
 --> statement-breakpoint
- -- Keep the established account identity and its access policy. Only the latest
+-- The historical Webflow placeholder never identified an authorized account.
+UPDATE connectors SET external_id = NULL
+WHERE connector_slug = 'webflow' AND external_id = 'unknown';
+--> statement-breakpoint
+-- Keep the established account identity and its access policy. Only the latest
 -- accepted credentials/metadata replace it; dependants follow the retained ID.
 CREATE TEMP TABLE connector_identity_merge ON COMMIT DROP AS
 SELECT id, canonical_id, credential_id

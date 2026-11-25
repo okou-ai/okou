@@ -45,13 +45,18 @@ async function completeSession(actor: ApiTestUser, session: Session) {
   return completed;
 }
 
-async function createAccountPair(actor: ApiTestUser) {
+async function createAccountPair(
+  actor: ApiTestUser,
+  oauthProvider: ReturnType<typeof mockTestOAuthDeviceConnectorProvider>,
+) {
+  oauthProvider.setSubject("test-oauth-device-default");
   const first = await connectors.startDeviceAuth(
     actor,
     "test-oauth-device",
     "oauth",
   );
   const defaultAccount = await completeSession(actor, first);
+  oauthProvider.setSubject("test-oauth-device-user");
   const second = await connectors.startDeviceAuth(
     actor,
     "test-oauth-device",
@@ -142,11 +147,16 @@ describe("Builtin device-auth retained-claim completion", () => {
     await owned.run(async () => {
       const actor = owned.actor;
       owned.ownsFeatureSwitches();
-      mockTestOAuthDeviceConnectorProvider({ tokenScope: "read baseline" });
+      const oauthProvider = mockTestOAuthDeviceConnectorProvider({
+        tokenScope: "read baseline",
+      });
       await connectors.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.TestOauthConnector]: true,
       });
-      const { defaultAccount, siblingAccount } = await createAccountPair(actor);
+      const { defaultAccount, siblingAccount } = await createAccountPair(
+        actor,
+        oauthProvider,
+      );
       const old = await connectors.startDeviceAuth(
         actor,
         "test-oauth-device",
@@ -213,11 +223,16 @@ describe("Builtin device-auth retained-claim completion", () => {
     await owned.run(async () => {
       const actor = owned.actor;
       owned.ownsFeatureSwitches();
-      mockTestOAuthDeviceConnectorProvider({ tokenScope: "read baseline" });
+      const oauthProvider = mockTestOAuthDeviceConnectorProvider({
+        tokenScope: "read baseline",
+      });
       await connectors.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.TestOauthConnector]: true,
       });
-      const { defaultAccount, siblingAccount } = await createAccountPair(actor);
+      const { defaultAccount, siblingAccount } = await createAccountPair(
+        actor,
+        oauthProvider,
+      );
       const startedAt = now();
       mockNow(startedAt);
       mockTestOAuthDeviceConnectorProvider({ interval: 3 });

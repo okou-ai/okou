@@ -1,5 +1,8 @@
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { describe, expect, it } from "vitest";
+import { http, HttpResponse } from "msw";
+import { server } from "../../../mocks/server";
+import { mockOptionalEnv } from "../../../lib/env";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { connectorAccountRoutes } from "../connector-accounts";
@@ -17,7 +20,7 @@ const accounts = setupApp({ context, routes: connectorAccountRoutes })(
   connectorAccountsContract,
 );
 
-type Slug = "gmail" | "google-drive";
+type Slug = "gmail" | "google-drive" | "webflow";
 function provider(slug: Slug, subject: string, email = "account@example.test") {
   if (slug === "gmail") {
     mockGmailConnectorOAuth({
@@ -33,7 +36,9 @@ function provider(slug: Slug, subject: string, email = "account@example.test") {
 }
 function state(authorizationUrl: string) {
   const value = new URL(authorizationUrl).searchParams.get("state");
-  if (!value) {throw new Error("Missing provider state");}
+  if (!value) {
+    throw new Error("Missing provider state");
+  }
   return value;
 }
 async function finish(
@@ -71,6 +76,28 @@ async function list(slug: Slug) {
 }
 
 describe("provider account identity on Add account", () => {
+  it.each(["unavailable", "missing"] as const)(
+    "keeps Webflow accounts independent when provider identity is %s",
+    async (identity) => {
+      const actor = createBddApi(context).user();
+      mockOptionalEnv("WEBFLOW_OAUTH_CLIENT_ID", "webflow-client-id");
+      mockOptionalEnv("WEBFLOW_OAUTH_CLIENT_SECRET", "webflow-client-secret");
+      server.use(
+        http.post("https://api.webflow.com/oauth/access_token", () => {
+          return HttpResponse.json({ access_token: "webflow-access-token" });
+        }),
+        http.get("https://api.webflow.com/v2/token/authorized_by", () => {
+          return identity === "unavailable"
+            ? HttpResponse.json({}, { status: 503 })
+            : HttpResponse.json({ email: "shared@example.test" });
+        }),
+      );
+      const first = await connect(actor, "webflow");
+      const second = await connect(actor, "webflow");
+      expect(second).not.toBe(first);
+      expect((await list("webflow")).connections).toHaveLength(2);
+    },
+  );
   it.each(["gmail", "google-drive"] as const)(
     "reuses %s identity and policy while replacing authorized account metadata",
     async (slug) => {

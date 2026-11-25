@@ -1548,6 +1548,7 @@ interface TestOAuthDeviceConnectorProviderOptions {
 }
 
 interface TestOAuthDeviceConnectorProviderRecorder {
+  setSubject(subject: string): void;
   readonly deviceCodeBodies: URLSearchParams[];
   readonly tokenBodies: URLSearchParams[];
 }
@@ -1606,9 +1607,13 @@ function testOAuthDeviceTokenErrorResponse(
 export function mockTestOAuthDeviceConnectorProvider(
   options: TestOAuthDeviceConnectorProviderOptions = {},
 ): TestOAuthDeviceConnectorProviderRecorder {
+  let subject = "test-oauth-device-user";
   const recorded: TestOAuthDeviceConnectorProviderRecorder = {
     deviceCodeBodies: [],
     tokenBodies: [],
+    setSubject(value) {
+      subject = value;
+    },
   };
 
   server.use(
@@ -1654,6 +1659,7 @@ export function mockTestOAuthDeviceConnectorProvider(
 
       return HttpResponse.json({
         access_token: `test-device-access:${deviceCode}`,
+        sub: subject,
         token_type: "Bearer",
         expires_in: 3600,
         ...(options.tokenScope === null
