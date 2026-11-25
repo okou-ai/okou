@@ -13,10 +13,13 @@ renewal acceptance are operator checks, not a systemd-ready assertion.
 The dedicated `okou-runner-caddy` account/group owns private persistent
 certificate state in `/var/lib/okou-runner-caddy`; keep it across provisioning.
 Configuration is in `/etc/okou-runner-caddy`, and checksum-pinned binaries are
-versioned under `/usr/local/lib/okou-runner-caddy`. Changed/repaired deployments
-are activated with a readiness-bound apply fingerprint. Healthy unchanged
-provisioning preserves the running Caddy process; an ingress restart interrupts
-existing streams and clients must reconnect.
+versioned under `/usr/local/lib/okou-runner-caddy`. The production Runner release
+applies provisioning when the Ansible tree changes. A Caddyfile-only update
+validates the file and signals the running Caddy with `SIGUSR1`. The applied
+fingerprint advances only after the same process and systemd invocation confirm
+the reload in the journal. A failed or unconfirmed reload fails provisioning.
+Deploy process changes, such as a binary or systemd unit update, separately from
+Caddyfile changes on an active host.
 
 Static `/runners/<runnerId>/...` routes select only the matching Unix socket at
 `/var/lib/vm0-runner/ingress/<runnerId>.sock`, preserving the whole URI. Multiple
@@ -28,6 +31,14 @@ live state. Missing sockets return 502 until their Runner starts.
 Runner control uses `/runners/<runnerId>/control/...`. Run WebSockets use the
 exact path `/runners/<runnerId>/sandbox/runs/<runId>`. Paths are unversioned. HTTPS and
 HTTP/1.1 WebSocket upgrades share TLS, routing and the Unix upstream.
+
+The first hot reload from a configuration without `stream_close_delay` can
+disconnect WebSockets that the old configuration accepted. Later hot reloads
+leave existing WebSockets on their original upstream until the Run or client
+closes the stream. New connections use the updated routing. For the first
+production rollout, verify the applied fingerprint and that each host retains
+its Caddy PID and systemd invocation. On a subsequent rollout, verify that an
+established Run WebSocket still exchanges frames after the new config applies.
 
 An official non-local Runner binds its listener and requests its own
 `https://<hostname>/runners/<runnerId>/control/health` before publishing the first

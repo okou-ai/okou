@@ -133,7 +133,7 @@
         mode: "0644"
       register: runner_caddy_unit
 
-    # A previous run can stop after publishing files but before restarting Caddy.
+    # A previous run can stop after publishing files but before applying them.
     # Record completion only after readiness; task.changed alone loses that state.
     - name: Recover and apply Runner Caddy deployment
       when: not ansible_check_mode
@@ -146,6 +146,15 @@
           gid: "{{ runner_caddy_user.group }}"
           groups: "{{ runner_caddy_user.groups }}"
           invocation: "{{ runner_caddy_invocation.stdout }}"
+        runner_caddy_previous: "{{ runner_caddy_applied.content | default('e30=') | b64decode | from_json }}"
+        runner_caddy_config_pending: "{{ runner_caddy_config.changed or runner_caddy_previous.get('config') != runner_caddy_activation_state.config }}"
+        runner_caddy_runtime_pending: >-
+          {{ (not runner_caddy_previous and (runner_caddy_unit.changed or runner_caddy_binary.changed or runner_caddy_user.changed))
+             or runner_caddy_previous.get('binary', runner_caddy_activation_state.binary) != runner_caddy_activation_state.binary
+             or runner_caddy_previous.get('unit', runner_caddy_activation_state.unit) != runner_caddy_activation_state.unit
+             or (runner_caddy_previous.get('uid', runner_caddy_activation_state.uid) | string) != (runner_caddy_activation_state.uid | string)
+             or (runner_caddy_previous.get('gid', runner_caddy_activation_state.gid) | string) != (runner_caddy_activation_state.gid | string)
+             or runner_caddy_previous.get('groups', runner_caddy_activation_state.groups) != runner_caddy_activation_state.groups }}
       block:
         - name: Fingerprint published Caddy deployment files
           ansible.builtin.stat:
@@ -155,7 +164,14 @@
             - "/usr/local/lib/okou-runner-caddy/{{ runner_caddy_version }}/caddy"
             - /etc/okou-runner-caddy/Caddyfile
             - /etc/systemd/system/okou-runner-caddy.service
+            - /etc/okou-runner-caddy/applied-state.json
           register: runner_caddy_deployment_files
+
+        - name: Read the last applied Caddy deployment
+          ansible.builtin.slurp:
+            src: /etc/okou-runner-caddy/applied-state.json
+          when: runner_caddy_deployment_files.results[3].stat.exists
+          register: runner_caddy_applied
 
         - name: Inspect current Caddy service invocation
           ansible.builtin.command:
@@ -168,22 +184,40 @@
           changed_when: false
           register: runner_caddy_invocation
 
-        - name: Check whether the published deployment has been applied
-          ansible.builtin.copy:
-            content: "{{ runner_caddy_activation_state | to_nice_json }}\n"
-            dest: /etc/okou-runner-caddy/applied-state.json
-            owner: root
-            group: root
-            mode: "0600"
-          check_mode: true
-          register: runner_caddy_activation
+        - name: Check whether Caddy is already active
+          ansible.builtin.command:
+            argv: [systemctl, is-active, --quiet, okou-runner-caddy.service]
+          register: runner_caddy_active
+          changed_when: false
+          failed_when: runner_caddy_active.rc not in [0, 3, 4]
 
-        - name: Apply changed ingress configuration without touching Runner services
+        - name: Require separate configuration and process updates on an active Caddy
+          ansible.builtin.assert:
+            that: not (runner_caddy_config_pending and runner_caddy_runtime_pending)
+            fail_msg: Caddyfile changes cannot restart an active Caddy. Apply process changes separately.
+          when: runner_caddy_active.rc == 0
+
+        - name: Enable Caddy and apply changes to its process inputs
           ansible.builtin.systemd_service:
             name: okou-runner-caddy.service
-            daemon_reload: "{{ runner_caddy_unit.changed or runner_caddy_activation.changed }}"
+            daemon_reload: "{{ runner_caddy_active.rc != 0 or runner_caddy_runtime_pending }}"
             enabled: true
-            state: "{{ 'restarted' if (runner_caddy_unit.changed or runner_caddy_config.changed or runner_caddy_binary.changed or runner_caddy_user.changed or runner_caddy_activation.changed) else 'started' }}"
+            state: >-
+              {{ 'started' if runner_caddy_active.rc != 0 else
+                 ('restarted' if runner_caddy_runtime_pending else omit) }}
+
+        - name: Hot-reload the Caddyfile in the active process
+          ansible.builtin.script:
+            cmd: >-
+              ../files/reload-runner-caddy.py okou-runner-caddy.service
+              /etc/okou-runner-caddy/Caddyfile {{ runner_caddy_activation_state.config }}
+              {{ runner_caddy_invocation.stdout }}
+            executable: /usr/bin/python3
+          when:
+            - runner_caddy_active.rc == 0
+            - not runner_caddy_runtime_pending
+            - runner_caddy_config_pending or runner_caddy_previous.get('invocation') != runner_caddy_invocation.stdout
+          register: runner_caddy_reload
 
         - name: Verify the ready Caddy service invocation
           ansible.builtin.command:
@@ -194,8 +228,11 @@
               - --property=InvocationID
               - --value
           changed_when: false
-          register: runner_caddy_invocation
-          failed_when: runner_caddy_invocation.rc != 0 or runner_caddy_invocation.stdout is not match('^[0-9a-f]{32}$')
+          register: runner_caddy_ready_invocation
+          failed_when: >-
+            runner_caddy_ready_invocation.rc != 0
+            or runner_caddy_ready_invocation.stdout is not match('^[0-9a-f]{32}$')
+            or (runner_caddy_reload is changed and runner_caddy_ready_invocation.stdout != runner_caddy_invocation.stdout)
 
         # A startup failure can follow the notify acknowledgement immediately.
         - name: Verify Caddy remained active after startup
@@ -209,7 +246,7 @@
 
         - name: Record the successfully applied Caddy deployment
           ansible.builtin.copy:
-            content: "{{ runner_caddy_activation_state | to_nice_json }}\n"
+            content: "{{ runner_caddy_activation_state | combine({'invocation': runner_caddy_ready_invocation.stdout}) | to_nice_json }}\n"
             dest: /etc/okou-runner-caddy/applied-state.json
             owner: root
             group: root
