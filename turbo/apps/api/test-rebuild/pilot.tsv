@@ -113,13 +113,13 @@ billing	src/signals/routes/__tests__/billing-credit-checkout-auto-recharge.test.
 billing	src/signals/routes/__tests__/billing-credit-checkout-auto-recharge.test.ts	billing-credit-checkout-auto-recharge-006	rewritten	70.1	
 billing	src/signals/routes/__tests__/billing-credit-checkout-auto-recharge.test.ts	billing-credit-checkout-auto-recharge-007	rewritten	42.6	
 billing	src/signals/routes/__tests__/billing-credit-checkout-auto-recharge.test.ts	billing-credit-checkout-auto-recharge-008	rewritten	63.0	
-billing	src/signals/routes/__tests__/billing-credit-checkout.test.ts	billing-credit-checkout-001	planned		
-billing	src/signals/routes/__tests__/billing-credit-checkout.test.ts	billing-credit-checkout-002	planned		
-billing	src/signals/routes/__tests__/billing-credit-checkout.test.ts	billing-credit-checkout-003	planned		
-billing	src/signals/routes/__tests__/billing-credit-checkout.test.ts	billing-credit-checkout-004	planned		
-billing	src/signals/routes/__tests__/billing-credit-checkout.test.ts	billing-credit-checkout-008	planned		
-billing	src/signals/routes/__tests__/billing-credit-checkout.test.ts	billing-credit-checkout-009	planned		
-billing	src/signals/routes/__tests__/billing-credit-checkout.test.ts	billing-credit-checkout-011	planned		
+billing	src/signals/routes/__tests__/billing-credit-checkout.test.ts	billing-credit-checkout-001	rewritten	26.8	
+billing	src/signals/routes/__tests__/billing-credit-checkout.test.ts	billing-credit-checkout-002	rewritten	38.9	
+billing	src/signals/routes/__tests__/billing-credit-checkout.test.ts	billing-credit-checkout-003	rewritten	98.9	
+billing	src/signals/routes/__tests__/billing-credit-checkout.test.ts	billing-credit-checkout-004	rewritten	97.6	
+billing	src/signals/routes/__tests__/billing-credit-checkout.test.ts	billing-credit-checkout-008	rewritten	63.7	
+billing	src/signals/routes/__tests__/billing-credit-checkout.test.ts	billing-credit-checkout-009	rewritten	56.7	
+billing	src/signals/routes/__tests__/billing-credit-checkout.test.ts	billing-credit-checkout-011	rewritten	61.9	
 browser	src/signals/routes/__tests__/phone-use.test.ts	phone-use-002	rewritten	83.0	
 browser	src/signals/routes/__tests__/phone-use.test.ts	phone-use-006	rewritten	114.2	
 browser	src/signals/routes/__tests__/phone-use.test.ts	phone-use-007	rewritten	55.5	
