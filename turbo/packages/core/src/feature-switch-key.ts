@@ -50,7 +50,6 @@ export enum FeatureSwitchKey {
   ChatLatestTurnScrollRoom = "chatLatestTurnScrollRoom",
   ChatReplyNameLine = "chatReplyNameLine",
   CloudBrowserPanel = "cloudBrowserPanel",
-  CloudBrowserRestart = "cloudBrowserRestart",
   ShareAudienceDescriptions = "shareAudienceDescriptions",
   WorksChannelCards = "worksChannelCards",
   HostedSiteCustomDomains = "hostedSiteCustomDomains",

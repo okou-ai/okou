@@ -248,13 +248,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Show who is in control with Take over and Hand back, use a floating loading status instead of the permanent footer, and refine the start button.",
     enabled: false,
   },
-  [FeatureSwitchKey.CloudBrowserRestart]: {
-    maintainer: "liangyou@okou.ai",
-    displayName: "Cloud browser restart",
-    description:
-      "Recover an unresponsive shared Browser instance from the CLI.",
-    enabled: true,
-  },
   [FeatureSwitchKey.ShareAudienceDescriptions]: {
     maintainer: "ming@okou.ai",
     displayName: "Share audience descriptions",
