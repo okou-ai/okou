@@ -115,16 +115,64 @@ const mcpCors = cors({
 });
 const mcpMetadataCors = cors({ origin: "*", allowMethods: ["GET", "OPTIONS"] });
 
+function isG2ChatRequest(method: string, path: string): boolean {
+  if (method === "POST") {
+    return (
+      path === "/api/chat-threads" ||
+      path === "/api/chat/events" ||
+      path === "/api/realtime/token"
+    );
+  }
+  return (
+    method === "GET" &&
+    /^\/api\/chat-threads\/[\dA-Fa-f]{8}(?:-[\dA-Fa-f]{4}){3}-[\dA-Fa-f]{12}\/(?:metadata|event-snapshot|event-rows)$/u.test(
+      path,
+    )
+  );
+}
+
 export const corsMiddleware: MiddlewareHandler = async (context, next) => {
-  if (context.req.path === "/.well-known/oauth-protected-resource/mcp") {
+  const { req } = context;
+  if (req.path === "/.well-known/oauth-protected-resource/mcp") {
     return mcpMetadataCors(context, next);
   }
-  if (context.req.path !== "/mcp") {
-    return firstPartyCors(context, next);
+  const origin = req.header("Origin");
+  if (req.path === "/mcp") {
+    if (origin !== undefined && !allowedMcpOrigin(origin)) {
+      return context.json({ error: "Forbidden Origin" }, 403);
+    }
+    return mcpCors(context, next);
   }
-  const origin = context.req.header("Origin");
-  if (origin !== undefined && !allowedMcpOrigin(origin)) {
-    return context.json({ error: "Forbidden Origin" }, 403);
+
+  // Even Hub serves the installed G2 package on a loopback port chosen at launch.
+  if (
+    origin?.startsWith("http://127.0.0.1:") &&
+    safeUrlParse(origin)?.origin === origin
+  ) {
+    const preflight = req.method === "OPTIONS";
+    const method = preflight
+      ? (req.header("Access-Control-Request-Method") ?? "")
+      : req.method;
+    if (isG2ChatRequest(method, req.path)) {
+      const hasAuthorization = preflight
+        ? req
+            .header("Access-Control-Request-Headers")
+            ?.toLowerCase()
+            .split(",")
+            .some((name) => {
+              return name.trim() === "authorization";
+            })
+        : /^Bearer \S+$/u.test(req.header("Authorization") ?? "");
+      if (!hasAuthorization || req.header("Cookie") !== undefined) {
+        return context.json({ error: "Bearer authentication required" }, 403);
+      }
+      return cors({
+        origin,
+        allowMethods: [method],
+        allowHeaders: ["Authorization", "Content-Type"],
+        maxAge: 600,
+      })(context, next);
+    }
   }
-  return await mcpCors(context, next);
+  return await firstPartyCors(context, next);
 };
