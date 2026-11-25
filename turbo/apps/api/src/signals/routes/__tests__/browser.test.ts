@@ -48,10 +48,13 @@ import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRouteMocks } from "./helpers/route-test";
+import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
 import { browserRoutes } from "../browser";
 import { browserAuthorizationRoutes } from "../browser-authorization";
 import { browserUserActionRoutes } from "../browser-user-actions";
@@ -1702,6 +1705,136 @@ aroundEach(async (runTest) => {
 });
 
 describe("Browser user-action route", () => {
+  it("creates a native input link from Slack and delivers the callback to the same chat", async () => {
+    mockEnv("OKOU_BROWSER_USE_API_KEY", "test-browser-use-key");
+    const owner = await publicChatActor(context, {
+      optionalEnvironmentNames: ["OKOU_BROWSER_USE_API_KEY"],
+      clockTime: STARTED_AT_MS,
+      restoreEnvironment: () => {
+        context.mocks.slack.chat.postMessage.mockResolvedValue({
+          ok: true,
+          ts: "1794840001.000001",
+          channel: "D0NATIVEINPUT",
+        });
+      },
+    });
+    const { actor } = owner;
+    const chat = createChatFilesBddApi(context);
+    const integrations = createBddIntegrationApi(context);
+    const installed = await owner.run(() => {
+      return createPublicSlackOrgApi(context).installOrg({
+        actor,
+        withConnection: true,
+      });
+    });
+    await createRunsApi(context).heartbeatRunner(owner.runnerGroup);
+    await owner.run(async () => {
+      await createMiscRoutesApi(context).updatePreferences(
+        actor,
+        { cloudBrowserEnabledByDefault: true },
+        [200],
+      );
+      await integrations.postSlackEvent(installed.slackWorkspaceId, {
+        type: "message",
+        channel_type: "im",
+        channel: "D0NATIVEINPUT",
+        user: installed.slackUserId,
+        ts: "1794840000.000001",
+        text: "Sign in to the website",
+      });
+      await flushWaitUntilForTest();
+    });
+    const logs = await createRunReadsApi(context).requestListLogs(
+      actor,
+      { triggerSource: "slack", limit: 1 },
+      [200],
+    );
+    const run = logs.body.data[0];
+    if (!run) {
+      throw new Error("Expected the Slack message to launch a Run");
+    }
+    const execution = await owner.executionInput(run.id);
+    const headers = {
+      authorization: `Bearer ${okouTokenFromExecution(execution)}`,
+    };
+    const providerId = randomUUID();
+    acceptBrowserUseCdpSessions([providerId]);
+    mockNativeInputTarget();
+    server.use(
+      http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
+        const body = strictObject({ name: string() }).parse(
+          await request.json(),
+        );
+        return HttpResponse.json(providerProfile(randomUUID(), body.name), {
+          status: 201,
+        });
+      }),
+      http.delete(`${BROWSER_USE_API_URL}/profiles/:id`, () => {
+        return new HttpResponse(null, { status: 204 });
+      }),
+      http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
+        return HttpResponse.json(providerBrowser(providerId), { status: 201 });
+      }),
+      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+        return HttpResponse.json(providerBrowser(String(params.id)));
+      }),
+    );
+    await owner.run(async () => {
+      const browser = await accept(
+        useInputBrowser({ headers, body: {} }),
+        [200],
+      );
+      const threadId = browser.body.browser.threadId;
+      const callbackPrompt = "Continue signing in after native input";
+      const created = await accept(
+        userActionClient().create({
+          headers,
+          body: nativePasswordRequest(callbackPrompt),
+        }),
+        [201],
+      );
+      const url = new URL(created.body.actionUrl);
+      const { requestToken, callbackIds } = created.body.action;
+      expect(url.origin).toBe("https://app.okou.test");
+      expect(url.pathname).toBe(`/browser/actions/${requestToken}`);
+      expect(url.searchParams.get("threadId")).toBe(threadId);
+      expect(url.searchParams.get("callbackPrompt")).toBe(callbackPrompt);
+
+      createRouteMocks(context).clerk.session(
+        actor.userId,
+        actor.orgId,
+        actor.orgRole,
+      );
+      const authenticated = {
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken },
+      };
+      const applied = await accept(
+        userActionClient().apply({
+          ...authenticated,
+          body: { values: [{ key: "password", value: "synthetic-password" }] },
+        }),
+        [200],
+      );
+      expect(applied.body.state).toBe("succeeded");
+      await chat.requestSendEvent(
+        actor,
+        {
+          threadId,
+          prompt: callbackPrompt,
+          clientEventId: callbackIds.success.clientEventId,
+          chatThreadSortEventId: callbackIds.success.chatThreadSortEventId,
+        },
+        [201],
+      );
+      const readBack = await accept(
+        userActionClient().get(authenticated),
+        [200],
+      );
+      expect(readBack.body.callbackDelivered).toBeTruthy();
+    });
+  });
+
   it.each(["another user", "another organization"] as const)(
     "keeps all native input operations within the request owner for %s",
     async (foreignScope) => {
