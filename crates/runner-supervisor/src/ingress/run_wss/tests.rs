@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use serde_json::{Value, json};
+use tokio::io::AsyncReadExt;
 use tokio::net::UnixStream;
 use tokio::sync::Notify;
 use tokio_tungstenite::{client_async, tungstenite::Error};
@@ -29,6 +30,36 @@ async fn next(ws: &mut WebSocketStream<UnixStream>) -> Option<Result<Message, Er
     timeout(HANDSHAKE_TIMEOUT, ws.next()).await.unwrap()
 }
 
+fn ticket_request(runner: RunnerProcessIdentity, run: RunId) -> String {
+    format!(
+        "POST /runners/{}/control/runs/{run}/wss-ticket HTTP/1.1\r\nHost: {HOST}\r\nAuthorization: Bearer {TOKEN}\r\n{GENERATION_HEADER}: {}\r\nContent-Length: 0\r\n\r\n",
+        runner.runner_id(),
+        runner.heartbeat_generation(),
+    )
+}
+
+async fn issue_first_frame(socket: &Path, ticket_request: &str) -> Message {
+    let (status, body, headers) = request(socket, ticket_request).await;
+    assert_eq!(status, 200);
+    assert!(headers.contains("cache-control: no-store"));
+    let ticket: Value = serde_json::from_str(&body).unwrap();
+    Message::Text(json!({"ticket": ticket["ticket"]}).to_string().into())
+}
+
+async fn connect_authenticated(
+    socket: &Path,
+    path: &str,
+    first: Message,
+) -> WebSocketStream<UnixStream> {
+    let mut ws = connect(socket, path).await;
+    ws.send(first).await.unwrap();
+    assert_eq!(
+        next(&mut ws).await.unwrap().unwrap(),
+        Message::Text(r#"{"type":"auth.ok"}"#.into())
+    );
+    ws
+}
+
 #[tokio::test]
 async fn active_run_websocket_uses_a_single_ticket_on_the_exact_path_and_closes_on_release() {
     let (_root, directory) = namespace();
@@ -51,9 +82,7 @@ async fn active_run_websocket_uses_a_single_ticket_on_the_exact_path_and_closes_
 
     let socket = directory.join(format!("{}.sock", runner.runner_id()));
     let runner_path = format!("/runners/{}", runner.runner_id());
-    let ticket_request = format!(
-        "POST {runner_path}/control/runs/{run}/wss-ticket HTTP/1.1\r\nHost: {HOST}\r\nAuthorization: Bearer {TOKEN}\r\n{GENERATION_HEADER}: 7\r\nContent-Length: 0\r\n\r\n"
-    );
+    let ticket_request = ticket_request(runner, run);
     assert_eq!(
         request(&socket, &ticket_request.replace(TOKEN, "unauthorized"))
             .await
@@ -66,11 +95,7 @@ async fn active_run_websocket_uses_a_single_ticket_on_the_exact_path_and_closes_
             .0,
         404
     );
-    let (status, body, headers) = request(&socket, &ticket_request).await;
-    assert_eq!(status, 200);
-    assert!(headers.contains("cache-control: no-store"));
-    let ticket: Value = serde_json::from_str(&body).unwrap();
-    let first = Message::Text(json!({"ticket": ticket["ticket"]}).to_string().into());
+    let first = issue_first_frame(&socket, &ticket_request).await;
 
     let other_run = RunId::new_v4();
     let other_path = format!("{runner_path}/sandbox/runs/{other_run}");
@@ -92,12 +117,7 @@ async fn active_run_websocket_uses_a_single_ticket_on_the_exact_path_and_closes_
         .0,
         404
     );
-    let mut ws = connect(&socket, &run_path).await;
-    ws.send(first.clone()).await.unwrap();
-    assert_eq!(
-        next(&mut ws).await.unwrap().unwrap(),
-        Message::Text(r#"{"type":"auth.ok"}"#.into())
-    );
+    let mut ws = connect_authenticated(&socket, &run_path, first.clone()).await;
     ws.send(Message::Ping(Bytes::from_static(b"ping")))
         .await
         .unwrap();
@@ -154,36 +174,67 @@ async fn issued_ticket_expires_and_does_not_survive_run_cancellation() {
 
 #[tokio::test]
 async fn each_run_has_eight_connection_slots_released_on_disconnect() {
+    let (_root, directory) = namespace();
+    let runner = RunnerProcessIdentity::new(Uuid::new_v4(), 7).unwrap();
+    let runtime = IngressRuntime::start(
+        directory.clone(),
+        runner,
+        HOST.into(),
+        TOKEN,
+        RUNNER_VERSION,
+    )
+    .await
+    .unwrap();
     let active_runs = ActiveRuns::new(Arc::new(Notify::new()));
     let cancellations = RunCancellationRegistry::new();
-    let run = RunId::new_v4();
-    let other_run = RunId::new_v4();
-    let _active = active_runs.register(run, None, "vm0/default".into());
-    let _other_active = active_runs.register(other_run, None, "vm0/default".into());
-    let registration = cancellations.register(run).await.unwrap();
-    let other_registration = cancellations.register(other_run).await.unwrap();
-    let server = RunWebSocket::new(active_runs, cancellations, CancellationToken::new());
-
-    let mut connections = Vec::new();
-    for _ in 0..8 {
-        let ticket = server.issue(run).await.unwrap();
-        let first = json!({"ticket": ticket.ticket}).to_string();
-        connections.push(server.redeem(run, &first).unwrap());
+    let run_ids = [(); 5].map(|_| RunId::new_v4());
+    let mut runs = Vec::new();
+    for run in run_ids {
+        runs.push((
+            active_runs.register(run, None, "vm0/default".into()),
+            cancellations.register(run).await.unwrap(),
+        ));
     }
-    let overflow = server.issue(run).await.unwrap();
-    let overflow_frame = json!({"ticket": overflow.ticket}).to_string();
-    assert!(server.redeem(run, &overflow_frame).is_none());
+    runtime.enable_run_wss(active_runs, cancellations);
 
-    let ticket = server.issue(other_run).await.unwrap();
+    let socket = directory.join(format!("{}.sock", runner.runner_id()));
+    let runner_path = format!("/runners/{}", runner.runner_id());
+    let mut connections = Vec::new();
+    // Keep more than 32 authenticated connections alive on the same Runner.
+    for run in run_ids {
+        let path = format!("{runner_path}/sandbox/runs/{run}");
+        let ticket_request = ticket_request(runner, run);
+        for _ in 0..8 {
+            let first = issue_first_frame(&socket, &ticket_request).await;
+            connections.push(connect_authenticated(&socket, &path, first).await);
+        }
+    }
+
+    let run = run_ids[0];
+    let path = format!("{runner_path}/sandbox/runs/{run}");
+    let overflow = issue_first_frame(&socket, &ticket_request(runner, run)).await;
+    let mut rejected = connect(&socket, &path).await;
+    rejected.send(overflow.clone()).await.unwrap();
     assert!(
-        server
-            .redeem(other_run, &json!({"ticket": ticket.ticket}).to_string())
-            .is_some()
+        next(&mut rejected)
+            .await
+            .is_none_or(|message| message.is_err())
     );
 
-    drop(connections.pop().unwrap());
-    assert!(server.redeem(run, &overflow_frame).is_some());
+    let mut closed = connections.swap_remove(0);
+    closed.send(Message::Close(None)).await.unwrap();
+    // Wait for the server to tear down the connection before reusing its slot.
+    let mut stream = closed.into_inner();
+    timeout(HANDSHAKE_TIMEOUT, stream.read_to_end(&mut Vec::new()))
+        .await
+        .unwrap()
+        .unwrap();
+    connections.push(connect_authenticated(&socket, &path, overflow).await);
+
     drop(connections);
-    registration.unregister().await;
-    other_registration.unregister().await;
+    for (active, registration) in runs {
+        drop(active);
+        registration.unregister().await;
+    }
+    runtime.shutdown().await;
 }
