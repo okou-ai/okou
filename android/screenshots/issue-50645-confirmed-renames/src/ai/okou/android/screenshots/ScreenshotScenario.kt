@@ -26,6 +26,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
+import androidx.test.uiautomator.Condition
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
@@ -33,6 +34,7 @@ import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.roundToInt
 import kotlinx.serialization.json.Json
@@ -75,7 +77,7 @@ class ScreenshotScenario {
                 testPreferences().copy(locale = UserPreferencesLocale.ZH_HANS, theme = UserPreferencesTheme.LIGHT)
             instrumentation.runOnMainSync { localeManager.applicationLocales = locales }
 
-            for (project in listOf(false, true)) {
+            for ((project, unconfirmed) in listOf(false to false, false to true, true to false)) {
                 val prefix = if (project) "wide-project" else "phone-chat"
                 val oldName = if (project) "用户研究" else "制定下周计划"
                 val newName = if (project) "产品访谈" else "整理下周行动"
@@ -85,6 +87,9 @@ class ScreenshotScenario {
                 val releaseRead = CountDownLatch(1)
                 val rejectFirstWrite = AtomicBoolean(project)
                 val operation = AtomicReference<String>()
+                val readsAfterWrite = AtomicInteger()
+                val releaseUnconfirmedEvent = AtomicBoolean()
+                val writes = AtomicInteger()
                 val fixture = ChatListApiFixture()
                 fixture.projects = {
                     jsonResponse("""{"projects":[{"id":"$CHAT_PROJECT","name":"用户研究","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","sortOrder":"a0"}],"latestEventId":null,"latestSeqId":0}""")
@@ -95,9 +100,16 @@ class ScreenshotScenario {
                     val rows =
                         if (since == null) chatEventWire(seq = 17, title = "制定下周计划")
                         else if (!project && event != null && since < 18) {
-                            readStarted.countDown()
-                            check(releaseRead.await(45, TimeUnit.SECONDS))
-                            chatEventWire(id = event, seq = 18, kind = "renamed", title = newName)
+                            if (unconfirmed) {
+                                readsAfterWrite.incrementAndGet()
+                                if (releaseUnconfirmedEvent.get())
+                                    chatEventWire(id = event, seq = 18, kind = "renamed", title = newName)
+                                else ""
+                            } else {
+                                readStarted.countDown()
+                                check(releaseRead.await(45, TimeUnit.SECONDS))
+                                chatEventWire(id = event, seq = 18, kind = "renamed", title = newName)
+                            }
                         } else ""
                     jsonResponse("""{"events":[$rows],"hasMore":false}""")
                 }
@@ -120,6 +132,7 @@ class ScreenshotScenario {
                         val body = Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
                         val field = if (project) "name" else "title"
                         check(body.getValue(field).jsonPrimitive.content == newName)
+                        writes.incrementAndGet()
                         if (rejectFirstWrite.getAndSet(false)) MockResponse().setResponseCode(400)
                         else {
                             writeStarted.countDown()
@@ -127,7 +140,7 @@ class ScreenshotScenario {
                             operation.set(body.getValue("eventId").jsonPrimitive.content)
                             if (project) {
                                 jsonResponse("""{"id":"$CHAT_PROJECT","name":"$newName","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","sortOrder":"a0"}""")
-                            } else MockResponse().setResponseCode(204)
+                            } else MockResponse().setResponseCode(if (unconfirmed) 503 else 204)
                         }
                     }
                 }
@@ -180,6 +193,41 @@ class ScreenshotScenario {
                         check(writeStarted.await(10, TimeUnit.SECONDS))
                         device.find(By.pkg(app.packageName).text(labels.getString(R.string.settings_saving)))
                         snapshotName(scenario, oldName)
+                        if (unconfirmed) {
+                            releaseWrite.countDown()
+                            val panel = By.pkg(app.packageName).text(heading)
+                            val checkLabel = labels.getString(R.string.chat_rename_check_result)
+                            val checkResult = By.pkg(app.packageName).text(checkLabel).enabled(true)
+                            device.find(checkResult)
+                            val priorReads = readsAfterWrite.get()
+                            device.find(checkResult).click()
+                            check(
+                                device.wait(
+                                    object : Condition<UiDevice, Boolean> {
+                                        override fun apply(device: UiDevice): Boolean =
+                                            readsAfterWrite.get() > priorReads && device.hasObject(checkResult)
+                                    },
+                                    12_000,
+                                ),
+                            )
+                            snapshotName(scenario, oldName)
+                            val cancel = labels.getString(R.string.chat_rename_cancel)
+                            device.find(By.pkg(app.packageName).text(cancel)).click()
+                            check(device.wait(Until.gone(panel), 12_000))
+                            device.find(By.pkg(app.packageName).text(oldName)).longClick()
+                            device.find(By.pkg(app.packageName).text(menu)).click()
+                            device.find(checkResult)
+                            check(device.find(focusedEditor).text == newName)
+                            device.find(By.pkg(app.packageName).text(labels.getString(R.string.chat_rename_save_unconfirmed)))
+                            ScreenshotCapture.capture("phone-chat-unconfirmed.png")
+                            releaseUnconfirmedEvent.set(true)
+                            device.find(checkResult).click()
+                            check(device.wait(Until.gone(panel), 12_000))
+                            device.find(By.pkg(app.packageName).text(newName))
+                            snapshotName(scenario, newName)
+                            check(writes.get() == 1)
+                            return@use
+                        }
                         ScreenshotCapture.capture("$prefix-saving.png")
 
                         releaseWrite.countDown()
