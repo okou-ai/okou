@@ -10,6 +10,21 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.130.3](https://github.com/okou-ai/okou/compare/api-v2.130.2...api-v2.130.3) (2026-11-25)
+
+
+### Bug Fixes
+
+* **api:** allow bearer-authenticated chat from the even g2 webview ([#50907](https://github.com/okou-ai/okou/issues/50907)) ([b7de833](https://github.com/okou-ai/okou/commit/b7de833561ce9337f2295a42b72c6dffe2b59bf4))
+* transcribe voice messages before sending progress updates ([#50901](https://github.com/okou-ai/okou/issues/50901)) ([112ad56](https://github.com/okou-ai/okou/commit/112ad5653516635f981824195ecb1f6cb7f2024f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/pi-agent-runtime bumped to 1.52.80
+
 ## [2.130.2](https://github.com/okou-ai/okou/compare/api-v2.130.1...api-v2.130.2) (2026-11-25)
 
 
