@@ -6,10 +6,7 @@ import {
 import { isValidTimeZone } from "@okouai/core/timezone";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
-import {
-  officialWorkflowAutomationIdentities,
-  workflows,
-} from "@okouai/db/schema/workflow";
+import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import { and, eq, exists, inArray, notExists, sql } from "drizzle-orm";
@@ -76,25 +73,16 @@ function keepSkippedMorningBriefOccurrence(
     : next;
 }
 
-/** Both the read and the conditional update must observe the same owner's active schedule. */
-function ownedMorningBriefSchedule(owner: InstallationOwner) {
+/** Recheck the installed workflow, membership timezone and enrollment on update. */
+function ownedMorningBriefInstallation(owner: InstallationOwner) {
   const query = new QueryBuilder();
-  const identities = officialWorkflowAutomationIdentities;
   return query
     .select({
-      automationId: identities.automationId,
+      workflowId: workflows.id,
       definitionName: workflows.officialDefinitionName,
       timezone: orgMembersMetadata.timezone,
     })
     .from(workflows)
-    .innerJoin(
-      identities,
-      and(
-        eq(identities.workflowId, workflows.id),
-        eq(identities.blueprintKey, MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY),
-        eq(identities.state, "active"),
-      ),
-    )
     .innerJoin(
       orgMembersMetadata,
       and(
@@ -126,20 +114,23 @@ function ownedMorningBriefSchedule(owner: InstallationOwner) {
         ),
       ),
     )
-    .as("owned_morning_brief_schedule");
+    .as("owned_morning_brief_installation");
 }
 
 export const repairMorningBriefSchedule$ = command(
   async ({ get, set }, owner: InstallationOwner, signal: AbortSignal) => {
-    const schedule = ownedMorningBriefSchedule(owner);
+    const installation = ownedMorningBriefInstallation(owner);
     const [target] = await get(db$)
       .select({
         automation: workflowAutomationColumns(),
-        definitionName: schedule.definitionName,
-        timezone: schedule.timezone,
+        definitionName: installation.definitionName,
+        timezone: installation.timezone,
       })
       .from(workflowAutomations)
-      .innerJoin(schedule, eq(schedule.automationId, workflowAutomations.id))
+      .innerJoin(
+        installation,
+        eq(installation.workflowId, workflowAutomations.workflowId),
+      )
       .where(
         and(
           eq(
@@ -219,13 +210,13 @@ export const repairMorningBriefSchedule$ = command(
           observedWorkflowAutomationCondition(automation),
           exists(
             db
-              .select({ id: schedule.automationId })
-              .from(schedule)
+              .select({ id: installation.workflowId })
+              .from(installation)
               .where(
                 and(
-                  eq(schedule.automationId, automation.id),
-                  eq(schedule.definitionName, definitionName),
-                  eq(schedule.timezone, timezone),
+                  eq(installation.workflowId, automation.workflowId),
+                  eq(installation.definitionName, definitionName),
+                  eq(installation.timezone, timezone),
                 ),
               ),
           ),

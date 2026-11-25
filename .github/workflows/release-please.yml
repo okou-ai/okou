@@ -1890,8 +1890,8 @@ jobs:
           echo "Verified API Worker production at $WORKER_URL ($EXPECTED_SOURCE_SHA)"
           echo "API Worker production health and release SHA verified: $EXPECTED_SOURCE_SHA" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Retire archived Official Workflow tables after API drain
-        id: retire-official-workflow-catalog
+      - name: Retire Official Workflow tables after API drain
+        id: retire-official-workflow-tables
         if: needs.release-please.outputs.api_release_created == 'true' && steps.deploy.outcome == 'success' && steps.api-worker-verify.outcome == 'success'
         shell: bash
         env:
@@ -1899,13 +1899,24 @@ jobs:
           PGSSLROOTCERT: /etc/ssl/certs/ca-certificates.crt
         run: |
           set -euo pipefail
-          migration=turbo/packages/db/src/migrations/1636_archive_official_workflow_installations.sql
-          pending=$(psql --dbname="$DATABASE_URL" -XAt -v ON_ERROR_STOP=1 -c "SELECT to_regclass('public.official_workflow_catalog_state') IS NOT NULL")
+          pending=$(psql --dbname="$DATABASE_URL" -XAt -v ON_ERROR_STOP=1 -c "
+            SELECT to_regclass('public.official_workflow_catalog_state') IS NOT NULL
+                OR to_regclass('public.official_workflow_automation_identities') IS NOT NULL")
           if [[ "$pending" == "t" ]]; then
             # Outgoing Vercel invocations have a five-minute maximum duration.
             sleep 300
-            psql --dbname="$DATABASE_URL" -X -v ON_ERROR_STOP=1 --single-transaction \
-              -c "SET LOCAL lock_timeout = '1s'; SET LOCAL statement_timeout = '10s'" --file "$migration"
+            psql --dbname="$DATABASE_URL" -X -v ON_ERROR_STOP=1 --single-transaction --file=- <<'SQL'
+          SET LOCAL lock_timeout = '1s';
+          SET LOCAL statement_timeout = '10s';
+          SELECT to_regclass('public.official_workflow_catalog_state') IS NOT NULL AS has_catalog,
+                 to_regclass('public.official_workflow_automation_identities') IS NOT NULL AS has_identities \gset
+          \if :has_catalog
+            \i turbo/packages/db/src/migrations/1636_archive_official_workflow_installations.sql
+          \endif
+          \if :has_identities
+            \i turbo/packages/db/src/migrations/1637_retire_official_workflow_automation_identities.sql
+          \endif
+          SQL
           fi
 
       - name: Report API Worker production failure

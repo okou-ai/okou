@@ -6,18 +6,15 @@ import {
   text,
   varchar,
   integer,
-  boolean,
   uniqueIndex,
   index,
   check,
-  foreignKey,
   jsonb,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { chatThreads } from "./chat-thread";
 import { connectors } from "./connector";
 import { workflowAutomationColumns } from "../columns/workflow-automation";
-import type { OfficialWorkflowParameterBindings } from "@okouai/db/jsonb-contracts/workflow";
 import type {
   WorkflowAttachments,
   OfficialWorkflowArchivedSnapshot,
@@ -36,8 +33,6 @@ export type OfficialWorkflowInstallationState = "installing" | "installed";
 export type WorkflowImportSource = "claudeCode" | "codex";
 export type OfficialWorkflowReconciliationStatus =
   "current" | "reconciling" | "needs_reconfiguration" | "failed";
-export type OfficialWorkflowAutomationIdentityState =
-  "active" | "reconciling" | "needs_reconfiguration" | "failed" | "removed";
 
 /** Org-scoped Workflow definitions and their published content references. */
 export const workflows = pgTable(
@@ -303,81 +298,6 @@ export const workflowAutomations = pgTable(
           AND ${table.officialReconciliationStatus} IN ('current', 'reconciling', 'needs_reconfiguration', 'failed')
           AND jsonb_typeof(${table.officialParameterBindings}) = 'array'
           AND ${table.officialIntendedEnabled} IS NOT NULL
-        )`,
-      ),
-    ];
-  },
-);
-
-/**
- * Permanent logical identity for one Official Automation Blueprint projection.
- *
- * Executable configuration remains in `workflow_automations`. This row
- * survives Blueprint removal and can represent a newly introduced Blueprint
- * whose required parameters are not yet resolvable, without exposing an
- * incomplete trigger configuration to mixed-version readers.
- */
-export const officialWorkflowAutomationIdentities = pgTable(
-  "official_workflow_automation_identities",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    workflowId: uuid("workflow_id").notNull(),
-    automationId: uuid("automation_id"),
-    blueprintKey: varchar("blueprint_key", { length: 64 }).notNull(),
-    state: varchar("state", { length: 32 })
-      .$type<OfficialWorkflowAutomationIdentityState>()
-      .notNull(),
-    retainedParameterBindings: jsonb(
-      "retained_parameter_bindings",
-    ).$type<OfficialWorkflowParameterBindings>(),
-    retainedIntendedEnabled: boolean("retained_intended_enabled"),
-    retainedAppliedFingerprint: varchar("retained_applied_fingerprint", {
-      length: 64,
-    }),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
-  },
-  (table) => {
-    return [
-      foreignKey({
-        name: "official_workflow_automation_identity_workflow_fk",
-        columns: [table.workflowId],
-        foreignColumns: [workflows.id],
-      }).onDelete("cascade"),
-      foreignKey({
-        name: "official_workflow_automation_identity_automation_fk",
-        columns: [table.automationId],
-        foreignColumns: [workflowAutomations.id],
-      }).onDelete("set null"),
-      uniqueIndex("idx_official_workflow_automation_identities_key").on(
-        table.workflowId,
-        table.blueprintKey,
-      ),
-      uniqueIndex(
-        "idx_official_workflow_automation_identities_automation_unique",
-      )
-        .on(table.automationId)
-        .where(sql`${table.automationId} IS NOT NULL`),
-      index("idx_official_workflow_automation_identities_workflow").on(
-        table.workflowId,
-      ),
-      check(
-        "official_workflow_automation_identities_state_check",
-        sql`(
-          ${table.state} = 'active'
-          AND ${table.automationId} IS NOT NULL
-          AND ${table.retainedParameterBindings} IS NULL
-          AND ${table.retainedIntendedEnabled} IS NULL
-          AND ${table.retainedAppliedFingerprint} IS NULL
-        ) OR (
-          ${table.state} IN ('reconciling', 'needs_reconfiguration', 'failed', 'removed')
-          AND ${table.automationId} IS NULL
-          AND jsonb_typeof(${table.retainedParameterBindings}) = 'array'
-          AND ${table.retainedIntendedEnabled} IS NOT NULL
-          AND (
-            ${table.retainedAppliedFingerprint} IS NULL
-            OR ${table.retainedAppliedFingerprint} ~ '^[0-9a-f]{64}$'
-          )
         )`,
       ),
     ];

@@ -74,10 +74,7 @@ export const installMorningBrief$ = command(
         SELECT org_id, id, owner_user_id, 'schedule', 'cron', ${cron}, ${timezone}, true, ${nextRunAt},
           ${blueprint.key}, ${blueprint.fingerprint}, 'current',
           jsonb_build_array(jsonb_build_object('key', 'cron', 'value', ${cron}::text)), true, ${at}, ${at}
-        FROM installed RETURNING id, workflow_id
-      ), identity AS (
-        INSERT INTO official_workflow_automation_identities (id, workflow_id, automation_id, blueprint_key, state)
-        SELECT id, workflow_id, id, ${blueprint.key}, 'active' FROM scheduled
+        FROM installed
       )
       INSERT INTO workflow_user_automation_threads (org_id, user_id, workflow_id)
       SELECT org_id, owner_user_id, id FROM installed

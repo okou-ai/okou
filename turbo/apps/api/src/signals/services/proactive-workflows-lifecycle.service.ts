@@ -18,10 +18,7 @@ import { QueryBuilder } from "drizzle-orm/pg-core";
 import type { ProactiveWorkflowKind } from "@okouai/api-contracts/contracts/proactive";
 import { isValidTimeZone } from "@okouai/core/timezone";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
-import {
-  officialWorkflowAutomationIdentities,
-  workflows,
-} from "@okouai/db/schema/workflow";
+import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
@@ -213,26 +210,13 @@ export const ensureProactiveWorkflows$ = command(
         WHERE org_id = ${owner.orgId} AND owner_user_id = ${owner.userId}
           AND official_definition_name = ${definition.name} AND official_installation_state = 'installed'
           AND ${proactiveWorkflowOwnerEnabledSql(owner, kind === "learning" ? timezone : undefined)}
-      ), scheduled AS (
-        INSERT INTO workflow_automations (org_id, workflow_id, owner_user_id, kind, schedule_type, cron_expression, interval_seconds,
-          timezone, enabled, next_run_at, official_blueprint_key, official_applied_fingerprint,
-          official_reconciliation_status, official_parameter_bindings, official_intended_enabled)
-        SELECT ${owner.orgId}, id, ${owner.userId}, 'schedule', 'cron', ${cron}, NULL, ${timezone}, true, ${next},
-          ${blueprint.key}, ${blueprint.fingerprint}, 'current', jsonb_build_array(jsonb_build_object('key', 'cron', 'value', ${cron}::text)), true FROM installed
-        ON CONFLICT (workflow_id, official_blueprint_key) WHERE official_blueprint_key IS NOT NULL DO NOTHING
-        RETURNING id, workflow_id
-      ), existing_or_created AS (
-        SELECT id, workflow_id FROM scheduled
-        UNION ALL
-        SELECT a.id, a.workflow_id FROM workflow_automations a JOIN installed w ON w.id = a.workflow_id
-        WHERE a.official_blueprint_key = ${blueprint.key} AND a.kind = 'schedule' AND a.schedule_type = 'cron'
       )
-      INSERT INTO official_workflow_automation_identities AS i (id, workflow_id, automation_id, blueprint_key, state)
-      SELECT id, workflow_id, id, ${blueprint.key}, 'active' FROM existing_or_created
-      ON CONFLICT (workflow_id, blueprint_key) DO UPDATE SET automation_id = EXCLUDED.automation_id,
-        state = 'active', retained_applied_fingerprint = NULL, retained_parameter_bindings = NULL,
-        retained_intended_enabled = NULL, updated_at = ${at}
-      WHERE i.automation_id IS DISTINCT FROM EXCLUDED.automation_id OR i.state <> 'active'
+      INSERT INTO workflow_automations (org_id, workflow_id, owner_user_id, kind, schedule_type, cron_expression, interval_seconds,
+        timezone, enabled, next_run_at, official_blueprint_key, official_applied_fingerprint,
+        official_reconciliation_status, official_parameter_bindings, official_intended_enabled)
+      SELECT ${owner.orgId}, id, ${owner.userId}, 'schedule', 'cron', ${cron}, NULL, ${timezone}, true, ${next},
+        ${blueprint.key}, ${blueprint.fingerprint}, 'current', jsonb_build_array(jsonb_build_object('key', 'cron', 'value', ${cron}::text)), true FROM installed
+      ON CONFLICT (workflow_id, official_blueprint_key) WHERE official_blueprint_key IS NOT NULL DO NOTHING
     `);
       signal.throwIfAborted();
       await set(
@@ -283,7 +267,6 @@ function proactiveScheduleGaps(ownerHash: SQL) {
     if (!builtin) {
       throw new Error(`Missing built-in Workflow: ${definition.name}`);
     }
-    const identities = officialWorkflowAutomationIdentities;
     return schedules(
       and(
         eq(workflows.officialDefinitionName, definition.name),
@@ -300,19 +283,6 @@ function proactiveScheduleGaps(ownerHash: SQL) {
         eq(
           workflowAutomations.officialParameterBindings,
           sql`jsonb_build_array(jsonb_build_object('key','cron','value',${cron}))`,
-        ),
-        exists(
-          new QueryBuilder()
-            .select({ id: identities.id })
-            .from(identities)
-            .where(
-              and(
-                eq(identities.automationId, workflowAutomations.id),
-                eq(identities.workflowId, workflows.id),
-                eq(identities.blueprintKey, definition.blueprintKey),
-                eq(identities.state, "active"),
-              ),
-            ),
         ),
       ),
     );

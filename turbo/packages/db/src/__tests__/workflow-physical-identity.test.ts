@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 import { schema } from "../index";
 import { workflowAutomations as runtimeWorkflowAutomations } from "../runtime/workflow-automation";
 import {
-  officialWorkflowAutomationIdentities,
   workflows,
   workflowAutomations,
   workflowGithubProcessedEvents,
@@ -35,9 +34,6 @@ function explicitNames(table: Parameters<typeof getTableConfig>[0]): {
 describe("workflow schema physical identity", () => {
   it("keeps the workflow and Official reconciliation table mappings", () => {
     expect({
-      officialWorkflowAutomationIdentities: getTableConfig(
-        officialWorkflowAutomationIdentities,
-      ).name,
       workflows: getTableConfig(workflows).name,
       workflowAutomations: getTableConfig(workflowAutomations).name,
       workflowWebhookAutomations: getTableConfig(workflowWebhookAutomations)
@@ -47,8 +43,6 @@ describe("workflow schema physical identity", () => {
         workflowGithubProcessedEvents,
       ).name,
     }).toEqual({
-      officialWorkflowAutomationIdentities:
-        "official_workflow_automation_identities",
       workflows: "workflows",
       workflowAutomations: "workflow_automations",
       workflowWebhookAutomations: "workflow_webhook_automations",
@@ -58,9 +52,6 @@ describe("workflow schema physical identity", () => {
   });
 
   it("exports the canonical tables through the root schema", () => {
-    expect(schema.officialWorkflowAutomationIdentities).toBe(
-      officialWorkflowAutomationIdentities,
-    );
     expect(schema.workflows).toBe(workflows);
     expect(schema.workflowAutomations).toBe(runtimeWorkflowAutomations);
     expect(schema.workflowWebhookAutomations).toBe(workflowWebhookAutomations);
@@ -121,9 +112,6 @@ describe("workflow schema physical identity", () => {
 
   it("keeps every explicit index and check name in the touched schemas", () => {
     expect({
-      officialWorkflowAutomationIdentities: explicitNames(
-        officialWorkflowAutomationIdentities,
-      ),
       workflows: explicitNames(workflows),
       workflowUserAutomationThreads: explicitNames(
         workflowUserAutomationThreads,
@@ -135,14 +123,6 @@ describe("workflow schema physical identity", () => {
         workflowGithubProcessedEvents,
       ),
     }).toEqual({
-      officialWorkflowAutomationIdentities: {
-        indexes: [
-          "idx_official_workflow_automation_identities_automation_unique",
-          "idx_official_workflow_automation_identities_key",
-          "idx_official_workflow_automation_identities_workflow",
-        ],
-        checks: ["official_workflow_automation_identities_state_check"],
-      },
       workflows: {
         indexes: [
           "idx_workflows_import_session",

@@ -3907,6 +3907,13 @@
       "when": 1795635534065,
       "tag": "1636_archive_official_workflow_installations",
       "breakpoints": true
+    },
+    {
+      "idx": 1637,
+      "version": "7",
+      "when": 1795641080018,
+      "tag": "1637_retire_official_workflow_automation_identities",
+      "breakpoints": true
     }
   ]
 }

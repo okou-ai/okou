@@ -56,6 +56,7 @@ import { validateChatThreadEventExecutorRetirement } from "./test-chat-thread-ev
 import { validateAgentRunLaunchSnapshotSchema } from "./test-agent-run-launch-snapshot";
 import { validateAgentRunOfficialWorkflowProvenanceSchema } from "./test-agent-run-official-workflow-provenance";
 import { validateOfficialWorkflowCatalogArchive } from "./test-official-workflow-catalog-archive";
+import { validateOfficialWorkflowIdentityRetirement } from "./test-official-workflow-identity-retirement";
 import { validateOfficialWorkflowStorageRetirement } from "./test-official-workflow-storage-retirement";
 import { validateWorkflowPublicationContraction } from "./test-workflow-publication-contraction";
 import { validateStaffWorkflowAttachmentDeletion } from "./test-staff-workflow-attachment-deletion";
@@ -1388,7 +1389,7 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
     volatility: "v",
     securityDefiner: false,
     parallel: "u",
-    bodyHash: "92c17b395a82669b0ed147c68a59ae5e",
+    bodyHash: "b557f44205a3417969da493bfca39499",
   },
   {
     schemaName: "public",
@@ -2886,6 +2887,12 @@ async function main(): Promise<void> {
       dbUrl1,
       await migrationTimestamp(
         "1620_drop_custom_connector_skill_publication_view",
+      ),
+    );
+    await validateOfficialWorkflowIdentityRetirement(
+      dbUrl1,
+      await migrationTimestamp(
+        "1637_retire_official_workflow_automation_identities",
       ),
     );
     await runMigrations(dbUrl1);

@@ -173,12 +173,12 @@ test("production release keeps Worker deployment non-blocking and verifies its d
     productionSteps.indexOf(migrations) <
       productionSteps.indexOf(byId("deploy")),
   );
-  const retireCatalog = byId("retire-official-workflow-catalog");
+  const retireTables = byId("retire-official-workflow-tables");
   assert.ok(
-    productionSteps.indexOf(retireCatalog) > productionSteps.indexOf(verify),
+    productionSteps.indexOf(retireTables) > productionSteps.indexOf(verify),
   );
   assert.match(
-    field(retireCatalog, "if", 8),
+    field(retireTables, "if", 8),
     /steps\.api-worker-verify\.outcome == 'success'/,
   );
   // Official Runs routed by the promoted API require their managed key.

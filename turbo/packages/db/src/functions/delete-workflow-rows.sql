@@ -53,10 +53,6 @@ BEGIN
   FROM public.workflow_automations AS automation
   WHERE automation.workflow_id = locked_workflow.id;
 
-  -- Active identities must be removed before their Automation's SET NULL.
-  DELETE FROM public.official_workflow_automation_identities
-  WHERE workflow_id = locked_workflow.id;
-
   WITH removed AS (
     DELETE FROM public.workflow_automations
     WHERE workflow_id = locked_workflow.id
