@@ -28,31 +28,11 @@ final class ThreadListStore {
   /// The confirmed chats, kept in the workspace session's Store. Views read it through
   /// CCStateSwiftUI; `threads` serves owner logic, actions and tests.
   let threadsValue: Computed<[ChatThread]>
-
-  private(set) var threads: [ChatThread] {
-    get { confirmed(threadsValue) }
-    set {
-      guard newValue != confirmed(threadsValue) else { return }
-      do { try stateStore.set(replaceThreads, newValue) } catch {
-        preconditionFailure("Cannot publish confirmed threads: \(error)")
-      }
-    }
-  }
   @ObservationIgnored private let confirmedUnread = CCState.State<Set<String>>([])
   @ObservationIgnored private let replaceUnread: Command<Void, Set<String>>
   /// Chats the read-state snapshot marks unread, kept in the workspace session's Store. Views
   /// read it through CCStateSwiftUI; `unreadThreadIDs` serves owner logic, actions and tests.
   let unreadThreadIDsValue: Computed<Set<String>>
-
-  private(set) var unreadThreadIDs: Set<String> {
-    get { confirmed(unreadThreadIDsValue) }
-    set {
-      guard newValue != confirmed(unreadThreadIDsValue) else { return }
-      do { try stateStore.set(replaceUnread, newValue) } catch {
-        preconditionFailure("Cannot publish unread chats: \(error)")
-      }
-    }
-  }
   private(set) var markingAllRead = false
   private var readRevision = 0
   var actionError: String? { actions.actionError }
@@ -65,16 +45,6 @@ final class ThreadListStore {
   /// Whether a chat list has been published, kept in the workspace session's Store. Views read
   /// it through CCStateSwiftUI; `hasLoadedThreads` serves owner logic and tests.
   let hasLoadedThreadsValue: Computed<Bool>
-
-  private(set) var hasLoadedThreads: Bool {
-    get { confirmed(hasLoadedThreadsValue) }
-    set {
-      guard newValue != confirmed(hasLoadedThreadsValue) else { return }
-      do { try stateStore.set(replaceLoadedThreads, newValue) } catch {
-        preconditionFailure("Cannot publish the loaded chat list: \(error)")
-      }
-    }
-  }
   var updatingThreads: Set<String> { actions.updatingThreads }
 
   private let client: APIClient
@@ -277,13 +247,6 @@ final class ThreadListStore {
       lifecycleTasks.track(task)
       signal.onCancel { task.cancel() }
       return task
-    }
-  }
-
-  private func confirmed<Value>(_ signal: Signal<Value>) -> Value {
-    // These are synchronous local business values, not a network or persistence boundary.
-    do { return try stateStore.get(signal) } catch {
-      preconditionFailure("Cannot read confirmed navigation: \(error)")
     }
   }
 
@@ -588,6 +551,46 @@ final class ThreadListStore {
   }
 
   isolated deinit { listTask?.cancel() }
+}
+
+/// Synchronous accessors for the graph-backed list values, for owner logic, actions and tests.
+extension ThreadListStore {
+  private(set) var threads: [ChatThread] {
+    get { confirmed(threadsValue) }
+    set {
+      guard newValue != confirmed(threadsValue) else { return }
+      do { try stateStore.set(replaceThreads, newValue) } catch {
+        preconditionFailure("Cannot publish confirmed threads: \(error)")
+      }
+    }
+  }
+
+  private(set) var unreadThreadIDs: Set<String> {
+    get { confirmed(unreadThreadIDsValue) }
+    set {
+      guard newValue != confirmed(unreadThreadIDsValue) else { return }
+      do { try stateStore.set(replaceUnread, newValue) } catch {
+        preconditionFailure("Cannot publish unread chats: \(error)")
+      }
+    }
+  }
+
+  private(set) var hasLoadedThreads: Bool {
+    get { confirmed(hasLoadedThreadsValue) }
+    set {
+      guard newValue != confirmed(hasLoadedThreadsValue) else { return }
+      do { try stateStore.set(replaceLoadedThreads, newValue) } catch {
+        preconditionFailure("Cannot publish the loaded chat list: \(error)")
+      }
+    }
+  }
+
+  private func confirmed<Value>(_ signal: Signal<Value>) -> Value {
+    // These are synchronous local business values, not a network or persistence boundary.
+    do { return try stateStore.get(signal) } catch {
+      preconditionFailure("Cannot read confirmed navigation: \(error)")
+    }
+  }
 }
 
 extension ThreadListStore {
