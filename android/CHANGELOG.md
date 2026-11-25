@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.55.6](https://github.com/okou-ai/okou/compare/android-v0.55.5...android-v0.55.6) (2026-11-25)
+
+
+### Bug Fixes
+
+* **android:** align connector read feedback and detail spacing ([#50707](https://github.com/okou-ai/okou/issues/50707)) ([f43d1fb](https://github.com/okou-ai/okou/commit/f43d1fb924dabb66bf0cde9244e666fd84c3703e))
+* **android:** align personal instructions editor with settings design ([#50602](https://github.com/okou-ai/okou/issues/50602)) ([3a121ab](https://github.com/okou-ai/okou/commit/3a121ab6b4996e1ba4d2c42c6b57ff8b09daedd0))
+
 ## [0.55.5](https://github.com/okou-ai/okou/compare/android-v0.55.4...android-v0.55.5) (2026-11-25)
 
 

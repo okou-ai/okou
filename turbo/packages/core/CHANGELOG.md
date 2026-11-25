@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.876.0](https://github.com/okou-ai/okou/compare/core-v8.875.0...core-v8.876.0) (2026-11-25)
+
+
+### Features
+
+* **artifacts:** enable artifact library list for staff ([#50711](https://github.com/okou-ai/okou/issues/50711)) ([853631f](https://github.com/okou-ai/okou/commit/853631f0c943d742e23f66221aff6f7e620705ba))
+* **core:** enable suggestions for everyone ([#50721](https://github.com/okou-ai/okou/issues/50721)) ([9f4acb1](https://github.com/okou-ai/okou/commit/9f4acb11dc613e04f11a2b69efc5a634a84b3f30))
+* roll out content-aware document output to everyone ([#50706](https://github.com/okou-ai/okou/issues/50706)) ([d7d26cd](https://github.com/okou-ai/okou/commit/d7d26cd3922157848f7adf6d631a2c02f3d3a8fb))
+
+
+### Refactoring
+
+* remove workflow recency sync feature switch ([#50708](https://github.com/okou-ai/okou/issues/50708)) ([edc8bb9](https://github.com/okou-ai/okou/commit/edc8bb96bba57f6e4390bfa3a8905924d1b4b88f))
+
 ## [8.875.0](https://github.com/okou-ai/okou/compare/core-v8.874.0...core-v8.875.0) (2026-11-25)
 
 

@@ -13,6 +13,28 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1180.0](https://github.com/okou-ai/okou/compare/app-v0.1179.2...app-v0.1180.0) (2026-11-25)
+
+
+### Features
+
+* **core:** enable suggestions for everyone ([#50721](https://github.com/okou-ai/okou/issues/50721)) ([9f4acb1](https://github.com/okou-ai/okou/commit/9f4acb11dc613e04f11a2b69efc5a634a84b3f30))
+* roll out content-aware document output to everyone ([#50706](https://github.com/okou-ai/okou/issues/50706)) ([d7d26cd](https://github.com/okou-ai/okou/commit/d7d26cd3922157848f7adf6d631a2c02f3d3a8fb))
+* toggle project archive with a keyboard shortcut ([#50693](https://github.com/okou-ai/okou/issues/50693)) ([a6c307c](https://github.com/okou-ai/okou/commit/a6c307c8070ce7cc9d8dcfc0dfb632666ae6bbd6))
+
+
+### Refactoring
+
+* remove workflow recency sync feature switch ([#50708](https://github.com/okou-ai/okou/issues/50708)) ([edc8bb9](https://github.com/okou-ai/okou/commit/edc8bb96bba57f6e4390bfa3a8905924d1b4b88f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.876.0
+    * @okouai/ui bumped to 1.22.15
+
 ## [0.1179.2](https://github.com/okou-ai/okou/compare/app-v0.1179.1...app-v0.1179.2) (2026-11-25)
 
 

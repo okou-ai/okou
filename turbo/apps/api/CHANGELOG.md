@@ -10,6 +10,33 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.124.0](https://github.com/okou-ai/okou/compare/api-v2.123.1...api-v2.124.0) (2026-11-25)
+
+
+### Features
+
+* **cli:** add gated custom domain configuration ([#50696](https://github.com/okou-ai/okou/issues/50696)) ([6792328](https://github.com/okou-ai/okou/commit/679232832d580bf2b7545ed5ab99bb6ed4ce8159))
+* roll out content-aware document output to everyone ([#50706](https://github.com/okou-ai/okou/issues/50706)) ([d7d26cd](https://github.com/okou-ai/okou/commit/d7d26cd3922157848f7adf6d631a2c02f3d3a8fb))
+
+
+### Bug Fixes
+
+* **api:** read flattened openrouter network log fields ([#50714](https://github.com/okou-ai/okou/issues/50714)) ([baaa4d4](https://github.com/okou-ai/okou/commit/baaa4d46ace3f662278e4e5c8e237a17d29ba5b4))
+
+
+### Refactoring
+
+* remove workflow recency sync feature switch ([#50708](https://github.com/okou-ai/okou/issues/50708)) ([edc8bb9](https://github.com/okou-ai/okou/commit/edc8bb96bba57f6e4390bfa3a8905924d1b4b88f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.876.0
+    * @okouai/db bumped to 2.67.4
+    * @okouai/pi-agent-runtime bumped to 1.52.70
+
 ## [2.123.1](https://github.com/okou-ai/okou/compare/api-v2.123.0...api-v2.123.1) (2026-11-25)
 
 
