@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.66.0](https://github.com/okou-ai/okou/compare/ios-v0.65.10...ios-v0.66.0) (2026-11-25)
+
+
+### Features
+
+* show the workspace initial on default workspace logos ([#50380](https://github.com/okou-ai/okou/issues/50380)) ([1b432c5](https://github.com/okou-ai/okou/commit/1b432c5ccfdb04d7dcddb8ac26ff7f0ce471834a))
+
+
+### Bug Fixes
+
+* **ios:** lift the for you dock off the sea with veiled glass ([#50822](https://github.com/okou-ai/okou/issues/50822)) ([00fc5e9](https://github.com/okou-ai/okou/commit/00fc5e98623ea71fbc6df6c77bd319bd3a3e9b53))
+
+
+### Refactoring
+
+* **ios:** keep confirmed personal subscriptions in the session graph ([#50814](https://github.com/okou-ai/okou/issues/50814)) ([980deec](https://github.com/okou-ai/okou/commit/980deec9750a67b53da3b4ac09df30f81e3496cf))
+
 ## [0.65.10](https://github.com/okou-ai/okou/compare/ios-v0.65.9...ios-v0.65.10) (2026-11-25)
 
 

@@ -13,6 +13,30 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1184.0](https://github.com/okou-ai/okou/compare/app-v0.1183.0...app-v0.1184.0) (2026-11-25)
+
+
+### Features
+
+* guide custom domain setup through verification and activation ([#50730](https://github.com/okou-ai/okou/issues/50730)) ([8846eae](https://github.com/okou-ai/okou/commit/8846eae8a6948dc3177e550be081b39857308062))
+* show the workspace initial on default workspace logos ([#50380](https://github.com/okou-ai/okou/issues/50380)) ([1b432c5](https://github.com/okou-ai/okou/commit/1b432c5ccfdb04d7dcddb8ac26ff7f0ce471834a))
+
+
+### Bug Fixes
+
+* **app:** align project shortcuts and shorten thread menu labels ([#50826](https://github.com/okou-ai/okou/issues/50826)) ([ef31a2c](https://github.com/okou-ai/okou/commit/ef31a2c3b1d219e161bd20b4d7ea31f4b3c59c4d))
+* **app:** bind shared database sync to its workspace member ([#50821](https://github.com/okou-ai/okou/issues/50821)) ([ab8b6ae](https://github.com/okou-ai/okou/commit/ab8b6aee88db92abb636759b2061eb45387fd958))
+* **app:** clarify chat share selection states ([#50793](https://github.com/okou-ai/okou/issues/50793)) ([931369f](https://github.com/okou-ai/okou/commit/931369fd759101a33184564e63c4694418e00fff))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.128.0
+    * @okouai/core bumped to 8.879.0
+    * @okouai/ui bumped to 1.22.19
+
 ## [0.1183.0](https://github.com/okou-ai/okou/compare/app-v0.1182.0...app-v0.1183.0) (2026-11-25)
 
 
