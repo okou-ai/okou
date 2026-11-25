@@ -79,6 +79,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       ios-only: ${{ steps.detect.outputs.ios-only }}
+      codeql-needed: ${{ steps.detect.outputs.codeql-needed }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -177,26 +178,49 @@ jobs:
     needs: [detect-release, detect-native-only]
     name: CodeQL SAST
     # PR and main results are uploaded for CASA; merge groups cannot upload SARIF.
-    if: needs.detect-release.outputs.skip != 'true' && github.event_name != 'merge_group' && needs.detect-native-only.outputs.ios-only == 'false'
+    if: needs.detect-release.outputs.skip != 'true' && github.event_name != 'merge_group' && needs.detect-native-only.outputs.codeql-needed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    env:
-      # Avoid per-run database snapshots competing with dependency caches.
-      CODEQL_OVERLAY_DATABASE_MODE: none
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Prepare CodeQL overlay cache
+        id: overlay-cache
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DB_LOCATION: ${{ runner.temp }}/codeql_databases
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: bash .github/scripts/checks/codeql-overlay-cache.sh prepare
+
       - name: Initialize CodeQL
+        id: init
         uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           languages: javascript-typescript
-          # Disable the extraction cache as well when overlay analysis is off.
+          # Keep GitHub Actions cache free of TRAP caches; overlay bases live in R2.
           trap-caching: false
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           category: codeql
+          # Preserve the overlay evaluation cache until the R2 publish step cleans and archives it.
+          upload-database: ${{ steps.overlay-cache.outputs.publish != 'true' && 'true' || 'false' }}
+
+      - name: Publish CodeQL overlay base to R2
+        if: steps.overlay-cache.outputs.publish == 'true'
+        env:
+          DB_LOCATION: ${{ runner.temp }}/codeql_databases
+          CODEQL_PATH: ${{ steps.init.outputs.codeql-path }}
+          CODEQL_CLI_VERSION: ${{ steps.init.outputs.codeql-version }}
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: bash .github/scripts/checks/codeql-overlay-cache.sh publish
 
   pnpm-audit:
     needs: [detect-release, detect-native-only]
@@ -289,6 +313,8 @@ jobs:
             .github/scripts/runner/stage-native-test-binary.sh \
             .github/scripts/tests/stage-native-test-binary-test.sh \
             .github/scripts/tests/runner-image-operation-test.sh \
+            .github/scripts/checks/codeql-overlay-cache.sh \
+            .github/scripts/tests/codeql-overlay-cache-test.sh \
             .github/scripts/checks/detect-native-only.sh \
             .github/scripts/tests/native-only-ci-test.sh \
             .github/scripts/tests/native-only-gates-test.sh \
@@ -558,6 +584,7 @@ jobs:
           echo "::group::CI Gate Results"
           FAILED=0
           IOS_ONLY="${{ needs.detect-native-only.outputs.ios-only }}"
+          CODEQL_NEEDED="${{ needs.detect-native-only.outputs.codeql-needed }}"
 
           check_result() {
             local job="$1" result="$2" allow_skip="${3:-false}"
@@ -575,10 +602,10 @@ jobs:
           check_result "detect-native-only" "${{ needs.detect-native-only.result }}"
           check_result "pr-title" "${{ needs.pr-title.result }}"
           check_result "semgrep" "${{ needs.semgrep.result }}"
-          if [[ "$EVENT_NAME" == "merge_group" ]]; then
+          if [[ "$EVENT_NAME" == "merge_group" || "$CODEQL_NEEDED" == "false" ]]; then
             check_result "codeql" "${{ needs.codeql.result }}" "true"
           else
-            check_result "codeql" "${{ needs.codeql.result }}" "$IOS_ONLY"
+            check_result "codeql" "${{ needs.codeql.result }}" "false"
           fi
           check_result "pnpm-audit" "${{ needs.pnpm-audit.result }}" "$IOS_ONLY"
           check_result "actionlint" "${{ needs.actionlint.result }}"
