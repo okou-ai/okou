@@ -38,7 +38,21 @@ final class ThreadListStore {
       }
     }
   }
-  private(set) var unreadThreadIDs: Set<String> = []
+  @ObservationIgnored private let confirmedUnread = CCState.State<Set<String>>([])
+  @ObservationIgnored private let replaceUnread: Command<Void, Set<String>>
+  /// Chats the read-state snapshot marks unread, kept in the workspace session's Store. Views
+  /// read it through CCStateSwiftUI; `unreadThreadIDs` serves owner logic, actions and tests.
+  let unreadThreadIDsValue: Computed<Set<String>>
+
+  private(set) var unreadThreadIDs: Set<String> {
+    get { confirmed(unreadThreadIDsValue) }
+    set {
+      guard newValue != confirmed(unreadThreadIDsValue) else { return }
+      do { try stateStore.set(replaceUnread, newValue) } catch {
+        preconditionFailure("Cannot publish unread chats: \(error)")
+      }
+    }
+  }
   private(set) var markingAllRead = false
   private var readRevision = 0
   var actionError: String? { actions.actionError }
@@ -46,7 +60,21 @@ final class ThreadListStore {
   private var indicatorsError: String?
   // Standalone indicator failures retain their own policy; list errors live on listValue.
   var syncError: String? { indicatorsError }
-  private(set) var hasLoadedThreads = false
+  @ObservationIgnored private let loadedThreads = CCState.State(false)
+  @ObservationIgnored private let replaceLoadedThreads: Command<Void, Bool>
+  /// Whether a chat list has been published, kept in the workspace session's Store. Views read
+  /// it through CCStateSwiftUI; `hasLoadedThreads` serves owner logic and tests.
+  let hasLoadedThreadsValue: Computed<Bool>
+
+  private(set) var hasLoadedThreads: Bool {
+    get { confirmed(hasLoadedThreadsValue) }
+    set {
+      guard newValue != confirmed(hasLoadedThreadsValue) else { return }
+      do { try stateStore.set(replaceLoadedThreads, newValue) } catch {
+        preconditionFailure("Cannot publish the loaded chat list: \(error)")
+      }
+    }
+  }
   var updatingThreads: Set<String> { actions.updatingThreads }
 
   private let client: APIClient
@@ -87,7 +115,7 @@ final class ThreadListStore {
   var renameTitle = ""
   private var renameSessionID = UUID()
   private var closed = false
-  private var blocked = false
+  @ObservationIgnored private var blocked = false
 
   init(
     client: APIClient, sync: ChatSync, commands: ChatCommands, resources: WorkspaceResources,
@@ -106,6 +134,12 @@ final class ThreadListStore {
     let confirmedThreads = confirmedThreads
     threadsValue = Computed { try $0(confirmedThreads) }
     replaceThreads = Command { context, value in try context.set(confirmedThreads, value) }
+    let confirmedUnread = confirmedUnread
+    unreadThreadIDsValue = Computed { try $0(confirmedUnread) }
+    replaceUnread = Command { context, value in try context.set(confirmedUnread, value) }
+    let loadedThreads = loadedThreads
+    hasLoadedThreadsValue = Computed { try $0(loadedThreads) }
+    replaceLoadedThreads = Command { context, value in try context.set(loadedThreads, value) }
     let listDemand = listDemand
     let listLifetime = listLifetime
     reloadList = Command { context in
