@@ -143,7 +143,7 @@ chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-anno
 chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-002	planned		
 chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-003	planned		
 chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-005	planned		
-chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-008	planned		
+chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-008	rewritten	152.3	
 chat	src/signals/routes/__tests__/chat-events-admission.test.ts	chat-events-admission-001	planned		
 chat	src/signals/routes/__tests__/chat-events-admission.test.ts	chat-events-admission-004	planned		
 chat	src/signals/routes/__tests__/chat-events-admission.test.ts	chat-events-admission-006	planned		
