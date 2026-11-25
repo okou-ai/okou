@@ -64,6 +64,10 @@ interface ComputerUseHostStartOptions {
 }
 
 interface ComputerUseReadCommandBody {
+  readonly appStateRunner?: {
+    readonly runnerId: string;
+    readonly heartbeatGeneration: number;
+  };
   readonly kind: ComputerUseReadCommandKind;
   readonly app?: string;
   readonly timeoutMs?: number;

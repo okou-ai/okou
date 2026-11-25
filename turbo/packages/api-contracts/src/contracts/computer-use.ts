@@ -87,6 +87,7 @@ export const computerUseCommandErrorCodeSchema = zEnum([
   "command_timeout",
   "invalid_arguments",
   "result_too_large",
+  "transfer_failed",
   "shell_unavailable",
   "shell_busy",
 ]);

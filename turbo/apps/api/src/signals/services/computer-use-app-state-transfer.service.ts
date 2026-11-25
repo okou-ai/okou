@@ -1,7 +1,13 @@
 import { createHmac } from "node:crypto";
 import { command } from "ccstate";
 import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
-import { appStateRunnerSchema } from "@okouai/api-contracts/contracts/computer-use";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
+import {
+  DIRECT_APP_STATE_CAPABILITY,
+  appStateRunnerSchema,
+} from "@okouai/api-contracts/contracts/computer-use";
 import { isCanonicalRunnerHostname } from "@okouai/api-contracts/contracts/runner-dispatch";
 import { OFFICIAL_RUNNER_TOKEN_PREFIX } from "@okouai/api-contracts/contracts/runner-primitives";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -130,3 +136,81 @@ export function signAppStateUpload(
     token: `${target.hostId}.${target.expiresAt}.${signature}`,
   };
 }
+
+/** Decide once, using the CLI's assigned Runner and the authorized Mac's advertisement. */
+export const selectAppStateTransfer$ = command(
+  async (
+    { get, set },
+    owner: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly runId?: string;
+      readonly targetHostId?: string;
+    },
+    host:
+      | Pick<
+          typeof computerUseHosts.$inferSelect,
+          "id" | "connectionGeneration" | "supportedCapabilities"
+        >
+      | undefined,
+    receiver: {
+      readonly runnerId: string;
+      readonly heartbeatGeneration: number;
+    },
+    signal: AbortSignal,
+  ) => {
+    if (
+      !owner.runId ||
+      !host ||
+      owner.targetHostId !== host.id ||
+      !host.supportedCapabilities.includes(DIRECT_APP_STATE_CAPABILITY)
+    ) {
+      return null;
+    }
+    const features = await set(
+      loadUserFeatureSwitchContext$,
+      owner.orgId,
+      owner.userId,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (
+      !isFeatureEnabled(
+        FeatureSwitchKey.ComputerUseAppStateDirectTransfer,
+        features,
+      )
+    ) {
+      return null;
+    }
+    const [run] = await get(db$)
+      .select({ hostname: agentRuns.runnerHostname })
+      .from(agentRuns)
+      .innerJoin(
+        chatThreads,
+        and(
+          eq(chatThreads.id, agentRuns.chatThreadId),
+          eq(chatThreads.computerUseHostId, host.id),
+          eq(chatThreads.orgId, owner.orgId),
+          eq(chatThreads.userId, owner.userId),
+        ),
+      )
+      .where(
+        and(
+          eq(agentRuns.id, owner.runId),
+          eq(agentRuns.userId, owner.userId),
+          eq(agentRuns.orgId, owner.orgId),
+          eq(agentRuns.status, "running"),
+          eq(agentRuns.runnerId, receiver.runnerId),
+          eq(agentRuns.runnerHeartbeatGeneration, receiver.heartbeatGeneration),
+        ),
+      );
+    signal.throwIfAborted();
+    return run?.hostname && isCanonicalRunnerHostname(run.hostname)
+      ? {
+          runnerId: receiver.runnerId,
+          heartbeatGeneration: receiver.heartbeatGeneration,
+          hostGeneration: host.connectionGeneration,
+        }
+      : null;
+  },
+);
