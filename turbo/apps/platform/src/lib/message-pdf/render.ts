@@ -24,6 +24,10 @@ export async function renderMessagePdf(
     ["Sarasa-Italic.ttf", request.italicFont],
     ["Sarasa-BoldItalic.ttf", request.boldItalicFont],
     ["NotoEmoji.woff", request.emojiFont],
+    ["NotoSansUnicode-Regular.ttf", request.unicodeRegularFont],
+    ["NotoSansUnicode-Bold.ttf", request.unicodeBoldFont],
+    ["NotoSansUnicode-Italic.ttf", request.unicodeItalicFont],
+    ["NotoSansUnicode-BoldItalic.ttf", request.unicodeBoldItalicFont],
   ] as const) {
     if (buffer) {
       pdfMake.addVirtualFileSystem({ [name]: fontBase64(buffer) });
@@ -35,6 +39,12 @@ export async function renderMessagePdf(
       bold: "NotoSans-Bold.otf",
       italics: "Sarasa-Italic.ttf",
       bolditalics: "Sarasa-BoldItalic.ttf",
+    },
+    NotoSansUnicode: {
+      normal: "NotoSansUnicode-Regular.ttf",
+      bold: "NotoSansUnicode-Bold.ttf",
+      italics: "NotoSansUnicode-Italic.ttf",
+      bolditalics: "NotoSansUnicode-BoldItalic.ttf",
     },
     NotoEmoji: {
       normal: "NotoEmoji.woff",

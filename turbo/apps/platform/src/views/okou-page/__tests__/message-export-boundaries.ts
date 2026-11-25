@@ -22,20 +22,33 @@ export function pdfServices(
     italic: "sarasa-gothic-sc-italic.ttf",
     boldItalic: "sarasa-gothic-sc-bolditalic.ttf",
     emoji: "noto-emoji-emoji-400-normal.woff",
+    unicodeRegular: "NotoSans_400Regular.ttf",
+    unicodeBold: "NotoSans_700Bold.ttf",
+    unicodeItalic: "NotoSans_400Regular_Italic.ttf",
+    unicodeBoldItalic: "NotoSans_700Bold_Italic.ttf",
   } as const;
   for (const key of Object.keys(fonts) as (keyof typeof fonts)[]) {
-    context.mocks.http.get(platformMessagePdfFontUrls[key], () => {
-      return new HttpResponse(
-        Uint8Array.from(
-          readFileSync(
-            new URL(
-              "../../../../test-fixtures/message-pdf-fonts/" + fonts[key],
-              import.meta.url,
+    context.mocks.http.get(
+      new RegExp(
+        platformMessagePdfFontUrls[key].replace(
+          /[.*+?^${}()|[\]\\]/gu,
+          String.raw`\$&`,
+        ) + "$",
+        "u",
+      ),
+      () => {
+        return new HttpResponse(
+          Uint8Array.from(
+            readFileSync(
+              new URL(
+                "../../../../test-fixtures/message-pdf-fonts/" + fonts[key],
+                import.meta.url,
+              ),
             ),
           ),
-        ),
-      );
-    });
+        );
+      },
+    );
   }
   context.mocks.browser.dedicatedWorker(async (request) => {
     return {
