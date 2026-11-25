@@ -92,3 +92,69 @@ export async function validateOfficialWorkflowIdentityRetirement(
     await sql.end();
   }
 }
+
+/** Old readers see new atomic installations until the release drops the old schema. */
+export async function validateOfficialWorkflowInstallationRetirement(
+  databaseUrl: string,
+  migrationMillis: number,
+) {
+  const sql = postgres(databaseUrl, { max: 1 });
+  const migration = await readFile(
+    new URL(
+      "../src/migrations/1638_retire_official_workflow_installation_state.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const workflowId = randomUUID();
+  try {
+    await applyPendingMigrations(sql, {
+      beforeMillis: migrationMillis + 1,
+      beforeApiPromotion: true,
+    });
+    await sql`WITH installed AS (
+      INSERT INTO workflows (id, org_id, owner_user_id, name, created_by, updated_by, official_definition_name)
+      VALUES (${workflowId}, 'overlap-test', 'owner', 'morning-brief', 'owner', 'owner', 'morning-brief')
+      RETURNING id
+    )
+    INSERT INTO workflow_automations (org_id, owner_user_id, workflow_id, kind, schedule_type, cron_expression, timezone,
+      enabled, official_intended_enabled, official_blueprint_key, official_applied_fingerprint, official_parameter_bindings, official_reconciliation_status)
+    SELECT 'overlap-test', 'owner', id, 'schedule', 'cron', '10 7 * * *', 'UTC',
+      false, true, 'daily-delivery', repeat('a', 64), '[]', 'needs_reconfiguration' FROM installed`;
+    const [outgoing] =
+      await sql`SELECT w.official_installation_state, a.official_parameter_bindings
+      FROM workflows w JOIN workflow_automations a ON a.workflow_id = w.id WHERE w.id = ${workflowId}`;
+    assert.deepEqual(outgoing, {
+      official_installation_state: "installed",
+      official_parameter_bindings: [{ key: "cron", value: "10 7 * * *" }],
+    });
+    await sql`UPDATE workflow_automations SET cron_expression = '20 7 * * *' WHERE workflow_id = ${workflowId}`;
+    const schedule =
+      () => sql`SELECT enabled, official_intended_enabled, official_reconciliation_status,
+      cron_expression, official_parameter_bindings FROM workflow_automations WHERE workflow_id = ${workflowId}`;
+    const before = await schedule();
+    assert.deepEqual(before[0], {
+      enabled: false,
+      official_intended_enabled: true,
+      official_reconciliation_status: "needs_reconfiguration",
+      cron_expression: "20 7 * * *",
+      official_parameter_bindings: [{ key: "cron", value: "20 7 * * *" }],
+    });
+    // An outgoing install or event activation can start after the preparation check.
+    await sql`UPDATE workflows SET official_installation_state = 'installing' WHERE id = ${workflowId}`;
+    const promote = () => sql.unsafe(migration).simple();
+    await assert.rejects(promote, /Official Workflow is incomplete/);
+    await sql`UPDATE workflows SET official_installation_state = 'installed' WHERE id = ${workflowId}`;
+    await sql`UPDATE workflow_automations SET official_reconciliation_status = 'reconciling' WHERE workflow_id = ${workflowId}`;
+    await assert.rejects(promote, /staged automation exists/);
+    await sql`UPDATE workflow_automations SET official_reconciliation_status = 'needs_reconfiguration' WHERE workflow_id = ${workflowId}`;
+    await promote();
+    assert.deepEqual(await schedule(), before);
+    await assert.rejects(
+      sql`SELECT public.delete_workflow_rows('overlap-test', ${workflowId})`,
+      /Official Workflow installations are read-only/,
+    );
+  } finally {
+    await sql.end();
+  }
+}

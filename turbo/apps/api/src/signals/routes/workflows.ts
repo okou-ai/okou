@@ -436,11 +436,6 @@ function workflowCreationSource(
       officialDefinitionName: sql`NULL`
         .mapWith(nullableDriverValueDecoder(workflows.officialDefinitionName))
         .as("official_definition_name"),
-      officialInstallationState: sql`NULL`
-        .mapWith(
-          nullableDriverValueDecoder(workflows.officialInstallationState),
-        )
-        .as("official_installation_state"),
       importSource: sql`${sql.param(v.importSource, workflows.importSource)}`
         .mapWith(nullableDriverValueDecoder(workflows.importSource))
         .as("import_source"),

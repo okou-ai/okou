@@ -31,9 +31,6 @@ function copySourceLocks(args: WorkflowCopyPublicationArgs): SQL[] {
         definitionName === null
           ? undefined
           : eq(workflows.officialDefinitionName, definitionName),
-        official
-          ? eq(workflows.officialInstallationState, "installed")
-          : undefined,
       ),
     )
     .for("update");

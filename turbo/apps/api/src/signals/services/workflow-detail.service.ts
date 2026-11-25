@@ -83,7 +83,6 @@ export const workflowDetail$ = command(
     signal.throwIfAborted();
 
     const official = installedOfficialWorkflow(workflow);
-    const officialRevision = official?.revision;
 
     const baseSummary = workflowSummary({
       workflow,
@@ -91,11 +90,11 @@ export const workflowDetail$ = command(
       shadowedBy,
       officialDefinitionLifecycle: official?.lifecycle,
     });
-    const summary = officialRevision
+    const summary = official
       ? {
           ...baseSummary,
-          displayName: officialRevision.definition.workflow.displayName,
-          description: officialRevision.definition.workflow.description,
+          displayName: official.workflow.displayName,
+          description: official.workflow.description,
         }
       : baseSummary;
 
@@ -112,8 +111,8 @@ export const workflowDetail$ = command(
           )
         : null;
     signal.throwIfAborted();
-    const volumeFiles = officialRevision
-      ? officialRevision.definition.workflow.files.map((file) => {
+    const volumeFiles = official
+      ? official.workflow.files.map((file) => {
           return {
             ...file,
             size: new TextEncoder().encode(file.content).length,
@@ -128,6 +127,7 @@ export const workflowDetail$ = command(
       {
         orgId: args.orgId,
         workflowId: workflow.id,
+        officialDefinitionName: workflow.officialDefinitionName,
         userId: args.member.userId,
       },
       signal,
@@ -140,9 +140,7 @@ export const workflowDetail$ = command(
       updatedByUserId: workflow.updatedBy,
       createdAt: workflow.createdAt.toISOString(),
       updatedAt: workflow.updatedAt.toISOString(),
-      instruction:
-        officialRevision?.definition.workflow.instruction ??
-        workflow.instruction,
+      instruction: official?.workflow.instruction ?? workflow.instruction,
       files,
       fileContents,
       automations: [...automations],

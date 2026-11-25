@@ -34,7 +34,6 @@ export interface WorkflowRow {
   readonly description: string | null;
   readonly officialDefinitionName: string | null;
   readonly archivedOfficialSnapshot: (typeof workflows.$inferSelect)["archivedOfficialSnapshot"];
-  readonly officialInstallationState: "installing" | "installed" | null;
   readonly importSource: WorkflowImportSource | null;
   readonly createdBy: string;
   readonly updatedBy: string;
@@ -51,7 +50,6 @@ type WorkflowSummaryRow = Pick<
   | "displayName"
   | "description"
   | "officialDefinitionName"
-  | "officialInstallationState"
   | "importSource"
   | "createdAt"
 >;
@@ -166,12 +164,11 @@ export function workflowSummary(args: {
     canManage: canManageWorkflow(args.workflow, args.member),
     canPublish: canPublishWorkflow(args.workflow, args.member),
     official:
-      args.workflow.officialDefinitionName === null ||
-      args.workflow.officialInstallationState === null
+      args.workflow.officialDefinitionName === null
         ? null
         : {
             definitionName: args.workflow.officialDefinitionName,
-            installationState: args.workflow.officialInstallationState,
+            installationState: "installed",
             definitionLifecycle:
               args.officialDefinitionLifecycle ?? "unavailable",
             readOnly: true,
@@ -298,7 +295,6 @@ export function workflowList(args: {
             sql`${workflows.archivedOfficialSnapshot}->>'lifecycle'`.mapWith(
               zodDriverValueDecoder(officialWorkflowLifecycleSchema.nullable()),
             ),
-          officialInstallationState: workflows.officialInstallationState,
           importSource: workflows.importSource,
           createdAt: workflows.createdAt,
         },
@@ -322,8 +318,7 @@ export function workflowList(args: {
         shadowedBy:
           winner && winner.id !== row.workflow.id ? winner : undefined,
         officialDefinitionLifecycle: row.workflow.officialDefinitionName
-          ? (builtInWorkflow(row.workflow.officialDefinitionName)?.definition
-              .lifecycle ??
+          ? (builtInWorkflow(row.workflow.officialDefinitionName)?.lifecycle ??
             row.workflow.archivedLifecycle ??
             "unavailable")
           : undefined,

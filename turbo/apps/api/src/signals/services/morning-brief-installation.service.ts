@@ -49,7 +49,6 @@ export const installMorningBrief$ = command(
     if (!builtin) {
       throw new Error("Missing Morning Brief definition");
     }
-    const { blueprint } = builtin;
     const workflowId = randomUUID();
     const at = nowDate();
     const cron = morningBriefCronExpression(owner);
@@ -64,16 +63,16 @@ export const installMorningBrief$ = command(
         RETURNING e.workflow_id, e.org_id, e.user_id
       ), installed AS (
         INSERT INTO workflows (id, org_id, owner_user_id, name, visibility, official_definition_name,
-          official_installation_state, created_by, updated_by, created_at, updated_at)
-        SELECT workflow_id, org_id, user_id, ${name}, 'private', ${name}, 'installed', user_id, user_id, ${at}, ${at}
+          created_by, updated_by, created_at, updated_at)
+        SELECT workflow_id, org_id, user_id, ${name}, 'private', ${name}, user_id, user_id, ${at}, ${at}
         FROM chosen RETURNING id, org_id, owner_user_id
       ), scheduled AS (
         INSERT INTO workflow_automations (org_id, workflow_id, owner_user_id, kind, schedule_type,
           cron_expression, timezone, enabled, next_run_at, official_blueprint_key, official_applied_fingerprint,
           official_reconciliation_status, official_parameter_bindings, official_intended_enabled, created_at, updated_at)
         SELECT org_id, id, owner_user_id, 'schedule', 'cron', ${cron}, ${timezone}, true, ${nextRunAt},
-          ${blueprint.key}, ${blueprint.fingerprint}, 'current',
-          jsonb_build_array(jsonb_build_object('key', 'cron', 'value', ${cron}::text)), true, ${at}, ${at}
+          ${builtin.blueprintKey}, ${builtin.fingerprint}, 'current', '[]'::jsonb,
+          true, ${at}, ${at}
         FROM installed
       )
       INSERT INTO workflow_user_automation_threads (org_id, user_id, workflow_id)

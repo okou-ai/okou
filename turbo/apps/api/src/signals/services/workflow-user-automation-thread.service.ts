@@ -84,7 +84,7 @@ function officialWorkflowThreadPresentation(args: {
         : args.definitionName
     ]?.[locale];
   return {
-    title: localized ?? definition.revision.definition.workflow.displayName,
+    title: localized ?? definition.workflow.displayName,
     hidden: true,
   };
 }

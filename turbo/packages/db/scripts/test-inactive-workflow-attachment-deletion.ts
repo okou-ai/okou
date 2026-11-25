@@ -26,7 +26,7 @@ export async function validateInactiveWorkflowAttachmentDeletion(
   const deleteWorkflow = async (workflowId: string) => {
     const [row] = await sql`
       SELECT public.delete_workflow_rows(
-        ${orgId}, ${workflowId}, false, NULL
+        ${orgId}, ${workflowId}
       )->>'deleted' AS deleted
     `;
     return row?.deleted;

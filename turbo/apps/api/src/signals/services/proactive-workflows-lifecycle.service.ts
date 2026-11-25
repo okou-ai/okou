@@ -59,7 +59,6 @@ function proactiveSchedule(
   if (!builtin) {
     throw new Error(`Missing built-in Workflow: ${source.name}`);
   }
-  const { blueprint, definition } = builtin;
   if (!isValidTimeZone(timezone)) {
     throw new Error("Proactive schedules require a valid timezone");
   }
@@ -67,7 +66,7 @@ function proactiveSchedule(
     kind === "learning"
       ? proactiveNightlyCron(owner)
       : `${ownerMinute(owner)} * * * *`;
-  return { definition, blueprint, cron };
+  return { builtin, cron };
 }
 
 const synchronizeProactiveSchedule$ = command(
@@ -97,7 +96,6 @@ const synchronizeProactiveSchedule$ = command(
             workflows.officialDefinitionName,
             PROACTIVE_WORKFLOW_DEFINITIONS[args.kind].name,
           ),
-          eq(workflows.officialInstallationState, "installed"),
         ),
       );
     const automation = workflowAutomations;
@@ -107,13 +105,11 @@ const synchronizeProactiveSchedule$ = command(
       sql`${automation.timezone} IS DISTINCT FROM ${args.timezone}`,
       sql`${automation.cronExpression} IS DISTINCT FROM ${args.cron}`,
     );
-    const bindings = [{ key: "cron", value: args.cron }];
     await database
       .update(automation)
       .set({
         cronExpression: args.cron,
         timezone: args.timezone,
-        officialParameterBindings: bindings,
         officialAppliedFingerprint: args.fingerprint,
         officialReconciliationStatus: "current",
         officialIntendedEnabled: true,
@@ -138,7 +134,6 @@ const synchronizeProactiveSchedule$ = command(
             sql`${automation.officialReconciliationStatus} IS DISTINCT FROM 'current'`,
             sql`${automation.officialAppliedFingerprint} IS DISTINCT FROM ${args.fingerprint}`,
             changedCadence,
-            sql`${automation.officialParameterBindings} IS DISTINCT FROM ${sql.param(bindings, automation.officialParameterBindings)}::jsonb`,
           ),
         ),
       );
@@ -186,36 +181,31 @@ export const ensureProactiveWorkflows$ = command(
       if (timezone === null) {
         continue;
       }
-      const { definition, blueprint, cron } = proactiveSchedule(
-        owner,
-        kind,
-        timezone,
-      );
+      const { builtin, cron } = proactiveSchedule(owner, kind, timezone);
       const at = nowDate();
       const next = calculateNextRun(cron, timezone, at);
       await database.execute(sql`
       WITH created AS (
         INSERT INTO workflows (org_id, owner_user_id, name, visibility, instruction, display_name, description,
-          official_definition_name, official_installation_state, created_by, updated_by, created_at, updated_at)
-        SELECT ${owner.orgId}, ${owner.userId}, ${definition.name}, 'private', NULL, NULL, NULL,
-          ${definition.name}, 'installed', ${owner.userId}, ${owner.userId}, ${at}, ${at}
+          official_definition_name, created_by, updated_by, created_at, updated_at)
+        SELECT ${owner.orgId}, ${owner.userId}, ${builtin.name}, 'private', NULL, NULL, NULL,
+          ${builtin.name}, ${owner.userId}, ${owner.userId}, ${at}, ${at}
         WHERE ${proactiveWorkflowOwnerEnabledSql(owner, kind === "learning" ? timezone : undefined)}
         ON CONFLICT (org_id, owner_user_id, official_definition_name) WHERE official_definition_name IS NOT NULL
-        DO UPDATE SET official_installation_state = 'installed', updated_at = EXCLUDED.updated_at
-        WHERE workflows.official_installation_state = 'installing' RETURNING id
+        DO NOTHING RETURNING id
       ), installed AS (
         SELECT id FROM created
         UNION ALL
         SELECT id FROM workflows
         WHERE org_id = ${owner.orgId} AND owner_user_id = ${owner.userId}
-          AND official_definition_name = ${definition.name} AND official_installation_state = 'installed'
+          AND official_definition_name = ${builtin.name}
           AND ${proactiveWorkflowOwnerEnabledSql(owner, kind === "learning" ? timezone : undefined)}
       )
       INSERT INTO workflow_automations (org_id, workflow_id, owner_user_id, kind, schedule_type, cron_expression, interval_seconds,
         timezone, enabled, next_run_at, official_blueprint_key, official_applied_fingerprint,
         official_reconciliation_status, official_parameter_bindings, official_intended_enabled)
       SELECT ${owner.orgId}, id, ${owner.userId}, 'schedule', 'cron', ${cron}, NULL, ${timezone}, true, ${next},
-        ${blueprint.key}, ${blueprint.fingerprint}, 'current', jsonb_build_array(jsonb_build_object('key', 'cron', 'value', ${cron}::text)), true FROM installed
+        ${builtin.blueprintKey}, ${builtin.fingerprint}, 'current', '[]'::jsonb, true FROM installed
       ON CONFLICT (workflow_id, official_blueprint_key) WHERE official_blueprint_key IS NOT NULL DO NOTHING
     `);
       signal.throwIfAborted();
@@ -223,8 +213,8 @@ export const ensureProactiveWorkflows$ = command(
         synchronizeProactiveSchedule$,
         {
           owner,
-          blueprintKey: blueprint.key,
-          fingerprint: blueprint.fingerprint,
+          blueprintKey: builtin.blueprintKey,
+          fingerprint: builtin.fingerprint,
           kind,
           cron,
           timezone,
@@ -270,20 +260,12 @@ function proactiveScheduleGaps(ownerHash: SQL) {
     return schedules(
       and(
         eq(workflows.officialDefinitionName, definition.name),
-        eq(workflows.officialInstallationState, "installed"),
         eq(workflowAutomations.officialBlueprintKey, definition.blueprintKey),
         intended,
         eq(workflowAutomations.officialReconciliationStatus, "current"),
-        eq(
-          workflowAutomations.officialAppliedFingerprint,
-          builtin.blueprint.fingerprint,
-        ),
+        eq(workflowAutomations.officialAppliedFingerprint, builtin.fingerprint),
         eq(workflowAutomations.cronExpression, cron),
         eq(workflowAutomations.timezone, timezone),
-        eq(
-          workflowAutomations.officialParameterBindings,
-          sql`jsonb_build_array(jsonb_build_object('key','cron','value',${cron}))`,
-        ),
       ),
     );
   }

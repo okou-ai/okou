@@ -15,7 +15,9 @@ import type {
   WorkflowMember,
 } from "../services/workflow-data.service";
 import { visibleWorkflowCondition } from "../services/workflow-visibility";
-import { builtInWorkflow } from "../services/builtin-workflows";
+import type { installedOfficialWorkflow } from "../services/builtin-workflows";
+import { workflowScheduleSchema } from "@okouai/api-contracts/contracts/workflows";
+import { isValidTimeZone } from "@okouai/core/timezone";
 
 interface WorkflowCopyObservation {
   readonly workflowXmin: string;
@@ -91,9 +93,6 @@ export function copySourcePlans(args: WorkflowCopyInput) {
         official ? eq(workflows.ownerUserId, args.userId) : undefined,
         definitionName !== null
           ? eq(workflows.officialDefinitionName, definitionName)
-          : undefined,
-        official
-          ? eq(workflows.officialInstallationState, "installed")
           : undefined,
       ),
     );
@@ -175,12 +174,11 @@ export function copyWebhooksQuery(
   return query.as("copy_webhooks");
 }
 
-export function officialCopyMaterialization(
-  sourceWorkflow: WorkflowRow,
-  revision: OfficialWorkflowAcceptedRevision,
+function archivedCopyAutomations(
+  blueprints: OfficialWorkflowAcceptedRevision["definition"]["blueprints"],
   rows: WorkflowCopySource["sourceAutomations"],
-): OfficialCopyMaterialization {
-  if (rows.length !== revision.definition.blueprints.length) {
+) {
+  if (rows.length !== blueprints.length) {
     throw new CopyPreparationConflict(OFFICIAL_COPY_RECONFIGURE_MESSAGE);
   }
   const rowsByBlueprint = new Map(
@@ -189,7 +187,7 @@ export function officialCopyMaterialization(
     }),
   );
   const sourceAutomations: (typeof workflowAutomations.$inferSelect)[] = [];
-  for (const blueprint of revision.definition.blueprints) {
+  for (const blueprint of blueprints) {
     const row = rowsByBlueprint.get(blueprint.key);
     if (
       !row ||
@@ -210,21 +208,49 @@ export function officialCopyMaterialization(
     }
     sourceAutomations.push(row);
   }
+  return sourceAutomations;
+}
+
+export function officialCopyMaterialization(
+  sourceWorkflow: WorkflowRow,
+  official: NonNullable<ReturnType<typeof installedOfficialWorkflow>>,
+  rows: WorkflowCopySource["sourceAutomations"],
+): OfficialCopyMaterialization {
+  let sourceAutomations = rows;
+  if (official.kind === "builtin") {
+    const [row] = rows;
+    if (
+      rows.length !== 1 ||
+      !row ||
+      row.kind !== "schedule" ||
+      row.scheduleType !== "cron" ||
+      row.officialBlueprintKey !== official.builtin.blueprintKey ||
+      row.officialAppliedFingerprint !== official.builtin.fingerprint ||
+      row.officialReconciliationStatus !== "current" ||
+      !isValidTimeZone(row.timezone) ||
+      !workflowScheduleSchema.safeParse({
+        type: "cron",
+        cronExpression: row.cronExpression,
+        timezone: row.timezone,
+      }).success
+    ) {
+      throw new CopyPreparationConflict(OFFICIAL_COPY_RECONFIGURE_MESSAGE);
+    }
+  } else {
+    sourceAutomations = archivedCopyAutomations(official.blueprints, rows);
+  }
   return {
     sourceWorkflow: {
       ...sourceWorkflow,
       // An editable copy becomes an ordinary Workflow and owns its instructions.
-      instruction:
-        builtInWorkflow(sourceWorkflow.officialDefinitionName)?.prompt ??
-        revision.definition.workflow.instruction,
-      displayName: revision.definition.workflow.displayName,
-      description: revision.definition.workflow.description,
+      instruction: official.copyInstruction,
+      displayName: official.workflow.displayName,
+      description: official.workflow.description,
       archivedOfficialSnapshot: null,
       officialDefinitionName: null,
-      officialInstallationState: null,
     },
     sourceAutomations,
-    files: revision.definition.workflow.files,
+    files: official.workflow.files,
   };
 }
 

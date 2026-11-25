@@ -116,8 +116,7 @@ const feedAutomationDescriptions$ = command(
       rows.map(({ id, description, definitionName }) => {
         return [
           id,
-          builtInWorkflow(definitionName)?.revision.definition.workflow
-            .description ?? description,
+          builtInWorkflow(definitionName)?.description ?? description,
         ] as const;
       }),
     );

@@ -43,20 +43,20 @@ export const readWorkflowCopySnapshot$ = command(
       if (!source) {
         throw new Error("Workflow copy source observation is missing");
       }
-      const revision = installedOfficialWorkflow(sourceRow)?.revision;
-      if (p.official && !revision) {
+      const official = installedOfficialWorkflow(sourceRow);
+      if (p.official && !official) {
         throw new CopyPreparationConflict(OFFICIAL_COPY_RECONFIGURE_MESSAGE);
       }
       // Official blueprint reads precede visibility; ordinary rows follow it.
-      let rows = revision ? await db.select().from(p.automations) : [];
+      let rows = official ? await db.select().from(p.automations) : [];
       signal.throwIfAborted();
-      const m = revision
-        ? officialCopyMaterialization(sourceRow, revision, rows)
+      const m = official
+        ? officialCopyMaterialization(sourceRow, official, rows)
         : null;
       const [visibleRow] = await db.select().from(p.visible);
       signal.throwIfAborted();
       const visible = requireCopyVisibility(visibleRow, args, p.official);
-      if (!revision) {
+      if (!official) {
         rows = await db.select().from(p.automations);
         signal.throwIfAborted();
       }

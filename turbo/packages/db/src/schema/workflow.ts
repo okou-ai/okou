@@ -28,11 +28,10 @@ export type { WorkflowAutomationEventConfig } from "@okouai/db/jsonb-contracts/w
  * only to their owner.
  */
 export type WorkflowVisibility = "public" | "private";
-export type OfficialWorkflowInstallationState = "installing" | "installed";
 /** The local tool a skill-imported workflow came from. */
 export type WorkflowImportSource = "claudeCode" | "codex";
 export type OfficialWorkflowReconciliationStatus =
-  "current" | "reconciling" | "needs_reconfiguration" | "failed";
+  "current" | "needs_reconfiguration" | "failed";
 
 /** Org-scoped Workflow definitions and their published content references. */
 export const workflows = pgTable(
@@ -58,9 +57,6 @@ export const workflows = pgTable(
       "archived_official_snapshot",
     ).$type<OfficialWorkflowArchivedSnapshot>(),
     officialDefinitionName: varchar("official_definition_name", { length: 64 }),
-    officialInstallationState: varchar("official_installation_state", {
-      length: 32,
-    }).$type<OfficialWorkflowInstallationState>(),
     // Set once by the skill import when it creates the workflow; null for a
     // workflow made in Okou or imported by a session that named no tool.
     importSource: varchar("import_source", {
@@ -111,13 +107,8 @@ export const workflows = pgTable(
       ),
       officialInstallationCheck: check(
         "workflows_official_installation_check",
-        sql`(
-          ${table.officialDefinitionName} IS NULL
-          AND ${table.officialInstallationState} IS NULL
-        ) OR (
-          ${table.officialDefinitionName} IS NOT NULL
-          AND ${table.officialInstallationState} IN ('installing', 'installed')
-          AND ${table.officialDefinitionName} = ${table.name}
+        sql`${table.officialDefinitionName} IS NULL OR (
+          ${table.officialDefinitionName} = ${table.name}
           AND ${table.visibility} = 'private'
           AND ${table.instruction} IS NULL
           AND ${table.displayName} IS NULL
@@ -295,7 +286,8 @@ export const workflowAutomations = pgTable(
         ) OR (
           ${table.officialBlueprintKey} IS NOT NULL
           AND ${table.officialAppliedFingerprint} ~ '^[0-9a-f]{64}$'
-          AND ${table.officialReconciliationStatus} IN ('current', 'reconciling', 'needs_reconfiguration', 'failed')
+          AND ${table.kind} = 'schedule'
+          AND ${table.officialReconciliationStatus} IN ('current', 'needs_reconfiguration', 'failed')
           AND jsonb_typeof(${table.officialParameterBindings}) = 'array'
           AND ${table.officialIntendedEnabled} IS NOT NULL
         )`,

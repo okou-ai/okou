@@ -43,7 +43,6 @@ export interface ThreadAutomationTarget {
     | "ownerUserId"
     | "visibility"
     | "officialDefinitionName"
-    | "officialInstallationState"
   >;
 }
 
@@ -67,7 +66,6 @@ function officialOwnerPreferencesCondition(bootstrap: AgentRunContextSignals) {
   return and(
     isNotNull(workflows.officialDefinitionName),
     isNotNull(workflowAutomations.officialBlueprintKey),
-    eq(workflows.officialInstallationState, "installed"),
     eq(workflows.visibility, "private"),
     eq(workflowAutomations.orgId, bootstrap.orgId),
     eq(workflowAutomations.ownerUserId, bootstrap.userId),
@@ -131,7 +129,6 @@ export function createThreadAutomationSnapshot(
           ownerUserId: workflows.ownerUserId,
           visibility: workflows.visibility,
           officialDefinitionName: workflows.officialDefinitionName,
-          officialInstallationState: workflows.officialInstallationState,
         },
       })
       .from(chatAutomationContext)

@@ -87,7 +87,7 @@ describe("workflow schema physical identity", () => {
         runtimeWorkflowAutomations,
       ),
     }).toEqual({
-      workflows: ["official_definition_name", "official_installation_state"],
+      workflows: ["official_definition_name"],
       workflowAutomations: officialAutomationColumns,
       runtimeWorkflowAutomations: officialAutomationColumns,
     });

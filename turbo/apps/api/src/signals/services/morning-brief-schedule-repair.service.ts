@@ -1,4 +1,3 @@
-import { isDeepStrictEqual } from "node:util";
 import {
   MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES,
   MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
@@ -95,7 +94,6 @@ function ownedMorningBriefInstallation(owner: InstallationOwner) {
         eq(workflows.id, owner.workflowId),
         eq(workflows.orgId, owner.orgId),
         eq(workflows.ownerUserId, owner.userId),
-        eq(workflows.officialInstallationState, "installed"),
         inArray(
           workflows.officialDefinitionName,
           MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES,
@@ -161,7 +159,6 @@ export const repairMorningBriefSchedule$ = command(
       return false;
     }
     const cronExpression = morningBriefCronExpression(owner);
-    const bindings = [{ key: "cron", value: cronExpression }];
     // The failure recovery poller owns the next retry after three consecutive failures.
     const waitingForRetry =
       automation.officialIntendedEnabled &&
@@ -170,11 +167,10 @@ export const repairMorningBriefSchedule$ = command(
     const enabled = automation.officialIntendedEnabled && !waitingForRetry;
     if (
       automation.officialReconciliationStatus === "current" &&
-      automation.officialAppliedFingerprint === builtin.blueprint.fingerprint &&
+      automation.officialAppliedFingerprint === builtin.fingerprint &&
       automation.cronExpression === cronExpression &&
       automation.timezone === timezone &&
-      automation.enabled === enabled &&
-      isDeepStrictEqual(automation.officialParameterBindings, bindings)
+      automation.enabled === enabled
     ) {
       return true;
     }
@@ -193,9 +189,8 @@ export const repairMorningBriefSchedule$ = command(
         enabled,
         updatedAt,
         autonomyBudget: AUTONOMY_BUDGET_CEILING,
-        officialAppliedFingerprint: builtin.blueprint.fingerprint,
+        officialAppliedFingerprint: builtin.fingerprint,
         officialReconciliationStatus: "current",
-        officialParameterBindings: bindings,
         nextRunAt: reconciledScheduleAnchor(
           automation,
           keepSkippedMorningBriefOccurrence(

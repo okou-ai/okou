@@ -259,7 +259,6 @@ const commitDebugMorningBrief$ = command(
           eq(workflowAutomations.enabled, true),
           isNotNull(workflowAutomations.nextRunAt),
           eq(workflows.name, plan.context.workflowName),
-          eq(workflows.officialInstallationState, "installed"),
         ),
       );
     // The canonical input, source context and queue wake-up are one atomic

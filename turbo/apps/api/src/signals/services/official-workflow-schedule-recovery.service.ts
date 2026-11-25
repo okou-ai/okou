@@ -8,7 +8,7 @@ import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import { builtInWorkflow, BUILTIN_WORKFLOWS } from "./builtin-workflows";
+import { BUILTIN_WORKFLOWS } from "./builtin-workflows";
 import { proactiveWorkflowOwnerEnabledSql } from "./proactive-workflow-owner";
 import { proactiveWorkflowKind } from "./proactive-workflow-definitions";
 import { advanceTimeAutomationAfterCompletion } from "./time-automation";
@@ -28,14 +28,6 @@ type RecoveryCandidate = {
 const recoverOfficialSchedule$ = command(
   async ({ set }, candidate: RecoveryCandidate, signal: AbortSignal) => {
     const { automation, definitionName } = candidate;
-    const builtin = builtInWorkflow(definitionName);
-    if (
-      !builtin ||
-      builtin.blueprint.key !== automation.officialBlueprintKey ||
-      builtin.blueprint.fingerprint !== automation.officialAppliedFingerprint
-    ) {
-      return;
-    }
     const fireable = await set(
       workflowAutomationCanFire$,
       {
@@ -100,13 +92,13 @@ const recoverOfficialSchedule$ = command(
 export const recoverDueOfficialWorkflowSchedules$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const acceptedBlueprints = or(
-      ...BUILTIN_WORKFLOWS.map(({ definition, blueprint }) => {
+      ...BUILTIN_WORKFLOWS.map((builtin) => {
         return and(
-          eq(workflows.officialDefinitionName, definition.name),
-          eq(workflowAutomations.officialBlueprintKey, blueprint.key),
+          eq(workflows.officialDefinitionName, builtin.name),
+          eq(workflowAutomations.officialBlueprintKey, builtin.blueprintKey),
           eq(
             workflowAutomations.officialAppliedFingerprint,
-            blueprint.fingerprint,
+            builtin.fingerprint,
           ),
         );
       }),
@@ -125,7 +117,6 @@ export const recoverDueOfficialWorkflowSchedules$ = command(
           eq(workflowAutomations.officialReconciliationStatus, "current"),
           eq(workflowAutomations.kind, "schedule"),
           gte(workflowAutomations.consecutiveFailures, 3),
-          eq(workflows.officialInstallationState, "installed"),
           acceptedBlueprints,
           or(
             lte(workflowAutomations.nextRunAt, nowDate()),

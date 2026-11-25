@@ -66,10 +66,7 @@ import {
   nextDiscordUserExportKind,
   readDiscordUserExportPage$,
 } from "./user-export-discord.service";
-import {
-  builtInWorkflow,
-  installedOfficialWorkflow,
-} from "./builtin-workflows";
+import { installedOfficialWorkflow } from "./builtin-workflows";
 
 const CHAT_PAGE_SIZE = 100;
 const CHAT_PAGE_ESTIMATED_BYTES = 2 * 1024 * 1024;
@@ -824,13 +821,8 @@ const collectWorkflow$ = command(
       .where(
         and(
           inArray(workflows.orgId, checkpoint.orgIds),
-          // Export only workflows owned by the requester. The installation guard
-          // stays: a half-installed official workflow has no readable revision.
+          // Export only workflows owned by the requester.
           eq(workflows.ownerUserId, args.userId),
-          or(
-            isNull(workflows.officialDefinitionName),
-            eq(workflows.officialInstallationState, "installed"),
-          ),
           lte(workflows.createdAt, startedBefore(checkpoint)),
           checkpoint.cursor ? gt(workflows.id, checkpoint.cursor) : undefined,
         ),
@@ -844,20 +836,18 @@ const collectWorkflow$ = command(
     const { archivedOfficialSnapshot, ...exported } = workflow;
     let record = exported;
     if (workflow.officialDefinitionName !== null) {
-      const builtin = builtInWorkflow(workflow.officialDefinitionName);
-      const revision = installedOfficialWorkflow({
+      const official = installedOfficialWorkflow({
         officialDefinitionName: workflow.officialDefinitionName,
         archivedOfficialSnapshot,
-      })?.revision;
-      if (!revision) {
+      });
+      if (!official) {
         throw new Error(`Workflow revision is unavailable: ${workflow.id}`);
       }
       record = {
         ...exported,
-        displayName: revision.definition.workflow.displayName,
-        description: revision.definition.workflow.description,
-        instruction:
-          builtin?.prompt ?? revision.definition.workflow.instruction,
+        displayName: official.workflow.displayName,
+        description: official.workflow.description,
+        instruction: official.copyInstruction,
       };
     }
     return step({ ...checkpoint, cursor: workflow.id }, [

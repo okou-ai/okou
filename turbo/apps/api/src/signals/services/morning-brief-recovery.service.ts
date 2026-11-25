@@ -16,7 +16,7 @@ export const reconcileExistingMorningBrief$ = command(
   ): Promise<"current" | "absent" | "ineligible" | "conflict"> => {
     const owner = { orgId: args.orgId, userId: args.member.userId };
     const ownership = await set(loadMorningBriefOwnership$, owner, signal);
-    if (ownership.installation?.installationState !== "installed") {
+    if (!ownership.installation) {
       return "absent";
     }
     if (ownership.enrollment?.state === "departed") {

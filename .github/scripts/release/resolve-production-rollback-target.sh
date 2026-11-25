@@ -199,7 +199,7 @@ readonly USAGE_ALLOWANCE_RETIREMENT_PATH=turbo/packages/db/src/migrations/1356_d
 readonly SSH_CANONICAL_TRANSPORT_PATH=turbo/packages/db/src/migrations/1365_tailscale_private_ssh.sql
 readonly OFFICIAL_RESULT_EMAIL_RUNTIME_RETIREMENT_PATH=turbo/packages/db/src/migrations/1382_retire_official_result_email_runtime.sql
 readonly OFFICIAL_RESULT_EMAIL_STORAGE_CONTRACTION_PATH=turbo/packages/db/src/migrations/1386_drop_official_result_email_storage.sql
-readonly OFFICIAL_WORKFLOW_STORAGE_RETIREMENT_PATH=turbo/packages/db/src/migrations/1637_retire_official_workflow_automation_identities.sql
+readonly OFFICIAL_WORKFLOW_STORAGE_RETIREMENT_PATH=turbo/packages/db/src/migrations/1638_retire_official_workflow_installation_state.sql
 readonly SSH_NEEDS_REBIND_INDEPENDENT_PATH=turbo/packages/db/src/runtime/ssh-connection.ts
 
 fail() {

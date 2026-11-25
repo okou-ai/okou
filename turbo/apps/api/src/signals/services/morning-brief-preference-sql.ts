@@ -1,31 +1,17 @@
 import { MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES } from "@okouai/api-contracts/contracts/morning-brief-preference";
-import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { workflows } from "@okouai/db/schema/workflow";
 import { inArray, sql } from "drizzle-orm";
 import type { MorningBriefMemberIdentity } from "./morning-brief-enrollment-data.service";
 
-/** Preserve the enrollment, then oldest-installation precedence. */
-export function morningBriefSelectedWorkflowSql(
-  owner: MorningBriefMemberIdentity,
-) {
-  return sql`SELECT ${workflows.id} AS "workflowId"
-    FROM ${workflows}
-    LEFT JOIN ${morningBriefEnrollments} ON ${morningBriefEnrollments.orgId} = ${workflows.orgId}
-      AND ${morningBriefEnrollments.userId} = ${workflows.ownerUserId}
-    WHERE ${workflows.orgId} = ${owner.orgId} AND ${workflows.ownerUserId} = ${owner.userId}
-      AND ${workflows.visibility} = 'private'
-      AND ${inArray(workflows.officialDefinitionName, [...MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES])}
-    ORDER BY CASE WHEN ${workflows.id} = ${morningBriefEnrollments.workflowId} THEN 0
-      ELSE 1 END, ${workflows.createdAt}, ${workflows.id}
-    LIMIT 1`;
-}
-
 export function morningBriefTimezoneTargetSql(
   owner: MorningBriefMemberIdentity,
 ) {
-  return sql`WITH selected AS (${morningBriefSelectedWorkflowSql(owner)})
-    SELECT selected."workflowId", ${orgMembersMetadata.timezone} AS timezone
-    FROM selected JOIN ${orgMembersMetadata} ON ${orgMembersMetadata.orgId} = ${owner.orgId}
-      AND ${orgMembersMetadata.userId} = ${owner.userId}`;
+  return sql`SELECT ${workflows.id} AS "workflowId", ${orgMembersMetadata.timezone} AS timezone
+    FROM ${workflows}
+    JOIN ${orgMembersMetadata} ON ${orgMembersMetadata.orgId} = ${workflows.orgId}
+      AND ${orgMembersMetadata.userId} = ${workflows.ownerUserId}
+    WHERE ${workflows.orgId} = ${owner.orgId} AND ${workflows.ownerUserId} = ${owner.userId}
+      AND ${workflows.visibility} = 'private'
+      AND ${inArray(workflows.officialDefinitionName, [...MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES])}`;
 }

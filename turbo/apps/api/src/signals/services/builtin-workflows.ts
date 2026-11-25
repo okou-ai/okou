@@ -2,8 +2,6 @@ import { createHash } from "node:crypto";
 import {
   officialWorkflowArchivedSnapshotSchema,
   type OfficialWorkflowArchivedSnapshot,
-  type OfficialWorkflowAcceptedBlueprint,
-  type OfficialWorkflowAcceptedRevision,
 } from "@okouai/api-contracts/contracts/official-workflow-catalog";
 import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
 import {
@@ -19,7 +17,6 @@ import {
   PROACTIVE_LEARNING_DEFINITION_NAME,
   PROACTIVE_LEARNING_BLUEPRINT_KEY,
 } from "@okouai/api-contracts/contracts/proactive";
-import { canonicalJsonString } from "../../lib/canonical-json";
 import {
   MORNING_BRIEF_INSTRUCTION,
   PROACTIVE_SUGGESTIONS_INSTRUCTION,
@@ -31,60 +28,18 @@ function scheduledWorkflow(args: {
   displayName: string;
   description: string;
   blueprintKey: string;
-  defaultCron: string;
-  timezone?: string;
+  fingerprint: string;
   prompt: string;
   contentBundle: ContentBundle;
 }) {
-  const { name, displayName, description, prompt, contentBundle } = args;
-  const parameters: OfficialWorkflowAcceptedBlueprint["parameters"] = [
-    {
-      key: "cron",
-      required: true,
-      type: "string",
-      format: "text",
-      default: args.defaultCron,
-    },
-  ];
-  const desiredState: OfficialWorkflowAcceptedBlueprint["desiredState"] = {
-    kind: "schedule",
-    schedule: {
-      type: "cron",
-      cronExpression: { parameter: "cron" },
-      ...(args.timezone && { timezone: args.timezone }),
-    },
-  };
-  // Keep the fingerprint already recorded on installed automations.
-  const fingerprint = createHash("sha256")
-    .update(canonicalJsonString({ parameters, desiredState }))
-    .digest("hex");
-  const blueprint = {
-    key: args.blueprintKey,
-    parameters,
-    desiredState,
-    fingerprint,
-  };
-  const revisionId = createHash("sha256").update(prompt).digest("hex");
-  const definition = {
-    name,
+  return {
+    ...args,
     lifecycle: "active" as const,
-    revision: revisionId,
-    contentBundle,
+    revision: createHash("sha256").update(args.prompt).digest("hex"),
   };
-  const revision: OfficialWorkflowAcceptedRevision = {
-    definition: {
-      schemaVersion: 3,
-      name,
-      revision: revisionId,
-      workflow: { displayName, description, instruction: "", files: [] },
-      blueprints: [blueprint],
-    },
-    contentBundle,
-  };
-  return { definition, revision, blueprint, prompt };
 }
 
-// These content-addressed CDN archives contain only SKILL.md frontmatter.
+// Fingerprints identify the deployed schedules. The CDN archives contain only SKILL.md frontmatter.
 export const BUILTIN_WORKFLOWS = Object.freeze([
   scheduledWorkflow({
     name: PROACTIVE_LEARNING_DEFINITION_NAME,
@@ -92,7 +47,8 @@ export const BUILTIN_WORKFLOWS = Object.freeze([
     description:
       "Update your user profile overnight with your role, responsibilities, goals and working preferences.",
     blueprintKey: PROACTIVE_LEARNING_BLUEPRINT_KEY,
-    defaultCron: "0 2 * * *",
+    fingerprint:
+      "dfd58b0122a505440175639a7ab76871c3e8a4c7bfbe842753a7ded06bcc196d",
     prompt: PROACTIVE_LEARNING_INSTRUCTION,
     contentBundle: {
       sha256:
@@ -106,8 +62,8 @@ export const BUILTIN_WORKFLOWS = Object.freeze([
     description:
       "Check connected sources hourly and maintain useful next steps on your home page.",
     blueprintKey: PROACTIVE_SUGGESTIONS_BLUEPRINT_KEY,
-    defaultCron: "0 * * * *",
-    timezone: "UTC",
+    fingerprint:
+      "02cb482747ad41c9cbf4ccf05315dc1ee1e66d0f66c333c95c495832902fb052",
     prompt: PROACTIVE_SUGGESTIONS_INSTRUCTION,
     contentBundle: {
       sha256:
@@ -121,7 +77,8 @@ export const BUILTIN_WORKFLOWS = Object.freeze([
     description:
       "Summarize today's email, GitHub, calendar, connected Slack activity from the past 24 hours, and recent Chat priorities.",
     blueprintKey: MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
-    defaultCron: "0 7 * * *",
+    fingerprint:
+      "6cc0bf31fb219dc5fb3019832bc4ccbadac6f883f998c00e11c9a4ba62fbe8ba",
     prompt: MORNING_BRIEF_INSTRUCTION,
     contentBundle: {
       sha256:
@@ -137,14 +94,14 @@ export function builtInWorkflow(name: string | null) {
     name === INTERNAL_TEST_MORNING_BRIEF_DEFINITION_NAME
       ? MORNING_BRIEF_OFFICIAL_DEFINITION_NAME
       : name;
-  return BUILTIN_WORKFLOWS.find(({ definition }) => {
-    return definition.name === canonicalName;
+  return BUILTIN_WORKFLOWS.find((workflow) => {
+    return workflow.name === canonicalName;
   });
 }
 
 export function builtInWorkflowBundleUrl(sha256: string) {
-  return BUILTIN_WORKFLOWS.some(({ definition }) => {
-    return definition.contentBundle.sha256 === sha256;
+  return BUILTIN_WORKFLOWS.some((workflow) => {
+    return workflow.contentBundle.sha256 === sha256;
   })
     ? `https://static.vm0.io/workflows/builtin-skills/${sha256}.tar.gz`
     : undefined;
@@ -158,8 +115,16 @@ export function installedOfficialWorkflow(source: {
   const builtin = builtInWorkflow(source.officialDefinitionName);
   if (builtin) {
     return {
-      lifecycle: builtin.definition.lifecycle,
-      revision: builtin.revision,
+      kind: "builtin" as const,
+      builtin,
+      lifecycle: builtin.lifecycle,
+      workflow: {
+        displayName: builtin.displayName,
+        description: builtin.description,
+        instruction: "",
+        files: [],
+      },
+      copyInstruction: builtin.prompt,
     };
   }
   if (source.archivedOfficialSnapshot === null) {
@@ -173,5 +138,12 @@ export function installedOfficialWorkflow(source: {
       "Archived Official Workflow does not match its installation",
     );
   }
-  return snapshot;
+  const { workflow, blueprints } = snapshot.revision.definition;
+  return {
+    kind: "archived" as const,
+    lifecycle: snapshot.lifecycle,
+    workflow,
+    blueprints,
+    copyInstruction: workflow.instruction,
+  };
 }

@@ -60,7 +60,7 @@ const deleteWorkflowRows$ = command(
   async ({ set }, args: DeleteWorkflowInput, signal: AbortSignal) => {
     const writeDb = set(writeDb$);
     const query = sql`SELECT public.delete_workflow_rows(
-      ${args.orgId}, ${args.workflowId}::uuid, false, NULL
+      ${args.orgId}, ${args.workflowId}::uuid
     ) AS result`;
     const rowSchema = deletionRowSchema;
     const result = await (async () => {

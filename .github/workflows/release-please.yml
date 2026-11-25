@@ -1900,7 +1900,9 @@ jobs:
         run: |
           set -euo pipefail
           pending=$(psql --dbname="$DATABASE_URL" -XAt -v ON_ERROR_STOP=1 -c "
-            SELECT to_regclass('public.official_workflow_catalog_state') IS NOT NULL
+            SELECT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'public.workflows'::regclass
+                           AND attname = 'official_installation_state' AND NOT attisdropped)
+                OR to_regclass('public.official_workflow_catalog_state') IS NOT NULL
                 OR to_regclass('public.official_workflow_automation_identities') IS NOT NULL")
           if [[ "$pending" == "t" ]]; then
             # Outgoing Vercel invocations have a five-minute maximum duration.
@@ -1909,12 +1911,17 @@ jobs:
           SET LOCAL lock_timeout = '1s';
           SET LOCAL statement_timeout = '10s';
           SELECT to_regclass('public.official_workflow_catalog_state') IS NOT NULL AS has_catalog,
-                 to_regclass('public.official_workflow_automation_identities') IS NOT NULL AS has_identities \gset
+                 to_regclass('public.official_workflow_automation_identities') IS NOT NULL AS has_identities,
+                 EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'public.workflows'::regclass
+                         AND attname = 'official_installation_state' AND NOT attisdropped) AS has_installation_state \gset
           \if :has_catalog
             \i turbo/packages/db/src/migrations/1636_archive_official_workflow_installations.sql
           \endif
           \if :has_identities
             \i turbo/packages/db/src/migrations/1637_retire_official_workflow_automation_identities.sql
+          \endif
+          \if :has_installation_state
+            \i turbo/packages/db/src/migrations/1638_retire_official_workflow_installation_state.sql
           \endif
           SQL
           fi
