@@ -1,6 +1,7 @@
 package ai.okou.android.chat
 
 import ai.okou.android.normalizedRenameName
+import ai.okou.android.renameForm
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,20 +24,23 @@ internal class ChatRenameEditor(
     val restoreFocus: Boolean,
     submission: RenameSubmission? = null,
 ) {
-    var baseline by mutableStateOf(initialName)
-        private set
+    private var baseline by mutableStateOf(initialName)
 
     val field = WorkspaceNameField(submission?.name ?: initialName)
     var submitted by mutableStateOf(submission)
 
+    private val pristine: Boolean
+        get() =
+            field.input.composition == null &&
+                normalizedRenameName(field.input.text) == normalizedRenameName(baseline)
+
+    fun form(confirmedName: String, enabled: Boolean) =
+        renameForm(if (pristine) confirmedName else field.input.text, confirmedName, enabled, null)
+
     fun updateConfirmedName(name: String, readOnly: Boolean) {
         if (name == baseline) return
         val input = field.input
-        if (
-            !readOnly &&
-                input.composition == null &&
-                normalizedRenameName(input.text) == normalizedRenameName(baseline)
-        ) {
+        if (!readOnly && pristine) {
             val previousSelection = input.selection
             input.edit {
                 replace(0, length, name)
