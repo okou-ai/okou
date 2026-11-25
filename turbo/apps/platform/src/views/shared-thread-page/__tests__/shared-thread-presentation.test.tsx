@@ -1,9 +1,16 @@
+import { setupPage } from "../../../__tests__/page-helper.ts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { platformOkouWordmarkLightImg } from "../../../lib/static-assets.ts";
 import {
+  okouMessageAvatarStill,
+  okouMessageAvatarAnimated,
+  platformOkouWordmarkLightImg,
+} from "../../../lib/static-assets.ts";
+import {
+  SHARED_THREAD_ID,
   setupSharedThreadPage,
   sharedThread,
   getLinkByName,
@@ -111,3 +118,62 @@ test("shared-thread-presentation-005 keeps literal prompt emphasis beside a safe
     expect.arrayContaining(["noopener", "noreferrer"]),
   );
 });
+
+test.each([false, true])(
+  "only the newest shared reply offers motion (name line: %s)",
+  async (nameLine) => {
+    context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
+      return respond(
+        200,
+        sharedThread({
+          messages: [
+            {
+              role: "assistant",
+              messageIndex: 0,
+              content: "First reply",
+              runIndex: 0,
+            },
+            {
+              role: "assistant",
+              messageIndex: 1,
+              content: "Latest reply",
+              runIndex: 1,
+            },
+            { role: "user", messageIndex: 2, content: "One more question" },
+          ],
+        }),
+      );
+    });
+    await setupPage({
+      context,
+      path: "/share/threads/" + SHARED_THREAD_ID,
+      host,
+      featureSwitches: {
+        [FeatureSwitchKey.OkouAnimatedAvatar]: true,
+        [FeatureSwitchKey.ChatReplyNameLine]: nameLine,
+      },
+    });
+    const first = (await screen.findByText("First reply")).closest(
+      '[data-role="assistant"]',
+    );
+    const latest = (await screen.findByText("Latest reply")).closest(
+      '[data-role="assistant"]',
+    );
+    await waitFor(() => {
+      expect(
+        latest?.querySelector(
+          'source[media="(prefers-reduced-motion: no-preference)"]',
+        ),
+      ).toHaveAttribute("srcset", okouMessageAvatarAnimated);
+    });
+    expect(first?.querySelector("img")).toHaveAttribute(
+      "src",
+      okouMessageAvatarStill,
+    );
+    expect(first?.querySelector("picture")).toBeNull();
+    expect(latest?.querySelector("img")).toHaveAttribute(
+      "src",
+      okouMessageAvatarStill,
+    );
+  },
+);

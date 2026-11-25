@@ -320,6 +320,17 @@ test("Scrolling back to the beginning keeps that turn mounted until the reader r
   });
   const pane = await openPagedHistory(events);
   await within(pane).findByText("Locator answer 26");
+  const animatedReplies = () => {
+    return Array.from(
+      pane.querySelectorAll("picture > img[data-okou-avatar]"),
+      (avatar) => {
+        return avatar.closest('[data-role="assistant"]')?.textContent;
+      },
+    );
+  };
+  expect(animatedReplies()).toStrictEqual([
+    expect.stringContaining("Locator answer 26"),
+  ]);
   await expectTail(pane);
   const leading = requiredElement('[data-transcript-spacer="before"]', pane);
   const estimated = leading.getBoundingClientRect().height;
@@ -339,6 +350,7 @@ test("Scrolling back to the beginning keeps that turn mounted until the reader r
     expect(messageOffset("Locator question 1", pane)).toBeGreaterThan(-80);
     expect(messageOffset("Locator question 1", pane)).toBeLessThanOrEqual(0);
   });
+  expect(animatedReplies()).toHaveLength(0);
   events.push(...pagedTurn(27));
   publishRunUpdate();
   await waitFor(() => {
@@ -353,6 +365,9 @@ test("Scrolling back to the beginning keeps that turn mounted until the reader r
   await within(pane).findByText("Locator answer 27");
   await expectTail(pane);
   expect(leading.getBoundingClientRect().height).toBeGreaterThan(estimated);
+  expect(animatedReplies()).toStrictEqual([
+    expect.stringContaining("Locator answer 27"),
+  ]);
   expect(decodedImages).not.toContain(image);
 });
 
@@ -456,7 +471,7 @@ test("Avatar loading preserves a wheel movement before scroll delivery", async (
   fireEvent.wheel(pane, { deltaY: -320 });
   pane.scrollTop = reading;
   fireEvent.scroll(pane);
-  const avatar = requiredElement("svg[data-okou-avatar] image", pane);
+  const avatar = requiredElement("img[data-okou-avatar]", pane);
   fireEvent.wheel(pane, { deltaY: 60 });
   pane.scrollTop = reading + 60;
   fireEvent.load(avatar);

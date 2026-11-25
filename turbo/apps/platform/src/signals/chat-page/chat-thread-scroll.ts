@@ -901,11 +901,11 @@ function createScrollContentOnRef(
     command(({ set }, content: HTMLElement, signal: AbortSignal) => {
       L.debug("content bound", { threadId });
       const restoreLayout = onDomEventFn((event: Event) => {
-        // Avatar textures paint inside a fixed SVG viewport. Replaying the
+        // Avatar images have fixed dimensions. Replaying the
         // last reading position here can undo a newer compositor scroll.
         if (
-          event.target instanceof SVGElement &&
-          event.target.closest("svg[data-okou-avatar]")
+          event.target instanceof Element &&
+          event.target.closest("[data-okou-avatar]")
         ) {
           return;
         }

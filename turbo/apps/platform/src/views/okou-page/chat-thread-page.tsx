@@ -3020,6 +3020,7 @@ function ChatThreadRow({
     statusTailEvents,
     stackFirstOnPrevious,
     holdsStatusRow,
+    animateAvatar,
     dateDividers,
     modelChanges,
   } = useGet(row.model$);
@@ -3050,6 +3051,7 @@ function ChatThreadRow({
       {assistantDate ? <ChatThreadDateDivider divider={assistantDate} /> : null}
       <SelectablePagedGroupRow
         group={group}
+        animateAvatar={animateAvatar}
         thread={thread}
         modelChanges={modelChanges}
         stackFirstOnPrevious={stackFirstOnPrevious}
@@ -5955,10 +5957,6 @@ function AssistantErrorState({
   );
 }
 
-function AssistantBubbleAvatar() {
-  return <MyOkouAvatarButton size={36} className="size-7 @[900px]:size-9" />;
-}
-
 function AssistantNameLine() {
   const name = useGet(assistantName$);
   return <span className={CHAT_THREAD_ASSISTANT_NAME_LINE_CLASS}>{name}</span>;
@@ -5973,6 +5971,7 @@ function PagedGroupRow({
   group,
   thread,
   modelChanges,
+  animateAvatar,
   stackFirstOnPrevious = false,
   dateDividers,
   runWorkSection,
@@ -5982,6 +5981,7 @@ function PagedGroupRow({
   group: ChatEventGroup;
   thread: ChatPanelSignals;
   modelChanges: ReadonlyMap<string, RunModelChange>;
+  animateAvatar: boolean;
   stackFirstOnPrevious?: boolean;
   dateDividers: ReadonlyMap<string, ChatDateDivider>;
   runWorkSection?: RunWorkSectionControl;
@@ -6001,6 +6001,7 @@ function PagedGroupRow({
   }
   return (
     <PagedAssistantGroup
+      animateAvatar={animateAvatar}
       group={group}
       thread={thread}
       modelChanges={modelChanges}
@@ -6035,6 +6036,7 @@ function RefreshedSelectablePagedGroupRow({
   group,
   thread,
   modelChanges,
+  animateAvatar,
   stackFirstOnPrevious,
   dateDividers,
   runWorkSection,
@@ -6061,6 +6063,7 @@ function RefreshedSelectablePagedGroupRow({
   );
   const content = (
     <PagedGroupRow
+      animateAvatar={animateAvatar}
       group={displayGroup}
       thread={thread}
       modelChanges={modelChanges}
@@ -6192,6 +6195,7 @@ function LegacySelectablePagedGroupRow({
   group,
   thread,
   modelChanges,
+  animateAvatar,
   stackFirstOnPrevious,
   dateDividers,
   runWorkSection,
@@ -6209,6 +6213,7 @@ function LegacySelectablePagedGroupRow({
   const displayGroup = sharing ? chatGroupForSharing(group) : group;
   const content = (
     <PagedGroupRow
+      animateAvatar={animateAvatar}
       group={displayGroup}
       thread={thread}
       modelChanges={modelChanges}
@@ -7878,6 +7883,7 @@ type RunWorkSectionControl = Omit<RunWorkSection, "key"> & {
 };
 
 type PagedAssistantGroupProps = {
+  readonly animateAvatar: boolean;
   readonly group: ChatEventGroup;
   readonly thread: ChatPanelSignals;
   readonly modelChanges: ReadonlyMap<string, RunModelChange>;
@@ -8128,6 +8134,7 @@ function PagedAssistantGroup({
   group,
   thread,
   modelChanges,
+  animateAvatar,
   runWorkSection,
   statusRow,
   statusTailEvents,
@@ -8179,7 +8186,15 @@ function PagedAssistantGroup({
             : CHAT_THREAD_ASSISTANT_MESSAGE_ROW_CLASS
         }
       >
-        {nameLine ? <AssistantNameLine /> : <AssistantBubbleAvatar />}
+        {nameLine ? (
+          <AssistantNameLine />
+        ) : (
+          <MyOkouAvatarButton
+            size={36}
+            animated={animateAvatar}
+            className="size-7 @[900px]:size-9"
+          />
+        )}
         <div
           className={cn(
             "relative",
