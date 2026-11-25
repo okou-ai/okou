@@ -1,6 +1,7 @@
 package ai.okou.android
 
 import ai.okou.android.chat.ChatChanges
+import android.content.ClipboardManager
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ComposeTimeoutException
@@ -35,6 +36,51 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "en-rUS-w1180dp-h1000dp", application = ChatListApplication::class)
 internal class ConversationInlineImageRootTest : ArtifactCatalogRootTestFixture() {
+    @Test
+    fun copiesAuthorizedImagesAndTableCellsInReadingOrder() {
+        val fixture = InlineImageFixture(app.fixture)
+        val ready = "/artifacts/${fixture.readyReference}"
+        val outer = "https://example.com/rollout"
+        fixture.install(
+            latest =
+                "Rollout checks\n\n- Build complete\n- Tests passed\n\n" +
+                    "![${fixture.readyAlt}]($ready)\n\n" +
+                    "| Evidence | Note |\n| --- | --- |\n" +
+                    "| [![Linked chart]($ready)]($outer) | ![${fixture.deniedAlt}](/artifacts/${fixture.deniedReference}) |",
+            earlier = false,
+        )
+        openConversation()
+        val mainImage = hasContentDescription(fixture.readyAlt) and hasClickAction()
+        val linked = hasContentDescription("Linked chart") and hasClickAction()
+        val denied =
+            hasContentDescription(fixture.deniedAlt) and
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.StateDescription,
+                    "Image unavailable",
+                )
+        compose.waitUntil(8_000) {
+            listOf(mainImage, linked, denied).all {
+                compose.onAllNodes(it).fetchSemanticsNodes().isNotEmpty()
+            }
+        }
+        val references = fixture.references.toList()
+        compose.onNodeWithContentDescription("Reply actions").assertIsDisplayed().performClick()
+        awaitText("Copy reply")
+        compose.onNodeWithText("Copy reply").performClick()
+        val clipboard =
+            checkNotNull(compose.activity.getSystemService(ClipboardManager::class.java))
+        compose.waitUntil(5_000) { clipboard.primaryClip != null }
+
+        assertEquals(
+            "Rollout checks\n\n• Build complete\n• Tests passed\n" +
+                "${fixture.readyAlt} [${BuildConfig.WEB_ORIGIN.trimEnd('/')}$ready]\n\n" +
+                "Evidence\tNote\nLinked chart [$outer]\t${fixture.deniedAlt}",
+            clipboard.primaryClip?.getItemAt(0)?.text?.toString(),
+        )
+        assertEquals(references, fixture.references.toList())
+        assertTrue(fixture.originals.isEmpty())
+    }
+
     @Test
     fun opensAuthorizedOriginalAndRestoresTheImageWithoutRefetchingItsThumbnail() {
         val fixture = InlineImageFixture(app.fixture)

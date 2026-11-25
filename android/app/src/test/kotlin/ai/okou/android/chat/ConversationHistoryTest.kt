@@ -1,5 +1,6 @@
 package ai.okou.android.chat
 
+import ai.okou.android.BuildConfig
 import ai.okou.android.CHAT_DATE
 import ai.okou.android.CHAT_IN_PROJECT
 import ai.okou.android.CHAT_PERSONAL
@@ -13,6 +14,7 @@ import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.HistorySnapshot
 import ai.okou.android.api.generated.ReadState
 import ai.okou.android.api.generated.ThreadDetail
+import ai.okou.android.artifacts.inlineImageSource
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.historyEventWire
 import ai.okou.android.jsonResponse
@@ -1449,8 +1451,37 @@ internal class ConversationHistoryProjectionTest : ConversationHistoryTestFixtur
         assertTrue(numbered.text.contains("7. nested"))
         assertTrue(numbered.text.contains("4. second"))
         val table =
-            conversationMarkdownForCopy("| Check | Status |\n| --- | --- |\n| Links | Done |")
-        assertEquals("Check\tStatus\nLinks\tDone", table)
+            conversationMarkdownForCopy("| Check | Status |\n| --- | --- |\n| Links | |", "Image")
+        assertEquals("Check\tStatus\nLinks\t", table)
+    }
+
+    @Test
+    fun replyCopyUsesKnownStableTargetsAndLocalizedImageDescriptions() {
+        val external = "https://example.com/evidence.png"
+        val temporary = "$external?signature=temporary"
+        val protected = "/artifacts/evidence01.png"
+        val granted =
+            listOf(external, temporary).associate {
+                checkNotNull(inlineImageSource(it)) to "evidence.png"
+            }
+        val label = "图片"
+        val source =
+            "![]($external)\n\n![]($temporary)\n\n" +
+                "[![Protected target]($external)]($protected)\n\n" +
+                "[![Temporary target]($external)]($temporary)\n\n" +
+                "[![]($protected)](https://example.com/notes)"
+        assertEquals(
+            "evidence.png [$external]\n\nevidence.png\n\nProtected target\n\nTemporary target\n\n$label",
+            conversationMarkdownForCopy(source, label, granted),
+        )
+        assertEquals(
+            "Protected target [${BuildConfig.WEB_ORIGIN.trimEnd('/')}$protected]",
+            conversationMarkdownForCopy(
+                "[![Protected target]($external)]($protected)",
+                label,
+                granted + (protected to "protected.png"),
+            ),
+        )
     }
 
     @Test

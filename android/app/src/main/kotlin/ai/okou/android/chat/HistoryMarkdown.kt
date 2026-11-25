@@ -1,8 +1,11 @@
 package ai.okou.android.chat
 
+import ai.okou.android.BuildConfig
 import ai.okou.android.R
 import ai.okou.android.artifacts.ArtifactKind
+import ai.okou.android.artifacts.ExternalImagePreviewPrefix
 import ai.okou.android.artifacts.InlineArtifactImages
+import ai.okou.android.artifacts.artifactHttpsUrl
 import ai.okou.android.artifacts.icon
 import ai.okou.android.artifacts.inlineImageSource
 import ai.okou.android.artifacts.label
@@ -61,6 +64,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.HttpUrl
 import org.commonmark.ext.gfm.tables.TableBlock
 import org.commonmark.ext.gfm.tables.TableCell
 import org.commonmark.ext.gfm.tables.TablesExtension
@@ -802,6 +806,7 @@ private fun historyMarkdownRows(
     table: TableBlock,
     interactiveLinks: Boolean,
     inlineImages: Boolean = false,
+    copyImages: ReplyImageCopy? = null,
 ): List<List<HistoryMarkdownCell>> =
     table
         .children()
@@ -817,6 +822,7 @@ private fun historyMarkdownRows(
                                 cell,
                                 interactiveLinks = interactiveLinks,
                                 images = images,
+                                copyImages = copyImages,
                             ),
                             images.orEmpty(),
                         ),
@@ -900,8 +906,39 @@ private fun HistoryMarkdownTable(
     }
 }
 
-internal fun conversationMarkdownForCopy(source: String): String =
-    renderHistoryMarkdownNode(historyMarkdownParser.parse(source)).text.trimEnd()
+internal fun conversationMarkdownForCopy(
+    source: String,
+    imageLabel: String,
+    authorizedImages: Map<String, String> = emptyMap(),
+): String =
+    renderHistoryMarkdownNode(
+            historyMarkdownParser.parse(source),
+            copyImages = ReplyImageCopy(imageLabel, authorizedImages),
+        )
+        .text
+        .trimEnd('\n')
+
+private class ReplyImageCopy(val label: String, val authorizedNames: Map<String, String>) {
+    fun target(source: String, outer: String?): String? {
+        if (outer != null) {
+            val artifact = messageArtifactLink(outer)?.takeIf { it.startsWith("/artifacts/") }
+            if (artifact != null) return artifact.takeIf { it in authorizedNames }?.let(::webLink)
+            return when (val link = conversationLink(outer)) {
+                is ConversationLink.Chat -> webLink(outer)
+                is ConversationLink.Web -> link.url.stableTarget()
+                null -> null
+            }
+        }
+        if (!source.startsWith(ExternalImagePreviewPrefix)) return webLink(source)
+        return artifactHttpsUrl(source.removePrefix(ExternalImagePreviewPrefix))?.stableTarget()
+    }
+
+    private fun webLink(value: String): String =
+        if (value.startsWith('/')) "${BuildConfig.WEB_ORIGIN.trimEnd('/')}$value" else value
+
+    private fun HttpUrl.stableTarget(): String? =
+        toString().takeIf { query == null && !encodedPath.startsWith("/cdn-cgi/image/") }
+}
 
 internal fun renderHistoryMarkdown(source: String, compactLists: Boolean = false): AnnotatedString {
     val text =
@@ -921,16 +958,19 @@ private fun renderHistoryMarkdownNode(
     seenArtifacts: MutableSet<String>? = null,
     interactiveLinks: Boolean = false,
     images: MutableList<MarkdownImage>? = null,
+    copyImages: ReplyImageCopy? = null,
     paragraphBreak: (Paragraph) -> String = { if (it.parent is ListItem) "\n" else "\n\n" },
 ): AnnotatedString = buildAnnotatedString {
     val builder = this
     node.accept(
         object : AbstractVisitor() {
             private val listNumbers = mutableMapOf<OrderedList, Int>()
+            private var copiedImages = 0
 
             override fun visit(node: org.commonmark.node.CustomBlock) {
                 if (node is TableBlock) {
-                    for (row in historyMarkdownRows(node, interactiveLinks)) {
+                    for (row in
+                        historyMarkdownRows(node, interactiveLinks, copyImages = copyImages)) {
                         for ((index, cell) in row.withIndex()) {
                             if (index > 0) append('\t')
                             append(cell.content.text)
@@ -1004,7 +1044,9 @@ private fun renderHistoryMarkdownNode(
             override fun visit(node: Link) {
                 val start = length
                 val imageCount = images?.size ?: 0
+                val copyCount = copiedImages
                 visitChildren(node)
+                if (copiedImages > copyCount) return
                 if (images != null && images.size > imageCount) {
                     if (interactiveLinks && conversationLink(node.destination) != null) {
                         var offset = start
@@ -1047,25 +1089,28 @@ private fun renderHistoryMarkdownNode(
             }
 
             override fun visit(node: Image) {
-                if (images != null) {
+                if (images != null || copyImages != null) {
                     val description = node.imageDescription()
-                    val start = length
-                    append(description.ifBlank { "\uFFFC" })
                     val outer =
                         generateSequence(node.parent) { it.parent }
                             .filterIsInstance<Link>()
                             .firstOrNull()
                             ?.destination
-                    images.add(
-                        MarkdownImage(
-                            start,
-                            length,
-                            images.size,
-                            inlineImageSource(node.destination),
-                            description,
-                            outer,
-                        ),
-                    )
+                    val source = inlineImageSource(node.destination)
+                    if (copyImages != null) {
+                        val name = source?.let { copyImages.authorizedNames[it] }
+                        append(description.ifBlank { name ?: copyImages.label })
+                        if (source != null && name != null) {
+                            copyImages.target(source, outer)?.let { append(" [$it]") }
+                        }
+                        copiedImages++
+                    } else if (images != null) {
+                        val start = length
+                        append(description.ifBlank { "\uFFFC" })
+                        images.add(
+                            MarkdownImage(start, length, images.size, source, description, outer),
+                        )
+                    }
                     return
                 }
                 visitChildren(node)
