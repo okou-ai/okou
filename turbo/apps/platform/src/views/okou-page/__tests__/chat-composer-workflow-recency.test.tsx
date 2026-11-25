@@ -621,6 +621,7 @@ test("Accepted sending completes while initialization waits, and the new use win
     },
   );
   const editor = await openPage();
+  await fill(editor, "Draft");
   await reading.promise;
   await sendWorkflow(editor, "delta");
   // The accepted send and next draft are usable before optional HTTP settles.
@@ -727,6 +728,7 @@ test("A workspace switch during token acquisition cannot send the old workflow u
     },
   );
   const editor = await openPage();
+  await fill(editor, "Draft");
   await reading.promise;
   await sendWorkflow(editor, "delta");
   const tokenRequested = context.mocks.deferred<void>();
@@ -764,7 +766,7 @@ test("A late read from a disposed session cannot overwrite the current session's
     await response.promise;
     return respond(200, { workflowIds: [id("zulu")] });
   });
-  await openPage(firstPage);
+  await fill(await openPage(firstPage), "Draft");
   await reading.promise;
   disposeFirstPage();
   mockRemote([id("echo")]);

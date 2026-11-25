@@ -10,7 +10,6 @@ import { setupUserPreferenceRealtime$ } from "./external/user-model-preference.t
 import { setupBillingRealtime$ } from "./okou-page/billing.ts";
 import { subscribeCustomTemplatesChanged$ } from "./okou-page/custom-template-library.ts";
 import { setupGetStartedRewards$ } from "./okou-page/get-started.ts";
-import { setupRecentWorkflowSync$ } from "./okou-page/recent-workflows.ts";
 import { subscribePresentationTemplatesChanged$ } from "./okou-page/presentation-template-library.ts";
 import { subscribePermissionUpdate$ } from "./permission-allow/permission-allow-signals.ts";
 import { hydrateProjectCache$ } from "./projects/projects.ts";
@@ -116,12 +115,6 @@ export const setupAuthenticatedBootstrapData$ = command(
     if (!user || !clerk.organization) {
       return;
     }
-    // Recency is optional browser-cache synchronization, not app readiness.
-    detach(
-      set(setupRecentWorkflowSync$, signal),
-      Reason.Daemon,
-      "initial workflow recency sync",
-    );
     await get(bridgeConnected$);
     signal.throwIfAborted();
     await Promise.all([
