@@ -96,6 +96,52 @@ test("chat-run-composer-004 submits the full launch board with the Auto message"
   );
 });
 
+test("Enter queues a ready attachment after the last character is deleted during a run", async () => {
+  const runId = crypto.randomUUID();
+  const queued = context.mocks.deferred<UserMessageDocument | undefined>();
+  installRunChat({
+    activeRunIds: [runId],
+    chatEvents: [
+      promptEvent({ id: runId, runId, seqId: 1, text: "Review the plan" }),
+    ],
+    onQueuedEventAppend: ({ userMessage }) => {
+      queued.resolve(userMessage);
+    },
+  });
+  const file = new File(["milestones"], "plan.txt", { type: "text/plain" });
+  const fileId = crypto.randomUUID();
+  context.mocks.upload.success({
+    id: fileId,
+    filename: file.name,
+    size: file.size,
+    contentType: file.type,
+    url: "https://cdn.okou.io/artifacts/tests/plan.txt",
+  });
+
+  await setupPage({ context, path: RUN_PATH });
+  await findEnabledButton("Stop");
+  const user = userEvent.setup({ delay: null });
+  await user.upload(
+    await screen.findByLabelText("Attach", { selector: "input" }),
+    file,
+  );
+  await findEnabledButton("Send");
+  const editor = screen.getByRole("textbox", { name: "Message" });
+  await user.click(editor);
+  await user.keyboard("a{Backspace}");
+  expect(editor).toHaveTextContent(/^$/);
+  await user.keyboard("{Enter}");
+
+  expect((await queued.promise)?.parts).toContainEqual(
+    expect.objectContaining({
+      type: "file",
+      fileId,
+      filenameSnapshot: file.name,
+    }),
+  );
+  await findEnabledButton("Stop");
+});
+
 test("chat-run-composer-005 keeps the pending automation beside an accepted follow-up in the live conversation", async () => {
   const runId = "3210dce2-b225-4c1e-b7cc-a38a9e1ff853";
   const update = "The launch outline is ready";
