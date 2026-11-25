@@ -28,7 +28,9 @@ enum ConnectorProviderAuthorization {
   static func appURL(
     receipt: ChatConnectorReceipt, target: ChatConnectorTarget, methodID: String, webURL: URL
   ) throws -> URL? {
-    if case .builtin(let slug) = target, googleConnectors.contains(slug), methodID == "oauth" {
+    if let slug = target.connectorSlug, target == .builtin(slug), googleConnectors.contains(slug),
+      methodID == "oauth"
+    {
       guard webURL.scheme == "https", webURL.host == "accounts.google.com", webURL.port == nil,
         webURL.path == "/o/oauth2/v2/auth", webURL.user == nil, webURL.password == nil,
         webURL.fragment == nil
