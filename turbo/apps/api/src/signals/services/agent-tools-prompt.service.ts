@@ -67,6 +67,7 @@ export interface AgentToolsPromptInputs {
   readonly markdownFirstOutputEnabled: boolean;
   readonly cloudBrowserEnabled: boolean;
   readonly artifactThreePointTimingEnabled: boolean;
+  readonly hostedSiteCustomDomainsEnabled: boolean;
 }
 
 export function buildAgentToolsPromptInputs(args: {
@@ -76,6 +77,10 @@ export function buildAgentToolsPromptInputs(args: {
 }): AgentToolsPromptInputs {
   const context = args.featureSwitchContext;
   return {
+    hostedSiteCustomDomainsEnabled: isFeatureEnabled(
+      FeatureSwitchKey.HostedSiteCustomDomains,
+      context,
+    ),
     artifactThreePointTimingEnabled: isFeatureEnabled(
       FeatureSwitchKey.ArtifactThreePointTiming,
       context,
@@ -230,6 +235,11 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
         ]
       : []),
     ...buildIntegrationToolsPrompt(args.markdownFirstOutputEnabled),
+    ...(args.hostedSiteCustomDomainsEnabled
+      ? [
+          "- Custom website domains: when the user asks to connect their domain, read `okou host domain --help`. These commands use the same custom-domain feature switch and paid-subscription requirement as Customize URL in the App. Use the owned website's platform Site slug and one exact hostname, not a wildcard. Run `okou host domain add <site> <hostname>`, configure every returned DNS record through an authorized DNS provider or have the user configure them, then run `okou host domain verify <site> <hostname>` once. Verification may return additional certificate TXT records; apply them, allow DNS/HTTPS provisioning to finish, and explicitly verify again. Do not poll or guess DNS targets. Only after all checks are ready, run `okou host domain select <site> <hostname>` and return the saved effective URL. Pending/failed verification prints checks and exits 1. Use `okou host domain list <site> --json` to inspect or recover current state. `select <site> --default` restores the platform sharing URL while keeping connected domains active; `remove <site> <hostname>` revokes the binding and its sessions, then its DNS records can be removed. Preserve the website's existing visibility and private sign-in. After a conflict or uncertain mutation, inspect current settings before retrying; never automatically replay add, verify, select, or remove.",
+        ]
+      : []),
     "- Presentation page images: use `okou presentation screenshot --input <deck.ppt|deck.pptx|deck.pdf|page.html|layouts-dir|url> --out <dir>` to render any presentation source to ordered `page-001.png` files at one fixed page size. PPT, PPTX, and PDF are rasterised through LibreOffice and Poppler; HTML pages, layout directories, and URLs are captured through a browser, one image per slide. It only writes local image files: it uploads nothing, publishes nothing, and is unrelated to `okou presentation-template publish`, so it is the right tool whenever page images are the goal, including review and analysis. Prefer it over `pdftoppm`, `soffice`, or hand-driven `agent-browser` screenshot calls, because a screenshot of a page the browser never painted looks like a successful screenshot. Run `okou presentation screenshot --help` for the current interface.",
     "- Static web artifacts can be published with `okou host <dir> --site <slug> [--spa]`; for HTML presentations, include `--artifact-kind presentation-html`; run `okou host --help` for details.",
     args.presentationOutputFormatEnabled
