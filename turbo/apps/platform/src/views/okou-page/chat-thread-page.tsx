@@ -6157,12 +6157,12 @@ function shareGroupClassName({
     // action row under its bubble. Every group then sits the same 16px
     // from the next, and the tint hugs the bubble.
     role === "user" && "[&_[data-chat-user-message-actions]]:hidden",
-    // Outline the selected group without changing the transcript's geometry.
-    "before:pointer-events-none before:absolute before:inset-0 before:rounded-[inherit] before:border before:border-transparent data-selected:before:border-primary data-selected:bg-state-selected",
+    // Keep the warm surface tint when adding hover feedback to a selection.
+    "data-selected:bg-secondary-hover",
     phase === "selecting" &&
       (hasSelection
-        ? "data-selected:hover:bg-state-selected-hover"
-        : "hover:bg-state-hover"),
+        ? "data-selected:hover:bg-state-hover-overlay"
+        : "hover:bg-secondary"),
   );
 }
 
