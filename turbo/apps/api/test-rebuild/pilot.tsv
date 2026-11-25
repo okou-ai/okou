@@ -108,11 +108,11 @@ billing	src/signals/routes/__tests__/billing-checkout.test.ts	billing-checkout-0
 billing	src/signals/routes/__tests__/billing-checkout.test.ts	billing-checkout-020	rewritten	5.9	
 billing	src/signals/routes/__tests__/billing-checkout.test.ts	billing-checkout-021	rewritten	5.6	
 billing	src/signals/routes/__tests__/billing-checkout.test.ts	billing-checkout-022	rewritten	4.5	
-billing	src/signals/routes/__tests__/billing-credit-checkout-auto-recharge.test.ts	billing-credit-checkout-auto-recharge-001	planned		
-billing	src/signals/routes/__tests__/billing-credit-checkout-auto-recharge.test.ts	billing-credit-checkout-auto-recharge-003	planned		
-billing	src/signals/routes/__tests__/billing-credit-checkout-auto-recharge.test.ts	billing-credit-checkout-auto-recharge-006	planned		
-billing	src/signals/routes/__tests__/billing-credit-checkout-auto-recharge.test.ts	billing-credit-checkout-auto-recharge-007	planned		
-billing	src/signals/routes/__tests__/billing-credit-checkout-auto-recharge.test.ts	billing-credit-checkout-auto-recharge-008	planned		
+billing	src/signals/routes/__tests__/billing-credit-checkout-auto-recharge.test.ts	billing-credit-checkout-auto-recharge-001	rewritten	71.6	
+billing	src/signals/routes/__tests__/billing-credit-checkout-auto-recharge.test.ts	billing-credit-checkout-auto-recharge-003	rewritten	137.5	
+billing	src/signals/routes/__tests__/billing-credit-checkout-auto-recharge.test.ts	billing-credit-checkout-auto-recharge-006	rewritten	70.1	
+billing	src/signals/routes/__tests__/billing-credit-checkout-auto-recharge.test.ts	billing-credit-checkout-auto-recharge-007	rewritten	42.6	
+billing	src/signals/routes/__tests__/billing-credit-checkout-auto-recharge.test.ts	billing-credit-checkout-auto-recharge-008	rewritten	63.0	
 billing	src/signals/routes/__tests__/billing-credit-checkout.test.ts	billing-credit-checkout-001	planned		
 billing	src/signals/routes/__tests__/billing-credit-checkout.test.ts	billing-credit-checkout-002	planned		
 billing	src/signals/routes/__tests__/billing-credit-checkout.test.ts	billing-credit-checkout-003	planned		
