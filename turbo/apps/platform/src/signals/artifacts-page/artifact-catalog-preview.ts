@@ -15,7 +15,7 @@ import {
   classifyChatAttachment,
   type BodyPreviewKind,
 } from "../chat-page/parse-body-blocks.ts";
-import { getHostedSiteShareScope } from "../hosted-site-sharing.ts";
+import { selectArtifactPreviewSessions$ } from "../artifact-preview-sessions.ts";
 
 interface ArtifactDetailPreview {
   readonly kind: BodyPreviewKind;
@@ -26,11 +26,10 @@ interface ArtifactDetailPreview {
 }
 
 /** Opening and publication notifications select the same preview-owned session. */
-export function createCatalogSharingRefresh$(
+export function createCatalogPreviewSessionsRefresh$(
   catalog: ArtifactCatalogViewSignals,
   readOwner$: Command<AbortSignal | undefined, []>,
 ) {
-  const sharing = getHostedSiteShareScope("sidebar");
   return command(async ({ get, set }, signal: AbortSignal) => {
     const ownerSignal = set(readOwner$);
     if (!ownerSignal || ownerSignal.aborted) {
@@ -42,9 +41,16 @@ export function createCatalogSharingRefresh$(
       return;
     }
     const url = artifactDetailPreview(detail).url;
-    if (get(sharing.session$)?.sourceUrl !== url) {
-      set(sharing.select$, url, ownerSignal);
-    }
+    set(
+      selectArtifactPreviewSessions$,
+      "sidebar",
+      {
+        url,
+        deletionIdentity: { artifactId: detail.id },
+        fileId: "file" in detail ? detail.file.id : undefined,
+      },
+      ownerSignal,
+    );
   });
 }
 

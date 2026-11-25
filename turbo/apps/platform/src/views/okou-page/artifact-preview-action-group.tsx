@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { Computed } from "ccstate";
-import { useGet, useLastLoadable } from "ccstate-react";
+import { useGet, useLastLoadable, useLastResolved } from "ccstate-react";
 import { cn } from "@okouai/ui";
 
 import { artifactPreviewDeletionScope } from "../../signals/artifact-deletion.ts";
@@ -47,9 +47,10 @@ export function ArtifactPreviewActionGroup({
 }: ArtifactPreviewActionGroupProps) {
   const deletion = artifactPreviewDeletionScope(surface);
   const deletionSession = useGet(deletion.session$);
+  const deletionIdentity = useLastResolved(deletion.identity$);
   const ownershipPending = usePreviewActionPending(
-    artifactId !== undefined && deletionSession?.artifactId === artifactId
-      ? deletionSession.detail$
+    artifactId !== undefined && deletionIdentity?.artifactId === artifactId
+      ? deletionSession?.detail$
       : undefined,
   );
   const sharing = getArtifactShareScope(surface);
@@ -73,7 +74,7 @@ export function ArtifactPreviewActionGroup({
     (artifactId !== undefined && ownershipPending) ||
     sharingPending;
 
-  // Mounted controls own their requests even while the group is hidden.
+  // Preview commands own requests; visibility only reflects their readiness.
   return (
     <div
       hidden={pending}

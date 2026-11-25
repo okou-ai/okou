@@ -1,4 +1,9 @@
-import { useGet, useLastLoadable, useSet } from "ccstate-react";
+import {
+  useGet,
+  useLastLoadable,
+  useLastResolved,
+  useSet,
+} from "ccstate-react";
 import type { ComponentProps, Ref } from "react";
 import type { ArtifactSummary } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { useLoadableSet } from "ccstate-react/experimental";
@@ -139,21 +144,16 @@ export function ArtifactDeleteButton({
   readonly menu?: boolean;
 }) {
   const scope = artifactPreviewDeletionScope(artifactDeletionSurface(origin));
-  const mountRef = useSet(scope.mountRef$);
   const session = useGet(scope.session$);
+  const identity = useLastResolved(scope.identity$);
   if (!artifactId) {
     return null;
   }
   return (
-    <span
-      key={artifactId}
-      ref={mountRef}
-      data-artifact-id={artifactId}
-      data-source-kind={sourceKind}
-      className="inline-flex"
-    >
-      {session?.artifactId === artifactId &&
-        session.sourceKind === sourceKind && (
+    <span className="inline-flex">
+      {session &&
+        identity?.artifactId === artifactId &&
+        identity.sourceKind === sourceKind && (
           <PreviewArtifactDeleteButton
             key={artifactId}
             session={session}

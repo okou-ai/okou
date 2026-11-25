@@ -28,7 +28,7 @@ import {
 
 const onArtifactsChanged$ = command(async ({ set }, signal: AbortSignal) => {
   set(reloadArtifactCatalog$);
-  await set(artifactCatalogSidebar.refreshSharing$, signal);
+  await set(artifactCatalogSidebar.refreshPreviewSessions$, signal);
   return false;
 });
 

@@ -285,14 +285,13 @@ function createSiteUrlSignals(sourceUrl: string) {
 
 function createSiteSharingSettings(
   details$: Computed<Promise<SiteUrl | null>>,
-  open$: State<boolean>,
 ) {
   const visibility = createSiteVisibilitySignals(details$);
   const peopleTarget$ = computed(async (get) => {
     const site = await get(visibility.visibility$);
     return site ? { kind: "site" as const, id: site.siteId } : null;
   });
-  const people = createSharePeopleSignals(peopleTarget$, open$);
+  const people = createSharePeopleSignals(peopleTarget$);
   const banner = createHostedSiteBannerSignals(visibility.visibility$);
   const hasSettings$ = computed(async (get) => {
     const [details, permissions] = await Promise.all([
@@ -334,7 +333,7 @@ function createHostedSiteShareSession(sourceUrl: string) {
     set(editor.cancel$);
   });
   const { visibility, people, banner, hasSettings$ } =
-    createSiteSharingSettings(details$, open$);
+    createSiteSharingSettings(details$);
   const resetOpenSignal$ = resetSignal();
   const linkCopy = createShareLinkCopy();
   const setOpen$ = command(({ set }, open: boolean) => {
@@ -349,6 +348,7 @@ function createHostedSiteShareSession(sourceUrl: string) {
   });
   const show$ = command(async ({ get, set }, parentSignal: AbortSignal) => {
     const signal = set(resetOpenSignal$, parentSignal);
+    set(people.open$, signal);
     set(open$, true);
     const hasSettings = await get(hasSettings$);
     signal.throwIfAborted();

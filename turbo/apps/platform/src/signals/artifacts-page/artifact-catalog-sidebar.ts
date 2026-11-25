@@ -6,7 +6,7 @@ import { pageSignal$ } from "../page-signal.ts";
 import { refreshWorkspaceLayout$ } from "../chat-page/workspace-layout.ts";
 import {
   createCatalogArtifactPreviewSignals,
-  createCatalogSharingRefresh$,
+  createCatalogPreviewSessionsRefresh$,
 } from "./artifact-catalog-preview.ts";
 import type { ArtifactCatalogSignals } from "./create-artifact-catalog-signals.ts";
 
@@ -28,7 +28,10 @@ export function createArtifactCatalogSidebarSignals(
   const readOwner$ = command(({ get }) => {
     return get(internalSession$)?.ownerSignal;
   });
-  const refreshSharing$ = createCatalogSharingRefresh$(catalog, readOwner$);
+  const refreshPreviewSessions$ = createCatalogPreviewSessionsRefresh$(
+    catalog,
+    readOwner$,
+  );
 
   const close$ = command(({ get, set }) => {
     set(resetOpenSignal$);
@@ -75,7 +78,7 @@ export function createArtifactCatalogSidebarSignals(
           );
           return;
         }
-        await set(refreshSharing$, openSignal);
+        await set(refreshPreviewSessions$, openSignal);
         signal.throwIfAborted();
         openSignal.throwIfAborted();
         const selectedPreview = await set(
@@ -98,7 +101,7 @@ export function createArtifactCatalogSidebarSignals(
       },
     ),
     close$,
-    refreshSharing$,
+    refreshPreviewSessions$,
     fullscreen$: computed((get) => {
       return get(internalFullscreen$);
     }),

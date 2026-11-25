@@ -3037,14 +3037,14 @@ function createArtifactRealtimeHandlers(
       set(reloadArtifacts$);
       set(messages.sidebar.artifactCatalog.reload$);
       set(messages.refreshArtifactPreviews$);
-      await set(messages.sidebar.refreshSharing$, signal);
+      await set(messages.sidebar.refreshPreviewSessions$, signal);
       return false;
     },
   );
   const onArtifactsChanged$ = command(async ({ set }, signal: AbortSignal) => {
     set(messages.sidebar.artifactCatalog.reloadSelectedArtifactDetail$);
     set(messages.refreshArtifactPreviews$);
-    await set(messages.sidebar.refreshSharing$, signal);
+    await set(messages.sidebar.refreshPreviewSessions$, signal);
     return false;
   });
   return { onArtifactCatalogChanged$, onArtifactsChanged$ };
