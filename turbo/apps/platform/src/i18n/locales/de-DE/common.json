@@ -1206,9 +1206,6 @@
       "teamWarning": "Ihr Team-Zugang bleibt bis zum Ende des aktuellen Abrechnungszeitraums aktiv. Danach wird dieser Arbeitsbereich nach {{plan}} verschoben.",
       "title": "Downgrade-Plan"
     },
-    "feedback": {
-      "shareFeedback": "Feedback geben"
-    },
     "invoices": {
       "amount": "Betrag",
       "date": "Datum",
@@ -1743,6 +1740,7 @@
       "waiting": "Warten auf Mastercard Data Connect. Schließen Sie den Vorgang dort ab und kehren Sie dann zum Chat zurück."
     },
     "billing": {
+      "addCreditsOrUpgrade": "Lade ab 5 $ Guthaben auf, um weiterzumachen, oder wechsle zu Pro, um exklusive Funktionen freizuschalten.",
       "addCreditsToContinue": "Fügen Sie Credits hinzu, um weiterhin mit {{assistantName}} zu chatten.",
       "askAdminCredits": "Bitten Sie einen Arbeitsbereichsadministrator, Credits hinzuzufügen, damit Sie weiterhin mit {{assistantName}} chatten können.",
       "askAdminUpgrade": "Bitten Sie einen Arbeitsbereichsadministrator um ein Upgrade auf Pro, damit Sie weiterhin mit {{assistantName}} chatten können.",
@@ -1756,7 +1754,6 @@
       "customAmountError": "Geben Sie zwischen 1 und 10.000 US-Dollar ein",
       "customDollarAmount": "Benutzerdefinierter Dollarbetrag",
       "outOfCredits": "Ihre Credits sind aufgebraucht",
-      "redirecting": "Weiterleitung...",
       "upgradeToContinue": "Führen Sie ein Upgrade auf Pro durch, um weiterhin mit {{assistantName}} chatten zu können.",
       "upgradeToPro": "Upgrade auf Pro",
       "upgradeToRun": "Auf Pro upgraden, um {{assistantName}} auszuführen",
@@ -4431,7 +4428,6 @@
   },
   "myOkou": {
     "conflict": "Deine gespeicherten Anweisungen wurden anderswo geändert. Dein Entwurf bleibt erhalten. Prüfe oder kopiere ihn, bevor du die gespeicherten Anweisungen neu lädst.",
-    "description": "Deine Anweisungen für Okou in diesem Arbeitsbereich",
     "discard": "Verwerfen",
     "draftKept": "Dein Entwurf bleibt in diesem Browser-Tab erhalten, wenn du die Seite oder den Arbeitsbereich wechselst.",
     "instructions": "Anweisungen",
@@ -5704,7 +5700,6 @@
           "title": "Einstellungen"
         },
         "proactiveLearning": {
-          "description": "Wähle, wie Okou proaktiv arbeitet.",
           "title": "Proactive"
         },
         "tools": {
@@ -6110,7 +6105,6 @@
         "title": "Morgenbrief"
       },
       "proactiveSuggestions": {
-        "description": "Verbundene Quellen stündlich prüfen, dein Nutzerprofil täglich aktualisieren und hilfreiche nächste Schritte vorschlagen.",
         "errorMessage": "Die Einstellungen konnten nicht geladen oder aktualisiert werden.",
         "missingTimezone": "Legen Sie Ihre Zeitzone in den Einstellungen fest.",
         "preparationFailed": "Vorübergehend nicht verfügbar.",

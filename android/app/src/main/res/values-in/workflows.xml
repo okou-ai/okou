@@ -16,6 +16,7 @@
     <string name="workflow_daily_schedule">Setiap hari pukul %1$s</string>
     <string name="workflow_discard">Buang</string>
     <string name="workflow_discard_title">Buang perubahan yang belum disimpan?</string>
+    <string name="workflow_discard_detail">Perubahan pada “%1$s” yang belum disimpan di perangkat ini akan dibuang.</string>
     <string name="workflow_draft_unavailable">Draf chat baru tidak dapat dibuka. Draf Anda yang sudah ada tetap tersimpan.</string>
     <string name="workflow_edit">Edit</string>
     <string name="workflow_edit_automation">Edit otomatisasi</string>
@@ -66,7 +67,6 @@
     <string name="workflow_notion_child">Subhalaman Notion dibuat</string>
     <string name="workflow_notion_item">Item basis data Notion dibuat</string>
     <string name="workflow_notion_updated">Halaman Notion diperbarui</string>
-    <string name="workflow_offline_changes">Hubungkan ke internet untuk menyimpan. Perubahan Anda tetap ada.</string>
     <string name="workflow_pause">Jeda</string>
     <string name="workflow_paused">Otomatisasi dijeda</string>
     <string name="workflow_private">Hanya saya</string>
@@ -103,7 +103,6 @@
     <plurals name="workflow_enabled_count">
         <item quantity="other">%d otomatisasi aktif</item>
     </plurals>
-    <string name="workflow_draft_network_failed">Draf chat baru tidak dapat dibuka. Draf Anda yang sudah ada tetap tersimpan. Periksa koneksi Anda dan coba lagi.</string>
     <string name="workflow_rule_change_failed">Aturan ini tidak dapat diubah.</string>
     <string name="workflow_rule_network_failed">Aturan ini tidak dapat diubah. Periksa koneksi Anda dan coba lagi.</string>
     <string name="workflow_write_conflict">Alur kerja ini berubah saat disimpan. Perubahan Anda tetap ada.</string>

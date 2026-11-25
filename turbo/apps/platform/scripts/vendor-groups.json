@@ -8,6 +8,7 @@
     "@clerk/localizations": 4,
     "@clerk/react": 4,
     "@clerk/shared": 4,
+    "@expo-google-fonts/noto-sans": 1,
     "@floating-ui/core": 2,
     "@floating-ui/dom": 2,
     "@floating-ui/react-dom": 2,

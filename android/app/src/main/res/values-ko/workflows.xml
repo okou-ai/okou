@@ -16,6 +16,7 @@
     <string name="workflow_daily_schedule">매일 %1$s</string>
     <string name="workflow_discard">버리기</string>
     <string name="workflow_discard_title">저장하지 않은 변경사항을 버릴까요?</string>
+    <string name="workflow_discard_detail">이 기기에서 ‘%1$s’에 대해 저장하지 않은 변경사항이 삭제됩니다.</string>
     <string name="workflow_draft_unavailable">새 채팅 초안을 열 수 없습니다. 기존 초안은 유지됩니다.</string>
     <string name="workflow_edit">편집</string>
     <string name="workflow_edit_automation">자동화 편집</string>
@@ -66,7 +67,6 @@
     <string name="workflow_notion_child">Notion 하위 페이지 생성됨</string>
     <string name="workflow_notion_item">Notion 데이터베이스 항목 생성됨</string>
     <string name="workflow_notion_updated">Notion 페이지 업데이트됨</string>
-    <string name="workflow_offline_changes">저장하려면 연결하세요. 변경사항은 유지됩니다.</string>
     <string name="workflow_pause">일시 중지</string>
     <string name="workflow_paused">자동화 일시 중지됨</string>
     <string name="workflow_private">나만</string>
@@ -103,7 +103,6 @@
     <plurals name="workflow_enabled_count">
         <item quantity="other">자동화 %d개 활성</item>
     </plurals>
-    <string name="workflow_draft_network_failed">새 채팅 초안을 열 수 없습니다. 기존 초안은 유지됩니다. 연결을 확인한 후 다시 시도하세요.</string>
     <string name="workflow_rule_change_failed">이 규칙을 변경할 수 없습니다.</string>
     <string name="workflow_rule_network_failed">이 규칙을 변경할 수 없습니다. 연결을 확인한 후 다시 시도하세요.</string>
     <string name="workflow_write_conflict">저장하는 동안 이 워크플로가 변경되었습니다. 수정 내용은 유지됩니다.</string>

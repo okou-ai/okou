@@ -87,6 +87,7 @@ import { googleSearchConsoleProvider } from "./connectors/google-search-console/
 import { googleSheetsProvider } from "./connectors/google-sheets/provider";
 import { larkProvider } from "./connectors/lark/provider";
 import { linearProvider } from "./connectors/linear/provider";
+import { linkedinProvider } from "./connectors/linkedin/provider";
 import { mailchimpProvider } from "./connectors/mailchimp/provider";
 import { mercuryProvider } from "./connectors/mercury/provider";
 import { microsoft365Provider } from "./connectors/microsoft-365/provider";
@@ -1040,6 +1041,7 @@ const CONNECTOR_AUTH_METHOD_PROVIDER_ENTRIES = [
   refreshProviderEntry("lark", "api-token", larkProvider),
   authCodeProviderEntry("intervals-icu", "oauth", intervalsIcuProvider),
   authCodeRefreshTokenRevokeProviderEntry("linear", "oauth", linearProvider),
+  authCodeProviderEntry("linkedin", "oauth", linkedinProvider),
   authCodeProviderEntry("mailchimp", "oauth", mailchimpProvider),
   authCodeRefreshProviderEntry("mercury", "oauth", mercuryProvider),
   authCodeRefreshProviderEntry("microsoft-365", "oauth", microsoft365Provider),

@@ -16,6 +16,7 @@
     <string name="workflow_daily_schedule">Täglich um %1$s</string>
     <string name="workflow_discard">Verwerfen</string>
     <string name="workflow_discard_title">Ungespeicherte Änderungen verwerfen?</string>
+    <string name="workflow_discard_detail">Ungespeicherte Änderungen an „%1$s“ auf diesem Gerät werden verworfen.</string>
     <string name="workflow_draft_unavailable">Der neue Chatentwurf konnte nicht geöffnet werden. Dein vorhandener Entwurf bleibt erhalten.</string>
     <string name="workflow_edit">Bearbeiten</string>
     <string name="workflow_edit_automation">Automatisierung bearbeiten</string>
@@ -66,7 +67,6 @@
     <string name="workflow_notion_child">Unterseite in Notion erstellt</string>
     <string name="workflow_notion_item">Notion-Datenbankeintrag erstellt</string>
     <string name="workflow_notion_updated">Notion-Seite aktualisiert</string>
-    <string name="workflow_offline_changes">Zum Speichern online gehen. Deine Änderungen bleiben erhalten.</string>
     <string name="workflow_pause">Pausieren</string>
     <string name="workflow_paused">Automatisierungen pausiert</string>
     <string name="workflow_private">Nur ich</string>
@@ -104,7 +104,6 @@
         <item quantity="one">%d Automatisierung aktiv</item>
         <item quantity="other">%d Automatisierungen aktiv</item>
     </plurals>
-    <string name="workflow_draft_network_failed">Der neue Chatentwurf konnte nicht geöffnet werden. Dein vorhandener Entwurf bleibt erhalten. Prüfe deine Verbindung und versuche es erneut.</string>
     <string name="workflow_rule_change_failed">Diese Regel konnte nicht geändert werden.</string>
     <string name="workflow_rule_network_failed">Diese Regel konnte nicht geändert werden. Prüfe deine Verbindung und versuche es erneut.</string>
     <string name="workflow_write_conflict">Dieser Workflow wurde während des Speicherns geändert. Deine Änderungen bleiben erhalten.</string>

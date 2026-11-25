@@ -16,6 +16,7 @@
     <string name="workflow_daily_schedule">Cada día a las %1$s</string>
     <string name="workflow_discard">Descartar</string>
     <string name="workflow_discard_title">¿Descartar los cambios sin guardar?</string>
+    <string name="workflow_discard_detail">Se descartarán los cambios sin guardar de «%1$s» en este dispositivo.</string>
     <string name="workflow_draft_unavailable">No se pudo abrir el borrador del nuevo chat. Tu borrador anterior sigue guardado.</string>
     <string name="workflow_edit">Editar</string>
     <string name="workflow_edit_automation">Editar automatización</string>
@@ -66,7 +67,6 @@
     <string name="workflow_notion_child">Subpágina de Notion creada</string>
     <string name="workflow_notion_item">Elemento de base de datos de Notion creado</string>
     <string name="workflow_notion_updated">Página de Notion actualizada</string>
-    <string name="workflow_offline_changes">Conéctate para guardar. Tus cambios se conservan.</string>
     <string name="workflow_pause">Pausar</string>
     <string name="workflow_paused">Automatizaciones en pausa</string>
     <string name="workflow_private">Solo yo</string>
@@ -105,7 +105,6 @@
         <item quantity="many">%d automatizaciones activas</item>
         <item quantity="other">%d automatizaciones activas</item>
     </plurals>
-    <string name="workflow_draft_network_failed">No se pudo abrir el borrador del nuevo chat. Tu borrador anterior sigue guardado. Comprueba tu conexión e inténtalo de nuevo.</string>
     <string name="workflow_rule_change_failed">No se pudo cambiar esta regla.</string>
     <string name="workflow_rule_network_failed">No se pudo cambiar esta regla. Comprueba tu conexión e inténtalo de nuevo.</string>
     <string name="workflow_write_conflict">Este flujo de trabajo cambió durante el guardado. Tus cambios se conservan.</string>

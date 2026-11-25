@@ -7,10 +7,7 @@ import {
   agentChatPageActive$,
 } from "../../signals/active-route.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
-import {
-  followForYouFeedOnRef$,
-  suggestionsEnabled$,
-} from "../../signals/okou-page/agent-suggestion-session.ts";
+import { followForYouFeedOnRef$ } from "../../signals/okou-page/agent-suggestion-session.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 import { Link } from "../router/link.tsx";
 import { forYouHasUnread$ } from "../../signals/okou-page/for-you-sources.ts";
@@ -86,13 +83,9 @@ export function ForYouChatListRow({
   readonly touch?: boolean;
 }) {
   const { t } = useTranslation();
-  const enabled = useLastResolved(suggestionsEnabled$) ?? false;
   const active = useGet(activeRoute$) === "forYou";
   const unread = useLastResolved(forYouHasUnread$) === true;
   const followFeed = useSet(followForYouFeedOnRef$);
-  if (!enabled) {
-    return null;
-  }
   return (
     <Link
       pathname={ROUTES.forYou}

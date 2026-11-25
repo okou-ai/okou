@@ -1014,6 +1014,30 @@ export const CONNECTOR_AUTH_PROVIDER_METHOD_REGISTRATIONS = [
     },
   },
   {
+    connectorSlug: "linkedin",
+    authMethodId: "oauth",
+    contract: {
+      client: {
+        kind: "static-confidential-env",
+        clientIdEnv: "LINKEDIN_OAUTH_CLIENT_ID",
+        clientSecretEnv: "LINKEDIN_OAUTH_CLIENT_SECRET",
+      },
+      grant: {
+        kind: "auth-code",
+        callbackOrigin: "web",
+        outputNames: ["accessToken"],
+        startOptionNames: [],
+      },
+      access: {
+        kind: "static",
+        inputNames: [],
+        outputNames: [],
+        platformSecrets: [],
+      },
+      revoke: { kind: "none", inputNames: [] },
+    },
+  },
+  {
     connectorSlug: "mailchimp",
     authMethodId: "oauth",
     contract: {

@@ -7,7 +7,6 @@ import ai.okou.android.connectors.connectorFeedbackType
 import ai.okou.android.currentWindowSizeDp
 import ai.okou.android.state.rememberJournalEditor
 import ai.okou.android.workspaceListPaneWidth
-import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -52,7 +51,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
@@ -89,7 +87,6 @@ internal fun ChatComposerField(
     model: ChatComposerModel,
     target: ComposerTarget,
     modifier: Modifier = Modifier,
-    offline: Boolean = false,
     followup: String? = null,
     onFollowupInserted: () -> Unit = {},
     beforeSend: () -> Unit = {},
@@ -97,7 +94,6 @@ internal fun ChatComposerField(
     manageConnectors: (ConnectorAccountTarget?) -> Unit = {},
 ) {
     val state by model.uiState.collectAsStateWithLifecycle()
-    val context = LocalContext.current
     val focus = LocalFocusManager.current
     val entry = state.entry(target)
     val input = rememberJournalEditor(state.journal?.let { entry.text }, target.key)
@@ -199,7 +195,6 @@ internal fun ChatComposerField(
                         model,
                         state,
                         target,
-                        offline,
                         inputFocused,
                         editorFocus,
                         manageConnectors,
@@ -259,18 +254,9 @@ internal fun ChatComposerField(
                 }
                 FilledIconButton(
                     onClick = {
-                        if (offline) {
-                            Toast.makeText(
-                                    context,
-                                    R.string.conversation_offline_send,
-                                    Toast.LENGTH_SHORT,
-                                )
-                                .show()
-                        } else {
-                            focus.clearFocus()
-                            beforeSend()
-                            model.send(target)
-                        }
+                        focus.clearFocus()
+                        beforeSend()
+                        model.send(target)
                     },
                     modifier = Modifier.size(48.dp).semantics { contentDescription = sendLabel },
                     enabled = state.canSend(target),

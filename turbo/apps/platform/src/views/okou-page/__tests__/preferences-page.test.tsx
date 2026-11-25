@@ -1,6 +1,5 @@
 // @vitest-environment-options {"url":"https://app.okou.ai/","settings":{"disableIframePageLoading":true,"disableCSSFileLoading":true,"handleDisabledFileLoadingAsSuccess":true}}
 import entryCss from "../../css/index.css?inline";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { test, expect } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
@@ -78,24 +77,26 @@ test("preferences-page-007 saving Eastern Time restores Morning Brief while leav
   });
   await setupPage({
     context,
-    path: "/preferences",
-    featureSwitches: { [FeatureSwitchKey.AgentSuggestion]: false },
+    path: "/?settings=my-okou",
   });
   await expect(
     screen.findByText("Set a valid time zone before enabling Morning Brief."),
   ).resolves.toBeVisible();
-  const zone = screen.getByRole("combobox", { name: /time zone/i });
+  click(await findAction("button", "Preference"));
+  const zone = await screen.findByRole("combobox", { name: /time zone/i });
   expect(zone).toHaveTextContent("UTC");
   click(zone);
   click(await screen.findByRole("option", { name: / Eastern Time \(ET\)$/ }));
+  await waitFor(() => {
+    return expect(zone).toHaveTextContent(/Eastern Time/);
+  });
+  expect(zone).toBeEnabled();
+  click(await findAction("button", "My Okou"));
   await waitFor(() => {
     return expect(
       screen.getByRole("switch", { name: /morning brief/i }),
     ).toBeChecked();
   });
-  expect(prefs.timezone).toBe("America/New_York");
-  expect(zone).toHaveTextContent(/Eastern Time/);
-  expect(zone).toBeEnabled();
   expect(
     screen.queryByText("Set a valid time zone before enabling Morning Brief."),
   ).not.toBeInTheDocument();

@@ -58,6 +58,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -353,14 +354,17 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
         compose.onNodeWithTag("workflow_save").assertIsNotEnabled()
         name.performTextReplacement("Release checklist")
         compose.onNodeWithText("Use 256 characters or fewer.").assertDoesNotExist()
+        val instructions =
+            "Confirm the release owner.\n![Launch screenshot](<https://example.test/release.png>)"
         compose
             .onNodeWithText(
                 "Review launch copy and product notes.\nCheck the website, email, and community assets.",
             )
-            .performTextReplacement("Confirm the release owner.")
+            .performTextReplacement(instructions)
         compose.onNodeWithTag("workflow_save").performClick()
         waitForTag("workflow_detail_title")
-        compose.onNodeWithText("Confirm the release owner.").assertIsDisplayed()
+        compose.onNodeWithText(instructions).assertIsDisplayed()
+        assertEquals(instructions, app.fixture.instruction)
         compose.onNodeWithTag("workflow_tab_automations").performClick()
         waitFor("Paused · Needs connection")
         compose.onNodeWithText("Trigger rules").assertIsDisplayed()
@@ -379,6 +383,11 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
         compose.onNodeWithText("View connections").assertIsDisplayed()
         compose.onNodeWithTag("workflow_save").assertIsNotEnabled()
         back()
+        compose
+            .onNodeWithText(
+                "Unsaved changes to “Release checklist” on this device will be discarded.",
+            )
+            .assertIsDisplayed()
         compose.onNodeWithText("Discard").performClick()
         compose.onNodeWithTag("workflow_toggle_weekday").performClick()
         waitFor("Enabled")
@@ -501,12 +510,10 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
     }
 
     @Test
-    fun offlineDetailAttemptsTheDraftReadAndExplainsItsFailureBesideUse() = withHardwareKeyboard {
+    fun detailExplainsADraftReadFailureBesideUse() = withHardwareKeyboard {
         openWorkflowDetail()
-        app.connectivity.value = false
         app.fixture.disconnectDraftRead = true
-        val error =
-            "Could not open the new chat draft. Your existing draft is preserved. Check your connection and try again."
+        val error = "Could not open the new chat draft. Your existing draft is preserved."
         compose.onNodeWithText("Workflow instructions").assertIsDisplayed()
         compose.onNodeWithText(error).assertDoesNotExist()
         val use = compose.onNodeWithTag("workflow_use").assertIsEnabled()
@@ -523,10 +530,6 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
         assertEquals("Keep my existing draft", app.fixture.previousDraft)
 
         app.fixture.disconnectDraftRead = false
-        app.connectivity.value = true
-        compose.waitUntil(10_000) {
-            compose.onAllNodesWithText(error).fetchSemanticsNodes().isEmpty()
-        }
         compose.onNodeWithTag("message_input").assertDoesNotExist()
         use.assertIsFocused().performKeyInput { pressKey(Key.Enter) }
         waitForTag("message_input")
@@ -540,7 +543,6 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
         app.gate.countDown()
         waitFor("Personal chat")
         openWorkflowDetail()
-        app.connectivity.value = false
         app.fixture.disconnectDraftRead = true
         val requested = CountDownLatch(1)
         val releaseDraft = CountDownLatch(1)
@@ -569,69 +571,63 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
     }
 
     @Test
-    fun offlineEditorAttemptsSaveAndRetainsInputAndFocusAfterTransportFailure() =
-        withHardwareKeyboard {
-            openWorkflowDetail()
-            app.connectivity.value = false
-            app.fixture.disconnectInstructionSave = true
-            val original = app.fixture.instruction
-            compose.onNodeWithText("Edit instructions").assertIsEnabled().performClick()
-            val instruction = compose.onNodeWithContentDescription("Workflow instructions")
-            instruction.performTextReplacement("Check the launch owner.")
-            instruction.performTextInputSelection(TextRange(4, 8))
+    fun editorRetainsInputAndFocusAfterTransportFailure() = withHardwareKeyboard {
+        openWorkflowDetail()
+        app.fixture.disconnectInstructionSave = true
+        val original = app.fixture.instruction
+        compose.onNodeWithText("Edit instructions").assertIsEnabled().performClick()
+        val instruction = compose.onNodeWithContentDescription("Workflow instructions")
+        instruction.performTextReplacement("Check the launch owner.")
+        instruction.performTextInputSelection(TextRange(4, 8))
 
-            val error = "Connect to save. Your changes are still here."
-            val save = compose.onNodeWithTag("workflow_save").assertIsEnabled()
-            val saveBounds = save.getUnclippedBoundsInRoot()
-            save.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
-            val selection =
-                instruction.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange]
-            compose.onNodeWithText(error).assertDoesNotExist()
-            val releaseSave = CountDownLatch(1)
-            app.fixture.beforeInstructionSave = { releaseSave.await() }
-            try {
-                save.performClick()
-                save
-                    .assertIsNotEnabled()
-                    .assertContentDescriptionEquals("Save")
-                    .assert(
-                        SemanticsMatcher.expectValue(
-                            SemanticsProperties.StateDescription,
-                            "Saving…",
-                        ),
-                    )
-                assertEquals(saveBounds, save.getUnclippedBoundsInRoot())
-            } finally {
-                releaseSave.countDown()
-            }
-            waitFor(error)
-            instruction.assertTextContains("Check the launch owner.")
-            assertEquals(
-                selection,
-                instruction.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange],
-            )
-            val notice = compose.onNodeWithText(error).getUnclippedBoundsInRoot()
-            assertTrue(
-                notice.bottom + 16.dp <=
-                    save.assertIsEnabled().assertIsFocused().getUnclippedBoundsInRoot().top,
-            )
-            val saves =
-                app.fixture.requests.filter {
-                    it.method == "PATCH" &&
-                        it.requestUrl?.encodedPath == "/api/workflows/$WORKFLOW_RELEASE"
-                }
-            assertEquals(1, saves.size)
-
-            app.fixture.disconnectInstructionSave = false
-            app.connectivity.value = true
-            compose.waitUntil(10_000) {
-                compose.onAllNodesWithText(error).fetchSemanticsNodes().isEmpty()
-            }
-            assertEquals(original, app.fixture.instruction)
+        val error = "Could not save your changes."
+        val save = compose.onNodeWithTag("workflow_save").assertIsEnabled()
+        val saveBounds = save.getUnclippedBoundsInRoot()
+        save.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+        val selection =
+            instruction.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange]
+        compose.onNodeWithText(error).assertDoesNotExist()
+        val releaseSave = CountDownLatch(1)
+        app.fixture.beforeInstructionSave = { releaseSave.await() }
+        try {
             save.performClick()
-            waitForTag("workflow_detail_title")
-            compose.onNodeWithText("Check the launch owner.").assertIsDisplayed()
+            save
+                .assertIsNotEnabled()
+                .assertContentDescriptionEquals("Save")
+                .assert(
+                    SemanticsMatcher.expectValue(
+                        SemanticsProperties.StateDescription,
+                        "Saving…",
+                    ),
+                )
+            assertEquals(saveBounds, save.getUnclippedBoundsInRoot())
+        } finally {
+            releaseSave.countDown()
         }
+        waitFor(error)
+        instruction.assertTextContains("Check the launch owner.")
+        assertEquals(
+            selection,
+            instruction.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange],
+        )
+        val notice = compose.onNodeWithText(error).getUnclippedBoundsInRoot()
+        assertTrue(
+            notice.bottom + 16.dp <=
+                save.assertIsEnabled().assertIsFocused().getUnclippedBoundsInRoot().top,
+        )
+        val saves =
+            app.fixture.requests.filter {
+                it.method == "PATCH" &&
+                    it.requestUrl?.encodedPath == "/api/workflows/$WORKFLOW_RELEASE"
+            }
+        assertEquals(1, saves.size)
+
+        app.fixture.disconnectInstructionSave = false
+        assertEquals(original, app.fixture.instruction)
+        save.performClick()
+        waitForTag("workflow_detail_title")
+        compose.onNodeWithText("Check the launch owner.").assertIsDisplayed()
+    }
 
     @Test
     fun instructionConflictShowsTheServerOutcomeAndPreservesTheEdit() {
@@ -683,11 +679,17 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
         edit.pressEnter()
         compose.onNodeWithText("Cancel").pressEnter()
         edit.assertIsFocused().performKeyInput { pressKey(Key.Enter) }
-        val field = compose.onNodeWithContentDescription("Display name")
-        field.performTextReplacement("Prepare the release")
+        val field = compose.onNodeWithContentDescription("Workflow instructions")
+        val draft = "Prepare the release.\n![Checklist](<https://example.test/checklist.png>)"
+        field.performTextReplacement(draft)
         compose.onNodeWithText("Cancel").pressEnter()
+        compose
+            .onNodeWithText(
+                "Unsaved changes to “Release checklist” on this device will be discarded.",
+            )
+            .assertIsDisplayed()
         compose.onNodeWithText("Keep editing").pressEnter()
-        field.assertTextContains("Prepare the release")
+        field.assertTextContains(draft)
         compose.onNodeWithText("Cancel").pressEnter()
         compose.onNodeWithText("Discard").pressEnter()
         edit.assertIsFocused()
@@ -695,19 +697,48 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
     }
 
     @Test
+    fun frequencyMenuMarksItsValueAndReturnsKeyboardFocus() = withHardwareKeyboard {
+        openWorkflowDetail()
+        compose.onNodeWithTag("workflow_tab_automations").performClick()
+        compose.onNodeWithText("Add automation").pressEnter()
+
+        val weekdays = compose.onNodeWithText("Weekdays")
+        val inMenu = hasAnyAncestor(hasTestTag("workspace_popup"))
+        val selected = compose.onNode(hasText("Weekdays") and inMenu)
+        val daily = compose.onNode(hasText("Daily") and inMenu)
+
+        weekdays.pressEnter()
+        selected.assertIsSelected().assertIsFocused().performKeyInput { pressKey(Key.Tab) }
+        weekdays.assertIsFocused().performKeyInput { pressKey(Key.Enter) }
+        selected.assertIsSelected().assertIsFocused().performKeyInput { pressKey(Key.Escape) }
+        weekdays.assertIsFocused().performKeyInput { pressKey(Key.Enter) }
+        selected.assertIsFocused().performKeyInput { pressKey(Key.DirectionDown) }
+        daily.assertIsFocused().performKeyInput { pressKey(Key.Enter) }
+        compose.onNodeWithText("Daily").assertIsFocused()
+    }
+
+    @Test
     fun newScheduleUsesTheLocalTimezoneBeforePreferencesSync() {
         openWorkflowDetail()
-        app.connectivity.value = false
-        compose.runOnIdle {
-            val session = ViewModelProvider(compose.activity)[SessionModel::class.java]
-            val preferences = checkNotNull(session.uiState.value.ready).preferences
-            preferences.selectTimezone("Asia/Tokyo")
-            assertEquals("UTC", preferences.uiState.value.confirmed.timezone)
+        val pendingWrite = CompletableDeferred<Unit>()
+        app.preferenceWrite = { _, save ->
+            pendingWrite.await()
+            save()
         }
-        compose.onNodeWithTag("workflow_tab_automations").performClick()
-        compose.onNodeWithText("Add automation").assertIsEnabled().performClick()
+        try {
+            compose.runOnIdle {
+                val session = ViewModelProvider(compose.activity)[SessionModel::class.java]
+                val preferences = checkNotNull(session.uiState.value.ready).preferences
+                preferences.selectTimezone("Asia/Tokyo")
+                assertEquals("UTC", preferences.uiState.value.confirmed.timezone)
+            }
+            compose.onNodeWithTag("workflow_tab_automations").performClick()
+            compose.onNodeWithText("Add automation").assertIsEnabled().performClick()
 
-        compose.onNodeWithText("Tokyo (UTC+9)").assertIsDisplayed()
+            compose.onNodeWithText("Tokyo (UTC+9)").assertIsDisplayed()
+        } finally {
+            pendingWrite.complete(Unit)
+        }
     }
 
     @Test
@@ -733,12 +764,20 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
             }
             waitFor(heading)
             compose.onNodeWithText(heading).assertIsDisplayed()
-            compose.onNodeWithText("Discard").assertIsDisplayed()
-            compose.onNodeWithText("Keep editing").assertIsDisplayed().performClick()
+            compose
+                .onNodeWithText(
+                    "Unsaved changes to “Release checklist” on this device will be discarded.",
+                )
+                .assertIsDisplayed()
+            compose
+                .onNodeWithText("Keep editing")
+                .performScrollTo()
+                .assertIsDisplayed()
+                .performClick()
             input.assertTextContains("Prepare the release")
 
             compose.onNodeWithText("Cancel").performClick()
-            compose.onNodeWithText("Discard").assertIsDisplayed().performClick()
+            compose.onNodeWithText("Discard").performScrollTo().assertIsDisplayed().performClick()
             waitForTag("workflow_detail_title")
             compose
                 .onNodeWithTag("workflow_detail_title")
@@ -773,8 +812,6 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
         compose.onNodeWithTag("workflow_tab_automations").performClick()
         waitFor("Paused · Needs connection")
         compose.onNodeWithText("example/release").assertIsDisplayed()
-        app.connectivity.value = false
-
         compose
             .onNodeWithTag("workflow_toggle_github")
             .assertIsDisplayed()
@@ -795,8 +832,6 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
         openWorkflowDetail()
         compose.onNodeWithTag("workflow_tab_automations").performClick()
         waitFor("Paused · Needs connection")
-        app.connectivity.value = false
-
         compose
             .onNodeWithTag("workflow_toggle_github")
             .assertIsDisplayed()
@@ -1588,7 +1623,7 @@ internal class WorkflowSearchRootTest : WorkflowRootTestFixture() {
     }
 
     @Test
-    fun workspaceSearchLoadsAndKeepsTheWorkflowIntroWithAnOfflineSignal() {
+    fun workspaceSearchLoadsTheWorkflowIntroWithItsDraftAction() {
         app.gate.countDown()
         waitForTag("workspace_search_entry")
         compose.waitUntil(10_000) {
@@ -1600,7 +1635,6 @@ internal class WorkflowSearchRootTest : WorkflowRootTestFixture() {
                     ?.workflows != null
             }
         }
-        compose.runOnIdle { app.connectivity.value = false }
         compose.onNodeWithContentDescription("Search workspace").performClick()
         compose.onNodeWithTag("search_type_Workflows").performClick()
         compose.onNodeWithTag("chat_search_query").performTextInput("launch")
@@ -1608,7 +1642,6 @@ internal class WorkflowSearchRootTest : WorkflowRootTestFixture() {
         compose.onNodeWithText(app.fixture.releaseTitle).performClick()
         waitFor("View workflow details")
         compose.onNodeWithText("Add to new chat draft").assertIsEnabled()
-        compose.runOnIdle { app.connectivity.value = true }
         compose.onNodeWithText("View workflow details").assertIsDisplayed()
     }
 }

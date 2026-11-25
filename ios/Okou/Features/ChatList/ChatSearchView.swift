@@ -23,7 +23,7 @@ struct ChatSearchView: View {
   }
 }
 
-/// Search has its own Store; list status must observe the workspace's original read.
+/// List status observes the workspace's original list read, not a search copy.
 private struct ChatSearchListReadStatus: View {
   let list: ThreadListStore
 
@@ -77,6 +77,8 @@ private struct ChatSearchContent: View {
   @LoadableValue private var messageResults: Loadable<[ChatSearchResult]>
   @LoadableValue private var workflowResults: Loadable<[ChatSearchWorkflow]>
   @LoadableValue private var artifactResults: Loadable<[ChatSearchArtifact]>
+  /// The field's text, its keyword and the opening error, kept in the workspace session's Store.
+  @ResolvedValue private var resolvedField: ChatSearchStore.Field?
 
   init(
     workspace: WorkspaceStore, showsArchived: Bool, didOpen: @escaping () -> Void,
@@ -89,12 +91,15 @@ private struct ChatSearchContent: View {
     _messageResults = LoadableValue(task: workspace.search.messagesValue)
     _workflowResults = LoadableValue(task: workspace.search.workflowsValue)
     _artifactResults = LoadableValue(task: workspace.search.artifactsValue)
+    _resolvedField = ResolvedValue(workspace.search.field)
   }
 
   @Environment(\.openURL) private var openURL
   @State private var openingID: String?
   @State private var scope = Scope.all
   private var search: ChatSearchStore { workspace.search }
+  /// This render's search input, with the synchronous value for a first render.
+  private var field: ChatSearchStore.Field { resolvedField ?? search.currentField }
 
   private var messages: [ChatSearchResult] { messageResults.data ?? [] }
   private var workflows: [ChatSearchWorkflow] { workflowResults.data ?? [] }
@@ -107,7 +112,7 @@ private struct ChatSearchContent: View {
   private var artifactsError: String? { artifactResults.error?.localizedDescription }
 
   private var titleThreads: [ChatThread] {
-    search.keyword.isEmpty
+    field.keyword.isEmpty
       ? workspace.list.threads(
         archived: showsArchived,
         onlyUnread: workspace.sidebar.filter == .unread)
@@ -117,10 +122,10 @@ private struct ChatSearchContent: View {
   private func shows(_ section: Scope) -> Bool { scope == .all || scope == section }
 
   var body: some View {
-    let titles = search.titleResults(in: titleThreads)
+    let titles = ChatSearchStore.titleResults(in: titleThreads, keyword: field.keyword)
     NavigationStack {
       OkouSearchPage(
-        text: Binding(get: { search.query }, set: { search.updateQuery($0) }),
+        text: Binding(get: { field.query }, set: { search.updateQuery($0) }),
         prompt: "Search", close: { search.dismiss() },
         filters: {
           // On the search field's and the rows' leading edge.
@@ -151,13 +156,13 @@ private struct ChatSearchContent: View {
   @ViewBuilder
   private func results(titles: [ChatThread]) -> some View {
     ChatSearchListReadStatus(list: workspace.list)
-    if let error = search.openingError {
+    if let error = field.openingError {
       Text(error).foregroundStyle(OkouColor.mutedForeground)
     }
     if shows(.chats), !titles.isEmpty {
       Section {
         sectionTitle {
-          Text(search.keyword.isEmpty ? LocalizedStringKey("Recent chats") : "Chats")
+          Text(field.keyword.isEmpty ? LocalizedStringKey("Recent chats") : "Chats")
             .okouSectionHeader()
         }
         ForEach(titles) { thread in
@@ -167,7 +172,7 @@ private struct ChatSearchContent: View {
         }
       }
     }
-    if shows(.messages), !search.keyword.isEmpty { messagesSection }
+    if shows(.messages), !field.keyword.isEmpty { messagesSection }
     if shows(.workflows) { workflowsSection }
     if shows(.artifacts) { artifactsSection }
   }
@@ -217,7 +222,7 @@ private struct ChatSearchContent: View {
   private var workflowsSection: some View {
     let workflows = self.workflows
     let showsAll = scope == .workflows
-    if (showsAll || !search.keyword.isEmpty) && !workflows.isEmpty {
+    if (showsAll || !field.keyword.isEmpty) && !workflows.isEmpty {
       Section {
         sectionTitle { Text("Workflows").okouSectionHeader() }
         ForEach(workflows) { workflow in
@@ -254,7 +259,7 @@ private struct ChatSearchContent: View {
   /// Artifacts are searched on the server, so they appear only for a query.
   @ViewBuilder
   private var artifactsSection: some View {
-    if !search.keyword.isEmpty {
+    if !field.keyword.isEmpty {
       if !artifacts.isEmpty {
         Section {
           sectionTitle { Text("Artifacts").okouSectionHeader() }
@@ -326,7 +331,7 @@ private struct ChatSearchContent: View {
   /// The page's empty state where a scope has nothing to show yet.
   @ViewBuilder
   private func emptyState(hasTitles: Bool) -> some View {
-    let keyword = search.keyword
+    let keyword = field.keyword
     if keyword.isEmpty && scope == .messages {
       pageState(
         "Search messages", icon: "messages-square",

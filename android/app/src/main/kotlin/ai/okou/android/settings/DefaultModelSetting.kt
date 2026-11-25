@@ -112,7 +112,6 @@ internal fun DefaultModelSetting(
     if (options == null || state.record == null) {
         val status =
             when {
-                state.offline -> stringResource(R.string.settings_model_load_when_online)
                 state.catalogUnavailable -> stringResource(R.string.chat_list_first_load_failed)
                 else -> null
             }

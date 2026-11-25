@@ -10,6 +10,54 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.126.0](https://github.com/okou-ai/okou/compare/api-v2.125.0...api-v2.126.0) (2026-11-25)
+
+
+### Features
+
+* **api:** run official schedules only for recently active owners ([#50775](https://github.com/okou-ai/okou/issues/50775)) ([260dffe](https://github.com/okou-ai/okou/commit/260dffe5585f16f48c7dbd22f682e6ca1819c1a6))
+* **connectors:** support linkedin publishing oauth ([#50774](https://github.com/okou-ai/okou/issues/50774)) ([c63a475](https://github.com/okou-ai/okou/commit/c63a475bf35f4f53a6fa2607576001e81ead0834))
+* deliver opted-in mac app state to the assigned sandbox ([#50748](https://github.com/okou-ai/okou/issues/50748)) ([58beac7](https://github.com/okou-ai/okou/commit/58beac7e0900ba3f87616e7b6068715e2620a0fc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.126.1
+    * @okouai/connectors bumped to 3.25.0
+    * @okouai/core bumped to 8.878.0
+    * @okouai/db bumped to 2.68.1
+    * @okouai/pi-agent-runtime bumped to 1.52.72
+
+## [2.125.0](https://github.com/okou-ai/okou/compare/api-v2.124.1...api-v2.125.0) (2026-11-25)
+
+
+### Features
+
+* **api:** enable suggestions for new accounts after onboarding ([#50749](https://github.com/okou-ai/okou/issues/50749)) ([9478076](https://github.com/okou-ai/okou/commit/9478076996f9e58fd3775f50e3bab7f0a815b187))
+* receive computer use app state on the assigned runner ([#50745](https://github.com/okou-ai/okou/issues/50745)) ([9977243](https://github.com/okou-ai/okou/commit/99772436210306fef0b462d019a9fe57d118ff81))
+
+
+### Bug Fixes
+
+* **billing:** align feedback surveys and share one-time rewards ([#50566](https://github.com/okou-ai/okou/issues/50566)) ([ddf37fc](https://github.com/okou-ai/okou/commit/ddf37fc99d5ab9ee763a6299f597c56241c4224d))
+
+
+### Refactoring
+
+* graduate suggestions into the shared morning brief ([#50746](https://github.com/okou-ai/okou/issues/50746)) ([3a296b9](https://github.com/okou-ai/okou/commit/3a296b93fe3b031bfcf1cb30ce189841198b825f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.126.0
+    * @okouai/core bumped to 8.877.0
+    * @okouai/db bumped to 2.68.0
+    * @okouai/pi-agent-runtime bumped to 1.52.71
+
 ## [2.124.1](https://github.com/okou-ai/okou/compare/api-v2.124.0...api-v2.124.1) (2026-11-25)
 
 

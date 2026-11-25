@@ -50,7 +50,6 @@ async function fromInstructions(run: string, finished: boolean) {
       organization: { activeOrg: org, memberships: [{ id: org.id }] },
     },
     featureSwitches: {
-      [FeatureSwitchKey.AgentSuggestion]: true,
       [FeatureSwitchKey.OkouDebug]: true,
     },
   });

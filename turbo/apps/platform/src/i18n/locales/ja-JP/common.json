@@ -1202,9 +1202,6 @@
       "teamWarning": "チームのアクセスは、現在の請求期間が終了するまで有効のままです。その後、このワークスペースは {{plan}} に移動します。",
       "title": "ダウングレード計画"
     },
-    "feedback": {
-      "shareFeedback": "フィードバックを送信"
-    },
     "invoices": {
       "amount": "金額",
       "date": "日付",
@@ -1737,6 +1734,7 @@
       "waiting": "Mastercard Data Connectでの操作を待っています。そこで完了してから、チャットに戻ってください。"
     },
     "billing": {
+      "addCreditsOrUpgrade": "$5からクレジットを追加して続けるか、Proにアップグレードして限定機能を利用できます。",
       "addCreditsToContinue": "クレジットを追加すると、{{assistantName}} とのチャットを続けることができます。",
       "askAdminCredits": "{{assistantName}} とチャットを続けることができるように、ワークスペース管理者にクレジットを追加するように依頼してください。",
       "askAdminUpgrade": "{{assistantName}} とのチャットを継続できるように、ワークスペース管理者に Pro にアップグレードするよう依頼してください。",
@@ -1750,7 +1748,6 @@
       "customAmountError": "1 ドルから 10,000 ドルの間で入力してください",
       "customDollarAmount": "カスタムドル額",
       "outOfCredits": "クレジットが不足しています",
-      "redirecting": "リダイレクト中...",
       "upgradeToContinue": "{{assistantName}} とチャットを続けるには、Pro にアップグレードしてください。",
       "upgradeToPro": "プロにアップグレード",
       "upgradeToRun": "{{assistantName}} を実行するには Pro にアップグレードしてください",
@@ -4411,7 +4408,6 @@
   },
   "myOkou": {
     "conflict": "保存済みの指示が別の場所で変更されました。下書きは保持されています。内容を確認またはコピーしてから、保存済みの指示を再読み込みしてください。",
-    "description": "このワークスペースでのあなた専用の Okou への指示",
     "discard": "破棄",
     "draftKept": "ページやワークスペースを切り替えても、下書きはこのブラウザータブに保持されます。",
     "instructions": "指示",
@@ -5681,7 +5677,6 @@
           "title": "好み"
         },
         "proactiveLearning": {
-          "description": "Okou が先回りして行う作業を設定します。",
           "title": "Proactive"
         },
         "tools": {
@@ -6086,7 +6081,6 @@
         "title": "モーニングブリーフ"
       },
       "proactiveSuggestions": {
-        "description": "接続済みの情報源を毎時間確認し、ユーザープロフィールを毎日更新して、役立つ次のアクションを提案します。",
         "errorMessage": "提案の設定を読み込みまたは更新できませんでした。",
         "missingTimezone": "設定でタイムゾーンを指定してください。",
         "preparationFailed": "一時的に利用できません。",

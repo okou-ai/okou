@@ -16,6 +16,7 @@
     <string name="workflow_daily_schedule">Daily at %1$s</string>
     <string name="workflow_discard">Discard</string>
     <string name="workflow_discard_title">Discard unsaved changes?</string>
+    <string name="workflow_discard_detail">Unsaved changes to “%1$s” on this device will be discarded.</string>
     <string name="workflow_draft_unavailable">Could not open the new chat draft. Your existing draft is preserved.</string>
     <string name="workflow_edit">Edit</string>
     <string name="workflow_edit_automation">Edit automation</string>
@@ -66,7 +67,6 @@
     <string name="workflow_notion_child">Notion child page created</string>
     <string name="workflow_notion_item">Notion database item created</string>
     <string name="workflow_notion_updated">Notion page updated</string>
-    <string name="workflow_offline_changes">Connect to save. Your changes are still here.</string>
     <string name="workflow_pause">Pause</string>
     <string name="workflow_paused">Automations paused</string>
     <string name="workflow_private">Only me</string>
@@ -104,7 +104,6 @@
         <item quantity="one">%d automation enabled</item>
         <item quantity="other">%d automations enabled</item>
     </plurals>
-    <string name="workflow_draft_network_failed">Could not open the new chat draft. Your existing draft is preserved. Check your connection and try again.</string>
     <string name="workflow_rule_change_failed">Could not change this rule.</string>
     <string name="workflow_rule_network_failed">Could not change this rule. Check your connection and try again.</string>
     <string name="workflow_write_conflict">This workflow changed while saving. Your edits are preserved.</string>

@@ -42,7 +42,6 @@
     <string name="connector_disconnect">断开账号</string>
     <string name="connector_disconnect_title">断开此账号？</string>
     <string name="connector_disconnect_copy">使用此账号的聊天和自动化可能需要重新选择连接。其他账号继续可用。</string>
-    <string name="connector_load_when_online">联网后加载…</string>
     <string name="connector_loading">正在读取连接器…</string>
     <string name="connector_loading_accounts">正在读取账号…</string>
     <string name="connector_loading_permissions">正在读取权限…</string>
@@ -52,7 +51,6 @@
     <string name="connector_accounts_failed">暂时无法读取账号。</string>
     <string name="connector_permissions_failed">暂时无法读取权限。</string>
     <string name="connector_impact_failed">暂时无法检查此账号的使用情况。</string>
-    <string name="connector_offline">离线</string>
     <string name="connector_network_failed">暂时无法连接 Okou。请检查网络后重试。</string>
     <string name="connector_account_unavailable">此账号已不可用。</string>
     <string name="connector_unavailable">此账号暂时无法授权。</string>

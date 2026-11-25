@@ -105,6 +105,49 @@ test("chat-message-pdf-008 the exported font faces preserve Chinese emphasis and
   expect(pages[0]!.text).toContain("**marker");
   expect(pages[0]!.text.replace("**marker", "")).not.toContain("*");
 });
+test("Unicode chemistry subscripts and exponents remain readable and copyable in every font face", async () => {
+  const { pages } = await exportMessage(
+    "# CHD₃ reaction\n\n" +
+      "- **H abstraction:** F + CHD₃ → HF + CD₃\n" +
+      "- **D abstraction:** F + CHD₃ → DF + CHD₂\n\n" +
+      "ν₁ = 1; C₁₂H₂₂O₁₁; mol⁻¹; x²; y³; ⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁼⁽⁾; ₀₁₂₃₄₅₆₇₈₉₊₋₌₍₎ₐₑₒₓₔₕₖₗₘₙₚₛₜ\n\n" +
+      "**CHD₃** *CHD₃* ***CHD₃***\n\n" +
+      "[CHD₃](https://example.test/chemistry) and `mol⁻¹`\n\n" +
+      "中文 😀 🔬 1️⃣\n\n" +
+      "| Molecule | State |\n|---|---|\n| CHD₃ | ν₁ = 1 |",
+  );
+  const items = pages.flatMap((page) => {
+    return page.items;
+  });
+  const text = pages
+    .map((page) => {
+      return page.text;
+    })
+    .join("")
+    .replace(/\s/gu, "");
+  for (const formula of [
+    "F+CHD₃→HF+CD₃",
+    "F+CHD₃→DF+CHD₂",
+    "ν₁=1",
+    "C₁₂H₂₂O₁₁",
+    "mol⁻¹",
+    "x²",
+    "y³",
+    "中文😀🔬1️⃣",
+    "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁼⁽⁾",
+    "₀₁₂₃₄₅₆₇₈₉₊₋₌₍₎ₐₑₒₓₔₕₖₗₘₙₚₛₜ",
+  ]) {
+    expect(text).toContain(formula);
+  }
+  for (const style of ["Regular", "Bold", "Italic", "BoldItalic"]) {
+    expect(
+      items.some((item) => {
+        return item.text.includes("₃") && item.font.endsWith(`Unicode${style}`);
+      }),
+    ).toBeTruthy();
+  }
+});
+
 test("chat-message-pdf-009 prose around whitespace-only emphasis survives export", async () => {
   const { pages } = await exportMessage("Before **  ** Between *   * After");
   expect(pages[0]!.text).toMatch(/Before.*Between.*After/u);

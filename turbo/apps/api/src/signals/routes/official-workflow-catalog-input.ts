@@ -1,4 +1,7 @@
-import { INTERNAL_TEST_MORNING_BRIEF_DEFINITION_NAME } from "@okouai/api-contracts/contracts/morning-brief-preference";
+import {
+  INTERNAL_TEST_MORNING_BRIEF_DEFINITION_NAME,
+  MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
+} from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { SUGGESTION_CURATION_REFERENCE } from "./suggestion-curation-reference";
 import {
   PROACTIVE_SUGGESTIONS_DEFINITION_NAME,
@@ -14,7 +17,6 @@ import {
   OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
   type OfficialWorkflowSourceCatalog,
   type OfficialWorkflowSourceDefinition,
-  type OfficialWorkflowExecutable,
 } from "@okouai/api-contracts/contracts/official-workflow-catalog";
 
 const MORNING_BRIEF_CONTEXT_INSTRUCTION = `# Morning Brief
@@ -142,33 +144,23 @@ ${SUGGESTION_CURATION_INSTRUCTION}
 
 Only read context and maintain suggestions. Never execute proposed work, change provider data, send messages or notifications, or alter the user's composer. Do not read application tables, internal APIs, signed Run input/output URLs or callback endpoints. Finish with the diagnostic outcome in this background Chat.`;
 
-const MORNING_BRIEF_INSTRUCTION =
-  MORNING_BRIEF_CONTEXT_INSTRUCTION + MORNING_BRIEF_DELIVERY_INSTRUCTION;
-
-// Temporary AgentSuggestion rollout (#39591): at GA, include the curation phase
-// in MORNING_BRIEF_INSTRUCTION and attach its publishing reference. Switch back
-// to morning-brief, retire internal-test-morning-brief and remove rollout selection.
-// Retain immutable revisions needed by captured and historical Runs.
-const INTERNAL_TEST_MORNING_BRIEF_INSTRUCTION = [
+const MORNING_BRIEF_INSTRUCTION = [
   MORNING_BRIEF_CONTEXT_INSTRUCTION.trimEnd(),
+  "Only maintain Suggestions when this Run includes the injected Suggestions feedback context. Otherwise skip this phase and continue with briefing delivery.",
   SUGGESTION_CURATION_INSTRUCTION,
   MORNING_BRIEF_DELIVERY_INSTRUCTION,
 ].join("\n\n");
 
-function morningBriefDefinition(
-  name: string,
-  instruction: string,
-  files: OfficialWorkflowExecutable["files"] = [],
-): OfficialWorkflowSourceDefinition {
+function morningBriefDefinition(): OfficialWorkflowSourceDefinition {
   return {
-    name,
+    name: MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
     lifecycle: "active",
     workflow: {
       displayName: "Morning Brief",
       description:
         "Summarize today's email, GitHub, calendar, connected Slack activity from the past 24 hours, and recent Chat priorities.",
-      instruction,
-      files,
+      instruction: MORNING_BRIEF_INSTRUCTION,
+      files: [SUGGESTION_CURATION_REFERENCE],
     },
     blueprints: [
       {
@@ -280,12 +272,12 @@ export const OFFICIAL_WORKFLOW_SOURCE_CATALOG: OfficialWorkflowSourceCatalog =
           presentation: { category: "productivity" },
         };
       }),
-      morningBriefDefinition("morning-brief", MORNING_BRIEF_INSTRUCTION),
-      morningBriefDefinition(
-        INTERNAL_TEST_MORNING_BRIEF_DEFINITION_NAME,
-        INTERNAL_TEST_MORNING_BRIEF_INSTRUCTION,
-        [SUGGESTION_CURATION_REFERENCE],
-      ),
+      morningBriefDefinition(),
+      {
+        name: INTERNAL_TEST_MORNING_BRIEF_DEFINITION_NAME,
+        lifecycle: "retired",
+        presentation: { category: "productivity" },
+      },
       {
         name: "connector-doctor",
         lifecycle: "retired",

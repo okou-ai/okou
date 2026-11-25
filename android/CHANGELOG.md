@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.56.2](https://github.com/okou-ai/okou/compare/android-v0.56.1...android-v0.56.2) (2026-11-25)
+
+
+### Bug Fixes
+
+* **android:** copy inline images safely from replies ([#50766](https://github.com/okou-ai/okou/issues/50766)) ([630309e](https://github.com/okou-ai/okou/commit/630309e8c9aaa2bc73be7ae9e58a34171e960e14))
+
+## [0.56.1](https://github.com/okou-ai/okou/compare/android-v0.56.0...android-v0.56.1) (2026-11-25)
+
+
+### Bug Fixes
+
+* **android:** align artifact preview states and retry timing ([#50720](https://github.com/okou-ai/okou/issues/50720)) ([3c357d0](https://github.com/okou-ai/okou/commit/3c357d0408b73820553d34f8e1cbaae830558185))
+* **android:** align workflow editor menus and discard confirmation ([#50719](https://github.com/okou-ai/okou/issues/50719)) ([7f899b2](https://github.com/okou-ai/okou/commit/7f899b23276053d1082da888b0fcf9e15b2a2f38))
+* **android:** honor server retry delays in workspace search ([#50764](https://github.com/okou-ai/okou/issues/50764)) ([29a9f87](https://github.com/okou-ai/okou/commit/29a9f87d62aa235b3e828e791ec6690d27d9966f))
+
+
+### Refactoring
+
+* **android:** remove system connectivity gating ([#50724](https://github.com/okou-ai/okou/issues/50724)) ([ffe1a09](https://github.com/okou-ai/okou/commit/ffe1a09a86a4fe141e40b5ad7c1f0569fe797815))
+* **android:** share bounded read retries ([#50716](https://github.com/okou-ai/okou/issues/50716)) ([664aaae](https://github.com/okou-ai/okou/commit/664aaae57687fd215f44f0ec600f3f4a9d63aa15))
+* graduate suggestions into the shared morning brief ([#50746](https://github.com/okou-ai/okou/issues/50746)) ([3a296b9](https://github.com/okou-ai/okou/commit/3a296b93fe3b031bfcf1cb30ce189841198b825f))
+
+## [0.56.0](https://github.com/okou-ai/okou/compare/android-v0.55.6...android-v0.56.0) (2026-11-25)
+
+
+### Features
+
+* **android:** render inline markdown images in conversations ([#50662](https://github.com/okou-ai/okou/issues/50662)) ([b67f49d](https://github.com/okou-ai/okou/commit/b67f49d764028747d763e795a72d9904328bcd8a))
+
 ## [0.55.6](https://github.com/okou-ai/okou/compare/android-v0.55.5...android-v0.55.6) (2026-11-25)
 
 

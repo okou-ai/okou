@@ -9,6 +9,7 @@ import type {
 } from "pdfmake/interfaces";
 
 import { parseMarkdownTree } from "../markdown/pipeline.ts";
+import { PDF_SCRIPT_CHAR } from "./fonts.ts";
 import type { PdfAssets, PdfMathRenderer, PdfRasterImage } from "./types.ts";
 import { pdfLink } from "./urls.ts";
 
@@ -185,7 +186,9 @@ function textRuns(
   for (const { segment } of context.segmenter.segment(text)) {
     const font = /[\p{Emoji_Presentation}\uFE0F\u20E3]/u.test(segment)
       ? "NotoEmoji"
-      : "NotoSans";
+      : PDF_SCRIPT_CHAR.test(segment)
+        ? "NotoSansUnicode"
+        : "NotoSans";
     const previous = runs.at(-1);
     if (previous?.font === font) {
       previous.text = String(previous.text) + segment;

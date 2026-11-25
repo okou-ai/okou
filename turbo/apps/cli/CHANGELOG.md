@@ -1,5 +1,38 @@
 # Changelog
 
+## [10.42.0](https://github.com/okou-ai/okou/compare/cli-v10.41.0...cli-v10.42.0) (2026-11-25)
+
+
+### Features
+
+* deliver opted-in mac app state to the assigned sandbox ([#50748](https://github.com/okou-ai/okou/issues/50748)) ([58beac7](https://github.com/okou-ai/okou/commit/58beac7e0900ba3f87616e7b6068715e2620a0fc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.126.1
+    * @okouai/connectors bumped to 3.25.0
+    * @okouai/core bumped to 8.878.0
+    * @okouai/pi-agent-runtime bumped to 1.52.72
+
+## [10.41.0](https://github.com/okou-ai/okou/compare/cli-v10.40.0...cli-v10.41.0) (2026-11-25)
+
+
+### Features
+
+* receive computer use app state on the assigned runner ([#50745](https://github.com/okou-ai/okou/issues/50745)) ([9977243](https://github.com/okou-ai/okou/commit/99772436210306fef0b462d019a9fe57d118ff81))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.126.0
+    * @okouai/core bumped to 8.877.0
+    * @okouai/pi-agent-runtime bumped to 1.52.71
+
 ## [10.40.0](https://github.com/okou-ai/okou/compare/cli-v10.39.4...cli-v10.40.0) (2026-11-25)
 
 

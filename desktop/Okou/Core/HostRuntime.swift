@@ -645,7 +645,12 @@ public actor HostRuntime {
             await publish()
             result = await executor.execute(command, claimStarted: claimStarted)
             if let index = state.commands.firstIndex(where: { $0.id == command.id }) {
-              state.commands[index].response = result
+              var history = result
+              if command.kind.rawValue == "app.state", var fields = history["result"].object {
+                fields.removeValue(forKey: "screenshot")
+                history["result"] = .object(fields)
+              }
+              state.commands[index].response = history
               state.commands[index].completedAt = Date()
             }
             state.lastCommand = Date()

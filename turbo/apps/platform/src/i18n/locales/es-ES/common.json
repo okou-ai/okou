@@ -1230,9 +1230,6 @@
       "teamWarning": "El acceso de tu equipo permanece activo hasta que termine el periodo de facturación actual. Después de eso, este espacio de trabajo se traslada a {{plan}}.",
       "title": "Cambiar a un plan inferior"
     },
-    "feedback": {
-      "shareFeedback": "Compartir comentarios"
-    },
     "invoices": {
       "amount": "Cantidad",
       "date": "Fecha",
@@ -1773,6 +1770,7 @@
       "waiting": "Esperando a Mastercard Data Connect. Completa el proceso allí y luego vuelve al Chat."
     },
     "billing": {
+      "addCreditsOrUpgrade": "Añade créditos desde $5 para continuar, o cambia a Pro para desbloquear funciones exclusivas.",
       "addCreditsToContinue": "Añade créditos para seguir charlando con {{assistantName}}.",
       "askAdminCredits": "Pide a un administrador de espacio de trabajo que añada créditos para que puedas seguir hablando con {{assistantName}}.",
       "askAdminUpgrade": "Pide a un administrador de espacio de trabajo que actualice a Pro para poder seguir hablando con {{assistantName}}.",
@@ -1786,7 +1784,6 @@
       "customAmountError": "Introduce entre $1 y $10,000",
       "customDollarAmount": "Cantidad personalizada en dólares",
       "outOfCredits": "Se te han acabado los créditos",
-      "redirecting": "Redirigiendo...",
       "upgradeToContinue": "Actualiza a Pro para seguir charlando con {{assistantName}}.",
       "upgradeToPro": "Actualizar a Pro",
       "upgradeToRun": "Actualizar a Pro para ejecutar {{assistantName}}",
@@ -4491,7 +4488,6 @@
   },
   "myOkou": {
     "conflict": "Tus instrucciones guardadas cambiaron en otro lugar. Se conserva tu borrador. Revísalo o cópialo antes de recargar las instrucciones guardadas.",
-    "description": "Tus instrucciones para Okou en este espacio de trabajo",
     "discard": "Descartar",
     "draftKept": "Tu borrador permanece en esta pestaña al cambiar de página o espacio de trabajo.",
     "instructions": "Instrucciones",
@@ -5772,7 +5768,6 @@
           "title": "Preferencias"
         },
         "proactiveLearning": {
-          "description": "Elige cómo trabaja Okou de forma proactiva.",
           "title": "Proactive"
         },
         "tools": {
@@ -6181,7 +6176,6 @@
         "title": "Resumen matutino"
       },
       "proactiveSuggestions": {
-        "description": "Revisa tus fuentes conectadas cada hora, actualiza tu perfil a diario y recibe sugerencias útiles sobre los próximos pasos.",
         "errorMessage": "No se pudo cargar o actualizar la configuración.",
         "missingTimezone": "Configura tu zona horaria en Preferencias.",
         "preparationFailed": "No disponible temporalmente.",

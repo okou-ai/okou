@@ -1,13 +1,14 @@
 package ai.okou.android.connectors
 
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.retryBoundedRead
 import java.net.ConnectException
 import java.net.NoRouteToHostException
 import java.net.UnknownHostException
-import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeMark
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 internal enum class ConnectorReadFailure {
     Network,
@@ -39,47 +40,35 @@ internal data class ConnectorRead<T>(
             )
 }
 
-private const val READ_RETRY_LIMIT = 2
-
 internal suspend fun <T : Any> retryConnectorRead(
     read: suspend () -> T,
     canRead: () -> Boolean,
     onError: (Exception) -> Unit,
     publish: (ConnectorRead<T>) -> Unit,
-    canRetry: () -> Boolean = canRead,
 ) {
-    for (attempt in 0..READ_RETRY_LIMIT) {
-        if (!canRead()) return
-        val value =
-            try {
-                read()
-            } catch (error: Exception) {
-                if (error is CancellationException) throw error
-                onError(error)
-                if (!canRead()) return
-                val retryable =
-                    error !is ApiFailure.Http ||
-                        error.status !in 400..499 ||
-                        error.status == 408 ||
-                        error.status == 429
-                if (retryable && attempt < READ_RETRY_LIMIT && canRetry()) {
-                    delay(3.seconds)
-                    if (canRead() && canRetry()) continue
-                    if (!canRead()) return
+    val error =
+        retryBoundedRead(canRead) {
+            val value =
+                try {
+                    read()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    currentCoroutineContext().ensureActive()
+                    onError(error)
+                    return@retryBoundedRead error.takeIf { canRead() }
                 }
-                val failure =
-                    when {
-                        error is ApiFailure.Http && error.status in 403..404 ->
-                            ConnectorReadFailure.Unavailable
-                        error.connectionFailed() -> ConnectorReadFailure.Network
-                        else -> ConnectorReadFailure.Sustained
-                    }
-                publish(ConnectorRead(failure = failure))
-                return
-            }
-        if (canRead()) publish(ConnectorRead(value))
-        return
-    }
+            currentCoroutineContext().ensureActive()
+            if (canRead()) publish(ConnectorRead(value))
+            null
+        } ?: return
+    val failure =
+        when {
+            error is ApiFailure.Http && error.status in 403..404 -> ConnectorReadFailure.Unavailable
+            error.connectionFailed() -> ConnectorReadFailure.Network
+            else -> ConnectorReadFailure.Sustained
+        }
+    publish(ConnectorRead(failure = failure))
 }
 
 // Canonical calls do not retry connections or follow redirects. These failures happen

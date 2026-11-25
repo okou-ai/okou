@@ -20,7 +20,7 @@ internal fun inlineImageSource(destination: String): String? =
 
 internal data class InlineImageRequest(val threadId: String, val source: String, val width: Int)
 
-internal data class InlineImageGrant(val previewId: String, val filename: String?)
+internal data class InlineImageGrant(val previewId: String, val filename: String)
 
 internal enum class InlineImageStatus {
     Loading,
@@ -64,17 +64,20 @@ internal class InlineArtifactImages(
     }
 
     fun names(threadId: String) =
-        entries
-            .map { images ->
-                images
-                    .asSequence()
-                    .filter { it.key.threadId == threadId }
-                    .mapNotNull { (request, state) ->
-                        state.grant?.filename?.let { request.source to it }
-                    }
-                    .toMap()
-            }
-            .distinctUntilChanged()
+        entries.map { authorizedNames(threadId, it) }.distinctUntilChanged()
+
+    fun authorizedNames(threadId: String): Map<String, String> =
+        authorizedNames(threadId, entries.value)
+
+    private fun authorizedNames(
+        threadId: String,
+        images: Map<InlineImageRequest, InlineImageState>,
+    ): Map<String, String> =
+        images
+            .asSequence()
+            .filter { it.key.threadId == threadId }
+            .mapNotNull { (request, state) -> state.grant?.let { request.source to it.filename } }
+            .toMap()
 
     fun request(request: InlineImageRequest) {
         if (request !in visibleCounts || request in entries.value) return

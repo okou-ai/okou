@@ -55,6 +55,10 @@ interface ComputerUseCommandParams<
 > {
   readonly kind: Kind;
   readonly app?: string;
+  readonly appStateRunner?: {
+    readonly runnerId: string;
+    readonly heartbeatGeneration: number;
+  };
   readonly snapshotId?: string;
   readonly elementId?: string;
   readonly elementIndex?: number;
@@ -78,6 +82,7 @@ function commandBody<
     kind: params.kind,
     timeoutMs: params.timeoutMs ?? 15_000,
     realtime: true as const,
+    ...(params.appStateRunner ? { appStateRunner: params.appStateRunner } : {}),
     ...(params.app ? { app: params.app } : {}),
     ...(params.snapshotId ? { snapshotId: params.snapshotId } : {}),
     ...(params.elementId ? { elementId: params.elementId } : {}),

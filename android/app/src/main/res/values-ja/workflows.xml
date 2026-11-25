@@ -16,6 +16,7 @@
     <string name="workflow_daily_schedule">毎日 %1$s</string>
     <string name="workflow_discard">破棄</string>
     <string name="workflow_discard_title">未保存の変更を破棄しますか？</string>
+    <string name="workflow_discard_detail">この端末で「%1$s」に加えた未保存の変更は破棄されます。</string>
     <string name="workflow_draft_unavailable">新しいチャットの下書きを開けませんでした。既存の下書きは保持されています。</string>
     <string name="workflow_edit">編集</string>
     <string name="workflow_edit_automation">自動化を編集</string>
@@ -66,7 +67,6 @@
     <string name="workflow_notion_child">Notion の子ページを作成</string>
     <string name="workflow_notion_item">Notion のデータベースに項目を作成</string>
     <string name="workflow_notion_updated">Notion のページを更新</string>
-    <string name="workflow_offline_changes">保存するには接続してください。変更は保持されています。</string>
     <string name="workflow_pause">一時停止</string>
     <string name="workflow_paused">自動化は一時停止中</string>
     <string name="workflow_private">自分のみ</string>
@@ -103,7 +103,6 @@
     <plurals name="workflow_enabled_count">
         <item quantity="other">%d 件の自動化が有効</item>
     </plurals>
-    <string name="workflow_draft_network_failed">新しいチャットの下書きを開けませんでした。既存の下書きは保持されています。接続を確認して、もう一度お試しください。</string>
     <string name="workflow_rule_change_failed">このルールを変更できませんでした。</string>
     <string name="workflow_rule_network_failed">このルールを変更できませんでした。接続を確認して、もう一度お試しください。</string>
     <string name="workflow_write_conflict">保存中にこのワークフローが更新されました。編集内容は保持されています。</string>

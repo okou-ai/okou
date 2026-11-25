@@ -1,5 +1,6 @@
 //! Launch the official Antigravity CLI in its signed-in Google account mode.
 
+mod auth;
 mod stream;
 pub(super) use stream::Projection;
 
@@ -96,6 +97,14 @@ impl Launch {
             "--add-dir".into(),
             crate::paths::CANONICAL_WORKING_DIR.into(),
         ]);
+        // Install the member's personal Google credential (or clear a stale one
+        // from a reused sandbox) before agy reads its local credential store.
+        let credential = runtime
+            .user_env
+            .get(auth::CREDENTIAL_ENV)
+            .map(|raw| auth::AntigravityCredential::parse(raw))
+            .transpose()?;
+        auth::reconcile_credential(runtime.home_dir.as_ref(), credential.as_ref())?;
         Ok(Self {
             argv,
             model,
@@ -163,16 +172,19 @@ fn write_tool_policy(dir: &Path, disallowed: &str) -> Result<(), AgentError> {
 
 pub(super) fn configure_env(values: &mut Vec<(String, String)>) {
     values.retain(|(key, _)| {
-        !matches!(
-            key.as_str(),
-            "GEMINI_API_KEY"
-                | "GOOGLE_API_KEY"
-                | "GOOGLE_GEMINI_BASE_URL"
-                | "GOOGLE_APPLICATION_CREDENTIALS"
-                | "GOOGLE_GENAI_USE_VERTEXAI"
-                | "AGY_ADC_AUTH"
-                | "AGY_CLI_DISABLE_AUTO_UPDATE"
-        )
+        // The native credential reaches agy through its private on-disk store
+        // only; never leave the raw grant in the child process environment.
+        key.as_str() != auth::CREDENTIAL_ENV
+            && !matches!(
+                key.as_str(),
+                "GEMINI_API_KEY"
+                    | "GOOGLE_API_KEY"
+                    | "GOOGLE_GEMINI_BASE_URL"
+                    | "GOOGLE_APPLICATION_CREDENTIALS"
+                    | "GOOGLE_GENAI_USE_VERTEXAI"
+                    | "AGY_ADC_AUTH"
+                    | "AGY_CLI_DISABLE_AUTO_UPDATE"
+            )
     });
     values.push(("AGY_CLI_DISABLE_AUTO_UPDATE".into(), "true".into()));
 }

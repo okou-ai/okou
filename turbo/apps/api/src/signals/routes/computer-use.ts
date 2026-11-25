@@ -96,6 +96,7 @@ const commandCreateInner$ = command(
       {
         orgId: auth.orgId,
         userId: auth.userId,
+        appStateRunner: bodyResult.data.appStateRunner,
         kind: bodyResult.data.kind,
         payload: bodyResult.data,
         timeoutMs: bodyResult.data.timeoutMs,
@@ -148,6 +149,7 @@ const commandCreateInner$ = command(
       body: {
         commandId: result.commandId,
         status: result.commandStatus,
+        ...(result.directAppState ? { directAppState: true as const } : {}),
         ...(realtime ? { realtime } : {}),
       },
     };

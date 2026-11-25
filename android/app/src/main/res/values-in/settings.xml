@@ -36,8 +36,6 @@
     <string name="settings_accounts_scope">Pilih akun langganan yang Anda gunakan di “%1$s”.</string>
     <string name="settings_accounts_scope_empty">Akun model di “%1$s”</string>
     <string name="settings_workspace_status">“%1$s” · %2$s</string>
-    <string name="settings_accounts_offline">Offline. Sambungkan untuk mengganti akun.</string>
-    <string name="settings_accounts_offline_connect">Offline. Sambungkan untuk menautkan akun model.</string>
     <string name="settings_accounts_unavailable">Akun model tidak dapat dilihat saat ini.</string>
     <string name="settings_accounts_update_failed">Gagal memperbarui akun model. Informasi terakhir ditampilkan.</string>
     <string name="settings_accounts_empty">Belum ada akun model yang terhubung</string>
@@ -66,7 +64,6 @@
     <string name="settings_credits_less_than">&lt; %1$s</string>
     <string name="settings_credit_balance">Saldo kredit</string>
     <string name="settings_credit_scope">Kredit Okou di “%1$s”</string>
-    <string name="settings_credit_offline">Offline. Saldo terakhir ditampilkan.</string>
     <string name="settings_credit_update_failed">Gagal memperbarui. Saldo terakhir ditampilkan.</string>
     <string name="settings_credit_unavailable">Saldo tidak dapat dilihat saat ini.</string>
     <string name="settings_credit_member">Paket penggunaan pribadi</string>
@@ -83,7 +80,6 @@
     <string name="settings_model_plan_restricted">Memerlukan paket lain</string>
     <string name="settings_model_fast">Mode cepat</string>
     <string name="settings_model_fast_usage">Saat aktif, penggunaan langganan ChatGPT menjadi %1$s kali penggunaan mode standar</string>
-    <string name="settings_model_load_when_online">Konten akan dimuat saat Anda kembali online.</string>
     <string name="settings_model_save_rolled_back">Model default tidak dapat disimpan. Setelan sebelumnya telah dipulihkan.</string>
     <string name="settings_model_save_unconfirmed">Penyimpanan model default belum dikonfirmasi.</string>
     <string name="settings_model_effort">Tingkat penalaran</string>
@@ -98,7 +94,6 @@
     <string name="settings_proactive_services">Layanan proaktif</string>
     <string name="settings_proactive_scope">Setelan ini berlaku di “%1$s”.</string>
     <string name="settings_proactive_loading">Memuat layanan proaktif</string>
-    <string name="settings_proactive_offline">Offline. Sambungkan untuk mengubah setelan ini.</string>
     <string name="settings_proactive_needs_timezone">Pilih zona waktu untuk menjadwalkan pengiriman.</string>
     <string name="settings_proactive_read_failed">Setelan ini tidak dapat dimuat saat ini.</string>
     <string name="settings_proactive_refresh_failed">Sinkronisasi gagal. Setelan terakhir yang dikonfirmasi ditampilkan.</string>

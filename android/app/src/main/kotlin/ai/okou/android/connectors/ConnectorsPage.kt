@@ -231,7 +231,7 @@ internal fun ConnectorsPage(
                 key(selected) {
                     ConnectorDetails(
                         model,
-                        matchingState ?: ConnectorUiState(offline = state.offline),
+                        matchingState ?: ConnectorUiState(),
                         entry ?: matchingState?.selectedPreview,
                         wide,
                         initialAccountId = initialAccountId.takeIf { selected == initialSlug },
@@ -372,9 +372,7 @@ private fun ConnectorDirectory(
             ::clearQuery,
             setCategory,
         )
-        val initialFailure =
-            entries == null &&
-                (failure == ConnectorReadFailure.Unavailable || !state.offline && failure != null)
+        val initialFailure = entries == null && failure != null
         if (initialFailure) {
             ConnectorReadError(
                 R.string.connector_load_failed,
@@ -392,16 +390,11 @@ private fun ConnectorDirectory(
                 item {
                     when {
                         entries == null ->
-                            when {
-                                state.offline ->
-                                    ConnectorLoadWhenOnline(Modifier.padding(horizontal = 12.dp))
-                                else ->
-                                    key(route.connected, filter) {
-                                        ConnectorSkeleton(
-                                            stringResource(R.string.connector_loading),
-                                            rows = 3,
-                                        )
-                                    }
+                            key(route.connected, filter) {
+                                ConnectorSkeleton(
+                                    stringResource(R.string.connector_loading),
+                                    rows = 3,
+                                )
                             }
                         query.isNotEmpty() ->
                             ConnectorEmpty(
@@ -456,11 +449,10 @@ private fun ConnectorDirectory(
                         }
                 }
             }
-            if (entries != null && (state.offline || failure != null)) {
+            if (entries != null && failure != null) {
                 item(key = "connector-directory-read-feedback") {
                     ContentReadFeedback(
-                        if (state.offline) R.string.connector_offline
-                        else R.string.connector_refresh_failed,
+                        R.string.connector_refresh_failed,
                         Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
                     )
                 }
@@ -836,22 +828,6 @@ internal fun ConnectorReadError(message: Int, modifier: Modifier = Modifier) {
         message,
         modifier.fillMaxWidth().padding(start = 12.dp, top = 24.dp, end = 12.dp),
     )
-}
-
-@Composable
-internal fun ConnectorLoadWhenOnline(modifier: Modifier = Modifier) {
-    Box(
-        modifier.fillMaxWidth().heightIn(min = 48.dp).semantics(mergeDescendants = true) {
-            liveRegion = LiveRegionMode.Polite
-        },
-        contentAlignment = Alignment.CenterStart,
-    ) {
-        Text(
-            stringResource(R.string.connector_load_when_online),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = connectorFeedbackType(),
-        )
-    }
 }
 
 @Composable

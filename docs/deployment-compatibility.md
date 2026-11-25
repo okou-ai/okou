@@ -419,8 +419,8 @@ If the online iOS inventory is unavailable, the check uses the base branch
 contract when available. A TestFlight check or floor increase never proves an API contraction. Without
 public evidence, an unbounded response transform can still preserve compatibility.
 
-[Submit iOS for App Review](../ios/TESTFLIGHT.md#submit-an-existing-build-for-app-review)
-submits a selected TestFlight build directly to Apple. On public release,
+[Submit the tested build manually in App Store Connect](../ios/TESTFLIGHT.md#submit-an-existing-build-for-app-review).
+On public release,
 verify availability in every configured storefront before enabling or raising
 the App Store minimum in a separate policy PR. API deployment activates
 changes to the minimum versions.

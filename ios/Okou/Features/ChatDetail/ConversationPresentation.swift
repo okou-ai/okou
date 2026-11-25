@@ -1,3 +1,4 @@
+import CCState
 import ChatData
 import ChatDomain
 import Foundation
@@ -76,6 +77,15 @@ final class ConversationPresentation {
     self.clearStopIssue = clearStopIssue
     self.cancelRecoverySend = cancelRecoverySend
     self.report = report
+    let readingState = readingState
+    window = Computed { get in try get(readingState).window }
+    navigation = Computed { get in
+      let reading = try get(readingState)
+      return Navigation(readingMessageID: reading.position?.messageID, request: reading.request)
+    }
+    loadsEarlier = Computed { get in try get(readingState).isLoadingEarlier }
+    let syncState = syncState
+    syncStatus = Computed { get in try get(syncState) }
   }
   private func reconcileProjection() { didReconcileProjection() }
   func waitForRefresh() async {
@@ -87,17 +97,34 @@ final class ConversationPresentation {
     expansionTask?.cancel()
   }
 
-  private(set) var visibleItems: [ConversationItem] = []
-  private(set) var hasEarlierMessages = false
-  private(set) var isLoadingEarlier = false
-  private(set) var readingPosition: ConversationReadingPosition?
-  private(set) var navigationRequest: NavigationRequest?
+  /// The render window, the reading position and the latest reveal request, kept in the
+  /// workspace session's Store. ChatDetailView reads `window` and `navigation`, and the earlier
+  /// messages row reads `loadsEarlier`, through CCStateSwiftUI; the accessors in the extension
+  /// below serve owner logic and tests.
+  @ObservationIgnored let window: Computed<Window>
+  @ObservationIgnored let navigation: Computed<Navigation>
+  @ObservationIgnored let loadsEarlier: Computed<Bool>
+  @ObservationIgnored private let readingState = CCState.State(Reading())
   private(set) var detailOwner: UUID?
-  private(set) var readSyncError: String?
-  private(set) var historySyncError: String?
+  /// History and read-mark synchronization, kept in the workspace session's Store.
+  /// ChatDetailView and the chat list's sync status read `syncStatus` through CCStateSwiftUI.
+  @ObservationIgnored let syncStatus: Computed<SyncStatus>
+  @ObservationIgnored private let syncState = CCState.State(SyncStatus())
+  private(set) var readSyncError: String? {
+    get { currentSyncStatus.readError }
+    set { updateSync { $0.readError = newValue } }
+  }
+  private(set) var historySyncError: String? {
+    get { currentSyncStatus.historyError }
+    set { updateSync { $0.historyError = newValue } }
+  }
   private var refreshAgain = false
-  private var refreshTask: Task<Void, Never>?
-  private var readTask: Task<Void, Never>?
+  @ObservationIgnored private var refreshTask: Task<Void, Never>? {
+    didSet { updateSync { $0.isRefreshing = refreshTask != nil } }
+  }
+  @ObservationIgnored private var readTask: Task<Void, Never>? {
+    didSet { updateSync { $0.isMarkingRead = readTask != nil } }
+  }
   private var readAgain = false
   private var refreshGeneration = UUID()
   private var expansionTask: Task<Void, Never>?
@@ -106,7 +133,7 @@ final class ConversationPresentation {
   private var suppressAutomaticRead = false
   private var manualUnreadThrough: Date?
   private var locallyReadThrough: Date?
-  var isLoading: Bool { refreshTask != nil || readTask != nil }
+  var isLoading: Bool { currentSyncStatus.isLoading }
 
   func restoreCached() async {
     guard let thread = conversation?.thread else { return }
@@ -338,7 +365,7 @@ final class ConversationPresentation {
       return
     }
     if position == nil { renderWindow.resumeFollowing() } else { renderWindow.pauseFollowing() }
-    if readingPosition != position { readingPosition = position }
+    updateReading { $0.position = position }
   }
 
   /// A run link lands on its original input, matching the PWA's run anchor.
@@ -351,7 +378,7 @@ final class ConversationPresentation {
     rememberReadingPosition(position)
     renderWindow.include(message.id)
     publishWindow()
-    navigationRequest = NavigationRequest(position: position)
+    updateReading { $0.request = NavigationRequest(position: position) }
     return true
   }
 
@@ -365,13 +392,13 @@ final class ConversationPresentation {
     guard !closed, !needsUpgrade, !Task.isCancelled, hasEarlierMessages, expansionTask == nil else {
       return
     }
-    isLoadingEarlier = true
+    updateReading { $0.isLoadingEarlier = true }
     let task = Task { [weak self, weak conversation = conversation] in
       guard let self, let conversation else { return }
       defer { withExtendedLifetime(conversation) {} }
       defer {
         expansionTask = nil
-        isLoadingEarlier = false
+        updateReading { $0.isLoadingEarlier = false }
         didSettle()
       }
       // Warm only the landing rows immediately above the current boundary, not the entire page.
@@ -390,7 +417,7 @@ final class ConversationPresentation {
   func resetRenderWindowToLatest() {
     guard !closed else { return }
     expansionTask?.cancel()
-    readingPosition = nil
+    updateReading { $0.position = nil }
     renderWindow.resetToLatest()
     publishWindow()
   }
@@ -402,9 +429,9 @@ final class ConversationPresentation {
   func releaseRenderWindow() { preservesRenderWindow = false }
 
   private func publishWindow() {
-    let next = Array(items[renderWindow.range])
-    if visibleItems != next { visibleItems = next }
-    hasEarlierMessages = renderWindow.hasEarlierMessages
+    let next = Window(
+      items: Array(items[renderWindow.range]), hasEarlierMessages: renderWindow.hasEarlierMessages)
+    updateReading { $0.window = next }
     reconcileRunUsage()
   }
 
@@ -447,8 +474,90 @@ final class ConversationPresentation {
       reconcileRunUsage()
       return
     }
-    readingPosition = position
-    if let readingPosition { renderWindow.include(readingPosition.messageID) }
+    updateReading { $0.position = position }
+    if let position { renderWindow.include(position.messageID) }
     publishWindow()
+  }
+}
+
+extension ConversationPresentation {
+  /// The rows the transcript renders, and whether earlier groups exist above them.
+  struct Window: Equatable {
+    var items: [ConversationItem] = []
+    var hasEarlierMessages = false
+  }
+
+  /// What the scroll coordinator follows: the remembered reading row and the latest explicit
+  /// reveal. An offset change alone does not change it, so ordinary scrolling does not render
+  /// the transcript view again.
+  struct Navigation: Equatable {
+    var readingMessageID: String?
+    var request: NavigationRequest?
+  }
+
+  /// The graph state behind `window`, `navigation` and `loadsEarlier`.
+  fileprivate struct Reading: Equatable {
+    var window = Window()
+    var isLoadingEarlier = false
+    var position: ConversationReadingPosition?
+    var request: NavigationRequest?
+  }
+
+  var currentWindow: Window { currentReading.window }
+  var currentNavigation: Navigation {
+    let reading = currentReading
+    return Navigation(readingMessageID: reading.position?.messageID, request: reading.request)
+  }
+  var visibleItems: [ConversationItem] { currentReading.window.items }
+  var hasEarlierMessages: Bool { currentReading.window.hasEarlierMessages }
+  var isLoadingEarlier: Bool { currentReading.isLoadingEarlier }
+  var readingPosition: ConversationReadingPosition? { currentReading.position }
+  var navigationRequest: NavigationRequest? { currentReading.request }
+
+  private var currentReading: Reading {
+    do { return try projection.store.get(readingState) } catch {
+      preconditionFailure("Cannot read the conversation reading graph: \(error)")
+    }
+  }
+
+  /// History and read-mark synchronization: whether either is in flight, and their last errors.
+  struct SyncStatus: Equatable {
+    var isRefreshing = false
+    var isMarkingRead = false
+    var historyError: String?
+    var readError: String?
+
+    var isLoading: Bool { isRefreshing || isMarkingRead }
+    /// The error the chat list's sync status reports.
+    var error: String? { historyError ?? readError }
+  }
+
+  /// The answer for a reader without a conversation.
+  static let idleSync = Computed { _ in SyncStatus() }
+
+  var currentSyncStatus: SyncStatus {
+    do { return try projection.store.get(syncState) } catch {
+      preconditionFailure("Cannot read the conversation sync status: \(error)")
+    }
+  }
+
+  fileprivate func updateSync(_ mutation: (inout SyncStatus) -> Void) {
+    let previous = currentSyncStatus
+    var next = previous
+    mutation(&next)
+    guard next != previous else { return }
+    do { try projection.store.set(syncState, next) } catch {
+      preconditionFailure("Cannot update the conversation sync status: \(error)")
+    }
+  }
+
+  fileprivate func updateReading(_ mutation: (inout Reading) -> Void) {
+    let previous = currentReading
+    var next = previous
+    mutation(&next)
+    guard next != previous else { return }
+    do { try projection.store.set(readingState, next) } catch {
+      preconditionFailure("Cannot update the conversation reading graph: \(error)")
+    }
   }
 }

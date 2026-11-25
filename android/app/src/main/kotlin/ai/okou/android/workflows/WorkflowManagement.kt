@@ -4,6 +4,8 @@ import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
 import ai.okou.android.SettingsTrigger
 import ai.okou.android.WorkspaceFilterRow
+import ai.okou.android.WorkspaceMenu
+import ai.okou.android.WorkspaceMenuItem
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.WorkflowAutomation
 import ai.okou.android.api.generated.WorkflowAutomationVariant1
@@ -40,8 +42,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -447,10 +447,10 @@ internal fun WorkflowEditor(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             when (state.issue?.failure) {
-                WorkflowWriteFailure.Network -> WorkflowNotice(R.string.workflow_offline_changes)
                 WorkflowWriteFailure.UncertainCreate ->
                     WorkflowNotice(R.string.workflow_create_uncertain)
                 WorkflowWriteFailure.Conflict -> WorkflowNotice(R.string.workflow_write_conflict)
+                WorkflowWriteFailure.Network,
                 WorkflowWriteFailure.Failed -> WorkflowNotice(R.string.workflow_write_failed)
                 null -> Unit
             }
@@ -564,12 +564,11 @@ private fun WorkflowRuleFields(
             val sources = listOf(EditableTrigger.Calendar, EditableTrigger.Gmail)
             WorkflowChoice(
                 R.string.workflow_event_source,
-                stringResource(fields.trigger.eventLabel),
                 sources.map { stringResource(it.eventLabel) },
+                sources.indexOf(fields.trigger),
                 enabled,
             ) {
-                val selected = sources[it]
-                if (selected != fields.trigger) editFields(fields.copy(trigger = selected))
+                editFields(fields.copy(trigger = sources[it]))
             }
         }
     }
@@ -582,8 +581,8 @@ private fun WorkflowRuleFields(
                 )
             WorkflowChoice(
                 R.string.workflow_frequency,
-                frequency[if (fields.weekdays) 0 else 1],
                 frequency,
+                if (fields.weekdays) 0 else 1,
                 enabled,
             ) {
                 editFields(fields.copy(weekdays = it == 0))
@@ -714,27 +713,31 @@ private fun WorkflowFieldLabel(title: String) {
 @Composable
 private fun WorkflowChoice(
     label: Int,
-    current: String,
     options: List<String>,
+    selected: Int,
     enabled: Boolean,
     pick: (Int) -> Unit,
 ) {
-    var expanded by remember { mutableStateOf(false) }
     Column {
         WorkflowFieldLabel(stringResource(label))
         Spacer(Modifier.height(8.dp))
         Box {
-            WorkflowSelection(current, enabled, onClick = { expanded = true })
-            DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
-                options.forEachIndexed { index, option ->
-                    DropdownMenuItem(
-                        text = { Text(option) },
-                        onClick = {
-                            expanded = false
-                            pick(index)
-                        },
+            SettingsTrigger(
+                enabled = enabled,
+                content = { dismiss ->
+                    WorkspaceMenu(
+                        items =
+                            options.mapIndexed { index, option ->
+                                WorkspaceMenuItem(option, selected = index == selected) {
+                                    dismiss()
+                                    if (index != selected) pick(index)
+                                }
+                            },
+                        close = dismiss,
                     )
-                }
+                },
+            ) { trigger, open ->
+                WorkflowSelection(options[selected], enabled, trigger, onClick = open)
             }
         }
     }

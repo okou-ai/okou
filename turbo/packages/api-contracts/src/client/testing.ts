@@ -174,6 +174,7 @@ import {
   computerUseHostsContract as OriginalComputerUseHostsContract,
   computerUseSessionHostsContract as OriginalComputerUseSessionHostsContract,
   computerUseWriteCommandContract as OriginalComputerUseWriteCommandContract,
+  runnerAppStateContract as OriginalRunnerAppStateContract,
 } from "../contracts/computer-use";
 import {
   computerUseAuditEventsContract,
@@ -182,6 +183,7 @@ import {
   computerUseHostsContract,
   computerUseSessionHostsContract,
   computerUseWriteCommandContract,
+  runnerAppStateContract,
 } from "./computer-use";
 import { connectedConnectorsContract as OriginalConnectedConnectorsContract } from "../contracts/connected-connectors";
 import { connectedConnectorsContract } from "./connected-connectors";
@@ -623,6 +625,8 @@ import {
   runsCancelContract,
   runsQueueContract,
 } from "./run-routes";
+import { runWssContract as OriginalRunWssContract } from "../contracts/run-wss";
+import { runWssContract } from "./run-wss";
 import { runnerSshContract as OriginalRunnerSshContract } from "../contracts/runner-ssh";
 import { runnerSshContract } from "./runner-ssh";
 import { runnersRunStartupContract as OriginalRunnersRunStartupContract } from "../contracts/runner-startup";
@@ -907,6 +911,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [computerUseHostsContract, OriginalComputerUseHostsContract],
   [computerUseSessionHostsContract, OriginalComputerUseSessionHostsContract],
   [computerUseWriteCommandContract, OriginalComputerUseWriteCommandContract],
+  [runnerAppStateContract, OriginalRunnerAppStateContract],
   [connectedConnectorsContract, OriginalConnectedConnectorsContract],
   [connectorAccountsContract, OriginalConnectorAccountsContract],
   [connectorCatalogContract, OriginalConnectorCatalogContract],
@@ -1288,6 +1293,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [runsByIdContract, OriginalRunsByIdContract],
   [runsCancelContract, OriginalRunsCancelContract],
   [runsQueueContract, OriginalRunsQueueContract],
+  [runWssContract, OriginalRunWssContract],
   [runnerSshContract, OriginalRunnerSshContract],
   [runnersRunStartupContract, OriginalRunnersRunStartupContract],
   [runnerVncContract, OriginalRunnerVncContract],

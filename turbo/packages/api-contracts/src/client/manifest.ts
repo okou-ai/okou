@@ -179,6 +179,7 @@ export const clientDescriptorManifest = [
       "computerUseHostsContract",
       "computerUseSessionHostsContract",
       "computerUseWriteCommandContract",
+      "runnerAppStateContract",
     ],
   },
   {
@@ -659,6 +660,10 @@ export const clientDescriptorManifest = [
       "runsCancelContract",
       "runsQueueContract",
     ],
+  },
+  {
+    module: "run-wss",
+    contracts: ["runWssContract"],
   },
   {
     module: "runner-ssh",

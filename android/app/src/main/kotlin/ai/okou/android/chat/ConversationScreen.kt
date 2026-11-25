@@ -180,7 +180,7 @@ internal fun ConversationRoute(
             else -> null
         }
     val summarizeRun = activeRun.takeIf {
-        execution == HistoryExecution.Running && !missing && !list.offline
+        execution == HistoryExecution.Running && !missing
     }
     SideEffect { visit?.showRunActivity(summarizeRun) }
     val activityText =
@@ -412,9 +412,7 @@ internal fun ConversationRoute(
         // Keep cached rows readable while an absent target waits for catch-up.
         val waitingForAnchor =
             (pendingFind != null && foundIndex < 0 ||
-                restoredAnchor != null && restoredIndex < 0) &&
-                state.phase == HistoryPhase.Loading &&
-                !list.offline
+                restoredAnchor != null && restoredIndex < 0) && state.phase == HistoryPhase.Loading
         val canPosition =
             restored != null &&
                 !positioned &&
@@ -473,12 +471,7 @@ internal fun ConversationRoute(
         if (onLinkUnavailable != null) {
             val missingLinkTarget =
                 positioned && linkTarget != null && readingTarget === linkTarget && foundIndex < 0
-            // The first failed read follows local cache lookup. An offline link without local
-            // content returns to its source instead of keeping an unreachable destination open.
-            val offlineWithoutHistory =
-                list.offline && thread != null && !hasContent && state.consecutiveReadFailures > 0
-            val linkUnavailable =
-                missing || firstReadFailed || missingLinkTarget || offlineWithoutHistory
+            val linkUnavailable = missing || firstReadFailed || missingLinkTarget
             LaunchedEffect(linkUnavailable, linkPosition) {
                 if (linkUnavailable) onLinkUnavailable()
             }
@@ -559,7 +552,7 @@ internal fun ConversationRoute(
                 }
             }
         val displayedConfirmation =
-            state.confirmation.takeIf { readingReady && latestAtReadingEdge && !list.offline }
+            state.confirmation.takeIf { readingReady && latestAtReadingEdge }
         LaunchedEffect(visit, displayedConfirmation) {
             displayedConfirmation?.let { visit?.confirmDisplayed(it) }
         }
@@ -696,7 +689,7 @@ internal fun ConversationRoute(
                                         runningFrame = runningFrame,
                                         controls =
                                             controls.takeIf { it?.currentRunId == entry.runId },
-                                        stopPlacement = stopPlacement.takeUnless { list.offline },
+                                        stopPlacement = stopPlacement,
                                     )
                                 }
                             is ConversationMessage -> {

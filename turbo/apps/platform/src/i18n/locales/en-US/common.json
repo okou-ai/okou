@@ -1206,9 +1206,6 @@
       "teamWarning": "Your Team access remains active until the current billing period ends. After that, this workspace moves to {{plan}}.",
       "title": "Downgrade plan"
     },
-    "feedback": {
-      "shareFeedback": "Share feedback"
-    },
     "invoices": {
       "amount": "Amount",
       "date": "Date",
@@ -1743,6 +1740,7 @@
       "waiting": "Waiting for Mastercard Data Connect. Finish there, then return to Chat."
     },
     "billing": {
+      "addCreditsOrUpgrade": "Add credits from $5 to keep going, or upgrade to Pro to unlock exclusive features.",
       "addCreditsToContinue": "Add credits to keep chatting with {{assistantName}}.",
       "askAdminCredits": "Ask a workspace admin to add credits so you can keep chatting with {{assistantName}}.",
       "askAdminUpgrade": "Ask a workspace admin to upgrade to Pro so you can keep chatting with {{assistantName}}.",
@@ -1756,7 +1754,6 @@
       "customAmountError": "Enter between $1 and $10,000",
       "customDollarAmount": "Custom dollar amount",
       "outOfCredits": "You're out of credits",
-      "redirecting": "Redirecting...",
       "upgradeToContinue": "Upgrade to Pro to keep chatting with {{assistantName}}.",
       "upgradeToPro": "Upgrade to Pro",
       "upgradeToRun": "Upgrade to Pro to run {{assistantName}}",
@@ -4429,7 +4426,6 @@
   },
   "myOkou": {
     "conflict": "Your saved instructions changed elsewhere. Your draft is kept here. Review or copy it before reloading the latest saved instructions.",
-    "description": "Your instructions for Okou in this workspace",
     "discard": "Discard",
     "draftKept": "Your draft is kept in this browser tab when you navigate or switch workspaces.",
     "instructions": "Instructions",
@@ -5702,7 +5698,6 @@
           "title": "Preference"
         },
         "proactiveLearning": {
-          "description": "Choose how Okou works proactively.",
           "title": "Proactive"
         },
         "tools": {
@@ -6108,7 +6103,6 @@
         "title": "Morning brief"
       },
       "proactiveSuggestions": {
-        "description": "Check connected sources hourly, update your user profile daily, and suggest useful next steps.",
         "errorMessage": "Proactive Suggestions settings could not be loaded or updated.",
         "missingTimezone": "Set your time zone in Preferences.",
         "preparationFailed": "Temporarily unavailable.",
