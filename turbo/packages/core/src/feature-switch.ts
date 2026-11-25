@@ -53,6 +53,13 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.WorkflowListRedesign]: {
+    maintainer: "ming@okou.ai",
+    displayName: "Workflow list redesign",
+    description:
+      "Browse workflows with search, separate visibility and automation filters, and a flat list sorted by creation date.",
+    enabled: false,
+  },
   [FeatureSwitchKey.IosConnectorManagement]: {
     maintainer: "yuma@okou.ai",
     displayName: "iOS connector management",

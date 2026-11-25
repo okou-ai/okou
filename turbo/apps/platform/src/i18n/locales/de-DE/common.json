@@ -7433,6 +7433,8 @@
       "all": "Alle",
       "automated": "Automatisiert",
       "automations": "Automatisierungen",
+      "clearFilters": "Filter löschen",
+      "clearSearch": "Suche löschen",
       "createdBy": "Erstellt von",
       "createInChat": "Im Chat erstellen",
       "description": "Eine wiederverwendbare SOP für eine Aufgabe. Schreiben Sie eines von Grund auf oder destillieren Sie es aus Ihrer täglichen Arbeit und führen Sie es dann aus, bearbeiten oder automatisieren Sie es.",
@@ -7441,13 +7443,18 @@
         "automated": "Wenn Sie einem Workflow eine Automatisierung hinzufügen, wird sie hier angezeigt.",
         "private": "Noch keine privaten Workflows.",
         "public": "Noch keine öffentlichen Workflows.",
+        "search": "Versuche einen anderen Suchbegriff oder ändere den Filter.",
         "without": "Jeder Workflow läuft hier nach einem Zeitplan oder Ereignis."
       },
+      "filter": "Workflows filtern",
+      "filters": "Filter",
+      "noResults": "Keine passenden Workflows",
       "noWorkflows": "Keine Workflows",
       "open": "Öffnen Sie {{title}}",
       "openRecovery": "Wiederherstellung für {{title}} öffnen",
       "ownerLoading": "Autor wird geladen…",
       "ownerUnavailable": "Autor nicht verfügbar",
+      "search": "Workflows suchen…",
       "section": {
         "event": "Über Automatisierung",
         "later": "Später",
@@ -7457,12 +7464,16 @@
       },
       "sort": {
         "alphabetical": "Alphabetisch",
-        "created": "Zeit geschaffen",
-        "label": "Nächste Ausführung",
+        "created": "Zuletzt erstellt",
+        "label": "Workflows sortieren",
         "nextRun": "Nächste Ausführung"
       },
       "title": "Workflows",
-      "viewAutomations": "Automatisierungen anzeigen"
+      "viewAutomations": "Automatisierungen anzeigen",
+      "visibility": "Sichtbarkeit",
+      "withAutomations": "Mit Automatisierungen",
+      "withoutAutomations": "Ohne Automatisierungen",
+      "workspaceShared": "Im Arbeitsbereich geteilt"
     },
     "skillImport": {
       "action": "Skills importieren",

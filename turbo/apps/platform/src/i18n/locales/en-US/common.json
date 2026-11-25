@@ -7431,6 +7431,8 @@
       "all": "All",
       "automated": "Automated",
       "automations": "Automations",
+      "clearFilters": "Clear filters",
+      "clearSearch": "Clear search",
       "createdBy": "Created by",
       "createInChat": "Create in chat",
       "description": "A reusable SOP for a task. Write one from scratch or distill it from your daily work, then run, edit, or automate it.",
@@ -7439,13 +7441,18 @@
         "automated": "Add an automation to a workflow and it shows up here.",
         "private": "No private workflows yet.",
         "public": "No public workflows yet.",
+        "search": "Try another search or change the filter.",
         "without": "Every workflow here runs on a schedule or event."
       },
+      "filter": "Filter workflows",
+      "filters": "Filters",
+      "noResults": "No matching workflows",
       "noWorkflows": "No workflows",
       "open": "Open {{title}}",
       "openRecovery": "Open {{title}} recovery",
       "ownerLoading": "Loading author…",
       "ownerUnavailable": "Author unavailable",
+      "search": "Search workflows…",
       "section": {
         "event": "On automation",
         "later": "Later",
@@ -7455,12 +7462,16 @@
       },
       "sort": {
         "alphabetical": "Alphabetical",
-        "created": "Created time",
-        "label": "Next run",
+        "created": "Newest created",
+        "label": "Sort workflows",
         "nextRun": "Next run"
       },
       "title": "Workflows",
-      "viewAutomations": "View automations"
+      "viewAutomations": "View automations",
+      "visibility": "Visibility",
+      "withAutomations": "With automations",
+      "withoutAutomations": "Without automations",
+      "workspaceShared": "Workspace shared"
     },
     "skillImport": {
       "action": "Import skills",

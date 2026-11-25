@@ -7515,6 +7515,8 @@
       "all": "Tutto",
       "automated": "Automatizzato",
       "automations": "Automazioni",
+      "clearFilters": "Cancella filtri",
+      "clearSearch": "Cancella ricerca",
       "createdBy": "Creato da",
       "createInChat": "Crea nella chat",
       "description": "Una SOP riutilizzabile per un'attività. Scrivine uno da zero o distillalo dal tuo lavoro quotidiano, quindi eseguilo, modificalo o automatizzalo.",
@@ -7523,13 +7525,18 @@
         "automated": "Aggiungi un'automazione a un flusso di lavoro e verrà visualizzata qui.",
         "private": "Nessun flusso di lavoro privato ancora.",
         "public": "Nessun flusso di lavoro pubblico ancora.",
+        "search": "Prova un’altra ricerca o modifica il filtro.",
         "without": "Ogni flusso di lavoro qui viene eseguito in base a una pianificazione o a un evento."
       },
+      "filter": "Filtra i flussi di lavoro",
+      "filters": "Filtri",
+      "noResults": "Nessun flusso di lavoro corrispondente",
       "noWorkflows": "Nessun flusso di lavoro",
       "open": "Apri {{title}}",
       "openRecovery": "Apri il ripristino di {{title}}",
       "ownerLoading": "Caricamento autore…",
       "ownerUnavailable": "Autore non disponibile",
+      "search": "Cerca flussi di lavoro…",
       "section": {
         "event": "Sull'automazione",
         "later": "Più tardi",
@@ -7539,12 +7546,16 @@
       },
       "sort": {
         "alphabetical": "Alfabetico",
-        "created": "Tempo creato",
-        "label": "Prossima esecuzione",
+        "created": "Creati di recente",
+        "label": "Ordina workflow",
         "nextRun": "Prossima esecuzione"
       },
       "title": "Flussi di lavoro",
-      "viewAutomations": "Visualizza le automazioni"
+      "viewAutomations": "Visualizza le automazioni",
+      "visibility": "Visibilità",
+      "withAutomations": "Con automazioni",
+      "withoutAutomations": "Senza automazioni",
+      "workspaceShared": "Condiviso nello spazio"
     },
     "skillImport": {
       "action": "Importa skill",

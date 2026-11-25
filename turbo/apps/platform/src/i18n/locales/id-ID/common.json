@@ -7404,6 +7404,8 @@
       "all": "Semua",
       "automated": "Otomatis",
       "automations": "Otomatisasi",
+      "clearFilters": "Hapus filter",
+      "clearSearch": "Hapus pencarian",
       "createdBy": "Dibuat oleh",
       "createInChat": "Buat di chat",
       "description": "SOP yang dapat digunakan kembali untuk suatu tugas. Tulis dari awal atau ringkas dari pekerjaan harian Anda, lalu jalankan, edit, atau otomatiskan.",
@@ -7412,13 +7414,18 @@
         "automated": "Tambahkan otomatisasi ke alur kerja dan akan muncul di sini.",
         "private": "Belum ada alur kerja privat.",
         "public": "Belum ada alur kerja publik.",
+        "search": "Coba pencarian lain atau ubah filter.",
         "without": "Setiap alur kerja di sini berjalan sesuai jadwal atau peristiwa."
       },
+      "filter": "Filter alur kerja",
+      "filters": "Filter",
+      "noResults": "Tidak ada alur kerja yang cocok",
       "noWorkflows": "Tidak ada alur kerja",
       "open": "Buka {{title}}",
       "openRecovery": "Buka pemulihan {{title}}",
       "ownerLoading": "Memuat penulis…",
       "ownerUnavailable": "Penulis tidak tersedia",
+      "search": "Cari alur kerja…",
       "section": {
         "event": "Saat otomatisasi",
         "later": "Nanti",
@@ -7428,12 +7435,16 @@
       },
       "sort": {
         "alphabetical": "Alfabetis",
-        "created": "Waktu dibuat",
-        "label": "Eksekusi berikutnya",
+        "created": "Terbaru dibuat",
+        "label": "Urutkan workflow",
         "nextRun": "Eksekusi berikutnya"
       },
       "title": "Alur kerja",
-      "viewAutomations": "Lihat otomatisasi"
+      "viewAutomations": "Lihat otomatisasi",
+      "visibility": "Visibilitas",
+      "withAutomations": "Dengan otomatisasi",
+      "withoutAutomations": "Tanpa otomatisasi",
+      "workspaceShared": "Dibagikan di ruang kerja"
     },
     "skillImport": {
       "action": "Impor skill",

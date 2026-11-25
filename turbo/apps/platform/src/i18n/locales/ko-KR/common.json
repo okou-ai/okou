@@ -7404,6 +7404,8 @@
       "all": "전체",
       "automated": "자동화됨",
       "automations": "자동화",
+      "clearFilters": "필터 지우기",
+      "clearSearch": "검색 지우기",
       "createdBy": "작성자",
       "createInChat": "채팅에서 생성",
       "description": "작업을 위한 재사용 가능한 SOP입니다. 처음부터 작성하거나 일상 업무에서 추출한 후 실행, 편집 또는 자동화하세요.",
@@ -7412,13 +7414,18 @@
         "automated": "워크플로에 자동화를 추가하면 여기에 표시됩니다.",
         "private": "비공개 워크플로가 아직 없습니다.",
         "public": "공개 워크플로가 아직 없습니다.",
+        "search": "다른 검색어를 입력하거나 필터를 변경하세요.",
         "without": "여기에 있는 모든 워크플로는 일정 또는 이벤트에 따라 실행됩니다."
       },
+      "filter": "워크플로 필터",
+      "filters": "필터",
+      "noResults": "일치하는 워크플로가 없습니다",
       "noWorkflows": "워크플로가 없습니다",
       "open": "{{title}} 열기",
       "openRecovery": "{{title}} 복구 열기",
       "ownerLoading": "작성자 불러오는 중…",
       "ownerUnavailable": "작성자 정보를 사용할 수 없습니다",
+      "search": "워크플로 검색…",
       "section": {
         "event": "자동화 시",
         "later": "나중에",
@@ -7428,12 +7435,16 @@
       },
       "sort": {
         "alphabetical": "알파벳순",
-        "created": "생성 시간",
-        "label": "다음 실행",
+        "created": "최근 생성순",
+        "label": "워크플로 정렬",
         "nextRun": "다음 실행"
       },
       "title": "워크플로",
-      "viewAutomations": "자동화 보기"
+      "viewAutomations": "자동화 보기",
+      "visibility": "공개 범위",
+      "withAutomations": "자동화 있음",
+      "withoutAutomations": "자동화 없음",
+      "workspaceShared": "워크스페이스 공유"
     },
     "skillImport": {
       "action": "스킬 가져오기",
