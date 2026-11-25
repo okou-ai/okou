@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.113.2](https://github.com/okou-ai/okou/compare/guest-agent-v0.113.1...guest-agent-v0.113.2) (2026-11-25)
+
+
+### Refactoring
+
+* **guest-agent:** share stdout ingestion failure handling ([#50840](https://github.com/okou-ai/okou/issues/50840)) ([9ff2b76](https://github.com/okou-ai/okou/commit/9ff2b76a11c555c10f025c766ecd5836e4906aa0))
+
 ## [0.113.1](https://github.com/okou-ai/okou/compare/guest-agent-v0.113.0...guest-agent-v0.113.1) (2026-11-25)
 
 

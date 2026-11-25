@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.56.5](https://github.com/okou-ai/okou/compare/android-v0.56.4...android-v0.56.5) (2026-11-25)
+
+
+### Bug Fixes
+
+* **ios:** return all connector oauth attempts to the app ([#50773](https://github.com/okou-ai/okou/issues/50773)) ([e683a88](https://github.com/okou-ai/okou/commit/e683a886bb389afe4671e7eca49a100d485137eb))
+
 ## [0.56.4](https://github.com/okou-ai/okou/compare/android-v0.56.3...android-v0.56.4) (2026-11-25)
 
 

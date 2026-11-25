@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.66.1](https://github.com/okou-ai/okou/compare/ios-v0.66.0...ios-v0.66.1) (2026-11-25)
+
+
+### Bug Fixes
+
+* **ios:** return all connector oauth attempts to the app ([#50773](https://github.com/okou-ai/okou/issues/50773)) ([e683a88](https://github.com/okou-ai/okou/commit/e683a886bb389afe4671e7eca49a100d485137eb))
+
+
+### Refactoring
+
+* **ios:** let identity images own their request instead of a graph read ([#50835](https://github.com/okou-ai/okou/issues/50835)) ([151555b](https://github.com/okou-ai/okou/commit/151555b72075f400ce1aee266fa5f11a5924555d))
+* **ios:** pass mention sources through SwiftUI instead of the editor ([#50848](https://github.com/okou-ai/okou/issues/50848)) ([2038a32](https://github.com/okou-ai/okou/commit/2038a32d33c66d819514dee25cba746ae8095c7c))
+
 ## [0.66.0](https://github.com/okou-ai/okou/compare/ios-v0.65.10...ios-v0.66.0) (2026-11-25)
 
 
