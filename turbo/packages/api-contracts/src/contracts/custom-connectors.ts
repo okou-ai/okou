@@ -365,6 +365,7 @@ export type UpdateCustomConnectorBody = zInfer<
 >;
 
 export const startCustomConnectorOAuth2BodySchema = object({
+  nativeCallback: literal("ios-https").optional(),
   account: connectorAccountMutationIntentSchema,
 }).strict();
 

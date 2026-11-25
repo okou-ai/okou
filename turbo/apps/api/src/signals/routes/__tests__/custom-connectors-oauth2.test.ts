@@ -1,9 +1,14 @@
+import { customConnectorOAuth2Contract } from "@okouai/api-contracts/contracts/custom-connectors";
+import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { customConnectorOAuth2Routes } from "../custom-connectors-oauth2";
+import { connectorAccountRoutes } from "../connector-accounts";
 import { randomUUID } from "node:crypto";
 
 import type { CreateCustomConnectorBody } from "@okouai/api-contracts/contracts/custom-connectors";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
@@ -89,6 +94,62 @@ describe("Custom connector OAuth callbacks", () => {
     }
   });
 
+  it.each([false, true])(
+    "returns a custom OAuth attempt to iOS after consent or refusal (denied=%s)",
+    async (denied) => {
+      mockEnv("APP_URL", "https://app.okou.ai");
+      const provider = mockCustomConnectorOAuth2Provider(context, {
+        initialScope: "read",
+      });
+      const actor = createBddApi(context).user({ orgRole: "org:admin" });
+      const connector = await createCustomOAuthConnector(actor, provider);
+      ownedConnectors.push({ actor, connectorId: connector.id });
+      const client = setupApp({
+        context,
+        routes: [...customConnectorOAuth2Routes, ...connectorAccountRoutes],
+      });
+      // The public actor remains authenticated after creating the definition.
+      const headers = { authorization: "Bearer clerk-session" };
+      const started = await accept(
+        client(customConnectorOAuth2Contract).start({
+          headers,
+          params: { id: connector.id },
+          body: { account: { intent: "add" }, nativeCallback: "ios-https" },
+        }),
+        [200],
+      );
+      if (started.body.result !== "authorization")
+        throw new Error("Expected authorization");
+      expect(started.body.nativeCallbackUrl).toBe(
+        `https://app.okou.ai/native/connector-authorization?attemptId=${started.body.oauthAttemptId}`,
+      );
+      const state = authorizationState(new URL(started.body.authorizationUrl));
+      const result = await accept(
+        client(customConnectorOAuth2Contract).callback({
+          query: {
+            state,
+            ...(denied ? { error: "access_denied" } : { code: "valid-code" }),
+            responseMode: "json",
+          },
+        }),
+        [200],
+      );
+      expect(result.body).toMatchObject({
+        status: denied ? "error" : "success",
+        nativeAppReturn: {
+          platform: "ios",
+          attemptId: started.body.oauthAttemptId,
+          httpsHost: "app.okou.ai",
+        },
+      });
+      const receipt = await client(connectorAccountsContract).oauthCompletion({
+        headers,
+        params: { attemptId: started.body.oauthAttemptId },
+        query: { kind: "custom", customConnectorId: connector.id },
+      });
+      expect(receipt.status).toBe(denied ? 404 : 200);
+    },
+  );
   it("preserves editable OAuth configuration in the list without exposing the client secret", async () => {
     const provider = mockCustomConnectorOAuth2Provider(context, {
       initialScope: "read",

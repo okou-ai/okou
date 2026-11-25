@@ -965,7 +965,10 @@ const handleOpenIdConnectorCallback$ = command(
       signal,
     );
     if (!resolvedState.ok) {
-      return resolvedState.response;
+      return nativeConnectorCallbackResponse(
+        resolvedState.response,
+        claimedState.storedState,
+      );
     }
 
     const callbackResponse = await tapError(
@@ -989,15 +992,15 @@ const handleOpenIdConnectorCallback$ = command(
     );
     signal.throwIfAborted();
 
-    if (callbackResponse) {
-      return callbackResponse;
-    }
-
-    return redirectWithError(
-      callbackOrigin,
-      args.connectorSlug,
-      "OpenID authorization failed. Please try again.",
-      true,
+    return nativeConnectorCallbackResponse(
+      callbackResponse ??
+        redirectWithError(
+          callbackOrigin,
+          args.connectorSlug,
+          "OpenID authorization failed. Please try again.",
+          true,
+        ),
+      claimedState.storedState,
     );
   },
 );

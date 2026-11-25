@@ -58,10 +58,12 @@ function mockSteamRuntimeEnv(): void {
 async function startSteamOpenId(
   actor: TestActor,
   account: ConnectorAccountMutationIntent = { intent: "add" },
+  native = false,
 ): Promise<{
   readonly authorizationUrl: URL;
   readonly oauthAttemptId: string;
   readonly connectionId?: string;
+  readonly nativeCallbackUrl?: string;
 }> {
   mockSession(actor);
   const response = await accept(
@@ -70,7 +72,11 @@ async function startSteamOpenId(
     ).start({
       params: { connectorSlug: "steam" },
       headers: authHeaders(),
-      body: { authMethod: "openid", account },
+      body: {
+        authMethod: "openid",
+        account,
+        ...(native ? { nativeCallback: "ios-https" as const } : {}),
+      },
     }),
     [200],
   );
@@ -81,6 +87,7 @@ async function startSteamOpenId(
     authorizationUrl: new URL(response.body.authorizationUrl),
     oauthAttemptId: response.body.oauthAttemptId,
     connectionId: response.body.connectionId,
+    nativeCallbackUrl: response.body.nativeCallbackUrl,
   };
 }
 
@@ -195,6 +202,37 @@ async function readSteamAccount(actor: ReturnType<typeof testActor>) {
 }
 
 describe("Steam OpenID connector", () => {
+  it("returns the initiating native OpenID attempt after provider verification", async () => {
+    const actor = testActor();
+    mockSteamRuntimeEnv();
+    mockEnv("APP_URL", "https://app.okou.ai");
+    mockSteamOpenIdVerification();
+    const started = await startSteamOpenId(actor, { intent: "add" }, true);
+    expect(started.nativeCallbackUrl).toBe(
+      `https://app.okou.ai/native/connector-authorization?attemptId=${started.oauthAttemptId}`,
+    );
+    const callback = await accept(
+      setupApp({ context, routes: builtinConnectorsSlugCallbackRoutes })(
+        builtinConnectorsSlugCallbackContract,
+      ).callback({
+        params: { connectorSlug: "steam" },
+        query: {
+          ...steamCallbackQuery(started.authorizationUrl),
+          responseMode: "json",
+        },
+      }),
+      [200],
+    );
+    expect(callback.body).toMatchObject({
+      status: "success",
+      nativeAppReturn: {
+        platform: "ios",
+        attemptId: started.oauthAttemptId,
+        httpsHost: "app.okou.ai",
+      },
+    });
+  });
+
   it("exposes Steam in the connector catalog by default", async () => {
     const actor = testActor();
     mockSession(actor);

@@ -1,4 +1,10 @@
 import {
+  connectorHttpsReturnState,
+  connectorHttpsReturn,
+  connectorHttpsCallbackUrl,
+} from "./connector-native-return";
+import type { ConnectorNativeAppReturn } from "@okouai/api-contracts/validators/connectors";
+import {
   IssuerMismatchError,
   type OAuthClientMetadata,
 } from "@modelcontextprotocol/client";
@@ -140,6 +146,7 @@ type FailureReason =
   | "temporary"
   | "incompatible";
 interface Failure {
+  readonly nativeAppReturn?: ConnectorNativeAppReturn;
   readonly kind: "error";
   readonly reason: FailureReason;
   readonly connectorSlug?: string;
@@ -371,6 +378,7 @@ const prepareBuiltinAutomaticAuthorization$ = command(
 );
 
 interface StartBuiltinAutomaticArgs {
+  readonly nativeCallback?: "ios-https";
   readonly orgId: string;
   readonly userId: string;
   readonly resolved: ResolvedConnectorActionMethod;
@@ -386,6 +394,7 @@ type StartedBuiltinAutomatic =
       readonly kind: "authorization";
       readonly authorizationUrl: string;
       readonly oauthAttemptId: string;
+      readonly nativeCallbackUrl?: string;
     }
   | { readonly kind: "connected"; readonly connectionId: string };
 
@@ -418,7 +427,10 @@ export const startBuiltinConnectorAutomatic$ = command(
     if (args.account.intent === "reconnect" && !reconnectedAccount) {
       return { kind: "error", reason: "invalid-account" };
     }
-    const state = generateConnectorOAuthState();
+    const state = connectorHttpsReturnState({
+      state: generateConnectorOAuthState(),
+      nativeCallback: args.nativeCallback,
+    });
     const prepared = await settle(
       set(
         prepareBuiltinAutomaticAuthorization$,
@@ -513,6 +525,7 @@ export const startBuiltinConnectorAutomatic$ = command(
       kind: "authorization",
       authorizationUrl: authorization.authorizationUrl,
       oauthAttemptId,
+      nativeCallbackUrl: connectorHttpsCallbackUrl(state, oauthAttemptId),
     };
   },
 );
@@ -668,6 +681,7 @@ const finishAutomaticOAuth$ = command(
 type CompletedBuiltinAutomaticOAuth =
   | Failure
   | {
+      readonly nativeAppReturn?: ConnectorNativeAppReturn;
       readonly kind: "connected";
       readonly connectorSlug: string;
       readonly connectionId: string;
@@ -725,6 +739,7 @@ export const completeBuiltinConnectorAutomatic$ = command(
       return { kind: "error", reason: "invalid-state" };
     }
     const stored = claimed.state;
+    const nativeAppReturn = connectorHttpsReturn(stored);
     const parsed = builtinAutomaticContextSchema.safeParse(
       stored.oauthContext === null ? null : safeJsonParse(stored.oauthContext),
     );
@@ -739,6 +754,7 @@ export const completeBuiltinConnectorAutomatic$ = command(
         kind: "error",
         reason: "invalid-state",
         connectorSlug: stored.connectorSlug,
+        nativeAppReturn,
       };
     }
     const context = parsed.data;
@@ -747,6 +763,7 @@ export const completeBuiltinConnectorAutomatic$ = command(
         kind: "error",
         reason: "oauth-failed",
         connectorSlug: stored.connectorSlug,
+        nativeAppReturn,
       };
     }
     const code = args.code;
@@ -762,6 +779,7 @@ export const completeBuiltinConnectorAutomatic$ = command(
         kind: "error",
         reason: "oauth-failed",
         connectorSlug: stored.connectorSlug,
+        nativeAppReturn,
       };
     }
     // COMMIT may finish after cancellation; publish its wakeup before the
@@ -793,9 +811,10 @@ export const completeBuiltinConnectorAutomatic$ = command(
       return {
         ...failure(operation.error),
         connectorSlug: stored.connectorSlug,
+        nativeAppReturn,
       };
     }
-    return operation.value;
+    return { ...operation.value, nativeAppReturn };
   },
 );
 

@@ -59,7 +59,7 @@ struct ConnectorAuthenticationSessionView: UIViewControllerRepresentable {
           completionHandler: completion)
       } else {
         // Older APIs and other providers still complete through receipt polling.
-        // Require HTTPS for these eight providers only after every serving and
+        // Require HTTPS for registered origins only after every serving and
         // retained rollback API supports it; keep the other live paths (#50221).
         session = ASWebAuthenticationSession(
           url: url, callbackURLScheme: nil, completionHandler: completion)

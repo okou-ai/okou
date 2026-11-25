@@ -2,6 +2,7 @@ import type { ConnectorAuthMethodRuntimeConfig } from "@okouai/connectors/connec
 import { buildConnectorOpenIdAuthAuthorizationUrlWithMethod } from "@okouai/connectors/auth-providers";
 import type { AuthUrlResult } from "@okouai/connectors/auth-providers/provider-flow-types";
 
+import { connectorHttpsReturnState } from "../services/connector-native-return";
 import { generateConnectorOAuthState } from "../../lib/connector-oauth-state";
 
 type PrepareResolvedBuiltinConnectorOpenIdAuthStartResult = {
@@ -28,11 +29,15 @@ export function prepareBuiltinConnectorOpenIdAuthStartWithMethod(args: {
   readonly connectorSlug: string;
   readonly method: ConnectorAuthMethodRuntimeConfig;
   readonly origin: string;
+  readonly nativeCallback?: "ios-https";
 }): PrepareResolvedBuiltinConnectorOpenIdAuthStartResult {
   if (args.method.grant.kind !== "openid-auth") {
     throw new Error("OpenID auth method required");
   }
-  const state = generateConnectorOAuthState();
+  const state = connectorHttpsReturnState({
+    state: generateConnectorOAuthState(),
+    nativeCallback: args.nativeCallback,
+  });
   const returnTo = new URL(
     `/api/connectors/${args.connectorSlug}/callback`,
     args.origin,
