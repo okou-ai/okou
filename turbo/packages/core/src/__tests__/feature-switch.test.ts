@@ -130,24 +130,21 @@ describe("isFeatureEnabled", () => {
     }
   });
 
-  it("defaults Markdown-first output to staff and honors external opt-in", () => {
+  it("enables Markdown-first output for everyone and honors Lab overrides", () => {
     const key = FeatureSwitchKey.MarkdownFirstOutput;
-    const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
-    for (const context of [
+    for (const identity of [
       {},
       { userId: "external-user", orgId: "external-org" },
+      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
     ]) {
-      expect(isFeatureEnabled(key, context)).toBe(false);
-      expect(getAllFeatureStates(context)[key]).toBe(false);
+      expect(isFeatureEnabled(key, identity)).toBe(true);
+      expect(getAllFeatureStates(identity)[key]).toBe(true);
+      for (const enabled of [false, true]) {
+        const context = { ...identity, overrides: { [key]: enabled } };
+        expect(isFeatureEnabled(key, context)).toBe(enabled);
+        expect(getAllFeatureStates(context)[key]).toBe(enabled);
+      }
     }
-    const optedIn = { orgId: "external-org", overrides: { [key]: true } };
-    expect(isFeatureEnabled(key, optedIn)).toBe(true);
-    expect(getAllFeatureStates(optedIn)[key]).toBe(true);
-    expect(isFeatureEnabled(key, staff)).toBe(true);
-    expect(getAllFeatureStates(staff)[key]).toBe(true);
-    expect(
-      isFeatureEnabled(key, { ...staff, overrides: { [key]: false } }),
-    ).toBe(false);
   });
 
   it("enables presentation format for staff and honors Lab overrides", () => {
@@ -476,6 +473,9 @@ describe("getFeatureSwitchMetadata", () => {
     const metadata = getFeatureSwitchMetadata();
 
     expect(metadata[FeatureSwitchKey.Banking].rolloutStage).toBe("alpha");
+    expect(metadata[FeatureSwitchKey.MarkdownFirstOutput].rolloutStage).toBe(
+      "released",
+    );
     expect(metadata[FeatureSwitchKey.ComposerVoiceMessages].rolloutStage).toBe(
       "beta",
     );
