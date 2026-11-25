@@ -380,6 +380,11 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Send preview chat runs through real agent CLIs instead of preview mock runners.",
     enabled: false,
   },
+  [FeatureSwitchKey.RunWss]: {
+    maintainer: "liangyou@okou.ai",
+    description: "Enable authenticated WebSocket bootstrap for active Runs.",
+    enabled: false,
+  },
   [FeatureSwitchKey.CodexExecution]: {
     maintainer: "liangyou@okou.ai",
     description:

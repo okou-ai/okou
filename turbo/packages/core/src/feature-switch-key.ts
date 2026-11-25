@@ -32,6 +32,7 @@ export enum FeatureSwitchKey {
   TestOauthConnector = "_testOauthConnector",
   ZoomConnector = "zoomConnector",
   RealAgentInPreview = "_realAgentInPreview",
+  RunWss = "_runWss",
   ArtifactLibrary = "artifactLibrary",
   ZipArtifactPreview = "zipArtifactPreview",
   LarkOfficialBot = "larkOfficialBot",

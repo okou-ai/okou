@@ -253,6 +253,10 @@ pub(super) async fn start(
                 {
                     ingress.enable_app_state(receiver);
                 }
+                ingress.enable_run_wss(
+                    ctx.shared.active_runs.clone(),
+                    ctx.provider.cancel_tokens.clone(),
+                );
                 startup.resources.ingress = Some(ingress);
             }
             Err(error) => {

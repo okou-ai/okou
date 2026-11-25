@@ -1561,6 +1561,11 @@ export const clientContractImportManifest = [
     ],
   },
   {
+    module: "run-wss",
+    contracts: ["runWssContract"],
+    bindings: [],
+  },
+  {
     module: "runner-ssh",
     contracts: ["runnerSshContract"],
     bindings: [
