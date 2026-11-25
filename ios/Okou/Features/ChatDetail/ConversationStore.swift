@@ -606,3 +606,18 @@ extension ConversationStore {
     if next.isStopping != previous.isStopping { reconcileActivitySummary() }
   }
 }
+
+extension ConversationStore {
+  /// The render window, kept in the workspace session's Store. ChatDetailView reads it,
+  /// `navigation` and `loadsEarlier` through CCStateSwiftUI; the synchronous accessors in the
+  /// class serve owner logic, the scroll coordinator's actions and tests.
+  var window: Computed<ConversationPresentation.Window> { reading.window }
+  /// The remembered reading row and the latest explicit reveal.
+  var navigation: Computed<ConversationPresentation.Navigation> { reading.navigation }
+  /// Whether earlier groups are being prepared for the render window.
+  var loadsEarlier: Computed<Bool> { reading.loadsEarlier }
+  /// The synchronous values of `window` and `navigation`, for a render whose graph read has
+  /// not resolved.
+  var currentWindow: ConversationPresentation.Window { reading.currentWindow }
+  var currentNavigation: ConversationPresentation.Navigation { reading.currentNavigation }
+}

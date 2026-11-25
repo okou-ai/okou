@@ -224,7 +224,6 @@ internal fun ArtifactCatalogList(
                                 showDay = day == ArtifactDay.Search,
                             ),
                         selected = item.id == selectedId,
-                        offline = state.offline,
                         thumbnail = model::thumbnail,
                         modifier =
                             if (item.id == restoreRow) Modifier.focusRequester(rowFocus)
@@ -342,8 +341,7 @@ private fun ArtifactRow(
     item: ArtifactItem,
     date: String,
     selected: Boolean,
-    offline: Boolean,
-    thumbnail: suspend (String, Boolean) -> android.graphics.Bitmap?,
+    thumbnail: suspend (String) -> android.graphics.Bitmap?,
     modifier: Modifier,
     onClick: () -> Unit,
 ) {
@@ -364,7 +362,7 @@ private fun ArtifactRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        ArtifactThumbnail(item, offline, thumbnail)
+        ArtifactThumbnail(item, thumbnail)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
                 item.title,
@@ -390,12 +388,11 @@ private fun ArtifactRow(
 @Composable
 private fun ArtifactThumbnail(
     item: ArtifactItem,
-    offline: Boolean,
-    thumbnail: suspend (String, Boolean) -> android.graphics.Bitmap?,
+    thumbnail: suspend (String) -> android.graphics.Bitmap?,
 ) {
     val bitmap by
-        produceState<android.graphics.Bitmap?>(null, item.thumbnail, offline) {
-            value = item.thumbnail?.let { thumbnail(it, offline) }
+        produceState<android.graphics.Bitmap?>(null, item.thumbnail) {
+            value = item.thumbnail?.let { thumbnail(it) }
         }
     val colors = MaterialTheme.colorScheme
     Box(

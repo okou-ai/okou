@@ -158,10 +158,7 @@ internal fun updateToolbarAction(
             UpdateToolbarAction(stringResource(R.string.updates_download_failed), openDetails)
         state.canDownload -> {
             val release = checkNotNull(state.candidate)
-            UpdateToolbarAction(
-                stringResource(R.string.updates_toolbar),
-                if (state.offline) openDetails else ({ download(release) }),
-            )
+            UpdateToolbarAction(stringResource(R.string.updates_toolbar), { download(release) })
         }
         else -> UpdateToolbarAction(stringResource(R.string.updates_toolbar), openDetails)
     }
@@ -219,13 +216,12 @@ internal fun UpdateToolbarButton(action: UpdateToolbarAction) {
 @Composable
 internal fun UpdateHost(
     state: UpdateUiState,
+    checkOnOpen: () -> Unit,
     check: () -> Unit,
     download: (AndroidUpdatesRelease) -> Unit,
     install: (AndroidUpdatesRelease) -> Unit,
     @StringRes installProgress: Int?,
     detailsOpen: MutableState<Boolean>,
-    checkFromDetails: () -> Unit,
-    downloadFromDetails: (AndroidUpdatesRelease) -> Unit,
     content: @Composable (openUpdates: () -> Unit) -> Unit,
 ) {
     var details by detailsOpen
@@ -250,11 +246,7 @@ internal fun UpdateHost(
             savedUi.SaveableStateProvider("workspace") {
                 content {
                     details = true
-                    if (
-                        state.check == UpdateCheck.Failed &&
-                            state.displayedRelease?.let(state::isEligible) != true
-                    )
-                        check()
+                    checkOnOpen()
                 }
             }
         }
@@ -263,8 +255,8 @@ internal fun UpdateHost(
         savedUi.SaveableStateProvider("update-details") {
             UpdateSheet(
                 state,
-                checkFromDetails,
-                downloadFromDetails,
+                check,
+                download,
                 install,
                 installProgress,
                 restoreInstallFocus = returningToDetails && installProgress == null,
@@ -377,7 +369,7 @@ private fun UpdateSheet(
                     bottom = verticalInset,
                 ),
         ) {
-            val actions = measureUpdateSheetActions(maxWidth)
+            val actions = measureUpdateActions(maxWidth, required = false)
             val headingStyle =
                 if (compact)
                     MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp, lineHeight = 28.sp)
@@ -437,7 +429,7 @@ private fun UpdateSheet(
                             ) {
                                 UpdateMetadata(release, compact = compact)
                             }
-                        } else if (state.check == UpdateCheck.Checked && !state.offline) {
+                        } else if (state.check == UpdateCheck.Checked) {
                             val current = stringResource(R.string.updates_current)
                             UpdateCopy(
                                 current,
@@ -471,7 +463,6 @@ private fun UpdateSheet(
                         Modifier.weight(1f)
                             .heightIn(min = actions.height)
                             .focusRequester(installFocus),
-                        allowRetry = true,
                     )
                 }
             }
@@ -498,6 +489,8 @@ private fun RequiredUpdateScreen(
             contentAlignment = Alignment.TopCenter,
         ) {
             val shortTitle = maxHeight < base * 13
+            val actionWidth = (maxWidth - EntryContentGutter * 2).coerceIn(0.dp, EntryContentWidth)
+            val actionHeight = measureUpdateActions(actionWidth, required = true).height
             Column(
                 Modifier.padding(horizontal = EntryContentGutter)
                     .widthIn(max = EntryContentWidth)
@@ -530,7 +523,7 @@ private fun RequiredUpdateScreen(
                     download,
                     install,
                     installProgress,
-                    Modifier.fillMaxWidth(),
+                    Modifier.fillMaxWidth().heightIn(min = actionHeight),
                 )
             }
         }
@@ -637,7 +630,6 @@ private fun UpdateMetadata(release: AndroidUpdatesRelease, compact: Boolean = fa
 
 @StringRes
 private fun UpdateUiState.updateProblemMessage(requiresNewerAndroid: Boolean): Int? {
-    val disconnected = offline && !canInstall && transfer !is UpdateTransfer.Downloading
     val latestProblem =
         when (problem) {
             UpdateProblem.Check -> R.string.updates_error_check
@@ -650,9 +642,6 @@ private fun UpdateUiState.updateProblemMessage(requiresNewerAndroid: Boolean): I
             null -> null
         }
     return when {
-        disconnected && (canDownload || transfer is UpdateTransfer.Waiting) ->
-            R.string.updates_connect_to_download
-        disconnected -> R.string.updates_connect_to_check
         latestProblem != null -> latestProblem
         (check == UpdateCheck.Failed || check == UpdateCheck.Waiting) &&
             !canDownload &&
@@ -740,27 +729,22 @@ private fun UpdateAction(
     install: (AndroidUpdatesRelease) -> Unit,
     @StringRes installProgress: Int?,
     modifier: Modifier,
-    allowRetry: Boolean = false,
 ) {
     val transfer = state.transfer
     val colors = MaterialTheme.colorScheme
-    val useEntryActionStyle = state.required && transfer !is UpdateTransfer.Downloading
-    val shape = if (useEntryActionStyle) ButtonDefaults.shape else RoundedCornerShape(12.dp)
+    val shape = if (state.required) ButtonDefaults.shape else RoundedCornerShape(12.dp)
     val foreground = if (state.required) colors.onPrimary else colors.inverseOnSurface
     val background = if (state.required) colors.primary else colors.inverseSurface
     val contentPadding =
-        if (useEntryActionStyle) PaddingValues(16.dp, updateActionVerticalPadding)
+        if (state.required)
+            PaddingValues(requiredUpdateActionHorizontalPadding, updateActionVerticalPadding)
         else updateActionPadding
     val focus = rememberInstallControlFocus(inProgress = installProgress != null)
-    val waitingForCheck =
-        state.check == UpdateCheck.Waiting && !state.canInstall && !state.canDownload
-    val waiting = transfer is UpdateTransfer.Waiting || waitingForCheck
     val checking =
         state.check == UpdateCheck.Checking &&
-            !state.offline &&
             transfer !is UpdateTransfer.Downloading &&
             !state.preparing &&
-            !waiting &&
+            transfer !is UpdateTransfer.Waiting &&
             !state.canInstall &&
             !state.canDownload
     val progress =
@@ -771,12 +755,10 @@ private fun UpdateAction(
             checking -> stringResource(R.string.updates_check_in_progress)
             else -> null
         }
-    val enabled =
-        progress == null && (state.canInstall || !state.offline && (!waiting || allowRetry))
     val showingProgress = progress != null
-    // Capture focus before the action target is replaced by a progress or waiting target.
-    val retainFocus = remember(showingProgress, enabled) { focus.isFocused }
-    LaunchedEffect(showingProgress, enabled) {
+    // Capture focus before the button and the progress target replace each other.
+    val retainFocus = remember(showingProgress) { focus.isFocused }
+    LaunchedEffect(showingProgress) {
         if (retainFocus) focus.requestFocus()
     }
     val controlModifier =
@@ -785,7 +767,7 @@ private fun UpdateAction(
             .then(focus.modifier)
             .updateFocusOutline(
                 shape,
-                if (enabled) foreground else colors.onSurface,
+                if (showingProgress) colors.onSurface else foreground,
             )
     if (progress != null) {
         val fraction = (transfer as? UpdateTransfer.Downloading)?.fraction()
@@ -823,26 +805,16 @@ private fun UpdateAction(
         when {
             transfer is UpdateTransfer.Ready && state.canInstall ->
                 R.string.updates_ready to { install(transfer.release) }
-            transfer is UpdateTransfer.Waiting -> {
-                val label =
-                    if (allowRetry) R.string.updates_retry_download
-                    else R.string.updates_waiting_to_download
-                label to { download(transfer.release) }
-            }
-            waitingForCheck -> {
-                val label =
-                    if (allowRetry) R.string.updates_retry_check
-                    else R.string.updates_waiting_to_check
-                label to check
-            }
+            transfer is UpdateTransfer.Waiting ->
+                R.string.updates_retry_download to { download(transfer.release) }
             state.canDownload -> {
                 val label =
-                    if (allowRetry && state.interrupted) R.string.updates_retry_download
+                    if (state.interrupted) R.string.updates_retry_download
                     else R.string.updates_download
                 label to { download(checkNotNull(state.candidate)) }
             }
-            allowRetry && state.check == UpdateCheck.Failed -> R.string.updates_retry_check to check
-            state.offline -> R.string.updates_waiting_to_check to {}
+            state.check == UpdateCheck.Waiting || state.check == UpdateCheck.Failed ->
+                R.string.updates_retry_check to check
             state.required || state.requiresNewerAndroid ->
                 R.string.updates_check_compatible to check
             else -> R.string.updates_check to check
@@ -852,23 +824,18 @@ private fun UpdateAction(
             if (state.canInstall) focus.rememberTrigger()
             action()
         },
-        enabled = enabled,
-        modifier = controlModifier.focusable(enabled = !enabled),
+        modifier = controlModifier,
         shape = shape,
         contentPadding = contentPadding,
         colors =
             ButtonDefaults.buttonColors(
                 containerColor = background,
                 contentColor = foreground,
-                disabledContainerColor = colors.surfaceVariant,
-                disabledContentColor = colors.onSurfaceVariant,
             ),
     ) {
         Text(
             stringResource(label),
-            style =
-                if (state.required) MaterialTheme.typography.labelLarge
-                else updateActionLabelStyle(),
+            style = updateActionLabelStyle(state.required),
             textAlign = TextAlign.Center,
         )
     }
@@ -924,32 +891,36 @@ private fun ActionText(label: String, action: () -> Unit, modifier: Modifier = M
 
 private val updateActionMinHeight = 48.dp
 private val updateActionHorizontalPadding = 12.dp
+private val requiredUpdateActionHorizontalPadding = 16.dp
 private val updateActionVerticalPadding = 8.dp
 private val updateSheetActionGap = 8.dp
 private val updateActionPadding =
     PaddingValues(updateActionHorizontalPadding, updateActionVerticalPadding)
 
 @Composable
-private fun updateActionLabelStyle() =
-    MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight(550))
+private fun updateActionLabelStyle(required: Boolean = false): TextStyle {
+    val style = MaterialTheme.typography.labelLarge
+    return if (required) style else style.copy(fontWeight = FontWeight(550))
+}
 
 @Composable
 private fun updateProgressStyle() =
     MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum")
 
-private data class UpdateSheetActionSize(val dismissWidth: Dp, val height: Dp)
+private data class UpdateActionSize(val dismissWidth: Dp, val height: Dp)
 
 // Reserve room for both buttons and progress so localized wrapping cannot move the footer.
 @Composable
-private fun measureUpdateSheetActions(width: Dp): UpdateSheetActionSize {
+private fun measureUpdateActions(width: Dp, required: Boolean): UpdateActionSize {
     val measurer = rememberTextMeasurer(cacheSize = 16)
-    val dismissLabel = stringResource(R.string.updates_close)
+    val dismissLabel = if (required) null else stringResource(R.string.updates_close)
+    val horizontalPadding =
+        if (required) requiredUpdateActionHorizontalPadding else updateActionHorizontalPadding
     val mainLabels =
         listOf(
             stringResource(R.string.updates_download),
             stringResource(R.string.updates_check),
             stringResource(R.string.updates_check_compatible),
-            stringResource(R.string.updates_waiting_to_check),
             stringResource(R.string.updates_retry_check),
             stringResource(R.string.updates_retry_download),
             stringResource(R.string.updates_ready),
@@ -962,18 +933,19 @@ private fun measureUpdateSheetActions(width: Dp): UpdateSheetActionSize {
             stringResource(R.string.updates_installing),
             stringResource(R.string.updates_waiting_to_install),
         )
-    val labelStyle = updateActionLabelStyle()
+    val labelStyle = updateActionLabelStyle(required)
     val progressStyle = updateProgressStyle()
     return with(LocalDensity.current) {
         val dismissWidth =
-            (measurer.measure(dismissLabel, labelStyle, softWrap = false).size.width.toDp() +
-                    updateActionHorizontalPadding * 2)
-                .coerceAtLeast(72.dp)
-                .coerceAtMost((width - updateSheetActionGap - 48.dp).coerceAtLeast(0.dp))
-        val mainWidth = width - dismissWidth - updateSheetActionGap
+            dismissLabel?.let {
+                (measurer.measure(it, labelStyle, softWrap = false).size.width.toDp() +
+                        horizontalPadding * 2)
+                    .coerceAtLeast(72.dp)
+                    .coerceAtMost((width - updateSheetActionGap - 48.dp).coerceAtLeast(0.dp))
+            } ?: 0.dp
+        val mainWidth = if (required) width else width - dismissWidth - updateSheetActionGap
         fun textHeight(label: String, style: TextStyle, slotWidth: Dp): Dp {
-            val available =
-                (slotWidth - updateActionHorizontalPadding * 2).roundToPx().coerceAtLeast(0)
+            val available = (slotWidth - horizontalPadding * 2).roundToPx().coerceAtLeast(0)
             return measurer
                 .measure(label, style, constraints = Constraints(maxWidth = available))
                 .size
@@ -982,11 +954,11 @@ private fun measureUpdateSheetActions(width: Dp): UpdateSheetActionSize {
         }
         val textHeight =
             maxOf(
-                textHeight(dismissLabel, labelStyle, dismissWidth),
+                dismissLabel?.let { textHeight(it, labelStyle, dismissWidth) } ?: 0.dp,
                 mainLabels.maxOf { textHeight(it, labelStyle, mainWidth) },
                 progressLabels.maxOf { textHeight(it, progressStyle, mainWidth) },
             )
-        UpdateSheetActionSize(
+        UpdateActionSize(
             dismissWidth,
             (textHeight + updateActionVerticalPadding * 2).coerceAtLeast(updateActionMinHeight),
         )

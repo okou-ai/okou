@@ -231,7 +231,6 @@ internal fun ArtifactSelectionPreview(
             preview,
             rememberScrollState(),
             wide,
-            state.offline,
             source,
             restoreSourceFocus = page.restoreSource,
             onSourceFocusRestored = { page.restoreSource = false },

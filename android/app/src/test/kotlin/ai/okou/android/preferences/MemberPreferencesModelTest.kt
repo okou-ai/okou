@@ -22,7 +22,6 @@ import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -126,7 +125,6 @@ class MemberPreferencesModelTest {
 
     private fun check(
         service: Service = Service(),
-        online: MutableStateFlow<Boolean> = MutableStateFlow(true),
         block: suspend TestScope.(MemberPreferencesModel, Service, ViewModelStore) -> Unit,
     ) = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
@@ -137,7 +135,7 @@ class MemberPreferencesModelTest {
                     store,
                     viewModelFactory {
                         initializer {
-                            MemberPreferencesModel(service.stored, service, { true }, {}, online)
+                            MemberPreferencesModel(service.stored, service, { true }, {})
                         }
                     },
                 )[MemberPreferencesModel::class.java]
@@ -455,19 +453,24 @@ class MemberPreferencesModelTest {
     }
 
     @Test
-    fun timezoneConflictRetriesAfterReconnectAndPreservesLaterAppearanceChanges() {
-        val online = MutableStateFlow(false)
+    fun timezoneConflictRetriesAndPreservesLaterAppearanceChanges() {
         val service = Service()
         val save = service.write
         service.write = { request ->
             save(request)
             throw ApiFailure.Http(409, "CONFLICT", null, null)
         }
-        check(service, online) { model, api, _ ->
+        check(service) { model, api, _ ->
+            val read = CompletableDeferred<Unit>()
+            api.load = {
+                read.await()
+                api.stored
+            }
+            model.refresh()
             runCurrent()
             model.selectTheme(UserPreferencesTheme.DARK)
             model.selectTimezone("Asia/Tokyo")
-            online.value = true
+            read.complete(Unit)
             runCurrent()
             assertEquals(PreferenceStatus.SaveFailed, model.uiState.value.status)
             assertEquals("Asia/Tokyo", api.stored.timezone)
@@ -475,13 +478,7 @@ class MemberPreferencesModelTest {
 
             api.stored = api.stored.copy(theme = UserPreferencesTheme.LIGHT)
             api.write = save
-            online.value = false
-            runCurrent()
             model.retry()
-            runCurrent()
-            assertEquals(1, api.requests.size)
-
-            online.value = true
             runCurrent()
 
             assertEquals(
@@ -529,10 +526,14 @@ class MemberPreferencesModelTest {
     }
 
     @Test
-    fun queuedAppearanceSavesOnReconnectWithoutRepeatingAnObsoleteTimezone() {
-        val online = MutableStateFlow(true)
-        check(online = online) { model, api, _ ->
+    fun queuedAppearanceSavesWithoutRepeatingAnObsoleteTimezone() {
+        check { model, api, _ ->
             val release = CompletableDeferred<Unit>()
+            val readback = CompletableDeferred<Unit>()
+            api.load = {
+                readback.await()
+                api.stored
+            }
             val save = api.write
             api.write = { update ->
                 if (update.timezone == "Asia/Tokyo") {
@@ -545,15 +546,13 @@ class MemberPreferencesModelTest {
             model.selectTimezone("Asia/Tokyo")
             runCurrent()
             model.selectTheme(UserPreferencesTheme.DARK)
-            online.value = false
-            runCurrent()
             release.complete(Unit)
             runCurrent()
             assertEquals(1, api.requests.size)
             assertEquals("Asia/Tokyo", model.uiState.value.confirmed.timezone)
 
             api.stored = api.stored.copy(timezone = "Asia/Shanghai")
-            online.value = true
+            readback.complete(Unit)
             runCurrent()
 
             assertEquals(
@@ -620,9 +619,14 @@ class MemberPreferencesModelTest {
     }
 
     @Test
-    fun offlineChoicesStayLocalUntilReconnectAndOnlyTheLastValueIsSent() {
-        val online = MutableStateFlow(false)
-        check(online = online) { model, api, _ ->
+    fun choicesQueuedDuringAReadOnlySendTheLastValue() {
+        check { model, api, _ ->
+            val read = CompletableDeferred<Unit>()
+            api.load = {
+                read.await()
+                api.stored
+            }
+            model.refresh()
             runCurrent()
             model.selectTheme(UserPreferencesTheme.DARK)
             model.selectTheme(UserPreferencesTheme.LIGHT)
@@ -634,7 +638,7 @@ class MemberPreferencesModelTest {
             assertEquals("UTC", model.uiState.value.confirmed.timezone)
             assertTrue(api.requests.isEmpty())
 
-            online.value = true
+            read.complete(Unit)
             runCurrent()
             assertEquals(UserPreferencesTheme.LIGHT, model.uiState.value.confirmed.theme)
             assertEquals(UpdatePreferencesRequestTheme.LIGHT, api.requests.single().theme)

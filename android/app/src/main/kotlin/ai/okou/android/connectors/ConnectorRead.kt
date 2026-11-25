@@ -46,7 +46,6 @@ internal suspend fun <T : Any> retryConnectorRead(
     canRead: () -> Boolean,
     onError: (Exception) -> Unit,
     publish: (ConnectorRead<T>) -> Unit,
-    canRetry: () -> Boolean = canRead,
 ) {
     for (attempt in 0..READ_RETRY_LIMIT) {
         if (!canRead()) return
@@ -62,10 +61,9 @@ internal suspend fun <T : Any> retryConnectorRead(
                         error.status !in 400..499 ||
                         error.status == 408 ||
                         error.status == 429
-                if (retryable && attempt < READ_RETRY_LIMIT && canRetry()) {
+                if (retryable && attempt < READ_RETRY_LIMIT) {
                     delay(3.seconds)
-                    if (canRead() && canRetry()) continue
-                    if (!canRead()) return
+                    continue
                 }
                 val failure =
                     when {

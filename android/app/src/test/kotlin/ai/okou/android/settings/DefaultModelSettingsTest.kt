@@ -157,7 +157,7 @@ class DefaultModelSettingsTest {
     }
 
     @Test
-    fun offlineChangesCoalesceAndReopeningRestoresOnlyConfirmedValues() = runTest {
+    fun queuedChangesCoalesceAndReopeningRestoresOnlyConfirmedValues() = runTest {
         ChatListApiFixture().use { api ->
             val fixture = DefaultModelApiFixture(api)
             val fixtureResponse = api.commandResponse
@@ -191,7 +191,7 @@ class DefaultModelSettingsTest {
                         },
                     )
                 assertEquals("gpt-test", model.openAfterSync().selected?.id)
-                model.online(false)
+                assertNull(store.load(api.identity).confirmed.serviceTier)
                 model.select("claude-test")
                 assertEquals(ModelEffort.HIGH, model.state.value.effort)
                 model.select("gpt-test")
@@ -199,9 +199,7 @@ class DefaultModelSettingsTest {
                 assertEquals(ModelEffort.HIGH, model.state.value.effort)
                 model.fast(true)
                 assertTrue(fixture.writes.isEmpty())
-                assertNull(store.load(api.identity).confirmed.serviceTier)
 
-                model.online(true)
                 val synced = model.state.first { it.pending == null }
                 assertTrue(synced.fast)
                 assertEquals(ModelEffort.HIGH, synced.effort)
@@ -261,15 +259,13 @@ class DefaultModelSettingsTest {
             assertNull(reopened.load(otherWorkspace).confirmed.selectedModel)
             assertNull(reopened.load(api.identity.copy(userId = "other")).confirmed.selectedModel)
             val model = model(api, reopened, identity = api.identity.copy(sessionId = "renewed"))
-            model.online(false)
-            model.showSettings(SettingsDestination.Overview)
-            model.foreground(true)
             val restored = model.state.first { it.record != null }
             assertEquals("gpt-test", restored.selectedModel)
             assertNull(restored.record?.confirmedLabel)
             assertNull(restored.pending)
 
-            model.online(true)
+            model.showSettings(SettingsDestination.Overview)
+            model.foreground(true)
             val cached = model.state.first { it.options != null }
             assertEquals("gpt-test", cached.selected?.id)
             assertEquals(ModelEffort.HIGH, cached.effort)
@@ -323,7 +319,6 @@ class DefaultModelSettingsTest {
                 fixture.writes.single()["modelSettingsPatch"]?.jsonObject?.get("model"),
             )
 
-            model.online(false)
             model.select("claude-test")
             assertEquals(ModelEffort.HIGH, model.state.value.effort)
         }
@@ -355,7 +350,7 @@ class DefaultModelSettingsTest {
     }
 
     @Test
-    fun cachedCatalogKeepsItsOptionsAfterThreeAttemptsAndRecoversOnReconnect() = runTest {
+    fun cachedCatalogKeepsItsOptionsAfterThreeAttemptsAndRecoversOnForegrounding() = runTest {
         ChatListApiFixture().use { api ->
             DefaultModelApiFixture(api)
             val catalog = api.service.recoveryCatalog()
@@ -388,8 +383,8 @@ class DefaultModelSettingsTest {
             advanceTimeBy(60_000)
             assertEquals(3, attempts.size)
             unavailable = false
-            model.online(false)
-            model.online(true)
+            model.foreground(false)
+            model.foreground(true)
             runCurrent()
             assertFalse(model.state.value.catalogUnavailable)
             assertEquals("gpt-test", model.state.value.selected?.id)
@@ -561,8 +556,8 @@ class DefaultModelSettingsTest {
             assertEquals("gpt-test", store.load(api.identity).confirmed.selectedModel)
 
             advanceTimeBy(1_000)
-            model.online(false)
-            model.online(true)
+            model.foreground(false)
+            model.foreground(true)
             runCurrent()
             assertEquals(7_000L, reads.last())
             assertTrue(model.state.value.pending != null)
@@ -587,7 +582,7 @@ class DefaultModelSettingsTest {
     }
 
     @Test
-    fun rejectedReadbackDoesNotRepeatTheWriteAndReconnectReconciles() = runTest {
+    fun rejectedReadbackReconcilesOnForegroundingWithoutRepeatingTheWrite() = runTest {
         ChatListApiFixture().use { api ->
             val fixture = DefaultModelApiFixture(api)
             val fixtureResponse = api.commandResponse
@@ -617,11 +612,11 @@ class DefaultModelSettingsTest {
             assertEquals(1, blockedReads.get())
             assertEquals(1, writes.get())
 
-            model.online(false)
+            model.foreground(false)
             fixture.preference =
                 JsonObject(fixture.preference + ("serviceTier" to JsonPrimitive("priority")))
             rejectReadback.set(false)
-            model.online(true)
+            model.foreground(true)
             val confirmed = model.state.first { it.pending == null }
             assertTrue(confirmed.fast)
             assertEquals(1, writes.get())
@@ -714,7 +709,7 @@ class DefaultModelSettingsTest {
     }
 
     @Test
-    fun saveRetriesKeepTheirScheduleAcrossReconnectAndYieldToScheduledRead() = runTest {
+    fun saveRetriesRespectTheirScheduleAndYieldToScheduledRead() = runTest {
         ChatListApiFixture().use { api ->
             DefaultModelApiFixture(api)
             val confirmed = api.service.defaultModelPreference()
@@ -750,10 +745,7 @@ class DefaultModelSettingsTest {
             assertTrue(model.state.value.fast)
 
             advanceTimeBy(1_000)
-            model.online(false)
-            runCurrent()
             advanceTimeBy(1_000)
-            model.online(true)
             runCurrent()
             assertEquals(listOf(0L), writes)
             advanceTimeBy(1_000)
@@ -772,8 +764,6 @@ class DefaultModelSettingsTest {
             assertNull(store.load(api.identity).confirmed.serviceTier)
 
             advanceTimeBy(30_000)
-            model.online(false)
-            model.online(true)
             runCurrent()
             assertEquals(listOf(0L, 3_000L, 6_000L), writes)
             assertEquals(listOf(DefaultModelNotice.SaveRolledBack), notices)

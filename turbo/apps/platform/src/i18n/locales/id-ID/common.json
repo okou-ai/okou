@@ -1203,7 +1203,11 @@
       "title": "Turunkan paket"
     },
     "feedback": {
-      "shareFeedback": "Bagikan masukan"
+      "otherPlaceholder": "Ceritakan lebih lanjut…",
+      "rewardTerms": "Sekali per ruang kerja · Kredit berlaku 30 hari",
+      "shareFeedback": "Bagikan masukan",
+      "submitFeedback": "Kirim masukan",
+      "thanks": "Terima kasih atas masukannya"
     },
     "invoices": {
       "amount": "Jumlah",

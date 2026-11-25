@@ -15,7 +15,6 @@
     <string name="conversation_new_reply">Nouvelle réponse</string>
     <string name="conversation_view_progress">Voir la progression</string>
     <string name="conversation_processing">En cours…</string>
-    <string name="conversation_offline_send">Connectez-vous pour envoyer. Votre brouillon reste ici.</string>
     <string name="conversation_reply_summary">Résumé de la réponse</string>
     <string name="conversation_turn_continued">Repris au tour suivant</string>
     <string name="conversation_replying">Réponse en cours…</string>

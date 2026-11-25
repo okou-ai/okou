@@ -153,8 +153,7 @@ class ProactiveSettingsModelTest {
             model.morningBrief.choose(true)
 
             fixture.readStatus = 200
-            model.online(false)
-            model.online(true)
+            model.refresh()
             model.morningBrief.state.first { it.enabled == true && it.checking == null }
             assertEquals(listOf(ProactiveSetting.MorningBrief to true), fixture.writes)
         }
@@ -267,12 +266,10 @@ class ProactiveSettingsModelTest {
             )
 
             val reopened = model(api, cache)
-            reopened.online(false)
             reopened.visible(true)
             val restored = reopened.morningBrief.state.first { it.confirmed != null }
             assertEquals(true, restored.enabled)
-            assertFalse(restored.canChoose)
-            assertEquals(1, fixture.reads.count { it == "morning-brief" })
+            assertTrue(restored.canChoose)
         }
     }
 

@@ -1207,7 +1207,11 @@
       "title": "Downgrade-Plan"
     },
     "feedback": {
-      "shareFeedback": "Feedback geben"
+      "otherPlaceholder": "Erzähl uns mehr…",
+      "rewardTerms": "Einmal pro Workspace · Credits sind 30 Tage gültig",
+      "shareFeedback": "Feedback geben",
+      "submitFeedback": "Feedback senden",
+      "thanks": "Danke für dein Feedback"
     },
     "invoices": {
       "amount": "Betrag",

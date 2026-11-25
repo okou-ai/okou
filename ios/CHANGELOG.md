@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.65.7](https://github.com/okou-ai/okou/compare/ios-v0.65.6...ios-v0.65.7) (2026-11-25)
+
+
+### Refactoring
+
+* **ios:** keep the failure recovery state in the session graph ([#50722](https://github.com/okou-ai/okou/issues/50722)) ([d4491b4](https://github.com/okou-ai/okou/commit/d4491b4516895fe48a692663b6784a5146e12801))
+
 ## [0.65.6](https://github.com/okou-ai/okou/compare/ios-v0.65.5...ios-v0.65.6) (2026-11-25)
 
 

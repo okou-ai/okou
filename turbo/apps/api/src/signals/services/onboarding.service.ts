@@ -9,15 +9,18 @@ import { isValidTimeZone } from "@okouai/core/timezone";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, or, sql } from "drizzle-orm";
 
 import type { AuthContext } from "../../types/auth";
 import { logger } from "../../lib/log";
+import type { ClerkUser } from "../external/clerk";
 import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { settle } from "../utils";
 import type { WorkflowMember } from "./workflow-data.service";
 import { markOrgOnboardingComplete$ } from "./onboarding-completion.command";
+import { shouldEnableOnboardingSuggestions$ } from "./onboarding-suggestions.service";
+import { ensureProactiveWorkflows$ } from "./proactive-workflows-lifecycle.service";
 
 const L = logger("onboarding.service");
 
@@ -37,7 +40,11 @@ type CompleteOnboardingResponse = {
 const markMemberOnboardingComplete$ = command(
   async (
     { set },
-    args: { readonly orgId: string; readonly userId: string },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly enableSuggestions: boolean;
+    },
     signal: AbortSignal,
   ): Promise<boolean> => {
     const db = set(writeDb$);
@@ -51,13 +58,25 @@ const markMemberOnboardingComplete$ = command(
         userId,
         selectedModel: AUTO_SELECTED_MODEL,
         onboardingCompletedAt: completedAt,
+        proactiveSuggestionsEnabled: args.enableSuggestions ? true : undefined,
         createdAt: completedAt,
         updatedAt: completedAt,
       })
       .onConflictDoUpdate({
         target: [orgMembersMetadata.orgId, orgMembersMetadata.userId],
-        set: { onboardingCompletedAt: completedAt, updatedAt: completedAt },
-        setWhere: isNull(orgMembersMetadata.onboardingCompletedAt),
+        set: {
+          onboardingCompletedAt: sql`coalesce(${orgMembersMetadata.onboardingCompletedAt}, excluded.onboarding_completed_at)`,
+          ...(args.enableSuggestions && {
+            proactiveSuggestionsEnabled: sql`coalesce(${orgMembersMetadata.proactiveSuggestionsEnabled}, true)`,
+          }),
+          updatedAt: completedAt,
+        },
+        setWhere: or(
+          isNull(orgMembersMetadata.onboardingCompletedAt),
+          args.enableSuggestions
+            ? isNull(orgMembersMetadata.proactiveSuggestionsEnabled)
+            : undefined,
+        ),
       })
       .returning({ userId: orgMembersMetadata.userId });
     signal.throwIfAborted();
@@ -112,6 +131,7 @@ interface CompleteOnboardingArgs {
   readonly orgId: string;
   readonly member: WorkflowMember;
   readonly isAdmin: boolean;
+  readonly clerkUser?: ClerkUser;
   readonly timezone?: string;
   readonly industry?: OnboardingIndustry;
 }
@@ -208,108 +228,71 @@ export function memberOnboardingStatus(
   });
 }
 
-const completeMemberOnboarding$ = command(
-  async (
-    { set },
-    args: CompleteOnboardingArgs,
-    signal: AbortSignal,
-  ): Promise<CompleteOnboardingResponse> => {
-    const firstCompletion = await set(
-      markMemberOnboardingComplete$,
-      { orgId: args.orgId, userId: args.member.userId },
-      signal,
-    );
-    signal.throwIfAborted();
-    // The timezone is the member's own preference, so it is kept like an
-    // admin's. The industry and subscription answers are not: they only seed
-    // organization defaults, which a member does not own.
-    const timezone = await settle(
-      set(
-        preserveOrStoreTimezoneFallback$,
-        {
-          orgId: args.orgId,
-          userId: args.member.userId,
-          timezone: args.timezone,
-        },
-        signal,
-      ),
-      signal,
-    );
-    if (timezone.ok) {
-      L.debug("Member onboarding completed", {
-        orgId: args.orgId,
-        userId: args.member.userId,
-        firstCompletion,
-        timezone: timezone.value,
-      });
-    } else {
-      L.warn("Member onboarding timezone fallback failed", {
-        orgId: args.orgId,
-        userId: args.member.userId,
-        firstCompletion,
-        error: timezone.error,
-      });
-    }
-    return {
-      status: 200,
-      body: {
-        onboardingComplete: true,
-        needsOnboarding: false,
-      },
-    };
-  },
-);
-
 export const completeOnboarding$ = command(
   async (
     { set },
     args: CompleteOnboardingArgs,
     signal: AbortSignal,
   ): Promise<CompleteOnboardingResponse> => {
-    await set(
-      initializeMemberMemory$,
-      {
-        orgId: args.orgId,
-        userId: args.member.userId,
-      },
+    const owner = { orgId: args.orgId, userId: args.member.userId };
+    await set(initializeMemberMemory$, owner, signal);
+    signal.throwIfAborted();
+    // Resolve the registration cohort before stamping completion so a failed
+    // Clerk lookup can be retried while onboarding is still pending.
+    const enableSuggestions = await set(
+      shouldEnableOnboardingSuggestions$,
+      owner,
+      args.clerkUser,
       signal,
     );
     signal.throwIfAborted();
-    if (!args.isAdmin) {
-      return await set(completeMemberOnboarding$, args, signal);
-    }
-    await set(
-      markOrgOnboardingComplete$,
-      {
-        orgId: args.orgId,
-        userId: args.member.userId,
-        industry: args.industry,
-      },
-      signal,
-    );
+    const updated = args.isAdmin
+      ? await set(
+          markOrgOnboardingComplete$,
+          { ...owner, industry: args.industry, enableSuggestions },
+          signal,
+        )
+      : await set(
+          markMemberOnboardingComplete$,
+          { ...owner, enableSuggestions },
+          signal,
+        );
     signal.throwIfAborted();
-
     const timezone = await settle(
       set(
         preserveOrStoreTimezoneFallback$,
-        {
-          orgId: args.orgId,
-          userId: args.member.userId,
-          timezone: args.timezone,
-        },
+        { ...owner, timezone: args.timezone },
         signal,
       ),
       signal,
     );
     signal.throwIfAborted();
-    if (!timezone.ok) {
+    if (timezone.ok) {
+      L.debug("Member onboarding completed", {
+        ...owner,
+        updated,
+        timezone: timezone.value,
+      });
+    } else {
       L.warn("Member onboarding timezone fallback failed", {
-        orgId: args.orgId,
-        userId: args.member.userId,
+        ...owner,
+        updated,
         error: timezone.error,
       });
     }
-
+    if (enableSuggestions) {
+      // The saved preference also makes the owner eligible for scheduled reconciliation.
+      const setup = await settle(
+        set(ensureProactiveWorkflows$, owner, signal),
+        signal,
+      );
+      if (!setup.ok) {
+        L.warn("Could not prepare Suggestions after onboarding", {
+          ...owner,
+          error: setup.error,
+        });
+      }
+    }
     return {
       status: 200,
       body: {
