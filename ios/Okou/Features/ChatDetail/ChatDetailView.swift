@@ -171,15 +171,7 @@ struct ChatDetailView: View {
       .okouSheetBackground()
       .task { await conversation.modelSelection?.models.loadUsageCatalog() }
     }
-    .sheet(
-      item: Binding(
-        get: { conversation.connectorActions.active },
-        set: { if $0 == nil { conversation.connectorActions.cancel() } }
-      )
-    ) { flow in
-      ConnectorAuthorizationSheet(flow: flow, store: conversation.connectorActions)
-        .okouSheetBackground()
-    }
+    .connectorAuthorization(store: conversation.connectorActions)
     .alert(
       "Unable to open connection",
       isPresented: Binding(

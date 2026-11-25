@@ -9,7 +9,7 @@ private typealias FixtureData = ConnectorHTTPFixtures
 
 @MainActor
 final class ConnectorSystemAuthenticationTests: XCTestCase {
-  func testHttpsReturnReconcilesOnlyItsAttemptAndRequiresTheBackendReceipt() async throws {
+  func testExactHttpsReconnectStartsDirectlyAndRequiresItsBackendReceipt() async throws {
     let scheduled = (1...2).map { expectation(description: "Attempt \($0) is waiting") }
     let starts = Mutex(0)
     let sleeps = Mutex(0)
@@ -40,6 +40,16 @@ final class ConnectorSystemAuthenticationTests: XCTestCase {
         return ChatHTTPResponse(body: account)
       }
       if path == "/api/connectors/github/oauth/start" {
+        struct Body: Decodable {
+          struct Account: Decodable {
+            let intent: String
+            let connectionId: String
+          }
+          let account: Account
+        }
+        let body = try JSONDecoder().decode(Body.self, from: chatRequestBody(request))
+        XCTAssertEqual(body.account.intent, "reconnect")
+        XCTAssertEqual(body.account.connectionId, FixtureData.accountID)
         let index = starts.withLock { value in
           value += 1
           return value
@@ -62,9 +72,9 @@ final class ConnectorSystemAuthenticationTests: XCTestCase {
       didContinue: { continued.withLock { $0 = true } }, didFail: { _ in },
       pollSleep: clock.sleep)
     defer { store.close() }
-    store.activate(.configuration(target: .builtin("github"), threadID: nil))
-    try await waitForBusinessResult { store.active != nil }
-    store.submit()
+    store.activate(
+      .configuration(target: .builtin("github"), threadID: nil, connectionID: FixtureData.accountID)
+    )
     await fulfillment(of: [scheduled[0]], timeout: 3)
     let flow = try XCTUnwrap(store.active)
     let firstReturn = try XCTUnwrap(flow.session?.nativeCallbackUrl)
@@ -80,18 +90,21 @@ final class ConnectorSystemAuthenticationTests: XCTestCase {
     XCTAssertNil(flow.browserURL)
     XCTAssertNotNil(flow.session)
     clock.advance(.seconds(2))
-    try await waitForBusinessResult { flow.session == nil }
+    try await waitForBusinessResult { store.active == nil }
     XCTAssertFalse(continued.withLock { $0 })
-    XCTAssertNotNil(store.active)
 
-    store.submit()
+    store.activate(
+      .configuration(target: .builtin("github"), threadID: nil, connectionID: FixtureData.accountID)
+    )
     await fulfillment(of: [scheduled[1]], timeout: 3)
-    let nextBrowser = try XCTUnwrap(flow.browserURL)
+    let nextFlow = try XCTUnwrap(store.active)
+    let nextBrowser = try XCTUnwrap(nextFlow.browserURL)
     store.receiveProviderReturn(firstReturn)
-    XCTAssertEqual(flow.browserURL, nextBrowser)
-    let nextReturn = try XCTUnwrap(flow.session?.nativeCallbackUrl)
+    XCTAssertEqual(nextFlow.browserURL, nextBrowser)
+    let nextReturn = try XCTUnwrap(nextFlow.session?.nativeCallbackUrl)
     connected.withLock { $0 = true }
-    store.authenticationFinished(flow: flow, url: nextBrowser, callbackURL: nextReturn, error: nil)
+    store.authenticationFinished(
+      flow: nextFlow, url: nextBrowser, callbackURL: nextReturn, error: nil)
     clock.advance(.seconds(2))
     try await waitForBusinessResult { store.active == nil }
     XCTAssertTrue(continued.withLock { $0 })
@@ -135,8 +148,6 @@ final class ConnectorSystemAuthenticationTests: XCTestCase {
       pollSleep: clock.sleep)
     defer { store.close() }
     store.activate(.configuration(target: .builtin("slack"), threadID: nil))
-    try await waitForBusinessResult { store.active != nil }
-    store.submit()
     await fulfillment(of: [scheduled[0]], timeout: 3)
     let flow = try XCTUnwrap(store.active)
     let retiredURL = try XCTUnwrap(flow.browserURL)
