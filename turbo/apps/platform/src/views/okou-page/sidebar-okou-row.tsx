@@ -7,10 +7,12 @@ import {
   agentChatPageActive$,
 } from "../../signals/active-route.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
-import { followForYouFeedOnRef$ } from "../../signals/okou-page/agent-suggestion-session.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 import { Link } from "../router/link.tsx";
-import { forYouHasUnread$ } from "../../signals/okou-page/for-you-sources.ts";
+import {
+  forYouSummary$,
+  followForYouSummaryOnRef$,
+} from "../../signals/okou-page/for-you-sources.ts";
 import {
   ChatThreadStateIndicator,
   ChatThreadStateText,
@@ -84,12 +86,12 @@ export function ForYouChatListRow({
 }) {
   const { t } = useTranslation();
   const active = useGet(activeRoute$) === "forYou";
-  const unread = useLastResolved(forYouHasUnread$) === true;
-  const followFeed = useSet(followForYouFeedOnRef$);
+  const unread = useLastResolved(forYouSummary$)?.hasUnread === true;
+  const followSummary = useSet(followForYouSummaryOnRef$);
   return (
     <Link
       pathname={ROUTES.forYou}
-      ref={followFeed}
+      ref={followSummary}
       aria-current={active ? "page" : undefined}
       className={cn(
         ENTRY_ROW,

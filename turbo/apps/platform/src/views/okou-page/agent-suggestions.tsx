@@ -1,4 +1,4 @@
-import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
   ArrowRight,
@@ -17,6 +17,7 @@ import { Button, buttonVariants, cn } from "@okouai/ui";
 import type { SuggestionOption } from "@okouai/api-contracts/contracts/feed";
 import {
   agentSuggestionEntries$,
+  suggestionDirectionItemId$,
   type AgentSuggestionEntry,
   closeSettledSuggestion$,
   retryAgentSuggestion$,
@@ -30,7 +31,6 @@ import {
   suggestionDirectionComposer$,
   suggestionDirectionEntryOnRef$,
   suggestionDirectionFolded$,
-  suggestionDirectionItemId$,
   suggestionDirectionReopened$,
 } from "../../signals/okou-page/agent-suggestions.ts";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
@@ -247,12 +247,9 @@ function SuggestionSaveError({
 }
 
 export function SuggestionSaveErrors() {
-  const entries = useLastLoadable(agentSuggestionEntries$);
-  return entries.state === "hasData"
-    ? entries.data.map((entry) => {
-        return <SuggestionSaveError key={entry.item.id} entry={entry} />;
-      })
-    : null;
+  return useGet(agentSuggestionEntries$).map((entry) => {
+    return <SuggestionSaveError key={entry.item.id} entry={entry} />;
+  });
 }
 
 function SuggestionDirectionEntry({

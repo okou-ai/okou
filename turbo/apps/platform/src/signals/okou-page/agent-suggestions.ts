@@ -2,7 +2,6 @@ import type { SuggestionPreset } from "@okouai/api-contracts/validators/chat-thr
 import {
   captureSuggestionCard,
   type SuggestionDirection,
-  type SuggestionImpression,
 } from "../../lib/posthog.ts";
 import { command, computed, state } from "ccstate";
 import type {
@@ -25,6 +24,8 @@ import {
 import { sendNewThreadWithoutNavigation$ } from "../chat-page/optimistic-chat-thread-page.ts";
 import {
   type AgentSuggestionEntry,
+  type SuggestionDirectionSession,
+  suggestionDirectionSession$,
   linkAgentSuggestionThread$,
   restoreAgentSuggestion$,
   settleAgentSuggestion$,
@@ -105,29 +106,6 @@ function showSuggestionSent(): void {
   );
 }
 
-interface SuggestionThreadTarget {
-  readonly kind: "thread";
-  readonly id: string;
-}
-
-/**
- * A custom direction continues the chat the card names, or starts a new chat
- * when the card names none or that chat is no longer available.
- */
-type SuggestionDirectionTarget =
-  { readonly kind: "new" } | SuggestionThreadTarget;
-
-interface SuggestionDirectionSession {
-  readonly entry: AgentSuggestionEntry;
-  readonly target: SuggestionDirectionTarget;
-  readonly impression: SuggestionImpression;
-  /** Closes the composer and settles the card once a send is accepted. */
-  readonly finish: (threadId: string, submission: ComposerSubmission) => void;
-}
-
-const internalDirectionSession$ = state<SuggestionDirectionSession | null>(
-  null,
-);
 const resolveDirectionThreadMeta$ = createThreadMetaLookup();
 const internalDirectionComposer$ = state<Promise<ComposerSignals> | null>(null);
 const resetDirection$ = resetSignal();
@@ -137,7 +115,7 @@ const resetDirection$ = resetSignal();
  * draft nor the target thread's saved draft is read or replaced.
  */
 const directionGraph$ = computed((get) => {
-  const session = get(internalDirectionSession$);
+  const session = get(get(suggestionDirectionSession$));
   if (!session) {
     return null;
   }
@@ -156,10 +134,6 @@ const directionGraph$ = computed((get) => {
       session.finish(target.id, submission);
     }),
   };
-});
-
-export const suggestionDirectionItemId$ = computed((get) => {
-  return get(internalDirectionSession$)?.entry.item.id ?? null;
 });
 
 export const suggestionDirectionComposer$ = computed((get) => {
@@ -260,10 +234,10 @@ export const suggestionDirectionEntryOnRef$ = onRef<HTMLElement>(
   }),
 );
 
-const closeSuggestionDirection$ = command(({ set }) => {
+const closeSuggestionDirection$ = command(({ get, set }) => {
   set(resetDirection$);
   set(internalDirectionComposer$, null);
-  set(internalDirectionSession$, null);
+  set(get(suggestionDirectionSession$), null);
   set(directionFoldedState$, false);
 });
 
@@ -283,7 +257,7 @@ const finishSuggestionDirection$ = command(
     pageSignal: AbortSignal,
   ): void => {
     const { threadId, submission } = sent;
-    if (get(internalDirectionSession$) === session) {
+    if (get(get(suggestionDirectionSession$)) === session) {
       set(closeSuggestionDirection$);
     }
     const document = submission.editorDocument.toMessageDocument();
@@ -316,7 +290,7 @@ const finishSuggestionDirection$ = command(
 /** Installs the card's background before the target's composer mounts. */
 const prepareDirectionComposer$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<ComposerSignals> => {
-    const session = get(internalDirectionSession$);
+    const session = get(get(suggestionDirectionSession$));
     const graph = get(directionGraph$);
     if (!session || !graph) {
       throw new Error("Suggestion direction is unavailable");
@@ -376,7 +350,7 @@ export const openSuggestionDirection$ = command(
     // Reopening a folded editor shows it as it was left.
     if (
       get(directionFoldedState$) &&
-      get(internalDirectionSession$)?.entry === entry
+      get(get(suggestionDirectionSession$))?.entry === entry
     ) {
       set(directionFoldedState$, false);
       set(directionReopenedState$, (count) => {
@@ -423,13 +397,13 @@ export const openSuggestionDirection$ = command(
         );
       },
     };
-    set(internalDirectionSession$, session);
+    set(get(suggestionDirectionSession$), session);
     // Leaving the page or opening another card's editor ends this session.
     signal.addEventListener(
       "abort",
       () => {
-        if (get(internalDirectionSession$) === session) {
-          set(internalDirectionSession$, null);
+        if (get(get(suggestionDirectionSession$)) === session) {
+          set(get(suggestionDirectionSession$), null);
           set(internalDirectionComposer$, null);
           set(directionFoldedState$, false);
         }

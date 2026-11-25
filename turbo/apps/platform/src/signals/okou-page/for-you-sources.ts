@@ -4,6 +4,7 @@ import { command, computed, state, type Command } from "ccstate";
 import { feedContract } from "@okouai/api-contracts/client/feed";
 import type { FeedSources } from "@okouai/api-contracts/contracts/feed";
 import { accept } from "../../lib/accept.ts";
+import { setAblyLoop$ } from "../realtime.ts";
 import { apiClient$ } from "../api-client.ts";
 import { authenticatedSessionKey$ } from "../auth.ts";
 import { createDeferredPromise, onRef } from "../utils.ts";
@@ -24,7 +25,7 @@ export const forYouSources$ = computed(async (get) => {
   return result.body;
 });
 
-export const forYouHasUnread$ = computed(async (get) => {
+export const forYouSummary$ = computed(async (get) => {
   get(get(sourceState$).summaryVersion$);
   const result = await accept(
     get(apiClient$)(feedContract).summary(),
@@ -32,7 +33,7 @@ export const forYouHasUnread$ = computed(async (get) => {
     undefined,
     { showErrorToast: false },
   );
-  return result.body.hasUnread;
+  return result.body;
 });
 
 export const reloadForYouSources$ = command(({ get, set }) => {
@@ -44,6 +45,28 @@ export const reloadForYouSources$ = command(({ get, set }) => {
     return version + 1;
   });
 });
+
+const refreshForYouSummary$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    set(reloadForYouSources$);
+    await get(forYouSummary$);
+    signal.throwIfAborted();
+    return false;
+  },
+);
+export const followForYouSummaryOnRef$ = onRef(
+  command(({ set }, _row: HTMLElement, signal: AbortSignal) => {
+    set(
+      setAblyLoop$,
+      {
+        scope: "credential",
+        topic: "agentSuggestionsChanged",
+        loopCommand$: refreshForYouSummary$,
+      },
+      signal,
+    );
+  }),
+);
 
 export const updateForYouSource$ = command(
   async (

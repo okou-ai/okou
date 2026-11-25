@@ -385,8 +385,8 @@ describe("recurring automation auto-disable platform feed events", () => {
       [200],
     );
     expect(
-      (await accept(feedClient().summary({ headers }), [200])).body.hasUnread,
-    ).toBeTruthy();
+      (await accept(feedClient().summary({ headers }), [200])).body,
+    ).toStrictEqual({ hasUnread: true, firstItem: delivered[0] });
     await accept(
       feedClient().updateSources({
         headers,
