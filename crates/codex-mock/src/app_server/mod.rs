@@ -4,7 +4,7 @@ mod persistence;
 mod scenario;
 
 use chrono::{DateTime, Utc};
-use messages::{write_json_line, write_success};
+use messages::{write_error, write_json_line, write_success};
 use persistence::session_artifact_thread_id;
 use scenario::Scenario;
 use serde_json::{Value, json};
@@ -270,17 +270,21 @@ impl AppServerState {
         });
     }
 
-    fn current_thread_mut<'a>(
+    fn lookup_turn_thread<'a, W: Write>(
         slot: &'a mut Option<AppServerThread>,
         requested_thread_id: &str,
-    ) -> Result<&'a mut AppServerThread, &'static str> {
-        let Some(current_thread) = slot.as_mut() else {
-            return Err("no active thread");
+        id: &Value,
+        output: &mut W,
+    ) -> io::Result<Option<&'a mut AppServerThread>> {
+        let message = match slot.as_mut() {
+            Some(thread) if requested_thread_id == thread.protocol_thread_id => {
+                return Ok(Some(thread));
+            }
+            Some(_) => "unknown threadId",
+            None => "no active thread",
         };
-        if requested_thread_id != current_thread.protocol_thread_id {
-            return Err("unknown threadId");
-        }
-        Ok(current_thread)
+        write_error(output, id.clone(), INVALID_REQUEST, message)?;
+        Ok(None)
     }
 }
 
