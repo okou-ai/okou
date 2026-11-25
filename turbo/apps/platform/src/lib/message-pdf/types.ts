@@ -20,6 +20,10 @@ export interface PdfWorkerRequest {
   readonly italicFont?: ArrayBuffer;
   readonly boldItalicFont?: ArrayBuffer;
   readonly emojiFont?: ArrayBuffer;
+  readonly unicodeRegularFont?: ArrayBuffer;
+  readonly unicodeBoldFont?: ArrayBuffer;
+  readonly unicodeItalicFont?: ArrayBuffer;
+  readonly unicodeBoldItalicFont?: ArrayBuffer;
 }
 
 export type DocumentExportFormat = "pdf" | "docx";
