@@ -6,6 +6,10 @@ import ai.okou.android.WorkspaceSearchField
 import ai.okou.android.chat.ChatListTextAction
 import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.workspaceSearchFocusOutline
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.text.format.DateFormat
 import androidx.annotation.StringRes
 import androidx.compose.foundation.Image
@@ -46,6 +50,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -80,6 +85,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.LifecycleStartEffect
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -555,32 +562,58 @@ internal class ArtifactDates(
 internal fun rememberArtifactDates(): ArtifactDates {
     val context = LocalContext.current
     val locale = LocalConfiguration.current.locales[0]
-    val calendar =
-        Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }
-    val today = calendar.timeInMillis
-    val startOfYear =
-        (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_YEAR, 1) }.timeInMillis
-    calendar.add(Calendar.DATE, -1)
-    val yesterday = calendar.timeInMillis
+    var calendarRevision by remember { mutableIntStateOf(0) }
+    LifecycleStartEffect(context) {
+        val receiver =
+            object : BroadcastReceiver() {
+                override fun onReceive(context: Context, intent: Intent) {
+                    calendarRevision++
+                }
+            }
+        val filter =
+            IntentFilter(Intent.ACTION_DATE_CHANGED).apply {
+                addAction(Intent.ACTION_TIME_CHANGED)
+                addAction(Intent.ACTION_TIMEZONE_CHANGED)
+            }
+        ContextCompat.registerReceiver(
+            context,
+            receiver,
+            filter,
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        calendarRevision++
+        onStopOrDispose { context.unregisterReceiver(receiver) }
+    }
     val todayLabel = stringResource(R.string.artifact_today)
     val yesterdayLabel = stringResource(R.string.artifact_yesterday)
-    return remember(context, locale, today, yesterday, todayLabel, yesterdayLabel) {
+    return remember(context, locale, calendarRevision, todayLabel, yesterdayLabel) {
+        val calendar = Calendar.getInstance()
+        val zone = calendar.timeZone
+        val today = (calendar.clone() as Calendar).startOfDayMillis()
+        val yesterday =
+            (calendar.clone() as Calendar).apply { add(Calendar.DATE, -1) }.startOfDayMillis()
+        val startOfYear = calendar.apply { set(Calendar.DAY_OF_YEAR, 1) }.startOfDayMillis()
         ArtifactDates(
             today,
             yesterday,
-            DateFormat.getTimeFormat(context),
-            DateFormat.getMediumDateFormat(context),
-            SimpleDateFormat(DateFormat.getBestDateTimePattern(locale, "MMMd"), locale),
+            DateFormat.getTimeFormat(context).apply { timeZone = zone },
+            DateFormat.getMediumDateFormat(context).apply { timeZone = zone },
+            SimpleDateFormat(DateFormat.getBestDateTimePattern(locale, "MMMd"), locale).apply {
+                timeZone = zone
+            },
             startOfYear,
             todayLabel,
             yesterdayLabel,
         )
     }
+}
+
+private fun Calendar.startOfDayMillis(): Long {
+    set(Calendar.HOUR_OF_DAY, 0)
+    set(Calendar.MINUTE, 0)
+    set(Calendar.SECOND, 0)
+    set(Calendar.MILLISECOND, 0)
+    return timeInMillis
 }
 
 private fun ArtifactFilter.label(): Int =

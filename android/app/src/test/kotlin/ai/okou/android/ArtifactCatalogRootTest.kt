@@ -69,6 +69,9 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.util.Calendar
+import java.util.SimpleTimeZone
+import java.util.TimeZone
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -822,6 +825,39 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
         assertTrue(first.height >= 80.dp)
         assertEquals(8.dp, title.top - first.top)
         assertEquals(16.dp, nextDay.top - first.bottom)
+    }
+
+    @Test
+    fun catalogRegroupsExistingRowsWhenTheDeviceTimeZoneChanges() {
+        val original = TimeZone.getDefault()
+        val utcHour = Calendar.getInstance(TimeZone.getTimeZone("UTC")).get(Calendar.HOUR_OF_DAY)
+        // Put the current time near 18:00 and the fixture's 10:20 entry before the new midnight.
+        val offset = (18 - utcHour) * 3_600_000
+        try {
+            TimeZone.setDefault(SimpleTimeZone(offset, "catalog-before"))
+            val fixture = ArtifactApiFixture(app.fixture)
+            fixture.install()
+            app.responseGate.countDown()
+            awaitText(fixture.sourceTitle)
+            compose.onNodeWithContentDescription("Artifacts").performClick()
+            awaitText(fixture.checklist.title)
+            compose.onNodeWithText("Today").assertIsDisplayed()
+            val requests = fixture.catalogQueries.size
+
+            compose.runOnIdle {
+                TimeZone.setDefault(SimpleTimeZone(offset - 12 * 3_600_000, "catalog-after"))
+                app.sendBroadcast(Intent(Intent.ACTION_TIMEZONE_CHANGED))
+            }
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithText("Today").fetchSemanticsNodes().isEmpty()
+            }
+            val yesterday = compose.onNodeWithText("Yesterday").getUnclippedBoundsInRoot()
+            val row = compose.onNodeWithText(fixture.checklist.title).getUnclippedBoundsInRoot()
+            assertTrue(row.top >= yesterday.bottom)
+            assertEquals(requests, fixture.catalogQueries.size)
+        } finally {
+            TimeZone.setDefault(original)
+        }
     }
 
     @Test
