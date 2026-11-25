@@ -365,7 +365,6 @@ export type UpdateCustomConnectorBody = zInfer<
 >;
 
 export const startCustomConnectorOAuth2BodySchema = object({
-  nativeCallback: literal("ios-https").optional(),
   account: connectorAccountMutationIntentSchema,
 }).strict();
 
@@ -544,7 +543,9 @@ export const customConnectorOAuth2Contract = c.router({
   start: {
     method: "POST",
     path: "/api/custom-connectors/:id/oauth2/start",
-    headers: authHeadersSchema,
+    headers: authHeadersSchema.extend({
+      "x-okou-native-connector-callback": literal("ios-https").optional(),
+    }),
     pathParams: object({ id: uuid() }),
     body: startCustomConnectorOAuth2BodySchema,
     responses: {

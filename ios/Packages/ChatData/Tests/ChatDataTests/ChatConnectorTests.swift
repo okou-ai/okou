@@ -310,10 +310,11 @@ final class ChatConnectorTests: XCTestCase {
             JSONSerialization.jsonObject(with: chatRequestBody(request)) as? [String: Any])
           let keys: Set<String> =
             ["oauth", "automatic"].contains(mode)
-            ? ["account", "nativeCallback"] : ["account", "values"]
+            ? ["account"] : ["account", "values"]
           XCTAssertEqual(Set(body.keys), keys)
           if ["oauth", "automatic"].contains(mode) {
-            XCTAssertEqual(body["nativeCallback"] as? String, "ios-https")
+            XCTAssertEqual(
+              request.value(forHTTPHeaderField: "X-Okou-Native-Connector-Callback"), "ios-https")
           }
           XCTAssertEqual(body["account"] as? [String: String], ["intent": "add"])
           if mode == "manual" {

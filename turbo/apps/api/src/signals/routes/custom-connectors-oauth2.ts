@@ -159,7 +159,11 @@ const startOAuth2Inner$ = command(async ({ get, set }, signal: AbortSignal) => {
         dcrClientMetadata: okouMcpOAuthDynamicClientMetadata(get(request$).raw),
       },
       account: body.data.account,
-      nativeCallback: body.data.nativeCallback,
+      nativeCallback:
+        get(request$).raw.headers.get("x-okou-native-connector-callback") ===
+        "ios-https"
+          ? "ios-https"
+          : undefined,
     },
     signal,
   );

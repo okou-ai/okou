@@ -350,11 +350,11 @@ public struct ChatConnectorService: Sendable {
     if custom.usesBrowserAuthorization {
       struct Body: Encodable {
         let account: Account
-        let nativeCallback = "ios-https"
       }
       return try await client.request(
         "/api/custom-connectors/\(custom.id)/oauth2/start", method: "POST",
-        body: JSONEncoder().encode(Body(account: account)))
+        body: JSONEncoder().encode(Body(account: account)),
+        headers: ["X-Okou-Native-Connector-Callback": "ios-https"])
     }
     return try await configureCustom(custom, connectionID: connectionID, values: values)
   }

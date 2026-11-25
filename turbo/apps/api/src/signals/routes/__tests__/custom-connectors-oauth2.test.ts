@@ -111,12 +111,15 @@ describe("Custom connector OAuth callbacks", () => {
         routes: [...customConnectorOAuth2Routes, ...connectorAccountRoutes],
       });
       // The public actor remains authenticated after creating the definition.
-      const headers = { authorization: "Bearer clerk-session" };
+      const headers = {
+        authorization: "Bearer clerk-session",
+        "x-okou-native-connector-callback": "ios-https" as const,
+      };
       const started = await accept(
         client(customConnectorOAuth2Contract).start({
           headers,
           params: { id: connector.id },
-          body: { account: { intent: "add" }, nativeCallback: "ios-https" },
+          body: { account: { intent: "add" } },
         }),
         [200],
       );
