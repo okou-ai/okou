@@ -6,18 +6,18 @@ account-org	src/signals/routes/__tests__/antigravity-personal-subscription.test.
 account-org	src/signals/routes/__tests__/antigravity-personal-subscription.test.ts	antigravity-personal-subscription-002	rewritten	73.7	
 account-org	src/signals/routes/__tests__/antigravity-personal-subscription.test.ts	antigravity-personal-subscription-003	rewritten	23.7	
 account-org	src/signals/routes/__tests__/antigravity-personal-subscription.test.ts	antigravity-personal-subscription-006	rewritten	27.9	
-account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-001	planned		
-account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-002	planned		
-account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-005	planned		
-account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-007	planned		
-account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-012	planned		
+account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-001	rewritten	88.1	
+account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-002	rewritten	13.1	
+account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-005	rewritten	8.8	
+account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-007	rewritten	66.9	
+account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-012	rewritten	90.5	
 account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-014	planned		
-account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-015	planned		
-account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-016	planned		
-account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-017	planned		
+account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-015	rewritten	159.6	
+account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-016	rewritten	107.7	
+account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-017	rewritten	142.7	
 account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-018	planned		
-account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-019	planned		
-account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-020	planned		
+account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-019	rewritten	51.9	
+account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-020	rewritten	42.2	
 account-org	src/signals/routes/__tests__/auth-org.bdd.test.ts	auth-org.bdd-001	planned		
 account-org	src/signals/routes/__tests__/auth-org.bdd.test.ts	auth-org.bdd-004	planned		
 account-org	src/signals/routes/__tests__/auth-org.bdd.test.ts	auth-org.bdd-006	planned		
