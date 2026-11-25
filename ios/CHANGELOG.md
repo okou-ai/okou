@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.66.3](https://github.com/okou-ai/okou/compare/ios-v0.66.2...ios-v0.66.3) (2026-11-25)
+
+
+### Refactoring
+
+* **ios:** keep connector action status reads in the session store ([#50878](https://github.com/okou-ai/okou/issues/50878)) ([5c8f655](https://github.com/okou-ai/okou/commit/5c8f655bc972079a32ec613ac75ccf0f8d719f6c))
+
 ## [0.66.2](https://github.com/okou-ai/okou/compare/ios-v0.66.1...ios-v0.66.2) (2026-11-25)
 
 

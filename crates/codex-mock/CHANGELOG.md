@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.102](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.101...codex-mock-v0.12.102) (2026-11-25)
+
+
+### Refactoring
+
+* **codex-mock:** share turn thread lookup errors ([#50881](https://github.com/okou-ai/okou/issues/50881)) ([770ba6c](https://github.com/okou-ai/okou/commit/770ba6c51816446c060ae0d62e8b39f268c2a9ff))
+
 ## [0.12.101](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.100...codex-mock-v0.12.101) (2026-11-25)
 
 ## [0.12.100](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.99...codex-mock-v0.12.100) (2026-11-24)
