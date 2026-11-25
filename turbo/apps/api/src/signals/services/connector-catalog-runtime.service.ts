@@ -848,6 +848,7 @@ export function materializeConnectorRuntimeLookup<
     createAcceptedConnectorServerFirewallCatalogFromConnectors({
       catalogIdentity: args.catalogIdentity,
       connectors: runtimeArtifacts,
+      shareExecutionMetadata: true,
       runtimeMethodsForSlug: (connectorSlug) => {
         return [
           ...(runtimeConnectors.get(connectorSlug)?.methods.values() ?? []),
