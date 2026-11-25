@@ -345,19 +345,19 @@ remote-access	src/signals/routes/__tests__/cloudflare-access-promotion-deletion.
 remote-access	src/signals/routes/__tests__/cloudflare-access-promotion-deletion.test.ts	cloudflare-access-promotion-deletion-004	rewritten	131.6	
 remote-access	src/signals/routes/__tests__/cloudflare-access-promotion-deletion.test.ts	cloudflare-access-promotion-deletion-008	rewritten	38.6	
 remote-access	src/signals/routes/__tests__/cloudflare-access-promotion-deletion.test.ts	cloudflare-access-promotion-deletion-012	rewritten	49.0	
-remote-access	src/signals/routes/__tests__/remote-control-deletion-versions.test.ts	remote-control-deletion-versions-001	planned		
-remote-access	src/signals/routes/__tests__/remote-control-deletion-versions.test.ts	remote-control-deletion-versions-004	planned		
-remote-access	src/signals/routes/__tests__/remote-control-deletion-versions.test.ts	remote-control-deletion-versions-005	planned		
-remote-access	src/signals/routes/__tests__/remote-control-deletion-versions.test.ts	remote-control-deletion-versions-006	planned		
-remote-access	src/signals/routes/__tests__/remote-control-deletion-versions.test.ts	remote-control-deletion-versions-009	planned		
-remote-access	src/signals/routes/__tests__/remote-control-deletion-versions.test.ts	remote-control-deletion-versions-010	planned		
-remote-access	src/signals/routes/__tests__/remote-control-deletion-versions.test.ts	remote-control-deletion-versions-011	planned		
-remote-access	src/signals/routes/__tests__/remote-control-deletion-versions.test.ts	remote-control-deletion-versions-014	planned		
-remote-access	src/signals/routes/__tests__/remote-control-deletion-versions.test.ts	remote-control-deletion-versions-016	planned		
-remote-access	src/signals/routes/__tests__/remote-control-deletion-versions.test.ts	remote-control-deletion-versions-019	planned		
-remote-access	src/signals/routes/__tests__/remote-control-deletion-versions.test.ts	remote-control-deletion-versions-021	planned		
-remote-access	src/signals/routes/__tests__/remote-control-deletion-versions.test.ts	remote-control-deletion-versions-024	planned		
-remote-access	src/signals/routes/__tests__/remote-control-deletion-versions.test.ts	remote-control-deletion-versions-025	planned		
+remote-access	src/signals/routes/__tests__/remote-control-deletion-versions.test.ts	remote-control-deletion-versions-001	rewritten	127.2	
+remote-access	src/signals/routes/__tests__/remote-control-deletion-versions.test.ts	remote-control-deletion-versions-004	rewritten	28.4	
+remote-access	src/signals/routes/__tests__/remote-control-deletion-versions.test.ts	remote-control-deletion-versions-005	rewritten	25.5	
+remote-access	src/signals/routes/__tests__/remote-control-deletion-versions.test.ts	remote-control-deletion-versions-006	rewritten	66.7	
+remote-access	src/signals/routes/__tests__/remote-control-deletion-versions.test.ts	remote-control-deletion-versions-009	rewritten	27.1	
+remote-access	src/signals/routes/__tests__/remote-control-deletion-versions.test.ts	remote-control-deletion-versions-010	rewritten	27.1	
+remote-access	src/signals/routes/__tests__/remote-control-deletion-versions.test.ts	remote-control-deletion-versions-011	rewritten	40.2	
+remote-access	src/signals/routes/__tests__/remote-control-deletion-versions.test.ts	remote-control-deletion-versions-014	rewritten	17.8	
+remote-access	src/signals/routes/__tests__/remote-control-deletion-versions.test.ts	remote-control-deletion-versions-016	rewritten	48.8	
+remote-access	src/signals/routes/__tests__/remote-control-deletion-versions.test.ts	remote-control-deletion-versions-019	rewritten	20.9	
+remote-access	src/signals/routes/__tests__/remote-control-deletion-versions.test.ts	remote-control-deletion-versions-021	rewritten	18.1	
+remote-access	src/signals/routes/__tests__/remote-control-deletion-versions.test.ts	remote-control-deletion-versions-024	rewritten	25.1	
+remote-access	src/signals/routes/__tests__/remote-control-deletion-versions.test.ts	remote-control-deletion-versions-025	rewritten	52.6	
 runs	src/signals/routes/__tests__/run-context-diagnostics.test.ts	run-context-diagnostics-001	planned		
 runs	src/signals/routes/__tests__/run-context-diagnostics.test.ts	run-context-diagnostics-004	planned		
 runs	src/signals/routes/__tests__/run-context-diagnostics.test.ts	run-context-diagnostics-005	planned		
