@@ -7343,7 +7343,6 @@
       "instructions": "Instructions",
       "manual": "Manual",
       "private": "Private",
-      "public": "Public",
       "settings": "Settings",
       "workflow": "Workflow",
       "workflows": "Workflows"
@@ -7430,21 +7429,18 @@
     "list": {
       "actionRequired": "Action required",
       "all": "All",
-      "automated": "Automated",
       "automations": "Automations",
+      "clearFilters": "Clear filters",
       "clearSearch": "Clear search",
       "createdBy": "Created by",
       "createInChat": "Create in chat",
       "description": "A reusable SOP for a task. Write one from scratch or distill it from your daily work, then run, edit, or automate it.",
       "empty": {
         "all": "Create a workflow from chat or save one from a useful run.",
-        "automated": "Add an automation to a workflow and it shows up here.",
-        "private": "No private workflows yet.",
-        "public": "No public workflows yet.",
-        "search": "Try another search or change the filter.",
-        "without": "Every workflow here runs on a schedule or event."
+        "search": "Try another search or change the filter."
       },
       "filter": "Filter workflows",
+      "filters": "Filters",
       "noResults": "No matching workflows",
       "noWorkflows": "No workflows",
       "open": "Open {{title}}",
@@ -7452,21 +7448,18 @@
       "ownerLoading": "Loading author…",
       "ownerUnavailable": "Author unavailable",
       "search": "Search workflows…",
-      "section": {
-        "event": "On automation",
-        "later": "Later",
-        "manual": "Manual",
-        "today": "Runs today",
-        "week": "This week"
-      },
       "sort": {
         "alphabetical": "Alphabetical",
-        "created": "Created time",
-        "label": "Next run",
+        "created": "Newest created",
+        "label": "Sort workflows",
         "nextRun": "Next run"
       },
       "title": "Workflows",
-      "viewAutomations": "View automations"
+      "viewAutomations": "View automations",
+      "visibility": "Visibility",
+      "withAutomations": "With automations",
+      "withoutAutomations": "Without automations",
+      "workspaceShared": "Workspace shared"
     },
     "skillImport": {
       "action": "Import skills",

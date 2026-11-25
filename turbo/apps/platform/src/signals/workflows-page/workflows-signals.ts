@@ -68,8 +68,8 @@ import {
 
 type WorkflowDetailActionDialog = "copy" | "delete" | null;
 export type WorkflowDetailTab = "automations" | "instructions" | "info";
-export type WorkflowFilter =
-  "all" | "automated" | "without" | "private" | "public";
+export type WorkflowFilter = "all" | "private" | "public";
+export type WorkflowAutomationFilter = "all" | "automated" | "without";
 export type WorkflowSortMode = "next-run" | "alphabetical" | "created";
 
 type GmailTextField = "from" | "subject" | "body" | "to" | "cc";
@@ -296,6 +296,7 @@ export const setWorkflowDemoteConfirmOpen$ = command(
 );
 
 const FILTER_PARAM = "filter";
+const AUTOMATION_FILTER_PARAM = "automation";
 const SORT_MODE_PARAM = "sort";
 const SEARCH_PARAM = "q";
 
@@ -315,17 +316,29 @@ export const workflowFilter$ = computed((get): WorkflowFilter => {
   return readSearchParam(
     get(searchParams$),
     FILTER_PARAM,
-    ["all", "automated", "without", "private", "public"],
+    ["all", "private", "public"],
     "all",
   );
 });
+
+export const workflowAutomationFilter$ = computed(
+  (get): WorkflowAutomationFilter => {
+    const params = get(searchParams$);
+    return readSearchParam(
+      params,
+      AUTOMATION_FILTER_PARAM,
+      ["all", "automated", "without"],
+      readSearchParam(params, FILTER_PARAM, ["automated", "without"], "all"),
+    );
+  },
+);
 
 export const workflowSortMode$ = computed((get): WorkflowSortMode => {
   return readSearchParam(
     get(searchParams$),
     SORT_MODE_PARAM,
     ["next-run", "alphabetical", "created"],
-    "next-run",
+    "created",
   );
 });
 
@@ -350,18 +363,46 @@ function nextSearchParams(
 
 export const setWorkflowFilter$ = command(
   ({ get, set }, value: WorkflowFilter) => {
+    const params = nextSearchParams(
+      get(searchParams$),
+      AUTOMATION_FILTER_PARAM,
+      get(workflowAutomationFilter$),
+      "all",
+    );
     set(
       replaceSearchParams$,
-      nextSearchParams(get(searchParams$), FILTER_PARAM, value, "all"),
+      nextSearchParams(params, FILTER_PARAM, value, "all"),
     );
   },
 );
+
+export const setWorkflowAutomationFilter$ = command(
+  ({ get, set }, value: WorkflowAutomationFilter) => {
+    const params = nextSearchParams(
+      get(searchParams$),
+      FILTER_PARAM,
+      get(workflowFilter$),
+      "all",
+    );
+    set(
+      replaceSearchParams$,
+      nextSearchParams(params, AUTOMATION_FILTER_PARAM, value, "all"),
+    );
+  },
+);
+
+export const clearWorkflowFilters$ = command(({ get, set }) => {
+  const params = new URLSearchParams(get(searchParams$));
+  params.delete(FILTER_PARAM);
+  params.delete(AUTOMATION_FILTER_PARAM);
+  set(replaceSearchParams$, params);
+});
 
 export const setWorkflowSortMode$ = command(
   ({ get, set }, value: WorkflowSortMode) => {
     set(
       replaceSearchParams$,
-      nextSearchParams(get(searchParams$), SORT_MODE_PARAM, value, "next-run"),
+      nextSearchParams(get(searchParams$), SORT_MODE_PARAM, value, "created"),
     );
   },
 );

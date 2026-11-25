@@ -7427,7 +7427,6 @@
       "instructions": "Instructions",
       "manual": "Manuel",
       "private": "Privé",
-      "public": "Public",
       "settings": "Paramètres",
       "workflow": "Workflow",
       "workflows": "Workflows"
@@ -7514,21 +7513,18 @@
     "list": {
       "actionRequired": "Action requise",
       "all": "Tout",
-      "automated": "Automatisé",
       "automations": "Automatisations",
+      "clearFilters": "Effacer les filtres",
       "clearSearch": "Effacer la recherche",
       "createdBy": "Créé par",
       "createInChat": "Créer dans le chat",
       "description": "Une SOP réutilisable pour une tâche. Rédigez-en une à partir de zéro ou tirez-la de votre travail quotidien, puis exécutez-la, modifiez-la ou automatisez-la.",
       "empty": {
         "all": "Créez un workflow depuis le chat ou enregistrez-en un à partir d'une exécution utile.",
-        "automated": "Ajoutez une automatisation à un workflow et elle apparaîtra ici.",
-        "private": "Aucun workflow privé pour le moment.",
-        "public": "Aucun workflow public pour le moment.",
-        "search": "Essayez une autre recherche ou modifiez le filtre.",
-        "without": "Chaque workflow ici s'exécute selon un calendrier ou un événement."
+        "search": "Essayez une autre recherche ou modifiez le filtre."
       },
       "filter": "Filtrer les workflows",
+      "filters": "Filtres",
       "noResults": "Aucun workflow correspondant",
       "noWorkflows": "Aucun workflow",
       "open": "Ouvrir {{title}}",
@@ -7536,21 +7532,18 @@
       "ownerLoading": "Chargement de l’auteur…",
       "ownerUnavailable": "Auteur indisponible",
       "search": "Rechercher des workflows…",
-      "section": {
-        "event": "Sur l'automatisation",
-        "later": "Plus tard",
-        "manual": "Manuel",
-        "today": "Exécutions du jour",
-        "week": "Cette semaine"
-      },
       "sort": {
         "alphabetical": "Alphabétique",
-        "created": "Heure de création",
-        "label": "Prochaine exécution",
+        "created": "Créés récemment",
+        "label": "Trier les workflows",
         "nextRun": "Prochaine exécution"
       },
       "title": "Workflows",
-      "viewAutomations": "Voir les automatisations"
+      "viewAutomations": "Voir les automatisations",
+      "visibility": "Visibilité",
+      "withAutomations": "Avec automatisations",
+      "withoutAutomations": "Sans automatisation",
+      "workspaceShared": "Partagé dans l’espace"
     },
     "skillImport": {
       "action": "Importer des skills",
