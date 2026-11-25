@@ -147,13 +147,19 @@ class SearchInputTest {
                 val query = compose.onNodeWithTag("artifact_query")
                 query.performTouchInput { click() }.assertIsFocused()
                 compose.waitUntil(5_000) { ime.connection != null }
-                val connection = checkNotNull(ime.connection)
-                compose.runOnIdle { assertTrue(connection.setComposingText("Product", 1)) }
+                compose.runOnIdle {
+                    assertTrue(checkNotNull(ime.connection).setComposingText("Product", 1))
+                }
                 query.assertTextContains("Product").assertIsFocused()
                 compose.onNodeWithText(fixture.checklist.title).assertIsDisplayed()
                 assertTrue(model.state.value.query.keyword.isEmpty())
 
-                compose.runOnIdle { assertTrue(connection.commitText(committed, 1)) }
+                compose.runOnIdle {
+                    assertTrue(checkNotNull(ime.connection).setComposingText(committed, 1))
+                }
+                query.assertTextContains(committed).assertIsFocused()
+                compose.runOnIdle { assertTrue(checkNotNull(ime.connection).finishComposingText()) }
+                compose.waitUntil(5_000) { model.state.value.query.keyword == committed }
                 compose.waitUntil(5_000) { searchStarted.count == 0L }
                 compose.runOnIdle {
                     assertTrue(checkNotNull(ime.connection).setComposingRegion(0, committed.length))
