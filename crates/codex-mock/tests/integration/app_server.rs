@@ -1459,6 +1459,46 @@ fn app_server_rejects_missing_or_empty_turn_thread_id() -> std::io::Result<()> {
 }
 
 #[test]
+fn app_server_turn_thread_lookup_preserves_request_errors() -> std::io::Result<()> {
+    let dir = TempDir::new().unwrap();
+    let mut server = spawn_app_server(dir.path(), &["app-server", "--stdio"], None)?;
+    server.request(1, "initialize", initialize_params())?;
+
+    let requests = [
+        ("turn/start", json!({"threadId": "other-thread"})),
+        (
+            "turn/steer",
+            json!({"threadId": "other-thread", "expectedTurnId": "turn"}),
+        ),
+        (
+            "turn/interrupt",
+            json!({"threadId": "other-thread", "turnId": "turn"}),
+        ),
+    ];
+    let assert_lookup_errors =
+        |server: &mut AppServerProcess, ids: std::ops::Range<i64>, message: &str| {
+            for (id, (method, params)) in ids.zip(&requests) {
+                assert_eq!(
+                    server.request(id, method, params.clone())?,
+                    json!({"id": id, "error": {"code": -32600, "message": message}}),
+                    "{method}"
+                );
+            }
+            Ok::<_, std::io::Error>(())
+        };
+    assert_lookup_errors(&mut server, 2..5, "no active thread")?;
+    let response = server.request(5, "thread/start", json!({}))?;
+    assert!(response["result"]["thread"]["id"].is_string());
+    assert_lookup_errors(&mut server, 6..9, "unknown threadId")?;
+    assert_eq!(
+        server.request(9, "turn/interrupt", json!({"threadId": "other-thread"}))?,
+        json!({"id": 9, "error": {"code": -32600, "message": "missing turnId"}})
+    );
+    assert_eq!(server.close_and_wait()?, 0);
+    Ok(())
+}
+
+#[test]
 fn app_server_rejects_missing_or_empty_expected_turn_id() -> std::io::Result<()> {
     let dir = TempDir::new().unwrap();
     let mut server = spawn_app_server(dir.path(), &["app-server", "--stdio"], None)?;
