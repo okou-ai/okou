@@ -43,10 +43,10 @@ export function useComposerPrimaryAction(
   actions: ComposerActions,
 ): ComposerPrimaryAction {
   const voiceDraft = useLoadable(signals.voice.state$);
-  // Keep the last action while the thread's events resync; falling back to
-  // "disabled" on every recompute would unmount and remount Stop mid-run.
-  const action =
-    useLastResolved(signals.submission.primaryAction$) ?? "disabled";
+  // Keep Stop mounted while the thread's events resync.
+  const choices = useLastResolved(signals.submission.actionsByInput$);
+  const input = useGet(signals.submission.inputState$);
+  const action = choices?.[input] ?? "disabled";
   const uploads = useLoadable(signals.draft.attachmentUploadsReady$);
   const sending = useLastResolved(signals.submission.sending$) ?? false;
   const availableAction =
