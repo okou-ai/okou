@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.56.4](https://github.com/okou-ai/okou/compare/android-v0.56.3...android-v0.56.4) (2026-11-25)
+
+
+### Bug Fixes
+
+* **android:** refresh device-local artifact dates ([#50805](https://github.com/okou-ai/okou/issues/50805)) ([359605f](https://github.com/okou-ai/okou/commit/359605f55f80ca2ab0bf6cde70480c7146a6489c))
+
 ## [0.56.3](https://github.com/okou-ai/okou/compare/android-v0.56.2...android-v0.56.3) (2026-11-25)
 
 

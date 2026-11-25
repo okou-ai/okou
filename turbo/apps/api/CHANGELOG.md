@@ -10,6 +10,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.128.0](https://github.com/okou-ai/okou/compare/api-v2.127.0...api-v2.128.0) (2026-11-25)
+
+
+### Features
+
+* guide custom domain setup through verification and activation ([#50730](https://github.com/okou-ai/okou/issues/50730)) ([8846eae](https://github.com/okou-ai/okou/commit/8846eae8a6948dc3177e550be081b39857308062))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.128.0
+    * @okouai/core bumped to 8.879.0
+    * @okouai/db bumped to 2.68.3
+    * @okouai/pi-agent-runtime bumped to 1.52.74
+
 ## [2.127.0](https://github.com/okou-ai/okou/compare/api-v2.126.0...api-v2.127.0) (2026-11-25)
 
 
