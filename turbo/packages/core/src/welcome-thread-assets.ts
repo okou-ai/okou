@@ -10,12 +10,9 @@ const SCENE_BASE =
 // okou.app framing resolves only on production hostnames, because
 // resolveHostedSiteDomains excludes okou.app elsewhere.
 export const WELCOME_THREAD_ASSETS = Object.freeze({
-  campaignVisualUrl:
-    "https://welcome-my-okou-20261125.okou.app/assets/campaign-visual-b41da7d23fb9.jpg",
-  slackSceneUrl:
-    "https://welcome-my-okou-20261125.okou.app/assets/slack-scene-9ce10cf40647.png",
-  telegramSceneUrl:
-    "https://welcome-my-okou-20261125.okou.app/assets/telegram-scene-a83b63a9bd16.png",
+  campaignVisualUrl: "https://app.okou.ai/artifacts/j0cekeay38.jpg",
+  slackSceneUrl: "https://app.okou.ai/artifacts/292ow4w4kp.png",
+  telegramSceneUrl: "https://app.okou.ai/artifacts/6oupi3q8n6.png",
   modelTiersUrl: `${SCENE_BASE}/model-tiers.png`,
   workflowTemplatePickerUrl: `${STEP_BASE}/workflow-template-picker.png`,
   newAgentDialogUrl: `${STEP_BASE}/new-agent.png`,
@@ -30,9 +27,9 @@ const MY_OKOU_GUIDE_BASE = "https://welcome-my-okou-20261125.okou.app";
 
 export const MY_OKOU_WELCOME_THREAD_ASSETS = Object.freeze({
   myOkouQuickStartUrl: MY_OKOU_GUIDE_BASE,
-  personalInstructionsUrl: `${MY_OKOU_GUIDE_BASE}/assets/my-okou-instructions-8ec43cd079ea.png`,
-  workflowInstructionsUrl: `${MY_OKOU_GUIDE_BASE}/assets/my-okou-workflow-instructions-5f1222f7d3ea.png`,
-  workflowSharingUrl: `${MY_OKOU_GUIDE_BASE}/assets/my-okou-workflow-settings-5c32a5d6a9c6.png`,
+  personalInstructionsUrl: "https://app.okou.ai/artifacts/r4fja3y81o.png",
+  workflowInstructionsUrl: "https://app.okou.ai/artifacts/d6qnvm1jpv.png",
+  workflowSharingUrl: "https://app.okou.ai/artifacts/x9kdidlggl.png",
 });
 
 const PREVIEW_BASE =

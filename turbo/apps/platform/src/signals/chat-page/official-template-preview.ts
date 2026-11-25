@@ -17,6 +17,19 @@ const welcomePreviewContentTypes: Readonly<Record<string, string | undefined>> =
     [MY_OKOU_WELCOME_THREAD_ASSETS.personalInstructionsUrl]: "image/png",
     [MY_OKOU_WELCOME_THREAD_ASSETS.workflowInstructionsUrl]: "image/png",
     [MY_OKOU_WELCOME_THREAD_ASSETS.workflowSharingUrl]: "image/png",
+    // Keep image paths from the earlier refresh as images in saved messages.
+    "https://welcome-my-okou-20261125.okou.app/assets/campaign-visual-b41da7d23fb9.jpg":
+      "image/jpeg",
+    "https://welcome-my-okou-20261125.okou.app/assets/slack-scene-9ce10cf40647.png":
+      "image/png",
+    "https://welcome-my-okou-20261125.okou.app/assets/telegram-scene-a83b63a9bd16.png":
+      "image/png",
+    "https://welcome-my-okou-20261125.okou.app/assets/my-okou-instructions-8ec43cd079ea.png":
+      "image/png",
+    "https://welcome-my-okou-20261125.okou.app/assets/my-okou-workflow-instructions-5f1222f7d3ea.png":
+      "image/png",
+    "https://welcome-my-okou-20261125.okou.app/assets/my-okou-workflow-settings-5c32a5d6a9c6.png":
+      "image/png",
     // Persisted welcome messages still reference these exact publications.
     "https://static.vm0.io/vm0/welcome-thread/2026-09-17-1e76170cef99/campaign-visual.jpg":
       "image/jpeg",
