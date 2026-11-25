@@ -160,8 +160,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Project title reveal",
     description:
       "Show more of Project names with fading overflow and reveal them on hover or keyboard focus.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.OkouAnimatedAvatar]: {
     maintainer: "tongx@okou.ai",
