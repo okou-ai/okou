@@ -334,6 +334,37 @@ fn credential(user: bool) -> Result<RsaAesCredentials, Error> {
         RsaAesCredentials::password(password())
     }
 }
+
+async fn assert_selected_transport(
+    private: RsaPrivateKey,
+    pin: RsaServerKeyPin,
+    mode: RsaAesSecurity,
+    user: bool,
+) -> TestResult {
+    let (client, server) = tokio::io::duplex(512);
+    let exchange = async move {
+        let mut authenticated = authenticate_rsa_aes(
+            client,
+            mode,
+            credential(user)?,
+            pin,
+            Instant::now() + Duration::from_secs(30),
+        )
+        .await?
+        .into_stream();
+        authenticated.write_all(b"hello").await?;
+        authenticated.flush().await?;
+        let mut reply = [0; 5];
+        authenticated.read_exact(&mut reply).await?;
+        Ok::<_, Error>(reply)
+    };
+    let (reply, server_finished) =
+        tokio::join!(exchange, peer(server, private, mode, user, Fault::None));
+    assert_eq!(reply?, *b"reply", "{mode:?}, username={user}");
+    assert!(server_finished?, "{mode:?}, username={user}");
+    Ok(())
+}
+
 #[tokio::test]
 async fn all_four_exact_modes_and_both_credential_subtypes_keep_the_selected_post_auth_transport()
 -> TestResult {
@@ -346,25 +377,13 @@ async fn all_four_exact_modes_and_both_credential_subtypes_keep_the_selected_pos
         RsaAesSecurity::Ra2ne,
         RsaAesSecurity::Ra2ne256,
     ] {
-        for user in [false, true] {
-            let (a, b) = tokio::io::duplex(512);
-            let server = tokio::spawn(peer(b, private.clone(), mode, user, Fault::None));
-            let mut authenticated = authenticate_rsa_aes(
-                a,
-                mode,
-                credential(user)?,
-                pin,
-                Instant::now() + Duration::from_secs(30),
-            )
-            .await?
-            .into_stream();
-            authenticated.write_all(b"hello").await?;
-            authenticated.flush().await?;
-            let mut reply = [0; 5];
-            authenticated.read_exact(&mut reply).await?;
-            assert_eq!(&reply, b"reply");
-            assert!(server.await??);
-        }
+        // Both exchanges own separate streams and fit the two-job crypto limit.
+        let (password, username_password) = tokio::join!(
+            assert_selected_transport(private.clone(), pin, mode, false),
+            assert_selected_transport(private.clone(), pin, mode, true),
+        );
+        password?;
+        username_password?;
     }
     Ok(())
 }
