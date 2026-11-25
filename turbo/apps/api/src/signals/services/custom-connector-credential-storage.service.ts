@@ -168,7 +168,9 @@ function customValueConditionalInsert(
   const fields = customValuePublicationFields(table, values);
   return sql`INSERT INTO ${table} (${sql.join(
     fields.map(({ column }) => {
-      return sql.identifier(column.name);
+      return column instanceof SQL
+        ? sql`(${column})`
+        : sql.identifier(column.name);
     }),
     sql`, `,
   )}) SELECT ${sql.join(
@@ -234,7 +236,9 @@ function customValueCredentialClauses(
     );
     const onConflict = sql`ON CONFLICT (${sql.join(
       conflict.target.map((column) => {
-        return sql.identifier(column.name);
+        return column instanceof SQL
+          ? sql`(${column})`
+          : sql.identifier(column.name);
       }),
       sql`, `,
     )}) WHERE ${conflict.targetWhere} DO UPDATE SET ${update}`;
@@ -322,7 +326,9 @@ export function customConnectorValuesPublicationSql(
     }
     const conflict = sql`ON CONFLICT (${sql.join(
       write.conflict.target.map((column) => {
-        return sql.identifier(column.name);
+        return column instanceof SQL
+          ? sql`(${column})`
+          : sql.identifier(column.name);
       }),
       sql`, `,
     )}) WHERE ${write.conflict.where} DO NOTHING`;

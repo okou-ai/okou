@@ -11,6 +11,7 @@ import { logger } from "../../lib/log";
 
 import {
   connectorConnectionDefaultConflict,
+  connectorConnectionExternalPrincipal,
   connectorConnectionExternalConflict,
   connectorConnectionIdentityValues,
   connectorConnectionReplacementValues,
@@ -63,6 +64,7 @@ type InsertConnectorConnectionMutation = {
   readonly allowSiblings: boolean;
   readonly matchExternalId: string | null;
   readonly matchExternalIssuer: string;
+  readonly matchExternalPrincipal: string;
 };
 
 export type ReadyConnectorConnectionMutation =
@@ -185,6 +187,7 @@ export interface ConnectorConnectionMutationArgs {
   readonly allowSiblings: boolean;
   readonly matchExternalId?: string;
   readonly matchExternalIssuer?: string;
+  readonly matchExternalPrincipal?: string;
 }
 
 function connectorConnectionTargetReadPlan(
@@ -236,6 +239,10 @@ export function connectorConnectionMutationReadPlan(
         targetCondition(args.target),
         eq(connectors.externalId, args.matchExternalId),
         eq(connectors.externalIssuer, args.matchExternalIssuer ?? ""),
+        eq(
+          connectorConnectionExternalPrincipal(),
+          args.matchExternalPrincipal ?? "",
+        ),
       ),
       orderBy: [connectors.id],
       limit: 2,
@@ -344,6 +351,7 @@ function connectorConnectionMutationResolution(
       isDefault,
       allowSiblings: args.allowSiblings,
       matchExternalIssuer: args.matchExternalIssuer ?? "",
+      matchExternalPrincipal: args.matchExternalPrincipal ?? "",
       matchExternalId:
         args.mutation.intent === "add" ? args.matchExternalId || null : null,
     };
@@ -488,6 +496,10 @@ export function connectorConnectionMetadataWritePlan(
           ? and(
               eq(connectors.externalId, identity.matchExternalId),
               eq(connectors.externalIssuer, identity.matchExternalIssuer),
+              eq(
+                connectorConnectionExternalPrincipal(),
+                identity.matchExternalPrincipal,
+              ),
             )
           : undefined,
       ),
@@ -505,6 +517,7 @@ function connectorConnectionIdentityWrite(
     context.ownerCondition,
     eq(connectors.externalId, matchExternalId),
     eq(connectors.externalIssuer, insert.matchExternalIssuer),
+    eq(connectorConnectionExternalPrincipal(), insert.matchExternalPrincipal),
   );
   return {
     kind: "update",

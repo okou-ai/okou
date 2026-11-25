@@ -1,5 +1,5 @@
 {
-  "id": "77a68993-d768-4801-8018-b27975ae1713",
+  "id": "dba0125c-f41c-4bef-b598-62b7fd001a17",
   "prevId": "7f614252-9112-4f26-b3a7-c9d641ea7c0b",
   "version": "7",
   "dialect": "postgresql",
@@ -11511,6 +11511,12 @@
               "expression": "external_issuer",
               "isExpression": false,
               "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "(CASE WHEN \"connector_slug\" = 'aws' THEN substring(\"external_username\" from '[(]([^()]+)[)]$') ELSE '' END)",
+              "asc": true,
+              "isExpression": true,
               "nulls": "last"
             }
           ],

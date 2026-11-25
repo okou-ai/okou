@@ -1,3 +1,4 @@
+import { connectorConnectionPrincipalValue } from "./connector-account-mutation.service";
 import { connectEmailFromMailAccount$ } from "./email-connection.service";
 import {
   builtinDeletionSqlResultSchema,
@@ -2216,6 +2217,10 @@ export function builtinConnectorTokenMutationValues(
     },
     mutation: args.account,
     allowSiblings: true,
+    matchExternalPrincipal: connectorConnectionPrincipalValue(
+      args.runtimeMethod.connectorSlug,
+      args.userInfo.username,
+    ),
     matchExternalId:
       args.account.intent === "add" ? args.userInfo.id : undefined,
   };

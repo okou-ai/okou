@@ -170,6 +170,29 @@ describe("AWS Sign-In refresh expiry", () => {
     });
   });
 
+  it("reuses the same STS principal when its IAM user ARN changes", async () => {
+    const publicFixture = createPublicFirewallFixture(context);
+    await publicFixture.run(async () => {
+      const aws = await setupAwsFirewall(publicFixture);
+      server.use(
+        http.get(AWS_STS_URL, () => {
+          return HttpResponse.xml(
+            "<GetCallerIdentityResponse><GetCallerIdentityResult>" +
+              "<UserId>AIDAEXTERNALUSER</UserId><Account>123456789012</Account>" +
+              "<Arn>arn:aws:iam::123456789012:user/renamed</Arn>" +
+              "</GetCallerIdentityResult></GetCallerIdentityResponse>",
+          );
+        }),
+      );
+      const replaced = await aws.connect({ intent: "add" });
+      expect(replaced.id).toBe(aws.account.id);
+      await expect(
+        aws.connectors.listBuiltinConnectorAccounts(aws.actor, "aws"),
+      ).resolves.toHaveLength(1);
+      expect((await aws.request(aws.account.id, false)).status).toBe(200);
+    });
+  });
+
   it("keeps a healthy sibling account usable without substituting it for the expired account", async () => {
     const publicFixture = createPublicFirewallFixture(context);
     await publicFixture.run(async () => {

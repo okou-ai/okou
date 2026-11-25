@@ -14,7 +14,7 @@ import {
   gte,
   inArray,
   sql,
-  type SQL,
+  SQL,
   getTableColumns,
 } from "drizzle-orm";
 
@@ -122,7 +122,9 @@ function automaticSiblingAccountInsert(
   const conflict = identity
     ? sql`ON CONFLICT (${sql.join(
         conflictTarget.target.map((column) => {
-          return sql.identifier(column.name);
+          return column instanceof SQL
+            ? sql`(${column})`
+            : sql.identifier(column.name);
         }),
         sql`, `,
       )}) WHERE ${conflictTarget.where} DO UPDATE SET ${new PgDialect().buildUpdateSet(

@@ -202,6 +202,7 @@ export function connectorConnectionExternalConflict(
           connectors.connectorSlug,
           connectors.externalId,
           connectors.externalIssuer,
+          connectorConnectionExternalPrincipal(),
         ],
         where: sql`${connectors.connectorSlug} IS NOT NULL AND ${connectors.externalId} IS NOT NULL AND ${connectors.externalId} <> ''`,
       }
@@ -215,4 +216,19 @@ export function connectorConnectionExternalConflict(
         ],
         where: sql`${connectors.customConnectorId} IS NOT NULL AND ${connectors.externalId} IS NOT NULL AND ${connectors.externalId} <> ''`,
       };
+}
+
+/** AWS account numbers contain multiple independently authorized STS principals. */
+export function connectorConnectionExternalPrincipal() {
+  return sql`CASE WHEN ${connectors.connectorSlug} = 'aws'
+    THEN substring(${connectors.externalUsername} from '[(]([^()]+)[)]$') ELSE '' END`;
+}
+
+export function connectorConnectionPrincipalValue(
+  connectorSlug: string | null,
+  externalUsername: string | null | undefined,
+): string {
+  return connectorSlug === "aws"
+    ? (externalUsername?.match(/[(]([^()]+)[)]$/u)?.[1] ?? "")
+    : "";
 }

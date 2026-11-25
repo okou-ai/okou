@@ -438,6 +438,65 @@ describe("FW-1: firewall auth boundaries", () => {
   });
 });
 
+describe("saved connector account credentials", () => {
+  it("uses the newest Gmail access and refresh credentials after repeated Add account consent", async () => {
+    const fw = createFirewallApi(context);
+    const { actor, headers } = await publicConnections.run();
+    const connections = createConnectorBddApi(context);
+    await publicConnections.googleOAuth(actor, "gmail", {
+      accessToken: "dedup-before-access",
+      refreshToken: "dedup-before-refresh",
+      expiresIn: 3600,
+    });
+    const original = await connections.readDefaultBuiltinAccount(
+      actor,
+      "gmail",
+    );
+    const body = {
+      authHeaders: { Authorization: `Bearer ${secretTemplate("GMAIL_TOKEN")}` },
+      ...(await exactSecretConnectorSources(actor, { GMAIL_TOKEN: "gmail" })),
+    };
+    const authorization = async () => {
+      const resolved = await fw.requestFirewallAuth(headers, body, [200]);
+      if (resolved.status !== 200) {
+        throw new Error("Expected the saved Gmail account to resolve");
+      }
+      return resolved.body.headers.Authorization;
+    };
+    await expect(authorization()).resolves.toBe("Bearer dedup-before-access");
+    await publicConnections.googleOAuth(actor, "gmail", {
+      accessToken: "dedup-after-access",
+      refreshToken: "dedup-after-refresh",
+      expiresIn: 3600,
+    });
+    await expect(authorization()).resolves.toBe("Bearer dedup-after-access");
+    await publicConnections.googleOAuth(actor, "gmail", {
+      accessToken: "dedup-expired-access",
+      refreshToken: "dedup-newest-refresh",
+      expiresIn: -60,
+    });
+    server.use(
+      http.post("https://oauth2.googleapis.com/token", async ({ request }) => {
+        const input = new URLSearchParams(await request.text());
+        return input.get("grant_type") === "refresh_token" &&
+          input.get("refresh_token") === "dedup-newest-refresh"
+          ? HttpResponse.json({
+              access_token: "dedup-renewed-access",
+              expires_in: 3600,
+            })
+          : HttpResponse.json({ error: "invalid_grant" }, { status: 400 });
+      }),
+    );
+    await expect(authorization()).resolves.toBe("Bearer dedup-renewed-access");
+    const accounts = await connections.listBuiltinConnectorAccounts(
+      actor,
+      "gmail",
+    );
+    expect(accounts).toHaveLength(1);
+    expect(accounts[0]?.id).toBe(original.id);
+  });
+});
+
 describe("FW-2: template resolution without connector refresh", () => {
   it("resolves variable and basic auth header templates", async () => {
     await withPublicFirewallRun(async (headers) => {

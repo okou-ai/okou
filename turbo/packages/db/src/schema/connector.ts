@@ -70,6 +70,7 @@ export const connectors = pgTable(
           table.connectorSlug,
           table.externalId,
           table.externalIssuer,
+          sql`(CASE WHEN ${table.connectorSlug} = 'aws' THEN substring(${table.externalUsername} from '[(]([^()]+)[)]$') ELSE '' END)`,
         )
         .where(
           sql`${table.connectorSlug} IS NOT NULL AND ${table.externalId} IS NOT NULL AND ${table.externalId} <> ''`,
