@@ -20,14 +20,12 @@ import ai.okou.android.testPreferences
 import android.app.LocaleManager
 import android.content.res.Configuration
 import android.os.LocaleList
-import android.provider.Settings
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
-import androidx.test.uiautomator.Condition
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
@@ -36,6 +34,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.math.roundToInt
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -68,27 +67,9 @@ class ScreenshotScenario {
         val originalDensity = device.overrideValue("wm density", "Override density: (\\d+)")
         val fontScale = device.executeShellCommand("settings get system font_scale").trim()
         val motionScale = device.executeShellCommand("settings get global animator_duration_scale").trim()
-        val gestureNavigation = "com.android.internal.systemui.navbar.gestural"
-        val originalNavigation =
-            Regex("""(?m)^\[x\] (com\.android\.internal\.systemui\.navbar\.[^\r\n ]+)$""")
-                .find(device.executeShellCommand("cmd overlay list --user current android"))
-                ?.groupValues?.get(1)
         try {
-            device.executeShellCommand("wm density 160")
             device.executeShellCommand("settings put system font_scale 1.0")
             device.executeShellCommand("settings put global animator_duration_scale 0")
-            if (originalNavigation != null && originalNavigation != gestureNavigation) {
-                device.setNavigation(gestureNavigation)
-                check(
-                    device.wait(
-                        object : Condition<UiDevice, Boolean> {
-                            override fun apply(device: UiDevice): Boolean =
-                                Settings.Secure.getInt(app.contentResolver, "navigation_mode", -1) == 2
-                        },
-                        10_000,
-                    ),
-                ) { "Gesture navigation did not become active" }
-            }
             app.connectivity.value = true
             app.initialPreferences =
                 testPreferences().copy(locale = UserPreferencesLocale.ZH_HANS, theme = UserPreferencesTheme.LIGHT)
@@ -153,7 +134,10 @@ class ScreenshotScenario {
                 app.chatService = fixture.service
                 app.workflows = fixture.service.workflowService
                 app.connectorService = fixture.service.connectors
-                device.executeShellCommand(if (project) "wm size 1180x920" else "wm size 440x900")
+                if (project) {
+                    device.executeShellCommand("wm size 1180x920")
+                    device.executeShellCommand("wm density 160")
+                }
                 auth.state.value = testAuthenticationState(user = "rename-${UUID.randomUUID()}")
                 val heading = labels.getString(if (project) R.string.chat_rename_project else R.string.chat_rename)
                 val menu = labels.getString(if (project) R.string.chat_rename_confirm else R.string.chat_rename)
@@ -169,11 +153,19 @@ class ScreenshotScenario {
                 }
                 try {
                     ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                        var minimumFieldHeight = 0
+                        scenario.onActivity { activity ->
+                            val configuration = activity.resources.configuration
+                            check((configuration.screenWidthDp >= 720) == project)
+                            minimumFieldHeight = (56 * activity.resources.displayMetrics.density).roundToInt()
+                        }
                         device.find(By.pkg(app.packageName).text(oldName)).longClick()
                         device.find(By.pkg(app.packageName).text(menu)).click()
                         val focusedEditor = By.pkg(app.packageName).clazz("android.widget.EditText").focused(true)
                         val input = device.find(focusedEditor)
-                        check(input.visibleBounds.height() >= 56) { "Rename input is below the 56 dp minimum" }
+                        check(input.visibleBounds.height() >= minimumFieldHeight) {
+                            "Rename input is below the 56 dp minimum"
+                        }
                         input.text = newName
                         val save = By.pkg(app.packageName).text(labels.getString(R.string.chat_project_rename_save)).enabled(true)
                         if (project) {
@@ -225,8 +217,6 @@ class ScreenshotScenario {
             instrumentation.runOnMainSync { localeManager.applicationLocales = originalLocale }
             device.executeShellCommand("wm size ${originalSize ?: "reset"}")
             device.executeShellCommand("wm density ${originalDensity ?: "reset"}")
-            if (originalNavigation != null && originalNavigation != gestureNavigation)
-                device.setNavigation(originalNavigation)
             device.restoreSetting("system", "font_scale", fontScale)
             device.restoreSetting("global", "animator_duration_scale", motionScale)
             cache.restore()
@@ -239,11 +229,6 @@ class ScreenshotScenario {
     private fun UiDevice.restoreSetting(namespace: String, name: String, value: String) {
         if (value == "null") executeShellCommand("settings delete $namespace $name")
         else executeShellCommand("settings put $namespace $name $value")
-    }
-
-    private fun UiDevice.setNavigation(overlay: String) {
-        val output = executeShellCommand("cmd overlay enable-exclusive --user current --category $overlay")
-        check(output.isBlank()) { output }
     }
 
     private fun UiDevice.find(selector: BySelector): UiObject2 =
