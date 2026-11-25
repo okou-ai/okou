@@ -5,7 +5,7 @@
 - Vitest: "CHAT-02: personal subscription model selection > preserves one Pi session while selecting Luna, Sol, Luna, and Luna again"
 - Mode: run
 - Given: An authenticated workspace member has a personal Codex subscription usable by multiple Pi models.
-- When: The member sends four turns on one thread, selecting Luna, Sol, Luna and Luna respectively and completing each through its Sandbox callbacks.
+- When: The member sends four turns on one thread, selecting `gpt-6-luna`, `gpt-6-sol`, `gpt-6.1-sol` and `gpt-6-luna` respectively and completing each through its Sandbox callbacks.
 - Then: Each dispatch uses the selected model. The initial dispatch uses the thread ID as its Pi session ID, with `xhigh` thinking and no service tier, and all completions return the same nonempty native session ID.
 
 ## chat-events-pi-session-002

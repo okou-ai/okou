@@ -77,3 +77,15 @@ The source review refined the Auto routing and Runner BDDs to capture the actual
 | `browser-admission-002` | Admission waits for the first window. The sibling gets a distinct window within the same provider instance. |
 | `execution-storage-url-freshness-001` | Corrected the refresh boundary to 44 hours from the source. The Run spends two minutes queued across that threshold. |
 | `proactive-preferences-001` | Feed source flags remain individually editable when Suggestions is paused, and the returned values are read back through the web session. |
+| `chat-events-pi-session-001` | The third request uses GPT-6.1 Sol, despite the title. Corrected the BDD to retain the exact model sequence. |
+| `chat-events-history-002` | The source observes one generated title and one recommendation revocation across accepted and conflicting deliveries. |
+| `chat-thread-pdf-filename-004` | Rejected authentication, selection and body requests produce zero provider calls. |
+| `connector-external-code-session-creation-003` | An external-code exchange already in flight completes and replays its sibling account after replacement. A concurrent duplicate gets 400 while exchange is in progress. |
+| `connector-device-auth-session-expiration-002` | Device authorization expires at the exact 30-second cutoff. |
+| `connector-external-code-session-expiration-002` | An external-code session remains exclusive at 30 minutes and expires one millisecond later. |
+| `discord-gateway-auth-002` | The repeated title corresponds to formatted Unicode guild-delete bytes and an authenticated HTTP 403 outcome. |
+| `discord-conversation-parity-013` | The provider read error preserves the DM message reference and the absence of private content. |
+| `integration-model-recovery-slack-012` | The global default, single recovery Run and native indicator target are independently verified. |
+| `runner-app-state-002` | Upload authorization is confined to the claimed host response. The command read omits it, and completion or host stop invalidates the Runner grant. |
+| `runners-run-lookups-001` | The non-owner sees 403 while the Run is active and 404 after completion. Only the owner sees the terminal-sync error. |
+| `runners-member-instructions-003` | Storage verification races the sender’s edit, and the execution package preserves the earlier sender text. |
