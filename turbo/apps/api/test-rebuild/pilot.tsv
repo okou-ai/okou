@@ -95,19 +95,19 @@ billing	src/signals/routes/__tests__/billing-checkout-complete.test.ts	billing-c
 billing	src/signals/routes/__tests__/billing-checkout-complete.test.ts	billing-checkout-complete-005	rewritten	92.9	
 billing	src/signals/routes/__tests__/billing-checkout-complete.test.ts	billing-checkout-complete-007	rewritten	62.8	
 billing	src/signals/routes/__tests__/billing-checkout-complete.test.ts	billing-checkout-complete-008	rewritten	18.9	
-billing	src/signals/routes/__tests__/billing-checkout.test.ts	billing-checkout-003	planned		
-billing	src/signals/routes/__tests__/billing-checkout.test.ts	billing-checkout-004	planned		
-billing	src/signals/routes/__tests__/billing-checkout.test.ts	billing-checkout-010	planned		
+billing	src/signals/routes/__tests__/billing-checkout.test.ts	billing-checkout-003	rewritten	27.0	
+billing	src/signals/routes/__tests__/billing-checkout.test.ts	billing-checkout-004	rewritten	45.5	
+billing	src/signals/routes/__tests__/billing-checkout.test.ts	billing-checkout-010	rewritten	64.1	
 billing	src/signals/routes/__tests__/billing-checkout.test.ts	billing-checkout-011	planned		
 billing	src/signals/routes/__tests__/billing-checkout.test.ts	billing-checkout-012	planned		
-billing	src/signals/routes/__tests__/billing-checkout.test.ts	billing-checkout-013	planned		
+billing	src/signals/routes/__tests__/billing-checkout.test.ts	billing-checkout-013	rewritten	25.7	
 billing	src/signals/routes/__tests__/billing-checkout.test.ts	billing-checkout-014	planned		
-billing	src/signals/routes/__tests__/billing-checkout.test.ts	billing-checkout-015	planned		
-billing	src/signals/routes/__tests__/billing-checkout.test.ts	billing-checkout-017	planned		
-billing	src/signals/routes/__tests__/billing-checkout.test.ts	billing-checkout-018	planned		
-billing	src/signals/routes/__tests__/billing-checkout.test.ts	billing-checkout-020	planned		
-billing	src/signals/routes/__tests__/billing-checkout.test.ts	billing-checkout-021	planned		
-billing	src/signals/routes/__tests__/billing-checkout.test.ts	billing-checkout-022	planned		
+billing	src/signals/routes/__tests__/billing-checkout.test.ts	billing-checkout-015	rewritten	10.2	
+billing	src/signals/routes/__tests__/billing-checkout.test.ts	billing-checkout-017	rewritten	55.1	
+billing	src/signals/routes/__tests__/billing-checkout.test.ts	billing-checkout-018	rewritten	40.4	
+billing	src/signals/routes/__tests__/billing-checkout.test.ts	billing-checkout-020	rewritten	5.9	
+billing	src/signals/routes/__tests__/billing-checkout.test.ts	billing-checkout-021	rewritten	5.6	
+billing	src/signals/routes/__tests__/billing-checkout.test.ts	billing-checkout-022	rewritten	4.5	
 billing	src/signals/routes/__tests__/billing-credit-checkout-auto-recharge.test.ts	billing-credit-checkout-auto-recharge-001	planned		
 billing	src/signals/routes/__tests__/billing-credit-checkout-auto-recharge.test.ts	billing-credit-checkout-auto-recharge-003	planned		
 billing	src/signals/routes/__tests__/billing-credit-checkout-auto-recharge.test.ts	billing-credit-checkout-auto-recharge-006	planned		
