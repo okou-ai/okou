@@ -8,6 +8,7 @@ import ai.okou.android.chat.ConversationLinkPosition
 import ai.okou.android.chat.ConversationLinkSource
 import ai.okou.android.chat.WorkspaceSearchType
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.MutableState
@@ -722,6 +723,21 @@ internal fun rememberConversationUiState(): ConversationUiState {
 }
 
 internal class JournalEditor(val value: TextFieldValue, val edit: (TextFieldValue) -> Unit)
+
+@Composable
+internal fun rememberWorkflowFieldInput(text: String, field: Int): TextFieldState =
+    rememberSaveable(
+        field,
+        saver =
+            listSaver(
+                save = { state: TextFieldState ->
+                    listOf(state.selection.start, state.selection.end)
+                },
+                restore = { TextFieldState(text, TextRange(it[0], it[1])) },
+            ),
+    ) {
+        TextFieldState(text)
+    }
 
 /** Wait for journal hydration before consuming the restored native selection. */
 @Composable

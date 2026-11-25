@@ -346,14 +346,21 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
         compose.onNodeWithText("Edit instructions").performClick()
         compose.onNodeWithTag("workflow_save").assertIsNotEnabled()
         val name = compose.onNodeWithContentDescription("Display name")
+        val purpose = compose.onNodeWithContentDescription("Purpose")
+        val purposeTop = purpose.getUnclippedBoundsInRoot().top
         name.performTextReplacement(" ")
         compose.onNodeWithText("Enter a display name.").assertIsDisplayed()
+        name.assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.Error, "Enter a display name."),
+        )
+        assertEquals(purposeTop, purpose.getUnclippedBoundsInRoot().top)
         compose.onNodeWithTag("workflow_save").assertIsNotEnabled()
         name.performTextReplacement("x".repeat(257))
         compose.onNodeWithText("Use 256 characters or fewer.").assertIsDisplayed()
         compose.onNodeWithTag("workflow_save").assertIsNotEnabled()
         name.performTextReplacement("Release checklist")
         compose.onNodeWithText("Use 256 characters or fewer.").assertDoesNotExist()
+        assertEquals(purposeTop, purpose.getUnclippedBoundsInRoot().top)
         val instructions =
             "Confirm the release owner.\n![Launch screenshot](<https://example.test/release.png>)"
         compose
