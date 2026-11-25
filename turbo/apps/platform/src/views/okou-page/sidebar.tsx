@@ -3,16 +3,8 @@ import { Collapsible } from "@base-ui/react/collapsible";
 import type { ComponentProps, CSSProperties, ReactNode } from "react";
 import { useLastResolved, useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import {
-  LayoutGrid,
-  Package,
-  Route,
-  PanelLeftClose,
-  Plug,
-  Search,
-} from "lucide-react";
-import { Button, ShortcutTooltipGroup, cn } from "@okouai/ui";
-import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
+import { Package, Route, PanelLeftClose, Plug, Search } from "lucide-react";
+import { BrandSlack, Button, ShortcutTooltipGroup, cn } from "@okouai/ui";
 import {
   sidebarOff$,
   toggleSidebarOff$,
@@ -57,8 +49,6 @@ import { workspaceResizing$ } from "../../signals/chat-page/workspace-resize.ts"
 
 type NavIcon = (props: { size?: number; className?: string }) => ReactNode;
 
-const slackIcon = settingsIconAssetUrl("slack");
-
 type ManageNavId = "artifacts" | "connectors" | "workflows";
 type SidebarNavId = ManageNavId | "chat" | "works";
 
@@ -101,7 +91,6 @@ interface FooterNavItem {
   readonly activeKeys: readonly RouteKey[];
   readonly pathname: string;
   readonly icon: NavIcon;
-  readonly iconImg: string | undefined;
 }
 
 const FOOTER_NAV: readonly FooterNavItem[] = [
@@ -109,8 +98,7 @@ const FOOTER_NAV: readonly FooterNavItem[] = [
     id: "works",
     activeKeys: ["works"],
     pathname: "/works",
-    icon: LayoutGrid as NavIcon,
-    iconImg: slackIcon,
+    icon: BrandSlack as NavIcon,
   },
 ];
 
@@ -187,7 +175,6 @@ function LabeledRailLink({
   navPath,
   label,
   icon: Icon,
-  iconImg,
   isActive,
   showBadge,
   onNavigate,
@@ -196,7 +183,6 @@ function LabeledRailLink({
   navPath: string;
   label: string;
   icon: NavIcon;
-  iconImg?: string | undefined;
   isActive: boolean;
   showBadge?: boolean;
   onNavigate?: () => void;
@@ -239,19 +225,7 @@ function LabeledRailLink({
             : "text-sidebar-foreground hover:bg-state-hover group-hover:bg-state-hover"
         }`}
       >
-        {iconImg ? (
-          <span className="inline-flex h-4 w-4 items-center justify-center overflow-hidden">
-            <img
-              src={iconImg}
-              alt=""
-              className="h-4 w-4 scale-[2.2]"
-              width={16}
-              height={16}
-            />
-          </span>
-        ) : (
-          <Icon size={19} className="shrink-0 opacity-70" />
-        )}
+        <Icon size={19} className="shrink-0 opacity-70" />
         {showBadge && (
           <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-red-500" />
         )}
@@ -358,7 +332,6 @@ function LabeledFooterRailLinks() {
         navPath={item.pathname}
         label={item.label}
         icon={item.icon}
-        iconImg={item.iconImg}
         isActive={activeId !== null && item.activeKeys.includes(activeId)}
         showBadge={slackScopeMismatch}
       />
