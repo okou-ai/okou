@@ -477,11 +477,11 @@ artifacts	src/signals/routes/__tests__/private-artifact-uploads.test.ts	private-
 artifacts	src/signals/routes/__tests__/private-artifact-uploads.test.ts	private-artifact-uploads-010	planned		extension after sandbox reset
 artifacts	src/signals/routes/__tests__/private-artifact-uploads.test.ts	private-artifact-uploads-015	planned		extension after sandbox reset
 artifacts	src/signals/routes/__tests__/private-artifact-uploads.test.ts	private-artifact-uploads-016	planned		extension after sandbox reset
-artifacts	src/signals/routes/__tests__/uploads-multipart.test.ts	uploads-multipart-003	planned		extension after sandbox reset
-artifacts	src/signals/routes/__tests__/uploads-multipart.test.ts	uploads-multipart-004	planned		extension after sandbox reset
-artifacts	src/signals/routes/__tests__/uploads-multipart.test.ts	uploads-multipart-008	planned		extension after sandbox reset
-artifacts	src/signals/routes/__tests__/uploads-multipart.test.ts	uploads-multipart-009	planned		extension after sandbox reset
-artifacts	src/signals/routes/__tests__/uploads-multipart.test.ts	uploads-multipart-010	planned		extension after sandbox reset
+artifacts	src/signals/routes/__tests__/uploads-multipart.test.ts	uploads-multipart-003	rewritten	36.4	extension after sandbox reset
+artifacts	src/signals/routes/__tests__/uploads-multipart.test.ts	uploads-multipart-004	rewritten	70.1	extension after sandbox reset
+artifacts	src/signals/routes/__tests__/uploads-multipart.test.ts	uploads-multipart-008	rewritten	14.0	extension after sandbox reset
+artifacts	src/signals/routes/__tests__/uploads-multipart.test.ts	uploads-multipart-009	rewritten	10.8	extension after sandbox reset
+artifacts	src/signals/routes/__tests__/uploads-multipart.test.ts	uploads-multipart-010	rewritten	8.0	extension after sandbox reset
 artifacts	src/signals/routes/__tests__/registry-resources-download.test.ts	registry-resources-download-002	rewritten	41.7	extension after sandbox reset
 artifacts	src/signals/routes/__tests__/registry-resources-download.test.ts	registry-resources-download-003	rewritten	7.1	extension after sandbox reset
 artifacts	src/signals/routes/__tests__/registry-resources-download.test.ts	registry-resources-download-005	rewritten	5.3	extension after sandbox reset
