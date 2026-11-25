@@ -1287,7 +1287,11 @@ export function PricingStepContent({
       {/* No bottom inset: a step's action bar sits on the frame's edge. */}
       <DialogBody
         scrollable={!flush}
-        className={cn("flex flex-col", !flush && "overflow-y-auto px-5 pt-5")}
+        className={cn(
+          "flex flex-col",
+          !flush && "overflow-y-auto px-5 pt-5",
+          step === 2 && "pt-0 md:pt-5",
+        )}
       >
         {children}
       </DialogBody>
@@ -2632,7 +2636,7 @@ function PackageConfigurationStep({
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-5">
+    <div className="flex flex-1 flex-col md:gap-5">
       <MemberUsageConfiguration
         catalog={catalog}
         comparisonRows={comparisonRows}
@@ -2643,9 +2647,8 @@ function PackageConfigurationStep({
         plan={plan}
         totals={totals}
       />
-      {/* The frame keeps step 1's height, so a short member list leaves slack
-          between the ledger and the action at the foot of the dialog. Keep
-          the wrapper sticky so short viewports retain the whole action bar. */}
+      {/* Desktop keeps step 1's height, with any slack above the action bar.
+          Keep the wrapper sticky so short viewports retain the whole action. */}
       <div className="sticky bottom-0 mt-auto">
         {management ? (
           <ManagedSubscriptionOrderSummary
