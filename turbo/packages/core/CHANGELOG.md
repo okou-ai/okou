@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.875.0](https://github.com/okou-ai/okou/compare/core-v8.874.0...core-v8.875.0) (2026-11-25)
+
+
+### Features
+
+* enable markdown artifact quotes for staff ([#50679](https://github.com/okou-ai/okou/issues/50679)) ([4581eb1](https://github.com/okou-ai/okou/commit/4581eb1391592033556be9ffb213b3976da0001a))
+
 ## [8.874.0](https://github.com/okou-ai/okou/compare/core-v8.873.0...core-v8.874.0) (2026-11-24)
 
 
