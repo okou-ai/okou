@@ -333,9 +333,9 @@ non-route	src/__tests__/worker-lifecycle.test.ts	worker-lifecycle-006	planned
 non-route	src/lib/__tests__/morning-brief-notification-source.test.ts	morning-brief-notification-source-001	planned		
 non-route	src/lib/__tests__/morning-brief-notification-source.test.ts	morning-brief-notification-source-005	planned		
 non-route	src/lib/__tests__/morning-brief-notification-source.test.ts	morning-brief-notification-source-009	planned		
-remote-access	src/signals/routes/__tests__/cloudflare-access-custom-connectors.test.ts	cloudflare-access-custom-connectors-001	planned		
-remote-access	src/signals/routes/__tests__/cloudflare-access-custom-connectors.test.ts	cloudflare-access-custom-connectors-003	planned		
-remote-access	src/signals/routes/__tests__/cloudflare-access-custom-connectors.test.ts	cloudflare-access-custom-connectors-005	planned		
+remote-access	src/signals/routes/__tests__/cloudflare-access-custom-connectors.test.ts	cloudflare-access-custom-connectors-001	rewritten	101.4	
+remote-access	src/signals/routes/__tests__/cloudflare-access-custom-connectors.test.ts	cloudflare-access-custom-connectors-003	rewritten	99.5	
+remote-access	src/signals/routes/__tests__/cloudflare-access-custom-connectors.test.ts	cloudflare-access-custom-connectors-005	rewritten	88.5	
 remote-access	src/signals/routes/__tests__/cloudflare-access-lifecycle.test.ts	cloudflare-access-lifecycle-001	planned		
 remote-access	src/signals/routes/__tests__/cloudflare-access-lifecycle.test.ts	cloudflare-access-lifecycle-004	planned		
 remote-access	src/signals/routes/__tests__/cloudflare-access-lifecycle.test.ts	cloudflare-access-lifecycle-005	planned		
