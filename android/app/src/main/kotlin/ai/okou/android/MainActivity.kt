@@ -176,13 +176,12 @@ class MainActivity : AppCompatActivity() {
                 }
                 UpdateHost(
                     updateState.copy(required = updateRequired),
+                    updates::checkAfterFailure,
                     { updates.check() },
-                    { updateInstall.download(it) },
+                    { updateInstall.download(it, advanceRetry = true) },
                     ::installUpdate,
                     installProgress,
                     detailsOpen = updateDetails,
-                    checkFromDetails = { updates.check(advanceRetry = true) },
-                    downloadFromDetails = { updateInstall.download(it, advanceRetry = true) },
                 ) { openUpdates ->
                     SessionRoot(
                         sessionState,

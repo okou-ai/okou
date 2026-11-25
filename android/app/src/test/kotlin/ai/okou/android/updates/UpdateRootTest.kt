@@ -5,6 +5,7 @@ import ai.okou.android.MainActivity
 import ai.okou.android.R
 import ai.okou.android.TestAuthentication
 import ai.okou.android.TestOkouApplication
+import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.RequiredUpdate
 import ai.okou.android.api.generated.AndroidUpdates
 import ai.okou.android.auth.Authentication
@@ -357,7 +358,7 @@ class UpdateRootTest {
             )
         fun progressFillsCorner(): Boolean {
             val pixels = progress.assertIsDisplayed().captureToImage().toPixelMap()
-            // A point inside the download indicator's 12dp corner and outside the pill.
+            // A point outside the full-screen action's pill.
             val (x, y) = with(compose.density) { 8.dp.roundToPx() to 3.dp.roundToPx() }
             return pixels[x, y] == pixels[pixels.width / 2, y]
         }
@@ -371,7 +372,10 @@ class UpdateRootTest {
         update.performClick()
         compose.waitUntil(10_000) { app.updates.state.value.transfer is UpdateTransfer.Downloading }
         assertEquals(bounds, progress.assertIsDisplayed().getUnclippedBoundsInRoot())
-        assertTrue("Preparing the download uses the download indicator", progressFillsCorner())
+        assertFalse(
+            "Preparing the download keeps the full-screen action shape",
+            progressFillsCorner(),
+        )
         compose.onNodeWithText("Preparing…").assertHasNoClickAction()
     }
 
@@ -398,14 +402,19 @@ class UpdateRootTest {
                 )
             installed.performScrollTo().assertIsDisplayed()
             assertEquals(bounds, action.assertIsDisplayed().getUnclippedBoundsInRoot())
+            action.performClick()
+            val preparing = compose.onNodeWithText(app.getString(R.string.updates_preparing))
+            assertEquals(bounds, preparing.assertIsDisplayed().getUnclippedBoundsInRoot())
         } finally {
             RuntimeEnvironment.setFontScale(originalFontScale)
         }
     }
 
     @Test
-    fun requiredPageShowsTheInstalledVersionDuringDiscovery() {
+    fun requiredPageShowsTheInstalledVersionAndAllowsImmediateCheckAndDownloadRetries() {
         val discovery = checkNotNull(app.fixture.heldCheck)
+        val retryDiscovery = CompletableDeferred<Unit>()
+        val limited = ApiFailure.Http(429, null, null, 60)
         try {
             app.updates.requireUpdate(RequiredUpdate("99.0.0"))
             compose.waitUntil(10_000) {
@@ -418,11 +427,36 @@ class UpdateRootTest {
             compose.onNodeWithText("Checking…").assertIsDisplayed()
             compose.onNodeWithText("You are up to date").assertDoesNotExist()
 
-            discovery.complete(Unit)
+            compose.runOnIdle {
+                app.fixture.checkRejection = limited
+                discovery.complete(Unit)
+            }
+            compose.waitUntil(10_000) { app.updates.state.value.check == UpdateCheck.Waiting }
+            compose.runOnIdle {
+                app.fixture.checkRejection = null
+                app.fixture.heldCheck = retryDiscovery
+            }
+            compose.onNodeWithText("Retry check").assertIsEnabled().performClick()
+            compose.waitUntil(10_000) { app.updates.state.value.check == UpdateCheck.Checking }
+            compose.onNodeWithText("Checking…").assertIsDisplayed()
+
+            retryDiscovery.complete(Unit)
             compose.waitUntil(10_000) { app.updates.state.value.canDownload }
-            compose.onNodeWithText("Download update").assertIsEnabled()
+            val release = checkNotNull(app.updates.state.value.candidate)
+            compose.onNodeWithText("Download update").assertIsEnabled().performClick()
+            compose.runOnIdle { app.fixture.transfer.completeExceptionally(limited) }
+            compose.waitUntil(10_000) {
+                app.updates.state.value.transfer == UpdateTransfer.Waiting(release)
+            }
+            compose.runOnIdle { app.fixture.transfer = CompletableDeferred() }
+            compose.onNodeWithText("Retry download").assertIsEnabled().performClick()
+            compose.waitUntil(10_000) {
+                app.updates.state.value.transfer == UpdateTransfer.Downloading(release)
+            }
+            compose.onNodeWithText("Preparing…").assertIsDisplayed()
         } finally {
             discovery.complete(Unit)
+            retryDiscovery.complete(Unit)
         }
     }
 

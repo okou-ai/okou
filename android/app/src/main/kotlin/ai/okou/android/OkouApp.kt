@@ -1725,7 +1725,7 @@ internal fun OkouApp(
                                     focusOnEntry = focusSearch,
                                     onFocused = { focusSearch = false },
                                     onClose = ::closeSearch,
-                                    refreshChats = chats::refreshSearchMetadata,
+                                    refreshChats = chats::refreshList,
                                     onOpen = {
                                         leaveWorkflowChat()
                                         openChat(it, fromSearch = true)

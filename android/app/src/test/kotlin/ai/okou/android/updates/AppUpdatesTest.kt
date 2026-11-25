@@ -255,9 +255,9 @@ class AppUpdatesTest {
     }
 
     @Test
-    fun manualRetriesRespectTheServerDelayForChecksAndDownloads() = runTest {
-        val rejection = ApiFailure.Http(429, null, null, 8)
-        val service = ControlledUpdates().apply { checkRejection = rejection }
+    fun automaticCheckAndDownloadRetriesUseTheServerDelay() = runTest {
+        val service =
+            ControlledUpdates().apply { checkRejection = ApiFailure.Http(429, null, null, 1) }
         val release = updateRelease()
         val store = MemoryUpdateStore()
         AppUpdates(
@@ -272,22 +272,20 @@ class AppUpdatesTest {
                 runCurrent()
                 assertEquals(UpdateCheck.Waiting, owner.state.value.check)
                 service.checkRejection = null
-                owner.check(advanceRetry = true)
-                advanceTimeBy(7_999)
+                advanceTimeBy(999)
                 assertEquals(1, service.checks)
                 advanceTimeBy(1)
                 runCurrent()
                 assertEquals(2, service.checks)
                 assertEquals(UpdateCheck.Checked, owner.state.value.check)
 
-                service.transfer.completeExceptionally(rejection)
+                service.transfer.completeExceptionally(ApiFailure.Http(429, null, null, 8))
                 assertTrue(owner.download(release))
                 runCurrent()
                 assertEquals(UpdateTransfer.Waiting(release), owner.state.value.transfer)
                 assertFalse(owner.download(release))
                 assertEquals(release, store.record?.target)
                 service.transfer = CompletableDeferred(File("verified.apk"))
-                owner.download(release, advanceRetry = true)
                 advanceTimeBy(7_999)
                 assertEquals(listOf(release), service.downloadedReleases)
                 advanceTimeBy(1)
@@ -298,37 +296,53 @@ class AppUpdatesTest {
     }
 
     @Test
-    fun temporaryFailuresStopAfterTwoRetries() = runTest {
-        val service = ControlledUpdates().apply { timeoutCheck = true }
-        AppUpdates(
-                service,
-                MemoryUpdateStore(),
-                "0.12.0",
-                35,
-                StandardTestDispatcher(testScheduler),
-            )
-            .use { owner ->
-                owner.check()
-                advanceTimeBy(6_000)
-                runCurrent()
-                assertEquals(3, service.checks)
-                assertEquals(UpdateCheck.Failed, owner.state.value.check)
+    fun reopeningAFailedCheckRespectsItsLastServerDelayAndDownloadsKeepTheirRetryBudget() =
+        runTest {
+            val service =
+                ControlledUpdates().apply { checkRejection = ApiFailure.Http(429, null, null, 1) }
+            AppUpdates(
+                    service,
+                    MemoryUpdateStore(),
+                    "0.12.0",
+                    35,
+                    StandardTestDispatcher(testScheduler),
+                    clock = testScheduler.timeSource,
+                )
+                .use { owner ->
+                    owner.check()
+                    advanceTimeBy(1_000)
+                    runCurrent()
+                    service.checkRejection = ApiFailure.Http(429, null, null, 8)
+                    advanceTimeBy(1_000)
+                    runCurrent()
+                    assertEquals(3, service.checks)
+                    assertEquals(UpdateCheck.Failed, owner.state.value.check)
 
-                service.timeoutCheck = false
-                owner.check()
-                runCurrent()
-                service.transfer.completeExceptionally(SocketTimeoutException("download"))
-                assertTrue(owner.download(updateRelease()))
-                advanceTimeBy(6_000)
-                runCurrent()
-                assertEquals(List(3) { updateRelease() }, service.downloadedReleases)
-                assertEquals(UpdateTransfer.Failed, owner.state.value.transfer)
-            }
-    }
+                    service.checkRejection = null
+                    owner.checkAfterFailure()
+                    owner.check(manual = false)
+                    advanceTimeBy(7_999)
+                    owner.checkAfterFailure()
+                    runCurrent()
+                    assertEquals(3, service.checks)
+                    advanceTimeBy(1)
+                    owner.checkAfterFailure()
+                    runCurrent()
+                    assertEquals(4, service.checks)
+                    assertEquals(UpdateCheck.Checked, owner.state.value.check)
+                    service.transfer.completeExceptionally(SocketTimeoutException("download"))
+                    assertTrue(owner.download(updateRelease()))
+                    advanceTimeBy(6_000)
+                    runCurrent()
+                    assertEquals(List(3) { updateRelease() }, service.downloadedReleases)
+                    assertEquals(UpdateTransfer.Failed, owner.state.value.transfer)
+                }
+        }
 
     @Test
     fun manualCheckAdvancesThePendingRetryWithoutAddingAttempts() = runTest {
-        val service = ControlledUpdates().apply { timeoutCheck = true }
+        val service =
+            ControlledUpdates().apply { checkRejection = ApiFailure.Http(429, null, null, 8) }
         AppUpdates(
                 service,
                 MemoryUpdateStore(),
@@ -340,18 +354,20 @@ class AppUpdatesTest {
                 owner.check()
                 runCurrent()
                 assertEquals(UpdateCheck.Waiting, owner.state.value.check)
-                owner.check()
+                owner.check(manual = false)
+                owner.checkAfterFailure()
                 runCurrent()
                 assertEquals(1, service.checks)
 
                 val retry = CompletableDeferred<Unit>()
                 service.heldCheck = retry
-                owner.check(advanceRetry = true)
-                owner.check(advanceRetry = true)
+                owner.check()
+                owner.check()
                 runCurrent()
                 assertEquals(UpdateCheck.Checking, owner.state.value.check)
                 assertEquals(2, service.checks)
-                owner.check(advanceRetry = true)
+                owner.check()
+                advanceTimeBy(8_000)
                 runCurrent()
                 assertEquals(2, service.checks)
 
@@ -359,13 +375,13 @@ class AppUpdatesTest {
                 retry.complete(Unit)
                 runCurrent()
                 assertEquals(UpdateCheck.Waiting, owner.state.value.check)
-                advanceTimeBy(3_000)
+                advanceTimeBy(8_000)
                 runCurrent()
                 assertEquals(UpdateCheck.Failed, owner.state.value.check)
                 assertEquals(3, service.checks)
 
-                service.timeoutCheck = false
-                owner.check(advanceRetry = true)
+                service.checkRejection = null
+                owner.check()
                 runCurrent()
                 assertEquals(UpdateCheck.Checked, owner.state.value.check)
                 assertEquals(4, service.checks)
@@ -387,7 +403,7 @@ class AppUpdatesTest {
             .use { owner ->
                 owner.check()
                 runCurrent()
-                service.transfer.completeExceptionally(SocketTimeoutException("download"))
+                service.transfer.completeExceptionally(ApiFailure.Http(429, null, null, 8))
                 assertTrue(owner.download(selected))
                 runCurrent()
                 assertEquals(UpdateTransfer.Waiting(selected), owner.state.value.transfer)
@@ -401,6 +417,9 @@ class AppUpdatesTest {
                 assertFalse(owner.download(selected, advanceRetry = true))
                 runCurrent()
                 assertEquals(UpdateTransfer.Downloading(selected), owner.state.value.transfer)
+                assertEquals(listOf(selected, selected), service.downloadedReleases)
+                advanceTimeBy(8_000)
+                runCurrent()
                 assertEquals(listOf(selected, selected), service.downloadedReleases)
 
                 service.transfer.completeExceptionally(SocketTimeoutException("download"))

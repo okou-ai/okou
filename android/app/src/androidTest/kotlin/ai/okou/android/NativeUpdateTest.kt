@@ -384,7 +384,7 @@ class NativeUpdateTest {
             click(R.string.updates_retry_download)
             assertNotNull(text(progressLabel))
             val rateLimited = download.getAndSet(CompletableDeferred())
-            rateLimited.completeExceptionally(ApiFailure.Http(429, null, null, 8))
+            rateLimited.completeExceptionally(ApiFailure.Http(429, null, null, 60))
             val waiting = checkNotNull(text(app.getString(R.string.updates_retry_download)))
             assertTrue(
                 generateSequence(waiting) { it.parent }.any { it.isClickable && it.isEnabled },
@@ -395,6 +395,7 @@ class NativeUpdateTest {
                 exists(R.string.updates_retry_download)
                 captureState("details-short-retry-waiting")
             }
+            click(R.string.updates_retry_download)
             assertNotNull(text(progressLabel))
             click(R.string.updates_close)
 

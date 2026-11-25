@@ -12,6 +12,9 @@ import java.io.InterruptedIOException
 import java.net.SocketException
 import java.net.UnknownHostException
 import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.TimeMark
+import kotlin.time.TimeSource
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -20,7 +23,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -168,6 +170,7 @@ class AppUpdates(
     sdk: Int,
     dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
     private val now: () -> Long = System::currentTimeMillis,
+    private val clock: TimeSource = TimeSource.Monotonic,
 ) : Closeable {
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val mutable = MutableStateFlow(UpdateUiState(version, sdk = sdk))
@@ -176,6 +179,7 @@ class AppUpdates(
     private val initialized = CompletableDeferred<Unit>()
     private val persistence = Mutex()
     private var checkedAt = 0L
+    private var automaticCheckAfter: TimeMark? = null
     private var checkJob: Job? = null
     private var transferJob: Job? = null
     private val checkRetry = RetryDelay()
@@ -224,19 +228,32 @@ class AppUpdates(
         }
     }
 
-    fun check(manual: Boolean = true, advanceRetry: Boolean = false) {
+    fun check(manual: Boolean = true) {
+        startCheck(manual) { snapshot ->
+            snapshot.needsRequiredRelease ||
+                checkedAt <= 0 ||
+                now() - checkedAt !in 0 until 10.minutes.inWholeMilliseconds
+        }
+    }
+
+    internal fun checkAfterFailure() {
+        if (mutable.value.check != UpdateCheck.Failed) return
+        startCheck(manual = false) { snapshot ->
+            snapshot.check == UpdateCheck.Failed &&
+                snapshot.displayedRelease?.let(snapshot::isEligible) != true
+        }
+    }
+
+    private fun startCheck(manual: Boolean, shouldCheck: (UpdateUiState) -> Boolean) {
         if (checkJob?.isActive == true) {
-            if (advanceRetry) checkRetry.advance()
+            if (manual) checkRetry.advance()
             return
         }
         checkJob = scope.launch {
             initialized.await()
-            val snapshot = mutable.value
             if (
                 !manual &&
-                    !snapshot.needsRequiredRelease &&
-                    checkedAt > 0 &&
-                    now() - checkedAt in 0 until 10.minutes.inWholeMilliseconds
+                    (automaticCheckAfter?.hasNotPassedNow() == true || !shouldCheck(mutable.value))
             )
                 return@launch
             val info = readRelease() ?: return@launch
@@ -263,6 +280,7 @@ class AppUpdates(
     }
 
     private suspend fun readRelease(): AndroidUpdates? {
+        automaticCheckAfter = null
         var retries = 0
         while (true) {
             mutable.update { it.copy(check = UpdateCheck.Checking) }
@@ -271,7 +289,11 @@ class AppUpdates(
             } catch (error: Exception) {
                 currentCoroutineContext().ensureActive()
                 classify(error, UpdateProblem.Check)
-                if (!error.isTemporaryNetworkFailure() || retries == 2) {
+                val retryable = error.isTemporaryNetworkFailure()
+                if (!retryable || retries == 2) {
+                    if (retryable) {
+                        automaticCheckAfter = error.retryAfter()?.let { clock.markNow() + it }
+                    }
                     mutable.update { it.copy(check = UpdateCheck.Failed) }
                     return null
                 }
@@ -298,7 +320,7 @@ class AppUpdates(
             } catch (error: Exception) {
                 reportStorageFailure(error)
             }
-            if (mutable.value.needsRequiredRelease) check()
+            if (mutable.value.needsRequiredRelease) check(manual = false)
         }
     }
 
@@ -369,19 +391,11 @@ class AppUpdates(
         fun advance() = pending?.complete(Unit) == true
 
         suspend fun awaitNextAttempt(error: Exception, showWaiting: () -> Unit) {
-            val serverWait =
-                ((error as? ApiFailure.Http)?.retryAfterSeconds ?: 0L).coerceIn(
-                    0,
-                    Long.MAX_VALUE / 1_000,
-                ) * 1_000
             val signal = CompletableDeferred<Unit>()
             pending = signal
             try {
                 showWaiting()
-                // A manual retry can advance the local delay after the server's deadline.
-                delay(serverWait)
-                val remaining = 3_000L - serverWait
-                if (remaining > 0) withTimeoutOrNull(remaining) { signal.await() }
+                withTimeoutOrNull(error.retryAfter() ?: 3.seconds) { signal.await() }
             } finally {
                 if (pending === signal) pending = null
             }
@@ -478,6 +492,9 @@ class AppUpdates(
         service.close()
     }
 }
+
+private fun Exception.retryAfter() =
+    (this as? ApiFailure.Http)?.retryAfterSeconds?.takeIf { it >= 0 }?.seconds
 
 private fun Exception.isTemporaryNetworkFailure(): Boolean =
     when (this) {

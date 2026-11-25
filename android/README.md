@@ -658,6 +658,11 @@ Optional releases appear in the chat-list toolbar and app update settings.
 Required updates own the full-screen recovery flow. Automatic checks run on
 foreground without holding the first native frame and reuse successful discovery
 for 10 minutes, including across process restarts.
+Recoverable checks and downloads get two automatic retries. Each uses the
+delay supplied by `Retry-After`, or three seconds when no delay is supplied. Opening
+details can start a new check after failure when no compatible update is known
+and the server's wait has passed. The retry actions in details and the required
+update screen can advance a scheduled attempt without starting a second job.
 
 Startup retains and revalidates an eligible pending APK for the current
 installed version. It removes other updater-owned APKs, including the package

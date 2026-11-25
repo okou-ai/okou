@@ -125,11 +125,9 @@
     <string name="settings_saving">Menyimpan…</string>
     <string name="settings_sign_out_title">Keluar?</string>
     <string name="settings_sign_out_body">Masuk lagi untuk menggunakan Okou di perangkat ini. Draf tetap tersimpan di akun ini.</string>
-    <string name="updates_waiting_to_check">Menunggu pemeriksaan</string>
     <string name="updates_waiting_to_install">Menunggu pemasangan</string>
     <string name="updates_retry_download">Coba unduh lagi</string>
     <string name="updates_retry_check">Periksa lagi</string>
-    <string name="updates_waiting_to_download">Menunggu unduhan</string>
     <string name="instructions_placeholder">Apa yang ingin Anda minta Okou perhatikan?</string>
     <string name="settings_timezone">Zona waktu</string>
     <string name="settings_timezone_utc">Waktu Universal Terkoordinasi</string>

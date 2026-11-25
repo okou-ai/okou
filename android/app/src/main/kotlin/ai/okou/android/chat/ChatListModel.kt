@@ -1623,8 +1623,6 @@ class ChatListModel(
 
     fun refreshList() = requestListRead()
 
-    internal fun refreshSearchMetadata() = requestListRead()
-
     internal fun retryList() = requestListRead(userRequested = true)
 
     private fun canRefreshList() = listRetryAt == null

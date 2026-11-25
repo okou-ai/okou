@@ -125,11 +125,9 @@
     <string name="settings_saving">Wird gespeichert…</string>
     <string name="settings_sign_out_title">Abmelden?</string>
     <string name="settings_sign_out_body">Um Okou auf diesem Gerät erneut zu nutzen, melde dich wieder an. Entwürfe bleiben bei diesem Konto.</string>
-    <string name="updates_waiting_to_check">Warten auf Prüfung</string>
     <string name="updates_waiting_to_install">Warte auf Installation</string>
     <string name="updates_retry_download">Download wiederholen</string>
     <string name="updates_retry_check">Erneut prüfen</string>
-    <string name="updates_waiting_to_download">Warten auf Download</string>
     <string name="instructions_placeholder">Was soll Okou berücksichtigen?</string>
     <string name="settings_timezone">Zeitzone</string>
     <string name="settings_timezone_utc">Koordinierte Weltzeit</string>

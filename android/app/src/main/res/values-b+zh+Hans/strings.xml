@@ -125,11 +125,9 @@
     <string name="settings_saving">正在保存…</string>
     <string name="settings_sign_out_title">退出登录？</string>
     <string name="settings_sign_out_body">再次使用 Okou 时需要登录。草稿保留在原账号下。</string>
-    <string name="updates_waiting_to_check">等待检查</string>
     <string name="updates_waiting_to_install">等待安装</string>
     <string name="updates_retry_download">重新下载</string>
     <string name="updates_retry_check">重新检查</string>
-    <string name="updates_waiting_to_download">等待下载</string>
     <string name="instructions_placeholder">填写你希望 Okou 遵循的回复偏好</string>
     <string name="settings_timezone">时区</string>
     <string name="settings_timezone_utc">协调世界时</string>
