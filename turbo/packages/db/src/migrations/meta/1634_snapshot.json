@@ -1,5 +1,5 @@
 {
-  "id": "dba0125c-f41c-4bef-b598-62b7fd001a17",
+  "id": "a954f6cb-ba0b-46d7-bec5-c34a38ee9e3e",
   "prevId": "7f614252-9112-4f26-b3a7-c9d641ea7c0b",
   "version": "7",
   "dialect": "postgresql",
@@ -11514,7 +11514,7 @@
               "nulls": "last"
             },
             {
-              "expression": "(CASE WHEN \"connector_slug\" = 'aws' THEN substring(\"external_username\" from '[(]([^()]+)[)]$') ELSE '' END)",
+              "expression": "(CASE WHEN \"connector_slug\" = 'aws' THEN substring(\"external_username\" from '[(]([^()]+)[)]$') WHEN \"connector_slug\" IN ('notion', 'slack', 'hubspot') AND \"external_issuer\" = '' THEN NULL ELSE '' END)",
               "asc": true,
               "isExpression": true,
               "nulls": "last"

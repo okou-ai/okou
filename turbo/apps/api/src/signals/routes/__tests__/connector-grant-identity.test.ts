@@ -96,6 +96,49 @@ async function connections(slug: ScopedSlug) {
 describe.each(["notion", "slack", "hubspot"] as const)(
   "%s authorization identity",
   (slug) => {
+    it("reuses the same provider grant on repeated authorization", async () => {
+      const actor = createBddApi(context).user();
+      expect((await authorize(actor, slug, "1001")).body.status).toBe(
+        "success",
+      );
+      const [original] = await connections(slug);
+      expect((await authorize(actor, slug, "1001")).body.status).toBe(
+        "success",
+      );
+      const saved = await connections(slug);
+      expect(saved).toHaveLength(1);
+      expect(saved[0]?.id).toBe(original?.id);
+    });
+
+    it("arbitrates overlapping authorizations of the same workspace grant", async () => {
+      const actor = createBddApi(context).user();
+      provider(slug, "1001");
+      const starts = await Promise.all([
+        api.startOauth(actor, slug, "oauth"),
+        api.startOauth(actor, slug, "oauth"),
+      ]);
+      const results = await Promise.all(
+        starts.map(async (started) => {
+          const state = new URL(started.authorizationUrl).searchParams.get(
+            "state",
+          );
+          if (!state) {
+            throw new Error("Missing overlapping authorization state");
+          }
+          return await api.completeOauthCallbackResult(slug, {
+            code: "overlapping-authorization",
+            state,
+          });
+        }),
+      );
+      expect(
+        results.map((result) => {
+          return result.body.status;
+        }),
+      ).toStrictEqual(["success", "success"]);
+      await expect(connections(slug)).resolves.toHaveLength(1);
+    });
+
     it("preserves different authorizations owned by the same provider user", async () => {
       const actor = createBddApi(context).user();
       expect((await authorize(actor, slug, "1001")).body.status).toBe(

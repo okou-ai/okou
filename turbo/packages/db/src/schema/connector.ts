@@ -70,7 +70,7 @@ export const connectors = pgTable(
           table.connectorSlug,
           table.externalId,
           table.externalIssuer,
-          sql`(CASE WHEN ${table.connectorSlug} = 'aws' THEN substring(${table.externalUsername} from '[(]([^()]+)[)]$') ELSE '' END)`,
+          sql`(CASE WHEN ${table.connectorSlug} = 'aws' THEN substring(${table.externalUsername} from '[(]([^()]+)[)]$') WHEN ${table.connectorSlug} IN ('notion', 'slack', 'hubspot') AND ${table.externalIssuer} = '' THEN NULL ELSE '' END)`,
         )
         .where(
           sql`${table.connectorSlug} IS NOT NULL AND ${table.externalId} IS NOT NULL AND ${table.externalId} <> ''`,

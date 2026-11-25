@@ -30,6 +30,8 @@ FROM (
     ) AS copies
   FROM connectors WHERE external_id IS NOT NULL AND external_id <> ''
     AND (connector_slug IS DISTINCT FROM 'aws' OR substring(external_username from '[(]([^()]+)[)]$') IS NOT NULL)
+    -- Historical user IDs alone cannot identify workspace-scoped grants.
+    AND (coalesce(connector_slug, '') NOT IN ('notion', 'slack', 'hubspot') OR external_issuer <> '')
 ) ranked WHERE copies > 1;
 --> statement-breakpoint
 -- Do not silently discard separately linked drafts or managed installations.
@@ -263,5 +265,5 @@ FROM connector_identity_merge m WHERE watch.connector_id = m.id AND m.id <> m.ca
 DELETE FROM connectors duplicate USING connector_identity_merge m
 WHERE duplicate.id = m.id AND m.id <> m.canonical_id;
 --> statement-breakpoint
-CREATE UNIQUE INDEX "idx_connectors_builtin_external_identity" ON "connectors" USING btree ("org_id","user_id","connector_slug","external_id","external_issuer",(CASE WHEN "connector_slug" = 'aws' THEN substring("external_username" from '[(]([^()]+)[)]$') ELSE '' END)) WHERE "connectors"."connector_slug" IS NOT NULL AND "connectors"."external_id" IS NOT NULL AND "connectors"."external_id" <> '';--> statement-breakpoint
+CREATE UNIQUE INDEX "idx_connectors_builtin_external_identity" ON "connectors" USING btree ("org_id","user_id","connector_slug","external_id","external_issuer",(CASE WHEN "connector_slug" = 'aws' THEN substring("external_username" from '[(]([^()]+)[)]$') WHEN "connector_slug" IN ('notion', 'slack', 'hubspot') AND "external_issuer" = '' THEN NULL ELSE '' END)) WHERE "connectors"."connector_slug" IS NOT NULL AND "connectors"."external_id" IS NOT NULL AND "connectors"."external_id" <> '';--> statement-breakpoint
 CREATE UNIQUE INDEX "idx_connectors_custom_external_identity" ON "connectors" USING btree ("org_id","user_id","custom_connector_id","external_id","external_issuer") WHERE "connectors"."custom_connector_id" IS NOT NULL AND "connectors"."external_id" IS NOT NULL AND "connectors"."external_id" <> '';
