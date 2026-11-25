@@ -245,6 +245,12 @@ export const MODEL_PROVIDER_TYPES = {
       OPENAI_MODEL: "$model",
     } satisfies ModelProviderEnvBindings,
   },
+  // Internal staff pilot: stores the member's Google refresh token. It has no
+  // launch framework until runs can be admitted for this provider.
+  antigravity: {
+    secretName: "ANTIGRAVITY_REFRESH_TOKEN",
+    label: "Google AI (Antigravity)",
+  },
   "built-in": BUILT_IN_MODEL_PROVIDER_CONFIG,
 } as const satisfies Record<ModelProviderType, unknown>;
 
@@ -280,7 +286,12 @@ export const modelProviderFrameworkSchema = zEnum(["claude-code", "codex"]);
 export function getFrameworkForType(
   type: ModelProviderType,
 ): ModelProviderFramework {
-  return MODEL_PROVIDER_TYPES[type]?.framework ?? "claude-code";
+  // Callers may pass an unvalidated provider string at runtime.
+  if (!(type in MODEL_PROVIDER_TYPES)) {
+    return "claude-code";
+  }
+  const config = MODEL_PROVIDER_TYPES[type];
+  return "framework" in config ? config.framework : "claude-code";
 }
 
 /**

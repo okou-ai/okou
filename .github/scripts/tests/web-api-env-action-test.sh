@@ -212,6 +212,8 @@ build_doppler_secrets_json() {
       | . + {
         CODEX_OAUTH_CLIENT_ID: "doppler-CODEX_OAUTH_CLIENT_ID",
         CLAUDE_CODE_OAUTH_CLIENT_ID: "doppler-CLAUDE_CODE_OAUTH_CLIENT_ID",
+        ANTIGRAVITY_OAUTH_CLIENT_ID: "doppler-antigravity-client-id",
+        ANTIGRAVITY_OAUTH_CLIENT_SECRET: "doppler-antigravity-client-secret",
         LINK_OAUTH_CLIENT_ID: "doppler-link-client-id",
         LINK_OAUTH_CLIENT_SECRET: "doppler-link-client-secret",
         LINK_STRIPE_PUBLISHABLE_KEY: "pk_live_link_fixture",
@@ -441,11 +443,11 @@ for integration_app in api web; do
   fi
 done
 
-# The optional Link values stay empty despite conflicting GitHub inputs.
+# The optional Link and Antigravity values stay empty despite conflicting GitHub inputs.
 machine_secret_dir="$(mktemp -d)"
 TEMP_DIRS+=("$machine_secret_dir")
 machine_secret_output="$(run_action \
-  "$(build_doppler_secrets_json | jq -c 'del(.LINK_OAUTH_CLIENT_ID, .LINK_OAUTH_CLIENT_SECRET, .LINK_STRIPE_PUBLISHABLE_KEY)')" \
+  "$(build_doppler_secrets_json | jq -c 'del(.LINK_OAUTH_CLIENT_ID, .LINK_OAUTH_CLIENT_SECRET, .LINK_STRIPE_PUBLISHABLE_KEY, .ANTIGRAVITY_OAUTH_CLIENT_ID, .ANTIGRAVITY_OAUTH_CLIENT_SECRET)')" \
   "$machine_secret_dir" api preview "" \
   '{"OKOU_MACHINE_SECRET_KEY":" preview-canonical-machine-secret=bytes "}' "" 2>&1)"
 machine_secret_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${machine_secret_dir}/github-output")"
@@ -455,6 +457,8 @@ assert_machine_secret_canonical "$machine_secret_env_file" " preview-canonical-m
 assert_preview_job_ref_absent "$machine_secret_env_file"
 assert_env_value "$machine_secret_env_file" LINK_OAUTH_CLIENT_ID ""
 assert_env_value "$machine_secret_env_file" LINK_OAUTH_CLIENT_SECRET ""
+assert_env_value "$machine_secret_env_file" ANTIGRAVITY_OAUTH_CLIENT_ID ""
+assert_env_value "$machine_secret_env_file" ANTIGRAVITY_OAUTH_CLIENT_SECRET ""
 
 api_backend_url_absent_dir="$(mktemp -d)"
 TEMP_DIRS+=("$api_backend_url_absent_dir")
@@ -495,6 +499,8 @@ assert_env_value "$success_env_file" R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID "private
 assert_env_value "$success_env_file" R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY "private-dev-secret"
 assert_env_value "$success_env_file" CODEX_OAUTH_CLIENT_ID "doppler-CODEX_OAUTH_CLIENT_ID"
 assert_env_value "$success_env_file" CLAUDE_CODE_OAUTH_CLIENT_ID "doppler-CLAUDE_CODE_OAUTH_CLIENT_ID"
+assert_env_value "$success_env_file" ANTIGRAVITY_OAUTH_CLIENT_ID "doppler-antigravity-client-id"
+assert_env_value "$success_env_file" ANTIGRAVITY_OAUTH_CLIENT_SECRET "doppler-antigravity-client-secret"
 assert_env_value "$success_env_file" GH_OAUTH_CLIENT_ID "doppler-GH_OAUTH_CLIENT_ID"
 assert_env_value "$success_env_file" GH_OAUTH_CLIENT_SECRET "doppler-GH_OAUTH_CLIENT_SECRET"
 assert_env_value "$success_env_file" SLACK_OAUTH_CLIENT_ID "doppler-SLACK_OAUTH_CLIENT_ID"

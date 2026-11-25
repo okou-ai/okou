@@ -13215,6 +13215,7 @@ enum class RecoveryModelsModelsItemMemberEffectiveProviderType {
     @SerialName("claude-code-oauth-token") CLAUDE_CODE_OAUTH_TOKEN,
     @SerialName("openrouter-codex") OPENROUTER_CODEX,
     @SerialName("codex-oauth-token") CODEX_OAUTH_TOKEN,
+    @SerialName("antigravity") ANTIGRAVITY,
     @SerialName("built-in") BUILT_IN,
 }
 
@@ -13223,6 +13224,7 @@ enum class RecoveryModelsModelsItemMemberEffectiveRuntimeProviderType {
     @SerialName("claude-code-oauth-token") CLAUDE_CODE_OAUTH_TOKEN,
     @SerialName("openrouter-codex") OPENROUTER_CODEX,
     @SerialName("codex-oauth-token") CODEX_OAUTH_TOKEN,
+    @SerialName("antigravity") ANTIGRAVITY,
     @SerialName("built-in") BUILT_IN,
 }
 
@@ -13474,6 +13476,7 @@ enum class RecoverySubscriptionsSubscriptionsItemType {
     @SerialName("claude-code-oauth-token") CLAUDE_CODE_OAUTH_TOKEN,
     @SerialName("openrouter-codex") OPENROUTER_CODEX,
     @SerialName("codex-oauth-token") CODEX_OAUTH_TOKEN,
+    @SerialName("antigravity") ANTIGRAVITY,
     @SerialName("built-in") BUILT_IN,
 }
 
