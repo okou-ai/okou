@@ -262,3 +262,88 @@ Shared test infrastructure and configuration stay:
 - `src/signals/routes/__tests__/helpers/` (130 modules).
 - `src/signals/routes/__tests__/fixtures/`.
 - The standalone `scripts/*.node-test.mjs` files, which are outside the Vitest scope.
+
+## Step 2: BDD selection
+
+The second step selects, in a positive pass, the higher-value half of the frozen BDD scenarios for the rebuild. It writes no tests, rewrites no BDD, and leaves the frozen BDD text unchanged.
+
+### Standard
+
+Cases are judged from the perspective of a user or third-party caller, such as a webhook sender, CLI, Runner or integration: what the caller can trigger and what consequence they can observe. Cases closer to the user rank higher. Selected cases carry one basis:
+
+- `core-path`: the core success path for a user or caller.
+- `visible-result`: a result the user can see.
+- `business-rule`: an independent business rule.
+- `access-isolation`: a permission or data-isolation outcome a user can actually encounter.
+
+These lose points:
+
+- extreme edge cases;
+- cases a user would struggle to construct;
+- cases that only describe internal implementation;
+- negative assertions, tombstone tests and repeated parameter variants.
+
+A negative case is selected only when it protects a unique, important outcome a user can encounter. Copy review, isolatePg counts, BDD verification, and dependence on isolatePg, a private store or a logger are not selection criteria.
+
+### Method
+
+Each file has a quota of `ceil(N/2)` expanded cases. A file selects more only when key user scenarios cannot be replaced. It selects fewer, possibly none, only when its remaining cases are not reachable by a user: configuration, library, adapter, protocol, telemetry, caching or retry internals, precise race interleavings, contrived provider-failure combinations, or test fixtures. Each exception has a one-line reason. Unselected cases are recorded as `not-selected` without per-case reasons.
+
+1. **First pass.** Model-assisted scoring covered all 599 files in 18 groups ordered by domain. It selected 40.6%, with 215 files below quota.
+2. **Top-up pass.** The first pass had treated user-reachable variants as grounds for selecting fewer. That is narrower than the rule, so 171 route files below quota were re-examined. User-reachable cases, including other channels, plans, providers, roles and user-visible error outcomes, were added until each file reached its quota. A file stopped below quota only when its remaining cases are not user-reachable. This pass added 472 cases and removed none.
+3. **Domain review.** Independent reviewers checked 141 files across all 112 domains that have both selected and unselected cases. They checked whether the selected cases are closer to the user than the unselected ones. 129 files were confirmed. 12 files received 13 count-preserving swaps (`add > drop`):
+
+| File                                        | Swap                     | Reason                                                                                                                                                        |
+| ------------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agentphone.bdd`                            | `088 > 002`, `096 > 083` | A rejected reply still leaves the conversation usable, and a message from an unlinked phone is rejected. Both replace SMS repeats of selected iMessage cases. |
+| `connectors.bdd`                            | `012 > 010`              | Denied and expired device authorization states the user sees, in place of malformed start requests.                                                           |
+| `onboarding`                                | `008 > 007`              | Covers 007 plus peer and other-workspace threads not counting.                                                                                                |
+| `hosted-site-access`                        | `027 > 024`              | Owner preview of a private site, in place of a Clerk token claim the user cannot construct.                                                                   |
+| `webhooks-agent-firewall-auth-custom-oauth` | `029 > 006`              | The Cloudflare Access switch keeps existing connectors working, in place of a 403 repeat of 005.                                                              |
+| `cron-connector-catalog`                    | `003 > 009`              | The published catalog advances and rolls back, in place of a revoke-call count.                                                                               |
+| `shared-threads`                            | `017 > 002`              | Outsiders cannot change share visibility, in place of a title-failure variant.                                                                                |
+| `paid-tools`                                | `010 > 004`              | Another user's IDs cannot change my tool preferences, in place of a repeated toggle.                                                                          |
+| `marketing-handoffs`                        | `008 > 004`              | Two people import the same template, in place of a 12-character hash collision.                                                                               |
+| `skill-import.bdd`                          | `010 > 009`              | The published 256 KiB instruction limit, in place of the request-size limit.                                                                                  |
+| `slack-connector-oauth`                     | `027 > 004`              | Cancelling Slack consent shows a retryable message, in place of a no-welcome check already covered.                                                           |
+| `connected-connectors`                      | `004 > 001`              | The Run's agent reads the connector list, in place of a single-account listing.                                                                               |
+
+4. **Coordinator check.** Seven files were reviewed directly: `billing-checkout`, `integrations-slack-message`, `webhooks-gmail`, `runner-cancellation`, `projects`, `chat-events-admission` and `vnc-access`. All were confirmed with no swaps. The closest call was `runner-cancellation-004` (selected, cancellation after a failed realtime publication) against `runner-cancellation-002` (same-workspace Run isolation, whose other-workspace row `003` is selected).
+
+### Result
+
+| Measure                     |                                                                      Value |
+| --------------------------- | -------------------------------------------------------------------------: |
+| Frozen cases                |                                                                      7,453 |
+| Selected                    |                                                              3,499 (46.9%) |
+| Not selected                |                                                              3,954 (53.1%) |
+| Files with exceptions       |                     113: 112 `fewer` (68 route, 44 non-route) and 1 `more` |
+| Files with nothing selected |                                                                         70 |
+| Selected basis              | 959 core-path, 969 visible-result, 952 business-rule, 619 access-isolation |
+
+| Domain                                          | Cases | Selected | Not selected |  Rate |
+| ----------------------------------------------- | ----: | -------: | -----------: | ----: |
+| Messaging integrations                          | 1,635 |      803 |          832 | 49.1% |
+| Chat and threads                                |   826 |      429 |          397 | 51.9% |
+| Connectors and MCP                              |   732 |      373 |          359 | 51.0% |
+| Account, org and other routes                   |   656 |      322 |          334 | 49.1% |
+| Billing and credits                             |   628 |      308 |          320 | 49.0% |
+| Artifacts, hosting and generation               |   590 |      274 |          316 | 46.4% |
+| Non-route (lib, infra, scripts)                 |   548 |       69 |          479 | 12.6% |
+| Runs and Runners                                |   410 |      209 |          201 | 51.0% |
+| Remote access (SSH, VNC, Tailscale, Cloudflare) |   409 |      208 |          201 | 50.9% |
+| Browser and Computer Use                        |   389 |      194 |          195 | 49.9% |
+| Webhooks                                        |   375 |      185 |          190 | 49.3% |
+| Workflows and automations                       |   255 |      125 |          130 | 49.0% |
+
+Rates slightly above 50% come from rounding small files up. The only `more` file is `workspace-workflow-permissions` (2 of 2). Its second case checks that a copied workflow brings only the caller's own Automations.
+
+### Ledgers
+
+- `selection.tsv` records each frozen ID with its test file, `selected` or `not-selected`, and the basis.
+- `selection-files.tsv` records each file's case count, quota, selected count, exception and reason.
+- `node turbo/apps/api/test-rebuild/selection-check.mjs` proves that each of the 7,453 frozen IDs has exactly one decision under its own file, without missing or unknown entries. It also checks that the file ledger matches the per-ID decisions, and that every file not at quota has a correctly directed exception with a reason.
+
+### Upstream tests
+
+From the frozen baseline through `main` at `3acc628d7f`, upstream added, modified or deleted no files under `turbo/apps/api`. The separate upstream selection count is 0.
