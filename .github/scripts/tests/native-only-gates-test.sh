@@ -23,7 +23,8 @@ assert 'codeql' in security['ci-gate-security']['needs']
 for action in ['github/codeql-action/init@', 'github/codeql-action/analyze@']:
     assert any(step.get('uses', '').startswith(action) for step in security['codeql']['steps']), \
         'the required CodeQL job must initialize and execute its scanner'
-ts_jobs = ['lint-eslint', 'lint-style', 'lint-types', 'lint-type-app', 'lint-type-api',
+ts_jobs = ['lint-eslint', 'lint-eslint-api', 'lint-eslint-app', 'lint-db-dependencies',
+           'lint-style', 'lint-types', 'lint-type-app', 'lint-type-api',
            'lint-format', 'lint-knip', 'test-cli', 'test-app', 'test-api',
            'test-other', 'test-browser-extension-package', 'test-browser-extension']
 artifacts = ['deploy-app']
@@ -130,7 +131,8 @@ for job in ts_jobs:
     assert condition(turbo[job], context(ios=False, ts=True, event='merge_group')), job
     assert not condition(turbo[job], context(ios=False, ts=True, event='push')), job
     assert not condition(turbo[job], context(ios=False, ts=False)), job
-for job in ['test-browser-extension-package', 'test-browser-extension']:
+for job in ['lint-eslint-api', 'lint-eslint-app', 'lint-db-dependencies',
+            'test-browser-extension-package', 'test-browser-extension']:
     for result in ['failure', 'cancelled', 'skipped']:
         gate(turbo, 'ci-gate-turbo', context(ios=False, ts=True) | {f'needs.{job}.result': result}, False)
 for job in artifacts:
