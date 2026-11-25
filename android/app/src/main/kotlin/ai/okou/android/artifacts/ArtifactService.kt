@@ -21,8 +21,10 @@ import ai.okou.android.api.generated.ArtifactDownloadVariant1
 import ai.okou.android.api.generated.ArtifactReferenceTargetKind
 import ai.okou.android.api.generated.RelatedCommunicatingChatsItemsItemStatus
 import ai.okou.android.api.generated.RelatedCreatedChatsItemsItemStatus
+import ai.okou.android.chat.renderHistoryMarkdown
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import androidx.compose.ui.text.AnnotatedString
 import java.io.OutputStream
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -93,7 +95,7 @@ internal sealed interface ArtifactResource {
 }
 
 internal sealed interface ArtifactContent {
-    data class Text(val source: String, val markdown: Boolean) : ArtifactContent
+    data class Text(val rendered: AnnotatedString, val markdown: Boolean) : ArtifactContent
 
     data class Image(val bitmap: Bitmap) : ArtifactContent
 
@@ -304,10 +306,14 @@ internal constructor(
                         .download(url, MAX_TEXT_BYTES)
                         .toString(Charsets.UTF_8)
                         .removePrefix("\uFEFF")
-                ArtifactContent.Text(
-                    text,
-                    type == "text/markdown" || extension in setOf("md", "markdown"),
-                )
+                val markdown = type == "text/markdown" || extension in setOf("md", "markdown")
+                val rendered =
+                    if (markdown)
+                        withContext(Dispatchers.Default) {
+                            renderHistoryMarkdown(text, compactLists = true)
+                        }
+                    else AnnotatedString(text)
+                ArtifactContent.Text(rendered, markdown)
             }
             else ->
                 thumbnail(file.cover, 1440)?.let { ArtifactContent.Image(it) }

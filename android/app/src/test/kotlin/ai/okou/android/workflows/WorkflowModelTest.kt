@@ -44,6 +44,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -761,6 +762,7 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
             model.visibilityChanged(true)
             runCurrent()
             model.edit(checkNotNull(model.state.value.detail).editableInstructions())
+            val session = model.state.value.editing as WorkflowEditSession.Instructions
             val summary = service.summary.copy(displayName = "New name")
             service.catalogRead = { listOf(summary) }
             val latestDetail = CompletableDeferred<WorkflowDetail>()
@@ -770,10 +772,15 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
             runCurrent()
 
             val pristine = model.state.value.editor as WorkflowEdit.Instructions
+            assertSame(session, model.state.value.editing)
             assertEquals("New name", pristine.value.title)
             assertFalse(pristine.canSave)
-            val edited = pristine.copy(value = pristine.value.copy(purpose = "My purpose"))
-            model.edit(edited)
+            val selection = androidx.compose.ui.text.TextRange(2, 5)
+            session.purpose.edit {
+                replace(0, length, "My purpose")
+                this.selection = selection
+            }
+            val edited = session.draft
             service.detail =
                 service.detail.copy(
                     displayName = summary.displayName,
@@ -784,6 +791,8 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
             runCurrent()
 
             val draft = model.state.value.editor as WorkflowEdit.Instructions
+            assertSame(session, model.state.value.editing)
+            assertEquals(selection, session.purpose.selection)
             assertEquals(edited.value, draft.value)
             assertEquals("Updated instruction", draft.original.instruction)
             assertTrue(draft.canSave)

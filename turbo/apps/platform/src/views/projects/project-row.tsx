@@ -185,10 +185,7 @@ function ProjectMenu({
     useLastResolved(featureSwitches$)?.[FeatureSwitchKey.ProjectArchive] ===
     true;
   const setArchived = useSet(setProjectArchived$);
-  const archiveShortcut =
-    useGet(selectedProjectId$) === project.id
-      ? GLOBAL_KEYBOARD_SHORTCUTS.toggleArchive
-      : undefined;
+  const { rename, toggleArchive } = GLOBAL_KEYBOARD_SHORTCUTS;
   const signal = useGet(pageSignal$);
   const open = useSet(setProjectDialog$);
   const dialog = useGet(projectDialog$);
@@ -239,6 +236,7 @@ function ProjectMenu({
         <ProjectMoveMenuItems project={project} />
         <ProjectFoldMenuItem project={project} expanded={expanded} />
         <DropdownMenuItem
+          aria-keyshortcuts={rename.ariaKeyShortcuts}
           onClick={() => {
             return editor({ projectId: project.id }, project.name);
           }}
@@ -247,10 +245,11 @@ function ProjectMenu({
           {t(($) => {
             return $.projects.rename;
           })}
+          <ChatThreadMenuShortcut shortcut={rename.binding} />
         </DropdownMenuItem>
         {archiveEnabled && (
           <DropdownMenuItem
-            aria-keyshortcuts={archiveShortcut?.ariaKeyShortcuts}
+            aria-keyshortcuts={toggleArchive.ariaKeyShortcuts}
             onClick={() => {
               detach(
                 setArchived(project.id, !project.archived, signal),
@@ -270,9 +269,7 @@ function ProjectMenu({
               : t(($) => {
                   return $.projects.archiveProject;
                 })}
-            {archiveShortcut && (
-              <ChatThreadMenuShortcut shortcut={archiveShortcut.binding} />
-            )}
+            <ChatThreadMenuShortcut shortcut={toggleArchive.binding} />
           </DropdownMenuItem>
         )}
         <DropdownMenuSeparator />

@@ -28,6 +28,13 @@ _MAX_CONTROL_LINE_BYTES = 4096
 _MAX_STEP_BYTES = 4096
 
 
+def resolve_event_name(event_name: str | None, data_type: object) -> str | None:
+    """Prefer an explicit SSE name, then a string type from the payload."""
+    if event_name is None and isinstance(data_type, str):
+        return data_type
+    return event_name
+
+
 class SseUsageEventHandler(Protocol):
     """Provider-owned sink for target SSE event data."""
 

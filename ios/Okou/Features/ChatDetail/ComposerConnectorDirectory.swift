@@ -21,6 +21,8 @@ private struct ComposerConnectorDirectoryContent: View {
   let resources: ComposerConnectorDirectoryResources
   let showsCustom: Bool
   @LoadableValue private var selection: Loadable<ComposerConnectorDirectoryResources.Selection>
+  /// The composer's confirmed connectors and remote access, kept in the session Store.
+  @ResolvedValue private var resolvedSnapshot: ComposerConnectorStore.Snapshot?
 
   init(
     store: ComposerConnectorStore, resources: ComposerConnectorDirectoryResources, showsCustom: Bool
@@ -29,7 +31,10 @@ private struct ComposerConnectorDirectoryContent: View {
     self.resources = resources
     self.showsCustom = showsCustom
     _selection = LoadableValue(resources.selection)
+    _resolvedSnapshot = ResolvedValue(store.snapshotValue)
   }
+
+  private var snapshot: ComposerConnectorStore.Snapshot { resolvedSnapshot ?? store.snapshot }
 
   var body: some View {
     switch selection {
@@ -144,7 +149,7 @@ private struct ComposerConnectorDirectoryContent: View {
   }
 
   private func catalogCard(_ connector: ChatCatalogConnector) -> some View {
-    let added = store.connectors.contains { $0.target.connectorSlug == connector.slug }
+    let added = snapshot.connectors.contains { $0.target.connectorSlug == connector.slug }
     return HStack(spacing: OkouSpace.sm) {
       NavigationLink {
         ComposerConnectorDetail(store: store, connector: connector)

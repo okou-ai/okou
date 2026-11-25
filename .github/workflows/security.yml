@@ -497,6 +497,9 @@ jobs:
             "$archive"
           tar -xzf "$archive" -C /usr/local/bin gitleaks
 
+      - name: Verify Gitleaks detects a generated secret fixture
+        run: python3 .github/scripts/checks/check-gitleaks-config.py
+
       - name: Run Gitleaks
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then

@@ -12,6 +12,10 @@ struct ComposerConnectorDefaults: View {
   @State private var name = ""
   @State private var disconnecting: ChatConnectorAccount?
 
+  private var isAuthorizing: Bool {
+    store.authorization.isAuthorizing(target: resources.connector.target)
+  }
+
   var body: some View {
     ForEach(page.accounts) { account in
       Section {
@@ -77,10 +81,21 @@ struct ComposerConnectorDefaults: View {
       if page.nextCursor != nil {
         Button("Load more") { Task { await resources.loadMore() } }.disabled(busy)
       }
-      Button("Add account", okouSymbol: "plus") {
+      Button {
         store.connect(target: resources.connector.target)
+      } label: {
+        Label {
+          Text("Add account")
+        } icon: {
+          OkouIcon("plus")
+            .opacity(isAuthorizing ? 0 : 1)
+            .overlay {
+              if isAuthorizing { ProgressView().controlSize(.small) }
+            }
+        }
       }
-      .disabled(busy)
+      .disabled(busy || store.authorization.active != nil)
+      .accessibilityValue(isAuthorizing ? Text("Connecting…") : Text(""))
     } footer: {
       if page.policies == nil {
         Text("Used unless a chat chooses otherwise.").okouSectionNote()

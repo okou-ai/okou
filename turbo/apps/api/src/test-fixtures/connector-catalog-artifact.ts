@@ -1538,6 +1538,19 @@ const connectors = [
     ],
   }),
   connector({
+    connectorSlug: "linkedin",
+    label: "LinkedIn",
+    authMethods: [
+      providerMethod({
+        connectorSlug: "linkedin",
+        authMethodId: "oauth",
+        values: { accessToken: secret("LINKEDIN_ACCESS_TOKEN") },
+        envBindings: { LINKEDIN_TOKEN: secret("LINKEDIN_ACCESS_TOKEN") },
+        scopes: ["openid", "profile", "w_member_social"],
+      }),
+    ],
+  }),
+  connector({
     connectorSlug: "mailchimp",
     label: "Mailchimp",
     authMethods: [

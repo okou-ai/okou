@@ -45,6 +45,7 @@ export const connectors = pgTable(
 
     // External account info (from OAuth)
     externalId: varchar("external_id", { length: 255 }),
+    externalIssuer: text("external_issuer").notNull().default(""),
     externalUsername: varchar("external_username", { length: 255 }),
     externalEmail: varchar("external_email", { length: 255 }),
     oauthScopes: text("oauth_scopes"), // Custom grants; legacy built-in fact and requested mirror for new built-in writes

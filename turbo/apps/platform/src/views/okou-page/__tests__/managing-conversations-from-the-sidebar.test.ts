@@ -70,7 +70,7 @@ async function action(title: string, label: string) {
   click(await menuChoice(label));
 }
 async function deletion(title: string) {
-  await action(title, "Delete chat");
+  await action(title, "Delete");
   return screen.findByRole("dialog", { name: "Delete chat?" });
 }
 async function confirm(box: HTMLElement) {
@@ -129,7 +129,7 @@ test.each([
 test("sidebar-chat-history-012 Undoing a mute restores the unread marker after explaining notification behavior", async () => {
   await workspace([release, quiet], route(release.id), quiet.id);
   await findFastControl("link", /Quiet task Unread/);
-  await action("Quiet task", "Mute chat");
+  await action("Quiet task", "Mute");
   await screen.findByText(
     /new replies won't show as unread or send push notifications/i,
   );
@@ -143,7 +143,7 @@ test("sidebar-chat-history-018 Unmuting the only filtered chat empties Muted and
   await workspace([release, { ...quiet, muted: true }], route(release.id));
   await filter("Muted");
   await titles("Quiet task");
-  await action("Quiet task", "Unmute chat");
+  await action("Quiet task", "Unmute");
   await expect(screen.findByText("No muted chats")).resolves.toBeVisible();
   await titles();
   click(await findFastControl("button", "Show all chats"));
@@ -151,7 +151,7 @@ test("sidebar-chat-history-018 Unmuting the only filtered chat empties Muted and
 });
 test("sidebar-chat-history-022 Undo restores an archived muted chat after its distinct toast explains that new replies will not return it", async () => {
   await workspace([release, { ...quiet, muted: true }], route(release.id));
-  await action("Quiet task", "Archive chat");
+  await action("Quiet task", "Archive");
   await expect(
     screen.findByText(/muted, so new replies won't bring it back/i),
   ).resolves.toBeVisible();
@@ -162,7 +162,7 @@ test("sidebar-chat-history-022 Undo restores an archived muted chat after its di
 test("sidebar-chat-history-021 The advertised archive shortcut toggles the current conversation out of and back into Inbox", async () => {
   await workspace([release], route(release.id));
   openThreadMenu("Release plan");
-  const archive = await menuChoice("Archive chat");
+  const archive = await menuChoice("Archive");
   expect(archive).toHaveTextContent(/Ctrl.*Shift.*X/i);
   expect(
     archive.getAttribute("aria-keyshortcuts")?.toLowerCase().split(" "),

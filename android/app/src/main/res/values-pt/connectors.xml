@@ -109,6 +109,7 @@
     </plurals>
     <string name="chat_options_title">Opções do chat</string>
     <string name="chat_options_settings">Configurações da conversa</string>
+    <string name="chat_options_model">Modelo</string>
     <string name="chat_connector_scope">Aplica-se a este chat. Inicialmente, são usadas as contas padrão do espaço de trabalho.</string>
     <string name="chat_connector_empty">Não há contas conectadas neste espaço de trabalho.</string>
     <string name="chat_connector_manage">Gerenciar conectores</string>

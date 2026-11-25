@@ -647,7 +647,8 @@ final class ConnectorStatusReadTests: XCTestCase {
         return try XCTUnwrap(FixtureData.response(request))
       }
       let store = ConnectorActionStore(
-        service: ChatConnectorService(client: fixture.client), didContinue: {},
+        service: ChatConnectorService(client: fixture.client), graph: makeTestWorkspaceGraph(),
+        didContinue: {},
         didFail: { error in
           if let code = (error as? APIClientError)?.statusCode {
             reported.withLock { $0.append(code) }
@@ -788,7 +789,8 @@ extension XCTestCase {
       createdAt: .distantPast, updatedAt: .distantPast, sortAt: .distantPast, pinnedAt: nil,
       pinOrder: nil, modelSettings: [:], serviceTier: nil, indicator: nil)
     return ConnectorActionStore(
-      service: commands.connectorActions, commands: commands, thread: thread, didContinue: {},
+      service: commands.connectorActions, graph: makeTestWorkspaceGraph(),
+      commands: commands, thread: thread, didContinue: {},
       didFail: { _ in }, pollSleep: pollSleep)
   }
 }

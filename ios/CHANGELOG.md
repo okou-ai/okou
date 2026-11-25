@@ -1,5 +1,59 @@
 # Changelog
 
+## [0.66.2](https://github.com/okou-ai/okou/compare/ios-v0.66.1...ios-v0.66.2) (2026-11-25)
+
+
+### Bug Fixes
+
+* **ios:** open google authorization directly and show connection progress ([#50834](https://github.com/okou-ai/okou/issues/50834)) ([1bbaf52](https://github.com/okou-ai/okou/commit/1bbaf52d0c037bf6ee54454478c15bd561dac7c9))
+
+
+### Refactoring
+
+* **ios:** keep composer connector reads and their snapshot in the session graph ([#50867](https://github.com/okou-ai/okou/issues/50867)) ([f2940d7](https://github.com/okou-ai/okou/commit/f2940d7d832b793868382a90310c15897c231024))
+
+## [0.66.1](https://github.com/okou-ai/okou/compare/ios-v0.66.0...ios-v0.66.1) (2026-11-25)
+
+
+### Bug Fixes
+
+* **ios:** return all connector oauth attempts to the app ([#50773](https://github.com/okou-ai/okou/issues/50773)) ([e683a88](https://github.com/okou-ai/okou/commit/e683a886bb389afe4671e7eca49a100d485137eb))
+
+
+### Refactoring
+
+* **ios:** let identity images own their request instead of a graph read ([#50835](https://github.com/okou-ai/okou/issues/50835)) ([151555b](https://github.com/okou-ai/okou/commit/151555b72075f400ce1aee266fa5f11a5924555d))
+* **ios:** pass mention sources through SwiftUI instead of the editor ([#50848](https://github.com/okou-ai/okou/issues/50848)) ([2038a32](https://github.com/okou-ai/okou/commit/2038a32d33c66d819514dee25cba746ae8095c7c))
+
+## [0.66.0](https://github.com/okou-ai/okou/compare/ios-v0.65.10...ios-v0.66.0) (2026-11-25)
+
+
+### Features
+
+* show the workspace initial on default workspace logos ([#50380](https://github.com/okou-ai/okou/issues/50380)) ([1b432c5](https://github.com/okou-ai/okou/commit/1b432c5ccfdb04d7dcddb8ac26ff7f0ce471834a))
+
+
+### Bug Fixes
+
+* **ios:** lift the for you dock off the sea with veiled glass ([#50822](https://github.com/okou-ai/okou/issues/50822)) ([00fc5e9](https://github.com/okou-ai/okou/commit/00fc5e98623ea71fbc6df6c77bd319bd3a3e9b53))
+
+
+### Refactoring
+
+* **ios:** keep confirmed personal subscriptions in the session graph ([#50814](https://github.com/okou-ai/okou/issues/50814)) ([980deec](https://github.com/okou-ai/okou/commit/980deec9750a67b53da3b4ac09df30f81e3496cf))
+
+## [0.65.10](https://github.com/okou-ai/okou/compare/ios-v0.65.9...ios-v0.65.10) (2026-11-25)
+
+
+### Bug Fixes
+
+* **ios:** try google connector universal links before browser authorization ([#50771](https://github.com/okou-ai/okou/issues/50771)) ([9b3c7f0](https://github.com/okou-ai/okou/commit/9b3c7f08e8a1669d118bf367000a4ec0012120c1))
+
+
+### Refactoring
+
+* **ios:** read the chat list and selection from the session graph ([#50787](https://github.com/okou-ai/okou/issues/50787)) ([1ecc07f](https://github.com/okou-ai/okou/commit/1ecc07f20e600c6943e0b4fe2987cb44cfb1aab2))
+
 ## [0.65.9](https://github.com/okou-ai/okou/compare/ios-v0.65.8...ios-v0.65.9) (2026-11-25)
 
 

@@ -4,7 +4,6 @@ import ai.okou.android.EntryBrand
 import ai.okou.android.EntryCompactHeight
 import ai.okou.android.EntryContentGutter
 import ai.okou.android.EntryContentWidth
-import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
 import ai.okou.android.SettingsIcon
 import ai.okou.android.SettingsModal
@@ -141,11 +140,11 @@ internal fun updateToolbarAction(
     val transfer = state.transfer
     return when {
         transfer is UpdateTransfer.Downloading -> {
-            val fraction = transfer.fraction()
+            val percent = updatePercent(transfer.fraction() ?: 0f)
             UpdateToolbarAction(
-                downloadLabel(fraction),
+                stringResource(R.string.updates_downloading, percent),
                 openDetails,
-                progress = fraction?.let { updatePercent(it) },
+                progress = percent,
             )
         }
         transfer is UpdateTransfer.Ready && state.canInstall ->
@@ -319,7 +318,7 @@ internal fun AppUpdateSettings(
                     {
                         Box(
                             Modifier.size(8.dp)
-                                .background(LocalActivityStatusColor.current, CircleShape),
+                                .background(MaterialTheme.colorScheme.primary, CircleShape),
                         )
                     }
                 } else null,
@@ -794,7 +793,7 @@ private fun UpdateAction(
                         Modifier.align(Alignment.BottomStart)
                             .fillMaxWidth(fraction)
                             .height(2.dp)
-                            .background(LocalActivityStatusColor.current),
+                            .background(MaterialTheme.colorScheme.primary),
                     )
                 }
             }

@@ -227,6 +227,7 @@ Compile SDK is 37.2 and build tools are 37.0.0. The app targets API 37 and suppo
 (Android 7.0). Java 21 runs the build; app bytecode targets JVM 17.
 These pins align with the Clerk SDK release and are validated together.
 
+Use the repository's Node and pnpm versions for palette verification.
 From the repository root:
 
 ```bash
@@ -392,7 +393,8 @@ From `android/`:
 ```bash
 ./gradlew spotlessApply
 ./gradlew :app:lintDebug :app:assembleDebug
-python3 scripts/sync-design-tokens.py --check
+pnpm --dir scripts/theme install --frozen-lockfile --ignore-scripts
+node scripts/theme/generate.mjs --check
 python3 scripts/ci-changed.test.py
 ```
 
@@ -493,7 +495,7 @@ locale/script matching on APIs 24 and 35. These are local tests; they do not
 establish physical-device IME/rendering or startup budgets.
 MemberPreferencesModelTest covers shared display mode, confirmed and pending
 selections, failed saves, retry, readback and retired work. PaletteColorsTest resolves all sixteen
-mode/palette combinations from generated resources; LegacyLanguageSettingsTest
+mode/palette combinations from the generated Material 3 scheme. LegacyLanguageSettingsTest
 exercises pre-Android13 app-language changes through the real Activity.
 Add modules and shared helpers for actual application boundaries.
 SessionModelTest holds workspace responses to exercise cached appearance,

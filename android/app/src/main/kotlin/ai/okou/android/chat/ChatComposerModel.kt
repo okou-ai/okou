@@ -3,6 +3,7 @@ package ai.okou.android.chat
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.connectors.ChatConnectorOverride
 import ai.okou.android.connectors.ConnectorService
+import ai.okou.android.settings.DefaultModelOptions
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
@@ -74,6 +75,12 @@ class ChatComposerModel(
         owner.editConnectorOverride(connection, target, choice)
 
     fun send(target: ComposerTarget) = owner.send(connection, target)
+
+    internal fun send(target: ComposerTarget, options: DefaultModelOptions?) =
+        owner.send(connection, target, options)
+
+    internal fun editDraftModel(target: ComposerTarget, selection: DraftModelSelection) =
+        owner.editDraftModel(connection, target, selection)
 
     fun retry(target: ComposerTarget) = owner.retry(connection, target)
 

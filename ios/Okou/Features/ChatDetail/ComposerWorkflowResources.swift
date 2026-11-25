@@ -28,13 +28,15 @@ final class ComposerWorkflowResources {
     case dismiss
   }
 
-  let store = CCState.Store()
+  /// The workspace session's Store, which keeps the candidate request's graph values.
+  let store: CCState.Store
   private let request = CCState.State<Request?>(nil)
   private let filter = CCState.State(Filter())
   private let transition: Command<Void, Action>
   private var task: Task<[ComposerWorkflow], Error>?
 
-  init() {
+  init(graph: CCState.Store) {
+    store = graph
     let request = request
     let filter = filter
     transition = Command { context, action in

@@ -181,7 +181,7 @@ export function MobileChatThreadMoreMenu({
         >
           <Pencil size={16} />
           {t(($) => {
-            return $.chat.sidebar.rename;
+            return $.chat.actions.rename;
           })}
         </DropdownMenuItem>
         <MobileMuteMenuItem thread={thread} />

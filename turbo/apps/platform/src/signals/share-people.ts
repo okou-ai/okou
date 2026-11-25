@@ -1,11 +1,13 @@
-import { command, computed, state, type Computed, type State } from "ccstate";
+import { command, computed, state, type Computed } from "ccstate";
+import type { infer as zInfer } from "zod";
+import type { hostedSiteShareSchema } from "@okouai/api-contracts/contracts/hosted-site-sharing";
 import { artifactSharingContract } from "@okouai/api-contracts/client/artifact-sharing";
 import { hostedSiteShareEmailSchema } from "@okouai/api-contracts/validators/hosted-site-sharing";
 import type { ArtifactSharingTarget } from "@okouai/api-contracts/contracts/artifact-sharing";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { accept } from "../lib/accept.ts";
 import { i18n } from "../i18n/index.ts";
-import { apiClient$ } from "./api-client.ts";
+import { apiClient$, type ApiClientFactory } from "./api-client.ts";
 import { debounceCommand, resetSignal, throttleCommand } from "./utils.ts";
 
 type SharingResource = ArtifactSharingTarget;
@@ -59,30 +61,53 @@ function createPeopleSearch(
   return { input$, validEmail$, change$, clear$, searchOpen$, setSearchOpen$ };
 }
 
-export function createSharePeopleSignals(
+function createPeopleList(
   resource$: Computed<Promise<SharingResource | null>>,
-  open$: State<boolean>,
 ) {
-  const search = createPeopleSearch(resource$);
   const reload$ = state(0);
+  const request$ = state<
+    | ((
+        client: ApiClientFactory,
+        resource: SharingResource,
+      ) => Promise<zInfer<typeof hostedSiteShareSchema>[]>)
+    | null
+  >(null);
   const shares$ = computed(async (get) => {
     get(reload$);
-    if (!get(open$)) {
+    const request = get(request$);
+    if (!request) {
       return null;
     }
     const site = await get(resource$);
     if (!site) {
       return null;
     }
-    const response = await accept(
-      get(apiClient$)(artifactSharingContract).list({
-        params: site,
-        fetchOptions: { cache: "no-store" },
-      }),
-      [200],
-    );
-    return response.body.shares;
+    return request(get(apiClient$), site);
   });
+  const open$ = command(({ set }, signal: AbortSignal) => {
+    set(request$, () => {
+      return async (client: ApiClientFactory, resource: SharingResource) => {
+        signal.throwIfAborted();
+        const response = await accept(
+          client(artifactSharingContract).list({
+            params: resource,
+            fetchOptions: { cache: "no-store", signal },
+          }),
+          [200],
+          signal,
+        );
+        return response.body.shares;
+      };
+    });
+  });
+  return { shares$, reload$, open$ };
+}
+
+export function createSharePeopleSignals(
+  resource$: Computed<Promise<SharingResource | null>>,
+) {
+  const search = createPeopleSearch(resource$);
+  const { shares$, reload$, open$ } = createPeopleList(resource$);
   const share$ = throttleCommand(
     command(async ({ get, set }, rawEmail: string, signal: AbortSignal) => {
       const email = hostedSiteShareEmailSchema.parse(rawEmail);
@@ -100,6 +125,7 @@ export function createSharePeopleSignals(
         [200],
         signal,
       );
+      signal.throwIfAborted();
       set(search.clear$);
       set(reload$, (value) => {
         return value + 1;
@@ -127,6 +153,7 @@ export function createSharePeopleSignals(
         [200],
         signal,
       );
+      signal.throwIfAborted();
       set(reload$, (value) => {
         return value + 1;
       });
@@ -138,5 +165,5 @@ export function createSharePeopleSignals(
     }),
     0,
   );
-  return { ...search, shares$, share$, remove$ };
+  return { ...search, shares$, share$, remove$, open$ };
 }

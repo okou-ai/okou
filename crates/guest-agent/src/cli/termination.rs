@@ -467,6 +467,25 @@ impl CliTerminationRuntime {
         self.post_result_cleanup = None;
     }
 
+    pub(super) fn handle_stdout_ingestion_failure(
+        &mut self,
+        error: AgentError,
+        cli_exited: bool,
+        termination_deadline: Pin<&mut Sleep>,
+    ) -> Result<(), AgentError> {
+        if cli_exited {
+            return Err(error);
+        }
+
+        let error_log = error.to_string();
+        self.begin_control_failure(
+            error,
+            ControlFailure::StdoutIngestionFailed { error: error_log },
+            termination_deadline,
+        );
+        Ok(())
+    }
+
     pub(super) fn begin_control_failure(
         &mut self,
         error: AgentError,

@@ -4,23 +4,38 @@ import { createZoomableImageCanvasSignals } from "../zoomable-image-canvas.ts";
 import { detach, Reason, resetSignal } from "../utils.ts";
 import { pageSignal$ } from "../page-signal.ts";
 import { refreshWorkspaceLayout$ } from "../chat-page/workspace-layout.ts";
-import { createCatalogArtifactPreviewSignals } from "./artifact-catalog-preview.ts";
+import {
+  createCatalogArtifactPreviewSignals,
+  createCatalogPreviewSessionsRefresh$,
+} from "./artifact-catalog-preview.ts";
 import type { ArtifactCatalogSignals } from "./create-artifact-catalog-signals.ts";
+
+interface CatalogSidebarSession {
+  readonly artifactId: string;
+  readonly ownerSignal: AbortSignal;
+}
 
 /** The org-wide catalog owns a preview without inventing a chat thread. */
 export function createArtifactCatalogSidebarSignals(
   catalog: ArtifactCatalogSignals,
 ) {
-  const internalOpen$ = state(false);
+  const internalSession$ = state<CatalogSidebarSession | null>(null);
   const internalFullscreen$ = state(false);
   const resetOpenSignal$ = resetSignal();
   const imageCanvas = createZoomableImageCanvasSignals();
   const diagram = createArtifactDiagramPreviewSignals();
   const preview = createCatalogArtifactPreviewSignals(catalog, diagram.open$);
+  const readOwner$ = command(({ get }) => {
+    return get(internalSession$)?.ownerSignal;
+  });
+  const refreshPreviewSessions$ = createCatalogPreviewSessionsRefresh$(
+    catalog,
+    readOwner$,
+  );
 
   const close$ = command(({ get, set }) => {
     set(resetOpenSignal$);
-    set(internalOpen$, false);
+    set(internalSession$, null);
     set(internalFullscreen$, false);
     set(catalog.selectArtifact$, null);
     set(imageCanvas.reset$);
@@ -34,7 +49,7 @@ export function createArtifactCatalogSidebarSignals(
 
   return {
     open$: computed((get) => {
-      return get(internalOpen$);
+      return get(internalSession$) !== null;
     }),
     openArtifact$: command(
       async ({ get, set }, artifactId: string, signal: AbortSignal) => {
@@ -50,7 +65,7 @@ export function createArtifactCatalogSidebarSignals(
         );
         set(imageCanvas.reset$);
         set(catalog.selectArtifact$, artifactId);
-        set(internalOpen$, true);
+        set(internalSession$, { artifactId, ownerSignal: openSignal });
         const detail = await get(catalog.selectedArtifactDetail$);
         signal.throwIfAborted();
         openSignal.throwIfAborted();
@@ -63,6 +78,9 @@ export function createArtifactCatalogSidebarSignals(
           );
           return;
         }
+        await set(refreshPreviewSessions$, openSignal);
+        signal.throwIfAborted();
+        openSignal.throwIfAborted();
         const selectedPreview = await set(
           catalog.ensureSelectedArtifactPreview$,
           artifactId,
@@ -83,6 +101,7 @@ export function createArtifactCatalogSidebarSignals(
       },
     ),
     close$,
+    refreshPreviewSessions$,
     fullscreen$: computed((get) => {
       return get(internalFullscreen$);
     }),

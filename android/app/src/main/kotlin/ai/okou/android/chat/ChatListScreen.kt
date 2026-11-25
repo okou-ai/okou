@@ -1,6 +1,5 @@
 package ai.okou.android.chat
 
-import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.OkouConfirmationDialog
 import ai.okou.android.R
 import ai.okou.android.WorkspaceMenu
@@ -1268,7 +1267,7 @@ private fun ChatRowStatus.label(): String? =
 
 @Composable
 private fun ChatStatusGlyph(status: ChatRowStatus, runningFrame: LongState, row: Int) {
-    val color = LocalActivityStatusColor.current
+    val color = MaterialTheme.colorScheme.primary
     Box(Modifier.size(16.dp), contentAlignment = Alignment.Center) {
         when (status) {
             ChatRowStatus.Unread -> Canvas(Modifier.size(8.dp)) { drawCircle(color) }

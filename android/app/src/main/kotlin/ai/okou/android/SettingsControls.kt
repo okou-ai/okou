@@ -70,7 +70,6 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
@@ -109,7 +108,7 @@ internal fun SettingsGroup(content: @Composable ColumnScope.() -> Unit) {
     Surface(
         Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surface,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(content = content)
@@ -266,23 +265,7 @@ internal fun SettingsSwitchRow(
 
 @Composable
 internal fun OkouSwitch(checked: Boolean, enabled: Boolean) {
-    val colors = MaterialTheme.colorScheme
-    val dark = LocalOkouDarkMode.current
-    val activity = LocalActivityStatusColor.current
-    val switchColors =
-        remember(colors, dark, activity) {
-            colors.copy(
-                primary = if (dark) colors.primary else activity,
-                onPrimary = if (dark) colors.onPrimary else Color.White,
-                surfaceContainerHighest =
-                    colors.onSurface
-                        .copy(alpha = if (dark) 0.16f else 0.12f)
-                        .compositeOver(colors.surface),
-            )
-        }
-    MaterialTheme(colorScheme = switchColors) {
-        Switch(checked = checked, enabled = enabled, onCheckedChange = null)
-    }
+    Switch(checked = checked, enabled = enabled, onCheckedChange = null)
 }
 
 @Composable
@@ -639,10 +622,6 @@ internal fun OkouConfirmationDialog(
                                     modifier = Modifier.heightIn(min = 48.dp),
                                     enabled = dismissEnabled,
                                     contentPadding = buttonPadding,
-                                    colors =
-                                        ButtonDefaults.textButtonColors(
-                                            contentColor = colors.onSurface,
-                                        ),
                                 ) {
                                     Text(dismissLabel)
                                 }
@@ -652,10 +631,11 @@ internal fun OkouConfirmationDialog(
                                     enabled = confirmEnabled,
                                     contentPadding = buttonPadding,
                                     colors =
-                                        ButtonDefaults.textButtonColors(
-                                            contentColor =
-                                                if (destructive) colors.error else colors.onSurface,
-                                        ),
+                                        if (destructive)
+                                            ButtonDefaults.textButtonColors(
+                                                contentColor = colors.error,
+                                            )
+                                        else ButtonDefaults.textButtonColors(),
                                 ) {
                                     Text(confirm)
                                 }

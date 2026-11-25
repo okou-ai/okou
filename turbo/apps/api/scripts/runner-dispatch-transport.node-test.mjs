@@ -16,6 +16,7 @@ import {
 } from "node:tls";
 import "../src/__tests__/global-setup-env.ts";
 import { createRunnerDispatchTransport } from "../src/runner-dispatch-transport.node.ts";
+import { runnerDispatchHeaderTimings } from "../src/signals/external/runner-dispatch-transport.ts";
 import { awaitWithSignal } from "../src/signals/utils.ts";
 
 const dispatcherKeys = [
@@ -91,7 +92,7 @@ async function withPeer(signal, run, pool, reply) {
     {
       key,
       cert,
-      ...(pool && { keepAliveTimeout: 35_000 }),
+      ...(pool && { keepAliveTimeout: 300_000 }),
       SNICallback(_servername, callback) {
         handshake.resolve();
         if (released) {
@@ -208,7 +209,7 @@ function reserve(transport, runId, url, signal, encoding = "identity") {
           duplex: "half",
           signal: connectionSignal,
         }),
-        timing: { startedAt: 0, sendCount: 0 },
+        timing: { sendCount: 0 },
       };
     },
     signal,
@@ -218,7 +219,7 @@ function reserve(transport, runId, url, signal, encoding = "identity") {
 
 async function send(transport, url) {
   const signal = globalThis.AbortSignal.timeout(3000);
-  const reserved = transport.take(url, dispatchBody, 1, signal);
+  const reserved = transport.take(url, dispatchBody, signal);
   try {
     const response = await (reserved?.response ??
       transport.request(url, {
@@ -244,6 +245,33 @@ test("preserves the process-wide Fetch dispatcher", async () => {
   }
 });
 
+test("measures header emission from the preconnection and dispatch boundaries", () => {
+  const dispatchStartedAt = 25;
+  const early = { preconnectStartedAt: 10, sentHeadersAt: 20, sendCount: 1 };
+  assert.deepEqual(runnerDispatchHeaderTimings(early, dispatchStartedAt), {
+    api_preconnect_send_headers_ms: 10,
+    api_send_headers_ms: undefined,
+  });
+  assert.deepEqual(
+    runnerDispatchHeaderTimings(
+      { ...early, sentHeadersAt: 30 },
+      dispatchStartedAt,
+    ),
+    { api_preconnect_send_headers_ms: 20, api_send_headers_ms: 5 },
+  );
+  assert.deepEqual(
+    runnerDispatchHeaderTimings(
+      { sentHeadersAt: 30, sendCount: 1 },
+      dispatchStartedAt,
+    ),
+    { api_preconnect_send_headers_ms: undefined, api_send_headers_ms: 5 },
+  );
+  assert.deepEqual(
+    runnerDispatchHeaderTimings({ ...early, sendCount: 2 }, dispatchStartedAt),
+    {},
+  );
+});
+
 test(
   "releases gzip bytes on its reserved HTTPS request",
   { timeout: 5000 },
@@ -255,7 +283,6 @@ test(
       const reserved = peer.transport.take(
         peer.origin,
         gzipSync(dispatchBody),
-        1,
         t.signal,
         "gzip",
       );
@@ -281,7 +308,7 @@ test(
       reserve(peer.transport, "gzip", peer.origin, t.signal, "gzip");
       await peer.firstHandshake;
       assert.equal(
-        peer.transport.take(peer.origin, dispatchBody, 1, t.signal),
+        peer.transport.take(peer.origin, dispatchBody, t.signal),
         undefined,
       );
       peer.releaseHandshake();
@@ -354,7 +381,7 @@ test(
               send(transport, origin),
               awaitWithSignal(idleTimeout.promise, t.signal),
             ]);
-            assert.equal(milliseconds, 30_000);
+            assert.equal(milliseconds, 120_000);
           } finally {
             timerObserver.mock.restore();
           }

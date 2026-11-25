@@ -20,12 +20,45 @@ use std::{
     time::Duration,
 };
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
+use tokio::time::{self, Instant};
 use tokio_util::sync::CancellationToken;
 
 pub(super) async fn bounded<T>(future: impl Future<Output = T>) -> T {
     tokio::time::timeout(Duration::from_secs(15), future)
         .await
         .unwrap()
+}
+
+pub(super) async fn at_native_cleanup_deadline<T>(shutdown: impl Future<Output = T>) -> T {
+    async fn advance_to(target: Instant) {
+        // Process the timers without letting the clock auto-advance past target.
+        let barrier = time::sleep_until(target - Duration::from_millis(1));
+        tokio::pin!(barrier);
+        assert!(futures_util::poll!(&mut barrier).is_pending());
+        time::advance(target - Instant::now()).await;
+        barrier.await;
+        assert_eq!(Instant::now(), target);
+    }
+
+    // Callers have observed the live peer and keep its physical retirement gated.
+    // The first poll arms the native shutdown timer at this paused instant.
+    let mut shutdown = std::pin::pin!(shutdown);
+    time::pause();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    assert!(futures_util::poll!(&mut shutdown).is_pending());
+
+    // Tokio rounds timers to millisecond ticks.
+    advance_to(deadline - Duration::from_millis(1)).await;
+    assert!(
+        futures_util::poll!(&mut shutdown).is_pending(),
+        "native cleanup finished before its five-second deadline",
+    );
+    advance_to(deadline + Duration::from_millis(1)).await;
+    time::resume();
+    let Poll::Ready(result) = futures_util::poll!(&mut shutdown) else {
+        panic!("native cleanup was still pending at its five-second deadline");
+    };
+    result
 }
 
 #[derive(Debug, Eq, PartialEq)]

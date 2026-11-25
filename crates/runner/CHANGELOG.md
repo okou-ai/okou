@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.251.6](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.5...runner-rs-v0.251.6) (2026-11-25)
+
+
+### Refactoring
+
+* **runner:** share cooperative json inspection slice size ([#50874](https://github.com/okou-ai/okou/issues/50874)) ([17f51e7](https://github.com/okou-ai/okou/commit/17f51e762e0ad903829b36f63b749ec2636a913c))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.251.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.4...runner-rs-v0.251.5) (2026-11-25)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.251.4](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.3...runner-rs-v0.251.4) (2026-11-25)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.251.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.2...runner-rs-v0.251.3) (2026-11-25)
+
+
+### Refactoring
+
+* **runner:** share sse event name selection ([#50830](https://github.com/okou-ai/okou/issues/50830)) ([b18b2b4](https://github.com/okou-ai/okou/commit/b18b2b4f298f85a0cbcc30ec54e3cd3ecad8a0b1))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.251.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.1...runner-rs-v0.251.2) (2026-11-25)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.251.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.0...runner-rs-v0.251.1) (2026-11-25)
 
 

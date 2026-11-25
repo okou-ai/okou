@@ -88,7 +88,7 @@
     <string name="workflow_shared_usable">Dibagikan di ruang kerja · Dapat digunakan</string>
     <string name="workflow_show_all">Tampilkan semua</string>
     <string name="workflow_status_connection">%1$s · Perlu koneksi</string>
-    <string name="workflow_time">Waktu (HH:mm)</string>
+    <string name="workflow_time">Waktu</string>
     <string name="workflow_timezone">Zona waktu</string>
     <string name="workflow_transcript">Transkrip Google Meet siap</string>
     <string name="workflow_trigger">Pemicu</string>

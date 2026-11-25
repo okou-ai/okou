@@ -74,7 +74,8 @@ final class ComposerConnectorPermissionResources {
 
   let slug: String
   let label: String
-  let store = CCState.Store()
+  /// The composer's Store, the workspace session's in production.
+  let store: CCState.Store
   let controls: Computed<Controls>
   private let input = CCState.State(Selection())
   private let confirmationFailure = CCState.State<String?>(nil)
@@ -98,6 +99,7 @@ final class ComposerConnectorPermissionResources {
     self.composer = composer
     self.slug = slug
     self.label = label
+    store = composer.graph
     service = composer.service
     self.didFail = didFail
     let input = input

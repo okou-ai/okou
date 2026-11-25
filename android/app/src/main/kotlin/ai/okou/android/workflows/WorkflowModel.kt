@@ -40,11 +40,15 @@ internal data class WorkflowState(
     val writing: Boolean = false,
     val toggles: Map<String, WorkflowToggle> = emptyMap(),
     val issue: WorkflowWriteIssue? = null,
-    val editor: WorkflowEdit? = null,
-)
+    val editing: WorkflowEditSession? = null,
+) {
+    val editor: WorkflowEdit?
+        get() = editing?.draft
+}
 
-private fun WorkflowState.editorFor(detail: WorkflowDetail?): WorkflowEdit? = detail?.let {
-    if (writing) editor else editor?.updateConfirmed(it)
+private fun WorkflowState.editingFor(detail: WorkflowDetail?): WorkflowEditSession? = detail?.let {
+    val session = editing ?: return null
+    if (writing || session.receiveConfirmed(it)) session else null
 }
 
 internal enum class WorkflowHistoryRead(val loading: Boolean, val earlier: Boolean = false) {
@@ -81,6 +85,7 @@ internal enum class WorkflowWriteFailure {
 internal data class WorkflowWriteIssue(
     val failure: WorkflowWriteFailure,
     val ruleId: String? = null,
+    val rejectedDraft: WorkflowEdit? = null,
 )
 
 /** Confirmed data belongs to the authorized workspace and survives leaving the destination. */
@@ -221,7 +226,7 @@ internal constructor(
                 historyFailure = null,
                 toggles = if (newSelection) emptyMap() else current.toggles,
                 issue = current.issue.takeUnless { newSelection },
-                editor = current.editor.takeUnless { newSelection },
+                editing = current.editing.takeUnless { newSelection },
             )
         if (id == null) {
             if (visible) presentCachedRanges()
@@ -427,7 +432,7 @@ internal constructor(
                 historyFailure = current.historyFailure.takeUnless { lostSelected },
                 detailFailure =
                     if (lostSelected) WorkflowReadFailure.Unavailable else current.detailFailure,
-                editor = current.editorFor(detail),
+                editing = current.editingFor(detail),
                 toggles = if (lostSelected) emptyMap() else current.toggles,
                 issue = current.issue.takeUnless { lostSelected },
             )
@@ -450,7 +455,7 @@ internal constructor(
                 rules = confirmed,
                 rulesFailure = null,
                 detail = detail,
-                editor = current.editorFor(detail),
+                editing = current.editingFor(detail),
             )
     }
 
@@ -476,7 +481,7 @@ internal constructor(
                 connectionsFailure = null,
                 detailFailure = WorkflowReadFailure.Unavailable,
                 toggles = emptyMap(),
-                editor = null,
+                editing = null,
                 issue = null,
             )
     }
@@ -524,7 +529,7 @@ internal constructor(
                                 history = null,
                                 historyFailure = null,
                                 detailFailure = WorkflowReadFailure.Unavailable,
-                                editor = null,
+                                editing = null,
                                 toggles = emptyMap(),
                                 issue = null,
                             )
@@ -690,11 +695,38 @@ internal constructor(
         val issue =
             state.issue?.takeIf {
                 editor != null &&
-                    state.editor != null &&
+                    state.editing != null &&
                     (it.failure == WorkflowWriteFailure.UncertainCreate ||
                         it.failure == WorkflowWriteFailure.Network)
             }
-        mutable.value = state.copy(editor = editor, issue = issue)
+        val editing =
+            when (editor) {
+                is WorkflowEdit.Instructions -> WorkflowEditSession.Instructions(editor)
+                is WorkflowEdit.Rule -> WorkflowEditSession.Rule(editor)
+                null -> null
+            }
+        mutable.value = state.copy(editing = editing, issue = issue)
+    }
+
+    internal fun canEdit(editing: WorkflowEditSession): Boolean {
+        val state = mutable.value
+        return state.editing === editing &&
+            !state.writing &&
+            authorized() &&
+            state.detail?.canEdit(editing.draft) == true
+    }
+
+    internal fun editRuleOptions(
+        editing: WorkflowEditSession.Rule,
+        change: (WorkflowEdit.Rule) -> WorkflowEdit.Rule,
+    ) {
+        if (canEdit(editing)) editing.editOptions(change)
+    }
+
+    internal fun clearRejectedEdit(editing: WorkflowEditSession, issue: WorkflowWriteIssue) {
+        val current = mutable.value
+        if (current.editing === editing && current.issue === issue)
+            mutable.value = current.copy(issue = null)
     }
 
     internal fun toggle(rule: WorkflowAutomation) {
@@ -788,13 +820,14 @@ internal constructor(
                 ruleId != null && ruleId in state.toggles -> state.toggles - ruleId
                 else -> state.toggles
             }
+        val submittedDraft = state.editor.takeIf { toggleTo == null }
         mutable.value = mutable.value.copy(writing = true, toggles = toggles, issue = null)
         viewModelScope.launch {
             try {
                 // await cancellation / scope checks before publishing from a retired session.
                 action(detail)
                 if (authorized() && selected == detail.id)
-                    mutable.value = mutable.value.copy(editor = null)
+                    mutable.value = mutable.value.copy(editing = null)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
@@ -825,7 +858,12 @@ internal constructor(
                                     WorkflowWriteFailure.Conflict
                                 else -> WorkflowWriteFailure.Failed
                             }
-                        mutable.value = current.copy(issue = WorkflowWriteIssue(failure, ruleId))
+                        val rejectedDraft = submittedDraft.takeIf {
+                            failure == WorkflowWriteFailure.Failed ||
+                                failure == WorkflowWriteFailure.Conflict
+                        }
+                        mutable.value =
+                            current.copy(issue = WorkflowWriteIssue(failure, ruleId, rejectedDraft))
                     }
                     readsAfterWrite.add(WorkflowReadScope.Detail)
                 }
@@ -901,7 +939,7 @@ internal constructor(
         mutable.value =
             current.copy(
                 detail = detail,
-                editor = current.editorFor(detail),
+                editing = current.editingFor(detail),
                 detailFailure = null,
                 toggles = toggles,
                 catalog =

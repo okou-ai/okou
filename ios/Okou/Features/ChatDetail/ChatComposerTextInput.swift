@@ -23,6 +23,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
   var followup: String?
   var identifier = "message-input"
   var expanded = false
+  var mentionSource: ComposerMentionSource?
   @Environment(\.isEnabled) private var isEnabled
   @Environment(\.workspaceChatPresentation) private var presentation
 
@@ -49,6 +50,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
     let view = container.textView
     context.coordinator.input = self
     view.mentionEditor = editor
+    view.mentionSource = mentionSource
     view.workflowSuggestions = editor?.workflows
     view.updateWorkflows = { [weak coordinator = context.coordinator, weak view] textChanged in
       guard let coordinator, let view else { return }
@@ -152,6 +154,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
     view.isCurrent = { false }
     view.inputReady = nil
     view.mentionEditor = nil
+    view.mentionSource = nil
     view.workflowSuggestions?.unregister(view)
     view.workflowSuggestions = nil
     view.updateWorkflows = { _ in }
@@ -269,6 +272,8 @@ final class ComposerTextView: UITextView {
   var isCurrent: @MainActor () -> Bool = { true }
   var inputReady: (@MainActor () -> Void)?
   weak var mentionEditor: ComposerEditor?
+  /// The workspace chats this input was last rendered with, for keyboard mention activation.
+  var mentionSource: ComposerMentionSource?
   private(set) var isSettlingComposition = false
   private var wantsFocus = false
   weak var navigationPresentation: WorkspaceChatPresentation?

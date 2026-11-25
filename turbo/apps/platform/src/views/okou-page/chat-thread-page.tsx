@@ -6141,17 +6141,7 @@ function RefreshedSelectablePagedGroupRow({
         })}
       >
         <ShareGroupSelectionColumn role={group.role} {...selection} />
-        <div
-          className={cn(
-            "min-w-0",
-            !nameLine && "@[900px]:pl-[46px]",
-            // Once anything is chosen, what is left out steps back, and
-            // pointing at its checkbox brings it forward again.
-            selectedEventIds.size > 0 && !hasSelection && "opacity-40",
-            phase === "selecting" &&
-              "[@media(hover:hover)]:group-has-[[data-chat-share-selection]:hover]/share-group:opacity-100",
-          )}
-        >
+        <div className={cn("min-w-0", !nameLine && "@[900px]:pl-[46px]")}>
           {messages}
         </div>
       </div>
@@ -6181,11 +6171,12 @@ function shareGroupClassName({
     // action row under its bubble. Every group then sits the same 16px
     // from the next, and the tint hugs the bubble.
     role === "user" && "[&_[data-chat-user-message-actions]]:hidden",
-    "data-selected:bg-gray-50 dark:data-selected:bg-gray-100",
+    // Keep the warm surface tint when adding hover feedback to a selection.
+    "data-selected:bg-secondary-hover",
     phase === "selecting" &&
       (hasSelection
-        ? "[@media(hover:hover)]:has-[[data-chat-share-selection]:hover]:bg-state-hover-overlay"
-        : "[@media(hover:hover)]:has-[[data-chat-share-selection]:hover]:bg-state-hover"),
+        ? "data-selected:hover:bg-state-hover-overlay"
+        : "hover:bg-secondary"),
   );
 }
 
@@ -6397,7 +6388,7 @@ function ShareGroupSelectionColumn({
           // Once the link exists the selection is the record of what was
           // shared: read-only, at full strength rather than faded as disabled.
           readOnly={!selecting}
-          className={cn(shareGroupCheckboxHoverClass(props))}
+          className="h-5 w-5"
           onCheckedChange={onToggle}
         />
       </span>

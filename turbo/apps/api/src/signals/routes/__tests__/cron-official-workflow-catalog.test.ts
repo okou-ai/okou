@@ -41,6 +41,7 @@ import {
   okouTokenFromExecution,
 } from "./helpers/chat-events-fixture";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { createRouteMocks } from "./helpers/route-test";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 import { readExecutionContentBundle } from "./helpers/execution-content-bundle";
@@ -51,6 +52,8 @@ import { mockEnv } from "../../../lib/env";
 import { cronOfficialWorkflowCatalogRoutes } from "../cron-official-workflow-catalog";
 
 const context = testContext();
+// The API test baseline's managed key for platform-paid Official Runs.
+const PROACTIVE_MANAGED_KEY = "okou-fake-proactive-model-key-sentinel-8d2b6f41";
 
 async function saveCompletedActionFeedback(
   content: SuggestionContent,
@@ -1328,6 +1331,36 @@ test.each(activityScenarios)(
         return 1;
       }),
     );
+    // Platform-paid Official Runs spend from their own managed key.
+    for (const runId of launched.flat()) {
+      const { execution, sandboxHeaders } = await owned.runExecution(runId);
+      await withMockNowForTest(activeDue, async () => {
+        const resolved = await owned.run(() => {
+          return createFirewallApi(context).requestFirewallAuth(
+            { authorization: `Bearer ${execution.firewallToken}` },
+            {
+              authHeaders: {
+                Authorization: `Bearer ${secretTemplate("OPENROUTER_API_KEY")}`,
+              },
+              firewallBillable: true,
+            },
+            [200],
+          );
+        });
+        expect(resolved.body).toMatchObject({
+          headers: { Authorization: `Bearer ${PROACTIVE_MANAGED_KEY}` },
+          resolvedSecrets: ["OPENROUTER_API_KEY"],
+        });
+        await owned.run(() => {
+          return fixture.failChatRun(
+            runId,
+            sandboxHeaders,
+            "Official Run key inspected",
+          );
+        });
+        await owned.run(flushWaitUntilForTest);
+      });
+    }
     await withMockNowForTest(activeDue, () => {
       return failActiveOfficialRuns(owned, workflows.body, (item) => {
         return item.official !== null;

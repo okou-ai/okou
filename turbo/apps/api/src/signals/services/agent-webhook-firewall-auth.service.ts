@@ -83,7 +83,7 @@ import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import {
-  AUTO_RUN_KEY_VENDOR,
+  AUTO_RUN_KEY_VENDORS,
   AUTO_RUN_PROVIDER,
 } from "@okouai/core/auto-run-model";
 import {
@@ -4501,7 +4501,7 @@ const prepareNonCustomFirewallSecrets$ = command(
             eq(agentRuns.userId, auth.userId),
             eq(agentRuns.modelProvider, "built-in"),
             eq(agentRuns.modelRuntimeProvider, AUTO_RUN_PROVIDER),
-            eq(builtInModelKeys.vendor, AUTO_RUN_KEY_VENDOR),
+            inArray(builtInModelKeys.vendor, [...AUTO_RUN_KEY_VENDORS]),
           ),
         )
         .limit(1);
@@ -6212,9 +6212,11 @@ function personalSubscriptionRuntimeGroups(args: {
     }
     const type = modelProviderTypeForMetadata(providerKey, metadata);
     const name = modelProviderRuntimeSecretName({ key, providerKey, metadata });
+    // Antigravity credentials are never injected through the firewall.
     if (
       !type ||
       !isPersonalSubscriptionProviderType(type) ||
+      type === "antigravity" ||
       !name ||
       !metadata.sourceId
     ) {

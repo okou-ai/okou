@@ -160,6 +160,7 @@ describe("external-code session claim ownership", () => {
         intent: "add",
       });
     });
+    mockAwsExternalCodeProvider({ accountId: "111111111111" });
     const defaultAccount = await run(() => {
       return connectors.completeExternalCode(
         actor,
@@ -173,6 +174,7 @@ describe("external-code session claim ownership", () => {
         intent: "add",
       });
     });
+    mockAwsExternalCodeProvider();
     const siblingAccount = await run(() => {
       return connectors.completeExternalCode(
         actor,

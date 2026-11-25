@@ -85,7 +85,7 @@ final class ComposerDraftStore {
     set { signals.replaceDocument(newValue) }
   }
   let attachments: AttachmentDraftStore
-  let editor = ComposerEditor()
+  let editor: ComposerEditor
   let voice: ComposerVoiceInputStore?
   private var consumedVoiceID: UUID?
   var canEditVoice: Bool { canEditDocument }
@@ -221,6 +221,7 @@ final class ComposerDraftStore {
     self.didSave = didSave
     let store = graph
     self.store = store
+    editor = ComposerEditor(graph: store)
     let voice =
       target == .unassigned
       ? nil
@@ -529,7 +530,6 @@ final class ComposerDraftStore {
         lifecycleTasks.track(task)
       }
     }
-    editor.mentionSource = nil
     signals.close()
     debounceTask?.cancel()
     syncTask?.cancel()

@@ -307,7 +307,8 @@ public struct ChatConnectorService: Sendable {
       let body = Body(
         account: account, authMethod: method.id,
         callbackTarget: method.grantKind == "auth-code" ? "app" : nil,
-        nativeCallback: method.grantKind == "auth-code" ? "ios-https" : nil,
+        nativeCallback: ["auth-code", "automatic", "openid-auth"].contains(method.grantKind)
+          ? "ios-https" : nil,
         nativeAppAuthorization: nativeAppAuthorization && method.grantKind == "auth-code"
           ? "ios" : nil,
         values: method.grantKind == "manual" ? method.manualValues(values) : nil,
@@ -351,7 +352,8 @@ public struct ChatConnectorService: Sendable {
       }
       return try await client.request(
         "/api/custom-connectors/\(custom.id)/oauth2/start", method: "POST",
-        body: JSONEncoder().encode(Body(account: account)))
+        body: JSONEncoder().encode(Body(account: account)),
+        headers: ["X-Okou-Native-Connector-Callback": "ios-https"])
     }
     return try await configureCustom(custom, connectionID: connectionID, values: values)
   }

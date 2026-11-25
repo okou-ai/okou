@@ -415,6 +415,7 @@ describe("CONN-02: external-code session lifecycle", () => {
         code: awsVerificationCode(defaultSession.authorizationUrl),
       },
     );
+    provider.setAccountId("222222222222");
     const siblingSession = await connectorsApi.startExternalCode(
       actor,
       "aws",

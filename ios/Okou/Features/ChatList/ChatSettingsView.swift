@@ -209,6 +209,12 @@ struct ChatSettingsView: View {
         }
       }
     }
+    .background {
+      if let connectors {
+        // Keep authorization mounted while connector and account pages are pushed.
+        Color.clear.connectorAuthorizationPresentation(store: connectors)
+      }
+    }
     .onDisappear {
       connectors?.close()
       connectors = nil
@@ -219,7 +225,7 @@ struct ChatSettingsView: View {
     let models = store.modelStore
     connectors = ComposerConnectorStore(
       service: models.connectorAccess, authorizationService: models.connectorAuthorization,
-      webURL: store.webURL, includesRemote: false,
+      webURL: store.webURL, graph: models.stateStore, includesRemote: false,
       managementEnabled: { true },
       memberAccessEnabled: { [weak models] in
         models?.lastKnownFeatureSwitches?.usesMemberConnectorAccess == true

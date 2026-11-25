@@ -23,6 +23,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
@@ -31,6 +32,8 @@ import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isEnabled
+import androidx.compose.ui.test.isFocused
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -52,6 +55,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import java.util.UUID
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
@@ -76,7 +80,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
-class ComposerRootApplication : TestOkouApplication() {
+open class ComposerRootApplication : TestOkouApplication() {
     lateinit var fixture: ComposerApiFixture
     lateinit var cacheSnapshot: ChatCacheSnapshot
     val contextGate = CountDownLatch(1)
@@ -110,6 +114,16 @@ class ComposerRootApplication : TestOkouApplication() {
     }
 }
 
+class DraftModelRootApplication : ComposerRootApplication() {
+    internal lateinit var modelFixture: DefaultModelApiFixture
+
+    override fun onCreate() {
+        super.onCreate()
+        modelFixture = DefaultModelApiFixture(fixture.chats)
+        recoveryService = fixture.service
+    }
+}
+
 @RunWith(RobolectricTestRunner::class)
 @Config(
     sdk = [35],
@@ -123,6 +137,182 @@ class ChatComposerRootTest {
     private var editor: ai.okou.android.chat.ChatComposerModel? = null
     private var replacement: ActivityScenario<MainActivity>? = null
     private var cleanupApplication: ComposerRootApplication? = null
+
+    @Test
+    @Config(application = DraftModelRootApplication::class)
+    fun newChatUsesItsDraftModelAndAdvancedOptionsOnFirstSend() {
+        val app = compose.activity.application as DraftModelRootApplication
+        cleanupApplication = app
+        app.contextGate.countDown()
+        app.sendGate.countDown()
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            compose.activityRule.scenario.recreate()
+            compose.onNodeWithText("New chat").performClick()
+            val editor = compose.onNodeWithTag("message_input")
+            editor.performTextInput("Use my draft model")
+            editor.assertIsFocused()
+            compose.onNodeWithTag("chat-options-button").performClick()
+            val modelRow = compose.onNodeWithTag("chat-options-model")
+            compose.waitUntil(8_000) {
+                compose
+                    .onAllNodes(
+                        hasTestTag("chat-options-model") and hasText("GPT 5.6 Sol") and isEnabled(),
+                    )
+                    .fetchSemanticsNodes()
+                    .isNotEmpty()
+            }
+            modelRow.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
+            modelRow.assertIsFocused().performClick()
+            val gpt = compose.onNodeWithText("GPT 5.6 Sol")
+            val claude = compose.onNodeWithText("Claude Sonnet 5")
+            gpt.assertIsSelected()
+            claude.performClick().assertIsSelected()
+            compose.onNodeWithText("High").assertIsDisplayed()
+            compose.onNodeWithText("Fast mode").assertDoesNotExist()
+            gpt.performClick().assertIsSelected()
+            compose.onNodeWithText("Medium").performClick()
+            compose.onNodeWithText("High").performClick()
+            compose.onNodeWithText("Fast mode").performClick()
+            compose
+                .onNode(
+                    hasContentDescription("Back") and hasAnyAncestor(hasTestTag("model-picker")),
+                )
+                .performSemanticsAction(SemanticsActions.OnClick)
+            compose.waitUntil(5_000) {
+                compose
+                    .onAllNodes(hasTestTag("chat-options-model") and isFocused())
+                    .fetchSemanticsNodes()
+                    .isNotEmpty()
+            }
+            modelRow.assertTextContains("GPT 5.6 Sol").assertIsFocused()
+            compose
+                .onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.Dismiss))
+                .performSemanticsAction(SemanticsActions.Dismiss)
+            editor.assertIsFocused().assertTextContains("Use my draft model")
+        } finally {
+            instrumentation.resetInTouchMode()
+        }
+        compose.onNodeWithContentDescription("Send").performClick()
+        awaitConversation { app.fixture.inputs.isNotEmpty() }
+        val request = app.fixture.created.single()
+        assertEquals("gpt-test", request["model"]?.jsonPrimitive?.content)
+        assertEquals("high", request["reasoningEffort"]?.jsonPrimitive?.content)
+        assertEquals("priority", request["serviceTier"]?.jsonPrimitive?.content)
+        assertTrue(app.modelFixture.writes.isEmpty())
+    }
+
+    @Test
+    @Config(application = DraftModelRootApplication::class)
+    fun switchingToAutoHidesModelEntryWhenNamedModelsAreUnavailable() {
+        val app = compose.activity.application as DraftModelRootApplication
+        cleanupApplication = app
+        app.modelFixture.planRestricted = true
+        compose.onNodeWithText("New chat").performClick()
+        compose.onNodeWithTag("chat-options-button").performClick()
+        val model = hasTestTag("chat-options-model") and isEnabled()
+        compose.waitUntil(8_000) { compose.onAllNodes(model).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(model).assertTextContains("GPT 5.6 Sol").performClick()
+        compose.onNodeWithText("GPT 5.6 Sol").assertIsNotEnabled().assertIsSelected()
+        compose.onNodeWithText("Auto").performClick().assertIsSelected()
+        compose
+            .onNode(hasContentDescription("Back") and hasAnyAncestor(hasTestTag("model-picker")))
+            .performClick()
+        compose.onNodeWithTag("chat-options-model").assertDoesNotExist()
+        compose.onNodeWithText("Chat options").assertIsDisplayed()
+    }
+
+    @Test
+    @Config(application = DraftModelRootApplication::class)
+    fun restoredModelPickerWaitsForCatalogAndFocusesItsDraftChoice() {
+        val app = compose.activity.application as DraftModelRootApplication
+        cleanupApplication = app
+        app.contextGate.countDown()
+        val catalogStarted = CountDownLatch(1)
+        val releaseCatalog = CountDownLatch(1)
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            val scenario = compose.activityRule.scenario
+            scenario.recreate()
+            compose.onNodeWithText("New chat").performClick()
+            captureOwners()
+            compose.onNodeWithTag("chat-options-button").performClick()
+            val modelRow = hasTestTag("chat-options-model") and isEnabled()
+            compose.waitUntilExactlyOneExists(modelRow, 8_000)
+            compose.onNode(modelRow).performClick()
+            val claude = hasText("Claude Sonnet 5")
+            compose.onNode(claude).performClick().assertIsSelected()
+            awaitConversation { editor?.uiState?.value?.persistence == ComposerPersistence.Durable }
+
+            app.modelFixture.beforeCatalogReturn = {
+                catalogStarted.countDown()
+                releaseCatalog.await()
+            }
+            compose.runOnIdle { compose.activity.viewModelStore.clear() }
+            scenario.recreate()
+            compose.waitUntilExactlyOneExists(hasTestTag("model-picker"), 8_000)
+            captureOwners()
+            assertTrue(catalogStarted.await(5, TimeUnit.SECONDS))
+            compose.onNodeWithText("Auto").assertDoesNotExist()
+
+            releaseCatalog.countDown()
+            compose.waitUntilExactlyOneExists(claude and isFocused(), 8_000)
+            compose.onNode(claude).assertIsSelected().assertIsDisplayed()
+        } finally {
+            releaseCatalog.countDown()
+            app.modelFixture.beforeCatalogReturn = null
+            instrumentation.resetInTouchMode()
+        }
+    }
+
+    @Test
+    @Config(application = DraftModelRootApplication::class)
+    fun restoredDraftKeepsDisplayedEffortWithoutReopeningThePicker() {
+        val app = compose.activity.application as DraftModelRootApplication
+        cleanupApplication = app
+        app.contextGate.countDown()
+        app.sendGate.countDown()
+        compose.onNodeWithText("New chat").performClick()
+        captureOwners()
+        val prompt = "Send the restored model draft"
+        compose.onNodeWithTag("message_input").performTextInput(prompt)
+        compose.onNodeWithTag("chat-options-button").performClick()
+        val model = hasTestTag("chat-options-model") and isEnabled()
+        compose.waitUntilExactlyOneExists(model, 8_000)
+        compose.onNode(model).performClick()
+        compose.onNodeWithText("Claude Sonnet 5").performClick()
+        compose.onNodeWithText("GPT 5.6 Sol").performClick()
+        compose.onNodeWithText("Medium").assertIsDisplayed()
+        compose
+            .onNode(hasContentDescription("Back") and hasAnyAncestor(hasTestTag("model-picker")))
+            .performClick()
+        compose
+            .onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.Dismiss))
+            .performSemanticsAction(SemanticsActions.Dismiss)
+        awaitConversation { editor?.uiState?.value?.persistence == ComposerPersistence.Durable }
+
+        compose.activityRule.scenario.close()
+        compose.waitUntil(10_000) {
+            shadowOf(Looper.getMainLooper()).idle()
+            editorJob?.isCompleted == true && listJob?.isCompleted == true
+        }
+        runBlocking { checkNotNull(app.journalStore).close() }
+        app.journalStore = ComposerJournalStore(app, app.journalDirectory)
+        val fresh = ActivityScenario.launch<MainActivity>(Intent(app, MainActivity::class.java))
+        replacement = fresh
+        compose.onNodeWithText("New chat").performClick()
+        compose.waitUntilExactlyOneExists(hasTestTag("message_input") and hasText(prompt), 10_000)
+        var activity: MainActivity? = null
+        fresh.onActivity { activity = it }
+        captureOwners(checkNotNull(activity))
+        compose.onNodeWithContentDescription("Send").assertIsEnabled().performClick()
+        awaitConversation { app.fixture.inputs.isNotEmpty() }
+        val request = app.fixture.created.single()
+        assertEquals("gpt-test", request["model"]?.jsonPrimitive?.content)
+        assertEquals("medium", request["reasoningEffort"]?.jsonPrimitive?.content)
+    }
 
     private fun messageText(eventId: String, text: String) =
         compose.onNode(

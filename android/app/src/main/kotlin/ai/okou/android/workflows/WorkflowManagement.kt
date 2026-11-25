@@ -1,6 +1,10 @@
 package ai.okou.android.workflows
 
-import ai.okou.android.LocalActivityStatusColor
+import ai.okou.android.LocalOkouDarkMode
+import ai.okou.android.OkouActionButton
+import ai.okou.android.OkouActionTreatment
+import ai.okou.android.OkouFormLabel
+import ai.okou.android.OkouFormLayout
 import ai.okou.android.R
 import ai.okou.android.SettingsTrigger
 import ai.okou.android.WorkspaceFilterRow
@@ -19,17 +23,21 @@ import ai.okou.android.api.generated.WorkflowAutomationVariant3
 import ai.okou.android.api.generated.WorkflowAutomationVariant4
 import ai.okou.android.api.generated.WorkflowDetail
 import ai.okou.android.chat.chatTime
+import ai.okou.android.okouFormInputStyle
+import ai.okou.android.okouFormLabelHeight
+import ai.okou.android.okouFormSupportingTextStyle
 import ai.okou.android.preferences.TimezoneSelectionSheet
 import ai.okou.android.preferences.timezoneLabel
-import ai.okou.android.state.rememberJournalEditor
-import ai.okou.android.workspaceSearchFocusOutline
+import ai.okou.android.updates.updateFocusOutline
+import android.app.TimePickerDialog
+import android.text.format.DateFormat as AndroidDateFormat
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -38,47 +46,71 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.input.InputTransformation
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextFieldLabelPosition
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.text.DateFormat
 import java.text.NumberFormat
 import java.util.Date
+import java.util.Locale
 import java.util.TimeZone
+import kotlin.math.ceil
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 
 @Composable
 internal fun WorkflowRuleRow(
@@ -106,7 +138,7 @@ internal fun WorkflowRuleRow(
     val badgeColor =
         when {
             connectionRequired -> colors.error
-            rule.enabled -> LocalActivityStatusColor.current
+            rule.enabled -> MaterialTheme.colorScheme.primary
             else -> colors.onSurfaceVariant
         }
     val editable = remember(rule, timezone) { rule.editableRule(timezone) }
@@ -331,15 +363,17 @@ internal fun workflowTimestamp(time: String, timezone: String): String {
 @Composable
 internal fun WorkflowEditor(
     detail: WorkflowDetail,
-    editor: WorkflowEdit,
+    editing: WorkflowEditSession,
     state: WorkflowState,
     model: WorkflowModel,
     wide: Boolean,
+    discarding: Boolean,
     onCancel: () -> Unit,
     onViewConnection: ((String) -> Unit)?,
     restoreConnectionFocus: Boolean,
     onConnectionFocusRestored: () -> Unit,
 ) {
+    val editor = editing.draft
     val horizontalPadding = if (wide) 32.dp else 20.dp
     val activeRule = editor as? WorkflowEdit.Rule
     val available = !state.writing && detail.canEdit(editor)
@@ -363,6 +397,21 @@ internal fun WorkflowEditor(
     var restoreSaveFocusAfterWrite by remember { mutableStateOf(false) }
     val restoreSaveFocus =
         !showConnectionAction && saveEnabled && (connectionFocused || restoreSaveFocusAfterWrite)
+    val inputGuard =
+        remember(model, editing) {
+            InputTransformation { if (!model.canEdit(editing)) revertAllChanges() }
+        }
+    val fieldFocus =
+        remember(editing, discarding) {
+            WorkflowFieldFocus(editing, discarding, restoreConnectionFocus)
+        }
+    val issue = state.issue
+    if (issue?.rejectedDraft != null) {
+        LaunchedEffect(model, editing, issue) {
+            snapshotFlow { editing.draft }.first { it != issue.rejectedDraft }
+            model.clearRejectedEdit(editing, issue)
+        }
+    }
     LaunchedEffect(showConnectionAction, saveEnabled, restoreConnectionFocus) {
         if (restoreConnectionFocus && !state.writing) {
             val target =
@@ -382,6 +431,7 @@ internal fun WorkflowEditor(
             Modifier.widthIn(max = 730.dp)
                 .fillMaxWidth()
                 .weight(1f)
+                .testTag("workflow_editor_fields")
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = horizontalPadding, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -402,40 +452,43 @@ internal fun WorkflowEditor(
                 if (activeRule != null)
                     WorkflowSecondary(detail.displayName ?: detail.name, small = true)
             }
-            when (editor) {
-                is WorkflowEdit.Instructions -> {
-                    val value = editor.value
+            when (editing) {
+                is WorkflowEditSession.Instructions -> {
+                    val value = editing.draft.value
                     WorkflowField(
                         R.string.workflow_name,
-                        value.title,
+                        editing.title,
                         available,
-                        errorMessage =
-                            if (value.title.isBlank())
-                                stringResource(R.string.workflow_name_required)
-                            else workflowLengthError(value.title, WORKFLOW_DISPLAY_NAME_LIMIT),
-                    ) {
-                        model.edit(editor.copy(value = editor.value.copy(title = it)))
-                    }
+                        inputGuard,
+                        fieldFocus,
+                        validation =
+                            workflowValidation(
+                                value.title,
+                                WORKFLOW_DISPLAY_NAME_LIMIT,
+                                stringResource(R.string.workflow_name_required),
+                            ),
+                    )
                     WorkflowField(
                         R.string.workflow_purpose,
-                        value.purpose,
+                        editing.purpose,
                         available,
-                        errorMessage = workflowLengthError(value.purpose, WORKFLOW_PURPOSE_LIMIT),
-                    ) {
-                        model.edit(editor.copy(value = editor.value.copy(purpose = it)))
-                    }
+                        inputGuard,
+                        fieldFocus,
+                        validation = workflowValidation(value.purpose, WORKFLOW_PURPOSE_LIMIT),
+                    )
                     WorkflowField(
                         R.string.workflow_instructions_heading,
-                        value.instruction,
+                        editing.instruction,
                         available,
+                        inputGuard,
+                        fieldFocus,
                         singleLine = false,
-                        errorMessage =
-                            workflowLengthError(value.instruction, WORKFLOW_INSTRUCTION_LIMIT),
-                    ) {
-                        model.edit(editor.copy(value = editor.value.copy(instruction = it)))
-                    }
+                        validation =
+                            workflowValidation(value.instruction, WORKFLOW_INSTRUCTION_LIMIT),
+                    )
                 }
-                is WorkflowEdit.Rule -> WorkflowRuleFields(editor, available, model::edit)
+                is WorkflowEditSession.Rule ->
+                    WorkflowRuleFields(editing, available, model, inputGuard, fieldFocus)
             }
         }
         WorkflowDivider()
@@ -444,16 +497,8 @@ internal fun WorkflowEditor(
                 .fillMaxWidth()
                 .padding(horizontal = horizontalPadding, vertical = 8.dp),
             horizontalAlignment = Alignment.End,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(OkouFormLayout.ActionGap),
         ) {
-            when (state.issue?.failure) {
-                WorkflowWriteFailure.UncertainCreate ->
-                    WorkflowNotice(R.string.workflow_create_uncertain)
-                WorkflowWriteFailure.Conflict -> WorkflowNotice(R.string.workflow_write_conflict)
-                WorkflowWriteFailure.Network,
-                WorkflowWriteFailure.Failed -> WorkflowNotice(R.string.workflow_write_failed)
-                null -> Unit
-            }
             val readFeedback = state.detailFailure.cachedReadFeedback() ?: connectionFeedback
             if (readFeedback != null) WorkflowNotice(readFeedback)
             if (connectionRequired != null && state.connections != null) {
@@ -465,41 +510,101 @@ internal fun WorkflowEditor(
                     MaterialTheme.colorScheme.error,
                 )
             }
+            WorkflowEditorWriteFeedback(editor, issue?.failure)
             FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement =
+                    Arrangement.spacedBy(OkouFormLayout.ActionGap, Alignment.End),
+                verticalArrangement = Arrangement.spacedBy(OkouFormLayout.ActionGap),
             ) {
-                WorkflowAction(
+                OkouActionButton(
                     stringResource(R.string.workflow_cancel),
                     onCancel,
                     Modifier.focusRequester(cancelFocus),
                     enabled = !state.writing,
+                    treatment = OkouActionTreatment.Text,
                 )
                 if (showConnectionAction) {
-                    WorkflowAction(
+                    OkouActionButton(
                         stringResource(R.string.workflow_view_connection),
                         { onViewConnection?.invoke(connector) },
                         Modifier.focusRequester(recoveryFocus).onFocusChanged {
                             connectionFocused = it.isFocused
                         },
                         enabled = !state.writing && onViewConnection != null,
+                        treatment = OkouActionTreatment.Outline,
                     )
                 }
-                WorkflowAction(
-                    stringResource(R.string.workflow_save),
+                val saveLabel = stringResource(R.string.workflow_save)
+                val savingLabel = stringResource(R.string.settings_saving)
+                val pendingSemantics =
+                    if (state.writing)
+                        Modifier.clearAndSetSemantics {
+                            contentDescription = saveLabel
+                            stateDescription = savingLabel
+                            role = Role.Button
+                            liveRegion = LiveRegionMode.Polite
+                            disabled()
+                        }
+                    else Modifier
+                OkouActionButton(
+                    if (state.writing) savingLabel else saveLabel,
                     onClick = {
-                        restoreSaveFocusAfterWrite = saveFocused
-                        model.save(editor)
+                        if (model.canEdit(editing)) {
+                            restoreSaveFocusAfterWrite = saveFocused
+                            model.save(editing.draft)
+                        }
                     },
-                    primary = true,
                     enabled = saveEnabled,
-                    pendingStatus = R.string.settings_saving.takeIf { state.writing },
+                    layoutLabels = listOf(saveLabel, savingLabel),
                     modifier =
                         Modifier.focusRequester(saveFocus)
                             .onFocusChanged { saveFocused = it.isFocused }
-                            .testTag("workflow_save"),
+                            .updateFocusOutline(
+                                MaterialTheme.shapes.medium,
+                                MaterialTheme.colorScheme.onPrimary,
+                            )
+                            .testTag("workflow_save")
+                            .then(pendingSemantics),
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun WorkflowEditorWriteFeedback(editor: WorkflowEdit, failure: WorkflowWriteFailure?) {
+    val reservedLabel =
+        when (editor) {
+            is WorkflowEdit.Instructions -> R.string.workflow_write_conflict
+            is WorkflowEdit.Rule -> R.string.workflow_create_uncertain.takeIf { editor.id == null }
+        }
+    val message =
+        when (failure) {
+            WorkflowWriteFailure.UncertainCreate -> R.string.workflow_create_uncertain
+            WorkflowWriteFailure.Conflict -> R.string.workflow_write_conflict
+            WorkflowWriteFailure.Network,
+            WorkflowWriteFailure.Failed -> R.string.workflow_write_failed
+            null -> null
+        }
+    val colors = MaterialTheme.colorScheme
+    val style = workflowBodyStyle().copy(fontSize = 14.sp, lineHeight = 20.sp)
+    val hidden = Modifier.clearAndSetSemantics {}.alpha(0f)
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.BottomEnd) {
+        Text(stringResource(R.string.workflow_write_failed), hidden, style = style)
+        if (reservedLabel != null) Text(stringResource(reservedLabel), hidden, style = style)
+        if (message != null) {
+            Text(
+                stringResource(message),
+                Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                color =
+                    if (
+                        failure == WorkflowWriteFailure.Conflict ||
+                            failure == WorkflowWriteFailure.Failed
+                    )
+                        colors.error
+                    else colors.onSurfaceVariant,
+                style = style,
+            )
         }
     }
 }
@@ -521,12 +626,17 @@ internal fun WorkflowState.connectionReadFeedback(): Int? =
 
 @Composable
 private fun WorkflowRuleFields(
-    editor: WorkflowEdit.Rule,
+    editing: WorkflowEditSession.Rule,
     enabled: Boolean,
-    onChange: (WorkflowEdit.Rule) -> Unit,
+    model: WorkflowModel,
+    inputGuard: InputTransformation,
+    fieldFocus: WorkflowFieldFocus,
 ) {
+    val editor = editing.draft
     val fields = editor.value
-    val editFields = { next: RuleFields -> onChange(editor.copy(value = next)) }
+    fun editFields(change: (RuleFields) -> RuleFields) {
+        model.editRuleOptions(editing) { it.copy(value = change(it.value)) }
+    }
     if (editor.id == null) {
         val mode =
             if (fields.trigger == EditableTrigger.Schedule) TriggerMode.Schedule
@@ -549,15 +659,16 @@ private fun WorkflowRuleFields(
             enabled = enabled,
         ) {
             if (it == mode) return@WorkspaceFilterRow
-            when (it) {
-                TriggerMode.Schedule ->
-                    onChange(
-                        editor.copy(
-                            value = fields.copy(trigger = EditableTrigger.Schedule),
-                            lastEventSource = fields.trigger,
-                        ),
-                    )
-                TriggerMode.Event -> editFields(fields.copy(trigger = editor.lastEventSource))
+            model.editRuleOptions(editing) { rule ->
+                when (it) {
+                    TriggerMode.Schedule ->
+                        rule.copy(
+                            value = rule.value.copy(trigger = EditableTrigger.Schedule),
+                            lastEventSource = rule.value.trigger,
+                        )
+                    TriggerMode.Event ->
+                        rule.copy(value = rule.value.copy(trigger = rule.lastEventSource))
+                }
             }
         }
         if (mode == TriggerMode.Event) {
@@ -567,8 +678,8 @@ private fun WorkflowRuleFields(
                 sources.map { stringResource(it.eventLabel) },
                 sources.indexOf(fields.trigger),
                 enabled,
-            ) {
-                editFields(fields.copy(trigger = sources[it]))
+            ) { chosen ->
+                editFields { it.copy(trigger = sources[chosen]) }
             }
         }
     }
@@ -584,28 +695,32 @@ private fun WorkflowRuleFields(
                 frequency,
                 if (fields.weekdays) 0 else 1,
                 enabled,
-            ) {
-                editFields(fields.copy(weekdays = it == 0))
+            ) { chosen ->
+                editFields { it.copy(weekdays = chosen == 0) }
             }
-            WorkflowField(R.string.workflow_time, fields.time, enabled) {
-                editFields(fields.copy(time = it))
+            WorkflowTime(fields.time, enabled) { time -> editFields { it.copy(time = time) } }
+            WorkflowTimezone(fields.timezone, enabled) { timezone ->
+                editFields { it.copy(timezone = timezone) }
             }
-            WorkflowTimezone(fields.timezone, enabled) { editFields(fields.copy(timezone = it)) }
         }
         EditableTrigger.Gmail ->
-            WorkflowField(R.string.workflow_match_subject, fields.subject, enabled) {
-                editFields(fields.copy(subject = it))
-            }
+            WorkflowField(
+                R.string.workflow_match_subject,
+                editing.subject,
+                enabled,
+                inputGuard,
+                fieldFocus,
+            )
         EditableTrigger.Calendar ->
             WorkflowField(
                 R.string.workflow_calendar_id,
-                fields.calendarId,
+                editing.calendarId,
                 enabled,
-                errorMessage =
-                    workflowLengthError(fields.trimmedCalendarId, WORKFLOW_CALENDAR_ID_LIMIT),
-            ) {
-                editFields(fields.copy(calendarId = it))
-            }
+                inputGuard,
+                fieldFocus,
+                validation =
+                    workflowValidation(fields.trimmedCalendarId, WORKFLOW_CALENDAR_ID_LIMIT),
+            )
     }
     WorkflowSecondary(
         stringResource(
@@ -629,84 +744,170 @@ private val EditableTrigger.eventLabel: Int
             EditableTrigger.Calendar -> R.string.workflow_source_calendar
         }
 
+private data class WorkflowValidation(
+    val lengthMessage: String,
+    val requiredMessage: String?,
+    val errorMessage: String?,
+)
+
 @Composable
-private fun workflowLengthError(value: String, limit: Int): String? {
-    if (value.length <= limit) return null
+private fun workflowValidation(
+    value: String,
+    limit: Int,
+    requiredMessage: String? = null,
+): WorkflowValidation {
+    val locale = LocalConfiguration.current.locales[0]
     val formattedLimit =
-        NumberFormat.getIntegerInstance(LocalConfiguration.current.locales[0]).format(limit)
-    return stringResource(R.string.workflow_field_too_long, formattedLimit)
+        remember(locale, limit) { NumberFormat.getIntegerInstance(locale).format(limit) }
+    val lengthMessage = stringResource(R.string.workflow_field_too_long, formattedLimit)
+    val errorMessage =
+        when {
+            requiredMessage != null && value.isBlank() -> requiredMessage
+            value.length > limit -> lengthMessage
+            else -> null
+        }
+    return WorkflowValidation(lengthMessage, requiredMessage, errorMessage)
+}
+
+private class WorkflowFieldFocus(
+    private val editing: WorkflowEditSession,
+    val discarding: Boolean,
+    returningFromConnection: Boolean,
+) {
+    // Take a new restore target on reattachment or after dismissing the discard dialog.
+    private var pending =
+        editing.fieldSelection.takeUnless { discarding || returningFromConnection }
+
+    fun restore(input: TextFieldState, requester: FocusRequester) {
+        val retained = pending?.takeIf { it.field === input } ?: return
+        if (requester.requestFocus()) {
+            input.edit {
+                selection =
+                    TextRange(
+                        retained.range.start.coerceAtMost(length),
+                        retained.range.end.coerceAtMost(length),
+                    )
+            }
+            pending = null
+        }
+    }
+
+    fun rememberSelection(input: TextFieldState, range: TextRange) {
+        editing.rememberSelection(input, range)
+    }
 }
 
 @Composable
 private fun WorkflowField(
     label: Int,
-    value: String,
+    input: TextFieldState,
     enabled: Boolean,
+    inputGuard: InputTransformation,
+    fieldFocus: WorkflowFieldFocus,
     singleLine: Boolean = true,
-    errorMessage: String? = null,
-    onChange: (String) -> Unit,
+    validation: WorkflowValidation? = null,
 ) {
     val title = stringResource(label)
-    val input = rememberJournalEditor(value, target = label)
-    val interactions = remember { MutableInteractionSource() }
-    val colors = MaterialTheme.colorScheme
-    val isError = errorMessage != null
-    Column {
-        WorkflowFieldLabel(title)
-        Spacer(Modifier.height(8.dp))
-        BasicTextField(
-            value = input.value,
-            onValueChange = {
-                if (input.edit(it)) onChange(it.text)
-            },
+    val baseHeight = if (singleLine) OutlinedTextFieldDefaults.MinHeight else 112.dp
+    val errorMessage = validation?.errorMessage
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val requester = remember { FocusRequester() }
+        var focused by remember { mutableStateOf(false) }
+        val supportStyle = okouFormSupportingTextStyle()
+        val labelHeight = okouFormLabelHeight(title, constraints.maxWidth)
+        val minimumHeight =
+            if (validation == null) baseHeight else baseHeight + OkouFormLayout.SupportingTextGap
+        val supportHeight =
+            if (validation == null) 0.dp
+            else workflowSupportingHeight(validation, supportStyle, constraints.maxWidth)
+        OutlinedTextField(
+            state = input,
+            inputTransformation = inputGuard,
             modifier =
                 Modifier.fillMaxWidth()
-                    .heightIn(min = if (singleLine) 56.dp else 112.dp)
+                    .heightIn(min = minimumHeight + supportHeight + labelHeight)
+                    .focusRequester(requester)
+                    .onFocusChanged { focused = it.isFocused }
                     .semantics {
                         contentDescription = title
                         if (errorMessage != null) error(errorMessage)
                     },
-            readOnly = !enabled,
-            singleLine = singleLine,
-            maxLines = if (singleLine) 1 else 8,
-            textStyle = workflowBodyStyle().copy(color = colors.onBackground),
-            cursorBrush = SolidColor(if (isError) colors.error else colors.onBackground),
-            interactionSource = interactions,
-            decorationBox = { inner ->
-                OutlinedTextFieldDefaults.DecorationBox(
-                    value = value,
-                    innerTextField = inner,
-                    enabled = true,
-                    singleLine = singleLine,
-                    visualTransformation = VisualTransformation.None,
-                    interactionSource = interactions,
-                    contentPadding = PaddingValues(12.dp),
-                    isError = isError,
-                    container = {
-                        OutlinedTextFieldDefaults.Container(
-                            enabled = true,
-                            isError = isError,
-                            interactionSource = interactions,
-                            shape = RoundedCornerShape(12.dp),
-                        )
-                    },
-                )
-            },
+            enabled = enabled,
+            labelPosition = TextFieldLabelPosition.Above(),
+            label = { OkouFormLabel(title) },
+            isError = errorMessage != null,
+            lineLimits =
+                if (singleLine) TextFieldLineLimits.SingleLine
+                else TextFieldLineLimits.MultiLine(maxHeightInLines = 8),
+            textStyle = okouFormInputStyle(),
+            shape = RoundedCornerShape(12.dp),
+            contentPadding = OkouFormLayout.FieldPadding,
+            supportingText =
+                if (validation == null) null
+                else {
+                    {
+                        Box(Modifier.height(supportHeight).clipToBounds()) {
+                            if (errorMessage != null) {
+                                Text(
+                                    errorMessage,
+                                    modifier =
+                                        Modifier.wrapContentHeight(
+                                            Alignment.Top,
+                                            unbounded = true,
+                                        ),
+                                    style = supportStyle,
+                                )
+                            }
+                        }
+                    }
+                },
         )
-        if (errorMessage != null) {
-            Text(
-                errorMessage,
-                Modifier.padding(top = 4.dp),
-                color = colors.error,
-                style = MaterialTheme.typography.bodySmall,
-            )
+        LaunchedEffect(input, fieldFocus) {
+            if (fieldFocus.discarding) return@LaunchedEffect
+            fieldFocus.restore(input, requester)
+            snapshotFlow { if (focused) input.selection else null }
+                .filterNotNull()
+                .collect { fieldFocus.rememberSelection(input, it) }
         }
     }
 }
 
 @Composable
-private fun WorkflowFieldLabel(title: String) {
-    Text(title, style = workflowBodyStyle().copy(fontSize = 14.sp, lineHeight = 20.sp))
+private fun workflowSupportingHeight(
+    validation: WorkflowValidation,
+    style: TextStyle,
+    fieldWidth: Int,
+): Dp {
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val reservedPixels =
+        remember(measurer, density, style, validation.lengthMessage, validation.requiredMessage) {
+            with(density) {
+                // A localized fallback font can make one line taller than its nominal line height.
+                val lengthLine = measurer.measure(validation.lengthMessage, style, maxLines = 1)
+                val requiredLine =
+                    validation.requiredMessage?.let { measurer.measure(it, style, maxLines = 1) }
+                maxOf(
+                    ceil(style.lineHeight.toPx()).toInt(),
+                    lengthLine.size.height,
+                    requiredLine?.size?.height ?: 0,
+                )
+            }
+        }
+    val errorPixels =
+        remember(measurer, density, style, fieldWidth, validation.errorMessage) {
+            validation.errorMessage?.let {
+                // Material 3 adds 16 dp of supporting-text padding on each side.
+                val textWidth =
+                    with(density) { (fieldWidth - 2 * 16.dp.roundToPx()).coerceAtLeast(0) }
+                measurer
+                    .measure(it, style, constraints = Constraints(maxWidth = textWidth))
+                    .size
+                    .height
+            } ?: 0
+        }
+    // The native outline's minimum includes its supporting slot. Keep both in sync while animating.
+    return animateDpAsState(with(density) { maxOf(reservedPixels, errorPixels).toDp() }).value
 }
 
 @Composable
@@ -717,27 +918,24 @@ private fun WorkflowChoice(
     enabled: Boolean,
     pick: (Int) -> Unit,
 ) {
-    Column {
-        WorkflowFieldLabel(stringResource(label))
-        Spacer(Modifier.height(8.dp))
-        Box {
-            SettingsTrigger(
-                enabled = enabled,
-                content = { dismiss ->
-                    WorkspaceMenu(
-                        items =
-                            options.mapIndexed { index, option ->
-                                WorkspaceMenuItem(option, selected = index == selected) {
-                                    dismiss()
-                                    if (index != selected) pick(index)
-                                }
-                            },
-                        close = dismiss,
-                    )
-                },
-            ) { trigger, open ->
-                WorkflowSelection(options[selected], enabled, trigger, onClick = open)
-            }
+    val title = stringResource(label)
+    Box {
+        SettingsTrigger(
+            enabled = enabled,
+            content = { dismiss ->
+                WorkspaceMenu(
+                    items =
+                        options.mapIndexed { index, option ->
+                            WorkspaceMenuItem(option, selected = index == selected) {
+                                dismiss()
+                                if (index != selected) pick(index)
+                            }
+                        },
+                    close = dismiss,
+                )
+            },
+        ) { trigger, open ->
+            WorkflowSelection(title, options[selected], enabled, trigger, onClick = open)
         }
     }
 }
@@ -745,14 +943,13 @@ private fun WorkflowChoice(
 @Composable
 private fun WorkflowTimezone(current: String, enabled: Boolean, pick: (String) -> Unit) {
     val title = stringResource(R.string.workflow_timezone)
-    Column {
-        WorkflowFieldLabel(title)
-        Spacer(Modifier.height(8.dp))
+    Box {
         SettingsTrigger(
             enabled = enabled,
             content = { dismiss -> TimezoneSelectionSheet(current, title, dismiss, pick) },
         ) { trigger, open ->
             WorkflowSelection(
+                title,
                 timezoneLabel(current),
                 enabled,
                 trigger.testTag("workflow_timezone"),
@@ -763,34 +960,96 @@ private fun WorkflowTimezone(current: String, enabled: Boolean, pick: (String) -
 }
 
 @Composable
+private fun WorkflowTime(value: String, enabled: Boolean, pick: (String) -> Unit) {
+    val context = LocalContext.current
+    val dark = LocalOkouDarkMode.current
+    val latestPick by rememberUpdatedState(pick)
+    var showing by remember { mutableStateOf(false) }
+    if (showing && enabled) {
+        DisposableEffect(context, dark) {
+            val (hour, minute) = value.split(":").map(String::toInt)
+            val theme =
+                if (dark) android.R.style.Theme_Material_Dialog_Alert
+                else android.R.style.Theme_Material_Light_Dialog_Alert
+            val dialog =
+                TimePickerDialog(
+                    context,
+                    theme,
+                    { _, pickedHour, pickedMinute ->
+                        latestPick(
+                            String.format(Locale.ROOT, "%02d:%02d", pickedHour, pickedMinute),
+                        )
+                    },
+                    hour,
+                    minute,
+                    AndroidDateFormat.is24HourFormat(context),
+                )
+            dialog.setOnDismissListener { showing = false }
+            dialog.show()
+            onDispose {
+                dialog.setOnDismissListener(null)
+                dialog.dismiss()
+            }
+        }
+    }
+    WorkflowSelection(
+        stringResource(R.string.workflow_time),
+        value,
+        enabled,
+        icon = R.drawable.ic_schedule,
+        onClick = { showing = true },
+    )
+}
+
+@Composable
 private fun WorkflowSelection(
+    label: String,
     value: String,
     enabled: Boolean,
     modifier: Modifier = Modifier,
+    icon: Int = R.drawable.ic_expand_more,
     onClick: () -> Unit,
 ) {
     val shape = RoundedCornerShape(12.dp)
     val colors = MaterialTheme.colorScheme
-    OutlinedButton(
-        onClick,
-        modifier.fillMaxWidth().heightIn(min = 56.dp).workspaceSearchFocusOutline(shape),
-        enabled = enabled,
-        shape = shape,
-        border = BorderStroke(1.dp, colors.outline),
-        contentPadding = PaddingValues(12.dp),
-    ) {
+    var focused by remember { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(OkouFormLayout.LabelGap)) {
         Text(
-            value,
-            Modifier.weight(1f),
-            color = if (enabled) colors.onBackground else colors.onSurfaceVariant,
-            style = workflowBodyStyle(),
+            label,
+            color =
+                when {
+                    !enabled -> colors.onSurface.copy(alpha = 0.38f)
+                    focused -> colors.primary
+                    else -> colors.onSurfaceVariant
+                },
+            style = MaterialTheme.typography.bodyMedium,
         )
-        Spacer(Modifier.size(8.dp))
-        Icon(
-            painterResource(R.drawable.ic_expand_more),
-            contentDescription = null,
-            modifier = Modifier.size(20.dp),
-            tint = colors.onSurfaceVariant,
-        )
+        OutlinedButton(
+            onClick,
+            modifier
+                .fillMaxWidth()
+                .heightIn(min = 56.dp)
+                .onFocusChanged { focused = it.isFocused }
+                .semantics { contentDescription = label },
+            enabled = enabled,
+            shape = shape,
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.onSurface),
+            border =
+                when {
+                    !enabled -> BorderStroke(1.dp, colors.onSurface.copy(alpha = 0.12f))
+                    focused -> BorderStroke(2.dp, colors.primary)
+                    else -> BorderStroke(1.dp, colors.outline)
+                },
+            contentPadding = OkouFormLayout.FieldPadding,
+        ) {
+            Text(value, Modifier.weight(1f), style = okouFormInputStyle())
+            Spacer(Modifier.size(8.dp))
+            Icon(
+                painterResource(icon),
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = if (enabled) colors.onSurfaceVariant else LocalContentColor.current,
+            )
+        }
     }
 }

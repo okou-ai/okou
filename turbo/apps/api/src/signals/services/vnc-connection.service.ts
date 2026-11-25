@@ -1,3 +1,4 @@
+import { publishRemoteChannelDevice } from "./remote-device-publication";
 import {
   vncConnectionResponseSchema,
   type CreateVncConnectionRequest,
@@ -125,6 +126,12 @@ const metadata = Object.freeze({
   generation: vncConnections.generation,
   createdAt: vncCreationTimestamp.as("vnc_created_at"),
   updatedAt: vncConnections.updatedAt,
+});
+const vncCreationSelection = Object.freeze({
+  ...metadata,
+  remoteDeviceId: vncConnections.remoteDeviceId,
+  orgId: vncConnections.orgId,
+  userId: vncConnections.userId,
 });
 type Metadata = Omit<
   Pick<typeof vncConnections.$inferSelect, keyof typeof metadata>,
@@ -540,6 +547,7 @@ function vncConnectionCreationValues(
   return {
     ...args.owner,
     id: args.body.id,
+    remoteDeviceId: sql`gen_random_uuid()`,
     displayName: args.body.displayName,
     host: prepared.host.value,
     port: args.body.port,
@@ -573,7 +581,12 @@ const writeInlineVncConnectionCreate$ = command(
           credentialId: sql`(select ${generated.id} from ${generated})`,
           authMethod: create.authMethod,
         })
-        .returning({ ...metadata }),
+        .returning({ ...vncCreationSelection }),
+    );
+    const device = publishRemoteChannelDevice(
+      db,
+      connection,
+      args.body.displayName,
     );
     const complete = publication.completion(connection);
     const [created] = await db
@@ -581,6 +594,7 @@ const writeInlineVncConnectionCreate$ = command(
         ...publication.ctes,
         generated,
         connection,
+        device,
         createdCredential,
         complete,
       )
@@ -616,6 +630,7 @@ export const createVncConnection$ = command(
       return prepared;
     }
     const { security, transport, preparedCredential } = prepared.value;
+    const { displayName } = args.body;
     const publication = vncNetworkPublication(args.owner, {
       ...security.value,
       ...transport.value,
@@ -685,11 +700,12 @@ export const createVncConnection$ = command(
               ...vncConnectionCreationValues(args, prepared.value),
               ...credentialDatabaseValues(credential),
             })
-            .returning({ ...metadata }),
+            .returning({ ...vncCreationSelection }),
         );
+        const device = publishRemoteChannelDevice(db, connection, displayName);
         const complete = publication.completion(connection);
         const [created] = await db
-          .with(...publication.ctes, connection, complete)
+          .with(...publication.ctes, connection, device, complete)
           .select()
           .from(complete)
           .leftJoin(connection, sql`true`);

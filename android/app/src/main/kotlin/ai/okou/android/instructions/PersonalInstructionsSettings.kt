@@ -9,9 +9,9 @@ import ai.okou.android.OkouFormLayout
 import ai.okou.android.R
 import ai.okou.android.SettingsSheet
 import ai.okou.android.okouFormInputStyle
-import ai.okou.android.okouFormOutlineColors
 import ai.okou.android.okouFormSupportingLineHeight
 import ai.okou.android.rememberContentReadSkeleton
+import ai.okou.android.replaceTextPreservingSelection
 import ai.okou.android.state.rememberJournalTextField
 import ai.okou.android.state.rememberSettingsFlag
 import androidx.activity.compose.BackHandler
@@ -61,7 +61,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
@@ -115,17 +114,7 @@ private class InstructionsInput(val field: TextFieldState) {
         val current = model.uiState.value
         if (text != current.content && current.canEdit && field.composition != null) return
         presented = current.content
-        if (text != current.content) {
-            val previousSelection = field.selection
-            field.edit {
-                replace(0, length, presented)
-                selection =
-                    TextRange(
-                        previousSelection.start.coerceAtMost(length),
-                        previousSelection.end.coerceAtMost(length),
-                    )
-            }
-        }
+        field.replaceTextPreservingSelection(presented)
     }
 }
 
@@ -271,6 +260,8 @@ internal fun PersonalInstructionsSettings(
                     if (restoreFocus) focus.requestFocus()
                 }
                 val colors = MaterialTheme.colorScheme
+                val message = fieldError ?: requestFeedback
+                val hasError = fieldError != null || saveFailed
                 OutlinedTextField(
                     state = editing.field,
                     inputTransformation = editing.inputTransformation,
@@ -292,27 +283,25 @@ internal fun PersonalInstructionsSettings(
                             .testTag("instructions_editor")
                             .semantics {
                                 contentDescription = title
-                                if (fieldError != null) error(fieldError)
+                                if (hasError && message != null) error(message)
                             },
-                    textStyle = inputStyle.copy(color = colors.onSurface),
+                    textStyle = inputStyle,
                     placeholder = {
                         Text(stringResource(R.string.instructions_placeholder), style = inputStyle)
                     },
                     supportingText = {
                         OkouFormFieldSupport(
-                            fieldError ?: requestFeedback,
-                            if (fieldError != null || saveFailed) colors.error
-                            else colors.onSurfaceVariant,
+                            message,
+                            if (hasError) colors.error else colors.onSurfaceVariant,
                             Modifier.animateContentSize().heightIn(min = supportLineHeight),
                         )
                     },
-                    isError = fieldError != null,
+                    isError = hasError,
                     lineLimits =
                         TextFieldLineLimits.MultiLine(minHeightInLines = 2, maxHeightInLines = 8),
                     keyboardOptions =
                         KeyboardOptions(showKeyboardOnFocus = !restoreFocus || restoreKeyboard),
                     shape = RoundedCornerShape(12.dp),
-                    colors = okouFormOutlineColors(saveFailed),
                     contentPadding = OkouFormLayout.FieldPadding,
                     readOnly = !state.canEdit,
                 )
@@ -330,7 +319,7 @@ internal fun PersonalInstructionsSettings(
                             .then(
                                 if (showSkeleton)
                                     Modifier.background(
-                                        MaterialTheme.colorScheme.surfaceVariant,
+                                        MaterialTheme.colorScheme.surfaceContainerHigh,
                                         RoundedCornerShape(12.dp),
                                     )
                                 else Modifier,

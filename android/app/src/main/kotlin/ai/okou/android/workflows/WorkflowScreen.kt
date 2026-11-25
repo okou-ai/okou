@@ -1,10 +1,9 @@
 package ai.okou.android.workflows
 
-import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.OkouConfirmationDialog
 import ai.okou.android.R
 import ai.okou.android.WorkspaceFilterRow
-import ai.okou.android.WorkspaceSearchField
+import ai.okou.android.WorkspaceSearchInput
 import ai.okou.android.WorkspaceToolDirectoryRow
 import ai.okou.android.api.generated.WorkflowAutomation
 import ai.okou.android.api.generated.WorkflowDetail
@@ -14,6 +13,8 @@ import ai.okou.android.api.generated.WorkflowSummaryVisibility
 import ai.okou.android.chat.ChatListTextAction
 import ai.okou.android.chat.ChatSkeletonBlock
 import ai.okou.android.rememberContentReadSkeleton
+import ai.okou.android.retainSearchResultsWhileComposing
+import ai.okou.android.searchClearAction
 import ai.okou.android.state.ChatSearchState
 import ai.okou.android.state.WorkflowConnectorVisit
 import ai.okou.android.state.WorkflowDraftAction
@@ -22,10 +23,8 @@ import ai.okou.android.state.WorkflowTab
 import ai.okou.android.state.WorkflowsRoute
 import ai.okou.android.state.rememberWorkflowDiscardConfirmation
 import ai.okou.android.state.rememberWorkflowEditorReturnFocus
-import ai.okou.android.state.retainWhileComposing
 import ai.okou.android.updates.updateFocusOutline
 import ai.okou.android.workspaceSearchFocusOutline
-import ai.okou.android.workspaceSearchTextStyle
 import androidx.activity.compose.BackHandler
 import androidx.annotation.StringRes
 import androidx.compose.foundation.BorderStroke
@@ -56,9 +55,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -66,6 +62,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.PrimaryTabRow
@@ -88,7 +85,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.InputModeManager
 import androidx.compose.ui.input.key.Key
@@ -117,7 +113,6 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -158,20 +153,21 @@ internal fun WorkflowScreen(
     val focus = LocalFocusManager.current
     val inputMode = LocalInputModeManager.current
     val keyboard = LocalSoftwareKeyboardController.current
-    val editor = state.editor
+    val editing = state.editing
     val detail = state.detail?.takeIf { it.id == route.id }
     var editorReturnFocus by rememberWorkflowEditorReturnFocus(route.id, route.tab)
-    var discard by rememberWorkflowDiscardConfirmation(route.id, editor != null)
+    var discard by rememberWorkflowDiscardConfirmation(route.id, editing != null)
     var restoreRow by remember { mutableStateOf<String?>(null) }
     val draftFocusAction = route.draftReturn?.action
-    val canNavigate = editor == null && !state.writing
+    val canNavigate = editing == null && !state.writing
     fun exitEditor() {
-        if (state.writing) return
-        if (editor?.changed == true) discard = true else model.edit(null)
+        val current = model.state.value
+        if (current.writing || current.editing !== editing) return
+        if (editing?.draft?.changed == true) discard = true else model.edit(null)
     }
     fun back() {
         when {
-            editor != null -> exitEditor()
+            editing != null -> exitEditor()
             state.writing -> Unit
             route.id != null && !wide && !directEntry && !handoffPending -> {
                 restoreRow = route.id
@@ -181,7 +177,7 @@ internal fun WorkflowScreen(
         }
     }
     BackHandler(onBack = ::back)
-    if (discard && editor != null && detail != null) {
+    if (discard && editing != null && detail != null) {
         OkouConfirmationDialog(
             title = stringResource(R.string.workflow_discard_title),
             confirm = stringResource(R.string.workflow_discard),
@@ -189,7 +185,7 @@ internal fun WorkflowScreen(
             onDismiss = { discard = false },
             onConfirm = {
                 discard = false
-                model.edit(null)
+                if (model.state.value.editing === editing) model.edit(null)
             },
         ) {
             Text(
@@ -217,7 +213,7 @@ internal fun WorkflowScreen(
                         Modifier.widthIn(min = (listWidth - 1).dp, max = (listWidth - 1).dp)
                             .fillMaxHeight()
                     else Modifier.weight(1f).fillMaxHeight(),
-                onBack = { if (editor != null) exitEditor() else if (!state.writing) onClose() },
+                onBack = { if (editing != null) exitEditor() else if (!state.writing) onClose() },
                 onCreate = onCreate,
                 restoreCreateFocus =
                     !handoffPending && draftFocusAction == WorkflowDraftAction.Create,
@@ -245,9 +241,9 @@ internal fun WorkflowScreen(
         if (wide) VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         if (wide || route.id != null) {
             Column(Modifier.weight(1f).fillMaxHeight()) {
-                if (!wide || editor != null)
+                if (!wide || editing != null)
                     WorkflowToolbar(
-                        if (editor != null) stringResource(R.string.workflow_edit)
+                        if (editing != null) stringResource(R.string.workflow_edit)
                         else stringResource(R.string.workspace_workflows),
                         ::back,
                     )
@@ -257,14 +253,15 @@ internal fun WorkflowScreen(
                 when {
                     route.id == null -> WorkflowPlaceholder(R.string.workflow_select)
                     detail == null -> WorkflowPendingDetail(wide, state.detailFailure)
-                    editor != null ->
+                    editing != null ->
                         WorkflowEditor(
                             detail,
-                            editor,
+                            editing,
                             state,
                             model,
                             wide,
-                            ::exitEditor,
+                            discarding = discard,
+                            onCancel = ::exitEditor,
                             onViewConnection =
                                 onViewConnection?.let { open -> { slug -> open(slug, null) } },
                             restoreConnectionFocus =
@@ -368,9 +365,11 @@ private fun WorkflowDirectory(
     onRowRestored: () -> Unit,
 ) {
     val text = query.keyword
+    val searchFocus = remember { FocusRequester() }
+    val clearQuery = searchClearAction(searchFocus, query::clearQuery)
     val displayedState =
         if (state.catalogFailure == WorkflowReadFailure.Unavailable) state
-        else query.retainWhileComposing(state)
+        else key(query) { retainSearchResultsWhileComposing(state, query.hasPendingInput) }
     val catalog =
         remember(displayedState.catalog, state.catalog) {
             val displayed = displayedState.catalog
@@ -436,10 +435,6 @@ private fun WorkflowDirectory(
                         .updateFocusOutline(shape, MaterialTheme.colorScheme.onBackground)
                         .testTag("workflow_create"),
                 shape = shape,
-                colors =
-                    ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.onBackground,
-                    ),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
             ) {
                 Icon(painterResource(R.drawable.ic_add), null, Modifier.size(18.dp))
@@ -464,7 +459,18 @@ private fun WorkflowDirectory(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (createError != null) WorkflowNotice(createError)
-            WorkflowQuery(query)
+            WorkspaceSearchInput(
+                value = query.query,
+                onValueChange = query::edit,
+                label = stringResource(R.string.workflow_search),
+                onClear = clearQuery,
+                modifier =
+                    Modifier.fillMaxWidth()
+                        .focusRequester(searchFocus)
+                        .onFocusChanged { if (!it.isFocused) query.cancelComposition() }
+                        .testTag("workflow_query"),
+                clearLabel = stringResource(R.string.workflow_clear_search),
+            )
             WorkspaceFilterRow(
                 WorkflowScope.entries,
                 route.scope,
@@ -495,7 +501,7 @@ private fun WorkflowDirectory(
                                 WorkflowEmpty(
                                     route.scope,
                                     text,
-                                    query::reset,
+                                    clearQuery,
                                     onScope,
                                     topPadding = if (readFeedback == null) 24.dp else 0.dp,
                                 )
@@ -538,70 +544,6 @@ private val WorkflowScope.label: Int
             WorkflowScope.Private -> R.string.workflow_private
             WorkflowScope.Shared -> R.string.workflow_shared
         }
-
-@Composable
-private fun WorkflowQuery(query: ChatSearchState) {
-    val name = stringResource(R.string.workflow_search)
-    val requester = remember { FocusRequester() }
-    var focused by remember { mutableStateOf(false) }
-    val keyboard = LocalSoftwareKeyboardController.current
-    val colors = MaterialTheme.colorScheme
-    val style = workspaceSearchTextStyle()
-    BasicTextField(
-        value = query.query,
-        onValueChange = query::edit,
-        modifier =
-            Modifier.fillMaxWidth()
-                .focusRequester(requester)
-                .onFocusChanged {
-                    focused = it.isFocused
-                    if (!it.isFocused) query.cancelComposition()
-                }
-                .testTag("workflow_query")
-                .semantics { contentDescription = name },
-        textStyle = style.copy(color = colors.onBackground),
-        singleLine = true,
-        cursorBrush = SolidColor(colors.onBackground),
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-        keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
-        decorationBox = { input ->
-            WorkspaceSearchField(
-                Modifier.fillMaxWidth(),
-                focused = focused,
-                hasTrailingAction = query.query.text.isNotEmpty(),
-                shape = RoundedCornerShape(18.dp),
-            ) {
-                Box(Modifier.weight(1f).padding(vertical = 8.dp)) {
-                    if (query.query.text.isEmpty())
-                        Text(
-                            name,
-                            color = colors.onSurfaceVariant,
-                            style = style,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    input()
-                }
-                if (query.query.text.isNotEmpty())
-                    IconButton(
-                        onClick = {
-                            query.reset()
-                            requester.requestFocus()
-                            keyboard?.show()
-                        },
-                        modifier = Modifier.workspaceSearchFocusOutline(CircleShape),
-                    ) {
-                        Icon(
-                            painterResource(R.drawable.ic_close),
-                            stringResource(R.string.workflow_clear_search),
-                            modifier = Modifier.size(20.dp),
-                            tint = colors.onSurfaceVariant,
-                        )
-                    }
-            }
-        },
-    )
-}
 
 @Composable
 private fun WorkflowEmpty(
@@ -706,7 +648,7 @@ private fun WorkflowRow(
                         R.plurals.workflow_enabled_count,
                         enabledCount,
                         enabledCount,
-                    ) to LocalActivityStatusColor.current
+                    ) to MaterialTheme.colorScheme.primary
                 !rules.isNullOrEmpty() ->
                     stringResource(R.string.workflow_paused) to colors.onSurfaceVariant
                 else -> null
@@ -971,6 +913,7 @@ private fun WorkflowUseBar(
 
 @Composable
 private fun WorkflowDetailHeader(detail: WorkflowDetail) {
+    val colors = MaterialTheme.colorScheme
     Column(Modifier.padding(bottom = 20.dp)) {
         Text(
             detail.displayName ?: detail.name,
@@ -994,10 +937,11 @@ private fun WorkflowDetailHeader(detail: WorkflowDetail) {
             Text(
                 "/${detail.name}",
                 Modifier.background(
-                        MaterialTheme.colorScheme.surfaceVariant,
+                        colors.tertiaryContainer,
                         RoundedCornerShape(8.dp),
                     )
                     .padding(horizontal = 8.dp, vertical = 4.dp),
+                color = colors.onTertiaryContainer,
                 style =
                     MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp),
             )
@@ -1020,7 +964,7 @@ private fun WorkflowDetailHeader(detail: WorkflowDetail) {
 @Composable
 private fun WorkflowTabs(current: WorkflowTab, pick: (WorkflowTab) -> Unit) {
     val colors = MaterialTheme.colorScheme
-    val accent = LocalActivityStatusColor.current
+    val accent = MaterialTheme.colorScheme.primary
     val tabs = WorkflowTab.entries
     val tabFocus = remember { List(WorkflowTab.entries.size) { FocusRequester() } }
     val stepRight = if (LocalLayoutDirection.current == LayoutDirection.Ltr) 1 else -1
@@ -1170,12 +1114,7 @@ internal fun WorkflowAction(
         Box(contentAlignment = Alignment.Center) {
             Text(
                 label,
-                color =
-                    when {
-                        showProgress -> Color.Transparent
-                        pendingStatus != null -> colors.onSurfaceVariant
-                        else -> Color.Unspecified
-                    },
+                color = if (showProgress) Color.Transparent else Color.Unspecified,
                 style = workflowSmallStyle(),
                 textAlign = TextAlign.Center,
                 fontWeight = FontWeight(550),
@@ -1183,7 +1122,7 @@ internal fun WorkflowAction(
             if (showProgress) {
                 CircularProgressIndicator(
                     Modifier.size(16.dp),
-                    color = colors.onSurfaceVariant,
+                    color = LocalContentColor.current,
                     strokeWidth = 2.dp,
                 )
             }
@@ -1194,17 +1133,10 @@ internal fun WorkflowAction(
             click,
             modifier
                 .heightIn(min = 48.dp)
-                .updateFocusOutline(shape, colors.background)
+                .updateFocusOutline(shape, colors.onPrimary)
                 .then(pendingSemantics),
             enabled = enabled,
             shape = shape,
-            colors =
-                ButtonDefaults.buttonColors(
-                    containerColor = colors.onBackground,
-                    contentColor = colors.background,
-                    disabledContainerColor = colors.surfaceVariant,
-                    disabledContentColor = colors.onSurfaceVariant,
-                ),
             contentPadding = padding,
         ) {
             content()
@@ -1221,10 +1153,9 @@ internal fun WorkflowAction(
                 .then(pendingSemantics),
             enabled = enabled,
             shape = shape,
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.onBackground),
             border =
-                if (keyboardFocused) BorderStroke(2.dp, colors.onBackground)
-                else BorderStroke(1.dp, colors.outline),
+                if (enabled && keyboardFocused) BorderStroke(2.dp, colors.onBackground)
+                else ButtonDefaults.outlinedButtonBorder(enabled),
             contentPadding = padding,
         ) {
             content()

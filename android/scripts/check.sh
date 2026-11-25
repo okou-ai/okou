@@ -13,6 +13,7 @@ python3 scripts/check-saved-state.test.py
 python3 scripts/check-jvm-test-counts.test.py
 python3 scripts/check-saved-state.py
 python3 ../.github/scripts/checks/android_launcher.py ..
-python3 scripts/sync-design-tokens.py --check
+pnpm --dir scripts/theme install --frozen-lockfile --ignore-scripts
+node scripts/theme/generate.mjs --check
 ./gradlew spotlessCheck :app:testDebugUnitTest \
   :app:lintDebug :app:assembleDebug --no-daemon "$@"

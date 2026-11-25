@@ -7,6 +7,8 @@ struct ComposerChatConnectorAccounts: View {
   let page: ComposerConnectorAccountResources.Page
   let busy: Bool
   let search: String
+  /// From the snapshot the account page resolves.
+  let canConfigurePermissions: Bool
   let openPermissions: () -> Void
   let openManagement: () -> Void
 
@@ -34,9 +36,7 @@ struct ComposerChatConnectorAccounts: View {
       }
     }
     Section {
-      if let slug = resources.connector.target.connectorSlug,
-        store.canConfigurePermissions(slug: slug)
-      {
+      if canConfigurePermissions {
         Button(action: openPermissions) {
           destinationLabel("Permissions", icon: "sliders-horizontal")
         }

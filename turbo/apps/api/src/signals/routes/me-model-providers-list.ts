@@ -1,3 +1,7 @@
+import {
+  androidAntigravitySubscriptionTransforms,
+  iosAntigravitySubscriptionTransforms,
+} from "@okouai/api-contracts/client-transforms/antigravity-subscription";
 import { command } from "ccstate";
 import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { thirdPartySubscriptionsMainContract } from "@okouai/api-contracts/contracts/third-party-subscriptions";
@@ -60,6 +64,10 @@ export const meModelProvidersListRoutes: readonly RouteEntry[] = [
 export const meThirdPartySubscriptionsListRoutes: readonly RouteEntry[] = [
   {
     route: thirdPartySubscriptionsMainContract.list,
+    responseTransforms: [
+      iosAntigravitySubscriptionTransforms.subscriptions,
+      androidAntigravitySubscriptionTransforms.subscriptions,
+    ],
     handler: authRoute(listAuthOptions, listSubscriptionsInner$),
   },
 ];

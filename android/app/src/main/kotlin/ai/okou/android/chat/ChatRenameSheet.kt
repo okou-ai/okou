@@ -2,6 +2,7 @@ package ai.okou.android.chat
 
 import ai.okou.android.OkouFormActions
 import ai.okou.android.OkouFormFieldSupport
+import ai.okou.android.OkouFormLabel
 import ai.okou.android.OkouFormLayout
 import ai.okou.android.R
 import ai.okou.android.RenameFieldError
@@ -9,14 +10,13 @@ import ai.okou.android.SettingsSheet
 import ai.okou.android.SettingsSheetScroll
 import ai.okou.android.normalizedRenameName
 import ai.okou.android.okouFormInputStyle
-import ai.okou.android.okouFormOutlineColors
+import ai.okou.android.okouFormLabelHeight
 import ai.okou.android.okouFormSupportingTextStyle
 import androidx.annotation.StringRes
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -25,7 +25,7 @@ import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Text
+import androidx.compose.material3.TextFieldLabelPosition
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -317,12 +317,12 @@ private fun WorkspaceNameFormBody(
     val fieldPadding = OkouFormLayout.FieldPadding.calculateTopPadding()
     // Material's minimum includes the supporting slot. Center the short input in its own outline.
     val inputVerticalPadding = maxOf(fieldPadding, (outlineMinHeight - inputLineHeight) / 2)
-    Column {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
         var fieldFocused by remember { mutableStateOf(false) }
-        if (projectName) {
-            Text(label, style = MaterialTheme.typography.bodyMedium)
-            Spacer(Modifier.height(OkouFormLayout.LabelGap))
-        }
+        val labelHeight =
+            if (projectName) okouFormLabelHeight(label, constraints.maxWidth) else 0.dp
+        val message = validationMessage ?: notice?.let { stringResource(it) }
+        val hasError = validationMessage != null || noticeIsError
         OutlinedTextField(
             state = input,
             modifier =
@@ -330,6 +330,7 @@ private fun WorkspaceNameFormBody(
                     .heightIn(
                         min =
                             outlineMinHeight +
+                                labelHeight +
                                 OkouFormLayout.SupportingTextGap +
                                 supportingLineHeight,
                     )
@@ -337,26 +338,29 @@ private fun WorkspaceNameFormBody(
                     .onFocusChanged { fieldFocused = it.isFocused }
                     .semantics {
                         contentDescription = label
-                        if (validationMessage != null) error(validationMessage)
+                        if (hasError && message != null) error(message)
                     },
             textStyle = inputStyle,
             readOnly = readOnly,
+            labelPosition = TextFieldLabelPosition.Above(),
+            label =
+                if (projectName) {
+                    { OkouFormLabel(label) }
+                } else null,
             supportingText = {
                 OkouFormFieldSupport(
-                    validationMessage ?: notice?.let { stringResource(it) },
-                    if (validationMessage != null || noticeIsError) colors.error
-                    else colors.onSurfaceVariant,
+                    message,
+                    if (hasError) colors.error else colors.onSurfaceVariant,
                     Modifier.fillMaxWidth()
                         .animateContentSize(tween(250, easing = ChatListMotionEasing))
                         .heightIn(min = supportingLineHeight),
                 )
             },
-            isError = validationMessage != null,
+            isError = hasError,
             lineLimits = TextFieldLineLimits.SingleLine,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             onKeyboardAction = submit?.let { action -> { action() } },
             shape = MaterialTheme.shapes.medium,
-            colors = okouFormOutlineColors(noticeIsError),
             contentPadding =
                 PaddingValues(horizontal = fieldPadding, vertical = inputVerticalPadding),
         )

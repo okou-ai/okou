@@ -12,7 +12,8 @@ final class ComposerConnectorResources {
     let connections: [ChatVncConnection]
   }
 
-  let store = CCState.Store()
+  /// The workspace session's Store, which keeps these reads' graph values.
+  let store: CCState.Store
   private let service: ChatComposerAccess
 
   private let threadID: String?
@@ -31,8 +32,8 @@ final class ComposerConnectorResources {
   private var closed = false
 
   init(
-    service: ChatComposerAccess, threadID: String?, options: ChatComposerOptions,
-    includesRemote: Bool = true,
+    service: ChatComposerAccess, graph: CCState.Store, threadID: String?,
+    options: ChatComposerOptions, includesRemote: Bool = true,
     memberAccessEnabled: @escaping @MainActor () -> Bool,
     sleep: @escaping @Sendable (Duration) async throws -> Void,
     didLoadConnected: @escaping @MainActor ([ChatComposerConnector]) -> Void,
@@ -40,6 +41,7 @@ final class ComposerConnectorResources {
     didFail: @escaping @MainActor (Error) -> Void
   ) {
     self.service = service
+    store = graph
     self.threadID = threadID
     self.includesRemote = includesRemote
     self.memberAccessEnabled = memberAccessEnabled

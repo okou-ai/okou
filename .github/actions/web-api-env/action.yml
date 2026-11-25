@@ -321,6 +321,8 @@ runs:
           # Optional until the default-off custom-domain feature is provisioned.
           # Both API runtimes consume this same resolved environment file.
           for hosted_domain_key in \
+            HOSTED_SITE_DOMAIN_CONNECT_PRIVATE_KEY_BASE64 \
+            HOSTED_SITE_DOMAIN_CONNECT_KEY_HOST \
             HOSTED_SITE_CUSTOM_DOMAIN_API_TOKEN \
             HOSTED_SITE_CUSTOM_DOMAIN_ZONE_ID \
             HOSTED_SITE_CUSTOM_DOMAIN_TARGET \
@@ -459,10 +461,17 @@ runs:
           add_oauth_client_config "$prefix"
         done
 
+        # Optional until each environment is configured for the staff rollout.
+        add_doppler_config LINKEDIN_OAUTH_CLIENT_ID
+        add_doppler_config LINKEDIN_OAUTH_CLIENT_SECRET
+
         add_doppler_config GOOGLE_ADS_DEVELOPER_TOKEN
         if [[ "$INPUT_APP" == "api" ]]; then
           add_oauth_client_config_key CODEX_OAUTH_CLIENT_ID
           add_oauth_client_config_key CLAUDE_CODE_OAUTH_CLIENT_ID
+          # Optional while the staff-only Antigravity pilot is unconfigured.
+          add_env ANTIGRAVITY_OAUTH_CLIENT_ID "$(doppler_secret ANTIGRAVITY_OAUTH_CLIENT_ID)"
+          add_env ANTIGRAVITY_OAUTH_CLIENT_SECRET "$(doppler_secret ANTIGRAVITY_OAUTH_CLIENT_SECRET)"
           # Data Router credentials are configured per deployment.
           add_secret OKOU_DATA_ROUTER_URL OKOU_DATA_ROUTER_URL
           add_secret OKOU_DATA_TOKEN OKOU_DATA_TOKEN

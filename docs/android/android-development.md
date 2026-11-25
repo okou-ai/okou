@@ -145,13 +145,13 @@ External OAuth should retain its own system-browser/session and server-receipt
 verification contract. Do not render provider credentials or first-party
 application flows as an unowned embedded website.
 
-Use Web semantic color roles through generated Android resources. Shared brand
+Use the generated Android Material 3 Tonal Spot scheme. Palette identifiers
+follow the shared workspace preferences. Shared brand
 assets and licensed Geist fonts retain their source artwork and licenses;
 Android controls own dp/sp, touch targets, scaling, back navigation and focus.
 Do not copy iOS point sizes, Apple materials or Swift UI APIs as Android rules.
-The shared primary role can be a pale fill. Use a readable foreground role for
-text-only actions and state indicators instead of assuming that fill contrasts
-with its surrounding surface; verify contrast against the actual surface.
+Use the component's Material 3 color defaults and verify contrast against the
+actual adjacent surface for product-specific color treatments.
 
 Use string resources for product copy and preserve user text verbatim. Keep
 IME composition, selection, undo and cursor state with the editing owner.

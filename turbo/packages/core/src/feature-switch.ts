@@ -53,6 +53,13 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.WorkflowListRedesign]: {
+    maintainer: "ming@okou.ai",
+    displayName: "Workflow list redesign",
+    description:
+      "Browse workflows with search, separate visibility and automation filters, and a flat list sorted by creation date.",
+    enabled: false,
+  },
   [FeatureSwitchKey.IosConnectorManagement]: {
     maintainer: "yuma@okou.ai",
     displayName: "iOS connector management",
@@ -103,6 +110,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Use organization Cloudflare Access for custom HTTP API and MCP connectors.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.RemoteDevices]: {
+    maintainer: "liangyou@okou.ai",
+    displayName: "Remote devices",
+    description: "Manage remote channels and access at the device level.",
+    enabled: false,
   },
   [FeatureSwitchKey.MemberConnectorAccountAccess]: {
     maintainer: "liangyou@okou.ai",
@@ -175,15 +188,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "TikTok OAuth connector",
     description:
       "Connect a TikTok account with automatically refreshed read-only access.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-    restrictOverridesToAudience: true,
-  },
-  [FeatureSwitchKey.LinkedInOAuthConnector]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "LinkedIn OAuth connector",
-    description:
-      "Connect LinkedIn for personal publishing through the official API. Other LinkedIn tasks use Cloud Browser.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,
@@ -282,6 +286,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Artifact email sharing",
     description:
       "Share websites and files with existing accounts or invite verified email recipients.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.SlackArtifactChannelSharing]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Slack artifact sharing",
+    description:
+      "Privately prompt artifact owners to share restricted links with the current Slack channel members.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

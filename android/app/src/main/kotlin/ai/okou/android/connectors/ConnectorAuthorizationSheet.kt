@@ -1,8 +1,8 @@
 package ai.okou.android.connectors
 
-import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.OkouFormActions
 import ai.okou.android.OkouFormFieldSupport
+import ai.okou.android.OkouFormLabel
 import ai.okou.android.OkouFormLayout
 import ai.okou.android.R
 import ai.okou.android.RenameDraft
@@ -13,7 +13,7 @@ import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItemGran
 import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItemManualFieldsItemInputType
 import ai.okou.android.chat.ContentReadFeedback
 import ai.okou.android.okouFormInputStyle
-import ai.okou.android.okouFormOutlineColors
+import ai.okou.android.okouFormLabelHeight
 import ai.okou.android.okouFormSupportingTextHeight
 import ai.okou.android.updates.updateFocusOutline
 import android.content.ActivityNotFoundException
@@ -21,11 +21,10 @@ import android.content.Context
 import android.content.Intent
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.selection.selectable
@@ -41,8 +40,8 @@ import androidx.compose.material3.OutlinedSecureTextField
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextFieldLabelPosition
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -122,6 +121,7 @@ internal fun ConnectorRenameSheet(
             stringResource(R.string.connector_account_name),
             draft.input,
             readOnly = !canModify,
+            showLabel = false,
             supportingText = {
                 OkouFormFieldSupport(
                     errorMessage ?: feedback,
@@ -130,8 +130,7 @@ internal fun ConnectorRenameSheet(
                     Modifier.animateContentSize(),
                 )
             },
-            errorMessage = errorMessage,
-            requestFailed = definiteFailure,
+            errorMessage = errorMessage ?: feedback.takeIf { definiteFailure },
         )
     }
 }
@@ -432,7 +431,6 @@ private fun ConnectorChoice(
             selected,
             onClick = null,
             enabled = enabled,
-            colors = RadioButtonDefaults.colors(selectedColor = LocalActivityStatusColor.current),
         )
         Text(label, style = connectorBodyType())
     }
@@ -445,42 +443,46 @@ private fun ConnectorInput(
     readOnly: Boolean,
     modifier: Modifier = Modifier,
     secret: Boolean = false,
+    showLabel: Boolean = true,
     placeholder: String? = null,
     supportingText: (@Composable () -> Unit)? = null,
     errorMessage: String? = null,
-    requestFailed: Boolean = false,
 ) {
     val supportHeight =
         if (supportingText != null)
             okouFormSupportingTextHeight() + OkouFormLayout.SupportingTextGap
         else 0.dp
-    val field =
-        modifier
-            .fillMaxWidth()
-            .heightIn(min = OutlinedTextFieldDefaults.MinHeight + supportHeight)
-            .testTag("connector-input")
-            .semantics {
-                contentDescription = label
-                if (errorMessage != null) error(errorMessage)
-            }
     val shape = MaterialTheme.shapes.medium
-    val fieldColors = okouFormOutlineColors(requestFailed)
     val padding = OkouFormLayout.FieldPadding
     val placeholderContent: (@Composable () -> Unit)? = placeholder?.let {
         { Text(it, style = connectorBodyType()) }
     }
-    Column(Modifier.fillMaxWidth()) {
-        Text(label, style = connectorFeedbackType())
-        Spacer(Modifier.height(OkouFormLayout.LabelGap))
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val labelHeight = if (showLabel) okouFormLabelHeight(label, constraints.maxWidth) else 0.dp
+        val field =
+            modifier
+                .fillMaxWidth()
+                .heightIn(min = OutlinedTextFieldDefaults.MinHeight + supportHeight + labelHeight)
+                .testTag("connector-input")
+                .semantics {
+                    contentDescription = label
+                    if (errorMessage != null) error(errorMessage)
+                }
         if (secret) {
             OutlinedSecureTextField(
                 state = state,
                 modifier = field,
                 inputTransformation = InputTransformation { if (readOnly) revertAllChanges() },
                 textObfuscationMode = TextObfuscationMode.Hidden,
+                labelPosition = TextFieldLabelPosition.Above(),
+                label =
+                    if (showLabel) {
+                        { OkouFormLabel(label) }
+                    } else null,
+                isError = errorMessage != null,
+                supportingText = supportingText,
                 shape = shape,
                 textStyle = okouFormInputStyle(),
-                colors = fieldColors,
                 placeholder = placeholderContent,
                 contentPadding = padding,
             )
@@ -489,12 +491,16 @@ private fun ConnectorInput(
                 state = state,
                 modifier = field,
                 readOnly = readOnly,
+                labelPosition = TextFieldLabelPosition.Above(),
+                label =
+                    if (showLabel) {
+                        { OkouFormLabel(label) }
+                    } else null,
                 isError = errorMessage != null,
                 supportingText = supportingText,
                 lineLimits = TextFieldLineLimits.SingleLine,
                 shape = shape,
                 textStyle = okouFormInputStyle(),
-                colors = fieldColors,
                 placeholder = placeholderContent,
                 contentPadding = padding,
             )

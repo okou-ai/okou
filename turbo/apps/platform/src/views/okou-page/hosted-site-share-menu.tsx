@@ -1142,7 +1142,11 @@ function HostedSiteShareSessionMenu({
         aria-label={props.ariaLabel}
         className={cn(
           "max-w-[calc(100vw-2rem)] p-0",
-          domainEditor ? "w-105" : emailSharing ? "w-100" : "w-90",
+          domainEditor
+            ? "max-h-[var(--available-height)] w-105 overflow-y-auto overscroll-contain"
+            : emailSharing
+              ? "w-100"
+              : "w-90",
         )}
       >
         <HostedSiteShareBody
@@ -1213,12 +1217,12 @@ export function HostedSiteShareMenu({
 }) {
   const scope = getHostedSiteShareScope(surface);
   const session = useGet(scope.session$);
-  const mountRef = useSet(scope.mountRef$);
   return (
-    <span key={url} ref={mountRef} data-share-url={url} className="inline-flex">
+    <span className="inline-flex">
       {session?.sourceUrl === url ? (
         // Settings have independent subscriptions; URL saves keep these nodes.
         <HostedSiteShareSessionMenu
+          key={session.inputId}
           session={session}
           surface={surface}
           banner={<HostedSiteBannerSetting session={session} />}

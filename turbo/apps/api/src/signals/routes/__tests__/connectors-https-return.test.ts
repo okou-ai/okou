@@ -238,11 +238,28 @@ test("uses the HTTPS return for direct callbacks and ignores unclaimed native-lo
   );
 });
 
-test("keeps ordinary web grants and providers outside this delivery on the existing completion path", async () => {
+test("keeps web grants unchanged and returns connectors outside the original whitelist", async () => {
   const web = await start("github", false);
-  const unsupported = await start("test-oauth");
+  const native = await start("test-oauth");
   expect(web.nativeCallbackUrl).toBeUndefined();
-  expect(unsupported.nativeCallbackUrl).toBeUndefined();
+  expect(native.nativeCallbackUrl).toBe(
+    `https://app.okou.ai/native/connector-authorization?attemptId=${native.oauthAttemptId}`,
+  );
+  const denied = await accept(
+    client(builtinConnectorsSlugCallbackContract).callback({
+      params: { connectorSlug: "test-oauth" },
+      query: {
+        state: native.state,
+        error: "access_denied",
+        responseMode: "json",
+      },
+    }),
+    [200],
+  );
+  expect(denied.body.nativeAppReturn).toMatchObject({
+    attemptId: native.oauthAttemptId,
+    httpsHost: "app.okou.ai",
+  });
   const result = await accept(
     client(builtinConnectorsSlugCallbackContract).callback({
       params: { connectorSlug: "github" },

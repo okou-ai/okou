@@ -1,3 +1,4 @@
+import CCState
 import ChatDataTestSupport
 import Foundation
 import Synchronization
@@ -104,7 +105,7 @@ final class ChatModelResourceTests: XCTestCase {
       let anotherComposer = Task.immediate { await second.open() }
       let readiness: Task<Void, Never>? =
         reconnects ? Task.immediate { await models.refresh() } : nil
-      let usage = Task.immediate { await models.loadUsageCatalog() }
+      let usage = Task.immediate { await models.loadCatalog() }
       defer {
         anotherComposer.cancel()
         readiness?.cancel()
@@ -118,7 +119,8 @@ final class ChatModelResourceTests: XCTestCase {
       await usage.value
       XCTAssertEqual(first.selection.model, reconnects ? "claude-model" : "codex-model")
       XCTAssertEqual(second.selection.model, reconnects ? "claude-model" : "codex-model")
-      XCTAssertEqual(models.usageCatalog?.name("codex-model"), "Codex Example")
+      let catalog = try await models.stateStore.get(models.catalog).value
+      XCTAssertEqual(catalog.name("codex-model"), "Codex Example")
       let observed = requests.withLock { $0 }
       XCTAssertEqual(observed, initialRequests.mapValues { $0 * (reconnects ? 2 : 1) })
     }

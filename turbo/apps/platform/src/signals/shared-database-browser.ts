@@ -25,7 +25,7 @@ import { SingleConnectionSharedDatabaseBridge } from "../shared-database/single-
 import { SharedDatabaseWorkerLoadError } from "../shared-database/worker-load-error.ts";
 import { reportSharedWorkerFailure } from "./shared-worker-failure.ts";
 import { clerk$, clerkUser$ } from "./auth.ts";
-import { ensureClerkToken, waitForClerkSession } from "./clerk-token.ts";
+import { readClerkMemberToken, waitForClerkSession } from "./clerk-token.ts";
 import { applyChatThreadReadCursorUpdated$ } from "./chat-thread-list-reload.ts";
 import { syncActiveChatEvents$ } from "./chat-page/chat-event-signal-registry.ts";
 import { catchUpChatThreadEventSource$ } from "./chat-page/chat-thread-event-sourcing.ts";
@@ -37,7 +37,12 @@ import {
   sharedDatabaseBridgeInstalled$,
 } from "./shared-database-bridge-state.ts";
 import { reloadComputedFromWorker$ } from "./shared-database.ts";
-import { createDeferredPromise, onDomEventFn, onRejection } from "./utils.ts";
+import {
+  createDeferredPromise,
+  onDomEventFn,
+  onRejection,
+  resetSignal,
+} from "./utils.ts";
 
 export interface SharedDatabaseBridgeHost {
   createBridge(
@@ -158,8 +163,7 @@ const sharedDatabaseBridgeHostState$ = state<SharedDatabaseBridgeHost>({
   createBridge: createBrowserSharedDatabaseBridge,
 });
 
-const preparedSharedDatabaseBridgeState$ =
-  state<SingleConnectionSharedDatabaseBridge | null>(null);
+const resetBridgeOwner$ = resetSignal();
 
 const syncSharedDatabaseInvalidation$ = command(
   async (
@@ -185,34 +189,55 @@ export const setSharedDatabaseBridgeHostForTest$ = command(
   },
 );
 
-const prepareSharedDatabaseBridge$ = command(
+type BridgeConnection = ReturnType<typeof createDeferredPromise<void>>;
+
+const connectSharedDatabaseBridge$ = command(
   async (
     { get, set },
-    signal: AbortSignal,
-  ): Promise<SingleConnectionSharedDatabaseBridge | null> => {
-    signal.throwIfAborted();
-    const existing = get(preparedSharedDatabaseBridgeState$);
-    if (existing) {
-      await existing.prepare(signal);
-      return existing;
+    connected: BridgeConnection,
+    parentSignal: AbortSignal,
+  ): Promise<void> => {
+    if (get(sharedDatabaseBridgeInstalled$)) {
+      connected.resolve(undefined);
+      return;
     }
     const clerk = await get(clerk$);
-    signal.throwIfAborted();
-    const session = await waitForClerkSession(clerk, signal);
-    signal.throwIfAborted();
-    const user = await get(clerkUser$);
-    signal.throwIfAborted();
-    if (!session || !user || !clerk.organization) {
-      return null;
+    await Promise.all([
+      waitForClerkSession(clerk, parentSignal),
+      get(clerkUser$),
+    ]);
+    parentSignal.throwIfAborted();
+    // Read the member and session together after Clerk finishes activation.
+    const { user, organization, session } = clerk;
+    if (!session || !user || !organization) {
+      return;
     }
-    const identity = {
-      userId: user.id,
-      orgId: clerk.organization.id,
+    const identity = { userId: user.id, orgId: organization.id };
+    const signal = set(resetBridgeOwner$, parentSignal);
+    const unsubscribe = clerk.addListener(
+      () => {
+        // Clerk can temporarily clear resources during a same-member refresh.
+        if (
+          clerk.session === null ||
+          clerk.user === null ||
+          (clerk.user && clerk.user.id !== identity.userId) ||
+          (clerk.organization && clerk.organization.id !== identity.orgId)
+        ) {
+          set(resetBridgeOwner$);
+        }
+      },
+      { skipInitialEmit: true },
+    );
+    signal.addEventListener("abort", unsubscribe, { once: true });
+
+    const getToken: SharedDatabaseTokenProvider = (requestSignal) => {
+      return readClerkMemberToken(
+        clerk,
+        identity,
+        requestSignal ? AbortSignal.any([signal, requestSignal]) : signal,
+      );
     };
     const bridgeHost = get(sharedDatabaseBridgeHostState$);
-    const getToken: SharedDatabaseTokenProvider = (requestSignal) => {
-      return ensureClerkToken(clerk, requestSignal);
-    };
     const bridge = new SingleConnectionSharedDatabaseBridge({
       createBridge: (events, connectionSignal) => {
         return bridgeHost.createBridge(
@@ -240,29 +265,6 @@ const prepareSharedDatabaseBridge$ = command(
         },
       },
     });
-    set(preparedSharedDatabaseBridgeState$, bridge);
-    await bridge.prepare(signal);
-    return bridge;
-  },
-);
-
-type BridgeConnection = ReturnType<typeof createDeferredPromise<void>>;
-
-const connectSharedDatabaseBridge$ = command(
-  async (
-    { get, set },
-    connected: BridgeConnection,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    if (get(sharedDatabaseBridgeInstalled$)) {
-      connected.resolve(undefined);
-      return;
-    }
-    const bridge = await set(prepareSharedDatabaseBridge$, signal);
-    signal.throwIfAborted();
-    if (!bridge) {
-      return;
-    }
     await set(installSharedDatabaseBridge$, bridge, signal);
     signal.throwIfAborted();
     connected.resolve(undefined);

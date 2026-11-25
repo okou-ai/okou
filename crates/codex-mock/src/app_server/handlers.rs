@@ -324,12 +324,10 @@ impl AppServerState {
             write_error(output, id, INVALID_REQUEST, "missing threadId")?;
             return Ok(ServerAction::Continue);
         };
-        let current_thread = match Self::current_thread_mut(&mut self.current_thread, thread_id) {
-            Ok(current_thread) => current_thread,
-            Err(message) => {
-                write_error(output, id, INVALID_REQUEST, message)?;
-                return Ok(ServerAction::Continue);
-            }
+        let Some(current_thread) =
+            Self::lookup_turn_thread(&mut self.current_thread, thread_id, &id, output)?
+        else {
+            return Ok(ServerAction::Continue);
         };
         let thread_id = current_thread.protocol_thread_id.clone();
         let inputs = match text_inputs(params) {
@@ -626,12 +624,10 @@ impl AppServerState {
             write_error(output, id, INVALID_REQUEST, "missing turnId")?;
             return Ok(ServerAction::Continue);
         };
-        let current_thread = match Self::current_thread_mut(&mut self.current_thread, thread_id) {
-            Ok(current_thread) => current_thread,
-            Err(message) => {
-                write_error(output, id, INVALID_REQUEST, message)?;
-                return Ok(ServerAction::Continue);
-            }
+        let Some(current_thread) =
+            Self::lookup_turn_thread(&mut self.current_thread, thread_id, &id, output)?
+        else {
+            return Ok(ServerAction::Continue);
         };
         if current_thread.active_turn_id.as_deref() != Some(turn_id) {
             write_error(output, id, INVALID_REQUEST, "turn is not active")?;
@@ -692,12 +688,10 @@ impl AppServerState {
             write_error(output, id, INVALID_REQUEST, "missing threadId")?;
             return Ok(ServerAction::Continue);
         };
-        let current_thread = match Self::current_thread_mut(&mut self.current_thread, thread_id) {
-            Ok(current_thread) => current_thread,
-            Err(message) => {
-                write_error(output, id, INVALID_REQUEST, message)?;
-                return Ok(ServerAction::Continue);
-            }
+        let Some(current_thread) =
+            Self::lookup_turn_thread(&mut self.current_thread, thread_id, &id, output)?
+        else {
+            return Ok(ServerAction::Continue);
         };
         let Some(active_turn_id) = current_thread.active_turn_id.clone() else {
             write_error(output, id, INVALID_REQUEST, "no active turn to steer")?;

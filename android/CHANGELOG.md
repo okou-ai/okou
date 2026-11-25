@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.57.0](https://github.com/okou-ai/okou/compare/android-v0.56.5...android-v0.57.0) (2026-11-25)
+
+
+### Features
+
+* **android:** choose model settings for new chat drafts ([#50818](https://github.com/okou-ai/okou/issues/50818)) ([209fadc](https://github.com/okou-ai/okou/commit/209fadcc132361e5f1b1e78a0ac5e52f620b4a13))
+
+
+### Refactoring
+
+* **android:** share native search field interactions ([#50823](https://github.com/okou-ai/okou/issues/50823)) ([a819f8f](https://github.com/okou-ai/okou/commit/a819f8feaa4e6cb1ef1b517af681f9ce2142dc2c))
+
+## [0.56.5](https://github.com/okou-ai/okou/compare/android-v0.56.4...android-v0.56.5) (2026-11-25)
+
+
+### Bug Fixes
+
+* **ios:** return all connector oauth attempts to the app ([#50773](https://github.com/okou-ai/okou/issues/50773)) ([e683a88](https://github.com/okou-ai/okou/commit/e683a886bb389afe4671e7eca49a100d485137eb))
+
+## [0.56.4](https://github.com/okou-ai/okou/compare/android-v0.56.3...android-v0.56.4) (2026-11-25)
+
+
+### Bug Fixes
+
+* **android:** refresh device-local artifact dates ([#50805](https://github.com/okou-ai/okou/issues/50805)) ([359605f](https://github.com/okou-ai/okou/commit/359605f55f80ca2ab0bf6cde70480c7146a6489c))
+
+## [0.56.3](https://github.com/okou-ai/okou/compare/android-v0.56.2...android-v0.56.3) (2026-11-25)
+
+
+### Bug Fixes
+
+* **android:** align connector authorization choices with the shared form ([#50765](https://github.com/okou-ai/okou/issues/50765)) ([1aae76c](https://github.com/okou-ai/okou/commit/1aae76cd35ff59093e6d73234631b01fd345516b))
+* **android:** align localized copy spacing ([#50768](https://github.com/okou-ai/okou/issues/50768)) ([6c7e7c7](https://github.com/okou-ai/okou/commit/6c7e7c774d29c63759fa85f6d4e7fa51f256ab86))
+* **android:** preserve workspace search position after result removal ([#50804](https://github.com/okou-ai/okou/issues/50804)) ([3b39830](https://github.com/okou-ai/okou/commit/3b39830ce0f8288a619ea5a28ec4da502fedcc8f))
+* **android:** publish chat and project renames on confirmation ([#50703](https://github.com/okou-ai/okou/issues/50703)) ([3865e7c](https://github.com/okou-ai/okou/commit/3865e7c4de336da4283ce38b69c27ade907df4ec))
+
+
+### Refactoring
+
+* **android:** share workspace tool directory rows ([#50769](https://github.com/okou-ai/okou/issues/50769)) ([c48b9ce](https://github.com/okou-ai/okou/commit/c48b9ce0cd578ddada967461a421bb0b45bae5a4))
+
 ## [0.56.2](https://github.com/okou-ai/okou/compare/android-v0.56.1...android-v0.56.2) (2026-11-25)
 
 

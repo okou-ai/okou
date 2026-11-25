@@ -101,6 +101,7 @@
     </plurals>
     <string name="chat_options_title">聊天選項</string>
     <string name="chat_options_settings">對話設定</string>
+    <string name="chat_options_model">模型</string>
     <string name="chat_connector_scope">用於目前對話。初始採用工作區預設啟用的帳號。</string>
     <string name="chat_connector_empty">此工作區還沒有已連線的帳號。</string>
     <string name="chat_connector_manage">管理連接器</string>

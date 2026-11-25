@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 import openai_responses_events
+from response_inspection import JSON_STEP_BYTES
 
 from .json_limits import MODEL_JSON_MAX_WORK_UNITS
 from .json_probe import TopLevelStringFieldProbeResult, probe_top_level_string_field
@@ -47,7 +48,7 @@ from .model_tokens import (
 from .openai_tokens import partition_input_tokens
 from .quantities import MAX_USAGE_QUANTITY
 from .quantities import is_usage_quantity as _is_usage_quantity
-from .sse import SseUsageScanner
+from .sse import SseUsageScanner, resolve_event_name
 
 _SseUsageParseErrorCallback = Callable[[str, str], None]
 _SseTerminalUsageCallback = Callable[[dict], None]
@@ -72,7 +73,6 @@ _JSON_PREFILTER_MAX_STRING_BYTES = 1024
 _RESPONSES_EVENT_PREFILTER_MAX_BYTES = 4096
 # Bound dense syntax and slow scalar inspection while retaining the selective
 # parser's bulk-scan path for ordinary large content strings.
-_WEBSOCKET_INSPECTION_STEP_BYTES = 4096
 OPENAI_RESPONSES_WEBSOCKET_WORK_LIMIT_ERROR = "work_limit_exceeded"
 
 
@@ -203,11 +203,11 @@ def _finish_inspection[Result](steps: Generator[None, None, Result]) -> Result:
 def _inspect_websocket_json_steps(
     extractor: JsonSelectiveExtractor, body: bytes
 ) -> Generator[None, None, JsonExtractionResult]:
-    for offset in range(0, len(body), _WEBSOCKET_INSPECTION_STEP_BYTES):
-        extractor.feed(body[offset : offset + _WEBSOCKET_INSPECTION_STEP_BYTES])
+    for offset in range(0, len(body), JSON_STEP_BYTES):
+        extractor.feed(body[offset : offset + JSON_STEP_BYTES])
         if not extractor.accepts_more_input():
             break
-        if offset + _WEBSOCKET_INSPECTION_STEP_BYTES < len(body):
+        if offset + JSON_STEP_BYTES < len(body):
             yield
     return extractor.finish()
 
@@ -765,9 +765,7 @@ class _OpenAIResponsesSseUsageHandler:
             if terminal_usage is not None and self._on_terminal_usage is not None:
                 self._on_terminal_usage(terminal_usage)
             return
-        event_type = event_name
-        if event_type is None and isinstance(data_type, str):
-            event_type = data_type
+        event_type = resolve_event_name(event_name, data_type)
         if (
             event_type is not None
             and event_type in openai_responses_events.TERMINAL_EVENTS

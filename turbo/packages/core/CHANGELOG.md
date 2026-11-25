@@ -1,5 +1,65 @@
 # Changelog
 
+## [8.881.0](https://github.com/okou-ai/okou/compare/core-v8.880.0...core-v8.881.0) (2026-11-25)
+
+
+### Features
+
+* **connectors:** release linkedin oauth to all users ([#50870](https://github.com/okou-ai/okou/issues/50870)) ([8569b73](https://github.com/okou-ai/okou/commit/8569b736e2f89ae64986ca5a43a6b34a846d483d))
+
+## [8.880.0](https://github.com/okou-ai/okou/compare/core-v8.879.1...core-v8.880.0) (2026-11-25)
+
+
+### Features
+
+* **app:** organize workflow directory behind feature switch ([#50253](https://github.com/okou-ai/okou/issues/50253)) ([df2ee82](https://github.com/okou-ai/okou/commit/df2ee823b18568645240ab6ac095a1c1651525e5))
+* **db:** prepare member-owned remote device storage ([#50817](https://github.com/okou-ai/okou/issues/50817)) ([29caea0](https://github.com/okou-ai/okou/commit/29caea00aee82182dfa6015c76b534adeb708521))
+
+
+### Bug Fixes
+
+* link welcome threads to the current get started guide ([#50853](https://github.com/okou-ai/okou/issues/50853)) ([4002fa4](https://github.com/okou-ai/okou/commit/4002fa48bfc0862b24a800b488cbdbca72c9ba4a))
+* refresh welcome artifact addresses ([#50849](https://github.com/okou-ai/okou/issues/50849)) ([0f5ca8c](https://github.com/okou-ai/okou/commit/0f5ca8ce9028f78dd046658a5765e0758d78e44a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.128.2
+
+## [8.879.1](https://github.com/okou-ai/okou/compare/core-v8.879.0...core-v8.879.1) (2026-11-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.128.1
+
+## [8.879.0](https://github.com/okou-ai/okou/compare/core-v8.878.1...core-v8.879.0) (2026-11-25)
+
+
+### Features
+
+* show the workspace initial on default workspace logos ([#50380](https://github.com/okou-ai/okou/issues/50380)) ([1b432c5](https://github.com/okou-ai/okou/commit/1b432c5ccfdb04d7dcddb8ac26ff7f0ce471834a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.128.0
+
+## [8.878.1](https://github.com/okou-ai/okou/compare/core-v8.878.0...core-v8.878.1) (2026-11-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.127.0
+
 ## [8.878.0](https://github.com/okou-ai/okou/compare/core-v8.877.0...core-v8.878.0) (2026-11-25)
 
 

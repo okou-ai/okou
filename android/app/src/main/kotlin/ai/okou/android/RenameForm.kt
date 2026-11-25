@@ -4,7 +4,6 @@ import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.text.TextRange
 
 internal enum class RenameFieldError {
     Required,
@@ -27,17 +26,7 @@ internal class RenameDraft(
     fun receive(name: String, readOnly: Boolean = false): Boolean {
         if (name == confirmed) return false
         val replaceInput = !readOnly && pristine
-        if (replaceInput) {
-            val previousSelection = input.selection
-            input.edit {
-                replace(0, length, name)
-                selection =
-                    TextRange(
-                        previousSelection.start.coerceAtMost(length),
-                        previousSelection.end.coerceAtMost(length),
-                    )
-            }
-        }
+        if (replaceInput) input.replaceTextPreservingSelection(name)
         confirmed = name
         return replaceInput
     }

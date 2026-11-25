@@ -23,6 +23,8 @@ import ai.okou.android.connectors.connectorSmallType
 import ai.okou.android.connectors.label
 import ai.okou.android.connectors.needsAttention
 import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.settings.DefaultModelSettings
+import ai.okou.android.settings.ModelPickerSheet
 import ai.okou.android.state.ComposerOptionsPage
 import ai.okou.android.state.ComposerOptionsPresentation
 import ai.okou.android.state.rememberComposerOptions
@@ -46,6 +48,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -59,6 +62,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
@@ -78,43 +82,55 @@ import androidx.lifecycle.repeatOnLifecycle
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun ChatConnectorOptionsButton(
-    options: ChatConnectorOptions,
+    options: ChatConnectorOptions?,
     composer: ChatComposerModel,
     composerState: ComposerState,
     target: ComposerTarget,
     editorFocused: Boolean,
     editorFocus: FocusRequester,
     manageConnectors: (ConnectorAccountTarget?) -> Unit,
+    defaultModel: DefaultModelSettings? = null,
 ) {
     var presentation by rememberComposerOptions(target.key)
     val buttonFocus = remember { FocusRequester() }
     val entryFocus = remember { FocusRequester() }
+    val modelFocus = remember { FocusRequester() }
     val accountFocus = remember { FocusRequester() }
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val imeVisible = WindowInsets.isImeVisible
     var restoreTrigger by remember { mutableStateOf(false) }
-    var restoreEntry by remember { mutableStateOf(false) }
+    var restoreEntry by remember { mutableStateOf<ComposerOptionsPage?>(null) }
     var restoredAccount by remember { mutableStateOf<String?>(null) }
     var sheetGeneration by remember { mutableIntStateOf(0) }
     val page = presentation.page
+    val open = page != ComposerOptionsPage.Closed
+    DisposableEffect(defaultModel, open) {
+        if (open) defaultModel?.showComposerOptions(true)
+        onDispose { if (open) defaultModel?.showComposerOptions(false) }
+    }
+    val modelState = if (open) defaultModel?.state?.collectAsStateWithLifecycle()?.value else null
+    val catalog = modelState?.options
+    val override = composerState.journal?.newChatModel
+    val selection = remember(override, modelState) { override ?: modelState?.draftDefaults() }
+    val selectedId = catalog?.resolve(selection?.model) ?: selection?.model
+    val choice = catalog?.choices?.firstOrNull { it.id == selectedId }
+    val showModel =
+        modelState != null &&
+            (catalog == null || selectedId != null || catalog.choices.any { it.canSelect })
+    val modelChoices =
+        if (modelState?.record != null && composerState.journal != null) catalog?.choices else null
+    val modelEnabled = showModel && modelChoices != null && composerState.canEditDraftModel(target)
 
-    LaunchedEffect(page, restoreTrigger, restoreEntry) {
-        when {
-            page == ComposerOptionsPage.Closed && restoreTrigger -> {
-                withFrameNanos {}
-                if (presentation.restoreEditor) {
-                    editorFocus.requestFocus()
-                    if (presentation.restoreKeyboard) keyboard?.show()
-                } else buttonFocus.requestFocus()
-                restoreTrigger = false
-                presentation = ComposerOptionsPresentation()
-            }
-            page == ComposerOptionsPage.Options && restoreEntry -> {
-                withFrameNanos {}
-                entryFocus.requestFocus()
-                restoreEntry = false
-            }
+    LaunchedEffect(page, restoreTrigger) {
+        if (page == ComposerOptionsPage.Closed && restoreTrigger) {
+            withFrameNanos {}
+            if (presentation.restoreEditor) {
+                editorFocus.requestFocus()
+                if (presentation.restoreKeyboard) keyboard?.show()
+            } else buttonFocus.requestFocus()
+            restoreTrigger = false
+            presentation = ComposerOptionsPresentation()
         }
     }
 
@@ -137,14 +153,15 @@ internal fun ChatConnectorOptionsButton(
     if (page == ComposerOptionsPage.Closed) return
 
     val showingAccounts = page == ComposerOptionsPage.Connectors
-    val state = options.state.collectAsStateWithLifecycle().value.takeIf { it.target == target.key }
+    val state =
+        options?.state?.collectAsStateWithLifecycle()?.value?.takeIf { it.target == target.key }
     val reading = state?.read
     val groups = reading?.data?.groups
     val save = state?.save
     val saving = save?.saving == true
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(options, target, showingAccounts, lifecycle) {
-        if (showingAccounts)
+        if (showingAccounts && options != null)
             lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 options.show(target)
             }
@@ -152,15 +169,51 @@ internal fun ChatConnectorOptionsButton(
 
     fun back() {
         if (saving) return
-        options.close(target)
-        if (showingAccounts) {
+        options?.close(target)
+        if (showingAccounts || page == ComposerOptionsPage.Model) {
             presentation =
                 presentation.copy(page = ComposerOptionsPage.Options, returnAccount = null)
-            restoreEntry = true
+            restoreEntry = page
         } else {
             presentation = presentation.copy(page = ComposerOptionsPage.Closed)
             restoreTrigger = true
         }
+    }
+
+    if (page == ComposerOptionsPage.Model && selection != null) {
+        ModelPickerSheet(
+            title = stringResource(R.string.chat_options_model),
+            choices = modelChoices,
+            selectedId = selectedId,
+            effort = choice?.let { selection.effortFor(it) },
+            fast = selection.fast && choice?.fastMultiplier != null,
+            catalogUnavailable = catalog == null && modelState?.catalogUnavailable == true,
+            select = { id ->
+                val next =
+                    if (id == null) selection.copy(model = null, fast = false)
+                    else
+                        catalog
+                            ?.choices
+                            ?.firstOrNull { it.id == id && it.canSelect }
+                            ?.let {
+                                selection.withModel(it, fast = id == selectedId && selection.fast)
+                            }
+                if (next != null) composer.editDraftModel(target, next)
+            },
+            selectEffort = { effort ->
+                if (choice != null && effort in choice.efforts)
+                    composer.editDraftModel(
+                        target,
+                        selection.withModel(choice, selection.fast, effort),
+                    )
+            },
+            selectFast = { enabled ->
+                if (choice?.fastMultiplier != null)
+                    composer.editDraftModel(target, selection.withModel(choice, fast = enabled))
+            },
+            dismiss = ::back,
+        )
+        return
     }
 
     fun openDirectory(account: ConnectorAccountTarget?) {
@@ -196,21 +249,56 @@ internal fun ChatConnectorOptionsButton(
             back = if (showingAccounts || currentWindowSizeDp().height < 480) ::back else null,
         ) {
             if (!showingAccounts) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                var positioned by remember { mutableStateOf(false) }
+                LaunchedEffect(restoreEntry, positioned, modelEnabled) {
+                    if (restoreEntry != null && positioned) {
+                        if (restoreEntry == ComposerOptionsPage.Model && modelEnabled)
+                            modelFocus.requestFocus()
+                        else if (options != null) entryFocus.requestFocus()
+                        restoreEntry = null
+                    }
+                }
+                Column(
+                    modifier = Modifier.onGloballyPositioned { positioned = true },
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
                     Text(
                         stringResource(R.string.chat_options_settings),
                         modifier = Modifier.padding(start = 12.dp).semantics { heading() },
                         style = connectorSmallType(),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    ConnectorOptionRow(
-                        stringResource(R.string.connector_title),
-                        onClick = {
-                            presentation = presentation.copy(page = ComposerOptionsPage.Connectors)
-                        },
-                        modifier =
-                            Modifier.focusRequester(entryFocus).testTag("chat-options-connectors"),
-                    )
+                    if (showModel) {
+                        val value =
+                            choice?.label
+                                ?: selectedId?.let { id ->
+                                    modelState.record?.confirmedLabel?.takeIf { override == null }
+                                        ?: id
+                                }
+                                ?: stringResource(R.string.settings_auto_model)
+                        ConnectorOptionRow(
+                            stringResource(R.string.chat_options_model),
+                            onClick = {
+                                presentation = presentation.copy(page = ComposerOptionsPage.Model)
+                            },
+                            modifier =
+                                Modifier.focusRequester(modelFocus).testTag("chat-options-model"),
+                            enabled = modelEnabled,
+                            icon = R.drawable.ic_settings,
+                            supportingText = value,
+                        )
+                    }
+                    if (options != null)
+                        ConnectorOptionRow(
+                            stringResource(R.string.connector_title),
+                            onClick = {
+                                presentation =
+                                    presentation.copy(page = ComposerOptionsPage.Connectors)
+                            },
+                            modifier =
+                                Modifier.focusRequester(entryFocus)
+                                    .testTag("chat-options-connectors"),
+                        )
                 }
             } else if (groups == null) {
                 when {
@@ -423,11 +511,13 @@ private fun ConnectorOptionRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    icon: Int = R.drawable.ic_extension,
+    supportingText: String? = null,
 ) {
     Row(
         modifier
             .fillMaxWidth()
-            .heightIn(min = 56.dp)
+            .heightIn(min = if (supportingText == null) 56.dp else 72.dp)
             .clip(RoundedCornerShape(12.dp))
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(horizontal = 12.dp),
@@ -435,12 +525,21 @@ private fun ConnectorOptionRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            painterResource(R.drawable.ic_extension),
+            painterResource(icon),
             null,
             Modifier.size(24.dp),
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Text(title, Modifier.weight(1f), style = connectorBodyType())
+        Column(Modifier.weight(1f)) {
+            Text(title, style = connectorBodyType())
+            supportingText?.let {
+                Text(
+                    it,
+                    style = connectorFeedbackType(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
         ConnectorChevron()
     }
 }

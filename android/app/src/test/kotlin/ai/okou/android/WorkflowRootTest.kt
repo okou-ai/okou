@@ -4,6 +4,7 @@ import ai.okou.android.api.generated.WorkflowRunHistory
 import ai.okou.android.api.generated.WorkflowRunHistoryEntryStatus
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.chat.ComposerJournalStore
+import android.app.TimePickerDialog
 import android.os.Looper
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -79,6 +80,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import org.robolectric.shadows.ShadowDialog
 
 class WorkflowRootApplication : TestOkouApplication() {
     internal lateinit var fixture: WorkflowApiFixture
@@ -376,14 +378,21 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
         compose.onNodeWithText("Edit instructions").performClick()
         compose.onNodeWithTag("workflow_save").assertIsNotEnabled()
         val name = compose.onNodeWithContentDescription("Display name")
+        val purpose = compose.onNodeWithContentDescription("Purpose")
+        val purposeTop = purpose.getUnclippedBoundsInRoot().top
         name.performTextReplacement(" ")
         compose.onNodeWithText("Enter a display name.").assertIsDisplayed()
+        name.assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.Error, "Enter a display name."),
+        )
+        assertEquals(purposeTop, purpose.getUnclippedBoundsInRoot().top)
         compose.onNodeWithTag("workflow_save").assertIsNotEnabled()
         name.performTextReplacement("x".repeat(257))
         compose.onNodeWithText("Use 256 characters or fewer.").assertIsDisplayed()
         compose.onNodeWithTag("workflow_save").assertIsNotEnabled()
         name.performTextReplacement("Release checklist")
         compose.onNodeWithText("Use 256 characters or fewer.").assertDoesNotExist()
+        assertEquals(purposeTop, purpose.getUnclippedBoundsInRoot().top)
         name.performTextInputSelection(TextRange.Zero)
         name.performSemanticsAction(SemanticsActions.SetText) { setText ->
             assertTrue(setText(AnnotatedString("Temporary name")))
@@ -608,6 +617,26 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
     }
 
     @Test
+    fun saveReadsTheCurrentNativeInputBeforeTheNextFrame() {
+        openWorkflowDetail()
+        compose.onNodeWithText("Edit instructions").performClick()
+        val instruction = compose.onNodeWithContentDescription("Workflow instructions")
+        instruction.performTextReplacement("Check the launch owner.")
+        val replace =
+            checkNotNull(instruction.fetchSemanticsNode().config[SemanticsActions.SetText].action)
+        val save = compose.onNodeWithTag("workflow_save").assertIsEnabled()
+        val submit = checkNotNull(save.fetchSemanticsNode().config[SemanticsActions.OnClick].action)
+        val latest = "Check the launch owner and date."
+        compose.runOnIdle {
+            assertTrue(replace(AnnotatedString(latest)))
+            assertTrue(submit())
+        }
+
+        waitForTag("workflow_detail_title")
+        assertEquals(latest, app.fixture.instruction)
+    }
+
+    @Test
     fun editorRetainsInputAndFocusAfterTransportFailure() = withHardwareKeyboard {
         openWorkflowDetail()
         app.fixture.disconnectInstructionSave = true
@@ -620,6 +649,10 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
         val error = "Could not save your changes."
         val save = compose.onNodeWithTag("workflow_save").assertIsEnabled()
         val saveBounds = save.getUnclippedBoundsInRoot()
+        val fields = compose.onNodeWithTag("workflow_editor_fields")
+        val fieldsBounds = fields.getUnclippedBoundsInRoot()
+        val cancel = compose.onNodeWithText("Cancel")
+        val cancelBounds = cancel.getUnclippedBoundsInRoot()
         save.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
         val selection =
             instruction.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange]
@@ -637,7 +670,15 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
                         "Saving…",
                     ),
                 )
+                .assert(
+                    SemanticsMatcher.expectValue(
+                        SemanticsProperties.LiveRegion,
+                        LiveRegionMode.Polite,
+                    ),
+                )
             assertEquals(saveBounds, save.getUnclippedBoundsInRoot())
+            assertEquals(cancelBounds, cancel.assertIsNotEnabled().getUnclippedBoundsInRoot())
+            assertEquals(fieldsBounds, fields.getUnclippedBoundsInRoot())
         } finally {
             releaseSave.countDown()
         }
@@ -648,10 +689,13 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
             instruction.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange],
         )
         val notice = compose.onNodeWithText(error).getUnclippedBoundsInRoot()
-        assertTrue(
-            notice.bottom + 16.dp <=
-                save.assertIsEnabled().assertIsFocused().getUnclippedBoundsInRoot().top,
+        assertEquals(
+            8.dp,
+            save.assertIsEnabled().assertIsFocused().getUnclippedBoundsInRoot().top - notice.bottom,
         )
+        assertEquals(saveBounds, save.getUnclippedBoundsInRoot())
+        assertEquals(cancelBounds, cancel.getUnclippedBoundsInRoot())
+        assertEquals(fieldsBounds, fields.getUnclippedBoundsInRoot())
         val saves =
             app.fixture.requests.filter {
                 it.method == "PATCH" &&
@@ -788,6 +832,11 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
             compose.onNodeWithText("Edit instructions").performClick()
             val input = compose.onNodeWithContentDescription("Display name")
             input.performTextReplacement("Prepare the release")
+            val selection = TextRange(2, 8)
+            input
+                .performSemanticsAction(SemanticsActions.RequestFocus)
+                .assertIsFocused()
+                .performTextInputSelection(selection)
             compose.onNodeWithText("Cancel").performClick()
             val heading = "Discard unsaved changes?"
             waitFor(heading)
@@ -811,7 +860,15 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
                 .performScrollTo()
                 .assertIsDisplayed()
                 .performClick()
-            input.assertTextContains("Prepare the release")
+            input
+                .assertIsFocused()
+                .assertTextContains("Prepare the release")
+                .assert(
+                    SemanticsMatcher.expectValue(
+                        SemanticsProperties.TextSelectionRange,
+                        selection,
+                    ),
+                )
 
             compose.onNodeWithText("Cancel").performClick()
             compose.onNodeWithText("Discard").performScrollTo().assertIsDisplayed().performClick()
@@ -912,10 +969,10 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
         val saveBounds = save.getUnclippedBoundsInRoot()
         assertTrue(saveBounds.bottom - saveBounds.top >= 48.dp)
         assertEquals(useBounds.right, saveBounds.right)
-        val time = compose.onNodeWithContentDescription("Time (HH:mm)")
+        val time = compose.onNodeWithContentDescription("Time")
         val timeBounds = time.getUnclippedBoundsInRoot()
         assertTrue(timeBounds.bottom - timeBounds.top >= 56.dp)
-        time.performTextReplacement("09:30")
+        pickWorkflowTime(time, 9, 30)
         val timezone = compose.onNodeWithTag("workflow_timezone")
         timezone.pressEnter()
         compose
@@ -960,7 +1017,7 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
                 hasText("Edit") and hasAnyAncestor(hasTestTag("workflow_rule_shared-weekday")),
             )
         edit.pressEnter()
-        compose.onNodeWithContentDescription("Time (HH:mm)").performTextReplacement("10:00")
+        pickWorkflowTime(time, 10, 0)
         save.assertIsEnabled().pressEnter()
         waitFor("Weekdays at 10:00")
         edit.assertIsFocused()
@@ -971,6 +1028,16 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
         waitFor("Paused")
         toggle.assertIsFocused()
         compose.onNodeWithText("Weekdays at 10:00").assertIsDisplayed()
+    }
+
+    private fun pickWorkflowTime(field: SemanticsNodeInteraction, hour: Int, minute: Int) {
+        field.pressEnter()
+        compose.runOnIdle {
+            val dialog = ShadowDialog.getLatestDialog() as TimePickerDialog
+            assertTrue(dialog.isShowing)
+            dialog.updateTime(hour, minute)
+            dialog.getButton(TimePickerDialog.BUTTON_POSITIVE).performClick()
+        }
     }
 
     @Test
