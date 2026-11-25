@@ -1136,7 +1136,7 @@ checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
 
 [[package]]
 name = "codex-mock"
-version = "0.12.101"
+version = "0.12.102"
 dependencies = [
  "chrono",
  "clap",
@@ -2215,7 +2215,7 @@ dependencies = [
 
 [[package]]
 name = "guest-state-restore"
-version = "0.4.43"
+version = "0.4.44"
 dependencies = [
  "guest-contracts",
  "libc",
@@ -4159,7 +4159,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.251.6"
+version = "0.251.7"
 dependencies = [
  "api-contracts",
  "async-trait",

@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.881.1](https://github.com/okou-ai/okou/compare/core-v8.881.0...core-v8.881.1) (2026-11-25)
+
+
+### Refactoring
+
+* **api:** pass built-in workflow instructions in automation run prompts ([#50895](https://github.com/okou-ai/okou/issues/50895)) ([587a0fa](https://github.com/okou-ai/okou/commit/587a0fac74e2eea912d1a73be5b46afb20faab68))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.128.3
+
 ## [8.881.0](https://github.com/okou-ai/okou/compare/core-v8.880.0...core-v8.881.0) (2026-11-25)
 
 

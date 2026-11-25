@@ -13,6 +13,22 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1186.0](https://github.com/okou-ai/okou/compare/app-v0.1185.1...app-v0.1186.0) (2026-11-25)
+
+
+### Features
+
+* **app:** redesign the for you deck on its cover's scene ([#50844](https://github.com/okou-ai/okou/issues/50844)) ([2fa8c1c](https://github.com/okou-ai/okou/commit/2fa8c1c14a0ec63105c01520de2d466dd7194bc8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.128.3
+    * @okouai/core bumped to 8.881.1
+    * @okouai/ui bumped to 1.22.23
+
 ## [0.1185.1](https://github.com/okou-ai/okou/compare/app-v0.1185.0...app-v0.1185.1) (2026-11-25)
 
 
