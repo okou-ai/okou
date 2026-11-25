@@ -26,6 +26,7 @@ describe("isFeatureEnabled", () => {
     FeatureSwitchKey.MemberConnectorAccountAccess,
     FeatureSwitchKey.IosConnectorManagement,
     FeatureSwitchKey.ComposerVoiceMessages,
+    FeatureSwitchKey.MarkdownArtifactQuote,
     FeatureSwitchKey.ZipArtifactPreview,
     FeatureSwitchKey.FollowupPlaceholder,
     FeatureSwitchKey.WorkflowRecencySync,
@@ -476,6 +477,9 @@ describe("getFeatureSwitchMetadata", () => {
 
     expect(metadata[FeatureSwitchKey.Banking].rolloutStage).toBe("alpha");
     expect(metadata[FeatureSwitchKey.ComposerVoiceMessages].rolloutStage).toBe(
+      "beta",
+    );
+    expect(metadata[FeatureSwitchKey.MarkdownArtifactQuote].rolloutStage).toBe(
       "beta",
     );
     expect(metadata[FeatureSwitchKey.PresentationConvert].rolloutStage).toBe(
