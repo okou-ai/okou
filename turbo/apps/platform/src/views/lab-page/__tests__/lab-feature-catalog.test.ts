@@ -102,9 +102,9 @@ test("lab-page-002 Each staff-visible feature has exactly one switch under its r
 });
 
 test.each([
-  FeatureSwitchKey.PresentationOutputFormat,
-  FeatureSwitchKey.MarkdownFirstOutput,
-])("Staff see %s enabled by default in Beta", async (key) => {
+  [FeatureSwitchKey.PresentationOutputFormat, "Beta"],
+  [FeatureSwitchKey.MarkdownFirstOutput, "Released"],
+] as const)("Staff see %s enabled by default in %s", async (key, stage) => {
   context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
     return respond(200, {
       switches: {},
@@ -114,7 +114,7 @@ test.each([
   await visitLab(false, true);
   const name = getFeatureSwitchMetadata()[key].displayName ?? key;
   const row = screen.getByText(name, { exact: true }).closest("li")!;
-  expect(row.closest("section")?.querySelector("h2")).toHaveTextContent("Beta");
+  expect(row.closest("section")?.querySelector("h2")).toHaveTextContent(stage);
   expect(within(row).getByRole("switch")).toBeChecked();
 });
 
@@ -137,12 +137,14 @@ test.each([
   [
     "lab-page-006 Reset all restores the test OAuth connector's original off state",
     FeatureSwitchKey.TestOauthConnector,
+    false,
   ],
   [
-    "A member can enable Markdown-first output in Lab and reset the override",
+    "A member can disable Markdown-first output in Lab and reset the override",
     FeatureSwitchKey.MarkdownFirstOutput,
+    true,
   ],
-] as const)("%s", async (_title, featureKey) => {
+] as const)("%s", async (_title, featureKey, defaultEnabled) => {
   let overrides: Partial<Record<FeatureSwitchKey, boolean>> = {};
   context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
     return respond(200, { switches: overrides, effectiveSwitches: overrides });
@@ -161,10 +163,13 @@ test.each([
     "label",
   )!;
   const toggle = within(label).getByRole("switch");
-  expect(toggle).not.toBeChecked();
+  expect(toggle).toHaveAttribute("aria-checked", String(defaultEnabled));
   click(toggle);
   await waitFor(() => {
-    return expect(toggle).toBeChecked();
+    return expect(toggle).toHaveAttribute(
+      "aria-checked",
+      String(!defaultEnabled),
+    );
   });
   const reset = getButtonByName("Reset all");
   await waitFor(() => {
@@ -172,7 +177,10 @@ test.each([
   });
   click(reset);
   await waitFor(() => {
-    return expect(toggle).not.toBeChecked();
+    return expect(toggle).toHaveAttribute(
+      "aria-checked",
+      String(defaultEnabled),
+    );
   });
 });
 
