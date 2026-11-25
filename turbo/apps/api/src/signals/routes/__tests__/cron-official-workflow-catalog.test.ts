@@ -23,7 +23,6 @@ import {
   type WorkflowAutomationSummary,
   type WorkflowSummary,
 } from "@okouai/api-contracts/contracts/workflows";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   CANONICAL_CLAUDE_CONFIG_DIR,
   CANONICAL_CODEX_HOME_DIR,
@@ -43,7 +42,6 @@ import {
 } from "./helpers/chat-events-fixture";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 import { readExecutionContentBundle } from "./helpers/execution-content-bundle";
 
@@ -103,14 +101,6 @@ async function withFeedbackRun<T>(
   if (!orgId) {
     throw new Error("Expected a feedback owner workspace");
   }
-  owned.ownsFeatureSwitches();
-  await owned.run(() => {
-    return updateFeatureSwitchesForUser(
-      context,
-      { ...owned.actor, orgId },
-      { [FeatureSwitchKey.AgentSuggestion]: true },
-    );
-  });
   await owned.run(() => {
     return createRunsApi(context).registerDirectRunner(owned.runnerGroup);
   });
@@ -777,9 +767,7 @@ const scenarios = [
     definitionName: learning
       ? "proactive-learning"
       : morningBrief
-        ? scenario.suggestionsEnabled
-          ? "internal-test-morning-brief"
-          : "morning-brief"
+        ? "morning-brief"
         : "agent-suggestions",
     heading: learning
       ? "# Proactive Learning"
@@ -814,6 +802,18 @@ function officialWorkflowBundle(
     execution.cliAgentType === "pi" ? execution.runId : undefined,
   );
   return bundle;
+}
+
+function expectWorkflowInstructions(
+  instruction: string | null | undefined,
+  definitionName: string,
+  learning: boolean,
+) {
+  if (definitionName === "morning-brief") {
+    expect(instruction).toContain("Only maintain Suggestions when");
+    expect(instruction).toContain("## Decide whether to email the briefing");
+  }
+  expectScopeGuidance(instruction, learning);
 }
 
 test.each(scenarios)(
@@ -899,16 +899,6 @@ test.each(scenarios)(
     if (!orgId) {
       throw new Error("Expected an organization owner");
     }
-    owned.ownsFeatureSwitches();
-    await owned.run(() => {
-      return updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId },
-        {
-          [FeatureSwitchKey.AgentSuggestion]: true,
-        },
-      );
-    });
     await owned.run(() => {
       return fixture.bdd.completeOnboarding(actor, {
         timezone: "Asia/Shanghai",
@@ -965,7 +955,11 @@ test.each(scenarios)(
       );
     });
     expect(detail.body.instruction).toContain(heading);
-    expectScopeGuidance(detail.body.instruction, learning);
+    expectWorkflowInstructions(
+      detail.body.instruction,
+      definitionName,
+      learning,
+    );
     expect(detail.body.fileContents).toStrictEqual(expect.any(Array));
     const automations = await owned.run(() => {
       return accept(
@@ -1036,7 +1030,7 @@ test.each(scenarios)(
         "# Suggestions feedback context",
       );
     }
-    if (learning) {
+    if (!curatesSuggestions) {
       await owned.run(() => {
         return accept(
           setupApp({ context, routes: feedRoutes })(feedContract).manage({
@@ -1053,11 +1047,7 @@ test.each(scenarios)(
     const files = readExecutionContentBundle(s3.objects, bundle);
     expect(files.get("SKILL.md")?.toString()).toContain(heading);
     expectScopeGuidance(files.get("SKILL.md")?.toString(), learning);
-    expectPublishingReference(
-      files,
-      detail.body.fileContents,
-      !curatesSuggestions,
-    );
+    expectPublishingReference(files, detail.body.fileContents, learning);
     await withMockNowForTest(dispatchedAt, async () => {
       await owned.run(() => {
         return fixture.failChatRun(

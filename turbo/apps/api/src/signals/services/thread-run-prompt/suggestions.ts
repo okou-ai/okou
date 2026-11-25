@@ -1,6 +1,4 @@
 import { computed, type Computed } from "ccstate";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { PROACTIVE_SUGGESTIONS_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { PROACTIVE_LEARNING_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive";
 import { isMorningBriefDefinitionName } from "@okouai/api-contracts/contracts/morning-brief-preference";
@@ -23,10 +21,6 @@ export function createSuggestionsPrompt(
       systemPromptVariables: {},
       userPromptVariables: {},
     };
-    const features = await get(bootstrap.featureSwitches$);
-    if (!isFeatureEnabled(FeatureSwitchKey.AgentSuggestion, features)) {
-      return empty;
-    }
     const event = await get(pickedEvent$);
     if (event?.contextType !== "automation") {
       return empty;

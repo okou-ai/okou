@@ -14,10 +14,7 @@ import { settingsActionSignal$ } from "./settings-dialog.ts";
 
 export const debugLearningEnabled$ = computed(async (get) => {
   const features = await get(featureSwitches$);
-  return (
-    features[FeatureSwitchKey.OkouDebug] &&
-    features[FeatureSwitchKey.AgentSuggestion]
-  );
+  return features[FeatureSwitchKey.OkouDebug];
 });
 
 const discovery$ = state<Promise<WorkflowAutomationSummary | null> | undefined>(

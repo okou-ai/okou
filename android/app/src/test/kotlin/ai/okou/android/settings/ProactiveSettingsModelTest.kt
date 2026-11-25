@@ -41,7 +41,7 @@ class ProactiveSettingsModelTest {
             model.visible(true)
             assertEquals(false, model.morningBrief.state.first { it.confirmed != null }.enabled)
             model.suggestions.state.first { it.hidden }
-            assertEquals(setOf("morning-brief", "eligibility"), fixture.reads.toSet())
+            assertTrue(fixture.reads.containsAll(listOf("morning-brief", "suggestions")))
 
             fixture.suggestionsEligible = true
             fixture.cardsEnabled = true

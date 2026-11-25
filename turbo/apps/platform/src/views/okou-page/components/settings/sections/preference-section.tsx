@@ -1,5 +1,4 @@
-import { proactiveSettingsInMyOkou$ } from "../../../../../signals/proactive-settings.ts";
-import { useGet, useLoadable, useLastResolved } from "ccstate-react";
+import { useGet, useLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Sun, Moon, Monitor, Palette } from "lucide-react";
@@ -19,7 +18,6 @@ import { AccountSection } from "./account-section.tsx";
 import { LanguageSettings } from "../language-settings.tsx";
 import { ColorThemeSettings } from "../color-theme-settings.tsx";
 import { PreferenceCardRow } from "../preference-card-row.tsx";
-import { ProactiveSection } from "./proactive-section.tsx";
 
 const THEME_OPTIONS: readonly {
   value: ThemePreference;
@@ -91,7 +89,6 @@ function AppearanceBlock() {
 }
 
 export function PreferenceSection() {
-  const proactiveInMyOkou = useLastResolved(proactiveSettingsInMyOkou$);
   const { t } = useTranslation();
 
   return (
@@ -124,8 +121,6 @@ export function PreferenceSection() {
           <EmailSubscriptionSettings />
         </div>
       </section>
-
-      {proactiveInMyOkou === false && <ProactiveSection />}
 
       <section className="flex flex-col gap-3">
         <SettingsSectionHeading

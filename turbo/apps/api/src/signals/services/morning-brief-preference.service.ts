@@ -1,7 +1,7 @@
-import { selectedMorningBriefDefinition$ } from "./morning-brief-workflow-selection.service";
 import { synchronizeMorningBriefTimezone$ } from "./morning-brief-timezone.service";
 import {
   MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
+  MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
   type MorningBriefPreferenceErrorCode,
   type MorningBriefPreferenceResponse,
 } from "@okouai/api-contracts/contracts/morning-brief-preference";
@@ -251,17 +251,12 @@ const createMorningBriefFromPreference$ = command(
     if (unavailableReason !== null) {
       return await set(loadInstalledPreference$, args, signal);
     }
-    const definitionName = await set(
-      selectedMorningBriefDefinition$,
-      identity,
-      signal,
-    );
     const installed = await set(
       installOfficialWorkflow$,
       {
         orgId: args.orgId,
         member: args.member,
-        definitionName,
+        definitionName: MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
         blueprints: [
           {
             blueprintKey: MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,

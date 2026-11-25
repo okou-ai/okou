@@ -1,5 +1,3 @@
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { BUILT_IN_SKILLS } from "@okouai/core/built-in-skills";
 import { computed, type Computed } from "ccstate";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
@@ -122,16 +120,6 @@ export function createThreadWorkflowContext(
       }
       const kind = proactiveWorkflowKind(name);
       if (kind !== null) {
-        if (
-          !isFeatureEnabled(
-            FeatureSwitchKey.AgentSuggestion,
-            await get(bootstrap.featureSwitches$),
-          )
-        ) {
-          throw new OfficialWorkflowRunAdmissionError({
-            message: "Proactive workflow is not enabled.",
-          });
-        }
         const preferences = target.proactivePreferences;
         const enabled = preferences?.suggestionsEnabled;
         if (

@@ -52,8 +52,6 @@ const CONDITIONAL_CAPABILITIES = [
   ["phone-use:read", FeatureSwitchKey.PhoneUse],
   ["phone-use:write", FeatureSwitchKey.PhoneUse],
   ["computer-use:shell:write", FeatureSwitchKey.DesktopShell],
-  ["suggestion:read", FeatureSwitchKey.AgentSuggestion],
-  ["suggestion:write", FeatureSwitchKey.AgentSuggestion],
   ["banking:read", FeatureSwitchKey.Banking],
   ["lark:write", FeatureSwitchKey.LarkIntegration],
   ["lark:read", FeatureSwitchKey.LarkOfficialBot],
