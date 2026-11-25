@@ -7,6 +7,15 @@ import XCTest
 
 private typealias FixtureData = ConnectorHTTPFixtures
 
+private let githubAuthorizationCatalog = """
+  {"connector":{"slug":"github","label":"GitHub","description":"Review repositories","connectNotice":null,"authMethods":[
+    {"id":"api-token","label":"API token","grantKind":"manual","manualFields":[
+      {"id":"token","label":"API token","required":true,"inputType":"password"}
+    ],"startOptions":[]},
+    {"id":"oauth","label":"OAuth","grantKind":"auth-code","manualFields":[],"startOptions":[]}
+  ]}}
+  """
+
 @MainActor
 final class ConnectorSystemAuthenticationTests: XCTestCase {
   func testExactHttpsReconnectStartsDirectlyAndRequiresItsBackendReceipt() async throws {
@@ -27,7 +36,7 @@ final class ConnectorSystemAuthenticationTests: XCTestCase {
       let path = request.url!.path
       let account = FixtureData.account().replacingOccurrences(of: "slack", with: "github")
       if path == "/api/connector-catalog/github" {
-        return ChatHTTPResponse(body: FixtureData.catalog(grantKind: "auth-code", slug: "github"))
+        return ChatHTTPResponse(body: githubAuthorizationCatalog)
       }
       if path == "/api/connector-accounts/connections" {
         let account = connected.withLock { $0 } ? account : "null"
