@@ -12,10 +12,8 @@ import ai.okou.android.connectors.ConnectorAccountTarget
 import ai.okou.android.connectors.ConnectorButton
 import ai.okou.android.connectors.ConnectorButtonTreatment
 import ai.okou.android.connectors.ConnectorChevron
-import ai.okou.android.connectors.ConnectorLoadWhenOnline
 import ai.okou.android.connectors.ConnectorMark
 import ai.okou.android.connectors.ConnectorReadError
-import ai.okou.android.connectors.ConnectorReadFailure
 import ai.okou.android.connectors.ConnectorSheet
 import ai.okou.android.connectors.ConnectorSkeleton
 import ai.okou.android.connectors.connectorAccountStatus
@@ -84,7 +82,6 @@ internal fun ChatConnectorOptionsButton(
     composer: ChatComposerModel,
     composerState: ComposerState,
     target: ComposerTarget,
-    offline: Boolean,
     editorFocused: Boolean,
     editorFocus: FocusRequester,
     manageConnectors: (ConnectorAccountTarget?) -> Unit,
@@ -146,10 +143,10 @@ internal fun ChatConnectorOptionsButton(
     val save = state?.save
     val saving = save?.saving == true
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    LaunchedEffect(options, target, showingAccounts, offline, lifecycle) {
+    LaunchedEffect(options, target, showingAccounts, lifecycle) {
         if (showingAccounts)
             lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                options.show(target, offline)
+                options.show(target)
             }
     }
 
@@ -217,9 +214,6 @@ internal fun ChatConnectorOptionsButton(
                 }
             } else if (groups == null) {
                 when {
-                    reading?.failure == ConnectorReadFailure.Unavailable ->
-                        ConnectorReadError(R.string.connector_accounts_failed)
-                    offline -> ConnectorLoadWhenOnline()
                     reading?.failure != null ->
                         ConnectorReadError(R.string.connector_accounts_failed)
                     else ->
@@ -230,13 +224,12 @@ internal fun ChatConnectorOptionsButton(
                 }
             } else {
                 val newChat = target.threadId == null
-                val memberAccess = reading.data?.memberAccess == true
+                val memberAccess = reading.data.memberAccess
                 val draftChoices =
                     composerState.connectorOverrides(target).associateBy { it.connectionId }
                 val canEdit =
                     !saving &&
-                        if (memberAccess || !newChat) !offline
-                        else composerState.canEditDraftConnectors(target)
+                        (memberAccess || !newChat || composerState.canEditDraftConnectors(target))
                 if (!memberAccess) {
                     Text(
                         stringResource(R.string.chat_connector_scope),

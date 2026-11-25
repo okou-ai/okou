@@ -13,7 +13,6 @@
     <string name="conversation_new_reply">有新回覆</string>
     <string name="conversation_view_progress">查看進度</string>
     <string name="conversation_processing">處理中</string>
-    <string name="conversation_offline_send">草稿已保留，請連線後再傳送。</string>
     <string name="conversation_reply_summary">回覆摘要</string>
     <string name="conversation_turn_continued">已由下一輪接續</string>
     <string name="conversation_replying">正在回覆</string>

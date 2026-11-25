@@ -60,13 +60,12 @@ internal class ChatConnectorOptions(
     val state = mutable.asStateFlow()
     private var readRevision = 0L
 
-    suspend fun show(target: ComposerTarget, offline: Boolean) {
+    suspend fun show(target: ComposerTarget) {
         if (!authorized()) return
         if (mutable.value.target != target.key)
             mutable.value = ChatConnectorOptionsState(target.key)
         if (mutable.value.save?.saving == true) return
         val revision = ++readRevision
-        if (offline) return
         retryConnectorRead(
             read = { service.chatAccounts(target.threadId) },
             canRead = { current(target) && revision == readRevision },

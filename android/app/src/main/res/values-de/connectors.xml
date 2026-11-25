@@ -42,7 +42,6 @@
     <string name="connector_disconnect">Konto trennen</string>
     <string name="connector_disconnect_title">Dieses Konto trennen?</string>
     <string name="connector_disconnect_copy">Chats und Automatisierungen, die dieses Konto nutzen, benötigen eventuell eine andere Verbindung. Andere Konten bleiben verfügbar.</string>
-    <string name="connector_load_when_online">Die Inhalte werden geladen, sobald du wieder online bist.</string>
     <string name="connector_loading">Connectoren werden geladen…</string>
     <string name="connector_loading_accounts">Konten werden geladen…</string>
     <string name="connector_loading_permissions">Berechtigungen werden geladen…</string>
@@ -52,7 +51,6 @@
     <string name="connector_accounts_failed">Konten konnten nicht geladen werden.</string>
     <string name="connector_permissions_failed">Berechtigungen konnten nicht geladen werden.</string>
     <string name="connector_impact_failed">Die Nutzung dieses Kontos konnte nicht geprüft werden.</string>
-    <string name="connector_offline">Offline</string>
     <string name="connector_network_failed">Okou ist nicht erreichbar. Prüfe deine Verbindung und versuche es erneut.</string>
     <string name="connector_account_unavailable">Dieses Konto ist nicht mehr verfügbar.</string>
     <string name="connector_unavailable">Dieses Konto kann zurzeit nicht autorisiert werden.</string>

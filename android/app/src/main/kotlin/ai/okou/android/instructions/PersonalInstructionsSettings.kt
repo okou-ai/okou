@@ -36,7 +36,6 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
@@ -66,21 +65,19 @@ import kotlinx.coroutines.flow.first
 internal fun PersonalInstructionsSettings(
     model: PersonalInstructionsModel,
     dismiss: () -> Unit,
-    offline: Boolean,
 ) {
     val state by model.uiState.collectAsStateWithLifecycle()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    val connectionOffline by rememberUpdatedState(offline)
     var opened by rememberSettingsFlag()
     DisposableEffect(model, lifecycle) {
         val read = model.uiState.value.read
         val restoring = opened && read == InstructionsRead.Ready
-        if (!restoring && (!connectionOffline || read == InstructionsRead.Idle)) model.open()
+        if (!restoring) model.open()
         opened = true
         var firstResume = true
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                if (!firstResume && !connectionOffline) model.refreshFromForeground()
+                if (!firstResume) model.refreshFromForeground()
                 firstResume = false
             }
         }
@@ -90,23 +87,8 @@ internal fun PersonalInstructionsSettings(
     var closeAfterSave by rememberSettingsFlag()
     var discardDraft by remember(model) { mutableStateOf<InstructionsDraft?>(null) }
     var reloadDraft by remember(model) { mutableStateOf<InstructionsDraft?>(null) }
-    var offlineSave by rememberSettingsFlag()
     var editorFocused by rememberSettingsFlag()
     var editorKeyboardVisible by rememberSettingsFlag()
-    var wasOffline by remember(model) { mutableStateOf(offline) }
-    LaunchedEffect(model, offline) {
-        val reconnected = wasOffline && !offline
-        wasOffline = offline
-        if (!offline) offlineSave = false
-        if (reconnected) {
-            val current = model.uiState.first { !it.busy }
-            if (
-                current.read != InstructionsRead.Ready ||
-                    current.phase == InstructionsPhase.Uncertain
-            )
-                model.refresh()
-        }
-    }
     LaunchedEffect(closeAfterSave, state.phase, state.draft) {
         if (closeAfterSave && state.phase == InstructionsPhase.Ready && state.draft == null) {
             closeAfterSave = false
@@ -144,10 +126,6 @@ internal fun PersonalInstructionsSettings(
         }
     }
     fun save() {
-        if (offline) {
-            offlineSave = true
-            return
-        }
         closeAfterSave = true
         model.save()
     }
@@ -162,20 +140,6 @@ internal fun PersonalInstructionsSettings(
                 Modifier.fillMaxWidth().padding(top = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                if (offline && offlineSave && canSubmit) {
-                    Text(
-                        stringResource(R.string.instructions_save_when_online),
-                        Modifier.padding(horizontal = 8.dp).semantics {
-                            liveRegion = LiveRegionMode.Polite
-                        },
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style =
-                            MaterialTheme.typography.labelLarge.copy(
-                                fontSize = 13.sp,
-                                lineHeight = 20.sp,
-                            ),
-                    )
-                }
                 FlowRow(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement =
@@ -316,7 +280,7 @@ internal fun PersonalInstructionsSettings(
             val loading =
                 editing == null &&
                     state.phase in setOf(InstructionsPhase.Idle, InstructionsPhase.Loading)
-            if (loading && !offline) {
+            if (loading) {
                 val showSkeleton = rememberContentReadSkeleton()
                 val label = stringResource(R.string.instructions_loading)
                 Box(
@@ -342,7 +306,6 @@ internal fun PersonalInstructionsSettings(
                     state.phase == InstructionsPhase.Uncertain -> R.string.instructions_uncertain
                     state.phase == InstructionsPhase.Unavailable ->
                         R.string.instructions_unavailable
-                    offline && editing == null -> R.string.chat_list_load_when_online
                     state.phase == InstructionsPhase.Failed -> R.string.instructions_load_failed
                     else -> null
                 }
@@ -365,10 +328,9 @@ internal fun PersonalInstructionsSettings(
                         InstructionsAction(
                             R.string.instructions_reload,
                             { reloadDraft = state.draft },
-                            !offline,
                         )
                     if (checkSavedVersion)
-                        InstructionsAction(R.string.instructions_refresh, model::refresh, !offline)
+                        InstructionsAction(R.string.instructions_refresh, model::refresh)
                     if (state.localFailure)
                         InstructionsAction(R.string.retry, model::retryLocalDraft, !state.busy)
                 }
@@ -408,7 +370,7 @@ internal fun PersonalInstructionsSettings(
 }
 
 @Composable
-private fun InstructionsAction(label: Int, action: () -> Unit, enabled: Boolean) {
+private fun InstructionsAction(label: Int, action: () -> Unit, enabled: Boolean = true) {
     TextButton(
         onClick = action,
         enabled = enabled,

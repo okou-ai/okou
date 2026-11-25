@@ -42,7 +42,6 @@
     <string name="connector_disconnect">Putuskan akun</string>
     <string name="connector_disconnect_title">Putuskan hubungan akun ini?</string>
     <string name="connector_disconnect_copy">Chat dan otomatisasi yang memakai akun ini mungkin perlu memilih koneksi lain. Akun lainnya tetap tersedia.</string>
-    <string name="connector_load_when_online">Konten akan dimuat saat Anda kembali online.</string>
     <string name="connector_loading">Memuat konektor…</string>
     <string name="connector_loading_accounts">Memuat akun…</string>
     <string name="connector_loading_permissions">Memuat izin…</string>
@@ -52,7 +51,6 @@
     <string name="connector_accounts_failed">Akun tidak dapat dimuat.</string>
     <string name="connector_permissions_failed">Izin tidak dapat dimuat.</string>
     <string name="connector_impact_failed">Penggunaan akun ini tidak dapat diperiksa.</string>
-    <string name="connector_offline">Offline</string>
     <string name="connector_network_failed">Tidak dapat terhubung ke Okou. Periksa koneksi Anda dan coba lagi.</string>
     <string name="connector_account_unavailable">Akun ini tidak lagi tersedia.</string>
     <string name="connector_unavailable">Otorisasi tidak tersedia untuk akun ini.</string>

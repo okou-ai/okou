@@ -40,7 +40,6 @@ fun AssistantRecoveryPanel(
     target: ComposerTarget,
     failureId: String,
     reason: String?,
-    offline: Boolean,
 ) {
     val read by model.uiState.collectAsStateWithLifecycle()
     val input by composer.uiState.collectAsStateWithLifecycle()
@@ -49,8 +48,7 @@ fun AssistantRecoveryPanel(
         return
     }
     val entry = input.entry(target)
-    val busy =
-        offline || target.key in input.busy || input.persistence != ComposerPersistence.Durable
+    val busy = target.key in input.busy || input.persistence != ComposerPersistence.Durable
     val attempt = entry.recovery?.takeIf { it.selection == read.selection }
     val unresolvedOther =
         entry.recovery?.let {

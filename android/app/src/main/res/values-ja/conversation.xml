@@ -13,7 +13,6 @@
     <string name="conversation_new_reply">新しい返信</string>
     <string name="conversation_view_progress">進捗を確認</string>
     <string name="conversation_processing">処理中…</string>
-    <string name="conversation_offline_send">送信するには接続してください。下書きは残ります。</string>
     <string name="conversation_reply_summary">返信の要約</string>
     <string name="conversation_turn_continued">次のターンに引き継ぎ</string>
     <string name="conversation_replying">返信中…</string>
