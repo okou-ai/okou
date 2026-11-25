@@ -47,6 +47,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -1063,12 +1064,13 @@ internal class ChatListUnreadModelTest : ChatListModelTestFixture() {
     }
 
     @Test
-    fun anOldUnreadSnapshotSurvivesRelaunchAndAConfirmedEmptySnapshotReplacesIt() = runTest {
+    fun anOldUnreadSnapshotAndItsConfirmedEmptyReplacementSurviveRelaunch() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
         val cache = cache(temporary.newFolder(), dispatcher)
         val first = ViewModelStore()
         val next = ViewModelStore()
+        val afterConfirmation = ViewModelStore()
         val confirmedAt = 1_000_000L
         val unread = mapOf(CHAT_PERSONAL to CHAT_DATE)
         val service = Service().apply { statusRead = { throw IOException("offline") } }
@@ -1096,12 +1098,21 @@ internal class ChatListUnreadModelTest : ChatListModelTestFixture() {
             assertEquals(ChatReadPhase.Ready, relaunched.uiState.value.indicatorsPhase)
             val emptyUnread = emptyMap<String, String>()
             assertEquals(emptyUnread, relaunched.uiState.value.displayUnreadAt)
-            cache
-                .open(identity) { true }
-                .use { assertEquals(emptyUnread, it.loadUnread()?.unreadAt) }
+
+            next.clear()
+            service.statusRead = { awaitCancellation() }
+            val reopened = unreadModel(afterConfirmation, cache, service, dispatcher, wallMillis)
+            reopened.refresh()
+            reopened.selectFilter(ChatListFilter.Unread)
+            runCurrent()
+            val restored = reopened.uiState.value
+            assertEquals(ChatReadPhase.Loading, restored.indicatorsPhase)
+            assertEquals(emptyUnread, restored.displayUnreadAt)
+            assertFalse(restored.waitingForUnreadIndicators)
         } finally {
             first.clear()
             next.clear()
+            afterConfirmation.clear()
             runCurrent()
             Dispatchers.resetMain()
         }
@@ -1126,8 +1137,8 @@ internal class ChatListUnreadModelTest : ChatListModelTestFixture() {
             runCurrent()
             assertEquals(unread, model.uiState.value.displayUnreadAt)
 
-            // Device sleep advances wall time without running the scheduled timeout.
-            now += 120_000L
+            // Advance wall time without advancing the coroutine test clock.
+            now += 3_600_000L
             model.refresh()
             runCurrent()
             assertEquals(ChatReadPhase.Loading, model.uiState.value.indicatorsPhase)
