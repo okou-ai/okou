@@ -37,10 +37,10 @@ account-org	src/signals/routes/__tests__/banking.test.ts	banking-003	planned
 account-org	src/signals/routes/__tests__/banking.test.ts	banking-004	planned		
 account-org	src/signals/routes/__tests__/banking.test.ts	banking-006	planned		
 account-org	src/signals/routes/__tests__/banking.test.ts	banking-007	planned		
-account-org	src/signals/routes/__tests__/banking.test.ts	banking-008	planned		
-account-org	src/signals/routes/__tests__/banking.test.ts	banking-010	planned		
-account-org	src/signals/routes/__tests__/banking.test.ts	banking-013	planned		
-account-org	src/signals/routes/__tests__/banking.test.ts	banking-014	planned		
+account-org	src/signals/routes/__tests__/banking.test.ts	banking-008	rewritten	122.7	
+account-org	src/signals/routes/__tests__/banking.test.ts	banking-010	rewritten	170.8	
+account-org	src/signals/routes/__tests__/banking.test.ts	banking-013	rewritten	129.0	
+account-org	src/signals/routes/__tests__/banking.test.ts	banking-014	rewritten	24.0	
 artifacts	src/signals/routes/__tests__/artifact-downloads.test.ts	artifact-downloads-001	planned		
 artifacts	src/signals/routes/__tests__/artifact-downloads.test.ts	artifact-downloads-003	planned		
 artifacts	src/signals/routes/__tests__/artifact-downloads.test.ts	artifact-downloads-007	rewritten	131.2	
