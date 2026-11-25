@@ -666,9 +666,9 @@ remote-access	src/signals/routes/__tests__/vnc-lifecycle.test.ts	vnc-lifecycle-0
 remote-access	src/signals/routes/__tests__/vnc-lifecycle.test.ts	vnc-lifecycle-007	rewritten	195.3	extension after sandbox reset
 remote-access	src/signals/routes/__tests__/vnc-lifecycle.test.ts	vnc-lifecycle-008	rewritten	151.8	extension after sandbox reset
 remote-access	src/signals/routes/__tests__/vnc-lifecycle.test.ts	vnc-lifecycle-009	rewritten	72.7	extension after sandbox reset
-remote-access	src/signals/routes/__tests__/remotes.test.ts	remotes-003	planned		extension after sandbox reset
-remote-access	src/signals/routes/__tests__/remotes.test.ts	remotes-004	planned		extension after sandbox reset
-remote-access	src/signals/routes/__tests__/remotes.test.ts	remotes-005	planned		extension after sandbox reset
+remote-access	src/signals/routes/__tests__/remotes.test.ts	remotes-003	rewritten	159.9	extension after sandbox reset
+remote-access	src/signals/routes/__tests__/remotes.test.ts	remotes-004	rewritten	118.7	extension after sandbox reset
+remote-access	src/signals/routes/__tests__/remotes.test.ts	remotes-005	rewritten	156.8	extension after sandbox reset
 remote-access	src/signals/routes/__tests__/ssh-member-lifecycle.test.ts	ssh-member-lifecycle-001	skipped		slow-setup: full Given (13 owner resources across 3 actors, VNC over 2 SSH tunnels) plus leave, 3 webhook cleanups and ~25 verification reads measured 511-570 ms for the webhook variant even with parallel setup; this case adds POST /api/org/leave on top
 remote-access	src/signals/routes/__tests__/ssh-member-lifecycle.test.ts	ssh-member-lifecycle-002	skipped		slow-setup: same fixture and verification as 003 (measured 511-570 ms even with parallel setup) plus DELETE /api/org/members; cannot drop required checks to reach 200 ms
 remote-access	src/signals/routes/__tests__/ssh-member-lifecycle.test.ts	ssh-member-lifecycle-003	skipped		slow-setup: written and passing but measured 511 ms and 570 ms (parallel setup), still a lower bound because the Kerberos KDC tunnel was simplified; 3 sequential Clerk webhook cleanups and ~40 requests are inherent to the case
