@@ -38,7 +38,6 @@ const discoverDebugLearning$ = command(async ({ get }, signal: AbortSignal) => {
       return (
         entry.workflow.official?.definitionName ===
           PROACTIVE_LEARNING_DEFINITION_NAME &&
-        entry.workflow.official.installationState === "installed" &&
         entry.workflow.official.definitionLifecycle === "active" &&
         entry.automation.official?.blueprintKey ===
           PROACTIVE_LEARNING_BLUEPRINT_KEY

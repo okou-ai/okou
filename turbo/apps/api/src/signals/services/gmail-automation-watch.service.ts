@@ -371,7 +371,6 @@ interface GmailWatchPublicationInput {
   readonly topicName: string;
   readonly resetCurrentCursor: boolean;
   readonly forceRefresh: boolean;
-  readonly allowStagedOfficialTarget: boolean;
   readonly accessToken: string;
 }
 
@@ -398,9 +397,7 @@ function gmailWatchPublicationSql(
     eq(workflowAutomations.orgId, args.orgId),
     eq(workflowAutomations.ownerUserId, args.userId),
     eq(workflowAutomations.eventConnectorId, args.connectorId),
-    sql`(${workflowAutomations.enabled} OR (${args.allowStagedOfficialTarget}
-      AND ${workflowAutomations.officialReconciliationStatus} = 'reconciling'
-      AND ${workflowAutomations.officialBlueprintKey} IS NOT NULL))`,
+    eq(workflowAutomations.enabled, true),
     eq(workflowAutomations.kind, "event"),
     inArray(workflowAutomations.eventType, [...GMAIL_EVENT_TYPES]),
   );
@@ -519,7 +516,6 @@ export const ensureGmailWatchForUser$ = command(
       readonly userId: string;
       readonly connectorId: string;
       readonly forceRefresh?: boolean;
-      readonly allowStagedOfficialTarget?: boolean;
     },
     signal: AbortSignal,
   ): Promise<EnsureGmailWatchResult> => {
@@ -558,7 +554,6 @@ export const ensureGmailWatchForUser$ = command(
         ...scope,
         resetCurrentCursor: args.forceRefresh ?? false,
         forceRefresh: args.forceRefresh ?? false,
-        allowStagedOfficialTarget: args.allowStagedOfficialTarget ?? false,
         accessToken: access.access.accessToken,
       },
       signal,
@@ -569,9 +564,7 @@ export const ensureGmailWatchForUser$ = command(
         message: "Failed to register Gmail watch for event automation setup",
       };
     }
-    if (!args.allowStagedOfficialTarget) {
-      await set(removeInactiveGmailWatchStates$, scope, signal);
-    }
+    await set(removeInactiveGmailWatchStates$, scope, signal);
     return { kind: "ok" };
   },
 );
@@ -641,7 +634,6 @@ export const reconcileGmailPhysicalScope$ = command(
         accessToken: access.accessToken,
         resetCurrentCursor: false,
         forceRefresh: true,
-        allowStagedOfficialTarget: false,
       },
       signal,
     );

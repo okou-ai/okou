@@ -6,26 +6,9 @@ import {
 import { Buffer } from "node:buffer";
 import type { infer as zInfer } from "zod";
 import { command } from "ccstate";
-import {
-  and,
-  asc,
-  desc,
-  eq,
-  gt,
-  inArray,
-  isNotNull,
-  lt,
-  ne,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, lt, ne, or, sql } from "drizzle-orm";
 import { feedItems } from "@okouai/db/schema/feed-item";
 import { workflows } from "@okouai/db/schema/workflow";
-import {
-  officialWorkflowCatalogReleases,
-  officialWorkflowCatalogState,
-  officialWorkflowDefinitionRevisions,
-} from "@okouai/db/schema/official-workflow-catalog";
 import {
   FEED_PAGE_SIZE,
   SUGGESTION_RETENTION_MS,
@@ -44,10 +27,6 @@ import { badRequestMessage } from "../../lib/error";
 import { nowDate } from "../../lib/time";
 import { withSuggestionConsumeToken } from "./agent-suggestion-consumption-token";
 import { visibleWorkflowCondition } from "./workflow-visibility";
-import {
-  acceptedCatalogDefinitionRevision,
-  acceptedOfficialWorkflowCatalogReadPlan,
-} from "./official-workflow-catalog-read.service";
 import { builtInWorkflow } from "./builtin-workflows";
 
 interface Owner {
@@ -115,36 +94,16 @@ const feedAutomationDescriptions$ = command(
     if (auth.tokenType !== "session" || workflowIds.length === 0) {
       return new Map<string, string | null>();
     }
-    const catalog = acceptedOfficialWorkflowCatalogReadPlan();
     const rows = await get(db$)
       .select({
         id: workflows.id,
         definitionName: workflows.officialDefinitionName,
         description: sql`coalesce(
-          ${officialWorkflowDefinitionRevisions.payload}->'workflow'->>'description',
+          ${workflows.archivedOfficialSnapshot}#>>'{revision,definition,workflow,description}',
           ${workflows.description}
         )`.mapWith(nullableDriverValueDecoder(pgTextDecoder)),
       })
       .from(workflows)
-
-      .leftJoin(
-        officialWorkflowCatalogState,
-        and(isNotNull(workflows.officialDefinitionName), catalog.condition),
-      )
-      .leftJoin(officialWorkflowCatalogReleases, catalog.join)
-      .leftJoin(
-        officialWorkflowDefinitionRevisions,
-        and(
-          eq(
-            officialWorkflowDefinitionRevisions.definitionName,
-            workflows.officialDefinitionName,
-          ),
-          eq(
-            officialWorkflowDefinitionRevisions.revision,
-            acceptedCatalogDefinitionRevision(workflows.officialDefinitionName),
-          ),
-        ),
-      )
       .where(
         and(
           eq(workflows.orgId, auth.orgId),
@@ -157,8 +116,7 @@ const feedAutomationDescriptions$ = command(
       rows.map(({ id, description, definitionName }) => {
         return [
           id,
-          builtInWorkflow(definitionName)?.revision.definition.workflow
-            .description ?? description,
+          builtInWorkflow(definitionName)?.description ?? description,
         ] as const;
       }),
     );

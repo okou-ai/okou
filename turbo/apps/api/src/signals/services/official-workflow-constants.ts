@@ -7,5 +7,5 @@ export const OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE =
 export const OFFICIAL_WORKFLOW_AUTOMATION_READ_ONLY_MESSAGE =
   "Official Workflow automation structure is read-only";
 
-export const OFFICIAL_WORKFLOW_RECONFIGURATION_IN_PROGRESS_MESSAGE =
-  "Official Workflow reconfiguration is in progress; retry shortly";
+export const OFFICIAL_AUTOMATION_CHANGED_MESSAGE =
+  "The Official Workflow automation changed. Retry the update.";

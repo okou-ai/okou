@@ -12,22 +12,13 @@ import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
 
 const log = logger("OfficialWorkflowReconciliationCron");
 
-// Poll schedules and recover eligible owners before dispatching due runs.
+// Recover due schedules first. Installation repair runs after dispatch.
 const executeWorkflowAutomationsRoute$: RouteEntry["handler"] = command(
   async ({ get, set }, signal: AbortSignal) => {
     if (!get(hasValidCronSecret$)) {
       return cronUnauthorized();
     }
 
-    const proactive = await settle(
-      set(reconcileProactiveWorkflows$, signal),
-      signal,
-    );
-    if (!proactive.ok) {
-      log.error("Proactive workflow reconciliation failed", {
-        error: proactive.error,
-      });
-    }
     const recovery = await settle(
       set(recoverDueOfficialWorkflowSchedules$, signal),
       signal,
@@ -41,6 +32,15 @@ const executeWorkflowAutomationsRoute$: RouteEntry["handler"] = command(
     const notionResult = await set(executeDueNotionAutomationEvents$, signal);
     signal.throwIfAborted();
 
+    const proactive = await settle(
+      set(reconcileProactiveWorkflows$, signal),
+      signal,
+    );
+    if (!proactive.ok) {
+      log.error("Proactive workflow reconciliation failed", {
+        error: proactive.error,
+      });
+    }
     return {
       status: 200 as const,
       body: {

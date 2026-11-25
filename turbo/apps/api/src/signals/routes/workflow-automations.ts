@@ -155,7 +155,10 @@ const listAutomationsInner$ = command(
     const params = get(pathParamsOf(workflowAutomationsContract.list));
     const db = get(db$);
     const [visible] = await db
-      .select({ id: workflows.id })
+      .select({
+        id: workflows.id,
+        officialDefinitionName: workflows.officialDefinitionName,
+      })
       .from(workflows)
       .where(
         and(
@@ -174,6 +177,7 @@ const listAutomationsInner$ = command(
       {
         orgId: auth.orgId,
         workflowId: visible.id,
+        officialDefinitionName: visible.officialDefinitionName,
         userId: auth.userId,
       },
       signal,
@@ -379,7 +383,6 @@ const enableAutomationInner$ = command(
     const result = await set(
       enableWorkflowAutomation$,
       {
-        userRequestedEnable: true,
         orgId: auth.orgId,
         member: memberFromAuth(auth),
         automationId: params.id,

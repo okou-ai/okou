@@ -25,7 +25,6 @@ import {
   workflowAutomationAccountConnectorSlug,
   type WorkflowAutomationAccountConnectorSlug,
 } from "../services/workflow-automation-account-classification.service";
-import { officialAccountProjectionReadPlan } from "../services/official-workflow-account-projection";
 import { prepareChatThreadInsert } from "../services/chat-thread-create.service";
 import type { WorkflowThreadPreparation } from "../services/workflow-user-automation-thread.service";
 import type { WorkflowAttachments } from "@okouai/db/jsonb-contracts/workflow";
@@ -348,18 +347,10 @@ export function copyAccountReadPlan(
       ),
     )
     .as("projection_selection");
-  const eventType = copyProjectionEventTypes[slug][0];
-  const plan = officialAccountProjectionReadPlan({
-    ...args,
-    workflowId: args.source.sourceWorkflow.id,
-    currentEventType: eventType,
-    nextEventType: eventType,
-  });
   return {
-    ...plan,
     source,
     columns: {
-      ...plan.columns,
+      connectorId: source.connectorId,
       observedXmin: source.observedXmin,
       automation: {
         id: source.id,

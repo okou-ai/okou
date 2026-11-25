@@ -49,7 +49,6 @@ function officialObservationFromTarget(
     workflow.orgId !== scope.orgId ||
     workflow.ownerUserId !== scope.userId ||
     workflow.visibility !== "private" ||
-    workflow.officialInstallationState !== "installed" ||
     automationContext.workflowName !== workflow.name
   ) {
     throw new OfficialWorkflowRunAdmissionError();
@@ -61,12 +60,12 @@ function officialObservationFromTarget(
   if (
     !builtin ||
     automation.officialReconciliationStatus !== "current" ||
-    builtin.blueprint.key !== automation.officialBlueprintKey ||
-    builtin.blueprint.fingerprint !== automation.officialAppliedFingerprint
+    builtin.blueprintKey !== automation.officialBlueprintKey ||
+    builtin.fingerprint !== automation.officialAppliedFingerprint
   ) {
     throw new OfficialWorkflowRunAdmissionError();
   }
-  const { name: definitionName, revision, contentBundle } = builtin.definition;
+  const { name: definitionName, revision, contentBundle } = builtin;
   const source = { name: definitionName, revision, contentBundle };
   return {
     prompt: builtin.prompt,

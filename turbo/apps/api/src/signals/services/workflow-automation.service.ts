@@ -26,8 +26,7 @@ import {
   prepareNotionPageContentUpdatedEventConfigForPersist$,
   validateNotionEventConfigForConnector$,
 } from "./notion-automation-preparation.service";
-import { builtInWorkflow } from "./builtin-workflows";
-import { readAcceptedOfficialWorkflowCatalog$ } from "./official-workflow-catalog-read.service";
+import { builtInWorkflow, builtinCronBindings } from "./builtin-workflows";
 import { waitUntil } from "../context/wait-until";
 import {
   workflowAutomationSnapshot,
@@ -42,7 +41,6 @@ import {
   chatThreadServiceTierFromCodex,
 } from "./chat-thread-event.service";
 
-import type { OfficialWorkflowParameterBinding } from "@okouai/api-contracts/contracts/official-workflow-bindings";
 import {
   chatRunFinishedEventConfigSchema,
   githubDeploymentStatusCreatedEventConfigSchema,
@@ -97,7 +95,6 @@ import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-eve
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { notionWorkflowPendingEvents } from "@okouai/db/schema/notion-event";
 import {
-  officialWorkflowAutomationIdentities,
   workflows,
   workflowUserAutomationThreads,
   workflowWebhookAutomations,
@@ -121,11 +118,10 @@ import {
   or,
   sql,
 } from "drizzle-orm";
-import { alias, QueryBuilder } from "drizzle-orm/pg-core";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import {
   pgBooleanDecoder,
   pgNullDecoder,
-  pgTextDecoder,
 } from "../../lib/db-structured-result";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
@@ -153,7 +149,7 @@ import {
   hasEnabledGoogleCalendarConsumer$,
   stageGoogleCalendarWatchTargetForReconfiguration$,
 } from "./google-calendar-automation-watch.service";
-import { officialAutomationLifecycleCondition } from "./workflow-automation-write-condition";
+import { workflowAutomationToggleCondition } from "./workflow-automation-write-condition";
 import { notionConfigWithConnectorId } from "./notion-automation-account.service";
 import {
   workflowAutomationConnectorSelectionSql,
@@ -161,7 +157,7 @@ import {
 } from "./workflow-automation-account.service";
 import {
   OFFICIAL_WORKFLOW_AUTOMATION_READ_ONLY_MESSAGE,
-  OFFICIAL_WORKFLOW_RECONFIGURATION_IN_PROGRESS_MESSAGE,
+  OFFICIAL_AUTOMATION_CHANGED_MESSAGE,
 } from "./official-workflow-constants";
 import { orgPlanCapabilitiesFromRow } from "./org-plan-entitlement-read.service";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
@@ -598,7 +594,11 @@ function supportedNotionEventType(
   );
 }
 
-function rowSummaryBase(row: AutomationRow, chatThreadId: string | null) {
+function rowSummaryBase(
+  row: AutomationRow,
+  chatThreadId: string | null,
+  parameterBindings = row.officialParameterBindings,
+) {
   return {
     id: row.id,
     ownerUserId: row.ownerUserId,
@@ -610,7 +610,7 @@ function rowSummaryBase(row: AutomationRow, chatThreadId: string | null) {
       row.officialBlueprintKey === null ||
       row.officialAppliedFingerprint === null ||
       row.officialReconciliationStatus === null ||
-      row.officialParameterBindings === null ||
+      parameterBindings === null ||
       row.officialIntendedEnabled === null
         ? null
         : {
@@ -618,12 +618,13 @@ function rowSummaryBase(row: AutomationRow, chatThreadId: string | null) {
             appliedFingerprint: row.officialAppliedFingerprint,
             reconciliationStatus: row.officialReconciliationStatus,
             intendedEnabled: row.officialIntendedEnabled,
-            parameterBindings: row.officialParameterBindings,
+            parameterBindings,
           },
   };
 }
 
 type RowToSummaryOptions = {
+  readonly officialDefinitionName?: string | null;
   readonly chatThreadId?: string | null;
   readonly warning?: string;
 } & (
@@ -1011,8 +1012,15 @@ const rowToSummary$ = command(
       }
     }
     const schedule = rowToSchedule(row);
+    const builtin = builtInWorkflow(options.officialDefinitionName ?? null);
+    const bindings =
+      schedule.type === "cron" &&
+      builtin &&
+      builtin.blueprintKey === row.officialBlueprintKey
+        ? builtinCronBindings(schedule.cronExpression)
+        : row.officialParameterBindings;
     return {
-      ...rowSummaryBase(row, chatThreadId),
+      ...rowSummaryBase(row, chatThreadId, bindings),
       kind: "schedule",
       schedule,
       scheduleSummary: summarizeSchedule(schedule),
@@ -1025,6 +1033,7 @@ const rowToPublicSummary$ = command(
     row: AutomationRow,
     options: {
       readonly chatThreadId?: string | null;
+      readonly officialDefinitionName: string | null;
     },
     signal: AbortSignal,
   ): Promise<WorkflowAutomationSummary | null> => {
@@ -1156,6 +1165,7 @@ export const loadWorkflowAutomations$ = command(
     args: {
       readonly orgId: string;
       readonly workflowId: string;
+      readonly officialDefinitionName: string | null;
       readonly userId: string;
     },
     signal: AbortSignal,
@@ -1186,7 +1196,12 @@ export const loadWorkflowAutomations$ = command(
     signal.throwIfAborted();
     const summaries = await Promise.all(
       rows.map((row) => {
-        return set(rowToPublicSummary$, row, { chatThreadId }, signal);
+        return set(
+          rowToPublicSummary$,
+          row,
+          { chatThreadId, officialDefinitionName: args.officialDefinitionName },
+          signal,
+        );
       }),
     );
     signal.throwIfAborted();
@@ -1246,28 +1261,13 @@ export const listWorkspaceWorkflowAutomations$ = command(
       .orderBy(asc(workflowAutomations.createdAt), asc(workflowAutomations.id));
     signal.throwIfAborted();
 
-    const hasHistoricalDefinition = rows.some((row) => {
-      return (
-        row.workflow.officialDefinitionName !== null &&
-        !builtInWorkflow(row.workflow.officialDefinitionName)
-      );
-    });
-    const acceptedCatalog = hasHistoricalDefinition
-      ? await set(readAcceptedOfficialWorkflowCatalog$, signal)
-      : null;
-    signal.throwIfAborted();
-    const officialLifecycleByName = new Map(
-      acceptedCatalog?.payload.definitions.map((definition) => {
-        return [definition.name, definition.lifecycle] as const;
-      }) ?? [],
-    );
-
     const entries = await Promise.all(
       rows.map(async (row): Promise<WorkflowAutomationsListEntry | null> => {
         const automation = await set(
           rowToPublicSummary$,
           row.automation,
           {
+            officialDefinitionName: row.workflow.officialDefinitionName,
             chatThreadId: row.chatThreadId ?? null,
           },
           signal,
@@ -1282,10 +1282,8 @@ export const listWorkspaceWorkflowAutomations$ = command(
             member: args.member,
             officialDefinitionLifecycle: row.workflow.officialDefinitionName
               ? (builtInWorkflow(row.workflow.officialDefinitionName)
-                  ?.definition.lifecycle ??
-                officialLifecycleByName.get(
-                  row.workflow.officialDefinitionName,
-                ) ??
+                  ?.lifecycle ??
+                row.workflow.archivedOfficialSnapshot?.lifecycle ??
                 "unavailable")
               : undefined,
           }),
@@ -1374,10 +1372,6 @@ export const listThreadBoundWorkflowAutomations$ = command(
           visibleWorkflowCondition(args.userId),
           eq(workflowAutomations.ownerUserId, args.userId),
           eq(workflowUserAutomationThreads.chatThreadId, args.threadId),
-          or(
-            isNull(workflows.officialDefinitionName),
-            eq(workflows.officialInstallationState, "installed"),
-          ),
         ),
       )
       .orderBy(asc(workflowAutomations.createdAt));
@@ -1389,6 +1383,7 @@ export const listThreadBoundWorkflowAutomations$ = command(
           rowToPublicSummary$,
           automation,
           {
+            officialDefinitionName: workflow.officialDefinitionName,
             chatThreadId,
           },
           signal,
@@ -1444,7 +1439,12 @@ export const getWorkflowAutomation$ = command(
     if (!visible) {
       return null;
     }
-    return await set(rowToPublicSummary$, automation, {}, signal);
+    return await set(
+      rowToPublicSummary$,
+      automation,
+      { officialDefinitionName: visible.workflow.officialDefinitionName },
+      signal,
+    );
   },
 );
 
@@ -1644,21 +1644,9 @@ interface CreateWebhookEventAutomationInput {
   readonly eventConfig?: WebhookReceivedEventConfig;
   readonly enabled: boolean;
   readonly autonomyBudget?: number;
-  readonly officialInstallation?: OfficialAutomationCreationMetadata;
 }
 
-export interface OfficialAutomationCreationMetadata {
-  readonly definitionName: string;
-  readonly blueprintKey: string;
-  readonly appliedFingerprint: string;
-  readonly parameterBindings: readonly OfficialWorkflowParameterBinding[];
-  readonly automationId?: string;
-  readonly installationState?: "installing" | "installed";
-  readonly intendedEnabled?: boolean;
-  readonly stagedMaterialization?: boolean;
-}
-
-export type CreateAutomationInput = (
+type CreateAutomationInput =
   | CreateScheduleAutomationInput
   | CreateChatRunFinishedEventAutomationInput
   | CreateGmailEventAutomationInput
@@ -1667,10 +1655,7 @@ export type CreateAutomationInput = (
   | CreateGoogleFormsEventAutomationInput
   | CreateGoogleMeetEventAutomationInput
   | CreateNotionEventAutomationInput
-  | CreateWebhookEventAutomationInput
-) & {
-  readonly officialInstallation?: OfficialAutomationCreationMetadata;
-};
+  | CreateWebhookEventAutomationInput;
 type CreateEventAutomationInput = Exclude<
   CreateAutomationInput,
   CreateScheduleAutomationInput
@@ -1702,12 +1687,6 @@ function automationCreateInputIsGithubWebhook(
   }
 > {
   return supportedGithubWebhookEventType(args.eventType);
-}
-
-function automationCreateInputIsGithub(
-  args: CreateEventAutomationInput,
-): args is CreateGithubEventAutomationInput {
-  return supportedGithubEventType(args.eventType);
 }
 
 function automationCreateInputIsGoogleCalendar(
@@ -2146,29 +2125,13 @@ function webhookCreationAccessFailure(
   if (!workflow) {
     return { kind: "not-found" };
   }
-  const official = args.input.officialInstallation;
-  const owned = workflow.ownerUserId === args.input.member.userId;
-  const available =
-    workflow.officialDefinitionName === null ||
-    workflow.officialInstallationState === "installed";
-  const visible = owned || workflow.visibility === "public";
-  const installing =
-    official !== undefined &&
-    owned &&
-    workflow.officialInstallationState === "installing";
-  if (!(available && visible) && !installing) {
+  const visible =
+    workflow.ownerUserId === args.input.member.userId ||
+    workflow.visibility === "public";
+  if (!visible) {
     return { kind: "not-found" };
   }
-  if (
-    official !== undefined &&
-    (workflow.officialDefinitionName !== official.definitionName ||
-      workflow.officialInstallationState !==
-        (official.installationState ?? "installing") ||
-      !owned)
-  ) {
-    return { kind: "not-found" };
-  }
-  if (workflow.officialDefinitionName !== null && official === undefined) {
+  if (workflow.officialDefinitionName !== null) {
     return {
       kind: "conflict",
       message: OFFICIAL_WORKFLOW_AUTOMATION_READ_ONLY_MESSAGE,
@@ -2290,20 +2253,10 @@ function webhookCreationAccessCondition(
   workflow: ReturnType<typeof webhookCreationAdmissionPlan>["workflow"],
 ) {
   const owned = eq(workflow.ownerUserId, args.input.member.userId);
-  const official = args.input.officialInstallation;
-  return official === undefined
-    ? and(
-        isNull(workflow.officialDefinitionName),
-        or(owned, eq(workflow.visibility, "public")),
-      )
-    : and(
-        owned,
-        eq(workflow.officialDefinitionName, official.definitionName),
-        eq(
-          workflow.officialInstallationState,
-          official.installationState ?? "installing",
-        ),
-      );
+  return and(
+    isNull(workflow.officialDefinitionName),
+    or(owned, eq(workflow.visibility, "public")),
+  );
 }
 
 /** Retain the original entitlement -> Workflow protection order. */
@@ -2893,7 +2846,6 @@ const insertScheduleAutomation$ = command(
     args: {
       readonly input: CreateScheduleAutomationInput;
       readonly workflowId: string;
-      readonly automationId?: string;
       readonly columns: ScheduleColumns;
       readonly nextRunAt: Date | null;
       readonly currentTime: Date;
@@ -2917,7 +2869,6 @@ const insertScheduleAutomation$ = command(
     const [row] = await db
       .insert(workflowAutomations)
       .values({
-        id: args.automationId,
         orgId: args.input.orgId,
         workflowId: args.workflowId,
         ownerUserId: args.input.member.userId,
@@ -3888,313 +3839,6 @@ const createEventAutomationForWorkflow$ = command(
   },
 );
 
-function plainOfficialAutomationWhere(automationId: string) {
-  return and(
-    eq(workflowAutomations.id, automationId),
-    isNull(workflowAutomations.officialBlueprintKey),
-    isNull(workflowAutomations.officialAppliedFingerprint),
-    isNull(workflowAutomations.officialReconciliationStatus),
-    isNull(workflowAutomations.officialParameterBindings),
-    isNull(workflowAutomations.officialIntendedEnabled),
-  );
-}
-
-function officialAutomationMetadataValues(
-  metadata: OfficialAutomationCreationMetadata,
-  at: Date,
-) {
-  return {
-    officialBlueprintKey: metadata.blueprintKey,
-    officialAppliedFingerprint: metadata.appliedFingerprint,
-    officialReconciliationStatus:
-      metadata.stagedMaterialization === true
-        ? ("reconciling" as const)
-        : ("current" as const),
-    officialParameterBindings: [...metadata.parameterBindings],
-    officialIntendedEnabled: metadata.intendedEnabled ?? true,
-    updatedAt: at,
-  };
-}
-
-/** Preserve schema decoding and the exact snapshot strings through the CTE. */
-function attachedOfficialAutomationColumns() {
-  const automation = alias(workflowAutomations, "official_metadata_updated");
-  return {
-    ...getTableColumns(automation),
-    observedUpdatedAt: sql`${automation.updatedAt}::text`.mapWith(
-      pgTextDecoder,
-    ),
-    observedXmin: sql`${automation}.${sql.identifier("observedXmin")}`.mapWith(
-      pgTextDecoder,
-    ),
-  };
-}
-
-function officialMetadataReservationCondition(
-  metadata: OfficialAutomationCreationMetadata,
-  identityComplete: boolean,
-) {
-  const plain = alias(workflowAutomations, "official_metadata_plain");
-  const reservation = alias(
-    officialWorkflowAutomationIdentities,
-    "official_metadata_reservation",
-  );
-  // JSONB normalizes negative zero, while the former strict JS comparison
-  // rejected it. Binding values are schema-validated scalar primitives.
-  const bindingsComparable = !metadata.parameterBindings.some((binding) => {
-    return Object.is(binding.value, -0);
-  });
-  return and(
-    sql`${identityComplete && bindingsComparable}`,
-    eq(plain.enabled, false),
-    eq(reservation.retainedAppliedFingerprint, metadata.appliedFingerprint),
-    eq(reservation.retainedParameterBindings, [...metadata.parameterBindings]),
-    eq(reservation.retainedIntendedEnabled, metadata.intendedEnabled ?? true),
-  );
-}
-
-function activeOfficialAutomationIdentityColumns(
-  metadata: OfficialAutomationCreationMetadata,
-  at: Date,
-) {
-  const updated = alias(workflowAutomations, "official_metadata_updated");
-  const identities = officialWorkflowAutomationIdentities;
-  return {
-    id: updated.id,
-    workflowId: updated.workflowId,
-    automationId: updated.id,
-    blueprintKey: sql`${metadata.blueprintKey}`
-      .mapWith(identities.blueprintKey)
-      .as("blueprint_key"),
-    state: sql`'active'`.mapWith(identities.state).as("state"),
-    retainedParameterBindings: sql`NULL`
-      .mapWith(pgNullDecoder)
-      .as("retained_parameter_bindings"),
-    retainedIntendedEnabled: sql`NULL`
-      .mapWith(pgNullDecoder)
-      .as("retained_intended_enabled"),
-    retainedAppliedFingerprint: sql`NULL`
-      .mapWith(pgNullDecoder)
-      .as("retained_applied_fingerprint"),
-    createdAt: sql`${sql.param(at, identities.createdAt)}`
-      .mapWith(identities.createdAt)
-      .as("created_at"),
-    updatedAt: sql`${sql.param(at, identities.updatedAt)}`
-      .mapWith(identities.updatedAt)
-      .as("updated_at"),
-  };
-}
-
-function activeOfficialAutomationIdentityUpdate(
-  automationId: string,
-  at: Date,
-) {
-  return {
-    automationId,
-    state: "active" as const,
-    retainedParameterBindings: null,
-    retainedIntendedEnabled: null,
-    retainedAppliedFingerprint: null,
-    updatedAt: at,
-  };
-}
-
-const persistOfficialAutomationMetadata$ = command(
-  async (
-    { set },
-    args: {
-      readonly automationId: string;
-      readonly metadata: OfficialAutomationCreationMetadata;
-    },
-    signal: AbortSignal,
-  ) => {
-    const db = set(writeDb$);
-    const { automationId, metadata } = args;
-    const staged = metadata.stagedMaterialization === true;
-    const identityComplete = metadata.automationId === automationId;
-    const identities = officialWorkflowAutomationIdentities;
-    const plain = db
-      .$with("official_metadata_plain")
-      .as(
-        db
-          .select()
-          .from(workflowAutomations)
-          .where(plainOfficialAutomationWhere(automationId))
-          .for("update")
-          .limit(1),
-      );
-    // Retain the existing automation -> reservation lock order. Only a valid
-    // disabled staged automation proceeds to the existing reservation lock.
-    const reservation = db.$with("official_metadata_reservation").as(
-      db
-        .select({
-          id: identities.id,
-          retainedAppliedFingerprint: identities.retainedAppliedFingerprint,
-          retainedParameterBindings: identities.retainedParameterBindings,
-          retainedIntendedEnabled: identities.retainedIntendedEnabled,
-        })
-        .from(identities)
-        .innerJoin(plain, eq(plain.workflowId, identities.workflowId))
-        .where(
-          and(
-            sql`${staged && identityComplete}`,
-            eq(plain.enabled, false),
-            eq(identities.id, automationId),
-            eq(identities.blueprintKey, metadata.blueprintKey),
-            eq(identities.state, "reconciling"),
-            isNull(identities.automationId),
-          ),
-        )
-        .for("update", { of: identities })
-        .limit(1),
-    );
-    const admitted = db.$with("official_metadata_admitted").as(
-      db
-        .select({ id: plain.id, updatedAt: plain.updatedAt })
-        .from(plain)
-        .leftJoin(reservation, eq(reservation.id, plain.id))
-        .where(
-          staged
-            ? officialMetadataReservationCondition(metadata, identityComplete)
-            : sql`true`,
-        ),
-    );
-    // One application timestamp owns both writes. Sampling before the statement
-    // can precede a competing writer's timestamp after waiting for its lock.
-    const at = nowDate();
-    const columns = workflowAutomationColumns();
-    const updated = db.$with("official_metadata_updated").as(
-      db
-        .update(workflowAutomations)
-        .set(officialAutomationMetadataValues(metadata, at))
-        .from(admitted)
-        .where(
-          and(
-            eq(workflowAutomations.id, admitted.id),
-            // Preserve the old Date-encoded CAS rejection of submillisecond
-            // preimages before either write can commit.
-            eq(
-              admitted.updatedAt,
-              sql`date_trunc('milliseconds', ${admitted.updatedAt})`,
-            ),
-          ),
-        )
-        .returning({
-          ...columns,
-          observedUpdatedAt: columns.observedUpdatedAt.as("observedUpdatedAt"),
-          observedXmin: columns.observedXmin.as("observedXmin"),
-        }),
-    );
-    const activeIdentity = db.$with("official_metadata_active_identity").as(
-      db
-        .insert(identities)
-        .select(
-          db
-            .select(activeOfficialAutomationIdentityColumns(metadata, at))
-            .from(updated)
-            .where(sql`${!staged}`),
-        )
-        .onConflictDoUpdate({
-          target: [identities.workflowId, identities.blueprintKey],
-          set: activeOfficialAutomationIdentityUpdate(automationId, at),
-        })
-        .returning({ id: identities.id }),
-    );
-    const result = await (async () => {
-      const [row] = await db
-        .with(plain, reservation, admitted, updated, activeIdentity)
-        .select({
-          plainId: plain.id,
-          plainEnabled: plain.enabled,
-          admittedId: admitted.id,
-          row: attachedOfficialAutomationColumns(),
-          identityId: activeIdentity.id,
-        })
-        .from(sql`(SELECT 1) AS metadata_result`)
-        .leftJoin(plain, sql`true`)
-        .leftJoin(reservation, eq(reservation.id, plain.id))
-        .leftJoin(admitted, eq(admitted.id, plain.id))
-        .leftJoin(updated, eq(updated.id, plain.id))
-        .leftJoin(activeIdentity, sql`true`);
-      if (!row?.plainId) {
-        throw new Error("Failed to lock new Official Workflow automation");
-      }
-      if (staged && (!identityComplete || row.plainEnabled)) {
-        throw new Error("Official materialization identity is incomplete");
-      }
-      if (!row.admittedId) {
-        return { kind: "reservation-lost" as const };
-      }
-      if (!row.row || (!staged && !row.identityId)) {
-        throw new Error("Failed to mark Official Workflow automation");
-      }
-      return { kind: "attached" as const, row: row.row };
-    })();
-    signal.throwIfAborted();
-    return result;
-  },
-);
-
-const loadCommittedAutomationSummary$ = command(
-  async (
-    { set },
-    args: { readonly row: AutomationRow; readonly chatThreadId: string | null },
-    signal: AbortSignal,
-  ): Promise<WorkflowAutomationSummary> => {
-    return await set(
-      rowToSummary$,
-      args.row,
-      { chatThreadId: args.chatThreadId },
-      signal,
-    );
-  },
-);
-
-const attachOfficialAutomationMetadata$ = command(
-  async (
-    { set },
-    args: {
-      readonly result: AutomationResult;
-      readonly metadata: OfficialAutomationCreationMetadata | undefined;
-    },
-    signal: AbortSignal,
-  ): Promise<AutomationResult> => {
-    const { result, metadata } = args;
-    if (result.kind !== "ok" || metadata === undefined) {
-      return result;
-    }
-    const attached = await set(
-      persistOfficialAutomationMetadata$,
-      { automationId: result.summary.id, metadata },
-      signal,
-    );
-    if (attached.kind === "reservation-lost") {
-      const db = set(writeDb$);
-      await db
-        .delete(workflowAutomations)
-        .where(
-          and(
-            plainOfficialAutomationWhere(result.summary.id),
-            eq(workflowAutomations.enabled, false),
-          ),
-        );
-      signal.throwIfAborted();
-      return {
-        kind: "conflict",
-        message: "Official Workflow reconciliation was superseded",
-      };
-    }
-    const summary = await set(
-      loadCommittedAutomationSummary$,
-      {
-        row: attached.row,
-        chatThreadId: result.summary.chatThreadId,
-      },
-      signal,
-    );
-    return { kind: "ok", summary };
-  },
-);
 export const createWorkflowAutomation$ = command(
   async (
     { set },
@@ -4207,7 +3851,6 @@ export const createWorkflowAutomation$ = command(
         orgId: args.orgId,
         member: args.member,
         workflowId: args.workflowId,
-        includeInstallingOfficial: args.officialInstallation !== undefined,
       },
       signal,
     );
@@ -4216,45 +3859,23 @@ export const createWorkflowAutomation$ = command(
       return { kind: "not-found" };
     }
     const { workflow } = visible;
-    if (
-      args.officialInstallation !== undefined &&
-      (workflow.officialDefinitionName !==
-        args.officialInstallation.definitionName ||
-        workflow.officialInstallationState !==
-          (args.officialInstallation.installationState ?? "installing") ||
-        workflow.ownerUserId !== args.member.userId)
-    ) {
-      return { kind: "not-found" };
-    }
-    if (
-      workflow.officialDefinitionName !== null &&
-      args.officialInstallation === undefined
-    ) {
+    if (workflow.officialDefinitionName !== null) {
       return {
         kind: "conflict",
         message: OFFICIAL_WORKFLOW_AUTOMATION_READ_ONLY_MESSAGE,
       };
     }
     if (!automationCreateInputIsSchedule(args)) {
-      const created = await set(
+      const result = await set(
         createEventAutomationForWorkflow$,
         {
           input: args,
           workflowId: workflow.id,
           workflowTitle: workflow.displayName ?? workflow.name,
-          automationId: args.officialInstallation?.automationId,
         },
         signal,
       );
       signal.throwIfAborted();
-      const result = await set(
-        attachOfficialAutomationMetadata$,
-        {
-          result: created,
-          metadata: args.officialInstallation,
-        },
-        signal,
-      );
       if (result.kind === "ok") {
         await publishThreadBoundWorkflowAutomationChanged(
           result.summary.ownerUserId,
@@ -4276,7 +3897,6 @@ export const createWorkflowAutomation$ = command(
       {
         input: args,
         workflowId: workflow.id,
-        automationId: args.officialInstallation?.automationId,
         columns: cols,
         nextRunAt,
         currentTime: now,
@@ -4284,476 +3904,17 @@ export const createWorkflowAutomation$ = command(
       signal,
     );
     signal.throwIfAborted();
-    const attached = await set(
-      attachOfficialAutomationMetadata$,
-      {
-        result: { kind: "ok", summary },
-        metadata: args.officialInstallation,
-      },
-      signal,
-    );
-    if (attached.kind !== "ok") {
-      throw new Error("Failed to create Official Workflow automation");
-    }
     await publishThreadBoundWorkflowAutomationChanged(
-      attached.summary.ownerUserId,
-      attached.summary.chatThreadId,
+      summary.ownerUserId,
+      summary.chatThreadId,
     );
     signal.throwIfAborted();
-    return attached;
-  },
-);
-
-export interface OfficialAutomationEventPreparation {
-  readonly eventConfig: WorkflowAutomationEventConfig;
-  readonly eventConnectorId?: string;
-  readonly googleFormsSeedCursor?: string;
-  readonly webhookCredentials?: PreparedWebhookCredentials;
-}
-
-export type OfficialAutomationEventPreparationResult =
-  | {
-      readonly kind: "ok";
-      readonly preparation: OfficialAutomationEventPreparation;
-    }
-  | AutomationActionFailure;
-
-interface PrepareOfficialAutomationReconfigurationInput {
-  readonly automationId: string;
-  readonly input: CreateAutomationInput;
-}
-
-function preparedOfficialEvent(
-  eventConfig: WorkflowAutomationEventConfig,
-  extra?: Omit<OfficialAutomationEventPreparation, "eventConfig">,
-): OfficialAutomationEventPreparationResult {
-  return {
-    kind: "ok",
-    preparation: { eventConfig, ...extra },
-  };
-}
-
-const prepareOfficialChatRunFinishedEvent$ = command(
-  async (
-    { get },
-    input: CreateChatRunFinishedEventAutomationInput,
-    signal: AbortSignal,
-  ): Promise<OfficialAutomationEventPreparationResult> => {
-    const db = get(db$);
-    const [thread] = await db
-      .select({ userId: chatThreads.userId })
-      .from(chatThreads)
-      .where(eq(chatThreads.id, input.eventConfig.chatThreadId))
-      .limit(1);
-    signal.throwIfAborted();
-    if (!thread || thread.userId !== input.member.userId) {
-      return {
-        kind: "bad-request",
-        message: `Chat thread not found: ${input.eventConfig.chatThreadId}`,
-      };
-    }
-    const [binding] = await db
-      .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
-      .from(workflowUserAutomationThreads)
-      .where(
-        and(
-          eq(workflowUserAutomationThreads.orgId, input.orgId),
-          eq(workflowUserAutomationThreads.userId, input.member.userId),
-          eq(workflowUserAutomationThreads.workflowId, input.workflowId),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    const automationThreadId = binding?.chatThreadId ?? null;
-    if (automationThreadId === input.eventConfig.chatThreadId) {
-      return {
-        kind: "bad-request",
-        message:
-          "A workflow cannot watch run-finished events from its own chat thread",
-      };
-    }
-    return preparedOfficialEvent(input.eventConfig);
-  },
-);
-
-const prepareOfficialNotionEvent$ = command(
-  async (
-    { set },
-    input: CreateNotionEventAutomationInput,
-    signal: AbortSignal,
-  ): Promise<OfficialAutomationEventPreparationResult> => {
-    const eventConnectorId = await set(
-      readEventAutomationConnectorId$,
-      {
-        orgId: input.orgId,
-        userId: input.member.userId,
-        workflowId: input.workflowId,
-        connectorSlug: "notion",
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (eventConnectorId === null) {
-      return {
-        kind: "bad-request",
-        message: "Connect Notion before adding a Notion event automation",
-      };
-    }
-    const config = input.eventConfig;
-    if (input.eventType === "notion-child-page-created") {
-      if (config.event !== "child_page_created") {
-        return {
-          kind: "bad-request",
-          message: "Unsupported Notion automation event config",
-        };
-      }
-      const prepared = await set(
-        prepareNotionChildPageEventConfigForPersist$,
-        {
-          orgId: input.orgId,
-          userId: input.member.userId,
-          connectorId: eventConnectorId,
-          eventConfig:
-            "parentPageUrl" in config
-              ? config
-              : {
-                  provider: "notion",
-                  event: "child_page_created",
-                  parentPageUrl:
-                    config.parentPage.rawUrl ?? config.parentPage.url,
-                },
-        },
-        signal,
-      );
-      return prepared.kind === "ok"
-        ? preparedOfficialEvent(prepared.eventConfig, { eventConnectorId })
-        : prepared;
-    }
-    if (input.eventType === "notion-database-item-created") {
-      if (config.event !== "database_item_created") {
-        return {
-          kind: "bad-request",
-          message: "Unsupported Notion automation event config",
-        };
-      }
-      const prepared = await set(
-        prepareNotionDatabaseItemEventConfigForPersist$,
-        {
-          orgId: input.orgId,
-          userId: input.member.userId,
-          connectorId: eventConnectorId,
-          eventConfig:
-            "databaseUrl" in config
-              ? config
-              : {
-                  provider: "notion",
-                  event: "database_item_created",
-                  databaseUrl:
-                    config.dataSource.rawUrl ?? config.dataSource.url,
-                },
-        },
-        signal,
-      );
-      return prepared.kind === "ok"
-        ? preparedOfficialEvent(prepared.eventConfig, { eventConnectorId })
-        : prepared;
-    }
-    if (config.event !== "page_content_updated") {
-      return {
-        kind: "bad-request",
-        message: "Unsupported Notion automation event config",
-      };
-    }
-    const eventConfig =
-      "scope" in config
-        ? config.scope.type === "page"
-          ? {
-              provider: "notion" as const,
-              event: "page_content_updated" as const,
-              pageUrl: config.scope.page.rawUrl ?? config.scope.page.url,
-            }
-          : {
-              provider: "notion" as const,
-              event: "page_content_updated" as const,
-              databaseUrl:
-                config.scope.dataSource.rawUrl ?? config.scope.dataSource.url,
-            }
-        : config;
-    const prepared = await set(
-      prepareNotionPageContentUpdatedEventConfigForPersist$,
-      {
-        orgId: input.orgId,
-        userId: input.member.userId,
-        connectorId: eventConnectorId,
-        eventConfig,
-      },
-      signal,
-    );
-    return prepared.kind === "ok"
-      ? preparedOfficialEvent(prepared.eventConfig, { eventConnectorId })
-      : prepared;
-  },
-);
-
-const prepareOfficialGmailEvent$ = command(
-  async (
-    { set },
-    input: CreateGmailEventAutomationInput,
-    signal: AbortSignal,
-  ): Promise<OfficialAutomationEventPreparationResult> => {
-    const eventConnectorId = await set(
-      readGmailAutomationConnectorId$,
-      {
-        orgId: input.orgId,
-        userId: input.member.userId,
-        workflowId: input.workflowId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (eventConnectorId === null) {
-      return {
-        kind: "bad-request",
-        message: "Connect Gmail before adding a Gmail event automation",
-      };
-    }
-    const prepared = await set(
-      prepareGmailEventConfigForPersist$,
-      {
-        orgId: input.orgId,
-        userId: input.member.userId,
-        connectorId: eventConnectorId,
-        eventType: input.eventType,
-        eventConfig: input.eventConfig,
-      },
-      signal,
-    );
-    return prepared.kind === "ok"
-      ? preparedOfficialEvent(prepared.eventConfig, { eventConnectorId })
-      : prepared;
-  },
-);
-const prepareOfficialGoogleCalendarEvent$ = command(
-  async (
-    { set },
-    input: CreateGoogleCalendarEventAutomationInput,
-    signal: AbortSignal,
-  ): Promise<OfficialAutomationEventPreparationResult> => {
-    const eventConnectorId = await set(
-      readGoogleCalendarAutomationConnectorId$,
-      {
-        orgId: input.orgId,
-        userId: input.member.userId,
-        workflowId: input.workflowId,
-      },
-    );
-    signal.throwIfAborted();
-    if (eventConnectorId === null) {
-      return {
-        kind: "bad-request",
-        message:
-          "Connect Google Calendar before adding a Google Calendar event automation",
-      };
-    }
-    const parsedConfig = parseGoogleCalendarEventConfig(
-      input.eventType,
-      input.eventConfig,
-    );
-    const calendarId = await set(
-      normalizeGoogleCalendarIdForConnector$,
-      {
-        orgId: input.orgId,
-        userId: input.member.userId,
-        connectorId: eventConnectorId,
-        calendarId: parsedConfig.calendarId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    return preparedOfficialEvent(
-      { ...parsedConfig, calendarId },
-      { eventConnectorId },
-    );
-  },
-);
-const prepareOfficialGithubEvent$ = command(
-  async (
-    { set },
-    input: CreateGithubEventAutomationInput,
-    signal: AbortSignal,
-  ): Promise<OfficialAutomationEventPreparationResult> => {
-    const prepared = await set(
-      prepareGithubAutomationEventConfig$,
-      {
-        orgId: input.orgId,
-        eventType: input.eventType,
-        eventConfig: input.eventConfig,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    return prepared.kind === "ok"
-      ? preparedOfficialEvent(prepared.eventConfig)
-      : prepared;
-  },
-);
-
-const prepareOfficialGoogleFormsEvent$ = command(
-  async (
-    { set },
-    input: CreateGoogleFormsEventAutomationInput,
-    signal: AbortSignal,
-  ): Promise<OfficialAutomationEventPreparationResult> => {
-    if (!("formUrl" in input.eventConfig)) {
-      return missingGoogleFormsUrlResult;
-    }
-    const connectorId = await set(
-      readGoogleFormsActivationAccount$,
-      {
-        orgId: input.orgId,
-        userId: input.member.userId,
-        workflowId: input.workflowId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (connectorId === null) {
-      return {
-        kind: "bad-request",
-        message:
-          "Connect Google Forms before using Google Forms response automations",
-      };
-    }
-    const prepared = await set(
-      prepareGoogleFormsResponseEventConfigForPersist$,
-      {
-        orgId: input.orgId,
-        userId: input.member.userId,
-        connectorId,
-        eventConfig: input.eventConfig,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    return prepared.kind === "ok"
-      ? preparedOfficialEvent(prepared.eventConfig, {
-          eventConnectorId: connectorId,
-          googleFormsSeedCursor: prepared.seedCursor,
-        })
-      : prepared;
-  },
-);
-
-const prepareOfficialGoogleMeetEvent$ = command(
-  async (
-    { set },
-    input: CreateGoogleMeetEventAutomationInput,
-    signal: AbortSignal,
-  ): Promise<OfficialAutomationEventPreparationResult> => {
-    const eventConnectorId = await set(
-      readEventAutomationConnectorId$,
-      {
-        orgId: input.orgId,
-        userId: input.member.userId,
-        workflowId: input.workflowId,
-        connectorSlug: "google-meet",
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (eventConnectorId === null) {
-      return {
-        kind: "bad-request",
-        message:
-          "Connect Google Meet before using Google Meet event automations",
-      };
-    }
-    const eventConfig = googleMeetTranscriptGeneratedEventConfigSchema.parse(
-      input.eventConfig,
-    );
-    return preparedOfficialEvent(eventConfig, { eventConnectorId });
-  },
-);
-
-export const prepareOfficialAutomationReconfiguration$ = command(
-  async (
-    { get, set },
-    args: PrepareOfficialAutomationReconfigurationInput,
-    signal: AbortSignal,
-  ): Promise<OfficialAutomationEventPreparationResult> => {
-    const db = get(db$);
-    const owned = await set(
-      loadOwnedAutomation$,
-      {
-        orgId: args.input.orgId,
-        member: args.input.member,
-        automationId: args.automationId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if ("kind" in owned) {
-      return owned;
-    }
-    const input = args.input;
-    const automation = owned.automation;
-    if (
-      automationCreateInputIsSchedule(input) ||
-      automation.officialBlueprintKey === null ||
-      automation.workflowId !== input.workflowId
-    ) {
-      return {
-        kind: "conflict",
-        message: "Official Workflow Blueprint structure changed",
-      };
-    }
-    if (automationCreateInputIsChatRunFinished(input)) {
-      return await set(prepareOfficialChatRunFinishedEvent$, input, signal);
-    }
-    if (automationCreateInputIsGmail(input)) {
-      return await set(prepareOfficialGmailEvent$, input, signal);
-    }
-    if (automationCreateInputIsGithub(input)) {
-      return await set(prepareOfficialGithubEvent$, input, signal);
-    }
-    if (automationCreateInputIsGoogleCalendar(input)) {
-      return await set(prepareOfficialGoogleCalendarEvent$, input, signal);
-    }
-    if (automationCreateInputIsGoogleForms(input)) {
-      return await set(prepareOfficialGoogleFormsEvent$, input, signal);
-    }
-    if (automationCreateInputIsGoogleMeet(input)) {
-      return await set(prepareOfficialGoogleMeetEvent$, input, signal);
-    }
-    if (automationCreateInputIsNotion(input)) {
-      return await set(prepareOfficialNotionEvent$, input, signal);
-    }
-    if (input.eventType === "webhook-received") {
-      const [webhook] = await db
-        .select({ automationId: workflowWebhookAutomations.automationId })
-        .from(workflowWebhookAutomations)
-        .where(eq(workflowWebhookAutomations.automationId, automation.id))
-        .limit(1);
-      signal.throwIfAborted();
-      // Finalization keeps its existing catalog, entitlement, identity, and
-      // updatedAt guards. It only consumes prepared ciphertext under locks.
-      const credentials = webhook
-        ? undefined
-        : await prepareWebhookCredentials(
-            { orgId: input.orgId, userId: input.member.userId },
-            signal,
-          );
-      signal.throwIfAborted();
-      return preparedOfficialEvent(
-        input.eventConfig ?? defaultWebhookReceivedEventConfig(),
-        credentials ? { webhookCredentials: credentials.row } : undefined,
-      );
-    }
-    return { kind: "not-found" };
+    return { kind: "ok", summary };
   },
 );
 
 interface OwnedAutomation {
+  readonly officialDefinitionName: string | null;
   readonly automation: AutomationRow;
 }
 
@@ -4814,7 +3975,10 @@ export const loadOwnedAutomation$ = command(
         message: "Only the automation owner can manage this automation",
       };
     }
-    return { automation };
+    return {
+      automation,
+      officialDefinitionName: visible.workflow.officialDefinitionName,
+    };
   },
 );
 
@@ -5573,8 +4737,6 @@ export interface AutomationActionInput {
   readonly automationId: string;
   readonly sourceRunId?: string;
   readonly inheritedAutonomyBudget?: number;
-  readonly allowReservedOfficialMaterialization?: boolean;
-  readonly userRequestedEnable?: true;
 }
 export const deleteWorkflowAutomation$ = command(
   async (
@@ -5849,29 +5011,12 @@ const restoreDisabledWorkflowAutomation$ = command(
     },
   ): Promise<void> => {
     const { previousAutomation } = args;
-    const officialReconciliationStatus =
-      previousAutomation.officialBlueprintKey === null
-        ? null
-        : previousAutomation.officialReconciliationStatus;
-    if (
-      previousAutomation.officialBlueprintKey !== null &&
-      officialReconciliationStatus === null
-    ) {
-      throw new Error("Official Workflow automation state is incomplete");
-    }
     const db = set(writeDb$);
     const restore = db
       .update(workflowAutomations)
       .set({
         enabled: previousAutomation.enabled,
         nextRunAt: previousAutomation.nextRunAt,
-        ...(officialReconciliationStatus === null
-          ? {}
-          : {
-              officialIntendedEnabled:
-                previousAutomation.officialIntendedEnabled,
-              officialReconciliationStatus,
-            }),
         updatedAt: nowDate(),
       })
       .where(eq(workflowAutomations.id, previousAutomation.id))
@@ -5896,58 +5041,6 @@ const restoreDisabledWorkflowAutomation$ = command(
   },
 );
 
-function officialAutomationReconfigurationFailure(
-  automation: AutomationRow,
-): AutomationActionFailure | null {
-  return automation.officialBlueprintKey !== null &&
-    automation.officialReconciliationStatus === "reconciling"
-    ? {
-        kind: "conflict",
-        message: OFFICIAL_WORKFLOW_RECONFIGURATION_IN_PROGRESS_MESSAGE,
-      }
-    : null;
-}
-
-const finalizeEnabledOfficialAutomation$ = command(
-  async (
-    { set },
-    previousAutomation: AutomationRow,
-    enabledAutomation: AutomationRow,
-    signal: AbortSignal,
-  ): Promise<AutomationRow> => {
-    const db = set(writeDb$);
-    if (
-      previousAutomation.officialBlueprintKey === null ||
-      enabledAutomation.kind !== "event"
-    ) {
-      return enabledAutomation;
-    }
-    if (previousAutomation.officialReconciliationStatus === null) {
-      throw new Error("Official Workflow automation state is incomplete");
-    }
-    const [finalized] = await db
-      .update(workflowAutomations)
-      .set({
-        officialReconciliationStatus:
-          previousAutomation.officialReconciliationStatus,
-        updatedAt: nowDate(),
-      })
-      .where(
-        and(
-          eq(workflowAutomations.id, enabledAutomation.id),
-          eq(workflowAutomations.officialReconciliationStatus, "reconciling"),
-        ),
-      )
-      .returning(workflowAutomationColumns());
-    signal.throwIfAborted();
-    if (!finalized) {
-      throw new Error(
-        "Official Workflow lifecycle reconciliation lost ownership",
-      );
-    }
-    return finalized;
-  },
-);
 const ensureEnabledAutomationEventWatchWithRollback$ = command(
   async (
     { set },
@@ -5958,59 +5051,37 @@ const ensureEnabledAutomationEventWatchWithRollback$ = command(
     },
     signal: AbortSignal,
   ): Promise<AutomationActionFailure | null> => {
-    const db = set(writeDb$);
     const rollback = async (): Promise<void> => {
-      const cleanupSignal = new AbortController().signal;
-      await onRejection(
-        (async () => {
-          await set(restoreDisabledWorkflowAutomation$, {
-            previousAutomation: args.previousAutomation,
-          });
-          await set(
-            reconcileAutomationEventWatches$,
-            {
-              automations: [args.enabledAutomation],
-            },
-            cleanupSignal,
-          );
-        })(),
-        async () => {
-          if (args.previousAutomation.officialBlueprintKey === null) {
-            return;
-          }
-          await db
-            .update(workflowAutomations)
-            .set({
-              officialReconciliationStatus: "failed",
-              updatedAt: nowDate(),
-            })
-            .where(
-              and(
-                eq(workflowAutomations.id, args.previousAutomation.id),
-                isNotNull(workflowAutomations.officialBlueprintKey),
-              ),
-            );
-        },
+      await set(restoreDisabledWorkflowAutomation$, {
+        previousAutomation: args.previousAutomation,
+      });
+      await set(
+        reconcileAutomationEventWatches$,
+        { automations: [args.enabledAutomation] },
+        new AbortController().signal,
       );
     };
-    return await onRejection(
-      (async () => {
-        const failure = await set(
-          ensureEnabledAutomationEventWatch$,
-          {
-            automation: args.enabledAutomation,
-            hadConsumer: args.hadConsumer,
-          },
-          signal,
-        );
-        if (failure && failure.kind !== "conflict") {
-          await rollback();
-        }
-        signal.throwIfAborted();
-        return failure;
-      })(),
+    // Finish compensating an interrupted subscription with the cleanup signal.
+    const failure = await onRejection(
+      set(
+        ensureEnabledAutomationEventWatch$,
+        {
+          automation: args.enabledAutomation,
+          hadConsumer: args.hadConsumer,
+        },
+        signal,
+      ),
       rollback,
     );
+    if (signal.aborted) {
+      await rollback();
+      signal.throwIfAborted();
+    }
+    if (failure && failure.kind !== "conflict") {
+      await rollback();
+    }
+    signal.throwIfAborted();
+    return failure;
   },
 );
 type EnabledAutomationAccountProjection =
@@ -6256,12 +5327,7 @@ function enabledWorkflowAutomationValues(
       : {}),
     updatedAt: args.now,
     ...(args.automation.officialBlueprintKey !== null
-      ? {
-          officialIntendedEnabled: true,
-          ...(args.automation.kind === "event"
-            ? { officialReconciliationStatus: "reconciling" as const }
-            : {}),
-        }
+      ? { officialIntendedEnabled: true }
       : args.inheritedAutonomyBudget === undefined
         ? {}
         : { autonomyBudget: args.inheritedAutonomyBudget }),
@@ -6406,7 +5472,7 @@ const commitEnabledWorkflowAutomation$ = command(
         .set(values)
         .where(
           and(
-            officialAutomationLifecycleCondition(args.automation),
+            workflowAutomationToggleCondition(args.automation),
             eligible,
             gte(db.select({ count: count() }).from(resetCursor), 0),
           ),
@@ -6499,7 +5565,7 @@ const persistEnabledWorkflowAutomation$ = command(
         : db
             .update(workflowAutomations)
             .set(values)
-            .where(officialAutomationLifecycleCondition(args.automation))
+            .where(workflowAutomationToggleCondition(args.automation))
             .returning(workflowAutomationColumns()),
     );
     signal.throwIfAborted();
@@ -6600,22 +5666,14 @@ function enabledAutomationWithAccountProjection(
   };
 }
 
-const finalizeAndPublishEnabledWorkflowAutomation$ = command(
+const publishEnabledWorkflowAutomation$ = command(
   async (
     { set },
-    args: {
-      readonly previousAutomation: AutomationRow;
-      readonly enabledAutomation: AutomationRow;
-      readonly memberUserId: string;
-    },
+    row: AutomationRow,
+    memberUserId: string,
+    officialDefinitionName: string | null,
     signal: AbortSignal,
   ): Promise<AutomationResult> => {
-    const row = await set(
-      finalizeEnabledOfficialAutomation$,
-      args.previousAutomation,
-      args.enabledAutomation,
-      signal,
-    );
     const chatThreadId = await set(
       readAutomationChatThreadId$,
       {
@@ -6627,11 +5685,16 @@ const finalizeAndPublishEnabledWorkflowAutomation$ = command(
     );
     signal.throwIfAborted();
     await publishThreadBoundWorkflowAutomationChanged(
-      args.memberUserId,
+      memberUserId,
       chatThreadId,
     );
     signal.throwIfAborted();
-    const summary = await set(rowToSummary$, row, { chatThreadId }, signal);
+    const summary = await set(
+      rowToSummary$,
+      row,
+      { chatThreadId, officialDefinitionName },
+      signal,
+    );
     signal.throwIfAborted();
     return { kind: "ok", summary };
   },
@@ -6726,17 +5789,11 @@ const activateInactiveGoogleFormsAutomation$ = command(
         resetAutomationId: args.previousAutomation.id,
         activation: {
           automationSnapshot,
-          ...(args.previousAutomation.officialBlueprintKey === null
-            ? {}
-            : { officialAutomation: args.previousAutomation }),
           automationId: args.previousAutomation.id,
           workflowId: args.previousAutomation.workflowId,
           eventConfig,
           nextRunAt: args.nextRunAt,
-          inheritedAutonomyBudget:
-            args.previousAutomation.officialBlueprintKey === null
-              ? args.inheritedAutonomyBudget
-              : undefined,
+          inheritedAutonomyBudget: args.inheritedAutonomyBudget,
         },
       },
       signal,
@@ -6744,11 +5801,7 @@ const activateInactiveGoogleFormsAutomation$ = command(
     if (prepared.kind !== "ok") {
       return {
         kind: prepared.kind === "superseded" ? "conflict" : "bad-request",
-        message:
-          prepared.kind === "superseded" &&
-          args.previousAutomation.officialBlueprintKey !== null
-            ? OFFICIAL_WORKFLOW_RECONFIGURATION_IN_PROGRESS_MESSAGE
-            : prepared.message,
+        message: prepared.message,
       };
     }
     if (!prepared.enabledAutomation) {
@@ -6857,7 +5910,7 @@ function enabledWorkflowAutomationFailure(
   if (enabled.status === "conflict") {
     return {
       kind: "conflict",
-      message: OFFICIAL_WORKFLOW_RECONFIGURATION_IN_PROGRESS_MESSAGE,
+      message: OFFICIAL_AUTOMATION_CHANGED_MESSAGE,
     };
   }
   if (enabled.status === "gmail-unavailable") {
@@ -6916,20 +5969,14 @@ const persistAndReconcileEnabledWorkflowAutomation$ = command(
       readonly automation: AutomationRow;
       readonly orgId: string;
       readonly memberUserId: string;
+      readonly officialDefinitionName: string | null;
       readonly nextRunAt: Date | null;
       readonly now: Date;
       readonly inheritedAutonomyBudget?: number;
-      readonly userRequestedEnable: boolean;
     },
     signal: AbortSignal,
   ): Promise<AutomationResult> => {
-    if (
-      args.automation.eventType === "google-forms-response-submitted" &&
-      (args.automation.officialBlueprintKey === null ||
-        (args.userRequestedEnable &&
-          !args.automation.enabled &&
-          args.automation.officialIntendedEnabled === false))
-    ) {
+    if (args.automation.eventType === "google-forms-response-submitted") {
       if (args.automation.enabled) {
         return await set(
           refreshEnabledGoogleFormsAutomation$,
@@ -6990,25 +6037,25 @@ const persistAndReconcileEnabledWorkflowAutomation$ = command(
     if (!enabled.row) {
       throw new Error("Failed to enable workflow automation");
     }
-    const watchFailure = await set(
-      ensureEnabledAutomationEventWatchWithRollback$,
-      {
-        previousAutomation: args.automation,
-        enabledAutomation: enabled.row,
-        hadConsumer: watchHadConsumer,
-      },
-      signal,
-    );
-    if (watchFailure) {
-      return watchFailure;
+    if (enabled.row.kind === "event") {
+      const watchFailure = await set(
+        ensureEnabledAutomationEventWatchWithRollback$,
+        {
+          previousAutomation: args.automation,
+          enabledAutomation: enabled.row,
+          hadConsumer: watchHadConsumer,
+        },
+        signal,
+      );
+      if (watchFailure) {
+        return watchFailure;
+      }
     }
     return await set(
-      finalizeAndPublishEnabledWorkflowAutomation$,
-      {
-        previousAutomation: args.automation,
-        enabledAutomation: enabled.row,
-        memberUserId: args.memberUserId,
-      },
+      publishEnabledWorkflowAutomation$,
+      enabled.row,
+      args.memberUserId,
+      args.officialDefinitionName,
       signal,
     );
   },
@@ -7024,6 +6071,7 @@ const readWorkflowAutomationEnableTarget$ = command(
     const [row] = await db
       .select({
         automation: workflowAutomationColumns(),
+        officialDefinitionName: workflows.officialDefinitionName,
       })
       .from(workflowAutomations)
       .innerJoin(workflows, eq(workflows.id, workflowAutomations.workflowId))
@@ -7051,7 +6099,7 @@ const readWorkflowAutomationEnableTarget$ = command(
         message: "Only the automation owner can manage this automation",
       };
     }
-    return { automation: row.automation };
+    return row;
   },
 );
 
@@ -7067,18 +6115,6 @@ export const enableWorkflowAutomation$ = command(
       return owned;
     }
     const { automation } = owned;
-    const reconfigurationFailure =
-      args.allowReservedOfficialMaterialization === true
-        ? automation.officialReconciliationStatus === "reconciling"
-          ? null
-          : {
-              kind: "conflict" as const,
-              message: OFFICIAL_WORKFLOW_RECONFIGURATION_IN_PROGRESS_MESSAGE,
-            }
-        : officialAutomationReconfigurationFailure(automation);
-    if (reconfigurationFailure) {
-      return reconfigurationFailure;
-    }
     const now = nowDate();
     const nextRunAt =
       automation.kind === "schedule"
@@ -7108,11 +6144,11 @@ export const enableWorkflowAutomation$ = command(
       persistMorningBriefAutomationToggle$,
       {
         automation,
+        officialDefinitionName: owned.officialDefinitionName,
         enabled: true,
         nextRunAt,
         now,
         inheritedAutonomyBudget: args.inheritedAutonomyBudget,
-        reconciliationOwned: args.allowReservedOfficialMaterialization === true,
       },
       signal,
     );
@@ -7120,17 +6156,15 @@ export const enableWorkflowAutomation$ = command(
     if (morningBriefRow.kind === "conflict") {
       return {
         kind: "conflict",
-        message: OFFICIAL_WORKFLOW_RECONFIGURATION_IN_PROGRESS_MESSAGE,
+        message: OFFICIAL_AUTOMATION_CHANGED_MESSAGE,
       };
     }
     if (morningBriefRow.kind === "applied") {
       return await set(
-        finalizeAndPublishEnabledWorkflowAutomation$,
-        {
-          previousAutomation: automation,
-          enabledAutomation: morningBriefRow.row,
-          memberUserId: args.member.userId,
-        },
+        publishEnabledWorkflowAutomation$,
+        morningBriefRow.row,
+        args.member.userId,
+        owned.officialDefinitionName,
         signal,
       );
     }
@@ -7140,10 +6174,10 @@ export const enableWorkflowAutomation$ = command(
         automation,
         orgId: args.orgId,
         memberUserId: args.member.userId,
+        officialDefinitionName: owned.officialDefinitionName,
         nextRunAt,
         now,
         inheritedAutonomyBudget: args.inheritedAutonomyBudget,
-        userRequestedEnable: args.userRequestedEnable === true,
       },
       signal,
     );
@@ -7172,7 +6206,7 @@ const persistDisabledWorkflowAutomation$ = command(
             ? {}
             : { officialIntendedEnabled: false }),
         })
-        .where(officialAutomationLifecycleCondition(args.automation))
+        .where(workflowAutomationToggleCondition(args.automation))
         .returning({
           ...columns,
           observedUpdatedAt: columns.observedUpdatedAt.as("observedUpdatedAt"),
@@ -7216,12 +6250,6 @@ export const disableWorkflowAutomation$ = command(
     if ("kind" in owned) {
       return owned;
     }
-    const reconfigurationFailure = officialAutomationReconfigurationFailure(
-      owned.automation,
-    );
-    if (reconfigurationFailure) {
-      return reconfigurationFailure;
-    }
     const now = nowDate();
     const nextRunAt =
       owned.automation.kind === "schedule" ? null : owned.automation.nextRunAt;
@@ -7229,6 +6257,7 @@ export const disableWorkflowAutomation$ = command(
       persistMorningBriefAutomationToggle$,
       {
         automation: owned.automation,
+        officialDefinitionName: owned.officialDefinitionName,
         enabled: false,
         nextRunAt,
         now,
@@ -7251,7 +6280,7 @@ export const disableWorkflowAutomation$ = command(
       if (owned.automation.officialBlueprintKey !== null) {
         return {
           kind: "conflict",
-          message: OFFICIAL_WORKFLOW_RECONFIGURATION_IN_PROGRESS_MESSAGE,
+          message: OFFICIAL_AUTOMATION_CHANGED_MESSAGE,
         };
       }
       throw new Error("Failed to disable workflow automation");
@@ -7300,7 +6329,12 @@ export const disableWorkflowAutomation$ = command(
     signal.throwIfAborted();
     return {
       kind: "ok",
-      summary: await set(rowToSummary$, row, { chatThreadId }, signal),
+      summary: await set(
+        rowToSummary$,
+        row,
+        { chatThreadId, officialDefinitionName: owned.officialDefinitionName },
+        signal,
+      ),
     };
   },
 );

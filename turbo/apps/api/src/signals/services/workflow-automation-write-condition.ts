@@ -1,22 +1,11 @@
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
+import { observedWorkflowAutomationCondition } from "./workflow-automation-snapshot";
+
 type AutomationRow = typeof workflowAutomations.$inferSelect;
 
-export function officialAutomationLifecycleCondition(
-  automation: AutomationRow,
-) {
-  if (automation.officialBlueprintKey === null) {
-    return eq(workflowAutomations.id, automation.id);
-  }
-  if (automation.officialReconciliationStatus === null) {
-    throw new Error("Official Workflow automation state is incomplete");
-  }
-  return and(
-    eq(workflowAutomations.id, automation.id),
-    eq(workflowAutomations.updatedAt, automation.updatedAt),
-    eq(
-      workflowAutomations.officialReconciliationStatus,
-      automation.officialReconciliationStatus,
-    ),
-  );
+export function workflowAutomationToggleCondition(automation: AutomationRow) {
+  return automation.officialBlueprintKey === null
+    ? eq(workflowAutomations.id, automation.id)
+    : observedWorkflowAutomationCondition(automation);
 }

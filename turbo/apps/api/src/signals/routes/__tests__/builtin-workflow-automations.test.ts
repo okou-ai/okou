@@ -582,6 +582,7 @@ async function expectMorningBriefRecovery(
     routes: [
       ...cronExecuteWorkflowAutomationsRoutes,
       ...workflowAutomationsRoutes,
+      ...morningBriefPreferenceRoutes,
       ...feedRoutes,
     ],
   });
@@ -660,6 +661,18 @@ async function expectMorningBriefRecovery(
   expect(Date.parse(disabled.nextRunAt ?? "")).toBeGreaterThan(
     Date.parse(threshold.completedAt),
   );
+  const unchanged = await accept(
+    app(morningBriefPreferenceContract).update({
+      headers,
+      body: { enabled: true },
+    }),
+    [200],
+  );
+  expect(unchanged.body).toMatchObject({ enabled: true, status: "error" });
+  await expect(readAutomation()).resolves.toMatchObject({
+    enabled: false,
+    nextRunAt: disabled.nextRunAt,
+  });
   const delivered = await accept(
     app(feedContract).list({ headers, query: { type: "event" } }),
     [200],
@@ -711,12 +724,22 @@ function expectScopeGuidance(
   }
 }
 
-function expectLearningSchedule(automation: WorkflowAutomationSummary) {
+function expectBuiltinCronSchedule(
+  automation: WorkflowAutomationSummary,
+  learning: boolean,
+) {
   if (automation.kind !== "schedule" || automation.schedule.type !== "cron") {
-    throw new Error("Expected the Learning cron schedule");
+    throw new Error("Expected an Official cron schedule");
   }
-  expect(automation.schedule.cronExpression.split(" ")[1]).toBe("2");
-  expect(automation.schedule.timezone).toBe("Asia/Shanghai");
+  const { schedule } = automation;
+  expect(automation.official?.parameterBindings).toStrictEqual([
+    { key: "cron", value: schedule.cronExpression },
+  ]);
+  if (learning) {
+    expect(schedule.cronExpression.split(" ")[1]).toBe("2");
+    expect(schedule.timezone).toBe("Asia/Shanghai");
+  }
+  return schedule;
 }
 
 function isProactiveProfileWorkflow(workflow: WorkflowSummary) {
@@ -954,9 +977,7 @@ test.each(scenarios)(
     if (!automation.nextRunAt) {
       throw new Error("Expected the next Official workflow schedule");
     }
-    if (learning) {
-      expectLearningSchedule(automation);
-    }
+    const schedule = expectBuiltinCronSchedule(automation, learning);
     // Feedback setup may finish after this occurrence becomes due.
     const dispatchedAt = Math.max(now(), Date.parse(automation.nextRunAt));
     await withMockNowForTest(dispatchedAt, async () => {
@@ -1072,6 +1093,14 @@ test.each(scenarios)(
           [200],
         );
         expect(detail.body.instruction).toContain(heading);
+        const copied = await accept(
+          app(workflowAutomationsContract).list({
+            headers,
+            params: { workflowId: copy.body.id },
+          }),
+          [200],
+        );
+        expect(copied.body).toMatchObject([{ official: null, schedule }]);
       });
     }
   },

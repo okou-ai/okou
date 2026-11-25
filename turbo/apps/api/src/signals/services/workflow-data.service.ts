@@ -1,3 +1,4 @@
+import { officialWorkflowLifecycleSchema } from "@okouai/api-contracts/contracts/official-workflow-catalog";
 import { visibleWorkflowCondition } from "./workflow-visibility";
 import { command, computed, type Computed } from "ccstate";
 import type { WorkflowAttachments } from "@okouai/db/jsonb-contracts/workflow";
@@ -9,15 +10,10 @@ import { workflows } from "@okouai/db/schema/workflow";
 import { and, asc, desc, eq, isNull, or, sql, type SQL } from "drizzle-orm";
 
 import { db$ } from "../external/db";
-import { pgTextDecoder } from "../../lib/db-structured-result";
 import {
-  acceptedOfficialWorkflowCatalogReadPlan,
-  acceptedCatalogFromRow,
-} from "./official-workflow-catalog-read.service";
-import {
-  officialWorkflowCatalogState,
-  officialWorkflowCatalogReleases,
-} from "@okouai/db/schema/official-workflow-catalog";
+  pgTextDecoder,
+  zodDriverValueDecoder,
+} from "../../lib/db-structured-result";
 import { builtInWorkflow } from "./builtin-workflows";
 
 export interface WorkflowMember {
@@ -37,7 +33,7 @@ export interface WorkflowRow {
   readonly displayName: string | null;
   readonly description: string | null;
   readonly officialDefinitionName: string | null;
-  readonly officialInstallationState: "installing" | "installed" | null;
+  readonly archivedOfficialSnapshot: (typeof workflows.$inferSelect)["archivedOfficialSnapshot"];
   readonly importSource: WorkflowImportSource | null;
   readonly createdBy: string;
   readonly updatedBy: string;
@@ -54,7 +50,6 @@ type WorkflowSummaryRow = Pick<
   | "displayName"
   | "description"
   | "officialDefinitionName"
-  | "officialInstallationState"
   | "importSource"
   | "createdAt"
 >;
@@ -122,7 +117,6 @@ export const loadVisibleWorkflowById$ = command(
       readonly orgId: string;
       readonly member: WorkflowMember;
       readonly workflowId: string;
-      readonly includeInstallingOfficial?: boolean;
     },
     signal: AbortSignal,
   ): Promise<(VisibleWorkflow & { readonly observedXmin: string }) | null> => {
@@ -136,15 +130,7 @@ export const loadVisibleWorkflowById$ = command(
         and(
           eq(workflows.orgId, args.orgId),
           eq(workflows.id, args.workflowId),
-          args.includeInstallingOfficial
-            ? or(
-                visibleWorkflowCondition(args.member.userId),
-                and(
-                  eq(workflows.ownerUserId, args.member.userId),
-                  eq(workflows.officialInstallationState, "installing"),
-                ),
-              )
-            : visibleWorkflowCondition(args.member.userId),
+          visibleWorkflowCondition(args.member.userId),
         ),
       )
       .limit(1);
@@ -178,12 +164,11 @@ export function workflowSummary(args: {
     canManage: canManageWorkflow(args.workflow, args.member),
     canPublish: canPublishWorkflow(args.workflow, args.member),
     official:
-      args.workflow.officialDefinitionName === null ||
-      args.workflow.officialInstallationState === null
+      args.workflow.officialDefinitionName === null
         ? null
         : {
             definitionName: args.workflow.officialDefinitionName,
-            installationState: args.workflow.officialInstallationState,
+            installationState: "installed",
             definitionLifecycle:
               args.officialDefinitionLifecycle ?? "unavailable",
             readOnly: true,
@@ -306,7 +291,10 @@ export function workflowList(args: {
           displayName: workflows.displayName,
           description: workflows.description,
           officialDefinitionName: workflows.officialDefinitionName,
-          officialInstallationState: workflows.officialInstallationState,
+          archivedLifecycle:
+            sql`${workflows.archivedOfficialSnapshot}->>'lifecycle'`.mapWith(
+              zodDriverValueDecoder(officialWorkflowLifecycleSchema.nullable()),
+            ),
           importSource: workflows.importSource,
           createdAt: workflows.createdAt,
         },
@@ -320,28 +308,6 @@ export function workflowList(args: {
       )
       .orderBy(asc(workflows.name));
 
-    const hasHistoricalDefinition = rows.some((row) => {
-      return (
-        row.workflow.officialDefinitionName !== null &&
-        !builtInWorkflow(row.workflow.officialDefinitionName)
-      );
-    });
-    const catalogPlan = acceptedOfficialWorkflowCatalogReadPlan();
-    const [catalogRow] = hasHistoricalDefinition
-      ? await db
-          .select(catalogPlan.columns)
-          .from(officialWorkflowCatalogState)
-          .innerJoin(officialWorkflowCatalogReleases, catalogPlan.join)
-          .where(catalogPlan.condition)
-          .limit(1)
-      : [];
-    const acceptedCatalog = acceptedCatalogFromRow(catalogRow);
-    const officialLifecycleByName = new Map(
-      acceptedCatalog?.payload.definitions.map((definition) => {
-        return [definition.name, definition.lifecycle] as const;
-      }) ?? [],
-    );
-
     const winners = shadowWinnerFromRows(rows, args.member);
     return rows.map((row) => {
       const key = row.workflow.name;
@@ -352,9 +318,8 @@ export function workflowList(args: {
         shadowedBy:
           winner && winner.id !== row.workflow.id ? winner : undefined,
         officialDefinitionLifecycle: row.workflow.officialDefinitionName
-          ? (builtInWorkflow(row.workflow.officialDefinitionName)?.definition
-              .lifecycle ??
-            officialLifecycleByName.get(row.workflow.officialDefinitionName) ??
+          ? (builtInWorkflow(row.workflow.officialDefinitionName)?.lifecycle ??
+            row.workflow.archivedLifecycle ??
             "unavailable")
           : undefined,
       });

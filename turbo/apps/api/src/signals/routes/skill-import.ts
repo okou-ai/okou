@@ -151,7 +151,6 @@ const listSessionSkillsInner$ = computed(async (get) => {
         displayName: workflows.displayName,
         description: workflows.description,
         officialDefinitionName: workflows.officialDefinitionName,
-        officialInstallationState: workflows.officialInstallationState,
         importSource: workflows.importSource,
         createdAt: workflows.createdAt,
       },

@@ -1,4 +1,7 @@
-import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/morning-brief-preference";
+import {
+  isMorningBriefDefinitionName,
+  MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
+} from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
@@ -6,34 +9,28 @@ import { sql } from "drizzle-orm";
 
 import { writeDb$ } from "../external/db";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import { officialAutomationLifecycleCondition } from "./workflow-automation-write-condition";
+import { observedWorkflowAutomationCondition } from "./workflow-automation-snapshot";
 
 type AutomationRow = typeof workflowAutomations.$inferSelect;
 interface MorningBriefToggleInput {
   readonly automation: AutomationRow;
+  readonly officialDefinitionName: string | null;
   readonly enabled: boolean;
   readonly nextRunAt: Date | null;
   readonly now: Date;
   readonly inheritedAutonomyBudget?: number;
-  readonly reconciliationOwned?: boolean;
 }
 
-function toggleOwner(automation: AutomationRow) {
-  return automation.officialBlueprintKey ===
-    MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY &&
+function toggleOwner({
+  automation,
+  officialDefinitionName,
+}: MorningBriefToggleInput) {
+  return isMorningBriefDefinitionName(officialDefinitionName) &&
+    automation.officialBlueprintKey === MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY &&
     automation.ownerUserId !== null &&
     automation.kind === "schedule"
     ? { orgId: automation.orgId, userId: automation.ownerUserId }
     : undefined;
-}
-
-function enrollmentChoice(enabled: boolean, at: Date) {
-  return {
-    state: enabled ? ("pending" as const) : ("cancelled" as const),
-    availableAt: at,
-    lastError: null,
-    updatedAt: at,
-  };
 }
 
 export type MorningBriefAutomationToggleResult =
@@ -47,7 +44,7 @@ export const persistMorningBriefAutomationToggle$ = command(
     args: MorningBriefToggleInput,
     signal: AbortSignal,
   ): Promise<MorningBriefAutomationToggleResult> => {
-    const owner = toggleOwner(args.automation);
+    const owner = toggleOwner(args);
     if (owner === undefined) {
       return { kind: "not-applicable" };
     }
@@ -65,24 +62,24 @@ export const persistMorningBriefAutomationToggle$ = command(
           ? {}
           : { autonomyBudget: args.inheritedAutonomyBudget }),
       })
-      .where(officialAutomationLifecycleCondition(args.automation))
+      .where(observedWorkflowAutomationCondition(args.automation))
       .returning({
         ...columns,
         observedUpdatedAt: columns.observedUpdatedAt.as("observedUpdatedAt"),
         observedXmin: columns.observedXmin.as("observedXmin"),
       });
     const updated = db.$with("updated_morning_brief_automation").as(update);
-    const values = enrollmentChoice(args.enabled, args.now);
+    const at = sql.param(args.now, morningBriefEnrollments.updatedAt);
     // Drizzle INSERT SELECT requires every column. Keep the omitted enrollment
     // fields on their database defaults, and gate publication on UPDATE RETURNING.
     const published = db.$with("published_morning_brief_choice", {}).as(sql`
       INSERT INTO ${morningBriefEnrollments}
-        (org_id, user_id, state, available_at, last_error, updated_at)
-      SELECT ${owner.orgId}, ${owner.userId}, ${values.state},
-        ${sql.param(values.availableAt, morningBriefEnrollments.availableAt)}, NULL,
-        ${sql.param(values.updatedAt, morningBriefEnrollments.updatedAt)}
+        (org_id, user_id, workflow_id, state, available_at, updated_at)
+      SELECT ${owner.orgId}, ${owner.userId}, ${args.automation.workflowId}::uuid,
+        ${args.enabled ? "completed" : "cancelled"}, ${at}, ${at}
       FROM ${updated}
       ON CONFLICT (org_id, user_id) DO UPDATE SET
+        workflow_id = EXCLUDED.workflow_id,
         state = EXCLUDED.state,
         available_at = EXCLUDED.available_at,
         last_error = EXCLUDED.last_error,
@@ -90,9 +87,7 @@ export const persistMorningBriefAutomationToggle$ = command(
     `);
     // A data-modifying CTE executes even without a returned enrollment row.
     // Read the actual automation RETURNING values with their schema decoders.
-    const [row] = args.reconciliationOwned
-      ? await update
-      : await db.with(updated, published).select().from(updated);
+    const [row] = await db.with(updated, published).select().from(updated);
     signal.throwIfAborted();
     return row ? { kind: "applied", row } : { kind: "conflict" };
   },

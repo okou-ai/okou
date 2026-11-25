@@ -9,7 +9,6 @@ import {
   record,
   string,
   union,
-  url,
   enum as zEnum,
   null as zNull,
   type infer as zInfer,
@@ -29,12 +28,10 @@ export {
   officialWorkflowParameterKeySchema,
   officialWorkflowParameterValueSchema,
   officialWorkflowParameterBindingSchema,
-  officialWorkflowBlueprintBindingsSchema,
 } from "./official-workflow-bindings";
 export type {
   OfficialWorkflowParameterValue,
   OfficialWorkflowParameterBinding,
-  OfficialWorkflowBlueprintBindings,
 } from "./official-workflow-bindings";
 
 export const officialWorkflowLifecycleSchema = zEnum(["active", "retired"]);
@@ -183,16 +180,6 @@ export type OfficialWorkflowExecutable = zInfer<
   typeof officialWorkflowExecutableSchema
 >;
 
-export const officialWorkflowPresentationSchema = object({
-  category: string().min(1).max(64).optional(),
-  coverImageUrl: url().optional(),
-  order: number().int().safe().optional(),
-  marketingCopy: string().min(1).max(2048).optional(),
-}).strict();
-export type OfficialWorkflowPresentation = zInfer<
-  typeof officialWorkflowPresentationSchema
->;
-
 const fingerprintSchema = string().regex(/^[0-9a-f]{64}$/);
 
 // Accepted catalog and revision payloads are immutable once persisted. Each
@@ -249,38 +236,19 @@ export type OfficialWorkflowDefinitionRevisionPayload = zInfer<
   typeof officialWorkflowDefinitionRevisionPayloadSchema
 >;
 
-const officialWorkflowAcceptedDefinitionShape = {
-  name: workflowNameSchema,
-  lifecycle: officialWorkflowLifecycleSchema,
-  revision: fingerprintSchema,
-  releasedBlueprintKeys: array(officialWorkflowBlueprintKeySchema),
-  presentation: officialWorkflowPresentationSchema,
-};
-
-/** Delivery format is independent of the immutable v2/v3 definition payload. */
-export const OFFICIAL_WORKFLOW_BUNDLE_CATALOG_SCHEMA_VERSION = 4 as const;
-const officialWorkflowAcceptedDefinitionV4Schema = object({
-  ...officialWorkflowAcceptedDefinitionShape,
-  contentBundle: contentBundleSchema,
-  blueprints: array(officialWorkflowAcceptedBlueprintSchema),
-}).strict();
-
-export type OfficialWorkflowAcceptedDefinition = zInfer<
-  typeof officialWorkflowAcceptedDefinitionV4Schema
->;
-
-export const officialWorkflowCatalogReleasePayloadSchema = object({
-  schemaVersion: literal(OFFICIAL_WORKFLOW_BUNDLE_CATALOG_SCHEMA_VERSION),
-  definitions: array(officialWorkflowAcceptedDefinitionV4Schema),
-}).strict();
-export type OfficialWorkflowCatalogReleasePayload = zInfer<
-  typeof officialWorkflowCatalogReleasePayloadSchema
->;
-
 export const officialWorkflowAcceptedRevisionSchema = object({
   definition: officialWorkflowDefinitionRevisionPayloadSchema,
   contentBundle: contentBundleSchema,
 }).strict();
 export type OfficialWorkflowAcceptedRevision = zInfer<
   typeof officialWorkflowAcceptedRevisionSchema
+>;
+
+/** The last readable definition for a historical private installation. */
+export const officialWorkflowArchivedSnapshotSchema = object({
+  lifecycle: officialWorkflowLifecycleSchema,
+  revision: officialWorkflowAcceptedRevisionSchema,
+}).strict();
+export type OfficialWorkflowArchivedSnapshot = zInfer<
+  typeof officialWorkflowArchivedSnapshotSchema
 >;
