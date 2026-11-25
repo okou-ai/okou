@@ -450,6 +450,45 @@ internal abstract class ChatListModelTestFixture {
 @Config(sdk = [35], application = TestOkouApplication::class)
 internal class ChatListModelTest : ChatListModelTestFixture() {
     @Test
+    fun anAmbiguousRenameSettlesWhenTheServerAlreadyShowsTheSubmittedTitle() = runTest {
+        var tail = page(emptyList())
+        val service =
+            object : Service() {
+                override suspend fun chatEvents(since: Long?) = if (since == null) page() else tail
+
+                override suspend fun renameThread(
+                    threadId: String,
+                    title: String,
+                    eventId: String,
+                ) {
+                    tail =
+                        page(
+                            listOf(
+                                chatEventWire(
+                                    id = HISTORY_LAST_EVENT,
+                                    seq = 18,
+                                    kind = "renamed",
+                                    title = title,
+                                ),
+                            ),
+                        )
+                    throw ApiFailure.Http(503, null, null, null)
+                }
+            }
+        withCatchUpModel(service) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            assertTrue(model.renameThread(CHAT_PERSONAL, "Requested title"))
+            advanceUntilIdle()
+
+            val settled = model.uiState.value
+            assertEquals("Requested title", settled.threads.single().title)
+            assertTrue(settled.unconfirmedRenames.isEmpty())
+            assertNull(settled.failedRowAction)
+        }
+    }
+
+    @Test
     fun chatRenameKeepsItsReceiptUntilAnEarlierSnapshotReadFinishes() = runTest {
         val write = CompletableDeferred<Unit>()
         val earlierRead = CompletableDeferred<Unit>()
@@ -2623,7 +2662,7 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
     }
 
     @Test
-    fun unconfirmedRenameRequiresReadbackBeforeAcceptingAnotherWrite() = runTest {
+    fun inconclusiveReadbackKeepsTheOriginalRenameUntilItsEventArrives() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
         val store = ViewModelStore()
@@ -2644,7 +2683,7 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
                     eventId: String,
                 ) {
                     if (title == "First edit") throw IOException("unconfirmed write")
-                    tail.add(chatEventWire(id = eventId, seq = 18, kind = "renamed", title = title))
+                    tail.add(chatEventWire(id = eventId, seq = 19, kind = "renamed", title = title))
                 }
             }
         try {
@@ -2671,13 +2710,24 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
             advanceUntilIdle()
             assertEquals("Personal chat", model.uiState.value.threads.single().title)
             assertEquals(ChatRowAction.Rename, model.uiState.value.failedRowAction?.action)
-            model.dismissRowActionFailure(checkNotNull(model.uiState.value.failedRowAction))
+            val notice = checkNotNull(model.uiState.value.failedRowAction)
+            val firstId = notice.edits.single().eventId
+            model.dismissRowActionFailure(notice)
 
             assertFalse(model.renameThread(CHAT_PERSONAL, "Second edit"))
             assertTrue(CHAT_PERSONAL in model.uiState.value.unconfirmedRenames)
             model.checkChatRename(CHAT_PERSONAL)
             advanceUntilIdle()
             assertEquals("Personal chat", model.uiState.value.threads.single().title)
+            assertEquals("First edit", model.uiState.value.unconfirmedRenames[CHAT_PERSONAL])
+            model.reloadAfterRowActionFailure()
+            advanceUntilIdle()
+            assertFalse(model.renameThread(CHAT_PERSONAL, "Second edit"))
+
+            tail.add(chatEventWire(id = firstId, seq = 18, kind = "renamed", title = "First edit"))
+            model.checkChatRename(CHAT_PERSONAL)
+            advanceUntilIdle()
+            assertEquals("First edit", model.uiState.value.threads.single().title)
             assertTrue(model.uiState.value.unconfirmedRenames.isEmpty())
 
             assertTrue(model.renameThread(CHAT_PERSONAL, "Second edit"))
@@ -2688,7 +2738,7 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
             tail.add(
                 chatEventWire(
                     id = "77777777-7777-4777-8777-777777777777",
-                    seq = 19,
+                    seq = 20,
                     kind = "renamed",
                     title = "Remote edit",
                 ),

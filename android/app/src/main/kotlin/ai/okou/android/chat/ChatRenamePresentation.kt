@@ -21,10 +21,11 @@ internal class ChatRenameEditor(
     val target: WorkspaceRenameTarget,
     initialName: String,
     val restoreFocus: Boolean,
+    submittedName: String? = null,
 ) {
     val baseline = initialName.trim()
-    val field = WorkspaceNameField(initialName)
-    var submitted by mutableStateOf<String?>(null)
+    val field = WorkspaceNameField(submittedName ?: initialName)
+    var submitted by mutableStateOf(submittedName)
 }
 
 internal class WorkspaceNameField(initialName: String = "") {
@@ -106,17 +107,31 @@ class WorkspaceNamePresentation : ViewModel() {
         val thread =
             list.confirmedThreads.firstOrNull { it.id == id && it.hidden != true } ?: return
         val title = (list.threads.firstOrNull { it.id == id } ?: thread).title.orEmpty()
-        open(WorkspaceRenameTarget.Chat(id, fromConversation), title, restoreFocus)
+        open(
+            WorkspaceRenameTarget.Chat(id, fromConversation),
+            title,
+            restoreFocus,
+            list.unconfirmedRenames[id],
+        )
     }
 
     internal fun openProject(id: String, restoreFocus: Boolean, list: ChatListUiState) {
         val project = list.projects.firstOrNull { it.id == id } ?: return
-        open(WorkspaceRenameTarget.Project(id), project.name, restoreFocus)
+        val submitted =
+            list.projectList.unconfirmedRenameNames[id]?.takeUnless {
+                id in list.projectList.connectionFailedRenames
+            }
+        open(WorkspaceRenameTarget.Project(id), project.name, restoreFocus, submitted)
     }
 
-    private fun open(target: WorkspaceRenameTarget, name: String, restoreFocus: Boolean) {
+    private fun open(
+        target: WorkspaceRenameTarget,
+        name: String,
+        restoreFocus: Boolean,
+        submittedName: String?,
+    ) {
         focusReturn = null
-        editor = ChatRenameEditor(target, name, restoreFocus)
+        editor = ChatRenameEditor(target, name, restoreFocus, submittedName)
     }
 
     internal fun dismiss(openEditor: ChatRenameEditor) {

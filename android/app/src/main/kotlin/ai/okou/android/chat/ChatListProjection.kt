@@ -20,6 +20,9 @@ internal class ChatListProjection {
         var confirmedMembershipChanged = false
         var renameAcknowledged = false
 
+        val renameUnconfirmed: Boolean
+            get() = edit.action == ChatRowAction.Rename && unconfirmed
+
         val visibleEdit: ChatRowEdit?
             get() = edit.takeIf {
                 renameAcknowledged || optimistic && !(unconfirmed && confirmedMembershipChanged)
@@ -129,9 +132,15 @@ internal class ChatListProjection {
 
     fun hasUnsettledEdits(edits: List<ChatRowEdit>) = rowEdits.any { it.edit in edits }
 
-    fun unsettledRenames(renames: Map<String, String>): Map<String, String> =
-        if (renames.isEmpty()) renames
-        else renames.filterValues { eventId -> rowEdits.any { it.edit.eventId == eventId } }
+    fun unconfirmedRenameTitles(): Map<String, String> =
+        if (rowEdits.isEmpty()) emptyMap()
+        else
+            buildMap {
+                for (pending in rowEdits) {
+                    if (pending.renameUnconfirmed)
+                        put(pending.edit.threadId, checkNotNull(pending.edit.value))
+                }
+            }
 
     fun settleConfirmedTargets(edits: List<ChatRowEdit>): Boolean {
         if (edits.isEmpty() || rowEdits.isEmpty()) return false
@@ -179,13 +188,18 @@ internal class ChatListProjection {
     fun retryEvents(): Set<String> =
         rowEdits
             .asSequence()
-            .filter { it.unconfirmed && !it.canRecoverByTarget }
+            .filter { it.unconfirmed && !it.renameUnconfirmed && !it.canRecoverByTarget }
             .map { it.edit.eventId }
             .toSet()
 
     fun confirmEdits(edits: List<ChatRowEdit>): Boolean {
         val unresolved = rowEdits.filter { it.edit in edits }
         unresolved.forEach { it.unconfirmed = true }
+        val rename = unresolved.singleOrNull()?.takeIf { it.renameUnconfirmed }
+        if (rename != null) {
+            val row = confirmedRows.threads.firstOrNull { it.id == rename.edit.threadId }
+            if (renameTargetResolved(rename, row)) return discardEdits(edits)
+        }
         return unresolved.isEmpty()
     }
 
@@ -325,13 +339,21 @@ internal class ChatListProjection {
         observed: Set<String>,
         acknowledgedBeforeRead: Set<String>,
     ): Set<String> {
-        if (rowEdits.none { it.renameAcknowledged && it.edit.eventId !in observed })
+        if (
+            rowEdits.none {
+                (it.renameAcknowledged || it.renameUnconfirmed) && it.edit.eventId !in observed
+            }
+        )
             return emptySet()
         val byId = rows.threads.associateBy { it.id }
         return buildSet {
             for (pending in rowEdits) {
                 val (threadId, eventId) = pending.edit
-                if (!pending.renameAcknowledged || eventId in observed) continue
+                if (
+                    (!pending.renameAcknowledged && !pending.renameUnconfirmed) ||
+                        eventId in observed
+                )
+                    continue
                 val row = byId[threadId]
                 // An older incremental page can omit this event. A full read started
                 // after acknowledgement can also settle it through an advancing snapshot.
@@ -339,10 +361,15 @@ internal class ChatListProjection {
                     eventId in acknowledgedBeforeRead &&
                         checkpoint.snapshotCursor.seqId >
                             checkNotNull(pending.renameSnapshotCursor).seqId
-                if (row == null || row.hidden == true || coveredBySnapshot) add(eventId)
+                if (renameTargetResolved(pending, row) || coveredBySnapshot) add(eventId)
             }
         }
     }
+
+    private fun renameTargetResolved(pending: PendingRowEdit, row: ConfirmedChat?): Boolean =
+        row == null ||
+            row.hidden == true ||
+            pending.renameUnconfirmed && row.title == pending.edit.value
 
     private fun settleRowEdits(observed: Set<String>, discarded: Set<String>) {
         val settledThrough = mutableMapOf<Pair<String, ChatRowField>, Int>()

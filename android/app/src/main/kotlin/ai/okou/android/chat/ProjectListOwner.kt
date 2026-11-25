@@ -54,12 +54,15 @@ internal constructor(
     val cacheUnavailable: Boolean = false,
     val renamingId: String? = null,
     val deletingId: String? = null,
-    val unconfirmedRenames: Set<String> = emptySet(),
+    internal val unconfirmedRenameNames: Map<String, String> = emptyMap(),
     internal val connectionFailedRenames: Set<String> = emptySet(),
     internal val renameRejection: ProjectRenameRejection? = null,
     internal val deleteFeedback: List<ProjectDeleteFeedback> = emptyList(),
     internal val creation: ProjectCreation? = null,
 ) {
+    val unconfirmedRenames: Set<String>
+        get() = unconfirmedRenameNames.keys
+
     internal val canRename: Boolean
         get() = source != null && renamingId == null && deletingId == null
 }
@@ -447,7 +450,7 @@ internal class ProjectListOwner(
                             if (receipt == null) row else row.copy(name = receipt.name)
                         },
                 renamingId = pending?.id,
-                unconfirmedRenames = retryableProjectRenames.keys.toSet(),
+                unconfirmedRenameNames = retryableProjectRenames.mapValues { it.value.name },
                 connectionFailedRenames =
                     retryableProjectRenames.values
                         .filter { it.connectionFailed }

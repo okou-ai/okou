@@ -1321,8 +1321,7 @@ class ChatListModel(
                                     .copy(
                                         unconfirmedRenames =
                                             if (action == ChatRowAction.Rename && !failure.rejected)
-                                                previous.unconfirmedRenames +
-                                                    (threadId to failure.edits.single().eventId)
+                                                projection.unconfirmedRenameTitles()
                                             else previous.unconfirmedRenames,
                                     )
                             if (movingProject) reconcileProjectMoves(state, rowsChanged = true)
@@ -1383,7 +1382,7 @@ class ChatListModel(
                             state.rowActionFailures.filter {
                                 it.edits.isEmpty() || projection.hasUnsettledEdits(it.edits)
                             },
-                    unconfirmedRenames = projection.unsettledRenames(state.unconfirmedRenames),
+                    unconfirmedRenames = projection.unconfirmedRenameTitles(),
                 )
                 .pruneInvalidUndo { it.threadId !in state.pendingRowActions },
         )
@@ -1490,8 +1489,7 @@ class ChatListModel(
     }
 
     internal fun checkChatRename(threadId: String) {
-        val eventId = mutable.value.unconfirmedRenames[threadId] ?: return
-        requestListRead(setOf(eventId), userRequested = true)
+        if (threadId in mutable.value.unconfirmedRenames) requestListRead(userRequested = true)
     }
 
     internal fun dismissRowActionFailure(failure: ChatRowActionFailure) {
