@@ -13,6 +13,7 @@ import { sshConnections as physicalSshConnections } from "../src/schema/ssh-conn
 import { sshCredentials } from "../src/schema/ssh-credential";
 import { cloudflareAccessConfigs } from "../src/schema/cloudflare-access-config";
 import { tailscaleConfigs } from "../src/schema/tailscale-config";
+import { remoteDevices } from "../src/schema/remote-device";
 
 /** Canonical SQL, ownership and binding state on replayed and fresh schemas. */
 export async function validatePermanentSshStorage(databaseUrl: string) {
@@ -53,6 +54,12 @@ export async function validatePermanentSshStorage(databaseUrl: string) {
       })
       .returning();
     assert.ok(credential && access && tailscale);
+    const otherUserId = "another-owner";
+    const [otherDevice] = await db
+      .insert(remoteDevices)
+      .values({ ...owner, userId: otherUserId, displayName: "Other device" })
+      .returning({ id: remoteDevices.id });
+    assert.ok(otherDevice);
     assert.deepEqual(
       await db
         .select({ needsRebind: sshConnectionNeedsRebind })
@@ -124,10 +131,20 @@ export async function validatePermanentSshStorage(databaseUrl: string) {
         "The physical mapping must issue the same canonical SQL",
       );
       await assert.rejects(
-        client.query("UPDATE ssh_connections SET user_id=$1 WHERE id=$2", [
-          "another-owner",
-          host.id,
-        ]),
+        client.query(
+          "UPDATE ssh_connections SET remote_device_id=$1 WHERE id=$2",
+          [otherDevice.id, host.id],
+        ),
+        {
+          code: "23503",
+          constraint: "ssh_connections_remote_device_owner_fk",
+        },
+      );
+      await assert.rejects(
+        client.query(
+          "UPDATE ssh_connections SET user_id=$1, remote_device_id=$2 WHERE id=$3",
+          [otherUserId, otherDevice.id, host.id],
+        ),
         { code: "23503", constraint: "ssh_connections_credential_owner_fk" },
       );
       await assert.rejects(
@@ -249,6 +266,9 @@ export async function validatePermanentSshStorage(databaseUrl: string) {
         await db
           .delete(sshConnections)
           .where(eq(sshConnections.orgId, owner.orgId));
+        await db
+          .delete(remoteDevices)
+          .where(eq(remoteDevices.orgId, owner.orgId));
         await db
           .delete(cloudflareAccessConfigs)
           .where(eq(cloudflareAccessConfigs.orgId, owner.orgId));
