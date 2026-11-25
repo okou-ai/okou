@@ -45,6 +45,74 @@ WITH inserted_entries AS (
   {"hash":"sha256:531ff54f2331b9a0c3c30839f9dd780026a87815c15487e0581cab456075e860","slug":"jira","label":"Jira","description":"Jira accepted-catalog test fixture.","category":"test-connectors","icon":{"key":"test-fixtures/connectors/jira.svg","invertInDarkMode":false},"tags":[],"generation":[],"auth_methods":[{"id":"api-token","label":"API Key","description":"Enter test connector credentials.","visible":true,"storage":{"version":1,"secrets":["JIRA_API_TOKEN"],"variables":["JIRA_DOMAIN","JIRA_EMAIL"]},"grant":{"kind":"manual","fields":[{"privateName":"JIRA_API_TOKEN","publicId":"apiToken","label":"API Token","required":true,"placeholder":null,"storage":"secret"},{"privateName":"JIRA_DOMAIN","publicId":"domain","label":"Jira Domain","required":true,"placeholder":null,"storage":"variable","normalize":"host"},{"privateName":"JIRA_EMAIL","publicId":"email","label":"Jira Email","required":true,"placeholder":null,"storage":"variable"}]},"access":{"kind":"static","envBindings":{"JIRA_API_TOKEN":"$secrets.JIRA_API_TOKEN","JIRA_DOMAIN":"$vars.JIRA_DOMAIN","JIRA_EMAIL":"$vars.JIRA_EMAIL"}},"revoke":{"kind":"none"}}],"mcp":null,"skill":{"kind":"none"},"firewall":{"kind":"generated","billable":false,"config":{"description":"API test connector firewall.","apis":[{"base":"https://${{ vars.JIRA_DOMAIN }}","hostPolicy":{"kind":"providerOwned","suffixes":["atlassian.net"]},"auth":{"headers":{"Authorization":"${{ basic(vars.JIRA_EMAIL, secrets.JIRA_API_TOKEN) }}"}},"permissions":[]}]},"categories":null,"defaultAllowed":null,"defaultUnknownPolicy":"allow"},"permission_summary":{"hasPermissions":false,"permissionCount":0,"hasCategories":false,"hasDefaultPolicyOverrides":false}},
   {"hash":"sha256:531ff54f2331b9a0c3c30839f9dd780026a87815c15487e0581cab456075e860","slug":"lark","label":"Lark","description":"Lark accepted-catalog test fixture.","category":"test-connectors","icon":{"key":"test-fixtures/connectors/lark.svg","invertInDarkMode":false},"tags":[],"generation":[],"auth_methods":[{"id":"api-token","label":"App Credentials","description":"Test connector authorization.","visible":true,"storage":{"version":1,"secrets":["LARK_APP_SECRET","LARK_ACCESS_TOKEN"],"variables":["LARK_APP_ID"]},"grant":{"kind":"manual","fields":[{"privateName":"LARK_APP_ID","publicId":"appId","label":"App ID","required":true,"placeholder":null,"storage":"variable"},{"privateName":"LARK_APP_SECRET","publicId":"appSecret","label":"App Secret","required":true,"placeholder":null,"storage":"secret"}]},"access":{"kind":"refresh-token","envBindings":{"LARK_TOKEN":"$secrets.LARK_ACCESS_TOKEN"},"inputs":{"appId":"$vars.LARK_APP_ID","appSecret":"$secrets.LARK_APP_SECRET"},"outputs":{"accessToken":"$secrets.LARK_ACCESS_TOKEN"},"refreshableSecrets":["LARK_ACCESS_TOKEN"]},"revoke":{"kind":"none"}}],"mcp":null,"skill":{"kind":"none"},"firewall":{"kind":"generated","billable":false,"config":{"description":"API test connector firewall.","placeholders":{"LARK_TOKEN":"fixture-lark-token"},"apis":[{"base":"https://open.larksuite.com","auth":{"headers":{"Authorization":"Bearer ${{ secrets.LARK_TOKEN }}"}},"permissions":[]}]},"categories":null,"defaultAllowed":null,"defaultUnknownPolicy":"allow"},"permission_summary":{"hasPermissions":false,"permissionCount":0,"hasCategories":false,"hasDefaultPolicyOverrides":false}},
   {"hash":"sha256:531ff54f2331b9a0c3c30839f9dd780026a87815c15487e0581cab456075e860","slug":"linear","label":"Linear","description":"Linear accepted-catalog test fixture.","category":"test-connectors","icon":{"key":"test-fixtures/connectors/linear.svg","invertInDarkMode":false},"tags":[],"generation":[],"auth_methods":[{"id":"oauth","label":"OAuth","description":"Sign in to the test connector provider.","visible":true,"client":{"clientRegistration":"static","clientType":"confidential","clientIdEnv":"LINEAR_OAUTH_CLIENT_ID","clientSecretEnv":"LINEAR_OAUTH_CLIENT_SECRET"},"storage":{"version":1,"secrets":["LINEAR_ACCESS_TOKEN","LINEAR_REFRESH_TOKEN"],"variables":[]},"grant":{"kind":"auth-code","scopes":["read","write"],"callbackOrigin":"web","outputs":{"accessToken":"$secrets.LINEAR_ACCESS_TOKEN","refreshToken":"$secrets.LINEAR_REFRESH_TOKEN"}},"access":{"kind":"refresh-token","envBindings":{"LINEAR_TOKEN":"$secrets.LINEAR_ACCESS_TOKEN"},"inputs":{"refreshToken":"$secrets.LINEAR_REFRESH_TOKEN"},"outputs":{"accessToken":"$secrets.LINEAR_ACCESS_TOKEN","refreshToken":"$secrets.LINEAR_REFRESH_TOKEN"},"refreshableSecrets":["LINEAR_ACCESS_TOKEN"]},"revoke":{"kind":"token-revoke","inputs":{"accessToken":"$secrets.LINEAR_ACCESS_TOKEN"}}}],"mcp":null,"skill":{"kind":"none"},"firewall":{"kind":"none"},"permission_summary":{"hasPermissions":false,"permissionCount":0,"hasCategories":false,"hasDefaultPolicyOverrides":false}},
+  {
+    "hash": "sha256:531ff54f2331b9a0c3c30839f9dd780026a87815c15487e0581cab456075e860",
+    "slug": "linkedin",
+    "label": "LinkedIn",
+    "description": "LinkedIn accepted-catalog test fixture.",
+    "category": "test-connectors",
+    "icon": {
+      "key": "test-fixtures/connectors/linkedin.svg",
+      "invertInDarkMode": false
+    },
+    "tags": [],
+    "generation": [],
+    "auth_methods": [
+      {
+        "id": "oauth",
+        "label": "Connect",
+        "description": "Test connector authorization.",
+        "visible": true,
+        "client": {
+          "clientRegistration": "static",
+          "clientType": "confidential",
+          "clientIdEnv": "LINKEDIN_OAUTH_CLIENT_ID",
+          "clientSecretEnv": "LINKEDIN_OAUTH_CLIENT_SECRET"
+        },
+        "storage": {
+          "version": 1,
+          "secrets": [
+            "LINKEDIN_ACCESS_TOKEN"
+          ],
+          "variables": []
+        },
+        "grant": {
+          "kind": "auth-code",
+          "scopes": [
+            "openid",
+            "profile",
+            "w_member_social"
+          ],
+          "callbackOrigin": "web",
+          "outputs": {
+            "accessToken": "$secrets.LINKEDIN_ACCESS_TOKEN"
+          }
+        },
+        "access": {
+          "kind": "static",
+          "envBindings": {
+            "LINKEDIN_TOKEN": "$secrets.LINKEDIN_ACCESS_TOKEN"
+          }
+        },
+        "revoke": {
+          "kind": "none"
+        }
+      }
+    ],
+    "mcp": null,
+    "skill": {
+      "kind": "none"
+    },
+    "firewall": {
+      "kind": "none"
+    },
+    "permission_summary": {
+      "hasPermissions": false,
+      "permissionCount": 0,
+      "hasCategories": false,
+      "hasDefaultPolicyOverrides": false
+    }
+  },
   {"hash":"sha256:531ff54f2331b9a0c3c30839f9dd780026a87815c15487e0581cab456075e860","slug":"mailchimp","label":"Mailchimp","description":"Mailchimp accepted-catalog test fixture.","category":"test-connectors","icon":{"key":"test-fixtures/connectors/mailchimp.svg","invertInDarkMode":false},"tags":[],"generation":[],"auth_methods":[{"id":"oauth","label":"Connect","description":"Test connector authorization.","visible":true,"client":{"clientRegistration":"static","clientType":"confidential","clientIdEnv":"MAILCHIMP_OAUTH_CLIENT_ID","clientSecretEnv":"MAILCHIMP_OAUTH_CLIENT_SECRET"},"storage":{"version":1,"secrets":["MAILCHIMP_ACCESS_TOKEN"],"variables":[]},"grant":{"kind":"auth-code","scopes":[],"callbackOrigin":"web","outputs":{"accessToken":"$secrets.MAILCHIMP_ACCESS_TOKEN"}},"access":{"kind":"static","envBindings":{"MAILCHIMP_TOKEN":"$secrets.MAILCHIMP_ACCESS_TOKEN"}},"revoke":{"kind":"none"}}],"mcp":null,"skill":{"kind":"none"},"firewall":{"kind":"none"},"permission_summary":{"hasPermissions":false,"permissionCount":0,"hasCategories":false,"hasDefaultPolicyOverrides":false}},
   {"hash":"sha256:531ff54f2331b9a0c3c30839f9dd780026a87815c15487e0581cab456075e860","slug":"mercury","label":"Mercury","description":"Mercury accepted-catalog test fixture.","category":"test-connectors","icon":{"key":"test-fixtures/connectors/mercury.svg","invertInDarkMode":false},"tags":[],"generation":[],"auth_methods":[{"id":"oauth","label":"OAuth","description":"Sign in to the test connector provider.","visible":true,"client":{"clientRegistration":"static","clientType":"confidential","clientIdEnv":"MERCURY_OAUTH_CLIENT_ID","clientSecretEnv":"MERCURY_OAUTH_CLIENT_SECRET"},"storage":{"version":1,"secrets":["MERCURY_ACCESS_TOKEN","MERCURY_REFRESH_TOKEN"],"variables":[]},"grant":{"kind":"auth-code","scopes":["read","offline_access"],"callbackOrigin":"web","outputs":{"accessToken":"$secrets.MERCURY_ACCESS_TOKEN","refreshToken":"$secrets.MERCURY_REFRESH_TOKEN"}},"access":{"kind":"refresh-token","envBindings":{"MERCURY_TOKEN":"$secrets.MERCURY_ACCESS_TOKEN"},"inputs":{"refreshToken":"$secrets.MERCURY_REFRESH_TOKEN"},"outputs":{"accessToken":"$secrets.MERCURY_ACCESS_TOKEN","refreshToken":"$secrets.MERCURY_REFRESH_TOKEN"},"refreshableSecrets":["MERCURY_ACCESS_TOKEN"]},"revoke":{"kind":"none"}},{"id":"api-token","label":"API Token","description":"Enter a Mercury API token.","visible":false,"storage":{"version":1,"secrets":["MERCURY_TOKEN"],"variables":[]},"grant":{"kind":"manual","fields":[{"privateName":"MERCURY_TOKEN","publicId":"apiToken","label":"API Token","required":true,"placeholder":"secret-token:mercury_production_...","storage":"secret"}]},"access":{"kind":"static","envBindings":{"MERCURY_TOKEN":"$secrets.MERCURY_TOKEN"}},"revoke":{"kind":"none"}}],"mcp":null,"skill":{"kind":"none"},"firewall":{"kind":"none"},"permission_summary":{"hasPermissions":false,"permissionCount":0,"hasCategories":false,"hasDefaultPolicyOverrides":false}},
   {"hash":"sha256:531ff54f2331b9a0c3c30839f9dd780026a87815c15487e0581cab456075e860","slug":"meta-ads","label":"Meta Ads","description":"Meta Ads accepted-catalog test fixture.","category":"test-connectors","icon":{"key":"test-fixtures/connectors/meta-ads.svg","invertInDarkMode":false},"tags":[],"generation":[],"auth_methods":[{"id":"oauth","label":"OAuth","description":"Sign in to the test connector provider.","visible":true,"client":{"clientRegistration":"static","clientType":"confidential","clientIdEnv":"META_ADS_OAUTH_CLIENT_ID","clientSecretEnv":"META_ADS_OAUTH_CLIENT_SECRET"},"storage":{"version":1,"secrets":["META_ADS_ACCESS_TOKEN","META_ADS_REFRESH_TOKEN"],"variables":[]},"grant":{"kind":"auth-code","scopes":["ads_management","ads_read","business_management","pages_manage_ads","pages_read_engagement","pages_show_list","public_profile"],"callbackOrigin":"web","outputs":{"accessToken":"$secrets.META_ADS_ACCESS_TOKEN","refreshToken":"$secrets.META_ADS_REFRESH_TOKEN"}},"access":{"kind":"refresh-token","envBindings":{"META_ADS_TOKEN":"$secrets.META_ADS_ACCESS_TOKEN"},"inputs":{"refreshToken":"$secrets.META_ADS_REFRESH_TOKEN"},"outputs":{"accessToken":"$secrets.META_ADS_ACCESS_TOKEN","refreshToken":"$secrets.META_ADS_REFRESH_TOKEN"},"refreshableSecrets":["META_ADS_ACCESS_TOKEN"]},"revoke":{"kind":"none"}}],"mcp":null,"skill":{"kind":"none"},"firewall":{"kind":"none"},"permission_summary":{"hasPermissions":false,"permissionCount":0,"hasCategories":false,"hasDefaultPolicyOverrides":false}},

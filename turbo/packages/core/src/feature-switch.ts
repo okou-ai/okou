@@ -192,15 +192,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,
   },
-  [FeatureSwitchKey.LinkedInOAuthConnector]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "LinkedIn OAuth connector",
-    description:
-      "Connect LinkedIn for personal publishing through the official API. Other LinkedIn tasks use Cloud Browser.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-    restrictOverridesToAudience: true,
-  },
   [FeatureSwitchKey.ComputerUseAppStateDirectTransfer]: {
     maintainer: "lancy@okou.ai",
     displayName: "Computer Use app state direct transfer",
