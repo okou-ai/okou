@@ -13,10 +13,11 @@ use crate::ingress::tests::{namespace, request};
 use runner_host::runner_process_identity::RunnerProcessIdentity;
 
 async fn connect(socket: &Path, path: &str) -> WebSocketStream<UnixStream> {
+    // The supplied Unix stream represents the upstream hop after Caddy terminates TLS.
     let stream = UnixStream::connect(socket).await.unwrap();
     let (ws, _) = timeout(
         HANDSHAKE_TIMEOUT,
-        client_async(format!("ws://{HOST}{path}"), stream),
+        client_async(format!("wss://{HOST}{path}"), stream),
     )
     .await
     .unwrap()
