@@ -225,7 +225,7 @@ struct ChatSettingsView: View {
     let models = store.modelStore
     connectors = ComposerConnectorStore(
       service: models.connectorAccess, authorizationService: models.connectorAuthorization,
-      webURL: store.webURL, includesRemote: false,
+      webURL: store.webURL, graph: models.stateStore, includesRemote: false,
       managementEnabled: { true },
       memberAccessEnabled: { [weak models] in
         models?.lastKnownFeatureSwitches?.usesMemberConnectorAccess == true

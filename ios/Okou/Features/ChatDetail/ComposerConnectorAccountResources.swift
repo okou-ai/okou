@@ -37,7 +37,8 @@ final class ComposerConnectorAccountResources {
   let connector: ChatComposerConnector
 
   let managesDefaults: Bool
-  let store = CCState.Store()
+  /// The composer's Store, the workspace session's in production.
+  let store: CCState.Store
   let search: Computed<String>
   let pagination: Computed<Task<Void, Error>>
   private let deletionID = CCState.State<String?>(nil)
@@ -74,6 +75,7 @@ final class ComposerConnectorAccountResources {
     self.composer = composer
     self.connector = connector
     self.managesDefaults = managesDefaults
+    store = composer.graph
     service = composer.service
     self.didFail = didFail
     let deletionID = deletionID
