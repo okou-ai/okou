@@ -20,6 +20,10 @@ struct ChatSidebarView: View {
   @ResolvedValue private var searchPresented: Bool?
   /// Project actions and disclosure, kept in the workspace session's Store.
   @ResolvedValue private var resolvedProjects: ChatProjectStore.Presentation?
+  /// The confirmed chats, kept in the workspace session's Store.
+  @ResolvedValue private var resolvedThreads: [ChatThread]?
+  /// The selected chat, kept in the workspace session's Store.
+  @ResolvedValue private var resolvedSelection: String??
 
   init(
     store: WorkspaceStore, authentication: AuthenticationService, workspaceID: String,
@@ -40,6 +44,8 @@ struct ChatSidebarView: View {
     _presentation = LoadableValue(store.sidebar.presentation)
     _searchPresented = ResolvedValue(store.search.presented)
     _resolvedProjects = ResolvedValue(store.projects.presentation)
+    _resolvedThreads = ResolvedValue(store.list.threadsValue)
+    _resolvedSelection = ResolvedValue(store.selectedThreadValue)
   }
 
   private struct ProjectEditor {
@@ -241,7 +247,10 @@ struct ChatSidebarView: View {
     ChatSidebarHeader(
       store: store, authentication: authentication, workspaceID: workspaceID,
       headerHeight: headerHeight, isScrolled: isScrolled, accountError: $accountError,
-      threadFilter: threadFilter, close: close, newProject: { showEditor(creationEditor) })
+      threadFilter: threadFilter,
+      hasUnreadChats: (resolvedThreads ?? store.list.threads).contains {
+        !$0.isMuted && $0.indicator == .unread
+      }, close: close, newProject: { showEditor(creationEditor) })
   }
 
   /// For you is always the list's first row, whatever the chats below it are doing.
@@ -458,7 +467,7 @@ struct ChatSidebarView: View {
     .listRowBackground(
       RoundedRectangle(cornerRadius: OkouRadius.control)
         .fill(
-          store.selectedThreadID == thread.id
+          selectedThreadID == thread.id
             ? OkouColor.stateSelected : .clear
         )
         .padding(.leading, OkouSpace.md + indentation)
@@ -466,7 +475,7 @@ struct ChatSidebarView: View {
         .background(OkouColor.sidebar)
     )
     .accessibilityIdentifier("chat-\(thread.id)")
-    .accessibilityAddTraits(store.selectedThreadID == thread.id ? .isSelected : [])
+    .accessibilityAddTraits(selectedThreadID == thread.id ? .isSelected : [])
     .contextMenu {
       ChatThreadMenuContent(
         menu: ChatThreadMenu(
@@ -536,6 +545,9 @@ struct ChatSidebarView: View {
 }
 
 extension ChatSidebarView {
+  /// This render's selected chat, with the synchronous value for a first render.
+  private var selectedThreadID: String? { resolvedSelection ?? store.selectedThreadID }
+
   /// This render's Project state, with the synchronous value for a first render.
   private var projectState: ChatProjectStore.Presentation {
     resolvedProjects ?? store.projects.currentPresentation
