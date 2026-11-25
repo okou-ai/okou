@@ -459,6 +459,10 @@ runs:
           add_oauth_client_config "$prefix"
         done
 
+        # Optional until each environment is configured for the staff rollout.
+        add_doppler_config LINKEDIN_OAUTH_CLIENT_ID
+        add_doppler_config LINKEDIN_OAUTH_CLIENT_SECRET
+
         add_doppler_config GOOGLE_ADS_DEVELOPER_TOKEN
         if [[ "$INPUT_APP" == "api" ]]; then
           add_oauth_client_config_key CODEX_OAUTH_CLIENT_ID
