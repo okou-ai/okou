@@ -44,7 +44,7 @@ extension ConversationStore {
     let position: ConversationReadingPosition
   }
 
-  enum DeliveryFailure {
+  enum DeliveryFailure: Equatable {
     case notSent(String)
     case unconfirmed
   }

@@ -23,6 +23,8 @@ struct ChatDetailView: View {
   @State private var usageDetails: UsageDetails?
   /// The transcript's graph value, kept in the workspace session's Store.
   @ResolvedValue private var resolvedTranscript: ConversationProjection.Value?
+  /// Send, Stop and failure state, kept in the workspace session's Store.
+  @ResolvedValue private var resolvedDelivery: ConversationStore.Delivery?
 
   private struct UsageDetails: Identifiable { let id: String }
 
@@ -43,6 +45,7 @@ struct ChatDetailView: View {
     self.fork = fork
     _scrolling = State(initialValue: ConversationScrollCoordinator(conversation: conversation))
     _resolvedTranscript = ResolvedValue(conversation.transcript)
+    _resolvedDelivery = ResolvedValue(conversation.delivery)
   }
 
   /// This render's transcript. The synchronous read only covers a missing first resolution.
@@ -50,8 +53,14 @@ struct ChatDetailView: View {
     resolvedTranscript ?? conversation.currentTranscript
   }
   private var history: ChatHistory { transcript.history ?? .empty }
+  /// This render's delivery state, with the same fallback as the transcript.
+  private var delivery: ConversationStore.Delivery {
+    resolvedDelivery ?? conversation.currentDelivery
+  }
   private var rows: [ConversationCollectionRow] {
-    ConversationRowProjection(conversation: conversation, transcript: transcript).rows
+    ConversationRowProjection(
+      conversation: conversation, transcript: transcript, isSending: delivery.isSending
+    ).rows
   }
 
   var body: some View {
@@ -195,13 +204,13 @@ struct ChatDetailView: View {
     }
     .safeAreaInset(edge: .bottom, spacing: 0) {
       VStack(alignment: .leading, spacing: 0) {
-        if let issue = conversation.stopIssue {
+        if let issue = delivery.stopIssue {
           OkouBanner(Text(issue), icon: "circle-stop") {
             Button("Check status") { Task { await conversation.refresh() } }
               .disabled(conversation.isLoading)
             if conversation.historySyncError == nil && history.canStop {
               Button("Stop again") { Task { await conversation.stop() } }
-                .disabled(conversation.isStopping)
+                .disabled(delivery.isStopping)
             }
           }
           .padding(.horizontal, OkouSpace.lg)
@@ -213,10 +222,10 @@ struct ChatDetailView: View {
             .chatFeedbackContentAnchor()
         } else {
           ChatComposerView(
-            isBusy: conversation.isSending || conversation.isStopping
+            isBusy: delivery.isSending || delivery.isStopping
               || conversation.isRecoveringFailure,
-            showsProgress: false, canStop: history.canStop, needsUpgrade: conversation.needsUpgrade,
-            error: conversation.error,
+            showsProgress: false, canStop: history.canStop, needsUpgrade: delivery.needsUpgrade,
+            error: delivery.error,
             attachmentURL: conversation.webURL.appending(path: "chats/\(thread.id)"),
             draftState: conversation.composer,
             submit: {
