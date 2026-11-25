@@ -43,8 +43,9 @@ of order and carry the original ID as `requestId`. Each connection owns its
 pending calls and so can start again at ID 1 after reconnecting. The client
 discards responses for calls it has already retired.
 
-`method` is a string such as `diagnostics.echo`. `params` is an object, and
-`result` is defined by the method. Errors carry a stable string `code` inside
+`method` is a string such as `diagnostics.echo`. Each method defines its
+parameter object and result. A present `params` value that fails the method
+schema returns `invalid_params`. Errors carry a stable string `code` inside
 the `error` object. A valid request envelope can receive
 `unsupported_method`, `invalid_params`, `forbidden`, `busy` or `unavailable`
 without affecting other calls. An invalid result for a known call fails that
@@ -79,9 +80,9 @@ have their delivery guarantees specified when a consumer requires them.
 This example uses a read-only `diagnostics.echo` method with a string
 `text` parameter. It illustrates the contract for a future endpoint.
 
-The client sends line 1. The endpoint sends lines 2 and 3, in that order.
-The client then sends lines 4 and 6 and receives their respective responses
-on lines 5 and 7.
+The client sends line 1, the Runner sends line 2, and the application endpoint
+sends line 3. The client then sends lines 4 and 6 and receives their respective
+responses on lines 5 and 7.
 
 ```jsonl
 {"ticket":"<ticket from bootstrap>"}
