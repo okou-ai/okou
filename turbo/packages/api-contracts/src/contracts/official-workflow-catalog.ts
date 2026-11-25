@@ -37,13 +37,6 @@ export type {
   OfficialWorkflowBlueprintBindings,
 } from "./official-workflow-bindings";
 
-/**
- * The schema version emitted for source catalogs and immutable business revisions.
- * Persisted readers also decode schema v2, whose immutable accepted catalogs
- * and revisions are still referenced by retired definitions and Run provenance.
- */
-export const OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION = 3 as const;
-
 export const officialWorkflowLifecycleSchema = zEnum(["active", "retired"]);
 export type OfficialWorkflowLifecycle = zInfer<
   typeof officialWorkflowLifecycleSchema
@@ -175,14 +168,6 @@ const officialWorkflowBlueprintShape = {
   desiredState: officialWorkflowBlueprintDesiredStateSchema,
 };
 
-/** Source Blueprint: schema v3 carries no runtime settings. */
-export const officialWorkflowBlueprintSchema = object(
-  officialWorkflowBlueprintShape,
-).strict();
-export type OfficialWorkflowBlueprint = zInfer<
-  typeof officialWorkflowBlueprintSchema
->;
-
 export const officialWorkflowFileSchema = object({
   path: string().min(1).max(256),
   content: string(),
@@ -206,39 +191,6 @@ export const officialWorkflowPresentationSchema = object({
 }).strict();
 export type OfficialWorkflowPresentation = zInfer<
   typeof officialWorkflowPresentationSchema
->;
-
-const activeOfficialWorkflowSourceDefinitionSchema = object({
-  name: workflowNameSchema,
-  lifecycle: literal("active"),
-  workflow: officialWorkflowExecutableSchema,
-  blueprints: array(officialWorkflowBlueprintSchema),
-  presentation: officialWorkflowPresentationSchema,
-}).strict();
-
-const retiredOfficialWorkflowSourceDefinitionSchema = object({
-  name: workflowNameSchema,
-  lifecycle: literal("retired"),
-  presentation: officialWorkflowPresentationSchema,
-}).strict();
-
-export const officialWorkflowSourceDefinitionSchema = discriminatedUnion(
-  "lifecycle",
-  [
-    activeOfficialWorkflowSourceDefinitionSchema,
-    retiredOfficialWorkflowSourceDefinitionSchema,
-  ],
-);
-export type OfficialWorkflowSourceDefinition = zInfer<
-  typeof officialWorkflowSourceDefinitionSchema
->;
-
-export const officialWorkflowSourceCatalogSchema = object({
-  schemaVersion: literal(OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION),
-  definitions: array(officialWorkflowSourceDefinitionSchema),
-}).strict();
-export type OfficialWorkflowSourceCatalog = zInfer<
-  typeof officialWorkflowSourceCatalogSchema
 >;
 
 const fingerprintSchema = string().regex(/^[0-9a-f]{64}$/);
@@ -323,57 +275,6 @@ export const officialWorkflowCatalogReleasePayloadSchema = object({
 }).strict();
 export type OfficialWorkflowCatalogReleasePayload = zInfer<
   typeof officialWorkflowCatalogReleasePayloadSchema
->;
-
-/** The accepted payload shapes the publication writer emits. */
-export type OfficialWorkflowPublishedCatalogReleasePayload = Extract<
-  OfficialWorkflowCatalogReleasePayload,
-  {
-    readonly schemaVersion: typeof OFFICIAL_WORKFLOW_BUNDLE_CATALOG_SCHEMA_VERSION;
-  }
->;
-export type OfficialWorkflowPublishedDefinitionRevisionPayload = Extract<
-  OfficialWorkflowDefinitionRevisionPayload,
-  {
-    readonly schemaVersion: typeof OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION;
-  }
->;
-
-export const officialWorkflowCatalogDiagnosticCodeSchema = zEnum([
-  "invalid-candidate",
-  "duplicate-definition-name",
-  "duplicate-blueprint-key",
-  "duplicate-parameter-key",
-  "invalid-parameter-declaration",
-  "invalid-blueprint-configuration",
-  "non-canonical-value",
-  "missing-released-definition",
-  "unknown-retired-definition",
-  "artifact-preparation-failed",
-  "artifact-registration-failed",
-  "activation-conflict",
-]);
-export type OfficialWorkflowCatalogDiagnosticCode = zInfer<
-  typeof officialWorkflowCatalogDiagnosticCodeSchema
->;
-
-export const officialWorkflowCatalogDiagnosticSchema = object({
-  code: officialWorkflowCatalogDiagnosticCodeSchema,
-  path: array(union([string(), number().int().nonnegative()])),
-  definitionName: workflowNameSchema.optional(),
-  blueprintKey: officialWorkflowBlueprintKeySchema.optional(),
-}).strict();
-export type OfficialWorkflowCatalogDiagnostic = zInfer<
-  typeof officialWorkflowCatalogDiagnosticSchema
->;
-
-export const officialWorkflowCatalogSyncResponseSchema = object({
-  outcome: zEnum(["accepted", "unchanged", "rejected"]),
-  releaseId: fingerprintSchema.nullable(),
-  diagnostics: array(officialWorkflowCatalogDiagnosticSchema),
-}).strict();
-export type OfficialWorkflowCatalogSyncResponse = zInfer<
-  typeof officialWorkflowCatalogSyncResponseSchema
 >;
 
 export const officialWorkflowAcceptedRevisionSchema = object({

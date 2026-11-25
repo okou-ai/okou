@@ -5,7 +5,6 @@ import { logger } from "../../lib/log";
 import type { RouteEntry } from "../route-entry";
 import { executeDueNotionAutomationEvents$ } from "../services/notion-automation-event.service";
 import { executeDueWorkflowAutomations$ } from "../services/workflow-automation-poller.service";
-import { executeOfficialWorkflowReconciliationWork$ } from "../services/official-workflow-reconciliation-worker.service";
 import { reconcileProactiveWorkflows$ } from "../services/proactive-workflows-lifecycle.service";
 import { recoverDueOfficialWorkflowSchedules$ } from "../services/official-workflow-schedule-recovery.service";
 import { settle } from "../utils";
@@ -13,23 +12,13 @@ import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
 
 const log = logger("OfficialWorkflowReconciliationCron");
 
-// The cron tick polls the workflow_automations table; runs carry generic
-// trigger provenance and inject the workflow skill via the agent's attachment.
+// Poll schedules and recover eligible owners before dispatching due runs.
 const executeWorkflowAutomationsRoute$: RouteEntry["handler"] = command(
   async ({ get, set }, signal: AbortSignal) => {
     if (!get(hasValidCronSecret$)) {
       return cronUnauthorized();
     }
 
-    const reconciliation = await settle(
-      set(executeOfficialWorkflowReconciliationWork$, signal),
-      signal,
-    );
-    if (!reconciliation.ok) {
-      log.error("Official Workflow reconciliation worker failed", {
-        error: reconciliation.error,
-      });
-    }
     const proactive = await settle(
       set(reconcileProactiveWorkflows$, signal),
       signal,

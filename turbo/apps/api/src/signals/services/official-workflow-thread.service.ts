@@ -30,6 +30,7 @@ import { readAcceptedOfficialWorkflowCatalog$ } from "./official-workflow-catalo
 import { OfficialWorkflowRunAdmissionError } from "./official-workflow-run.service";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatEventReplacementInsertSql } from "./chat-event.service";
+import { builtInWorkflow } from "./builtin-workflows";
 
 /** Old user inputs must not reach a new free execution through the queue. */
 const revokeOfficialThreadUserInputs$ = command(
@@ -91,7 +92,7 @@ function officialThreadSettingsCondition(
   owner: OfficialWorkflowThreadOwner,
   threadId: string,
   definitionName: string,
-  releaseId: string,
+  releaseId: string | undefined,
 ) {
   return and(
     eq(chatThreads.id, threadId),
@@ -117,17 +118,19 @@ function officialThreadSettingsCondition(
           ),
         ),
     ),
-    exists(
-      new QueryBuilder()
-        .select({ id: officialWorkflowCatalogState.acceptedReleaseId })
-        .from(officialWorkflowCatalogState)
-        .where(
-          and(
-            eq(officialWorkflowCatalogState.authority, "official"),
-            eq(officialWorkflowCatalogState.acceptedReleaseId, releaseId),
-          ),
+    releaseId === undefined
+      ? undefined
+      : exists(
+          new QueryBuilder()
+            .select({ id: officialWorkflowCatalogState.acceptedReleaseId })
+            .from(officialWorkflowCatalogState)
+            .where(
+              and(
+                eq(officialWorkflowCatalogState.authority, "official"),
+                eq(officialWorkflowCatalogState.acceptedReleaseId, releaseId),
+              ),
+            ),
         ),
-    ),
   );
 }
 
@@ -190,10 +193,13 @@ export const synchronizeOfficialWorkflowThread$ = command(
       return false;
     }
     await set(revokeOfficialThreadUserInputs$, thread.id, signal);
-    const catalog = await set(readAcceptedOfficialWorkflowCatalog$, signal);
+    const builtin = builtInWorkflow(thread.definitionName);
+    const catalog = builtin
+      ? null
+      : await set(readAcceptedOfficialWorkflowCatalog$, signal);
     if (
-      !catalog ||
-      !catalog.payload.definitions.some((definition) => {
+      !builtin &&
+      !catalog?.payload.definitions.some((definition) => {
         return definition.name === thread.definitionName;
       })
     ) {
@@ -210,7 +216,7 @@ export const synchronizeOfficialWorkflowThread$ = command(
       owner,
       thread.id,
       thread.definitionName,
-      catalog.releaseId,
+      catalog?.releaseId,
     );
     if (visibilityChanged) {
       const changed = database

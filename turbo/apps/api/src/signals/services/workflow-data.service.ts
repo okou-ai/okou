@@ -18,6 +18,7 @@ import {
   officialWorkflowCatalogState,
   officialWorkflowCatalogReleases,
 } from "@okouai/db/schema/official-workflow-catalog";
+import { builtInWorkflow } from "./builtin-workflows";
 
 export interface WorkflowMember {
   readonly userId: string;
@@ -319,11 +320,14 @@ export function workflowList(args: {
       )
       .orderBy(asc(workflows.name));
 
-    const hasOfficialWorkflow = rows.some((row) => {
-      return row.workflow.officialDefinitionName !== null;
+    const hasHistoricalDefinition = rows.some((row) => {
+      return (
+        row.workflow.officialDefinitionName !== null &&
+        !builtInWorkflow(row.workflow.officialDefinitionName)
+      );
     });
     const catalogPlan = acceptedOfficialWorkflowCatalogReadPlan();
-    const [catalogRow] = hasOfficialWorkflow
+    const [catalogRow] = hasHistoricalDefinition
       ? await db
           .select(catalogPlan.columns)
           .from(officialWorkflowCatalogState)
@@ -348,7 +352,9 @@ export function workflowList(args: {
         shadowedBy:
           winner && winner.id !== row.workflow.id ? winner : undefined,
         officialDefinitionLifecycle: row.workflow.officialDefinitionName
-          ? (officialLifecycleByName.get(row.workflow.officialDefinitionName) ??
+          ? (builtInWorkflow(row.workflow.officialDefinitionName)?.definition
+              .lifecycle ??
+            officialLifecycleByName.get(row.workflow.officialDefinitionName) ??
             "unavailable")
           : undefined,
       });

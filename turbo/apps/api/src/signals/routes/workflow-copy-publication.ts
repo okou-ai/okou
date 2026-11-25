@@ -34,6 +34,8 @@ import {
   workflowCopyPublicationSql,
   copyPublicationResultSchema,
 } from "./workflow-copy-atomic-publication";
+import { builtInWorkflow } from "../services/builtin-workflows";
+
 export const readWorkflowCopySnapshot$ = command(
   async ({ get }, args: WorkflowCopyInput, signal: AbortSignal) => {
     const db = get(db$);
@@ -47,7 +49,10 @@ export const readWorkflowCopySnapshot$ = command(
       }
       let acceptedReleaseId: string | null = null;
       let revision: OfficialWorkflowAcceptedRevision | null = null;
-      if (p.official) {
+      const builtin = builtInWorkflow(p.definitionName);
+      if (builtin) {
+        revision = builtin.revision;
+      } else if (p.official) {
         const [catalogRow] = await db.select().from(p.catalog);
         signal.throwIfAborted();
         if (!catalogRow) {

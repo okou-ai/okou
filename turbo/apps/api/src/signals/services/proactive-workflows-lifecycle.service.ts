@@ -31,15 +31,12 @@ import {
   PROACTIVE_WORKFLOW_DEFINITIONS,
   RETIRED_PROACTIVE_DEFINITION_NAMES,
 } from "./proactive-workflow-definitions";
-import {
-  readAcceptedOfficialWorkflowCatalog$,
-  readAcceptedOfficialWorkflowRevision$,
-} from "./official-workflow-catalog-read.service";
 import { resolveBlueprint } from "./official-workflow-installation.service";
 import { calculateNextRun } from "./time-automation";
 import { officialScheduleOwnerHash } from "./official-workflow-owner-schedule";
 import { proactiveWorkflowOwnerEnabledSql } from "./proactive-workflow-owner";
 import { proactiveNightlyCron } from "./proactive-nightly-schedule";
+import { builtInWorkflow } from "./builtin-workflows";
 
 const log = logger("ProactiveWorkflows");
 const installedSchema = object({ id: uuid() });
@@ -48,65 +45,41 @@ function ownerMinute(owner: ProactiveWorkflowOwner): number {
   return officialScheduleOwnerHash(owner) % 60;
 }
 
-const loadProactiveSchedule$ = command(
-  async (
-    { set },
-    owner: ProactiveWorkflowOwner,
-    kind: ProactiveWorkflowKind,
-    timezone: string,
-    signal: AbortSignal,
-  ) => {
-    const source = PROACTIVE_WORKFLOW_DEFINITIONS[kind];
-    const catalog = await set(readAcceptedOfficialWorkflowCatalog$, signal);
-    const definition = catalog?.payload.definitions.find((item) => {
-      return item.name === source.name;
-    });
-    if (!catalog || !definition || definition.lifecycle !== "active") {
-      return;
-    }
-    const revision = await set(
-      readAcceptedOfficialWorkflowRevision$,
-      { name: definition.name, revision: definition.revision },
-      signal,
-    );
-    if (!revision) {
-      throw new Error(
-        `Accepted proactive workflow revision is missing: ${source.name}`,
-      );
-    }
-    const blueprint = revision.definition.blueprints.find((item) => {
-      return item.key === source.blueprintKey;
-    });
-    if (!blueprint) {
-      throw new Error(
-        `Proactive workflow cron Blueprint is missing: ${source.name}`,
-      );
-    }
-    const bindings = [
-      {
-        key: "cron",
-        value:
-          kind === "learning"
-            ? proactiveNightlyCron(owner)
-            : `${ownerMinute(owner)} * * * *`,
-      },
-    ];
-    const resolved = resolveBlueprint(
-      blueprint,
-      { blueprintKey: blueprint.key, bindings },
-      timezone,
-    );
-    if (
-      !resolved.ok ||
-      resolved.blueprint.createRequest.kind !== "schedule" ||
-      resolved.blueprint.createRequest.schedule.type !== "cron"
-    ) {
-      throw new Error("Proactive workflows require a cron Blueprint");
-    }
-    const schedule = resolved.blueprint.createRequest.schedule;
-    return { catalog, definition, blueprint, bindings, schedule };
-  },
-);
+function proactiveSchedule(
+  owner: ProactiveWorkflowOwner,
+  kind: ProactiveWorkflowKind,
+  timezone: string,
+) {
+  const source = PROACTIVE_WORKFLOW_DEFINITIONS[kind];
+  const builtin = builtInWorkflow(source.name);
+  if (!builtin) {
+    throw new Error(`Missing built-in Workflow: ${source.name}`);
+  }
+  const { blueprint, definition } = builtin;
+  const bindings = [
+    {
+      key: "cron",
+      value:
+        kind === "learning"
+          ? proactiveNightlyCron(owner)
+          : `${ownerMinute(owner)} * * * *`,
+    },
+  ];
+  const resolved = resolveBlueprint(
+    blueprint,
+    { blueprintKey: blueprint.key, bindings },
+    timezone,
+  );
+  if (
+    !resolved.ok ||
+    resolved.blueprint.createRequest.kind !== "schedule" ||
+    resolved.blueprint.createRequest.schedule.type !== "cron"
+  ) {
+    throw new Error("Proactive workflows require a cron Blueprint");
+  }
+  const schedule = resolved.blueprint.createRequest.schedule;
+  return { definition, blueprint, bindings, schedule };
+}
 
 const disableInactiveProactiveWorkflows$ = command(
   async (
@@ -251,17 +224,8 @@ export const ensureProactiveWorkflows$ = command(
       if (timezone === null) {
         continue;
       }
-      const schedule = await set(
-        loadProactiveSchedule$,
-        owner,
-        kind,
-        timezone,
-        signal,
-      );
-      if (!schedule) {
-        continue;
-      }
-      const { catalog, definition, blueprint, bindings } = schedule;
+      const schedule = proactiveSchedule(owner, kind, timezone);
+      const { definition, blueprint, bindings } = schedule;
       const cron = schedule.schedule.cronExpression;
       const at = nowDate();
       const next = calculateNextRun(cron, timezone, at);
@@ -274,7 +238,6 @@ export const ensureProactiveWorkflows$ = command(
         SELECT ${owner.orgId}, ${owner.userId}, ${definition.name}, 'private', NULL, NULL, NULL,
           ${definition.name}, 'installed', ${owner.userId}, ${owner.userId}, ${at}, ${at}
         WHERE ${proactiveWorkflowOwnerEnabledSql(owner)}
-          AND EXISTS (SELECT 1 FROM official_workflow_catalog_state WHERE accepted_release_id = ${catalog.releaseId})
         ON CONFLICT (org_id, owner_user_id, official_definition_name) WHERE official_definition_name IS NOT NULL
         DO UPDATE SET updated_at = EXCLUDED.updated_at
         RETURNING id
