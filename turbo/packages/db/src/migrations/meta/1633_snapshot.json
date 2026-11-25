@@ -1,5 +1,5 @@
 {
-  "id": "996fb3d1-ee55-4df0-b976-82d1b6cae322",
+  "id": "7f614252-9112-4f26-b3a7-c9d641ea7c0b",
   "prevId": "426aa9fe-49bd-46de-84c2-531206b0911d",
   "version": "7",
   "dialect": "postgresql",
@@ -11476,86 +11476,6 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_connectors_builtin_external_identity": {
-          "name": "idx_connectors_builtin_external_identity",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "connector_slug",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "external_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "external_issuer",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"connectors\".\"connector_slug\" IS NOT NULL AND \"connectors\".\"external_id\" IS NOT NULL AND \"connectors\".\"external_id\" <> ''",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_connectors_custom_external_identity": {
-          "name": "idx_connectors_custom_external_identity",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "custom_connector_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "external_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "external_issuer",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"connectors\".\"custom_connector_id\" IS NOT NULL AND \"connectors\".\"external_id\" IS NOT NULL AND \"connectors\".\"external_id\" <> ''",
           "concurrently": false,
           "method": "btree",
           "with": {}

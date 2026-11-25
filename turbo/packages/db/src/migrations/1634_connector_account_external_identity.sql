@@ -1,4 +1,3 @@
-ALTER TABLE "connectors" ADD COLUMN "external_issuer" text DEFAULT '' NOT NULL;--> statement-breakpoint
 UPDATE connectors account SET external_issuer = binding.issuer
 FROM connector_account_oauth_bindings binding WHERE binding.connector_account_id = account.id;
 --> statement-breakpoint
