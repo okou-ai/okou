@@ -7,6 +7,8 @@ import type { AppRouter } from "../contracts/trpc-contract";
 import type { ClientRouter } from "./types";
 import { androidUpdatesContract as OriginalAndroidUpdatesContract } from "../contracts/android-updates";
 import { androidUpdatesContract } from "./android-updates";
+import { antigravityDeviceAuthContract as OriginalAntigravityDeviceAuthContract } from "../contracts/antigravity-device-auth";
+import { antigravityDeviceAuthContract } from "./antigravity-device-auth";
 import { antigravityPersonalSubscriptionContract as OriginalAntigravityPersonalSubscriptionContract } from "../contracts/antigravity-personal-subscription";
 import { antigravityPersonalSubscriptionContract } from "./antigravity-personal-subscription";
 import { artifactCatalogContract as OriginalArtifactCatalogContract } from "../contracts/artifact-catalog";
@@ -805,6 +807,7 @@ export const clientDescriptorContracts: readonly (readonly [
   AppRouter,
 ])[] = [
   [androidUpdatesContract, OriginalAndroidUpdatesContract],
+  [antigravityDeviceAuthContract, OriginalAntigravityDeviceAuthContract],
   [
     antigravityPersonalSubscriptionContract,
     OriginalAntigravityPersonalSubscriptionContract,

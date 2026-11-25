@@ -12,9 +12,17 @@ import { openCodexDeviceAuthDialogPersonal$ } from "./settings/codex-device-auth
 export type SubscriptionLinkingSource =
   "composer_model_slot" | "composer_model_panel" | "account_menu" | "me_page";
 
+/** Subscriptions every linking entry offers; Antigravity is a staff pilot. */
+export type LinkableSubscriptionProvider = Exclude<
+  PersonalSubscriptionProviderType,
+  "antigravity"
+>;
+
 /** Both subscriptions, in the order every entry lists them. */
-export const SUBSCRIPTION_PROVIDERS: readonly PersonalSubscriptionProviderType[] =
-  ["codex-oauth-token", "claude-code-oauth-token"];
+export const SUBSCRIPTION_PROVIDERS: readonly LinkableSubscriptionProvider[] = [
+  "codex-oauth-token",
+  "claude-code-oauth-token",
+];
 
 interface SubscriptionPlanUsage {
   readonly type: PersonalSubscriptionProviderType;
@@ -67,7 +75,7 @@ export const connectSubscriptionLinkingProvider$ = command(
   async (
     { get, set },
     source: SubscriptionLinkingSource,
-    provider: PersonalSubscriptionProviderType,
+    provider: LinkableSubscriptionProvider,
     signal: AbortSignal,
   ) => {
     if (!(await get(subscriptionLinkingEnabled$))) {
