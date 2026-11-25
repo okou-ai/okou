@@ -23,7 +23,6 @@ final class ChatModelStore {
   }
   private(set) var active = false
   private var closed = false
-  private var reportingCatalog: ModelCatalog?
   @ObservationIgnored private var publication: Task<ChatModelConfiguration, Error>?
   private let lifetime = CCState.State(true)
   private let resources: WorkspaceResources
@@ -124,16 +123,15 @@ final class ChatModelStore {
     await load()
   }
 
-  var usageCatalog: ModelCatalog? { configuration?.catalog ?? reportingCatalog }
+  /// Reporting resolves model names from the shared catalog read, even when the model picker has
+  /// never opened. Reading it does not activate model selection or load subscription quotas.
+  var catalog: Computed<Task<ModelCatalog, Error>> { resources.catalogValue }
 
-  /// Reporting needs model names even when the model picker has never opened.
-  /// This read does not activate model selection or load subscription quotas.
-  func loadUsageCatalog() async {
-    guard !closed, !Task.isCancelled, usageCatalog == nil else { return }
+  /// Retries a failed catalog read for a reporting view and reports a new failure once.
+  func loadCatalog() async {
+    guard !closed, !Task.isCancelled else { return }
     do {
-      let result = try await resources.loadCatalog().value
-      guard !closed, !Task.isCancelled else { return }
-      reportingCatalog = result
+      _ = try await resources.loadCatalog().value
     } catch is CancellationError {
     } catch {
       guard !closed, !Task.isCancelled else { return }
@@ -156,7 +154,6 @@ final class ChatModelStore {
     loadedConfiguration = nil
     do { try stateStore.set(lifetime, false) } catch { didFail(error) }
     if ownsResources { resources.close() }
-    reportingCatalog = nil
     subscriptions.close()
   }
 
