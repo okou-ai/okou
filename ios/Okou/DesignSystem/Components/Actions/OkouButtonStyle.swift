@@ -62,15 +62,21 @@ struct OkouButtonStyle: ButtonStyle {
 struct OkouCompactButtonLabel: View {
   let title: LocalizedStringKey
   let icon: String
+  let isBusy: Bool
 
-  init(_ title: LocalizedStringKey, icon: String) {
+  init(_ title: LocalizedStringKey, icon: String, isBusy: Bool = false) {
     self.title = title
     self.icon = icon
+    self.isBusy = isBusy
   }
 
   var body: some View {
     HStack(spacing: OkouSpace.six) {
       OkouIcon(icon, size: OkouIconSize.inline)
+        .opacity(isBusy ? 0 : 1)
+        .overlay {
+          if isBusy { ProgressView().controlSize(.mini) }
+        }
         .accessibilityHidden(true)
       Text(title)
     }

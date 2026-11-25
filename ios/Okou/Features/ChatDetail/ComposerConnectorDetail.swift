@@ -11,6 +11,13 @@ struct ComposerConnectorDetail: View {
     store.connectors.contains { $0.target.connectorSlug == connector.slug }
   }
 
+  private var isAuthorizing: Bool {
+    guard let flow = store.authorization.active,
+      flow.status.target == .builtin(connector.slug)
+    else { return false }
+    return flow.busy
+  }
+
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: OkouSpace.lg) {
@@ -86,12 +93,14 @@ struct ComposerConnectorDetail: View {
           store.connect(connector)
         } label: {
           if added {
-            OkouCompactButtonLabel("Add account", icon: "plus")
+            OkouCompactButtonLabel("Add account", icon: "plus", isBusy: isAuthorizing)
           } else {
-            OkouCompactButtonLabel("Connect", icon: "plug")
+            OkouCompactButtonLabel("Connect", icon: "plug", isBusy: isAuthorizing)
           }
         }
         .buttonStyle(OkouButtonStyle(isPrimary: !added, isCompact: true))
+        .disabled(isAuthorizing)
+        .accessibilityValue(isAuthorizing ? Text("Connecting…") : Text(""))
         .accessibilityIdentifier("connector-connect")
         if connector.permissionSummary.hasPermissions
           && store.canConfigurePermissions(slug: connector.slug)
