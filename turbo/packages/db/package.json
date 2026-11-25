@@ -57,6 +57,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:migrate:smoke": "tsx scripts/migrate-smoke.ts",
+    "db:sync-proactive-model-key": "tsx scripts/sync-proactive-model-key.ts",
     "db:studio": "drizzle-kit studio",
     "db:reset": "tsx scripts/reset-db.ts",
     "test:migration-consistency": "tsx scripts/test-migration-consistency-schema.ts",
