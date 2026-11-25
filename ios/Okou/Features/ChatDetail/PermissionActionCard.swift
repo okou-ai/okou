@@ -15,28 +15,39 @@ struct PermissionActionCard: View {
 
   var body: some View {
     PermissionCardReadView(read: read) { phase in
-      PermissionActionCardContent(store: store, phase: phase)
+      PermissionActionCardContent(store: store, phase: phase, loadsState: loadsState)
     }
-    .task(id: store.isActive) { if loadsState { await store.loadIfNeeded() } }
   }
 }
 
 private struct PermissionActionCardContent: View {
-  @Bindable var store: PermissionActionStore
+  let store: PermissionActionStore
   let phase: Loadable<ChatPermissionSnapshot>
+  let loadsState: Bool
+  @LoadableValue private var presentation: Loadable<PermissionActionStore.Presentation>
   @State private var showsDetails = false
 
+  init(store: PermissionActionStore, phase: Loadable<ChatPermissionSnapshot>, loadsState: Bool) {
+    self.store = store
+    self.phase = phase
+    self.loadsState = loadsState
+    _presentation = LoadableValue(store.presentation)
+  }
+
+  private var current: PermissionActionStore.Presentation {
+    presentation.data ?? PermissionActionStore.Presentation(duration: store.action.duration)
+  }
   private var isLoading: Bool { phase.state == .loading }
   private var snapshot: ChatPermissionSnapshot? {
-    if store.isBusy, let snapshot = store.snapshot { return snapshot }
-    return phase.data ?? (isLoading ? store.snapshot : nil)
+    if current.isBusy, let snapshot = current.snapshot { return snapshot }
+    return phase.data ?? (isLoading ? current.snapshot : nil)
   }
   private var review: PermissionActionReview {
     PermissionActionReview(action: store.action, snapshot: snapshot)
   }
-  private var needsContinuation: Bool { store.needsContinuation && review.applied }
+  private var needsContinuation: Bool { current.needsContinuation && review.applied }
   private var error: String? {
-    phase.error.map(ChatRequestFailure.message(for:)) ?? store.error
+    phase.error.map(ChatRequestFailure.message(for:)) ?? current.error
   }
 
   private var permission: String {
@@ -44,8 +55,8 @@ private struct PermissionActionCardContent: View {
       ? String(localized: "Other endpoints") : store.action.permission
   }
   private var status: String {
-    if store.isSaving {
-      return store.isContinuing
+    if current.isSaving {
+      return current.isContinuing
         ? String(localized: "Continuing chat…") : String(localized: "Saving permission…")
     }
     if isLoading || (snapshot == nil && error == nil) {
@@ -88,7 +99,7 @@ private struct PermissionActionCardContent: View {
       }
     } actions: {
       if review.applied && !needsContinuation && error == nil && !isLoading
-        && !store.isSaving
+        && !current.isSaving
       {
         HStack(spacing: OkouSpace.sm) {
           Label(
@@ -125,6 +136,10 @@ private struct PermissionActionCardContent: View {
     .sheet(isPresented: $showsDetails) {
       PermissionActionDetails(store: store).okouSheetBackground()
     }
+    // Each activation is a new load request, including one whose inactive state never rendered.
+    .task(id: loadsState && current.isActive ? current.activation : 0) {
+      if loadsState { await store.loadIfNeeded() }
+    }
   }
 }
 
@@ -145,22 +160,32 @@ struct PermissionActionDetails: View {
 }
 
 private struct PermissionActionDetailsContent: View {
-  @Bindable var store: PermissionActionStore
+  let store: PermissionActionStore
   let phase: Loadable<ChatPermissionSnapshot>
+  @LoadableValue private var presentation: Loadable<PermissionActionStore.Presentation>
   @Environment(\.dismiss) private var dismiss
   @Environment(\.permissionWorkspaceName) private var workspaceName
 
+  init(store: PermissionActionStore, phase: Loadable<ChatPermissionSnapshot>) {
+    self.store = store
+    self.phase = phase
+    _presentation = LoadableValue(store.presentation)
+  }
+
+  private var current: PermissionActionStore.Presentation {
+    presentation.data ?? PermissionActionStore.Presentation(duration: store.action.duration)
+  }
   private var isLoading: Bool { phase.state == .loading }
   private var snapshot: ChatPermissionSnapshot? {
-    if store.isBusy, let snapshot = store.snapshot { return snapshot }
-    return phase.data ?? (isLoading ? store.snapshot : nil)
+    if current.isBusy, let snapshot = current.snapshot { return snapshot }
+    return phase.data ?? (isLoading ? current.snapshot : nil)
   }
   private var review: PermissionActionReview {
     PermissionActionReview(action: store.action, snapshot: snapshot)
   }
-  private var needsContinuation: Bool { store.needsContinuation && review.applied }
+  private var needsContinuation: Bool { current.needsContinuation && review.applied }
   private var error: String? {
-    phase.error.map(ChatRequestFailure.message(for:)) ?? store.error
+    phase.error.map(ChatRequestFailure.message(for:)) ?? current.error
   }
 
   var body: some View {
@@ -241,7 +266,7 @@ private struct PermissionActionDetailsContent: View {
     if snapshot != nil && !review.hasPermission && !isLoading {
       Text("This permission is no longer available.")
     }
-    if review.applied && !store.isSaving {
+    if review.applied && !current.isSaving {
       VStack(alignment: .leading, spacing: OkouSpace.xs) {
         Label(
           store.action.action == .allow
@@ -255,21 +280,24 @@ private struct PermissionActionDetailsContent: View {
         }
       }
     }
-    if review.hasPermission && (!review.applied || needsContinuation || store.isSaving) {
+    if review.hasPermission && (!review.applied || needsContinuation || current.isSaving) {
       if store.action.action == .allow
-        && (store.isSaving ? !store.isContinuing : !needsContinuation)
+        && (current.isSaving ? !current.isContinuing : !needsContinuation)
       {
         HStack {
           Text("Allow for")
           Spacer()
-          Picker("Allow for", selection: $store.duration) {
+          Picker(
+            "Allow for",
+            selection: Binding(get: { current.duration }, set: { store.duration = $0 })
+          ) {
             Text("1 hour").tag(ChatPermissionAction.Duration.hour)
             Text("24 hours").tag(ChatPermissionAction.Duration.day)
             Text("7 days").tag(ChatPermissionAction.Duration.week)
             Text("Always").tag(ChatPermissionAction.Duration.always)
           }
           .okouValuePicker().labelsHidden()
-          .disabled(store.isSaving || isLoading)
+          .disabled(current.isSaving || isLoading)
           .accessibilityIdentifier("permission-duration")
         }
         .font(.okou(.body))
@@ -281,10 +309,12 @@ private struct PermissionActionDetailsContent: View {
         Button {
           Task { [snapshot] in await store.confirm(reviewing: snapshot) }
         } label: {
-          ChatSettingsActionLabel(title: confirmationTitle, isBusy: store.isSaving)
+          ChatSettingsActionLabel(title: confirmationTitle, isBusy: current.isSaving)
         }
         .buttonStyle(OkouButtonStyle(isPrimary: true))
-        .disabled(!store.canConfirm(reviewing: snapshot) || isLoading || phase.error != nil)
+        .disabled(
+          !current.canConfirm(store.action, reviewing: snapshot) || isLoading
+            || phase.error != nil)
         .accessibilityIdentifier("permission-confirm")
         if store.action.callbackPrompt != nil {
           Text("The chat will continue after confirmation.")
@@ -295,8 +325,8 @@ private struct PermissionActionDetailsContent: View {
   }
 
   private var confirmationTitle: LocalizedStringKey {
-    if store.isSaving {
-      return store.isContinuing ? "Continuing chat…" : "Saving permission…"
+    if current.isSaving {
+      return current.isContinuing ? "Continuing chat…" : "Saving permission…"
     }
     if needsContinuation { return "Continue chat" }
     return store.action.action == .allow ? "Allow permission" : "Deny permission"
