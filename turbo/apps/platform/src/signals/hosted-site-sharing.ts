@@ -18,19 +18,14 @@ import { accept } from "../lib/accept.ts";
 import { resolveEditableHostedSiteDomain } from "../lib/platform-host.ts";
 import { copyAttachmentLinkToClipboard } from "../views/okou-page/attachment-url.ts";
 import { apiClient$ } from "./api-client.ts";
-import { pageSignal$ } from "./page-signal.ts";
+import { isHostedSiteUrl } from "./chat-page/parse-body-blocks.ts";
 import {
   currentHostedSiteUrl,
   hostedSiteUrlChanges$,
   recordHostedSiteUrlChange$,
 } from "./hosted-site-url-changes.ts";
 import { createShareLinkCopy } from "./share-link-copy.ts";
-import {
-  debounceCommand,
-  onRef,
-  resetSignal,
-  throttleCommand,
-} from "./utils.ts";
+import { debounceCommand, resetSignal, throttleCommand } from "./utils.ts";
 import { createHostedSiteBannerSignals } from "./hosted-site-banner.ts";
 import { passArtifactPaywall$ } from "./okou-page/artifact-paywall.ts";
 import { createSharePeopleSignals } from "./share-people.ts";
@@ -453,35 +448,34 @@ function createHostedSiteShareScope() {
     const source = get(source$);
     return source ? createHostedSiteShareSession(source.url) : null;
   });
-  const resetMount$ = resetSignal();
-  const mountRef$ = onRef(
-    command(
-      ({ get, set }, element: HTMLSpanElement, mountSignal: AbortSignal) => {
-        const url = element.dataset.shareUrl;
-        if (!url) {
-          return;
-        }
-        const signal = set(resetMount$, mountSignal, get(pageSignal$));
-        signal.throwIfAborted();
-        const source = { url };
-        set(source$, source);
-        const session = get(session$)!;
-        set(session.signal$, signal);
-        signal.addEventListener(
-          "abort",
-          () => {
-            if (get(source$) === source) {
-              set(source$, null);
-            }
-          },
-          { once: true },
-        );
-      },
-    ),
+  const resetSession$ = resetSignal();
+  const select$ = command(
+    ({ get, set }, url: string, parentSignal: AbortSignal) => {
+      parentSignal.throwIfAborted();
+      const signal = set(resetSession$, parentSignal);
+      if (!isHostedSiteUrl(url)) {
+        set(source$, null);
+        return;
+      }
+      const source = { url };
+      set(source$, source);
+      const session = get(session$)!;
+      set(session.signal$, signal);
+      set(session.domains.initialize$, signal);
+      signal.addEventListener(
+        "abort",
+        () => {
+          if (get(source$) === source) {
+            set(source$, null);
+          }
+        },
+        { once: true },
+      );
+    },
   );
   return {
     session$,
-    mountRef$,
+    select$,
   };
 }
 

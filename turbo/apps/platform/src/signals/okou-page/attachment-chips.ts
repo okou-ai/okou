@@ -29,6 +29,7 @@ import { rootSignal$ } from "../root-signal.ts";
 import type { ChatThreadArtifactGoogleDriveRecovery } from "@okouai/api-contracts/contracts/chat-threads";
 import { createZoomableImageCanvasSignals } from "../zoomable-image-canvas.ts";
 import { createCrossChatArtifactPreview } from "../chat-page/chat-artifact-preview.ts";
+import { getHostedSiteShareScope } from "../hosted-site-sharing.ts";
 
 // ---------------------------------------------------------------------------
 // Lightbox state — tracks which attachment is open in the global preview UI
@@ -428,6 +429,7 @@ export const openDocumentLightbox$ = command(
     set(internalLightboxDialogVisible$, true);
     set(internalLightboxDialogFullscreen$, false);
     const preview = attachmentPreviewSignalsFor(value);
+    set(getHostedSiteShareScope("dialog").select$, value.url, ownerSignal);
     if (isAttachmentTextDocumentLightboxInput(value)) {
       const text$ =
         value.text$ ??

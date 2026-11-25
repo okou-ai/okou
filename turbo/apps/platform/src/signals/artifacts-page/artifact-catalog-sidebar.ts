@@ -4,8 +4,12 @@ import { createZoomableImageCanvasSignals } from "../zoomable-image-canvas.ts";
 import { detach, Reason, resetSignal } from "../utils.ts";
 import { pageSignal$ } from "../page-signal.ts";
 import { refreshWorkspaceLayout$ } from "../chat-page/workspace-layout.ts";
-import { createCatalogArtifactPreviewSignals } from "./artifact-catalog-preview.ts";
+import {
+  artifactDetailPreview,
+  createCatalogArtifactPreviewSignals,
+} from "./artifact-catalog-preview.ts";
 import type { ArtifactCatalogSignals } from "./create-artifact-catalog-signals.ts";
+import { getHostedSiteShareScope } from "../hosted-site-sharing.ts";
 
 /** The org-wide catalog owns a preview without inventing a chat thread. */
 export function createArtifactCatalogSidebarSignals(
@@ -63,6 +67,11 @@ export function createArtifactCatalogSidebarSignals(
           );
           return;
         }
+        set(
+          getHostedSiteShareScope("sidebar").select$,
+          artifactDetailPreview(detail).url,
+          openSignal,
+        );
         const selectedPreview = await set(
           catalog.ensureSelectedArtifactPreview$,
           artifactId,

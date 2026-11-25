@@ -15,7 +15,11 @@ import {
 } from "ccstate";
 
 import type { ArtifactCatalogViewSignals } from "../artifacts-page/create-artifact-catalog-signals.ts";
-import { createCatalogArtifactPreviewSignals } from "../artifacts-page/artifact-catalog-preview.ts";
+import {
+  artifactDetailPreview,
+  createCatalogArtifactPreviewSignals,
+} from "../artifacts-page/artifact-catalog-preview.ts";
+import { getHostedSiteShareScope } from "../hosted-site-sharing.ts";
 import {
   createZipArtifactPreviewScope,
   type ZipArtifactPreviewScope,
@@ -348,6 +352,7 @@ function createOpenAttachmentCommand(
     ({ set }, input: ArtifactRefInput, signal: AbortSignal): void => {
       const sessionSignal = set(startSession$, signal);
       const ref = materializeArtifactRef(input, previewContext, sessionSignal);
+      set(getHostedSiteShareScope("sidebar").select$, ref.url, sessionSignal);
       set(publishTarget$, {
         type: "artifact",
         source: {
@@ -361,6 +366,50 @@ function createOpenAttachmentCommand(
         Reason.DomCallback,
         "retry attachment preview on open",
       );
+    },
+  );
+}
+
+function createOpenCatalogArtifactCommand(
+  startSession$: Command<AbortSignal, [AbortSignal]>,
+  publishTarget$: Command<void, [NonMailThreadSidebarTarget]>,
+  artifactCatalog: ArtifactCatalogViewSignals,
+  contentReady$: Computed<Promise<void>>,
+) {
+  return command(
+    async (
+      { get, set },
+      artifactId: string,
+      signal: AbortSignal,
+    ): Promise<void> => {
+      const sessionSignal = set(startSession$, signal);
+      set(artifactCatalog.selectArtifact$, artifactId);
+      set(publishTarget$, {
+        type: "artifact",
+        source: { kind: "catalog", artifactId, ownerSignal: sessionSignal },
+      });
+      const detail = await get(artifactCatalog.selectedArtifactDetail$);
+      signal.throwIfAborted();
+      sessionSignal.throwIfAborted();
+      if (detail) {
+        set(
+          getHostedSiteShareScope("sidebar").select$,
+          artifactDetailPreview(detail).url,
+          sessionSignal,
+        );
+      }
+      const selectedPreview = await set(
+        artifactCatalog.ensureSelectedArtifactPreview$,
+        artifactId,
+        sessionSignal,
+      );
+      signal.throwIfAborted();
+      sessionSignal.throwIfAborted();
+      if (selectedPreview) {
+        await set(selectedPreview.refreshOnOpen$, contentReady$, sessionSignal);
+        signal.throwIfAborted();
+        sessionSignal.throwIfAborted();
+      }
     },
   );
 }
@@ -497,31 +546,11 @@ export function createThreadSidebarSignals(
     },
   );
 
-  const openCatalogArtifact$ = command(
-    async ({ set }, artifactId: string, signal: AbortSignal): Promise<void> => {
-      const sessionSignal = set(startSession$, signal);
-      set(artifactCatalog.selectArtifact$, artifactId);
-      set(publishTarget$, {
-        type: "artifact",
-        source: { kind: "catalog", artifactId, ownerSignal: sessionSignal },
-      });
-      const selectedPreview = await set(
-        artifactCatalog.ensureSelectedArtifactPreview$,
-        artifactId,
-        sessionSignal,
-      );
-      signal.throwIfAborted();
-      sessionSignal.throwIfAborted();
-      if (selectedPreview) {
-        await set(
-          selectedPreview.refreshOnOpen$,
-          preview.contentReady$,
-          sessionSignal,
-        );
-        signal.throwIfAborted();
-        sessionSignal.throwIfAborted();
-      }
-    },
+  const openCatalogArtifact$ = createOpenCatalogArtifactCommand(
+    startSession$,
+    publishTarget$,
+    artifactCatalog,
+    preview.contentReady$,
   );
 
   const openAttachment$ = createOpenAttachmentCommand(

@@ -180,6 +180,70 @@ test("chat-hosted-site-url-004 follows both saved addresses through the preview 
   });
 });
 
+test("Closing a website cancels its pending domain read and reopening starts a fresh share session", async () => {
+  const began = context.mocks.deferred<void>();
+  const aborted = context.mocks.deferred<void>();
+  let hold = true;
+  context.mocks.api(hostContract.siteDomains, async ({ request, respond }) => {
+    if (hold) {
+      hold = false;
+      request.signal.addEventListener(
+        "abort",
+        () => {
+          aborted.resolve();
+        },
+        { once: true },
+      );
+      began.resolve();
+      await aborted.promise;
+    }
+    return respond(200, {
+      siteId,
+      defaultUrl: address(original),
+      effectiveUrl: address(original),
+      selectedDomainId: null,
+      revision: "00000000-0000-4000-8000-000000000053",
+      allowed: true,
+      domains: [],
+    });
+  });
+  const preview = await publishedReport(true);
+  await openHostedSiteShare(preview);
+  click(await findNamedButton("Customize URL"));
+  await began.promise;
+  click(getNamedButton("Close artifact", preview));
+  await aborted.promise;
+  await waitFor(() => {
+    expect(preview).not.toBeInTheDocument();
+  });
+
+  click(await findNamedLink("Read the launch report"));
+  const reopened = await screen.findByTestId("artifact-sidebar");
+  const menu = await openHostedSiteShare(reopened);
+  expect(within(menu).queryByLabelText("Website URL")).toBeNull();
+  click(await findNamedButton("Customize URL", menu));
+  await expect(screen.findByLabelText("Website URL")).resolves.toHaveValue(
+    original,
+  );
+});
+
+test("Opening a website from chat Resources initializes its sharing settings", async () => {
+  const preview = await publishedReport();
+  click(getNamedButton("Close artifact", preview));
+  await waitFor(() => {
+    expect(preview).not.toBeInTheDocument();
+  });
+  const resources = await openResources();
+  const artifact = await within(resources).findByText(title);
+  click(artifact.closest("button")!);
+  const catalogPreview = await screen.findByTestId("artifact-sidebar");
+  const menu = await openHostedSiteShare(catalogPreview);
+  expect(within(menu).getByLabelText("Anyone with the link")).toBeChecked();
+  await expect(
+    within(menu).findByRole("switch", { name: "Show Okou banner" }),
+  ).resolves.toBeChecked();
+});
+
 function tabNamed(name: string, container: HTMLElement) {
   const tab = queryAllByRoleFast("tab", container).find((item) => {
     return item.textContent?.startsWith(name);
