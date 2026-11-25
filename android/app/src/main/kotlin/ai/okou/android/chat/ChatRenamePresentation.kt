@@ -30,9 +30,11 @@ internal class ChatRenameEditor(
     var submitted by mutableStateOf(submission)
 
     private val pristine: Boolean
-        get() =
-            field.input.composition == null &&
-                normalizedRenameName(field.input.text) == normalizedRenameName(baseline)
+        get() {
+            val input = this.field.input
+            return input.composition == null &&
+                normalizedRenameName(input.text) == normalizedRenameName(baseline)
+        }
 
     fun form(confirmedName: String, enabled: Boolean) =
         renameForm(if (pristine) confirmedName else field.input.text, confirmedName, enabled, null)
