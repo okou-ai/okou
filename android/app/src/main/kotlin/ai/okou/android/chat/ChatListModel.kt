@@ -8,6 +8,7 @@ import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.contentReadStaleDelayMillis
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -148,6 +149,9 @@ internal constructor(
         get() = conversationId.takeUnless { action == ChatRowAction.Delete }
 }
 
+@ConsistentCopyVisibility
+data class RenameSubmission internal constructor(val eventId: String, val name: String)
+
 internal enum class ChatUndoPhase {
     Offered,
     Checking,
@@ -193,7 +197,8 @@ data class ChatListUiState(
     val filter: ChatListFilter = ChatListFilter.Inbox,
     val pendingRowActions: Map<String, ChatRowAction> = emptyMap(),
     internal val rowActionFailures: List<ChatRowActionFailure> = emptyList(),
-    internal val unconfirmedRenames: Map<String, String> = emptyMap(),
+    internal val unconfirmedRenames: Map<String, RenameSubmission> = emptyMap(),
+    internal val confirmedRenameIds: Map<String, String> = emptyMap(),
     val rowUndo: ChatRowUndo? = null,
     internal val conversationUndo: ChatRowUndo? = null,
     val markingAllRead: Boolean = false,
@@ -392,6 +397,7 @@ class ChatListModel(
     private val sync = ChatListSync(service, dispatcher)
     private var confirmed: CachedChats? = null
     private val projection = ChatListProjection()
+    private val pendingRenameIds = mutableMapOf<String, String>()
     private val rowMutations =
         ChatRowMutationOwner(
             service,
@@ -1051,13 +1057,18 @@ class ChatListModel(
         threadId: String,
         title: String,
         fromConversation: Boolean = false,
-    ): Boolean =
-        performRowAction(
-            threadId,
-            ChatRowAction.Rename,
-            title.trim(),
-            fromConversation = fromConversation,
-        )
+    ): RenameSubmission? {
+        val submission = RenameSubmission(UUID.randomUUID().toString(), title.trim())
+        return submission.takeIf {
+            performRowAction(
+                threadId,
+                ChatRowAction.Rename,
+                it.name,
+                fromConversation = fromConversation,
+                renameEventId = it.eventId,
+            )
+        }
+    }
 
     internal fun moveThreadToProject(
         threadId: String,
@@ -1078,6 +1089,7 @@ class ChatListModel(
         undoRequest: ChatRowUndo? = null,
         fromConversation: Boolean = false,
         deleteFromWorkflow: Boolean = false,
+        renameEventId: String? = null,
     ): Boolean {
         if (!current()) return false
         val state = mutable.value
@@ -1139,6 +1151,7 @@ class ChatListModel(
                     if (intent == null || undoRequest != null) state.readIntents
                     else state.readIntents + (threadId to intent),
             )
+        if (renameEventId != null) pendingRenameIds[threadId] = renameEventId
         mutable.value =
             if (undoRequest == null) pending
             else
@@ -1155,6 +1168,7 @@ class ChatListModel(
                                 pinGroup,
                                 index,
                                 state,
+                                renameEventId,
                             )
                         else emptyList()
                     } catch (_: IllegalArgumentException) {
@@ -1200,7 +1214,11 @@ class ChatListModel(
                     } else {
                         confirmation = null
                         submission =
-                            rowMutations.submit(action, edits, optimistic = undoRequest == null) {
+                            rowMutations.submit(
+                                action,
+                                edits,
+                                optimistic = undoRequest == null && action != ChatRowAction.Rename,
+                            ) {
                                 // Acknowledge replies that arrived while this chat was muted.
                                 markReadWithReceipt(threadId)
                             }
@@ -1217,6 +1235,12 @@ class ChatListModel(
                     }
                 }
                 requireCurrent()
+                if (submission?.renameAcknowledged == true) {
+                    if (projection.hasUnsettledEdits(submission.edits)) refreshList()
+                    return@launch
+                }
+                if (renameEventId != null && pendingRenameIds[threadId] != renameEventId)
+                    return@launch
                 val rollback = submission?.let(rowMutations::discardRejected)
                 val rolledBack = rollback != null
                 if (rolledBack) {
@@ -1288,8 +1312,7 @@ class ChatListModel(
                                     .copy(
                                         unconfirmedRenames =
                                             if (action == ChatRowAction.Rename && !failure.rejected)
-                                                previous.unconfirmedRenames +
-                                                    (threadId to failure.edits.single().eventId)
+                                                projection.unconfirmedRenames()
                                             else previous.unconfirmedRenames,
                                     )
                             if (movingProject) reconcileProjectMoves(state, rowsChanged = true)
@@ -1324,7 +1347,11 @@ class ChatListModel(
                             )
                 }
             } finally {
-                if ((intent == null || undoRequest != null) && current()) {
+                if (
+                    (intent == null || undoRequest != null) &&
+                        current() &&
+                        (renameEventId == null || pendingRenameIds.remove(threadId, renameEventId))
+                ) {
                     mutable.value =
                         mutable.value.copy(
                             pendingRowActions = mutable.value.pendingRowActions - threadId,
@@ -1337,6 +1364,17 @@ class ChatListModel(
 
     private fun publishRows(state: ChatListUiState = mutable.value) {
         val rows = projection.rows()
+        val confirmedRenameIds = projection.confirmedRenameIds
+        var pendingRowActions = state.pendingRowActions
+        if (pendingRenameIds.isNotEmpty()) {
+            pendingRenameIds.entries.removeAll { (threadId, eventId) ->
+                if (confirmedRenameIds[threadId] != eventId) false
+                else {
+                    pendingRowActions = pendingRowActions - threadId
+                    true
+                }
+            }
+        }
         publishWithCurrentMoveNotice(
             state
                 .copy(
@@ -1344,15 +1382,17 @@ class ChatListModel(
                     confirmedThreads = projection.confirmedRows.threads,
                     threadsByRecency = rows.byRecency,
                     acceptedNewChats = projection.acceptedNewChats,
+                    pendingRowActions = pendingRowActions,
                     rowActionFailures =
                         if (state.rowActionFailures.isEmpty()) state.rowActionFailures
                         else
                             state.rowActionFailures.filter {
                                 it.edits.isEmpty() || projection.hasUnsettledEdits(it.edits)
                             },
-                    unconfirmedRenames = projection.unsettledRenames(state.unconfirmedRenames),
+                    unconfirmedRenames = projection.unconfirmedRenames(),
+                    confirmedRenameIds = confirmedRenameIds,
                 )
-                .pruneInvalidUndo { it.threadId !in state.pendingRowActions },
+                .pruneInvalidUndo { it.threadId !in pendingRowActions },
         )
     }
 
@@ -1457,8 +1497,7 @@ class ChatListModel(
     }
 
     internal fun checkChatRename(threadId: String) {
-        val eventId = mutable.value.unconfirmedRenames[threadId] ?: return
-        requestListRead(setOf(eventId), userRequested = true)
+        if (threadId in mutable.value.unconfirmedRenames) requestListRead(userRequested = true)
     }
 
     internal fun dismissRowActionFailure(failure: ChatRowActionFailure) {
@@ -1709,8 +1748,14 @@ class ChatListModel(
             val reconciliation = completedActivityReconciliation
             val finishedActivity =
                 if (reconciliation != null) projection.completedOutgoingAttempts() else emptyMap()
+            val acknowledgedRenames = projection.acknowledgedRenameIds()
             val result = sync.synchronize(confirmed?.checkpoint)
-            publishList(result, rowDiscardsAfterRead, finishedActivity = finishedActivity)
+            publishList(
+                result,
+                rowDiscardsAfterRead,
+                finishedActivity = finishedActivity,
+                renamesAcknowledgedBeforeRead = acknowledgedRenames,
+            )
             rowDiscardsAfterRead.clear()
             if (completedActivityReconciliation === reconciliation)
                 completedActivityReconciliation = null
@@ -1789,6 +1834,7 @@ class ChatListModel(
         discardOnSuccess: Set<String>,
         preparedProjection: ReplayedChats? = null,
         finishedActivity: Map<String, ChatListProjection.OutgoingAttempt> = emptyMap(),
+        renamesAcknowledgedBeforeRead: Set<String> = emptySet(),
     ) {
         requireCurrent()
         val previous = confirmed
@@ -1814,7 +1860,14 @@ class ChatListModel(
         requireCurrent()
         confirmed = saved
         val projectionChanged =
-            projection.reconcile(result, saved.checkpoint, rows, discardOnSuccess, finishedActivity)
+            projection.reconcile(
+                result,
+                saved.checkpoint,
+                rows,
+                discardOnSuccess,
+                finishedActivity,
+                renamesAcknowledgedBeforeRead,
+            )
         val previousState = mutable.value
         fun ChatRowUndo?.retainIfUnsettled() =
             this?.takeUnless {
@@ -1852,8 +1905,6 @@ class ChatListModel(
     internal fun checkProjectCreation() = projectOwner.checkProjectCreation()
 
     internal fun dismissProjectCreation() = projectOwner.dismissProjectCreation()
-
-    internal fun retryProjectRename(id: String) = projectOwner.retryProjectRename(id)
 
     internal fun checkProjectRename(id: String) = projectOwner.checkProjectRename(id)
 

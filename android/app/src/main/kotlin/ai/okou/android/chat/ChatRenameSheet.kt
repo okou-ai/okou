@@ -13,7 +13,9 @@ import ai.okou.android.renameForm
 import androidx.annotation.StringRes
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -35,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -42,7 +45,10 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.flow.filterNotNull
@@ -59,6 +65,7 @@ internal enum class RenameStatus {
 internal fun RenameListItemSheet(
     editor: ChatRenameEditor,
     confirmedName: String,
+    confirmedEventId: String?,
     @StringRes titleRes: Int,
     @StringRes labelRes: Int,
     enabled: Boolean,
@@ -66,7 +73,7 @@ internal fun RenameListItemSheet(
     check: () -> Unit,
     dismiss: () -> Unit,
     saved: () -> Unit,
-    save: (String) -> Boolean,
+    save: (String) -> RenameSubmission?,
     projectName: Boolean = false,
 ) {
     val baseline = editor.baseline
@@ -77,27 +84,29 @@ internal fun RenameListItemSheet(
     val readOnly = unconfirmed || status == RenameStatus.Saving
     val form = renameForm(input.text, baseline, confirmedName, enabled && !readOnly, null)
     val name = form.name
-    val confirmed = submitted != null && submitted == confirmedName && !readOnly
-    LaunchedEffect(confirmed, submitted) {
-        if (
-            confirmed &&
-                editor.submitted == submitted &&
-                normalizedRenameName(input.text) == submitted
-        )
-            saved()
+    if (
+        submitted != null &&
+            submitted.eventId == confirmedEventId &&
+            normalizedRenameName(input.text) == submitted.name
+    ) {
+        LaunchedEffect(submitted) {
+            if (editor.submitted == submitted && normalizedRenameName(input.text) == submitted.name)
+                saved()
+        }
+        return
     }
 
-    val hint = if (projectName) null else stringResource(R.string.chat_rename_trim_hint)
-    val validation =
-        if (form.error == RenameFieldError.Required) stringResource(R.string.chat_rename_required)
-        else if (projectName) projectNameError(editor.field) else null
-    val saveFailed = !readOnly && submitted == name && !confirmed
+    LaunchedEffect(editor, confirmedName, readOnly) {
+        editor.updateConfirmedName(confirmedName, readOnly)
+    }
+
+    val validation = form.error ?: if (projectName) projectNameError(editor.field) else null
     val notice =
         when {
             status == RenameStatus.Saving && !projectName -> R.string.settings_saving
             checking && !projectName -> R.string.chat_rename_checking_result
             unconfirmed -> R.string.chat_rename_save_unconfirmed
-            saveFailed || status == RenameStatus.Rejected && submitted == null ->
+            status == RenameStatus.Rejected && (submitted == null || submitted.name == name) ->
                 R.string.chat_rename_save_failed
             else -> null
         }
@@ -106,7 +115,6 @@ internal fun RenameListItemSheet(
     SettingsSheet(
         title = stringResource(titleRes),
         onDismiss = dismiss,
-        modifier = if (projectName) Modifier.projectNamePanelMotion() else Modifier,
         actionSpacing = OkouFormLayout.GroupGap,
         scroll = if (projectName) SettingsSheetScroll.Panel else SettingsSheetScroll.Body,
         fullScreenInShortWindow = projectName,
@@ -129,9 +137,7 @@ internal fun RenameListItemSheet(
                     else {
                         val submittedName =
                             if (projectName) editor.field.submitProjectName() else name
-                        if (submittedName != null && save(submittedName)) {
-                            editor.submitted = submittedName
-                        }
+                        submittedName?.let(save)?.let { editor.submitted = it }
                     }
                 },
                 confirmEnabled = if (unconfirmed) !checking else form.canSave,
@@ -153,7 +159,7 @@ internal fun RenameListItemSheet(
             label,
             readOnly,
             validation,
-            hint,
+            projectName,
             notice,
             noticeIsError = notice == R.string.chat_rename_save_failed,
         )
@@ -189,7 +195,7 @@ internal fun CreateProjectSheet(
     SettingsSheet(
         title = stringResource(R.string.chat_project_create),
         onDismiss = dismiss,
-        modifier = Modifier.projectNamePanelMotion().testTag("create_project_sheet"),
+        modifier = Modifier.testTag("create_project_sheet"),
         actionSpacing = OkouFormLayout.GroupGap,
         scroll = SettingsSheetScroll.Panel,
         dismissible = !busy,
@@ -231,7 +237,7 @@ internal fun CreateProjectSheet(
             stringResource(R.string.chat_project_name),
             readOnly = busy || unconfirmed,
             validation = projectNameError(field),
-            hint = null,
+            projectName = true,
             notice = notice,
             noticeIsError = phase == ProjectCreatePhase.Rejected,
             submit = ::submit,
@@ -248,18 +254,12 @@ private fun projectNameActionLabels(@StringRes idle: Int, @StringRes pending: In
         stringResource(R.string.chat_project_checking),
     )
 
-@Composable
-private fun Modifier.projectNamePanelMotion(): Modifier =
-    if (isShortSettingsPanelWindow()) this
-    else animateContentSize(tween(250, easing = ChatListMotionEasing))
-
-@Composable
-private fun projectNameError(field: WorkspaceNameField): String? =
+private fun projectNameError(field: WorkspaceNameField): RenameFieldError? =
     if (
         field.overlongSubmission != null &&
             field.overlongSubmission == normalizedRenameName(field.input.text)
     )
-        stringResource(R.string.chat_project_name_too_long, ProjectNameLimit)
+        RenameFieldError.TooLong
     else null
 
 @Composable
@@ -267,8 +267,8 @@ private fun WorkspaceNameFormBody(
     field: WorkspaceNameField,
     label: String,
     readOnly: Boolean,
-    validation: String?,
-    hint: String?,
+    validation: RenameFieldError?,
+    projectName: Boolean,
     @StringRes notice: Int?,
     noticeIsError: Boolean,
     submit: (() -> Unit)? = null,
@@ -276,6 +276,52 @@ private fun WorkspaceNameFormBody(
     val colors = MaterialTheme.colorScheme
     val focus = remember { FocusRequester() }
     val input = field.input
+    val requiredMessage = stringResource(R.string.chat_rename_required)
+    val lengthMessage =
+        if (projectName) stringResource(R.string.chat_project_name_too_long, ProjectNameLimit)
+        else null
+    val validationMessage =
+        when (validation) {
+            RenameFieldError.Required -> requiredMessage
+            RenameFieldError.TooLong -> lengthMessage
+            null -> null
+        }
+    val lineHeightStyle =
+        LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None)
+    val supportingStyle =
+        MaterialTheme.typography.bodySmall.copy(
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+            lineHeightStyle = lineHeightStyle,
+        )
+    val inputStyle = okouFormInputStyle().copy(lineHeightStyle = lineHeightStyle)
+    val density = LocalDensity.current
+    val textMeasurer = rememberTextMeasurer()
+    // A fallback font can need more vertical space than the configured line height.
+    val supportingLineHeight =
+        remember(textMeasurer, density, supportingStyle, requiredMessage, lengthMessage) {
+            with(density) {
+                listOfNotNull(requiredMessage, lengthMessage)
+                    .maxOf {
+                        textMeasurer
+                            .measure(
+                                AnnotatedString(it),
+                                supportingStyle,
+                                softWrap = false,
+                                maxLines = 1,
+                            )
+                            .size
+                            .height
+                            .toDp()
+                    }
+                    .coerceAtLeast(supportingStyle.lineHeight.toDp())
+            }
+        }
+    val inputLineHeight = with(density) { inputStyle.lineHeight.toDp() }
+    val outlineMinHeight = OutlinedTextFieldDefaults.MinHeight
+    val fieldPadding = OkouFormLayout.FieldPadding.calculateTopPadding()
+    // Material's minimum includes the supporting slot. Center the short input in its own outline.
+    val inputVerticalPadding = maxOf(fieldPadding, (outlineMinHeight - inputLineHeight) / 2)
     Column {
         var fieldFocused by remember { mutableStateOf(false) }
         Text(label, style = MaterialTheme.typography.bodyMedium)
@@ -284,22 +330,38 @@ private fun WorkspaceNameFormBody(
             state = input,
             modifier =
                 Modifier.fillMaxWidth()
-                    .heightIn(min = OutlinedTextFieldDefaults.MinHeight)
+                    .heightIn(
+                        min =
+                            outlineMinHeight +
+                                OkouFormLayout.SupportingTextGap +
+                                supportingLineHeight,
+                    )
                     .focusRequester(focus)
                     .onFocusChanged { fieldFocused = it.isFocused }
                     .semantics {
                         contentDescription = label
-                        if (validation != null) error(validation)
+                        if (validationMessage != null) error(validationMessage)
                     },
-            textStyle = okouFormInputStyle(),
+            textStyle = inputStyle,
             readOnly = readOnly,
-            isError = validation != null,
+            supportingText = {
+                Box(
+                    Modifier.fillMaxWidth()
+                        .animateContentSize(tween(250, easing = ChatListMotionEasing))
+                        .heightIn(min = supportingLineHeight),
+                ) {
+                    if (validationMessage != null)
+                        Text(validationMessage, color = colors.error, style = supportingStyle)
+                }
+            },
+            isError = validationMessage != null,
             lineLimits = TextFieldLineLimits.SingleLine,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             onKeyboardAction = submit?.let { action -> { action() } },
             shape = MaterialTheme.shapes.medium,
             colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = colors.onSurface),
-            contentPadding = OkouFormLayout.FieldPadding,
+            contentPadding =
+                PaddingValues(horizontal = fieldPadding, vertical = inputVerticalPadding),
         )
         LaunchedEffect(field) {
             focus.requestFocus()
@@ -317,24 +379,20 @@ private fun WorkspaceNameFormBody(
                 snapshotFlow { input.text }.collect { field.clearLengthErrorOnEdit() }
             }
         }
-        val supportingText = validation ?: hint
-        if (supportingText != null) {
-            Spacer(Modifier.height(OkouFormLayout.SupportingTextGap))
-            Text(
-                supportingText,
-                color = if (validation == null) colors.onSurfaceVariant else colors.error,
-                style =
-                    MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp),
-            )
-        }
-        if (notice != null) {
-            Spacer(Modifier.height(OkouFormLayout.GroupGap))
-            Text(
-                stringResource(notice),
-                Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                color = if (noticeIsError) colors.error else colors.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyMedium,
-            )
+        val noticeMotion =
+            if (projectName && !isShortSettingsPanelWindow())
+                Modifier.animateContentSize(tween(250, easing = ChatListMotionEasing))
+            else Modifier
+        Column(Modifier.fillMaxWidth().then(noticeMotion)) {
+            if (notice != null) {
+                Spacer(Modifier.height(OkouFormLayout.GroupGap))
+                Text(
+                    stringResource(notice),
+                    Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                    color = if (noticeIsError) colors.error else colors.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
         }
     }
 }
