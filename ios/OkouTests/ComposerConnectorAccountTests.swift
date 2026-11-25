@@ -381,8 +381,8 @@ final class ComposerConnectorAccountTests: XCTestCase {
     let composer = ComposerConnectorStore(
       service: ChatComposerAccess(client: fixture.http.client),
       authorizationService: ChatConnectorService(client: fixture.http.client),
-      webURL: fixture.http.baseURL, threadID: thread ? FixtureData.threadID : nil, didFail: { _ in }
-    )
+      webURL: fixture.http.baseURL, graph: makeTestWorkspaceGraph(),
+      threadID: thread ? FixtureData.threadID : nil, didFail: { _ in })
     await composer.refresh()
     return composer
   }

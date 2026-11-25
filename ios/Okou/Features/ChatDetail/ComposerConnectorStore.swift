@@ -1,3 +1,4 @@
+import CCState
 import ChatData
 import ChatDomain
 import Foundation
@@ -10,6 +11,8 @@ final class ComposerConnectorStore {
   let webURL: URL
   let threadID: String?
   let includesRemote: Bool
+  /// The workspace session's Store in production; every connector read keeps its values here.
+  @ObservationIgnored let graph: CCState.Store
 
   private(set) var connectors: [ChatComposerConnector] = []
   private(set) var remotes: ChatRemotesOverview?
@@ -49,7 +52,7 @@ final class ComposerConnectorStore {
 
   init(
     service: ChatComposerAccess, authorizationService: ChatConnectorService, webURL: URL,
-    threadID: String? = nil, includesRemote: Bool = true,
+    graph: CCState.Store, threadID: String? = nil, includesRemote: Bool = true,
     managementEnabled: @escaping @MainActor () -> Bool = { false },
     memberAccessEnabled: @escaping @MainActor () -> Bool = { false },
     readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
@@ -61,6 +64,7 @@ final class ComposerConnectorStore {
     self.service = service
     self.authorizationService = authorizationService
     self.webURL = webURL
+    self.graph = graph
     self.threadID = threadID
     self.includesRemote = includesRemote
     self.managementEnabled = managementEnabled
@@ -142,7 +146,7 @@ final class ComposerConnectorStore {
   private func makeResources() -> ComposerConnectorResources? {
     let request = generation
     return ComposerConnectorResources(
-      service: service, threadID: threadID, options: pendingOptions,
+      service: service, graph: graph, threadID: threadID, options: pendingOptions,
       includesRemote: includesRemote, memberAccessEnabled: memberAccessEnabled,
       sleep: readRetrySleep,
       didLoadConnected: { [weak self] entries in
@@ -329,7 +333,8 @@ final class ComposerConnectorStore {
   func openDirectory() {
     guard !closed else { return }
     closeDirectory()
-    directory = ComposerConnectorDirectoryResources(service: service, didFail: didFail)
+    directory = ComposerConnectorDirectoryResources(
+      service: service, graph: graph, didFail: didFail)
   }
 
   func closeDirectory() {

@@ -208,7 +208,7 @@ final class ChatModelSelectionStore {
     clearMetadata = Command { context in try context.set(metadataDemand, nil) }
     connectors = ComposerConnectorStore(
       service: models.connectorAccess, authorizationService: models.connectorAuthorization,
-      webURL: models.webURL, threadID: threadID,
+      webURL: models.webURL, graph: models.stateStore, threadID: threadID,
       managementEnabled: { [weak models] in
         models?.configuration?.switches["iosConnectorManagement"] == true
       },

@@ -14,7 +14,8 @@ final class ComposerConnectorPermissionTests: XCTestCase {
     let composer = ComposerConnectorStore(
       service: ChatComposerAccess(client: server.http.client),
       authorizationService: ChatConnectorService(client: server.http.client),
-      webURL: server.http.baseURL, includesRemote: false, didFail: { _ in })
+      webURL: server.http.baseURL, graph: makeTestWorkspaceGraph(), includesRemote: false,
+      didFail: { _ in })
     defer { composer.close() }
     await composer.refresh()
     let resources = try open(composer)
@@ -304,7 +305,7 @@ final class ComposerConnectorPermissionTests: XCTestCase {
     let composer = ComposerConnectorStore(
       service: ChatComposerAccess(client: fixture.client),
       authorizationService: ChatConnectorService(client: fixture.client), webURL: fixture.baseURL,
-      didFail: { _ in })
+      graph: makeTestWorkspaceGraph(), didFail: { _ in })
     return composer
   }
 

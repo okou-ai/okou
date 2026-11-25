@@ -16,6 +16,7 @@ final class ChatConnectorAccessStoreTests: XCTestCase {
     let store = ComposerConnectorStore(
       service: ChatComposerAccess(client: client),
       authorizationService: ChatConnectorService(client: client), webURL: fixture.http.baseURL,
+      graph: makeTestWorkspaceGraph(),
       memberAccessEnabled: { fixture.state.withLock { $0.memberAccess } }, didFail: { _ in })
     defer { store.close() }
     await store.refresh()
@@ -125,6 +126,7 @@ final class ChatConnectorAccessStoreTests: XCTestCase {
     ComposerConnectorStore(
       service: ChatComposerAccess(client: fixture.http.client),
       authorizationService: ChatConnectorService(client: fixture.http.client),
-      webURL: fixture.http.baseURL, threadID: thread?.id, didFail: { _ in })
+      webURL: fixture.http.baseURL, graph: makeTestWorkspaceGraph(), threadID: thread?.id,
+      didFail: { _ in })
   }
 }
