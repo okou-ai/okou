@@ -663,9 +663,9 @@ remote-access	src/signals/routes/__tests__/ssh-credentials.test.ts	ssh-credentia
 remote-access	src/signals/routes/__tests__/ssh-credentials.test.ts	ssh-credentials-008	planned		extension after sandbox reset
 remote-access	src/signals/routes/__tests__/vnc-lifecycle.test.ts	vnc-lifecycle-001	planned		extension after sandbox reset
 remote-access	src/signals/routes/__tests__/vnc-lifecycle.test.ts	vnc-lifecycle-003	planned		extension after sandbox reset
-remote-access	src/signals/routes/__tests__/vnc-lifecycle.test.ts	vnc-lifecycle-007	planned		extension after sandbox reset
-remote-access	src/signals/routes/__tests__/vnc-lifecycle.test.ts	vnc-lifecycle-008	planned		extension after sandbox reset
-remote-access	src/signals/routes/__tests__/vnc-lifecycle.test.ts	vnc-lifecycle-009	planned		extension after sandbox reset
+remote-access	src/signals/routes/__tests__/vnc-lifecycle.test.ts	vnc-lifecycle-007	rewritten	195.3	extension after sandbox reset
+remote-access	src/signals/routes/__tests__/vnc-lifecycle.test.ts	vnc-lifecycle-008	rewritten	151.8	extension after sandbox reset
+remote-access	src/signals/routes/__tests__/vnc-lifecycle.test.ts	vnc-lifecycle-009	rewritten	72.7	extension after sandbox reset
 remote-access	src/signals/routes/__tests__/remotes.test.ts	remotes-003	planned		extension after sandbox reset
 remote-access	src/signals/routes/__tests__/remotes.test.ts	remotes-004	planned		extension after sandbox reset
 remote-access	src/signals/routes/__tests__/remotes.test.ts	remotes-005	planned		extension after sandbox reset
