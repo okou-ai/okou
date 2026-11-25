@@ -1557,41 +1557,48 @@ fn app_server_initialized_notification_does_not_replace_initialize_request() -> 
     let mut server = spawn_app_server(dir.path(), &["app-server", "--stdio"], None)?;
 
     server.notify("initialized", json!({}))?;
-    let thread_start_error = server.request(1, "thread/start", json!({}))?;
-    let turn_start_error = server.request(
-        2,
-        "turn/start",
-        json!({
-            "threadId": "thread-1",
-            "input": [text_input("initial prompt")]
-        }),
-    )?;
-    let turn_steer_error = server.request(
-        3,
-        "turn/steer",
-        json!({
-            "threadId": "thread-1",
-            "expectedTurnId": "turn-1",
-            "input": [text_input("follow-up prompt")]
-        }),
-    )?;
+    let guarded_requests = [
+        (1, "thread/start"),
+        (2, "thread/resume"),
+        (3, "turn/start"),
+        (4, "turn/steer"),
+        (5, "turn/interrupt"),
+    ];
+    for (id, method) in guarded_requests {
+        let response = server.request(id, method, Value::Null)?;
+        assert_eq!(
+            response,
+            json!({
+                "id": id,
+                "error": {
+                    "code": -32600,
+                    "message": "app server is not initialized"
+                }
+            }),
+            "{method}"
+        );
+    }
 
-    assert_eq!(thread_start_error["error"]["code"], -32600);
-    assert!(
-        thread_start_error["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("not initialized")
-    );
-    assert_eq!(turn_start_error["error"]["code"], -32600);
+    let state = server.request(6, "mock/state", Value::Null)?;
+    assert_eq!(state["result"]["initializedNotificationReceived"], true);
+    let inputs = server.request(7, "mock/inputs", Value::Null)?;
+    assert_eq!(inputs["result"], json!({"initial": [], "steered": []}));
+    let split_notification = server.request(8, "mock/complete-split-notification", Value::Null)?;
     assert_eq!(
-        turn_start_error["error"]["message"],
-        "app server is not initialized"
+        split_notification["error"],
+        json!({"code": -32600, "message": "missing split notification"})
     );
-    assert_eq!(turn_steer_error["error"]["code"], -32600);
+    let unsupported = server.request(9, "unknown/method", Value::Null)?;
     assert_eq!(
-        turn_steer_error["error"]["message"],
-        "app server is not initialized"
+        unsupported,
+        json!({
+            "id": 9,
+            "error": {
+                "code": -32601,
+                "message": "unsupported method",
+                "data": {"request": {"method": "unknown/method"}, "retryable": false}
+            }
+        })
     );
     assert_eq!(server.close_and_wait()?, 0);
     Ok(())
