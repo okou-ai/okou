@@ -57,9 +57,10 @@ type ConnectorConnectionTarget =
       readonly kind: "builtin";
       readonly connectorSlug: string;
       readonly identity:
-        | { readonly kind: "local" }
+        | { readonly kind: "local"; readonly issuer?: string }
         | {
             readonly kind: "external";
+            readonly issuer?: string;
             readonly externalId: string;
             readonly externalUsername: string | null;
             readonly externalEmail: string | null;
@@ -72,9 +73,10 @@ type ConnectorConnectionTarget =
       readonly customConnectorId: string;
       readonly oauthScopes: readonly string[] | null;
       readonly identity:
-        | { readonly kind: "local" }
+        | { readonly kind: "local"; readonly issuer?: string }
         | {
             readonly kind: "external";
+            readonly issuer?: string;
             readonly externalId: string;
             readonly externalUsername: string | null;
             readonly externalEmail: string | null;
@@ -95,47 +97,49 @@ export interface ConnectorConnectionMetadataArgs {
 export function connectorConnectionIdentityValues(
   target: ConnectorConnectionMetadataArgs["target"],
 ) {
-  return target.kind === "custom"
-    ? {
-        externalId:
-          target.identity.kind === "external"
-            ? target.identity.externalId
-            : null,
-        externalUsername:
-          target.identity.kind === "external"
-            ? target.identity.externalUsername
-            : null,
-        externalEmail:
-          target.identity.kind === "external"
-            ? target.identity.externalEmail
-            : null,
-        oauthScopes:
-          target.oauthScopes === null
-            ? null
-            : JSON.stringify(target.oauthScopes),
-        oauthGrantedScopes: null,
-      }
-    : target.identity.kind === "external"
+  const values =
+    target.kind === "custom"
       ? {
-          externalId: target.identity.externalId,
-          externalUsername: target.identity.externalUsername,
-          externalEmail: target.identity.externalEmail,
+          externalId:
+            target.identity.kind === "external"
+              ? target.identity.externalId
+              : null,
+          externalUsername:
+            target.identity.kind === "external"
+              ? target.identity.externalUsername
+              : null,
+          externalEmail:
+            target.identity.kind === "external"
+              ? target.identity.externalEmail
+              : null,
           oauthScopes:
-            target.identity.oauthRequestedScopes === null
+            target.oauthScopes === null
               ? null
-              : JSON.stringify(target.identity.oauthRequestedScopes),
-          oauthGrantedScopes:
-            target.identity.oauthGrantedScopes === null
-              ? null
-              : JSON.stringify(target.identity.oauthGrantedScopes),
-        }
-      : {
-          externalId: null,
-          externalUsername: null,
-          externalEmail: null,
-          oauthScopes: null,
+              : JSON.stringify(target.oauthScopes),
           oauthGrantedScopes: null,
-        };
+        }
+      : target.identity.kind === "external"
+        ? {
+            externalId: target.identity.externalId,
+            externalUsername: target.identity.externalUsername,
+            externalEmail: target.identity.externalEmail,
+            oauthScopes:
+              target.identity.oauthRequestedScopes === null
+                ? null
+                : JSON.stringify(target.identity.oauthRequestedScopes),
+            oauthGrantedScopes:
+              target.identity.oauthGrantedScopes === null
+                ? null
+                : JSON.stringify(target.identity.oauthGrantedScopes),
+          }
+        : {
+            externalId: null,
+            externalUsername: null,
+            externalEmail: null,
+            oauthScopes: null,
+            oauthGrantedScopes: null,
+          };
+  return { ...values, externalIssuer: target.identity.issuer ?? "" };
 }
 
 export function connectorConnectionTargetValues(

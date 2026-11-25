@@ -81,7 +81,7 @@ describe("Builtin device-auth session expiration", () => {
     await owned.run(async () => {
       const actor = owned.actor;
       owned.ownsFeatureSwitches();
-      mockTestOAuthDeviceConnectorProvider();
+      const oauthProvider = mockTestOAuthDeviceConnectorProvider();
       await connectors.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.TestOauthConnector]: true,
       });
@@ -92,7 +92,9 @@ describe("Builtin device-auth session expiration", () => {
         "test-oauth-device",
         "oauth",
       );
+      oauthProvider.setSubject("test-oauth-device-default");
       const defaultAccount = await completeSession(actor, defaultSession);
+      oauthProvider.setSubject("test-oauth-device-user");
       const siblingSession = await connectors.startDeviceAuth(
         actor,
         "test-oauth-device",

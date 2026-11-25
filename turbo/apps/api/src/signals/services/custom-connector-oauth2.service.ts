@@ -1,3 +1,4 @@
+import { connectorIdentityConflictAccount$ } from "./connector-identity-conflict-recovery";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { customOAuthConnectionPublicationSql } from "./custom-oauth-connection-publication";
@@ -1838,6 +1839,7 @@ export function customConnectorOAuth2CredentialContractFromRows(
 function customOAuthConnectionTarget(
   connectorId: string,
   token: CustomConnectorOAuthTokenResult,
+  issuer?: string,
 ) {
   return {
     kind: "custom" as const,
@@ -1846,11 +1848,12 @@ function customOAuthConnectionTarget(
     identity: token.userInfo
       ? {
           kind: "external" as const,
+          issuer,
           externalId: token.userInfo.id,
           externalUsername: token.userInfo.username,
           externalEmail: token.userInfo.email,
         }
-      : { kind: "local" as const },
+      : { kind: "local" as const, issuer },
   };
 }
 
@@ -1933,10 +1936,11 @@ const customOAuthPublicationRow = object({
   complete: literal(1),
 }).strict();
 
-export const storeCustomConnectorOAuth2Connection$ = command(
+const storeCustomConnectorOAuth2ConnectionAttempt$ = command(
   async function storeCustomConnectorOAuth2Connection(
     { set },
     args: StoreCustomConnectorOAuth2ConnectionArgs,
+    matchExternalIdentity: boolean,
     signal: AbortSignal,
   ): Promise<StoreCustomConnectorOAuth2ConnectionResult> {
     const db = set(writeDb$);
@@ -1954,10 +1958,15 @@ export const storeCustomConnectorOAuth2Connection$ = command(
       contractRef,
     );
     signal.throwIfAborted();
-    const mutationReadArgs = customOAuthConnectionMutationValues(
-      args,
-      contract,
-    );
+    const mutationReadArgs = {
+      ...customOAuthConnectionMutationValues(args, contract),
+      ...(matchExternalIdentity
+        ? {
+            matchExternalId: args.token.userInfo?.id,
+            matchExternalIssuer: args.automaticOAuthBinding?.issuer,
+          }
+        : {}),
+    };
     const revisions = new Map<string, string>();
     const resolution = await (async () => {
       let read = connectionMutationReadPlan(mutationReadArgs);
@@ -2057,6 +2066,51 @@ export const storeCustomConnectorOAuth2Connection$ = command(
         marketingRewardEventId,
       };
     })();
+  },
+);
+export const storeCustomConnectorOAuth2Connection$ = command(
+  async (
+    { set },
+    args: StoreCustomConnectorOAuth2ConnectionArgs,
+    signal: AbortSignal,
+  ): Promise<StoreCustomConnectorOAuth2ConnectionResult> => {
+    const outcome = await settle(
+      set(storeCustomConnectorOAuth2ConnectionAttempt$, args, false, signal),
+    );
+    if (signal.aborted) {
+      // An accepted publication still returns its committed result.
+      if (outcome.ok) {
+        return outcome.value;
+      }
+      signal.throwIfAborted();
+    }
+    if (outcome.ok) {
+      return outcome.value;
+    }
+    const existing =
+      args.account.intent === "add"
+        ? await set(
+            connectorIdentityConflictAccount$,
+            {
+              error: outcome.error,
+              orgId: args.orgId,
+              userId: args.userId,
+              target: { kind: "custom", customConnectorId: args.connectorId },
+              externalId: args.token.userInfo?.id,
+              issuer: args.automaticOAuthBinding?.issuer,
+            },
+            signal,
+          )
+        : undefined;
+    if (!existing) {
+      throw outcome.error;
+    }
+    return await set(
+      storeCustomConnectorOAuth2ConnectionAttempt$,
+      args,
+      true,
+      signal,
+    );
   },
 );
 
@@ -2776,7 +2830,11 @@ function customOAuthWriteArgs(
     authMethod: "oauth",
     storageVersion: args.storageVersion,
     tokenExpiresAt: args.token.expiresAt,
-    target: customOAuthConnectionTarget(args.connectorId, args.token),
+    target: customOAuthConnectionTarget(
+      args.connectorId,
+      args.token,
+      args.automaticOAuthBinding?.issuer,
+    ),
     resolution: resolution.mutation,
     insertConnectionId: args.insertConnectionId,
   };

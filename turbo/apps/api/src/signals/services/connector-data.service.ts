@@ -1,3 +1,4 @@
+import { connectorIdentityConflictAccount$ } from "./connector-identity-conflict-recovery";
 import { connectEmailFromMailAccount$ } from "./email-connection.service";
 import {
   builtinDeletionSqlResultSchema,
@@ -2624,7 +2625,7 @@ const publishTokenConnection$ = command(
   },
 );
 
-export const upsertBuiltinConnectorTokenConnection$ = command(
+const upsertBuiltinConnectorTokenConnectionAttempt$ = command(
   async (
     { set },
     args: BuiltinConnectorTokenConnectionArgs,
@@ -2673,6 +2674,57 @@ export const upsertBuiltinConnectorTokenConnection$ = command(
           ? publication.publication.marketingRewardEventId
           : null,
     };
+  },
+);
+
+/** Failed uniqueness arbitration rolls back before this finite identity replacement. */
+export const upsertBuiltinConnectorTokenConnection$ = command(
+  async (
+    { set },
+    args: BuiltinConnectorTokenConnectionArgs,
+    signal: AbortSignal,
+  ) => {
+    const outcome = await settle(
+      set(upsertBuiltinConnectorTokenConnectionAttempt$, args, signal),
+    );
+    if (signal.aborted) {
+      // An accepted publication still returns its committed result.
+      if (outcome.ok) {
+        return outcome.value;
+      }
+      signal.throwIfAborted();
+    }
+    if (outcome.ok) {
+      return outcome.value;
+    }
+    const existing =
+      args.account.intent === "add"
+        ? await set(
+            connectorIdentityConflictAccount$,
+            {
+              error: outcome.error,
+              orgId: args.orgId,
+              userId: args.userId,
+              target: {
+                kind: "builtin",
+                connectorSlug: args.runtimeMethod.connectorSlug,
+              },
+              externalId: args.userInfo.id,
+            },
+            signal,
+          )
+        : undefined;
+    if (!existing) {
+      throw outcome.error;
+    }
+    return await set(
+      upsertBuiltinConnectorTokenConnectionAttempt$,
+      {
+        ...args,
+        matchExistingExternalIdentity: true,
+      },
+      signal,
+    );
   },
 );
 

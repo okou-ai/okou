@@ -71,7 +71,7 @@ async function connectStripeOAuth(
     "stripe",
   );
   const account = accounts.find((candidate) => {
-    return candidate.displayName === displayName;
+    return candidate.externalId === accountId;
   });
   if (!account) {
     throw new Error("Expected added Stripe OAuth account");

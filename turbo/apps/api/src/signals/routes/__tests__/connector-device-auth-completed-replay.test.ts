@@ -27,10 +27,13 @@ function replayOwner() {
 }
 
 async function enableDeviceAuth(actor: ApiTestUser) {
-  mockTestOAuthDeviceConnectorProvider({ tokenScope: "read write" });
+  const provider = mockTestOAuthDeviceConnectorProvider({
+    tokenScope: "read write",
+  });
   await connectors.updateFeatureSwitches(actor, {
     [FeatureSwitchKey.TestOauthConnector]: true,
   });
+  return provider;
 }
 
 function expectNoSecrets(body: unknown, sessionToken: string): void {
@@ -95,7 +98,7 @@ describe("Builtin device-auth completed replay", () => {
     await owned.run(async () => {
       const actor = owned.actor;
       owned.ownsFeatureSwitches();
-      await enableDeviceAuth(actor);
+      const oauthProvider = await enableDeviceAuth(actor);
       const startedAt = now();
       mockNow(startedAt);
       const defaultSession = await connectors.startDeviceAuth(
@@ -103,7 +106,9 @@ describe("Builtin device-auth completed replay", () => {
         "test-oauth-device",
         "oauth",
       );
+      oauthProvider.setSubject("test-oauth-device-default");
       const defaultAccount = await completeSession(actor, defaultSession);
+      oauthProvider.setSubject("test-oauth-device-user");
       const siblingSession = await connectors.startDeviceAuth(
         actor,
         "test-oauth-device",
@@ -153,14 +158,16 @@ describe("Builtin device-auth completed replay", () => {
     await owned.run(async () => {
       const actor = owned.actor;
       owned.ownsFeatureSwitches();
-      await enableDeviceAuth(actor);
+      const oauthProvider = await enableDeviceAuth(actor);
       mockNow(now());
       const defaultSession = await connectors.startDeviceAuth(
         actor,
         "test-oauth-device",
         "oauth",
       );
+      oauthProvider.setSubject("test-oauth-device-default");
       const defaultAccount = await completeSession(actor, defaultSession);
+      oauthProvider.setSubject("test-oauth-device-user");
       const siblingSession = await connectors.startDeviceAuth(
         actor,
         "test-oauth-device",

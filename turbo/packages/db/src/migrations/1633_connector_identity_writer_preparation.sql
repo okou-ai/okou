@@ -1,0 +1,1 @@
+ALTER TABLE "connectors" ADD COLUMN "external_issuer" text DEFAULT '' NOT NULL;

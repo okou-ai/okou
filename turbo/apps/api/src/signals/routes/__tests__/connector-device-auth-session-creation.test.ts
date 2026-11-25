@@ -105,7 +105,7 @@ describe("Builtin device-auth session creation", () => {
         const actor = owned.actor;
         owned.ownsFeatureSwitches();
         foreign.ownsFeatureSwitches();
-        mockTestOAuthDeviceConnectorProvider();
+        const oauthProvider = mockTestOAuthDeviceConnectorProvider();
         await connectors.updateFeatureSwitches(actor, {
           [FeatureSwitchKey.TestOauthConnector]: true,
         });
@@ -117,7 +117,9 @@ describe("Builtin device-auth session creation", () => {
           "test-oauth-device",
           "oauth",
         );
+        oauthProvider.setSubject("test-oauth-device-default");
         const defaultAccount = await completeSession(actor, defaultSession);
+        oauthProvider.setSubject("test-oauth-device-user");
         const siblingAccount = await completeSession(
           actor,
           await connectors.startDeviceAuth(actor, "test-oauth-device", "oauth"),
@@ -193,22 +195,26 @@ describe("Builtin device-auth session creation", () => {
     await owned.run(async () => {
       const actor = owned.actor;
       owned.ownsFeatureSwitches();
-      mockTestOAuthDeviceConnectorProvider();
+      const oauthProvider = mockTestOAuthDeviceConnectorProvider();
       await connectors.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.TestOauthConnector]: true,
       });
+      oauthProvider.setSubject("test-oauth-device-default");
       const defaultAccount = await completeSession(
         actor,
         await connectors.startDeviceAuth(actor, "test-oauth-device", "oauth"),
       );
+      oauthProvider.setSubject("test-oauth-device-user");
       const siblingAccount = await completeSession(
         actor,
         await connectors.startDeviceAuth(actor, "test-oauth-device", "oauth"),
       );
+      oauthProvider.setSubject("test-oauth-device-deleted");
       const deletedAccount = await completeSession(
         actor,
         await connectors.startDeviceAuth(actor, "test-oauth-device", "oauth"),
       );
+      oauthProvider.setSubject("test-oauth-device-user");
       await connectors.deleteBuiltinConnectorAccount(
         actor,
         "test-oauth-device",
@@ -254,14 +260,16 @@ describe("Builtin device-auth session creation", () => {
     await owned.run(async () => {
       const actor = owned.actor;
       owned.ownsFeatureSwitches();
-      mockTestOAuthDeviceConnectorProvider();
+      const oauthProvider = mockTestOAuthDeviceConnectorProvider();
       await connectors.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.TestOauthConnector]: true,
       });
+      oauthProvider.setSubject("test-oauth-device-default");
       const defaultAccount = await completeSession(
         actor,
         await connectors.startDeviceAuth(actor, "test-oauth-device", "oauth"),
       );
+      oauthProvider.setSubject("test-oauth-device-user");
       const siblingAccount = await completeSession(
         actor,
         await connectors.startDeviceAuth(actor, "test-oauth-device", "oauth"),
