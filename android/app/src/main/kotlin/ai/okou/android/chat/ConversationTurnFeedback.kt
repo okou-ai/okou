@@ -2,9 +2,7 @@ package ai.okou.android.chat
 
 import ai.okou.android.R
 import ai.okou.android.updates.updateFocusOutline
-import android.icu.text.MeasureFormat
-import android.icu.util.Measure
-import android.icu.util.MeasureUnit
+import android.content.res.Resources
 import android.text.format.DateFormat
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
@@ -47,6 +45,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInputModeManager
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
@@ -66,7 +65,6 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import java.text.SimpleDateFormat
 import java.util.Date
-import java.util.Locale
 import java.util.TimeZone
 import kotlinx.coroutines.delay
 
@@ -77,7 +75,8 @@ internal fun ConversationReplySummary(
     expanded: Boolean,
     onToggle: () -> Unit,
 ) {
-    val locale = LocalConfiguration.current.locales[0]
+    val locales = LocalConfiguration.current.locales
+    val resources = LocalResources.current
     val elapsed =
         if (summary.phase == ReplyPhase.Replying && summary.startedAtMillis != null) {
             val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -94,8 +93,8 @@ internal fun ConversationReplySummary(
         } else summary.elapsedMillis(0L)
     val roundedDuration = elapsed?.let(::workDuration)
     val duration =
-        remember(roundedDuration, locale) {
-            roundedDuration?.let { formatWorkDuration(it, locale) }
+        remember(roundedDuration, locales, resources) {
+            roundedDuration?.let { formatWorkDuration(resources, it) }
         }
     val elapsedLabel = duration?.let {
         stringResource(
@@ -344,12 +343,22 @@ private fun ConversationTextAction(
     }
 }
 
-private fun formatWorkDuration(duration: WorkDuration, locale: Locale): String {
-    val measures = buildList {
-        if (duration.hours > 0) add(Measure(duration.hours, MeasureUnit.HOUR))
-        if (duration.minutes > 0) add(Measure(duration.minutes, MeasureUnit.MINUTE))
-        if (duration.seconds > 0 || isEmpty()) add(Measure(duration.seconds, MeasureUnit.SECOND))
+internal fun formatWorkDuration(resources: Resources, duration: WorkDuration): String =
+    when {
+        duration.hours > 0 && duration.minutes > 0 ->
+            resources.getString(
+                R.string.conversation_work_hours_minutes,
+                duration.hours,
+                duration.minutes,
+            )
+        duration.hours > 0 -> resources.getString(R.string.conversation_work_hours, duration.hours)
+        duration.minutes > 0 && duration.seconds > 0 ->
+            resources.getString(
+                R.string.conversation_work_minutes_seconds,
+                duration.minutes,
+                duration.seconds,
+            )
+        duration.minutes > 0 ->
+            resources.getString(R.string.conversation_work_minutes, duration.minutes)
+        else -> resources.getString(R.string.conversation_work_seconds, duration.seconds)
     }
-    return MeasureFormat.getInstance(locale, MeasureFormat.FormatWidth.WIDE)
-        .formatMeasures(*measures.toTypedArray())
-}

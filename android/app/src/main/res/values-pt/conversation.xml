@@ -23,6 +23,11 @@
     <string name="conversation_replies_collapsed">Recolhido</string>
     <string name="conversation_work_elapsed">Trabalhando há %1$s</string>
     <string name="conversation_work_total">Trabalhou por %1$s</string>
+    <string name="conversation_work_seconds">%1$d s</string>
+    <string name="conversation_work_minutes">%1$d min</string>
+    <string name="conversation_work_hours">%1$d h</string>
+    <string name="conversation_work_minutes_seconds">%1$d min %2$d s</string>
+    <string name="conversation_work_hours_minutes">%1$d h %2$d min</string>
     <string name="conversation_followup_continue">Continuar</string>
     <string name="conversation_feedback_pair">%1$s · %2$s</string>
     <plurals name="conversation_reply_steps">
