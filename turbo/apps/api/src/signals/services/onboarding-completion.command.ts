@@ -1,10 +1,11 @@
 import type { OnboardingIndustry } from "@okouai/api-contracts/contracts/onboarding";
 import { orgTierSchema } from "@okouai/api-contracts/contracts/orgs";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
+import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command } from "ccstate";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { object, string } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { nowDate } from "../../lib/time";
@@ -15,6 +16,7 @@ interface OrgOnboardingCompletion {
   readonly orgId: string;
   readonly userId: string;
   readonly industry?: OnboardingIndustry;
+  readonly enableSuggestions: boolean;
 }
 
 const createdMetadataSchema = object({
@@ -34,7 +36,8 @@ export const markOrgOnboardingComplete$ = command(
       .insert(orgMetadataCanonicalWrites)
       .values({
         orgId: args.orgId,
-        onboardingComplete: true,
+        // When a personal default is due, the final UPDATE commits it with completion.
+        onboardingComplete: !args.enableSuggestions,
         ...industry,
         updatedAt: now,
       })
@@ -89,26 +92,42 @@ export const markOrgOnboardingComplete$ = command(
         ON CONFLICT (org_id) DO NOTHING
       ) SELECT org_id, tier FROM created_metadata LIMIT 1`),
     );
-    // A conflicting INSERT can wait for a creator invisible to its statement
-    // snapshot. Keep this UPDATE in a separate, fresh snapshot; existing
-    // metadata never repairs or replaces Plan.
-    const [written] = created
-      ? [created]
-      : await db
-          .update(orgMetadataCanonicalWrites)
-          .set({ onboardingComplete: true, ...industry, updatedAt: now })
-          .where(
-            and(
-              eq(orgMetadataCanonicalWrites.orgId, args.orgId),
-              eq(orgMetadataCanonicalWrites.onboardingComplete, false),
-            ),
-          )
-          .returning({ orgId: orgMetadata.orgId, tier: orgMetadata.tier });
-    if (!written) {
-      return false;
-    }
-    // Autocommit may already be durable when cancellation is observed here.
     signal.throwIfAborted();
-    return true;
+    if (created && !args.enableSuggestions) {
+      return true;
+    }
+    const suggestionsDefault = db.$with("enabled_suggestions").as(
+      db
+        .insert(orgMembersMetadata)
+        .values({
+          orgId: args.orgId,
+          userId: args.userId,
+          proactiveSuggestionsEnabled: true,
+        })
+        .onConflictDoUpdate({
+          target: [orgMembersMetadata.orgId, orgMembersMetadata.userId],
+          set: { proactiveSuggestionsEnabled: true, updatedAt: now },
+          setWhere: isNull(orgMembersMetadata.proactiveSuggestionsEnabled),
+        })
+        .returning({ userId: orgMembersMetadata.userId }),
+    );
+    const completion = args.enableSuggestions
+      ? db.with(suggestionsDefault)
+      : db;
+    // A conflicting INSERT can wait for a creator invisible to its statement
+    // snapshot. Keep this UPDATE in a fresh snapshot; existing metadata
+    // never repairs or replaces Plan.
+    const [written] = await completion
+      .update(orgMetadataCanonicalWrites)
+      .set({ onboardingComplete: true, ...industry, updatedAt: now })
+      .where(
+        and(
+          eq(orgMetadataCanonicalWrites.orgId, args.orgId),
+          eq(orgMetadataCanonicalWrites.onboardingComplete, false),
+        ),
+      )
+      .returning({ orgId: orgMetadata.orgId });
+    signal.throwIfAborted();
+    return written !== undefined;
   },
 );
