@@ -604,10 +604,10 @@ connectors	src/signals/routes/__tests__/connectors-list.test.ts	connectors-list-
 connectors	src/signals/routes/__tests__/connectors-list.test.ts	connectors-list-002	rewritten	62.4	extension after sandbox reset
 connectors	src/signals/routes/__tests__/connectors-list.test.ts	connectors-list-003	rewritten	50.4	extension after sandbox reset
 connectors	src/signals/routes/__tests__/connectors-list.test.ts	connectors-list-004	rewritten	160.7	extension after sandbox reset
-connectors	src/signals/routes/__tests__/connectors-native-app-authorization.test.ts	connectors-native-app-authorization-001	planned		extension after sandbox reset
+connectors	src/signals/routes/__tests__/connectors-native-app-authorization.test.ts	connectors-native-app-authorization-001	rewritten	62.9	extension after sandbox reset
 connectors	src/signals/routes/__tests__/connectors-native-app-authorization.test.ts	connectors-native-app-authorization-003	planned		extension after sandbox reset
-connectors	src/signals/routes/__tests__/connectors-native-app-authorization.test.ts	connectors-native-app-authorization-004	planned		extension after sandbox reset
-connectors	src/signals/routes/__tests__/connectors-native-app-authorization.test.ts	connectors-native-app-authorization-005	planned		extension after sandbox reset
+connectors	src/signals/routes/__tests__/connectors-native-app-authorization.test.ts	connectors-native-app-authorization-004	rewritten	48.1	extension after sandbox reset
+connectors	src/signals/routes/__tests__/connectors-native-app-authorization.test.ts	connectors-native-app-authorization-005	rewritten	52.8	extension after sandbox reset
 messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-001	planned		extension after sandbox reset
 messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-002	planned		extension after sandbox reset
 messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-003	planned		extension after sandbox reset
