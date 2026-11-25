@@ -10,21 +10,23 @@ const SCENE_BASE =
 // okou.app framing resolves only on production hostnames, because
 // resolveHostedSiteDomains excludes okou.app elsewhere.
 export const WELCOME_THREAD_ASSETS = Object.freeze({
-  campaignVisualUrl: `${SCENE_BASE}/campaign-visual.jpg`,
-  slackSceneUrl: `${SCENE_BASE}/slack-scene.png`,
-  telegramSceneUrl: `${SCENE_BASE}/telegram-scene.png`,
+  campaignVisualUrl:
+    "https://welcome-my-okou-20261125.okou.app/assets/campaign-visual-b41da7d23fb9.jpg",
+  slackSceneUrl:
+    "https://welcome-my-okou-20261125.okou.app/assets/slack-scene-9ce10cf40647.png",
+  telegramSceneUrl:
+    "https://welcome-my-okou-20261125.okou.app/assets/telegram-scene-a83b63a9bd16.png",
   modelTiersUrl: `${SCENE_BASE}/model-tiers.png`,
   workflowTemplatePickerUrl: `${STEP_BASE}/workflow-template-picker.png`,
   newAgentDialogUrl: `${STEP_BASE}/new-agent.png`,
-  presentationArtifactUrl: "https://sproutpop-launch-deck-p9jk.okou.app",
-  websiteArtifactUrl: "https://coastal-hotel-example.okou.app",
+  presentationArtifactUrl: "https://welcome-sproutpop-20261125.okou.app",
+  websiteArtifactUrl: "https://welcome-coastal-hotel-20261125.okou.app",
   quickStartUrl: "https://4nnp6iwpss.okou.app",
 });
 
 // Versioned My Okou publications. Keep the legacy guide and screenshots above
 // intact for existing messages.
-const MY_OKOU_GUIDE_BASE =
-  "https://my-okou-quickstart-20261112-review.okou.app";
+const MY_OKOU_GUIDE_BASE = "https://welcome-my-okou-20261125.okou.app";
 
 export const MY_OKOU_WELCOME_THREAD_ASSETS = Object.freeze({
   myOkouQuickStartUrl: MY_OKOU_GUIDE_BASE,
@@ -40,11 +42,11 @@ const PREVIEW_BASE =
 // URLs so persisted welcome messages receive the same static preview.
 const welcomePreviews = [
   {
-    url: `${WELCOME_THREAD_ASSETS.presentationArtifactUrl}/`,
+    url: "https://sproutpop-launch-deck-p9jk.okou.app/",
     image: `${PREVIEW_BASE}/sproutpop-a826bd3d2831.png`,
   },
   {
-    url: `${WELCOME_THREAD_ASSETS.websiteArtifactUrl}/`,
+    url: "https://coastal-hotel-example.okou.app/",
     image: `${PREVIEW_BASE}/coastal-hotel-d2b4e1caa3c1.png`,
   },
   {

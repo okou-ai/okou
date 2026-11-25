@@ -8,18 +8,37 @@ import {
 
 // These exact, public publications also need media identity when the App's
 // preview deployment does not resolve production okou.app hostnames.
-const myOkouPreviewContentTypes: Readonly<Record<string, string | undefined>> =
+const welcomePreviewContentTypes: Readonly<Record<string, string | undefined>> =
   Object.freeze({
+    [WELCOME_THREAD_ASSETS.campaignVisualUrl]: "image/jpeg",
+    [WELCOME_THREAD_ASSETS.slackSceneUrl]: "image/png",
+    [WELCOME_THREAD_ASSETS.telegramSceneUrl]: "image/png",
     [MY_OKOU_WELCOME_THREAD_ASSETS.myOkouQuickStartUrl]: "text/html",
     [MY_OKOU_WELCOME_THREAD_ASSETS.personalInstructionsUrl]: "image/png",
     [MY_OKOU_WELCOME_THREAD_ASSETS.workflowInstructionsUrl]: "image/png",
     [MY_OKOU_WELCOME_THREAD_ASSETS.workflowSharingUrl]: "image/png",
+    // Persisted welcome messages still reference these exact publications.
+    "https://static.vm0.io/vm0/welcome-thread/2026-09-17-1e76170cef99/campaign-visual.jpg":
+      "image/jpeg",
+    "https://static.vm0.io/vm0/welcome-thread/2026-09-17-1e76170cef99/slack-scene.png":
+      "image/png",
+    "https://static.vm0.io/vm0/welcome-thread/2026-09-17-1e76170cef99/telegram-scene.png":
+      "image/png",
+    "https://sproutpop-launch-deck-p9jk.okou.app": "text/html",
+    "https://coastal-hotel-example.okou.app": "text/html",
+    "https://my-okou-quickstart-20261112-review.okou.app": "text/html",
+    "https://my-okou-quickstart-20261112-review.okou.app/assets/my-okou-instructions-8ec43cd079ea.png":
+      "image/png",
+    "https://my-okou-quickstart-20261112-review.okou.app/assets/my-okou-workflow-instructions-5f1222f7d3ea.png":
+      "image/png",
+    "https://my-okou-quickstart-20261112-review.okou.app/assets/my-okou-workflow-settings-5c32a5d6a9c6.png":
+      "image/png",
   });
 
 export function officialTemplatePreviewContentType(
   url: string,
 ): string | undefined {
-  return myOkouPreviewContentTypes[url];
+  return welcomePreviewContentTypes[url];
 }
 
 // The official catalog and welcome assets own these resources. Match complete
@@ -41,7 +60,7 @@ const officialPreviewUrls = Object.freeze([
   WELCOME_THREAD_ASSETS.presentationArtifactUrl,
   WELCOME_THREAD_ASSETS.websiteArtifactUrl,
   WELCOME_THREAD_ASSETS.quickStartUrl,
-  ...Object.keys(myOkouPreviewContentTypes),
+  ...Object.keys(welcomePreviewContentTypes),
 ]);
 
 export function isOfficialTemplatePreviewUrl(url: string): boolean {
