@@ -1,3 +1,4 @@
+import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import {
   INTERNAL_TEST_MORNING_BRIEF_DEFINITION_NAME,
   MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
@@ -5,11 +6,6 @@ import {
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
-import {
-  officialWorkflowCatalogState,
-  officialWorkflowCatalogReleases,
-  officialWorkflowDefinitionRevisions,
-} from "@okouai/db/schema/official-workflow-catalog";
 import { workflows } from "@okouai/db/schema/workflow";
 import { computed, type Computed } from "ccstate";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
@@ -28,7 +24,6 @@ import {
   type ExecutionPackageSources,
 } from "./execution-package-sources";
 import { resolveOrdinaryAutomationWorkflowName } from "./execution-workflow-selection";
-import { officialWorkflowSourcePlan } from "./official-workflow-context.signals";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 import { restoredWorkflowAutomationEventPayload } from "./workflow-automation-context.service";
 
@@ -37,16 +32,6 @@ export interface ThreadAutomationTarget {
   readonly packageSources: ExecutionPackageSources;
   /** Authorized ordinary package winner for this picked Automation. */
   readonly ordinaryWorkflowName: string | null;
-  readonly officialCatalog:
-    | (Pick<
-        typeof officialWorkflowCatalogReleases.$inferSelect,
-        "payload" | "hiddenThreadDefinitionNames"
-      > & { readonly releaseId: string })
-    | null;
-  readonly officialRevision: Pick<
-    typeof officialWorkflowDefinitionRevisions.$inferSelect,
-    "definitionName" | "revision" | "payload" | "contentBundle"
-  > | null;
   readonly proactivePreferences: {
     readonly suggestionsEnabled: boolean | null;
   } | null;
@@ -78,6 +63,21 @@ interface ThreadAutomationSnapshot {
   readonly sourceAutonomyBudget: number | null;
 }
 
+function officialOwnerPreferencesCondition(bootstrap: AgentRunContextSignals) {
+  return and(
+    isNotNull(workflows.officialDefinitionName),
+    isNotNull(workflowAutomations.officialBlueprintKey),
+    eq(workflows.officialInstallationState, "installed"),
+    eq(workflows.visibility, "private"),
+    eq(workflowAutomations.orgId, bootstrap.orgId),
+    eq(workflowAutomations.ownerUserId, bootstrap.userId),
+    eq(workflows.orgId, bootstrap.orgId),
+    eq(workflows.ownerUserId, bootstrap.userId),
+    eq(orgMembersMetadata.orgId, bootstrap.orgId),
+    eq(orgMembersMetadata.userId, bootstrap.userId),
+  );
+}
+
 /** Observe the queued event and its still-live launch dependencies together. */
 export function createThreadAutomationSnapshot(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
@@ -92,7 +92,6 @@ export function createThreadAutomationSnapshot(
     ) {
       return null;
     }
-    const source = officialWorkflowSourcePlan(bootstrap);
     const sourceRun = sql`CASE ${chatAutomationContext.eventType}
       WHEN 'chat-run-finished' THEN ${chatAutomationContext.eventPayload} -> 'runId'
       WHEN 'manual' THEN ${chatAutomationContext.eventPayload} -> 'sourceRunId'
@@ -113,7 +112,10 @@ export function createThreadAutomationSnapshot(
           eventType: chatAutomationContext.eventType,
           eventPayload: chatAutomationContext.eventPayload,
         },
-        ...source.columns,
+        proactivePreferences: {
+          memberUserId: orgMembersMetadata.userId,
+          suggestionsEnabled: orgMembersMetadata.proactiveSuggestionsEnabled,
+        },
         sourceRunIdType,
         sourceAutonomyBudget: agentRuns.autonomyBudget,
         automation: workflowAutomationColumns(),
@@ -151,10 +153,10 @@ export function createThreadAutomationSnapshot(
           isNotNull(agentRuns.triggerSource),
         ),
       )
-      .leftJoin(officialWorkflowCatalogState, source.catalogCondition)
-      .leftJoin(officialWorkflowCatalogReleases, source.releaseJoin)
-      .leftJoin(officialWorkflowDefinitionRevisions, source.revisionJoin)
-      .leftJoinLateral(source.preferences, sql`true`)
+      .leftJoin(
+        orgMembersMetadata,
+        officialOwnerPreferencesCondition(bootstrap),
+      )
       .where(
         and(
           eq(chatAutomationContext.id, pickedEvent.contextId),
@@ -173,12 +175,10 @@ export function createThreadAutomationSnapshot(
     }
     const {
       event,
-      sourceRunIdType: idType,
-      sourceAutonomyBudget,
       automation,
       workflow,
       packageSources,
-      ...official
+      proactivePreferences,
     } = row;
     // A queued input carries the installation's name at enqueue time. Follow
     // this Official rename for launch and its mounted skill, without rewriting
@@ -194,7 +194,7 @@ export function createThreadAutomationSnapshot(
       target:
         automation && workflow && packageSources
           ? {
-              ...official,
+              proactivePreferences,
               automation,
               workflow,
               packageSources,
@@ -205,8 +205,8 @@ export function createThreadAutomationSnapshot(
               ),
             }
           : null,
-      sourceRunIdType: idType,
-      sourceAutonomyBudget,
+      sourceRunIdType: row.sourceRunIdType,
+      sourceAutonomyBudget: row.sourceAutonomyBudget,
     };
   });
 }

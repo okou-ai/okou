@@ -21,6 +21,7 @@ import {
   readAcceptedOfficialWorkflowCatalog$,
   readAcceptedOfficialWorkflowRevision$,
 } from "./official-workflow-catalog-read.service";
+import { builtInWorkflow } from "./builtin-workflows";
 
 function detailFileMetadata(
   workflow: {
@@ -85,24 +86,30 @@ export const workflowDetail$ = command(
     );
     signal.throwIfAborted();
 
-    const acceptedCatalog = workflow.officialDefinitionName
-      ? await set(readAcceptedOfficialWorkflowCatalog$, signal)
-      : null;
+    const builtin = builtInWorkflow(workflow.officialDefinitionName);
+    const acceptedCatalog =
+      !builtin && workflow.officialDefinitionName
+        ? await set(readAcceptedOfficialWorkflowCatalog$, signal)
+        : null;
     signal.throwIfAborted();
     const officialDefinition =
+      builtin?.definition ??
       acceptedCatalog?.payload.definitions.find((definition) => {
         return definition.name === workflow.officialDefinitionName;
-      }) ?? null;
-    const officialRevision = officialDefinition
-      ? await set(
-          readAcceptedOfficialWorkflowRevision$,
-          {
-            name: officialDefinition.name,
-            revision: officialDefinition.revision,
-          },
-          signal,
-        )
-      : null;
+      }) ??
+      null;
+    const officialRevision =
+      builtin?.revision ??
+      (officialDefinition
+        ? await set(
+            readAcceptedOfficialWorkflowRevision$,
+            {
+              name: officialDefinition.name,
+              revision: officialDefinition.revision,
+            },
+            signal,
+          )
+        : null);
     signal.throwIfAborted();
 
     const baseSummary = workflowSummary({

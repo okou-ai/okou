@@ -1,14 +1,8 @@
 import { BUILT_IN_SKILLS } from "@okouai/core/built-in-skills";
 import { computed, type Computed } from "ccstate";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
-import {
-  acceptedCatalogFromRow,
-  acceptedRevisionFromRow,
-} from "./official-workflow-catalog-read.service";
 import { OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE } from "./official-workflow-constants";
 import {
-  acceptedDefinitionForName,
-  assembleWorkflowObservation,
   OfficialWorkflowRunAdmissionError,
   type OfficialWorkflowObservation,
 } from "./official-workflow-run.service";
@@ -21,6 +15,7 @@ import type {
   ThreadAutomationTarget,
 } from "./thread-automation-context.service";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
+import { builtInWorkflow } from "./builtin-workflows";
 
 function assertOfficialManualEvent(
   eventType: string | null,
@@ -62,27 +57,22 @@ function officialObservationFromTarget(
   if (BUILT_IN_SKILLS.includes(workflow.name)) {
     throw new OfficialWorkflowRunAdmissionError();
   }
-  const catalog = acceptedCatalogFromRow(target.officialCatalog ?? undefined);
-  const definition =
-    catalog && acceptedDefinitionForName(catalog.payload.definitions, name);
+  const builtin = builtInWorkflow(name);
   if (
-    !definition ||
-    !target.officialRevision ||
+    !builtin ||
     automation.officialReconciliationStatus !== "current" ||
-    !definition.blueprints.some((blueprint) => {
-      return (
-        blueprint.key === automation.officialBlueprintKey &&
-        blueprint.fingerprint === automation.officialAppliedFingerprint
-      );
-    })
+    builtin.blueprint.key !== automation.officialBlueprintKey ||
+    builtin.blueprint.fingerprint !== automation.officialAppliedFingerprint
   ) {
     throw new OfficialWorkflowRunAdmissionError();
   }
-  return assembleWorkflowObservation(
-    workflow.id,
-    definition,
-    acceptedRevisionFromRow(target.officialRevision),
-  );
+  const { name: definitionName, revision, contentBundle } = builtin.definition;
+  const source = { name: definitionName, revision, contentBundle };
+  return {
+    prompt: builtin.prompt,
+    definitions: [{ workflowId: workflow.id, ...source }],
+    provenance: { schemaVersion: 2, definitions: [source] },
+  };
 }
 
 export function createThreadWorkflowContext(

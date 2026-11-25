@@ -70,6 +70,7 @@ import {
   nextDiscordUserExportKind,
   readDiscordUserExportPage$,
 } from "./user-export-discord.service";
+import { builtInWorkflow } from "./builtin-workflows";
 
 const CHAT_PAGE_SIZE = 100;
 const CHAT_PAGE_ESTIMATED_BYTES = 2 * 1024 * 1024;
@@ -842,22 +843,29 @@ const collectWorkflow$ = command(
     }
     let record = workflow;
     if (workflow.officialDefinitionName !== null) {
-      const catalog = await set(readAcceptedOfficialWorkflowCatalog$, signal);
-      const definition = catalog?.payload.definitions.find((definition) => {
-        return definition.name === workflow.officialDefinitionName;
-      });
+      const builtin = builtInWorkflow(workflow.officialDefinitionName);
+      const catalog = builtin
+        ? null
+        : await set(readAcceptedOfficialWorkflowCatalog$, signal);
+      const definition =
+        builtin?.definition ??
+        catalog?.payload.definitions.find((definition) => {
+          return definition.name === workflow.officialDefinitionName;
+        });
       signal.throwIfAborted();
       if (!definition) {
         throw new Error(`Workflow definition is unavailable: ${workflow.id}`);
       }
-      const revision = await set(
-        readAcceptedOfficialWorkflowRevision$,
-        {
-          name: definition.name,
-          revision: definition.revision,
-        },
-        signal,
-      );
+      const revision =
+        builtin?.revision ??
+        (await set(
+          readAcceptedOfficialWorkflowRevision$,
+          {
+            name: definition.name,
+            revision: definition.revision,
+          },
+          signal,
+        ));
       signal.throwIfAborted();
       if (!revision) {
         throw new Error(`Workflow revision is unavailable: ${workflow.id}`);
@@ -866,7 +874,8 @@ const collectWorkflow$ = command(
         ...workflow,
         displayName: revision.definition.workflow.displayName,
         description: revision.definition.workflow.description,
-        instruction: revision.definition.workflow.instruction,
+        instruction:
+          builtin?.prompt ?? revision.definition.workflow.instruction,
       };
     }
     return step({ ...checkpoint, cursor: workflow.id }, [

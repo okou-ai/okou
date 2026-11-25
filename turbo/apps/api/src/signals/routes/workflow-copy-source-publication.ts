@@ -18,6 +18,7 @@ import { QueryBuilder } from "drizzle-orm/pg-core";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { copyRevisionQuery } from "./workflow-copy-source";
 import type { WorkflowCopyPublicationArgs } from "./workflow-copy-publication-plans";
+import { builtInWorkflow } from "../services/builtin-workflows";
 
 function after(name: string): SQL {
   return sql`(SELECT ${count()} FROM ${sql.identifier(name)}) >= 0`;
@@ -27,17 +28,18 @@ function copySourceLocks(args: WorkflowCopyPublicationArgs): SQL[] {
   const definitionName = args.sourceWorkflow.officialDefinitionName;
   const official = definitionName !== null;
   const query = new QueryBuilder();
-  const catalog = official
-    ? query
-        .select({
-          release_id: sql`${officialWorkflowCatalogState.acceptedReleaseId}`
-            .mapWith(officialWorkflowCatalogState.acceptedReleaseId)
-            .as("release_id"),
-        })
-        .from(officialWorkflowCatalogState)
-        .where(eq(officialWorkflowCatalogState.authority, "official"))
-        .for("share")
-    : sql`SELECT NULL::text AS release_id`;
+  const catalog =
+    official && !builtInWorkflow(definitionName)
+      ? query
+          .select({
+            release_id: sql`${officialWorkflowCatalogState.acceptedReleaseId}`
+              .mapWith(officialWorkflowCatalogState.acceptedReleaseId)
+              .as("release_id"),
+          })
+          .from(officialWorkflowCatalogState)
+          .where(eq(officialWorkflowCatalogState.authority, "official"))
+          .for("share")
+      : sql`SELECT NULL::text AS release_id`;
   const source = query
     .select({
       id: workflows.id,
@@ -139,7 +141,7 @@ export function copySourcePublicationClauses(
   });
   const definitionName = args.sourceWorkflow.officialDefinitionName;
   let revisionExists = sql`true`;
-  if (definitionName !== null) {
+  if (definitionName !== null && !builtInWorkflow(definitionName)) {
     const revision = args.source.revision;
     if (revision === null) {
       throw new Error("Official copy revision observation is missing");

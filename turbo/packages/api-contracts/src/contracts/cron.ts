@@ -15,10 +15,6 @@ import {
 import { authHeadersSchema, initContract } from "./base";
 import { connectorCatalogSyncAttemptReportSchema } from "./connector-catalog-sync";
 import { apiErrorSchema } from "./errors";
-import {
-  officialWorkflowCatalogSyncResponseSchema,
-  type OfficialWorkflowCatalogSyncResponse,
-} from "./official-workflow-catalog";
 
 const c = initContract();
 
@@ -582,19 +578,6 @@ export const cronConnectorCatalogContract = c.router({
   },
 });
 
-export const cronOfficialWorkflowCatalogContract = c.router({
-  sync: {
-    method: "GET",
-    path: "/api/cron/sync-official-workflow-catalog",
-    headers: authHeadersSchema,
-    responses: {
-      200: officialWorkflowCatalogSyncResponseSchema,
-      401: apiErrorSchema,
-    },
-    summary: "Publish and accept the Official Workflow catalog",
-  },
-});
-
 export const cronExecuteWorkflowAutomationsContract = c.router({
   execute: {
     method: "GET",
@@ -640,9 +623,6 @@ export type CronBrowserReconcileContract = typeof cronBrowserReconcileContract;
 export type CronDrainEmailOutboxContract = typeof cronDrainEmailOutboxContract;
 export type CronSyncSkillsContract = typeof cronSyncSkillsContract;
 export type CronConnectorCatalogContract = typeof cronConnectorCatalogContract;
-export type CronOfficialWorkflowCatalogContract =
-  typeof cronOfficialWorkflowCatalogContract;
-export type { OfficialWorkflowCatalogSyncResponse };
 export type CronRenewGmailWatchesContract =
   typeof cronRenewGmailWatchesContract;
 export type CronRenewGoogleFormsWatchesContract =

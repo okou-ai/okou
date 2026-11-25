@@ -84,7 +84,6 @@ import { cronCleanupSuggestionsRoutes } from "./routes/cron-cleanup-suggestions"
 import { cronDrainEmailOutboxRoutes } from "./routes/cron-drain-email-outbox";
 import { cronExecuteWorkflowAutomationsRoutes } from "./routes/cron-execute-workflow-automations";
 import { cronMonitorChatEventQueueRoutes } from "./routes/cron-monitor-chat-event-queue";
-import { cronOfficialWorkflowCatalogRoutes } from "./routes/cron-official-workflow-catalog";
 import { cronProcessBackgroundJobsRoutes } from "./routes/cron-process-background-jobs";
 import { cronReconcileImageGenerationsRoutes } from "./routes/cron-reconcile-image-generations";
 import { cronProcessUsageEventsRoutes } from "./routes/cron-process-usage-events";
@@ -309,7 +308,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...cronCleanupSandboxesRoutes,
   ...cronCleanupXResourceReadsRoutes,
   ...cronConnectorCatalogRoutes,
-  ...cronOfficialWorkflowCatalogRoutes,
   ...cronConnectorOauthStateCleanupRoutes,
   ...cronCleanupSuggestionsRoutes,
   ...cronDrainEmailOutboxRoutes,

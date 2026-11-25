@@ -29,6 +29,7 @@ import type {
   WorkflowMember,
 } from "../services/workflow-data.service";
 import { visibleWorkflowCondition } from "../services/workflow-visibility";
+import { builtInWorkflow } from "../services/builtin-workflows";
 
 interface WorkflowCopyObservation {
   readonly workflowXmin: string;
@@ -255,7 +256,10 @@ export function officialCopyMaterialization(
     revision: revision.definition.revision,
     sourceWorkflow: {
       ...sourceWorkflow,
-      instruction: revision.definition.workflow.instruction,
+      // An editable copy becomes an ordinary Workflow and owns its instructions.
+      instruction:
+        builtInWorkflow(sourceWorkflow.officialDefinitionName)?.prompt ??
+        revision.definition.workflow.instruction,
       displayName: revision.definition.workflow.displayName,
       description: revision.definition.workflow.description,
       officialDefinitionName: null,

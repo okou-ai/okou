@@ -274,7 +274,7 @@ describe("Daily profile learning through Suggestions", () => {
 });
 
 describe("Proactive Suggestions preference", () => {
-  it("keeps the shared Suggestions choice while the catalog is unavailable", async () => {
+  it("keeps the Suggestions choice while the member has no timezone", async () => {
     const app = setupApp({
       context,
       routes: proactiveSuggestionsRoutes,
@@ -291,7 +291,11 @@ describe("Proactive Suggestions preference", () => {
       client.update({ headers: authHeaders(actor), body: { enabled: true } }),
       [200],
     );
-    expect(pending.body).toMatchObject({ enabled: true, status: "preparing" });
+    expect(pending.body).toMatchObject({
+      enabled: true,
+      status: "preparing",
+      unavailableReason: "missing-timezone",
+    });
     const morning = await accept(
       morningBriefPreferenceClient().get({ headers: authHeaders(actor) }),
       [200],

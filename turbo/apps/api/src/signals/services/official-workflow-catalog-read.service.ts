@@ -7,10 +7,6 @@ import {
   type OfficialWorkflowDefinitionRevisionPayload,
 } from "@okouai/api-contracts/contracts/official-workflow-catalog";
 import {
-  contentBundleSchema,
-  type ContentBundle,
-} from "@okouai/api-contracts/contracts/content-bundle";
-import {
   officialWorkflowCatalogReleases,
   officialWorkflowCatalogState,
   officialWorkflowDefinitionRevisions,
@@ -168,36 +164,5 @@ export const readAcceptedOfficialWorkflowRevision$ = command(
       .limit(1);
     signal.throwIfAborted();
     return row ? acceptedRevisionFromRow(row) : null;
-  },
-);
-
-export interface OfficialWorkflowRevisionForPublication {
-  readonly definition: OfficialWorkflowDefinitionRevisionPayload;
-  readonly contentBundle: ContentBundle | null;
-}
-
-/** A newly selected source may reuse an immutable revision not yet bundled. */
-export const readOfficialWorkflowRevisionForPublication$ = command(
-  async (
-    { get },
-    args: { readonly name: string; readonly revision: string },
-    signal: AbortSignal,
-  ): Promise<OfficialWorkflowRevisionForPublication | null> => {
-    const plan = acceptedOfficialWorkflowRevisionReadPlan(args);
-    const [row] = await get(db$)
-      .select(plan.columns)
-      .from(officialWorkflowDefinitionRevisions)
-      .where(plan.condition)
-      .limit(1);
-    signal.throwIfAborted();
-    return row
-      ? {
-          definition: revisionDefinition(row),
-          contentBundle:
-            row.contentBundle === null
-              ? null
-              : contentBundleSchema.parse(row.contentBundle),
-        }
-      : null;
   },
 );

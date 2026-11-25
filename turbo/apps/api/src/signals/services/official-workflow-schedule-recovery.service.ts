@@ -1,6 +1,5 @@
 import { automationWorkflowJoinCondition } from "./workflow-visibility";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
-import { officialWorkflowCatalogState } from "@okouai/db/schema/official-workflow-catalog";
 import { workflows } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
 import { and, asc, eq, gte, isNull, lte, or } from "drizzle-orm";
@@ -9,11 +8,7 @@ import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import {
-  readAcceptedOfficialWorkflowCatalog$,
-  type AcceptedOfficialWorkflowCatalog,
-} from "./official-workflow-catalog-read.service";
-import { acceptedDefinitionForName } from "./official-workflow-run.service";
+import { builtInWorkflow, BUILTIN_WORKFLOWS } from "./builtin-workflows";
 import { proactiveWorkflowOwnerEnabledSql } from "./proactive-workflow-owner";
 import { proactiveWorkflowKind } from "./proactive-workflow-definitions";
 import { advanceTimeAutomationAfterCompletion } from "./time-automation";
@@ -31,28 +26,13 @@ type RecoveryCandidate = {
 };
 
 const recoverOfficialSchedule$ = command(
-  async (
-    { set },
-    candidate: RecoveryCandidate,
-    catalog: AcceptedOfficialWorkflowCatalog,
-    signal: AbortSignal,
-  ) => {
+  async ({ set }, candidate: RecoveryCandidate, signal: AbortSignal) => {
     const { automation, definitionName } = candidate;
-    const definition =
-      definitionName === null
-        ? null
-        : acceptedDefinitionForName(
-            catalog.payload.definitions,
-            definitionName,
-          );
+    const builtin = builtInWorkflow(definitionName);
     if (
-      definition?.lifecycle !== "active" ||
-      !definition.blueprints.some((blueprint) => {
-        return (
-          blueprint.key === automation.officialBlueprintKey &&
-          blueprint.fingerprint === automation.officialAppliedFingerprint
-        );
-      })
+      !builtin ||
+      builtin.blueprint.key !== automation.officialBlueprintKey ||
+      builtin.blueprint.fingerprint !== automation.officialAppliedFingerprint
     ) {
       return;
     }
@@ -85,14 +65,11 @@ const recoverOfficialSchedule$ = command(
     const [updated] = await set(writeDb$)
       .update(workflowAutomations)
       .set({ enabled: resume, nextRunAt, updatedAt: at })
-      .from(officialWorkflowCatalogState)
       .where(
         and(
           observedWorkflowAutomationCondition(automation),
           eq(workflowAutomations.enabled, false),
           eq(workflowAutomations.officialIntendedEnabled, true),
-          // A catalog retirement or replacement wins over this recovery attempt.
-          eq(officialWorkflowCatalogState.acceptedReleaseId, catalog.releaseId),
           resume && proactiveKind !== null
             ? proactiveWorkflowOwnerEnabledSql({
                 orgId: automation.orgId,
@@ -122,30 +99,18 @@ const recoverOfficialSchedule$ = command(
 /** Runtime recovery runs every cron tick, independently of catalog publication. */
 export const recoverDueOfficialWorkflowSchedules$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const catalog = await set(readAcceptedOfficialWorkflowCatalog$, signal);
-    if (catalog === null) {
-      return;
-    }
-    // Retired or outdated rows must not occupy the bounded recovery batch.
     const acceptedBlueprints = or(
-      ...catalog.payload.definitions.flatMap((definition) => {
-        return definition.lifecycle === "active"
-          ? definition.blueprints.map((blueprint) => {
-              return and(
-                eq(workflows.officialDefinitionName, definition.name),
-                eq(workflowAutomations.officialBlueprintKey, blueprint.key),
-                eq(
-                  workflowAutomations.officialAppliedFingerprint,
-                  blueprint.fingerprint,
-                ),
-              );
-            })
-          : [];
+      ...BUILTIN_WORKFLOWS.map(({ definition, blueprint }) => {
+        return and(
+          eq(workflows.officialDefinitionName, definition.name),
+          eq(workflowAutomations.officialBlueprintKey, blueprint.key),
+          eq(
+            workflowAutomations.officialAppliedFingerprint,
+            blueprint.fingerprint,
+          ),
+        );
       }),
     );
-    if (acceptedBlueprints === undefined) {
-      return;
-    }
     const candidates = await get(db$)
       .select({
         automation: workflowAutomationColumns(),
@@ -173,7 +138,7 @@ export const recoverDueOfficialWorkflowSchedules$ = command(
     signal.throwIfAborted();
     for (const candidate of candidates) {
       const result = await settle(
-        set(recoverOfficialSchedule$, candidate, catalog, signal),
+        set(recoverOfficialSchedule$, candidate, signal),
         signal,
       );
       if (!result.ok) {
