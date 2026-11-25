@@ -99,6 +99,11 @@ export function builtInWorkflow(name: string | null) {
   });
 }
 
+/** Compatibility representation of the single built-in cron in API responses and installation records. */
+export function builtinCronBindings(cronExpression: string) {
+  return [{ key: "cron", value: cronExpression }];
+}
+
 export function builtInWorkflowBundleUrl(sha256: string) {
   return BUILTIN_WORKFLOWS.some((workflow) => {
     return workflow.contentBundle.sha256 === sha256;

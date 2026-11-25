@@ -5223,7 +5223,6 @@ enum class WorkflowSummaryVisibility {
 
 @Serializable
 enum class WorkflowSummaryOfficialInstallationState {
-    @SerialName("installing") INSTALLING,
     @SerialName("installed") INSTALLED,
 }
 
@@ -5274,7 +5273,6 @@ data class WorkflowSummary(
 @Serializable
 enum class WorkflowAutomationRuleOriginReconciliationStatus {
     @SerialName("current") CURRENT,
-    @SerialName("reconciling") RECONCILING,
     @SerialName("needs_reconfiguration") NEEDS_RECONFIGURATION,
     @SerialName("failed") FAILED,
 }
@@ -7192,7 +7190,6 @@ enum class WorkflowDetailVisibility {
 
 @Serializable
 enum class WorkflowDetailOfficialInstallationState {
-    @SerialName("installing") INSTALLING,
     @SerialName("installed") INSTALLED,
 }
 

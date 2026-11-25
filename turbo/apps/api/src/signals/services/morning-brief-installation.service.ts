@@ -8,7 +8,7 @@ import { isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
-import { builtInWorkflow } from "./builtin-workflows";
+import { builtInWorkflow, builtinCronBindings } from "./builtin-workflows";
 import type { MorningBriefMemberIdentity } from "./morning-brief-enrollment-data.service";
 import { morningBriefCronExpression } from "./official-workflow-owner-schedule";
 import { calculateNextRun } from "./time-automation";
@@ -71,7 +71,7 @@ export const installMorningBrief$ = command(
           cron_expression, timezone, enabled, next_run_at, official_blueprint_key, official_applied_fingerprint,
           official_reconciliation_status, official_parameter_bindings, official_intended_enabled, created_at, updated_at)
         SELECT org_id, id, owner_user_id, 'schedule', 'cron', ${cron}, ${timezone}, true, ${nextRunAt},
-          ${builtin.blueprintKey}, ${builtin.fingerprint}, 'current', '[]'::jsonb,
+          ${builtin.blueprintKey}, ${builtin.fingerprint}, 'current', ${JSON.stringify(builtinCronBindings(cron))}::jsonb,
           true, ${at}, ${at}
         FROM installed
       )

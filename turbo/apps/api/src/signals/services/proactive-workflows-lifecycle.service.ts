@@ -41,7 +41,7 @@ import {
   proactiveWorkflowOwnerEnabledSql,
 } from "./proactive-workflow-owner";
 import { proactiveNightlyCron } from "./proactive-nightly-schedule";
-import { builtInWorkflow } from "./builtin-workflows";
+import { builtInWorkflow, builtinCronBindings } from "./builtin-workflows";
 
 const log = logger("ProactiveWorkflows");
 
@@ -205,7 +205,7 @@ export const ensureProactiveWorkflows$ = command(
         timezone, enabled, next_run_at, official_blueprint_key, official_applied_fingerprint,
         official_reconciliation_status, official_parameter_bindings, official_intended_enabled)
       SELECT ${owner.orgId}, id, ${owner.userId}, 'schedule', 'cron', ${cron}, NULL, ${timezone}, true, ${next},
-        ${builtin.blueprintKey}, ${builtin.fingerprint}, 'current', '[]'::jsonb, true FROM installed
+        ${builtin.blueprintKey}, ${builtin.fingerprint}, 'current', ${JSON.stringify(builtinCronBindings(cron))}::jsonb, true FROM installed
       ON CONFLICT (workflow_id, official_blueprint_key) WHERE official_blueprint_key IS NOT NULL DO NOTHING
     `);
       signal.throwIfAborted();

@@ -26,7 +26,7 @@ import {
   prepareNotionPageContentUpdatedEventConfigForPersist$,
   validateNotionEventConfigForConnector$,
 } from "./notion-automation-preparation.service";
-import { builtInWorkflow } from "./builtin-workflows";
+import { builtInWorkflow, builtinCronBindings } from "./builtin-workflows";
 import { waitUntil } from "../context/wait-until";
 import {
   workflowAutomationSnapshot,
@@ -1017,7 +1017,7 @@ const rowToSummary$ = command(
       schedule.type === "cron" &&
       builtin &&
       builtin.blueprintKey === row.officialBlueprintKey
-        ? [{ key: "cron", value: schedule.cronExpression }]
+        ? builtinCronBindings(schedule.cronExpression)
         : row.officialParameterBindings;
     return {
       ...rowSummaryBase(row, chatThreadId, bindings),

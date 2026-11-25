@@ -126,69 +126,25 @@ BEGIN
 END;
 $workflow_deletion$;
 --> statement-breakpoint
--- Outgoing readers still expect the physical installation state and cron binding.
--- These triggers cover only the handoff to the atomic installers.
-CREATE OR REPLACE FUNCTION public.project_outgoing_official_installation() RETURNS trigger
-LANGUAGE plpgsql AS $project$
-BEGIN
-  NEW.official_installation_state := 'installed';
-  RETURN NEW;
-END
-$project$;
+-- Outgoing readers test the definition name before interpreting the legacy state.
+-- A constant default makes atomic inserts readable until the outgoing API drains.
+ALTER TABLE "workflows" ALTER COLUMN "official_installation_state" SET DEFAULT 'installed';
 --> statement-breakpoint
-CREATE OR REPLACE TRIGGER project_outgoing_official_installation
-BEFORE INSERT ON public.workflows FOR EACH ROW
-WHEN (NEW.official_definition_name IS NOT NULL AND NEW.official_installation_state IS NULL)
-EXECUTE FUNCTION public.project_outgoing_official_installation();
+ALTER TABLE "workflows" DROP CONSTRAINT "workflows_official_installation_check";
 --> statement-breakpoint
-CREATE OR REPLACE FUNCTION public.project_outgoing_builtin_cron() RETURNS trigger
-LANGUAGE plpgsql AS $project$
-BEGIN
-  IF TG_OP = 'UPDATE' THEN
-    IF NEW.cron_expression IS NOT DISTINCT FROM OLD.cron_expression
-       OR NEW.official_parameter_bindings IS DISTINCT FROM OLD.official_parameter_bindings
-       OR OLD.official_parameter_bindings IS DISTINCT FROM jsonb_build_array(jsonb_build_object('key', 'cron', 'value', OLD.cron_expression)) THEN
-      RETURN NEW;
-    END IF;
-  ELSIF NEW.official_parameter_bindings IS DISTINCT FROM '[]'::jsonb THEN
-    RETURN NEW;
-  END IF;
-  IF EXISTS (SELECT 1 FROM public.workflows w WHERE w.id = NEW.workflow_id
-    AND (w.official_definition_name, NEW.official_blueprint_key) IN (
-      ('morning-brief', 'daily-delivery'), ('internal-test-morning-brief', 'daily-delivery'),
-      ('agent-suggestions', 'hourly-check'), ('proactive-learning', 'nightly-learning')
-    )) THEN
-    NEW.official_parameter_bindings := jsonb_build_array(jsonb_build_object('key', 'cron', 'value', NEW.cron_expression));
-  END IF;
-  RETURN NEW;
-END
-$project$;
---> statement-breakpoint
-CREATE OR REPLACE TRIGGER project_outgoing_builtin_cron
-BEFORE INSERT OR UPDATE OF cron_expression ON public.workflow_automations FOR EACH ROW
-WHEN (NEW.kind = 'schedule' AND NEW.schedule_type = 'cron' AND NEW.official_blueprint_key IS NOT NULL)
-EXECUTE FUNCTION public.project_outgoing_builtin_cron();
---> statement-breakpoint
--- okou:after-api-promotion
-DROP TRIGGER project_outgoing_builtin_cron ON public.workflow_automations;
---> statement-breakpoint
--- okou:after-api-promotion
-DROP FUNCTION public.project_outgoing_builtin_cron();
---> statement-breakpoint
--- okou:after-api-promotion
-DROP TRIGGER project_outgoing_official_installation ON public.workflows;
---> statement-breakpoint
--- okou:after-api-promotion
-DROP FUNCTION public.project_outgoing_official_installation();
+ALTER TABLE "workflows" ADD CONSTRAINT "workflows_official_installation_check" CHECK ("workflows"."official_definition_name" IS NULL OR (
+          "workflows"."official_definition_name" = "workflows"."name"
+          AND "workflows"."visibility" = 'private'
+          AND "workflows"."instruction" IS NULL
+          AND "workflows"."display_name" IS NULL
+          AND "workflows"."description" IS NULL
+        ));
 --> statement-breakpoint
 -- okou:after-api-promotion
 DROP FUNCTION public.delete_workflow_rows(text, uuid, boolean, text);
 --> statement-breakpoint
 -- okou:after-api-promotion
 ALTER TABLE "workflow_automations" DROP CONSTRAINT "workflow_automations_official_binding_check";
---> statement-breakpoint
--- okou:after-api-promotion
-ALTER TABLE "workflows" DROP CONSTRAINT "workflows_official_installation_check";
 --> statement-breakpoint
 -- okou:after-api-promotion
 ALTER TABLE "workflows" DROP COLUMN "official_installation_state";
@@ -207,13 +163,4 @@ ALTER TABLE "workflow_automations" ADD CONSTRAINT "workflow_automations_official
           AND "workflow_automations"."official_reconciliation_status" IN ('current', 'needs_reconfiguration', 'failed')
           AND jsonb_typeof("workflow_automations"."official_parameter_bindings") = 'array'
           AND "workflow_automations"."official_intended_enabled" IS NOT NULL
-        ));
---> statement-breakpoint
--- okou:after-api-promotion
-ALTER TABLE "workflows" ADD CONSTRAINT "workflows_official_installation_check" CHECK ("workflows"."official_definition_name" IS NULL OR (
-          "workflows"."official_definition_name" = "workflows"."name"
-          AND "workflows"."visibility" = 'private'
-          AND "workflows"."instruction" IS NULL
-          AND "workflows"."display_name" IS NULL
-          AND "workflows"."description" IS NULL
         ));
