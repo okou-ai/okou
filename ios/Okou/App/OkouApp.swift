@@ -1,5 +1,6 @@
 import CCStateSwiftUI
 import ChatData
+import ChatDomain
 import Foundation
 import SwiftUI
 
