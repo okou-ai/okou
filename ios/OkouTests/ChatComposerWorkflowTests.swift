@@ -364,7 +364,7 @@ final class ComposerWorkflowResourceTests: XCTestCase {
     })
     let source = ComposerWorkflowSource(
       client: fixture.http.client, storage: nil, didFail: { _ in })
-    let resources = ComposerWorkflowResources()
+    let resources = ComposerWorkflowResources(graph: makeTestWorkspaceGraph())
     defer {
       resources.dismiss()
       source.close()
@@ -425,7 +425,7 @@ final class ComposerWorkflowResourceTests: XCTestCase {
     })
     let source = ComposerWorkflowSource(
       client: fixture.http.client, storage: nil, didFail: { _ in })
-    let resources = ComposerWorkflowResources()
+    let resources = ComposerWorkflowResources(graph: makeTestWorkspaceGraph())
     defer {
       resources.dismiss()
       source.close()
