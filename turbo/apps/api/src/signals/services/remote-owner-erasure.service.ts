@@ -12,7 +12,7 @@ import { vncCredentials } from "@okouai/db/schema/vnc-credential";
 import { and, eq, exists, notExists } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { command } from "ccstate";
-import { writeDb$ } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
 
 type RemoteErasureScope =
   | { readonly kind: "owner"; readonly orgId: string; readonly userId: string }
@@ -35,6 +35,33 @@ function boundCustomConnectorErasureCondition(orgId: string) {
             eq(orgCustomConnectorCloudflareBindings.orgId, orgId),
           ),
         ),
+    ),
+  );
+}
+
+function eraseEmptyRemoteDevices(db: Db, scope: RemoteErasureScope) {
+  // Native installations have their own retention lifecycle. Keep their
+  // device links while erasing records with no surviving channels.
+  const linkedChannels = [
+    computerUseHosts,
+    phoneUseDevices,
+    sshConnections,
+    vncConnections,
+  ];
+  return db.delete(remoteDevices).where(
+    and(
+      scope.kind === "user" ? undefined : eq(remoteDevices.orgId, scope.orgId),
+      scope.kind === "organization"
+        ? undefined
+        : eq(remoteDevices.userId, scope.userId),
+      ...linkedChannels.map((channel) => {
+        return notExists(
+          db
+            .select({ id: channel.id })
+            .from(channel)
+            .where(eq(channel.remoteDeviceId, remoteDevices.id)),
+        );
+      }),
     ),
   );
 }
@@ -164,32 +191,7 @@ export const eraseRemoteOwnerData$ = command(
         ),
       );
     signal.throwIfAborted();
-    // Native installations have their own retention lifecycle. Keep their
-    // device links while erasing records with no surviving channels.
-    const linkedChannels = [
-      computerUseHosts,
-      phoneUseDevices,
-      sshConnections,
-      vncConnections,
-    ];
-    await db.delete(remoteDevices).where(
-      and(
-        scope.kind === "user"
-          ? undefined
-          : eq(remoteDevices.orgId, scope.orgId),
-        scope.kind === "organization"
-          ? undefined
-          : eq(remoteDevices.userId, scope.userId),
-        ...linkedChannels.map((channel) => {
-          return notExists(
-            db
-              .select({ id: channel.id })
-              .from(channel)
-              .where(eq(channel.remoteDeviceId, remoteDevices.id)),
-          );
-        }),
-      ),
-    );
+    await eraseEmptyRemoteDevices(db, scope);
     signal.throwIfAborted();
   },
 );

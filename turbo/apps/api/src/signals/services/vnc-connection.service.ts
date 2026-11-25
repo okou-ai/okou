@@ -127,6 +127,12 @@ const metadata = Object.freeze({
   createdAt: vncCreationTimestamp.as("vnc_created_at"),
   updatedAt: vncConnections.updatedAt,
 });
+const vncCreationSelection = {
+  ...metadata,
+  remoteDeviceId: vncConnections.remoteDeviceId,
+  orgId: vncConnections.orgId,
+  userId: vncConnections.userId,
+};
 type Metadata = Omit<
   Pick<typeof vncConnections.$inferSelect, keyof typeof metadata>,
   "createdAt"
@@ -575,12 +581,7 @@ const writeInlineVncConnectionCreate$ = command(
           credentialId: sql`(select ${generated.id} from ${generated})`,
           authMethod: create.authMethod,
         })
-        .returning({
-          ...metadata,
-          remoteDeviceId: vncConnections.remoteDeviceId,
-          orgId: vncConnections.orgId,
-          userId: vncConnections.userId,
-        }),
+        .returning(vncCreationSelection),
     );
     const device = publishRemoteChannelDevice(db, connection);
     const complete = publication.completion(connection);
@@ -694,12 +695,7 @@ export const createVncConnection$ = command(
               ...vncConnectionCreationValues(args, prepared.value),
               ...credentialDatabaseValues(credential),
             })
-            .returning({
-              ...metadata,
-              remoteDeviceId: vncConnections.remoteDeviceId,
-              orgId: vncConnections.orgId,
-              userId: vncConnections.userId,
-            }),
+            .returning(vncCreationSelection),
         );
         const device = publishRemoteChannelDevice(db, connection);
         const complete = publication.completion(connection);
