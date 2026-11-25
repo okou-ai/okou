@@ -170,7 +170,6 @@ internal class ChatRowMutationOwner(
         // Even when a response is lost, the original event ID can confirm the write.
         awaitListRead(needsRead)
         requireCurrent()
-        if (submission.renameAcknowledged) return Confirmation(null, true)
         if (missingDeleteTarget != null) {
             // A concurrent deletion can make the requested result canonical after a 404.
             return Confirmation(

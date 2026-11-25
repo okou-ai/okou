@@ -134,6 +134,10 @@ internal class ChatListProjection {
         pending.renameAcknowledgement =
             if (showSubmittedName) RenameAcknowledgement.ShowSubmittedName
             else RenameAcknowledgement.KeepCanonicalName
+        // A later acknowledged rename supersedes older receipt overlays on this row.
+        rowEdits = rowEdits.filterNot {
+            it !== pending && it.edit.threadId == edit.threadId && it.renameAcknowledgement != null
+        }
         return true
     }
 

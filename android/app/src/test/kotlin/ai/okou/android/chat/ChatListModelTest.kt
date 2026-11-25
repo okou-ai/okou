@@ -627,6 +627,56 @@ internal class ChatListModelTest : ChatListModelTestFixture() {
     }
 
     @Test
+    fun confirmedChatRenameKeepsANewerWritePendingOnLateRejection() = runTest {
+        val firstResponse = CompletableDeferred<Unit>()
+        val secondResponse = CompletableDeferred<Unit>()
+        var event: String? = null
+        val service =
+            object : Service() {
+                override suspend fun chatEvents(since: Long?): ChatEvents =
+                    when {
+                        since == null -> page()
+                        since < 18 -> page(listOfNotNull(event))
+                        else -> page(emptyList())
+                    }
+
+                override suspend fun renameThread(
+                    threadId: String,
+                    title: String,
+                    eventId: String,
+                ) {
+                    if (title == "First title") firstResponse.await() else secondResponse.await()
+                }
+            }
+        withCatchUpModel(service) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            val first = checkNotNull(model.renameThread(CHAT_PERSONAL, "First title"))
+            runCurrent()
+            event = chatEventWire(first.eventId, 18, kind = "renamed", title = first.name)
+            model.refreshList()
+            advanceUntilIdle()
+            assertNull(model.uiState.value.pendingRowActions[CHAT_PERSONAL])
+
+            val second = checkNotNull(model.renameThread(CHAT_PERSONAL, "Second title"))
+            runCurrent()
+            firstResponse.completeExceptionally(ApiFailure.Http(400, null, null, null))
+            runCurrent()
+            val pending = model.uiState.value
+            assertEquals(ChatRowAction.Rename, pending.pendingRowActions[CHAT_PERSONAL])
+            assertEquals(first.name, pending.threads.single().title)
+            assertNull(pending.failedRowAction)
+
+            secondResponse.complete(Unit)
+            advanceUntilIdle()
+            val confirmed = model.uiState.value
+            assertEquals(second.eventId, confirmed.confirmedRenameIds[CHAT_PERSONAL])
+            assertEquals(second.name, confirmed.threads.single().title)
+            assertNull(confirmed.pendingRowActions[CHAT_PERSONAL])
+        }
+    }
+
+    @Test
     fun sendReceiptKeepsActivityUntilTheSortEventOrAnExplicitReconciliation() = runTest {
         val other =
             chatEventWire(
@@ -2241,25 +2291,28 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
             write.complete(Unit)
             runCurrent()
             assertEquals("Receipt title", model.uiState.value.threadsByRecency.single().title)
+            assertNull(model.uiState.value.pendingRowActions[CHAT_PERSONAL])
+            assertNotNull(model.renameThread(CHAT_PERSONAL, "Second title"))
+            runCurrent()
+            assertEquals(2, writes.size)
+            assertEquals("Second title", model.uiState.value.threadsByRecency.single().title)
             earlierRead.complete(Unit)
             runCurrent()
-            assertEquals("Receipt title", model.uiState.value.threadsByRecency.single().title)
+            assertEquals("Second title", model.uiState.value.threadsByRecency.single().title)
             assertEquals(ChatReadPhase.Loading, model.uiState.value.listPhase)
 
-            read.complete(Unit)
-            advanceUntilIdle()
             tail =
                 page(
                     listOf(
                         chatEventWire(
-                            id = writes.single(),
+                            id = writes.first(),
                             seq = 19,
                             kind = "renamed",
                             title = "Receipt title",
                         ),
                     ),
                 )
-            assertNotNull(model.renameThread(CHAT_PERSONAL, "Second title"))
+            read.complete(Unit)
             advanceUntilIdle()
             assertEquals("Second title", model.uiState.value.threads.single().title)
 
@@ -2646,7 +2699,7 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
             model.reloadAfterRowActionFailure()
             runCurrent()
             assertEquals(initialReads + 1, reads)
-            assertEquals(ChatRowAction.Rename, model.uiState.value.pendingRowActions[CHAT_PERSONAL])
+            assertNull(model.uiState.value.pendingRowActions[CHAT_PERSONAL])
 
             events.add(
                 chatEventWire(
@@ -3179,6 +3232,7 @@ internal class ChatListProjectRenameModelTest : ChatListModelTestFixture() {
     @Test
     fun observedProjectRenameReceiptTakesPrecedenceOverLateRejection() = runTest {
         val service = HeldProjectRenameService()
+        val firstResponse = service.response
         withCatchUpModel(service) { model ->
             model.refresh()
             advanceUntilIdle()
@@ -3210,11 +3264,22 @@ internal class ChatListProjectRenameModelTest : ChatListModelTestFixture() {
                 )
             model.refreshMetadata()
             advanceUntilIdle()
-            service.response.completeExceptionally(ApiFailure.Http(409, "CONFLICT", null, null))
+            assertNull(model.uiState.value.renamingProjectId)
+
+            service.response = CompletableDeferred()
+            assertNotNull(model.renameProject(CHAT_PROJECT, "Second name"))
+            runCurrent()
+            firstResponse.completeExceptionally(ApiFailure.Http(409, "CONFLICT", null, null))
+            runCurrent()
+            assertEquals(CHAT_PROJECT, model.uiState.value.renamingProjectId)
+            assertNull(model.uiState.value.projectRenameRejection)
+            assertEquals("After", model.uiState.value.projects.single().name)
+
+            service.response.complete(Unit)
             advanceUntilIdle()
 
             val state = model.uiState.value
-            assertEquals("After", state.projects.single().name)
+            assertEquals("Second name", state.projects.single().name)
             assertNull(state.projectRenameRejection)
             assertNull(state.renamingProjectId)
             assertTrue(state.unconfirmedProjectRenames.isEmpty())

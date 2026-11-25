@@ -397,6 +397,7 @@ class ChatListModel(
     private val sync = ChatListSync(service, dispatcher)
     private var confirmed: CachedChats? = null
     private val projection = ChatListProjection()
+    private val pendingRenameIds = mutableMapOf<String, String>()
     private val rowMutations =
         ChatRowMutationOwner(
             service,
@@ -1064,7 +1065,7 @@ class ChatListModel(
                 ChatRowAction.Rename,
                 it.name,
                 fromConversation = fromConversation,
-                eventId = it.eventId,
+                renameEventId = it.eventId,
             )
         }
     }
@@ -1088,7 +1089,7 @@ class ChatListModel(
         undoRequest: ChatRowUndo? = null,
         fromConversation: Boolean = false,
         deleteFromWorkflow: Boolean = false,
-        eventId: String? = null,
+        renameEventId: String? = null,
     ): Boolean {
         if (!current()) return false
         val state = mutable.value
@@ -1150,6 +1151,7 @@ class ChatListModel(
                     if (intent == null || undoRequest != null) state.readIntents
                     else state.readIntents + (threadId to intent),
             )
+        if (renameEventId != null) pendingRenameIds[threadId] = renameEventId
         mutable.value =
             if (undoRequest == null) pending
             else
@@ -1166,7 +1168,7 @@ class ChatListModel(
                                 pinGroup,
                                 index,
                                 state,
-                                eventId,
+                                renameEventId,
                             )
                         else emptyList()
                     } catch (_: IllegalArgumentException) {
@@ -1233,6 +1235,12 @@ class ChatListModel(
                     }
                 }
                 requireCurrent()
+                if (submission?.renameAcknowledged == true) {
+                    if (projection.hasUnsettledEdits(submission.edits)) refreshList()
+                    return@launch
+                }
+                if (renameEventId != null && pendingRenameIds[threadId] != renameEventId)
+                    return@launch
                 val rollback = submission?.let(rowMutations::discardRejected)
                 val rolledBack = rollback != null
                 if (rolledBack) {
@@ -1339,7 +1347,11 @@ class ChatListModel(
                             )
                 }
             } finally {
-                if ((intent == null || undoRequest != null) && current()) {
+                if (
+                    (intent == null || undoRequest != null) &&
+                        current() &&
+                        (renameEventId == null || pendingRenameIds.remove(threadId, renameEventId))
+                ) {
                     mutable.value =
                         mutable.value.copy(
                             pendingRowActions = mutable.value.pendingRowActions - threadId,
@@ -1352,6 +1364,17 @@ class ChatListModel(
 
     private fun publishRows(state: ChatListUiState = mutable.value) {
         val rows = projection.rows()
+        val confirmedRenameIds = projection.confirmedRenameIds
+        var pendingRowActions = state.pendingRowActions
+        if (pendingRenameIds.isNotEmpty()) {
+            pendingRenameIds.entries.removeAll { (threadId, eventId) ->
+                if (confirmedRenameIds[threadId] != eventId) false
+                else {
+                    pendingRowActions = pendingRowActions - threadId
+                    true
+                }
+            }
+        }
         publishWithCurrentMoveNotice(
             state
                 .copy(
@@ -1359,6 +1382,7 @@ class ChatListModel(
                     confirmedThreads = projection.confirmedRows.threads,
                     threadsByRecency = rows.byRecency,
                     acceptedNewChats = projection.acceptedNewChats,
+                    pendingRowActions = pendingRowActions,
                     rowActionFailures =
                         if (state.rowActionFailures.isEmpty()) state.rowActionFailures
                         else
@@ -1366,9 +1390,9 @@ class ChatListModel(
                                 it.edits.isEmpty() || projection.hasUnsettledEdits(it.edits)
                             },
                     unconfirmedRenames = projection.unconfirmedRenames(),
-                    confirmedRenameIds = projection.confirmedRenameIds,
+                    confirmedRenameIds = confirmedRenameIds,
                 )
-                .pruneInvalidUndo { it.threadId !in state.pendingRowActions },
+                .pruneInvalidUndo { it.threadId !in pendingRowActions },
         )
     }
 

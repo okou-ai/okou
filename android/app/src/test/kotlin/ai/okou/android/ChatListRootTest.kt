@@ -360,6 +360,10 @@ internal class ChatRenameFormRootTest : ChatListRootTestFixture() {
             editor.assertDoesNotExist()
             row.assert(hasText("Newer title"))
             compose.onNodeWithText("Chat title saved").assertIsDisplayed()
+            row.performTouchInput { longClick() }
+            compose.onNodeWithText("Rename chat").performClick()
+            editor.assertTextContains("Newer title")
+            compose.onNodeWithText("Save").assertIsNotEnabled()
         } finally {
             releaseWrite.countDown()
         }
@@ -3945,10 +3949,14 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
     fun successfulProjectRenameClosesWithTheNameReturnedByTheServer() {
         val app = compose.activity.application as ChatListApplication
         val writeSent = AtomicBoolean()
+        val readbackStarted = CountDownLatch(1)
         val releaseReadback = CountDownLatch(1)
         val readEvents = app.fixture.projectEvents
         app.fixture.projectEvents = { request ->
-            if (writeSent.get()) releaseReadback.await()
+            if (writeSent.get()) {
+                readbackStarted.countDown()
+                releaseReadback.await()
+            }
             readEvents(request)
         }
         app.fixture.commandResponse = { request ->
@@ -3977,12 +3985,19 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
             editor.assertDoesNotExist()
             compose.onNodeWithText("Newer name").assertIsDisplayed()
             compose.onNodeWithText("Project name saved").assertIsDisplayed()
+            compose.waitUntil(10_000) { readbackStarted.count == 0L }
+            compose.onNodeWithText("Newer name").performTouchInput { longClick() }
+            compose.onNodeWithText("Rename").assertIsEnabled().performClick()
+            editor.assertTextContains("Newer name")
+            compose.onNodeWithText("Save").assertIsNotEnabled()
         } finally {
             releaseReadback.countDown()
         }
     }
 
     @Test
+    @Config(qualifiers = "en-rUS-w450dp-h850dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun projectRenameRetainsTheConfirmedNameAndChecksTheOriginalEvent() {
         val app = compose.activity.application as ChatListApplication
         val pending = CountDownLatch(1)
@@ -4023,11 +4038,19 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
             val save = compose.onNodeWithText("Save")
             editor.performTextReplacement("a".repeat(121))
             val nameTooLong = app.getString(R.string.chat_project_name_too_long, 120)
-            compose.onNodeWithText(nameTooLong).assertDoesNotExist()
+            val lengthError = compose.onNodeWithText(nameTooLong, useUnmergedTree = true)
+            lengthError.assertDoesNotExist()
+            val fieldBounds = editor.getUnclippedBoundsInRoot()
+            val saveBounds = save.getUnclippedBoundsInRoot()
             save.performClick()
-            compose.onNodeWithText(nameTooLong).assertIsDisplayed()
+            lengthError.assertIsDisplayed()
+            editor.assert(SemanticsMatcher.expectValue(SemanticsProperties.Error, nameTooLong))
+            assertEquals(fieldBounds, editor.getUnclippedBoundsInRoot())
+            assertEquals(saveBounds, save.getUnclippedBoundsInRoot())
             assertTrue(writes.isEmpty())
             editor.performTextReplacement("  Field notes  ")
+            lengthError.assertDoesNotExist()
+            assertEquals(saveBounds, save.getUnclippedBoundsInRoot())
             val beforeSave = System.currentTimeMillis()
             save.performClick()
             compose.waitUntil(10_000) { writes.size == 1 }

@@ -476,30 +476,39 @@ internal class ProjectListOwner(
             var rejected = false
             var confirmedByReadback = false
             try {
-                try {
-                    val receipt = service.renameProject(rename.id, rename.name, rename.eventId)
-                    requireCurrent()
-                    publishRenameReceipt(rename, receipt, baseline, snapshotCursor)
-                    refreshAfterWrite()
-                    return@launch
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (error: Exception) {
-                    requireCurrent()
-                    if (error !is ApiFailure.Http || error.status != 404) onFailure(error)
-                    rejected = error.rejectsProjectMutation()
-                    if (rejected) return@launch
-                    if (
-                        error is ApiFailure.Network &&
-                            error.connectionFailed &&
-                            !hasProjectReceipt(rename.eventId)
-                    ) {
-                        unresolvedProjectRenames[rename.id] = rename.copy(connectionFailed = true)
-                        return@launch
+                val receipt =
+                    try {
+                        service.renameProject(rename.id, rename.name, rename.eventId)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        requireCurrent()
+                        if (error !is ApiFailure.Http || error.status != 404) onFailure(error)
+                        if (projectRename !== rename) return@launch
+                        rejected = error.rejectsProjectMutation()
+                        if (rejected) return@launch
+                        if (
+                            error is ApiFailure.Network &&
+                                error.connectionFailed &&
+                                !hasProjectReceipt(rename.eventId)
+                        ) {
+                            unresolvedProjectRenames[rename.id] =
+                                rename.copy(connectionFailed = true)
+                            return@launch
+                        }
+                        null
                     }
-                }
                 requireCurrent()
+                if (receipt != null) {
+                    if (projectRename === rename) {
+                        projectRename = null
+                        publishRenameReceipt(rename, receipt, baseline, snapshotCursor)
+                    }
+                    invalidate()
+                    return@launch
+                }
                 val readBack = refreshAfterWrite()
+                if (projectRename !== rename) return@launch
                 val confirmedName = confirmedRows().firstOrNull { it.id == rename.id }?.name
                 // The stream can deliver the receipt before the write response is lost.
                 confirmedByReadback =
@@ -511,27 +520,29 @@ internal class ProjectListOwner(
                     unresolvedProjectRenames[rename.id] = rename.copy(connectionFailed = false)
                 }
             } finally {
-                projectRename = null
-                if (current()) {
-                    val snapshot = state
-                    // The exact event may have been observed while the response was in flight.
-                    val settled =
-                        when {
-                            confirmedByReadback ->
-                                snapshot.copy(
-                                    confirmedRenameIds =
-                                        snapshot.confirmedRenameIds + (rename.id to rename.eventId),
-                                )
-                            rejected &&
-                                snapshot.confirmedRenameIds[rename.id] != rename.eventId &&
-                                !hasProjectReceipt(rename.eventId) ->
-                                snapshot.copy(
-                                    renameRejection =
-                                        ProjectRenameRejection(rename.id, rename.eventId),
-                                )
-                            else -> snapshot
-                        }
-                    publishProjects(settled)
+                if (projectRename === rename) {
+                    projectRename = null
+                    if (current()) {
+                        val snapshot = state
+                        val settled =
+                            when {
+                                confirmedByReadback ->
+                                    snapshot.copy(
+                                        confirmedRenameIds =
+                                            snapshot.confirmedRenameIds +
+                                                (rename.id to rename.eventId),
+                                    )
+                                rejected &&
+                                    snapshot.confirmedRenameIds[rename.id] != rename.eventId &&
+                                    !hasProjectReceipt(rename.eventId) ->
+                                    snapshot.copy(
+                                        renameRejection =
+                                            ProjectRenameRejection(rename.id, rename.eventId),
+                                    )
+                                else -> snapshot
+                            }
+                        publishProjects(settled)
+                    }
                 }
             }
         }
@@ -670,8 +681,10 @@ internal class ProjectListOwner(
                         confirmedRenameIds = confirmedRenameIds + (id to eventId)
                     }
                     projectRename?.let {
-                        if (observedProjectEvent(it.eventId))
+                        if (observedProjectEvent(it.eventId)) {
+                            projectRename = null
                             recordConfirmedRename(it.id, it.eventId)
+                        }
                     }
                     if (unresolvedProjectRenames.isNotEmpty()) {
                         val names = selected.rows.associate { it.id to it.name }
