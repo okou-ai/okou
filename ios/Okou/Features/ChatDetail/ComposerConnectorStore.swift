@@ -69,7 +69,7 @@ final class ComposerConnectorStore {
   private var accountPages: [ComposerConnectorAccountResources] = []
   private var accountWrite: Task<Void, Never>?
   @ObservationIgnored lazy var authorization = ConnectorActionStore(
-    service: authorizationService,
+    service: authorizationService, graph: graph,
     didContinue: { [weak self] in await self?.refresh() }, didFail: didFail)
 
   init(

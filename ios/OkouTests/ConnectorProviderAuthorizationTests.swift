@@ -88,7 +88,7 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
     let fixture = ChatHTTPFixture { try responses.response($0) }
     let continued = Mutex(false)
     let store = ConnectorActionStore(
-      service: ChatConnectorService(client: fixture.client),
+      service: ChatConnectorService(client: fixture.client), graph: makeTestWorkspaceGraph(),
       didContinue: { continued.withLock { $0 = true } }, didFail: { _ in },
       providerApplication: provider, pollSleep: clock.sleep)
     defer { store.close() }
@@ -113,7 +113,7 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
     let responses = ProviderAuthorizationFixture(slug: "gmail")
     let fixture = ChatHTTPFixture { try responses.response($0) }
     let store = ConnectorActionStore(
-      service: ChatConnectorService(client: fixture.client),
+      service: ChatConnectorService(client: fixture.client), graph: makeTestWorkspaceGraph(),
       didContinue: { XCTFail("Denial cannot continue") }, didFail: { _ in },
       providerApplication: ProviderApplication(opens: true), pollSleep: clock.sleep)
     defer { store.close() }
@@ -146,7 +146,7 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
     let fixture = ChatHTTPFixture { try responses.response($0) }
     let continued = Mutex(false)
     let store = ConnectorActionStore(
-      service: ChatConnectorService(client: fixture.client),
+      service: ChatConnectorService(client: fixture.client), graph: makeTestWorkspaceGraph(),
       didContinue: { continued.withLock { $0 = true } }, didFail: { _ in },
       providerApplication: provider, pollSleep: clock.sleep)
     defer { store.close() }
@@ -182,7 +182,7 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
     let responses = ProviderAuthorizationFixture()
     let fixture = ChatHTTPFixture { try responses.response($0) }
     let store = ConnectorActionStore(
-      service: ChatConnectorService(client: fixture.client),
+      service: ChatConnectorService(client: fixture.client), graph: makeTestWorkspaceGraph(),
       didContinue: {}, didFail: { _ in }, providerApplication: provider, pollSleep: clock.sleep)
     defer { store.close() }
     store.activate(.configuration(target: .builtin("strava"), threadID: nil))
@@ -210,7 +210,7 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
     let responses = ProviderAuthorizationFixture()
     let fixture = ChatHTTPFixture { try responses.response($0) }
     let store = ConnectorActionStore(
-      service: ChatConnectorService(client: fixture.client),
+      service: ChatConnectorService(client: fixture.client), graph: makeTestWorkspaceGraph(),
       didContinue: { XCTFail("Denial cannot continue") }, didFail: { _ in },
       providerApplication: ProviderApplication(opens: true), pollSleep: clock.sleep)
     defer { store.close() }

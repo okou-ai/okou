@@ -74,7 +74,7 @@ final class ConnectorSystemAuthenticationTests: XCTestCase {
       throw APIClientError.invalidResponse
     }
     let store = ConnectorActionStore(
-      service: ChatConnectorService(client: fixture.client),
+      service: ChatConnectorService(client: fixture.client), graph: makeTestWorkspaceGraph(),
       didContinue: { continued.withLock { $0 = true } }, didFail: { _ in },
       pollSleep: clock.sleep)
     defer { store.close() }
@@ -149,7 +149,7 @@ final class ConnectorSystemAuthenticationTests: XCTestCase {
         FixtureData.response(request, connected: connected.withLock { $0 }, grantKind: "auth-code"))
     }
     let store = ConnectorActionStore(
-      service: ChatConnectorService(client: fixture.client),
+      service: ChatConnectorService(client: fixture.client), graph: makeTestWorkspaceGraph(),
       didContinue: { continued.withLock { $0 = true } }, didFail: { _ in },
       pollSleep: clock.sleep)
     defer { store.close() }
