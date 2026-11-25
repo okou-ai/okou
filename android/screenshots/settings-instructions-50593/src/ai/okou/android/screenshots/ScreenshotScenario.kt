@@ -38,6 +38,7 @@ import androidx.test.uiautomator.Until
 import java.nio.file.Files
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlin.math.abs
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -142,6 +143,12 @@ class ScreenshotScenario {
                 // Accessibility can expose either the caption or the button as a single node.
                 val bounds = node.visibleBounds
                 return bounds.centerX() to bounds.centerY()
+            }
+            fun assertActionPosition(expected: Pair<Int, Int>, node: UiObject2) {
+                val actual = actionPosition(node)
+                // Caption widths can round their integer center one pixel differently.
+                assertTrue("Action moved from $expected to $actual", abs(expected.first - actual.first) <= 1)
+                assertEquals(expected.second, actual.second)
             }
             fun editor(expectedText: String? = null) =
                 checkNotNull(
@@ -275,8 +282,8 @@ class ScreenshotScenario {
             val cancelPosition = actionPosition(control(R.string.settings_cancel))
             click(R.string.instructions_save)
             reveal(app.getString(R.string.settings_saving))
-            assertEquals(savePosition, actionPosition(text(app.getString(R.string.settings_saving))))
-            assertEquals(cancelPosition, actionPosition(text(app.getString(R.string.settings_cancel))))
+            assertActionPosition(savePosition, text(app.getString(R.string.settings_saving)))
+            assertActionPosition(cancelPosition, text(app.getString(R.string.settings_cancel)))
             assertEquals(InstructionsPhase.Saving, model.uiState.value.phase)
             assertFalse(model.uiState.value.canSave)
             assertEquals(finalText, editor().text)
@@ -319,7 +326,7 @@ class ScreenshotScenario {
             assertTrue("The check performs a read", checkEntered.await(10, TimeUnit.SECONDS))
             reveal(app.getString(R.string.instructions_checking))
             assertEquals(InstructionsPhase.Checking, model.uiState.value.phase)
-            assertEquals(checkPosition, actionPosition(text(app.getString(R.string.instructions_save))))
+            assertActionPosition(checkPosition, text(app.getString(R.string.instructions_save)))
             assertEquals(editorBounds, editor().visibleBounds)
             assertEquals(pendingText, editor().text)
             assertEquals(putRequests + 1, fixture.requests.count { it.method == "PUT" })
