@@ -104,6 +104,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.RemoteDevices]: {
+    maintainer: "liangyou@okou.ai",
+    displayName: "Remote devices",
+    description: "Manage remote channels and access at the device level.",
+    enabled: false,
+  },
   [FeatureSwitchKey.MemberConnectorAccountAccess]: {
     maintainer: "liangyou@okou.ai",
     displayName: "Member-wide connector account access",

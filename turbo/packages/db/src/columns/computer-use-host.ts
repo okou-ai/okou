@@ -12,6 +12,7 @@ export function computerUseHostColumns() {
     userId: text("user_id").notNull(),
     installationId: uuid("installation_id"),
     displayName: text("display_name").notNull(),
+    remoteDeviceId: uuid("remote_device_id"),
     sessionId: text("session_id"),
     sessionValidatedAt: timestamp("session_validated_at"),
     connectionGeneration: integer("connection_generation").default(0).notNull(),
