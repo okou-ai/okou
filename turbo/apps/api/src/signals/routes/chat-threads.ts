@@ -183,19 +183,35 @@ const listChatThreadLifecycleEventsInner$ = computed(async (get) => {
   };
 });
 
-const listChatIndicatorsInner$ = computed(async (get) => {
-  const auth = get(organizationAuthContext$);
-  const query = get(queryOf(chatThreadsContract.indicators));
-  const indicators = await get(
-    chatIndicators({
-      userId: auth.userId,
-      orgId: auth.orgId,
-      includeActiveUnread: query.includeActiveUnread === "true",
-    }),
-  );
+export function createChatIndicatorsRoute(activeLimit: number): RouteEntry {
+  const listChatIndicators$ = computed(async (get) => {
+    const auth = get(organizationAuthContext$);
+    const query = get(queryOf(chatThreadsContract.indicators));
+    const indicators = await get(
+      chatIndicators({
+        userId: auth.userId,
+        orgId: auth.orgId,
+        includeActiveUnread: query.includeActiveUnread === "true",
+        activeLimit,
+      }),
+    );
 
-  return { status: 200 as const, body: indicators };
-});
+    return { status: 200 as const, body: indicators };
+  });
+
+  return {
+    route: chatThreadsContract.indicators,
+    handler: authRoute(
+      {
+        requireOrganization: true,
+        missingOrganizationStatus: 401,
+        requiredCapability: "chat-thread:read",
+        oauthScope: "okou:chat:read",
+      },
+      listChatIndicators$,
+    ),
+  };
+}
 
 const catchUpChatEventsInner$ = command(
   async ({ get }, signal: AbortSignal) => {
@@ -396,18 +412,7 @@ const searchChatInner$ = computed(async (get) => {
 
 export const chatThreadRoutes: readonly RouteEntry[] = [
   ...chatRelationsRoutes,
-  {
-    route: chatThreadsContract.indicators,
-    handler: authRoute(
-      {
-        requireOrganization: true,
-        missingOrganizationStatus: 401,
-        requiredCapability: "chat-thread:read",
-        oauthScope: "okou:chat:read",
-      },
-      listChatIndicatorsInner$,
-    ),
-  },
+  createChatIndicatorsRoute(50),
   {
     route: chatThreadsContract.snapshot,
     handler: authRoute(
