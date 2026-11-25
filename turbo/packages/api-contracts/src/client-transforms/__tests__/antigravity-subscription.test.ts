@@ -1,6 +1,9 @@
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
-import { androidAntigravitySubscriptionTransforms as transforms } from "../antigravity-subscription";
+import {
+  androidAntigravitySubscriptionTransforms,
+  iosAntigravitySubscriptionTransforms,
+} from "../antigravity-subscription";
 
 function account(type: string, index: number) {
   return {
@@ -31,28 +34,35 @@ function runModel(model: string, providerType: string) {
   };
 }
 
-it("hides Antigravity subscriptions and models from installed Android builds", () => {
-  const codex = account("codex-oauth-token", 1);
-  expect(
-    transforms.subscriptions.transform({
-      subscriptions: [codex, account("antigravity", 2)],
-    }),
-  ).toEqual({ subscriptions: [codex] });
+describe.each([
+  ["Android", androidAntigravitySubscriptionTransforms],
+  ["iOS", iosAntigravitySubscriptionTransforms],
+])("installed %s builds", (_, transforms) => {
+  it("hides Antigravity subscriptions and models", () => {
+    const codex = account("codex-oauth-token", 1);
+    expect(
+      transforms.subscriptions.transform({
+        subscriptions: [codex, account("antigravity", 2)],
+      }),
+    ).toEqual({ subscriptions: [codex] });
 
-  const gpt = runModel("gpt-6.1-sol", "codex-oauth-token");
-  expect(
-    transforms.runModels.transform({
-      models: [gpt, runModel("gemini-4-neon", "antigravity")],
-    }),
-  ).toEqual({ models: [gpt] });
-});
+    const gpt = runModel("gpt-6.1-sol", "codex-oauth-token");
+    expect(
+      transforms.runModels.transform({
+        models: [gpt, runModel("gemini-4-neon", "antigravity")],
+      }),
+    ).toEqual({ models: [gpt] });
+  });
 
-it("passes other single accounts through and rejects an Antigravity one", () => {
-  const claude = account("claude-code-oauth-token", 3);
-  expect(transforms.activate.transform(claude)).toEqual(claude);
-  const completed = { status: "complete", created: true, provider: claude };
-  expect(transforms.claudeCodeComplete.transform(completed)).toEqual(completed);
-  expect(() => {
-    return transforms.activate.transform(account("antigravity", 4));
-  }).toThrow("Android cannot decode an Antigravity subscription");
+  it("passes other single accounts through and rejects an Antigravity one", () => {
+    const claude = account("claude-code-oauth-token", 3);
+    expect(transforms.activate.transform(claude)).toEqual(claude);
+    const completed = { status: "complete", created: true, provider: claude };
+    expect(transforms.claudeCodeComplete.transform(completed)).toEqual(
+      completed,
+    );
+    expect(() => {
+      return transforms.activate.transform(account("antigravity", 4));
+    }).toThrow("Native apps cannot decode an Antigravity subscription");
+  });
 });

@@ -1,4 +1,7 @@
-import { androidAntigravitySubscriptionTransforms } from "@okouai/api-contracts/client-transforms/antigravity-subscription";
+import {
+  androidAntigravitySubscriptionTransforms,
+  iosAntigravitySubscriptionTransforms,
+} from "@okouai/api-contracts/client-transforms/antigravity-subscription";
 import { command } from "ccstate";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -16,7 +19,10 @@ const listRunModels$ = command(async ({ set }, signal: AbortSignal) => {
 export const runModelsRoutes: readonly RouteEntry[] = [
   {
     route: runModelsMainContract.list,
-    responseTransforms: [androidAntigravitySubscriptionTransforms.runModels],
+    responseTransforms: [
+      iosAntigravitySubscriptionTransforms.runModels,
+      androidAntigravitySubscriptionTransforms.runModels,
+    ],
     handler: authRoute(
       {
         requireOrganization: true,

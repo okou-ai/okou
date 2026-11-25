@@ -1,4 +1,7 @@
-import { androidAntigravitySubscriptionTransforms } from "@okouai/api-contracts/client-transforms/antigravity-subscription";
+import {
+  androidAntigravitySubscriptionTransforms,
+  iosAntigravitySubscriptionTransforms,
+} from "@okouai/api-contracts/client-transforms/antigravity-subscription";
 import { enqueueSubscriptionRecovery$ } from "../services/subscription-switch-recovery.service";
 import { waitUntil } from "../context/wait-until";
 import { continueIntegrationRecovery$ } from "../services/integration-recovery-continuation.service";
@@ -182,6 +185,7 @@ export const claudeCodeDeviceAuthRoutes: readonly RouteEntry[] = [
   {
     route: claudeCodeDeviceAuthContract.complete,
     responseTransforms: [
+      iosAntigravitySubscriptionTransforms.claudeCodeComplete,
       androidAntigravitySubscriptionTransforms.claudeCodeComplete,
     ],
     handler: authRoute(

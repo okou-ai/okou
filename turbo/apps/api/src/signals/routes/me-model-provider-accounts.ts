@@ -1,4 +1,7 @@
-import { androidAntigravitySubscriptionTransforms } from "@okouai/api-contracts/client-transforms/antigravity-subscription";
+import {
+  androidAntigravitySubscriptionTransforms,
+  iosAntigravitySubscriptionTransforms,
+} from "@okouai/api-contracts/client-transforms/antigravity-subscription";
 import {
   personalModelProviderAccountsByIdContract,
   personalSubscriptionsContract,
@@ -336,7 +339,10 @@ export const meModelProviderAccountRoutes: readonly RouteEntry[] = [
   },
   {
     route: personalModelProviderAccountsByIdContract.activate,
-    responseTransforms: [androidAntigravitySubscriptionTransforms.activate],
+    responseTransforms: [
+      iosAntigravitySubscriptionTransforms.activate,
+      androidAntigravitySubscriptionTransforms.activate,
+    ],
     handler: authRoute(
       { ...auth, requiredCapability: "subscription:switch" },
       activateInner$,
