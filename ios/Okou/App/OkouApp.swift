@@ -393,10 +393,7 @@ private struct WorkspaceRootView: View {
       UIApplication.shared.sendAction(
         #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
-    .modifier(
-      WorkspaceSelectionChange(store: store) { id in
-        if id == nil { taglineIndex = Int.random(in: 0..<64) }
-      })
+    .modifier(NewChatTaglineReset(store: store, taglineIndex: $taglineIndex))
   }
 
   private var greetingText: String {
@@ -460,19 +457,21 @@ private struct WorkspaceWidgetPublisher: View {
   }
 }
 
-/// Reacts to a change of the selected chat, which it reads from the workspace session's graph,
-/// so it applies under the workspace's Store provider.
-private struct WorkspaceSelectionChange: ViewModifier {
-  let action: (String?) -> Void
+/// Picks a new tagline when the selection clears. The selection is read from the workspace
+/// session's graph, so this applies under the workspace's Store provider.
+private struct NewChatTaglineReset: ViewModifier {
+  @Binding var taglineIndex: Int
   @ResolvedValue private var selection: String??
 
-  init(store: WorkspaceStore, action: @escaping (String?) -> Void) {
-    self.action = action
+  init(store: WorkspaceStore, taglineIndex: Binding<Int>) {
+    _taglineIndex = taglineIndex
     _selection = ResolvedValue(store.selectedThreadValue)
   }
 
   func body(content: Content) -> some View {
-    content.onChange(of: selection ?? nil) { _, id in action(id) }
+    content.onChange(of: selection ?? nil) { _, id in
+      if id == nil { taglineIndex = Int.random(in: 0..<64) }
+    }
   }
 }
 
