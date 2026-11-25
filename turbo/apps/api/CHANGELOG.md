@@ -10,6 +10,17 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.123.1](https://github.com/okou-ai/okou/compare/api-v2.123.0...api-v2.123.1) (2026-11-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.875.0
+    * @okouai/db bumped to 2.67.3
+    * @okouai/pi-agent-runtime bumped to 1.52.69
+
 ## [2.123.0](https://github.com/okou-ai/okou/compare/api-v2.122.0...api-v2.123.0) (2026-11-24)
 
 
