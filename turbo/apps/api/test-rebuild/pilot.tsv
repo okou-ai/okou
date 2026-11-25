@@ -43,7 +43,7 @@ account-org	src/signals/routes/__tests__/banking.test.ts	banking-013	planned
 account-org	src/signals/routes/__tests__/banking.test.ts	banking-014	planned		
 artifacts	src/signals/routes/__tests__/artifact-downloads.test.ts	artifact-downloads-001	planned		
 artifacts	src/signals/routes/__tests__/artifact-downloads.test.ts	artifact-downloads-003	planned		
-artifacts	src/signals/routes/__tests__/artifact-downloads.test.ts	artifact-downloads-007	planned		
+artifacts	src/signals/routes/__tests__/artifact-downloads.test.ts	artifact-downloads-007	rewritten	131.2	
 artifacts	src/signals/routes/__tests__/artifact-downloads.test.ts	artifact-downloads-008	planned		
 artifacts	src/signals/routes/__tests__/artifact-downloads.test.ts	artifact-downloads-009	planned		
 artifacts	src/signals/routes/__tests__/host-preview.test.ts	host-preview-001	planned		
