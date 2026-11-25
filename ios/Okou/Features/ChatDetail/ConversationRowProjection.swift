@@ -7,6 +7,8 @@ struct ConversationRowProjection {
   let conversation: ConversationStore
   /// The conversation's graph value for this render; ChatDetailView resolves it.
   let transcript: ConversationProjection.Value
+  /// Whether a send is in flight, from the delivery state ChatDetailView resolves.
+  let isSending: Bool
   private var history: ChatHistory { transcript.history ?? .empty }
 
   var rows: [ConversationCollectionRow] {
@@ -63,7 +65,7 @@ struct ConversationRowProjection {
           .message(
             message, showsAvatar: !continuesGroup, topSpacing: spacing,
             pendingRetry: pendingRetry,
-            isSending: pendingRetry == true && conversation.isSending, isWorkHistory: isWorkHistory,
+            isSending: pendingRetry == true && isSending, isWorkHistory: isWorkHistory,
             showsActions: !conversation.sharing.isSelecting && !isWorkHistory
               && pendingRetry == nil && endsTurn(at: index, in: items))
         )

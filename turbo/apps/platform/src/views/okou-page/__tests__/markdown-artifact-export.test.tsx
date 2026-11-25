@@ -26,6 +26,7 @@ import {
   mockAttachmentChat,
   publicArtifactUrl,
 } from "./chat-attachment-test-helpers.ts";
+import { pdfServices, readSavedPdf } from "./message-export-boundaries.ts";
 
 const context = testContext();
 const ARTIFACT_ID = "00000000-0000-4000-8000-000000000951";
@@ -50,6 +51,7 @@ const EXPORTS = [
 async function openExportMenu(
   tier: "limited-free-1" | "pro",
   url = SOURCE_URL,
+  source = "# Summary report\n\nThe launch plan is ready.",
 ): Promise<HTMLElement> {
   context.mocks.api(billingStatusContract.get, ({ respond }) => {
     return respond(200, {
@@ -60,7 +62,7 @@ async function openExportMenu(
     });
   });
   context.mocks.http.get(SOURCE_URL, () => {
-    return HttpResponse.text("# Summary report\n\nThe launch plan is ready.", {
+    return HttpResponse.text(source, {
       headers: { "Content-Type": "text/markdown" },
     });
   });
@@ -147,6 +149,33 @@ test.each(EXPORTS)(
     expect(browser.downloads).toStrictEqual([]);
   },
 );
+
+test("Markdown artifact PDF exports preserve Unicode subscripts and superscripts", async () => {
+  const browser = pdfServices(context, "summary");
+  const menu = await openExportMenu(
+    "pro",
+    SOURCE_URL,
+    "# Summary report\n\nF + CHD₃ → HF + CD₃\n\nν₁ = 1; mol⁻¹",
+  );
+  click(await findNamedMenuItem("Download as PDF", menu));
+  await waitFor(() => {
+    expect(browser.downloads).toHaveLength(1);
+  });
+  const download = browser.downloads[0];
+  expect(download?.filename).toBe("summary.pdf");
+  if (!download?.blob) {
+    throw new Error("Expected a downloaded PDF");
+  }
+  const pages = await readSavedPdf(download.blob);
+  const text = pages
+    .map((page) => {
+      return page.text;
+    })
+    .join("")
+    .replace(/\s/gu, "");
+  expect(text).toContain("F+CHD₃→HF+CD₃");
+  expect(text).toContain("ν₁=1;mol⁻¹");
+});
 
 test.each(EXPORTS)(
   "Pro Markdown $label exports download the expected filename and worker bytes",

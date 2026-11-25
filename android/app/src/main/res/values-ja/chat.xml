@@ -111,4 +111,9 @@
     <string name="chat_rename_save_unconfirmed">保存結果はまだ確認できていません。</string>
     <string name="chat_title_saved">チャット名を保存しました</string>
     <string name="chat_project_name_saved">プロジェクト名を保存しました</string>
+    <string name="inline_image_loading">画像を読み込み中…</string>
+    <string name="inline_image_no_thumbnail">サムネイルを表示できません</string>
+    <string name="inline_image_unavailable">画像を表示できません</string>
+    <string name="inline_image_view_original">元の画像を表示</string>
+    <string name="inline_image_open_link">リンクを開く</string>
 </resources>

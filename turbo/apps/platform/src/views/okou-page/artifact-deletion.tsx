@@ -39,15 +39,11 @@ export function ArtifactDeleteMoreMenu({
   triggerRef,
   onDelete,
   onOpenChange,
-  disabled = false,
-  loading = false,
   iconSize = 16,
 }: {
   readonly triggerRef?: Ref<HTMLButtonElement>;
   readonly onDelete: () => void;
   readonly onOpenChange?: ComponentProps<typeof DropdownMenu>["onOpenChange"];
-  readonly disabled?: boolean;
-  readonly loading?: boolean;
   readonly iconSize?: number;
 }) {
   const { t } = useTranslation();
@@ -73,17 +69,8 @@ export function ArtifactDeleteMoreMenu({
         </DropdownMenuTrigger>
       </ArtifactActionTooltip>
       <DropdownMenuContent align="end" sideOffset={6}>
-        <DropdownMenuItem
-          className="text-destructive"
-          disabled={disabled}
-          aria-busy={loading}
-          onClick={onDelete}
-        >
-          {loading ? (
-            <Loader2 size={14} className="animate-spin" />
-          ) : (
-            <Trash2 size={14} />
-          )}
+        <DropdownMenuItem className="text-destructive" onClick={onDelete}>
+          <Trash2 size={14} />
           {t(($) => {
             return $.artifacts.deletion.delete;
           })}

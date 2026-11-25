@@ -70,6 +70,19 @@ export function createArtifactDeletionSession(
   const target$ = state<ArtifactSummary | null>(null);
   const trigger$ = state<HTMLElement | null>(null);
   const completed$ = state(false);
+  const requestFromSummary$ = command(
+    (
+      { set },
+      target: ArtifactSummary,
+      trigger: HTMLElement,
+      signal: AbortSignal,
+    ) => {
+      signal.throwIfAborted();
+      set(trigger$, trigger);
+      set(completed$, false);
+      set(target$, target);
+    },
+  );
   // Shared pages carry source resource IDs. Only an owner-scoped catalog read
   // can resolve the identity accepted by deletion, including for public links.
   const detail$ = computed(async (get) => {
@@ -77,9 +90,7 @@ export function createArtifactDeletionSession(
     if (!request) {
       return null;
     }
-    if (surface !== "catalog-row") {
-      get(artifactCatalogRevision$);
-    }
+    get(artifactCatalogRevision$);
     // A token refresh must not reload the action and unmount its focus target.
     if (surface === "page" && !get(authenticatedSessionKey$)) {
       return null;
@@ -130,14 +141,13 @@ export function createArtifactDeletionSession(
     target$: computed((get) => {
       return get(target$);
     }),
+    requestFromSummary$,
     request$: command(
       async ({ get, set }, trigger: HTMLElement, signal: AbortSignal) => {
         const detail = await get(detail$);
         signal.throwIfAborted();
         if (detail) {
-          set(trigger$, trigger);
-          set(completed$, false);
-          set(target$, detail);
+          set(requestFromSummary$, detail, trigger, signal);
         }
       },
     ),

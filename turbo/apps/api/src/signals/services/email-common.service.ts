@@ -385,8 +385,12 @@ function fromAddressForTemplate(template: EmailTemplate): string {
   // Resolve the sender at delivery so legacy or malformed outbox snapshots
   // cannot bypass the user-facing email brand policy.
   switch (template.template) {
-    case "artifact-invitation":
-    case "hosted-site-invitation":
+    case "artifact-invitation": {
+      return artifactInvitationTemplate.from;
+    }
+    case "hosted-site-invitation": {
+      return hostedSiteInvitationTemplate.from;
+    }
     case "credit-low-balance": {
       return buildTeamFromAddress();
     }

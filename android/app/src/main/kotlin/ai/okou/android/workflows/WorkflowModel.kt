@@ -26,6 +26,7 @@ import kotlinx.coroutines.launch
 
 internal data class WorkflowState(
     val catalog: List<WorkflowSummary>? = null,
+    val catalogRefreshing: Boolean = false,
     val rules: Map<String, List<WorkflowAutomation>>? = null,
     val connections: Set<String>? = null,
     val detail: WorkflowDetail? = null,
@@ -123,7 +124,7 @@ internal constructor(
             }
             refresh(catalogScope)
         } else if (!visible) {
-            catalogRead.cancel()
+            cancelCatalogRead()
         }
     }
 
@@ -141,9 +142,16 @@ internal constructor(
     }
 
     private fun stopWorkflowReads(keepCatalog: Boolean = false) {
-        if (!keepCatalog) catalogRead.cancel()
+        if (!keepCatalog) cancelCatalogRead()
         rulesRead.cancel()
         cancelDetailRead()
+    }
+
+    private fun cancelCatalogRead() {
+        catalogRead.cancel()
+        if (mutable.value.catalogRefreshing) {
+            mutable.value = mutable.value.copy(catalogRefreshing = false)
+        }
     }
 
     private fun cancelDetailRead() {
@@ -287,10 +295,13 @@ internal constructor(
     private fun loadCatalog() {
         refreshRange(
             catalogRead,
+            started = { mutable.value = mutable.value.copy(catalogRefreshing = true) },
             fetch = { service.workflows().filter { it.official == null } },
             receive = ::publishCatalog,
             denied = ::clearAccess,
-            failure = { mutable.value = mutable.value.copy(catalogFailure = it) },
+            failure = {
+                mutable.value = mutable.value.copy(catalogRefreshing = false, catalogFailure = it)
+            },
         )
     }
 
@@ -330,12 +341,14 @@ internal constructor(
 
     private fun <T> refreshRange(
         range: WorkflowRangeRead,
+        started: () -> Unit = {},
         fetch: suspend () -> T,
         receive: (T, Map<String, WorkflowDirectoryUpdate?>) -> Unit,
         denied: () -> Unit,
         failure: (WorkflowReadFailure) -> Unit,
     ) {
         if (range.job?.isActive == true) return
+        started()
         range.job = viewModelScope.launch {
             retryReads(failure) {
                 val attempt = WorkflowRangeAttempt(++readSequence)
@@ -400,6 +413,7 @@ internal constructor(
         mutable.value =
             current.copy(
                 catalog = rows,
+                catalogRefreshing = false,
                 catalogFailure = null,
                 rules = if (removed.isEmpty()) current.rules else current.rules?.minus(removed),
                 detail = current.detail?.let { details[it.id]?.detail },
@@ -444,6 +458,7 @@ internal constructor(
         mutable.value =
             mutable.value.copy(
                 catalog = null,
+                catalogRefreshing = false,
                 rules = null,
                 connections = null,
                 detail = null,
@@ -770,7 +785,7 @@ internal constructor(
                 ruleId != null && ruleId in state.toggles -> state.toggles - ruleId
                 else -> state.toggles
             }
-        mutable.value = state.copy(writing = true, toggles = toggles, issue = null)
+        mutable.value = mutable.value.copy(writing = true, toggles = toggles, issue = null)
         viewModelScope.launch {
             try {
                 // await cancellation / scope checks before publishing from a retired session.

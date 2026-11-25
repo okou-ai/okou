@@ -19,7 +19,8 @@ final class FailureBillingRecoveryTests: XCTestCase {
     let failure = try XCTUnwrap(conversation.messages.last?.failure)
     let initial = await conversation.readFailureState(failure)
     let transcript = ConversationRowProjection(
-      conversation: conversation, transcript: conversation.currentTranscript
+      conversation: conversation, transcript: conversation.currentTranscript,
+      isSending: conversation.isSending
     ).rows
     XCTAssertTrue(transcript.contains { $0.message?.text == "Already generated content." })
     XCTAssertFalse(try XCTUnwrap(initial.billing).hasCredits)
@@ -178,7 +179,7 @@ final class FailureBillingRecoveryTests: XCTestCase {
     let messages = conversation.messages
     fixture.state.value.withLock { $0.billingStatus = 426 }
     await conversation.refreshFailureAccounts()
-    try await waitForBusinessResult { conversation.needsUpgrade }
+    try await waitForBusinessResult(watching: conversation) { conversation.needsUpgrade }
     let context = try XCTUnwrap(conversation.failureContext)
     let original = try context.store.get(XCTUnwrap(context.billing))
     guard case .failure(let error) = await original.result else {

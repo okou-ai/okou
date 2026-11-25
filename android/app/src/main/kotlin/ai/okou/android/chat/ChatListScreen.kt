@@ -20,7 +20,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -110,7 +109,6 @@ internal val ChatListMotionEasing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
 private val projectPlacement = tween<IntOffset>(ProjectMotionMillis, easing = ChatListMotionEasing)
 private val projectChildFade = tween<Float>(ProjectMotionMillis, easing = ChatListMotionEasing)
 private val immediatePlacement = snap<IntOffset>()
-internal const val ChatListPressedOpacity = 0.09f
 
 @Composable
 private fun chatListRowBackground(
@@ -119,16 +117,9 @@ private fun chatListRowBackground(
 ): Color {
     val colors = MaterialTheme.colorScheme
     if (selected) return colors.secondaryContainer
-    val pressed by interactions.collectIsPressedAsState()
     val hovered by interactions.collectIsHoveredAsState()
-    return when {
-        pressed ->
-            colors.onBackground
-                .copy(alpha = ChatListPressedOpacity)
-                .compositeOver(colors.background)
-        hovered -> colors.onBackground.copy(alpha = 0.05f).compositeOver(colors.background)
-        else -> colors.background
-    }
+    return if (hovered) colors.onBackground.copy(alpha = 0.05f).compositeOver(colors.background)
+    else colors.background
 }
 
 @Composable
@@ -966,7 +957,7 @@ private fun ProjectRow(
                 .updateFocusOutline(ChatListRowShape, colors.onBackground, keyboardOnly = true)
                 .combinedClickable(
                     interactionSource = interactions,
-                    indication = null,
+                    indication = ChatPressRipple,
                     role = Role.Button,
                     onClick = toggle,
                     onLongClick = openMenu,
@@ -1172,7 +1163,7 @@ private fun ChatRow(
                 .updateFocusOutline(ChatListRowShape, colors.onBackground, keyboardOnly = true)
                 .combinedClickable(
                     interactionSource = interactions,
-                    indication = null,
+                    indication = ChatPressRipple,
                     enabled = enabled,
                     onClick = open,
                     onLongClick = openMenu,

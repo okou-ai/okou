@@ -613,6 +613,22 @@ internal fun ConversationRoute(
                 onLinkFocusRestored,
             )
         }
+        val sourceFocus = artifactActions?.restoreKey ?: linkFocusKey
+        val imageReply = imageFocusReply(sourceFocus)
+        if (imageReply != null && readingReady) {
+            LaunchedEffect(sourceFocus, timeline) {
+                if (
+                    timeline.none { it is ConversationMessage && it.includes(imageReply) } &&
+                        timelineFocus.requestFocus()
+                ) {
+                    if (artifactActions?.restoreKey != null) artifactActions.restored()
+                    else onLinkFocusRestored()
+                }
+            }
+        }
+        val visibleArtifacts =
+            if (imageReply != null && !readingReady) artifactActions?.copy(restoreKey = null)
+            else artifactActions
         val contentWidth = Modifier.widthIn(max = ConversationContentMaxWidth)
         Column(modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
@@ -707,7 +723,7 @@ internal fun ConversationRoute(
                                 ) {
                                     ConversationMessageRow(
                                         entry,
-                                        artifactActions = artifactActions,
+                                        artifactActions = visibleArtifacts,
                                         findHighlight = highlight,
                                         links = links,
                                         beforeEarlierRepliesResize = {
@@ -756,21 +772,30 @@ internal fun ConversationRoute(
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     if (jump != null) {
-                        Box(Modifier.fillMaxWidth()) {
+                        val compactJump = window.height < 480
+                        val reportJumpPosition =
+                            stopPlacement?.let { placement ->
+                                DisposableEffect(placement) {
+                                    onDispose { placement.reportJumpBounds(null) }
+                                }
+                                Modifier.onGloballyPositioned {
+                                    placement.reportJumpBounds(it.boundsInRoot())
+                                }
+                            } ?: Modifier
+                        Box(
+                            Modifier.fillMaxWidth()
+                                .padding(
+                                    bottom =
+                                        if (feedbackInConversation || paneFeedbackVisible) 8.dp
+                                        else 4.dp,
+                                    end = if (compactJump) 12.dp else 0.dp,
+                                ),
+                            contentAlignment =
+                                if (compactJump) Alignment.BottomEnd else Alignment.BottomCenter,
+                        ) {
                             ConversationJump(
                                 jump,
-                                modifier =
-                                    Modifier.align(
-                                            if (window.height < 480) Alignment.BottomEnd
-                                            else Alignment.BottomCenter,
-                                        )
-                                        .padding(
-                                            bottom =
-                                                if (feedbackInConversation || paneFeedbackVisible)
-                                                    8.dp
-                                                else 4.dp,
-                                            end = if (window.height < 480) 12.dp else 0.dp,
-                                        ),
+                                modifier = reportJumpPosition,
                                 onClick = {
                                     scope.launch {
                                         position.scrollToItem(0)
@@ -797,8 +822,9 @@ internal fun ConversationRoute(
                             if (composer != null && !missing) ChatComposerTopInset else 0.dp
                         WorkspaceFeedbackHost(
                             controlSnackbar,
-                            stopFeedbackBounds.padding(bottom = 8.dp - composerTopInset),
+                            Modifier.padding(bottom = 8.dp - composerTopInset),
                             manageTimeout = false,
+                            surfaceModifier = stopFeedbackBounds,
                         )
                     }
                 }

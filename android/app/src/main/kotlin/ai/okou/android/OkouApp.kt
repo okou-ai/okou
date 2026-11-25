@@ -64,6 +64,7 @@ import ai.okou.android.settings.DefaultModelSettings
 import ai.okou.android.state.ArtifactsDestination
 import ai.okou.android.state.ChatConnectorVisit
 import ai.okou.android.state.ConversationLinkReturn
+import ai.okou.android.state.RetainedExternalImagePreview
 import ai.okou.android.state.SearchRoute
 import ai.okou.android.state.SettingsDestination
 import ai.okou.android.state.WorkflowConnectorVisit
@@ -281,6 +282,9 @@ internal fun OkouApp(
         )
             WorkspaceTarget.List
         else requestedTarget
+    LaunchedEffect(chatArtifacts, target) {
+        (target as? WorkspaceTarget.Chat)?.let { chatArtifacts?.inlineImages?.revisit(it.id) }
+    }
     var findVisit by remember(chats, target) { mutableStateOf<ConversationFindVisit?>(null) }
     // Window configuration changes on resize. IME insets only change the space inside the panes.
     val window = currentWindowSizeDp()
@@ -346,7 +350,10 @@ internal fun OkouApp(
     }
     DisposableEffect(workspaceSearch) { onDispose { workspaceSearch?.pauseReads() } }
     val inlineArtifactLink =
-        navigation.chatArtifactLink.takeIf {
+        when (val link = navigation.chatArtifactLink) {
+            RetainedExternalImagePreview -> chatArtifacts?.retainedExternalImageId()
+            else -> link
+        }.takeIf {
             thread != null &&
                 chatArtifacts != null &&
                 settings == null &&
@@ -1458,6 +1465,7 @@ internal fun OkouApp(
                                         rows,
                                         chatArtifacts != null,
                                         restoreFocus,
+                                        chatArtifacts?.inlineImages?.names(selected.id),
                                     )
                             }
                         }
@@ -1687,6 +1695,7 @@ internal fun OkouApp(
                                 val workflowRead =
                                     remember(
                                         workflowState?.catalog,
+                                        workflowState?.catalogRefreshing,
                                         workflowState?.catalogFailure,
                                         searchState.keyword,
                                     ) {
@@ -1983,9 +1992,12 @@ internal fun OkouApp(
                                                             restored = {
                                                                 navigation =
                                                                     navigation.copy(
+                                                                        chatArtifactLink = null,
                                                                         chatArtifactFocusKey = null,
                                                                     )
                                                             },
+                                                            images = chatArtifacts.inlineImages,
+                                                            threadId = target.id,
                                                         ),
                                                 findTarget = find?.target,
                                                 linkPosition = linkPosition,

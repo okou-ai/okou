@@ -148,6 +148,7 @@ internal class ConversationStopPlacement {
     private var focusedInline: Boolean? = null
     private var slotBounds: Rect? = null
     private var feedbackBounds: Rect? = null
+    private var jumpBounds: Rect? = null
 
     fun reportInlineSlot(bounds: Rect?) {
         slotBounds = bounds
@@ -159,8 +160,17 @@ internal class ConversationStopPlacement {
         updatePlacement()
     }
 
+    fun reportJumpBounds(bounds: Rect?) {
+        jumpBounds = bounds
+        updatePlacement()
+    }
+
     private fun updatePlacement() {
-        val visible = slotBounds?.let { feedbackBounds?.overlaps(it) != true } == true
+        val target = slotBounds
+        val visible =
+            target != null &&
+                feedbackBounds?.overlaps(target) != true &&
+                jumpBounds?.overlaps(target) != true
         if (inline == visible) return
         transferFocusToInline = visible.takeIf { focusedInline == inline }
         inline = visible

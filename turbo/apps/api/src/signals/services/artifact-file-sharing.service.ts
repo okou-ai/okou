@@ -8,7 +8,7 @@ import { clerk$ } from "../external/clerk";
 import { findClerkUser } from "../external/clerk-users";
 import { writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
-import { buildTeamFromAddress } from "./email-common.service";
+import artifactInvitationTemplate from "../../lib/artifact-invitation-template.json";
 import type { ArtifactSharingResource } from "./artifact-sharing-resource.service";
 
 export const shareFileArtifact$ = command(
@@ -24,9 +24,11 @@ export const shareFileArtifact$ = command(
     if (args.recipient?.userId === args.resource.userId) {
       return { status: "self" as const };
     }
-    const inviter = args.recipient
-      ? null
-      : await findClerkUser(get(clerk$), args.resource.userId, signal);
+    const inviter = await findClerkUser(
+      get(clerk$),
+      args.resource.userId,
+      signal,
+    );
     const database = set(writeDb$);
     const [share] = await database
       .insert(artifactFileShares)
@@ -48,18 +50,11 @@ export const shareFileArtifact$ = command(
     if (!share) {
       throw new Error("Artifact sharing did not return its grant");
     }
-    if (share.userId !== null) {
-      return {
-        status: "ok" as const,
-        share: { id: share.id, email: share.email },
-        outboxId: null,
-      };
-    }
     await database
       .insert(emailOutbox)
       .values({
         id: share.id,
-        fromAddress: buildTeamFromAddress(),
+        fromAddress: artifactInvitationTemplate.from,
         toAddresses: args.email,
         subject: "You’re invited to view a file on Okou",
         template: {

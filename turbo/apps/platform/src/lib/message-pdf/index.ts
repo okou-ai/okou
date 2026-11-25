@@ -8,6 +8,7 @@ import {
 } from "../static-assets.ts";
 import { preparePdfAssets } from "./assets.ts";
 import { parseMessagePdfTree } from "./document.ts";
+import { PDF_SCRIPT_CHAR } from "./fonts.ts";
 import type { PdfWorkerRequest } from "./types.ts";
 import { readPdfResource } from "./urls.ts";
 import { runDocumentExportWorker } from "./worker-client.ts";
@@ -33,7 +34,14 @@ async function loadFont(
 }
 
 function requiredExtraFonts(tree: Root) {
-  const needed = { italic: false, boldItalic: false, emoji: false };
+  const needed = {
+    italic: false,
+    boldItalic: false,
+    emoji: false,
+    unicode: false,
+    unicodeItalic: false,
+    unicodeBoldItalic: false,
+  };
   const visit = (node: RootContent, bold: boolean, italic: boolean): void => {
     if (node.type === "text") {
       // Whitespace runs retain their emphasis during PDF font measurement.
@@ -43,6 +51,10 @@ function requiredExtraFonts(tree: Root) {
         needed.emoji ||= /[\p{Emoji_Presentation}\uFE0F\u20E3]/u.test(
           node.value,
         );
+        const unicode = PDF_SCRIPT_CHAR.test(node.value);
+        needed.unicode ||= unicode;
+        needed.unicodeItalic ||= unicode && italic && !bold;
+        needed.unicodeBoldItalic ||= unicode && italic && bold;
       }
     } else if (node.type === "element") {
       for (const child of node.children) {
@@ -121,15 +133,29 @@ export async function generateMessagePdfBlob(
   const readFont = (url: string) => {
     return loadFont(url, production, signal);
   };
-  const [assets, regularFont, boldFont, italicFont, boldItalicFont, emojiFont] =
-    await Promise.all([
-      preparePdfAssets(tree, resources.imageUrls, signal),
-      readFont(fontUrls.regular),
-      readFont(fontUrls.bold),
-      needed.italic ? readFont(fontUrls.italic) : undefined,
-      needed.boldItalic ? readFont(fontUrls.boldItalic) : undefined,
-      needed.emoji ? readFont(fontUrls.emoji) : undefined,
-    ]);
+  const [
+    assets,
+    regularFont,
+    boldFont,
+    italicFont,
+    boldItalicFont,
+    emojiFont,
+    unicodeRegularFont,
+    unicodeBoldFont,
+    unicodeItalicFont,
+    unicodeBoldItalicFont,
+  ] = await Promise.all([
+    preparePdfAssets(tree, resources.imageUrls, signal),
+    readFont(fontUrls.regular),
+    readFont(fontUrls.bold),
+    needed.italic ? readFont(fontUrls.italic) : undefined,
+    needed.boldItalic ? readFont(fontUrls.boldItalic) : undefined,
+    needed.emoji ? readFont(fontUrls.emoji) : undefined,
+    needed.unicode ? readFont(fontUrls.unicodeRegular) : undefined,
+    needed.unicode ? readFont(fontUrls.unicodeBold) : undefined,
+    needed.unicodeItalic ? readFont(fontUrls.unicodeItalic) : undefined,
+    needed.unicodeBoldItalic ? readFont(fontUrls.unicodeBoldItalic) : undefined,
+  ]);
   const request: PdfWorkerRequest = {
     baseUrl,
     tree,
@@ -139,6 +165,10 @@ export async function generateMessagePdfBlob(
     italicFont,
     boldItalicFont,
     emojiFont,
+    unicodeRegularFont,
+    unicodeBoldFont,
+    unicodeItalicFont,
+    unicodeBoldItalicFont,
   };
   const fonts = [
     regularFont,
@@ -146,6 +176,10 @@ export async function generateMessagePdfBlob(
     italicFont,
     boldItalicFont,
     emojiFont,
+    unicodeRegularFont,
+    unicodeBoldFont,
+    unicodeItalicFont,
+    unicodeBoldItalicFont,
   ].filter((font): font is ArrayBuffer => {
     return font !== undefined;
   });
