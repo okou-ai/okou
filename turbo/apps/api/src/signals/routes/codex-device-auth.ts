@@ -1,3 +1,4 @@
+import { androidAntigravitySubscriptionTransforms } from "@okouai/api-contracts/client-transforms/antigravity-subscription";
 import { enqueueSubscriptionRecovery$ } from "../services/subscription-switch-recovery.service";
 import { waitUntil } from "../context/wait-until";
 import { continueIntegrationRecovery$ } from "../services/integration-recovery-continuation.service";
@@ -186,6 +187,9 @@ export const codexDeviceAuthRoutes: readonly RouteEntry[] = [
   },
   {
     route: codexDeviceAuthContract.complete,
+    responseTransforms: [
+      androidAntigravitySubscriptionTransforms.codexComplete,
+    ],
     handler: authRoute(modelProviderWriteAuth, completeCodexDeviceAuthInner$),
   },
   {
