@@ -47,6 +47,20 @@ export const hostContract: ClientDescriptor<typeof OriginalHostContract> = {
       503: true,
     },
   },
+  siteDomainSetup: {
+    method: "GET",
+    path: "/api/host/sites/:siteId/domains/:domainId/setup",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      402: true,
+      403: true,
+      404: true,
+      409: true,
+      503: true,
+    },
+  },
   removeSiteDomain: {
     method: "DELETE",
     path: "/api/host/sites/:siteId/domains/:domainId",

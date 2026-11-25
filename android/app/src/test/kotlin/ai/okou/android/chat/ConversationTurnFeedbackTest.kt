@@ -3,6 +3,8 @@ package ai.okou.android.chat
 import ai.okou.android.OkouTheme
 import ai.okou.android.TestOkouApplication
 import ai.okou.android.WorkspaceFeedbackHost
+import android.content.res.Configuration
+import android.os.LocaleList
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -17,7 +19,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
@@ -48,6 +52,32 @@ import org.robolectric.annotation.GraphicsMode
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class ConversationTurnFeedbackTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @Test
+    fun completedSummaryUsesTheAppLanguageAndKeepsMinuteAndSecondUnits() {
+        val activity = compose.activity
+        val configuration =
+            Configuration(activity.resources.configuration).apply {
+                setLocales(LocaleList.forLanguageTags("zh-Hans"))
+            }
+        val resources = activity.createConfigurationContext(configuration).resources
+        compose.setContent {
+            CompositionLocalProvider(
+                LocalConfiguration provides configuration,
+                LocalResources provides resources,
+            ) {
+                OkouTheme {
+                    ConversationReplySummary(
+                        ReplySummary(ReplyPhase.Completed, 0, 83_500),
+                        2,
+                        false,
+                    ) {}
+                }
+            }
+        }
+
+        compose.onNodeWithText("共工作 1 分钟 24 秒 · 2 个步骤").assertExists()
+    }
 
     @Test
     fun textActionsExtendIntoTheGutterAndActivateOnRelease() {

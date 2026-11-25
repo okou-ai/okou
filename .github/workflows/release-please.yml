@@ -1714,6 +1714,18 @@ jobs:
                   type: mrkdwn
                   text: "*Database Migration* ❌ Migration failed\n📦 Version: `${{ needs.release-please.outputs.api_version }}`\n⏱️ `${{ steps.migration-duration.outputs.text }}`\n🔗 <${{ github.server_url }}/${{ github.repository }}/releases/tag/api-v${{ needs.release-please.outputs.api_version }}|View Release>\n🔗 <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
 
+      # Platform-paid Official Runs require their managed OpenRouter key before
+      # the API that routes them is promoted.
+      - name: Sync Proactive Model Key
+        id: proactive-model-key
+        if: ${{ needs.release-please.outputs.api_release_created == 'true' }}
+        run: |
+          cd turbo
+          pnpm -F @okouai/db db:sync-proactive-model-key
+        env:
+          DATABASE_URL: ${{ steps.get-db-url.outputs.database-url }}
+          OPENROUTER_PROACTIVE_API_KEY: ${{ secrets.OPENROUTER_PROACTIVE_API_KEY }}
+
       - name: Start GitHub Deployment
         id: deployment
         continue-on-error: true

@@ -21,10 +21,35 @@ internal class ChatRenameEditor(
     val target: WorkspaceRenameTarget,
     initialName: String,
     val restoreFocus: Boolean,
+    submission: RenameSubmission? = null,
 ) {
-    val baseline = initialName.trim()
-    val field = WorkspaceNameField(initialName)
-    var submitted by mutableStateOf<String?>(null)
+    var baseline by mutableStateOf(initialName)
+        private set
+
+    val field = WorkspaceNameField(submission?.name ?: initialName)
+    var submitted by mutableStateOf(submission)
+
+    fun updateConfirmedName(name: String, readOnly: Boolean) {
+        if (name == baseline) return
+        val input = field.input
+        if (
+            !readOnly &&
+                input.composition == null &&
+                normalizedRenameName(input.text) == normalizedRenameName(baseline)
+        ) {
+            val previousSelection = input.selection
+            input.edit {
+                replace(0, length, name)
+                selection =
+                    TextRange(
+                        previousSelection.start.coerceAtMost(length),
+                        previousSelection.end.coerceAtMost(length),
+                    )
+            }
+            field.focusedSelection = input.selection
+        }
+        baseline = name
+    }
 }
 
 internal class WorkspaceNameField(initialName: String = "") {
@@ -105,17 +130,32 @@ class WorkspaceNamePresentation : ViewModel() {
     ) {
         val thread =
             list.confirmedThreads.firstOrNull { it.id == id && it.hidden != true } ?: return
-        open(WorkspaceRenameTarget.Chat(id, fromConversation), thread.title.orEmpty(), restoreFocus)
+        val title = (list.threads.firstOrNull { it.id == id } ?: thread).title.orEmpty()
+        open(
+            WorkspaceRenameTarget.Chat(id, fromConversation),
+            title,
+            restoreFocus,
+            list.unconfirmedRenames[id],
+        )
     }
 
     internal fun openProject(id: String, restoreFocus: Boolean, list: ChatListUiState) {
         val project = list.projects.firstOrNull { it.id == id } ?: return
-        open(WorkspaceRenameTarget.Project(id), project.name, restoreFocus)
+        val submitted =
+            list.projectList.unconfirmedRenameAttempts[id]?.takeUnless {
+                id in list.projectList.connectionFailedRenames
+            }
+        open(WorkspaceRenameTarget.Project(id), project.name, restoreFocus, submitted)
     }
 
-    private fun open(target: WorkspaceRenameTarget, name: String, restoreFocus: Boolean) {
+    private fun open(
+        target: WorkspaceRenameTarget,
+        name: String,
+        restoreFocus: Boolean,
+        submission: RenameSubmission?,
+    ) {
         focusReturn = null
-        editor = ChatRenameEditor(target, name, restoreFocus)
+        editor = ChatRenameEditor(target, name, restoreFocus, submission)
     }
 
     internal fun dismiss(openEditor: ChatRenameEditor) {

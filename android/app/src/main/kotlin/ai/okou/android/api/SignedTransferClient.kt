@@ -75,7 +75,9 @@ class SignedTransferClient(
             http.newCall(request).awaitBytes(maximumBytes)
         } catch (error: IOException) {
             currentCoroutineContext().ensureActive()
-            error.httpRejection()?.let { throw ApiFailure.Http(it.status, null, null, null) }
+            error.httpRejection()?.let {
+                throw ApiFailure.Http(it.status, null, null, retryAfter(it.retryAfter))
+            }
             throw error
         }
     }

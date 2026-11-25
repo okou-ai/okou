@@ -201,6 +201,35 @@ internal abstract class WorkflowRootTestFixture {
 )
 internal class WorkflowRootTest : WorkflowRootTestFixture() {
     @Test
+    fun compactWorkflowBackRestoresTheActivatedDirectoryRow() = withHardwareKeyboard {
+        app.gate.countDown()
+        compose.onNodeWithContentDescription("Workflows").performClick()
+        val tag = "workflow_row_$WORKFLOW_RELEASE"
+        waitForTag(tag)
+        val row = compose.onNodeWithTag(tag)
+        row.pressEnter()
+        waitForTag("workflow_detail_title")
+
+        back()
+
+        row.assertIsDisplayed().assertIsFocused()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1180dp-h820dp")
+    fun wideWorkflowKeepsTheActivatedDirectoryRowFocused() = withHardwareKeyboard {
+        app.gate.countDown()
+        compose.onNodeWithContentDescription("Workflows").performClick()
+        val tag = "workflow_row_$WORKFLOW_RELEASE"
+        waitForTag(tag)
+        val row = compose.onNodeWithTag(tag)
+        row.pressEnter()
+        waitForTag("workflow_detail_title")
+
+        row.assertIsDisplayed().assertIsSelected().assertIsFocused()
+    }
+
+    @Test
     fun terminalCatalogFailureReplacesTheSkeletonBelowTheFilters() {
         val fixture = app.fixture
         val gate = app.gate

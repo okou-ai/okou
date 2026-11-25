@@ -508,36 +508,73 @@
     },
     "customDomain": {
       "addressHint": "Choose the full address used when you share this website.",
+      "automaticHint": "웹사이트 CNAME과 소유권 TXT를 설정합니다. 아래의 추가 인증서 레코드를 추가한 후 돌아와서 확인하세요.",
+      "automaticSetup": "웹사이트 레코드 설정",
+      "checkBeforeEditing": "DNS를 변경하기 전에 검증을 클릭하여 레코드를 확인하세요.",
+      "checkFailed": "조치 필요",
+      "checkNotChecked": "확인 전",
+      "checkPassed": "통과",
+      "checkPending": "대기 중",
       "checks": {
         "certificate": "HTTPS",
         "dns": "DNS connection",
-        "ownership": "Ownership"
+        "ownership": "Ownership",
+        "provider": "도메인 활성화",
+        "route": "웹사이트 라우팅"
       },
+      "checkUnavailable": "확인할 수 없음",
       "connect": "Connect a domain",
       "continue": "Continue",
       "copied": "Copied",
       "copyFailed": "Could not copy. Select the value to copy it.",
-      "copyRecord": "Copy {{type}} value",
+      "copyRecordName": "{{type}} 이름 {{name}} 복사",
+      "copyRecordValue": "{{type}} 값 {{name}} 복사",
       "disconnectConfirm": "This domain will be disconnected from this website.",
+      "dnsConfigured": "DNS가 설정되었습니다",
       "dnsHelp": "Add these records at your DNS provider, then click Verify",
       "domain": "Domain",
+      "findingProvider": "DNS 설정 방법을 확인하는 중…",
       "hostnameExample": "www.example.com",
       "httpsReady": "HTTPS ready",
+      "keepTxtValues": "같은 이름의 기존 TXT 값을 유지하세요. 각 값을 별도의 TXT 레코드로 추가하세요.",
       "lastChecked": "Last checked {{time}}",
       "manage": "Manage {{hostname}}",
+      "manualHint": "DNS 설정에 레코드를 복사한 후 돌아와서 확인하세요.",
       "needsSetup": "Finish setup",
+      "noDnsChanges": "DNS 레코드가 일치합니다. DNS를 변경할 필요가 없습니다.",
       "notChecked": "No verification yet",
       "okouUrl": "Okou URL",
+      "openDns": "{{provider}} DNS 열기",
       "ownDomain": "Enter a domain you own",
+      "recordMatched": "일치함",
+      "recordName": "이름",
+      "recordNeedsCheck": "아직 일치하지 않음",
+      "recordValue": "값",
       "remove": "Remove",
       "removeConfirm": "Your sharing link will return to {{url}}.",
       "removeHostname": "Remove {{hostname}}",
       "removeTitle": "Remove custom domain?",
       "removing": "This domain is disconnected. Click Remove to finish cleaning up its configuration.",
+      "retryVerification": "아래 결과를 확인한 후 검증을 클릭하여 다시 확인하세요.",
+      "reviewDns": "DNS 레코드 확인",
+      "saveToEnable": "저장을 클릭해야 공유 주소가 변경됩니다.",
+      "setUpDns": "DNS 레코드 설정",
+      "setupStages": "도메인 설정 단계",
+      "sharingAddress": "공유 주소",
+      "steps": {
+        "dns": "DNS 설정",
+        "enable": "활성화",
+        "verify": "검증"
+      },
       "title": "Custom domain",
       "urlPreview": "https://{{hostname}}",
+      "verificationChecks": "도메인 확인 항목",
+      "verificationComplete": "모든 검사를 통과했습니다. 계속하여 도메인을 활성화하세요.",
+      "verificationDetails": "검증 세부 정보",
       "verified": "Domain verified. Save to use this address.",
+      "verifiedRecords": "검증된 레코드 ({{total}})",
       "verify": "Verify",
+      "verifyDomain": "도메인 검증",
       "yourDomains": "Connected domains"
     },
     "deletion": {
@@ -631,11 +668,10 @@
     "people": {
       "accounts": "일치하는 워크스페이스 멤버",
       "anyone": "모든 사람",
-      "empty": "아직 다른 사람을 초대하지 않았습니다.",
-      "hint": "워크스페이스 외부 사람은 전체 이메일 주소로 초대하세요.",
       "invitationProcessed": "공유 초대를 처리했습니다",
       "label": "사용자와 공유",
       "noAccounts": "일치하는 멤버가 없습니다. 전체 이메일 주소로 초대하세요.",
+      "owner": "소유자",
       "placeholder": "이름 또는 이메일 주소",
       "remove": "{{email}}의 액세스 권한 삭제",
       "removed": "액세스 권한을 삭제했습니다",
@@ -648,7 +684,8 @@
       "viewers": "액세스 권한이 있는 사용자",
       "workspace": "워크스페이스",
       "workspaceDescription": "{{organization}} 멤버와 초대받은 사람",
-      "workspaceDescriptionUnnamed": "워크스페이스 멤버와 초대받은 사람"
+      "workspaceDescriptionUnnamed": "워크스페이스 멤버와 초대받은 사람",
+      "you": "{{name}}(나)"
     },
     "preview": {
       "audioLabel": "{{filename}} 오디오 미리보기",
@@ -1203,7 +1240,10 @@
       "title": "플랜 다운그레이드"
     },
     "feedback": {
-      "shareFeedback": "의견 보내기"
+      "otherPlaceholder": "자세히 알려 주세요…",
+      "rewardTerms": "워크스페이스당 한 번 · 크레딧은 30일간 유효",
+      "submitFeedback": "피드백 제출",
+      "thanks": "피드백 감사합니다"
     },
     "invoices": {
       "amount": "금액",
@@ -1737,6 +1777,7 @@
       "waiting": "Mastercard Data Connect에서 완료하기를 기다리고 있습니다. 완료한 후 채팅으로 돌아오세요."
     },
     "billing": {
+      "addCreditsOrUpgrade": "$5부터 크레딧을 충전해 계속 이용하거나, Pro로 업그레이드해 전용 기능을 이용하세요.",
       "addCreditsToContinue": "{{assistantName}}와 계속 대화하려면 크레딧을 추가하세요.",
       "askAdminCredits": "{{assistantName}}와 계속 대화하려면 워크스페이스 관리자에게 크레딧 추가를 요청하세요.",
       "askAdminUpgrade": "{{assistantName}}와 계속 대화하려면 워크스페이스 관리자에게 Pro 업그레이드를 요청하세요.",
@@ -1750,7 +1791,6 @@
       "customAmountError": "$1에서 $10,000 사이를 입력하세요",
       "customDollarAmount": "맞춤 금액",
       "outOfCredits": "크레딧이 부족합니다",
-      "redirecting": "리디렉션 중...",
       "upgradeToContinue": "{{assistantName}}와 계속 대화하려면 Pro로 업그레이드하세요.",
       "upgradeToPro": "Pro로 업그레이드",
       "upgradeToRun": "{{assistantName}}를 실행하려면 Pro로 업그레이드하세요",
@@ -1915,6 +1955,7 @@
         "documentPlaceholder": "문서에 어떤 내용을 포함하고 싶으신가요?",
         "imagePlaceholder": "만들고 싶은 이미지를 설명하세요…",
         "presentationPlaceholder": "프레젠테이션의 주제는 무엇인가요?",
+        "presentationPlaceholderWithDefault": "어떤 프레젠테이션인가요? (기본값: {{format}})",
         "slideCount": "슬라이드 수",
         "slideCountAuto": "자동",
         "slideCountRange": "{{range}}장"
@@ -1926,12 +1967,14 @@
       "modelForThisChat": "이 채팅의 모델",
       "placeholder": "워크플로 자동화, 작업 관리 등을 요청하세요...",
       "presentationFormatSetup": {
-        "description": "기본 형식을 저장한 후 프레젠테이션을 생성합니다. 이번 요청에서 명시한 형식이 있으면 우선 적용됩니다.",
-        "htmlDescription": "브라우저에서 공유하기에 적합",
-        "pptxDescription": "PowerPoint에서 편집 가능한 슬라이드",
-        "saveAndGenerate": "저장하고 생성",
-        "settingsHint": "설정 → 환경설정 → 채팅에서 언제든 변경할 수 있습니다.",
-        "title": "기본 프레젠테이션 형식 선택"
+        "htmlDescription": "어느 브라우저에서나 열리는 링크",
+        "htmlLabel": "웹 슬라이드",
+        "openSettings": "설정 열기",
+        "pptxDescription": "편집 가능한 .pptx 파일",
+        "pptxLabel": "PowerPoint",
+        "savedDefault": "이제 {{format}}이(가) 프레젠테이션 기본 형식입니다",
+        "settingsHint": "이후 모든 새 프레젠테이션에 사용됩니다. 설정에서 변경할 수 있습니다.",
+        "title": "기본 형식을 선택해 시작하세요"
       },
       "selectedModelUnavailable": "선택한 모델을 사용할 수 없습니다. 전송 전에 구성하세요.",
       "selectedModelUnavailableToast": "선택한 모델을 사용할 수 없습니다",
@@ -2541,11 +2584,10 @@
       "number": "번호"
     },
     "sidebar": {
-      "archive": "채팅 보관",
+      "archive": "보관",
       "archived": "보관됨",
       "chatsWith": "{{assistantName}}와의 채팅",
       "chatThreads": "채팅 스레드",
-      "delete": "채팅 삭제",
       "deleteDescription": "이 채팅을 영구 삭제합니다. 현재 실행 중인 작업은 즉시 중단됩니다. 연결된 자동화는 일시 중지됩니다. 이 작업은 되돌릴 수 없습니다.",
       "deleteTitle": "채팅을 삭제하시겠습니까?",
       "draft": "초안",
@@ -2556,7 +2598,7 @@
       "markUnread": "읽지 않음으로 표시",
       "movePinDown": "아래로 이동",
       "movePinUp": "위로 이동",
-      "mute": "채팅 알림 끄기",
+      "mute": "알림 끄기",
       "muted": "알림 꺼짐",
       "newChatWith": "{{assistantName}}와 새 채팅",
       "noArchived": "보관된 채팅 없음",
@@ -2564,7 +2606,7 @@
       "noUnread": "읽지 않은 채팅 없음",
       "openChatMenu": "채팅 메뉴 열기",
       "openListMenu": "채팅 목록 메뉴 열기",
-      "pin": "채팅 고정",
+      "pin": "고정",
       "pinned": "고정됨",
       "rename": "채팅 이름 바꾸기",
       "renameDescription": "이 채팅 스레드의 새 이름을 입력하세요.",
@@ -2572,8 +2614,8 @@
       "showArchivedChats": "보관된 채팅 표시",
       "titlePlaceholder": "채팅 제목",
       "unarchive": "보관 해제",
-      "unmute": "채팅 알림 켜기",
-      "unpin": "채팅 고정 해제",
+      "unmute": "알림 켜기",
+      "unpin": "고정 해제",
       "unread": "읽지 않음",
       "unreadOnly": "읽지 않음"
     },
@@ -5972,11 +6014,12 @@
         },
         "description": "새 채팅의 기본값과 메시지 전송 방식을 선택하세요.",
         "presentationFormat": {
-          "description": "새 프레젠테이션의 기본 형식을 선택하세요",
+          "htmlDescription": "새 프레젠테이션은 브라우저에서 여는 링크로 제공됩니다",
+          "pptxDescription": "새 프레젠테이션은 편집 가능한 .pptx 파일로 제공됩니다",
           "saveFailed": "기본 형식을 저장하지 못했습니다. 다시 시도해 주세요.",
           "title": "기본 프레젠테이션 형식",
-          "unavailable": "사용할 수 없음",
-          "unset": "설정되지 않음"
+          "unavailable": "기본 형식을 불러올 수 없습니다",
+          "unsetDescription": "처음 프레젠테이션을 만들 때 물어봅니다"
         },
         "sectionTitle": "채팅"
       },

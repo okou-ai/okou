@@ -1,10 +1,11 @@
 //! Host ingress with startup-only public reachability validation.
 //! Caddy's runtime availability never acquires or cancels Run ownership.
-//! Health and complete-input dispatch share service authentication. Sandbox
-//! paths stay reserved. Caddy terminates TLS and preserves the original URI.
+//! Health, dispatch and ticket issuance share service authentication. Caddy
+//! terminates TLS and preserves the original URI.
 
 mod app_state;
 pub(crate) mod dispatch;
+mod run_wss;
 
 use std::convert::Infallible;
 use std::io::{self, Read};
@@ -22,6 +23,8 @@ use hyper::{Method, Request, Response, StatusCode};
 use hyper_util::rt::{TokioIo, TokioTimer};
 use runner_host::runner_ingress_socket::RunnerIngressSocket;
 use runner_host::runner_process_identity::RunnerProcessIdentity;
+use runner_lifecycle::active_runs::ActiveRuns;
+use runner_provider::RunCancellationRegistry;
 use runner_types::ids::RunId;
 use subtle::ConstantTimeEq;
 use tokio::task::{JoinHandle, JoinSet};
@@ -46,6 +49,7 @@ struct IngressHandler {
     runner_version: &'static str,
     dispatch: OnceLock<dispatch::DispatchIntake>,
     app_state: OnceLock<runner_remote::app_state::Runtime>,
+    run_wss: OnceLock<Arc<run_wss::RunWebSocket>>,
 }
 
 impl IngressHandler {
@@ -62,6 +66,7 @@ impl IngressHandler {
             runner_version,
             dispatch: OnceLock::new(),
             app_state: OnceLock::new(),
+            run_wss: OnceLock::new(),
         }
     }
 
@@ -126,32 +131,19 @@ impl IngressHandler {
         // Hyper keeps the raw URI: no decoding/rewriting may turn a reserved
         // sandbox path, traversal or encoded separator into a control request.
         let upload = app_state::target(self.identity.runner_id(), request.uri().path());
-        if (request.uri().path() != path && dispatch_run.is_none() && upload.is_none())
-            || request.uri().query().is_some()
-        {
+        if request.uri().query().is_some() {
             return response(StatusCode::NOT_FOUND, "");
         }
-        let host = request.headers().get("host").and_then(|v| v.to_str().ok());
-        if request.headers().get_all("host").iter().count() != 1
-            || !host.is_some_and(|host| {
-                host == self.hostname || host == format!("{}:443", self.hostname)
-            })
-        {
+        if request.uri().path() != path && dispatch_run.is_none() && upload.is_none() {
+            return self.handle_run_wss(request).await;
+        }
+        if !self.matches_host(&request) {
             return response(StatusCode::NOT_FOUND, "");
         }
         if let Some((run_id, command)) = upload {
             return self.handle_app_state(request, run_id, command).await;
         }
-        let credential = request
-            .headers()
-            .get("authorization")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.strip_prefix("Bearer "));
-        if request.headers().get_all("authorization").iter().count() != 1
-            || !credential.is_some_and(|credential| {
-                bool::from(credential.as_bytes().ct_eq(self.token.as_bytes()))
-            })
-        {
+        if !self.has_service_auth(&request) {
             return response(StatusCode::UNAUTHORIZED, "");
         }
         if let Some(run_id) = dispatch_run {
@@ -167,16 +159,30 @@ impl IngressHandler {
         if request.method() != Method::GET {
             return response(StatusCode::METHOD_NOT_ALLOWED, "");
         }
-        if request.headers().contains_key("upgrade")
-            || request.headers().contains_key("transfer-encoding")
-            || request
-                .headers()
-                .get("content-length")
-                .is_some_and(|v| v != "0")
-        {
+        if request.headers().contains_key("upgrade") || !has_empty_body(&request) {
             return response(StatusCode::BAD_REQUEST, "");
         }
         response(StatusCode::OK, "ok")
+    }
+
+    fn matches_host(&self, request: &Request<Incoming>) -> bool {
+        let host = request.headers().get("host").and_then(|v| v.to_str().ok());
+        request.headers().get_all("host").iter().count() == 1
+            && host.is_some_and(|host| {
+                host == self.hostname || host == format!("{}:443", self.hostname)
+            })
+    }
+
+    fn has_service_auth(&self, request: &Request<Incoming>) -> bool {
+        let credential = request
+            .headers()
+            .get("authorization")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix("Bearer "));
+        request.headers().get_all("authorization").iter().count() == 1
+            && credential.is_some_and(|credential| {
+                bool::from(credential.as_bytes().ct_eq(self.token.as_bytes()))
+            })
     }
 
     async fn handle_dispatch(
@@ -335,6 +341,14 @@ fn response(status: StatusCode, body: &str) -> Response<Full<Bytes>> {
     result
 }
 
+fn has_empty_body(request: &Request<Incoming>) -> bool {
+    !request.headers().contains_key("transfer-encoding")
+        && request
+            .headers()
+            .get("content-length")
+            .is_none_or(|value| value == "0")
+}
+
 /// Owned by startup and then the running reactor, independently of Caddy.
 pub struct IngressRuntime {
     handler: Arc<IngressHandler>,
@@ -413,8 +427,12 @@ impl IngressRuntime {
                     }
                 }
             }
+            cancel.cancel();
             connections.abort_all();
             while connections.join_next().await.is_some() {}
+            if let Some(run_wss) = handler.run_wss.get() {
+                run_wss.join().await;
+            }
             drop(socket);
         }));
         Ok(runtime)
@@ -436,6 +454,18 @@ impl IngressRuntime {
         assert!(
             self.handler.dispatch.set(intake).is_ok(),
             "dispatch intake configured once"
+        );
+    }
+
+    pub(crate) fn enable_run_wss(
+        &self,
+        active_runs: ActiveRuns,
+        cancellations: RunCancellationRegistry,
+    ) {
+        let run_wss = run_wss::RunWebSocket::new(active_runs, cancellations, self.cancel.clone());
+        assert!(
+            self.handler.run_wss.set(Arc::new(run_wss)).is_ok(),
+            "Run WSS configured once"
         );
     }
 

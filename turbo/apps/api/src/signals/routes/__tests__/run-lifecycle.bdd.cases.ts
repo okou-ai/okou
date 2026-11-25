@@ -8250,6 +8250,15 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(appendSystemPrompt).toContain(
           "Each chat has its own window and tabs; website login state is shared across chats.",
         );
+        expect(appendSystemPrompt).toContain(
+          "Keep as few tabs open as the task needs. Reuse a suitable tab and avoid opening duplicates. Close tabs you opened as soon as you no longer need them.",
+        );
+        expect(appendSystemPrompt).toContain(
+          "Use `okou browser restart` only after confirming the remote Browser instance remains unresponsive",
+        );
+        expect(appendSystemPrompt).toContain(
+          "Restart interrupts every chat currently using this user's shared Browser profile in the workspace",
+        );
         expect(appendSystemPrompt).not.toContain(
           "Okou Browser is currently off for this chat thread",
         );

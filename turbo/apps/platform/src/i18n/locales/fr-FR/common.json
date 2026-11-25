@@ -524,36 +524,73 @@
     },
     "customDomain": {
       "addressHint": "Choose the full address used when you share this website.",
+      "automaticHint": "Ceci configure le CNAME du site et le TXT de propriété. Ajoutez les enregistrements de certificat supplémentaires ci-dessous, puis revenez vérifier.",
+      "automaticSetup": "Configurer les enregistrements du site",
+      "checkBeforeEditing": "Cliquez sur Vérifier pour contrôler les enregistrements avant de modifier le DNS.",
+      "checkFailed": "Action requise",
+      "checkNotChecked": "Non vérifié",
+      "checkPassed": "Validé",
+      "checkPending": "En attente",
       "checks": {
         "certificate": "HTTPS",
         "dns": "DNS connection",
-        "ownership": "Ownership"
+        "ownership": "Ownership",
+        "provider": "Activation du domaine",
+        "route": "Routage du site"
       },
+      "checkUnavailable": "Vérification impossible",
       "connect": "Connect a domain",
       "continue": "Continue",
       "copied": "Copied",
       "copyFailed": "Could not copy. Select the value to copy it.",
-      "copyRecord": "Copy {{type}} value",
+      "copyRecordName": "Copier le nom {{type}} {{name}}",
+      "copyRecordValue": "Copier la valeur {{type}} {{name}}",
       "disconnectConfirm": "This domain will be disconnected from this website.",
+      "dnsConfigured": "DNS configuré",
       "dnsHelp": "Add these records at your DNS provider, then click Verify",
       "domain": "Domain",
+      "findingProvider": "Recherche des options de configuration DNS…",
       "hostnameExample": "www.example.com",
       "httpsReady": "HTTPS ready",
+      "keepTxtValues": "Conservez les valeurs TXT existantes portant le même nom. Ajoutez chaque valeur dans un enregistrement TXT distinct.",
       "lastChecked": "Last checked {{time}}",
       "manage": "Manage {{hostname}}",
+      "manualHint": "Copiez les enregistrements dans vos paramètres DNS, puis revenez vérifier.",
       "needsSetup": "Finish setup",
+      "noDnsChanges": "Vos enregistrements DNS correspondent. Aucune modification DNS n’est nécessaire.",
       "notChecked": "No verification yet",
       "okouUrl": "Okou URL",
+      "openDns": "Ouvrir le DNS {{provider}}",
       "ownDomain": "Enter a domain you own",
+      "recordMatched": "Correspondance",
+      "recordName": "Nom",
+      "recordNeedsCheck": "Pas encore de correspondance",
+      "recordValue": "Valeur",
       "remove": "Remove",
       "removeConfirm": "Your sharing link will return to {{url}}.",
       "removeHostname": "Remove {{hostname}}",
       "removeTitle": "Remove custom domain?",
       "removing": "This domain is disconnected. Click Remove to finish cleaning up its configuration.",
+      "retryVerification": "Consultez les résultats, puis cliquez sur Vérifier pour vérifier à nouveau.",
+      "reviewDns": "Consulter les enregistrements DNS",
+      "saveToEnable": "Votre adresse de partage change uniquement lorsque vous cliquez sur Enregistrer.",
+      "setUpDns": "Configurez les enregistrements DNS",
+      "setupStages": "Étapes de configuration du domaine",
+      "sharingAddress": "Votre adresse de partage",
+      "steps": {
+        "dns": "Configurer DNS",
+        "enable": "Activer",
+        "verify": "Vérification"
+      },
       "title": "Custom domain",
       "urlPreview": "https://{{hostname}}",
+      "verificationChecks": "Vérifications du domaine",
+      "verificationComplete": "Toutes les vérifications ont réussi. Continuez pour activer votre domaine.",
+      "verificationDetails": "Détails de la vérification",
       "verified": "Domain verified. Save to use this address.",
+      "verifiedRecords": "Enregistrements vérifiés ({{total}})",
       "verify": "Verify",
+      "verifyDomain": "Vérification du domaine",
       "yourDomains": "Connected domains"
     },
     "deletion": {
@@ -648,11 +685,10 @@
     "people": {
       "accounts": "Membres correspondants de l’espace de travail",
       "anyone": "Tout le monde",
-      "empty": "Personne d’autre n’a encore accès.",
-      "hint": "En dehors de votre espace de travail ? Utilisez leur adresse e-mail complète.",
       "invitationProcessed": "Invitation de partage traitée",
       "label": "Partager avec des personnes",
       "noAccounts": "Aucun membre correspondant. Saisissez une adresse e-mail complète pour inviter.",
+      "owner": "Propriétaire",
       "placeholder": "Nom ou adresse e-mail",
       "remove": "Retirer l’accès de {{email}}",
       "removed": "Accès retiré",
@@ -665,7 +701,8 @@
       "viewers": "Personnes ayant accès",
       "workspace": "Espace de travail",
       "workspaceDescription": "Membres de {{organization}} et personnes invitées",
-      "workspaceDescriptionUnnamed": "Membres de l’espace de travail et personnes invitées"
+      "workspaceDescriptionUnnamed": "Membres de l’espace de travail et personnes invitées",
+      "you": "{{name}} (vous)"
     },
     "preview": {
       "audioLabel": "Aperçu audio pour {{filename}}",
@@ -1231,7 +1268,10 @@
       "title": "Rétrograder le plan"
     },
     "feedback": {
-      "shareFeedback": "Donner mon avis"
+      "otherPlaceholder": "Dites-nous en plus…",
+      "rewardTerms": "Une fois par espace de travail · Crédits valables 30 jours",
+      "submitFeedback": "Envoyer les commentaires",
+      "thanks": "Merci pour vos commentaires"
     },
     "invoices": {
       "amount": "Montant",
@@ -1773,6 +1813,7 @@
       "waiting": "En attente de Mastercard Data Connect. Terminez l'opération là-bas, puis revenez au Chat."
     },
     "billing": {
+      "addCreditsOrUpgrade": "Ajoutez des crédits à partir de 5 $ pour continuer, ou passez à Pro pour débloquer des fonctionnalités exclusives.",
       "addCreditsToContinue": "Ajoutez des crédits pour continuer à discuter avec {{assistantName}}.",
       "askAdminCredits": "Demandez à un administrateur de l'espace de travail d'ajouter des crédits afin que vous puissiez continuer à discuter avec {{assistantName}}.",
       "askAdminUpgrade": "Demandez à un administrateur de l'espace de travail de passer à Pro afin que vous puissiez continuer à discuter avec {{assistantName}}.",
@@ -1786,7 +1827,6 @@
       "customAmountError": "Entrez un montant entre 1 $ et 10 000 $",
       "customDollarAmount": "Montant personnalisé en dollars",
       "outOfCredits": "Vous êtes à court de crédits",
-      "redirecting": "Redirection...",
       "upgradeToContinue": "Passez à Pro pour continuer à discuter avec {{assistantName}}.",
       "upgradeToPro": "Passer à Pro",
       "upgradeToRun": "Passez à Pro pour exécuter {{assistantName}}",
@@ -1951,6 +1991,7 @@
         "documentPlaceholder": "Que souhaitez-vous inclure dans votre document ?",
         "imagePlaceholder": "Décrivez l’image à créer…",
         "presentationPlaceholder": "Quel est le sujet de votre présentation ?",
+        "presentationPlaceholderWithDefault": "De quoi parle votre présentation ? ({{format}} par défaut)",
         "slideCount": "Nombre de diapositives",
         "slideCountAuto": "Automatique",
         "slideCountRange": "{{range}} diapositives"
@@ -1962,12 +2003,14 @@
       "modelForThisChat": "Modèle pour cette discussion",
       "placeholder": "Demandez-moi d’automatiser des workflows, de gérer des tâches...",
       "presentationFormatSetup": {
-        "description": "Nous enregistrerons ce choix par défaut, puis générerons votre présentation. Un format explicitement demandé reste prioritaire.",
-        "htmlDescription": "Idéal pour le partage dans un navigateur",
-        "pptxDescription": "Diapositives modifiables dans PowerPoint",
-        "saveAndGenerate": "Enregistrer et générer",
-        "settingsHint": "Modifiable dans Paramètres → Préférences → Discussion.",
-        "title": "Choisir un format de présentation par défaut"
+        "htmlDescription": "Un lien qui s’ouvre dans n’importe quel navigateur",
+        "htmlLabel": "Diapositives web",
+        "openSettings": "Ouvrir les paramètres",
+        "pptxDescription": "Un fichier .pptx modifiable",
+        "pptxLabel": "PowerPoint",
+        "savedDefault": "{{format}} est désormais votre format par défaut pour les présentations",
+        "settingsHint": "Utilisé pour chaque nouvelle présentation. Vous pouvez le modifier dans les paramètres.",
+        "title": "Choisissez un format par défaut pour commencer"
       },
       "selectedModelUnavailable": "Le modèle sélectionné n'est pas disponible. Configurez-le avant d'envoyer.",
       "selectedModelUnavailableToast": "Le modèle sélectionné n'est pas disponible",
@@ -2602,11 +2645,10 @@
       "number": "numéro"
     },
     "sidebar": {
-      "archive": "Archiver la discussion",
+      "archive": "Archiver",
       "archived": "Archivées",
       "chatsWith": "Discussions avec {{assistantName}}",
       "chatThreads": "Fils de discussion",
-      "delete": "Supprimer la discussion",
       "deleteDescription": "Cela supprimera définitivement cette discussion. Toute tâche en cours dans cette discussion sera arrêtée immédiatement. Toutes les automatisations liées seront mises en pause. Cette action est irréversible.",
       "deleteTitle": "Supprimer la discussion ?",
       "draft": "Brouillon",
@@ -2617,7 +2659,7 @@
       "markUnread": "Marquer comme non lu",
       "movePinDown": "Déplacer vers le bas",
       "movePinUp": "Déplacer vers le haut",
-      "mute": "Mettre la discussion en sourdine",
+      "mute": "Mettre en sourdine",
       "muted": "En sourdine",
       "newChatWith": "Nouvelle discussion avec {{assistantName}}",
       "noArchived": "Aucune discussion archivée",
@@ -2625,16 +2667,16 @@
       "noUnread": "Aucune discussion non lue",
       "openChatMenu": "Ouvrir le menu de discussion",
       "openListMenu": "Ouvrir le menu de la liste de discussion",
-      "pin": "Épingler la discussion",
+      "pin": "Épingler",
       "pinned": "Épinglé",
       "rename": "Renommer la discussion",
       "renameDescription": "Entrez un nouveau nom pour ce fil de discussion.",
       "showAllChats": "Afficher toutes les discussions",
       "showArchivedChats": "Afficher les discussions archivées",
       "titlePlaceholder": "Titre de la discussion",
-      "unarchive": "Désarchiver la discussion",
+      "unarchive": "Désarchiver",
       "unmute": "Réactiver les notifications",
-      "unpin": "Détacher la discussion",
+      "unpin": "Détacher",
       "unread": "Non lu",
       "unreadOnly": "Non lu"
     },
@@ -6066,11 +6108,12 @@
         },
         "description": "Choisissez les paramètres par défaut des nouvelles discussions et le mode d’envoi des messages.",
         "presentationFormat": {
-          "description": "Choisissez le format par défaut des nouvelles présentations",
+          "htmlDescription": "Les nouvelles présentations s’ouvrent sous forme de lien dans le navigateur",
+          "pptxDescription": "Les nouvelles présentations arrivent sous forme de fichier .pptx modifiable",
           "saveFailed": "Impossible d’enregistrer le format par défaut. Réessayez.",
           "title": "Format de présentation par défaut",
-          "unavailable": "Indisponible",
-          "unset": "Non défini"
+          "unavailable": "Impossible de charger votre format par défaut",
+          "unsetDescription": "Nous vous le demanderons lors de votre première présentation"
         },
         "sectionTitle": "Chat"
       },

@@ -403,6 +403,7 @@ internal abstract class ChatListModelTestFixture {
         var projectSnapshots = 0
         var collectionUnavailable = false
         var receipt: ProjectEventsEventsItem? = null
+        var responseName: String? = null
 
         override suspend fun projectSnapshot(): ProjectSnapshotVariant1 {
             projectSnapshots++
@@ -430,9 +431,14 @@ internal abstract class ChatListModelTestFixture {
             return result
         }
 
-        override suspend fun renameProject(projectId: String, name: String, eventId: String) {
+        override suspend fun renameProject(
+            projectId: String,
+            name: String,
+            eventId: String,
+        ): ConfirmedProject {
             sent += eventId
             response.await()
+            return ConfirmedProject(projectId, responseName ?: name, CHAT_DATE, CHAT_DATE, "a0")
         }
     }
 }
@@ -441,6 +447,235 @@ internal abstract class ChatListModelTestFixture {
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = TestOkouApplication::class)
 internal class ChatListModelTest : ChatListModelTestFixture() {
+    @Test
+    fun anUnconfirmedRenameBackToAnOlderTitleNeedsNewEvidence() = runTest {
+        val events = mutableListOf<String>()
+        var showEvents = false
+        val source =
+            object : Service() {
+                override suspend fun chatEvents(since: Long?): ChatEvents =
+                    when {
+                        since == null -> page()
+                        showEvents -> page(events)
+                        else -> throw ApiFailure.Http(503, null, null, null)
+                    }
+
+                override suspend fun renameThread(
+                    threadId: String,
+                    title: String,
+                    eventId: String,
+                ) {
+                    events +=
+                        chatEventWire(
+                            id = eventId,
+                            seq = 18 + events.size.toLong(),
+                            kind = "renamed",
+                            title = title,
+                        )
+                    if (events.size == 2) throw ApiFailure.Http(503, null, null, null)
+                }
+            }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            runCurrent()
+            val first = checkNotNull(model.renameThread(CHAT_PERSONAL, "Confirmed title"))
+            runCurrent()
+            assertEquals("Confirmed title", model.uiState.value.threads.single().title)
+
+            val second = checkNotNull(model.renameThread(CHAT_PERSONAL, "Personal chat"))
+            runCurrent()
+            val unconfirmed = model.uiState.value
+            assertEquals("Confirmed title", unconfirmed.threads.single().title)
+            assertEquals(second, unconfirmed.unconfirmedRenames[CHAT_PERSONAL])
+            assertEquals(first.eventId, unconfirmed.confirmedRenameIds[CHAT_PERSONAL])
+            assertNull(model.renameThread(CHAT_PERSONAL, "Duplicate edit"))
+
+            showEvents = true
+            model.checkChatRename(CHAT_PERSONAL)
+            runCurrent()
+            val confirmed = model.uiState.value
+            assertEquals("Personal chat", confirmed.threads.single().title)
+            assertTrue(confirmed.unconfirmedRenames.isEmpty())
+            assertEquals(second.eventId, confirmed.confirmedRenameIds[CHAT_PERSONAL])
+        }
+    }
+
+    @Test
+    fun anAmbiguousRenameSettlesWhenTheServerAlreadyShowsTheSubmittedTitle() = runTest {
+        var tail = page(emptyList())
+        val service =
+            object : Service() {
+                override suspend fun chatEvents(since: Long?) = if (since == null) page() else tail
+
+                override suspend fun renameThread(
+                    threadId: String,
+                    title: String,
+                    eventId: String,
+                ) {
+                    tail =
+                        page(
+                            listOf(
+                                chatEventWire(
+                                    id = HISTORY_LAST_EVENT,
+                                    seq = 18,
+                                    kind = "renamed",
+                                    title = title,
+                                ),
+                            ),
+                        )
+                    throw ApiFailure.Http(503, null, null, null)
+                }
+            }
+        withCatchUpModel(service) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            assertNotNull(model.renameThread(CHAT_PERSONAL, "Requested title"))
+            advanceUntilIdle()
+
+            val settled = model.uiState.value
+            assertEquals("Requested title", settled.threads.single().title)
+            assertTrue(settled.unconfirmedRenames.isEmpty())
+            assertNull(settled.failedRowAction)
+        }
+    }
+
+    @Test
+    fun chatRenameKeepsItsReceiptUntilAnEarlierSnapshotReadFinishes() = runTest {
+        val write = CompletableDeferred<Unit>()
+        val earlierRead = CompletableDeferred<Unit>()
+        val readback = CompletableDeferred<Unit>()
+        val initialEvents = page().events
+        val initialRows =
+            replayChats(
+                ChatCheckpoint(
+                    ChatArchive(emptyList()),
+                    ChatCursor(),
+                    initialEvents,
+                    initialEvents.single().cursor(),
+                ),
+            )
+        val earlierSnapshot =
+            ChatSnapshotVariant1("https://fixture.test/earlier", 60, HISTORY_LAST_EVENT, 18)
+        val laterSnapshot =
+            ChatSnapshotVariant1(
+                "https://fixture.test/later",
+                60,
+                "00000020-0000-4000-8000-000000000000",
+                20,
+            )
+        var snapshotReads = 0
+        var earlierTailRead = false
+        val service =
+            object : Service() {
+                override suspend fun chatSnapshot() =
+                    when (++snapshotReads) {
+                        1 -> super.chatSnapshot()
+                        2 -> earlierSnapshot
+                        else -> {
+                            readback.await()
+                            laterSnapshot
+                        }
+                    }
+
+                override suspend fun chatArchive(url: String): ChatArchive {
+                    val title =
+                        if (url == earlierSnapshot.url) "Earlier remote title" else "Later title"
+                    return ChatArchive(listOf(initialRows.single().copy(title = title)))
+                }
+
+                override suspend fun chatEvents(since: Long?) =
+                    when {
+                        since == null -> page()
+                        since == 18L && !earlierTailRead -> {
+                            earlierTailRead = true
+                            earlierRead.await()
+                            page(emptyList())
+                        }
+                        since == 20L -> page(emptyList())
+                        else -> throw ApiFailure.Http(410, null, null, null)
+                    }
+
+                override suspend fun renameThread(
+                    threadId: String,
+                    title: String,
+                    eventId: String,
+                ) {
+                    write.await()
+                }
+            }
+        withCatchUpModel(service) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            assertNotNull(model.renameThread(CHAT_PERSONAL, "Receipt title"))
+            model.refreshList()
+            runCurrent()
+            assertTrue(earlierTailRead)
+
+            write.complete(Unit)
+            runCurrent()
+            assertEquals("Receipt title", model.uiState.value.threads.single().title)
+            earlierRead.complete(Unit)
+            runCurrent()
+            assertEquals("Receipt title", model.uiState.value.threads.single().title)
+            assertEquals(ChatReadPhase.Loading, model.uiState.value.listPhase)
+
+            readback.complete(Unit)
+            advanceUntilIdle()
+            assertEquals("Later title", model.uiState.value.threads.single().title)
+            assertTrue(model.uiState.value.unconfirmedRenames.isEmpty())
+        }
+    }
+
+    @Test
+    fun confirmedChatRenameKeepsANewerWritePendingOnLateRejection() = runTest {
+        val firstResponse = CompletableDeferred<Unit>()
+        val secondResponse = CompletableDeferred<Unit>()
+        var event: String? = null
+        val service =
+            object : Service() {
+                override suspend fun chatEvents(since: Long?): ChatEvents =
+                    when {
+                        since == null -> page()
+                        since < 18 -> page(listOfNotNull(event))
+                        else -> page(emptyList())
+                    }
+
+                override suspend fun renameThread(
+                    threadId: String,
+                    title: String,
+                    eventId: String,
+                ) {
+                    if (title == "First title") firstResponse.await() else secondResponse.await()
+                }
+            }
+        withCatchUpModel(service) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            val first = checkNotNull(model.renameThread(CHAT_PERSONAL, "First title"))
+            runCurrent()
+            event = chatEventWire(first.eventId, 18, kind = "renamed", title = first.name)
+            model.refreshList()
+            advanceUntilIdle()
+            assertNull(model.uiState.value.pendingRowActions[CHAT_PERSONAL])
+
+            val second = checkNotNull(model.renameThread(CHAT_PERSONAL, "Second title"))
+            runCurrent()
+            firstResponse.completeExceptionally(ApiFailure.Http(400, null, null, null))
+            runCurrent()
+            val pending = model.uiState.value
+            assertEquals(ChatRowAction.Rename, pending.pendingRowActions[CHAT_PERSONAL])
+            assertEquals(first.name, pending.threads.single().title)
+            assertNull(pending.failedRowAction)
+
+            secondResponse.complete(Unit)
+            advanceUntilIdle()
+            val confirmed = model.uiState.value
+            assertEquals(second.eventId, confirmed.confirmedRenameIds[CHAT_PERSONAL])
+            assertEquals(second.name, confirmed.threads.single().title)
+            assertNull(confirmed.pendingRowActions[CHAT_PERSONAL])
+        }
+    }
+
     @Test
     fun sendReceiptKeepsActivityUntilTheSortEventOrAnExplicitReconciliation() = runTest {
         val other =
@@ -2008,7 +2243,105 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
     }
 
     @Test
-    fun rejectedRenameRestoresTheTitleBeforeReadingTheMissingTarget() = runTest {
+    fun chatRenameKeepsItsReceiptWhileEarlierFeedResponsesArrive() = runTest {
+        val write = CompletableDeferred<Unit>()
+        val earlierRead = CompletableDeferred<Unit>()
+        val read = CompletableDeferred<Unit>()
+        var tail = page(emptyList())
+        val writes = mutableListOf<String>()
+        val service =
+            object : Service() {
+                override suspend fun chatEvents(since: Long?): ChatEvents {
+                    if (since == null) return page()
+                    if (since < 18) {
+                        earlierRead.await()
+                        return page(
+                            listOf(
+                                chatEventWire(
+                                    id = "00000018-0000-4000-8000-000000000000",
+                                    seq = 18,
+                                    kind = "renamed",
+                                    title = "Earlier remote title",
+                                ),
+                            ),
+                        )
+                    }
+                    read.await()
+                    return tail
+                }
+
+                override suspend fun renameThread(
+                    threadId: String,
+                    title: String,
+                    eventId: String,
+                ) {
+                    writes += eventId
+                    write.await()
+                }
+            }
+        withCatchUpModel(service) { model ->
+            model.refresh()
+            runCurrent()
+            assertNotNull(model.renameThread(CHAT_PERSONAL, "Receipt title"))
+            runCurrent()
+            assertEquals("Personal chat", model.uiState.value.threads.single().title)
+            model.refreshList()
+            runCurrent()
+            assertEquals(ChatReadPhase.Loading, model.uiState.value.listPhase)
+            write.complete(Unit)
+            runCurrent()
+            assertEquals("Receipt title", model.uiState.value.threadsByRecency.single().title)
+            assertNull(model.uiState.value.pendingRowActions[CHAT_PERSONAL])
+            assertNotNull(model.renameThread(CHAT_PERSONAL, "Second title"))
+            runCurrent()
+            assertEquals(2, writes.size)
+            assertEquals("Second title", model.uiState.value.threadsByRecency.single().title)
+            earlierRead.complete(Unit)
+            runCurrent()
+            assertEquals("Second title", model.uiState.value.threadsByRecency.single().title)
+            assertEquals(ChatReadPhase.Loading, model.uiState.value.listPhase)
+
+            tail =
+                page(
+                    listOf(
+                        chatEventWire(
+                            id = writes.first(),
+                            seq = 19,
+                            kind = "renamed",
+                            title = "Receipt title",
+                        ),
+                    ),
+                )
+            read.complete(Unit)
+            advanceUntilIdle()
+            assertEquals("Second title", model.uiState.value.threads.single().title)
+
+            tail =
+                page(
+                    listOf(
+                        chatEventWire(
+                            id = writes.last(),
+                            seq = 20,
+                            kind = "renamed",
+                            title = "Second title",
+                        ),
+                        chatEventWire(
+                            id = HISTORY_LAST_EVENT,
+                            seq = 21,
+                            kind = "renamed",
+                            title = "Remote title",
+                        ),
+                    ),
+                )
+            model.refreshList()
+            advanceUntilIdle()
+            assertEquals("Remote title", model.uiState.value.threads.single().title)
+            assertTrue(model.uiState.value.unconfirmedRenames.isEmpty())
+        }
+    }
+
+    @Test
+    fun rejectedRenameKeepsTheTitleWhileReadingTheMissingTarget() = runTest {
         val rejection = CompletableDeferred<Unit>()
         val readback = CompletableDeferred<Unit>()
         val source =
@@ -2033,9 +2366,9 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
         withCatchUpModel(source) { model ->
             model.refresh()
             runCurrent()
-            model.renameThread(CHAT_PERSONAL, "Optimistic title")
+            model.renameThread(CHAT_PERSONAL, "Requested title")
             runCurrent()
-            assertEquals("Optimistic title", model.uiState.value.threads.single().title)
+            assertEquals("Personal chat", model.uiState.value.threads.single().title)
 
             rejection.complete(Unit)
             runCurrent()
@@ -2081,7 +2414,7 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
             model.renameThread(CHAT_PERSONAL, "Local title")
             runCurrent()
             val unconfirmed = model.uiState.value
-            assertEquals("Local title", unconfirmed.threads.single().title)
+            assertEquals("Personal chat", unconfirmed.threads.single().title)
             assertEquals(ChatListReadFailure.Retrying, unconfirmed.listReadFailure)
             assertEquals(ChatRowAction.Rename, unconfirmed.failedRowAction?.action)
             assertFalse(checkNotNull(unconfirmed.failedRowAction).rejected)
@@ -2366,7 +2699,7 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
             model.reloadAfterRowActionFailure()
             runCurrent()
             assertEquals(initialReads + 1, reads)
-            assertEquals(ChatRowAction.Rename, model.uiState.value.pendingRowActions[CHAT_PERSONAL])
+            assertNull(model.uiState.value.pendingRowActions[CHAT_PERSONAL])
 
             events.add(
                 chatEventWire(
@@ -2416,7 +2749,7 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
     }
 
     @Test
-    fun unconfirmedRenameRequiresReadbackBeforeAcceptingAnotherWrite() = runTest {
+    fun inconclusiveReadbackKeepsTheOriginalRenameUntilItsEventArrives() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
         val store = ViewModelStore()
@@ -2437,7 +2770,7 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
                     eventId: String,
                 ) {
                     if (title == "First edit") throw IOException("unconfirmed write")
-                    tail.add(chatEventWire(id = eventId, seq = 18, kind = "renamed", title = title))
+                    tail.add(chatEventWire(id = eventId, seq = 19, kind = "renamed", title = title))
                 }
             }
         try {
@@ -2462,18 +2795,29 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
 
             model.renameThread(CHAT_PERSONAL, "First edit")
             advanceUntilIdle()
-            assertEquals("First edit", model.uiState.value.threads.single().title)
+            assertEquals("Personal chat", model.uiState.value.threads.single().title)
             assertEquals(ChatRowAction.Rename, model.uiState.value.failedRowAction?.action)
-            model.dismissRowActionFailure(checkNotNull(model.uiState.value.failedRowAction))
+            val notice = checkNotNull(model.uiState.value.failedRowAction)
+            val firstId = notice.edits.single().eventId
+            model.dismissRowActionFailure(notice)
 
-            assertFalse(model.renameThread(CHAT_PERSONAL, "Second edit"))
+            assertNull(model.renameThread(CHAT_PERSONAL, "Second edit"))
             assertTrue(CHAT_PERSONAL in model.uiState.value.unconfirmedRenames)
             model.checkChatRename(CHAT_PERSONAL)
             advanceUntilIdle()
             assertEquals("Personal chat", model.uiState.value.threads.single().title)
+            assertEquals("First edit", model.uiState.value.unconfirmedRenames[CHAT_PERSONAL]?.name)
+            model.reloadAfterRowActionFailure()
+            advanceUntilIdle()
+            assertNull(model.renameThread(CHAT_PERSONAL, "Second edit"))
+
+            tail.add(chatEventWire(id = firstId, seq = 18, kind = "renamed", title = "First edit"))
+            model.checkChatRename(CHAT_PERSONAL)
+            advanceUntilIdle()
+            assertEquals("First edit", model.uiState.value.threads.single().title)
             assertTrue(model.uiState.value.unconfirmedRenames.isEmpty())
 
-            assertTrue(model.renameThread(CHAT_PERSONAL, "Second edit"))
+            assertNotNull(model.renameThread(CHAT_PERSONAL, "Second edit"))
             advanceUntilIdle()
             assertEquals("Second edit", model.uiState.value.threads.single().title)
             assertNull(model.uiState.value.failedRowAction)
@@ -2481,7 +2825,7 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
             tail.add(
                 chatEventWire(
                     id = "77777777-7777-4777-8777-777777777777",
-                    seq = 19,
+                    seq = 20,
                     kind = "renamed",
                     title = "Remote edit",
                 ),
@@ -2624,14 +2968,97 @@ internal class ChatListProjectCreationModelTest : ChatListModelTestFixture() {
 @Config(sdk = [35], application = TestOkouApplication::class)
 internal class ChatListProjectRenameModelTest : ChatListModelTestFixture() {
     @Test
-    fun rejectedCachedProjectRenameRestoresConfirmedNameWhileInitialReadIsHeld() = runTest {
+    fun projectRenamePublishesTheReturnedNameBeforeAnEarlierReadFinishes() = runTest {
+        val earlierRead = CompletableDeferred<Unit>()
+        val readback = CompletableDeferred<Unit>()
+        val service = HeldProjectRenameService().apply { responseName = "Current name" }
+        withCatchUpModel(service) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            val submission = checkNotNull(model.renameProject(CHAT_PROJECT, "Submitted name"))
+            runCurrent()
+            val exactEvent =
+                ProjectEventsEventsItem(
+                    id = submission.eventId,
+                    seqId = 1,
+                    projectId = CHAT_PROJECT,
+                    kind = ProjectEventsEventsItemKind.RENAMED,
+                    name = submission.name,
+                    createdAt = CHAT_DATE,
+                )
+            service.receipt = exactEvent
+            service.nextProjectRead = earlierRead
+            model.refreshMetadata()
+            runCurrent()
+            service.response.complete(Unit)
+            runCurrent()
+            assertEquals("Current name", model.uiState.value.projects.single().name)
+            assertEquals(
+                submission.eventId,
+                model.uiState.value.projectList.confirmedRenameIds[CHAT_PROJECT],
+            )
+
+            service.receipt = exactEvent.copy(id = CHAT_EVENT, seqId = 2, name = "Latest name")
+            service.nextProjectRead = readback
+            earlierRead.complete(Unit)
+            runCurrent()
+            assertEquals("Current name", model.uiState.value.projects.single().name)
+
+            readback.complete(Unit)
+            advanceUntilIdle()
+            val settled = model.uiState.value
+            assertEquals("Latest name", settled.projects.single().name)
+            assertTrue(settled.unconfirmedProjectRenames.isEmpty())
+        }
+    }
+
+    @Test
+    fun projectRenameKeepsItsReceiptWhileAnEarlierFeedResponseArrives() = runTest {
+        val earlierRead = CompletableDeferred<Unit>()
+        val readback = CompletableDeferred<Unit>()
+        val service = HeldProjectRenameService(earlierRead)
+        val earlierEvent =
+            ProjectEventsEventsItem(
+                id = CHAT_EVENT,
+                seqId = 1,
+                projectId = CHAT_PROJECT,
+                kind = ProjectEventsEventsItemKind.RENAMED,
+                name = "Earlier remote name",
+                createdAt = CHAT_DATE,
+            )
+        // An earlier rename and the write receipt can share the same wire timestamp.
+        service.receipt = earlierEvent
+        withCachedProjectRename(service) { model, _ ->
+            assertNotNull(model.renameProject(CHAT_PROJECT, "After"))
+            runCurrent()
+            assertEquals("Before", model.uiState.value.projects.single().name)
+            service.response.complete(Unit)
+            runCurrent()
+            assertEquals(ChatReadPhase.Loading, model.uiState.value.projectsPhase)
+            assertEquals("After", model.uiState.value.projects.single().name)
+            service.nextProjectRead = readback
+            service.receipt =
+                earlierEvent.copy(id = service.sent.single(), seqId = 2, name = "After")
+            earlierRead.complete(Unit)
+            runCurrent()
+            assertEquals(ChatReadPhase.Loading, model.uiState.value.projectsPhase)
+            assertEquals("After", model.uiState.value.projects.single().name)
+            readback.complete(Unit)
+            advanceUntilIdle()
+            assertEquals("After", model.uiState.value.projects.single().name)
+            assertTrue(model.uiState.value.unconfirmedProjectRenames.isEmpty())
+        }
+    }
+
+    @Test
+    fun rejectedCachedProjectRenameKeepsConfirmedNameWhileInitialReadIsHeld() = runTest {
         val initialRead = CompletableDeferred<Unit>()
         val service = HeldProjectRenameService(initialRead)
         withCachedProjectRename(service) { model, _ ->
             val projectReads = service.projectReads
             model.renameProject(CHAT_PROJECT, "Rejected")
             runCurrent()
-            assertEquals("Rejected", model.uiState.value.projects.single().name)
+            assertEquals("Before", model.uiState.value.projects.single().name)
 
             service.response.completeExceptionally(ApiFailure.Http(404, null, null, null))
             advanceUntilIdle()
@@ -2644,7 +3071,7 @@ internal class ChatListProjectRenameModelTest : ChatListModelTestFixture() {
             )
             assertTrue(state.unconfirmedProjectRenames.isEmpty())
             assertEquals(projectReads, service.projectReads)
-            model.retryProjectRename(CHAT_PROJECT)
+            model.checkProjectRename(CHAT_PROJECT)
             runCurrent()
             assertEquals(1, service.sent.size)
 
@@ -2672,14 +3099,14 @@ internal class ChatListProjectRenameModelTest : ChatListModelTestFixture() {
         withCachedProjectRename(service) { model, _ ->
             model.renameProject(CHAT_PROJECT, "Pending")
             runCurrent()
-            assertEquals("Pending", model.uiState.value.projects.single().name)
+            assertEquals("Before", model.uiState.value.projects.single().name)
 
             initialRead.complete(Unit)
             advanceUntilIdle()
             val refreshed = model.uiState.value
             assertEquals(ChatReadPhase.Ready, refreshed.projectsPhase)
             assertEquals(ChatListSource.Network, refreshed.projectsSource)
-            assertEquals("Pending", refreshed.projects.single().name)
+            assertEquals("Before", refreshed.projects.single().name)
             assertEquals(CHAT_PROJECT, refreshed.renamingProjectId)
 
             service.collectionUnavailable = true
@@ -2717,7 +3144,7 @@ internal class ChatListProjectRenameModelTest : ChatListModelTestFixture() {
             model.renameProject(CHAT_PROJECT, "After")
             runCurrent()
             val eventId = service.sent.single()
-            assertEquals("After", model.uiState.value.projects.single().name)
+            assertEquals("Before", model.uiState.value.projects.single().name)
             diskCache
                 .open(identity) { true }
                 .use {
@@ -2757,7 +3184,7 @@ internal class ChatListProjectRenameModelTest : ChatListModelTestFixture() {
     }
 
     @Test
-    fun unconfirmedProjectRenameRetriesWithTheOriginalIdAndIgnoresRetiredRejection() = runTest {
+    fun projectRenameIgnoresARejectionFromARetiredWorkspace() = runTest {
         val service = HeldProjectRenameService()
         var authorized = true
         withCatchUpModel(service, authorized = { authorized }) { model ->
@@ -2765,16 +3192,7 @@ internal class ChatListProjectRenameModelTest : ChatListModelTestFixture() {
             advanceUntilIdle()
             model.renameProject(CHAT_PROJECT, "After")
             runCurrent()
-            val originalId = service.sent.single()
-            service.response.completeExceptionally(ApiFailure.Network(IOException("Lost response")))
-            advanceUntilIdle()
-            assertEquals(setOf(CHAT_PROJECT), model.uiState.value.unconfirmedProjectRenames)
-            assertNull(model.uiState.value.projectRenameRejection)
-
-            service.response = CompletableDeferred()
-            model.retryProjectRename(CHAT_PROJECT)
-            runCurrent()
-            assertEquals(listOf(originalId, originalId), service.sent)
+            assertEquals(1, service.sent.size)
             authorized = false
             val replacementStore = ViewModelStore()
             val dispatcher = StandardTestDispatcher(testScheduler)
@@ -2812,21 +3230,15 @@ internal class ChatListProjectRenameModelTest : ChatListModelTestFixture() {
     }
 
     @Test
-    fun observedProjectRenameReceiptTakesPrecedenceOverRejectedRetry() = runTest {
+    fun observedProjectRenameReceiptTakesPrecedenceOverLateRejection() = runTest {
         val service = HeldProjectRenameService()
+        val firstResponse = service.response
         withCatchUpModel(service) { model ->
             model.refresh()
             advanceUntilIdle()
             model.renameProject(CHAT_PROJECT, "After")
             runCurrent()
             val originalId = service.sent.single()
-            service.response.completeExceptionally(ApiFailure.Network(IOException("Lost response")))
-            advanceUntilIdle()
-
-            service.response = CompletableDeferred()
-            model.retryProjectRename(CHAT_PROJECT)
-            runCurrent()
-            assertEquals(listOf(originalId, originalId), service.sent)
             service.receipt =
                 ProjectEventsEventsItem(
                     id = CHAT_EVENT,
@@ -2838,7 +3250,7 @@ internal class ChatListProjectRenameModelTest : ChatListModelTestFixture() {
                 )
             model.refreshMetadata()
             advanceUntilIdle()
-            assertEquals("After", model.uiState.value.projects.single().name)
+            assertEquals("From another client", model.uiState.value.projects.single().name)
             assertEquals(CHAT_PROJECT, model.uiState.value.renamingProjectId)
 
             service.receipt =
@@ -2852,11 +3264,22 @@ internal class ChatListProjectRenameModelTest : ChatListModelTestFixture() {
                 )
             model.refreshMetadata()
             advanceUntilIdle()
-            service.response.completeExceptionally(ApiFailure.Http(409, "CONFLICT", null, null))
+            assertNull(model.uiState.value.renamingProjectId)
+
+            service.response = CompletableDeferred()
+            assertNotNull(model.renameProject(CHAT_PROJECT, "Second name"))
+            runCurrent()
+            firstResponse.completeExceptionally(ApiFailure.Http(409, "CONFLICT", null, null))
+            runCurrent()
+            assertEquals(CHAT_PROJECT, model.uiState.value.renamingProjectId)
+            assertNull(model.uiState.value.projectRenameRejection)
+            assertEquals("After", model.uiState.value.projects.single().name)
+
+            service.response.complete(Unit)
             advanceUntilIdle()
 
             val state = model.uiState.value
-            assertEquals("After", state.projects.single().name)
+            assertEquals("Second name", state.projects.single().name)
             assertNull(state.projectRenameRejection)
             assertNull(state.renamingProjectId)
             assertTrue(state.unconfirmedProjectRenames.isEmpty())
@@ -2872,15 +3295,6 @@ internal class ChatListProjectRenameModelTest : ChatListModelTestFixture() {
             model.renameProject(CHAT_PROJECT, "After")
             runCurrent()
             val originalId = service.sent.single()
-            service.response.completeExceptionally(ApiFailure.Network(IOException("Lost response")))
-            advanceUntilIdle()
-            assertEquals(setOf(CHAT_PROJECT), model.uiState.value.unconfirmedProjectRenames)
-
-            service.response = CompletableDeferred()
-            model.retryProjectRename(CHAT_PROJECT)
-            runCurrent()
-            assertEquals(listOf(originalId, originalId), service.sent)
-
             val unrelated =
                 ProjectEventsEventsItem(
                     id = CHAT_EVENT,
@@ -2909,6 +3323,7 @@ internal class ChatListProjectRenameModelTest : ChatListModelTestFixture() {
             val afterUnrelatedReceipt = model.uiState.value
             assertEquals("After", afterUnrelatedReceipt.projects.single().name)
             assertEquals(rejection, afterUnrelatedReceipt.projectRenameRejection)
+            assertNull(afterUnrelatedReceipt.projectList.confirmedRenameIds[CHAT_PROJECT])
 
             service.receipt = unrelated.copy(id = originalId, seqId = 2)
             model.refreshMetadata()
@@ -2916,6 +3331,10 @@ internal class ChatListProjectRenameModelTest : ChatListModelTestFixture() {
             val afterMatchingReceipt = model.uiState.value
             assertEquals("After", afterMatchingReceipt.projects.single().name)
             assertNull(afterMatchingReceipt.projectRenameRejection)
+            assertEquals(
+                originalId,
+                afterMatchingReceipt.projectList.confirmedRenameIds[CHAT_PROJECT],
+            )
         }
     }
 
@@ -2927,7 +3346,7 @@ internal class ChatListProjectRenameModelTest : ChatListModelTestFixture() {
             advanceUntilIdle()
             model.renameProject(CHAT_PROJECT, "Field notes")
             runCurrent()
-            assertEquals("Field notes", model.uiState.value.projects.single().name)
+            assertEquals("Before", model.uiState.value.projects.single().name)
             service.response.completeExceptionally(ApiFailure.Network(ConnectException()))
             advanceUntilIdle()
             val failed = model.uiState.value
@@ -2937,7 +3356,7 @@ internal class ChatListProjectRenameModelTest : ChatListModelTestFixture() {
 
             service.receipt =
                 ProjectEventsEventsItem(
-                    id = eventId,
+                    id = CHAT_EVENT,
                     seqId = 1,
                     projectId = CHAT_PROJECT,
                     kind = ProjectEventsEventsItemKind.RENAMED,
@@ -2945,9 +3364,10 @@ internal class ChatListProjectRenameModelTest : ChatListModelTestFixture() {
                     createdAt = CHAT_DATE,
                 )
             service.response = CompletableDeferred(Unit)
-            model.retryProjectRename(CHAT_PROJECT)
+            val next = checkNotNull(model.renameProject(CHAT_PROJECT, "Field notes"))
             advanceUntilIdle()
-            assertEquals(listOf(eventId, eventId), service.sent)
+            assertNotEquals(eventId, next.eventId)
+            assertEquals(listOf(eventId, next.eventId), service.sent)
             assertEquals("Field notes", model.uiState.value.projects.single().name)
             assertTrue(model.uiState.value.unconfirmedProjectRenames.isEmpty())
         }
@@ -2977,7 +3397,7 @@ internal class ChatListProjectRenameModelTest : ChatListModelTestFixture() {
                     projectId: String,
                     name: String,
                     eventId: String,
-                ) {
+                ): ConfirmedProject {
                     event =
                         ProjectEventsEventsItem(
                             id = eventId,
@@ -2988,6 +3408,7 @@ internal class ChatListProjectRenameModelTest : ChatListModelTestFixture() {
                             createdAt = CHAT_DATE,
                         )
                     response.await()
+                    return ConfirmedProject(projectId, name, CHAT_DATE, CHAT_DATE, "a0")
                 }
 
                 override suspend fun projectEvents(since: Long) =
@@ -5341,7 +5762,7 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
             assertTrue(renameEventId.isCompleted)
             current.complete(newSnapshot)
             runCurrent()
-            assertEquals("Local rename", model.uiState.value.threads.single().title)
+            assertEquals("Newest", model.uiState.value.threads.single().title)
 
             renameResponse.complete(Unit)
             advanceUntilIdle()

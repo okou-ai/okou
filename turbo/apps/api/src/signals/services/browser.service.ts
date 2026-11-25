@@ -53,7 +53,10 @@ import {
   saveBrowserSnapshot$,
   browserLifetime,
 } from "./browser-snapshot.service";
-import { reconcileBrowsers$ } from "./browser-reconcile.service";
+import {
+  reconcileBrowsers$,
+  stopBrowserForRestart$,
+} from "./browser-reconcile.service";
 
 interface BrowserInput {
   readonly viewer?: boolean;
@@ -983,6 +986,33 @@ function browserLease(
   );
 }
 
+function browserRestart(context$: ReturnType<typeof browserContext>) {
+  return command(
+    async (
+      { get, set },
+      instanceId: string,
+      signal: AbortSignal,
+    ): Promise<Result<{ ok: true }>> => {
+      const ctx = await get(context$);
+      signal.throwIfAborted();
+      if (ctx.kind === "error") {
+        return ctx;
+      }
+      const result = await settleIncludingAbort(
+        provider(
+          set(stopBrowserForRestart$, ctx.owner, instanceId, signal),
+          signal,
+        ),
+      );
+      signal.throwIfAborted();
+      if (!result.ok) {
+        return errorResult(result.error);
+      }
+      return result.value ? { kind: "ok", value: { ok: true } } : unavailable();
+    },
+  );
+}
+
 function browserResize(
   context$: ReturnType<typeof browserContext>,
   view$: ReturnType<typeof browserView>,
@@ -1224,6 +1254,7 @@ export function createBrowserGraph(input$: BrowserInputNode) {
   return {
     present$: browserPresent(context$, view$),
     open$,
+    restart$: browserRestart(context$),
     lease$: browserLease(context$, view$),
     resize$: browserResize(context$, view$),
     close$: browserClose(context$, view$),

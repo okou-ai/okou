@@ -118,9 +118,9 @@
     <string name="connector_access_deny">拒絕</string>
     <string name="connector_access_always">始終</string>
     <string name="connector_access_expired">已過期</string>
-    <string name="connector_access_under_hour">&lt;1小時</string>
-    <string name="connector_access_hours">%d小時</string>
-    <string name="connector_access_days">%d天</string>
+    <string name="connector_access_under_hour">&lt; 1 小時</string>
+    <string name="connector_access_hours">%d 小時</string>
+    <string name="connector_access_days">%d 天</string>
     <string name="connector_access_allow_always">始終允許</string>
     <string name="connector_access_allow_hour">允許 1 小時</string>
     <string name="connector_access_allow_day">允許 24 小時</string>

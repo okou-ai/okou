@@ -332,13 +332,13 @@ function ChatThreadRenameMenuItem({
   const openRename = useSet(signals.openRename$);
   const pageSignal = useGet(pageSignal$);
   const label = t(($) => {
-    return $.chat.sidebar.rename;
+    return $.chat.actions.rename;
   });
 
   return (
     <DropdownMenuItem
       aria-label={label}
-      aria-keyshortcuts={GLOBAL_KEYBOARD_SHORTCUTS.renameChat.ariaKeyShortcuts}
+      aria-keyshortcuts={GLOBAL_KEYBOARD_SHORTCUTS.rename.ariaKeyShortcuts}
       onClick={() => {
         detach(openRename(pageSignal), Reason.DomCallback);
       }}
@@ -346,7 +346,7 @@ function ChatThreadRenameMenuItem({
       <Pencil size={16} className="mr-2" />
       {label}
       <ChatThreadMenuShortcut
-        shortcut={GLOBAL_KEYBOARD_SHORTCUTS.renameChat.binding}
+        shortcut={GLOBAL_KEYBOARD_SHORTCUTS.rename.binding}
       />
     </DropdownMenuItem>
   );
@@ -502,7 +502,7 @@ function ChatThreadMenuItems({
       >
         <Trash size={16} className="mr-2" />
         {t(($) => {
-          return $.chat.sidebar.delete;
+          return $.chat.actions.delete;
         })}
       </DropdownMenuItem>
     </>

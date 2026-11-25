@@ -917,7 +917,6 @@ const prepareBrowserUserAction$ = command(
     const [run] = await db
       .select({
         chatThreadId: agentRuns.chatThreadId,
-        triggerSource: agentRuns.triggerSource,
       })
       .from(agentRuns)
       .where(
@@ -930,10 +929,7 @@ const prepareBrowserUserAction$ = command(
       )
       .limit(1);
     signal.throwIfAborted();
-    if (
-      !run?.chatThreadId ||
-      (run.triggerSource !== "web" && run.triggerSource !== "agent")
-    ) {
+    if (!run?.chatThreadId) {
       return conflict(
         "Browser user actions require an active chat run",
         "BROWSER_USER_ACTION_RUN_REQUIRED",

@@ -1,5 +1,6 @@
 import CCStateSwiftUI
 import ChatData
+import ChatDomain
 import Foundation
 import SwiftUI
 
@@ -316,14 +317,10 @@ private struct WorkspaceRootView: View {
   private var chatPage: some View {
     Group {
       if let conversation = store.selectedConversation {
-        ChatDetailView(
-          conversation: conversation,
+        WorkspaceChatDetail(
+          store: store, conversation: conversation,
           workspaceName: authentication.workspacePresentation(workspaceID)?.name,
-          didSend: { await notifications.requestAfterSend() },
-          topContentInset: topContentHeight,
-          mentionSource: ComposerMentionSource(threads: store.list.threads),
-          onFirstMessagePresented: { store.newChatSubmission?.presentMessage($0) },
-          fork: { store.startFork($0, from: conversation) }
+          notifications: notifications, topContentInset: topContentHeight
         )
         .id(conversation.thread.id)
       } else {
@@ -361,10 +358,7 @@ private struct WorkspaceRootView: View {
     .sheet(
       item: Binding(get: { store.fork }, set: { if $0 == nil { store.dismissFork() } })
     ) { flow in
-      ChatForkView(
-        flow: flow, webURL: store.webURL, threads: store.list.threads,
-        project: store.projects.projects.first(where: { $0.id == flow.projectID }),
-        needsUpgrade: store.needsUpgrade, dismiss: store.dismissFork)
+      WorkspaceForkSheet(store: store, flow: flow)
     }
     .chatFeedbackOverlay(store: store, isPresented: !sidebar.isOpen)
     .composerSuggestionOverlay(
@@ -373,25 +367,8 @@ private struct WorkspaceRootView: View {
   }
 
   @ViewBuilder private var newChatComposer: some View {
-    let composer = store.newComposer
-    ChatComposerView(
-      isBusy: store.isCreating,
-      showsProgress: store.isCreating, canStop: false,
-      needsUpgrade: store.needsUpgrade,
-      error: store.error, attachmentURL: store.webURL,
-      draftState: composer,
-      submit: {
-        await store.sendNewChat(
-          sendTransition: ConversationSendTransition(), reduceMotion: reduceMotion)
-        await notifications.requestAfterSend()
-      },
-      refresh: nil,
-      modelSelection: store.newModelSelection,
-      connectorSelection: store.newModelSelection.connectors,
-      mentionSource: ComposerMentionSource(threads: store.list.threads),
-      workflowSource: store.composerWorkflows,
-      project: store.newChatProject,
-      removeProject: store.removeNewChatProject
+    WorkspaceNewChatComposer(
+      store: store, notifications: notifications, reduceMotion: reduceMotion
     )
     .transition(.identity)
   }
@@ -416,9 +393,7 @@ private struct WorkspaceRootView: View {
       UIApplication.shared.sendAction(
         #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
-    .onChange(of: store.selectedThreadID) { _, id in
-      if id == nil { taglineIndex = Int.random(in: 0..<64) }
-    }
+    .modifier(NewChatTaglineReset(store: store, taglineIndex: $taglineIndex))
   }
 
   private var greetingText: String {
@@ -455,6 +430,7 @@ private struct WorkspaceWidgetPublisher: View {
   private let selectedThreadID: String?
   @ResolvedValue private var selectedDraft: Bool?
   @ResolvedValue private var listedDrafts: Set<String>?
+  @ResolvedValue private var threads: [ChatThread]?
 
   init(store: WorkspaceStore, workspaceID: String, name: String?) {
     self.store = store
@@ -465,18 +441,136 @@ private struct WorkspaceWidgetPublisher: View {
     _selectedDraft = ResolvedValue(
       selected?.composer.unsentContent ?? ComposerDraftSignals.noContent)
     _listedDrafts = ResolvedValue(store.listedDraftIDs)
+    _threads = ResolvedValue(store.list.threadsValue)
   }
 
   var body: some View {
     let listed = listedDrafts
     let snapshot = OkouWidgetPublishing.snapshot(
-      workspaceID: workspaceID, threads: store.list.threads, name: name,
+      workspaceID: workspaceID, threads: threads ?? store.list.threads, name: name,
       hasDraft: { id in
         id == selectedThreadID ? selectedDraft == true : store.hasDraft(id, listed: listed)
       })
     Color.clear
       .frame(width: 0, height: 0)
       .task(id: snapshot) { [snapshot] in OkouWidgetPublishing.publish(snapshot) }
+  }
+}
+
+/// Picks a new tagline when the selection clears. The selection is read from the workspace
+/// session's graph, so this applies under the workspace's Store provider.
+private struct NewChatTaglineReset: ViewModifier {
+  @Binding var taglineIndex: Int
+  @ResolvedValue private var selection: String??
+
+  init(store: WorkspaceStore, taglineIndex: Binding<Int>) {
+    _taglineIndex = taglineIndex
+    _selection = ResolvedValue(store.selectedThreadValue)
+  }
+
+  func body(content: Content) -> some View {
+    content.onChange(of: selection ?? nil) { _, id in
+      if id == nil { taglineIndex = Int.random(in: 0..<64) }
+    }
+  }
+}
+
+/// The selected chat. Its mention candidates are read from the workspace session's graph, so
+/// the detail sits under the workspace's Store provider.
+private struct WorkspaceChatDetail: View {
+  let store: WorkspaceStore
+  let conversation: ConversationStore
+  let workspaceName: String?
+  let notifications: NotificationService
+  let topContentInset: CGFloat
+  @ResolvedValue private var threads: [ChatThread]?
+
+  init(
+    store: WorkspaceStore, conversation: ConversationStore, workspaceName: String?,
+    notifications: NotificationService, topContentInset: CGFloat
+  ) {
+    self.store = store
+    self.conversation = conversation
+    self.workspaceName = workspaceName
+    self.notifications = notifications
+    self.topContentInset = topContentInset
+    _threads = ResolvedValue(store.list.threadsValue)
+  }
+
+  var body: some View {
+    ChatDetailView(
+      conversation: conversation, workspaceName: workspaceName,
+      didSend: { await notifications.requestAfterSend() },
+      topContentInset: topContentInset,
+      mentionSource: ComposerMentionSource(threads: threads ?? store.list.threads),
+      onFirstMessagePresented: { store.newChatSubmission?.presentMessage($0) },
+      fork: { store.startFork($0, from: conversation) }
+    )
+  }
+}
+
+/// The new chat's composer. Its Project is read from the workspace session's graph, so the
+/// composer sits under the workspace's Store provider.
+private struct WorkspaceNewChatComposer: View {
+  let store: WorkspaceStore
+  let notifications: NotificationService
+  let reduceMotion: Bool
+  @ResolvedValue private var projects: [ChatProject]?
+  @ResolvedValue private var threads: [ChatThread]?
+
+  init(store: WorkspaceStore, notifications: NotificationService, reduceMotion: Bool) {
+    self.store = store
+    self.notifications = notifications
+    self.reduceMotion = reduceMotion
+    _projects = ResolvedValue(store.projects.confirmedValue)
+    _threads = ResolvedValue(store.list.threadsValue)
+  }
+
+  var body: some View {
+    let composer = store.newComposer
+    ChatComposerView(
+      isBusy: store.isCreating,
+      showsProgress: store.isCreating, canStop: false,
+      needsUpgrade: store.needsUpgrade,
+      error: store.error, attachmentURL: store.webURL,
+      draftState: composer,
+      submit: {
+        await store.sendNewChat(
+          sendTransition: ConversationSendTransition(), reduceMotion: reduceMotion)
+        await notifications.requestAfterSend()
+      },
+      refresh: nil,
+      modelSelection: store.newModelSelection,
+      connectorSelection: store.newModelSelection.connectors,
+      mentionSource: ComposerMentionSource(threads: threads ?? store.list.threads),
+      workflowSource: store.composerWorkflows,
+      project: store.newChatProjectID.flatMap { id in
+        (projects ?? store.projects.projects).first { $0.id == id }
+      },
+      removeProject: store.removeNewChatProject
+    )
+  }
+}
+
+/// The fork sheet. Its Project is read from the workspace session's graph.
+private struct WorkspaceForkSheet: View {
+  let store: WorkspaceStore
+  let flow: ChatForkStore
+  @ResolvedValue private var projects: [ChatProject]?
+  @ResolvedValue private var threads: [ChatThread]?
+
+  init(store: WorkspaceStore, flow: ChatForkStore) {
+    self.store = store
+    self.flow = flow
+    _projects = ResolvedValue(store.projects.confirmedValue)
+    _threads = ResolvedValue(store.list.threadsValue)
+  }
+
+  var body: some View {
+    ChatForkView(
+      flow: flow, webURL: store.webURL, threads: threads ?? store.list.threads,
+      project: (projects ?? store.projects.projects).first { $0.id == flow.projectID },
+      needsUpgrade: store.needsUpgrade, dismiss: store.dismissFork)
   }
 }
 

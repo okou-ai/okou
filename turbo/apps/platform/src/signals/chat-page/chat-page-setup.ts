@@ -15,7 +15,6 @@ import { SIDEBAR_PARAM } from "./chat-thread-pane-navigation.ts";
 import { createThreadMetaLookup } from "./chat-thread-event-sourcing.ts";
 import { recordBootstrapThreadMetadataTiming$ } from "../../lib/posthog.ts";
 import { restoreNarrowSidebarScroll$ } from "./chat-layout.ts";
-import { watchCreditsFeedbackSurvey$ } from "../billing-feedback.ts";
 
 const resolveLeftThreadMeta$ = createThreadMetaLookup();
 const resolveRightThreadMeta$ = createThreadMetaLookup();
@@ -101,7 +100,6 @@ const internalSetupChatPage$ = command(
 );
 
 export const setupChatPage$ = command(async ({ set }, signal: AbortSignal) => {
-  set(watchCreditsFeedbackSurvey$, signal);
   await set(internalSetupChatPage$, signal);
   signal.throwIfAborted();
 });

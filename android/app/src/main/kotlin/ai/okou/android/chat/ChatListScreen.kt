@@ -140,7 +140,6 @@ internal fun ChatListScreen(
     onRenameFocusFinished: (WorkspaceRenameTarget) -> Unit,
     requestDeleteProject: (String) -> Unit,
     confirmingProjectDelete: String?,
-    retryProjectRename: (String) -> Unit,
     projectExpansion: ProjectExpansionModel?,
     listState: LazyListState,
     newChat: (String?) -> Unit,
@@ -538,21 +537,13 @@ internal fun ChatListScreen(
                             }
                         } else if (project.id in unconfirmedRenames) {
                             item(key = "project_rename_${project.id}") {
-                                Column(
+                                ChatNotice(
+                                    if (project.id in state.projectList.connectionFailedRenames)
+                                        R.string.chat_action_connection_failed
+                                    else R.string.chat_project_rename_unconfirmed,
                                     Modifier.animateItem(null, placement, null)
                                         .projectChildIndent(outline),
-                                ) {
-                                    ChatNotice(
-                                        if (project.id in state.projectList.connectionFailedRenames)
-                                            R.string.chat_action_connection_failed
-                                        else R.string.chat_project_rename_unconfirmed,
-                                    )
-                                    ChatAction(
-                                        R.string.retry,
-                                        { retryProjectRename(project.id) },
-                                        enabled = canRenameProject,
-                                    )
-                                }
+                                )
                             }
                         }
                         if (section.showsEmptyProjectAction) {

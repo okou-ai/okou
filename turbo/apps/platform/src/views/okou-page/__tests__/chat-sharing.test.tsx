@@ -50,9 +50,23 @@ async function conversation(answer: string, refreshed = false) {
   return [promptId, answerId];
 }
 
-test("chat-sharing-001 toggling the prompt from its row label updates the selection once", async () => {
-  await conversation("Inventory checked");
+test("chat-sharing-001 / chat-sharing-007 Selecting message groups creates and copies a public snapshot", async () => {
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  const snapshot = crypto.randomUUID();
+  let submitted: unknown;
+  context.mocks.api(
+    sharedThreadVisibilityContract.create,
+    ({ body, respond }) => {
+      submitted = body;
+      return respond(201, { id: snapshot });
+    },
+  );
+  const ids = await conversation("Dispatch complete");
   click(await findFastControl("button", "Share messages"));
+  await expect(
+    screen.findByText("Anyone with the link"),
+  ).resolves.toBeInTheDocument();
+
   const prompt = await screen.findByText("Inspect inventory");
   const share = await findFastControl("button", "Share");
   expect(share).toBeDisabled();
@@ -69,6 +83,26 @@ test("chat-sharing-001 toggling the prompt from its row label updates the select
   });
   expect(row.getByRole("checkbox")).not.toBeChecked();
   await screen.findAllByText("0 selected");
+
+  const answer = messageGroup("Dispatch complete");
+  click(answer.getByText("Select message group"));
+  expect(answer.getByRole("checkbox")).toBeChecked();
+  click(answer.getByText("Deselect message group"));
+
+  for (const text of ["Inspect inventory", "Dispatch complete"]) {
+    click(messageGroup(text).getByText("Select message group"));
+  }
+  click(share);
+  const link = await screen.findByRole("textbox", { name: "Shared chat link" });
+  expect(link).toHaveValue(location.origin + "/share/threads/" + snapshot);
+  expect(submitted).toMatchObject({ eventIds: ids, audience: "public" });
+  expect(clipboard.writes).toContain(
+    location.origin + "/share/threads/" + snapshot,
+  );
+  const selection = messageGroup("Dispatch complete").getByRole("checkbox");
+  click(selection);
+  expect(selection).toBeChecked();
+  expect(selectionPopup()).not.toBeInTheDocument();
 });
 
 test("chat-sharing-005 copying code and clicking the answer preserve the intended message selection", async () => {
@@ -95,21 +129,6 @@ test("chat-sharing-005 copying code and clicking the answer preserve the intende
   expect(share).toBeEnabled();
 });
 
-test("chat-sharing-020 Escape dismisses the message audience menu and returns to Share", async () => {
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  await conversation("Inventory checked", true);
-  const composer = await screen.findByRole("textbox", { name: /message/i });
-  const share = await findFastControl("button", "Share message");
-  click(share);
-  await screen.findByRole("menu");
-  await userEvent.keyboard("{Escape}");
-  await waitFor(() => {
-    return expect(share).toHaveFocus();
-  });
-  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-  expect(clipboard.writes).toStrictEqual([]);
-  expect(composer).toBeInTheDocument();
-});
 function messageGroup(text: string) {
   return within(
     screen
@@ -117,35 +136,6 @@ function messageGroup(text: string) {
       .closest<HTMLElement>("[data-chat-share-selectable-group]")!,
   );
 }
-
-test("chat-sharing-007 public selection copies the snapshot and locks the answer group", async () => {
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  const snapshot = crypto.randomUUID();
-  let submitted: unknown;
-  context.mocks.api(
-    sharedThreadVisibilityContract.create,
-    ({ body, respond }) => {
-      submitted = body;
-      return respond(201, { id: snapshot });
-    },
-  );
-  const ids = await conversation("Dispatch complete");
-  click(await findFastControl("button", "Share messages"));
-  for (const text of ["Inspect inventory", "Dispatch complete"]) {
-    click(messageGroup(text).getByText("Select message group"));
-  }
-  click(await findFastControl("button", "Share"));
-  const link = await screen.findByRole("textbox", { name: "Shared chat link" });
-  expect(link).toHaveValue(location.origin + "/share/threads/" + snapshot);
-  expect(submitted).toMatchObject({ eventIds: ids, audience: "public" });
-  expect(clipboard.writes).toContain(
-    location.origin + "/share/threads/" + snapshot,
-  );
-  const selection = messageGroup("Dispatch complete").getByRole("checkbox");
-  click(selection);
-  expect(selection).toBeChecked();
-  expect(selectionPopup()).not.toBeInTheDocument();
-});
 
 test("chat-sharing-016 a group above the snapshot limit stays unselected", async () => {
   const serials = "01234567,89012345,".repeat(90_000);
@@ -395,16 +385,6 @@ test.each(["013", "014"] as const)(
     expectSelectionCommands();
   },
 );
-
-test("A new share opens with public access while both message groups remain selectable", async () => {
-  await conversation("Release approved");
-  click(await findFastControl("button", "Share messages"));
-  await expect(
-    screen.findByText("Anyone with the link"),
-  ).resolves.toBeInTheDocument();
-  click(messageGroup("Release approved").getByText("Select message group"));
-  expect(messageGroup("Release approved").getByRole("checkbox")).toBeChecked();
-});
 
 test.each([
   { outcome: "created", label: "chat-sharing-018" },

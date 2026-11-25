@@ -220,7 +220,7 @@ internal fun ConnectorDetails(
         ) {
             if (entry != null) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    ConnectorIcon(entry.icon, large = true)
+                    ConnectorIcon(entry.icon)
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
                             entry.name,

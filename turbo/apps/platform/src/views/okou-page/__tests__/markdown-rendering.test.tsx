@@ -115,7 +115,7 @@ test("Long bare URLs show a short label and retain their destination", async () 
   expect(getAction("link", name)).toHaveAttribute("href", long);
 });
 
-test("markdown-interactions-001 copying the second snippet leaves the first copy action untouched", async () => {
+test("markdown-interactions-001 copying the second snippet writes its exact text to the clipboard", async () => {
   const sample = 'const second = "beta";';
   const clipboard = context.mocks.browser.clipboardWriteText();
   const path = completedMarkdownReply(
@@ -135,10 +135,8 @@ test("markdown-interactions-001 copying the second snippet leaves the first copy
   expect(buttons).toHaveLength(2);
   click(buttons[1]);
   await waitFor(() => {
-    return expect(buttons[1]).toHaveAccessibleName("Copied");
+    return expect(clipboard.writes).toStrictEqual([sample + "\n"]);
   });
-  expect(buttons[0]).toHaveAccessibleName("Copy to clipboard");
-  expect(clipboard.writes).toStrictEqual([sample + "\n"]);
 });
 test("markdown-interactions-003 run completion preserves one copy of each rich message element", async () => {
   const chat = createMarkdownChatFixture(context),

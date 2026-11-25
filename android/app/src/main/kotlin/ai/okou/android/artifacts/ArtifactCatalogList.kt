@@ -3,9 +3,17 @@ package ai.okou.android.artifacts
 import ai.okou.android.R
 import ai.okou.android.WorkspaceFilterRow
 import ai.okou.android.WorkspaceSearchField
+import ai.okou.android.WorkspaceToolDirectoryRow
 import ai.okou.android.chat.ChatListTextAction
 import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.workspaceSearchFocusOutline
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.icu.util.Calendar
+import android.icu.util.GregorianCalendar
+import android.icu.util.TimeZone as IcuTimeZone
 import android.text.format.DateFormat
 import androidx.annotation.StringRes
 import androidx.compose.foundation.Image
@@ -28,7 +36,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -46,6 +53,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -53,7 +61,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -80,9 +87,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.LifecycleStartEffect
 import java.text.SimpleDateFormat
-import java.util.Calendar
 import java.util.Date
+import java.util.TimeZone
 
 @Composable
 internal fun ArtifactCatalogList(
@@ -345,42 +354,17 @@ private fun ArtifactRow(
     modifier: Modifier,
     onClick: () -> Unit,
 ) {
-    val colors = MaterialTheme.colorScheme
-    val foreground = if (selected) colors.onSecondaryContainer else colors.onSurface
-    val meta = if (selected) foreground else colors.onSurfaceVariant
-    val shape = RoundedCornerShape(8.dp)
-    Row(
-        modifier
-            .fillMaxWidth()
-            .heightIn(min = 80.dp)
-            .clip(shape)
-            .then(if (selected) Modifier.background(colors.secondaryContainer) else Modifier)
-            .workspaceSearchFocusOutline(shape)
-            .selectable(selected = selected, role = Role.Button, onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp)
-            .testTag("artifact_row"),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.Top,
-    ) {
-        ArtifactThumbnail(item, thumbnail)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(
-                item.title,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = foreground,
-            )
-            Text(
-                stringResource(R.string.artifact_metadata, stringResource(item.kind.label()), date),
-                style = artifactSmallText(),
-                color = meta,
-            )
-        }
-        Icon(
-            painterResource(R.drawable.ic_chevron_right),
-            contentDescription = null,
-            modifier = Modifier.align(Alignment.CenterVertically).size(18.dp),
-            tint = foreground,
+    WorkspaceToolDirectoryRow(
+        title = item.title,
+        selected = selected,
+        onClick = onClick,
+        modifier = modifier.testTag("artifact_row"),
+        leading = { ArtifactThumbnail(item, thumbnail) },
+    ) { supportingColor ->
+        Text(
+            stringResource(R.string.artifact_metadata, stringResource(item.kind.label()), date),
+            style = artifactSmallText(),
+            color = supportingColor,
         )
     }
 }
@@ -394,27 +378,16 @@ private fun ArtifactThumbnail(
         produceState<android.graphics.Bitmap?>(null, item.thumbnail) {
             value = item.thumbnail?.let { thumbnail(it) }
         }
-    val colors = MaterialTheme.colorScheme
-    Box(
-        Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(colors.surfaceVariant),
-        contentAlignment = Alignment.Center,
-    ) {
-        val image = bitmap
-        if (image != null) {
-            Image(
-                image.asImageBitmap(),
-                null,
-                Modifier.fillMaxSize(),
-                contentScale = ContentScale.Fit,
-            )
-        } else {
-            Icon(
-                painterResource(item.kind.icon()),
-                null,
-                Modifier.size(20.dp),
-                tint = colors.onSurface,
-            )
-        }
+    val image = bitmap
+    if (image != null) {
+        Image(image.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+    } else {
+        Icon(
+            painterResource(item.kind.icon()),
+            null,
+            Modifier.size(20.dp),
+            tint = MaterialTheme.colorScheme.onBackground,
+        )
     }
 }
 
@@ -522,15 +495,37 @@ internal enum class ArtifactDay(@param:StringRes val label: Int) {
 }
 
 internal class ArtifactDates(
-    val today: Long,
-    val yesterday: Long,
+    nowMillis: Long,
+    zone: TimeZone,
     private val formatTime: java.text.DateFormat,
     private val formatDate: java.text.DateFormat,
     private val formatMonthDay: java.text.DateFormat,
-    private val startOfYear: Long,
     private val todayLabel: String,
     private val yesterdayLabel: String,
 ) {
+    val today: Long
+    val yesterday: Long
+    private val startOfYear: Long
+
+    init {
+        val calendar =
+            GregorianCalendar(IcuTimeZone.getTimeZone(zone.id)).apply {
+                timeInMillis = nowMillis
+                // A local date begins at its first valid instant, even when midnight repeats or is
+                // skipped.
+                repeatedWallTimeOption = Calendar.WALLTIME_FIRST
+                skippedWallTimeOption = Calendar.WALLTIME_NEXT_VALID
+            }
+        val localDay = calendar.get(Calendar.JULIAN_DAY)
+        val firstDayOfYear = localDay - (calendar.get(Calendar.DAY_OF_YEAR) - 1)
+        today = calendar.startOfDayMillis(localDay)
+        yesterday = calendar.startOfDayMillis(localDay - 1)
+        startOfYear = calendar.startOfDayMillis(firstDayOfYear)
+        formatTime.timeZone = zone
+        formatDate.timeZone = zone
+        formatMonthDay.timeZone = zone
+    }
+
     fun group(time: Long): ArtifactDay =
         when {
             time >= today -> ArtifactDay.Today
@@ -555,32 +550,49 @@ internal class ArtifactDates(
 internal fun rememberArtifactDates(): ArtifactDates {
     val context = LocalContext.current
     val locale = LocalConfiguration.current.locales[0]
-    val calendar =
-        Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }
-    val today = calendar.timeInMillis
-    val startOfYear =
-        (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_YEAR, 1) }.timeInMillis
-    calendar.add(Calendar.DATE, -1)
-    val yesterday = calendar.timeInMillis
+    var calendarRevision by remember { mutableIntStateOf(0) }
+    LifecycleStartEffect(context) {
+        val receiver =
+            object : BroadcastReceiver() {
+                override fun onReceive(context: Context, intent: Intent) {
+                    calendarRevision++
+                }
+            }
+        val filter =
+            IntentFilter(Intent.ACTION_DATE_CHANGED).apply {
+                addAction(Intent.ACTION_TIME_CHANGED)
+                addAction(Intent.ACTION_TIMEZONE_CHANGED)
+            }
+        ContextCompat.registerReceiver(
+            context,
+            receiver,
+            filter,
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        calendarRevision++
+        onStopOrDispose { context.unregisterReceiver(receiver) }
+    }
     val todayLabel = stringResource(R.string.artifact_today)
     val yesterdayLabel = stringResource(R.string.artifact_yesterday)
-    return remember(context, locale, today, yesterday, todayLabel, yesterdayLabel) {
+    return remember(context, locale, calendarRevision, todayLabel, yesterdayLabel) {
         ArtifactDates(
-            today,
-            yesterday,
-            DateFormat.getTimeFormat(context),
-            DateFormat.getMediumDateFormat(context),
-            SimpleDateFormat(DateFormat.getBestDateTimePattern(locale, "MMMd"), locale),
-            startOfYear,
-            todayLabel,
-            yesterdayLabel,
+            nowMillis = System.currentTimeMillis(),
+            zone = TimeZone.getDefault(),
+            formatTime = DateFormat.getTimeFormat(context),
+            formatDate = DateFormat.getMediumDateFormat(context),
+            formatMonthDay =
+                SimpleDateFormat(DateFormat.getBestDateTimePattern(locale, "MMMd"), locale),
+            todayLabel = todayLabel,
+            yesterdayLabel = yesterdayLabel,
         )
     }
+}
+
+private fun Calendar.startOfDayMillis(localDay: Int): Long {
+    clear()
+    set(Calendar.JULIAN_DAY, localDay)
+    set(Calendar.MILLISECONDS_IN_DAY, 0)
+    return timeInMillis
 }
 
 private fun ArtifactFilter.label(): Int =

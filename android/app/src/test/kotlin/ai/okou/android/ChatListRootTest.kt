@@ -218,18 +218,71 @@ internal class ChatRenameFormRootTest : ChatListRootTestFixture() {
     }
 
     @Test
-    fun lateChatRenameConfirmationKeepsNewEditsOpen() {
+    fun chatRenameUsesTheLatestConfirmedNameWhileKeepingEditsAndSelection() {
         val app = compose.activity.application as ChatListApplication
         val events = app.fixture.rowEventTail()
-        val write = AtomicReference<String>()
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithTag("chat_$CHAT_PERSONAL").performTouchInput { longClick() }
+        compose.onNodeWithText("Rename chat").performClick()
+        val editor = compose.onNodeWithContentDescription("Chat title")
+        val save = compose.onNodeWithText("Save")
+        val saveBounds = save.getUnclippedBoundsInRoot()
+        compose.onNodeWithText("Leading and trailing spaces are removed.").assertDoesNotExist()
+        editor.performTextReplacement("")
+        val required = app.getString(R.string.chat_rename_required)
+        compose.onNodeWithText(required, useUnmergedTree = true).assertIsDisplayed()
+        editor.assert(SemanticsMatcher.expectValue(SemanticsProperties.Error, required))
+        save.assertIsNotEnabled()
+        assertEquals(saveBounds, save.getUnclippedBoundsInRoot())
+        editor.performTextReplacement("Personal chat")
+
+        fun publishTitle(sequence: Long, eventId: String, title: String) {
+            events.add(
+                sequence to chatEventWire(eventId, sequence, kind = "renamed", title = title),
+            )
+            refreshWorkspaceChats()
+            compose.waitUntil(10_000) {
+                currentList()?.confirmedThreads?.any {
+                    it.id == CHAT_PERSONAL && it.title == title
+                } == true
+            }
+        }
+
+        publishTitle(24, HISTORY_LAST_EVENT, "Remote title")
+        editor.assertTextContains("Remote title").assertIsFocused()
+        save.assertIsNotEnabled()
+
+        editor.performTextReplacement("Personal chat")
+        editor.performTextInputSelection(TextRange(1, 4))
+        save.assertIsEnabled()
+        publishTitle(25, "00000025-0000-4000-8000-000000000000", "Newer title")
+        editor.assertTextContains("Personal chat").assertIsFocused()
+        assertEquals(
+            TextRange(1, 4),
+            editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange],
+        )
+        save.assertIsEnabled()
+
+        publishTitle(26, "00000026-0000-4000-8000-000000000000", "Personal chat")
+        editor.assertTextContains("Personal chat")
+        save.assertIsNotEnabled()
+
+        editor.performTextReplacement("  Personal chat  ")
+        save.assertIsNotEnabled()
+        publishTitle(27, "00000027-0000-4000-8000-000000000000", "Final title")
+        editor.assertTextContains("Final title")
+        save.assertIsNotEnabled()
+    }
+
+    @Test
+    fun lateCanonicalChatTitleKeepsNewEditsOpen() {
+        val app = compose.activity.application as ChatListApplication
+        val events = app.fixture.rowEventTail()
         app.fixture.commandResponse = { request ->
-            if (request.requestUrl?.encodedPath == "/api/chat-threads/$CHAT_PERSONAL/rename") {
-                val body = request.jsonCommandBody()
-                val id = body.getValue("eventId").jsonPrimitive.content
-                val name = body.getValue("title").jsonPrimitive.content
-                write.set(chatEventWire(id, 24, CHAT_PERSONAL, "renamed", title = name))
-                MockResponse().setResponseCode(503)
-            } else null
+            if (request.requestUrl?.encodedPath == "/api/chat-threads/$CHAT_PERSONAL/rename")
+                MockResponse().setResponseCode(400)
+            else null
         }
         app.responseGate.countDown()
         awaitListAndNames()
@@ -239,8 +292,6 @@ internal class ChatRenameFormRootTest : ChatListRootTestFixture() {
         val editor = compose.onNodeWithContentDescription("Chat title")
         editor.performTextReplacement("First title")
         compose.onNodeWithText("Save").performClick()
-        compose.waitUntilExactlyOneExists(hasText("Check result") and isEnabled(), 10_000)
-        compose.onNodeWithText("Check result").performClick()
         compose.waitUntilExactlyOneExists(
             hasText("Could not save. Your changes are still here."),
             10_000,
@@ -248,7 +299,9 @@ internal class ChatRenameFormRootTest : ChatListRootTestFixture() {
 
         editor.performTextReplacement("New draft")
         editor.performTextInputSelection(TextRange(0, 3))
-        events.add(24L to checkNotNull(write.get()))
+        events.add(
+            24L to chatEventWire(HISTORY_LAST_EVENT, 24, kind = "renamed", title = "First title"),
+        )
         refreshWorkspaceChats()
         compose.waitUntil(10_000) {
             currentList()?.confirmedThreads?.any {
@@ -265,12 +318,79 @@ internal class ChatRenameFormRootTest : ChatListRootTestFixture() {
     }
 
     @Test
+    fun chatRenameClosesWhenItsEventArrivesWithALaterTitle() {
+        val app = compose.activity.application as ChatListApplication
+        val events = app.fixture.rowEventTail()
+        val submittedId = AtomicReference<String>()
+        val releaseWrite = CountDownLatch(1)
+        app.fixture.commandResponse = { request ->
+            if (request.requestUrl?.encodedPath == "/api/chat-threads/$CHAT_PERSONAL/rename") {
+                submittedId.set(request.jsonCommandBody().getValue("eventId").jsonPrimitive.content)
+                releaseWrite.await()
+                MockResponse().setResponseCode(204)
+            } else null
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+
+        try {
+            val row = compose.onNodeWithTag("chat_$CHAT_PERSONAL")
+            row.performTouchInput { longClick() }
+            compose.onNodeWithText("Rename chat").performClick()
+            val editor = compose.onNodeWithContentDescription("Chat title")
+            editor.performTextReplacement("Submitted title")
+            compose.onNodeWithText("Save").performClick()
+            compose.waitUntil(10_000) { submittedId.get() != null }
+            events.addAll(
+                listOf(
+                    24L to
+                        chatEventWire(
+                            checkNotNull(submittedId.get()),
+                            24,
+                            kind = "renamed",
+                            title = "Submitted title",
+                        ),
+                    25L to
+                        chatEventWire(
+                            HISTORY_LAST_EVENT,
+                            25,
+                            kind = "renamed",
+                            title = "Newer title",
+                        ),
+                ),
+            )
+            refreshWorkspaceChats()
+            compose.waitUntil(10_000) {
+                currentList()?.confirmedThreads?.any {
+                    it.id == CHAT_PERSONAL && it.title == "Newer title"
+                } == true
+            }
+
+            editor.assertDoesNotExist()
+            row.assert(hasText("Newer title"))
+            compose.onNodeWithText("Chat title saved").assertIsDisplayed()
+            row.performTouchInput { longClick() }
+            compose.onNodeWithText("Rename chat").performClick()
+            editor.assertTextContains("Newer title")
+            compose.onNodeWithText("Save").assertIsNotEnabled()
+        } finally {
+            releaseWrite.countDown()
+        }
+    }
+
+    @Test
     @Config(qualifiers = "en-rUS-w760dp-h892dp")
     fun uncertainChatRenameChecksTheOriginalEventAndClosesOnConfirmation() {
         val app = compose.activity.application as ChatListApplication
         val events = app.fixture.rowEventTail()
         val write = AtomicReference<String>()
         val requests = AtomicInteger()
+        val reads = AtomicInteger()
+        val readEvents = app.fixture.events
+        app.fixture.events = { request ->
+            reads.incrementAndGet()
+            readEvents(request)
+        }
         app.fixture.commandResponse = { request ->
             if (request.requestUrl?.encodedPath == "/api/chat-threads/$CHAT_PERSONAL/rename") {
                 val body = request.jsonCommandBody()
@@ -300,6 +420,20 @@ internal class ChatRenameFormRootTest : ChatListRootTestFixture() {
         compose.waitUntilExactlyOneExists(hasText("Check result"), 10_000)
         editor.assertTextContains("   Design notes  ").assertIsFocused()
         compose.waitUntilExactlyOneExists(hasText("Check result") and isEnabled(), 10_000)
+        val previousReads = reads.get()
+        compose.onNodeWithText("Check result").performClick()
+        compose.waitUntil(10_000) {
+            reads.get() > previousReads &&
+                currentList()?.listPhase == ai.okou.android.chat.ChatReadPhase.Ready
+        }
+        editor.assertTextContains("   Design notes  ")
+        compose.onNodeWithText("The save result is still unconfirmed.").assertIsDisplayed()
+        compose.onNodeWithText("Could not save. Your changes are still here.").assertDoesNotExist()
+        compose.onNodeWithText("Cancel").performClick()
+        editor.assertDoesNotExist()
+        compose.onNodeWithTag("chat_$CHAT_PERSONAL").performTouchInput { longClick() }
+        compose.onNodeWithText("Rename chat").performClick()
+        editor.assertTextContains("Design notes")
         events.add(24L to checkNotNull(write.get()))
         compose.onNodeWithText("Check result").assertIsEnabled().performClick()
         compose.waitUntilExactlyOneExists(hasText("Chat title saved"), 10_000)
@@ -3661,7 +3795,7 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
 
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
-    fun titleAndPinsAppearBeforeWriteAndReadbackComplete() {
+    fun chatTitleWaitsForConfirmationWhilePinningAppearsImmediately() {
         val app = compose.activity.application as ChatListApplication
         val readback = CountDownLatch(1)
         val release = CountDownLatch(1)
@@ -3742,7 +3876,7 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
                 )
             }
             compose.waitUntil(10_000) { compose.runOnIdle { readback.count == 0L } }
-            row.assert(hasText("Weekly brief"))
+            row.assert(hasText("Personal chat"))
             assertEquals(1, commands.size)
             release.countDown()
             awaitRowActionSettled(CHAT_PERSONAL)
@@ -3820,7 +3954,60 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
     }
 
     @Test
-    fun projectRenameShowsOptimisticallyAndRetriesTheSameEvent() {
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun successfulProjectRenameClosesWithTheNameReturnedByTheServer() {
+        val app = compose.activity.application as ChatListApplication
+        val writeSent = AtomicBoolean()
+        val readbackStarted = CountDownLatch(1)
+        val releaseReadback = CountDownLatch(1)
+        val readEvents = app.fixture.projectEvents
+        app.fixture.projectEvents = { request ->
+            if (writeSent.get()) {
+                readbackStarted.countDown()
+                releaseReadback.await()
+            }
+            readEvents(request)
+        }
+        app.fixture.commandResponse = { request ->
+            if (
+                request.method == "PATCH" &&
+                    request.requestUrl?.encodedPath == "/api/projects/$CHAT_PROJECT"
+            ) {
+                writeSent.set(true)
+                jsonResponse(
+                    """{"id":"$CHAT_PROJECT","name":"Newer name","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE"}""",
+                )
+            } else null
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+
+        try {
+            compose.onNodeWithText("Research").performTouchInput { longClick() }
+            compose.onNodeWithText("Rename").performClick()
+            val editor = compose.onNodeWithContentDescription("Project name")
+            editor.performTextReplacement("Submitted name")
+            editor.assertTextContains("Submitted name")
+            compose.onNodeWithText("Save").assertIsEnabled().performClick()
+            compose.waitUntilExactlyOneExists(hasText("Newer name"), 10_000)
+
+            editor.assertDoesNotExist()
+            compose.onNodeWithText("Newer name").assertIsDisplayed()
+            compose.onNodeWithText("Project name saved").assertIsDisplayed()
+            compose.waitUntil(10_000) { readbackStarted.count == 0L }
+            compose.onNodeWithText("Newer name").performTouchInput { longClick() }
+            compose.onNodeWithText("Rename").assertIsEnabled().performClick()
+            editor.assertTextContains("Newer name")
+            compose.onNodeWithText("Save").assertIsNotEnabled()
+        } finally {
+            releaseReadback.countDown()
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w450dp-h850dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun projectRenameRetainsTheConfirmedNameAndChecksTheOriginalEvent() {
         val app = compose.activity.application as ChatListApplication
         val pending = CountDownLatch(1)
         val writes = CopyOnWriteArrayList<String>()
@@ -3837,20 +4024,8 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
                 check(body.getValue("name").jsonPrimitive.content == "Field notes")
                 val eventId = body.getValue("eventId").jsonPrimitive.content
                 writes.add(eventId)
-                when (writes.size) {
-                    1 -> {
-                        pending.await()
-                        MockResponse().setResponseCode(503)
-                    }
-                    2 ->
-                        jsonResponse(
-                            """{"id":"$CHAT_PROJECT","name":"Field notes","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE"}""",
-                        )
-                    else -> {
-                        committed.set(eventId)
-                        MockResponse().setResponseCode(503)
-                    }
-                }
+                pending.await()
+                MockResponse().setResponseCode(503)
             }
         }
         app.fixture.projectEvents = { request ->
@@ -3872,11 +4047,19 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
             val save = compose.onNodeWithText("Save")
             editor.performTextReplacement("a".repeat(121))
             val nameTooLong = app.getString(R.string.chat_project_name_too_long, 120)
-            compose.onNodeWithText(nameTooLong).assertDoesNotExist()
+            val lengthError = compose.onNodeWithText(nameTooLong, useUnmergedTree = true)
+            lengthError.assertDoesNotExist()
+            val fieldBounds = editor.getUnclippedBoundsInRoot()
+            val saveBounds = save.getUnclippedBoundsInRoot()
             save.performClick()
-            compose.onNodeWithText(nameTooLong).assertIsDisplayed()
+            lengthError.assertIsDisplayed()
+            editor.assert(SemanticsMatcher.expectValue(SemanticsProperties.Error, nameTooLong))
+            assertEquals(fieldBounds, editor.getUnclippedBoundsInRoot())
+            assertEquals(saveBounds, save.getUnclippedBoundsInRoot())
             assertTrue(writes.isEmpty())
             editor.performTextReplacement("  Field notes  ")
+            lengthError.assertDoesNotExist()
+            assertEquals(saveBounds, save.getUnclippedBoundsInRoot())
             val beforeSave = System.currentTimeMillis()
             save.performClick()
             compose.waitUntil(10_000) { writes.size == 1 }
@@ -3887,6 +4070,7 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
             assertTrue(issuedAt in beforeSave..System.currentTimeMillis())
             editor.assertTextContains("  Field notes  ")
             compose.onNodeWithText(app.getString(R.string.settings_saving)).assertIsNotEnabled()
+            assertEquals("Research", currentList()?.projects?.single()?.name)
         } finally {
             pending.countDown()
         }
@@ -3905,12 +4089,15 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
             compose.onAllNodesWithText(unconfirmed).fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithText("Research").assertIsDisplayed()
-        compose.onNodeWithText("Try again").performClick()
-        compose.waitUntil(10_000) { writes.size == 2 && currentList()?.renamingProjectId == null }
-        compose.onNodeWithText(unconfirmed).assertIsDisplayed()
-        compose.onNodeWithText("Try again").performClick()
-        compose.waitUntil(10_000) { writes.size == 3 && currentList()?.renamingProjectId == null }
-        assertEquals(List(3) { writes.first() }, writes.toList())
+        compose.onNodeWithText("Try again").assertDoesNotExist()
+        compose.onNodeWithText("Research").performTouchInput { longClick() }
+        compose.onNodeWithText("Rename").performClick()
+        editor.assertTextContains("Field notes")
+        committed.set(writes.single())
+        compose.onNodeWithText("Check result").assertIsEnabled().performClick()
+        compose.waitUntilExactlyOneExists(hasText("Project name saved"), 10_000)
+        editor.assertDoesNotExist()
+        assertEquals(1, writes.size)
         compose.onNodeWithText("Field notes").assertIsDisplayed()
         compose.onNodeWithText(unconfirmed).assertDoesNotExist()
     }
@@ -3956,7 +4143,7 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
                     .renameProject(CHAT_PROJECT, "Field notes")
             }
             compose.waitUntil(10_000) { renameStarted.get() }
-            compose.onNodeWithText("Field notes").assertIsDisplayed()
+            compose.onNodeWithText("Research").assertIsDisplayed()
 
             compose.onNodeWithTag("chat_list").performScrollToNode(hasTestTag(rowTag))
             chat.performTouchInput { swipe(center.copy(x = width * 0.8f), center) }

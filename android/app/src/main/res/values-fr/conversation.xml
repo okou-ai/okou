@@ -9,7 +9,7 @@
         <item quantity="other">Message · %d pièces jointes</item>
     </plurals>
     <string name="conversation_run_queued">En attente de démarrage</string>
-    <string name="conversation_welcome">Sur quoi souhaitez-vous travailler ?</string>
+    <string name="conversation_welcome">Sur quoi souhaitez-vous travailler\u202F?</string>
     <string name="conversation_welcome_detail">Dites à Okou ce que vous souhaitez faire.</string>
     <string name="conversation_jump_latest">Aller au dernier message</string>
     <string name="conversation_new_reply">Nouvelle réponse</string>
@@ -23,6 +23,11 @@
     <string name="conversation_replies_collapsed">Réduit</string>
     <string name="conversation_work_elapsed">Travaille depuis %1$s</string>
     <string name="conversation_work_total">Temps de travail de %1$s</string>
+    <string name="conversation_work_seconds">%1$d\u00A0s</string>
+    <string name="conversation_work_minutes">%1$d\u00A0min</string>
+    <string name="conversation_work_hours">%1$d\u00A0h</string>
+    <string name="conversation_work_minutes_seconds">%1$d\u00A0min\u00A0%2$d\u00A0s</string>
+    <string name="conversation_work_hours_minutes">%1$d\u00A0h\u00A0%2$d\u00A0min</string>
     <string name="conversation_followup_continue">Continuez</string>
     <string name="conversation_feedback_pair">%1$s · %2$s</string>
     <plurals name="conversation_reply_steps">

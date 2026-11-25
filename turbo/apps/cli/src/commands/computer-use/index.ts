@@ -1,3 +1,4 @@
+import { appStateRunnerIdentity } from "./app-state-runner";
 import { receiveDirectAppState } from "./direct-app-state";
 import { createShellCommand } from "./shell";
 import { decodeSandboxTokenPayload } from "../../lib/api/sandbox-token";
@@ -15,6 +16,7 @@ import {
   createComputerUseReadCommand,
   createComputerUseWriteCommand,
   fetchComputerUseScreenshot,
+  getComputerUseCommand,
 } from "../../lib/api/domains/computer-use";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import {
@@ -413,7 +415,13 @@ async function runReadCommand(
 ): Promise<void> {
   const timeoutSeconds = parseTimeoutSeconds(options.timeout);
   try {
+    const appStateRunner =
+      kind === "app.state" &&
+      decodeSandboxTokenPayload()?.capabilities.includes("computer-use:write")
+        ? await appStateRunnerIdentity()
+        : undefined;
     const created = await createComputerUseReadCommand({
+      appStateRunner,
       kind,
       timeoutMs: timeoutSeconds * 1000,
       ...payload,
@@ -422,7 +430,18 @@ async function runReadCommand(
       const result = await receiveDirectAppState(
         created.commandId,
         timeoutSeconds,
-      );
+      ).catch(async (failure: unknown) => {
+        const command = await getComputerUseCommand(
+          created.commandId,
+          AbortSignal.timeout(2000),
+        ).catch(() => {
+          return undefined;
+        });
+        if (command?.status === "failed" && command.error) {
+          throw new Error(`${command.error.code}: ${command.error.message}`);
+        }
+        throw failure;
+      });
       console.log(JSON.stringify(result, null, 2));
       return;
     }

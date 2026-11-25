@@ -21,6 +21,11 @@
     <string name="conversation_replies_collapsed">접힘</string>
     <string name="conversation_work_elapsed">%1$s 동안 작업 중</string>
     <string name="conversation_work_total">총 %1$s 작업</string>
+    <string name="conversation_work_seconds">%1$d초</string>
+    <string name="conversation_work_minutes">%1$d분</string>
+    <string name="conversation_work_hours">%1$d시간</string>
+    <string name="conversation_work_minutes_seconds">%1$d분 %2$d초</string>
+    <string name="conversation_work_hours_minutes">%1$d시간 %2$d분</string>
     <string name="conversation_followup_continue">계속 진행</string>
     <string name="conversation_feedback_pair">%1$s · %2$s</string>
     <plurals name="conversation_reply_steps">

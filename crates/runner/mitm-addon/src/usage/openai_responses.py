@@ -47,7 +47,7 @@ from .model_tokens import (
 from .openai_tokens import partition_input_tokens
 from .quantities import MAX_USAGE_QUANTITY
 from .quantities import is_usage_quantity as _is_usage_quantity
-from .sse import SseUsageScanner
+from .sse import SseUsageScanner, resolve_event_name
 
 _SseUsageParseErrorCallback = Callable[[str, str], None]
 _SseTerminalUsageCallback = Callable[[dict], None]
@@ -737,9 +737,6 @@ class _OpenAIResponsesSseUsageHandler:
             return
         self._feed_event_data(chunk)
 
-    def on_data_separator(self) -> None:
-        self.on_data(b"\n")
-
     def on_event_end(self, event_name: str | None) -> None:
         self._resolve_event_prefix()
         extractor = self._extractor
@@ -768,9 +765,7 @@ class _OpenAIResponsesSseUsageHandler:
             if terminal_usage is not None and self._on_terminal_usage is not None:
                 self._on_terminal_usage(terminal_usage)
             return
-        event_type = event_name
-        if event_type is None and isinstance(data_type, str):
-            event_type = data_type
+        event_type = resolve_event_name(event_name, data_type)
         if (
             event_type is not None
             and event_type in openai_responses_events.TERMINAL_EVENTS

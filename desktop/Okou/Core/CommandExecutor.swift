@@ -5,6 +5,8 @@ public actor CommandExecutor {
     "apps.list", "app.state", "app.open", "element.click", "element.scroll", "element.set_value",
     "element.perform_action", "keyboard.type_text", "keyboard.press_key",
   ]
+  private let directUpload: DirectAppStateUpload
+  private var activeUploads: [String: Task<JSONValue, Never>] = [:]
   private let helper: NativeProcess
   public let shells: ShellSessions
   private var shellPermissionId: String?
@@ -19,8 +21,9 @@ public actor CommandExecutor {
     await shells.configure(permissionId: shellPermissionId, revision: shellConfigurationRevision)
   }
   public func supportedCapabilities() -> [String] {
-    guard let shellPermissionId else { return Self.capabilities }
-    return Self.capabilities + ShellSessions.capabilities + [
+    let supported = Self.capabilities + ["app.state.direct-transfer"]
+    guard let shellPermissionId else { return supported }
+    return supported + ShellSessions.capabilities + [
       "shell.permission:\(shellPermissionId)"
     ]
   }
@@ -33,7 +36,11 @@ public actor CommandExecutor {
   private var snapshots: [String: JSONValue] = [:]
   private var latest: [String: String] = [:]
   private var snapshotOrder: [String] = []
-  public init(helper: NativeProcess, shells: ShellSessions = ShellSessions()) {
+  public init(
+    helper: NativeProcess, shells: ShellSessions = ShellSessions(),
+    uploadConfiguration: URLSessionConfiguration = .ephemeral
+  ) {
+    self.directUpload = DirectAppStateUpload(configuration: uploadConfiguration)
     self.helper = helper
     self.shells = shells
   }
@@ -75,6 +82,20 @@ public actor CommandExecutor {
   public func execute(
     _ command: ComputerUseCommandClaim.Command, claimStarted: ContinuousClock.Instant
   ) async -> JSONValue {
+    guard command.kind.rawValue == "app.state", command.appStateUpload != nil else {
+      return await executeClaim(command, claimStarted: claimStarted)
+    }
+    let task = Task { await self.executeClaim(command, claimStarted: claimStarted) }
+    activeUploads[command.id] = task
+    defer { activeUploads.removeValue(forKey: command.id) }
+    return await withTaskCancellationHandler {
+      await task.value
+    } onCancel: { task.cancel() }
+  }
+
+  private func executeClaim(
+    _ command: ComputerUseCommandClaim.Command, claimStarted: ContinuousClock.Instant
+  ) async -> JSONValue {
     do {
       let kind = command.kind.rawValue
       if ShellSessions.capabilities.contains(kind) {
@@ -114,7 +135,16 @@ public actor CommandExecutor {
       guard let app = payload["app"].string, !app.isEmpty else {
         throw DesktopFailure("invalid_arguments", "Missing app")
       }
-      if kind == "app.state" { return try await state(app: app, settle: false, budget: budget) }
+      if kind == "app.state" {
+        try Task.checkCancellation()
+        if let target = command.appStateUpload {
+          let bundle = try await DirectAppStateBundle(
+            commandId: command.id, result: state(app: app, settle: false, budget: budget)["result"])
+          try Task.checkCancellation()
+          return try await directUpload.send(bundle, commandId: command.id, target: target, budget: budget)
+        }
+        return try await state(app: app, settle: false, budget: budget)
+      }
       if kind == "element.click", payload["x"].number != nil, payload["y"].number != nil,
         payload["elementId"].string == nil, payload["elementIndex"].number == nil
       {
@@ -196,7 +226,11 @@ public actor CommandExecutor {
         "screen_recording_unavailable",
         "Native app.state did not return a valid target-window screenshot")
     }
-    snapshots[id] = snapshot
+    let interactionFields: Set<String> = [
+      "app", "snapshotId", "screenshotSource", "screenshotWidth", "screenshotHeight",
+      "windowId", "windowFrame", "screenshotSourceBounds", "elementIdsByIndex",
+    ]
+    snapshots[id] = .object((snapshot.object ?? [:]).filter { interactionFields.contains($0.key) })
     latest[app.lowercased()] = id
     snapshotOrder.append(id)
     if snapshotOrder.count > 50 {
@@ -218,6 +252,7 @@ public actor CommandExecutor {
     return .object(["status": .string("succeeded"), "result": .object(publicValues)])
   }
   public func stop() async {
+    for upload in activeUploads.values { upload.cancel() }
     await retireShellSessions()
     await helper.stop()
     snapshots.removeAll()

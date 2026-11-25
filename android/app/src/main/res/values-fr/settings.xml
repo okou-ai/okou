@@ -33,9 +33,9 @@
     <string name="settings_account_email">Adresse e-mail</string>
     <string name="settings_account_web">Gérer le compte sur le Web</string>
     <string name="settings_model_accounts">Comptes de modèle</string>
-    <string name="settings_accounts_scope">Choisissez les comptes d’abonnement utilisés dans « %1$s ».</string>
-    <string name="settings_accounts_scope_empty">Comptes de modèle dans « %1$s »</string>
-    <string name="settings_workspace_status">« %1$s » · %2$s</string>
+    <string name="settings_accounts_scope">Choisissez les comptes d’abonnement utilisés dans «\u00A0%1$s\u00A0».</string>
+    <string name="settings_accounts_scope_empty">Comptes de modèle dans «\u00A0%1$s\u00A0»</string>
+    <string name="settings_workspace_status">«\u00A0%1$s\u00A0» · %2$s</string>
     <string name="settings_accounts_unavailable">Impossible d’afficher les comptes de modèle pour le moment.</string>
     <string name="settings_accounts_update_failed">L’actualisation a échoué. Dernières données connues affichées.</string>
     <string name="settings_accounts_empty">Aucun compte de modèle associé</string>
@@ -63,7 +63,7 @@
     <string name="settings_credits_unavailable_value">Indisponible</string>
     <string name="settings_credits_less_than">&lt; %1$s</string>
     <string name="settings_credit_balance">Solde de crédits</string>
-    <string name="settings_credit_scope">Crédits Okou dans « %1$s »</string>
+    <string name="settings_credit_scope">Crédits Okou dans «\u00A0%1$s\u00A0»</string>
     <string name="settings_credit_update_failed">L’actualisation a échoué. Dernier solde connu affiché.</string>
     <string name="settings_credit_unavailable">Impossible d’afficher le solde pour le moment.</string>
     <string name="settings_credit_member">Forfait d’utilisation personnel</string>
@@ -92,7 +92,7 @@
     <string name="settings_refreshing_model_accounts">Actualisation des comptes de modèles</string>
     <string name="settings_refreshing_credit_balance">Actualisation du solde de crédits</string>
     <string name="settings_proactive_services">Services proactifs</string>
-    <string name="settings_proactive_scope">Ces paramètres s’appliquent dans « %1$s ».</string>
+    <string name="settings_proactive_scope">Ces paramètres s’appliquent dans «\u00A0%1$s\u00A0».</string>
     <string name="settings_proactive_loading">Chargement des services proactifs</string>
     <string name="settings_proactive_needs_timezone">Choisissez un fuseau horaire pour programmer l’envoi.</string>
     <string name="settings_proactive_read_failed">Impossible de charger ce paramètre pour le moment.</string>

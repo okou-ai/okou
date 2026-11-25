@@ -94,7 +94,7 @@ test("sidebar-pin-order-006 Pinning a regular conversation places it ahead of th
   );
   try {
     const rows = await arrange();
-    await action(rows[3]!.id, "Pin chat");
+    await action(rows[3]!.id, "Pin");
     const received = await sent.promise;
     expect(received.id).toBe(rows[3]!.id);
     expect(typeof received.rank).toBe("string");

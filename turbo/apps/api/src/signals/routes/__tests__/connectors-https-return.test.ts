@@ -32,6 +32,11 @@ const slugs = Object.freeze([
   "google-sheets",
   "google-calendar",
   "google-ads",
+  "google-analytics",
+  "google-forms",
+  "google-maps",
+  "google-meet",
+  "youtube",
   "github",
   "notion",
 ]);

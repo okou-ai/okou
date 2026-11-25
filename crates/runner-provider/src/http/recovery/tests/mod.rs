@@ -1,6 +1,7 @@
 use super::*;
 use crate::http::HttpClientConfig;
 use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer};
+use tokio_util::task::AbortOnDropHandle;
 use tracing::instrument::WithSubscriber;
 use tracing_subscriber::prelude::*;
 use tracing_test_support::CapturedEvents;
@@ -332,18 +333,21 @@ async fn exhausted_recovery_capacity_does_not_block_original_attempts() {
     let http = client("http://localhost");
     let mut recovering = Vec::new();
     for _ in 0..MAX_CONCURRENT_RECOVERIES {
-        let mut server = RawHttpTestServer::spawn(vec![
+        let server = RawHttpTestServer::spawn(vec![
             RawHttpAction::ResetConnection,
             RawHttpAction::WaitForDisconnect,
         ])
         .await;
-        let request = tokio::spawn(
+        let request = AbortOnDropHandle::new(tokio::spawn(
             http.authenticated_request(reqwest::Method::GET, server.url(), "token")
                 .send("recovering"),
-        );
+        ));
+        recovering.push((server, request));
+    }
+    // Start all independent requests before waiting for their retry backoffs.
+    for (server, _) in &mut recovering {
         server.next_request("original request").await;
         server.next_request("recovery holding capacity").await;
-        recovering.push((server, request));
     }
     assert_eq!(http.inner.retry_slots.available_permits(), 0);
     let mut server = RawHttpTestServer::spawn(vec![RawHttpAction::ResetConnection, ok()]).await;

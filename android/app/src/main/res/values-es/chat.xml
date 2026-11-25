@@ -109,7 +109,6 @@
     <string name="chat_row_action_offline_named">No se pudo completar «%1$s». Comprueba tu conexión y vuelve a intentarlo.</string>
     <string name="chat_rename_save_failed">No se pudo guardar. Tus cambios se conservaron.</string>
     <string name="chat_rename_check_result">Comprobar resultado</string>
-    <string name="chat_rename_trim_hint">Se eliminan los espacios al principio y al final.</string>
     <string name="chat_rename_required">Introduce un nombre.</string>
     <string name="chat_rename_checking_result">Comprobando el resultado…</string>
     <string name="chat_rename_save_unconfirmed">El resultado del guardado aún no se ha confirmado.</string>

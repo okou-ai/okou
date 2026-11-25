@@ -105,7 +105,6 @@
     <string name="chat_row_action_offline_named">Tidak dapat menyelesaikan “%1$s”. Periksa koneksi dan coba lagi.</string>
     <string name="chat_rename_save_failed">Tidak dapat menyimpan. Perubahan Anda masih tersimpan di formulir.</string>
     <string name="chat_rename_check_result">Periksa hasil</string>
-    <string name="chat_rename_trim_hint">Spasi di awal dan akhir akan dihapus.</string>
     <string name="chat_rename_required">Masukkan nama.</string>
     <string name="chat_rename_checking_result">Memeriksa hasil…</string>
     <string name="chat_rename_save_unconfirmed">Hasil penyimpanan belum dikonfirmasi.</string>

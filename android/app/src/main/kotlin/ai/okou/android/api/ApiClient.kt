@@ -391,10 +391,8 @@ class ApiClient(
 
     internal suspend fun projectDetail(projectId: String) = read { projectDetail(it, projectId) }
 
-    suspend fun renameProject(projectId: String, name: String, eventId: String) {
-        write {
-            renameProject(it, projectId, RenameProjectRequest(eventId = eventId, name = name))
-        }
+    suspend fun renameProject(projectId: String, name: String, eventId: String) = write {
+        renameProject(it, projectId, RenameProjectRequest(eventId = eventId, name = name))
     }
 
     suspend fun moveThreadToProject(threadId: String, projectId: String?, eventId: String) {

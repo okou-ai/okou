@@ -21,6 +21,11 @@
     <string name="conversation_replies_collapsed">已收合</string>
     <string name="conversation_work_elapsed">已工作 %1$s</string>
     <string name="conversation_work_total">共工作 %1$s</string>
+    <string name="conversation_work_seconds">%1$d 秒</string>
+    <string name="conversation_work_minutes">%1$d 分鐘</string>
+    <string name="conversation_work_hours">%1$d 小時</string>
+    <string name="conversation_work_minutes_seconds">%1$d 分鐘 %2$d 秒</string>
+    <string name="conversation_work_hours_minutes">%1$d 小時 %2$d 分鐘</string>
     <string name="conversation_followup_continue">繼續</string>
     <string name="conversation_feedback_pair">%1$s · %2$s</string>
     <plurals name="conversation_reply_steps">

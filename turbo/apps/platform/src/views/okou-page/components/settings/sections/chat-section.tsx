@@ -1,14 +1,10 @@
 import type { SendMode } from "@okouai/api-contracts/contracts/user-preferences";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { PRESENTATION_OUTPUT_FORMATS } from "@okouai/core/presentation-output-format";
-import { ToggleButton } from "@okouai/ui";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@okouai/ui/components/ui/select";
+  PRESENTATION_OUTPUT_FORMATS,
+  type PresentationOutputFormat,
+} from "@okouai/core/presentation-output-format";
+import { ToggleButton } from "@okouai/ui";
 import { Switch } from "@okouai/ui/components/ui/switch";
 import {
   useGet,
@@ -39,9 +35,6 @@ import { ModelProviderPicker } from "../../model-provider-picker.tsx";
 import { PreferenceCardRow } from "../preference-card-row.tsx";
 
 const SEND_OPTIONS: readonly SendMode[] = ["enter", "cmd-enter"];
-const PRESENTATION_FORMAT_ITEMS = PRESENTATION_OUTPUT_FORMATS.map((value) => {
-  return { value, label: value.toUpperCase() };
-});
 
 function DefaultModelPreference() {
   const { t } = useTranslation();
@@ -184,6 +177,45 @@ function SendModePreference() {
   );
 }
 
+function PresentationFormatDescription({
+  failed,
+  current,
+}: {
+  readonly failed: boolean;
+  /** `undefined` while the saved default is still loading. */
+  readonly current: PresentationOutputFormat | null | undefined;
+}) {
+  const { t } = useTranslation();
+  if (failed) {
+    return t(($) => {
+      return $.settings.preferences.chat.presentationFormat.unavailable;
+    });
+  }
+  if (current === undefined) {
+    return (
+      <LoadingSkeleton
+        variant="text"
+        label={t(($) => {
+          return $.settings.preferences.chat.presentationFormat.title;
+        })}
+      />
+    );
+  }
+  if (current === "html") {
+    return t(($) => {
+      return $.settings.preferences.chat.presentationFormat.htmlDescription;
+    });
+  }
+  if (current === "pptx") {
+    return t(($) => {
+      return $.settings.preferences.chat.presentationFormat.pptxDescription;
+    });
+  }
+  return t(($) => {
+    return $.settings.preferences.chat.presentationFormat.unsetDescription;
+  });
+}
+
 function PresentationFormatPreference() {
   const { t } = useTranslation();
   const preference = useLoadable(presentationOutputFormat$);
@@ -193,26 +225,17 @@ function PresentationFormatPreference() {
   const title = t(($) => {
     return $.settings.preferences.chat.presentationFormat.title;
   });
-  const placeholder =
-    preference.state === "hasError" ? (
-      t(($) => {
-        return $.settings.preferences.chat.presentationFormat.unavailable;
-      })
-    ) : current === null ? (
-      t(($) => {
-        return $.settings.preferences.chat.presentationFormat.unset;
-      })
-    ) : (
-      <LoadingSkeleton variant="text" label={title} />
-    );
 
   return (
     <PreferenceCardRow
       icon={Presentation}
       title={title}
-      description={t(($) => {
-        return $.settings.preferences.chat.presentationFormat.description;
-      })}
+      description={
+        <PresentationFormatDescription
+          failed={preference.state === "hasError"}
+          current={current}
+        />
+      }
       status={
         save.state === "hasError" && (
           <p role="alert" className="text-sm text-destructive">
@@ -223,36 +246,34 @@ function PresentationFormatPreference() {
         )
       }
     >
-      <div className="w-full shrink-0 sm:w-40">
-        <Select
-          items={PRESENTATION_FORMAT_ITEMS}
-          value={current ?? null}
-          disabled={current === undefined || save.state === "loading"}
-          onValueChange={(value, details) => {
-            if (
-              value === null ||
-              current === undefined ||
-              save.state === "loading" ||
-              (value === current && details.reason === "none")
-            ) {
-              return;
-            }
-            detach(update(value, signal), Reason.DomCallback);
-          }}
-        >
-          <SelectTrigger aria-label={title} variant="neutral">
-            <SelectValue placeholder={placeholder} />
-          </SelectTrigger>
-          <SelectContent>
-            {PRESENTATION_FORMAT_ITEMS.map((item) => {
-              return (
-                <SelectItem key={item.value} value={item.value}>
-                  {item.label}
-                </SelectItem>
-              );
-            })}
-          </SelectContent>
-        </Select>
+      {/* Two options, so the same pair of toggles as "Send message with". */}
+      <div
+        role="group"
+        aria-label={title}
+        className="flex shrink-0 flex-wrap gap-2"
+      >
+        {PRESENTATION_OUTPUT_FORMATS.map((value) => {
+          return (
+            <ToggleButton
+              key={value}
+              type="button"
+              selected={current === value}
+              disabled={current === undefined || save.state === "loading"}
+              onClick={() => {
+                if (current === undefined || value === current) {
+                  return;
+                }
+                detach(update(value, signal), Reason.DomCallback);
+              }}
+            >
+              {t(($) => {
+                return value === "html"
+                  ? $.chat.composer.presentationFormatSetup.htmlLabel
+                  : $.chat.composer.presentationFormatSetup.pptxLabel;
+              })}
+            </ToggleButton>
+          );
+        })}
       </div>
     </PreferenceCardRow>
   );

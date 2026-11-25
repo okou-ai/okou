@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.113.1](https://github.com/okou-ai/okou/compare/guest-agent-v0.113.0...guest-agent-v0.113.1) (2026-11-25)
+
+
+### Refactoring
+
+* **guest-agent:** reuse the codex app-server event sink ([#50779](https://github.com/okou-ai/okou/issues/50779)) ([e12b940](https://github.com/okou-ai/okou/commit/e12b9404969dcb4272bedc69199ac237041f9d0d))
+
+## [0.113.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.112.2...guest-agent-v0.113.0) (2026-11-25)
+
+
+### Features
+
+* **runner:** inject personal antigravity oauth credential into the agy sandbox ([#50751](https://github.com/okou-ai/okou/issues/50751)) ([381b7c7](https://github.com/okou-ai/okou/commit/381b7c73486f63133b7ff0385b25f1aeea11e009))
+
 ## [0.112.2](https://github.com/okou-ai/okou/compare/guest-agent-v0.112.1...guest-agent-v0.112.2) (2026-11-24)
 
 

@@ -27,7 +27,7 @@ interface ChatListService : ConversationHistoryService {
 
     suspend fun projectDetail(projectId: String): ConfirmedProject
 
-    suspend fun renameProject(projectId: String, name: String, eventId: String)
+    suspend fun renameProject(projectId: String, name: String, eventId: String): ConfirmedProject
 
     suspend fun moveThreadToProject(threadId: String, projectId: String?, eventId: String)
 

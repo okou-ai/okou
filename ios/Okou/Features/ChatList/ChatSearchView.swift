@@ -38,14 +38,16 @@ private struct ChatSearchListReadStatus: View {
 private struct ChatSearchListReadStatusContent: View {
   let list: ThreadListStore
   @LoadableValue private var read: Loadable<Void>
+  @ResolvedValue private var threads: [ChatThread]?
 
   init(list: ThreadListStore) {
     self.list = list
     _read = LoadableValue(task: list.listValue)
+    _threads = ResolvedValue(list.threadsValue)
   }
 
   var body: some View {
-    if read.state == .loading && list.threads.isEmpty {
+    if read.state == .loading && (threads ?? list.threads).isEmpty {
       OkouLoadingRow("Loading chats…")
     } else if let error = read.error?.localizedDescription ?? list.error {
       OkouLoadErrorRow(message: error, actionTitle: "Reload chats") {
@@ -79,6 +81,8 @@ private struct ChatSearchContent: View {
   @LoadableValue private var artifactResults: Loadable<[ChatSearchArtifact]>
   /// The field's text, its keyword and the opening error, kept in the workspace session's Store.
   @ResolvedValue private var resolvedField: ChatSearchStore.Field?
+  /// The confirmed chats, kept in the workspace session's Store.
+  @ResolvedValue private var resolvedThreads: [ChatThread]?
 
   init(
     workspace: WorkspaceStore, showsArchived: Bool, didOpen: @escaping () -> Void,
@@ -92,6 +96,7 @@ private struct ChatSearchContent: View {
     _workflowResults = LoadableValue(task: workspace.search.workflowsValue)
     _artifactResults = LoadableValue(task: workspace.search.artifactsValue)
     _resolvedField = ResolvedValue(workspace.search.field)
+    _resolvedThreads = ResolvedValue(workspace.list.threadsValue)
   }
 
   @Environment(\.openURL) private var openURL
@@ -100,6 +105,7 @@ private struct ChatSearchContent: View {
   private var search: ChatSearchStore { workspace.search }
   /// This render's search input, with the synchronous value for a first render.
   private var field: ChatSearchStore.Field { resolvedField ?? search.currentField }
+  private var threads: [ChatThread] { resolvedThreads ?? workspace.list.threads }
 
   private var messages: [ChatSearchResult] { messageResults.data ?? [] }
   private var workflows: [ChatSearchWorkflow] { workflowResults.data ?? [] }
@@ -113,10 +119,9 @@ private struct ChatSearchContent: View {
 
   private var titleThreads: [ChatThread] {
     field.keyword.isEmpty
-      ? workspace.list.threads(
-        archived: showsArchived,
-        onlyUnread: workspace.sidebar.filter == .unread)
-      : workspace.list.threads
+      ? ThreadListStore.threads(
+        threads, archived: showsArchived, onlyUnread: workspace.sidebar.filter == .unread)
+      : threads
   }
 
   private func shows(_ section: Scope) -> Bool { scope == .all || scope == section }
@@ -189,7 +194,7 @@ private struct ChatSearchContent: View {
           resultButton(threadID: group.result.chatThreadId) {
             VStack(alignment: .leading, spacing: OkouSpace.xs) {
               Text(
-                workspace.list.threads.first { $0.id == group.result.chatThreadId }?
+                threads.first { $0.id == group.result.chatThreadId }?
                   .displayTitle ?? String(localized: "New Chat")
               )
               .lineLimit(1)

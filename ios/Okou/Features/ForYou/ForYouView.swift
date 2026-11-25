@@ -578,7 +578,7 @@ struct ForYouView: View {
           run { await store.openDirection(card) }
         }
       } label: {
-        OkouGlassPrompt("What do you have in mind?")
+        OkouGlassPrompt("What do you have in mind?", on: .scene)
       }
       .accessibilityHint("Ask a question or describe what you’d like to do.")
       .accessibilityIdentifier("for-you-direction")
@@ -598,7 +598,7 @@ struct ForYouView: View {
         Label("Dismiss", okouSymbol: "x", iconSize: OkouIconSize.inline)
           .font(.okou(.subheadline)).foregroundStyle(OkouColor.foreground).lineLimit(1)
           .padding(.horizontal, OkouSpace.lg)
-          .modifier(OkouGlassControl(shape: .capsule))
+          .modifier(OkouGlassControl(shape: .capsule, surface: .scene))
       }
       .menuOrder(.fixed)
       .accessibilityIdentifier("for-you-dismiss")
