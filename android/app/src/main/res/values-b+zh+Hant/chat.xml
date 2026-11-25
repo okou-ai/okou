@@ -105,7 +105,6 @@
     <string name="chat_row_action_offline_named">未能完成「%1$s」。請檢查網路連線後再試。</string>
     <string name="chat_rename_save_failed">未能儲存，修改已保留。</string>
     <string name="chat_rename_check_result">核對結果</string>
-    <string name="chat_rename_trim_hint">首尾空格會自動移除。</string>
     <string name="chat_rename_required">請輸入名稱。</string>
     <string name="chat_rename_checking_result">正在核對結果…</string>
     <string name="chat_rename_save_unconfirmed">尚未確認提交結果。</string>

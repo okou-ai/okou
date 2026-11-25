@@ -1,5 +1,28 @@
 # Changelog
 
+## [8.879.0](https://github.com/okou-ai/okou/compare/core-v8.878.1...core-v8.879.0) (2026-11-25)
+
+
+### Features
+
+* show the workspace initial on default workspace logos ([#50380](https://github.com/okou-ai/okou/issues/50380)) ([1b432c5](https://github.com/okou-ai/okou/commit/1b432c5ccfdb04d7dcddb8ac26ff7f0ce471834a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.128.0
+
+## [8.878.1](https://github.com/okou-ai/okou/compare/core-v8.878.0...core-v8.878.1) (2026-11-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.127.0
+
 ## [8.878.0](https://github.com/okou-ai/okou/compare/core-v8.877.0...core-v8.878.0) (2026-11-25)
 
 

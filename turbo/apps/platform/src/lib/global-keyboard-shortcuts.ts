@@ -19,7 +19,7 @@ export const GLOBAL_KEYBOARD_SHORTCUTS = {
     binding: "mod+shift+u",
     ariaKeyShortcuts: "Meta+Shift+U Control+Shift+U",
   },
-  renameChat: {
+  rename: {
     binding: "f2",
     ariaKeyShortcuts: "F2",
   },

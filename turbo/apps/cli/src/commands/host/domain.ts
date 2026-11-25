@@ -129,6 +129,14 @@ function printSettings(
     console.log("  DNS records (type, name, value):");
     for (const record of domain.records) {
       console.log(`  ${record.type}\t${record.name}\t${record.value}`);
+      const checked = domain.verification?.recordChecks.find((check) => {
+        return (
+          check.type === record.type &&
+          check.name === record.name &&
+          check.value === record.value
+        );
+      });
+      if (checked) console.log(`    ${checked.status}: ${checked.message}`);
     }
   }
 }

@@ -1,5 +1,37 @@
 # Changelog
 
+## [10.44.0](https://github.com/okou-ai/okou/compare/cli-v10.43.0...cli-v10.44.0) (2026-11-25)
+
+
+### Features
+
+* guide custom domain setup through verification and activation ([#50730](https://github.com/okou-ai/okou/issues/50730)) ([8846eae](https://github.com/okou-ai/okou/commit/8846eae8a6948dc3177e550be081b39857308062))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.128.0
+    * @okouai/core bumped to 8.879.0
+    * @okouai/pi-agent-runtime bumped to 1.52.74
+
+## [10.43.0](https://github.com/okou-ai/okou/compare/cli-v10.42.0...cli-v10.43.0) (2026-11-25)
+
+
+### Features
+
+* restart an unresponsive shared browser instance ([#50780](https://github.com/okou-ai/okou/issues/50780)) ([ce2d936](https://github.com/okou-ai/okou/commit/ce2d9360453d9fb4ca063d2a9c9cc2a71b35c4e9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.127.0
+    * @okouai/core bumped to 8.878.1
+    * @okouai/pi-agent-runtime bumped to 1.52.73
+
 ## [10.42.0](https://github.com/okou-ai/okou/compare/cli-v10.41.0...cli-v10.42.0) (2026-11-25)
 
 

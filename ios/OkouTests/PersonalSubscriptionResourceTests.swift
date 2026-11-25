@@ -45,6 +45,10 @@ final class PersonalSubscriptionResourceTests: XCTestCase {
     let reused = await store.refresh()
     XCTAssertTrue(reused)
     XCTAssertEqual(store.accounts.first?.accountEmail, "sample@example.invalid")
+    // The subscriptions page reads the same confirmed accounts from the graph.
+    let confirmed = try store.resources.store.get(store.resources.confirmed)
+    XCTAssertEqual(confirmed.accounts.map(\.id), store.accounts.map(\.id))
+    XCTAssertEqual(confirmed.revision, store.accountRevision)
     XCTAssertEqual(reads.withLock { $0 }, 1)
   }
 

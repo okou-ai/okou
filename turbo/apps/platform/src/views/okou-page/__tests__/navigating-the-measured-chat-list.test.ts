@@ -454,7 +454,7 @@ test("sidebar-virtualization-026 Pinning a chat after scrolling moves it to the 
   scrollTo(0);
   await shown("History 3");
   openThreadMenu("History 3");
-  click(await screen.findByText("Pin chat"));
+  click(await screen.findByText("Pin"));
   await waitFor(() => {
     return expect(within(list()).getAllByText(/^History \d+$/)[0]).toBe(
       row("History 3"),

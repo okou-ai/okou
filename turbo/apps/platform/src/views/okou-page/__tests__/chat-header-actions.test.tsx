@@ -324,13 +324,13 @@ test("chat-thread-header-actions-006 undoing archive returns to the original mob
     return respond(204);
   });
   await openMobile();
-  click(await action("Archive chat"));
+  click(await action("Archive"));
   const undo = await findButton("Undo");
   expect(location.pathname).toBe("/");
   click(undo);
   await screen.findByText(subject);
   expect(location.pathname).toBe(RUN_PATH);
-  await expect(action("Archive chat")).resolves.not.toHaveAttribute(
+  await expect(action("Archive")).resolves.not.toHaveAttribute(
     "aria-disabled",
     "true",
   );
@@ -344,21 +344,21 @@ test("chat-thread-header-actions-007 unmuting from the desktop header clears the
     return respond(204);
   });
   const viewport = await openMobile();
-  click(await action("Mute chat"));
+  click(await action("Mute"));
   await screen.findByText(/Chat muted\./);
   expect(location.pathname).toBe(RUN_PATH);
-  const unmute = await action("Unmute chat");
+  const unmute = await action("Unmute");
   expect(unmute).toBeInTheDocument();
   act(() => {
     viewport.setMatches((query) => {
       return query.startsWith("(min-width:");
     });
   });
-  const button = await findButton("Unmute chat");
+  const button = await findButton("Unmute");
   expect(button.closest("header")).toHaveTextContent("Cargo review");
   click(button);
   await screen.findByText("Chat unmuted");
-  expect(queryButton("Unmute chat")).toBeNull();
+  expect(queryButton("Unmute")).toBeNull();
 });
 
 test("chat-thread-header-actions-014 both failed pin changes release the next mobile action", async () => {
@@ -380,13 +380,13 @@ test("chat-thread-header-actions-014 both failed pin changes release the next mo
     });
   });
   await openMobile();
-  click(await action("Pin chat"));
-  click(await action("Unpin chat"));
+  click(await action("Pin"));
+  click(await action("Unpin"));
   first.resolve();
   await screen.findByText(/Pin rejected for cargo review/);
   second.resolve();
   await screen.findByText(/Unpin rejected for cargo review/);
-  await expect(action("Pin chat")).resolves.not.toHaveAttribute(
+  await expect(action("Pin")).resolves.not.toHaveAttribute(
     "aria-disabled",
     "true",
   );
@@ -394,7 +394,7 @@ test("chat-thread-header-actions-014 both failed pin changes release the next mo
 
 test("The same chat offers Rename on mobile and mail management in the desktop More menu", async () => {
   const viewport = await openMobile();
-  const mobileRename = await action("Rename chat");
+  const mobileRename = await action("Rename");
   click(mobileRename);
   const editor = await screen.findByDisplayValue("Cargo review");
   expect(editor).toBeVisible();
@@ -408,7 +408,7 @@ test("The same chat offers Rename on mobile and mail management in the desktop M
   const menu = desktopMenu.closest<HTMLElement>('[role="menu"]')!;
   expect(menu).toHaveTextContent("Automations");
   expect(menu).toHaveTextContent("Open browser");
-  expect(menu).not.toHaveTextContent(/Pin chat|Rename chat/);
+  expect(menu).not.toHaveTextContent(/Pin|Rename/);
   expect(screen.getByText(subject)).toBeInTheDocument();
 });
 
@@ -435,14 +435,7 @@ test.each(["mobile", "desktop"] as const)(
     expect(labels).toStrictEqual(
       layout === "desktop"
         ? ["Automations", "Manage emails", "Open browser"]
-        : [
-            "Pin chat",
-            "Rename chat",
-            "Mute chat",
-            "Archive chat",
-            "Automations",
-            "Open browser",
-          ],
+        : ["Pin", "Rename", "Mute", "Archive", "Automations", "Open browser"],
     );
     let origin = more;
     if (layout === "desktop") {

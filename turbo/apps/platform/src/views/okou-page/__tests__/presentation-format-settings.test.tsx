@@ -70,6 +70,33 @@ function settingsButton(settings: HTMLElement, name: string): HTMLElement {
   return button;
 }
 
+const labels = { html: "Web slides", pptx: "PowerPoint" } as const;
+const descriptions = {
+  html: "New decks open as a link in any browser",
+  pptx: "New decks arrive as a .pptx file you can edit",
+  unset: "We’ll ask the first time you make a deck",
+} as const;
+
+function formatGroup(settings: HTMLElement): Promise<HTMLElement> {
+  return within(settings).findByRole("group", { name: title });
+}
+
+function formatToggle(
+  group: HTMLElement,
+  format: "html" | "pptx",
+): HTMLElement {
+  return settingsButton(group, labels[format]);
+}
+
+function expectSelected(group: HTMLElement, format: "html" | "pptx" | null) {
+  for (const candidate of ["html", "pptx"] as const) {
+    expect(formatToggle(group, candidate)).toHaveAttribute(
+      "aria-pressed",
+      String(candidate === format),
+    );
+  }
+}
+
 test("Chat settings keeps the presentation format entry behind its existing gate", async () => {
   mockPreferences("pptx");
   const settings = await openChatSettings(false);
@@ -80,11 +107,11 @@ test("Chat settings keeps the presentation format entry behind its existing gate
     expect(browser).toBeEnabled();
   });
   expect(
-    within(settings).queryByRole("combobox", { name: title }),
+    within(settings).queryByRole("group", { name: title }),
   ).not.toBeInTheDocument();
 });
 
-test("opening Chat from Preference shows confirmed null as Not set without choosing a format", async () => {
+test("opening Chat from Preference shows confirmed null as unchosen without choosing a format", async () => {
   const preferences = mockPreferences(null);
   context.mocks.api(userPreferencesContract.update, ({ body, respond }) => {
     // Loading or opening the control must not create a presentation default.
@@ -100,23 +127,13 @@ test("opening Chat from Preference shows confirmed null as Not set without choos
   const settings = await screen.findByRole("dialog", { name: "Settings" });
   await within(settings).findByRole("combobox", { name: "Time zone" });
   click(settingsButton(settings, "Chat"));
-  const select = await within(settings).findByRole("combobox", { name: title });
+  const group = await formatGroup(settings);
   await waitFor(() => {
-    expect(select).toBeEnabled();
-    expect(select).toHaveTextContent("Not set");
+    expect(formatToggle(group, "html")).toBeEnabled();
+    expect(formatToggle(group, "pptx")).toBeEnabled();
   });
-  expect(
-    within(settings).getByText("Choose the default for new presentations"),
-  ).toBeInTheDocument();
-
-  click(select);
-  const html = await screen.findByRole("option", { name: "HTML" });
-  expect(html).toHaveAttribute("aria-selected", "false");
-  expect(screen.getByRole("option", { name: "PPTX" })).toHaveAttribute(
-    "aria-selected",
-    "false",
-  );
-  expect(select).toHaveTextContent("Not set");
+  expectSelected(group, null);
+  expect(within(settings).getByText(descriptions.unset)).toBeInTheDocument();
 });
 
 test.each(["html", "pptx"] as const)(
@@ -139,32 +156,32 @@ test.each(["html", "pptx"] as const)(
     );
     const originalPage = createTestRuntime(context);
     const settings = await openChatSettings(true, originalPage);
-    const select = await within(settings).findByRole("combobox", {
-      name: title,
-    });
+    const group = await formatGroup(settings);
     await waitFor(() => {
-      expect(select).toBeEnabled();
-      expect(select).toHaveTextContent("Not set");
+      expect(formatToggle(group, format)).toBeEnabled();
     });
+    expectSelected(group, null);
 
-    click(select);
-    click(await screen.findByRole("option", { name: format.toUpperCase() }));
+    click(formatToggle(group, format));
     await expect(requested.promise).resolves.toStrictEqual({
       presentationFormat: format,
     });
     await waitFor(() => {
-      expect(select).toBeDisabled();
+      expect(formatToggle(group, format)).toBeDisabled();
     });
-    expect(select).toHaveTextContent("Not set");
+    expectSelected(group, null);
     expect(
       within(settings).getByRole("switch", { name: "Cloud browser" }),
     ).toBeEnabled();
 
     release.resolve();
     await waitFor(() => {
-      expect(select).toBeEnabled();
-      expect(select).toHaveTextContent(format.toUpperCase());
+      expect(formatToggle(group, format)).toBeEnabled();
+      expectSelected(group, format);
     });
+    expect(
+      within(settings).getByText(descriptions[format]),
+    ).toBeInTheDocument();
 
     await act(() => {
       originalPage.dispose();
@@ -176,12 +193,10 @@ test.each(["html", "pptx"] as const)(
     vi.mocked(window.history.forward).mockRestore();
     const freshPage = createTestRuntime(context);
     const reopened = await openChatSettings(true, freshPage);
-    const persisted = await within(reopened).findByRole("combobox", {
-      name: title,
-    });
+    const persisted = await formatGroup(reopened);
     await waitFor(() => {
-      expect(persisted).toBeEnabled();
-      expect(persisted).toHaveTextContent(format.toUpperCase());
+      expect(formatToggle(persisted, format)).toBeEnabled();
+      expectSelected(persisted, format);
     });
   },
 );
@@ -199,23 +214,19 @@ test.each([null, "html"] as const)(
       });
     });
     const settings = await openChatSettings();
-    const select = await within(settings).findByRole("combobox", {
-      name: title,
-    });
-    const previousLabel = prior === null ? "Not set" : prior.toUpperCase();
+    const group = await formatGroup(settings);
     await waitFor(() => {
-      expect(select).toBeEnabled();
-      expect(select).toHaveTextContent(previousLabel);
+      expect(formatToggle(group, "pptx")).toBeEnabled();
     });
+    expectSelected(group, prior);
 
-    click(select);
-    click(await screen.findByRole("option", { name: "PPTX" }));
+    click(formatToggle(group, "pptx"));
     const error = await within(settings).findByRole("alert");
     expect(error).toHaveTextContent(
       "Couldn't save the default format. Try again.",
     );
-    expect(select).toBeEnabled();
-    expect(select).toHaveTextContent(previousLabel);
+    expect(formatToggle(group, "pptx")).toBeEnabled();
+    expectSelected(group, prior);
   },
 );
 
@@ -223,11 +234,12 @@ test("an enabled but unavailable server field is disabled rather than shown as a
   // The response contract permits an older server to omit this enabled field.
   mockPreferences(undefined);
   const settings = await openChatSettings();
-  const select = await within(settings).findByRole("combobox", { name: title });
-  await waitFor(() => {
-    expect(select).toHaveTextContent("Unavailable");
-  });
-  expect(select).toBeDisabled();
-  expect(select).not.toHaveTextContent("Not set");
-  expect(select).not.toHaveTextContent("HTML");
+  const group = await formatGroup(settings);
+  await within(settings).findByText("Couldn't load your default format");
+  expect(formatToggle(group, "html")).toBeDisabled();
+  expect(formatToggle(group, "pptx")).toBeDisabled();
+  expectSelected(group, null);
+  expect(
+    within(settings).queryByText(descriptions.unset),
+  ).not.toBeInTheDocument();
 });

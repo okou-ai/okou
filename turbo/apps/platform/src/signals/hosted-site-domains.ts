@@ -10,6 +10,10 @@ import { accept } from "../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "./api-client.ts";
 import { featureSwitches$ } from "./external/feature-switch.ts";
 import { openSettingsBillingPlansDialog$ } from "./okou-page/settings/settings-dialog.ts";
+import {
+  hostedDomainProgress,
+  type DomainSetupStage,
+} from "../lib/hosted-site-domains.ts";
 
 type Settings = zInfer<typeof hostedDomainSettingsSchema>;
 type SiteSignal = Computed<Promise<zInfer<typeof hostedSiteUrlSchema> | null>>;
@@ -43,6 +47,7 @@ function createDomainState(site$: SiteSignal) {
   const addressMode$ = state<"platform" | "custom">("platform");
   const selectedDomainId$ = state<string | null>(null);
   const managedDomainId$ = state<string | null>(null);
+  const reviewedStage$ = state<DomainSetupStage | null>(null);
   const hostname$ = state("");
   const notice$ = state<string | null>(null);
   const removalConfirmation$ = state(false);
@@ -69,6 +74,26 @@ function createDomainState(site$: SiteSignal) {
     }
     return await request(get(apiClient$), site.siteId);
   });
+  const setup$ = computed(async (get) => {
+    const settings = await get(settings$);
+    if (!get(open$) || !get(managedDomainId$) || !settings?.allowed) {
+      return null;
+    }
+    const domain = settings.domains.find((item) => {
+      return item.id === get(managedDomainId$);
+    });
+    if (!domain || domain.removing) {
+      return null;
+    }
+    const response = await accept(
+      get(apiClient$)(hostContract).siteDomainSetup({
+        params: { siteId: settings.siteId, domainId: domain.id },
+        fetchOptions: { cache: "no-store" },
+      }),
+      [200, 402, 404],
+    );
+    return response.status === 200 ? response.body : null;
+  });
   const effectiveUrl$ = computed((get) => {
     return get(saved$)?.effectiveUrl ?? null;
   });
@@ -79,14 +104,41 @@ function createDomainState(site$: SiteSignal) {
     addressMode$,
     selectedDomainId$,
     managedDomainId$,
+    reviewedStage$,
     hostname$,
     notice$,
     removalConfirmation$,
     settings$,
+    setup$,
     effectiveUrl$,
   };
 }
 type DomainState = ReturnType<typeof createDomainState>;
+function createDomainWizard(scope: DomainState) {
+  const wizard$ = computed(async (get) => {
+    const settings = await get(scope.settings$);
+    const domain = settings?.domains.find((item) => {
+      return item.id === get(scope.managedDomainId$);
+    });
+    if (!domain) {
+      return null;
+    }
+    const progress = hostedDomainProgress(domain);
+    const review = get(scope.reviewedStage$);
+    return {
+      ...progress,
+      stage:
+        review !== null && review < progress.currentStage
+          ? review
+          : progress.currentStage,
+    };
+  });
+  const reviewStage$ = command(({ set }, stage: DomainSetupStage) => {
+    set(scope.reviewedStage$, stage);
+    set(scope.notice$, null);
+  });
+  return { wizard$, reviewStage$ };
+}
 type DomainAction = "create" | "verify" | "remove";
 function createDomainNavigation(scope: DomainState) {
   const {
@@ -94,6 +146,7 @@ function createDomainNavigation(scope: DomainState) {
     addressMode$,
     selectedDomainId$,
     managedDomainId$,
+    reviewedStage$,
     hostname$,
     notice$,
     removalConfirmation$,
@@ -103,6 +156,7 @@ function createDomainNavigation(scope: DomainState) {
     const settings = await get(settings$);
     signal.throwIfAborted();
     set(open$, false);
+    set(reviewedStage$, null);
     set(notice$, null);
     const selected =
       settings?.allowed &&
@@ -123,6 +177,7 @@ function createDomainNavigation(scope: DomainState) {
       return;
     }
     set(managedDomainId$, null);
+    set(reviewedStage$, null);
     set(hostname$, "");
     set(notice$, null);
     set(open$, true);
@@ -168,6 +223,7 @@ function createDomainNavigation(scope: DomainState) {
   );
   const manage$ = command(({ set }, id: string | null) => {
     set(managedDomainId$, id);
+    set(reviewedStage$, null);
     set(notice$, null);
     set(open$, true);
   });
@@ -258,6 +314,7 @@ const applyDomainSettings$ = command(
       open$,
     } = scope;
     set(saved$, settings);
+    set(scope.reviewedStage$, null);
     if (
       get(selectedDomainId$) &&
       !settings.domains.some((domain) => {
@@ -432,6 +489,7 @@ export function createHostedSiteDomainSignals(site$: SiteSignal) {
   const scope = createDomainState(site$);
   return {
     ...scope,
+    ...createDomainWizard(scope),
     ...createDomainNavigation(scope),
     ...createDomainMutations(scope),
     ...createDomainSelection(scope, site$),

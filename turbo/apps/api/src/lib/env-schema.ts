@@ -138,6 +138,10 @@ function serviceEnvSchema() {
     PUBLIC_ARTIFACTS_BASE_URL: url(),
     OKOU_PUBLIC_ARTIFACTS_BASE_URL: url(),
     PUBLIC_ARTIFACT_SHARES_BASE_URL: url().optional(),
+    HOSTED_SITE_DOMAIN_CONNECT_PRIVATE_KEY_BASE64: string().min(1).optional(),
+    HOSTED_SITE_DOMAIN_CONNECT_KEY_HOST: string()
+      .regex(/^[a-z0-9_-]+$/u)
+      .optional(),
     HOSTED_SITE_CUSTOM_DOMAIN_API_TOKEN: string().min(1).optional(),
     HOSTED_SITE_CUSTOM_DOMAIN_ZONE_ID: string()
       .regex(/^[a-f0-9]{32}$/u)

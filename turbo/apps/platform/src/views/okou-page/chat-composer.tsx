@@ -2994,9 +2994,12 @@ function ComposerInputSlot({
 function ComposerSendButton({
   action,
   onActivate,
+  sendRef,
 }: {
   action: ComposerPrimaryAction;
   onActivate: () => void;
+  /** Anchors the first-use presentation format menu to Send. */
+  sendRef: (element: HTMLButtonElement | null) => (() => void) | undefined;
 }) {
   const { t } = useTranslation();
   const sendModeLoadable = useLastLoadable(sendMode$);
@@ -3023,6 +3026,7 @@ function ComposerSendButton({
   });
   const button = (
     <Button
+      ref={sendRef}
       size="icon-sm"
       className="shrink-0"
       onClick={onActivate}
@@ -3067,6 +3071,9 @@ function ComposerSendControl({
   actions: ComposerActions;
 }) {
   const action = useComposerPrimaryAction(signals, actions);
+  const setFormatSetupAnchor = useSet(
+    signals.submission.presentationFormatSetup.setAnchor$,
+  );
   const activatePrimaryAction = actions.submit;
   const ensurePushSubscription = useSet(ensurePushSubscription$);
   const rootSignal = useGet(rootSignal$);
@@ -3086,7 +3093,13 @@ function ComposerSendControl({
       rootSignal,
     );
   };
-  return <ComposerSendButton action={action} onActivate={activate} />;
+  return (
+    <ComposerSendButton
+      action={action}
+      onActivate={activate}
+      sendRef={setFormatSetupAnchor}
+    />
+  );
 }
 
 function ModelConfigurationWarning({

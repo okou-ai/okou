@@ -1,4 +1,5 @@
 import { command, computed, state } from "ccstate";
+import type { PresentationOutputFormat } from "@okouai/core/presentation-output-format";
 import { i18n } from "../../i18n/index.ts";
 import type { WorkflowComposerSignals } from "./tiptap-workflow-composer.ts";
 import type { ComposerUiSignalGroups } from "./chat-composer.ts";
@@ -18,7 +19,14 @@ export type PresentationSlideCount = (typeof PRESENTATION_SLIDE_COUNTS)[number];
 
 export type ComposerCreateMode = (typeof COMPOSER_CREATE_MODES)[number];
 
-export function composerCreatePlaceholder(mode: ComposerCreateMode): string {
+/**
+ * `presentationFormat` is the saved default; once it is set, the Presentation
+ * placeholder names it, because the first-use choice is not shown again.
+ */
+export function composerCreatePlaceholder(
+  mode: ComposerCreateMode,
+  presentationFormat?: PresentationOutputFormat | null,
+): string {
   switch (mode) {
     case "document": {
       return i18n.t(($) => {
@@ -31,6 +39,20 @@ export function composerCreatePlaceholder(mode: ComposerCreateMode): string {
       });
     }
     case "presentation": {
+      if (presentationFormat) {
+        return i18n.t(
+          ($) => {
+            return $.chat.composer.create.presentationPlaceholderWithDefault;
+          },
+          {
+            format: i18n.t(($) => {
+              return presentationFormat === "html"
+                ? $.chat.composer.presentationFormatSetup.htmlLabel
+                : $.chat.composer.presentationFormatSetup.pptxLabel;
+            }),
+          },
+        );
+      }
       return i18n.t(($) => {
         return $.chat.composer.create.presentationPlaceholder;
       });
