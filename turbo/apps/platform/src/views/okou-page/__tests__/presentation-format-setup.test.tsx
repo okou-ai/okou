@@ -56,12 +56,12 @@ function button(name: string, container: ParentNode = document): HTMLElement {
   return result;
 }
 
-function formatItem(menu: HTMLElement, name: RegExp): HTMLElement {
+function formatItem(menu: HTMLElement, label: string): HTMLElement {
   const result = queryAllByRoleFast("menuitem", menu).find((candidate) => {
-    return name.test(candidate.textContent?.trim() ?? "");
+    return candidate.textContent?.trim().startsWith(label) ?? false;
   });
   if (!result) {
-    throw new Error(`Expected format item ${name}`);
+    throw new Error(`Expected format item ${label}`);
   }
   return result;
 }
@@ -190,10 +190,10 @@ test.each(["html", "pptx"] as const)(
     const prompt = `Please deliver ${format === "html" ? "PPTX" : "HTML"} for the launch briefing`;
     const { slideCount, template } = await preparePresentation(editor, prompt);
     const menu = await openSetup();
-    expect(formatItem(menu, /^Web slides/u)).toHaveTextContent(
+    expect(formatItem(menu, "Web slides")).toHaveTextContent(
       "A link that opens in any browser",
     );
-    expect(formatItem(menu, /^PowerPoint/u)).toHaveTextContent(
+    expect(formatItem(menu, "PowerPoint")).toHaveTextContent(
       "An editable .pptx file",
     );
     expect(menu).toHaveTextContent(
@@ -208,7 +208,7 @@ test.each(["html", "pptx"] as const)(
     expect(capture.sentMessages).toStrictEqual([]);
 
     // Choosing a format is the confirmation: it saves and sends once.
-    click(formatItem(menu, new RegExp(`^${formatLabels[format]}`, "u")));
+    click(formatItem(menu, formatLabels[format]));
     await waitFor(() => {
       expect(capture.sentMessages).toHaveLength(1);
     });
@@ -232,9 +232,7 @@ test.each(["html", "pptx"] as const)(
     });
     expect(capture.sentMessages[0]?.parts).toContainEqual({
       type: "additional_info",
-      text: expect.stringContaining(
-        "When this saved default decides the format",
-      ),
+      text: expect.stringContaining("this saved default chose its format"),
     });
     await screen.findByText(
       `${formatLabels[format]} is now your default for decks`,
@@ -257,7 +255,7 @@ test("Open settings in the saved-default toast opens Chat settings on the saved 
   const editor = await findComposerEditor();
   await openPresentation();
   await fill(editor, "Draft the quarterly review deck");
-  click(formatItem(await openSetup(), /^PowerPoint/u));
+  click(formatItem(await openSetup(), "PowerPoint"));
   await waitFor(() => {
     expect(capture.sentMessages).toHaveLength(1);
   });
@@ -396,7 +394,7 @@ test("A saved default names itself in the Presentation placeholder and skips the
   });
 });
 
-test("A failed preference save keeps the menu and original composer until an explicit retry", async () => {
+test("A failed preference save keeps the draft, clears on reopening, and retries on the next choice", async () => {
   const preferences = mockPreferences({ failFirstSave: true });
   const capture = mockTemplateChat();
   await setupPage({
@@ -409,12 +407,12 @@ test("A failed preference save keeps the menu and original composer until an exp
   const prompt = "Retain this briefing while saving fails";
   const { slideCount, template } = await preparePresentation(editor, prompt);
   const menu = await openSetup();
-  click(formatItem(menu, /^PowerPoint/u));
+  click(formatItem(menu, "PowerPoint"));
   const error = await within(menu).findByRole("alert");
   expect(error).toHaveTextContent(
     "Couldn't save the default format. Try again.",
   );
-  expect(formatItem(menu, /^PowerPoint/u)).not.toHaveAttribute(
+  expect(formatItem(menu, "PowerPoint")).not.toHaveAttribute(
     "aria-disabled",
     "true",
   );
@@ -425,7 +423,19 @@ test("A failed preference save keeps the menu and original composer until an exp
   expect(capture.threadCreates).toStrictEqual([]);
   expect(capture.runPrompts).toStrictEqual([]);
 
-  click(formatItem(menu, /^PowerPoint/u));
+  // A dismissed failure does not greet the next opening.
+  await userEvent.setup().keyboard("{Escape}");
+  await waitFor(() => {
+    expect(setupMenu()).toBeNull();
+  });
+  const reopened = await openSetup();
+  expect(within(reopened).queryByRole("alert")).toBeNull();
+  expect(reopened).toHaveTextContent(
+    "Used for every new deck. You can change it in Settings.",
+  );
+  expect(editor).toHaveTextContent(prompt);
+
+  click(formatItem(reopened, "PowerPoint"));
   await waitFor(() => {
     expect(capture.sentMessages).toHaveLength(1);
   });
@@ -460,8 +470,8 @@ test("Rapid choices write once and disable both formats until the server confirm
   const prompt = "Generate this request only once";
   await fill(editor, prompt);
   const menu = await openSetup();
-  const html = formatItem(menu, /^Web slides/u);
-  const pptx = formatItem(menu, /^PowerPoint/u);
+  const html = formatItem(menu, "Web slides");
+  const pptx = formatItem(menu, "PowerPoint");
   click(html);
   click(html);
   await expect(preferences.requested.promise).resolves.toStrictEqual({
@@ -516,7 +526,7 @@ test("An accepted preference followed by a rejected normal send does not repeat 
   await openPresentation();
   const prompt = "Send my original briefing once";
   await fill(await findComposerEditor(), prompt);
-  click(formatItem(await openSetup(), /^PowerPoint/u));
+  click(formatItem(await openSetup(), "PowerPoint"));
   await sendRequested.promise;
   expect(preferences.writes).toStrictEqual([{ presentationFormat: "pptx" }]);
   expect(prompts).toStrictEqual([prompt]);
@@ -574,8 +584,8 @@ test("A fresh runtime still asks for a restored draft when no default was chosen
   });
   await openPresentation();
   const reopened = await openSetup();
-  expect(formatItem(reopened, /^Web slides/u)).toBeInTheDocument();
-  expect(formatItem(reopened, /^PowerPoint/u)).toBeInTheDocument();
+  expect(formatItem(reopened, "Web slides")).toBeInTheDocument();
+  expect(formatItem(reopened, "PowerPoint")).toBeInTheDocument();
   expect(restoredEditor).toHaveTextContent(prompt);
   expect(preferences.writes).toStrictEqual([]);
   expect(capture.threadCreates).toStrictEqual([]);
@@ -635,7 +645,7 @@ test("A tagged queued input waits for setup and enqueues the original message on
   expect(queued).toStrictEqual([]);
   expect(started).toStrictEqual([]);
   expect(preferences.writes).toStrictEqual([]);
-  click(formatItem(menu, /^PowerPoint/u));
+  click(formatItem(menu, "PowerPoint"));
   await waitFor(() => {
     expect(queued).toHaveLength(1);
   });
