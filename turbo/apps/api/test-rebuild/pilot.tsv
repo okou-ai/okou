@@ -78,18 +78,18 @@ artifacts	src/signals/routes/__tests__/presentation-template-publish.test.ts	pre
 artifacts	src/signals/routes/__tests__/presentation-template-publish.test.ts	presentation-template-publish-005	planned		
 artifacts	src/signals/routes/__tests__/presentation-template-publish.test.ts	presentation-template-publish-008	planned		
 artifacts	src/signals/routes/__tests__/presentation-template-publish.test.ts	presentation-template-publish-011	planned		
-billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-001	planned		
-billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-008	planned		
-billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-009	planned		
-billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-010	planned		
-billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-011	planned		
-billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-012	planned		
-billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-013	planned		
-billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-017	planned		
-billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-019	planned		
-billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-021	planned		
-billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-022	planned		
-billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-024	planned		
+billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-001	rewritten	25.4	
+billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-008	rewritten	33.5	
+billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-009	rewritten	71.1	
+billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-010	rewritten	54.3	
+billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-011	rewritten	61.1	
+billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-012	rewritten	40.1	
+billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-013	rewritten	52.1	
+billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-017	rewritten	68.9	
+billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-019	rewritten	70.4	
+billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-021	rewritten	59.7	
+billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-022	rewritten	38.4	
+billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-024	rewritten	30.2	
 billing	src/signals/routes/__tests__/billing-checkout-complete.test.ts	billing-checkout-complete-001	planned		
 billing	src/signals/routes/__tests__/billing-checkout-complete.test.ts	billing-checkout-complete-002	planned		
 billing	src/signals/routes/__tests__/billing-checkout-complete.test.ts	billing-checkout-complete-005	planned		
