@@ -432,17 +432,17 @@ workflows	src/signals/routes/__tests__/cron-project-chat-event-search.test.ts	cr
 workflows	src/signals/routes/__tests__/cron-sync-skills.test.ts	cron-sync-skills-003	planned		
 workflows	src/signals/routes/__tests__/cron-sync-skills.test.ts	cron-sync-skills-005	planned		
 workflows	src/signals/routes/__tests__/cron-sync-skills.test.ts	cron-sync-skills-006	planned		
-account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-003	planned		extension after sandbox reset
-account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-004	planned		extension after sandbox reset
-account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-006	planned		extension after sandbox reset
-account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-009	planned		extension after sandbox reset
-account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-011	planned		extension after sandbox reset
-account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-012	planned		extension after sandbox reset
-account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-013	planned		extension after sandbox reset
-account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-015	planned		extension after sandbox reset
-account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-019	planned		extension after sandbox reset
-account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-020	planned		extension after sandbox reset
-account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-021	planned		extension after sandbox reset
+account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-003	rewritten	82.7	extension after sandbox reset
+account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-004	rewritten	44.0	extension after sandbox reset
+account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-006	planned		unfinished: out of time
+account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-009	rewritten	41.0	extension after sandbox reset
+account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-011	rewritten	44.0	extension after sandbox reset
+account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-012	rewritten	45.9	extension after sandbox reset
+account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-013	rewritten	48.6	extension after sandbox reset
+account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-015	rewritten	49.0	extension after sandbox reset
+account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-019	rewritten	40.1	extension after sandbox reset
+account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-020	rewritten	10.1	extension after sandbox reset
+account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-021	rewritten	9.4	extension after sandbox reset
 account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-001	rewritten	80.3	extension after sandbox reset
 account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-002	rewritten	43.7	extension after sandbox reset
 account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-004	rewritten	9.2	extension after sandbox reset
