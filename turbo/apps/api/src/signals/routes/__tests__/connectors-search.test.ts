@@ -252,6 +252,29 @@ describe("GET /api/connectors/search", () => {
     expect(cloudflare?.authMethods).toStrictEqual(["oauth"]);
   });
 
+  it("offers LinkedIn OAuth to ordinary workspace members", async () => {
+    mocks.clerk.session(
+      `user_${randomUUID()}`,
+      `org_${randomUUID()}`,
+      "org:member",
+    );
+
+    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
+      builtinConnectorsSearchContract,
+    );
+    const response = await accept(
+      client.search({
+        query: { keyword: "linkedin" },
+        headers: authHeaders(),
+      }),
+      [200],
+    );
+
+    expect(response.body.connectors).toContainEqual(
+      expect.objectContaining({ slug: "linkedin", authMethods: ["oauth"] }),
+    );
+  });
+
   it("exposes openai as api-token only", async () => {
     mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
 

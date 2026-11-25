@@ -23,7 +23,6 @@ export enum FeatureSwitchKey {
   Dummy = "_dummy",
   AppStoreConnect = "appStoreConnect",
   TikTokOAuthConnector = "tiktokOAuthConnector",
-  LinkedInOAuthConnector = "linkedinOAuthConnector",
   DocuSignConnector = "docusignConnector",
   PayPalConnector = "payPalConnector",
   RampConnector = "rampConnector",
