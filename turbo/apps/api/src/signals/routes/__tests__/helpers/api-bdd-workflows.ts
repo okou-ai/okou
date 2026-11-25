@@ -85,6 +85,7 @@ export function mockGoogleCalendarConnectorOAuth(
 }
 
 interface NotionConnectorOAuthOptions {
+  readonly botId?: string;
   readonly accessToken?: string;
   readonly ownerId?: string;
   readonly ownerName?: string;
@@ -106,6 +107,7 @@ export function mockNotionConnectorOAuth(
     http.post(NOTION_OAUTH_TOKEN_URL, () => {
       return HttpResponse.json({
         access_token: options.accessToken ?? "notion-access-token",
+        bot_id: options.botId,
         refresh_token: "notion-refresh-token",
         expires_in: 3600,
         owner: {

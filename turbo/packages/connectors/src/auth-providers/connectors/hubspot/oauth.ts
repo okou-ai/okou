@@ -12,6 +12,7 @@ const HUBSPOT_TOKEN_INFO_URL = "https://api.hubapi.com/oauth/v1/access-tokens";
 
 interface HubSpotUserInfo {
   id: string;
+  identityNamespace?: string;
   email: string | null;
   hubDomain: string | null;
 }
@@ -172,12 +173,15 @@ async function fetchHubSpotUserInfo(
 
   const data = object({
     user_id: number(),
+    hub_id: number().optional(),
     user: string().optional(),
     hub_domain: string().optional(),
   }).parse(await response.json());
 
   return {
     id: String(data.user_id),
+    identityNamespace:
+      data.hub_id === undefined ? undefined : `hubspot:hub:${data.hub_id}`,
     email: data.user ?? null,
     hubDomain: data.hub_domain ?? null,
   };

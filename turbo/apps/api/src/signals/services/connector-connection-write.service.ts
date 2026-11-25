@@ -40,6 +40,7 @@ export interface StoredConnectorConnectionRow {
 }
 
 interface ExistingConnectorConnectionRow extends StoredConnectorConnectionRow {
+  readonly externalIssuer: string;
   readonly stateRevision: string;
   readonly connectorSlug: string | null;
   readonly customConnectorId: string | null;
@@ -166,6 +167,7 @@ export function connectorConnectionSelection() {
 export function existingConnectorConnectionSelection() {
   return {
     ...connectorConnectionSelection(),
+    externalIssuer: connectors.externalIssuer,
     stateRevision: sql`${connectors.updatedAt}::text`.mapWith(pgTextDecoder),
     connectorSlug: connectors.connectorSlug,
     customConnectorId: connectors.customConnectorId,

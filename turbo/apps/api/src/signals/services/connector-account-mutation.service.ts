@@ -190,10 +190,12 @@ export function connectorConnectionDefaultConflict(kind: "builtin" | "custom") {
       };
 }
 
-/** AWS account numbers contain multiple independently authorized STS principals. */
+/** AWS needs its STS principal; workspace grants need their provider namespace. */
 export function connectorConnectionExternalPrincipal() {
   return sql`CASE WHEN ${connectors.connectorSlug} = 'aws'
-    THEN substring(${connectors.externalUsername} from '[(]([^()]+)[)]$') ELSE '' END`;
+    THEN substring(${connectors.externalUsername} from '[(]([^()]+)[)]$')
+    WHEN ${connectors.connectorSlug} IN ('notion', 'slack', 'hubspot') AND ${connectors.externalIssuer} = ''
+    THEN NULL ELSE '' END`;
 }
 
 export function connectorConnectionPrincipalValue(

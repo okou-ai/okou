@@ -6,6 +6,8 @@ import type {
 
 export interface ConnectorAuthProviderGrantUserInfo {
   readonly id: string;
+  /** Provider-owned authorization scope when a user can grant multiple connections. */
+  readonly identityNamespace?: string;
   readonly username: string | null;
   readonly email: string | null;
 }

@@ -10,6 +10,7 @@ const NOTION_AUTHORIZATION_URL = "https://api.notion.com/v1/oauth/authorize";
 
 interface NotionUserInfo {
   id: string;
+  identityNamespace?: string;
   username: string;
   email: string | null;
 }
@@ -86,6 +87,7 @@ export async function exchangeNotionCode(
 
   const data = object({
     access_token: string().optional(),
+    bot_id: string().optional(),
     refresh_token: string().nullable().optional(),
     expires_in: number().optional(),
     owner: object({
@@ -114,6 +116,9 @@ export async function exchangeNotionCode(
     scopes: [],
     userInfo: {
       id: data.owner?.user?.id ?? "",
+      // A Notion user can authorize multiple workspaces. The bot identifies
+      // this authorization; retain the owner ID for webhook access checks.
+      identityNamespace: data.bot_id ? `notion:bot:${data.bot_id}` : undefined,
       username: data.owner?.user?.name ?? "",
       email: data.owner?.user?.person?.email ?? null,
     },
