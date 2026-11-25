@@ -5828,16 +5828,26 @@
         "resetUsage": "उपयोग रीसेट करें"
       },
       "antigravity": {
-        "check": "साइन इन जाँचें",
-        "error": "अपने लिए तय साइन-इन परिवेश की जाँच करें और फिर कोशिश करें।",
-        "expired": "साइन इन की अवधि समाप्त हो गई है। खाता फिर से कनेक्ट करें।",
-        "openTerminal": "Google साइन-इन टर्मिनल खोलें",
-        "terminal": "अपने टर्मिनल में यह कमांड चलाएँ और अपने व्यक्तिगत Google AI खाते से साइन इन करें।",
-        "title": "Google AI (Antigravity)",
-        "unassigned": "किसी व्यवस्थापक से अपने लिए साइन-इन टर्मिनल निर्धारित करने को कहें।",
-        "verify": "यह कमांड आपके सब्सक्रिप्शन कोटे का उपयोग करके Neon, Carbon और Hydrogen को एक-एक अनुरोध भेजती है।"
+        "title": "Google AI (Antigravity)"
       },
       "deviceAuth": {
+        "antigravity": {
+          "address": "ब्राउज़र का पता",
+          "addressPlaceholder": "http://localhost:51121/oauth-callback?…",
+          "addressRequired": "जारी रखने के लिए ब्राउज़र का पता पेस्ट करें।",
+          "connectedToast": "Google AI खाता कनेक्ट हो गया",
+          "connectTitle": "Google AI (Antigravity) कनेक्ट करें",
+          "expired": "साइन-इन की समय-सीमा समाप्त हो गई। फिर से शुरू करें।",
+          "failed": "Google साइन-इन विफल रहा। फिर से कोशिश करें।",
+          "instructions": "अपने निजी Google AI Pro या Ultra खाते से एक्सेस स्वीकृत करें। इसके बाद Google एक ऐसा पेज खोलता है जो लोड नहीं होता। अपने ब्राउज़र से उस पेज का पूरा पता कॉपी करें और नीचे पेस्ट करें।",
+          "openApproval": "Google साइन-इन खोलें",
+          "preparing": "Google साइन-इन तैयार किया जा रहा है…",
+          "reconnectAction": "फिर से साइन इन करें",
+          "reconnectTitle": "Google AI (Antigravity) फिर से कनेक्ट करें",
+          "signIn": "Google से साइन इन करें",
+          "submit": "कनेक्ट करें",
+          "usageNotice": "आंतरिक स्टाफ़ पायलट। Google तृतीय-पक्ष क्लाइंट के ज़रिए उपयोग किए गए खातों को प्रतिबंधित कर सकता है।"
+        },
         "claude": {
           "authorizationCode": "प्राधिकरण संकेत - लिपि",
           "codePlaceholder": "Claude से कोड पेस्ट करें",

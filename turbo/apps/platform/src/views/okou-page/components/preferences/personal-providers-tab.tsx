@@ -27,6 +27,10 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import { EllipsisVertical, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { subscriptionUsageWindows } from "../../../../lib/subscription-usage-windows.ts";
+import {
+  antigravitySignInEnabled$,
+  openAntigravitySignIn$,
+} from "../../../../signals/okou-page/settings/antigravity-device-auth.ts";
 import { openClaudeCodeDeviceAuthDialogPersonal$ } from "../../../../signals/okou-page/settings/claude-code-device-auth.ts";
 import { openCodexDeviceAuthDialogPersonal$ } from "../../../../signals/okou-page/settings/codex-device-auth.ts";
 import {
@@ -54,13 +58,10 @@ import {
   CodexResetUsageDialog,
 } from "./codex-reset-usage-dialog.tsx";
 
-import { AntigravitySubscription } from "./antigravity-subscription.tsx";
-
 export function PersonalProvidersTab() {
   return (
     <div className="flex flex-col gap-8">
       <OAuthAccountGroupsSection />
-      <AntigravitySubscription />
     </div>
   );
 }
@@ -98,6 +99,8 @@ function OAuthAccountGroupsSection() {
     openClaudeCodeDeviceAuthDialogPersonal$,
   );
   const openCodexDeviceAuthDialog = useSet(openCodexDeviceAuthDialogPersonal$);
+  const openAntigravitySignIn = useSet(openAntigravitySignIn$);
+  const antigravityEnabled = useLastLoadable(antigravitySignInEnabled$);
   const setDisconnectDialog = useSet(setPersonalAccountDisconnectDialog$);
   const setResetDialog = useSet(setSettingsCodexResetDialog$);
   const pageSignal = useGet(pageSignal$);
@@ -105,23 +108,39 @@ function OAuthAccountGroupsSection() {
   const isLoading = providersLoadable.state === "loading";
   const providers =
     providersLoadable.state === "hasData" ? providersLoadable.data : [];
-  const accountGroups: readonly PersonalProviderAccountGroup[] =
-    SUBSCRIPTION_PROVIDERS.map((type) => {
+  // The staff pilot lists Google AI accounts while opted in, and keeps any
+  // connected account visible so it can still be disconnected.
+  const groupTypes: readonly PersonalSubscriptionProviderType[] =
+    (antigravityEnabled.state === "hasData" && antigravityEnabled.data) ||
+    providers.some((provider) => {
+      return provider.type === "antigravity";
+    })
+      ? [...SUBSCRIPTION_PROVIDERS, "antigravity"]
+      : SUBSCRIPTION_PROVIDERS;
+  const groupTitles: Readonly<
+    Record<PersonalSubscriptionProviderType, string>
+  > = {
+    "codex-oauth-token": t(($) => {
+      return $.settings.models.personal.codexTitle;
+    }),
+    "claude-code-oauth-token": t(($) => {
+      return $.settings.models.personal.claudeTitle;
+    }),
+    antigravity: t(($) => {
+      return $.settings.models.antigravity.title;
+    }),
+  };
+  const accountGroups: readonly PersonalProviderAccountGroup[] = groupTypes.map(
+    (type) => {
       return {
         type,
-        title:
-          type === "codex-oauth-token"
-            ? t(($) => {
-                return $.settings.models.personal.codexTitle;
-              })
-            : t(($) => {
-                return $.settings.models.personal.claudeTitle;
-              }),
+        title: groupTitles[type],
         accounts: providers.filter((provider) => {
           return provider.type === type;
         }),
       };
-    });
+    },
+  );
 
   const openAccountAuth = (
     type: PersonalSubscriptionProviderType,
@@ -130,6 +149,10 @@ function OAuthAccountGroupsSection() {
     const args = modelProviderId
       ? { mode: "reconnect" as const, modelProviderId }
       : { mode: "connect" as const };
+    if (type === "antigravity") {
+      detach(openAntigravitySignIn(args, pageSignal), Reason.DomCallback);
+      return;
+    }
     const request =
       type === "codex-oauth-token"
         ? openCodexDeviceAuthDialog(args, pageSignal)

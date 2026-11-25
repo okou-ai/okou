@@ -5805,16 +5805,26 @@
         "resetUsage": "重置用量"
       },
       "antigravity": {
-        "check": "查看登录状态",
-        "error": "请检查分配给你的登录环境，然后重试。",
-        "expired": "登录已过期，请重新连接。",
-        "openTerminal": "打开 Google 登录终端",
-        "terminal": "在终端运行以下命令，然后使用你的个人 Google AI 账号登录。",
-        "title": "Google AI（Antigravity）",
-        "unassigned": "请管理员为你分配登录终端。",
-        "verify": "运行此命令会使用你的订阅额度，分别向 Neon、Carbon 和 Hydrogen 发送一次请求。"
+        "title": "Google AI（Antigravity）"
       },
       "deviceAuth": {
+        "antigravity": {
+          "address": "浏览器中的地址",
+          "addressPlaceholder": "http://localhost:51121/oauth-callback?…",
+          "addressRequired": "请粘贴浏览器中的地址后继续。",
+          "connectedToast": "已连接 Google AI 账号",
+          "connectTitle": "连接 Google AI（Antigravity）",
+          "expired": "登录已过期，请重新开始。",
+          "failed": "Google 登录失败，请重试。",
+          "instructions": "使用你的个人 Google AI Pro 或 Ultra 账号授权访问。随后 Google 会打开一个无法加载的页面，请从浏览器复制该页面的完整地址并粘贴到下方。",
+          "openApproval": "打开 Google 登录",
+          "preparing": "正在准备 Google 登录…",
+          "reconnectAction": "重新登录",
+          "reconnectTitle": "重新连接 Google AI（Antigravity）",
+          "signIn": "使用 Google 登录",
+          "submit": "连接",
+          "usageNotice": "内部员工试点。Google 可能会限制通过第三方客户端使用的账号。"
+        },
         "claude": {
           "authorizationCode": "授权码",
           "codePlaceholder": "粘贴 Claude 提供的授权码",

@@ -5896,16 +5896,26 @@
         "resetUsage": "Redefinir uso"
       },
       "antigravity": {
-        "check": "Verificar login",
-        "error": "Confira o ambiente de login atribuído a você e tente novamente.",
-        "expired": "O login expirou. Conecte a conta novamente.",
-        "openTerminal": "Abrir o terminal de login do Google",
-        "terminal": "Execute este comando no terminal e faça login com sua conta pessoal do Google AI.",
-        "title": "Google AI (Antigravity)",
-        "unassigned": "Peça a um administrador para atribuir um terminal de login a você.",
-        "verify": "Este comando usa sua assinatura para enviar uma solicitação a cada um dos modelos Neon, Carbon e Hydrogen."
+        "title": "Google AI (Antigravity)"
       },
       "deviceAuth": {
+        "antigravity": {
+          "address": "Endereço do navegador",
+          "addressPlaceholder": "http://localhost:51121/oauth-callback?…",
+          "addressRequired": "Cole o endereço do navegador para continuar.",
+          "connectedToast": "Conta do Google AI conectada",
+          "connectTitle": "Conectar Google AI (Antigravity)",
+          "expired": "O login expirou. Comece novamente.",
+          "failed": "Falha no login do Google. Tente novamente.",
+          "instructions": "Aprove o acesso com sua conta pessoal do Google AI Pro ou Ultra. Em seguida, o Google abre uma página que não carrega. Copie o endereço completo dessa página no navegador e cole abaixo.",
+          "openApproval": "Abrir login do Google",
+          "preparing": "Preparando o login do Google…",
+          "reconnectAction": "Entrar novamente",
+          "reconnectTitle": "Reconectar Google AI (Antigravity)",
+          "signIn": "Entrar com o Google",
+          "submit": "Conectar",
+          "usageNotice": "Piloto interno da equipe. O Google pode restringir contas usadas por clientes de terceiros."
+        },
         "claude": {
           "authorizationCode": "Código de autorização",
           "codePlaceholder": "Cole o código do Claude",

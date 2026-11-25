@@ -5826,16 +5826,26 @@
         "resetUsage": "Reset usage"
       },
       "antigravity": {
-        "check": "Check sign-in",
-        "error": "Check your assigned sign-in worker and try again.",
-        "expired": "Sign-in expired. Connect again to start a new session.",
-        "openTerminal": "Open Google sign-in terminal",
-        "terminal": "Run this command in your terminal and sign in with your personal Google AI account.",
-        "title": "Google AI (Antigravity)",
-        "unassigned": "Ask an administrator to assign your sign-in terminal.",
-        "verify": "This command uses your subscription to send one request each to Neon, Carbon and Hydrogen."
+        "title": "Google AI (Antigravity)"
       },
       "deviceAuth": {
+        "antigravity": {
+          "address": "Address from your browser",
+          "addressPlaceholder": "http://localhost:51121/oauth-callback?…",
+          "addressRequired": "Paste the address from your browser to continue.",
+          "connectedToast": "Google AI account connected",
+          "connectTitle": "Connect Google AI (Antigravity)",
+          "expired": "Sign-in expired. Start again.",
+          "failed": "Google sign-in failed. Try again.",
+          "instructions": "Approve access with your personal Google AI Pro or Ultra account. Google then opens a page that does not load. Copy that page's full address from your browser and paste it below.",
+          "openApproval": "Open Google sign-in",
+          "preparing": "Preparing Google sign-in…",
+          "reconnectAction": "Sign in again",
+          "reconnectTitle": "Reconnect Google AI (Antigravity)",
+          "signIn": "Sign in with Google",
+          "submit": "Connect",
+          "usageNotice": "Internal staff pilot. Google may restrict accounts that are used through third-party clients."
+        },
         "claude": {
           "authorizationCode": "Authorization code",
           "codePlaceholder": "Paste code from Claude",

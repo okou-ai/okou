@@ -5896,16 +5896,26 @@
         "resetUsage": "Restablecer uso"
       },
       "antigravity": {
-        "check": "Comprobar inicio de sesión",
-        "error": "Comprueba el entorno de inicio de sesión asignado y vuelve a intentarlo.",
-        "expired": "El inicio de sesión ha caducado. Vuelve a conectar la cuenta.",
-        "openTerminal": "Abrir la terminal de acceso a Google",
-        "terminal": "Ejecuta este comando en tu terminal e inicia sesión con tu cuenta personal de Google AI.",
-        "title": "Google AI (Antigravity)",
-        "unassigned": "Pide a un administrador que te asigne un terminal de inicio de sesión.",
-        "verify": "Este comando usa tu suscripción para enviar una solicitud a cada uno de los modelos Neon, Carbon y Hydrogen."
+        "title": "Google AI (Antigravity)"
       },
       "deviceAuth": {
+        "antigravity": {
+          "address": "Dirección del navegador",
+          "addressPlaceholder": "http://localhost:51121/oauth-callback?…",
+          "addressRequired": "Pega la dirección del navegador para continuar.",
+          "connectedToast": "Cuenta de Google AI conectada",
+          "connectTitle": "Conectar Google AI (Antigravity)",
+          "expired": "El inicio de sesión ha caducado. Vuelve a empezar.",
+          "failed": "No se pudo iniciar sesión con Google. Inténtalo de nuevo.",
+          "instructions": "Aprueba el acceso con tu cuenta personal de Google AI Pro o Ultra. Después, Google abre una página que no carga. Copia la dirección completa de esa página desde el navegador y pégala abajo.",
+          "openApproval": "Abrir inicio de sesión de Google",
+          "preparing": "Preparando el inicio de sesión de Google…",
+          "reconnectAction": "Volver a iniciar sesión",
+          "reconnectTitle": "Volver a conectar Google AI (Antigravity)",
+          "signIn": "Iniciar sesión con Google",
+          "submit": "Conectar",
+          "usageNotice": "Piloto interno del equipo. Google puede restringir las cuentas que se usan a través de clientes de terceros."
+        },
         "claude": {
           "authorizationCode": "Código de autorización",
           "codePlaceholder": "Pega el código de Claude",

@@ -5896,16 +5896,26 @@
         "resetUsage": "Réinitialiser l'utilisation"
       },
       "antigravity": {
-        "check": "Vérifier la connexion",
-        "error": "Vérifiez l’environnement de connexion qui vous a été attribué et réessayez.",
-        "expired": "La connexion a expiré. Reconnectez votre compte.",
-        "openTerminal": "Ouvrir le terminal de connexion Google",
-        "terminal": "Exécutez cette commande dans votre terminal, puis connectez-vous avec votre compte Google AI personnel.",
-        "title": "Google AI (Antigravity)",
-        "unassigned": "Demandez à un administrateur de vous attribuer un terminal de connexion.",
-        "verify": "Cette commande utilise votre abonnement pour envoyer une requête à chacun des modèles Neon, Carbon et Hydrogen."
+        "title": "Google AI (Antigravity)"
       },
       "deviceAuth": {
+        "antigravity": {
+          "address": "Adresse du navigateur",
+          "addressPlaceholder": "http://localhost:51121/oauth-callback?…",
+          "addressRequired": "Collez l'adresse du navigateur pour continuer.",
+          "connectedToast": "Compte Google AI connecté",
+          "connectTitle": "Connecter Google AI (Antigravity)",
+          "expired": "La connexion a expiré. Recommencez.",
+          "failed": "La connexion Google a échoué. Réessayez.",
+          "instructions": "Autorisez l'accès avec votre compte personnel Google AI Pro ou Ultra. Google ouvre ensuite une page qui ne se charge pas. Copiez l'adresse complète de cette page depuis votre navigateur et collez-la ci-dessous.",
+          "openApproval": "Ouvrir la connexion Google",
+          "preparing": "Préparation de la connexion Google…",
+          "reconnectAction": "Se reconnecter",
+          "reconnectTitle": "Reconnecter Google AI (Antigravity)",
+          "signIn": "Se connecter avec Google",
+          "submit": "Connecter",
+          "usageNotice": "Pilote interne réservé à l'équipe. Google peut restreindre les comptes utilisés via des clients tiers."
+        },
         "claude": {
           "authorizationCode": "Code d'autorisation",
           "codePlaceholder": "Coller le code depuis Claude",
