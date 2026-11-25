@@ -1203,7 +1203,11 @@
       "title": "降级套餐"
     },
     "feedback": {
-      "shareFeedback": "分享反馈"
+      "otherPlaceholder": "可以多说一点…",
+      "rewardTerms": "每个工作区仅一次 · 积分有效期 30 天",
+      "shareFeedback": "分享反馈",
+      "submitFeedback": "提交反馈",
+      "thanks": "感谢你的反馈"
     },
     "invoices": {
       "amount": "金额",
