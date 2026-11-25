@@ -24,6 +24,7 @@ import {
   createHostedSiteVisibilityOption,
 } from "./visibility-options";
 import { createHostedSiteVisibilityCommand } from "./visibility";
+import { createHostedSiteDomainCommand } from "./domain";
 import { hostedSiteDeliveryInstructions } from "../../lib/host/delivery";
 
 interface HostOptions {
@@ -84,7 +85,8 @@ export function createHostCommand(): Command {
     .addCommand(completeHostedSiteCommand)
     .addCommand(titleHostedSiteCommand)
     .addCommand(createHostedSiteBannerCommand())
-    .addCommand(createHostedSiteVisibilityCommand());
+    .addCommand(createHostedSiteVisibilityCommand())
+    .addCommand(createHostedSiteDomainCommand());
   return command
     .addHelpText("after", () => {
       return `
@@ -97,6 +99,7 @@ Examples:
   Hide the banner:      okou host banner my-product-demo off
   Invite by email:      okou host ./dist --site my-product-demo --title "Product demo" --visibility email --email person@example.com
   Change audience:      okou host visibility my-product-demo email --email person@example.com
+  Connect a domain:     okou host domain --help
   List site versions:    okou host versions my-product-demo
   Clone a hosted site:   okou host clone my-product-demo ./site
   Take a site offline:   okou host delete my-product-demo
