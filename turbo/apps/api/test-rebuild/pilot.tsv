@@ -421,10 +421,10 @@ workflows	src/signals/routes/__tests__/automation-disabled-feed-events.test.ts	a
 workflows	src/signals/routes/__tests__/automation-disabled-feed-events.test.ts	automation-disabled-feed-events-002	planned		
 workflows	src/signals/routes/__tests__/automation-disabled-feed-events.test.ts	automation-disabled-feed-events-003	planned		
 workflows	src/signals/routes/__tests__/automation-disabled-feed-events.test.ts	automation-disabled-feed-events-004	planned		
-workflows	src/signals/routes/__tests__/cron-official-workflow-catalog.test.ts	cron-official-workflow-catalog-002	planned		
-workflows	src/signals/routes/__tests__/cron-official-workflow-catalog.test.ts	cron-official-workflow-catalog-004	planned		
-workflows	src/signals/routes/__tests__/cron-official-workflow-catalog.test.ts	cron-official-workflow-catalog-005	planned		
-workflows	src/signals/routes/__tests__/cron-official-workflow-catalog.test.ts	cron-official-workflow-catalog-007	planned		
+workflows	src/signals/routes/__tests__/cron-official-workflow-catalog.test.ts	cron-official-workflow-catalog-002	skipped		slow-setup: Suggestions dispatch requires the owner's recent manual chat Run plus cron-dispatched Runs with Run tokens (gate officialScheduleOwnerIsActive$); no lighter public path
+workflows	src/signals/routes/__tests__/cron-official-workflow-catalog.test.ts	cron-official-workflow-catalog-004	skipped		slow-setup: Learning dispatch requires the owner's recent manual chat Run plus a cron-dispatched Run whose token is then used; no lighter public path
+workflows	src/signals/routes/__tests__/cron-official-workflow-catalog.test.ts	cron-official-workflow-catalog-005	skipped		slow-setup: Morning Brief needs the owner's recent manual chat Run, a dispatched Run and two further scheduled Run failures; no lighter public path
+workflows	src/signals/routes/__tests__/cron-official-workflow-catalog.test.ts	cron-official-workflow-catalog-007	skipped		slow-setup: the scenario is the seven-day manual chat Run gate itself and needs dispatched Runs calling firewall auth; no lighter public path
 workflows	src/signals/routes/__tests__/cron-project-chat-event-search.test.ts	cron-project-chat-event-search-002	planned		
 workflows	src/signals/routes/__tests__/cron-project-chat-event-search.test.ts	cron-project-chat-event-search-003	planned		
 workflows	src/signals/routes/__tests__/cron-project-chat-event-search.test.ts	cron-project-chat-event-search-005	planned		
