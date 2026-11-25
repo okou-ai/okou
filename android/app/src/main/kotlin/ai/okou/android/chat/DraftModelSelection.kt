@@ -4,6 +4,7 @@ import ai.okou.android.api.generated.CanonicalOptional
 import ai.okou.android.api.generated.CreateThreadRequest
 import ai.okou.android.api.generated.CreateThreadRequestReasoningEffort
 import ai.okou.android.api.generated.CreateThreadRequestServiceTier
+import ai.okou.android.settings.DefaultModelChoice
 import ai.okou.android.settings.DefaultModelOptions
 import ai.okou.android.settings.DefaultModelState
 import ai.okou.android.settings.ModelEffort
@@ -27,18 +28,28 @@ internal fun DefaultModelState.draftDefaults(): DraftModelSelection {
             ?.modelSettings
             .orEmpty()
             .mapNotNull { (id, settings) ->
-                settings.effort?.let {
-                    (options?.resolve(id) ?: id) to
-                        CreateThreadRequestReasoningEffort.valueOf(it.name)
-                }
+                settings.effort?.let { id to CreateThreadRequestReasoningEffort.valueOf(it.name) }
             }
             .toMap(),
         confirmed?.serviceTier != null,
     )
 }
 
-internal fun DraftModelSelection.withEffort(model: String, effort: ModelEffort) =
-    copy(efforts = efforts + (model to CreateThreadRequestReasoningEffort.valueOf(effort.name)))
+internal fun DraftModelSelection.effortFor(choice: DefaultModelChoice): ModelEffort? =
+    choice.efforts.firstOrNull { it.name == efforts[choice.id]?.name } ?: choice.defaultEffort
+
+internal fun DraftModelSelection.withModel(
+    choice: DefaultModelChoice,
+    fast: Boolean,
+    effort: ModelEffort? = effortFor(choice),
+): DraftModelSelection =
+    copy(
+        model = choice.id,
+        efforts =
+            if (effort == null) efforts - choice.id
+            else efforts + (choice.id to CreateThreadRequestReasoningEffort.valueOf(effort.name)),
+        fast = fast && choice.fastMultiplier != null,
+    )
 
 internal fun DraftModelSelection.applyTo(
     request: CreateThreadRequest,
@@ -47,9 +58,13 @@ internal fun DraftModelSelection.applyTo(
     val selected = options?.resolve(model) ?: model
     val capability = options?.choices?.firstOrNull { it.id == selected && it.canSelect }
     val effort =
-        efforts[selected]?.takeIf { value ->
-            options == null || capability?.efforts?.any { it.name == value.name } == true
-        } ?: capability?.defaultEffort?.let { CreateThreadRequestReasoningEffort.valueOf(it.name) }
+        if (options == null) efforts[selected]
+        else
+            capability
+                ?.let { effortFor(it) }
+                ?.let {
+                    CreateThreadRequestReasoningEffort.valueOf(it.name)
+                }
     return request.copy(
         model = CanonicalOptional.Present(selected),
         serviceTier =

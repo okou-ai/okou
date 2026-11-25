@@ -183,30 +183,34 @@ internal fun ChatConnectorOptionsButton(
     }
 
     if (page == ComposerOptionsPage.Model && selection != null) {
-        val remembered = selection.efforts[selectedId]
         ModelPickerSheet(
             title = stringResource(R.string.chat_options_model),
             choices = catalog?.choices.orEmpty(),
             selectedId = selectedId,
-            effort =
-                choice?.efforts?.firstOrNull { it.name == remembered?.name }
-                    ?: choice?.defaultEffort,
+            effort = choice?.let { selection.effortFor(it) },
             fast = selection.fast && choice?.fastMultiplier != null,
             select = { id ->
-                if (id == null || catalog?.choices?.any { it.id == id && it.canSelect } == true) {
-                    val next =
-                        if (id == selectedId) selection
-                        else selection.copy(model = id, fast = false)
-                    composer.editDraftModel(target, next)
-                }
+                val next =
+                    if (id == null) selection.copy(model = null, fast = false)
+                    else
+                        catalog
+                            ?.choices
+                            ?.firstOrNull { it.id == id && it.canSelect }
+                            ?.let {
+                                selection.withModel(it, fast = id == selectedId && selection.fast)
+                            }
+                if (next != null) composer.editDraftModel(target, next)
             },
             selectEffort = { effort ->
                 if (choice != null && effort in choice.efforts)
-                    composer.editDraftModel(target, selection.withEffort(choice.id, effort))
+                    composer.editDraftModel(
+                        target,
+                        selection.withModel(choice, selection.fast, effort),
+                    )
             },
             selectFast = { enabled ->
                 if (choice?.fastMultiplier != null)
-                    composer.editDraftModel(target, selection.copy(fast = enabled))
+                    composer.editDraftModel(target, selection.withModel(choice, fast = enabled))
             },
             dismiss = ::back,
         )

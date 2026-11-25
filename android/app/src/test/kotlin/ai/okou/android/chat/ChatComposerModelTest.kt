@@ -11,8 +11,16 @@ import ai.okou.android.api.generated.CreateThreadRequest
 import ai.okou.android.api.generated.CreateThreadRequestReasoningEffort
 import ai.okou.android.api.generated.CreatedThread
 import ai.okou.android.api.generated.CreatedThreadServiceTier
+import ai.okou.android.api.generated.DefaultModelPreference
+import ai.okou.android.api.generated.DefaultModelPreferenceModelSettingsValue
+import ai.okou.android.api.generated.DefaultModelPreferenceModelSettingsValueEffort
 import ai.okou.android.api.generated.SendRequestVariant1
 import ai.okou.android.auth.WorkspaceIdentity
+import ai.okou.android.settings.DefaultModelChoice
+import ai.okou.android.settings.DefaultModelOptions
+import ai.okou.android.settings.DefaultModelRecord
+import ai.okou.android.settings.DefaultModelState
+import ai.okou.android.settings.ModelEffort
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
@@ -496,6 +504,53 @@ internal class ChatComposerModelTest : ChatComposerModelTestFixture() {
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = TestOkouApplication::class)
 internal class ChatComposerSendModelTest : ChatComposerModelTestFixture() {
+    @Test
+    fun aReplacedModelCannotOverrideTheCurrentModelsSavedEffort() = check { service, _, create ->
+        val target = ComposerTarget()
+        val choice =
+            DefaultModelChoice(
+                id = "current-model",
+                label = "Current model",
+                canSelect = true,
+                efforts = listOf(ModelEffort.LOW, ModelEffort.MEDIUM, ModelEffort.HIGH),
+                defaultEffort = ModelEffort.MEDIUM,
+                fastMultiplier = null,
+            )
+        val options =
+            DefaultModelOptions(
+                listOf(choice),
+                mapOf("current-model" to "current-model", "retired-model" to "current-model"),
+            )
+        val confirmed =
+            DefaultModelPreference(
+                selectedModel = "current-model",
+                serviceTier = null,
+                modelSettings =
+                    mapOf(
+                        "current-model" to
+                            DefaultModelPreferenceModelSettingsValue(
+                                DefaultModelPreferenceModelSettingsValueEffort.LOW,
+                            ),
+                        "retired-model" to
+                            DefaultModelPreferenceModelSettingsValue(
+                                DefaultModelPreferenceModelSettingsValueEffort.HIGH,
+                            ),
+                    ),
+            )
+        val defaults = DefaultModelState(record = DefaultModelRecord(confirmed), options = options)
+        val model = create(false, identity)
+        model.open(target)
+        runCurrent()
+        model.edit(target, "Use the current model's effort")
+        model.editDraftModel(target, defaults.draftDefaults())
+        model.send(target, options)
+        runCurrent()
+        assertEquals(
+            CreateThreadRequestReasoningEffort.LOW,
+            service.creates.single().reasoningEffort,
+        )
+    }
+
     @Test
     fun explicitAutoSurvivesRejectedCreationAndDraftRestore() = check { service, store, create ->
         val target = ComposerTarget()

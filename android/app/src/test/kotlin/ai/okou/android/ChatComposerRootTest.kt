@@ -222,6 +222,53 @@ class ChatComposerRootTest {
         compose.onNodeWithText("Chat options").assertIsDisplayed()
     }
 
+    @Test
+    @Config(application = DraftModelRootApplication::class)
+    fun restoredDraftKeepsDisplayedEffortWithoutReopeningThePicker() {
+        val app = compose.activity.application as DraftModelRootApplication
+        cleanupApplication = app
+        app.contextGate.countDown()
+        app.sendGate.countDown()
+        compose.onNodeWithText("New chat").performClick()
+        captureOwners()
+        val prompt = "Send the restored model draft"
+        compose.onNodeWithTag("message_input").performTextInput(prompt)
+        compose.onNodeWithTag("chat-options-button").performClick()
+        val model = hasTestTag("chat-options-model") and isEnabled()
+        compose.waitUntilExactlyOneExists(model, 8_000)
+        compose.onNode(model).performClick()
+        compose.onNodeWithText("Claude Sonnet 5").performClick()
+        compose.onNodeWithText("GPT 5.6 Sol").performClick()
+        compose.onNodeWithText("Medium").assertIsDisplayed()
+        compose
+            .onNode(hasContentDescription("Back") and hasAnyAncestor(hasTestTag("model-picker")))
+            .performClick()
+        compose
+            .onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.Dismiss))
+            .performSemanticsAction(SemanticsActions.Dismiss)
+        awaitConversation { editor?.uiState?.value?.persistence == ComposerPersistence.Durable }
+
+        compose.activityRule.scenario.close()
+        compose.waitUntil(10_000) {
+            shadowOf(Looper.getMainLooper()).idle()
+            editorJob?.isCompleted == true && listJob?.isCompleted == true
+        }
+        runBlocking { checkNotNull(app.journalStore).close() }
+        app.journalStore = ComposerJournalStore(app, app.journalDirectory)
+        val fresh = ActivityScenario.launch<MainActivity>(Intent(app, MainActivity::class.java))
+        replacement = fresh
+        compose.onNodeWithText("New chat").performClick()
+        compose.waitUntilExactlyOneExists(hasTestTag("message_input") and hasText(prompt), 10_000)
+        var activity: MainActivity? = null
+        fresh.onActivity { activity = it }
+        captureOwners(checkNotNull(activity))
+        compose.onNodeWithContentDescription("Send").assertIsEnabled().performClick()
+        awaitConversation { app.fixture.inputs.isNotEmpty() }
+        val request = app.fixture.created.single()
+        assertEquals("gpt-test", request["model"]?.jsonPrimitive?.content)
+        assertEquals("medium", request["reasoningEffort"]?.jsonPrimitive?.content)
+    }
+
     private fun messageText(eventId: String, text: String) =
         compose.onNode(
             hasText(text) and hasAnyAncestor(hasTestTag("message_$eventId")),
