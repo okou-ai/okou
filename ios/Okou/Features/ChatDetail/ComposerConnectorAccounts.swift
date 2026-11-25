@@ -47,6 +47,8 @@ private struct ComposerConnectorAccountsContent: View {
   @LoadableValue private var pagination: Loadable<Void>
   @LoadableStatus<ComposerConnectorAccountResources.Page> private var status: LoadableState
   @LoadableStatus<Void> private var paginationStatus: LoadableState
+  /// The composer's confirmed connectors and remote access, kept in the session Store.
+  @ResolvedValue private var resolvedSnapshot: ComposerConnectorStore.Snapshot?
 
   init(store: ComposerConnectorStore, resources: ComposerConnectorAccountResources) {
     self.store = store
@@ -56,7 +58,10 @@ private struct ComposerConnectorAccountsContent: View {
     _pagination = LoadableValue(task: resources.pagination)
     _status = LoadableStatus(task: resources.page)
     _paginationStatus = LoadableStatus(task: resources.pagination)
+    _resolvedSnapshot = ResolvedValue(store.snapshotValue)
   }
+
+  private var snapshot: ComposerConnectorStore.Snapshot { resolvedSnapshot ?? store.snapshot }
 
   private var busy: Bool {
     status == .loading || paginationStatus == .loading || store.isSaving
@@ -88,6 +93,8 @@ private struct ComposerConnectorAccountsContent: View {
         } else {
           ComposerChatConnectorAccounts(
             store: store, resources: resources, page: value, busy: busy, search: search,
+            canConfigurePermissions: store.canConfigurePermissions(
+              slug: resources.connector.target.connectorSlug, in: snapshot),
             openPermissions: {
               if let slug = resources.connector.target.connectorSlug {
                 permissionDestination = store.openPermissions(
