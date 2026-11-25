@@ -15,7 +15,7 @@
     <string name="workflow_daily">Tous les jours</string>
     <string name="workflow_daily_schedule">Tous les jours à %1$s</string>
     <string name="workflow_discard">Ignorer</string>
-    <string name="workflow_discard_title">Ignorer les modifications non enregistrées ?</string>
+    <string name="workflow_discard_title">Ignorer les modifications non enregistrées\u202F?</string>
     <string name="workflow_discard_detail">Les modifications non enregistrées de « %1$s » sur cet appareil seront ignorées.</string>
     <string name="workflow_draft_unavailable">Impossible d’ouvrir le brouillon du nouveau chat. Votre brouillon actuel est conservé.</string>
     <string name="workflow_edit">Modifier</string>

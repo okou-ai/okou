@@ -101,7 +101,7 @@
     <string name="workflow_weekdays">平日</string>
     <string name="workflow_write_failed">変更を保存できませんでした。</string>
     <plurals name="workflow_enabled_count">
-        <item quantity="other">%d 件の自動化が有効</item>
+        <item quantity="other">%d件の自動化が有効</item>
     </plurals>
     <string name="workflow_rule_change_failed">このルールを変更できませんでした。</string>
     <string name="workflow_rule_network_failed">このルールを変更できませんでした。接続を確認して、もう一度お試しください。</string>

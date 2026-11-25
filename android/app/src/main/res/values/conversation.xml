@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <string name="conversation_queue_count">Queue (%1$d)</string>
     <string name="conversation_queue_empty">No queued items</string>
     <string name="conversation_queue_message">Message</string>
@@ -22,6 +22,12 @@
     <string name="conversation_replies_collapsed">Collapsed</string>
     <string name="conversation_work_elapsed">Working for %1$s</string>
     <string name="conversation_work_total">Worked for %1$s</string>
+    <!-- The compact English unit abbreviations use the same form for all quantities. -->
+    <string name="conversation_work_seconds" tools:ignore="PluralsCandidate">%1$d sec</string>
+    <string name="conversation_work_minutes">%1$d min</string>
+    <string name="conversation_work_hours">%1$d hr</string>
+    <string name="conversation_work_minutes_seconds" tools:ignore="PluralsCandidate">%1$d min %2$d sec</string>
+    <string name="conversation_work_hours_minutes">%1$d hr %2$d min</string>
     <string name="conversation_followup_continue">Keep going</string>
     <string name="conversation_feedback_pair">%1$s · %2$s</string>
     <plurals name="conversation_reply_steps">
