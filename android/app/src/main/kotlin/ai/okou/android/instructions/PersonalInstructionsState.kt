@@ -42,6 +42,7 @@ data class PersonalInstructionsState(
     val draft: InstructionsDraft? = null,
     val persistence: InstructionsPersistence = InstructionsPersistence.Durable,
     val saveRejected: Boolean = false,
+    val saveConfirmed: Boolean = false,
     val recoveryVersion: String? = null,
 ) {
     val content: String

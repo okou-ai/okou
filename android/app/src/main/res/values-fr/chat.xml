@@ -109,7 +109,6 @@
     <string name="chat_row_action_offline_named">Impossible de terminer «\u00A0%1$s\u00A0». Vérifiez votre connexion, puis réessayez.</string>
     <string name="chat_rename_save_failed">Impossible d’enregistrer. Vos modifications sont conservées.</string>
     <string name="chat_rename_check_result">Vérifier le résultat</string>
-    <string name="chat_rename_trim_hint">Les espaces au début et à la fin sont supprimés.</string>
     <string name="chat_rename_required">Saisissez un nom.</string>
     <string name="chat_rename_checking_result">Vérification du résultat…</string>
     <string name="chat_rename_save_unconfirmed">Le résultat de l’enregistrement reste à confirmer.</string>

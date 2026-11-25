@@ -4,9 +4,18 @@ import ai.okou.android.auth.SessionModel
 import ai.okou.android.instructions.InstructionsPhase
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import ai.okou.android.instructions.PersonalInstructionsModel
+import android.app.Instrumentation
 import android.content.Context
+import android.os.Build
 import android.view.KeyEvent
+import android.view.View
+import android.view.ViewGroup
 import android.view.accessibility.AccessibilityWindowInfo
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputConnection
+import android.view.inspector.WindowInspector
+import androidx.annotation.RequiresApi
+import androidx.core.view.children
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ActivityScenario
@@ -195,7 +204,21 @@ class NativeInstructionsTest {
             click(R.string.instructions_title)
             assertTrue(refreshEntered.await(10, TimeUnit.SECONDS))
             assertTrue(editor().text.contains("Native **instructions** 👋"))
-            editor().text = "Keep this local draft"
+            val localDraft = "Keep this local draft"
+            editor().text = localDraft
+            val connection =
+                if (Build.VERSION.SDK_INT >= 29) {
+                    editor().click()
+                    editor(requireFocus = true)
+                    awaitIme(true)
+                    activeInputConnection(instrumentation).also { input ->
+                        instrumentation.runOnMainSync {
+                            assertTrue(input.setSelection(localDraft.length, localDraft.length))
+                            assertTrue(input.setComposingText("zhongwen", 1))
+                        }
+                        editor(expectedText = "${localDraft}zhongwen")
+                    }
+                } else null
             val webText = "Changed on Web"
             fixture.externalEdit(webText)
             refreshHeld.countDown()
@@ -208,7 +231,18 @@ class NativeInstructionsTest {
                     10_000,
                 ) == true,
             )
-            assertEquals("Keep this local draft", editor().text)
+            if (connection == null) {
+                assertEquals(localDraft, editor().text)
+            } else {
+                assertEquals("${localDraft}zhongwen", editor(requireFocus = true).text)
+                instrumentation.runOnMainSync {
+                    assertTrue(connection.setComposingText("中文", 1))
+                    assertTrue(connection.finishComposingText())
+                }
+                editor(expectedText = "${localDraft}中文", requireFocus = true)
+                assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+                awaitIme(false)
+            }
             assertEquals(1, fixture.requests.count { it.method == "PUT" })
             assertTrue(text(app.getString(R.string.instructions_save)).isEnabled)
             click(R.string.settings_cancel)
@@ -256,6 +290,24 @@ class NativeInstructionsTest {
         MultipleFailureException.assertEmpty(failures)
     }
 }
+
+@RequiresApi(29)
+private fun activeInputConnection(instrumentation: Instrumentation): InputConnection {
+    var connection: InputConnection? = null
+    instrumentation.runOnMainSync {
+        connection =
+            WindowInspector.getGlobalWindowViews()
+                .asSequence()
+                .filter(View::hasWindowFocus)
+                .mapNotNull(::activeTextEditor)
+                .firstNotNullOfOrNull { it.onCreateInputConnection(EditorInfo()) }
+    }
+    return checkNotNull(connection) { "The focused editor did not expose an input connection" }
+}
+
+private fun activeTextEditor(view: View): View? =
+    if (view.onCheckIsTextEditor()) view
+    else (view as? ViewGroup)?.children?.firstNotNullOfOrNull(::activeTextEditor)
 
 internal fun UiDevice.confirmInstructionsDiscard(context: Context) {
     val label = By.pkg(context.packageName).text(context.getString(R.string.instructions_discard))

@@ -15,6 +15,7 @@ import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.assertWidthIsEqualTo
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDisplayed
@@ -29,6 +30,7 @@ import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -251,11 +253,18 @@ class PersonalInstructionsSettingsTest {
         }
         input.assertTextEquals(saved)
         save.assertIsNotEnabled()
+        input.performTextReplacement("$saved\u0000")
+        val invalidMessage = app.getString(R.string.instructions_invalid)
+        compose.onNodeWithText(invalidMessage).assertExists()
+        assertEquals(invalidMessage, input.fetchSemanticsNode().config[SemanticsProperties.Error])
+        save.assertIsNotEnabled()
         input.performScrollTo().performTextReplacement("Keep **my** 中文 👋 draft")
         compose.waitUntil(10_000) {
-            input.fetchSemanticsNode().config[SemanticsProperties.EditableText].spanStyles.any {
+            val layouts = mutableListOf<TextLayoutResult>()
+            input.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+            layouts.singleOrNull()?.layoutInput?.text?.spanStyles?.any {
                 it.item.fontWeight == FontWeight.Bold
-            }
+            } == true
         }
         input.performTextInputSelection(TextRange(5, 8))
         input.assertIsFocused()
@@ -292,20 +301,41 @@ class PersonalInstructionsSettingsTest {
         input.performScrollTo().performTextClearance()
         assertEquals("", input.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
         app.fixture.disconnectSave = true
+        app.fixture.rejectRead = true
         val markdown = "**Accepted** despite lost response"
         input.performScrollTo().performTextReplacement(markdown)
         val saveReply = CountDownLatch(1)
         app.fixture.beforeSave = { saveReply.await() }
         try {
-            compose.onNodeWithText("Save").performClick()
-            compose
-                .onNodeWithText(app.getString(R.string.settings_saving))
-                .performScrollTo()
-                .assertIsDisplayed()
-                .assertIsNotEnabled()
+            val cancel = compose.onNodeWithText("Cancel")
+            save.performScrollTo()
+            val idleSaveBounds = save.getUnclippedBoundsInRoot()
+            val idleCancelBounds = cancel.getUnclippedBoundsInRoot()
+            save.performClick()
+            val pending = compose.onNodeWithText(app.getString(R.string.settings_saving))
+            pending.assertIsDisplayed().assertIsNotEnabled()
+            assertEquals(idleSaveBounds, pending.getUnclippedBoundsInRoot())
+            assertEquals(idleCancelBounds, cancel.getUnclippedBoundsInRoot())
             input.assertExists()
         } finally {
             saveReply.countDown()
+        }
+        awaitPhase(InstructionsPhase.Uncertain)
+        val checkVersion = compose.onNodeWithText(app.getString(R.string.instructions_refresh))
+        checkVersion.performScrollTo().assertIsEnabled()
+        val checkBounds = checkVersion.getUnclippedBoundsInRoot()
+        val draftBounds = input.getUnclippedBoundsInRoot()
+        val checkReply = CountDownLatch(1)
+        app.fixture.rejectRead = false
+        app.fixture.beforeRead = { checkReply.await() }
+        try {
+            checkVersion.performClick()
+            awaitPhase(InstructionsPhase.Loading)
+            checkVersion.assertIsNotEnabled()
+            assertEquals(checkBounds, checkVersion.getUnclippedBoundsInRoot())
+            assertEquals(draftBounds, input.getUnclippedBoundsInRoot())
+        } finally {
+            checkReply.countDown()
         }
         compose.waitUntil(10_000) {
             compose.runOnIdle {
@@ -318,10 +348,21 @@ class PersonalInstructionsSettingsTest {
         input.assertDoesNotExist()
         compose.onNodeWithText("Personal Instructions").performScrollTo().performClick()
         awaitPhase(InstructionsPhase.Ready)
+        val savedElsewhere = "Text written elsewhere after a rejected save"
+        app.fixture.rejectSave = true
+        input.performScrollTo().performTextReplacement(savedElsewhere)
+        save.performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
+        compose.waitUntil(10_000) { compose.runOnIdle { model.uiState.value.saveRejected } }
+        app.fixture.externalEdit(savedElsewhere)
+        compose.runOnIdle { model.refresh() }
+        compose.waitUntil(10_000) {
+            compose.runOnIdle { model.uiState.value.saved?.content == savedElsewhere }
+        }
+        input.assertTextEquals(savedElsewhere)
+        save.assertIsNotEnabled()
         val large = "Personal instructions 👋 ".repeat(5_000)
         input.performScrollTo().performClick().performTextReplacement(large)
         input.performTextInputSelection(TextRange(13))
-        app.fixture.rejectSave = true
         save.performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
         val rejected = compose.onNodeWithText(app.getString(R.string.instructions_save_rejected))
         compose.waitUntil(10_000) { compose.runOnIdle { model.uiState.value.saveRejected } }

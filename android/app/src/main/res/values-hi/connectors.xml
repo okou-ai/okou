@@ -36,7 +36,6 @@
     <string name="connector_rename">नाम बदलें</string>
     <string name="connector_rename_title">खाते का नाम बदलें</string>
     <string name="connector_account_name">खाते का नाम</string>
-    <string name="connector_rename_hint">शुरुआती और आखिरी स्पेस हटा दिए जाते हैं। अधिकतम %1$d वर्ण।</string>
     <string name="connector_rename_required">खाते का नाम डालें।</string>
     <string name="connector_rename_too_long">खाते के नाम में अधिकतम %1$d वर्ण हो सकते हैं।</string>
     <string name="connector_disconnect">खाता डिस्कनेक्ट करें</string>

@@ -2,6 +2,7 @@ package ai.okou.android.connectors
 
 import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.OkouFormActions
+import ai.okou.android.OkouFormFieldError
 import ai.okou.android.OkouFormLayout
 import ai.okou.android.R
 import ai.okou.android.RenameDraft
@@ -12,6 +13,7 @@ import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItemGran
 import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItemManualFieldsItemInputType
 import ai.okou.android.chat.ContentReadFeedback
 import ai.okou.android.okouFormInputStyle
+import ai.okou.android.okouFormSupportingTextHeight
 import ai.okou.android.updates.updateFocusOutline
 import android.content.ActivityNotFoundException
 import android.content.Context
@@ -103,8 +105,7 @@ internal fun ConnectorRenameSheet(
             stringResource(R.string.connector_account_name),
             draft.input,
             readOnly = !canModify,
-            supportingText =
-                stringResource(R.string.connector_rename_hint, CONNECTOR_ACCOUNT_NAME_LIMIT),
+            supportingText = { OkouFormFieldError(errorMessage) },
             errorMessage = errorMessage,
         )
         ConnectorActionFeedback(action)
@@ -421,14 +422,18 @@ private fun ConnectorInput(
     modifier: Modifier = Modifier,
     secret: Boolean = false,
     placeholder: String? = null,
-    supportingText: String? = null,
+    supportingText: (@Composable () -> Unit)? = null,
     errorMessage: String? = null,
 ) {
     val colors = MaterialTheme.colorScheme
+    val supportHeight =
+        if (supportingText != null)
+            okouFormSupportingTextHeight() + OkouFormLayout.SupportingTextGap
+        else 0.dp
     val field =
         modifier
             .fillMaxWidth()
-            .heightIn(min = OutlinedTextFieldDefaults.MinHeight)
+            .heightIn(min = OutlinedTextFieldDefaults.MinHeight + supportHeight)
             .testTag("connector-input")
             .semantics {
                 contentDescription = label
@@ -461,6 +466,7 @@ private fun ConnectorInput(
                 modifier = field,
                 readOnly = readOnly,
                 isError = errorMessage != null,
+                supportingText = supportingText,
                 lineLimits = TextFieldLineLimits.SingleLine,
                 shape = shape,
                 textStyle = okouFormInputStyle(),
@@ -468,16 +474,6 @@ private fun ConnectorInput(
                 placeholder = placeholderContent,
                 contentPadding = padding,
             )
-        }
-        val supportStyle =
-            MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp)
-        if (supportingText != null) {
-            Spacer(Modifier.height(OkouFormLayout.SupportingTextGap))
-            Text(supportingText, style = supportStyle, color = colors.onSurfaceVariant)
-        }
-        if (errorMessage != null) {
-            Spacer(Modifier.height(OkouFormLayout.SupportingTextGap))
-            Text(errorMessage, style = supportStyle, color = colors.error)
         }
     }
 }
