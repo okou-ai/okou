@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.57.1](https://github.com/okou-ai/okou/compare/android-v0.57.0...android-v0.57.1) (2026-11-25)
+
+
+### Bug Fixes
+
+* **android:** align workflow text fields with the shared form ([#50815](https://github.com/okou-ai/okou/issues/50815)) ([64421aa](https://github.com/okou-ai/okou/commit/64421aa7089aa8492362d980d555ebcfb287d742))
+* **android:** render markdown before the first content layout ([#50875](https://github.com/okou-ai/okou/issues/50875)) ([0797b30](https://github.com/okou-ai/okou/commit/0797b30b16f1c2dbe0c07fd4fa17a4cd8dabd989))
+* **android:** show update progress at download start ([#50869](https://github.com/okou-ai/okou/issues/50869)) ([725ad76](https://github.com/okou-ai/okou/commit/725ad7697459c4dbd43e378f1a9d0960942b0a1f))
+
 ## [0.57.0](https://github.com/okou-ai/okou/compare/android-v0.56.5...android-v0.57.0) (2026-11-25)
 
 

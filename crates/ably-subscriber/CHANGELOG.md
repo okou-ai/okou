@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.23](https://github.com/okou-ai/okou/compare/ably-subscriber-v2.0.22...ably-subscriber-v2.0.23) (2026-11-25)
+
+
+### Refactoring
+
+* **ably-subscriber:** share attach writes on pending transports ([#50908](https://github.com/okou-ai/okou/issues/50908)) ([dcec8ba](https://github.com/okou-ai/okou/commit/dcec8ba3d29f4fe4be01f7b50f25cd408f079dbe))
+
 ## [2.0.22](https://github.com/okou-ai/okou/compare/ably-subscriber-v2.0.21...ably-subscriber-v2.0.22) (2026-11-24)
 
 ## [2.0.21](https://github.com/okou-ai/okou/compare/ably-subscriber-v2.0.20...ably-subscriber-v2.0.21) (2026-11-24)

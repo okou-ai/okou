@@ -17,10 +17,7 @@ import {
 import { visibleWorkflowCondition } from "./workflow-visibility";
 import { workflowAttachmentFiles } from "./workflow-attachments.service";
 import { loadWorkflowAutomations$ } from "./workflow-automation.service";
-import {
-  readAcceptedOfficialWorkflowCatalog$,
-  readAcceptedOfficialWorkflowRevision$,
-} from "./official-workflow-catalog-read.service";
+import { installedOfficialWorkflow } from "./builtin-workflows";
 
 function detailFileMetadata(
   workflow: {
@@ -85,37 +82,19 @@ export const workflowDetail$ = command(
     );
     signal.throwIfAborted();
 
-    const acceptedCatalog = workflow.officialDefinitionName
-      ? await set(readAcceptedOfficialWorkflowCatalog$, signal)
-      : null;
-    signal.throwIfAborted();
-    const officialDefinition =
-      acceptedCatalog?.payload.definitions.find((definition) => {
-        return definition.name === workflow.officialDefinitionName;
-      }) ?? null;
-    const officialRevision = officialDefinition
-      ? await set(
-          readAcceptedOfficialWorkflowRevision$,
-          {
-            name: officialDefinition.name,
-            revision: officialDefinition.revision,
-          },
-          signal,
-        )
-      : null;
-    signal.throwIfAborted();
+    const official = installedOfficialWorkflow(workflow);
 
     const baseSummary = workflowSummary({
       workflow,
       member: args.member,
       shadowedBy,
-      officialDefinitionLifecycle: officialDefinition?.lifecycle,
+      officialDefinitionLifecycle: official?.lifecycle,
     });
-    const summary = officialRevision
+    const summary = official
       ? {
           ...baseSummary,
-          displayName: officialRevision.definition.workflow.displayName,
-          description: officialRevision.definition.workflow.description,
+          displayName: official.workflow.displayName,
+          description: official.workflow.description,
         }
       : baseSummary;
 
@@ -132,8 +111,8 @@ export const workflowDetail$ = command(
           )
         : null;
     signal.throwIfAborted();
-    const volumeFiles = officialRevision
-      ? officialRevision.definition.workflow.files.map((file) => {
+    const volumeFiles = official
+      ? official.workflow.files.map((file) => {
           return {
             ...file,
             size: new TextEncoder().encode(file.content).length,
@@ -148,6 +127,7 @@ export const workflowDetail$ = command(
       {
         orgId: args.orgId,
         workflowId: workflow.id,
+        officialDefinitionName: workflow.officialDefinitionName,
         userId: args.member.userId,
       },
       signal,
@@ -160,9 +140,7 @@ export const workflowDetail$ = command(
       updatedByUserId: workflow.updatedBy,
       createdAt: workflow.createdAt.toISOString(),
       updatedAt: workflow.updatedAt.toISOString(),
-      instruction:
-        officialRevision?.definition.workflow.instruction ??
-        workflow.instruction,
+      instruction: official?.workflow.instruction ?? workflow.instruction,
       files,
       fileContents,
       automations: [...automations],

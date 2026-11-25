@@ -14,17 +14,7 @@ import {
 } from "@okouai/db/schema/google-forms-event";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
-import {
-  and,
-  eq,
-  exists,
-  isNotNull,
-  isNull,
-  not,
-  notExists,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, eq, exists, isNull, not, notExists, sql } from "drizzle-orm";
 import {
   array,
   boolean,
@@ -50,7 +40,6 @@ import { googleFormsAccountProjectionStatement } from "./google-forms-automation
 import { readWorkflowAutomationConnectorAccount$ } from "./workflow-automation-account.service";
 import type { AutomationRow } from "./workflow-automation-enqueue.service";
 import { readConnectorRuntimeAuthSelection$ } from "./connector-catalog-slug-source.service";
-import { officialAutomationLifecycleCondition } from "./workflow-automation-write-condition";
 
 const GOOGLE_FORMS_ACCESS_TOKEN_ENVIRONMENT_NAME = "GOOGLE_FORMS_TOKEN";
 
@@ -385,33 +374,36 @@ export async function newestGoogleFormResponseTime(
   return { kind: "ok", value: newest ?? nowDate().toISOString() };
 }
 
+type GoogleFormsWatchOwner = {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly connectorId: string;
+  readonly formId: string;
+};
+function enabledGoogleFormsConsumerCondition(args: GoogleFormsWatchOwner) {
+  return and(
+    eq(workflowAutomations.ownerUserId, args.userId),
+    eq(workflowAutomations.orgId, args.orgId),
+    eq(workflowAutomations.enabled, true),
+    eq(workflowAutomations.kind, "event"),
+    eq(workflowAutomations.eventType, "google-forms-response-submitted"),
+    eq(workflowAutomations.eventConnectorId, args.connectorId),
+    sql`${workflowAutomations.eventConfig} ->> 'connectorId' = ${args.connectorId}`,
+    sql`${workflowAutomations.eventConfig} -> 'form' ->> 'id' = ${args.formId}`,
+  );
+}
+
 export const hasEnabledGoogleFormsConsumer$ = command(
   async (
     { get },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly connectorId: string;
-      readonly formId: string;
-    },
+    args: GoogleFormsWatchOwner,
     signal: AbortSignal,
   ): Promise<boolean> => {
     const db = get(db$);
     const [consumer] = await db
       .select({ id: workflowAutomations.id })
       .from(workflowAutomations)
-      .where(
-        and(
-          eq(workflowAutomations.ownerUserId, args.userId),
-          eq(workflowAutomations.orgId, args.orgId),
-          eq(workflowAutomations.enabled, true),
-          eq(workflowAutomations.kind, "event"),
-          eq(workflowAutomations.eventType, "google-forms-response-submitted"),
-          eq(workflowAutomations.eventConnectorId, args.connectorId),
-          sql`${workflowAutomations.eventConfig} ->> 'connectorId' = ${args.connectorId}`,
-          sql`${workflowAutomations.eventConfig} -> 'form' ->> 'id' = ${args.formId}`,
-        ),
-      )
+      .where(enabledGoogleFormsConsumerCondition(args))
       .limit(1);
     signal.throwIfAborted();
     return consumer !== undefined;
@@ -627,27 +619,12 @@ function missingGoogleFormsConsumer(
 }
 
 interface GoogleFormsActivation {
-  readonly officialAutomation?: AutomationRow;
   readonly automationSnapshot: WorkflowAutomationSnapshot;
   readonly automationId: string;
   readonly workflowId: string;
   readonly eventConfig: GoogleFormsResponseSubmittedEventConfig;
   readonly nextRunAt: Date | null;
   readonly inheritedAutonomyBudget?: number;
-}
-
-function googleFormsPublicationHasConsumer(
-  hasConsumer: boolean,
-  args: {
-    readonly allowStagedOfficialTarget?: boolean;
-    readonly activation?: GoogleFormsActivation;
-  },
-) {
-  return (
-    hasConsumer ||
-    args.allowStagedOfficialTarget === true ||
-    args.activation !== undefined
-  );
 }
 
 export const ensureGoogleFormsWatchForUser$ = command(
@@ -660,7 +637,6 @@ export const ensureGoogleFormsWatchForUser$ = command(
       readonly connectorId: string;
       readonly resetAutomationId?: string;
       readonly seedCursor?: string;
-      readonly allowStagedOfficialTarget?: boolean;
       readonly activation?: GoogleFormsActivation;
     },
     signal: AbortSignal,
@@ -679,7 +655,7 @@ export const ensureGoogleFormsWatchForUser$ = command(
       return access;
     }
     const hasConsumer = await set(hasEnabledGoogleFormsConsumer$, args, signal);
-    if (!googleFormsPublicationHasConsumer(hasConsumer, args)) {
+    if (!hasConsumer && args.activation === undefined) {
       return missingGoogleFormsConsumer(args.resetAutomationId);
     }
     const prepared = await set(
@@ -739,7 +715,6 @@ interface GoogleFormsWatchPublication {
   readonly watch: zInfer<typeof googleFormsWatchSchema> | null;
   readonly cursor: string | null;
   readonly resetAutomationId?: string;
-  readonly allowStagedOfficialTarget?: boolean;
   readonly activation?: GoogleFormsActivation;
 }
 
@@ -754,7 +729,6 @@ function googleFormsCursorTargetCondition(args: {
   readonly userId: string;
   readonly connectorId: string;
   readonly formId: string;
-  readonly allowStagedOfficialTarget?: boolean;
 }) {
   return and(
     eq(workflowAutomations.id, args.automationId),
@@ -764,16 +738,7 @@ function googleFormsCursorTargetCondition(args: {
     eq(workflowAutomations.eventConnectorId, args.connectorId),
     sql`${workflowAutomations.eventConfig} ->> 'connectorId' = ${args.connectorId}`,
     sql`${workflowAutomations.eventConfig} -> 'form' ->> 'id' = ${args.formId}`,
-    args.allowStagedOfficialTarget === true
-      ? or(
-          eq(workflowAutomations.enabled, true),
-          and(
-            eq(workflowAutomations.enabled, false),
-            eq(workflowAutomations.officialReconciliationStatus, "reconciling"),
-            isNotNull(workflowAutomations.officialBlueprintKey),
-          ),
-        )
-      : eq(workflowAutomations.enabled, true),
+    eq(workflowAutomations.enabled, true),
   );
 }
 
@@ -916,9 +881,6 @@ const publishGoogleFormsActivation$ = command(
           enabled: true,
           nextRunAt: activation.nextRunAt,
           consecutiveFailures: 0,
-          ...(activation.officialAutomation === undefined
-            ? {}
-            : { officialIntendedEnabled: true }),
           ...(activation.inheritedAutonomyBudget === undefined
             ? {}
             : { autonomyBudget: activation.inheritedAutonomyBudget }),
@@ -933,16 +895,7 @@ const publishGoogleFormsActivation$ = command(
               workflowAutomations.eventType,
               "google-forms-response-submitted",
             ),
-            activation.officialAutomation === undefined
-              ? isNull(workflowAutomations.officialBlueprintKey)
-              : and(
-                  officialAutomationLifecycleCondition(
-                    activation.officialAutomation,
-                  ),
-                  isNotNull(workflowAutomations.officialBlueprintKey),
-                  eq(workflowAutomations.officialIntendedEnabled, false),
-                  eq(workflowAutomations.enabled, false),
-                ),
+            isNull(workflowAutomations.officialBlueprintKey),
             observedWorkflowAutomationCondition({
               id: activation.automationId,
               ...activation.automationSnapshot,
@@ -1038,26 +991,9 @@ function googleFormsWatchResourceCondition(state: GoogleFormsWatchStateRow) {
 }
 
 function googleFormsWatchProgressIsReferenced(state: GoogleFormsWatchStateRow) {
-  return exists(sql`(
-    SELECT 1 FROM ${workflowAutomations}
-    WHERE ${workflowAutomations.orgId} = ${state.orgId}
-      AND ${workflowAutomations.ownerUserId} = ${state.userId}
-      AND ${workflowAutomations.kind} = 'event'
-      AND ${workflowAutomations.eventType} = 'google-forms-response-submitted'
-      AND ${workflowAutomations.eventConnectorId} = ${state.connectorId}::uuid
-      AND ${workflowAutomations.eventConfig} ->> 'connectorId' = ${state.connectorId}
-      AND ${workflowAutomations.eventConfig} -> 'form' ->> 'id' = ${state.formId}
-      AND (${workflowAutomations.enabled} OR (
-        ${workflowAutomations.officialBlueprintKey} IS NOT NULL
-        AND ${workflowAutomations.officialIntendedEnabled} = true
-        AND ${workflowAutomations.officialReconciliationStatus} = 'needs_reconfiguration'
-        AND EXISTS (
-          SELECT 1 FROM ${googleFormsAutomationCursors}
-          WHERE ${googleFormsAutomationCursors.automationId} = ${workflowAutomations.id}
-            AND ${googleFormsAutomationCursors.watchStateId} = ${state.id}::uuid
-        )
-      ))
-  )`);
+  return exists(
+    sql`(SELECT 1 FROM ${workflowAutomations} WHERE ${enabledGoogleFormsConsumerCondition(state)})`,
+  );
 }
 
 const stopGoogleFormsWatchState$ = command(

@@ -3,7 +3,7 @@ import { connectors } from "@okouai/db/schema/connector";
 import { googleWorkspaceEventSubscriptionStates } from "@okouai/db/schema/google-workspace-event";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
-import { and, eq, isNotNull, notExists, or, sql, type SQL } from "drizzle-orm";
+import { and, eq, isNotNull, notExists, sql } from "drizzle-orm";
 import { array, object, string, type infer as zInfer, type ZodType } from "zod";
 
 import { parseRawRows } from "../../lib/db-raw-rows";
@@ -383,7 +383,7 @@ const loadWorkspaceSubscriptionState$ = command(
 
 /**
  * Conditional unique upsert of one subscription state: it applies only while
- * the account exists and, when required, a consumer is live.
+ * the account exists and a consumer is live.
  */
 function googleMeetSubscriptionPublicationSql(args: {
   readonly orgId: string;
@@ -394,7 +394,6 @@ function googleMeetSubscriptionPublicationSql(args: {
   readonly topicName: string;
   readonly subscription: zInfer<typeof workspaceSubscriptionSchema>;
   readonly currentTime: Date;
-  readonly consumerCondition: SQL | undefined;
 }) {
   const expireTime = subscriptionExpireTime(
     args.subscription,
@@ -406,10 +405,6 @@ function googleMeetSubscriptionPublicationSql(args: {
     eq(connectors.orgId, args.orgId),
     eq(connectors.userId, args.userId),
   );
-  const consumerGate =
-    args.consumerCondition === undefined
-      ? sql`TRUE`
-      : sql`EXISTS (SELECT 1 FROM ${workflowAutomations} WHERE ${args.consumerCondition})`;
   return sql`INSERT INTO ${googleWorkspaceEventSubscriptionStates} (
       org_id, user_id, connector_id, provider, target_resource, event_types,
       event_types_key, subscription_name, pubsub_topic, state, expire_time,
@@ -422,7 +417,7 @@ function googleMeetSubscriptionPublicationSql(args: {
       ${args.subscription.state ?? null}, ${expireTime.toISOString()}::timestamp,
       ${timestamp}, false, ${timestamp}, ${timestamp}
     WHERE EXISTS (SELECT 1 FROM ${connectors} WHERE ${accountCondition})
-      AND ${consumerGate}
+      AND EXISTS (SELECT 1 FROM ${workflowAutomations} WHERE ${enabledGoogleMeetConsumerCondition(args)})
     ON CONFLICT (connector_id, provider, target_resource, pubsub_topic, event_types_key)
     DO UPDATE SET
       subscription_name = EXCLUDED.subscription_name,
@@ -835,8 +830,8 @@ const prepareGoogleMeetTranscriptGeneratedSubscription$ = command(
   },
 );
 
-/** Meet automations of one owner that target one connector, in any state. */
-function googleMeetConnectorAutomationsCondition(args: {
+/** Enabled Meet automations of one owner that target one connector. */
+function enabledGoogleMeetConsumerCondition(args: {
   readonly orgId: string;
   readonly userId: string;
   readonly connectorId: string;
@@ -845,25 +840,13 @@ function googleMeetConnectorAutomationsCondition(args: {
     eq(workflowAutomations.orgId, args.orgId),
     eq(workflowAutomations.ownerUserId, args.userId),
     eq(workflowAutomations.kind, "event"),
+    eq(workflowAutomations.enabled, true),
     eq(
       workflowAutomations.eventType,
       GOOGLE_MEET_TRANSCRIPT_GENERATED_EVENT_TYPE,
     ),
     eq(workflowAutomations.eventConnectorId, args.connectorId),
   );
-}
-
-function googleMeetConsumerStateCondition(allowStagedOfficialTarget: boolean) {
-  return allowStagedOfficialTarget
-    ? or(
-        eq(workflowAutomations.enabled, true),
-        and(
-          eq(workflowAutomations.enabled, false),
-          eq(workflowAutomations.officialReconciliationStatus, "reconciling"),
-          isNotNull(workflowAutomations.officialBlueprintKey),
-        ),
-      )
-    : eq(workflowAutomations.enabled, true);
 }
 
 export const hasEnabledGoogleMeetConsumer$ = command(
@@ -873,21 +856,13 @@ export const hasEnabledGoogleMeetConsumer$ = command(
       readonly orgId: string;
       readonly userId: string;
       readonly connectorId: string;
-      readonly allowStagedOfficialTarget?: boolean;
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
     const [consumer] = await get(db$)
       .select({ id: workflowAutomations.id })
       .from(workflowAutomations)
-      .where(
-        and(
-          googleMeetConnectorAutomationsCondition(args),
-          googleMeetConsumerStateCondition(
-            args.allowStagedOfficialTarget === true,
-          ),
-        ),
-      )
+      .where(enabledGoogleMeetConsumerCondition(args))
       .limit(1);
     signal.throwIfAborted();
     return consumer !== undefined;
@@ -955,27 +930,21 @@ export const pendingGoogleMeetSubscriptionDeleteForState$ = command(
   },
 );
 
-const reconcileGoogleMeetSubscriptionLifecycle$ = command(
+export const ensureGoogleMeetTranscriptGeneratedSubscriptionForUser$ = command(
   async (
     { set },
     args: {
       readonly orgId: string;
       readonly userId: string;
       readonly connectorId: string;
-      readonly allowStagedOfficialTarget?: boolean;
-      readonly ensurePreparedOfficialTarget?: boolean;
     },
     signal: AbortSignal,
   ): Promise<GoogleMeetSubscriptionReconcileResult> => {
-    const consumerArgs = {
-      orgId: args.orgId,
-      userId: args.userId,
-      connectorId: args.connectorId,
-      allowStagedOfficialTarget: args.allowStagedOfficialTarget === true,
-    };
-    const wantsSubscription =
-      args.ensurePreparedOfficialTarget === true ||
-      (await set(hasEnabledGoogleMeetConsumer$, consumerArgs, signal));
+    const wantsSubscription = await set(
+      hasEnabledGoogleMeetConsumer$,
+      args,
+      signal,
+    );
     if (wantsSubscription) {
       const prepared = await set(
         prepareGoogleMeetTranscriptGeneratedSubscription$,
@@ -988,8 +957,7 @@ const reconcileGoogleMeetSubscriptionLifecycle$ = command(
       const published = await set(
         publishGoogleMeetSubscription$,
         {
-          ...consumerArgs,
-          requireConsumer: args.ensurePreparedOfficialTarget !== true,
+          ...args,
           publication: prepared.publication,
         },
         signal,
@@ -1022,7 +990,7 @@ const reconcileGoogleMeetSubscriptionLifecycle$ = command(
 
     const states = await set(
       loadGoogleMeetSubscriptionStatesForOwner$,
-      consumerArgs,
+      args,
       signal,
     );
     const state = googleMeetSubscriptionStateForCleanup(states);
@@ -1035,7 +1003,7 @@ const reconcileGoogleMeetSubscriptionLifecycle$ = command(
       : null;
     const removed = await set(
       removeGoogleMeetSubscriptionStates$,
-      consumerArgs,
+      args,
       signal,
     );
     if (!removed) {
@@ -1059,7 +1027,7 @@ const reconcileGoogleMeetSubscriptionLifecycle$ = command(
 
 /**
  * Short local publication: one conditional unique upsert that applies only
- * while the account exists and (when required) a consumer is live. No row is
+ * while the account exists and a consumer is live. No row is
  * locked; the connector FK protects a new row from a concurrent account
  * delete. A disable racing this statement may still publish one state, which
  * consumer-less removal cleans up (accepted notification/cleanup gap).
@@ -1068,8 +1036,6 @@ interface GoogleMeetSubscriptionPublicationArgs {
   readonly orgId: string;
   readonly userId: string;
   readonly connectorId: string;
-  readonly allowStagedOfficialTarget: boolean;
-  readonly requireConsumer: boolean;
   readonly publication: GoogleMeetSubscriptionPublication;
 }
 
@@ -1086,14 +1052,6 @@ const persistGoogleMeetSubscription$ = command(
           ...args.publication,
           orgId: args.orgId,
           userId: args.userId,
-          consumerCondition: args.requireConsumer
-            ? and(
-                googleMeetConnectorAutomationsCondition(args),
-                googleMeetConsumerStateCondition(
-                  args.allowStagedOfficialTarget,
-                ),
-              )
-            : undefined,
         }),
       ),
     );
@@ -1135,7 +1093,6 @@ const removeGoogleMeetSubscriptionStates$ = command(
       readonly orgId: string;
       readonly userId: string;
       readonly connectorId: string;
-      readonly allowStagedOfficialTarget: boolean;
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
@@ -1154,14 +1111,7 @@ const removeGoogleMeetSubscriptionStates$ = command(
             set(writeDb$)
               .select({ id: workflowAutomations.id })
               .from(workflowAutomations)
-              .where(
-                and(
-                  googleMeetConnectorAutomationsCondition(args),
-                  googleMeetConsumerStateCondition(
-                    args.allowStagedOfficialTarget,
-                  ),
-                ),
-              ),
+              .where(enabledGoogleMeetConsumerCondition(args)),
           ),
         ),
       )
@@ -1171,28 +1121,6 @@ const removeGoogleMeetSubscriptionStates$ = command(
       return true;
     }
     return !(await set(hasEnabledGoogleMeetConsumer$, args, signal));
-  },
-);
-
-export const ensureGoogleMeetTranscriptGeneratedSubscriptionForUser$ = command(
-  async (
-    { set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly connectorId: string;
-      readonly allowStagedOfficialTarget?: boolean;
-    },
-    signal: AbortSignal,
-  ): Promise<GoogleMeetSubscriptionReconcileResult> => {
-    return await set(
-      reconcileGoogleMeetSubscriptionLifecycle$,
-      {
-        ...args,
-        ensurePreparedOfficialTarget: args.allowStagedOfficialTarget === true,
-      },
-      signal,
-    );
   },
 );
 
@@ -1221,17 +1149,7 @@ const loadGoogleMeetConnectorInventory$ = command(
         and(
           eq(workflowAutomations.orgId, args.orgId),
           eq(workflowAutomations.ownerUserId, args.userId),
-          or(
-            eq(workflowAutomations.enabled, true),
-            and(
-              eq(workflowAutomations.enabled, false),
-              eq(
-                workflowAutomations.officialReconciliationStatus,
-                "reconciling",
-              ),
-              isNotNull(workflowAutomations.officialBlueprintKey),
-            ),
-          ),
+          eq(workflowAutomations.enabled, true),
           eq(workflowAutomations.kind, "event"),
           eq(
             workflowAutomations.eventType,
@@ -1382,8 +1300,8 @@ export const reconcileGoogleMeetSubscriptionInventory$ = command(
     for (const connectorId of connectorIds) {
       results.push(
         await set(
-          reconcileGoogleMeetSubscriptionLifecycle$,
-          { ...args, connectorId, allowStagedOfficialTarget: true },
+          ensureGoogleMeetTranscriptGeneratedSubscriptionForUser$,
+          { ...args, connectorId },
           signal,
         ),
       );

@@ -14,6 +14,7 @@ import type {
   CapturedExecutionPackages,
   ExecutionPackageMounts,
 } from "./execution-workflow-selection";
+import { builtInWorkflowBundleUrl } from "./builtin-workflows";
 
 export function selectExecutionContentBundles(
   packages: CapturedExecutionPackages,
@@ -43,7 +44,14 @@ export function selectExecutionContentBundles(
       }),
     ),
   ];
-  return { instructions, skills, templates, hashes };
+  return {
+    instructions,
+    skills,
+    templates,
+    hashes: hashes.filter((sha256) => {
+      return !builtInWorkflowBundleUrl(sha256);
+    }),
+  };
 }
 
 /** Share URLs for identical bytes while retaining each reference's mount metadata. */
@@ -83,7 +91,9 @@ export const signExecutionContentBundles$ = command(
     signal.throwIfAborted();
     const withDownloadUrl = <T extends ContentBundle>(reference: T) => {
       const request = requests.get(reference.sha256);
-      const url = request && signed.results.get(request.cacheKey)?.url;
+      const url =
+        builtInWorkflowBundleUrl(reference.sha256) ??
+        (request && signed.results.get(request.cacheKey)?.url);
       if (!url) {
         throw new Error("Execution Content Bundle URL is missing");
       }

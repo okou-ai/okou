@@ -64,7 +64,7 @@ def validate(directory):
         report.validate_witness_phases(
             events, PHASES, "missing, duplicate or unordered continuation witnesses",
         )
-        identity = report.witness_identity(terminal[1])
+        identity = report.witness_identity(result["cases"][case])
         times = [e["monotonic_ns"] for e in events]
         if (report.witness_identity_changed(events, identity)
                 or not terminal[0]["monotonic_ns"] < times[0] < times[1] < terminal[1]["monotonic_ns"]

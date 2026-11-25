@@ -1,0 +1,100 @@
+diff --git a/dist/index.js b/dist/index.js
+index bd21e898f431298b70e941833c78819a1eb53a36..a0e09b996ad1b57a74ecd15f1af3c4b39e09c766 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -576,15 +576,22 @@ const Toast = (props)=>{
+         setRemoved(true);
+         setOffsetBeforeRemove(offset.current);
+         setHeights((h)=>h.filter((height)=>height.toastId !== toast.id));
+-        setTimeout(()=>{
+-            removeToast(toast);
+-        }, TIME_BEFORE_UNMOUNT);
+     }, [
+-        toast,
+-        removeToast,
++        toast.id,
+         setHeights,
+         offset
+     ]);
++    React__default.default.useEffect(()=>{
++        if (!removed) return;
++        const timeoutId = setTimeout(()=>{
++            removeToast(toast.id);
++        }, TIME_BEFORE_UNMOUNT);
++        return ()=>clearTimeout(timeoutId);
++    }, [
++        removed,
++        removeToast,
++        toast.id
++    ]);
+     React__default.default.useEffect(()=>{
+         if (toast.promise && toastType === 'loading' || toast.duration === Infinity || toast.type === 'loading') return;
+         let timeoutId;
+@@ -951,13 +958,13 @@ const Toaster = /*#__PURE__*/ React__default.default.forwardRef(function Toaster
+     const hotkeyLabel = hotkey.join('+').replace(/Key/g, '').replace(/Digit/g, '');
+     const lastFocusedElementRef = React__default.default.useRef(null);
+     const isFocusWithinRef = React__default.default.useRef(false);
+-    const removeToast = React__default.default.useCallback((toastToRemove)=>{
++    const removeToast = React__default.default.useCallback((toastId)=>{
+         setToasts((toasts)=>{
+             var _toasts_find;
+-            if (!((_toasts_find = toasts.find((toast)=>toast.id === toastToRemove.id)) == null ? void 0 : _toasts_find.delete)) {
+-                ToastState.dismiss(toastToRemove.id);
++            if (!((_toasts_find = toasts.find((toast)=>toast.id === toastId)) == null ? void 0 : _toasts_find.delete)) {
++                ToastState.dismiss(toastId);
+             }
+-            return toasts.filter(({ id })=>id !== toastToRemove.id);
++            return toasts.filter(({ id })=>id !== toastId);
+         });
+     }, []);
+     React__default.default.useEffect(()=>{
+diff --git a/dist/index.mjs b/dist/index.mjs
+index d0c7a5a1fa1ed8b19c27bea968bb404f2437a07e..5a3962a0a815a92145ddefdeca286036c817aaf8 100644
+--- a/dist/index.mjs
++++ b/dist/index.mjs
+@@ -569,15 +569,22 @@ const Toast = (props)=>{
+         setRemoved(true);
+         setOffsetBeforeRemove(offset.current);
+         setHeights((h)=>h.filter((height)=>height.toastId !== toast.id));
+-        setTimeout(()=>{
+-            removeToast(toast);
+-        }, TIME_BEFORE_UNMOUNT);
+     }, [
+-        toast,
+-        removeToast,
++        toast.id,
+         setHeights,
+         offset
+     ]);
++    React.useEffect(()=>{
++        if (!removed) return;
++        const timeoutId = setTimeout(()=>{
++            removeToast(toast.id);
++        }, TIME_BEFORE_UNMOUNT);
++        return ()=>clearTimeout(timeoutId);
++    }, [
++        removed,
++        removeToast,
++        toast.id
++    ]);
+     React.useEffect(()=>{
+         if (toast.promise && toastType === 'loading' || toast.duration === Infinity || toast.type === 'loading') return;
+         let timeoutId;
+@@ -944,13 +951,13 @@ const Toaster = /*#__PURE__*/ React.forwardRef(function Toaster(props, ref) {
+     const hotkeyLabel = hotkey.join('+').replace(/Key/g, '').replace(/Digit/g, '');
+     const lastFocusedElementRef = React.useRef(null);
+     const isFocusWithinRef = React.useRef(false);
+-    const removeToast = React.useCallback((toastToRemove)=>{
++    const removeToast = React.useCallback((toastId)=>{
+         setToasts((toasts)=>{
+             var _toasts_find;
+-            if (!((_toasts_find = toasts.find((toast)=>toast.id === toastToRemove.id)) == null ? void 0 : _toasts_find.delete)) {
+-                ToastState.dismiss(toastToRemove.id);
++            if (!((_toasts_find = toasts.find((toast)=>toast.id === toastId)) == null ? void 0 : _toasts_find.delete)) {
++                ToastState.dismiss(toastId);
+             }
+-            return toasts.filter(({ id })=>id !== toastToRemove.id);
++            return toasts.filter(({ id })=>id !== toastId);
+         });
+     }, []);
+     React.useEffect(()=>{

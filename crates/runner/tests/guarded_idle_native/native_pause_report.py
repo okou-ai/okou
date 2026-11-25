@@ -36,14 +36,14 @@ def validate(directory):
         directory / 'stdout.log', PREFIX, CASES,
         invalid_message="invalid native physical pause witness",
     )
-    identities = {events[1][key] for events in terminals.values() for key in ("sandbox_id", "backing_generation")}
+    identities = report.original_resource_ids(result["cases"])
     paths, runners = set(), set()
     for case, events in witnesses.items():
         terminal = terminals[case]
         report.validate_witness_phases(
             events, PHASES, "missing duplicate or reordered native physical pause phases",
         )
-        identity = report.witness_identity(terminal[1])
+        identity = report.witness_identity(result["cases"][case])
         if report.witness_identity_changed(events, identity):
             raise ValueError("native physical pause changed original physical owner")
         report.validate_terminal_witness_clock_order(

@@ -53,7 +53,11 @@ import type { VoiceIoEditorContext } from "@okouai/api-contracts/contracts/voice
 import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import { splitPlainTextUrls } from "../../lib/plain-text-urls.ts";
 
-import { createRecentWorkflowIds } from "./recent-workflows.ts";
+import {
+  createRecentWorkflowIds,
+  setupRecentWorkflowSync$,
+} from "./recent-workflows.ts";
+import { rootSignal$ } from "../root-signal.ts";
 import { detach, onRef, Reason, resetSignal } from "../utils.ts";
 import type { DraftInputSyncTarget, DraftSignals } from "./chat-draft.ts";
 import {
@@ -1961,6 +1965,12 @@ function createSyncWorkflowNamesCommand(
         resetWorkflowNamesSyncSignal$,
         mountSignal,
         signal,
+      );
+      // All composers for this session share recency, including across navigation.
+      detach(
+        set(setupRecentWorkflowSync$, get(rootSignal$)),
+        Reason.Daemon,
+        "composer workflow recency",
       );
       const workflows = await get(workflows$);
       signal.throwIfAborted();

@@ -139,10 +139,12 @@ private actor MarkdownWorker {
     // that image node without scanning code/HTML or changing the authored outer destination.
     let tracksImages = text.contains("![")
     let tracksDiagrams = text.contains("mermaid")
+    let tracksTimes = text.range(of: "<time", options: .caseInsensitive) != nil
     guard
       var content = try? AttributedString(
         markdown: text, including: \.textual,
-        options: .init(appliesSourcePositionAttributes: tracksImages || tracksDiagrams),
+        options: .init(
+          appliesSourcePositionAttributes: tracksImages || tracksDiagrams || tracksTimes),
         baseURL: baseURL)
     else {
       return AttributedString(text)
@@ -160,6 +162,7 @@ private actor MarkdownWorker {
         content[run.range].imageURL = url
       }
     }
+    if tracksTimes { content = MessageTime.recognizingElements(in: content, source: text) }
     if !tracksDiagrams { content.markdownSourcePosition = nil }
     content = content.repairingEmphasizedAutolinks()
     shortenCommitHashes(in: &content)
@@ -192,12 +195,11 @@ struct PreparedMessageParser: MarkupParser {
   /// Short inline code drawn as web-style chips. Off under VoiceOver, which would read the
   /// chip's attachment as an image instead of its code.
   var drawsInlineCode = false
+  var timeFormat = MessageTime.format(locale: .current, timeZone: .current)
 
   func attributedString(for input: String) throws -> AttributedString {
-    if drawsInlineCode {
-      return content.withInlineCodeChips()
-    }
-    return content
+    let localized = MessageTime.localized(content, format: timeFormat)
+    return drawsInlineCode ? localized.withInlineCodeChips() : localized
   }
 }
 

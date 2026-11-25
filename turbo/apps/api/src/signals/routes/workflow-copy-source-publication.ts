@@ -1,22 +1,11 @@
-import { officialWorkflowCatalogState } from "@okouai/db/schema/official-workflow-catalog";
 import {
   workflows,
   workflowWebhookAutomations,
 } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
-import {
-  and,
-  asc,
-  count,
-  eq,
-  exists,
-  inArray,
-  sql,
-  type SQL,
-} from "drizzle-orm";
+import { and, asc, count, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { pgTextDecoder } from "../../lib/db-structured-result";
-import { copyRevisionQuery } from "./workflow-copy-source";
 import type { WorkflowCopyPublicationArgs } from "./workflow-copy-publication-plans";
 
 function after(name: string): SQL {
@@ -27,17 +16,6 @@ function copySourceLocks(args: WorkflowCopyPublicationArgs): SQL[] {
   const definitionName = args.sourceWorkflow.officialDefinitionName;
   const official = definitionName !== null;
   const query = new QueryBuilder();
-  const catalog = official
-    ? query
-        .select({
-          release_id: sql`${officialWorkflowCatalogState.acceptedReleaseId}`
-            .mapWith(officialWorkflowCatalogState.acceptedReleaseId)
-            .as("release_id"),
-        })
-        .from(officialWorkflowCatalogState)
-        .where(eq(officialWorkflowCatalogState.authority, "official"))
-        .for("share")
-    : sql`SELECT NULL::text AS release_id`;
   const source = query
     .select({
       id: workflows.id,
@@ -53,10 +31,6 @@ function copySourceLocks(args: WorkflowCopyPublicationArgs): SQL[] {
         definitionName === null
           ? undefined
           : eq(workflows.officialDefinitionName, definitionName),
-        official
-          ? eq(workflows.officialInstallationState, "installed")
-          : undefined,
-        after("copy_catalog_locked"),
       ),
     )
     .for("update");
@@ -109,7 +83,6 @@ function copySourceLocks(args: WorkflowCopyPublicationArgs): SQL[] {
     .orderBy(asc(workflowWebhookAutomations.automationId))
     .for("share");
   return [
-    sql`copy_catalog_locked AS MATERIALIZED (${catalog})`,
     sql`copy_source_locked AS MATERIALIZED (${source})`,
     sql`copy_automations_locked AS MATERIALIZED (${automations})`,
     sql`copy_hooks_locked AS MATERIALIZED (${hooks})`,
@@ -137,23 +110,8 @@ export function copySourcePublicationClauses(
       secret_last_four: row.secretLastFour,
     };
   });
-  const definitionName = args.sourceWorkflow.officialDefinitionName;
-  let revisionExists = sql`true`;
-  if (definitionName !== null) {
-    const revision = args.source.revision;
-    if (revision === null) {
-      throw new Error("Official copy revision observation is missing");
-    }
-    const read = copyRevisionQuery({ name: definitionName, revision });
-    revisionExists = exists(
-      new QueryBuilder()
-        .select({ definitionName: read.definitionName })
-        .from(read),
-    );
-  }
-  const valid = sql`${revisionExists} AND (SELECT ${count()} FROM copy_source_locked) = 1
+  const valid = sql`(SELECT ${count()} FROM copy_source_locked) = 1
     AND (${versionSetMatches("copy_automations_locked", observed.automations)})
-    AND (SELECT release_id FROM copy_catalog_locked) IS NOT DISTINCT FROM ${observed.acceptedReleaseId}
     AND (SELECT ${count()} FROM copy_hooks_locked) = ${hooks.length}
     AND NOT EXISTS (SELECT 1 FROM jsonb_to_recordset(${JSON.stringify(hooks)}::jsonb)
       AS expected(automation_id uuid, encrypted_secret text, secret_last_four text)

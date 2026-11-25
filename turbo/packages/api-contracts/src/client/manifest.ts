@@ -242,7 +242,6 @@ export const clientDescriptorManifest = [
       "cronDrainEmailOutboxContract",
       "cronExecuteWorkflowAutomationsContract",
       "cronMonitorChatEventQueueContract",
-      "cronOfficialWorkflowCatalogContract",
       "cronProcessBackgroundJobsContract",
       "cronProcessUsageEventsContract",
       "cronProjectChatEventSearchContract",

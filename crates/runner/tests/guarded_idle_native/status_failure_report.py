@@ -31,7 +31,7 @@ def validate(directory):
         report.validate_witness_phases(
             events, PHASES, "missing duplicate or unordered status-failure phases",
         )
-        identity = report.witness_identity(terminal[1])
+        identity = report.witness_identity(result["cases"][case])
         clocks = [terminal[3]["monotonic_ns"], *(e["monotonic_ns"] for e in events), terminal[-1]["monotonic_ns"]]
         if (any(a >= b for a, b in zip(clocks, clocks[1:]))
                 or report.witness_identity_changed(events, identity)):

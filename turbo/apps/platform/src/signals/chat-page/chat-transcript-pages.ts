@@ -288,6 +288,24 @@ export function createTranscriptWindow(
   const range$ = computed((get) => {
     return pageRange(get(index$), get(position$), get(coverage$));
   });
+  const hasLaterReply$ = computed((get) => {
+    const range = get(range$);
+    if (!range) {
+      return false;
+    }
+    const groups = get(groups$);
+    for (let index = groups.length - 1; index >= range.end; index--) {
+      const group = groups[index]!;
+      if (
+        group.role === "assistant" &&
+        (group.events.length === 0 ||
+          group.events.some(isRenderableAssistantEvent))
+      ) {
+        return true;
+      }
+    }
+    return false;
+  });
   const measurements = createPageMeasurements();
   const fillViewport$ = command(({ get, set }) => {
     const viewport = get(measurements.container$)?.closest<HTMLElement>(
@@ -311,7 +329,7 @@ export function createTranscriptWindow(
     set(coverage$, { ...coverage, [side]: coverage[side] + 1 });
     return true;
   });
-  return { index$, range$, fillViewport$, measurements };
+  return { index$, range$, hasLaterReply$, fillViewport$, measurements };
 }
 
 // The browser normally absorbs changes in the height above a reader. On

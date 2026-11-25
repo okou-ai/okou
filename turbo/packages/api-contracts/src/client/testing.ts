@@ -235,7 +235,6 @@ import {
   cronDrainEmailOutboxContract as OriginalCronDrainEmailOutboxContract,
   cronExecuteWorkflowAutomationsContract as OriginalCronExecuteWorkflowAutomationsContract,
   cronMonitorChatEventQueueContract as OriginalCronMonitorChatEventQueueContract,
-  cronOfficialWorkflowCatalogContract as OriginalCronOfficialWorkflowCatalogContract,
   cronProcessBackgroundJobsContract as OriginalCronProcessBackgroundJobsContract,
   cronProcessUsageEventsContract as OriginalCronProcessUsageEventsContract,
   cronProjectChatEventSearchContract as OriginalCronProjectChatEventSearchContract,
@@ -265,7 +264,6 @@ import {
   cronDrainEmailOutboxContract,
   cronExecuteWorkflowAutomationsContract,
   cronMonitorChatEventQueueContract,
-  cronOfficialWorkflowCatalogContract,
   cronProcessBackgroundJobsContract,
   cronProcessUsageEventsContract,
   cronProjectChatEventSearchContract,
@@ -983,10 +981,6 @@ export const clientDescriptorContracts: readonly (readonly [
   [
     cronMonitorChatEventQueueContract,
     OriginalCronMonitorChatEventQueueContract,
-  ],
-  [
-    cronOfficialWorkflowCatalogContract,
-    OriginalCronOfficialWorkflowCatalogContract,
   ],
   [
     cronProcessBackgroundJobsContract,

@@ -41,13 +41,7 @@ const log = logger("MorningBriefScheduleClaim");
 /** Matches the Official poller and callback policy; they share one constant. */
 const MAX_CONSECUTIVE_FAILURES = 3;
 
-/**
- * Whether the poller should journal this automation.
- *
- * Only the installation S1's canonical selection reports as the member's
- * installed Morning Brief is journaled. The cheap blueprint predicate keeps the
- * canonical read off every unrelated due automation.
- */
+/** Check the Blueprint before looking up the member's Morning Brief for claim journaling. */
 function canJournalMorningBrief(automation: AutomationRow) {
   return (
     automation.kind === "schedule" &&
@@ -68,10 +62,7 @@ export const isCanonicalMorningBriefAutomation$ = command(
     const db = set(writeDb$);
     const owner = { orgId: automation.orgId, userId: automation.ownerUserId };
     const [selected] = await db
-      .select({
-        id: workflows.id,
-        installationState: workflows.officialInstallationState,
-      })
+      .select({ id: workflows.id })
       .from(workflows)
       .where(
         and(
@@ -85,7 +76,7 @@ export const isCanonicalMorningBriefAutomation$ = command(
       )
       .limit(1);
     signal.throwIfAborted();
-    if (selected?.installationState !== "installed") {
+    if (!selected) {
       return false;
     }
     const rows = await db

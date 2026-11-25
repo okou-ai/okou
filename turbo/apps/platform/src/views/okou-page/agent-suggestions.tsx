@@ -1,4 +1,4 @@
-import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
   ArrowRight,
@@ -17,6 +17,7 @@ import { Button, buttonVariants, cn } from "@okouai/ui";
 import type { SuggestionOption } from "@okouai/api-contracts/contracts/feed";
 import {
   agentSuggestionEntries$,
+  suggestionDirectionItemId$,
   type AgentSuggestionEntry,
   closeSettledSuggestion$,
   retryAgentSuggestion$,
@@ -30,7 +31,6 @@ import {
   suggestionDirectionComposer$,
   suggestionDirectionEntryOnRef$,
   suggestionDirectionFolded$,
-  suggestionDirectionItemId$,
   suggestionDirectionReopened$,
 } from "../../signals/okou-page/agent-suggestions.ts";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
@@ -247,12 +247,9 @@ function SuggestionSaveError({
 }
 
 export function SuggestionSaveErrors() {
-  const entries = useLastLoadable(agentSuggestionEntries$);
-  return entries.state === "hasData"
-    ? entries.data.map((entry) => {
-        return <SuggestionSaveError key={entry.item.id} entry={entry} />;
-      })
-    : null;
+  return useGet(agentSuggestionEntries$).map((entry) => {
+    return <SuggestionSaveError key={entry.item.id} entry={entry} />;
+  });
 }
 
 function SuggestionDirectionEntry({
@@ -311,9 +308,17 @@ function FocusReopenedDirection({
   );
 }
 
-function SuggestionDirectionComposer({ folded }: { readonly folded: boolean }) {
+function SuggestionDirectionComposer({
+  entry,
+  folded,
+}: {
+  readonly entry: AgentSuggestionEntry;
+  readonly folded: boolean;
+}) {
   const { t } = useTranslation();
   const prepared = useLoadable(suggestionDirectionComposer$);
+  const open = useSet(openSuggestionDirection$);
+  const signal = useGet(pageSignal$);
   const fold = useSet(foldSuggestionDirection$);
   const foldOnRef = useSet(foldSuggestionDirectionOnRef$);
   const composer =
@@ -378,13 +383,28 @@ function SuggestionDirectionComposer({ folded }: { readonly folded: boolean }) {
           )}
         >
           {prepared.state === "hasError" ? (
-            <p role="alert" className="px-3 pb-3 text-sm text-muted-foreground">
+            <div
+              role="alert"
+              className="px-3 pb-3 text-sm text-muted-foreground"
+            >
               {prepared.error instanceof Error
                 ? prepared.error.message
                 : t(($) => {
                     return $.global.errors.requestFailed;
                   })}
-            </p>
+              <Button
+                type="button"
+                variant="quiet"
+                size="sm"
+                onClick={() => {
+                  detach(open(entry, signal), Reason.DomCallback);
+                }}
+              >
+                {t(($) => {
+                  return $.chat.errors.recovery.tryAgain;
+                })}
+              </Button>
+            </div>
           ) : composer ? (
             <div className="w-full min-w-0" data-chat-composer>
               <ChatComposer
@@ -569,7 +589,9 @@ export function AgentSuggestionCard({
             {active && (!directionOpen || folded) && (
               <SuggestionDirectionEntry entry={entry} />
             )}
-            {directionOpen && <SuggestionDirectionComposer folded={folded} />}
+            {directionOpen && (
+              <SuggestionDirectionComposer entry={entry} folded={folded} />
+            )}
           </div>
         }
         footer={<SuggestionFeedback entry={entry} />}

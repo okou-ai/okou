@@ -5,7 +5,6 @@ import {
   workflowUserAutomationThreads,
   workflows,
 } from "@okouai/db/schema/workflow";
-import { officialWorkflowCatalogState } from "@okouai/db/schema/official-workflow-catalog";
 import { command } from "ccstate";
 import {
   and,
@@ -26,10 +25,10 @@ import {
 } from "../external/realtime";
 import { chatThreadEventInsertSql } from "./chat-thread-event.service";
 import { metadataCommitWithEventsSql } from "./chat-thread-metadata-write-plan";
-import { readAcceptedOfficialWorkflowCatalog$ } from "./official-workflow-catalog-read.service";
 import { OfficialWorkflowRunAdmissionError } from "./official-workflow-run.service";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatEventReplacementInsertSql } from "./chat-event.service";
+import { installedOfficialWorkflow } from "./builtin-workflows";
 
 /** Old user inputs must not reach a new free execution through the queue. */
 const revokeOfficialThreadUserInputs$ = command(
@@ -91,7 +90,6 @@ function officialThreadSettingsCondition(
   owner: OfficialWorkflowThreadOwner,
   threadId: string,
   definitionName: string,
-  releaseId: string,
 ) {
   return and(
     eq(chatThreads.id, threadId),
@@ -117,17 +115,6 @@ function officialThreadSettingsCondition(
           ),
         ),
     ),
-    exists(
-      new QueryBuilder()
-        .select({ id: officialWorkflowCatalogState.acceptedReleaseId })
-        .from(officialWorkflowCatalogState)
-        .where(
-          and(
-            eq(officialWorkflowCatalogState.authority, "official"),
-            eq(officialWorkflowCatalogState.acceptedReleaseId, releaseId),
-          ),
-        ),
-    ),
   );
 }
 
@@ -146,7 +133,8 @@ const readOfficialWorkflowThread$ = command(
         selectedModel: chatThreads.selectedModel,
         codexServiceTier: chatThreads.codexServiceTier,
         lastMessageAt: chatThreads.lastMessageAt,
-        definitionName: workflows.officialDefinitionName,
+        officialDefinitionName: workflows.officialDefinitionName,
+        archivedOfficialSnapshot: workflows.archivedOfficialSnapshot,
       })
       .from(workflowUserAutomationThreads)
       .innerJoin(
@@ -186,17 +174,11 @@ export const synchronizeOfficialWorkflowThread$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     const thread = await set(readOfficialWorkflowThread$, owner, signal);
-    if (!thread?.definitionName) {
+    if (!thread?.officialDefinitionName) {
       return false;
     }
     await set(revokeOfficialThreadUserInputs$, thread.id, signal);
-    const catalog = await set(readAcceptedOfficialWorkflowCatalog$, signal);
-    if (
-      !catalog ||
-      !catalog.payload.definitions.some((definition) => {
-        return definition.name === thread.definitionName;
-      })
-    ) {
+    if (!installedOfficialWorkflow(thread)) {
       throw new OfficialWorkflowRunAdmissionError();
     }
     const hidden = true;
@@ -205,12 +187,11 @@ export const synchronizeOfficialWorkflowThread$ = command(
       thread.selectedModel !== AUTO_SELECTED_MODEL ||
       thread.codexServiceTier !== null;
     const database = set(writeDb$);
-    // Recheck the installation binding and accepted policy in the owning write.
+    // Recheck the installation binding in the owning write.
     const current = officialThreadSettingsCondition(
       owner,
       thread.id,
-      thread.definitionName,
-      catalog.releaseId,
+      thread.officialDefinitionName,
     );
     if (visibilityChanged) {
       const changed = database

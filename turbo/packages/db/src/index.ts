@@ -167,7 +167,6 @@ import * as googleCalendarEventSchema from "./schema/google-calendar-event";
 import * as googleFormsEventSchema from "./schema/google-forms-event";
 import * as googleWorkspaceEventSchema from "./schema/google-workspace-event";
 import * as connectorCatalogSchema from "./runtime/connector-catalog";
-import * as officialWorkflowCatalogSchema from "./schema/official-workflow-catalog";
 import * as mailDraftSchema from "./schema/mail-draft";
 import * as browserAuthorizationRequestSchema from "./schema/browser-authorization-request";
 import * as browserUserActionRequestSchema from "./schema/browser-user-action-request";
@@ -352,7 +351,6 @@ export const schema = {
   ...googleFormsEventSchema,
   ...googleWorkspaceEventSchema,
   ...connectorCatalogSchema,
-  ...officialWorkflowCatalogSchema,
   ...mailDraftSchema,
   ...browserAuthorizationRequestSchema,
   ...browserUserActionRequestSchema,

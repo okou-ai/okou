@@ -6,14 +6,17 @@ struct ChatAttachmentChips: View {
   /// The composer graph's items for this render; actions go to `draft`.
   let items: [AttachmentDraftStore.Item]
   let isDisabled: Bool
+  @ScaledMetric(relativeTo: .caption2) private var chipWidth: CGFloat = 240
   @State private var previewURL: URL?
 
   var body: some View {
     ScrollView(.horizontal) {
       HStack(spacing: OkouSpace.sm) {
         ForEach(items) { item in
+          let fileSize = ByteCountFormatter.string(
+            fromByteCount: Int64(item.file.size), countStyle: .file)
           VStack(alignment: .leading, spacing: OkouSpace.six) {
-            HStack(alignment: .top, spacing: OkouSpace.sm) {
+            HStack(spacing: OkouSpace.sm) {
               Button {
                 if item.file.url.isFileURL { previewURL = item.file.url }
               } label: {
@@ -26,8 +29,15 @@ struct ChatAttachmentChips: View {
                     OkouIcon("file", size: OkouIconSize.standard)
                       .frame(width: 40, height: 40).foregroundStyle(OkouColor.mutedForeground)
                   }
-                  Text(item.file.filename).font(.okou(.caption)).lineLimit(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                  VStack(alignment: .leading, spacing: OkouSpace.two) {
+                    Text(item.file.filename)
+                      .font(.okou(.caption))
+                      .truncationMode(.middle)
+                    Text(fileSize)
+                      .foregroundStyle(OkouColor.mutedForeground)
+                  }
+                  .lineLimit(1)
+                  .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .frame(minHeight: OkouControl.minimumTarget)
                 .contentShape(Rectangle())
@@ -35,6 +45,7 @@ struct ChatAttachmentChips: View {
               .buttonStyle(.plain)
               .disabled(!item.file.url.isFileURL)
               .accessibilityLabel("Preview \(item.file.filename)")
+              .accessibilityValue(fileSize)
               Button {
                 draft.remove(item.id)
               } label: {
@@ -54,10 +65,7 @@ struct ChatAttachmentChips: View {
             case .checking:
               Text("Checking uploaded file…").foregroundStyle(OkouColor.mutedForeground)
             case .ready:
-              Text(
-                ByteCountFormatter.string(fromByteCount: Int64(item.file.size), countStyle: .file)
-              )
-              .foregroundStyle(OkouColor.mutedForeground)
+              EmptyView()
             case .failed(let message):
               Text(message).foregroundStyle(OkouColor.destructive).lineLimit(2)
               Button {
@@ -74,7 +82,9 @@ struct ChatAttachmentChips: View {
           }
           .font(.okou(.caption2))
           .padding(OkouSpace.ten)
-          .frame(width: 240, alignment: .leading)
+          .containerRelativeFrame(.horizontal, alignment: .leading) { availableWidth, _ in
+            min(chipWidth, availableWidth)
+          }
           .glassEffect(.regular, in: RoundedRectangle(cornerRadius: OkouRadius.control))
         }
       }

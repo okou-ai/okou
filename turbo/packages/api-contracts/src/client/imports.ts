@@ -611,7 +611,6 @@ export const clientContractImportManifest = [
       "cronDrainEmailOutboxContract",
       "cronExecuteWorkflowAutomationsContract",
       "cronMonitorChatEventQueueContract",
-      "cronOfficialWorkflowCatalogContract",
       "cronProcessBackgroundJobsContract",
       "cronProcessUsageEventsContract",
       "cronProjectChatEventSearchContract",

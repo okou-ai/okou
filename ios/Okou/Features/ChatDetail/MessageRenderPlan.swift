@@ -157,7 +157,10 @@ struct MessageRenderPlan: Sendable {
 
   private static func stableMarkdownHeight(_ content: AttributedString) -> Bool {
     content.runs.allSatisfy { run in
-      guard run.imageURL == nil, run.textual.emojiURL == nil, run.textual.attachment == nil else {
+      // A timestamp can wrap differently when the phone's time zone or hour cycle changes.
+      guard run[MessageTime.self] == nil, run.imageURL == nil, run.textual.emojiURL == nil,
+        run.textual.attachment == nil
+      else {
         return false
       }
       return run.presentationIntent?.components.allSatisfy { component in

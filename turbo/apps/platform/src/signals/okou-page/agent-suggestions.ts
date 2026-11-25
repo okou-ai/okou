@@ -2,7 +2,6 @@ import type { SuggestionPreset } from "@okouai/api-contracts/validators/chat-thr
 import {
   captureSuggestionCard,
   type SuggestionDirection,
-  type SuggestionImpression,
 } from "../../lib/posthog.ts";
 import { command, computed, state } from "ccstate";
 import type {
@@ -25,6 +24,8 @@ import {
 import { sendNewThreadWithoutNavigation$ } from "../chat-page/optimistic-chat-thread-page.ts";
 import {
   type AgentSuggestionEntry,
+  type SuggestionDirectionSession,
+  suggestionDirectionSession$,
   linkAgentSuggestionThread$,
   restoreAgentSuggestion$,
   settleAgentSuggestion$,
@@ -105,62 +106,9 @@ function showSuggestionSent(): void {
   );
 }
 
-interface SuggestionThreadTarget {
-  readonly kind: "thread";
-  readonly id: string;
-}
-
-/**
- * A custom direction continues the chat the card names, or starts a new chat
- * when the card names none or that chat is no longer available.
- */
-type SuggestionDirectionTarget =
-  { readonly kind: "new" } | SuggestionThreadTarget;
-
-interface SuggestionDirectionSession {
-  readonly entry: AgentSuggestionEntry;
-  readonly target: SuggestionDirectionTarget;
-  readonly impression: SuggestionImpression;
-  /** Closes the composer and settles the card once a send is accepted. */
-  readonly finish: (threadId: string, submission: ComposerSubmission) => void;
-}
-
-const internalDirectionSession$ = state<SuggestionDirectionSession | null>(
-  null,
-);
 const resolveDirectionThreadMeta$ = createThreadMetaLookup();
 const internalDirectionComposer$ = state<Promise<ComposerSignals> | null>(null);
 const resetDirection$ = resetSignal();
-
-/**
- * One unsaved composer for the card's target, so neither the workspace
- * draft nor the target thread's saved draft is read or replaced.
- */
-const directionGraph$ = computed((get) => {
-  const session = get(internalDirectionSession$);
-  if (!session) {
-    return null;
-  }
-  const { target } = session;
-  if (target.kind === "new") {
-    return {
-      kind: target.kind,
-      composer: createInPlaceChatComposerSignals((threadId, submission) => {
-        session.finish(threadId, submission);
-      }, session.entry.item.content.title),
-    };
-  }
-  return {
-    kind: target.kind,
-    ...createInPlaceThreadComposerSignals(target.id, (submission) => {
-      session.finish(target.id, submission);
-    }),
-  };
-});
-
-export const suggestionDirectionItemId$ = computed((get) => {
-  return get(internalDirectionSession$)?.entry.item.id ?? null;
-});
 
 export const suggestionDirectionComposer$ = computed((get) => {
   return get(internalDirectionComposer$);
@@ -260,10 +208,10 @@ export const suggestionDirectionEntryOnRef$ = onRef<HTMLElement>(
   }),
 );
 
-const closeSuggestionDirection$ = command(({ set }) => {
+const closeSuggestionDirection$ = command(({ get, set }) => {
   set(resetDirection$);
   set(internalDirectionComposer$, null);
-  set(internalDirectionSession$, null);
+  set(get(suggestionDirectionSession$), null);
   set(directionFoldedState$, false);
 });
 
@@ -279,11 +227,12 @@ const finishSuggestionDirection$ = command(
     sent: {
       readonly threadId: string;
       readonly submission: ComposerSubmission;
+      readonly newThread: boolean;
     },
     pageSignal: AbortSignal,
   ): void => {
     const { threadId, submission } = sent;
-    if (get(internalDirectionSession$) === session) {
+    if (get(get(suggestionDirectionSession$)) === session) {
       set(closeSuggestionDirection$);
     }
     const document = submission.editorDocument.toMessageDocument();
@@ -295,7 +244,7 @@ const finishSuggestionDirection$ = command(
     ) {
       return;
     }
-    if (session.target.kind === "new") {
+    if (sent.newThread) {
       showSuggestionSent();
     } else {
       toast.success(
@@ -315,18 +264,43 @@ const finishSuggestionDirection$ = command(
 
 /** Installs the card's background before the target's composer mounts. */
 const prepareDirectionComposer$ = command(
-  async ({ get, set }, signal: AbortSignal): Promise<ComposerSignals> => {
-    const session = get(internalDirectionSession$);
-    const graph = get(directionGraph$);
-    if (!session || !graph) {
-      throw new Error("Suggestion direction is unavailable");
-    }
-    if (graph.kind === "new") {
-      set(graph.composer.setup$, signal);
-    } else {
-      await set(graph.setup$, signal);
-    }
+  async (
+    { set },
+    session: SuggestionDirectionSession,
+    pageSignal: AbortSignal,
+    signal: AbortSignal,
+  ): Promise<ComposerSignals> => {
     const item = session.entry.item;
+    const { threadId } = item.content.customOption;
+    // Resolve the selected card's target even when the local chat list has not
+    // loaded it. A missing thread gets a new conversation.
+    const thread =
+      threadId === null
+        ? null
+        : (await set(resolveDirectionThreadMeta$, threadId, signal)).meta;
+    signal.throwIfAborted();
+    const finish = (sentThreadId: string, submission: ComposerSubmission) => {
+      set(
+        finishSuggestionDirection$,
+        session,
+        { threadId: sentThreadId, submission, newThread: thread === null },
+        pageSignal,
+      );
+    };
+    let composer: ComposerSignals;
+    if (threadId !== null && thread) {
+      const graph = createInPlaceThreadComposerSignals(
+        threadId,
+        (submission) => {
+          finish(threadId, submission);
+        },
+      );
+      composer = graph.composer;
+      await set(graph.setup$, signal);
+    } else {
+      composer = createInPlaceChatComposerSignals(finish, item.content.title);
+      set(composer.setup$, signal);
+    }
     const files = item.content.customOption.draft.draftAttachments ?? [];
     const contextVersion = await suggestionDraftVersion(
       item.content.customOption.draft,
@@ -344,7 +318,7 @@ const prepareDirectionComposer$ = command(
       throw new Error("Invalid suggestion background");
     }
     await set(
-      graph.composer.draft.seed$,
+      composer.draft.seed$,
       {
         content,
         userMessage: document,
@@ -358,7 +332,7 @@ const prepareDirectionComposer$ = command(
       signal,
     );
     signal.throwIfAborted();
-    return graph.composer;
+    return composer;
   },
 );
 
@@ -376,7 +350,7 @@ export const openSuggestionDirection$ = command(
     // Reopening a folded editor shows it as it was left.
     if (
       get(directionFoldedState$) &&
-      get(internalDirectionSession$)?.entry === entry
+      get(get(suggestionDirectionSession$))?.entry === entry
     ) {
       set(directionFoldedState$, false);
       set(directionReopenedState$, (count) => {
@@ -393,50 +367,30 @@ export const openSuggestionDirection$ = command(
     set(internalDirectionComposer$, null);
     set(directionFoldedState$, false);
     signal.throwIfAborted();
-    const { threadId } = entry.item.content.customOption;
-    // Only the thread source can say the named chat is gone; a chat the local
-    // list has not loaded yet still receives the direction.
-    const thread =
-      threadId === null
-        ? null
-        : (await set(resolveDirectionThreadMeta$, threadId, signal)).meta;
-    signal.throwIfAborted();
     if (get(entry.hidden$)) {
       return;
     }
-    const session: SuggestionDirectionSession = {
-      entry,
-      impression,
-      target:
-        threadId !== null && thread
-          ? {
-              kind: "thread",
-              id: threadId,
-            }
-          : { kind: "new" },
-      finish: (sentThreadId, submission) => {
-        set(
-          finishSuggestionDirection$,
-          session,
-          { threadId: sentThreadId, submission },
-          pageSignal,
-        );
-      },
-    };
-    set(internalDirectionSession$, session);
+    // A list can arrive while the selected card's target is being resolved.
+    const session: SuggestionDirectionSession = { entry, impression };
+    set(get(suggestionDirectionSession$), session);
     // Leaving the page or opening another card's editor ends this session.
     signal.addEventListener(
       "abort",
       () => {
-        if (get(internalDirectionSession$) === session) {
-          set(internalDirectionSession$, null);
+        if (get(get(suggestionDirectionSession$)) === session) {
+          set(get(suggestionDirectionSession$), null);
           set(internalDirectionComposer$, null);
           set(directionFoldedState$, false);
         }
       },
       { once: true },
     );
-    const prepared = set(prepareDirectionComposer$, signal);
+    const prepared = set(
+      prepareDirectionComposer$,
+      session,
+      pageSignal,
+      signal,
+    );
     set(internalDirectionComposer$, prepared);
     await prepared;
   },

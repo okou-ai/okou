@@ -6,6 +6,7 @@ from .json_limits import MODEL_JSON_MAX_WORK_UNITS
 from .json_selective import JsonExtractionResult, JsonSelectiveExtractor, ScalarField
 from .model_tokens import (
     ANTHROPIC_USAGE_FIELD_CATEGORIES,
+    MODEL_USAGE_IDENTITY_FIELD,
     MODEL_USAGE_QUANTITY_FIELD,
     update_model_usage_quantity,
 )
@@ -21,15 +22,15 @@ _SseUsageParseErrorCallback = Callable[[str, str], None]
 AnthropicMessagesAccountingEventCallback = Callable[[str], None]
 
 _MODEL_JSON_SCALAR_FIELDS = {
-    ("id",): ScalarField("string", max_bytes=1024),
-    ("model",): ScalarField("string", max_bytes=1024),
+    ("id",): MODEL_USAGE_IDENTITY_FIELD,
+    ("model",): MODEL_USAGE_IDENTITY_FIELD,
     **{("usage", field): MODEL_USAGE_QUANTITY_FIELD for field in ANTHROPIC_USAGE_FIELD_CATEGORIES},
 }
 
 _ANTHROPIC_SSE_SCALAR_FIELDS = {
     ("type",): ScalarField("string", max_bytes=1024),
-    ("message", "id"): ScalarField("string", max_bytes=1024),
-    ("message", "model"): ScalarField("string", max_bytes=1024),
+    ("message", "id"): MODEL_USAGE_IDENTITY_FIELD,
+    ("message", "model"): MODEL_USAGE_IDENTITY_FIELD,
     **{
         ("message", "usage", field): MODEL_USAGE_QUANTITY_FIELD
         for field in ANTHROPIC_USAGE_FIELD_CATEGORIES

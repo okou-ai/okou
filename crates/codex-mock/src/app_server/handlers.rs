@@ -125,10 +125,6 @@ impl AppServerState {
         params: &Value,
         output: &mut W,
     ) -> io::Result<ServerAction> {
-        if !self.initialized {
-            write_error(output, id, INVALID_REQUEST, "app server is not initialized")?;
-            return Ok(ServerAction::Continue);
-        }
         if self.scenario == Scenario::ThreadStartInputTooLarge {
             write_error_with_data(
                 output,
@@ -240,10 +236,6 @@ impl AppServerState {
         params: &Value,
         output: &mut W,
     ) -> io::Result<ServerAction> {
-        if !self.initialized {
-            write_error(output, id, INVALID_REQUEST, "app server is not initialized")?;
-            return Ok(ServerAction::Continue);
-        }
         let Some(thread_id) = non_empty_string_param(params, "threadId") else {
             write_error(output, id, INVALID_REQUEST, "missing threadId")?;
             return Ok(ServerAction::Continue);
@@ -293,10 +285,6 @@ impl AppServerState {
         params: &Value,
         output: &mut W,
     ) -> io::Result<ServerAction> {
-        if !self.initialized {
-            write_error(output, id, INVALID_REQUEST, "app server is not initialized")?;
-            return Ok(ServerAction::Continue);
-        }
         if self.scenario == Scenario::ExitOnTurnStart {
             return Ok(ServerAction::Stop);
         }
@@ -612,10 +600,6 @@ impl AppServerState {
         params: &Value,
         output: &mut W,
     ) -> io::Result<ServerAction> {
-        if !self.initialized {
-            write_error(output, id, INVALID_REQUEST, "app server is not initialized")?;
-            return Ok(ServerAction::Continue);
-        }
         let Some(thread_id) = non_empty_string_param(params, "threadId") else {
             write_error(output, id, INVALID_REQUEST, "missing threadId")?;
             return Ok(ServerAction::Continue);
@@ -664,10 +648,6 @@ impl AppServerState {
         params: &Value,
         output: &mut W,
     ) -> io::Result<ServerAction> {
-        if !self.initialized {
-            write_error(output, id, INVALID_REQUEST, "app server is not initialized")?;
-            return Ok(ServerAction::Continue);
-        }
         if self.scenario == Scenario::ExitOnTurnSteer {
             return Ok(ServerAction::Stop);
         }

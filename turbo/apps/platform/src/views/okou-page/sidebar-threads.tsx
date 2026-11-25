@@ -1203,7 +1203,6 @@ function useNewChatAction() {
 }
 
 function useMarkAllReadMenuAction(showMarkAllRead: boolean) {
-  const hasUnread = useLastResolved(workspaceHasUnreadChats$) ?? false;
   const [markReadLoadable, markWorkspaceThreadsRead] = useLoadableSet(
     markWorkspaceThreadsRead$,
   );
@@ -1214,7 +1213,7 @@ function useMarkAllReadMenuAction(showMarkAllRead: boolean) {
   }
 
   return {
-    disabled: markReadLoadable.state === "loading" || !hasUnread,
+    disabled: markReadLoadable.state === "loading",
     onSelect,
     visible: showMarkAllRead,
   };
@@ -1228,9 +1227,10 @@ function MarkAllReadMenuItem({
   onSelect: () => void;
 }) {
   const { t } = useTranslation("common");
+  const hasUnread = useLastResolved(workspaceHasUnreadChats$) ?? false;
 
   return (
-    <DropdownMenuItem onClick={onSelect} disabled={disabled}>
+    <DropdownMenuItem onClick={onSelect} disabled={disabled || !hasUnread}>
       <CheckCheck size={16} className="mr-2" />
       {t(($) => {
         return $.sidebar.markAllRead;
@@ -1461,12 +1461,11 @@ function ChatThreadsSkeleton() {
 function ChatThreadsContent({
   scrollSignals,
   contentClassName,
-  stylesheetLoaded,
 }: {
   scrollSignals: SidebarChatThreadScrollSignals;
   contentClassName: string;
-  stylesheetLoaded: boolean;
 }) {
+  const stylesheetLoaded = useLastResolved(mainStylesheetLoaded$);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {stylesheetLoaded ? (
@@ -1584,14 +1583,28 @@ function AllChatThreadsContent({
   );
 }
 
-function CurrentChatThreadScrollMarker({
-  listSignals,
-  scrollSignals,
-}: {
+interface CurrentChatThreadScrollMarkerProps {
   listSignals: SidebarChatThreadListSignals;
   scrollSignals: SidebarChatThreadScrollSignals;
-}) {
+}
+
+function CurrentChatThreadScrollMarker(
+  props: CurrentChatThreadScrollMarkerProps,
+) {
   const currentMainThreadId = useGet(currentChatThreadId$);
+  return currentMainThreadId ? (
+    <ListedChatThreadScrollMarker
+      {...props}
+      currentMainThreadId={currentMainThreadId}
+    />
+  ) : null;
+}
+
+function ListedChatThreadScrollMarker({
+  listSignals,
+  scrollSignals,
+  currentMainThreadId,
+}: CurrentChatThreadScrollMarkerProps & { currentMainThreadId: string }) {
   const currentMainThreadListed = useLastResolved(
     listSignals.currentThreadListed$,
   );
@@ -1599,7 +1612,7 @@ function CurrentChatThreadScrollMarker({
     scrollSignals.scrollCurrentChatThreadOnRef$,
   );
 
-  return currentMainThreadId && currentMainThreadListed ? (
+  return currentMainThreadListed ? (
     <span
       ref={scrollCurrentChatThreadOnRef}
       data-chat-thread-id={currentMainThreadId}
@@ -1714,8 +1727,6 @@ export function ChatThreadsSection({
   /** False when the surrounding header already carries the title actions. */
   showTitle?: boolean;
 }) {
-  const mainStylesheetLoaded = useLastResolved(mainStylesheetLoaded$);
-
   return (
     <div className={cn("flex min-h-0 flex-1 flex-col", showTitle && "mt-4")}>
       {showTitle ? (
@@ -1732,7 +1743,6 @@ export function ChatThreadsSection({
       <ChatThreadsContent
         scrollSignals={scrollSignals}
         contentClassName={contentClassName}
-        stylesheetLoaded={mainStylesheetLoaded === true}
       />
     </div>
   );

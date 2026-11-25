@@ -1,5 +1,5 @@
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { command } from "ccstate";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
@@ -18,36 +18,19 @@ export function morningBriefEnrollmentWhere(
   );
 }
 
-export const loadMorningBriefEnrollment$ = command(
-  async (
-    { set },
-    identity: MorningBriefMemberIdentity,
-    signal: AbortSignal,
-  ) => {
-    const db = set(writeDb$);
-    signal.throwIfAborted();
-    const [row] = await db
-      .select()
-      .from(morningBriefEnrollments)
-      .where(morningBriefEnrollmentWhere(identity))
-      .limit(1);
-    signal.throwIfAborted();
-    return row;
-  },
-);
-
 export const recordMorningBriefChoice$ = command(
   async (
     { set },
     identity: MorningBriefMemberIdentity,
     enabled: boolean,
+    observedWorkflowId: string | null,
     signal: AbortSignal,
-  ): Promise<void> => {
+  ): Promise<boolean> => {
     const db = set(writeDb$);
     signal.throwIfAborted();
     const currentTime = nowDate();
     const state = enabled ? "pending" : "cancelled";
-    await db
+    const [recorded] = await db
       .insert(morningBriefEnrollments)
       .values({
         ...identity,
@@ -63,7 +46,12 @@ export const recordMorningBriefChoice$ = command(
           lastError: null,
           updatedAt: currentTime,
         },
-      });
+        // The atomic installer assigns a fresh workflow ID when it claims this row.
+        // If it won the row lock, the user's choice belongs on that schedule.
+        setWhere: sql`${morningBriefEnrollments.workflowId} IS NOT DISTINCT FROM ${observedWorkflowId}::uuid`,
+      })
+      .returning({ userId: morningBriefEnrollments.userId });
     signal.throwIfAborted();
+    return recorded !== undefined;
   },
 );

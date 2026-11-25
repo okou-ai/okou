@@ -7,7 +7,12 @@ import {
 } from "@okouai/api-contracts/contracts/feed";
 import { act, screen, within, waitFor, cleanup } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
-import { setupPage, click, fill } from "../../../__tests__/page-helper.ts";
+import {
+  setupPage,
+  click,
+  fill,
+  queryAllByRoleFast,
+} from "../../../__tests__/page-helper.ts";
 import {
   createTestRuntime,
   testContext,
@@ -482,11 +487,26 @@ test("agent-suggestions-025 a withdrawn second choice refreshes the pool and pre
   const one = proposal("Supplier one", 40),
     two = proposal("Supplier two", 30),
     three = proposal("Supplier three", 20),
+    four = proposal("Supplier four", 15),
     offer = proposal("November shipment");
-  const pool = [one, two, three];
+  const refresh = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  let withdrawn = false;
   const staleMessage =
     "Suggestion is no longer available. Refresh your suggestions.";
-  feed(pool);
+  context.mocks.api(feedContract.list, async ({ respond }) => {
+    if (withdrawn && !refresh.settled()) {
+      refresh.resolve();
+      await release.promise;
+      return respond(503, {
+        error: { code: "UNAVAILABLE", message: "Feed unavailable" },
+      });
+    }
+    if (withdrawn) {
+      return respond(200, { items: [offer] });
+    }
+    return respond(200, { items: [one, two, three, four] });
+  });
   context.mocks.api(feedContract.feedback, ({ params, body, respond }) => {
     return params.id === two.id
       ? respond(409, { error: { code: "CONFLICT", message: staleMessage } })
@@ -495,16 +515,38 @@ test("agent-suggestions-025 a withdrawn second choice refreshes the pool and pre
   await openDeck();
   click(await findFastControl("button", "Dismiss", await activeCard(one)));
   await screen.findByText("Suggestion dismissed");
-  pool.splice(0, pool.length, offer);
-  click(await findFastControl("button", "Already done", await activeCard(two)));
+  withdrawn = true;
+  try {
+    click(
+      await findFastControl("button", "Already done", await activeCard(two)),
+    );
+    await refresh.promise;
+    await expect(activeCard(three)).resolves.toBeVisible();
+    expect(screen.getByText("2 to go")).toBeInTheDocument();
+    click(await findFastControl("link", "Next suggestion"));
+    await expect(activeCard(four)).resolves.toBeVisible();
+    await expect(
+      findFastControl("link", "Show suggestion 2 of 2"),
+    ).resolves.toHaveAttribute("aria-current", "step");
+  } finally {
+    release.resolve();
+  }
   await screen.findByText(
     "That suggestion is no longer available. Suggestions have been refreshed.",
   );
+  const alert = await screen.findByRole("alert");
+  expect(screen.getByText("2 to go")).toBeInTheDocument();
+  click(await findFastControl("link", "Previous suggestion"));
+  await expect(activeCard(three)).resolves.toBeVisible();
+  click(await findFastControl("button", "Try again", alert));
   await expect(activeCard(offer)).resolves.toBeVisible();
+  expect(screen.getByText("1 to go")).toBeInTheDocument();
+  expect(queryFastControl("link", "Next suggestion")).toBeNull();
   expect(screen.queryByRole("alert")).toBeNull();
   expect(screen.queryByText(staleMessage)).toBeNull();
   click(await findFastControl("button", "Undo"));
   await expect(activeCard(one)).resolves.toBeVisible();
+  expect(screen.getByText("2 to go")).toBeInTheDocument();
 });
 
 test("agent-suggestions-026 an unavailable card clears its feedback error on retry", async () => {
@@ -865,59 +907,60 @@ test.each([
   },
 );
 
-test("Opening the unread For you row during a refresh separates a preloaded card from its replacement", async () => {
+test("Opening For you during a live summary refresh uses the fresh list even if the summary arrives later", async () => {
   const earlier = proposal("Survey the north quay");
   const later = proposal("Inspect the south pier");
-  const received = context.mocks.deferred<void>();
-  const started = context.mocks.deferred<void>();
+  const refresh = context.mocks.deferred<void>();
   const release = context.mocks.deferred<void>();
-  const decode = Response.prototype.json;
-  vi.spyOn(Response.prototype, "json").mockImplementation(async function (
-    this: Response,
-  ) {
-    const data: unknown = await decode.call(this);
-    if (!received.settled() && JSON.stringify(data).includes(earlier.id)) {
-      received.resolve();
+  const markRead = context.mocks.deferred<void>();
+  let summaryReads = 0;
+  let listReads = 0;
+  context.mocks.api(feedContract.summary, async ({ respond }) => {
+    summaryReads++;
+    if (summaryReads === 2) {
+      refresh.resolve();
+      await release.promise;
     }
-    return data;
+    return respond(200, { hasUnread: summaryReads === 1, firstItem: earlier });
   });
-  context.mocks.api(feedContract.summary, ({ respond }) => {
-    return respond(200, { hasUnread: true });
-  });
-  let refresh = false;
-  context.mocks.api(feedContract.list, async ({ respond }) => {
-    if (!refresh) {
-      return respond(200, { items: [earlier] });
-    }
-    if (!started.settled()) {
-      started.resolve();
-    }
-    await release.promise;
+  context.mocks.api(feedContract.list, ({ respond }) => {
+    listReads++;
     return respond(200, { items: [later] });
+  });
+  context.mocks.api(feedContract.markRead, async ({ respond }) => {
+    await markRead.promise;
+    return respond(200, { readAt: nowDate().toISOString() });
   });
   try {
     await openDeck("/");
     const row = await findFastControl("link", /For you/);
     await within(row).findByText("Unread");
-    await received.promise;
-    refresh = true;
+    await waitFor(() => {
+      expect(
+        context.mocks.ably.hasSubscription("agentSuggestionsChanged"),
+      ).toBeTruthy();
+    });
+    expect(summaryReads).toBe(1);
     context.mocks.ably.trigger("agentSuggestionsChanged");
-    await started.promise;
+    await refresh.promise;
+    expect(listReads).toBe(0);
     click(row);
-    await screen.findByRole("heading", { name: "For you" });
+    await expect(activeCard(later)).resolves.toBeVisible();
+    expect(listReads).toBe(1);
+    release.resolve();
+    await waitFor(() => {
+      expect(within(row).queryByText("Unread")).toBeNull();
+    });
     expect(
       screen.queryByRole("article", { name: earlier.content.title }),
     ).toBeNull();
-    expect(
-      screen.queryByRole("article", { name: later.content.title }),
-    ).toBeNull();
+    await expect(activeCard(later)).resolves.toBeVisible();
   } finally {
-    release.resolve();
+    if (!release.settled()) {
+      release.resolve();
+    }
+    markRead.resolve();
   }
-  await expect(activeCard(later)).resolves.toBeInTheDocument();
-  expect(
-    screen.queryByRole("article", { name: earlier.content.title }),
-  ).toBeNull();
 });
 
 test("agent-suggestions-022 revised inline direction sends the card file while the home attachment stays with its draft", async () => {
@@ -1253,31 +1296,189 @@ test("agent-suggestions-015 a member with only built-in Auto can send the first 
   await expect(activeCard(second)).resolves.toBeVisible();
 });
 
-test("A member opens the preloaded unread suggestion without waiting for the details service", async () => {
-  const card = proposal("Visit the eastern breakwater");
-  const first = context.mocks.deferred<void>();
-  const offline = context.mocks.deferred<void>();
+test("Opening For you shows the summary card and keeps its draft and read receipt when the list arrives", async () => {
+  const first = proposal("Visit the eastern breakwater");
+  const second = proposal("Review the ferry timetable", 20);
+  const revised = {
+    ...proposal("A revised breakwater plan", first.priority),
+    id: first.id,
+    createdAt: first.createdAt,
+  };
+  const release = context.mocks.deferred<void>();
+  const reads: string[] = [];
+  let listReads = 0;
   context.mocks.api(feedContract.summary, ({ respond }) => {
-    return respond(200, { hasUnread: true });
+    return respond(200, { hasUnread: true, firstItem: first });
   });
   context.mocks.api(feedContract.list, async ({ respond }) => {
-    if (first.settled()) {
-      await offline.promise;
-    } else {
-      first.resolve();
-    }
-    return respond(200, { items: [card] });
+    listReads++;
+    await release.promise;
+    return respond(200, { items: [second, revised] });
+  });
+  context.mocks.api(feedContract.markRead, ({ params, respond }) => {
+    reads.push(params.id);
+    return respond(200, { readAt: nowDate().toISOString() });
   });
   try {
     await openDeck("/");
-    const feed = await findFastControl("link", /For you/);
-    await within(feed).findByText("Unread");
-    await first.promise;
-    click(feed);
-    await expect(activeCard(card)).resolves.toBeVisible();
+    const row = await findFastControl("link", /For you/);
+    await within(row).findByText("Unread");
+    expect(listReads).toBe(0);
+    expect(reads).toHaveLength(0);
+    click(row);
+    const card = await activeCard(first);
+    click(await findFastControl("button", "What do you have in mind?", card));
+    const editor = await screen.findByRole("textbox", { name: /message/i });
+    await appendDirection(editor, "Check the tide");
+    expect(listReads).toBe(1);
+    expect(screen.queryByText(/\d+ to go/u)).toBeNull();
+    expect(queryFastControl("link", /Show suggestion/u)).toBeNull();
+    expect(queryFastControl("link", "Next suggestion")).toBeNull();
+    expect(
+      document.querySelector('[data-slot="suggestion-stack-layer"]'),
+    ).toBeNull();
+    expect(screen.queryByText("All caught up")).toBeNull();
   } finally {
-    offline.resolve();
+    release.resolve();
   }
+  await expect(
+    findFastControl("link", "Show suggestion 2 of 2"),
+  ).resolves.toHaveAttribute("aria-current", "step");
+  expect(screen.getByText("2 to go")).toBeInTheDocument();
+  expect(queryFastControl("link", "Previous suggestion")).toHaveAttribute(
+    "href",
+    "/for-you?suggestion=" + second.id,
+  );
+  expect(
+    document.querySelectorAll('[data-slot="suggestion-stack-layer"]'),
+  ).toHaveLength(1);
+  expect(screen.getByRole("textbox", { name: /message/i })).toHaveTextContent(
+    "Check the tide",
+  );
+  expect(reads).toStrictEqual([first.id]);
+  await expect(activeCard(first)).resolves.toBeVisible();
+});
+
+test("The full list updates an untouched preview when the same suggestion is revised", async () => {
+  const preview = proposal("Confirm the morning sailing");
+  const revised = {
+    ...proposal("Confirm the evening sailing"),
+    id: preview.id,
+    createdAt: preview.createdAt,
+    updatedAt: new Date(Date.parse(preview.updatedAt) + 1).toISOString(),
+  };
+  const release = context.mocks.deferred<void>();
+  context.mocks.api(feedContract.summary, ({ respond }) => {
+    return respond(200, { hasUnread: true, firstItem: preview });
+  });
+  context.mocks.api(feedContract.list, async ({ respond }) => {
+    await release.promise;
+    return respond(200, { items: [revised] });
+  });
+  try {
+    await openDeck();
+    await expect(activeCard(preview)).resolves.toBeVisible();
+  } finally {
+    release.resolve();
+  }
+  const card = await activeCard(revised);
+  await expect(
+    findFastControl("button", "Prepare Confirm the evening sailing", card),
+  ).resolves.toBeEnabled();
+});
+
+test("Retrying a failed list preserves feedback and Undo from the preview", async () => {
+  const first = proposal("Review the bridge inspection");
+  const next = proposal("Confirm the ferry slot", 1);
+  const release = context.mocks.deferred<void>();
+  let attempts = 0;
+  context.mocks.api(feedContract.summary, ({ respond }) => {
+    return respond(200, { hasUnread: true, firstItem: first });
+  });
+  context.mocks.api(feedContract.list, async ({ respond }) => {
+    attempts++;
+    if (attempts === 1) {
+      await release.promise;
+      return respond(503, {
+        error: { code: "UNAVAILABLE", message: "Feed unavailable" },
+      });
+    }
+    return respond(200, { items: [next] });
+  });
+  context.mocks.api(feedContract.feedback, ({ body, respond }) => {
+    return respond(200, { restored: body.kind === "undo" });
+  });
+  try {
+    await openDeck();
+    click(
+      await findFastControl("button", "Already done", await activeCard(first)),
+    );
+    await findFastControl("button", "Undo");
+    expect(screen.queryByText("All caught up")).toBeNull();
+  } finally {
+    release.resolve();
+  }
+  const alert = await screen.findByRole("alert");
+  click(await findFastControl("button", "Try again", alert));
+  await activeCard(next);
+  click(await findFastControl("button", "Undo"));
+  await expect(activeCard(first)).resolves.toBeVisible();
+  expect(attempts).toBe(2);
+});
+
+test("A direct link reads its card on the next page without displaying the summary card", async () => {
+  const preview = proposal("Review the eastern breakwater");
+  const target = proposal("Review the western breakwater", 1);
+  const firstPage = [
+    preview,
+    ...Array.from({ length: 9 }, (_, index) => {
+      return proposal("Review berth " + String(index + 1), 5);
+    }),
+  ];
+  const release = context.mocks.deferred<void>();
+  const nextPage = context.mocks.deferred<void>();
+  const reads: string[] = [];
+  context.mocks.api(feedContract.summary, ({ respond }) => {
+    return respond(200, { hasUnread: true, firstItem: preview });
+  });
+  context.mocks.api(feedContract.list, async ({ query, respond }) => {
+    if (!query.cursor) {
+      return respond(200, { items: firstPage, nextCursor: "second-page" });
+    }
+    nextPage.resolve();
+    await release.promise;
+    return respond(200, { items: [target] });
+  });
+  context.mocks.api(feedContract.markRead, ({ params, respond }) => {
+    reads.push(params.id);
+    return respond(200, { readAt: nowDate().toISOString() });
+  });
+  try {
+    await openDeck("/for-you?suggestion=" + target.id);
+    await nextPage.promise;
+    expect(reads).toHaveLength(0);
+    expect(queryFastControl("link", /Show suggestion/u)).toBeNull();
+    expect(
+      screen.queryByRole("article", { name: preview.content.title }),
+    ).toBeNull();
+  } finally {
+    release.resolve();
+  }
+  await expect(activeCard(target)).resolves.toBeVisible();
+  await expect(
+    findFastControl("link", "Show suggestion 11 of 11"),
+  ).resolves.toHaveAttribute("aria-current", "step");
+  expect(
+    queryAllByRoleFast("link").filter((link) => {
+      return link.getAttribute("aria-label")?.startsWith("Show suggestion ");
+    }),
+  ).toHaveLength(7);
+  expect(
+    document.querySelectorAll('[data-slot="suggestion-stack-layer"]'),
+  ).toHaveLength(2);
+  await waitFor(() => {
+    expect(reads).toStrictEqual([target.id]);
+  });
 });
 
 test("Folding the inline direction keeps what was written until it opens again", async () => {
