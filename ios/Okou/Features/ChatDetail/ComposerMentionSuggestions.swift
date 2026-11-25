@@ -32,10 +32,11 @@ struct ComposerMentionSuggestion: Equatable, Identifiable {
 
 struct ComposerMentionMenu: View {
   let editor: ComposerEditor
+  let source: ComposerMentionSource?
   let availableHeight: CGFloat
 
   var body: some View {
-    let suggestions = editor.mentionSuggestions
+    let suggestions = editor.mentionSuggestions(from: source)
     OkouSuggestionPanel(
       title: "Chats", availableHeight: availableHeight,
       dismissLabel: "Dismiss chat suggestions", dismissIdentifier: "dismiss-mentions",

@@ -6212,9 +6212,11 @@ function personalSubscriptionRuntimeGroups(args: {
     }
     const type = modelProviderTypeForMetadata(providerKey, metadata);
     const name = modelProviderRuntimeSecretName({ key, providerKey, metadata });
+    // Antigravity credentials are never injected through the firewall.
     if (
       !type ||
       !isPersonalSubscriptionProviderType(type) ||
+      type === "antigravity" ||
       !name ||
       !metadata.sourceId
     ) {

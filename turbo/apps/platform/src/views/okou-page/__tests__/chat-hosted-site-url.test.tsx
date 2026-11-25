@@ -5,7 +5,13 @@ import type {
 } from "@okouai/api-contracts/contracts/hosted-site-domains";
 import type { infer as zInfer } from "zod";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
@@ -41,13 +47,15 @@ const siteId = "be311386-caaa-4bfb-a74a-7d694c27c41e";
 async function publishedReport(
   customDomains = false,
   setup?: zInfer<typeof hostedDomainSetupSchema>,
+  publication?: () => { readonly title: string; readonly slug: string },
 ) {
   let slug = original;
   const site = () => {
+    const currentSlug = publication?.().slug ?? slug;
     return {
       siteId,
-      publicSlug: slug,
-      url: address(slug),
+      publicSlug: currentSlug,
+      url: address(currentSlug),
       isActive: true,
     };
   };
@@ -85,11 +93,15 @@ async function publishedReport(
       ];
     },
     getDetail: () => {
-      return hostedSiteArtifactDetail(item, {
-        siteId,
-        slug,
-        url: address(slug),
-      });
+      const current = publication?.() ?? { title, slug };
+      return hostedSiteArtifactDetail(
+        { ...item, title: current.title },
+        {
+          siteId,
+          slug: current.slug,
+          url: address(current.slug),
+        },
+      );
     },
     chatEvents: [
       {
@@ -194,6 +206,105 @@ test("chat-hosted-site-url-004 follows both saved addresses through the preview 
   click(getNamedButton("Copy link", row));
   await waitFor(() => {
     expect(clipboard.writes).toStrictEqual([address("final-site")]);
+  });
+});
+
+test("Closing a website cancels its pending domain read and reopening starts a fresh share session", async () => {
+  const began = context.mocks.deferred<void>();
+  const aborted = context.mocks.deferred<void>();
+  let hold = true;
+  context.mocks.api(hostContract.siteDomains, async ({ request, respond }) => {
+    if (hold) {
+      hold = false;
+      request.signal.addEventListener(
+        "abort",
+        () => {
+          aborted.resolve();
+        },
+        { once: true },
+      );
+      began.resolve();
+      await aborted.promise;
+    }
+    return respond(200, {
+      siteId,
+      defaultUrl: address(original),
+      effectiveUrl: address(original),
+      selectedDomainId: null,
+      revision: "00000000-0000-4000-8000-000000000053",
+      allowed: true,
+      domains: [],
+    });
+  });
+  const preview = await publishedReport(true);
+  await openHostedSiteShare(preview);
+  click(await findNamedButton("Customize URL"));
+  await began.promise;
+  click(getNamedButton("Close artifact", preview));
+  await aborted.promise;
+  await waitFor(() => {
+    expect(preview).not.toBeInTheDocument();
+  });
+
+  click(await findNamedLink("Read the launch report"));
+  const reopened = await screen.findByTestId("artifact-sidebar");
+  const menu = await openHostedSiteShare(reopened);
+  expect(within(menu).queryByLabelText("Website URL")).toBeNull();
+  click(await findNamedButton("Customize URL", menu));
+  await expect(screen.findByLabelText("Website URL")).resolves.toHaveValue(
+    original,
+  );
+});
+
+test("Opening a website from chat Resources initializes its sharing settings", async () => {
+  const preview = await publishedReport();
+  click(getNamedButton("Close artifact", preview));
+  await waitFor(() => {
+    expect(preview).not.toBeInTheDocument();
+  });
+  const resources = await openResources();
+  const artifact = await within(resources).findByText(title);
+  click(artifact.closest("button")!);
+  const catalogPreview = await screen.findByTestId("artifact-sidebar");
+  const menu = await openHostedSiteShare(catalogPreview);
+  expect(within(menu).getByLabelText("Anyone with the link")).toBeChecked();
+  await expect(
+    within(menu).findByRole("switch", { name: "Show Okou banner" }),
+  ).resolves.toBeChecked();
+});
+
+test("A publication notification updates sharing in the chat catalog preview", async () => {
+  let publication = { title, slug: original };
+  const preview = await publishedReport(false, undefined, () => {
+    return publication;
+  });
+  click(getNamedButton("Close artifact", preview));
+  await waitFor(() => {
+    expect(preview).not.toBeInTheDocument();
+  });
+  const resources = await openResources();
+  click((await within(resources).findByText(title)).closest("button")!);
+  const catalogPreview = await screen.findByTestId("artifact-sidebar");
+  await findNamedButton("Share artifact", catalogPreview);
+  await waitFor(() => {
+    expect(context.mocks.ably.hasSubscription("artifact:changed")).toBeTruthy();
+  });
+  publication = { title: "Updated launch report", slug: "republished-report" };
+  await act(() => {
+    context.mocks.ably.trigger("artifact:changed", {
+      artifactId: "d8064466-f246-4524-8e90-3655890190fe",
+    });
+  });
+  await within(screen.getByTestId("artifact-sidebar")).findByText(
+    publication.title,
+  );
+  const menu = await openHostedSiteShare(
+    screen.getByTestId("artifact-sidebar"),
+  );
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  click(await findNamedButton("Copy link", menu));
+  await waitFor(() => {
+    expect(clipboard.writes).toStrictEqual([address(publication.slug)]);
   });
 });
 

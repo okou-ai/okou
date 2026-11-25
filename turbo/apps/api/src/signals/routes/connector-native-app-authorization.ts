@@ -2,8 +2,11 @@ import {
   connectorNativeAppReturnSchema,
   type ConnectorNativeAppReturn,
 } from "@okouai/api-contracts/validators/connectors";
-import { connectorHttpsReturn } from "./connector-https-return";
-import type { StoredBuiltinOAuthState } from "../services/connector-oauth-state.service";
+import { connectorHttpsReturn } from "../services/connector-native-return";
+import type {
+  StoredBuiltinOAuthState,
+  StoredCustomConnectorOAuthState,
+} from "../services/connector-oauth-state.service";
 import type { AuthUrlResult } from "@okouai/connectors/auth-providers/provider-flow-types";
 
 // Strava's public mobile OAuth protocol retains the registered HTTPS callback,
@@ -63,10 +66,13 @@ export function isStravaIosAuthorization(
 
 export function nativeConnectorCallbackResponse(
   response: Response,
-  state: StoredBuiltinOAuthState,
+  state: StoredBuiltinOAuthState | StoredCustomConnectorOAuthState,
 ): Response {
   const httpsReturn = connectorHttpsReturn(state);
-  if (httpsReturn || isStravaIosAuthorization(state)) {
+  if (
+    httpsReturn ||
+    (state.connectorSlug !== null && isStravaIosAuthorization(state))
+  ) {
     response.headers.set(NATIVE_ATTEMPT_HEADER, state.id);
     response.headers.set("Cache-Control", "no-store");
     response.headers.set("Referrer-Policy", "no-referrer");

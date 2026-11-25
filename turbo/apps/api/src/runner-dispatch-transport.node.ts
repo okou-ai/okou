@@ -24,7 +24,6 @@ interface TransportOptions {
 
 type TakeReservation = (
   body: string | Uint8Array<ArrayBuffer>,
-  startedAt: number,
   signal: AbortSignal,
   encoding: RunnerDispatchEncoding,
 ) => TakenRunnerDispatch | undefined;
@@ -91,12 +90,7 @@ export function createRunnerDispatchTransport({
       const onExpiry = () => {
         finish("expired");
       };
-      const take: TakeReservation = (
-        body,
-        dispatchStartedAt,
-        deadline,
-        bodyEncoding,
-      ) => {
+      const take: TakeReservation = (body, deadline, bodyEncoding) => {
         if (bodyEncoding !== encoding) {
           finish("cancelled");
           return undefined;
@@ -105,7 +99,6 @@ export function createRunnerDispatchTransport({
           finish("failed");
           return undefined;
         }
-        attempt.timing.startedAt = dispatchStartedAt;
         finish("used");
         // Keep abort ownership until the response body is consumed as well.
         const abortDispatch = () => {
@@ -144,8 +137,8 @@ export function createRunnerDispatchTransport({
         "Runner dispatch preconnection cleanup",
       );
     },
-    take(url, body, startedAt, signal, encoding = "identity") {
-      return reservations.get(url)?.(body, startedAt, signal, encoding);
+    take(url, body, signal, encoding = "identity") {
+      return reservations.get(url)?.(body, signal, encoding);
     },
   };
 }

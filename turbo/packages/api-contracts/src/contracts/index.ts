@@ -865,6 +865,10 @@ export {
   type CodexDeviceAuthScope,
   type CodexDeviceAuthContract,
 } from "./codex-device-auth";
+export {
+  antigravityDeviceAuthContract,
+  type AntigravityDeviceAuthMode,
+} from "./antigravity-device-auth";
 export { antigravityPersonalSubscriptionContract } from "./antigravity-personal-subscription";
 export { atomSubscriptionGrantsContract } from "./atom-subscription-grants";
 export {

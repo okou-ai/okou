@@ -1,4 +1,3 @@
-import type { PersonalSubscriptionProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import {
   Button,
   DropdownMenu,
@@ -22,6 +21,7 @@ import { useTranslation } from "react-i18next";
 import {
   connectSubscriptionLinkingProvider$,
   SUBSCRIPTION_PROVIDERS,
+  type LinkableSubscriptionProvider,
   subscriptionLinkingUnlinked$,
   trackSubscriptionLinkingOpened$,
   type SubscriptionLinkingSource,
@@ -42,7 +42,7 @@ export function useConnectProvider(source: SubscriptionLinkingSource) {
   const connect = useSet(connectSubscriptionLinkingProvider$);
   const pageSignal = useGet(pageSignal$);
   return {
-    title: (type: PersonalSubscriptionProviderType) => {
+    title: (type: LinkableSubscriptionProvider) => {
       return type === "codex-oauth-token"
         ? t(($) => {
             return $.settings.models.personal.codexTitle;
@@ -52,7 +52,7 @@ export function useConnectProvider(source: SubscriptionLinkingSource) {
           });
     },
     /** The plans that include the subscription, so members know before signing in. */
-    plans: (type: PersonalSubscriptionProviderType) => {
+    plans: (type: LinkableSubscriptionProvider) => {
       return type === "codex-oauth-token"
         ? t(($) => {
             return $.settings.models.personal.codexPlans;
@@ -61,7 +61,7 @@ export function useConnectProvider(source: SubscriptionLinkingSource) {
             return $.settings.models.personal.claudePlans;
           });
     },
-    connect: (type: PersonalSubscriptionProviderType) => {
+    connect: (type: LinkableSubscriptionProvider) => {
       detach(connect(source, type, pageSignal), Reason.DomCallback);
     },
   };

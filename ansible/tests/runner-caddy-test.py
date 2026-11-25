@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 import shutil
+import signal
 import socket
 import ssl
 import struct
@@ -13,6 +14,7 @@ import tempfile
 import threading
 import time
 import uuid
+from contextlib import contextmanager, suppress
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from socketserver import ThreadingUnixStreamServer
@@ -32,7 +34,9 @@ class EchoHandler(BaseHTTPRequestHandler):
             self.send_header("Transfer-Encoding", "chunked")
             self.end_headers()
             self.write_chunk(self.server.label + b":first")
-            assert self.server.continue_response.wait(5), "first response chunk was buffered"
+            assert self.server.continue_response.wait(5), (
+                "first response chunk was buffered"
+            )
             self.write_chunk(b"second")
             self.wfile.write(b"0\r\n\r\n")
             self.wfile.flush()
@@ -46,16 +50,18 @@ class EchoHandler(BaseHTTPRequestHandler):
         self.send_header("Connection", "Upgrade")
         self.send_header("Sec-WebSocket-Accept", WEBSOCKET_ACCEPT)
         self.end_headers()
-        header = self.rfile.read(2)
-        assert header[0] == 0x81 and header[1] & 0x80
-        size = header[1] & 0x7F
-        assert size < 126
-        mask = self.rfile.read(4)
-        payload = self.rfile.read(size)
-        payload = bytes(value ^ mask[index % 4] for index, value in enumerate(payload))
-        response = self.server.label + b":" + payload
-        self.wfile.write(b"\x81" + bytes([len(response)]) + response)
-        self.wfile.flush()
+        while header := self.rfile.read(2):
+            assert header[0] == 0x81 and header[1] & 0x80
+            size = header[1] & 0x7F
+            assert size < 126
+            mask = self.rfile.read(4)
+            payload = self.rfile.read(size)
+            payload = bytes(
+                value ^ mask[index % 4] for index, value in enumerate(payload)
+            )
+            response = self.server.label + b":" + payload
+            self.wfile.write(b"\x81" + bytes([len(response)]) + response)
+            self.wfile.flush()
         self.close_connection = True
 
     def reply_http(self, body):
@@ -137,7 +143,8 @@ def streamed_http(context, port, path, server):
         )
 
 
-def response(context, port, path, websocket=False, method="GET", body=b""):
+@contextmanager
+def open_response(context, port, path, websocket=False, method="GET", body=b""):
     with (
         socket.create_connection(("127.0.0.1", port), timeout=5) as raw,
         context.wrap_socket(raw, server_hostname="runner-wss.example.org") as peer,
@@ -152,19 +159,37 @@ def response(context, port, path, websocket=False, method="GET", body=b""):
             (
                 f"{method} {path} HTTP/1.1\r\nHost: runner-wss.example.org\r\n"
                 f"Content-Length: {len(body)}\r\n{upgrade}\r\n"
-            ).encode() + body
+            ).encode()
+            + body
         )
-        reader = peer.makefile("rb")
-        status, headers = response_headers(reader)
+        with peer.makefile("rb") as reader:
+            status, headers = response_headers(reader)
+            yield peer, reader, status, headers
+
+
+def websocket_echo(peer, reader, payload):
+    mask = b"mask"
+    peer.sendall(
+        b"\x81"
+        + bytes([0x80 | len(payload)])
+        + mask
+        + bytes(value ^ mask[index % 4] for index, value in enumerate(payload))
+    )
+    header = reader.read(2)
+    assert len(header) == 2 and header[0] == 0x81 and not header[1] & 0x80
+    return reader.read(header[1])
+
+
+def response(context, port, path, websocket=False, method="GET", body=b""):
+    with open_response(context, port, path, websocket, method, body) as (
+        peer,
+        reader,
+        status,
+        headers,
+    ):
         if status == 101:
             assert headers["sec-websocket-accept"] == WEBSOCKET_ACCEPT
-            peer.sendall(
-                b"\x81\x84mask"
-                + bytes(v ^ b"mask"[i % 4] for i, v in enumerate(b"ping"))
-            )
-            header = reader.read(2)
-            assert header[0] == 0x81 and not header[1] & 0x80
-            return status, reader.read(header[1])
+            return status, websocket_echo(peer, reader, b"ping")
         return status, reader.read(int(headers.get("content-length", 0)))
 
 
@@ -180,7 +205,8 @@ def wait_ready(notify):
 def main():
     repo, rendered, caddy = map(Path, sys.argv[1:])
     spec = importlib.util.spec_from_file_location(
-        "namespace_validator", repo / "ansible/files/validate-runner-ingress-namespace.py"
+        "namespace_validator",
+        repo / "ansible/files/validate-runner-ingress-namespace.py",
     )
     validator = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(validator)
@@ -318,7 +344,9 @@ def main():
             }
             config_path = root / "Caddy.json"
             config_path.write_text(
-                json.dumps(config).replace("/var/lib/vm0-runner/ingress", str(namespace))
+                json.dumps(config).replace(
+                    "/var/lib/vm0-runner/ingress", str(namespace)
+                )
             )
             state = root / "state"
             state.mkdir(mode=0o700)
@@ -330,6 +358,7 @@ def main():
                 notify_path.chmod(0o660)
                 notify.settimeout(10)
                 with (root / "caddy.log").open("wb") as log:
+
                     def start_caddy():
                         return subprocess.Popen(
                             [str(caddy), "run", "--config", str(config_path)],
@@ -384,18 +413,26 @@ def main():
                     for runner_id, label, backend in zip(
                         ids, [b"first", b"second"], servers, strict=True
                     ):
-                        assert response(context, port, f"/runners/{runner_id}", True) == (
+                        assert response(
+                            context, port, f"/runners/{runner_id}", True
+                        ) == (
                             101,
                             label + b":ping",
                         )
                         path = f"/runners/{runner_id}/control/health?probe=1"
-                        assert response(context, port, path) == (200, label + b":" + path.encode())
-                        path = f"/runners/{runner_id}/sandbox/runs/{uuid.uuid4()}"
-                        assert response(context, port, path, True) == (101, label + b":ping")
-                        payload = b"stream-" * 16384
-                        assert response(context, port, path, method="POST", body=payload) == (
-                            200, label + b":" + path.encode() + b":" + payload
+                        assert response(context, port, path) == (
+                            200,
+                            label + b":" + path.encode(),
                         )
+                        path = f"/runners/{runner_id}/sandbox/runs/{uuid.uuid4()}"
+                        assert response(context, port, path, True) == (
+                            101,
+                            label + b":ping",
+                        )
+                        payload = b"stream-" * 16384
+                        assert response(
+                            context, port, path, method="POST", body=payload
+                        ) == (200, label + b":" + path.encode() + b":" + payload)
                         streamed_http(context, port, path, backend)
                     for path in [
                         "/",
@@ -407,12 +444,60 @@ def main():
                     ]:
                         assert response(context, port, path, True)[0] == 404, path
                     assert (
-                        response(context, port, f"/runners/{uuid.uuid4()}", True)[0] == 502
+                        response(context, port, f"/runners/{uuid.uuid4()}", True)[0]
+                        == 502
                     )
                     assert before == {
                         p.name: (p.stat().st_ino, p.stat().st_mode)
                         for p in namespace.iterdir()
                     }
+                    # Keep one real upgrade open across a change. A separate
+                    # request proves activation before exercising the old stream.
+                    ws_path = f"/runners/{ids[0]}/sandbox/runs/{uuid.uuid4()}"
+                    with open_response(context, port, ws_path, websocket=True) as (
+                        peer,
+                        reader,
+                        status,
+                        headers,
+                    ):
+                        assert status == 101
+                        assert headers["sec-websocket-accept"] == WEBSOCKET_ACCEPT
+                        assert (
+                            websocket_echo(peer, reader, b"before") == b"first:before"
+                        )
+                        server_config["routes"].insert(
+                            0,
+                            {
+                                "match": [{"path": ["/reload-marker"]}],
+                                "handle": [
+                                    {"handler": "static_response", "body": "reloaded"}
+                                ],
+                            },
+                        )
+                        pending = config_path.with_suffix(".next")
+                        pending.write_text(
+                            json.dumps(config).replace(
+                                "/var/lib/vm0-runner/ingress", str(namespace)
+                            )
+                        )
+                        pending.replace(config_path)
+                        process.send_signal(signal.SIGUSR1)
+                        deadline = time.monotonic() + 5
+                        while (
+                            "successfully reloaded config from file"
+                            not in (root / "caddy.log").read_text()
+                        ):
+                            assert time.monotonic() < deadline, "Caddy did not reload"
+                            time.sleep(0.025)
+                        assert response(context, port, "/reload-marker") == (
+                            200,
+                            b"reloaded",
+                        )
+                        assert process.poll() is None
+                        assert websocket_echo(peer, reader, b"after") == b"first:after"
+                    print(
+                        "Caddy reloaded in place while an existing WebSocket kept exchanging frames"
+                    )
                     # Caddy's lifetime is independent of every live Runner
                     # socket. Reconnect HTTP/WSS after restart without rebinding.
                     process.terminate()
@@ -421,13 +506,26 @@ def main():
                         p.name: (p.stat().st_ino, p.stat().st_mode)
                         for p in namespace.iterdir()
                     }
+                    # Retire any systemd notifications from the old process.
+                    notify.setblocking(False)
+                    with suppress(BlockingIOError):
+                        while notify.recv(1024):
+                            pass
                     process = start_caddy()
                     wait_ready(notify)
-                    for runner_id, label in zip(ids, [b"first", b"second"], strict=True):
+                    for runner_id, label in zip(
+                        ids, [b"first", b"second"], strict=True
+                    ):
                         path = f"/runners/{runner_id}/control/health"
-                        assert response(context, port, path) == (200, label + b":" + path.encode())
+                        assert response(context, port, path) == (
+                            200,
+                            label + b":" + path.encode(),
+                        )
                         path = f"/runners/{runner_id}/sandbox/runs/{uuid.uuid4()}"
-                        assert response(context, port, path, True) == (101, label + b":ping")
+                        assert response(context, port, path, True) == (
+                            101,
+                            label + b":ping",
+                        )
                     assert before == {
                         p.name: (p.stat().st_ino, p.stat().st_mode)
                         for p in namespace.iterdir()

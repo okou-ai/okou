@@ -1,3 +1,8 @@
+import {
+  nativeConnectorCallbackResponse,
+  nativeConnectorReturn,
+} from "./connector-native-app-authorization";
+import { connectorNativeAppReturnUrl } from "@okouai/api-contracts/validators/connectors";
 import { waitUntil } from "../context/wait-until";
 import { deliverMarketingRewardEvents$ } from "../services/marketing-reward-event-delivery.service";
 import {
@@ -110,11 +115,16 @@ function callbackResultFromRedirect(
   }
   const url = new URL(location);
   if (url.pathname === "/connectors/custom/callback/success") {
-    return { status: "success", username: null };
+    return {
+      status: "success",
+      username: null,
+      nativeAppReturn: nativeConnectorReturn(response),
+    };
   }
   if (url.pathname === "/connectors/custom/callback/error") {
     return {
       status: "error",
+      nativeAppReturn: nativeConnectorReturn(response),
       message:
         url.searchParams.get("message") ||
         "OAuth authorization failed. Please try again.",
@@ -149,6 +159,11 @@ const startOAuth2Inner$ = command(async ({ get, set }, signal: AbortSignal) => {
         dcrClientMetadata: okouMcpOAuthDynamicClientMetadata(get(request$).raw),
       },
       account: body.data.account,
+      nativeCallback:
+        get(request$).raw.headers.get("x-okou-native-connector-callback") ===
+        "ios-https"
+          ? "ios-https"
+          : undefined,
     },
     signal,
   );
@@ -634,9 +649,14 @@ const completeOAuth2Callback$ = command(
       );
     }
     const origin = appOrigin();
+    const nativeResponse = (response: Response) => {
+      return nativeConnectorCallbackResponse(response, claimed.state);
+    };
     const state = validateClaimedState(claimed.state);
     if (!state.ok) {
-      return callbackError(origin, "Invalid OAuth state - please try again");
+      return nativeResponse(
+        callbackError(origin, "Invalid OAuth state - please try again"),
+      );
     }
     const automaticContext = isCustomConnectorAutomaticOAuthStateContext(
       state.context,
@@ -644,13 +664,17 @@ const completeOAuth2Callback$ = command(
       ? state.context
       : null;
     if (!customOAuthCallbackIssuerMatches(state.context, query.iss)) {
-      return callbackError(
-        origin,
-        "OAuth authorization issuer did not match - please try again",
+      return nativeResponse(
+        callbackError(
+          origin,
+          "OAuth authorization issuer did not match - please try again",
+        ),
       );
     }
     if (providerError) {
-      return callbackError(origin, query.error_description ?? providerError);
+      return nativeResponse(
+        callbackError(origin, query.error_description ?? providerError),
+      );
     }
     const connector = await get(
       getCustomConnectorById({
@@ -667,9 +691,11 @@ const completeOAuth2Callback$ = command(
       ? isCurrentAutomaticOAuthCustomConnector(connector, automaticContext)
       : false;
     if (!currentCustom && !currentAutomatic) {
-      return callbackError(
-        origin,
-        "Custom connector OAuth configuration changed - please try again",
+      return nativeResponse(
+        callbackError(
+          origin,
+          "Custom connector OAuth configuration changed - please try again",
+        ),
       );
     }
     if (!connector) {
@@ -694,7 +720,7 @@ const completeOAuth2Callback$ = command(
     );
     signal.throwIfAborted();
     if (!persistence.ok) {
-      return callbackError(origin, persistence.message);
+      return nativeResponse(callbackError(origin, persistence.message));
     }
     if (persistence.marketingRewardEventId) {
       waitUntil(
@@ -716,7 +742,7 @@ const completeOAuth2Callback$ = command(
       signal,
     );
     signal.throwIfAborted();
-    return callbackRedirect({ origin, status: "success" });
+    return nativeResponse(callbackRedirect({ origin, status: "success" }));
   },
 );
 
@@ -725,6 +751,13 @@ const callbackOAuth2$ = command(async ({ get, set }, signal: AbortSignal) => {
   const response = await set(completeOAuth2Callback$, signal);
   signal.throwIfAborted();
   if (query.responseMode !== "json") {
+    const nativeReturn = nativeConnectorReturn(response);
+    if (nativeReturn) {
+      response.headers.set(
+        "Location",
+        connectorNativeAppReturnUrl(nativeReturn),
+      );
+    }
     return response;
   }
   set(setResHeader$, "Cache-Control", "no-store");

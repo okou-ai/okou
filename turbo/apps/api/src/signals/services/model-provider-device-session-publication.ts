@@ -6,7 +6,10 @@ export interface DeviceAuthSessionPublication {
   readonly id: string;
   readonly userId: string;
   readonly source:
-    "claude-code-device-auth" | "codex-device-auth" | "atom-subscription-grant";
+    | "claude-code-device-auth"
+    | "codex-device-auth"
+    | "antigravity-device-auth"
+    | "atom-subscription-grant";
 }
 
 /** Pure SQL; the credential-owning command executes this before committing. */

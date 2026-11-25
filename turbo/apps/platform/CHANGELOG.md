@@ -13,6 +13,22 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1184.1](https://github.com/okou-ai/okou/compare/app-v0.1184.0...app-v0.1184.1) (2026-11-25)
+
+
+### Bug Fixes
+
+* **app:** own artifact action sessions in preview commands ([#50824](https://github.com/okou-ai/okou/issues/50824)) ([2b8ccf3](https://github.com/okou-ai/okou/commit/2b8ccf35da6d6fe2096f7ce51530f891393d3934))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.128.1
+    * @okouai/core bumped to 8.879.1
+    * @okouai/ui bumped to 1.22.20
+
 ## [0.1184.0](https://github.com/okou-ai/okou/compare/app-v0.1183.0...app-v0.1184.0) (2026-11-25)
 
 

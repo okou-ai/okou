@@ -27,6 +27,7 @@ describe("SSH connection schema", () => {
       "org_id",
       "user_id",
       "display_name",
+      "remote_device_id",
       "host",
       "port",
       "credential_id",
@@ -49,6 +50,7 @@ describe("SSH connection schema", () => {
         };
       }),
     ).toStrictEqual([
+      { name: "idx_ssh_connections_remote_device", unique: false },
       { name: "idx_ssh_connections_tailscale", unique: false },
       { name: "idx_ssh_connections_cloudflare_access", unique: false },
       { name: "idx_ssh_connections_credential", unique: false },

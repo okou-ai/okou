@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { publishRemoteChannelDevice } from "./remote-device-publication";
 import { trace } from "@opentelemetry/api";
 import { HTTPException } from "hono/http-exception";
 import { providerUnavailable } from "../../lib/error";
@@ -1111,41 +1113,19 @@ export const startComputerUseHost$ = command(
     ) {
       return { status: "upgrade_required", minimumSupportedVersion: minimum };
     }
-    const [host] = await db
-      .insert(computerUseHosts)
-      .values({
-        orgId: params.orgId,
-        userId: params.userId,
-        installationId: params.installationId,
-        displayName,
-        sessionId: params.sessionId,
-        sessionValidatedAt: now,
-        connectionGeneration: 1,
-        appVersion,
-        osVersion,
-        supportedCapabilities,
-        permissions: params.permissions,
-        livenessMode,
-        status: "online",
-        lastSeenAt: now,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: [
-          computerUseHosts.orgId,
-          computerUseHosts.userId,
-          computerUseHosts.installationId,
-        ],
-        targetWhere: and(
-          isNotNull(computerUseHosts.installationId),
-          isNull(computerUseHosts.revokedAt),
-        ),
-        set: {
+    const candidateId = randomUUID();
+    const paired = db.$with("registered_desktop_host").as(
+      db
+        .insert(computerUseHosts)
+        .values({
+          orgId: params.orgId,
+          userId: params.userId,
+          installationId: params.installationId,
           displayName,
+          remoteDeviceId: candidateId,
           sessionId: params.sessionId,
           sessionValidatedAt: now,
-          connectionGeneration: sql`${computerUseHosts.connectionGeneration} + 1`,
+          connectionGeneration: 1,
           appVersion,
           osVersion,
           supportedCapabilities,
@@ -1153,13 +1133,56 @@ export const startComputerUseHost$ = command(
           livenessMode,
           status: "online",
           lastSeenAt: now,
+          createdAt: now,
           updatedAt: now,
-        },
+        })
+        .onConflictDoUpdate({
+          target: [
+            computerUseHosts.orgId,
+            computerUseHosts.userId,
+            computerUseHosts.installationId,
+          ],
+          targetWhere: and(
+            isNotNull(computerUseHosts.installationId),
+            isNull(computerUseHosts.revokedAt),
+          ),
+          set: {
+            remoteDeviceId: sql`coalesce(${computerUseHosts.remoteDeviceId}, excluded.remote_device_id)`,
+            displayName,
+            sessionId: params.sessionId,
+            sessionValidatedAt: now,
+            connectionGeneration: sql`${computerUseHosts.connectionGeneration} + 1`,
+            appVersion,
+            osVersion,
+            supportedCapabilities,
+            permissions: params.permissions,
+            livenessMode,
+            status: "online",
+            lastSeenAt: now,
+            updatedAt: now,
+          },
+        })
+        .returning({
+          id: computerUseHosts.id,
+          remoteDeviceId: computerUseHosts.remoteDeviceId,
+          orgId: computerUseHosts.orgId,
+          userId: computerUseHosts.userId,
+          connectionGeneration: computerUseHosts.connectionGeneration,
+        }),
+    );
+    const device = publishRemoteChannelDevice(
+      db,
+      paired,
+      displayName,
+      candidateId,
+    );
+    const [host] = await db
+      .with(paired, device)
+      .select({
+        id: paired.id,
+        connectionGeneration: paired.connectionGeneration,
       })
-      .returning({
-        id: computerUseHosts.id,
-        connectionGeneration: computerUseHosts.connectionGeneration,
-      });
+      .from(paired);
     signal.throwIfAborted();
     if (!host) {
       throw new Error("Failed to start computer-use host");

@@ -8,6 +8,11 @@ export const clientContractImportManifest = [
     bindings: [],
   },
   {
+    module: "antigravity-device-auth",
+    contracts: ["antigravityDeviceAuthContract"],
+    bindings: [],
+  },
+  {
     module: "antigravity-personal-subscription",
     contracts: ["antigravityPersonalSubscriptionContract"],
     bindings: [],

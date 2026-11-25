@@ -272,6 +272,8 @@ final class ChatConnectorTests: XCTestCase {
           ]
           if kind == "auth-code" {
             expected["callbackTarget"] = "app"
+          }
+          if ["auth-code", "automatic", "openid-auth"].contains(kind) {
             expected["nativeCallback"] = "ios-https"
           }
           if kind == "manual" { expected["values"] = ["key": "synthetic-key"] }
@@ -310,6 +312,10 @@ final class ChatConnectorTests: XCTestCase {
             ["oauth", "automatic"].contains(mode)
             ? ["account"] : ["account", "values"]
           XCTAssertEqual(Set(body.keys), keys)
+          if ["oauth", "automatic"].contains(mode) {
+            XCTAssertEqual(
+              request.value(forHTTPHeaderField: "X-Okou-Native-Connector-Callback"), "ios-https")
+          }
           XCTAssertEqual(body["account"] as? [String: String], ["intent": "add"])
           if mode == "manual" {
             XCTAssertEqual(
