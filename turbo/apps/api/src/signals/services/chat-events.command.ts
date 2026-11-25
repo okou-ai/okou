@@ -558,6 +558,27 @@ function clientEventIdResolutionResponse(
   }
   return acceptedSendResponse(threadId, resolution.createdAt, true);
 }
+// MCP returns the accepted input identity, including on retries. A duplicate
+// Web send can also acknowledge a collision with another kind of event.
+export const readAcceptedChatInputReceipt$ = command(
+  async (
+    { get, set },
+    threadId: string,
+    clientEventId: string,
+    signal: AbortSignal,
+  ) => {
+    const { orgId, userId } = get(organizationAuthContext$);
+    const resolution = await set(
+      resolveClientEventId$,
+      { orgId, userId, threadId, clientEventId },
+      signal,
+    );
+    return (
+      clientEventIdResolutionResponse(resolution, threadId) ??
+      duplicateClientEventIdResponse()
+    );
+  },
+);
 function isCancelResult(value: unknown): value is CancelRunResult {
   return (
     typeof value === "object" && value !== null && "alreadyCancelled" in value

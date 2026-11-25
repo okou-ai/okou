@@ -1,3 +1,7 @@
+import { directUploadResponseSchema } from "@okouai/api-contracts/contracts/uploads";
+import { transcribeContract } from "@okouai/api-contracts/contracts/transcribe";
+import { ablyTokenRequestSchema } from "@okouai/api-contracts/contracts/realtime";
+import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import { createProjectOperationId } from "@okouai/core/project-operation-id";
 import { projectRoutes } from "../projects";
@@ -121,6 +125,11 @@ describe("thin MCP Web adapters", () => {
       ).toStrictEqual(
         [
           "cancel_run",
+          "create_chat_thread",
+          "get_chat_realtime_token",
+          "prepare_voice_upload",
+          "complete_voice_upload",
+          "get_voice_playback_url",
           "get_chat_activity_summary",
           "get_chat_indicators",
           "get_chat_input_status",
@@ -222,6 +231,7 @@ describe("thin MCP Web adapters", () => {
       expect(
         Object.keys(sendTool.inputSchema.properties ?? {}).sort(),
       ).toStrictEqual([
+        "clientEventId",
         "model",
         "projectId",
         "prompt",
@@ -633,6 +643,116 @@ describe("thin MCP Web adapters", () => {
         before.lastReadAt,
       );
     });
+  });
+
+  it("authorizes a device to subscribe to its own workspace through Ably", async () => {
+    const f = await fixture();
+    context.mocks.ably.createTokenRequest.mockImplementation((params) => {
+      const request = object({
+        capability: object({}).catchall(array(string())),
+        clientId: string(),
+        ttl: number(),
+        timestamp: number(),
+      }).parse(params);
+      return Promise.resolve({
+        ...request,
+        capability: JSON.stringify(request.capability),
+        keyName: "test.key",
+        nonce: "nonce",
+        mac: "signature",
+      });
+    });
+    const signed = ablyTokenRequestSchema.parse(
+      body(await mcp.call(f.token(), "get_chat_realtime_token")),
+    );
+    expect(signed.clientId).toBe(f.actor.userId);
+    const channel = `user-org:${f.actor.userId}:${f.actor.orgId}`;
+    expect(JSON.parse(signed.capability)).toHaveProperty(
+      [channel],
+      ["subscribe"],
+    );
+    expect(signed.ttl).toBeGreaterThan(0);
+  });
+
+  it("sends and plays a private WAV through MCP and signed storage URLs", async () => {
+    const f = await fixture();
+    await createRunsApi(context).grantProEntitlement(f.actor);
+    installSharedThreadStorage(context);
+    const token = f.token();
+    const audio = "device recording".repeat(4);
+    const upload = directUploadResponseSchema.parse(
+      body(
+        await mcp.call(token, "prepare_voice_upload", {
+          filename: "clip.wav",
+          size: audio.length,
+        }),
+      ),
+    );
+    const put = await fetch(upload.uploadUrl, {
+      method: "PUT",
+      headers: upload.uploadHeaders,
+      body: audio,
+    });
+    expect(put.status).toBe(200);
+    expect(
+      body(await mcp.call(token, "complete_voice_upload", { id: upload.id })),
+    ).toMatchObject({ id: upload.id, contentType: "audio/wav" });
+    const clip = { fileId: upload.id };
+    const sent = await mcp.call(token, "send_chat_message", {
+      userMessage: { version: 1, parts: [{ type: "voice", clips: [clip] }] },
+    });
+    expect(sent.isError, JSON.stringify(sent.content)).not.toBeTruthy();
+    const playback = transcribeContract.playback.responses[200].parse(
+      body(await mcp.call(token, "get_voice_playback_url", clip)),
+    );
+    await expect((await fetch(playback.url)).text()).resolves.toBe(audio);
+  });
+
+  it("recovers an empty device thread and keyed sends after losing the acknowledgement", async () => {
+    const f = await fixture();
+    const token = f.token();
+    const threadId = randomUUID();
+    for (let attempt = 0; attempt < 2; attempt++) {
+      expect(
+        body(
+          await mcp.call(token, "create_chat_thread", {
+            clientThreadId: threadId,
+          }),
+        ),
+      ).toStrictEqual({ threadId });
+    }
+    for (const target of [{ threadId }, {}]) {
+      const input = {
+        ...target,
+        prompt: "Device input",
+        clientEventId: randomUUID(),
+      };
+      const first = mcpSendChatMessageOutputSchema.parse(
+        body(await mcp.call(token, "send_chat_message", input)),
+      );
+      const retry = body(await mcp.call(token, "send_chat_message", input));
+      expect(retry).toStrictEqual(first);
+      if (first.threadId !== threadId) {
+        expect(
+          error(
+            await mcp.call(token, "send_chat_message", { ...input, threadId }),
+          ).code,
+        ).toBe("CONFLICT");
+      }
+      expect(first.eventId).toBe(input.clientEventId);
+      const history = mcpGetChatMessagesOutputSchema.parse(
+        body(
+          await mcp.call(token, "get_chat_messages", {
+            threadId: first.threadId,
+          }),
+        ),
+      );
+      expect(
+        history.rows.filter((row) => {
+          return row.eventId === input.clientEventId;
+        }),
+      ).toHaveLength(1);
+    }
   });
 
   it("returns the generated input identity and persists plain text through the ordinary event stream", async () => {

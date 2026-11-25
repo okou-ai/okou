@@ -1,3 +1,9 @@
+import { platformRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
+import { transcribeContract } from "@okouai/api-contracts/contracts/transcribe";
+import {
+  directUploadResponseSchema,
+  uploadsContract,
+} from "@okouai/api-contracts/contracts/uploads";
 import {
   createMcpHandler,
   McpServer,
@@ -832,7 +838,7 @@ function registerMutationTools(
       name: "send_chat_message",
       scope: "okou:chat:send",
       description:
-        "Start a Chat with optional projectId, or continue by threadId. Supply either a plain text prompt or the full version 1 Chat userMessage document with ordered parts. The server records the authenticated MCP client as the source. Each voice part contains ordered clips referencing previously uploaded private audio file IDs. Generates and returns the accepted input's eventId with threadId and createdAt. Use eventId with revoke_queued_message to recall it while queued. Use get_chat_input_status with threadId and eventId for a bounded read of its retained Chat disposition and matching terminal event. Consumption alone does not prove completion. Does not wait for execution or provide safe retries after a lost acknowledgement.",
+        "Start a Chat with optional projectId, or continue by threadId. Supply either a plain text prompt or the full version 1 Chat userMessage document with ordered parts. The server records the authenticated MCP client as the source. Each voice part contains ordered clips referencing previously uploaded private audio file IDs. Generates and returns the accepted input's eventId with threadId and createdAt. Use eventId with revoke_queued_message to recall it while queued. Use get_chat_input_status with threadId and eventId for a bounded read of its retained Chat disposition and matching terminal event. Consumption alone does not prove completion. Supply the same clientEventId when retrying a send after a lost acknowledgement to recover its original threadId and eventId.",
       inputSchema: mcpSendChatMessageInputSchema,
       outputSchema: mcpSendChatMessageOutputSchema,
       annotations: writeAnnotations,
@@ -914,6 +920,135 @@ function registerMutationTools(
   );
 }
 
+function registerDeviceChatTools(
+  server: McpServer,
+  access: McpChatAccess,
+  requestSignal: AbortSignal,
+): void {
+  registerWebTool(
+    server,
+    access,
+    {
+      name: "create_chat_thread",
+      scope: "okou:chat:send",
+      description:
+        "Create an empty Chat. Reuse clientThreadId to recover the same thread after a lost response.",
+      inputSchema: chatThreadsContract.create.body
+        .pick({ clientThreadId: true, title: true, projectId: true })
+        .required({ clientThreadId: true }),
+      outputSchema: object({
+        threadId: mcpSendChatMessageOutputSchema.shape.threadId,
+      }),
+      annotations: writeAnnotations,
+      operation: async (input, signal) => {
+        const response = await requestWebApi(
+          access,
+          chatThreadsContract.create,
+          { body: input },
+          signal,
+        );
+        if (!response.ok) {
+          return await toolResponse(response);
+        }
+        const { id } = chatThreadsContract.create.responses[201].parse(
+          await response.json(),
+        );
+        return toolBody({ threadId: id });
+      },
+    },
+    requestSignal,
+  );
+  registerWebTool(
+    server,
+    access,
+    {
+      name: "get_chat_realtime_token",
+      scope: "okou:chat:read",
+      description:
+        "Get a signed, subscribe-only Ably TokenRequest. Exchange it with Ably and subscribe to the user/workspace channel in its capability. On attach, reconnect, or a thread notification, resume get_chat_messages from the last applied cursor. Call again to renew.",
+      inputSchema: emptyInput,
+      outputSchema: platformRealtimeTokenContract.create.responses[200],
+      annotations: readAnnotations,
+      operation: (_input, signal) => {
+        return requestWebApi(
+          access,
+          platformRealtimeTokenContract.create,
+          { body: {} },
+          signal,
+        );
+      },
+    },
+    requestSignal,
+  );
+  registerWebTool(
+    server,
+    access,
+    {
+      name: "prepare_voice_upload",
+      scope: "okou:chat:send",
+      description:
+        "Prepare a private WAV upload. PUT the audio to uploadUrl with uploadHeaders, then call complete_voice_upload with the returned id.",
+      inputSchema: uploadsContract.preparePrivate.body
+        .pick({ filename: true, size: true })
+        .strict(),
+      outputSchema: directUploadResponseSchema,
+      annotations: writeAnnotations,
+      operation: (input, signal) => {
+        return requestWebApi(
+          access,
+          uploadsContract.preparePrivate,
+          { body: { ...input, contentType: "audio/wav" } },
+          signal,
+        );
+      },
+    },
+    requestSignal,
+  );
+  registerWebTool(
+    server,
+    access,
+    {
+      name: "complete_voice_upload",
+      scope: "okou:chat:send",
+      description:
+        "Complete an owned WAV upload after its PUT succeeds. Use the returned id as a voice clip fileId in send_chat_message.",
+      inputSchema: uploadsContract.complete.body.pick({ id: true }).strict(),
+      outputSchema: uploadsContract.complete.responses[200],
+      annotations: writeAnnotations,
+      operation: (input, signal) => {
+        return requestWebApi(
+          access,
+          uploadsContract.complete,
+          { body: input },
+          signal,
+        );
+      },
+    },
+    requestSignal,
+  );
+  registerWebTool(
+    server,
+    access,
+    {
+      name: "get_voice_playback_url",
+      scope: "okou:chat:read",
+      description: "Get a temporary playback URL for an owned WAV voice clip.",
+      inputSchema: transcribeContract.playback.pathParams.strict(),
+      outputSchema: transcribeContract.playback.responses[200],
+      annotations: readAnnotations,
+      operation: (input, signal) => {
+        return requestWebApi(
+          access,
+          transcribeContract.playback,
+          { pathParams: input },
+          signal,
+        );
+      },
+    },
+    requestSignal,
+  );
+}
+
 function createChatServer(
   access: McpChatAccess,
   requestSignal: AbortSignal,
@@ -922,6 +1057,7 @@ function createChatServer(
     { name: "okou", version: "1.0.0" },
     { capabilities: { tools: { listChanged: false } } },
   );
+  registerDeviceChatTools(server, access, requestSignal);
   registerReadTools(server, access, requestSignal);
   registerMetadataTools(server, access, requestSignal);
   registerMutationTools(server, access, requestSignal);

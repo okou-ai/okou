@@ -43,7 +43,7 @@ const uploadMetadataSchema = object({
   url: artifactUrlSchema,
 });
 
-const prepareResponseSchema = uploadMetadataSchema.extend({
+export const directUploadResponseSchema = uploadMetadataSchema.extend({
   /** Presigned PUT URL — browser uploads the file body here directly. */
   uploadUrl: url(),
   /** Headers the client must include with the presigned PUT request. */
@@ -64,7 +64,7 @@ const multipartPrepareResponseSchema = uploadMetadataSchema.extend({
 });
 
 const prepareResultSchema = union([
-  prepareResponseSchema,
+  directUploadResponseSchema,
   multipartPrepareResponseSchema,
 ]);
 
