@@ -49,6 +49,36 @@ async function* rpcFrames(source: AsyncIterable<unknown>) {
     throw new Error("Truncated Runner RPC frame");
 }
 
+async function publishVerifiedBundle(
+  commandId: string,
+  buffer: Buffer,
+  sha256: string | undefined,
+  signal: AbortSignal,
+) {
+  const digest = createHash("sha256").update(buffer).digest();
+  if (digest.toString("hex") !== sha256)
+    throw new Error("App state digest mismatch");
+  const boundary = 4 + buffer.readUInt32BE(0);
+  if (
+    boundary + pngHeader.length > buffer.length ||
+    !buffer.subarray(boundary, boundary + pngHeader.length).equals(pngHeader)
+  )
+    throw new Error("Invalid app state PNG");
+  const { commandId: captured, result } = envelopeSchema.parse(
+    JSON.parse(utf8.decode(buffer.subarray(4, boundary))),
+  );
+  if (captured !== commandId)
+    throw new Error("App state belongs to a different command");
+  const files = await publishComputerUseAppState(
+    commandId,
+    result.snapshotId,
+    result.appState,
+    buffer.subarray(boundary),
+    signal,
+  );
+  return { files, digest };
+}
+
 export async function readDirectAppState(
   commandId: string,
   source: AsyncIterable<unknown>,
@@ -79,29 +109,13 @@ export async function readDirectAppState(
         offset < 4
       )
         throw new Error("Incomplete app state delivery");
-      const digest = createHash("sha256").update(buffer).digest();
-      if (digest.toString("hex") !== sha256)
-        throw new Error("App state digest mismatch");
-      const boundary = 4 + buffer.readUInt32BE(0);
-      if (
-        boundary + pngHeader.length > buffer.length ||
-        !buffer
-          .subarray(boundary, boundary + pngHeader.length)
-          .equals(pngHeader)
-      )
-        throw new Error("Invalid app state PNG");
-      const { commandId: captured, result } = envelopeSchema.parse(
-        JSON.parse(utf8.decode(buffer.subarray(4, boundary))),
-      );
-      if (captured !== commandId)
-        throw new Error("App state belongs to a different command");
-      published = await publishComputerUseAppState(
+      const { files, digest } = await publishVerifiedBundle(
         commandId,
-        result.snapshotId,
-        result.appState,
-        buffer.subarray(boundary),
+        buffer,
+        sha256,
         signal,
       );
+      published = files;
       signal.throwIfAborted();
       acknowledge(digest);
     } else {
@@ -133,10 +147,14 @@ export async function receiveDirectAppState(
   });
   const closed = new Promise<number | null>((resolve) => {
     child.once("close", resolve);
-    child.once("error", () => resolve(null));
+    child.once("error", () => {
+      return resolve(null);
+    });
   });
   // A rejected receive can close its input before reporting the terminal.
-  child.stdin.on("error", () => child.stdin.destroy());
+  child.stdin.on("error", () => {
+    return child.stdin.destroy();
+  });
   try {
     child.stdin.write(
       frame(

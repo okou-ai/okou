@@ -65,7 +65,7 @@ impl Run {
                 let pending = self
                     .entries
                     .lock()
-                    .expect("app state entries lock")
+                    .unwrap_or_else(|p| p.into_inner())
                     .get(&command_id)
                     .and_then(|entry| match &entry.state {
                         State::Pending(upload) => {
@@ -79,7 +79,7 @@ impl Run {
                         if let Some(entry) = self
                             .entries
                             .lock()
-                            .expect("app state entries lock")
+                            .unwrap_or_else(|p| p.into_inner())
                             .get_mut(&command_id)
                         {
                             entry.state = State::Revoked;
@@ -122,9 +122,12 @@ impl Run {
                 {
                     return Err(ErrorCode::Protocol);
                 }
-                let mut entries = self.entries.lock().expect("app state entries lock");
+                let mut entries = self.entries.lock().unwrap_or_else(|p| p.into_inner());
                 let entry = entries.get_mut(&command_id).ok_or(ErrorCode::Unavailable)?;
-                if entry.host != host || entry.digest != digest || Instant::now() >= entry.deadline
+                if matches!(entry.state, State::Revoked)
+                    || entry.host != host
+                    || entry.digest != digest
+                    || Instant::now() >= entry.deadline
                 {
                     return Err(ErrorCode::Unavailable);
                 }
@@ -147,8 +150,9 @@ impl Run {
             result = receive => result,
         };
         let response = match outcome {
-            Ok(()) => Response::Result {
-                data: to_raw_value(&true).expect("boolean is serializable"),
+            Ok(()) => match to_raw_value(&true) {
+                Ok(data) => Response::Result { data },
+                Err(_) => Response::error(ErrorCode::Protocol, Delivery::Unknown),
             },
             Err(code) => Response::error(
                 code,

@@ -53,13 +53,16 @@ it("publishes both private files before acknowledging and handles an identical r
   const snapshot = randomUUID();
   const text = "窗口\n".repeat(1024);
   const { chunks, png, digest } = wire(command, snapshot, text);
-  const read = (frames: Buffer[]) =>
-    readDirectAppState(
+  const read = (frames: Buffer[]) => {
+    return readDirectAppState(
       command,
       fragments(frames),
-      (ack) => expect(ack).toEqual(digest),
+      (ack) => {
+        return expect(ack).toEqual(digest);
+      },
       new AbortController().signal,
     );
+  };
   const output = await read(chunks);
   expect(await readFile(output.appState, "utf8")).toBe(text);
   expect(await readFile(output.screenshot)).toEqual(png);

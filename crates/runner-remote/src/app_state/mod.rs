@@ -53,7 +53,7 @@ impl Runtime {
             entries: Mutex::new(HashMap::new()),
             changed: watch::channel(()).0,
         });
-        let mut runs = self.0.runs.lock().expect("app state registry lock");
+        let mut runs = self.0.runs.lock().unwrap_or_else(|p| p.into_inner());
         if let Some(old) = runs
             .insert(id, Arc::downgrade(&run))
             .and_then(|old| old.upgrade())
@@ -78,12 +78,12 @@ impl Runtime {
     }
 
     pub fn expire(&self) {
-        let mut runs = self.0.runs.lock().expect("app state registry lock");
+        let mut runs = self.0.runs.lock().unwrap_or_else(|p| p.into_inner());
         runs.retain(|_, weak| {
             weak.upgrade().is_some_and(|run| {
                 run.entries
                     .lock()
-                    .expect("app state entries lock")
+                    .unwrap_or_else(|p| p.into_inner())
                     .retain(|_, entry| entry.deadline > Instant::now());
                 !run.cancel.is_cancelled()
             })
@@ -145,7 +145,7 @@ impl Run {
         }
         let mut changes = self.changed.subscribe();
         {
-            let mut entries = self.entries.lock().expect("app state entries lock");
+            let mut entries = self.entries.lock().unwrap_or_else(|p| p.into_inner());
             if self.cancel.is_cancelled() || Instant::now() >= deadline {
                 return Err(UploadError::Expired);
             }
@@ -179,7 +179,7 @@ impl Run {
             match self
                 .entries
                 .lock()
-                .expect("app state entries lock")
+                .unwrap_or_else(|p| p.into_inner())
                 .get(&command)
                 .map(|e| &e.state)
             {
