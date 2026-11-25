@@ -79,7 +79,7 @@ test("lab-page-002 Each staff-visible feature has exactly one switch under its r
     })
     .map((key) => {
       const { rolloutStage, displayName } = catalog[key];
-      const label = rolloutStage === "internal" ? key : (displayName ?? key);
+      const label = displayName ?? key;
       return [rolloutStage, label].join("/");
     })
     .sort();

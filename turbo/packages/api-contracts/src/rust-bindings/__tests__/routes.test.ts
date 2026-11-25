@@ -3,6 +3,20 @@ import { type RustRouteBinding, rustRouteBindings } from "../routes";
 
 const expectedBindings = [
   {
+    method: "POST",
+    path: "/api/runners/runs/:runId/computer-use/commands/:commandId/check",
+    rustModulePath: [
+      "runners",
+      "runs",
+      "by_run_id",
+      "computer_use",
+      "commands",
+      "by_command_id",
+      "check",
+    ],
+    rustConstName: "CHECK",
+  },
+  {
     method: "PUT",
     path: "/api/runners/runs/:runId/startup",
     rustModulePath: ["runners", "runs", "by_run_id", "startup"],

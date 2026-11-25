@@ -17,6 +17,7 @@ export enum FeatureSwitchKey {
   ProjectArchive = "projectArchive",
   ProjectTitleReveal = "projectTitleReveal",
   OkouAnimatedAvatar = "okouAnimatedAvatar",
+  ComputerUseAppStateDirectTransfer = "_computerUseAppStateDirectTransfer",
   DesktopShell = "desktopShell",
   Dummy = "_dummy",
   AppStoreConnect = "appStoreConnect",
