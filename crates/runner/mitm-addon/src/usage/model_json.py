@@ -7,6 +7,7 @@ from typing import Literal, NamedTuple, assert_never
 import response_inspection
 
 from . import anthropic_messages, openai_chat_completions, openai_responses
+from .json_limits import MODEL_JSON_MAX_WORK_UNITS
 from .json_selective import JsonExtractionResult, JsonSelectiveExtractor, ScalarField
 from .json_selective import Path as JsonPath
 
@@ -79,7 +80,7 @@ class ModelJsonResponseInspector:
             scalar_fields=dict(self._registration.scalar_fields()),
             object_presence_paths=self._registration.object_presence_paths(),
             value_presence_paths=self._registration.value_presence_paths(),
-            max_work_units=65_536,
+            max_work_units=MODEL_JSON_MAX_WORK_UNITS,
         )
 
     def feed(self, chunk: bytes) -> None:

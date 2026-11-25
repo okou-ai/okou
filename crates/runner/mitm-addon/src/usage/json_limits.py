@@ -1,5 +1,7 @@
 """Strict configuration limits shared by bounded JSON parsers."""
 
+MODEL_JSON_MAX_WORK_UNITS = 65_536
+
 
 def validate_positive_int(name: str, value: int) -> None:
     """Require a positive integer limit without accepting booleans."""
