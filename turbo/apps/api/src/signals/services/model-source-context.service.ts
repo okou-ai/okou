@@ -1,7 +1,7 @@
 import { getSecretNameForType } from "@okouai/api-contracts/contracts/model-providers";
 import {
-  AUTO_RUN_KEY_VENDOR,
   AUTO_RUN_PROVIDER,
+  isAutoRunKeyVendor,
 } from "@okouai/core/auto-run-model";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { modelProviders } from "@okouai/db/schema/model-provider";
@@ -209,7 +209,7 @@ export function managedSourceFromSnapshot(
   if (!key) {
     return null;
   }
-  if (key.vendor !== AUTO_RUN_KEY_VENDOR) {
+  if (!isAutoRunKeyVendor(key.vendor)) {
     throw new Error("Managed model key vendor is unsupported");
   }
   const name = getSecretNameForType(AUTO_RUN_PROVIDER);

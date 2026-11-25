@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url";
 import { readFile } from "node:fs/promises";
 
 import { count, gte, sql } from "drizzle-orm";
-import { AUTO_RUN_KEY_VENDOR } from "@okouai/core/auto-run-model";
+import { AUTO_RUN_KEY_VENDORS } from "@okouai/core/auto-run-model";
 import { resolveSkillRef } from "@okouai/core/github-url";
 import { BUILT_IN_SKILLS } from "@okouai/core/built-in-skills";
 import {
@@ -475,9 +475,11 @@ type OptionalEnvReader = (name: string) => string | undefined;
 type LineWriter = (message: string) => void;
 
 /**
- * Build the managed OpenRouter built_in_model_keys row from the environment.
- * Without a configured key, seed the obvious fake sentinel so the managed
- * route exists locally; the provider rejects it like any invalid key.
+ * Build the managed OpenRouter built_in_model_keys rows from the environment.
+ * Development and previews share one key between members' Runs and
+ * platform-paid Official Runs; production keeps separate keys. Without a
+ * configured key, seed the obvious fake sentinel so the managed routes exist
+ * locally; the provider rejects it like any invalid key.
  */
 export function buildBuiltInModelKeys(
   readEnv: OptionalEnvReader = optionalEnv,
@@ -487,17 +489,18 @@ export function buildBuiltInModelKeys(
   const apiKey = readEnv(envVar);
   if (!apiKey) {
     logLine(
-      `Seeding the fake ${AUTO_RUN_KEY_VENDOR} sentinel key: ${envVar} is not configured`,
+      `Seeding the fake OpenRouter sentinel key: ${envVar} is not configured`,
     );
-    return [
-      {
-        vendor: AUTO_RUN_KEY_VENDOR,
-        apiKey: DEV_SEED_SENTINEL_MANAGED_MODEL_KEY,
-        label: "dev-seed sentinel",
-      },
-    ];
   }
-  return [{ vendor: AUTO_RUN_KEY_VENDOR, apiKey, label: "dev-seed" }];
+  return AUTO_RUN_KEY_VENDORS.map((vendor) => {
+    return apiKey
+      ? { vendor, apiKey, label: "dev-seed" }
+      : {
+          vendor,
+          apiKey: DEV_SEED_SENTINEL_MANAGED_MODEL_KEY,
+          label: "dev-seed sentinel",
+        };
+  });
 }
 
 export function devSeedUsagePricing(environment: string | undefined) {
