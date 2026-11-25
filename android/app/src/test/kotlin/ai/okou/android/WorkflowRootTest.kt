@@ -48,6 +48,7 @@ import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.dp
@@ -375,14 +376,21 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
         compose.onNodeWithText("Edit instructions").performClick()
         compose.onNodeWithTag("workflow_save").assertIsNotEnabled()
         val name = compose.onNodeWithContentDescription("Display name")
+        val purpose = compose.onNodeWithContentDescription("Purpose")
+        val purposeTop = purpose.getUnclippedBoundsInRoot().top
         name.performTextReplacement(" ")
         compose.onNodeWithText("Enter a display name.").assertIsDisplayed()
+        name.assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.Error, "Enter a display name."),
+        )
+        assertEquals(purposeTop, purpose.getUnclippedBoundsInRoot().top)
         compose.onNodeWithTag("workflow_save").assertIsNotEnabled()
         name.performTextReplacement("x".repeat(257))
         compose.onNodeWithText("Use 256 characters or fewer.").assertIsDisplayed()
         compose.onNodeWithTag("workflow_save").assertIsNotEnabled()
         name.performTextReplacement("Release checklist")
         compose.onNodeWithText("Use 256 characters or fewer.").assertDoesNotExist()
+        assertEquals(purposeTop, purpose.getUnclippedBoundsInRoot().top)
         val instructions =
             "Confirm the release owner.\n![Launch screenshot](<https://example.test/release.png>)"
         compose
@@ -600,6 +608,26 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
     }
 
     @Test
+    fun saveReadsTheCurrentNativeInputBeforeTheNextFrame() {
+        openWorkflowDetail()
+        compose.onNodeWithText("Edit instructions").performClick()
+        val instruction = compose.onNodeWithContentDescription("Workflow instructions")
+        instruction.performTextReplacement("Check the launch owner.")
+        val replace =
+            checkNotNull(instruction.fetchSemanticsNode().config[SemanticsActions.SetText].action)
+        val save = compose.onNodeWithTag("workflow_save").assertIsEnabled()
+        val submit = checkNotNull(save.fetchSemanticsNode().config[SemanticsActions.OnClick].action)
+        val latest = "Check the launch owner and date."
+        compose.runOnIdle {
+            assertTrue(replace(AnnotatedString(latest)))
+            assertTrue(submit())
+        }
+
+        waitForTag("workflow_detail_title")
+        assertEquals(latest, app.fixture.instruction)
+    }
+
+    @Test
     fun editorRetainsInputAndFocusAfterTransportFailure() = withHardwareKeyboard {
         openWorkflowDetail()
         app.fixture.disconnectInstructionSave = true
@@ -612,6 +640,10 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
         val error = "Could not save your changes."
         val save = compose.onNodeWithTag("workflow_save").assertIsEnabled()
         val saveBounds = save.getUnclippedBoundsInRoot()
+        val fields = compose.onNodeWithTag("workflow_editor_fields")
+        val fieldsBounds = fields.getUnclippedBoundsInRoot()
+        val cancel = compose.onNodeWithText("Cancel")
+        val cancelBounds = cancel.getUnclippedBoundsInRoot()
         save.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
         val selection =
             instruction.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange]
@@ -629,7 +661,15 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
                         "Saving…",
                     ),
                 )
+                .assert(
+                    SemanticsMatcher.expectValue(
+                        SemanticsProperties.LiveRegion,
+                        LiveRegionMode.Polite,
+                    ),
+                )
             assertEquals(saveBounds, save.getUnclippedBoundsInRoot())
+            assertEquals(cancelBounds, cancel.assertIsNotEnabled().getUnclippedBoundsInRoot())
+            assertEquals(fieldsBounds, fields.getUnclippedBoundsInRoot())
         } finally {
             releaseSave.countDown()
         }
@@ -640,10 +680,13 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
             instruction.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange],
         )
         val notice = compose.onNodeWithText(error).getUnclippedBoundsInRoot()
-        assertTrue(
-            notice.bottom + 16.dp <=
-                save.assertIsEnabled().assertIsFocused().getUnclippedBoundsInRoot().top,
+        assertEquals(
+            8.dp,
+            save.assertIsEnabled().assertIsFocused().getUnclippedBoundsInRoot().top - notice.bottom,
         )
+        assertEquals(saveBounds, save.getUnclippedBoundsInRoot())
+        assertEquals(cancelBounds, cancel.getUnclippedBoundsInRoot())
+        assertEquals(fieldsBounds, fields.getUnclippedBoundsInRoot())
         val saves =
             app.fixture.requests.filter {
                 it.method == "PATCH" &&
@@ -780,6 +823,11 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
             compose.onNodeWithText("Edit instructions").performClick()
             val input = compose.onNodeWithContentDescription("Display name")
             input.performTextReplacement("Prepare the release")
+            val selection = TextRange(2, 8)
+            input
+                .performSemanticsAction(SemanticsActions.RequestFocus)
+                .assertIsFocused()
+                .performTextInputSelection(selection)
             compose.onNodeWithText("Cancel").performClick()
             val heading = "Discard unsaved changes?"
             waitFor(heading)
@@ -803,7 +851,15 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
                 .performScrollTo()
                 .assertIsDisplayed()
                 .performClick()
-            input.assertTextContains("Prepare the release")
+            input
+                .assertIsFocused()
+                .assertTextContains("Prepare the release")
+                .assert(
+                    SemanticsMatcher.expectValue(
+                        SemanticsProperties.TextSelectionRange,
+                        selection,
+                    ),
+                )
 
             compose.onNodeWithText("Cancel").performClick()
             compose.onNodeWithText("Discard").performScrollTo().assertIsDisplayed().performClick()
