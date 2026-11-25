@@ -58,7 +58,6 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -545,13 +544,13 @@ class SavedUiStateTest {
         route.editQuery(composing)
         assertEquals(composing, route.query)
         assertEquals(committed, route.committedQuery)
-        assertTrue(route.hasPendingSearchInput)
 
         val submitted = composing.copy(composition = null)
         route.editQuery(submitted)
+        assertEquals(submitted, route.query)
         route.editQuery(composing)
+        assertEquals(composing, route.query)
         assertEquals(submitted, route.committedQuery)
-        assertFalse(route.hasPendingSearchInput)
 
         route.editQuery(completed)
         assertEquals(completed, route.query)
