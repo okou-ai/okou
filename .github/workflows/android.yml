@@ -149,6 +149,11 @@ jobs:
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with:
           package_json_file: android/scripts/theme/package.json
+      - name: Verify generated Android palette
+        working-directory: android
+        run: |
+          pnpm --dir scripts/theme install --frozen-lockfile --ignore-scripts
+          node scripts/theme/generate.mjs --check
       - name: Run source checks, lint, and build the Debug APK
         working-directory: android
         run: bash scripts/check.sh --exclude-task :app:testDebugUnitTest

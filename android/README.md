@@ -264,12 +264,13 @@ From the repository root:
 bash android/scripts/check.sh
 ```
 
-This audits source-manifest entry points, generated colors, Kotlin/Gradle formatting,
+This audits source-manifest entry points, Kotlin/Gradle formatting,
 state-holder tests, Robolectric Compose/lifecycle interactions, Android lint, and debug APK
 assembly. Android Lint treats warnings as errors and reports newer dependency
 and Gradle toolchain versions as informational hints. Verification uses two Gradle
 workers, a 1536 MB build heap and in-process Kotlin compilation by default for
-small sandboxes.
+small sandboxes. Android CI also verifies generated palettes using the pinned Node
+and pnpm toolchain.
 
 Run the app's local JVM tests through Android Gradle Plugin with the configured
 Android SDK; no emulator is needed:
