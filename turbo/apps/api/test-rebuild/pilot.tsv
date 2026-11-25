@@ -443,16 +443,16 @@ account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-mo
 account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-019	planned		extension after sandbox reset
 account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-020	planned		extension after sandbox reset
 account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-021	planned		extension after sandbox reset
-account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-001	planned		extension after sandbox reset
-account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-002	planned		extension after sandbox reset
-account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-004	planned		extension after sandbox reset
-account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-006	planned		extension after sandbox reset
-account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-008	planned		extension after sandbox reset
+account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-001	rewritten	80.3	extension after sandbox reset
+account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-002	rewritten	43.7	extension after sandbox reset
+account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-004	rewritten	9.2	extension after sandbox reset
+account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-006	rewritten	38.9	extension after sandbox reset
+account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-008	rewritten	69.5	extension after sandbox reset
 account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-009	planned		extension after sandbox reset
-account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-011	planned		extension after sandbox reset
-account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-012	planned		extension after sandbox reset
-account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-013	planned		extension after sandbox reset
-account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-016	planned		extension after sandbox reset
+account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-011	rewritten	34.1	extension after sandbox reset
+account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-012	rewritten	36.8	extension after sandbox reset
+account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-013	rewritten	55.9	extension after sandbox reset
+account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-016	rewritten	20.4	extension after sandbox reset
 account-org	src/signals/routes/__tests__/feature-switches.test.ts	feature-switches-001	rewritten	177.6	extension after sandbox reset
 account-org	src/signals/routes/__tests__/feature-switches.test.ts	feature-switches-002	rewritten	10.1	extension after sandbox reset
 account-org	src/signals/routes/__tests__/feature-switches.test.ts	feature-switches-003	rewritten	109.3	extension after sandbox reset
