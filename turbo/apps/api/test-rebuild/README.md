@@ -100,3 +100,13 @@ The source review refined the Auto routing and Runner BDDs to capture the actual
 | `custom-connectors-automatic-dcr-003` | Confirmed HTTP 502 with `MCP_OAUTH_PROVIDER_UNAVAILABLE`, preserved account and exactly one later registration. |
 | `conversation-history-deletion-002` | The completed Run is read before deletion. The post-deletion assertion is HTTP 200 on completion replay, so the BDD does not claim a post-deletion history read. |
 | `workspace-workflow-permissions-002` | The source checks exactly one cloned schedule, owned by the requesting member with the 900-second interval. |
+| `chat-events-message-queue-006` | Wrong-thread recall permits 201 or 400. The original input still promotes with structured text and null legacy content. |
+| `chat-events-pi-codex-credentials-006` | Malformed token storage returns 400, and accepted enqueue performs zero decryptions. |
+| `feishu-oauth-events-013` | The Lark variant still uses the Feishu webhook path. |
+| `feishu-message-delivery-014` | Permanent 403 preserves the file ID and does not refetch, unlike the recoverable provider 429 and 503 cases. |
+| `custom-connectors-automatic-preflight-003` | The incompatible discovery resource gets 400 before token exchange or account creation. |
+| `custom-connectors-automatic-preflight-010` | Checked the separate invalid-resource variant with the same HTTP 400 and no account or token exchange. |
+| `custom-connectors-oauth2-004` | The redirect is HTTP 307, token exchange keeps the canonical redirect URI, and the public account identity is null. |
+| `run-lifecycle-billing.bdd-001` | Followed registration into the billing group. Each member's 108 credits reconcile with the exact 80 and 28 provider split, with model token totals zero. |
+| `run-lifecycle-automatic.bdd-003` | Query routing still uses OAuth, and reconnect leaves the original pinned auth lookup failing with HTTP 424. |
+| `marketing-reward-routing-002` | A provider acknowledgement alone leaves bonus credits at zero. Replaying after authorized settlement yields one 100-credit reward. |
