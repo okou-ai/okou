@@ -27,6 +27,7 @@ describe("isFeatureEnabled", () => {
     FeatureSwitchKey.IosConnectorManagement,
     FeatureSwitchKey.ComposerVoiceMessages,
     FeatureSwitchKey.MarkdownArtifactQuote,
+    FeatureSwitchKey.ArtifactLibrary,
     FeatureSwitchKey.ZipArtifactPreview,
     FeatureSwitchKey.FollowupPlaceholder,
     FeatureSwitchKey.WorkflowRecencySync,
