@@ -13,7 +13,6 @@
     <string name="conversation_new_reply">Balasan baru</string>
     <string name="conversation_view_progress">Lihat progres</string>
     <string name="conversation_processing">Sedang memproses…</string>
-    <string name="conversation_offline_send">Sambungkan internet untuk mengirim. Draf Anda tetap di sini.</string>
     <string name="conversation_reply_summary">Ringkasan balasan</string>
     <string name="conversation_turn_continued">Dilanjutkan di giliran berikutnya</string>
     <string name="conversation_replying">Sedang membalas…</string>

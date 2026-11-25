@@ -191,7 +191,6 @@ async function accountSettings() {
     },
     featureSwitches: {
       [FeatureSwitchKey.OkouDebug]: true,
-      [FeatureSwitchKey.AgentSuggestion]: false,
     },
   });
   click(await findAction("button", "Alex Rivera"));
@@ -213,15 +212,16 @@ test("sidebar-account-settings-001 Alex’s account menu opens focused preferenc
   ).toBeInTheDocument();
   expect(view.getByText("Alex Rivera")).toBeInTheDocument();
   expect(view.getByText("alex@example.test")).toBeInTheDocument();
+  const manage = getAction("link", "Manage", settings);
+  expect(manage).toHaveAttribute("href", "https://accounts.example.test/user");
+  expect(manage).toHaveAttribute("target", "_blank");
+  expect(manage).toHaveAttribute("rel", expect.stringContaining("noreferrer"));
+  click(await findAction("button", "My Okou", settings));
   const proactive = await view.findByRole("region", { name: "Proactive" });
   await expect(
     within(proactive).findByRole("switch", { name: /Morning Brief/iu }),
   ).resolves.toBeInTheDocument();
   expect(settings.contains(document.activeElement)).toBeTruthy();
-  const manage = getAction("link", "Manage", settings);
-  expect(manage).toHaveAttribute("href", "https://accounts.example.test/user");
-  expect(manage).toHaveAttribute("target", "_blank");
-  expect(manage).toHaveAttribute("rel", expect.stringContaining("noreferrer"));
 });
 
 test("sidebar-account-settings-002 Debug saves the capture allowance selected by click, Space and label", async () => {

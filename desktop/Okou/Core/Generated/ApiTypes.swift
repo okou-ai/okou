@@ -579,6 +579,16 @@ public enum ComputerUseCommandClaim: Codable, Equatable, Sendable {
       }
     }
 
+    public struct AppStateUpload: Codable, Equatable, Sendable {
+      public let url: String
+      public let token: String
+
+      public init(url: String, token: String) {
+        self.url = url
+        self.token = token
+      }
+    }
+
     public let id: String
     public let kind: Kind
     public let status: Status
@@ -591,6 +601,7 @@ public enum ComputerUseCommandClaim: Codable, Equatable, Sendable {
     public let createdAt: String
     public let claimedAt: String?
     public let completedAt: String?
+    public let appStateUpload: AppStateUpload?
 
     public init(
       id: String,
@@ -604,7 +615,8 @@ public enum ComputerUseCommandClaim: Codable, Equatable, Sendable {
       timeoutMs: Int?,
       createdAt: String,
       claimedAt: String?,
-      completedAt: String?
+      completedAt: String?,
+      appStateUpload: AppStateUpload? = nil
     ) {
       self.id = id
       self.kind = kind
@@ -618,6 +630,7 @@ public enum ComputerUseCommandClaim: Codable, Equatable, Sendable {
       self.createdAt = createdAt
       self.claimedAt = claimedAt
       self.completedAt = completedAt
+      self.appStateUpload = appStateUpload
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -633,6 +646,7 @@ public enum ComputerUseCommandClaim: Codable, Equatable, Sendable {
       case createdAt = "createdAt"
       case claimedAt = "claimedAt"
       case completedAt = "completedAt"
+      case appStateUpload = "appStateUpload"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -684,6 +698,7 @@ public enum ComputerUseCommandClaim: Codable, Equatable, Sendable {
             debugDescription: "completedAt is required"))
       }
       completedAt = try container.decodeIfPresent(String.self, forKey: .completedAt)
+      appStateUpload = try container.decodeIfPresent(AppStateUpload.self, forKey: .appStateUpload)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -700,6 +715,7 @@ public enum ComputerUseCommandClaim: Codable, Equatable, Sendable {
       try container.encode(createdAt, forKey: .createdAt)
       try container.encode(claimedAt, forKey: .claimedAt)
       try container.encode(completedAt, forKey: .completedAt)
+      try container.encodeIfPresent(appStateUpload, forKey: .appStateUpload)
     }
   }
 

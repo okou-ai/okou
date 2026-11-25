@@ -10,6 +10,7 @@ import ai.okou.android.api.generated.WorkflowRunHistoryEntry
 import ai.okou.android.api.generated.WorkflowSummary
 import ai.okou.android.api.generated.WorkflowSummaryShadowedBy
 import ai.okou.android.api.generated.WorkflowSummaryVisibility
+import ai.okou.android.api.retryBoundedRead
 import ai.okou.android.state.WorkflowTab
 import android.os.SystemClock
 import androidx.lifecycle.ViewModel
@@ -17,7 +18,6 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,6 +26,7 @@ import kotlinx.coroutines.launch
 
 internal data class WorkflowState(
     val catalog: List<WorkflowSummary>? = null,
+    val catalogRefreshing: Boolean = false,
     val rules: Map<String, List<WorkflowAutomation>>? = null,
     val connections: Set<String>? = null,
     val detail: WorkflowDetail? = null,
@@ -91,7 +92,6 @@ internal constructor(
     private var visible = false
     private var searchingCatalog = false
     private var foreground = false
-    private var offline = false
     private var selected: String? = null
     private var tab = WorkflowTab.Instructions
     private var readSequence = 0L
@@ -105,47 +105,6 @@ internal constructor(
         LinkedHashMap<String, CachedWorkflowHistory>(WORKFLOW_DETAIL_CACHE_CAPACITY, 0.75f, true)
     private var historyLoad: Job? = null
     private val readsAfterWrite = mutableSetOf<WorkflowReadScope>()
-
-    internal fun connectivityChanged(offline: Boolean) {
-        if (this.offline == offline) return
-        this.offline = offline
-        if (!offline) {
-            val current = mutable.value
-            if (current.issue?.failure == WorkflowWriteFailure.Network)
-                mutable.value = current.copy(issue = null)
-            // Active reads already own their backoff, including any server-requested delay.
-            val now = monotonicMillis()
-            refresh(
-                buildSet {
-                    if (
-                        !catalogRead.readAt.isFresh(now) ||
-                            current.catalogFailure == WorkflowReadFailure.Network
-                    )
-                        add(WorkflowReadScope.Catalog)
-                    if (
-                        !rulesRead.readAt.isFresh(now) ||
-                            current.rulesFailure == WorkflowReadFailure.Network
-                    )
-                        add(WorkflowReadScope.Rules)
-                    if (
-                        !connectionsRead.readAt.isFresh(now) ||
-                            current.connectionsFailure == WorkflowReadFailure.Network
-                    )
-                        add(WorkflowReadScope.Connections)
-                    if (
-                        !selected?.let { details[it]?.readAt }.isFresh(now) ||
-                            current.detailFailure == WorkflowReadFailure.Network
-                    )
-                        add(WorkflowReadScope.Detail)
-                    if (
-                        !selected?.let { histories[it]?.readAt }.isFresh(now) ||
-                            current.historyFailure == WorkflowReadFailure.Network
-                    )
-                        add(WorkflowReadScope.History)
-                },
-            )
-        }
-    }
 
     internal fun visibilityChanged(open: Boolean, retainCurrentVisit: Boolean = false) {
         if (visible == open) return
@@ -165,7 +124,7 @@ internal constructor(
             }
             refresh(catalogScope)
         } else if (!visible) {
-            catalogRead.cancel()
+            cancelCatalogRead()
         }
     }
 
@@ -183,9 +142,16 @@ internal constructor(
     }
 
     private fun stopWorkflowReads(keepCatalog: Boolean = false) {
-        if (!keepCatalog) catalogRead.cancel()
+        if (!keepCatalog) cancelCatalogRead()
         rulesRead.cancel()
         cancelDetailRead()
+    }
+
+    private fun cancelCatalogRead() {
+        catalogRead.cancel()
+        if (mutable.value.catalogRefreshing) {
+            mutable.value = mutable.value.copy(catalogRefreshing = false)
+        }
     }
 
     private fun cancelDetailRead() {
@@ -329,10 +295,13 @@ internal constructor(
     private fun loadCatalog() {
         refreshRange(
             catalogRead,
+            started = { mutable.value = mutable.value.copy(catalogRefreshing = true) },
             fetch = { service.workflows().filter { it.official == null } },
             receive = ::publishCatalog,
             denied = ::clearAccess,
-            failure = { mutable.value = mutable.value.copy(catalogFailure = it) },
+            failure = {
+                mutable.value = mutable.value.copy(catalogRefreshing = false, catalogFailure = it)
+            },
         )
     }
 
@@ -372,12 +341,14 @@ internal constructor(
 
     private fun <T> refreshRange(
         range: WorkflowRangeRead,
+        started: () -> Unit = {},
         fetch: suspend () -> T,
         receive: (T, Map<String, WorkflowDirectoryUpdate?>) -> Unit,
         denied: () -> Unit,
         failure: (WorkflowReadFailure) -> Unit,
     ) {
         if (range.job?.isActive == true) return
+        started()
         range.job = viewModelScope.launch {
             retryReads(failure) {
                 val attempt = WorkflowRangeAttempt(++readSequence)
@@ -442,6 +413,7 @@ internal constructor(
         mutable.value =
             current.copy(
                 catalog = rows,
+                catalogRefreshing = false,
                 catalogFailure = null,
                 rules = if (removed.isEmpty()) current.rules else current.rules?.minus(removed),
                 detail = current.detail?.let { details[it.id]?.detail },
@@ -486,6 +458,7 @@ internal constructor(
         mutable.value =
             mutable.value.copy(
                 catalog = null,
+                catalogRefreshing = false,
                 rules = null,
                 connections = null,
                 detail = null,
@@ -692,19 +665,11 @@ internal constructor(
         publishFailure: (WorkflowReadFailure) -> Unit,
         attempt: suspend () -> Throwable?,
     ) {
-        for (index in 0..WORKFLOW_READ_RETRIES) {
-            if (!authorized()) return
-            val error = attempt() ?: return
-            val retryAfter = error.retryAfterMillis()
-            if (retryAfter == null || index == WORKFLOW_READ_RETRIES) {
-                publishFailure(
-                    if (error is ApiFailure.Network) WorkflowReadFailure.Network
-                    else WorkflowReadFailure.RefreshFailed,
-                )
-                return
-            }
-            delay(maxOf(WORKFLOW_READ_RETRY_DELAY_MILLIS, retryAfter))
-        }
+        val error = retryBoundedRead(canRead = authorized, attempt = attempt) ?: return
+        publishFailure(
+            if (error is ApiFailure.Network) WorkflowReadFailure.Network
+            else WorkflowReadFailure.RefreshFailed,
+        )
     }
 
     internal fun edit(value: WorkflowEdit?) {
@@ -812,7 +777,7 @@ internal constructor(
                 ruleId != null && ruleId in state.toggles -> state.toggles - ruleId
                 else -> state.toggles
             }
-        mutable.value = state.copy(writing = true, toggles = toggles, issue = null)
+        mutable.value = mutable.value.copy(writing = true, toggles = toggles, issue = null)
         viewModelScope.launch {
             try {
                 // await cancellation / scope checks before publishing from a retired session.
@@ -1078,9 +1043,6 @@ private fun Map<String, List<WorkflowAutomation>>.withDirectoryUpdates(
     }
 }
 
-private const val WORKFLOW_READ_RETRIES = 2
-private const val WORKFLOW_READ_RETRY_DELAY_MILLIS = 3_000L
-
 private fun Throwable?.denied() =
     this is ApiFailure.Unauthenticated ||
         this is ApiFailure.Http && (status == 401 || status == 403)
@@ -1091,14 +1053,4 @@ private fun Exception.toggleOutcomeUnknown(): Boolean =
         is ApiFailure.IncompatibleResponse -> true
         is ApiFailure.Http -> status == 408 || status in 500..599
         else -> false
-    }
-
-private fun Throwable.retryAfterMillis(): Long? =
-    when (this) {
-        is ApiFailure.Network -> 0L
-        is ApiFailure.Http ->
-            if (status == 408 || status == 429 || status in 500..599)
-                (retryAfterSeconds ?: 0L).coerceIn(0, Long.MAX_VALUE / 1_000) * 1_000
-            else null
-        else -> null
     }

@@ -39,9 +39,10 @@ final class ConversationScrollCoordinator {
     return false
   }
 
-  var showsBottomButton: Bool {
+  /// Whether the reader has moved away from the latest row outside a send transition. The view
+  /// shows the jump-to-latest control when its resolved render window also has a message.
+  var isAwayFromLatest: Bool {
     hasPositionedHistory && isAwayFromBottom && !sendTransition.isActive
-      && !conversation.visibleMessages.isEmpty
   }
 
   private var isScrolling: Bool { phase != .idle }

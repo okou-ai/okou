@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { expect, test } from "vitest";
+import { beforeEach, expect, test } from "vitest";
 import { array, number, object, record, string } from "zod";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { hostedSiteSharingContract } from "@okouai/api-contracts/contracts/hosted-site-sharing";
@@ -18,6 +18,13 @@ import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+
+beforeEach(() => {
+  context.mocks.resend.send.mockResolvedValue({
+    data: { id: randomUUID() },
+    error: null,
+  });
+});
 
 function app(user: ApiTestUser) {
   createRouteMocks(context).clerk.session(
@@ -235,6 +242,30 @@ test("an owner searches verified accounts, shares privately, and revokes an exis
   expect(shared.body).toStrictEqual({
     share: { id: shared.body.share.id, email: viewer.email },
   });
+  await flushWaitUntilForTest();
+  const repeated = await accept(
+    app(owner)(hostedSiteSharingContract).share({
+      headers,
+      params,
+      body: { email: viewer.email },
+    }),
+    [200],
+  );
+  await flushWaitUntilForTest();
+  expect(repeated.body).toStrictEqual(shared.body);
+  expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
+  expect(context.mocks.resend.send.mock.calls[0]?.[0]).toMatchObject({
+    from: "Okou <noreply@okou.ai>",
+    to: viewer.email,
+    template: {
+      id: "okou-hosted-site-invitation-v1",
+      variables: {
+        INVITER_NAME: "Website Viewer",
+        RECIPIENT_EMAIL: viewer.email,
+        SITE_URL: `https://${site.publicSlug}.okou.app/`,
+      },
+    },
+  });
   const sessionHeaders = await browserSession(viewer, site);
   const access = () => {
     return app(viewer)(hostContract).siteAccess({
@@ -299,12 +330,14 @@ test("an email invitation uses the Resend template once and can only be claimed 
   expect(duplicate.body.share.id).toBe(first.body.share.id);
   const sent = context.mocks.resend.send.mock.calls.map((call) => {
     return object({
+      from: string(),
       to: string(),
       template: object({ id: string(), variables: record(string(), string()) }),
     }).parse(call[0]);
   });
   expect(sent).toStrictEqual([
     {
+      from: "Okou <noreply@okou.ai>",
       to: invitee.email,
       template: {
         id: "okou-hosted-site-invitation-v1",

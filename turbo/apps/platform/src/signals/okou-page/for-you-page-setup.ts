@@ -7,22 +7,13 @@ import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { resetProjectUi$ } from "../projects/project-ui.ts";
 import { updatePage$ } from "../react-router.ts";
-import { navigateTo$ } from "../route.ts";
-import { ROUTES } from "../route-paths.ts";
 import { detach, Reason } from "../utils.ts";
 import { setupForYouPageKeyboardShortcuts$ } from "./chat-keyboard.ts";
-import {
-  enterSuggestionSession$,
-  suggestionsEnabled$,
-} from "./agent-suggestion-session.ts";
+import { enterSuggestionSession$ } from "./agent-suggestion-session.ts";
 import { setupForYouPagination$ } from "./for-you.ts";
 
 export const setupForYouPage$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    if (!(await get(suggestionsEnabled$))) {
-      await set(navigateTo$, ROUTES.home, { replace: true }, signal);
-      return;
-    }
+  async ({ set }, signal: AbortSignal) => {
     signal.throwIfAborted();
     set(setupForYouPagination$, signal);
     set(setupForYouPageKeyboardShortcuts$, signal);

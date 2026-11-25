@@ -677,32 +677,41 @@ class ChatComposerRootTest {
         compose.onNodeWithContentDescription("Chats").assertExists()
         compose.onNodeWithText("New chat").performClick()
         compose.onNodeWithTag("message_input").assertTextContains("Original **message** 👋")
-        app.fixture.disconnectSend = true
-        compose.onNodeWithContentDescription("Send").assertIsEnabled().performClick()
-        compose.waitUntil(10_000) {
-            // Drain the actual native owner as journal/HTTP completions return to Main.
-            compose.onNodeWithTag("message_input").fetchSemanticsNode()
-            app.fixture.inputs.size == 1 ||
-                editor?.uiState?.value?.failed?.isNotEmpty() == true ||
-                editor?.uiState?.value?.persistence ==
-                    ai.okou.android.chat.ComposerPersistence.Failed
-        }
-        assertEquals(
-            "${editor?.uiState?.value}; requests=${app.fixture.requests.map { it.path }}",
-            1,
-            app.fixture.inputs.size,
-        )
-        app.contextGate.countDown()
-        val event = app.fixture.inputs.keys.single()
-        messageText(event, "Original **message** 👋").assertIsDisplayed()
-        compose.onNodeWithTag("message_input").performTextInput("Newer draft 你好")
         val checkStarted = CountDownLatch(1)
         val checkResponse = CountDownLatch(1)
         app.fixture.beforeInputStatusReturn = {
             checkStarted.countDown()
             checkResponse.await()
         }
+        // Keep confirmed history from settling the input before the status check returns.
+        app.fixture.beforeHistoryReturn = { threadId ->
+            if (
+                app.fixture.created.any { it["clientThreadId"]?.jsonPrimitive?.content == threadId }
+            ) {
+                checkResponse.await()
+            }
+        }
+        val event: String
         try {
+            app.fixture.disconnectSend = true
+            compose.onNodeWithContentDescription("Send").assertIsEnabled().performClick()
+            compose.waitUntil(10_000) {
+                // Drain the actual native owner as journal/HTTP completions return to Main.
+                compose.onNodeWithTag("message_input").fetchSemanticsNode()
+                app.fixture.inputs.size == 1 ||
+                    editor?.uiState?.value?.failed?.isNotEmpty() == true ||
+                    editor?.uiState?.value?.persistence ==
+                        ai.okou.android.chat.ComposerPersistence.Failed
+            }
+            assertEquals(
+                "${editor?.uiState?.value}; requests=${app.fixture.requests.map { it.path }}",
+                1,
+                app.fixture.inputs.size,
+            )
+            app.contextGate.countDown()
+            event = app.fixture.inputs.keys.single()
+            messageText(event, "Original **message** 👋").assertIsDisplayed()
+            compose.onNodeWithTag("message_input").performTextInput("Newer draft 你好")
             app.sendGate.countDown()
             awaitConversation { checkStarted.count == 0L }
             messageDelivery(event, "Sending…").assertIsDisplayed()

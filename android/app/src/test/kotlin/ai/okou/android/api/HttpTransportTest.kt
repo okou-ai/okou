@@ -27,6 +27,7 @@ class HttpTransportTest {
     @Test
     fun retryAfterRequiresACompleteDelayOrDate() {
         assertEquals(0L, retryAfter("0"))
+        assertEquals(1L, retryAfter("1"))
         assertEquals(1L, retryAfter(" 1\t"))
         assertNull(retryAfter("+1"))
         assertNull(retryAfter("-1"))

@@ -238,7 +238,7 @@ internal class RunControlsOwner {
                 intent.threadId,
                 connection.history.checkpoint(intent.threadId),
             )
-        val checkpoint = ChatDependencyRetry().read(online = { current(op) }, fetch = ::read)
+        val checkpoint = ChatDependencyRetry().read(isCurrent = { current(op) }, fetch = ::read)
         requireCurrent(op)
         if (canResend && controlEvidence(intent, checkpoint) == RunControlEvidence.Eligible)
             return true

@@ -7,6 +7,7 @@ import ai.okou.android.OkouSwitch
 import ai.okou.android.R
 import ai.okou.android.SettingsModal
 import ai.okou.android.chat.ChatSkeletonBlock
+import ai.okou.android.chat.ContentReadFeedback
 import ai.okou.android.isShortSettingsPanelWindow
 import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.settingsPanelContentPadding
@@ -84,7 +85,7 @@ internal fun ConnectorDetails(
     val detail = state.detail.data
     val detailUnavailable = state.detail.failure == ConnectorReadFailure.Unavailable
     val entry = detail?.entry ?: preview
-    if (entry == null && (detailUnavailable || !state.offline && state.detail.failure != null)) {
+    if (entry == null && state.detail.failure != null) {
         Box(
             Modifier.fillMaxSize().testTag("connector-detail"),
             contentAlignment = Alignment.TopCenter,
@@ -241,7 +242,6 @@ internal fun ConnectorDetails(
                         }
                     }
                 }
-                if (entry.description.isNotBlank()) Spacer(Modifier.height(12.dp))
                 ConnectorSectionDivider()
                 Text(
                     stringResource(R.string.connector_accounts),
@@ -268,22 +268,20 @@ internal fun ConnectorDetails(
                 }
 
                 if (detailUnavailable) {
-                    ConnectorStatusBanner(R.string.connector_load_failed)
+                    ContentReadFeedback(R.string.connector_load_failed)
                 } else if (!hasAccountContent) {
                     when {
-                        state.accounts.failure == ConnectorReadFailure.Unavailable ->
-                            ConnectorReadError(R.string.connector_accounts_failed)
-                        state.offline -> ConnectorLoadWhenOnline()
                         state.accounts.failure != null ->
-                            ConnectorReadError(R.string.connector_accounts_failed)
+                            ContentReadFeedback(
+                                R.string.connector_accounts_failed,
+                                Modifier.fillMaxWidth(),
+                            )
                         else ->
                             ConnectorSkeleton(
                                 stringResource(R.string.connector_loading_accounts),
                                 rows = 1,
                             )
                     }
-                } else if (state.offline && detail == null) {
-                    ConnectorLoadWhenOnline()
                 }
                 if (detail != null && hasAccountContent) {
                     Spacer(Modifier.height(8.dp))
@@ -326,21 +324,19 @@ internal fun ConnectorDetails(
                         model.showPermissions()
                     }
                 }
-                if (!state.offline && !detailUnavailable) {
+                if (!detailUnavailable) {
                     when {
                         detail == null && state.detail.failure != null ->
-                            ConnectorStatusBanner(R.string.connector_load_failed)
+                            ContentReadFeedback(R.string.connector_load_failed)
                         hasAccountContent &&
                             state.accounts.failure == ConnectorReadFailure.Unavailable ->
-                            ConnectorStatusBanner(R.string.connector_accounts_failed)
+                            ContentReadFeedback(R.string.connector_accounts_failed)
                         state.detail.failure != null ||
                             hasAccountContent && state.accounts.failure != null ->
-                            ConnectorStatusBanner(R.string.connector_refresh_failed)
+                            ContentReadFeedback(R.string.connector_refresh_failed)
                     }
                 }
                 if (panel == null) ConnectorActionFeedback(action)
-            } else if (state.offline) {
-                ConnectorLoadWhenOnline()
             } else if (rememberContentReadSkeleton()) {
                 val label = stringResource(R.string.connector_loading)
                 Column(
@@ -371,7 +367,6 @@ internal fun ConnectorDetails(
                     ConnectorPermissionSheet(
                         entry.name,
                         state.permissions,
-                        state.offline,
                         ::dismissPanel,
                     )
                 ConnectorPanel.Account ->
@@ -435,7 +430,6 @@ internal fun ConnectorDetails(
                         model = model,
                         service = entry.name,
                         detail = state.detail,
-                        offline = state.offline,
                         account = account,
                         addingAccount = accounts.isNotEmpty(),
                         canModify = canModify,
@@ -605,7 +599,6 @@ internal fun ConnectorSheet(
 private fun ConnectorPermissionSheet(
     service: String,
     permissions: ConnectorRead<List<ConnectorPermission>>,
-    offline: Boolean,
     close: () -> Unit,
 ) {
     ConnectorSheet(
@@ -617,11 +610,11 @@ private fun ConnectorPermissionSheet(
         when {
             permissions.data == null ->
                 when {
-                    permissions.failure == ConnectorReadFailure.Unavailable ->
-                        ConnectorReadError(R.string.connector_permissions_failed)
-                    offline -> ConnectorLoadWhenOnline()
                     permissions.failure != null ->
-                        ConnectorReadError(R.string.connector_permissions_failed)
+                        ContentReadFeedback(
+                            R.string.connector_permissions_failed,
+                            Modifier.fillMaxWidth(),
+                        )
                     else ->
                         ConnectorSkeleton(
                             stringResource(R.string.connector_loading_permissions),
@@ -655,11 +648,8 @@ private fun ConnectorPermissionSheet(
                     }
                 }
         }
-        if (permissions.data != null) {
-            if (offline) ConnectorStatusBanner(R.string.connector_offline)
-            else if (permissions.failure == ConnectorReadFailure.Sustained)
-                ConnectorStatusBanner(R.string.connector_refresh_failed)
-        }
+        if (permissions.data != null && permissions.failure == ConnectorReadFailure.Sustained)
+            ContentReadFeedback(R.string.connector_refresh_failed)
     }
 }
 

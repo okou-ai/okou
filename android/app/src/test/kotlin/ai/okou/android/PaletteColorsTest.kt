@@ -2,7 +2,6 @@ package ai.okou.android
 
 import ai.okou.android.api.generated.UserPreferencesColorTheme
 import ai.okou.android.api.generated.UserPreferencesLocale
-import ai.okou.android.chat.ChatListPressedOpacity
 import ai.okou.android.preferences.languageTag
 import android.content.Context
 import androidx.compose.ui.graphics.Color
@@ -75,26 +74,32 @@ class PaletteColorsTest {
                         contrast(colors.onSecondaryContainer, colors.secondaryContainer) >= 3f,
                     )
                     val status = activityStatusColor(palette, dark)
-                    val pressedChatRow =
-                        colors.onBackground
-                            .copy(alpha = ChatListPressedOpacity)
-                            .compositeOver(colors.background)
-                    for ((background, text) in
+                    // Material 3 draws its 10% press ripple over the row and its contents.
+                    val ripple = colors.onBackground.copy(alpha = 0.10f)
+                    for ((background, text, stateLayer) in
                         listOf(
-                            colors.background to colors.onBackground,
-                            pressedChatRow to colors.onBackground,
-                            colors.secondaryContainer to colors.onSecondaryContainer,
+                            Triple(colors.background, colors.onBackground, Color.Transparent),
+                            Triple(colors.background, colors.onBackground, ripple),
+                            Triple(
+                                colors.secondaryContainer,
+                                colors.onSecondaryContainer,
+                                Color.Transparent,
+                            ),
+                            Triple(colors.secondaryContainer, colors.onSecondaryContainer, ripple),
                         )) {
-                        assertTrue("$palette/$dark chat title", contrast(text, background) >= 4.5f)
+                        val displayedBackground = stateLayer.compositeOver(background)
+                        fun rowContrast(color: Color) =
+                            contrast(stateLayer.compositeOver(color), displayedBackground)
+                        assertTrue("$palette/$dark chat title", rowContrast(text) >= 4.5f)
                         assertTrue(
                             "$palette/$dark chat focus",
-                            contrast(colors.onBackground, background) >= 3f,
+                            contrast(colors.onBackground, displayedBackground) >= 3f,
                         )
                         assertTrue(
                             "$palette/$dark chat icon",
-                            contrast(colors.onSurfaceVariant, background) >= 3f,
+                            rowContrast(colors.onSurfaceVariant) >= 3f,
                         )
-                        assertTrue("$palette/$dark chat status", contrast(status, background) >= 3f)
+                        assertTrue("$palette/$dark chat status", rowContrast(status) >= 3f)
                     }
                     val activeTrack = if (dark) colors.primary else status
                     val activeThumb = if (dark) colors.onPrimary else Color.White

@@ -887,30 +887,22 @@ test("Shared chats remain native external links to their shared-thread identity"
   expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
 });
 
-test("A row's More menu validates ownership before Delete and restores its own trigger on Cancel or Escape", async () => {
-  const detail = textDetail(FIRST_ID, "launch-plan.txt");
-  const ownerStarted = context.mocks.deferred<void>();
-  const releaseOwner = context.mocks.deferred<void>();
+test("A row's Delete opens from its catalog summary and restores focus even when preview details are unavailable", async () => {
+  const summary = artifact({ id: FIRST_ID, title: "launch-plan.txt" });
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
     return respond(200, {
       artifacts: [
-        detail,
+        summary,
         artifact({ id: SECOND_ID, title: "another-plan.txt" }),
       ],
       nextCursor: null,
     });
   });
-  context.mocks.api(
-    artifactCatalogContract.get,
-    async ({ params, respond }) => {
-      expect(params.artifactId).toBe(FIRST_ID);
-      if (!ownerStarted.settled()) {
-        ownerStarted.resolve();
-      }
-      await releaseOwner.promise;
-      return respond(200, detail);
-    },
-  );
+  context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "Preview unavailable" },
+    });
+  });
 
   await setupLibraryPage();
 
@@ -923,18 +915,9 @@ test("A row's More menu validates ownership before Delete and restores its own t
   );
   click(more);
   const menu = await screen.findByRole("menu");
-  await ownerStarted.promise;
-  expect(getDeleteMenuItem(menu)).toHaveAttribute("aria-disabled", "true");
-  expect(getDeleteMenuItem(menu)).toHaveAttribute("aria-busy", "true");
+  expect(getDeleteMenuItem(menu)).not.toHaveAttribute("aria-disabled", "true");
+  expect(getDeleteMenuItem(menu)).not.toHaveAttribute("aria-busy", "true");
   expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
-  releaseOwner.resolve();
-
-  await waitFor(() => {
-    expect(getDeleteMenuItem(menu)).not.toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
-  });
   click(getDeleteMenuItem(menu));
   const cancelled = await screen.findByRole("dialog", {
     name: "Delete launch-plan.txt?",
@@ -948,12 +931,10 @@ test("A row's More menu validates ownership before Delete and restores its own t
   const user = userEvent.setup();
   await user.keyboard("{Enter}");
   const reopenedMenu = await screen.findByRole("menu");
-  await waitFor(() => {
-    expect(getDeleteMenuItem(reopenedMenu)).not.toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
-  });
+  expect(getDeleteMenuItem(reopenedMenu)).not.toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
   click(getDeleteMenuItem(reopenedMenu));
   const escaped = await screen.findByRole("dialog", {
     name: "Delete launch-plan.txt?",
@@ -967,45 +948,49 @@ test("A row's More menu validates ownership before Delete and restores its own t
   expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
 });
 
-test("A denied row ownership read leaves Delete disabled instead of opening a confirmation or preview", async () => {
-  const releaseOwner = context.mocks.deferred<void>();
+test("A denied row deletion keeps the artifact and lets the user cancel", async () => {
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
     return respond(200, {
       artifacts: [artifact({ title: "restricted-plan.txt" })],
       nextCursor: null,
     });
   });
-  context.mocks.api(
-    artifactCatalogContract.get,
-    async ({ params, respond }) => {
-      expect(params.artifactId).toBe(FIRST_ID);
-      await releaseOwner.promise;
-      return respond(403, {
-        error: { code: "FORBIDDEN", message: "Artifact unavailable" },
-      });
-    },
-  );
+  context.mocks.api(artifactCatalogContract.delete, ({ params, respond }) => {
+    expect(params.artifactId).toBe(FIRST_ID);
+    return respond(403, {
+      error: { code: "FORBIDDEN", message: "Artifact unavailable" },
+    });
+  });
 
   await setupLibraryPage();
 
   await expect(
     findArtifactAction("restricted-plan.txt"),
   ).resolves.toBeInTheDocument();
-  click(
-    getButtonByName("More artifact actions", rowFor("restricted-plan.txt")),
+  const more = getButtonByName(
+    "More artifact actions",
+    rowFor("restricted-plan.txt"),
   );
+  click(more);
   const menu = await screen.findByRole("menu");
-  expect(getDeleteMenuItem(menu)).toHaveAttribute("aria-busy", "true");
-  releaseOwner.resolve();
-
-  await waitFor(() => {
-    expect(getDeleteMenuItem(menu)).toHaveAttribute("aria-busy", "false");
-  });
-  expect(getDeleteMenuItem(menu)).toHaveAttribute("aria-disabled", "true");
   click(getDeleteMenuItem(menu));
-  expect(menu).toBeInTheDocument();
-  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
+  const dialog = await screen.findByRole("dialog", {
+    name: "Delete restricted-plan.txt?",
+  });
+  click(getButtonByName("Delete", dialog));
+
+  await expect(
+    screen.findByText("Artifact unavailable"),
+  ).resolves.toBeInTheDocument();
+  expect(getButtonByName("Delete", dialog)).toBeEnabled();
+  expect(
+    within(getCatalogViewport()).getByText("restricted-plan.txt"),
+  ).toBeInTheDocument();
+  click(getButtonByName("Cancel", dialog));
+  await waitFor(() => {
+    expect(dialog).not.toBeInTheDocument();
+    expect(more).toHaveFocus();
+  });
 });
 
 test("Row deletion retries in its own confirmation and keeps another artifact's sidebar open", async () => {
@@ -1059,12 +1044,7 @@ test("Row deletion retries in its own confirmation and keeps another artifact's 
   ).resolves.toBeInTheDocument();
   click(getButtonByName("More artifact actions", rowFor("remove-me.txt")));
   const menu = await screen.findByRole("menu");
-  await waitFor(() => {
-    expect(getDeleteMenuItem(menu)).not.toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
-  });
+  expect(getDeleteMenuItem(menu)).not.toHaveAttribute("aria-disabled", "true");
   click(getDeleteMenuItem(menu));
   const dialog = await screen.findByRole("dialog", {
     name: "Delete remove-me.txt?",
@@ -1114,7 +1094,7 @@ test.each([false, true])(
   "Realtime invalidation preserves a row confirmation (DELETE pending: %s)",
   async (deletePending) => {
     const keep = artifact({ title: "keep-this.txt" });
-    const remove = textDetail(SECOND_ID, "remove-on-confirm.txt");
+    const remove = artifact({ id: SECOND_ID, title: "remove-on-confirm.txt" });
     const deleting = context.mocks.deferred<void>();
     const releaseDelete = context.mocks.deferred<void>();
     const refreshStarted = context.mocks.deferred<void>();
@@ -1132,10 +1112,6 @@ test.each([false, true])(
         artifacts: removed ? [keep] : [keep, remove],
         nextCursor: null,
       });
-    });
-    context.mocks.api(artifactCatalogContract.get, ({ params, respond }) => {
-      expect(params.artifactId).toBe(SECOND_ID);
-      return respond(200, remove);
     });
     context.mocks.api(
       artifactCatalogContract.delete,
@@ -1162,12 +1138,10 @@ test.each([false, true])(
       getButtonByName("More artifact actions", rowFor("remove-on-confirm.txt")),
     );
     const menu = await screen.findByRole("menu");
-    await waitFor(() => {
-      expect(getDeleteMenuItem(menu)).not.toHaveAttribute(
-        "aria-disabled",
-        "true",
-      );
-    });
+    expect(getDeleteMenuItem(menu)).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
     click(getDeleteMenuItem(menu));
     const dialog = await screen.findByRole("dialog", {
       name: "Delete remove-on-confirm.txt?",

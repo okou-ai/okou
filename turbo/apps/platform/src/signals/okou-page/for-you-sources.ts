@@ -3,11 +3,9 @@ import type { SuggestionImpression } from "../../lib/posthog.ts";
 import { command, computed, state, type Command } from "ccstate";
 import { feedContract } from "@okouai/api-contracts/client/feed";
 import type { FeedSources } from "@okouai/api-contracts/contracts/feed";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { authenticatedSessionKey$ } from "../auth.ts";
-import { featureSwitches$ } from "../external/feature-switch.ts";
 import { createDeferredPromise, onRef } from "../utils.ts";
 
 const sourceState$ = computed((get) => {
@@ -27,11 +25,6 @@ export const forYouSources$ = computed(async (get) => {
 });
 
 export const forYouHasUnread$ = computed(async (get) => {
-  if (
-    (await get(featureSwitches$))[FeatureSwitchKey.AgentSuggestion] !== true
-  ) {
-    return false;
-  }
   get(get(sourceState$).summaryVersion$);
   const result = await accept(
     get(apiClient$)(feedContract).summary(),
@@ -93,13 +86,7 @@ export function createForYouReadRef(
       if (observe$) {
         set(observe$, element, signal);
       }
-      const enabled = (await get(featureSwitches$))[
-        FeatureSwitchKey.AgentSuggestion
-      ];
       signal.throwIfAborted();
-      if (!enabled) {
-        return;
-      }
       if (document.hidden) {
         const visible = createDeferredPromise<void>(signal);
         const onVisibilityChange = () => {

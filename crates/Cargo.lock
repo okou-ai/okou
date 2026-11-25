@@ -3184,7 +3184,7 @@ dependencies = [
 
 [[package]]
 name = "nbd-cow"
-version = "0.5.31"
+version = "0.5.32"
 dependencies = [
  "bitvec",
  "cli-test-support",
@@ -4159,7 +4159,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.250.10"
+version = "0.250.12"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4571,6 +4571,7 @@ dependencies = [
  "futures-util",
  "guest-contracts",
  "hex",
+ "hmac 0.13.0",
  "http-body-util",
  "httpmock",
  "hyper",
@@ -4584,6 +4585,7 @@ dependencies = [
  "runner-lifecycle",
  "runner-network",
  "runner-provider",
+ "runner-remote",
  "runner-storage",
  "runner-types",
  "rustls",
@@ -4894,7 +4896,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.53.145"
+version = "0.53.146"
 dependencies = [
  "api-contracts",
  "async-trait",

@@ -178,7 +178,14 @@ const computerUseCommandPayloadShape = {
   action: string().trim().min(1).max(256).optional(),
 } as const;
 
+export const appStateRunnerSchema = object({
+  runnerId: uuid(),
+  heartbeatGeneration: number().int().positive(),
+});
+export const DIRECT_APP_STATE_CAPABILITY = "app.state.direct-transfer";
+
 const computerUseCommandCreateBodySchema = object({
+  appStateRunner: appStateRunnerSchema.optional(),
   kind: computerUseReadCommandKindSchema,
   ...computerUseCommandTargetShape,
   ...computerUseCommandPayloadShape,
@@ -468,6 +475,7 @@ export const computerUseAuthorizationRequestApplyResponseSchema = object({
 });
 
 export const computerUseCommandCreateResponseSchema = object({
+  directAppState: literal(true).optional(),
   commandId: string(),
   status: literal("queued"),
   realtime: realtimeSubscriptionSchema.optional(),
@@ -498,7 +506,12 @@ export const computerUseHostCommandNextResponseSchema = discriminatedUnion(
     object({ status: literal("idle") }),
     object({
       status: literal("command"),
-      command: computerUseCommandResponseSchema,
+      command: computerUseCommandResponseSchema.extend({
+        appStateUpload: object({
+          url: string(),
+          token: string(),
+        }).optional(),
+      }),
     }),
   ],
 );
@@ -647,6 +660,25 @@ export const computerUseCommandContract = c.router({
       404: apiErrorSchema,
     },
     summary: "Resolve a temporary direct URL for a desktop command screenshot",
+  },
+});
+
+export const runnerAppStateContract = c.router({
+  check: {
+    method: "POST",
+    path: "/api/runners/runs/:runId/computer-use/commands/:commandId/check",
+    headers: authHeadersSchema,
+    pathParams: object({ runId: uuid(), commandId: uuid() }),
+    body: appStateRunnerSchema,
+    responses: {
+      200: object({ hostId: uuid(), claimed: boolean() }),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary:
+      "Check current Computer Use authority for one direct app state delivery",
   },
 });
 

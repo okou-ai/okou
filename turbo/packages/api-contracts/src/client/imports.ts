@@ -484,6 +484,7 @@ export const clientContractImportManifest = [
       "computerUseHostsContract",
       "computerUseSessionHostsContract",
       "computerUseWriteCommandContract",
+      "runnerAppStateContract",
     ],
     bindings: [
       {

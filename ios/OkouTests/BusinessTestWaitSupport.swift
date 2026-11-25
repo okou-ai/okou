@@ -92,9 +92,10 @@ extension XCTestCase {
   }
 
   /// Waits for a predicate over a conversation's graph state: its transcript (confirmed
-  /// history, pending messages, streamed output and their items) and its composer's draft.
-  /// It is checked again whenever either value changes, and whenever an Observation-tracked
-  /// value it reads changes.
+  /// history, pending messages, streamed output and their items), its render window and scroll
+  /// target, its delivery and failure recovery state and its composer's draft.
+  /// It is checked again whenever one of these values changes, and whenever an
+  /// Observation-tracked value it reads changes.
   func waitForBusinessResult(
     watching conversation: ConversationStore,
     timeout: TimeInterval = 3, file: StaticString = #filePath, line: UInt = #line,
@@ -119,6 +120,22 @@ extension XCTestCase {
     let draft = try store.watch(conversation.composer.presentation) { check() }
     defer {
       do { try draft.cancel() } catch { XCTFail("Draft waiter cleanup: \(error)") }
+    }
+    let delivery = try store.watch(conversation.delivery) { check() }
+    defer {
+      do { try delivery.cancel() } catch { XCTFail("Delivery waiter cleanup: \(error)") }
+    }
+    let recovery = try store.watch(conversation.failureRecoveryActions.recovery) { check() }
+    defer {
+      do { try recovery.cancel() } catch { XCTFail("Recovery waiter cleanup: \(error)") }
+    }
+    let window = try store.watch(conversation.window) { check() }
+    defer {
+      do { try window.cancel() } catch { XCTFail("Window waiter cleanup: \(error)") }
+    }
+    let navigation = try store.watch(conversation.navigation) { check() }
+    defer {
+      do { try navigation.cancel() } catch { XCTFail("Navigation waiter cleanup: \(error)") }
     }
     let observation = Task {
       for await result in Observations({ predicate() }) where result {

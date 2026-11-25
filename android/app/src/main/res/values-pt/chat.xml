@@ -13,7 +13,6 @@
     <string name="chat_undo_unconfirmed">Não foi possível confirmar se a alteração foi desfeita.</string>
     <string name="chat_feedback_dismiss">Fechar</string>
     <string name="chat_list_first_load_failed">Temporariamente indisponível para carregar</string>
-    <string name="chat_list_load_when_online">As conversas serão carregadas quando você voltar a ficar online.</string>
     <string name="chat_list_title">Conversas</string>
     <string name="chat_refresh">Atualizar conversas</string>
     <string name="chat_loading">Carregando conversas…</string>
@@ -116,4 +115,9 @@
     <string name="chat_rename_save_unconfirmed">O resultado do salvamento ainda não foi confirmado.</string>
     <string name="chat_title_saved">Título da conversa salvo</string>
     <string name="chat_project_name_saved">Nome do projeto salvo</string>
+    <string name="inline_image_loading">Carregando imagem…</string>
+    <string name="inline_image_no_thumbnail">Miniatura indisponível</string>
+    <string name="inline_image_unavailable">Imagem indisponível</string>
+    <string name="inline_image_view_original">Ver original</string>
+    <string name="inline_image_open_link">Abrir link</string>
 </resources>

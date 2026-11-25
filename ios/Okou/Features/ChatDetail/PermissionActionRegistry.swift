@@ -11,6 +11,7 @@ final class PermissionActionRegistry {
   private let didFail: @MainActor (Error) -> Void
   private let didContinue: @MainActor () async -> Void
   let resources: PermissionCardResources
+  private let graph: CCState.Store
   // These owners retain duration, confirmed review and exact mutation/continuation identities.
   // They are a business ledger until conversation close, not the disposable read cache.
   private var cards: [ChatPermissionAction: PermissionActionStore] = [:]
@@ -24,6 +25,7 @@ final class PermissionActionRegistry {
     didContinue: @escaping @MainActor () async -> Void
   ) {
     self.commands = commands
+    self.graph = graph
     resources = PermissionCardResources(commands: commands, graph: graph, didFail: didFail)
     self.sync = sync
     self.didFail = didFail
@@ -39,8 +41,8 @@ final class PermissionActionRegistry {
   func card(_ action: ChatPermissionBatchAction) -> PermissionBatchStore {
     if let existing = batches[action] { return existing }
     let card = PermissionBatchStore(
-      action: action, resources: resources, commands: commands, sync: sync, didFail: didFail,
-      didContinue: didContinue)
+      action: action, resources: resources, commands: commands, sync: sync, graph: graph,
+      didFail: didFail, didContinue: didContinue)
     if closed {
       card.close()
     } else if owner != nil {
@@ -53,7 +55,7 @@ final class PermissionActionRegistry {
   func card(_ action: ChatPermissionAction) -> PermissionActionStore {
     if let existing = cards[action] { return existing }
     let card = PermissionActionStore(
-      action: action, resources: resources, commands: commands, sync: sync,
+      action: action, resources: resources, commands: commands, sync: sync, graph: graph,
       didFail: didFail, didContinue: didContinue)
     if closed {
       card.close()

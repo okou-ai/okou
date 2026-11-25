@@ -38,7 +38,6 @@ internal class ConversationRunControls(
     val confirmed: ConversationUiState?,
     displayedRunId: String?,
     val pending: List<RunControlIntent>,
-    val offline: Boolean,
     val presentation: ConversationContent,
 ) {
     val currentRunId = displayedRunId.takeUnless { it in state.settledRuns[threadId].orEmpty() }
@@ -46,7 +45,7 @@ internal class ConversationRunControls(
         it.kind == RunControlKind.Interrupt && it.targetId == currentRunId
     }
     private val stopPending = stopIntent != null && phase(stopIntent) != RunControlPhase.Retryable
-    val canStop = currentRunId != null && !offline && !stopPending
+    val canStop = currentRunId != null && !stopPending
 
     fun stop() {
         if (!canStop) return
@@ -56,8 +55,7 @@ internal class ConversationRunControls(
 
     fun revoke(eventId: String, preview: ComposerMessagePreview?): (() -> Unit)? {
         if (
-            offline ||
-                eventId in state.settledQueueInputs[threadId].orEmpty() ||
+            eventId in state.settledQueueInputs[threadId].orEmpty() ||
                 !confirmed.canWithdrawInput(threadId, eventId, preview)
         )
             return null
@@ -81,7 +79,6 @@ internal fun conversationRunControls(
     model: RunControlsModel,
     history: ConversationHistoryModel,
     threadId: String,
-    offline: Boolean,
     composer: ChatComposerModel?,
 ): ConversationRunControls {
     val state by model.uiState.collectAsStateWithLifecycle()
@@ -115,8 +112,8 @@ internal fun conversationRunControls(
     if (pending.isNotEmpty()) {
         val confirmation = confirmed?.confirmation
         // A successful timeline read can resume verification after an independent read failed.
-        LaunchedEffect(model, threadId, offline, confirmation) {
-            if (!offline && confirmation != null) model.checkUnknown(threadId)
+        LaunchedEffect(model, threadId, confirmation) {
+            if (confirmation != null) model.checkUnknown(threadId)
         }
     }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -135,7 +132,6 @@ internal fun conversationRunControls(
         confirmed,
         confirmed?.controlRunIds(output)?.lastOrNull(),
         pending,
-        offline,
         presentation,
     )
 }
@@ -152,6 +148,7 @@ internal class ConversationStopPlacement {
     private var focusedInline: Boolean? = null
     private var slotBounds: Rect? = null
     private var feedbackBounds: Rect? = null
+    private var jumpBounds: Rect? = null
 
     fun reportInlineSlot(bounds: Rect?) {
         slotBounds = bounds
@@ -163,8 +160,17 @@ internal class ConversationStopPlacement {
         updatePlacement()
     }
 
+    fun reportJumpBounds(bounds: Rect?) {
+        jumpBounds = bounds
+        updatePlacement()
+    }
+
     private fun updatePlacement() {
-        val visible = slotBounds?.let { feedbackBounds?.overlaps(it) != true } == true
+        val target = slotBounds
+        val visible =
+            target != null &&
+                feedbackBounds?.overlaps(target) != true &&
+                jumpBounds?.overlaps(target) != true
         if (inline == visible) return
         transferFocusToInline = visible.takeIf { focusedInline == inline }
         inline = visible

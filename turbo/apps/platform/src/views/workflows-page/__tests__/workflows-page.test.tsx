@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
 import { connectorAccountFixture } from "../../../mocks/handlers/connector-account-fixtures.ts";
@@ -340,7 +339,6 @@ test.each([false, true])(
     await setupPage({
       context,
       path: base + "/automations",
-      featureSwitches: { [FeatureSwitchKey.WorkflowRecencySync]: true },
     });
     click(await findAction("button", "Run now"));
     const editor = await screen.findByLabelText("Message");

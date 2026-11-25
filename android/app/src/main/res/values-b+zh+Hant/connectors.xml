@@ -42,7 +42,6 @@
     <string name="connector_disconnect">中斷帳號連接</string>
     <string name="connector_disconnect_title">要中斷此帳號的連接嗎？</string>
     <string name="connector_disconnect_copy">使用此帳號的聊天和自動化可能需要重新選擇連接。其他帳號仍可使用。</string>
-    <string name="connector_load_when_online">連線後載入…</string>
     <string name="connector_loading">正在載入連接器…</string>
     <string name="connector_loading_accounts">正在載入帳號…</string>
     <string name="connector_loading_permissions">正在載入權限…</string>
@@ -52,7 +51,6 @@
     <string name="connector_accounts_failed">暫時無法載入帳號。</string>
     <string name="connector_permissions_failed">暫時無法載入權限。</string>
     <string name="connector_impact_failed">暫時無法檢查此帳號的使用情況。</string>
-    <string name="connector_offline">離線</string>
     <string name="connector_network_failed">暫時無法連線至 Okou。請檢查網路後再試。</string>
     <string name="connector_account_unavailable">此帳號已無法使用。</string>
     <string name="connector_unavailable">此帳號暫時無法授權。</string>

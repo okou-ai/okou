@@ -37,9 +37,6 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -122,7 +119,6 @@ abstract class SessionModelTestFixture {
         auth: TestAuthentication = TestAuthentication(),
         configure: (Resource) -> Unit = {},
         prepareAppearance: suspend MemberAppearanceCache.() -> Unit = {},
-        connectivity: Flow<Boolean> = emptyFlow(),
         block: suspend TestScope.(SessionModel, MutableList<Resource>) -> Unit,
     ) = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
@@ -185,7 +181,6 @@ abstract class SessionModelTestFixture {
                                 expansion,
                                 defaultModelStore,
                                 dispatcher,
-                                connectivity = connectivity,
                             )
                         }
                     },
@@ -873,7 +868,7 @@ class SessionModelTest : SessionModelTestFixture() {
     }
 
     @Test
-    fun temporaryPreparationFailuresRetryWithTheSameOwnerWhenActiveAndOnline() {
+    fun temporaryPreparationFailuresRetryWithTheSameOwnerWhileTheAppIsActive() {
         val auth =
             TestAuthentication(
                 testAuthenticationState()
@@ -882,12 +877,10 @@ class SessionModelTest : SessionModelTestFixture() {
                             listOf(MembershipAccess("org-a", "org:member", emptyList())),
                     ),
             )
-        val connected = MutableStateFlow(true)
         var organizations = 0
         var preferences = 0
         check(
             auth,
-            connectivity = connected,
             configure = { resource ->
                 resource.verifyOrganization = {
                     if (++organizations == 1) throw ApiFailure.Http(503, null, null, null)
@@ -916,11 +909,8 @@ class SessionModelTest : SessionModelTestFixture() {
             assertEquals(1, preferences)
 
             model.foregroundChanged(false)
-            connected.value = false
             runCurrent()
             advanceTimeBy(10_000)
-            runCurrent()
-            connected.value = true
             runCurrent()
             assertEquals(1, preferences)
 

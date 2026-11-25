@@ -23,6 +23,13 @@ struct ChatDetailView: View {
   @State private var usageDetails: UsageDetails?
   /// The transcript's graph value, kept in the workspace session's Store.
   @ResolvedValue private var resolvedTranscript: ConversationProjection.Value?
+  /// Send, Stop and failure state, kept in the workspace session's Store.
+  @ResolvedValue private var resolvedDelivery: ConversationStore.Delivery?
+  /// Whether a failure recovery is running, kept in the workspace session's Store.
+  @ResolvedValue private var resolvedRecovery: ConversationFailureRecovery.Recovery?
+  /// The render window and the scroll target, kept in the workspace session's Store.
+  @ResolvedValue private var resolvedWindow: ConversationPresentation.Window?
+  @ResolvedValue private var resolvedNavigation: ConversationPresentation.Navigation?
 
   private struct UsageDetails: Identifiable { let id: String }
 
@@ -43,6 +50,10 @@ struct ChatDetailView: View {
     self.fork = fork
     _scrolling = State(initialValue: ConversationScrollCoordinator(conversation: conversation))
     _resolvedTranscript = ResolvedValue(conversation.transcript)
+    _resolvedDelivery = ResolvedValue(conversation.delivery)
+    _resolvedRecovery = ResolvedValue(conversation.failureRecoveryActions.recovery)
+    _resolvedWindow = ResolvedValue(conversation.window)
+    _resolvedNavigation = ResolvedValue(conversation.navigation)
   }
 
   /// This render's transcript. The synchronous read only covers a missing first resolution.
@@ -50,12 +61,22 @@ struct ChatDetailView: View {
     resolvedTranscript ?? conversation.currentTranscript
   }
   private var history: ChatHistory { transcript.history ?? .empty }
+  /// This render's delivery state, with the same fallback as the transcript.
+  private var delivery: ConversationStore.Delivery {
+    resolvedDelivery ?? conversation.currentDelivery
+  }
+  private var isRecoveringFailure: Bool {
+    (resolvedRecovery ?? conversation.failureRecoveryActions.currentRecovery).isRecovering
+  }
   private var rows: [ConversationCollectionRow] {
-    ConversationRowProjection(conversation: conversation, transcript: transcript).rows
+    ConversationRowProjection(
+      conversation: conversation, transcript: transcript, window: window,
+      isSending: delivery.isSending
+    ).rows
   }
 
   var body: some View {
-    let displayedMessages = conversation.visibleMessages
+    let displayedMessages = window.items.compactMap(\.message)
     ConversationCollectionView(
       rows: rows, markdown: conversation.messageMarkdown, renderContext: renderContext,
       measurements: conversation.measurements,
@@ -103,7 +124,7 @@ struct ChatDetailView: View {
     .onChange(of: reduceMotion) { _, value in scrolling.setReduceMotion(value) }
     .overlay(alignment: .bottom) {
       ZStack {
-        if scrolling.showsBottomButton {
+        if showsBottomButton {
           Button {
             scrolling.jumpToLatest()
           } label: {
@@ -118,16 +139,16 @@ struct ChatDetailView: View {
         }
       }
       .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
-      .animation(reduceMotion ? nil : OkouMotion.press, value: scrolling.showsBottomButton)
-      .allowsHitTesting(scrolling.showsBottomButton)
+      .animation(reduceMotion ? nil : OkouMotion.press, value: showsBottomButton)
+      .allowsHitTesting(showsBottomButton)
       .padding(.bottom, feedbackClearance + OkouSpace.sm)
     }
     .task(id: displayedMessages.last) { await scrolling.latestMessageChanged() }
-    .onChange(of: conversation.visibleItems) { _, _ in scrolling.messagesChanged() }
-    .onChange(of: conversation.readingPosition?.messageID) { previousID, id in
+    .onChange(of: window.items) { _, _ in scrolling.messagesChanged() }
+    .onChange(of: navigation.readingMessageID) { previousID, id in
       scrolling.readingPositionChanged(previousID: previousID, currentID: id)
     }
-    .onChange(of: conversation.navigationRequest) { _, request in
+    .onChange(of: navigation.request) { _, request in
       if let request { scrolling.reveal(request.position) }
     }
     .onDisappear {
@@ -195,13 +216,13 @@ struct ChatDetailView: View {
     }
     .safeAreaInset(edge: .bottom, spacing: 0) {
       VStack(alignment: .leading, spacing: 0) {
-        if let issue = conversation.stopIssue {
+        if let issue = delivery.stopIssue {
           OkouBanner(Text(issue), icon: "circle-stop") {
             Button("Check status") { Task { await conversation.refresh() } }
               .disabled(conversation.isLoading)
             if conversation.historySyncError == nil && history.canStop {
               Button("Stop again") { Task { await conversation.stop() } }
-                .disabled(conversation.isStopping)
+                .disabled(delivery.isStopping)
             }
           }
           .padding(.horizontal, OkouSpace.lg)
@@ -213,10 +234,10 @@ struct ChatDetailView: View {
             .chatFeedbackContentAnchor()
         } else {
           ChatComposerView(
-            isBusy: conversation.isSending || conversation.isStopping
-              || conversation.isRecoveringFailure,
-            showsProgress: false, canStop: history.canStop, needsUpgrade: conversation.needsUpgrade,
-            error: conversation.error,
+            isBusy: delivery.isSending || delivery.isStopping
+              || isRecoveringFailure,
+            showsProgress: false, canStop: history.canStop, needsUpgrade: delivery.needsUpgrade,
+            error: delivery.error,
             attachmentURL: conversation.webURL.appending(path: "chats/\(thread.id)"),
             draftState: conversation.composer,
             submit: {
@@ -499,13 +520,47 @@ struct ChatDetailView: View {
 
 }
 
+extension ChatDetailView {
+  /// This render's window and scroll target, with the same fallback as the transcript.
+  private var window: ConversationPresentation.Window {
+    resolvedWindow ?? conversation.currentWindow
+  }
+  private var navigation: ConversationPresentation.Navigation {
+    resolvedNavigation ?? conversation.currentNavigation
+  }
+  /// The jump-to-latest control needs a displayed message as well as the reader's position.
+  private var showsBottomButton: Bool {
+    scrolling.isAwayFromLatest && window.items.contains { $0.message != nil }
+  }
+}
+
 private struct ConversationEarlierMessagesButton: View {
   let conversation: ConversationStore
   let scrolling: ConversationScrollCoordinator
 
   var body: some View {
+    // Transcript cells host this row outside the workspace root, so it provides the session
+    // Store that keeps the render window.
+    StoreProvider(conversation.graph) {
+      ConversationEarlierMessagesControl(conversation: conversation, scrolling: scrolling)
+    }
+  }
+}
+
+private struct ConversationEarlierMessagesControl: View {
+  let conversation: ConversationStore
+  let scrolling: ConversationScrollCoordinator
+  @ResolvedValue private var loadsEarlier: Bool?
+
+  init(conversation: ConversationStore, scrolling: ConversationScrollCoordinator) {
+    self.conversation = conversation
+    self.scrolling = scrolling
+    _loadsEarlier = ResolvedValue(conversation.loadsEarlier)
+  }
+
+  var body: some View {
     // Update the mounted indicator without waiting for the next measured snapshot.
-    let isLoading = scrolling.isLoadingEarlier || conversation.isLoadingEarlier
+    let isLoading = scrolling.isLoadingEarlier || (loadsEarlier ?? conversation.isLoadingEarlier)
     Button {
       scrolling.loadEarlierMessages()
     } label: {
