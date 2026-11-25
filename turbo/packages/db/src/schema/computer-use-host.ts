@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   check,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -17,6 +18,7 @@ import type {
   ComputerUseCommandResult,
 } from "@okouai/db/jsonb-contracts/computer-use-host";
 import { computerUseHostColumns } from "../columns/computer-use-host";
+import { remoteDevices } from "./remote-device";
 export type { ComputerUsePermissions } from "@okouai/db/jsonb-contracts/computer-use-host";
 
 export const computerUseHosts = pgTable(
@@ -24,6 +26,16 @@ export const computerUseHosts = pgTable(
   computerUseHostColumns(),
   (table) => {
     return [
+      foreignKey({
+        name: "computer_use_hosts_remote_device_owner_fk",
+        columns: [table.remoteDeviceId, table.orgId, table.userId],
+        foreignColumns: [
+          remoteDevices.id,
+          remoteDevices.orgId,
+          remoteDevices.userId,
+        ],
+      }).onDelete("restrict"),
+      index("idx_computer_use_hosts_remote_device").on(table.remoteDeviceId),
       uniqueIndex("idx_computer_use_hosts_active_installation")
         .on(table.orgId, table.userId, table.installationId)
         .where(sql`installation_id IS NOT NULL AND revoked_at IS NULL`),

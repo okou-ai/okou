@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -12,6 +13,8 @@ import {
 } from "drizzle-orm/pg-core";
 import type { PhoneUseObject } from "../jsonb-contracts/phone-use";
 import { chatThreads } from "./chat-thread";
+import { remoteDevices } from "./remote-device";
+
 export const phoneUseDevices = pgTable(
   "phone_use_devices",
   {
@@ -22,6 +25,7 @@ export const phoneUseDevices = pgTable(
     sessionId: text("session_id").notNull(),
     generation: integer("generation").notNull().default(1),
     displayName: text("display_name").notNull(),
+    remoteDeviceId: uuid("remote_device_id"),
     osVersion: text("os_version").notNull(),
     appVersion: text("app_version").notNull(),
     ready: boolean("ready").notNull().default(false),
@@ -30,6 +34,16 @@ export const phoneUseDevices = pgTable(
   },
   (table) => {
     return [
+      foreignKey({
+        name: "phone_use_devices_remote_device_owner_fk",
+        columns: [table.remoteDeviceId, table.orgId, table.userId],
+        foreignColumns: [
+          remoteDevices.id,
+          remoteDevices.orgId,
+          remoteDevices.userId,
+        ],
+      }).onDelete("restrict"),
+      index("idx_phone_use_devices_remote_device").on(table.remoteDeviceId),
       uniqueIndex("phone_use_device_installation").on(
         table.orgId,
         table.userId,

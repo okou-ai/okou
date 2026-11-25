@@ -7,6 +7,7 @@ import { Client } from "pg";
 import { schema } from "../src/index";
 import { computerUseHosts } from "../src/runtime/computer-use-host";
 import { computerUseHosts as physicalHosts } from "../src/schema/computer-use-host";
+import { remoteDevices } from "../src/schema/remote-device";
 
 /** Current host storage contract on replayed and freshly generated schemas. */
 export async function validatePermanentComputerUseHostStorage(
@@ -51,6 +52,31 @@ export async function validatePermanentComputerUseHostStorage(
     assert.ok(created);
     assert.equal(created.connectionGeneration, 0);
     assert.equal(created.status, "online");
+    const assigned = await db.query.computerUseHosts.findFirst({
+      where: eq(computerUseHosts.id, created.id),
+    });
+    assert.ok(assigned?.remoteDeviceId);
+    const [device] = await db
+      .select()
+      .from(remoteDevices)
+      .where(eq(remoteDevices.id, assigned.remoteDeviceId));
+    assert.equal(device?.accessAllowed, false);
+    assert.equal(device?.accessExpiresAt, null);
+
+    const [destination] = await db
+      .insert(remoteDevices)
+      .values({
+        orgId,
+        userId: values.userId,
+        displayName: "Destination",
+        accessAllowed: true,
+      })
+      .returning({ id: remoteDevices.id });
+    assert.ok(destination);
+    await db
+      .update(computerUseHosts)
+      .set({ remoteDeviceId: destination.id })
+      .where(eq(computerUseHosts.id, created.id));
 
     const [reconnected] = await db
       .insert(computerUseHosts)
@@ -74,7 +100,18 @@ export async function validatePermanentComputerUseHostStorage(
     assert.equal(reconnected?.id, created.id);
     assert.equal(reconnected?.connectionGeneration, 1);
     assert.equal(reconnected?.sessionId, "sess_reconnected");
+    assert.equal(reconnected?.remoteDeviceId, destination.id);
     assert.deepEqual(reconnected?.createdAt, created.createdAt);
+    assert.equal(
+      (
+        await db
+          .select()
+          .from(remoteDevices)
+          .where(eq(remoteDevices.orgId, orgId))
+      ).length,
+      2,
+      "Registration retries must not create additional devices",
+    );
     assert.deepEqual(
       await db.query.computerUseHosts.findFirst({
         where: eq(computerUseHosts.id, created.id),
@@ -132,6 +169,7 @@ export async function validatePermanentComputerUseHostStorage(
       await db
         .delete(computerUseHosts)
         .where(eq(computerUseHosts.orgId, orgId));
+      await db.delete(remoteDevices).where(eq(remoteDevices.orgId, orgId));
     } finally {
       await client.end();
     }

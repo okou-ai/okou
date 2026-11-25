@@ -84,8 +84,17 @@ export async function validatePermanentSshStorage(databaseUrl: string) {
           learnedHostKeyFingerprint: "SHA256:pin",
         })
         .returning();
-      const [host] = hosts;
-      assert.ok(host);
+      const [inserted] = hosts;
+      assert.ok(inserted);
+      const host = await db.query.sshConnections.findFirst({
+        where: eq(sshConnections.id, inserted.id),
+      });
+      // A legacy insert receives its device after PostgreSQL forms RETURNING.
+      assert.ok(host?.remoteDeviceId);
+      assert.deepEqual(host, {
+        ...inserted,
+        remoteDeviceId: host.remoteDeviceId,
+      });
       const readState = async () => {
         const [row] = await db
           .select({
