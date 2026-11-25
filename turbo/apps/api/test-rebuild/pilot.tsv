@@ -562,9 +562,9 @@ chat	src/signals/routes/__tests__/chat-remote-access.test.ts	chat-remote-access-
 chat	src/signals/routes/__tests__/composer-draft.test.ts	composer-draft-002	planned		extension after sandbox reset
 chat	src/signals/routes/__tests__/composer-draft.test.ts	composer-draft-003	planned		extension after sandbox reset
 chat	src/signals/routes/__tests__/composer-draft.test.ts	composer-draft-005	planned		extension after sandbox reset
-chat	src/signals/routes/__tests__/chat-thread-read-cursor.test.ts	chat-thread-read-cursor-001	planned		extension after sandbox reset
-chat	src/signals/routes/__tests__/chat-thread-read-cursor.test.ts	chat-thread-read-cursor-005	planned		extension after sandbox reset
-chat	src/signals/routes/__tests__/chat-thread-read-cursor.test.ts	chat-thread-read-cursor-006	planned		extension after sandbox reset
+chat	src/signals/routes/__tests__/chat-thread-read-cursor.test.ts	chat-thread-read-cursor-001	skipped		slow-setup: an unread thread needs a terminal Run event (run.completed/failed/cancelled) to set the read watermark; only public path is a dispatched chat Run (240-790 ms setup)
+chat	src/signals/routes/__tests__/chat-thread-read-cursor.test.ts	chat-thread-read-cursor-005	rewritten	82.4	extension after sandbox reset
+chat	src/signals/routes/__tests__/chat-thread-read-cursor.test.ts	chat-thread-read-cursor-006	skipped		slow-setup: mark-read only advances the cursor and the thread only shows as unread with a terminal Run event; only public path is a dispatched chat Run (240-790 ms setup)
 chat	src/signals/routes/__tests__/chat-threads-mute.test.ts	chat-threads-mute-001	planned		extension after sandbox reset
 chat	src/signals/routes/__tests__/chat-threads-mute.test.ts	chat-threads-mute-003	planned		extension after sandbox reset
 chat	src/signals/routes/__tests__/chat-thread-pdf-filename.test.ts	chat-thread-pdf-filename-001	planned		extension after sandbox reset
