@@ -446,14 +446,15 @@ private struct WorkspaceRootView: View {
   }
 }
 
-/// Publishes the widget snapshot. The selected chat's draft mark is read from the session graph,
-/// so the publisher sits under the workspace's Store provider.
+/// Publishes the widget snapshot. The selected chat's draft mark and the API's draft list are
+/// read from the session graph, so the publisher sits under the workspace's Store provider.
 private struct WorkspaceWidgetPublisher: View {
   let store: WorkspaceStore
   let workspaceID: String
   let name: String?
   private let selectedThreadID: String?
   @ResolvedValue private var selectedDraft: Bool?
+  @ResolvedValue private var listedDrafts: Set<String>?
 
   init(store: WorkspaceStore, workspaceID: String, name: String?) {
     self.store = store
@@ -463,12 +464,16 @@ private struct WorkspaceWidgetPublisher: View {
     selectedThreadID = selected?.thread.id
     _selectedDraft = ResolvedValue(
       selected?.composer.unsentContent ?? ComposerDraftSignals.noContent)
+    _listedDrafts = ResolvedValue(store.listedDraftIDs)
   }
 
   var body: some View {
+    let listed = listedDrafts
     let snapshot = OkouWidgetPublishing.snapshot(
       workspaceID: workspaceID, threads: store.list.threads, name: name,
-      hasDraft: { id in id == selectedThreadID ? selectedDraft == true : store.hasDraft(id) })
+      hasDraft: { id in
+        id == selectedThreadID ? selectedDraft == true : store.hasDraft(id, listed: listed)
+      })
     Color.clear
       .frame(width: 0, height: 0)
       .task(id: snapshot) { [snapshot] in OkouWidgetPublishing.publish(snapshot) }
