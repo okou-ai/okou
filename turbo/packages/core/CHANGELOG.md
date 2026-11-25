@@ -1,5 +1,24 @@
 # Changelog
 
+## [8.877.0](https://github.com/okou-ai/okou/compare/core-v8.876.0...core-v8.877.0) (2026-11-25)
+
+
+### Features
+
+* receive computer use app state on the assigned runner ([#50745](https://github.com/okou-ai/okou/issues/50745)) ([9977243](https://github.com/okou-ai/okou/commit/99772436210306fef0b462d019a9fe57d118ff81))
+
+
+### Refactoring
+
+* graduate suggestions into the shared morning brief ([#50746](https://github.com/okou-ai/okou/issues/50746)) ([3a296b9](https://github.com/okou-ai/okou/commit/3a296b93fe3b031bfcf1cb30ce189841198b825f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.126.0
+
 ## [8.876.0](https://github.com/okou-ai/okou/compare/core-v8.875.0...core-v8.876.0) (2026-11-25)
 
 

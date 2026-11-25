@@ -13,6 +13,32 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1181.0](https://github.com/okou-ai/okou/compare/app-v0.1180.1...app-v0.1181.0) (2026-11-25)
+
+
+### Features
+
+* receive computer use app state on the assigned runner ([#50745](https://github.com/okou-ai/okou/issues/50745)) ([9977243](https://github.com/okou-ai/okou/commit/99772436210306fef0b462d019a9fe57d118ff81))
+
+
+### Bug Fixes
+
+* **billing:** align feedback surveys and share one-time rewards ([#50566](https://github.com/okou-ai/okou/issues/50566)) ([ddf37fc](https://github.com/okou-ai/okou/commit/ddf37fc99d5ab9ee763a6299f597c56241c4224d))
+
+
+### Refactoring
+
+* graduate suggestions into the shared morning brief ([#50746](https://github.com/okou-ai/okou/issues/50746)) ([3a296b9](https://github.com/okou-ai/okou/commit/3a296b93fe3b031bfcf1cb30ce189841198b825f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.126.0
+    * @okouai/core bumped to 8.877.0
+    * @okouai/ui bumped to 1.22.16
+
 ## [0.1180.1](https://github.com/okou-ai/okou/compare/app-v0.1180.0...app-v0.1180.1) (2026-11-25)
 
 
