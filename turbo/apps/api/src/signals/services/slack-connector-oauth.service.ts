@@ -709,7 +709,10 @@ const finishSlackConnectorOAuth$ = command(
         runtimeMethod: resolved.runtimeMethod,
         snapshot: resolved.snapshot,
         outputs: { accessToken: oauth.userToken },
-        userInfo,
+        userInfo: {
+          ...userInfo,
+          identityNamespace: `slack:team:${oauth.teamId}`,
+        },
         oauthRequestedScopes: requestedScopes,
         oauthGrantedScopes: oauth.userScopes,
         account: { intent: "add" },
