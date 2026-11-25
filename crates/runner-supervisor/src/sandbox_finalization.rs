@@ -1090,34 +1090,17 @@ async fn finalize_sandbox_for_completion_inner(
             #[cfg(any(test, feature = "test-support"))]
             test_hooks.emit(FinalizationTestEvent::BeforeIdlePoolOwnershipTransfer { run_id });
             loop {
-                let mut pool = idle_pool.lock().await;
+                let pool = idle_pool.lock().await;
                 // Let hard cancellation win while finalization is still waiting
                 // for the pool lock. Once the pool lock is held, only enter the
                 // final transfer boundary if the per-run gate is immediately
                 // available; otherwise release the pool lock before waiting.
-                let Some(transfer_guard) = cancel.try_transfer_guard() else {
-                    drop(pool);
-                    let transfer_guard = cancel.transfer_guard().await;
-                    if cancel.is_hard_cancelled() {
-                        telemetry.record_outcome("runner_host_finalization_cancelled", "cancelled");
-                        telemetry.record_idle_publication(false, Some("cancelled"));
-                        info!(
-                            run_id = %run_id,
-                            reuse_key_fingerprint = %reuse_key_fingerprint,
-                            reuse_key_kind = reuse_kind,
-                            "job hard-cancelled before idle pool ownership transfer, destroying sandbox"
-                        );
-                        drop(transfer_guard);
-                        let destroy_result = destroy_parked_and_record_home(
-                            candidate.into_active_destroy_parts(),
-                            "hard_cancellation",
-                        )
-                        .await;
-                        reuse_state_changed = destroy_result.home_cache_promoted;
-                        break 'finalization destroy_result.budget;
+                let (locked_pool, transfer_guard) = match cancel.try_transfer_guard() {
+                    Some(transfer_guard) => (Some(pool), transfer_guard),
+                    None => {
+                        drop(pool);
+                        (None, cancel.transfer_guard().await)
                     }
-                    drop(transfer_guard);
-                    continue;
                 };
                 if cancel.is_hard_cancelled() {
                     telemetry.record_outcome("runner_host_finalization_cancelled", "cancelled");
@@ -1129,7 +1112,7 @@ async fn finalize_sandbox_for_completion_inner(
                         "job hard-cancelled before idle pool ownership transfer, destroying sandbox"
                     );
                     drop(transfer_guard);
-                    drop(pool);
+                    drop(locked_pool);
                     let destroy_result = destroy_parked_and_record_home(
                         candidate.into_active_destroy_parts(),
                         "hard_cancellation",
@@ -1138,6 +1121,10 @@ async fn finalize_sandbox_for_completion_inner(
                     reuse_state_changed = destroy_result.home_cache_promoted;
                     break 'finalization destroy_result.budget;
                 }
+                let Some(mut pool) = locked_pool else {
+                    drop(transfer_guard);
+                    continue;
+                };
                 let replacement_cleanup = match pool.park(candidate) {
                     ParkResult::Parked => {
                         info!(
