@@ -13,6 +13,30 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1185.0](https://github.com/okou-ai/okou/compare/app-v0.1184.1...app-v0.1185.0) (2026-11-25)
+
+
+### Features
+
+* **app:** organize workflow directory behind feature switch ([#50253](https://github.com/okou-ai/okou/issues/50253)) ([df2ee82](https://github.com/okou-ai/okou/commit/df2ee823b18568645240ab6ac095a1c1651525e5))
+* **platform:** connect google ai antigravity accounts in models settings ([#50813](https://github.com/okou-ai/okou/issues/50813)) ([b1a4381](https://github.com/okou-ai/okou/commit/b1a438147708afa39cf955f2de1e2070beef77a4))
+
+
+### Bug Fixes
+
+* link welcome threads to the current get started guide ([#50853](https://github.com/okou-ai/okou/issues/50853)) ([4002fa4](https://github.com/okou-ai/okou/commit/4002fa48bfc0862b24a800b488cbdbca72c9ba4a))
+* refresh welcome artifact addresses ([#50849](https://github.com/okou-ai/okou/issues/50849)) ([0f5ca8c](https://github.com/okou-ai/okou/commit/0f5ca8ce9028f78dd046658a5765e0758d78e44a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.128.2
+    * @okouai/connectors bumped to 3.25.1
+    * @okouai/core bumped to 8.880.0
+    * @okouai/ui bumped to 1.22.21
+
 ## [0.1184.1](https://github.com/okou-ai/okou/compare/app-v0.1184.0...app-v0.1184.1) (2026-11-25)
 
 
