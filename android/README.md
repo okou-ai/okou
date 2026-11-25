@@ -43,6 +43,10 @@ row in Settings shows preparation and temporary failures in its subtitle.
 My Okou in Settings reads and edits the signed-in user's personal Instructions
 for the selected workspace through the canonical Instructions API. Loading
 Instructions leaves chat and Appearance available.
+Closing an edited Instructions panel asks whether to discard before removing
+the draft. Conflict recovery asks before loading the latest version and keeps
+the edit when that read fails. Saving keeps the panel and its edit visible
+with a disabled saving action until the request settles.
 Saves always carry the displayed base version; a concurrent Web edit preserves
 the local draft and requires explicitly loading the latest version. Clearing the
 field and saving clears Instructions. A lost save response reads the server back;
