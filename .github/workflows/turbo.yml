@@ -519,6 +519,66 @@ jobs:
       - uses: ./.github/actions/toolchain-init
       - name: Check DB ownership boundary
         run: .github/scripts/checks/check-db-boundary.sh
+      - name: Validate oxlintrc.json react allowImportNames
+        working-directory: turbo
+        run: |
+          allowed=$(jq -r '.overrides[0].rules."no-restricted-imports"[1].paths[0].allowImportNames | sort | join(",")' apps/platform/.oxlintrc.json)
+          expected="Component,StrictMode"
+          if [ "$allowed" != "$expected" ]; then
+            echo "::error::platform oxlintrc.json allowImportNames must be [\"StrictMode\", \"Component\"], got: $allowed"
+            exit 1
+          fi
+      - name: Lint remaining packages
+        working-directory: turbo
+        run: pnpm lint --filter='!api' --filter='!@okouai/app'
+
+  lint-eslint-api:
+    needs: [detect-turbo-ts-checks]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261116
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+      - uses: ./.github/actions/toolchain-init
+      - name: Lint API
+        working-directory: turbo
+        run: pnpm --filter api run lint
+
+  lint-eslint-app:
+    needs: [detect-turbo-ts-checks]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261116
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+      - uses: ./.github/actions/toolchain-init
+      - name: Lint App
+        working-directory: turbo
+        run: pnpm --filter @okouai/app run lint
+
+  lint-db-dependencies:
+    needs: [detect-turbo-ts-checks]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261116
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+      - uses: ./.github/actions/toolchain-init
       - name: Check reduction-only database dependency inventories
         working-directory: turbo
         shell: bash
@@ -530,18 +590,6 @@ jobs:
           git fetch --no-tags --depth=1 origin "$POLICY_BASE_SHA"
           pnpm lint:transactions "$POLICY_BASE_SHA"
           pnpm lint:storage "$POLICY_BASE_SHA"
-      - name: Validate oxlintrc.json react allowImportNames
-        working-directory: turbo
-        run: |
-          allowed=$(jq -r '.overrides[0].rules."no-restricted-imports"[1].paths[0].allowImportNames | sort | join(",")' apps/platform/.oxlintrc.json)
-          expected="Component,StrictMode"
-          if [ "$allowed" != "$expected" ]; then
-            echo "::error::platform oxlintrc.json allowImportNames must be [\"StrictMode\", \"Component\"], got: $allowed"
-            exit 1
-          fi
-      - name: Lint
-        working-directory: turbo
-        run: pnpm lint
 
   lint-style:
     needs: [detect-turbo-ts-checks]
@@ -3000,6 +3048,9 @@ jobs:
       - prepare
       - file-size-check
       - lint-eslint
+      - lint-eslint-api
+      - lint-eslint-app
+      - lint-db-dependencies
       - lint-style
       - lint-types
       - lint-type-app
@@ -3145,6 +3196,9 @@ jobs:
           # detection confirmed a pure native change set, or staging is reusing
           # the merge group's completed code validation.
           check_result "lint-eslint" "${{ needs.lint-eslint.result }}" "$TS_CHECK_SKIP_ALLOWED"
+          check_result "lint-eslint-api" "${{ needs.lint-eslint-api.result }}" "$TS_CHECK_SKIP_ALLOWED"
+          check_result "lint-eslint-app" "${{ needs.lint-eslint-app.result }}" "$TS_CHECK_SKIP_ALLOWED"
+          check_result "lint-db-dependencies" "${{ needs.lint-db-dependencies.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "lint-style" "${{ needs.lint-style.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "lint-types" "${{ needs.lint-types.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "lint-type-app" "${{ needs.lint-type-app.result }}" "$TS_CHECK_SKIP_ALLOWED"
