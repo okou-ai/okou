@@ -47,7 +47,6 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -1100,7 +1099,8 @@ internal class ChatListUnreadModelTest : ChatListModelTestFixture() {
             assertEquals(emptyUnread, relaunched.uiState.value.displayUnreadAt)
 
             next.clear()
-            service.statusRead = { awaitCancellation() }
+            val pendingReply = CompletableDeferred<Indicators>()
+            service.statusRead = { pendingReply.await() }
             val reopened = unreadModel(afterConfirmation, cache, service, dispatcher, wallMillis)
             reopened.refresh()
             reopened.selectFilter(ChatListFilter.Unread)
