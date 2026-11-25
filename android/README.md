@@ -43,15 +43,17 @@ row in Settings shows preparation and temporary failures in its subtitle.
 My Okou in Settings reads and edits the signed-in user's personal Instructions
 for the selected workspace through the canonical Instructions API. Loading
 Instructions leaves chat and Appearance available.
-Closing an edited Instructions panel asks whether to discard before removing
-the draft. Conflict recovery asks before loading the latest version and keeps
-the edit when that read fails. Saving keeps the panel and its edit visible
-with a disabled saving action until the request settles.
-Saves always carry the displayed base version; a concurrent Web edit preserves
-the local draft and requires explicitly loading the latest version. Clearing the
-field and saving clears Instructions. A lost save response reads the server back;
-an unresolved attempt stays frozen until that read or an explicit retry with the
-same version resolves it.
+Opening the editor displays a confirmed snapshot less than 10 minutes old and
+refreshes it in the background. A cold or expired open reserves the editor space
+until data arrives. A refresh updates the saved value and preserves any edited text
+and selection. The latest confirmed value determines whether Save is available
+and what to restore on discard. Discard still requires confirmation.
+Saving keeps the panel and its edit visible with a disabled saving action until
+the request settles. An explicit save uses the latest confirmed version. A
+definitive stale-version rejection reads back the latest value and retries once
+with that version if the text differs. Clearing the field and saving clears
+Instructions. A lost save response reads the server back. An unresolved attempt
+stays frozen until that read or an explicit retry with the same version resolves it.
 
 Activities for the same API origin/user/workspace share one editing transaction
 while retaining their own native selection and session authorization. Request
@@ -59,16 +61,17 @@ progress, read failures and persisted intent are separate facts. Preparation
 must acknowledge that exact frozen intent before HTTP; a superseded queued write
 is not a durability receipt. Cancelling or failing preparation restores the
 editable intent, while cancellation after dispatch preserves the unknown attempt.
-Settlement only replaces its captured local revision. Retiring a controller
-cancels its own network work; the shared editor is released after the last
+Only the active authorized request settles its result. Retiring a controller
+cancels its own network work. The shared editor is released after the last
 controller detaches, and accepted local IO remains application-owned.
 
-Unsaved text and unresolved save attempts live in a separate application-owned,
-versioned AtomicFile store under `noBackupFilesDir/personal-instructions`.
-Format 1 contains content, the base response and attempt state, scoped by normalized
-API origin/user/workspace. It contains no credentials and survives editor retirement
-and process restart independently of the rebuildable chat cache. Disk errors retain
-accepted edits in memory and expose retry; malformed files are never silently reset.
+Ordinary edits live in the open editor. A separate application-owned AtomicFile
+journal under `noBackupFilesDir/personal-instructions` retains unresolved save
+attempts. Format 1 remains readable, including older unsubmitted drafts; these
+are recovered for the user to save or discard. The journal uses normalized API
+origin/user/workspace identity and contains no credentials. A failed save
+preparation retains editable text and prevents remote submission. Malformed files
+are never silently reset.
 Activity saved state carries only the native selection, keeping large text out of
 the size-limited Binder bundle.
 Feature-local 403/404 does not sign out the workspace. Visible/foreground/manual
@@ -119,8 +122,8 @@ startup, the unread dots, filter, and collapsed Project counts can use that
 snapshot for up to two minutes from confirmation. A successful indicators read
 replaces it. Running indicators and run controls still use live responses.
 Signed archive URLs are confined to a snapshot fetch, and credentials belong to
-the authentication owner. Personal Instructions drafts use the separate intent
-store described above.
+the authentication owner. Personal Instructions saves use the separate intent
+journal described above.
 
 Pin, pin reorder, rename, mute, archive and delete project their visible result
 from memory before the request completes. Definitive refusals remove their

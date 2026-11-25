@@ -58,7 +58,7 @@
     <string name="language_zh_hant">繁體中文</string>
     <string name="instructions_title">個人指令</string>
     <string name="instructions_loading">正在載入個人指令…</string>
-    <string name="instructions_conflict">個人指令已在其他位置變更。重新載入最新版本將捨棄本機變更。</string>
+    <string name="instructions_refresh_failed">暫時無法更新，顯示上次讀取的個人指令。</string>
     <string name="instructions_uncertain">尚未確認儲存結果。文字已保留，請先檢查已儲存的版本再重試。</string>
     <string name="instructions_load_failed">無法載入個人指令。</string>
     <string name="instructions_unavailable">目前無法使用個人指令。</string>
@@ -68,7 +68,6 @@
     <string name="instructions_invalid">文字含有不支援的字元。</string>
     <string name="instructions_refresh">檢查已儲存版本</string>
     <string name="instructions_save">儲存</string>
-    <string name="instructions_reload">載入最新版本並捨棄變更</string>
     <string name="instructions_discard">捨棄變更</string>
     <string name="instructions_retry_save">重試同一次儲存</string>
     <string name="composer_new">新對話</string>

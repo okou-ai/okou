@@ -86,7 +86,6 @@ internal fun PersonalInstructionsSettings(
     }
     var closeAfterSave by rememberSettingsFlag()
     var discardDraft by remember(model) { mutableStateOf<InstructionsDraft?>(null) }
-    var reloadDraft by remember(model) { mutableStateOf<InstructionsDraft?>(null) }
     var editorFocused by rememberSettingsFlag()
     var editorKeyboardVisible by rememberSettingsFlag()
     LaunchedEffect(closeAfterSave, state.phase, state.draft) {
@@ -98,7 +97,7 @@ internal fun PersonalInstructionsSettings(
     val title = stringResource(R.string.instructions_title)
     val editing =
         if (
-            state.phase != InstructionsPhase.Unavailable &&
+            state.read != InstructionsRead.Unavailable &&
                 (state.saved != null || state.draft != null)
         )
             rememberJournalEditor(state.content, replacementSelection = TextRange.Zero)
@@ -110,7 +109,7 @@ internal fun PersonalInstructionsSettings(
         if (current.phase == InstructionsPhase.Saving) return false
         val draft = current.draft
         if (draft != null && !draft.attempted) {
-            if (discardDraft == null && reloadDraft == null) discardDraft = draft
+            if (discardDraft == null) discardDraft = draft
             return false
         }
         return true
@@ -119,11 +118,7 @@ internal fun PersonalInstructionsSettings(
         if (confirmDismiss()) dismiss()
     }
     BackHandler {
-        when {
-            discardDraft != null -> discardDraft = null
-            reloadDraft != null -> reloadDraft = null
-            else -> requestDismiss()
-        }
+        if (discardDraft != null) discardDraft = null else requestDismiss()
     }
     fun save() {
         closeAfterSave = true
@@ -221,9 +216,11 @@ internal fun PersonalInstructionsSettings(
                 BasicTextField(
                     value = editing.value,
                     onValueChange = { value ->
-                        if (value.text != state.content) closeAfterSave = false
                         editing.edit(value)
-                        model.edit(value.text)
+                        if (value.text != editing.value.text) {
+                            closeAfterSave = false
+                            model.edit(value.text)
+                        }
                     },
                     modifier =
                         Modifier.fillMaxWidth()
@@ -302,11 +299,12 @@ internal fun PersonalInstructionsSettings(
                     state.localFailure -> R.string.instructions_local_failed
                     state.saveRejected -> R.string.instructions_save_rejected
                     state.content.contains('\u0000') -> R.string.instructions_invalid
-                    state.phase == InstructionsPhase.Conflict -> R.string.instructions_conflict
                     state.phase == InstructionsPhase.Uncertain -> R.string.instructions_uncertain
                     state.phase == InstructionsPhase.Unavailable ->
                         R.string.instructions_unavailable
                     state.phase == InstructionsPhase.Failed -> R.string.instructions_load_failed
+                    state.read == InstructionsRead.RefreshFailed ->
+                        R.string.instructions_refresh_failed
                     else -> null
                 }
             if (message != null) {
@@ -317,18 +315,11 @@ internal fun PersonalInstructionsSettings(
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
-            val canReload = state.conflicting && state.canEdit
             val checkSavedVersion =
-                !canReload &&
-                    (state.phase == InstructionsPhase.Failed ||
-                        state.phase == InstructionsPhase.Uncertain)
-            if (canReload || checkSavedVersion || state.localFailure) {
+                state.phase == InstructionsPhase.Failed ||
+                    state.phase == InstructionsPhase.Uncertain
+            if (checkSavedVersion || state.localFailure) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (canReload)
-                        InstructionsAction(
-                            R.string.instructions_reload,
-                            { reloadDraft = state.draft },
-                        )
                     if (checkSavedVersion)
                         InstructionsAction(R.string.instructions_refresh, model::refresh)
                     if (state.localFailure)
@@ -351,20 +342,6 @@ internal fun PersonalInstructionsSettings(
             },
         ) {
             Text(stringResource(R.string.instructions_unsaved))
-        }
-    }
-    reloadDraft?.let { draft ->
-        OkouConfirmationDialog(
-            onDismiss = { reloadDraft = null },
-            title = stringResource(R.string.instructions_reload),
-            confirm = stringResource(R.string.instructions_discard),
-            onConfirm = {
-                closeAfterSave = false
-                reloadDraft = null
-                model.reloadLatest(draft)
-            },
-        ) {
-            Text(stringResource(R.string.instructions_conflict))
         }
     }
 }

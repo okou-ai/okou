@@ -17,15 +17,13 @@ class PersonalInstructionsModel(
     private val editor = store.attach(identity, connection)
     val uiState = editor.uiState
 
-    fun open() = editor.refresh(connection)
+    fun open() = editor.open(connection)
 
     fun refreshFromForeground() = editor.refreshFromForeground(connection)
 
     fun edit(content: String) = editor.edit(connection, content)
 
     fun retryLocalDraft() = editor.retryLocalDraft(connection)
-
-    fun reloadLatest(draft: InstructionsDraft) = editor.reloadLatest(connection, draft)
 
     fun discardEdits(draft: InstructionsDraft) = editor.discardEdits(connection, draft)
 

@@ -58,7 +58,7 @@
     <string name="language_zh_hant">繁體中文</string>
     <string name="instructions_title">व्यक्तिगत निर्देश</string>
     <string name="instructions_loading">निर्देश लोड हो रहे हैं…</string>
-    <string name="instructions_conflict">निर्देश कहीं और बदल गए हैं। नवीनतम संस्करण लोड करने पर स्थानीय बदलाव हट जाएंगे।</string>
+    <string name="instructions_refresh_failed">निर्देश रीफ़्रेश नहीं हो सके। पिछली बार लोड किए गए निर्देश दिख रहे हैं।</string>
     <string name="instructions_uncertain">सहेजने की पुष्टि नहीं हुई। आपका पाठ सुरक्षित है। फिर प्रयास करने से पहले सहेजा गया संस्करण देखें।</string>
     <string name="instructions_load_failed">निर्देश लोड नहीं हो सके।</string>
     <string name="instructions_unavailable">इस संदर्भ में निजी निर्देश उपलब्ध नहीं हैं।</string>
@@ -68,7 +68,6 @@
     <string name="instructions_invalid">पाठ में असमर्थित वर्ण है।</string>
     <string name="instructions_refresh">सहेजा गया संस्करण जाँचें</string>
     <string name="instructions_save">सेव करें</string>
-    <string name="instructions_reload">नवीनतम संस्करण लोड करके बदलाव हटाएँ</string>
     <string name="instructions_discard">बदलाव हटाएँ</string>
     <string name="instructions_retry_save">वही सहेजना फिर आज़माएँ</string>
     <string name="composer_new">नई चैट</string>

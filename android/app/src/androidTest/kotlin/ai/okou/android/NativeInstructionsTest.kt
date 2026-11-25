@@ -3,6 +3,7 @@ package ai.okou.android
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.instructions.InstructionsPhase
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
+import ai.okou.android.instructions.PersonalInstructionsModel
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityWindowInfo
 import androidx.lifecycle.ViewModelProvider
@@ -32,7 +33,7 @@ import org.junit.runners.model.MultipleFailureException
 @RunWith(AndroidJUnit4::class)
 class NativeInstructionsTest {
     @Test
-    fun nativeEditingImeBackRecreationSaveAndExternalConflictKeepTheirOwners() {
+    fun nativeEditingImeBackRecreationSaveAndBackgroundRefreshKeepTheirOwners() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val app = instrumentation.targetContext.applicationContext as TestOkouApplication
         val authentication = app.authentication as TestAuthentication
@@ -48,6 +49,8 @@ class NativeInstructionsTest {
         val fixture = InstructionsApiFixture()
         val held = CountDownLatch(1)
         val entered = CountDownLatch(1)
+        val refreshHeld = CountDownLatch(1)
+        val refreshEntered = CountDownLatch(1)
         fixture.beforeRead = {
             entered.countDown()
             held.await()
@@ -57,6 +60,7 @@ class NativeInstructionsTest {
         authentication.state.value = testAuthenticationState()
         val device = UiDevice.getInstance(instrumentation)
         var scenario: ActivityScenario<MainActivity>? = null
+        lateinit var model: PersonalInstructionsModel
         var editorJob: Job? = null
         val failures = mutableListOf<Throwable>()
         try {
@@ -135,13 +139,13 @@ class NativeInstructionsTest {
             click(R.string.instructions_title)
             assertTrue(entered.await(10, TimeUnit.SECONDS))
             scenario.onActivity {
-                val editor =
+                model =
                     checkNotNull(
                             ViewModelProvider(it)[SessionModel::class.java].uiState.value.ready,
                         )
                         .instructions
-                editorJob = editor.viewModelScope.coroutineContext[Job]
-                assertEquals(InstructionsPhase.Loading, editor.uiState.value.phase)
+                editorJob = model.viewModelScope.coroutineContext[Job]
+                assertEquals(InstructionsPhase.Loading, model.uiState.value.phase)
             }
             // The host Compose test covers pending Instructions feedback. Release the actual HTTP
             // response after native first-display proof, before gestures can exhaust its deadline.
@@ -183,20 +187,34 @@ class NativeInstructionsTest {
             )
             assertTrue(fixture.saved.content.contains("Native **instructions** 👋"))
             reveal(app.getString(R.string.appearance))
+            fixture.beforeRead = {
+                refreshEntered.countDown()
+                refreshHeld.await()
+            }
             click(R.string.instructions_title)
+            assertTrue(refreshEntered.await(10, TimeUnit.SECONDS))
+            assertTrue(editor().text.contains("Native **instructions** 👋"))
             editor().text = "Keep this local draft"
             val webText = "Changed on Web"
             fixture.externalEdit(webText)
-            scenario.onActivity {
-                checkNotNull(ViewModelProvider(it)[SessionModel::class.java].uiState.value.ready)
-                    .instructions
-                    .refresh()
-            }
-            reveal(app.getString(R.string.instructions_conflict))
+            refreshHeld.countDown()
+            assertTrue(
+                device.wait(
+                    object : Condition<UiDevice, Boolean> {
+                        override fun apply(unused: UiDevice) =
+                            model.uiState.value.let { !it.busy && it.saved?.content == webText }
+                    },
+                    10_000,
+                ) == true,
+            )
             assertEquals("Keep this local draft", editor().text)
             assertEquals(1, fixture.requests.count { it.method == "PUT" })
-            click(R.string.instructions_reload)
+            assertTrue(text(app.getString(R.string.instructions_save)).isEnabled)
+            click(R.string.settings_cancel)
+            reveal(app.getString(R.string.instructions_unsaved))
             click(R.string.instructions_discard)
+            reveal(app.getString(R.string.appearance))
+            click(R.string.instructions_title)
             assertEquals(webText, editor(expectedText = webText).text)
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             reveal(app.getString(R.string.appearance))
@@ -211,6 +229,7 @@ class NativeInstructionsTest {
             }
         } finally {
             held.countDown()
+            refreshHeld.countDown()
             for (cleanup in
                 listOf<() -> Unit>(
                     { scenario?.close() },
