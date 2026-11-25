@@ -42,6 +42,7 @@ from .model_tokens import (
     MODEL_USAGE_CATEGORY_CACHE_READ,
     MODEL_USAGE_CATEGORY_INPUT,
     MODEL_USAGE_CATEGORY_OUTPUT,
+    MODEL_USAGE_IDENTITY_FIELD,
     MODEL_USAGE_QUANTITY_FIELD,
     update_model_usage_quantity,
 )
@@ -133,8 +134,8 @@ class OpenAIResponsesEvent:
 
 
 _RESPONSES_RESPONSE_TEXT_FIELDS = {
-    ("id",): ScalarField("string", max_bytes=1024),
-    ("model",): ScalarField("string", max_bytes=1024),
+    ("id",): MODEL_USAGE_IDENTITY_FIELD,
+    ("model",): MODEL_USAGE_IDENTITY_FIELD,
     ("service_tier",): ScalarField("string", max_bytes=1024),
 }
 _RESPONSES_USAGE_QUANTITY_PATHS = (
