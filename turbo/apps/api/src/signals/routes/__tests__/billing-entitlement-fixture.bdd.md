@@ -7,7 +7,7 @@
 - Intent: review
 - Given: The shared test fixture has a new organization that requests a Pro entitlement through the Stripe HTTP boundary.
 - When: The fixture completes entitlement and reads public billing status.
-- Then: The invoice, customer and subscription fixture identities share one full UUID suffix. Billing reports the requested plan and an active subscription.
+- Then: The invoice, customer and subscription fixture identities share one full UUID suffix. Billing reports the requested plan and a subscription.
 
 ## billing-entitlement-fixture-002
 
@@ -16,7 +16,7 @@
 - Intent: review
 - Given: The shared test fixture has a new organization that requests a Team entitlement through the Stripe HTTP boundary.
 - When: The fixture completes entitlement and reads public billing status.
-- Then: The invoice, customer and subscription fixture identities share one full UUID suffix. Billing reports the requested plan and an active subscription.
+- Then: The invoice, customer and subscription fixture identities share one full UUID suffix. Billing reports the requested plan and a subscription.
 
 ## billing-entitlement-fixture-003
 

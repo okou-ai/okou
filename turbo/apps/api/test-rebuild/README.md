@@ -150,3 +150,13 @@ The source review refined the Auto routing and Runner BDDs to capture the actual
 | `subscription-credit-balances-002` | Unknown credit amount keeps the finite marker and preserves reset credits and five-hour quota. |
 | `node-server-004` | Replacement can bind before the original process’s remaining background cleanup finishes. |
 | `onboarding-recommendations-003` | A connection revoked during reading is listed as unavailable; the request keeps capability labels and omits revoked facts and raw secrets. |
+| `chat-events-model-routing-012` | Public metadata uses priority while dispatch uses fast. Rejecting the fresh Fast Sonnet request leaves no thread. |
+| `chat-events-connectors-009` | Default HTTP and MCP sources enter dispatch without saved thread overrides. Header resolution is tied to each provider account. |
+| `discord-ingress-003` | The private-thread path makes participant-specific reads and distinguishes parallel launch from admission. |
+| `discord-ingress-029` | Canonical error event and native reply each survive replay without another reply. |
+| `discord-ingress-036` | Explicit member permission holds despite the role denial. |
+| `discord-ingress-049` | This Web send changes both thread and global defaults. The neighboring thread-only case remains distinct. |
+| `discord-ingress-054` | The projection omits the provider preview capability while assigned Runner context retains it. |
+| `computer-use-command-create-002` | Followed the create helper to verify the distinct no-host, unsupported, ambiguous and stale host responses. |
+| `chat-events-admission-004` | The prohibited annotation returns 400 even when its ID matches a previously accepted event. |
+| `chat-events-admission-009` | Enqueue 201 is distinct from asynchronous insufficient-credits rejection, branded guidance and zero active concurrency. |
