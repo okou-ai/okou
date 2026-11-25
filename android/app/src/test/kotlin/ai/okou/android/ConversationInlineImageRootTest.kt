@@ -107,6 +107,75 @@ internal class ConversationInlineImageRootTest : ArtifactCatalogRootTestFixture(
     }
 
     @Test
+    fun withdrawsAnExternalImageWhenItsUrlNoLongerAllowsReading() {
+        val fixture = InlineImageFixture(app.fixture)
+        val filename = "external-evidence.png"
+        val url = app.fixture.server.url("/inline-thumbnail/$filename")
+        fixture.install(latest = "![](<$url>)", earlier = false)
+        openConversation()
+        val loaded =
+            hasContentDescription(filename) and
+                hasClickAction() and
+                SemanticsMatcher.keyNotDefined(SemanticsProperties.StateDescription)
+        compose.waitUntil(8_000) { compose.onAllNodes(loaded).fetchSemanticsNodes().isNotEmpty() }
+        val frame = compose.onNode(loaded).getUnclippedBoundsInRoot()
+
+        fixture.deniedExternalFilename = filename
+        compose.onNode(loaded).performClick()
+        awaitText("You don’t have access to this artifact")
+        compose.onNodeWithTag("artifact_preview_title").assertDoesNotExist()
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+
+        val unavailable =
+            hasContentDescription("Image") and
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.StateDescription,
+                    "Image unavailable",
+                )
+        compose.waitUntil(8_000) {
+            compose.onAllNodes(unavailable).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNode(unavailable).assert(!hasClickAction())
+        assertEquals(frame, compose.onNode(unavailable).getUnclippedBoundsInRoot())
+        assertEquals(listOf(filename, filename), fixture.thumbnails.toList())
+
+        compose.onNodeWithContentDescription("Chat actions").performClick()
+        compose.onNodeWithText("Find messages").performClick()
+        compose.onNodeWithTag("conversation_find_query").performTextReplacement(filename)
+        awaitText("No matching messages")
+    }
+
+    @Test
+    fun restoresAnExternalPreviewAcrossRecreationWithoutSavingTheUrlInActivityState() {
+        val fixture = InlineImageFixture(app.fixture)
+        val filename = "external-preview.png"
+        val url =
+            app.fixture.server
+                .url("/inline-thumbnail/$filename")
+                .newBuilder()
+                .addQueryParameter("test-signature", "a".repeat(26_000))
+                .build()
+        fixture.install(latest = "![](<$url>)", earlier = false)
+        openConversation()
+        val loaded =
+            hasContentDescription(filename) and
+                hasClickAction() and
+                SemanticsMatcher.keyNotDefined(SemanticsProperties.StateDescription)
+        compose.waitUntil(8_000) { compose.onAllNodes(loaded).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(loaded).performClick()
+        awaitText(filename)
+        compose.waitUntil(8_000) { fixture.thumbnails.size >= 2 }
+
+        compose.activityRule.scenario.recreate()
+        awaitText(filename)
+        compose.onNodeWithTag("artifact_preview").assertIsDisplayed()
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.waitUntil(8_000) {
+            compose.onAllNodes(loaded and isFocused()).fetchSemanticsNodes().isNotEmpty()
+        }
+    }
+
+    @Test
     fun findsAHiddenTimelineImageWithoutLoadingItUntilTheResultIsOpened() {
         val fixture = InlineImageFixture(app.fixture)
         fixture.install()

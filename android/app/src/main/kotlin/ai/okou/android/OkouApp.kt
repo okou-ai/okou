@@ -64,6 +64,7 @@ import ai.okou.android.settings.DefaultModelSettings
 import ai.okou.android.state.ArtifactsDestination
 import ai.okou.android.state.ChatConnectorVisit
 import ai.okou.android.state.ConversationLinkReturn
+import ai.okou.android.state.RetainedExternalImagePreview
 import ai.okou.android.state.SearchRoute
 import ai.okou.android.state.SettingsDestination
 import ai.okou.android.state.WorkflowConnectorVisit
@@ -350,7 +351,10 @@ internal fun OkouApp(
     }
     DisposableEffect(workspaceSearch) { onDispose { workspaceSearch?.pauseReads() } }
     val inlineArtifactLink =
-        navigation.chatArtifactLink.takeIf {
+        when (val link = navigation.chatArtifactLink) {
+            RetainedExternalImagePreview -> chatArtifacts?.retainedExternalImageId()
+            else -> link
+        }.takeIf {
             thread != null &&
                 chatArtifacts != null &&
                 settings == null &&
@@ -2005,6 +2009,7 @@ internal fun OkouApp(
                                                             restored = {
                                                                 navigation =
                                                                     navigation.copy(
+                                                                        chatArtifactLink = null,
                                                                         chatArtifactFocusKey = null,
                                                                     )
                                                             },

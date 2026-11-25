@@ -286,6 +286,9 @@ internal constructor(
         if (id != null) readPreview(id)
     }
 
+    internal fun retainedExternalImageId(): String? =
+        mutable.value.preview?.id?.takeIf { it.startsWith(ExternalImagePreviewPrefix) }
+
     internal suspend fun thumbnail(url: String, offline: Boolean): Bitmap? {
         thumbnails.get(url)?.let {
             return it
@@ -765,6 +768,8 @@ internal constructor(
         }
         previewJob?.cancel()
         previewJob = viewModelScope.launch {
+            // External image metadata describes the URL. Only reading it establishes access.
+            val externalImage = id.startsWith(ExternalImagePreviewPrefix)
             var detailAuthorized = false
             var fileAccessAuthorized = false
             try {
@@ -773,7 +778,7 @@ internal constructor(
                     detailAuthorized = false
                     fileAccessAuthorized = false
                     val info = service.info(id)
-                    detailAuthorized = true
+                    detailAuthorized = !externalImage
                     updatePreview(id) {
                         copy(
                             item = info.item,
@@ -785,7 +790,7 @@ internal constructor(
                         when (val resource = info.resource) {
                             is ArtifactResource.File -> {
                                 val access = info.resolvedAccess ?: service.fileAccess(resource)
-                                fileAccessAuthorized = true
+                                fileAccessAuthorized = !externalImage
                                 updatePreview(id) { copy(access = access) }
                                 service.fileContent(resource, access)
                             }
@@ -821,11 +826,13 @@ internal constructor(
                 updatePreview(id) {
                     if (discardContent) previews.remove(id)
                     if (revoked && !detailAuthorized) {
-                        messageArtifactLink(id)
-                            ?.takeIf { it.startsWith("/artifacts/") }
-                            ?.let(inlineImages::revoke)
+                        val source =
+                            if (externalImage) id
+                            else messageArtifactLink(id)?.takeIf { it.startsWith("/artifacts/") }
+                        source?.let(inlineImages::revoke)
                     }
                     copy(
+                        item = item.takeUnless { revoked && externalImage },
                         info = info.takeUnless { revoked && !detailAuthorized },
                         content = content.takeIf { hasReadableContent && !discardContent },
                         access = access.takeUnless { revoked && !fileAccessAuthorized },

@@ -26,6 +26,7 @@ internal class InlineImageFixture(private val api: ChatListApiFixture) {
     val originals = CopyOnWriteArrayList<String>()
     var missingThumbnail = false
     @Volatile var readyReferenceDenied = false
+    @Volatile var deniedExternalFilename: String? = null
 
     fun install(latest: String? = null, earlier: Boolean = true) {
         val image = chart()
@@ -61,9 +62,11 @@ internal class InlineImageFixture(private val api: ChatListApiFixture) {
                     assertNull(request.getHeader("Cookie"))
                     if (path.startsWith("/inline-thumbnail/")) thumbnails.add(name)
                     else originals.add(name)
-                    MockResponse()
-                        .setHeader("Content-Type", "image/png")
-                        .setBody(Buffer().write(image))
+                    if (name == deniedExternalFilename) MockResponse().setResponseCode(403)
+                    else
+                        MockResponse()
+                            .setHeader("Content-Type", "image/png")
+                            .setBody(Buffer().write(image))
                 }
                 else -> previous(request)
             }
