@@ -10,6 +10,22 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.130.0](https://github.com/okou-ai/okou/compare/api-v2.129.0...api-v2.130.0) (2026-11-25)
+
+
+### Features
+
+* **connectors:** release linkedin oauth to all users ([#50870](https://github.com/okou-ai/okou/issues/50870)) ([8569b73](https://github.com/okou-ai/okou/commit/8569b736e2f89ae64986ca5a43a6b34a846d483d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.881.0
+    * @okouai/db bumped to 2.69.1
+    * @okouai/pi-agent-runtime bumped to 1.52.77
+
 ## [2.129.0](https://github.com/okou-ai/okou/compare/api-v2.128.1...api-v2.129.0) (2026-11-25)
 
 

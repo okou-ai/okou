@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.66.2](https://github.com/okou-ai/okou/compare/ios-v0.66.1...ios-v0.66.2) (2026-11-25)
+
+
+### Bug Fixes
+
+* **ios:** open google authorization directly and show connection progress ([#50834](https://github.com/okou-ai/okou/issues/50834)) ([1bbaf52](https://github.com/okou-ai/okou/commit/1bbaf52d0c037bf6ee54454478c15bd561dac7c9))
+
+
+### Refactoring
+
+* **ios:** keep composer connector reads and their snapshot in the session graph ([#50867](https://github.com/okou-ai/okou/issues/50867)) ([f2940d7](https://github.com/okou-ai/okou/commit/f2940d7d832b793868382a90310c15897c231024))
+
 ## [0.66.1](https://github.com/okou-ai/okou/compare/ios-v0.66.0...ios-v0.66.1) (2026-11-25)
 
 

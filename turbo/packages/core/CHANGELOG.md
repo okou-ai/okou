@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.881.0](https://github.com/okou-ai/okou/compare/core-v8.880.0...core-v8.881.0) (2026-11-25)
+
+
+### Features
+
+* **connectors:** release linkedin oauth to all users ([#50870](https://github.com/okou-ai/okou/issues/50870)) ([8569b73](https://github.com/okou-ai/okou/commit/8569b736e2f89ae64986ca5a43a6b34a846d483d))
+
 ## [8.880.0](https://github.com/okou-ai/okou/compare/core-v8.879.1...core-v8.880.0) (2026-11-25)
 
 
