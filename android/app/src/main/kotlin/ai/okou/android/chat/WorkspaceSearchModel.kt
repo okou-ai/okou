@@ -1,7 +1,7 @@
 package ai.okou.android.chat
 
 import ai.okou.android.api.ApiFailure
-import ai.okou.android.api.finiteReadRetryDelays
+import ai.okou.android.api.boundedReadRetryDelayMillis
 import ai.okou.android.api.generated.WorkflowSummary
 import ai.okou.android.artifacts.ArtifactKind
 import ai.okou.android.auth.WorkspaceIdentity
@@ -27,16 +27,6 @@ import kotlinx.coroutines.launch
 internal const val RecentSearchChatLimit = 8
 internal const val GroupedSearchResultLimit = 3
 private const val SearchDebounceMillis = 300L
-
-private fun searchRetryAfterMillis(error: Exception): Long? =
-    when (error) {
-        is ApiFailure.Network -> 0L
-        is ApiFailure.Http ->
-            if (error.status == 408 || error.status == 429 || error.status in 500..599) {
-                (error.retryAfterSeconds ?: 0L).coerceIn(0, Long.MAX_VALUE / 1_000) * 1_000
-            } else null
-        else -> null
-    }
 
 internal enum class WorkspaceSearchType {
     All,
@@ -331,8 +321,7 @@ internal constructor(
                     ) {
                         onFailure(error)
                     }
-                    val retryAfter = searchRetryAfterMillis(error)
-                    val retryDelay = finiteReadRetryDelays.getOrNull(failures)
+                    val retryDelay = error.boundedReadRetryDelayMillis(failures)
                     if (authorized()) {
                         publish(
                             when {
@@ -340,13 +329,13 @@ internal constructor(
                                     error is ApiFailure.UpdateRequired ||
                                     error is ApiFailure.Http && error.status in setOf(401, 403) ->
                                     SearchRead.AccessLost
-                                retryAfter == null || retryDelay == null -> SearchRead.Failed
+                                retryDelay == null -> SearchRead.Failed
                                 else -> SearchRead.Retrying
                             },
                         )
                     }
-                    if (retryAfter == null || retryDelay == null) return
-                    delay(maxOf(retryAfter, retryDelay))
+                    if (retryDelay == null) return
+                    delay(retryDelay)
                     failures++
                     continue
                 }
