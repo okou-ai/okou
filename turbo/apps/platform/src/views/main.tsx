@@ -27,7 +27,7 @@ import { InstatusStatusNotice } from "./components/instatus-status-notice.tsx";
 import { setupViewportPinchPrevention } from "../lib/viewport-pinch.ts";
 import { IN_VITEST } from "../env.ts";
 import { featureSwitches$ } from "../signals/external/feature-switch.ts";
-import { setupProjectArchiveShortcut$ } from "../signals/projects/project-archive-shortcut.ts";
+import { setupProjectActionShortcuts$ } from "../signals/projects/project-action-shortcuts.ts";
 import { projects$ } from "../signals/projects/projects.ts";
 import { projectReorderEnabled$ } from "../signals/projects/project-order.ts";
 import { setupGlobalKeyboardShortcuts$ } from "../signals/okou-page/nav.ts";
@@ -46,7 +46,7 @@ function GlobalKeyboardShortcuts() {
   const archiveEnabled =
     useLastResolved(featureSwitches$)?.[FeatureSwitchKey.ProjectArchive] ===
     true;
-  const setupArchive = useSet(setupProjectArchiveShortcut$);
+  const setupActions = useSet(setupProjectActionShortcuts$);
 
   const shortcutRef = (element: HTMLSpanElement | null) => {
     if (!element) {
@@ -57,12 +57,12 @@ function GlobalKeyboardShortcuts() {
         return project.id;
       }) ?? [];
     const stopGlobal = setupGlobal(signal);
-    const stopArchive = archiveEnabled ? setupArchive(signal) : undefined;
+    const stopActions = setupActions(archiveEnabled, signal);
     const stopFold = setupFold(ids, signal);
     const stopOrder = setupOrder(ids, reorderEnabled === true, signal);
     return () => {
       stopGlobal();
-      stopArchive?.();
+      stopActions();
       stopFold();
       stopOrder();
     };

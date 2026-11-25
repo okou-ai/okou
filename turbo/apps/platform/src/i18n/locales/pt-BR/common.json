@@ -2645,11 +2645,10 @@
       "number": "número"
     },
     "sidebar": {
-      "archive": "Arquivar conversa",
+      "archive": "Arquivar",
       "archived": "Arquivadas",
       "chatsWith": "Conversas com {{assistantName}}",
       "chatThreads": "Conversas",
-      "delete": "Excluir",
       "deleteDescription": "Esta conversa será excluída permanentemente. Qualquer tarefa em execução nesta conversa será interrompida imediatamente. Todas as automações vinculadas serão pausadas. Esta ação não pode ser desfeita.",
       "deleteTitle": "Excluir conversa?",
       "draft": "Rascunho",
@@ -2660,7 +2659,7 @@
       "markUnread": "Marcar como não lida",
       "movePinDown": "Mover para baixo",
       "movePinUp": "Mover para cima",
-      "mute": "Silenciar conversa",
+      "mute": "Silenciar",
       "muted": "Silenciada",
       "newChatWith": "Nova conversa com {{assistantName}}",
       "noArchived": "Nenhuma conversa arquivada",
@@ -2675,9 +2674,9 @@
       "showAllChats": "Mostrar todas as conversas",
       "showArchivedChats": "Mostrar conversas arquivadas",
       "titlePlaceholder": "Título da conversa",
-      "unarchive": "Desarquivar conversa",
+      "unarchive": "Desarquivar",
       "unmute": "Reativar notificações",
-      "unpin": "Desafixar conversa",
+      "unpin": "Desafixar",
       "unread": "Não lida",
       "unreadOnly": "Não lida"
     },

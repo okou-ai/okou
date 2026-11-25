@@ -107,7 +107,7 @@ const CHAT_THREAD_SHORTCUT_SECTIONS = [
     shortcuts: [
       ...GLOBAL_NAVIGATION_SHORTCUTS,
       {
-        key: GLOBAL_KEYBOARD_SHORTCUTS.renameChat.binding,
+        key: GLOBAL_KEYBOARD_SHORTCUTS.rename.binding,
         labelId: "renameChat",
       },
       {
