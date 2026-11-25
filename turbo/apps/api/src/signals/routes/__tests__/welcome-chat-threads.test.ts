@@ -282,16 +282,14 @@ describe("POST /api/welcome-chat-threads", () => {
         "https://pr-33252-www.omby.ai/en/workflow-automation-examples",
       );
       expect(content).not.toContain("{{");
-      expect(content).toContain(
-        "https://my-okou-quickstart-20261112-review.okou.app",
-      );
+      expect(content).toContain("https://okou-get-started.okou.app");
       for (const filename of [
-        "my-okou-instructions-8ec43cd079ea.png",
-        "my-okou-workflow-instructions-5f1222f7d3ea.png",
-        "my-okou-workflow-settings-5c32a5d6a9c6.png",
+        "get-started-instructions-557a4df6e9a4.png",
+        "get-started-workflow-instructions-0df6d807e0f5.png",
+        "get-started-workflow-sharing-c8637b0991d5.png",
       ]) {
         expect(content).toContain(
-          `https://my-okou-quickstart-20261112-review.okou.app/assets/${filename}`,
+          `https://okou-get-started.okou.app/assets/${filename}`,
         );
       }
     },
