@@ -546,11 +546,11 @@ chat	src/signals/routes/__tests__/shared-thread-attachments.test.ts	shared-threa
 chat	src/signals/routes/__tests__/shared-thread-attachments.test.ts	shared-thread-attachments-005	planned		extension after sandbox reset
 chat	src/signals/routes/__tests__/shared-thread-attachments.test.ts	shared-thread-attachments-008	planned		extension after sandbox reset
 chat	src/signals/routes/__tests__/shared-thread-attachments.test.ts	shared-thread-attachments-010	planned		extension after sandbox reset
-chat	src/signals/routes/__tests__/chat-thread-draft-store.test.ts	chat-thread-draft-store-001	planned		extension after sandbox reset
-chat	src/signals/routes/__tests__/chat-thread-draft-store.test.ts	chat-thread-draft-store-004	planned		extension after sandbox reset
-chat	src/signals/routes/__tests__/chat-thread-draft-store.test.ts	chat-thread-draft-store-006	planned		extension after sandbox reset
-chat	src/signals/routes/__tests__/chat-thread-draft-store.test.ts	chat-thread-draft-store-008	planned		extension after sandbox reset
-chat	src/signals/routes/__tests__/chat-thread-draft-store.test.ts	chat-thread-draft-store-010	planned		extension after sandbox reset
+chat	src/signals/routes/__tests__/chat-thread-draft-store.test.ts	chat-thread-draft-store-001	rewritten	122.4	extension after sandbox reset
+chat	src/signals/routes/__tests__/chat-thread-draft-store.test.ts	chat-thread-draft-store-004	rewritten	61.0	extension after sandbox reset
+chat	src/signals/routes/__tests__/chat-thread-draft-store.test.ts	chat-thread-draft-store-006	rewritten	29.2	extension after sandbox reset
+chat	src/signals/routes/__tests__/chat-thread-draft-store.test.ts	chat-thread-draft-store-008	rewritten	81.7	extension after sandbox reset
+chat	src/signals/routes/__tests__/chat-thread-draft-store.test.ts	chat-thread-draft-store-010	rewritten	120.5	extension after sandbox reset
 chat	src/signals/routes/__tests__/chat-thread-mark-all-read.test.ts	chat-thread-mark-all-read-003	planned		extension after sandbox reset
 chat	src/signals/routes/__tests__/chat-thread-mark-all-read.test.ts	chat-thread-mark-all-read-004	planned		extension after sandbox reset
 chat	src/signals/routes/__tests__/chat-thread-mark-all-read.test.ts	chat-thread-mark-all-read-005	planned		extension after sandbox reset
