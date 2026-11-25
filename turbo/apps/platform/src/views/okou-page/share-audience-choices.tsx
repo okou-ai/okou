@@ -51,7 +51,8 @@ function useAudienceOptions(organizationName: string | null) {
 /**
  * The audience is the DS segment control: its track and raised selection read
  * in both themes, where a hand-drawn `bg-gray-50` slider did not. The segments
- * size to their labels, so the longest label is not truncated in a third.
+ * size to their labels, and wrap to a second line instead of overflowing where
+ * a locale's three labels exceed the popover (es, fr, pt-BR, id).
  *
  * Invitations grant access in every audience (the workspace description says
  * so), so the people section stays mounted for all three; the popover keeps
@@ -98,7 +99,7 @@ export function ShareAudienceChoices({
             onChange(visibility);
           }
         }}
-        className="flex w-full"
+        className="flex h-auto min-h-9 w-full"
       >
         {options.map(({ value, label, description }) => {
           return (
@@ -107,7 +108,7 @@ export function ShareAudienceChoices({
               value={value}
               aria-label={label}
               aria-description={description}
-              className="min-w-0 flex-auto"
+              className="h-auto min-h-8 min-w-0 flex-auto self-stretch whitespace-normal py-1 text-center leading-tight"
             >
               {label}
             </SegmentControlItem>

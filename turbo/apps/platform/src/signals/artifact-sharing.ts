@@ -214,14 +214,19 @@ function createArtifactShareSession(source: ShareSource) {
       await set(linkCopy.copy$, details.copyUrl, signal);
     }
   });
-  const change$ = throttleCommand(
+  const throttledChange$ = throttleCommand(
     command(({ set }, choice: Audience, signal: AbortSignal) => {
       set(linkCopy.clear$);
-      set(pendingAudience$, choice);
       return set(persist$, choice, signal);
     }),
     0,
   );
+  // Records the choice before throttling, so a click queued behind an
+  // in-flight save is what the control shows.
+  const change$ = command(({ set }, choice: Audience, signal: AbortSignal) => {
+    set(pendingAudience$, choice);
+    return set(throttledChange$, choice, signal);
+  });
   return {
     source,
     signal$,

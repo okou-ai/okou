@@ -280,7 +280,7 @@ function ShareMenuFooter({
     // The people layout sits in the popover's default p-4, so its footer rule
     // runs edge to edge under the content.
     return (
-      <div className="-mx-4 mt-4 border-t border-border px-4 pt-4">
+      <div className="-mx-4 mt-4 border-t border-t-gray-400 px-4 pt-4">
         <ShareCopyButton {...copy} size="default" className="w-full" />
       </div>
     );

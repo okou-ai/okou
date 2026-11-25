@@ -886,6 +886,11 @@ function HostedSiteShareActions({
         {loadFailedStatus}
         <ShareCopyButton
           className="mt-1.5 w-full"
+          size={
+            features?.[FeatureSwitchKey.HostedSiteEmailSharing]
+              ? "default"
+              : "sm"
+          }
           copied={link !== null && copiedUrl === link}
           disabled={link === null}
           onCopy={copyLink}

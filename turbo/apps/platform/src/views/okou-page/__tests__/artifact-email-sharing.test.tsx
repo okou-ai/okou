@@ -198,21 +198,35 @@ test.each(["thread", "catalog", "viewer"] as const)(
     ).resolves.toBeInTheDocument();
     await within(menu).findByText(account.email);
     expect(within(menu).getByText("Owner")).toBeInTheDocument();
+    const people = () => {
+      return within(menu).getByRole("list", { name: "People with access" });
+    };
     for (const name of ["Workspace", "Anyone", "Invited people"]) {
       click(permission(name));
       await waitFor(() => {
-        return expect(permission(name)).toBeChecked();
+        expect(permission(name)).toBeChecked();
+        expect(within(menu).getByRole("radiogroup")).toHaveAttribute(
+          "aria-busy",
+          "false",
+        );
       });
       expect(document.querySelector("video")).toHaveAttribute("src", signed);
       // Invitations keep granting access in every audience, so the list stays.
-      expect(within(menu).getByText(account.email)).toBeVisible();
+      expect(people()).toHaveTextContent(account.email);
     }
+    click(permission("Workspace"));
+    await waitFor(() => {
+      expect(permission("Workspace")).toBeChecked();
+      expect(within(menu).getByRole("radiogroup")).toHaveAttribute(
+        "aria-busy",
+        "false",
+      );
+    });
     click(getButtonByName(`Remove access for ${account.email}`, menu));
     await waitFor(() => {
-      return expect(
-        within(menu).queryByText(account.email),
-      ).not.toBeInTheDocument();
+      return expect(people()).not.toHaveTextContent(account.email);
     });
+    expect(permission("Workspace")).toBeChecked();
     expect(within(menu).getByText("Owner")).toBeInTheDocument();
   },
 );
