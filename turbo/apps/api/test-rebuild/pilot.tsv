@@ -120,10 +120,10 @@ billing	src/signals/routes/__tests__/billing-credit-checkout.test.ts	billing-cre
 billing	src/signals/routes/__tests__/billing-credit-checkout.test.ts	billing-credit-checkout-008	planned		
 billing	src/signals/routes/__tests__/billing-credit-checkout.test.ts	billing-credit-checkout-009	planned		
 billing	src/signals/routes/__tests__/billing-credit-checkout.test.ts	billing-credit-checkout-011	planned		
-browser	src/signals/routes/__tests__/phone-use.test.ts	phone-use-002	planned		
-browser	src/signals/routes/__tests__/phone-use.test.ts	phone-use-006	planned		
-browser	src/signals/routes/__tests__/phone-use.test.ts	phone-use-007	planned		
-browser	src/signals/routes/__tests__/phone-use.test.ts	phone-use-009	planned		
+browser	src/signals/routes/__tests__/phone-use.test.ts	phone-use-002	rewritten	83.0	
+browser	src/signals/routes/__tests__/phone-use.test.ts	phone-use-006	rewritten	114.2	
+browser	src/signals/routes/__tests__/phone-use.test.ts	phone-use-007	rewritten	55.5	
+browser	src/signals/routes/__tests__/phone-use.test.ts	phone-use-009	rewritten	92.1	
 browser	src/signals/routes/__tests__/phone-use.test.ts	phone-use-010	planned		
 chat	src/signals/routes/__tests__/auxiliary-generation.test.ts	auxiliary-generation-001	planned		
 chat	src/signals/routes/__tests__/auxiliary-generation.test.ts	auxiliary-generation-002	planned		
