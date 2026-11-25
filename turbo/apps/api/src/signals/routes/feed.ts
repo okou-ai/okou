@@ -1,6 +1,7 @@
 import { command } from "ccstate";
 import { feedContract } from "@okouai/api-contracts/contracts/feed";
 import {
+  readActiveFeedCards$,
   readSuggestionManagement$,
   readFeedItems$,
 } from "../services/agent-suggestion-read.service";
@@ -22,7 +23,7 @@ import { dismissFeedEvent$ } from "../services/feed-events.service";
 import {
   readFeedSources$,
   updateFeedSources$,
-  readFeedSummary$,
+  feedHasUnread$,
   markFeedItemRead$,
 } from "../services/feed-sources.service";
 
@@ -31,12 +32,7 @@ const list$ = command(async ({ get, set }, signal: AbortSignal) => {
   const owner = await set(suggestionAccess$, signal);
   return "status" in owner
     ? owner
-    : await set(
-        readFeedItems$,
-        owner,
-        get(queryOf(feedContract.list)).type,
-        signal,
-      );
+    : await set(readFeedItems$, owner, get(queryOf(feedContract.list)), signal);
 });
 const create$ = command(async ({ get, set }, signal: AbortSignal) => {
   const owner = await set(suggestionAccess$, signal);
@@ -157,12 +153,18 @@ export const feedRoutes: readonly RouteEntry[] = [
       command(async ({ get, set }, signal: AbortSignal) => {
         set(setResHeader$, "Cache-Control", "no-store");
         const owner = await set(suggestionAccess$, signal);
-        return "status" in owner
-          ? owner
-          : {
-              status: 200 as const,
-              body: await get(readFeedSummary$),
-            };
+        if ("status" in owner) {
+          return owner;
+        }
+        const [hasUnread, page] = await Promise.all([
+          get(feedHasUnread$),
+          set(readActiveFeedCards$, owner, { firstOnly: true }, signal),
+        ]);
+        signal.throwIfAborted();
+        return {
+          status: 200 as const,
+          body: { hasUnread, firstItem: page.items[0] ?? null },
+        };
       }),
     ),
   },

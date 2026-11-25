@@ -1,4 +1,4 @@
-import { useGet, useLastResolved, useSet } from "ccstate-react";
+import { useGet, useLastResolved } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Edit, HandHeart } from "lucide-react";
 import { cn, getShortcutLabel } from "@okouai/ui";
@@ -7,10 +7,9 @@ import {
   agentChatPageActive$,
 } from "../../signals/active-route.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
-import { followForYouFeedOnRef$ } from "../../signals/okou-page/agent-suggestion-session.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 import { Link } from "../router/link.tsx";
-import { forYouHasUnread$ } from "../../signals/okou-page/for-you-sources.ts";
+import { forYouSummary$ } from "../../signals/okou-page/for-you-sources.ts";
 import {
   ChatThreadStateIndicator,
   ChatThreadStateText,
@@ -84,12 +83,10 @@ export function ForYouChatListRow({
 }) {
   const { t } = useTranslation();
   const active = useGet(activeRoute$) === "forYou";
-  const unread = useLastResolved(forYouHasUnread$) === true;
-  const followFeed = useSet(followForYouFeedOnRef$);
+  const unread = useLastResolved(forYouSummary$)?.hasUnread === true;
   return (
     <Link
       pathname={ROUTES.forYou}
-      ref={followFeed}
       aria-current={active ? "page" : undefined}
       className={cn(
         ENTRY_ROW,

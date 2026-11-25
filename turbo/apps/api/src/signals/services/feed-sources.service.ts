@@ -83,14 +83,13 @@ export const updateFeedSources$ = command(
   },
 );
 
-export const readFeedSummary$ = computed(async (get) => {
+export const feedHasUnread$ = computed(async (get) => {
   const owner = get(organizationAuthContext$);
   const sources = await get(readFeedSources$);
   if (!sources.suggestions && !sources.systemUpdates) {
-    return { hasUnread: false };
+    return false;
   }
-  // This is independent of the review's ten-card snapshot and counts no
-  // expired, consumed, removed or already displayed card.
+  // The first card can already be read while another enabled card is unread.
   const [row] = await get(db$)
     .select({ id: feedItems.id })
     .from(feedItems)
@@ -105,7 +104,7 @@ export const readFeedSummary$ = computed(async (get) => {
       ),
     )
     .limit(1);
-  return { hasUnread: row !== undefined };
+  return row !== undefined;
 });
 
 export const markFeedItemRead$ = command(

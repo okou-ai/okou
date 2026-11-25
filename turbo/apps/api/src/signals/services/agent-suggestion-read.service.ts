@@ -3,6 +3,8 @@ import {
   liveSuggestion,
   suggestionRow,
 } from "./agent-suggestions-lifecycle";
+import { Buffer } from "node:buffer";
+import type { infer as zInfer } from "zod";
 import { command } from "ccstate";
 import {
   and,
@@ -12,6 +14,7 @@ import {
   gt,
   inArray,
   isNotNull,
+  lt,
   ne,
   or,
   sql,
@@ -24,6 +27,7 @@ import {
   officialWorkflowDefinitionRevisions,
 } from "@okouai/db/schema/official-workflow-catalog";
 import {
+  FEED_PAGE_SIZE,
   SUGGESTION_RETENTION_MS,
   suggestionReceiptSchema,
   suggestionSchema,
@@ -35,6 +39,8 @@ import {
   nullableDriverValueDecoder,
   pgTextDecoder,
 } from "../../lib/db-structured-result";
+import { safeJsonParse } from "../utils";
+import { badRequestMessage } from "../../lib/error";
 import { nowDate } from "../../lib/time";
 import { withSuggestionConsumeToken } from "./agent-suggestion-consumption-token";
 import { visibleWorkflowCondition } from "./workflow-visibility";
@@ -159,21 +165,50 @@ const feedAutomationDescriptions$ = command(
   },
 );
 
-export const readFeedItems$ = command(
+const feedCursorSchema = suggestionSchema.pick({
+  priority: true,
+  createdAt: true,
+  id: true,
+});
+type FeedCursor = zInfer<typeof feedCursorSchema>;
+
+export const readActiveFeedCards$ = command(
   async (
     { get, set },
     owner: Owner,
-    type: "suggestion" | "event" | undefined,
+    options: {
+      readonly type?: "suggestion" | "event";
+      readonly firstOnly?: boolean;
+      readonly after?: FeedCursor;
+    },
     signal: AbortSignal,
   ) => {
+    const { after } = options;
+    const limit = options.firstOnly ? 1 : FEED_PAGE_SIZE;
     const rows = await get(db$)
-      .select()
+      .select({
+        card: feedItems,
+        // Preserve microseconds at the page boundary; Date truncates to milliseconds.
+        cursorTime:
+          sql`to_char(${feedItems.createdAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.mapWith(
+            pgTextDecoder,
+          ),
+      })
       .from(feedItems)
       .where(
         and(
           eq(feedItems.orgId, owner.orgId),
           eq(feedItems.userId, owner.userId),
-          type ? eq(feedItems.type, type) : undefined,
+          after
+            ? or(
+                lt(feedItems.priority, after.priority),
+                and(
+                  eq(feedItems.priority, after.priority),
+                  sql`(${feedItems.createdAt}, ${feedItems.id}) > (${after.createdAt}::timestamptz, ${after.id}::uuid)`,
+                ),
+              )
+            : undefined,
+          options.type ? eq(feedItems.type, options.type) : undefined,
           or(
             liveSuggestion(nowDate()),
             and(
@@ -188,9 +223,10 @@ export const readFeedItems$ = command(
         asc(feedItems.createdAt),
         asc(feedItems.id),
       )
-      .limit(10);
+      .limit(options.firstOnly ? 1 : limit + 1);
     signal.throwIfAborted();
-    const items = rows.map((row) => {
+    const page = rows.slice(0, limit);
+    const items = page.map(({ card: row }) => {
       if (row.type === "event") {
         return platformEventSchema.parse({
           ...row,
@@ -205,18 +241,15 @@ export const readFeedItems$ = command(
         suggestionSchema.parse(suggestionRow(row)),
       );
     });
-    const [receipts, descriptions] = await Promise.all([
-      type === "event" ? [] : set(recentSuggestionReceipts$, owner, signal),
-      set(
-        feedAutomationDescriptions$,
-        items.flatMap((item) => {
-          return item.type === "event" ? [item.content.workflowId] : [];
-        }),
-        signal,
-      ),
-    ]);
+    const descriptions = await set(
+      feedAutomationDescriptions$,
+      items.flatMap((item) => {
+        return item.type === "event" ? [item.content.workflowId] : [];
+      }),
+      signal,
+    );
     signal.throwIfAborted();
-    const describedItems = items.map((item) => {
+    const cards = items.map((item) => {
       if (item.type !== "event") {
         return item;
       }
@@ -228,7 +261,45 @@ export const readFeedItems$ = command(
           }
         : item;
     });
-    return { status: 200 as const, body: { items: describedItems, receipts } };
+    const tail = page.at(-1);
+    const nextCursor =
+      rows.length > limit && tail
+        ? Buffer.from(
+            JSON.stringify({
+              priority: tail.card.priority,
+              createdAt: tail.cursorTime,
+              id: tail.card.id,
+            }),
+          ).toString("base64url")
+        : undefined;
+    return { items: cards, nextCursor };
+  },
+);
+
+export const readFeedItems$ = command(
+  async (
+    { set },
+    owner: Owner,
+    query: { readonly type?: "suggestion" | "event"; readonly cursor?: string },
+    signal: AbortSignal,
+  ) => {
+    const { type, cursor } = query;
+    const after = cursor
+      ? feedCursorSchema.safeParse(
+          safeJsonParse(Buffer.from(cursor, "base64url").toString("utf8")),
+        )
+      : undefined;
+    if (after && !after.success) {
+      return badRequestMessage("Invalid feed cursor");
+    }
+    const [page, receipts] = await Promise.all([
+      set(readActiveFeedCards$, owner, { type, after: after?.data }, signal),
+      cursor || type === "event"
+        ? []
+        : set(recentSuggestionReceipts$, owner, signal),
+    ]);
+    signal.throwIfAborted();
+    return { status: 200 as const, body: { ...page, receipts } };
   },
 );
 export const readSuggestionManagement$ = command(

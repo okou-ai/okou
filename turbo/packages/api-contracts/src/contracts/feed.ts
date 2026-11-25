@@ -21,7 +21,7 @@ export {
   getSuggestionExpiresAt,
 } from "../validators/suggestions";
 
-const SUGGESTION_LIMIT = 10;
+export const FEED_PAGE_SIZE = 10;
 export const SUGGESTION_FEEDBACK_RETENTION_MS = 30 * SUGGESTION_RETENTION_MS;
 export const suggestionFeedbackSchema = object({
   id: uuid().toLowerCase(),
@@ -206,6 +206,8 @@ export const platformEventSchema = feedItemBaseSchema.extend({
   state: object({ status: zEnum(["active", "dismissed"]) }).strict(),
 });
 export type PlatformEvent = zInfer<typeof platformEventSchema>;
+const activeFeedItemSchema = suggestionSchema.or(platformEventSchema);
+export type ActiveFeedItem = zInfer<typeof activeFeedItemSchema>;
 export type FeedItem = Suggestion | SuggestionReceipt | PlatformEvent;
 export const feedSourcesSchema = object({
   suggestions: boolean(),
@@ -281,8 +283,15 @@ export const feedContract = c.router({
     method: "GET",
     path: "/api/feed/summary",
     headers: authHeadersSchema,
-    responses: { 200: object({ hasUnread: boolean() }), ...errors },
-    summary: "Read whether an enabled For you source has unread cards",
+    responses: {
+      200: object({
+        hasUnread: boolean(),
+        firstItem: activeFeedItemSchema.nullable().optional(),
+      }),
+      ...errors,
+    },
+    summary:
+      "Read the first For you card and whether any enabled source has unread cards",
   },
   markRead: {
     method: "POST",
@@ -314,12 +323,14 @@ export const feedContract = c.router({
     method: "GET",
     path: "/api/feed/items",
     headers: authHeadersSchema,
-    query: object({ type: feedItemTypeSchema.optional() }),
+    query: object({
+      type: feedItemTypeSchema.optional(),
+      cursor: string().min(1).max(256).optional(),
+    }),
     responses: {
       200: object({
-        items: array(suggestionSchema.or(platformEventSchema)).max(
-          SUGGESTION_LIMIT,
-        ),
+        items: array(activeFeedItemSchema).max(FEED_PAGE_SIZE),
+        nextCursor: string().optional(),
         receipts: array(suggestionReceiptSchema).optional(),
       }),
       ...errors,
