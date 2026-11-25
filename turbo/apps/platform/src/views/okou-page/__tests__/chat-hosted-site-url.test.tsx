@@ -842,6 +842,9 @@ test.each(["current", "legacy"] as const)(
       "aria-current",
       "step",
     );
+    expect(getNamedButton("DNS setup", menu)).not.toHaveAttribute(
+      "aria-description",
+    );
     expect(getNamedButton("Enable", menu)).toBeDisabled();
     click(getNamedButton("DNS setup", menu));
     await within(menu).findByRole("heading", { name: "Review DNS records" });

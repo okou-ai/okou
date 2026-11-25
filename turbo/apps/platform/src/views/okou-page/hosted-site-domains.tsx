@@ -326,11 +326,13 @@ function DomainSteps({
   session,
   stage,
   currentStage,
+  dnsMatched,
   busy,
 }: {
   readonly session: HostedSiteShareSession;
   readonly stage: DomainSetupStage;
   readonly currentStage: DomainSetupStage;
+  readonly dnsMatched: boolean;
   readonly busy: boolean;
 }) {
   const { t } = useTranslation();
@@ -354,6 +356,8 @@ function DomainSteps({
       })}
     >
       {([0, 1, 2] as const).map((step) => {
+        const completed =
+          step === 0 ? dnsMatched || currentStage === 2 : step < currentStage;
         return (
           <li key={step} className="min-w-0">
             <Button
@@ -363,6 +367,13 @@ function DomainSteps({
                 stage === step && "bg-gray-50 font-medium text-foreground",
               )}
               aria-label={labels[step]}
+              aria-description={
+                completed
+                  ? t(($) => {
+                      return $.artifacts.customDomain.checkPassed;
+                    })
+                  : undefined
+              }
               aria-current={stage === step ? "step" : undefined}
               disabled={busy || step > currentStage}
               onClick={() => {
@@ -373,10 +384,10 @@ function DomainSteps({
                 aria-hidden
                 className={cn(
                   "flex size-5 shrink-0 items-center justify-center rounded-full border border-border",
-                  step < currentStage && "border-green-600 text-green-600",
+                  completed && "border-green-600 text-green-600",
                 )}
               >
-                {step < currentStage ? <Check size={12} /> : step + 1}
+                {completed ? <Check size={12} /> : step + 1}
               </span>
               {labels[step]}
             </Button>
@@ -445,6 +456,7 @@ function DomainWizard({
         session={session}
         stage={stage}
         currentStage={currentStage}
+        dnsMatched={dnsMatched}
         busy={domainBusy(operations)}
       />
       {stage === 0 ? (
