@@ -52,7 +52,6 @@ struct SettingsConnectorsView: View {
       .background(OkouColor.background)
     }
     .navigationTitle("Connectors").navigationBarTitleDisplayMode(.inline)
-    .connectorAuthorizationPresentation(store: store)
     .task {
       if store.directory == nil { store.openDirectory() }
       await store.refresh()

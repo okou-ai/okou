@@ -209,6 +209,12 @@ struct ChatSettingsView: View {
         }
       }
     }
+    .background {
+      if let connectors {
+        // Keep authorization mounted while connector and account pages are pushed.
+        Color.clear.connectorAuthorizationPresentation(store: connectors)
+      }
+    }
     .onDisappear {
       connectors?.close()
       connectors = nil
