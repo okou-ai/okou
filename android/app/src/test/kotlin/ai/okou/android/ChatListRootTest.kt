@@ -1275,6 +1275,35 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
 
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun recoverableIndicatorFailuresKeepInboxAndArchivedQuiet() {
+        val app = compose.activity.application as ChatListApplication
+        app.responseGate.countDown()
+        awaitListAndNames()
+        app.fixture.indicators = { MockResponse().setResponseCode(503) }
+        (app.realtimeService as TestRealtimeService).invalidate(ChatChanges(indicators = true))
+        compose.waitUntil(10_000) {
+            val state = currentList()
+            state?.indicatorsPhase == ai.okou.android.chat.ChatReadPhase.Failed ||
+                state?.indicatorsRetryProgressVisible == true
+        }
+
+        val refreshFailure =
+            compose.onNodeWithText(compose.activity.getString(R.string.chat_refresh_failed))
+        val syncBar =
+            compose.onNodeWithContentDescription(compose.activity.getString(R.string.chat_syncing))
+        compose.onNodeWithText("Personal chat").assertIsDisplayed()
+        refreshFailure.assertDoesNotExist()
+        syncBar.assertDoesNotExist()
+
+        compose.onNodeWithContentDescription("Filter").performClick()
+        compose.onNodeWithText("Archived").performClick()
+        compose.onNodeWithText("No archived chats").assertIsDisplayed()
+        refreshFailure.assertDoesNotExist()
+        syncBar.assertDoesNotExist()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
     fun definitiveInitialUnreadFailureReplacesTheSkeletonInPlace() {
         val app = compose.activity.application as ChatListApplication
         val firstRead = CountDownLatch(1)

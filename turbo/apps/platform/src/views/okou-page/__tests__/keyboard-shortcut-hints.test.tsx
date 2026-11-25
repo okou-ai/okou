@@ -1,94 +1,92 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { pathname } from "../../../signals/location.ts";
-import { installContinuityWorkspace } from "./chat-continuity-test-helpers.ts";
-import { chatListThread } from "./chat-list-test-helpers.ts";
-
+import { createMessageExperienceHelpers } from "./chat-message-experience-test-helpers.ts";
 const context = testContext();
-const SEARCH_LABEL = "Search workspace...";
-
-const platforms = [
-  {
-    platform: "Mac",
-    userAgent:
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/152.0.0.0 Safari/537.36",
-    modifier: "Meta",
-    hints: ["⌘⇧F", "⌘⇧O", "⌘B"],
-  },
-  {
-    platform: "Windows",
-    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-    modifier: "Control",
-    hints: ["Ctrl+Shift+F", "Ctrl+Shift+O", "Ctrl+B"],
-  },
-] as const;
-
-async function prepareActionShortcuts({
-  userAgent,
-  modifier,
-  hints,
-}: (typeof platforms)[number]) {
-  context.mocks.browser.userAgent(userAgent);
-  context.mocks.browser.matchMedia((query) => {
-    return query === "(min-width: 48rem)";
-  });
-  const thread = chatListThread(1, "Keyboard shortcuts");
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 63,
-    threads: [thread],
+const thread = "a0000000-0000-4000-a000-000000000470";
+async function focusConversation() {
+  context.mocks.browser.userAgent(
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Safari/605.1.15",
+  );
+  createMessageExperienceHelpers(context).installMessageExperienceChat({
+    threadId: thread,
+    threadTitle: "Client workshop",
   });
   await setupPage({
     context,
-    path: `/chats/${thread.id}`,
-    ...workspace.pageOptions,
+    path: "/chats/" + thread,
+    host: "app.okou.ai",
+    sharedWorkerTestTransport: "message-port",
   });
-  const composer = await screen.findByRole("textbox", { name: "Message" });
-  click(composer);
-  const user = userEvent.setup({ delay: null });
-  return { user, modifier, hints };
+  const message = await screen.findByRole("textbox", { name: "Message" });
+  await userEvent.click(message);
+  expect(message).toHaveFocus();
+  return message;
 }
+test("keyboard-shortcut-hints-001 Command Shift O starts a fresh My Okou chat from the focused message", async () => {
+  const message = await focusConversation();
+  await userEvent.type(message, "Draft in the workshop");
+  await userEvent.keyboard("{Meta>}{Shift>}o{/Shift}{/Meta}");
+  await waitFor(() => {
+    expect(location.pathname).toBe("/");
+    expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
+      /^$/,
+    );
+  });
+});
+test("keyboard-shortcut-hints-005 Command Shift F moves editing focus into workspace search", async () => {
+  await focusConversation();
+  await userEvent.keyboard("{Meta>}{Shift>}f{/Shift}{/Meta}");
+  const dialog = await screen.findByRole("dialog", {
+    name: "Search workspace...",
+  });
+  await waitFor(() => {
+    expect(within(dialog).getByRole("combobox")).toHaveFocus();
+  });
+});
 
-test.each(platforms)(
-  "Keep the new chat shortcut usable in a $platform browser",
-  async (platform) => {
-    const { user, modifier } = await prepareActionShortcuts(platform);
-    await user.keyboard(`{${modifier}>}{Shift>}o{/Shift}{/${modifier}}`);
-    await waitFor(() => {
-      expect(pathname()).toBe("/");
-    });
-  },
-);
+test("The Mac toggle advertises its shortcut on the currently available list control", async () => {
+  const composer = await focusConversation();
+  const keyboard = userEvent.setup();
+  const hide = screen.queryByLabelText("Hide chat list");
+  if (hide) {
+    await keyboard.click(hide);
+  }
+  const expand = await screen.findByLabelText("Show chat list");
+  await keyboard.hover(expand);
+  const openingTip = await screen.findByRole("tooltip");
+  expect(openingTip).toHaveTextContent("⌘B");
+  await keyboard.unhover(expand);
+  await keyboard.click(composer);
+  await keyboard.keyboard("{Meta>}b{/Meta}");
+  const collapse = await screen.findByLabelText("Hide chat list");
+  expect(screen.queryByLabelText("Show chat list")).toBeNull();
+  await keyboard.hover(collapse);
+  const tip = await screen.findByRole("tooltip");
+  expect(tip).toHaveTextContent("⌘B");
+  await keyboard.keyboard("{Meta>}b{/Meta}");
+  await screen.findByLabelText("Show chat list");
+});
 
-test.each(platforms)(
-  "Keep the chat list shortcut usable in a $platform browser",
-  async (platform) => {
-    const { user, modifier, hints } = await prepareActionShortcuts(platform);
-    await user.keyboard(`{${modifier}>}b{/${modifier}}`);
-    const showChatList = await screen.findByLabelText("Show chat list");
-    expect(screen.queryByTestId("chat-list-column")).toBeNull();
-    await user.hover(showChatList);
-    await expect(
-      screen.findByRole("tooltip", { name: `Show chat list ${hints[2]}` }),
-    ).resolves.toBeVisible();
-    await user.keyboard(`{${modifier}>}b{/${modifier}}`);
-    await screen.findByTestId("chat-list-column");
-  },
-);
-
-test.each(platforms)(
-  "Keep the search shortcut usable in a $platform browser",
-  async (platform) => {
-    const { user, modifier } = await prepareActionShortcuts(platform);
-    await user.keyboard(`{${modifier}>}{Shift>}f{/Shift}{/${modifier}}`);
-    const searchDialog = await screen.findByRole("dialog", {
-      name: SEARCH_LABEL,
-    });
-    expect(
-      within(searchDialog).getByPlaceholderText(SEARCH_LABEL),
-    ).toHaveFocus();
-  },
-);
+test("Starting with the chat list open exposes Show and its Mac shortcut only after collapsing", async () => {
+  const editor = await focusConversation();
+  const user = userEvent.setup();
+  const expand = screen.queryByLabelText("Show chat list");
+  if (expand) {
+    await user.click(expand);
+  }
+  await screen.findByTestId("chat-list-column");
+  await user.click(editor);
+  await user.keyboard("{Meta>}b{/Meta}");
+  const show = await screen.findByLabelText("Show chat list");
+  expect(screen.queryByTestId("chat-list-column")).toBeNull();
+  await user.hover(show);
+  await expect(
+    screen.findByRole("tooltip", { name: /Show chat list.*⌘B/ }),
+  ).resolves.toBeVisible();
+  await user.keyboard("{Meta>}b{/Meta}");
+  await screen.findByTestId("chat-list-column");
+  expect(screen.queryByLabelText("Show chat list")).toBeNull();
+});

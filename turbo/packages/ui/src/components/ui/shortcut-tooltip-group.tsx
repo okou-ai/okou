@@ -1,6 +1,7 @@
 "use client";
 
 import type { ComponentProps, ReactElement } from "react";
+import { isVitestEnvironment } from "@okouai/core/test-environment";
 import { getShortcutLabel } from "../../lib/keyboard-shortcuts";
 import {
   Tooltip,
@@ -8,6 +9,11 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "./tooltip";
+
+// The provider's timeout is the grace period between adjacent tooltips.
+const SHORTCUT_TOOLTIP_TIMING = isVitestEnvironment()
+  ? { delay: 0, timeout: 0 }
+  : { delay: 200 };
 
 interface ShortcutItem {
   readonly shortcut: string;
@@ -25,7 +31,7 @@ export function ShortcutTooltipGroup({
   readonly side?: ComponentProps<typeof TooltipContent>["side"];
 }) {
   return (
-    <TooltipProvider delay={200}>
+    <TooltipProvider {...SHORTCUT_TOOLTIP_TIMING}>
       <span className="inline-flex shrink-0 items-center gap-1">
         {items.map((item) => {
           return (

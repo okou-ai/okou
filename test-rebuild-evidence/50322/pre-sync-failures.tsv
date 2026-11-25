@@ -1,0 +1,4 @@
+suite	registration	observed
+chat-batch-permissions.test.tsx	Review full scopes grouped by connector and apply the selected duration together	Error: promise rejected "TestingLibraryElementError: Unable to fin…" instead of resolving
+chat-batch-permissions.test.tsx	Approve only missing scopes without reapplying or extending active grants	Error: promise rejected "TestingLibraryElementError: Unable to fin…" instead of resolving
+markdown-permission-batch.test.tsx	markdown-permission-batch-005 the approval dialog shows saved access back on its card	Error: promise rejected "TestingLibraryElementError: Unable to fin…" instead of resolving

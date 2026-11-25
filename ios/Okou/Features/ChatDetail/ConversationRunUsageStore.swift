@@ -1,7 +1,6 @@
 import CCState
 import ChatData
 import Foundation
-import Observation
 
 /// Stable per-Run reads share the conversation's bounded HTTP batches.
 @MainActor
@@ -137,12 +136,22 @@ private final class ConversationRunUsageBatch {
   }
 }
 
+/// Run usage tables are equal when they hold the same read for the same Runs.
+private func sameResources(
+  _ lhs: [String: ConversationRunUsageResource], _ rhs: [String: ConversationRunUsageResource]
+) -> Bool {
+  lhs.count == rhs.count && lhs.allSatisfy { rhs[$0.key] === $0.value }
+}
+
 /// One immutable conversation scope; only Runs represented in the render window own reads.
-@MainActor @Observable
+@MainActor
 final class ConversationRunUsageStore {
   /// The workspace session's Store, which keeps each run's usage read.
-  @ObservationIgnored let store: CCState.Store
-  private(set) var resources: [String: ConversationRunUsageResource] = [:]
+  let store: CCState.Store
+  /// Each represented Run's usage read, keyed by Run id, for the rows that show it.
+  let resources: Computed<[String: ConversationRunUsageResource]>
+  private let table = CCState.State<[String: ConversationRunUsageResource]>(
+    [:], equals: sameResources)
   private let sync: ChatSync
   private let threadID: String
   private let didFail: @MainActor (Error) -> Void
@@ -161,6 +170,8 @@ final class ConversationRunUsageStore {
     self.sync = sync
     self.threadID = threadID
     self.didFail = didFail
+    let table = table
+    resources = Computed(equals: sameResources) { get in try get(table) }
   }
 
   func update(runIDs: [String], events: [String: String]) {
@@ -171,10 +182,11 @@ final class ConversationRunUsageStore {
     recentRunIDs.append(contentsOf: wanted.keys.sorted())
     recentRunIDs = Array(recentRunIDs.suffix(max(128, wanted.count)))
     let retained = Set(recentRunIDs)
-    for (id, resource) in resources where !retained.contains(id) {
+    let current = currentResources
+    for (id, resource) in current where !retained.contains(id) {
       do { try resource.close(in: store) } catch { didFail(error) }
     }
-    resources = resources.filter { retained.contains($0.key) }
+    publish(current.filter { retained.contains($0.key) })
     requestedEvents = requestedEvents.filter { retained.contains($0.key) }
     if wanted.isEmpty { stopReading() }
     startReading()
@@ -189,10 +201,10 @@ final class ConversationRunUsageStore {
   func close() {
     closed = true
     stopReading()
-    for resource in resources.values {
+    for resource in currentResources.values {
       do { try resource.close(in: store) } catch { didFail(error) }
     }
-    resources = [:]
+    publish([:])
     requestedEvents = [:]
     wanted = [:]
     recentRunIDs = []
@@ -230,16 +242,31 @@ final class ConversationRunUsageStore {
       })
     active = batch
     do {
+      var next = currentResources
       for (id, read) in batch.reads {
         requestedEvents[id] = events[id]
-        if let existing = resources[id] {
+        if let existing = next[id] {
           try existing.use(read, in: store)
         } else {
-          resources[id] = ConversationRunUsageResource(runID: id, read: read)
+          next[id] = ConversationRunUsageResource(runID: id, read: read)
         }
       }
+      publish(next)
       // The conversation starts one shared batch, independently of mounted subscribers.
       _ = try store.get(batch.value)
     } catch { didFail(error) }
+  }
+
+  // The table is a synchronous in-process value; reading and replacing it cannot fail.
+  private var currentResources: [String: ConversationRunUsageResource] {
+    do { return try store.get(table) } catch {
+      preconditionFailure("Cannot read the run usage table: \(error)")
+    }
+  }
+
+  private func publish(_ resources: [String: ConversationRunUsageResource]) {
+    do { try store.set(table, resources) } catch {
+      preconditionFailure("Cannot update the run usage table: \(error)")
+    }
   }
 }

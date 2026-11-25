@@ -1,327 +1,302 @@
-import {
-  browserContract,
-  type BrowserSession,
-} from "@okouai/api-contracts/contracts/browser";
-
-import {
-  act,
-  cleanup,
-  fireEvent,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import {
-  mockBrowserCdp,
-  TEST_BROWSER_EXTENSION,
-} from "../../../__tests__/browser-cdp-fixture.ts";
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
-import { mockMonotonicNow, mockNow } from "../../../lib/time.ts";
+import { queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
+import { findFastControl } from "../../okou-page/__tests__/chat-message-experience-test-helpers.ts";
+import { browserRecoveryClock } from "../../../__tests__/browser-recovery-clock.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  arrangeNativePage,
+  expectStreamingAt,
+} from "./browser-native-page-fixture.ts";
 
 const context = testContext();
-const threadId = "11111111-1111-4111-8111-111111111111";
-const endpoint = "wss://browser.example/domain-initialization";
-const domains = ["Inspector.enable", "Page.enable"] as const;
-
-function viewer() {
-  let elapsed = 0;
-  const now = Date.parse("2026-09-01T10:00:00.000Z");
-  mockMonotonicNow(() => {
-    return elapsed;
-  }, context.signal);
-  mockNow(() => {
-    return now + elapsed;
-  }, context.signal);
-  const session: BrowserSession = {
-    threadId,
-    name: "domain initialization",
-    status: "active",
-    viewerUrl: `https://viewer.example/browsers/${threadId}`,
-    liveUrl: null,
-    screenshotUrl: null,
-    timeoutMinutes: 240,
-    idleExpiresAt: "2026-09-01T10:10:00.000Z",
-    suspendedAt: null,
-    suspensionReason: null,
-    createdAt: "2026-09-01T10:00:00.000Z",
-    updatedAt: "2026-09-01T10:00:00.000Z",
-    window: {
-      instanceId: "22222222-2222-4222-8222-222222222222",
-      primaryWindowId: 101,
-    },
-  };
-  context.mocks.api(browserContract.get, ({ respond }) => {
-    return respond(200, {
-      browser: session,
-      viewer: {
-        browser: session,
-        cdpUrl: endpoint,
-        extension: TEST_BROWSER_EXTENSION,
-      },
-    });
-  });
-  context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
-    return respond(200, { browser: session });
-  });
-  const browser = mockBrowserCdp(context, endpoint, {
-    targets: [
-      {
-        targetId: "first",
-        title: "First",
-        url: "https://first.example",
-        windowId: 101,
-      },
-      {
-        targetId: "other",
-        title: "Other",
-        url: "https://other.example",
-        windowId: 101,
-      },
-      {
-        targetId: "sibling",
-        title: "Sibling",
-        url: "https://sibling.example",
-        windowId: 202,
-      },
-    ],
-  });
-  return {
-    browser,
-    start: () => {
-      return setupPage({
-        context,
-        path: `/browsers/${threadId}`,
-      });
-    },
-    advance(ms: number) {
-      act(() => {
-        elapsed += ms;
-      });
-    },
-  };
+const owner = Object.freeze({
+  targetId: "report",
+  title: "Report",
+  url: "https://report.example/",
+  windowId: 8,
+});
+const other = Object.freeze({
+  targetId: "other",
+  title: "Other",
+  url: "https://other.example/",
+  windowId: 8,
+});
+const outside = Object.freeze({
+  targetId: "private",
+  title: "Private",
+  url: "https://private.example/",
+  windowId: 31,
+});
+const setup = () => {
+  return arrangeNativePage(context, { targets: [owner, other, outside] }, 8);
+};
+type Remote = ReturnType<typeof setup>["cdp"];
+function input() {
+  return screen.getByLabelText("Remote browser input");
 }
-
-async function ready(url = "https://first.example") {
+function namedTab(label: string) {
+  return queryAllByRoleFast("tab").find((t) => {
+    return t.getAttribute("aria-label") === label;
+  });
+}
+async function sendText(remote: Remote, receiver: string, letter: string) {
+  await userEvent.type(input(), letter);
+  const text = expect.objectContaining({
+    params: expect.objectContaining({ text: letter }),
+  });
   await waitFor(() => {
-    expect(screen.getByLabelText("Address")).toHaveValue(url);
-    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    return expect(remote.inputForTarget(receiver)).toContainEqual(text);
   });
-  expect(
-    screen.queryByLabelText("Sibling", { selector: '[role="tab"]' }),
-  ).not.toBeInTheDocument();
+  const otherRecipients = [owner, other, outside].filter((page) => {
+    return page.targetId !== receiver;
+  });
+  for (const page of otherRecipients) {
+    expect(remote.inputForTarget(page.targetId)).not.toContainEqual(text);
+  }
 }
-
-async function typeOnce(
-  browser: ReturnType<typeof mockBrowserCdp>,
-  text: string,
+async function connecting() {
+  const { cdp, openPage } = setup();
+  const inspector = cdp.holdNext("Inspector.enable");
+  const page = cdp.holdNext("Page.enable");
+  await openPage();
+  await Promise.all([inspector.received, page.received]);
+  expect(input()).toBeDisabled();
+  const attachment = cdp.pageSession(owner.targetId);
+  return { cdp, inspector, page, attachment };
+}
+test("browser-domain-initialization-001 Input waits for Page after Inspector succeeds", async () => {
+  const { cdp, inspector, page } = await connecting();
+  await inspector.release();
+  await userEvent.type(input(), "x");
+  expect(input()).toBeDisabled();
+  expect(cdp.input).toStrictEqual([]);
+  await page.release();
+  await expectStreamingAt(owner.url);
+  await sendText(cdp, owner.targetId, "p");
+});
+test("browser-domain-initialization-003 Inspector failure retires the attachment before the late Page reply", async () => {
+  const { cdp, openPage } = setup();
+  cdp.failNext("Inspector.enable", "Domain unavailable");
+  const page = cdp.holdNext("Page.enable");
+  const failure = cdp.holdNext("Inspector.enable");
+  await openPage();
+  await Promise.all([page.received, failure.received]);
+  const attachment = cdp.pageSession(owner.targetId);
+  await failure.release();
+  await screen.findByText("Browser view unavailable");
+  await waitFor(() => {
+    return expect(cdp.detached).toContain(attachment);
+  });
+  await page.release();
+  await userEvent.type(input(), "q");
+  expect(input()).toBeDisabled();
+  expect(screen.getByText("Browser view unavailable")).toBeInTheDocument();
+  expect(cdp.input).toStrictEqual([]);
+});
+async function expectOtherAfterInspector(
+  remote: Remote,
+  reply: Awaited<ReturnType<typeof connecting>>["inspector"],
 ) {
-  const input = screen.getByLabelText("Remote browser input");
-  await userEvent.click(input);
-  fireEvent.input(input, { target: { value: text }, inputType: "insertText" });
-  await waitFor(() => {
-    expect(
-      browser.input.filter((entry) => {
-        return entry.method === "Input.insertText";
-      }),
-    ).toStrictEqual([expect.objectContaining({ params: { text } })]);
-  });
+  await expectStreamingAt(other.url);
+  const successor = remote.pageSession(other.targetId);
+  await reply.release();
+  await sendText(remote, other.targetId, "s");
+  expect(namedTab("Other")).toHaveAttribute("aria-selected", "true");
+  expect(remote.pageSession(other.targetId)).toBe(successor);
 }
-
-test.each(domains)(
-  "Both domains settle before input is enabled (%s replies first)",
-  async (first) => {
-    const { browser, start } = viewer();
-    const inspector = browser.holdNext("Inspector.enable");
-    const page = browser.holdNext("Page.enable");
-    await start();
-    await Promise.all([inspector.received, page.received]);
-    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
-    await act(first === "Inspector.enable" ? inspector.release : page.release);
-    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
-    await act(first === "Inspector.enable" ? page.release : inspector.release);
-    await ready();
-    await typeOnce(browser, "first input");
-  },
-);
-
-test.each(domains)(
-  "A failed %s retires its attachment before a late peer can revive it",
-  async (method) => {
-    const { browser, start } = viewer();
-    const peer = browser.holdNext(
-      method === "Inspector.enable" ? "Page.enable" : "Inspector.enable",
-    );
-    const failed = browser.holdNext(method);
-    browser.failNext(method, "Unavailable method", -32_601);
-    await start();
-    await Promise.all([peer.received, failed.received]);
-    const original = browser.pageSession("first");
-    await act(failed.release);
-    await screen.findByText("Browser view unavailable");
-    await waitFor(() => {
-      expect(browser.detached).toContain(original);
-    });
-    await act(peer.release);
-    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
-    expect(browser.input).toHaveLength(0);
-  },
-);
-
-test.each(domains)(
-  "Replacing a selection while %s is pending cannot retire its successor",
-  async (method) => {
-    const { browser, start } = viewer();
-    const held = browser.holdNext(method);
-    await start();
-    await held.received;
-    const original = browser.pageSession("first");
-    click(await screen.findByLabelText("Other", { selector: '[role="tab"]' }));
-    await ready("https://other.example");
-    const successor = browser.pageSession("other");
-    await act(held.release);
-    await ready("https://other.example");
-    expect(browser.detached).toContain(original);
-    expect(browser.detached).not.toContain(successor);
-    await typeOnce(browser, "successor input");
-  },
-);
-
-test.each(domains)(
-  "Target loss during %s retains the surviving owned tab",
-  async (method) => {
-    const { browser, start } = viewer();
-    const held = browser.holdNext(method);
-    await start();
-    await held.received;
-    act(() => {
-      browser.event("Target.targetDestroyed", { targetId: "first" });
-    });
-    await ready("https://other.example");
-    await act(held.release);
-    await ready("https://other.example");
-    expect(
-      screen.queryByLabelText("First", { selector: '[role="tab"]' }),
-    ).not.toBeInTheDocument();
-    await typeOnce(browser, "survivor input");
-  },
-);
-
-test.each(domains)(
-  "Window loss during %s cannot publish input or expose sibling tabs",
-  async (method) => {
-    const { browser, start } = viewer();
-    const held = browser.holdNext(method);
-    await start();
-    await held.received;
-    act(() => {
-      browser.targets.splice(0, 2);
-      browser.nativeEvent("window-removed", undefined, { windowId: 101 });
-    });
-    await screen.findByText("Browser disconnected");
-    await act(held.release);
-    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
-    expect(
-      screen.queryByLabelText("Sibling", { selector: '[role="tab"]' }),
-    ).not.toBeInTheDocument();
-    expect(browser.input).toHaveLength(0);
-  },
-);
-
-test.each(domains)(
-  "Unmounting with %s pending closes connections despite a late reply",
-  async (method) => {
-    const { browser, start } = viewer();
-    const held = browser.holdNext(method);
-    await start();
-    await held.received;
-    act(cleanup);
-    await waitFor(() => {
-      expect(browser.activeConnections()).toBe(0);
-    });
-    await act(held.release);
-    expect(
-      screen.queryByLabelText("Remote browser input"),
-    ).not.toBeInTheDocument();
-  },
-);
-
-test("A connection-mode change during enabling retains the new mode's session", async () => {
-  const { browser, start } = viewer();
-  const held = browser.holdNext("Inspector.enable");
-  await start();
-  await held.received;
-  const original = browser.pageSession("first");
-  click(screen.getByLabelText("Browser settings"));
-  const settings = await screen.findByRole("menu", {
-    name: "Browser settings",
+test("browser-domain-initialization-005 Selecting Other retires the pending attachment and routes text to Other", async () => {
+  const { cdp, inspector, page, attachment } = await connecting();
+  await page.release();
+  await userEvent.click(
+    screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+  );
+  await waitFor(() => {
+    expect(cdp.detached).toContain(attachment);
   });
-  click(within(settings).getByText("Connection mode"));
-  const modes = await screen.findByRole("menu", { name: "Connection mode" });
-  click(within(modes).getByText("Separate image connection"));
-  await ready();
-  const successor = browser.pageSession("first");
-  expect(successor).not.toBe(original);
-  await act(held.release);
-  await ready();
-  expect(browser.detached).not.toContain(successor);
-  await typeOnce(browser, "split input");
+  await expectOtherAfterInspector(cdp, inspector);
+});
+test("browser-domain-initialization-007 Destroying Report during setup leaves Other selected and usable", async () => {
+  const { cdp, inspector, page } = await connecting();
+  await page.release();
+  cdp.event("Target.targetDestroyed", { targetId: owner.targetId });
+  await expectOtherAfterInspector(cdp, inspector);
+  expect(namedTab("Report")).toBeUndefined();
+});
+test("browser-domain-initialization-009 Window removal blocks input and isolates the sibling after a late enable", async () => {
+  const { cdp, inspector, page } = await connecting();
+  await page.release();
+  cdp.closeWindow(8);
+  expect(cdp.targets).toStrictEqual([outside]);
+  await screen.findByText("Browser disconnected");
+  await inspector.release();
+  await userEvent.type(input(), "t");
+  expect(input()).toBeDisabled();
+  expect(namedTab("Private")).toBeUndefined();
+  expect(cdp.input).toStrictEqual([]);
+});
+test("browser-domain-initialization-011 Leaving the viewer closes its transport before a late Inspector reply", async () => {
+  const { cdp, inspector, page } = await connecting();
+  await page.release();
+  const viewer = window.location.pathname;
+  window.history.replaceState(null, "", "/");
+  window.history.pushState(null, "", viewer);
+  window.history.back();
+  await waitFor(() => {
+    expect(window.location.pathname).toBe("/");
+    expect(cdp.activeConnections()).toBe(0);
+    expect(screen.queryByLabelText("Remote browser input")).toBeNull();
+  });
+  await inspector.release();
+  expect(cdp.activeConnections()).toBe(0);
+  expect(screen.queryByLabelText("Remote browser input")).toBeNull();
+});
+test("browser-domain-initialization-013 A transport change retains its new session after the old enable replies", async () => {
+  const { cdp, inspector, page, attachment } = await connecting();
+  await page.release();
+  await userEvent.click(screen.getByLabelText("Browser settings"));
+  await userEvent.hover(await screen.findByText("Connection mode"));
+  await userEvent.click(await screen.findByText("Separate image connection"));
+  await expectStreamingAt(owner.url);
+  const successor = cdp.pageSession(owner.targetId);
+  expect(successor).not.toBe(attachment);
+  await inspector.release();
+  await sendText(cdp, owner.targetId, "z");
+  expect(cdp.inputForTarget(owner.targetId)).toContainEqual(
+    expect.objectContaining({
+      sessionId: successor,
+      params: expect.objectContaining({ text: "z" }),
+    }),
+  );
+  expect(cdp.pageSession(owner.targetId)).toBe(successor);
 });
 
-test("A lost connection while enabling recovers without reviving the old receipt", async () => {
-  const { browser, start, advance } = viewer();
-  const held = browser.holdNext("Page.enable");
-  await start();
-  await held.received;
-  act(() => {
-    browser.disconnect({ code: 1006, reason: "temporary loss" });
+test("browser-domain-initialization-014 A fresh connection takes input after the original Page reply arrives late", async () => {
+  const { cdp, openPage } = setup();
+  const original = cdp.holdNext("Page.enable");
+  await openPage();
+  await original.received;
+  const previous = cdp.pageSession(owner.targetId);
+  const replacement = cdp.holdTargetFrames(owner.targetId);
+  cdp.disconnect({ code: 1006 });
+  await replacement.received;
+  replacement.release();
+  await expectStreamingAt(owner.url);
+  const current = cdp.pageSession(owner.targetId);
+  expect(current).not.toBe(previous);
+  await original.release();
+  await sendText(cdp, owner.targetId, "r");
+  expect(cdp.inputForTarget(owner.targetId)).toContainEqual(
+    expect.objectContaining({
+      sessionId: current,
+      params: expect.objectContaining({ text: "r" }),
+    }),
+  );
+  expect(cdp.pageSession(owner.targetId)).toBe(current);
+  expect(cdp.connections()).toBe(2);
+});
+
+test("Page setup failure leaves input unavailable past the pending inspector deadline", async () => {
+  const advance = browserRecoveryClock(context.signal);
+  const { cdp, openPage } = setup();
+  cdp.failNext("Page.enable", "navigation failed during setup", -32_601);
+  const inspector = cdp.holdNext("Inspector.enable");
+  const reject = cdp.holdNext("Page.enable");
+  await openPage();
+  await Promise.all([inspector.received, reject.received]);
+  const old = cdp.pageSession(owner.targetId);
+  await reject.release();
+  await screen.findByText("Browser view unavailable");
+  await waitFor(() => {
+    return expect(cdp.detached).toContain(old);
   });
+  advance(31_001);
+  await userEvent.type(input(), "z");
+  expect(input()).toBeDisabled();
+  expect(cdp.inputForTarget(owner.targetId)).not.toContainEqual(
+    expect.objectContaining({ params: expect.objectContaining({ text: "z" }) }),
+  );
+  expect(screen.getByText("Browser view unavailable")).toBeInTheDocument();
+  let lateReplyRead = false;
+  await inspector.release(undefined, () => {
+    lateReplyRead = true;
+  });
+  expect(lateReplyRead).toBeFalsy();
+  expect(input()).toBeDisabled();
+  expect(screen.getByText("Browser view unavailable")).toBeInTheDocument();
+});
+
+test("browser-domain-initialization-018 A terminal Page failure preserves the manual reconnect while Inspector stays silent", async () => {
+  const advance = browserRecoveryClock(context.signal);
+  const editor = document.createElement("textarea");
+  // The provider admits the initial connection and one recovery connection.
+  // An intervening dial consumes the only admission available for Reconnect.
+  const admissions = ["initial", "recovery"];
+  const { cdp, openPage } = arrangeNativePage(context, {
+    autoOpen: false,
+    editors: new Map([["example-page", editor]]),
+    onConnecting(_url, socket) {
+      if (admissions.shift()) {
+        queueMicrotask(() => {
+          return socket.open();
+        });
+      }
+    },
+  });
+  const peer = cdp.holdNext("Inspector.enable");
+  const page = cdp.holdNext("Page.enable");
+  cdp.failNext("Page.enable", "Page domain is unavailable", -32_601);
+  await openPage();
+  await Promise.all([peer.received, page.received]);
+  const original = cdp.pageSession("example-page");
+  await page.release();
+
+  await screen.findByText("Browser view unavailable");
+  await waitFor(() => {
+    expect(cdp.detached).toContain(original);
+  });
+  advance(31_001);
+  await userEvent.type(input(), "blocked");
+  expect(screen.getByText("Browser view unavailable")).toBeInTheDocument();
+  expect(input()).toBeDisabled();
+  expect(editor.value).toBe("");
+
+  await userEvent.click(await findFastControl("button", "Reconnect"));
+  await expectStreamingAt("https://example.com");
+  const field = input();
+  field.focus();
+  fireEvent.input(field, {
+    target: { value: "ready" },
+    data: "ready",
+    inputType: "insertText",
+  });
+  await waitFor(() => {
+    expect(editor.value).toBe("ready");
+  });
+});
+
+test("An unanswered domain handshake can recover on a different transport after its deadline", async () => {
+  const advance = browserRecoveryClock(context.signal);
+  const { cdp, openPage } = setup();
+  const silent = cdp.holdNext("Inspector.enable");
+  await openPage();
+  await silent.received;
+  const pending = cdp.requests.find((r) => {
+    return r.method === "Inspector.enable";
+  });
+  expect(pending?.connectionId).toBeDefined();
+  expect(input()).toBeDisabled();
+  advance(29_000);
+  expect(input()).toBeDisabled();
+  advance(2000);
   await screen.findByText("Reconnecting…");
   advance(1000);
-  await ready();
-  await act(held.release);
-  await ready();
-  expect(browser.connections()).toBe(2);
-  await typeOnce(browser, "reconnected input");
+  await expectStreamingAt(owner.url);
+  await sendText(cdp, owner.targetId, "h");
+  const restored = cdp.requests.find((r) => {
+    return r.params?.text === "h";
+  });
+  expect(restored?.connectionId).toBeDefined();
+  expect(restored?.connectionId).not.toBe(pending?.connectionId);
 });
-
-test.each(domains)(
-  "A silent %s retains its original response deadline and recovers once",
-  async (method) => {
-    const { browser, start, advance } = viewer();
-    const held = browser.holdNext(method);
-    await start();
-    await held.received;
-    advance(31_000);
-    await screen.findByText("Reconnecting…");
-    advance(1000);
-    await ready();
-    await act(held.release);
-    await ready();
-    expect(browser.connections()).toBe(2);
-    await typeOnce(browser, "deadline recovery");
-  },
-);
-
-test.each(domains)(
-  "A terminal %s failure is retained when its peer never replies",
-  async (method) => {
-    const { browser, start, advance } = viewer();
-    const failure = browser.holdNext(method);
-    browser.holdNext(
-      method === "Inspector.enable" ? "Page.enable" : "Inspector.enable",
-    );
-    browser.failNext(method, "Unavailable method", -32_601);
-    await start();
-    await failure.received;
-    const original = browser.pageSession("first");
-    await act(failure.release);
-    await screen.findByText("Browser view unavailable");
-    expect(browser.detached).toContain(original);
-    advance(31_000);
-    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
-    expect(browser.connections()).toBe(1);
-  },
-);

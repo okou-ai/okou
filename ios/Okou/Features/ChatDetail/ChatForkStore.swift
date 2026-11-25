@@ -2,21 +2,40 @@ import CCState
 import ChatData
 import ChatDomain
 import Foundation
-import Observation
 
 /// One sheet owns its input and delivery identity without changing the source conversation.
-@MainActor @Observable
+@MainActor
 final class ChatForkStore: Identifiable {
+  /// The send attempt: in flight, its failure, whether a captured message identity is pending,
+  /// and whether its delivery is still unconfirmed.
+  struct Attempt: Equatable {
+    var isSending = false
+    var error: String?
+    var hasPendingAttempt = false
+    var deliveryUnconfirmed = false
+  }
+
+  /// What the sheet shows besides the composer: the attempt, and the model settings in use.
+  /// Those are the new chat's until the fork creates its thread, then that thread's.
+  struct Presentation: Equatable {
+    let attempt: Attempt
+    let modelSelection: ChatModelSelectionStore
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+      lhs.attempt == rhs.attempt && lhs.modelSelection === rhs.modelSelection
+    }
+  }
+
   let id = UUID()
 
   let projectID: String?
   let composer: ComposerDraftStore
-  private(set) var modelSelection: ChatModelSelectionStore
   let workflowSource: ComposerWorkflowSource
-  private(set) var isSending = false
-  private(set) var error: String?
-  private(set) var hasPendingAttempt = false
-  private(set) var deliveryUnconfirmed = false
+  let presentation: Computed<Presentation>
+  /// The workspace session Store that keeps the fork's graph values.
+  private let store: CCState.Store
+  private let attempt = CCState.State(Attempt())
+  private let modelSettings: CCState.State<ChatModelSelectionStore>
   private let sourceRunID: String
   private let sourceEventID: String
   private let commands: ChatCommands
@@ -62,6 +81,7 @@ final class ChatForkStore: Identifiable {
     self.didCreate = didCreate
     self.didSend = didSend
     self.didFail = didFail
+    store = graph
     composer = ComposerDraftStore(
       target: .unassigned, commands: commands, graph: graph, didFail: didFail,
       lifecycleTasks: lifecycleTasks, preservesFeedbackNotes: true)
@@ -73,9 +93,23 @@ final class ChatForkStore: Identifiable {
       return !draft.document.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         || uploads.hasAttachments
     }
-    modelSelection = ChatModelSelectionStore(models: models, lifecycleTasks: lifecycleTasks)
+    let modelSettings = CCState.State(
+      ChatModelSelectionStore(models: models, lifecycleTasks: lifecycleTasks))
+    self.modelSettings = modelSettings
+    let attempt = attempt
+    presentation = Computed { get in
+      let current = try get(attempt)
+      let modelSelection = try get(modelSettings)
+      return Presentation(attempt: current, modelSelection: modelSelection)
+    }
     composer.addFeedback(selection)
   }
+
+  var modelSelection: ChatModelSelectionStore { snapshot(of: modelSettings) }
+  var isSending: Bool { snapshot(of: attempt).isSending }
+  var error: String? { snapshot(of: attempt).error }
+  var hasPendingAttempt: Bool { snapshot(of: attempt).hasPendingAttempt }
+  var deliveryUnconfirmed: Bool { snapshot(of: attempt).deliveryUnconfirmed }
 
   var hasSourceQuote: Bool {
     composer.document.parts.contains {
@@ -114,14 +148,16 @@ final class ChatForkStore: Identifiable {
         sourceRunID: hasSourceQuote ? sourceRunID : nil)
     }
     guard let pending else { return false }
-    hasPendingAttempt = true
-    isSending = true
+    update {
+      $0.hasPendingAttempt = true
+      $0.isSending = true
+      $0.error = nil
+    }
     modelSelection.isSending = true
-    error = nil
     let task = Task<ChatThread?, Never> { [weak self] in
       guard let self else { return nil }
       defer {
-        isSending = false
+        update { $0.isSending = false }
         modelSelection.isSending = false
         sendTask = nil
       }
@@ -142,12 +178,13 @@ final class ChatForkStore: Identifiable {
           thread = target
           // Once created, settings belong to that thread, including edits after rejection.
           modelSelection.close()
-          modelSelection = ChatModelSelectionStore(
+          let settings = ChatModelSelectionStore(
             models: models, thread: target, lifecycleTasks: lifecycleTasks)
-          modelSelection.isSending = true
+          settings.isSending = true
+          write(modelSettings, settings)
           didCreate(target)
         }
-        deliveryUnconfirmed = true
+        update { $0.deliveryUnconfirmed = true }
         _ = try await commands.send(
           thread: target, text: pending.text, attachments: pending.attachments,
           document: pending.document, clientEventID: pending.messageID,
@@ -157,7 +194,7 @@ final class ChatForkStore: Identifiable {
           sourceRunID: pending.sourceRunID)
         try Task.checkCancellation()
         guard !closed else { return nil }
-        deliveryUnconfirmed = false
+        update { $0.deliveryUnconfirmed = false }
         workflowSource.recordUse(workflows)
         return target
       } catch is CancellationError {
@@ -167,11 +204,14 @@ final class ChatForkStore: Identifiable {
           (400..<500).contains(status), ![408, 409].contains(status)
         {
           // A definite rejection permits editing with a new message identity.
-          deliveryUnconfirmed = false
+          update {
+            $0.deliveryUnconfirmed = false
+            $0.hasPendingAttempt = false
+          }
           self.pending = nil
-          hasPendingAttempt = false
         }
-        self.error = ChatRequestFailure.message(for: error)
+        let message = ChatRequestFailure.message(for: error)
+        update { $0.error = message }
         didFail(error)
       }
       return nil
@@ -190,6 +230,25 @@ final class ChatForkStore: Identifiable {
     sendTask?.cancel()
     composer.close()
     modelSelection.close()
+  }
+
+  // The attempt and settings are synchronous in-process values; reads and writes cannot fail.
+  private func snapshot<Value>(of signal: Signal<Value>) -> Value {
+    do { return try store.get(signal) } catch {
+      preconditionFailure("Cannot read the fork graph: \(error)")
+    }
+  }
+
+  private func write<Value>(_ state: CCState.State<Value>, _ value: Value) {
+    do { try store.set(state, value) } catch {
+      preconditionFailure("Cannot update the fork graph: \(error)")
+    }
+  }
+
+  private func update(_ mutation: (inout Attempt) -> Void) {
+    var next = snapshot(of: attempt)
+    mutation(&next)
+    write(attempt, next)
   }
 
   isolated deinit { sendTask?.cancel() }

@@ -1,141 +1,173 @@
-import { composerDraftContract } from "@okouai/api-contracts/contracts/composer-draft";
-import type { ComposerDraft } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  composerDraftContract,
+  type ComposerDraftResponse,
+} from "@okouai/api-contracts/contracts/composer-draft";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-
-import { fill, setupPage } from "../../../__tests__/page-helper.ts";
+import { setupPage, fill } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { findAction } from "./connector-integrations-test-helpers.ts";
+import { findComposerEditor } from "./chat-composer-test-helpers.ts";
 import {
-  continuityAttachment,
   continuityDraft,
+  continuityAttachment,
   continuityThread,
   draftPlainText,
   installContinuityWorkspace,
-  textContinuityDraft,
 } from "./chat-continuity-test-helpers.ts";
 
 const context = testContext();
-
-async function openWhitespaceDraft(kind: "agent" | "thread") {
-  const thread = continuityThread(41, 1, "Whitespace draft conversation");
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 41,
-    threads: [thread],
-  });
-  let workspaceDraft = textContinuityDraft("");
-  const agentPatches: ComposerDraft[] = [];
+async function newChat() {
+  let server: ComposerDraftResponse = {
+    draftUserMessage: null,
+    draftAttachments: null,
+  };
   context.mocks.api(composerDraftContract.get, ({ respond }) => {
-    return respond(200, workspaceDraft);
+    return respond(200, server);
   });
   context.mocks.api(composerDraftContract.patch, ({ body, respond }) => {
-    workspaceDraft = {
+    server = {
       draftUserMessage: body.draftUserMessage,
       draftAttachments: body.draftAttachments ?? null,
     };
-    agentPatches.push(workspaceDraft);
     return respond(204);
   });
-  const latestPatch = () => {
-    return kind === "agent"
-      ? agentPatches.at(-1)
-      : workspace.draftPatches.at(-1);
+  await setupPage({ context, path: "/" });
+  return {
+    editor: await findComposerEditor(),
+    saved: () => {
+      return server;
+    },
   };
-
-  await setupPage({
-    context,
-    path: kind === "agent" ? "/?compose=1" : `/chats/${thread.id}`,
-    ...workspace.pageOptions,
-  });
-  const composer = await screen.findByRole("textbox", { name: "Message" });
-  return { composer, latestPatch };
 }
-
-test.each(["agent", "thread"] as const)(
-  "A blank %s draft stays empty after whitespace-only input",
-  async (kind) => {
-    const { composer, latestPatch } = await openWhitespaceDraft(kind);
-    const empty = { draftUserMessage: null, draftAttachments: null };
-    await fill(composer, " \t ");
-    await waitFor(() => {
-      expect(latestPatch()).toMatchObject(empty);
-    });
-  },
-);
-
-test.each(["agent", "thread"] as const)(
-  "Whitespace-only %s drafts clear saved content without trimming meaningful text",
-  async (kind) => {
-    const { composer, latestPatch } = await openWhitespaceDraft(kind);
-    const empty = { draftUserMessage: null, draftAttachments: null };
-    const text = "  Keep this draft\n\n    indented line  ";
-    await fill(composer, text);
-    await waitFor(() => {
-      expect(draftPlainText(latestPatch()?.draftUserMessage ?? null)).toBe(
-        text,
-      );
-    });
-
-    await fill(composer, " ");
-    const user = userEvent.setup({ delay: null });
-    await user.keyboard("{Shift>}{Enter}{/Shift}{Enter}");
-    await waitFor(() => {
-      expect(latestPatch()).toMatchObject(empty);
-    });
-    expect(composer).not.toHaveTextContent("Keep this draft");
-  },
-);
-
-test("Whitespace text preserves a draft's attachment and inline reference", async () => {
-  const thread = continuityThread(42, 1, "Rich whitespace draft");
-  const referenced = continuityThread(42, 2, "Referenced conversation");
-  const attachment = continuityAttachment(42, 1, "keep-this-file.txt");
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 42,
-    threads: [thread, referenced],
-    drafts: new Map([
-      [
-        thread.id,
-        continuityDraft(
-          [
-            { type: "text", text: " \n" },
-            {
-              type: "chat_thread",
-              threadId: referenced.id,
-              titleSnapshot: referenced.title ?? "Referenced conversation",
-            },
-            {
-              type: "file",
-              fileId: attachment.id,
-              filenameSnapshot: attachment.filename,
-              contentType: attachment.contentType,
-            },
-          ],
-          [attachment],
-        ),
-      ],
-    ]),
-  });
-  await setupPage({
-    context,
-    path: `/chats/${thread.id}`,
-    ...workspace.pageOptions,
-  });
-  const composer = await screen.findByRole("textbox", { name: "Message" });
+test("chat-whitespace-drafts-003 meaningful whitespace is preserved until the member clears the draft", async () => {
+  const { editor, saved } = await newChat();
+  const text = "  Harbor briefing\n\n    Third line";
+  await fill(editor, text);
   await waitFor(() => {
-    expect(composer).toHaveTextContent("Referenced conversation");
-    expect(document.body).toHaveTextContent(attachment.filename);
+    expect(draftPlainText(saved().draftUserMessage)).toBe(text);
   });
-  const user = userEvent.setup({ delay: null });
-  await user.click(composer);
+  await fill(editor, "  \t");
+  await userEvent.keyboard("{Shift>}{Enter}{Enter}{/Shift}");
+  await waitFor(() => {
+    expect(saved()).toStrictEqual({
+      draftUserMessage: null,
+      draftAttachments: null,
+    });
+  });
+  expect(editor).not.toHaveTextContent("Harbor briefing");
+});
+test("chat-whitespace-drafts-005 a pasted space retains the attached file and the link to the other chat", async () => {
+  const one = continuityThread(508, 1, "Port decisions"),
+    other = continuityThread(508, 2, "Shipping notes"),
+    file = continuityAttachment(508, 1, "manifest.txt");
+  const reference = {
+    type: "chat_thread" as const,
+    threadId: other.id,
+    titleSnapshot: "Shipping notes",
+  };
+  const item = {
+    type: "file" as const,
+    fileId: file.id,
+    filenameSnapshot: file.filename,
+    contentType: file.contentType,
+  };
+  const draft = continuityDraft(
+    [{ type: "text", text: " " }, reference, item],
+    [file],
+  );
+  const api = installContinuityWorkspace(context, {
+    caseId: 508,
+    threads: [one, other],
+    drafts: new Map([[one.id, draft]]),
+  });
+  await setupPage({ context, path: "/chats/" + one.id, ...api.pageOptions });
+  const editor = await findComposerEditor();
+  await waitFor(() => {
+    expect(editor).toHaveTextContent("Shipping notes");
+  });
+  await screen.findByText("manifest.txt");
+  const user = userEvent.setup();
+  await user.click(editor);
   await user.paste(" ");
   await waitFor(() => {
-    const saved = workspace.draftPatches.at(-1);
-    expect(saved?.draftAttachments).toStrictEqual([attachment]);
-    expect(saved?.draftUserMessage?.parts).toContainEqual({
-      type: "chat_thread",
-      threadId: referenced.id,
-      titleSnapshot: referenced.title,
-    });
+    const update = api.draftPatches
+      .filter((p) => {
+        return p.threadId === one.id;
+      })
+      .at(-1);
+    expect(update?.draftUserMessage?.parts).toStrictEqual(
+      expect.arrayContaining([reference, item]),
+    );
+    expect(update?.draftAttachments).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: file.id, filename: "manifest.txt" }),
+      ]),
+    );
   });
+  expect(editor).toHaveTextContent("Shipping notes");
+  expect(screen.getByText("manifest.txt")).toBeInTheDocument();
 });
+
+test("The member workspace saves a blank draft after whitespace-only input", async () => {
+  const saved = context.mocks.deferred<ComposerDraftResponse>();
+  const blank = { draftUserMessage: null, draftAttachments: null };
+  context.mocks.api(composerDraftContract.get, ({ respond }) => {
+    return respond(200, blank);
+  });
+  context.mocks.api(composerDraftContract.patch, ({ body, respond }) => {
+    saved.resolve({
+      draftUserMessage: body.draftUserMessage,
+      draftAttachments: body.draftAttachments ?? null,
+    });
+    return respond(204);
+  });
+  await setupPage({ context, path: "/" });
+  const editor = await findComposerEditor();
+  expect(editor.textContent).toBe("");
+  await fill(editor, "  \t ");
+  await expect(saved.promise).resolves.toStrictEqual(blank);
+  await expect(findAction("button", "Send")).resolves.toBeDisabled();
+});
+
+test.each(["deliver", "withhold"] as const)(
+  "The edited draft stays visible when the cancelled save is set to %s",
+  async (delivery) => {
+    const prior = context.mocks.deferred<AbortSignal>();
+    const finish = context.mocks.deferred<void>();
+    const boundary = context.mocks.deferred<boolean>();
+    const saved = context.mocks.deferred<string>();
+    context.mocks.api(
+      composerDraftContract.patch,
+      async ({ body, request, respond }) => {
+        const content = draftPlainText(body.draftUserMessage);
+        if (content === "old" && !prior.settled()) {
+          prior.resolve(request.signal);
+          await finish.promise;
+          boundary.resolve(request.signal.aborted);
+        }
+        if (content === "new" && !saved.settled()) {
+          saved.resolve(content);
+        }
+        return respond(204);
+      },
+    );
+    await setupPage({ context, path: "/" });
+    const editor = await findComposerEditor();
+    await fill(editor, "old");
+    const signal = await prior.promise;
+    await fill(editor, "new");
+    await expect(saved.promise).resolves.toBe("new");
+    expect(signal.aborted).toBeTruthy();
+    if (delivery === "deliver") {
+      finish.resolve();
+      await boundary.promise;
+    }
+    expect(boundary.settled()).toBe(delivery === "deliver");
+    expect(editor).toHaveTextContent("new");
+    if (!finish.settled()) {
+      finish.resolve();
+    }
+  },
+);

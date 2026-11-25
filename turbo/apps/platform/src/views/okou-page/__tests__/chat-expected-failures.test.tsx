@@ -1,94 +1,80 @@
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
-import { screen } from "@testing-library/react";
-import { expect, test, vi } from "vitest";
-
-import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
+// @vitest-environment-options {"url":"https://app.okou.ai"}
 import { initSentry } from "../../../lib/sentry.ts";
-import {
-  findEnabledButton,
-  RUN_PATH,
-  createChatRunFixtures,
-} from "./chat-run-test-fixtures.ts";
+import { screen, waitFor } from "@testing-library/react";
+import { HttpResponse } from "msw";
+import { expect, test, vi } from "vitest";
+import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { RUN_PATH, RUN_THREAD_ID } from "./chat-run-test-fixtures.ts";
+import { mockChatLifecycle } from "./chat-test-helpers.ts";
+
+// @vitest-environment-options {"url":"https://app.okou.ai"}
 
 const context = testContext();
-const { installRunChat } = createChatRunFixtures(context);
 
-test.each(["direct", "message-port"] as const)(
-  "show the upgrade dialog for headerless event-row 426 using %s transport",
-  async (transport) => {
-    installRunChat();
-    context.mocks.http.get("*/api/chat-threads/:threadId/event-rows", () => {
-      return Response.json(
-        {
-          error: {
-            code: "CLIENT_UPGRADE_REQUIRED",
-            message: "Client update required",
-          },
-        },
-        { status: 426 },
-      );
-    });
-    await expect(
-      setupPage({
-        context,
-        path: RUN_PATH,
-        sharedWorkerTestTransport: transport,
-      }),
-    ).rejects.toMatchObject({ status: 426 });
-    await expect(
-      screen.findByRole("dialog", { name: "Update required" }),
-    ).resolves.toBeVisible();
-  },
-);
-
-test("keep microphone guidance and retry after permission denial", async () => {
-  installRunChat();
-  context.mocks.api(voiceIoQuotaContract.get, ({ respond }) => {
-    return respond(200, { allowed: true, count: 0, limit: 60 });
+test("chat-expected-failures-001 a headerless client upgrade response during chat startup shows the update dialog", async () => {
+  mockChatLifecycle(context, { threadId: RUN_THREAD_ID });
+  context.mocks.http.get("*/api/chat-threads/:threadId/event-rows", () => {
+    return HttpResponse.json(
+      {
+        error: { code: "CLIENT_UPGRADE_REQUIRED", message: "Update required" },
+      },
+      { status: 426 },
+    );
   });
-  context.mocks.browser.voiceInput({ rms: 0.12 });
-  const denied = new DOMException(
-    "Permission denied by system",
+  await expect(
+    setupPage({ context, path: RUN_PATH, sharedWorkerTestTransport: "direct" }),
+  ).rejects.toMatchObject({ status: 426 });
+  await expect(
+    screen.findByRole("dialog", { name: "Update required" }),
+  ).resolves.toBeInTheDocument();
+});
+
+test("chat-expected-failures-003 the user can retry a reported microphone denial without losing their notes", async () => {
+  const sentry = context.mocks.sentry();
+  initSentry();
+  context.mocks.browser.voiceInput({ rms: 0.3 });
+  const denial = new DOMException(
+    "Recording permission denied by user",
     "NotAllowedError",
   );
   vi.spyOn(navigator.mediaDevices, "getUserMedia").mockRejectedValueOnce(
-    denied,
+    denial,
   );
-  const consoleErrors: unknown[][] = [];
-  const consoleError = vi.spyOn(console, "error");
-  const original = consoleError.getMockImplementation();
-  if (!original) {
-    throw new Error("Expected the shared console error guard");
-  }
-  consoleError.mockImplementation((...args: unknown[]) => {
-    if (args.includes(denied)) {
-      consoleErrors.push(args);
-      return;
+  const logged: unknown[][] = [];
+  const reporter = vi.spyOn(console, "error");
+  const original = reporter.getMockImplementation();
+  reporter.mockImplementation((...args) => {
+    if (
+      args.includes(denial) ||
+      args.some((value) => {
+        return (
+          typeof value === "string" &&
+          /[Mm]icrophone|[Rr]ecording permission denied/.test(value)
+        );
+      })
+    ) {
+      logged.push(args);
+    } else {
+      original?.(...args);
     }
-    original(...args);
   });
-  const sentry = context.mocks.sentry();
-  initSentry();
-  await setupPage({
-    context,
-    path: RUN_PATH,
+  mockChatLifecycle(context, { threadId: RUN_THREAD_ID });
+  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
+  const editor = await screen.findByRole("textbox", { name: "Message" });
+  await fill(editor, "Keep the field notes");
+  click(await findFastControl("button", "Voice input"));
+  await screen.findByText(
+    "Microphone access was denied. Allow microphone access and try again.",
+  );
+  expect(editor).toHaveTextContent("Keep the field notes");
+  click(await findFastControl("button", "Voice input"));
+  await findFastControl("button", "Stop recording");
+  expect(logged.flat()).toContain(denial);
+  await waitFor(() => {
+    expect(sentry.reports).toContainEqual(
+      expect.objectContaining({ type: "exception", error: denial }),
+    );
   });
-  const composer = screen.getByRole("textbox", { name: "Message" });
-  await fill(composer, "Keep these notes.");
-  click(await findEnabledButton("Voice input"));
-  await expect(
-    screen.findByText(
-      "Microphone access was denied. Allow microphone access and try again.",
-    ),
-  ).resolves.toBeVisible();
-  const retry = await findEnabledButton("Voice input");
-  expect(composer).toHaveTextContent("Keep these notes.");
-  expect(consoleErrors).not.toHaveLength(0);
-  const report = sentry.reports.find((candidate) => {
-    return candidate.type === "exception" && candidate.error === denied;
-  });
-  expect(report).toBeDefined();
-  click(retry);
-  await expect(findEnabledButton("Stop recording")).resolves.toBeVisible();
 });

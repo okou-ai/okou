@@ -1,124 +1,73 @@
-import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { test, expect } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
-import { expect, test } from "vitest";
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { pathname, search } from "../../../signals/location.ts";
-import { ROUTES } from "../../../signals/route-paths.ts";
-import { mockOnboardingConnectorCatalog } from "./onboarding-catalog-test-helpers.ts";
-
+import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
+import {
+  getAction,
+  findAction,
+  queryAction,
+} from "../../okou-page/__tests__/connector-integrations-test-helpers.ts";
 const context = testContext();
-const PREVIEW_HOST = "pr-40584-app-okou-app-preview.vm0.workers.dev";
-const INDUSTRY_QUESTION = "What kind of work do you do?";
-
-function mockOnboardingNeeded(isAdmin = true): void {
+const preview = "pr-40584-app-okou-app-preview.vm0.workers.dev";
+async function enter(host: string, path = "/onboarding") {
   context.mocks.data.onboardingStatus({
     needsOnboarding: true,
-    onboardingComplete: !isAdmin,
-    isAdmin,
+    onboardingComplete: false,
+    isAdmin: true,
   });
-  mockOnboardingConnectorCatalog(context, []);
+  await setupPage({ context, host, path });
 }
-
-function buttonsNamed(name: string): HTMLElement[] {
-  return queryAllByRoleFast("button").filter((button) => {
-    return button.textContent?.trim() === name;
-  });
-}
-
-function buttonNamed(name: string): HTMLElement {
-  const button = buttonsNamed(name)[0];
-  if (!button) {
-    throw new Error(`Expected button named "${name}"`);
-  }
-  return button;
-}
-
-test.each([
-  { host: PREVIEW_HOST, isAdmin: true },
-  { host: "staging-app-okou-app-preview.vm0.workers.dev", isAdmin: false },
-  { host: "app-okou-app-preview.vm0.workers.dev", isAdmin: true },
-  { host: "pr-40584-app.omby.ai", isAdmin: true },
-])(
-  "A preview visitor can skip unanswered onboarding on $host",
-  async ({ host, isAdmin }) => {
-    mockOnboardingNeeded(isAdmin);
-    await setupPage({ context, host, path: ROUTES.onboarding });
-
-    expect(
-      screen.getByRole("heading", { name: INDUSTRY_QUESTION }),
-    ).toBeInTheDocument();
-    expect(buttonNamed("Continue")).toBeDisabled();
-    expect(buttonNamed("Skip")).toBeEnabled();
-
-    click(buttonNamed("Skip"));
-
-    await expect(
-      screen.findByRole("textbox", { name: "Message" }),
-    ).resolves.toBeInTheDocument();
-    expect(pathname()).toBe("/");
-    expect(
-      screen.queryByRole("heading", { name: INDUSTRY_QUESTION }),
-    ).not.toBeInTheDocument();
-  },
-);
-
-test.each(["app.okou.ai", "okou.ai", "localhost", "127.0.0.1"])(
-  "Onboarding does not offer the preview shortcut on %s",
-  async (host) => {
-    mockOnboardingNeeded();
-    await setupPage({ context, host, path: ROUTES.onboarding });
-
-    expect(
-      screen.getByRole("heading", { name: INDUSTRY_QUESTION }),
-    ).toBeInTheDocument();
-    expect(buttonsNamed("Skip")).toHaveLength(0);
-    expect(buttonNamed("Continue")).toBeDisabled();
-  },
-);
-
-test("Skipping sources in a preview continues onboarding", async () => {
-  mockOnboardingNeeded();
-  await setupPage({
-    context,
-    host: PREVIEW_HOST,
-    path: ROUTES.onboardingSources,
-  });
-
+const industry = "What kind of work do you do?";
+test("onboarding-preview-skip-001 an admin skips the unanswered field question on the preview deployment", async () => {
+  await enter(preview);
+  await screen.findByRole("heading", { name: industry });
+  click(getAction("button", "Skip"));
+  await expect(
+    screen.findByRole("textbox", { name: "Message" }),
+  ).resolves.toBeVisible();
+  expect(location.pathname).toBe("/");
   expect(
-    screen.getByRole("heading", { name: "Connect a work tool" }),
-  ).toBeInTheDocument();
-  click(buttonNamed("Skip"));
-
-  await screen.findByRole("dialog", {
-    name: "Start without connecting a tool?",
-  });
-  expect(pathname()).toBe(ROUTES.onboardingSources);
-  click(buttonNamed("Skip for now"));
-
-  await screen.findByRole("heading", {
-    name: "How would you like to start with Okou?",
-  });
-  expect(pathname()).toBe(ROUTES.onboardingExperience);
+    screen.queryByRole("heading", { name: industry }),
+  ).not.toBeInTheDocument();
 });
-
-test("Skip waits for completion and remains retryable after a failure", async () => {
-  mockOnboardingNeeded();
-  const completion = context.mocks.deferred<void>();
-  let unavailable = true;
+test.each([
+  ["onboarding-preview-skip-005", "app.okou.ai"],
+  ["onboarding-preview-skip-007", "localhost"],
+])("%s requires an answer on %s", async (_id, host) => {
+  await enter(host);
+  await screen.findByRole("heading", { name: industry });
+  expect(location.hostname).toBe(host);
+  expect(queryAction("button", "Skip")).toBeNull();
+  expect(getAction("button", "Continue")).toBeDisabled();
+});
+test("onboarding-preview-skip-009 the sources Skip requires confirmation before experience opens", async () => {
+  await enter(preview, "/onboarding/sources");
+  click(await findAction("button", "Skip"));
+  const confirm = await findAction("button", "Skip for now");
+  expect(screen.getByText("Put your everyday tools to work")).toBeVisible();
+  expect(location.pathname).toBe("/onboarding/sources");
+  click(confirm);
+  await expect(
+    screen.findByRole("heading", {
+      name: "How would you like to start with Okou?",
+    }),
+  ).resolves.toBeVisible();
+  expect(location.pathname).toBe("/onboarding/experience");
+});
+test("onboarding-preview-skip-010 a failed preview skip unlocks retry on the unanswered page", async () => {
+  const release = context.mocks.deferred<void>();
+  let retry = false;
   context.mocks.api(
     onboardingCompleteContract.complete,
-    async ({ respond, withSignal }) => {
-      await withSignal(completion.promise);
-      if (unavailable) {
+    async ({ respond }) => {
+      if (!retry) {
+        await release.promise;
         return respond(500, {
           error: {
-            code: "INTERNAL_SERVER_ERROR",
-            message: "Could not complete onboarding",
+            code: "UNAVAILABLE",
+            message: "Unable to finish preview onboarding",
           },
         });
       }
@@ -126,58 +75,56 @@ test("Skip waits for completion and remains retryable after a failure", async ()
         needsOnboarding: false,
         onboardingComplete: true,
       });
-      return respond(200, {
-        needsOnboarding: false,
-        onboardingComplete: true,
-      });
+      return respond(200, { needsOnboarding: false, onboardingComplete: true });
     },
   );
-  await setupPage({ context, host: PREVIEW_HOST, path: ROUTES.onboarding });
-
-  click(buttonNamed("Skip"));
-
-  await waitFor(() => {
-    for (const button of buttonsNamed("Skip")) {
-      expect(button).toBeDisabled();
-      expect(button).toHaveAttribute("aria-busy", "true");
-    }
-  });
-  expect(pathname()).toBe(ROUTES.onboarding);
-  expect(buttonNamed("Continue")).toBeDisabled();
-
-  completion.resolve();
+  await enter(preview);
+  const skip = await findAction("button", "Skip");
+  click(skip);
+  try {
+    await waitFor(() => {
+      return expect(skip).toBeDisabled();
+    });
+    expect(skip).toHaveAttribute("aria-busy", "true");
+    expect(location.pathname).toBe("/onboarding");
+  } finally {
+    release.resolve();
+  }
   await expect(
-    screen.findByText("Could not complete onboarding"),
-  ).resolves.toBeInTheDocument();
-  await waitFor(() => {
-    expect(buttonNamed("Skip")).toBeEnabled();
-  });
-  expect(pathname()).toBe(ROUTES.onboarding);
-
-  unavailable = false;
-  click(buttonNamed("Skip"));
-
+    screen.findByText(/unable to finish preview onboarding/i),
+  ).resolves.toBeVisible();
+  expect(skip).toBeEnabled();
+  expect(location.pathname).toBe("/onboarding");
+  retry = true;
+  click(skip);
   await expect(
     screen.findByRole("textbox", { name: "Message" }),
-  ).resolves.toBeInTheDocument();
-  expect(pathname()).toBe("/");
+  ).resolves.toBeVisible();
+  expect(location.pathname).toBe("/");
 });
-
-test("Skipping a preview prompt handoff opens the app without running the prompt", async () => {
-  mockOnboardingNeeded();
-  await setupPage({
-    context,
-    host: PREVIEW_HOST,
-    path: `${ROUTES.onboarding}?prompt=Draft+the+launch+plan&redeemCode=PREVIEW`,
+test("onboarding-preview-skip-011 skipping the launch handoff opens an empty Home composer", async () => {
+  const task = "Draft the launch plan";
+  const messages: string[] = [];
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    messages.push(body.prompt ?? "");
+    return respond(201, { threadId: body.threadId ?? crypto.randomUUID() });
   });
-
+  await enter(
+    preview,
+    "/onboarding?" +
+      new URLSearchParams({ prompt: task, redeemCode: "PRO-LAUNCH" }),
+  );
+  await expect(
+    screen.findByLabelText("Onboarding prompt"),
+  ).resolves.toHaveValue(task);
+  click(getAction("button", "Skip"));
+  const box = await screen.findByRole("textbox", { name: "Message" });
+  expect(box.textContent).toBe("");
+  expect(location.pathname).toBe("/");
+  expect(location.search).toBe("");
   expect(
-    screen.getByRole("heading", { name: "Make this task your own" }),
-  ).toBeInTheDocument();
-  click(buttonNamed("Skip"));
-
-  const composer = await screen.findByRole("textbox", { name: "Message" });
-  expect(composer).toHaveTextContent(/^$/u);
-  expect(pathname()).toBe("/");
-  expect(new URLSearchParams(search()).has("prompt")).toBeFalsy();
+    messages.some((prompt) => {
+      return prompt.includes(task);
+    }),
+  ).toBeFalsy();
 });

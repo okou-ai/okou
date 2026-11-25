@@ -398,6 +398,7 @@ private final class RunUsageProbe {
   private let usage: ConversationRunUsageStore
   private(set) var states: [String: ConversationRunUsageState] = [:]
   @ObservationIgnored private var subscriptions: [String: Subscription] = [:]
+  @ObservationIgnored private var tableSubscription: Subscription?
   @ObservationIgnored private var watched: [String: ConversationRunUsageResource] = [:]
   @ObservationIgnored private var tasks: [String: Task<Void, Never>] = [:]
   @ObservationIgnored private var retiredTasks: [Task<Void, Never>] = []
@@ -407,11 +408,21 @@ private final class RunUsageProbe {
   init(_ usage: ConversationRunUsageStore, owner: XCTestCase) {
     self.usage = usage
     owner.addTeardownBlock { @MainActor [self] in await close() }
+    do {
+      // The resource table is graph state; a new or replaced read schedules a re-scan.
+      tableSubscription = try usage.store.watch(usage.resources) { [weak self] in
+        Task { @MainActor in self?.trackResources() }
+      }
+    } catch { XCTFail("Cannot observe usage resources: \(error)") }
     trackResources()
   }
 
   func detach() {
     stopped = true
+    do { try tableSubscription?.cancel() } catch {
+      XCTFail("Cannot detach usage resources: \(error)")
+    }
+    tableSubscription = nil
     for subscription in subscriptions.values {
       do { try subscription.cancel() } catch { XCTFail("Cannot detach usage observer: \(error)") }
     }
@@ -431,10 +442,10 @@ private final class RunUsageProbe {
 
   private func trackResources() {
     guard !stopped else { return }
-    let resources = withObservationTracking {
-      usage.resources
-    } onChange: { [weak self] in
-      Task { @MainActor in self?.trackResources() }
+    let resources: [String: ConversationRunUsageResource]
+    do { resources = try usage.store.get(usage.resources) } catch {
+      XCTFail("Cannot read usage resources: \(error)")
+      return
     }
     for id in subscriptions.keys where resources[id] == nil || resources[id] !== watched[id] {
       do { try subscriptions.removeValue(forKey: id)?.cancel() } catch {

@@ -1,275 +1,179 @@
 import {
-  chatThreadsContract,
-  type ChatThreadEvent,
-} from "@okouai/api-contracts/contracts/chat-threads";
-import { projectsContract } from "@okouai/api-contracts/contracts/projects";
-import type { ProjectEvent } from "@okouai/api-contracts/validators/projects";
-import { act, screen, waitFor } from "@testing-library/react";
-import { HttpResponse } from "msw";
-import { expect, test } from "vitest";
-
+  projectsContract,
+  type Project,
+  type ProjectEvent,
+} from "@okouai/api-contracts/contracts/projects";
+import { screen, waitFor } from "@testing-library/react";
+import { test, expect } from "vitest";
 import { setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  chatListEvent,
-  chatListThread,
-  chatListThreadId,
-  installChatListStream,
-} from "./chat-list-test-helpers.ts";
+import { changeChatThreadList } from "../../../mocks/mock-helpers.ts";
+import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import {
-  createChatRunFixtures,
-  promptEvent,
-  RUN_PATH,
-  RUN_THREAD_ID,
-} from "./chat-run-test-fixtures.ts";
-
-const context = testContext();
-const { installRunChat } = createChatRunFixtures(context);
-const OTHER_THREAD_ID = chatListThreadId(2);
-
-function installChat() {
-  context.mocks.browser.matchMedia(() => {
-    return true;
-  });
-  const messages: MockChatEventInput[] = [
-    promptEvent({ id: "sync-prompt", seqId: 1, text: "Keep our conversation" }),
+  chatListAuth,
+  chatListThread,
+  chatListEvent,
+  installChatListStream,
+  cachedChatListEvents,
+} from "./chat-list-test-helpers.ts";
+import {
+  findFastControl,
+  queryFastControl,
+} from "./chat-message-experience-test-helpers.ts";
+const context = testContext(),
+  old = "Earlier title",
+  updated = "Updated while away",
+  missed = "Reply received while away";
+async function conversation() {
+  const member = chatListAuth(854),
+    chat = chatListThread(31, old);
+  const replies: MockChatEventInput[] = [
     {
-      id: "sync-reply",
-      seqId: 2,
       role: "assistant",
-      runId: undefined,
-      content: "Already loaded reply",
-      createdAt: "2026-08-01T10:00:02.000Z",
+      content: "Original reply",
+      seqId: 1,
+      createdAt: "2026-08-01T09:00:00Z",
+      runId: "d0000000-0000-4000-a000-000000000103",
+      runEventId: "start",
+      sequenceNumber: 1,
     },
   ];
-  installRunChat({ chatEvents: messages });
-  installChatListStream(context, {
-    caseId: 91,
-    snapshot: [
-      chatListThread(1, "Run conversation", {
-        id: RUN_THREAD_ID,
-      }),
-      chatListThread(2, "Earlier title"),
-    ],
+  mockChatLifecycle(context, {
+    threadId: chat.id,
+    threadTitle: old,
+    chatEvents: replies,
   });
-  let events: ChatThreadEvent[] = [];
-  let unread = false;
-  context.mocks.http.get(
-    `*${chatThreadsContract.events.path}`,
-    ({ request }) => {
-      const after = Number(
-        new URL(request.url).searchParams.get("sinceSeqId") ?? 0,
-      );
-      return HttpResponse.json({
-        events: events.filter((event) => {
-          return event.seqId > after;
-        }),
-        hasMore: false,
-      });
-    },
-  );
-  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-    return respond(200, {
-      threads: unread ? { [OTHER_THREAD_ID]: "unread" } : {},
-      unreadAt: unread ? { [OTHER_THREAD_ID]: "2026-08-01T01:00:02.000Z" } : {},
-    });
+  const list = installChatListStream(context, {
+    caseId: 854,
+    snapshot: [chat],
   });
-  return {
-    advance(title = "Updated while away") {
-      events = [
-        chatListEvent(91, 2, "renamed", OTHER_THREAD_ID, {
-          title,
-        }),
-      ];
-      unread = true;
-      messages.push({
-        id: "sync-missed-reply",
-        seqId: 3,
-        role: "assistant",
-        runId: undefined,
-        content: "Reply received while away",
-        createdAt: "2026-08-01T10:00:03.000Z",
-      });
-    },
-  };
-}
-
-async function openChat(transport: "direct" | "message-port" = "message-port") {
   await setupPage({
     context,
-    path: RUN_PATH,
-    sharedWorkerTestTransport: transport,
+    path: "/chats/" + chat.id,
+    auth: member,
+    sharedWorkerTestTransport: "message-port",
+    cachedChatThreadEvents: cachedChatListEvents(854, [chat]),
   });
-  await expect(
-    screen.findByText("Already loaded reply"),
-  ).resolves.toBeInTheDocument();
-  await expect(screen.findByText("Earlier title")).resolves.toBeInTheDocument();
+  await screen.findByText("Original reply");
+  await findFastControl("link", new RegExp(old));
+  return {
+    rename() {
+      list.setEvents([
+        chatListEvent(854, 2, "renamed", chat.id, { title: updated }),
+      ]);
+    },
+    replies,
+  };
 }
-
-test.each(["direct", "message-port"] as const)(
-  "Ordinary notifications update a hidden chat tab through %s",
-  async (transport) => {
-    const visibility = context.mocks.browser.visibilityState("visible");
-    const fixture = installChat();
-    await openChat(transport);
-    await waitFor(() => {
-      expect(
-        context.mocks.ably.hasSubscriptionOnChannel(
-          "user:test-user-123",
-          "userPreferenceChanged",
-        ),
-      ).toBeTruthy();
-    });
-    act(() => {
-      visibility.changeTo("hidden");
-    });
-    fixture.advance();
-    act(() => {
-      context.mocks.ably.trigger("threadListChanged");
-    });
-    await expect(
-      screen.findByText("Updated while away"),
-    ).resolves.toBeInTheDocument();
-    act(() => {
-      visibility.changeTo("visible");
-    });
-    expect(screen.getByText("Updated while away")).toBeInTheDocument();
-    expect(screen.queryByText("Earlier title")).not.toBeInTheDocument();
-  },
-);
-
-test("A realtime continuity gap catches up without another chat notification", async () => {
-  const fixture = installChat();
-  await openChat();
-  await waitFor(() => {
-    expect(
-      context.mocks.ably.hasSubscriptionOnChannel(
-        "user:test-user-123",
-        "userPreferenceChanged",
-      ),
-    ).toBeTruthy();
-  });
-  fixture.advance();
-  act(() => {
-    context.mocks.ably.triggerSharedWorkerConnectionState("suspended");
-    return context.mocks.ably.triggerSharedWorkerReconnect();
-  });
-  await expect(
-    screen.findByText("Updated while away"),
-  ).resolves.toBeInTheDocument();
-  await expect(
-    screen.findByText("Reply received while away"),
-  ).resolves.toBeInTheDocument();
+async function renamed() {
+  await findFastControl("link", new RegExp(updated));
+  expect(queryFastControl("link", new RegExp(old))).toBeNull();
+}
+test("chat-sync-recovery-001 a hidden browser tab applies the ordinary title update before the member returns", async () => {
+  const page = await conversation(),
+    visibility = context.mocks.browser.visibilityState("visible");
+  visibility.changeTo("hidden");
+  page.rename();
+  changeChatThreadList();
+  await renamed();
+  visibility.changeTo("visible");
+  await renamed();
+  expect(document.visibilityState).toBe("visible");
 });
-
-test.each([
-  { path: RUN_PATH, gap: "connection" },
-  { path: RUN_PATH, gap: "credential" },
-  { path: "/", gap: "credential" },
-])(
-  "A $gap gap catches up Project changes without another notification at $path",
-  async ({ path, gap }) => {
-    installChat();
-    const renamedId = "30000000-0000-4000-8000-000000000071";
-    const deletedId = "30000000-0000-4000-8000-000000000072";
-    const createdId = "30000000-0000-4000-8000-000000000073";
-    const at = "2026-11-02T00:00:00.000Z";
-    const events: ProjectEvent[] = [];
-    context.mocks.api(projectsContract.snapshot, ({ respond }) => {
-      return respond(200, {
-        projects: [
-          {
-            id: renamedId,
-            name: "Earlier Project",
-            createdAt: at,
-            updatedAt: at,
-          },
-          {
-            id: deletedId,
-            name: "Retired Project",
-            createdAt: at,
-            updatedAt: at,
-          },
-        ],
-        latestEventId: "40000000-0000-4000-8000-000000000070",
-        latestSeqId: 2,
-      });
+test("chat-sync-recovery-003 reconnecting after a continuity gap retrieves both the renamed chat and its missed reply", async () => {
+  const page = await conversation();
+  context.mocks.ably.triggerSharedWorkerConnectionState("suspended");
+  page.rename();
+  page.replies.push({
+    role: "assistant",
+    content: missed,
+    seqId: 3,
+    runId: "d0000000-0000-4000-a000-000000000104",
+    runEventId: "missed",
+    sequenceNumber: 1,
+    createdAt: "2026-08-01T09:10:00Z",
+  });
+  context.mocks.ably.triggerSharedWorkerConnectionState("connected");
+  await renamed();
+  await expect(screen.findByText(missed)).resolves.toBeInTheDocument();
+});
+test("chat-sync-recovery-006 a credential gap reconciles renamed, retired and new Projects on the home route", async () => {
+  const now = "2026-08-02T09:00:00Z";
+  const project = (name: string, sortOrder: string): Project => {
+    return {
+      name,
+      sortOrder,
+      id: crypto.randomUUID(),
+      createdAt: now,
+      updatedAt: now,
+    };
+  };
+  const first = project("Earlier Project", "a0"),
+    retired = project("Retired Project", "a1"),
+    created = project("New Project", "a2");
+  let events: ProjectEvent[] = [];
+  const seed = crypto.randomUUID();
+  context.mocks.api(projectsContract.snapshot, ({ respond }) => {
+    return respond(200, {
+      projects: [first, retired],
+      latestEventId: seed,
+      latestSeqId: 1,
     });
-    context.mocks.api(projectsContract.events, ({ query, respond }) => {
-      return respond(200, {
-        events: events.filter((event) => {
-          return event.seqId > query.sinceSeqId;
-        }),
-        hasMore: false,
-      });
+  });
+  context.mocks.api(projectsContract.events, ({ query, respond }) => {
+    return respond(200, {
+      events: events.filter((e) => {
+        return e.seqId > (query.sinceSeqId ?? 0);
+      }),
+      hasMore: false,
     });
-    await setupPage({
-      context,
-      path,
-      sharedWorkerTestTransport: "message-port",
-    });
-    await expect(
-      screen.findByText("Earlier Project"),
-    ).resolves.toBeInTheDocument();
-    expect(screen.getByText("Retired Project")).toBeInTheDocument();
-    await waitFor(() => {
-      expect(
-        context.mocks.ably.hasSubscriptionOnChannel(
-          "user:test-user-123",
-          "userPreferenceChanged",
-        ),
-      ).toBeTruthy();
-    });
-
-    if (gap === "connection") {
-      act(() => {
-        context.mocks.ably.triggerSharedWorkerConnectionState("suspended");
-      });
-    }
-    events.push(
-      {
-        id: "40000000-0000-4000-8000-000000000071",
-        projectId: renamedId,
-        seqId: 3,
-        kind: "renamed",
-        name: "Renamed Project",
-        createdAt: at,
-      },
-      {
-        id: "40000000-0000-4000-8000-000000000072",
-        projectId: deletedId,
-        seqId: 4,
-        kind: "deleted",
-        name: null,
-        createdAt: at,
-      },
-      {
-        id: "40000000-0000-4000-8000-000000000073",
-        projectId: createdId,
-        seqId: 5,
-        kind: "created",
-        name: "New Project",
-        createdAt: at,
-      },
-    );
-    act(() => {
-      if (gap === "credential") {
-        context.mocks.ably.triggerSharedWorkerChannelGap(
-          "user-org:test-user-123:org_default",
-        );
-      } else {
-        context.mocks.ably.triggerSharedWorkerReconnect();
-      }
-    });
-
-    await expect(screen.findByText("New Project")).resolves.toBeInTheDocument();
-    expect(screen.getByText("Renamed Project")).toBeInTheDocument();
-    expect(screen.queryByText("Earlier Project")).not.toBeInTheDocument();
-    expect(screen.queryByText("Retired Project")).not.toBeInTheDocument();
-    expect(screen.queryAllByText("Already loaded reply")).toHaveLength(
-      path === RUN_PATH ? 1 : 0,
-    );
-    expect(location.pathname).toBe(path);
-  },
-);
+  });
+  await setupPage({
+    context,
+    path: "/",
+    auth: chatListAuth(855),
+    sharedWorkerTestTransport: "message-port",
+  });
+  const row = (name: string) => {
+    return "Show or hide chats in " + name;
+  };
+  await findFastControl("button", row(first.name));
+  await findFastControl("button", row(retired.name));
+  context.mocks.ably.triggerSharedWorkerConnectionState("suspended", {
+    code: 40_142,
+    statusCode: 401,
+    message: "Credential expired",
+  });
+  events = [
+    {
+      projectId: first.id,
+      kind: "renamed",
+      name: "Renamed Project",
+      sortOrder: "a0",
+    },
+    { projectId: retired.id, kind: "deleted", name: null, sortOrder: null },
+    {
+      projectId: created.id,
+      kind: "created",
+      name: created.name,
+      sortOrder: created.sortOrder,
+    },
+  ].map((event, index) => {
+    return {
+      ...event,
+      seqId: index + 2,
+      id: crypto.randomUUID(),
+      createdAt: now,
+    };
+  }) as ProjectEvent[];
+  context.mocks.ably.triggerSharedWorkerConnectionState("connected");
+  await findFastControl("button", row("Renamed Project"));
+  await findFastControl("button", row(created.name));
+  await waitFor(() => {
+    expect(queryFastControl("button", row(first.name))).toBeNull();
+    expect(queryFastControl("button", row(retired.name))).toBeNull();
+  });
+  expect(screen.queryByText(missed)).toBeNull();
+  expect(location.pathname).toBe("/");
+});

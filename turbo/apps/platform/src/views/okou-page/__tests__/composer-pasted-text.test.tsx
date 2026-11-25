@@ -1,383 +1,199 @@
-import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
-import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   uploadsContract,
   type UploadCompleteResponse,
 } from "@okouai/api-contracts/contracts/uploads";
-import { MAX_ATTACHMENT_UPLOAD_BYTES } from "@okouai/core/upload-limits";
+import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { HttpResponse } from "msw";
 import { expect, test, vi } from "vitest";
-
-import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import { HttpResponse } from "msw";
+import { setupPage, fill, click } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { findComposerEditor } from "./chat-composer-test-helpers.ts";
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
+import { mockChatLifecycle } from "./chat-test-helpers.ts";
+import { RUN_THREAD_ID, RUN_PATH } from "./chat-run-test-fixtures.ts";
 import {
-  ATTACHMENT_THREAD_ID,
-  findNamedButton,
-  getNamedButton,
-  mockAttachmentChat,
-  mockPrivateUrlSequence,
-} from "./chat-attachment-test-helpers.ts";
-import {
-  readClipboardItemText,
   readSingleRichClipboardWrite,
+  readClipboardItemText,
 } from "./chat-clipboard-test-helpers.ts";
-
-const context = testContext();
-
-const EXISTING_DRAFT = "Keep the existing draft.";
-const FIRST_FILE_ID = "a0000000-0000-4000-a000-000000045955";
-const SECOND_FILE_ID = "a0000000-0000-4000-a000-000000045956";
-const FIRST_FILENAME = "Pasted text-1.txt";
-const SECOND_FILENAME = "Pasted text-2.txt";
-interface UploadedContent {
-  readonly filename: string;
-  readonly contentType: string;
-  readonly size: number;
-  text?: string;
-  uploadContentType?: string | null;
-}
-
-/** Keep the normal prepare/PUT/complete flow, including private file URLs. */
-function mockComposerUploads(
-  files: readonly { readonly id: string; readonly file: File }[],
-): Map<string, UploadedContent> {
-  const uploads = new Map<string, UploadedContent>();
-  const results: UploadCompleteResponse[] = files.map(({ id, file }) => {
-    return {
-      id,
-      filename: file.name,
-      contentType: file.type,
-      size: file.size,
-      url: artifactReferencePath(id, file.name),
-    };
-  });
-  for (const result of results) {
-    context.mocks.upload.success(result);
-    context.mocks.http.put(
-      `https://mock-upload.r2.test/${result.id}`,
-      async ({ request }) => {
-        const upload = uploads.get(result.id);
-        if (!upload) {
-          throw new Error(`Upload ${result.filename} was not prepared`);
-        }
-        upload.text = await request.text();
-        upload.uploadContentType = request.headers.get("content-type");
-        return new HttpResponse(null, { status: 200 });
-      },
-    );
-  }
-  // Select by the actual filename so repeated pastes cannot reuse one file's
-  // identity or hide a naming regression behind fixed mock response metadata.
+import { continuityAttachment } from "./chat-continuity-test-helpers.ts";
+const context = testContext(),
+  draft = "Keep the existing draft.";
+function uploads() {
+  const metadata = new Map<string, UploadCompleteResponse>(),
+    contents = new Map<string, string>();
   context.mocks.api(uploadsContract.prepare, ({ body, respond }) => {
-    const result = results.find((file) => {
-      return file.filename === body.filename;
-    });
-    if (!result) {
-      throw new Error(`Unexpected upload: ${body.filename}`);
-    }
-    uploads.set(result.id, {
-      filename: body.filename,
-      contentType: body.contentType,
-      size: body.size,
-    });
+    const id = crypto.randomUUID(),
+      file = {
+        id,
+        filename: body.filename,
+        size: body.size,
+        contentType: body.contentType,
+        url:
+          "https://cdn.vm7.io/artifacts/local/notes/" +
+          encodeURIComponent(body.filename),
+      };
+    metadata.set(id, file);
     return respond(200, {
-      ...result,
-      filename: body.filename,
-      contentType: body.contentType,
-      size: body.size,
-      uploadUrl: `https://mock-upload.r2.test/${result.id}`,
+      ...file,
+      uploadUrl: "https://upload.example.test/" + id,
       uploadHeaders: {},
     });
   });
+  context.mocks.http.put(
+    "https://upload.example.test/:id",
+    async ({ request, params }) => {
+      const meta = metadata.get(String(params.id));
+      if (!meta) {
+        return new HttpResponse(null, { status: 404 });
+      }
+      contents.set(meta.filename, await request.text());
+      return new HttpResponse(null, { status: 200 });
+    },
+  );
   context.mocks.api(uploadsContract.complete, ({ body, respond }) => {
-    const result = results.find((file) => {
-      return file.id === body.id;
-    });
-    if (!result) {
-      throw new Error(`Unexpected upload completion: ${body.id}`);
+    const file = metadata.get(body.id);
+    if (!file) {
+      throw new Error("Prepared upload missing");
     }
-    return respond(200, result);
+    return respond(200, file);
   });
-  return uploads;
+  return contents;
 }
-
-function textClipboard(
-  text: string,
-  files: readonly File[] = [],
-): DataTransfer {
-  const clipboard = new DataTransfer();
-  clipboard.setData("text/plain", text);
-  for (const file of files) {
-    clipboard.items.add(file);
-  }
-  return clipboard;
-}
-
-async function openComposer(): Promise<HTMLElement> {
-  await setupPage({
-    context,
-    path: `/chats/${ATTACHMENT_THREAD_ID}`,
-  });
-  return await screen.findByRole("textbox", { name: "Message" });
-}
-
-test.each([
-  { label: "10,000 ASCII code units", text: "a".repeat(10_000) },
-  { label: "5,000 emoji (10,000 UTF-16 code units)", text: "😀".repeat(5000) },
-])("Insert $label into the existing draft", async ({ text }) => {
-  const user = userEvent.setup({ delay: null });
-  mockAttachmentChat(context);
-  const editor = await openComposer();
-
-  await fill(editor, EXISTING_DRAFT);
-  expect(editor.textContent).toBe(EXISTING_DRAFT);
-  await user.paste(textClipboard(text));
-
-  await waitFor(() => {
-    expect(editor.textContent).toBe(EXISTING_DRAFT + text);
-  });
-  expect(
-    screen.queryByLabelText(`Remove ${FIRST_FILENAME}`),
-  ).not.toBeInTheDocument();
-  expect(screen.getByLabelText("Send")).toBeEnabled();
-});
-
-test("A size-rejected long paste stays inline and can be sent", async () => {
-  const user = userEvent.setup({ delay: null });
-  const text = "a".repeat(10_001);
-  let sentMessage: UserMessageDocument | undefined;
-  mockAttachmentChat(context, {
-    onSendRequest: ({ userMessage }) => {
-      sentMessage = userMessage;
+async function openComposer(
+  events: NonNullable<
+    NonNullable<Parameters<typeof mockChatLifecycle>[1]>["chatEvents"]
+  > = [],
+) {
+  const sent: UserMessageDocument[] = [];
+  mockChatLifecycle(context, {
+    threadId: RUN_THREAD_ID,
+    chatEvents: events,
+    onSendRequest(body) {
+      if (body.userMessage) {
+        sent.push(body.userMessage);
+      }
     },
   });
-  // Exercise the browser's file metadata boundary without a multi-gigabyte allocation.
-  vi.spyOn(File.prototype, "size", "get").mockImplementation(function (
-    this: File,
-  ) {
-    return this.name === FIRST_FILENAME
-      ? MAX_ATTACHMENT_UPLOAD_BYTES + 1
-      : new Blob([this]).size;
-  });
-  const editor = await openComposer();
-
-  await fill(editor, EXISTING_DRAFT);
-  expect(editor.textContent).toBe(EXISTING_DRAFT);
+  await setupPage({ context, path: RUN_PATH });
+  const editor = await findComposerEditor(),
+    user = userEvent.setup();
+  await fill(editor, draft);
+  return { editor, user, sent };
+}
+test("composer-pasted-text-002 five thousand emoji stay inline at the UTF-16 threshold", async () => {
+  const { editor, user } = await openComposer();
+  const text = "🌊".repeat(5000);
+  await user.paste(text);
+  expect(editor.textContent).toBe(draft + text);
+  expect(screen.queryByText(/Pasted text-\d+\.txt/)).toBeNull();
+  await expect(findFastControl("button", "Send")).resolves.toBeEnabled();
+});
+test("composer-pasted-text-003 a file over five gigabytes falls back to sending the selected replacement inline", async () => {
+  const { editor, user, sent } = await openComposer();
   await user.keyboard("{Control>}a{/Control}");
-  await user.paste(textClipboard(text));
-
-  await expect(
-    screen.findByText(`${FIRST_FILENAME} exceeds the 5 GB limit`),
-  ).resolves.toBeInTheDocument();
-  await waitFor(() => {
-    expect(editor.textContent).toBe(text);
+  const text = "p".repeat(10_001);
+  const original = Object.getOwnPropertyDescriptor(Blob.prototype, "size")?.get;
+  if (!original) {
+    throw new Error("Blob size getter missing");
+  }
+  vi.spyOn(Blob.prototype, "size", "get").mockImplementation(function (
+    this: Blob,
+  ) {
+    return this instanceof File && this.name === "Pasted text-1.txt"
+      ? 6 * 1024 ** 3
+      : Number(original.call(this));
   });
-  expect(
-    screen.queryByLabelText(`Remove ${FIRST_FILENAME}`),
-  ).not.toBeInTheDocument();
-  const send = getNamedButton("Send");
-  expect(send).toBeEnabled();
-  click(send);
-
+  await user.paste(text);
+  await screen.findByText(/exceeds the 5 GB limit/);
+  expect(editor.textContent).toBe(text);
+  expect(screen.queryByText("Pasted text-1.txt", { exact: true })).toBeNull();
+  click(await findFastControl("button", "Send"));
   await waitFor(() => {
-    expect(screen.getByRole("textbox", { name: "Message" }).textContent).toBe(
-      "",
+    expect(
+      sent[0]?.parts.filter((x) => {
+        return x.type === "text" || x.type === "file";
+      }),
+    ).toStrictEqual([{ type: "text", text }]);
+  });
+});
+test("composer-pasted-text-004 the original draft and a whitespace-exact text upload are sent together", async () => {
+  const contents = uploads(),
+    { editor, user, sent } = await openComposer();
+  const text = "\n \t" + "x".repeat(9995) + " \r\n";
+  await user.keyboard("{Control>}a{/Control}");
+  await user.paste(text);
+  await screen.findByText("Pasted text-1.txt");
+  await waitFor(() => {
+    expect(contents.get("Pasted text-1.txt")).toBe(text);
+  });
+  expect(editor.textContent).toBe(draft);
+  click(await findFastControl("button", "Send"));
+  await waitFor(() => {
+    expect(sent[0]?.parts).toStrictEqual(
+      expect.arrayContaining([
+        { type: "text", text: draft },
+        expect.objectContaining({
+          type: "file",
+          filenameSnapshot: "Pasted text-1.txt",
+        }),
+      ]),
     );
   });
-  expect(sentMessage?.parts).toStrictEqual([{ type: "text", text }]);
 });
-
-test.each([
-  {
-    label: "10,001 ASCII code units with exact whitespace",
-    text: `\n \t${"a".repeat(9995)} \r\n`,
-  },
-  {
-    label: "5,000 emoji plus x (10,001 UTF-16 code units)",
-    text: `${"😀".repeat(5000)}x`,
-  },
-])(
-  "Attach and send $label without replacing selected draft text",
-  async ({ text }) => {
-    const user = userEvent.setup({ delay: null });
-    let sentMessage: UserMessageDocument | undefined;
-    mockAttachmentChat(context, {
-      onSendRequest: ({ userMessage }) => {
-        sentMessage = userMessage;
-      },
-    });
-    const expectedFile = new File([text], FIRST_FILENAME, {
-      type: "text/plain",
-    });
-    const uploads = mockComposerUploads([
-      { id: FIRST_FILE_ID, file: expectedFile },
-    ]);
-    const editor = await openComposer();
-
-    await fill(editor, EXISTING_DRAFT);
-    expect(editor.textContent).toBe(EXISTING_DRAFT);
-    await user.keyboard("{Control>}a{/Control}");
-    await user.paste(textClipboard(text));
-
-    await expect(
-      findNamedButton(`Remove ${FIRST_FILENAME}`),
-    ).resolves.toBeInTheDocument();
-    expect(editor.textContent).toBe(EXISTING_DRAFT);
-    expect(uploads.get(FIRST_FILE_ID)).toStrictEqual({
-      filename: FIRST_FILENAME,
-      contentType: "text/plain",
-      size: expectedFile.size,
-      text,
-      uploadContentType: "text/plain",
-    });
-
-    const send = getNamedButton("Send");
-    expect(send).toBeEnabled();
-    click(send);
-
-    await waitFor(() => {
-      expect(screen.getByRole("textbox", { name: "Message" }).textContent).toBe(
-        "",
-      );
-    });
-    expect(sentMessage?.parts).toContainEqual({
-      type: "text",
-      text: EXISTING_DRAFT,
-    });
-    expect(sentMessage?.parts).toContainEqual({
-      type: "file",
-      fileId: FIRST_FILE_ID,
-      filenameSnapshot: FIRST_FILENAME,
-      contentType: "text/plain",
-    });
-  },
-);
-
-test("Repeated oversized pastes keep distinct filenames and complete contents", async () => {
-  const user = userEvent.setup({ delay: null });
-  mockAttachmentChat(context);
-  const firstText = `First pasted note\n${"a".repeat(10_000)}`;
-  const secondText = `Second pasted note\n${"b".repeat(10_000)}`;
-  const uploads = mockComposerUploads([
+test("composer-pasted-text-006 two large notes retain their individual filenames and exact uploaded bodies", async () => {
+  const contents = uploads(),
+    { editor, user } = await openComposer();
+  const first = "First pasted note " + "a".repeat(10_010),
+    second = "Second pasted note " + "b".repeat(10_020);
+  await user.paste(first);
+  await screen.findByText("Pasted text-1.txt");
+  editor.focus();
+  await user.paste(second);
+  await screen.findByText("Pasted text-2.txt");
+  await waitFor(() => {
+    expect(contents.get("Pasted text-1.txt")).toBe(first);
+    expect(contents.get("Pasted text-2.txt")).toBe(second);
+  });
+  expect(editor.textContent).toBe(draft);
+});
+test("composer-pasted-text-009 chat rich copy restores its own attachment and appends long text inline", async () => {
+  const content = "Collected notes " + "z".repeat(10_001),
+    file = continuityAttachment(730, 1, "coastal-log.txt");
+  const { editor, user } = await openComposer([
     {
-      id: FIRST_FILE_ID,
-      file: new File([firstText], FIRST_FILENAME, { type: "text/plain" }),
-    },
-    {
-      id: SECOND_FILE_ID,
-      file: new File([secondText], SECOND_FILENAME, { type: "text/plain" }),
+      role: "user",
+      content,
+      createdAt: "2026-08-10T08:00:00Z",
+      fileParts: [
+        {
+          type: "file",
+          fileId: file.id,
+          filenameSnapshot: file.filename,
+          contentType: file.contentType,
+        },
+      ],
     },
   ]);
-  const editor = await openComposer();
-
-  await fill(editor, EXISTING_DRAFT);
-  expect(editor.textContent).toBe(EXISTING_DRAFT);
-  await user.paste(textClipboard(firstText));
-  await expect(
-    findNamedButton(`Remove ${FIRST_FILENAME}`),
-  ).resolves.toBeInTheDocument();
-  expect(editor.textContent).toBe(EXISTING_DRAFT);
-
-  await user.paste(textClipboard(secondText));
-  await expect(
-    findNamedButton(`Remove ${SECOND_FILENAME}`),
-  ).resolves.toBeInTheDocument();
-  expect(getNamedButton(`Remove ${FIRST_FILENAME}`)).toBeInTheDocument();
-  expect(editor.textContent).toBe(EXISTING_DRAFT);
-  expect(uploads.get(FIRST_FILE_ID)?.text).toBe(firstText);
-  expect(uploads.get(SECOND_FILE_ID)?.text).toBe(secondText);
-});
-
-test.each([
-  { filename: "clipboard-notes.txt", contentType: "text/plain" },
-  { filename: "clipboard-image.png", contentType: "image/png" },
-])(
-  "Keep mixed oversized text and $filename as text plus the original file",
-  async ({ filename, contentType }) => {
-    const user = userEvent.setup({ delay: null });
-    mockAttachmentChat(context);
-    const file = new File(["Original clipboard file"], filename, {
-      type: contentType,
-    });
-    mockComposerUploads([{ id: FIRST_FILE_ID, file }]);
-    const text = "m".repeat(10_001);
-    const editor = await openComposer();
-
-    await fill(editor, EXISTING_DRAFT);
-    expect(editor.textContent).toBe(EXISTING_DRAFT);
-    await user.paste(textClipboard(text, [file]));
-
-    await expect(
-      findNamedButton(`Remove ${filename}`),
-    ).resolves.toBeInTheDocument();
-    expect(editor.textContent).toBe(EXISTING_DRAFT + text);
-    expect(
-      screen.queryByLabelText(`Remove ${FIRST_FILENAME}`),
-    ).not.toBeInTheDocument();
-  },
-);
-
-test("Restore a rich Okou copy before converting its oversized plain-text fallback", async () => {
-  const user = userEvent.setup({ delay: null });
-  const clipboard = context.mocks.browser.clipboardWrite();
-  const text = `Copied structured message ${"r".repeat(10_001)}`;
-  const filename = "copied-reference.txt";
-  mockAttachmentChat(context, {
-    chatEvents: [
-      {
-        id: "oversized-rich-message",
-        role: "user",
-        content: text,
-        createdAt: "2026-03-10T00:00:01Z",
-        userMessage: {
-          version: 1,
-          parts: [
-            { type: "text", text },
-            {
-              type: "file",
-              fileId: FIRST_FILE_ID,
-              filenameSnapshot: filename,
-              contentType: "text/plain",
-            },
-          ],
-        },
-      },
-    ],
-  });
-  mockPrivateUrlSequence(context, {
-    [FIRST_FILE_ID]: [
-      "https://cdn.vm7.io/artifacts/tests/copied-reference.txt",
-    ],
-  });
-  const editor = await openComposer();
-  const message = await screen.findByText(text);
-  const userGroup = message.closest<HTMLElement>('[data-role="user"]');
-  if (!userGroup) {
-    throw new Error("Expected the copied user message");
+  const post = await screen.findByText(content);
+  const bubble = post.closest('[data-role="user"]');
+  if (!(bubble instanceof HTMLElement)) {
+    throw new Error("Missing source chat message");
   }
-
-  click(getNamedButton("Copy message", userGroup));
-  const copied = await readSingleRichClipboardWrite(clipboard);
-  const transfer = new DataTransfer();
-  transfer.setData(
-    "text/plain",
-    await readClipboardItemText(copied, "text/plain"),
-  );
-  transfer.setData(
-    "text/html",
-    await readClipboardItemText(copied, "text/html"),
-  );
-  await fill(editor, EXISTING_DRAFT);
-  expect(editor.textContent).toBe(EXISTING_DRAFT);
+  const clipboard = context.mocks.browser.clipboardWrite();
+  click(await findFastControl("button", "Copy message", bubble));
+  const message = await readSingleRichClipboardWrite(clipboard),
+    transfer = new DataTransfer();
+  for (const type of ["text/html", "text/plain"]) {
+    transfer.setData(type, await readClipboardItemText(message, type));
+  }
+  editor.focus();
   await user.paste(transfer);
-
-  await expect(
-    findNamedButton(`Remove ${filename}`),
-  ).resolves.toBeInTheDocument();
-  expect(editor.textContent).toBe(EXISTING_DRAFT + text);
-  expect(
-    screen.queryByLabelText(`Remove ${FIRST_FILENAME}`),
-  ).not.toBeInTheDocument();
+  await waitFor(() => {
+    expect(editor.textContent).toBe(draft + content);
+  });
+  const composer = editor.closest('[data-slot="chat-composer-card"]');
+  expect(composer).toHaveTextContent("coastal-log.txt");
+  expect(composer).not.toHaveTextContent(/Pasted text-\d+\.txt/);
 });

@@ -12,7 +12,6 @@ import type {
   PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import type { ConnectorPermissionFixture } from "../../../__tests__/connector-permissions.ts";
 
 import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
 
@@ -155,21 +154,5 @@ export function permissionMetadataFixture(
         : {}),
       unknownPolicy: options.unknownPolicy ?? "deny",
     },
-  };
-}
-
-export function permissionGrantFixture(
-  connectorSlug: ConnectorSlug,
-  permission: string,
-  action: "allow" | "deny",
-  expiresAt: string | null,
-  overrides: Partial<ConnectorPermissionFixture> = {},
-): ConnectorPermissionFixture {
-  return {
-    connectorSlug,
-    permission,
-    action,
-    expiresAt,
-    ...overrides,
   };
 }

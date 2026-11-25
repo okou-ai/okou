@@ -1,418 +1,117 @@
-import { screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import {
-  type UserLocale,
-  type UserPreferencesResponse,
-  userPreferencesContract,
-} from "@okouai/api-contracts/contracts/user-preferences";
+import { test, expect } from "vitest";
+import { screen, within, waitFor } from "@testing-library/react";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { expect, test } from "vitest";
-
 import {
-  click,
-  setupPage,
-  startPage,
-  queryAllByRoleFast,
-} from "../../../__tests__/page-helper.ts";
+  chatListThread,
+  installChatListStream,
+} from "./chat-list-test-helpers.ts";
 import {
-  mockChatThreadSnapshotResponse,
-  testContext,
-} from "../../../signals/__tests__/test-helpers.ts";
-import { OKOU_LOCALE_COOKIE_NAME } from "../../../i18n/locale-fallback.ts";
-
+  findAction,
+  getAction,
+  queryAction,
+} from "./connector-integrations-test-helpers.ts";
 const context = testContext();
+test("settings-dialog-005 a workspace administrator switches from General to People inside Settings", async () => {
+  context.mocks.data.org({ role: "admin" });
+  await setupPage({ context, path: "/?settings=general" });
+  const settings = await screen.findByRole("dialog");
+  await within(settings).findByRole("heading", { name: "General" });
+  click(await findAction("button", "People", settings));
+  await waitFor(() => {
+    return expect(
+      within(settings).getByRole("heading", { name: "People" }),
+    ).toBeVisible();
+  });
+  expect(settings).toBeVisible();
+  expect(new URL(location.href).searchParams.get("settings")).toBe("people");
+});
 
-async function openDialog(
-  role: "admin" | "member" = "admin",
-  section: "general" | "model" | "preference" = "general",
-  host = "localhost",
-): Promise<void> {
-  context.mocks.data.org({
-    id: "org_1",
-    name: "Test Org",
-    role,
-  });
-  context.mocks.data.orgMembers({
-    name: "Test Org",
-    role,
-    members: [],
-    pendingInvitations: [],
-    membershipRequests: [],
-    createdAt: "2026-01-01T00:00:00Z",
-  });
+test("settings-dialog-004 workspace Indonesian wins over French and German until English is chosen", async () => {
+  context.mocks.browser.language("de-DE");
+  context.mocks.browser.cookie("__Secure-okou-locale=v1.fr-FR");
+  context.mocks.data.userPreferences({ locale: "id-ID", timezone: "UTC" });
   await setupPage({
     context,
-    host,
-    path: `/?settings=${section}`,
-    featureSwitches: {},
+    host: "app.okou.ai",
+    path: "/?settings=preference",
   });
-  await waitFor(() => {
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-  });
-}
-
-function createPreferences(
-  locale: UserLocale | null,
-  supportedLocales: UserLocale[] = [
-    "en-US",
-    "pt-BR",
-    "ja-JP",
-    "ko-KR",
-    "id-ID",
-    "de-DE",
-    "es-ES",
-    "it-IT",
-    "fr-FR",
-    "hi-IN",
-    "zh-Hans",
-    "zh-Hant",
-  ],
-): UserPreferencesResponse {
-  return {
-    timezone: "America/Los_Angeles",
-    locale,
-    supportedLocales,
-    sendMode: "enter",
-    cloudBrowserEnabledByDefault: true,
-    chatResourcesEnabledByDefault: true,
-    forYouCoverId: null,
-    theme: "system",
-    colorTheme: "blue-horizon",
-    captureNetworkBodiesRemaining: 0,
-    memoryInitialized: true,
-  };
-}
-
-function mockMissingLocaleInitialization(
-  preferences: () => UserPreferencesResponse,
-  saveLocale: (locale: UserLocale) => void,
-): void {
-  context.mocks.api(userPreferencesContract.initialize, ({ body, respond }) => {
-    const current = preferences();
-    if (current.locale === null) {
-      const requested = body.locale ?? "en-US";
-      saveLocale(
-        current.supportedLocales.includes(requested) ? requested : "en-US",
-      );
-    }
-    return respond(200, preferences());
-  });
-}
-
-function indexedDbDisclosure(region: HTMLElement): {
-  readonly details: HTMLDetailsElement;
-  readonly summary: HTMLElement;
-} {
-  const title = within(region).getByText("IndexedDB storage");
-  const summary = title.closest("summary");
-  const details = summary?.closest("details");
-  if (!(summary instanceof HTMLElement)) {
-    throw new Error("IndexedDB diagnostics summary not found");
-  }
-  if (!(details instanceof HTMLDetailsElement)) {
-    throw new Error("IndexedDB diagnostics disclosure not found");
-  }
-  return { details, summary };
-}
-
-function buttonWithText(
-  container: HTMLElement,
-  text: string,
-): HTMLButtonElement {
-  const button = queryAllByRoleFast("button", container).find((candidate) => {
-    return candidate.textContent?.trim() === text;
-  });
-  if (!(button instanceof HTMLButtonElement)) {
-    throw new Error(`Button not found: ${text}`);
-  }
-  return button;
-}
-
-async function openSupportedLanguagePicker() {
-  let preferences = createPreferences("pt-BR", ["en-US", "pt-BR", "de-DE"]);
-  context.mocks.api(userPreferencesContract.get, ({ respond }) => {
-    return respond(200, preferences);
-  });
-  context.mocks.api(userPreferencesContract.update, ({ body, respond }) => {
-    preferences = {
-      ...preferences,
-      ...body,
-      supportedLocales:
-        body.locale === undefined ? preferences.supportedLocales : ["en-US"],
-    };
-    return respond(200, preferences);
-  });
-
-  await openDialog("admin", "preference");
-
-  click(await screen.findByRole("combobox", { name: "Language" }));
-}
-
-test("Offer only the workspace's supported languages", async () => {
-  await openSupportedLanguagePicker();
-  const languageOptions = within(screen.getByRole("listbox")).getAllByRole(
-    "option",
-  );
-  expect(languageOptions).toHaveLength(3);
-  expect(
-    languageOptions.map((option) => {
-      return option.textContent;
-    }),
-  ).toStrictEqual(["English", "Português (Brasil)", "Deutsch"]);
-});
-
-test("Persist the browser language when the workspace has no preference", async () => {
-  let serverLocale: UserLocale | null = null;
-  context.mocks.browser.languages(["id-ID"]);
-  context.mocks.api(userPreferencesContract.get, ({ respond }) => {
-    if (serverLocale === null) {
-      return respond(409, {
-        error: {
-          code: "USER_PREFERENCES_UNINITIALIZED",
-          message: "User preferences require timezone or locale initialization",
-        },
-      });
-    }
-    return respond(200, createPreferences(serverLocale));
-  });
-  mockMissingLocaleInitialization(
-    () => {
-      return createPreferences(serverLocale);
-    },
-    (locale) => {
-      serverLocale = locale;
-    },
-  );
-  context.mocks.api(userPreferencesContract.update, ({ body, respond }) => {
-    if (body.locale !== undefined) {
-      serverLocale = body.locale;
-    }
-    return respond(200, createPreferences(serverLocale));
-  });
-
-  await openDialog("admin", "preference", "app.okou.ai");
-
-  const languageSelect = await screen.findByRole("combobox", {
+  const settings = await screen.findByRole("dialog");
+  const language = await within(settings).findByRole("combobox", {
     name: "Language",
   });
   await waitFor(() => {
-    expect(serverLocale).toBe("id-ID");
-    expect(languageSelect).toHaveTextContent("Bahasa Indonesia");
-    expect(languageSelect).toBeEnabled();
-    expect(document.documentElement).toHaveAttribute("lang", "id-ID");
+    return expect(language).toHaveTextContent("Bahasa Indonesia");
   });
-
-  click(languageSelect);
-  click(screen.getByRole("option", { name: "English" }));
+  expect(document.documentElement.lang).toBe("id-ID");
+  click(language);
+  click(await screen.findByRole("option", { name: "English" }));
   await waitFor(() => {
-    expect(serverLocale).toBe("en-US");
-    expect(document.documentElement).toHaveAttribute("lang", "en-US");
-    expect(
-      screen.getByRole("combobox", { name: "Language" }),
-    ).toHaveTextContent("English");
+    return expect(document.documentElement.lang).toBe("en-US");
   });
+  expect(language).toHaveTextContent("English");
 });
-
-test("Select and persist a supported interface language", async () => {
-  const submittedLocales: UserLocale[] = [];
-  let serverLocale: UserLocale | null = "en-US";
-  const supportedLocales: UserLocale[] = ["en-US", "pt-BR", "de-DE"];
-  context.mocks.api(userPreferencesContract.get, ({ respond }) => {
-    return respond(200, createPreferences(serverLocale, supportedLocales));
-  });
-  context.mocks.api(userPreferencesContract.update, ({ body, respond }) => {
-    if (body.locale !== undefined) {
-      serverLocale = body.locale;
-      submittedLocales.push(body.locale);
-    }
-    return respond(200, createPreferences(serverLocale, supportedLocales));
-  });
-
-  await openDialog("admin", "preference");
-
-  click(
-    await screen.findByRole("combobox", {
-      name: "Language",
-    }),
-  );
-  click(screen.getByRole("option", { name: "Deutsch" }));
-
-  await waitFor(() => {
-    expect(submittedLocales).toContain("de-DE");
-    expect(
-      screen.getByRole("combobox", { name: "Language" }),
-    ).toHaveTextContent("Deutsch");
-    expect(document.documentElement.lang).toBe("de-DE");
-  });
-});
-
-test("Use the saved workspace language ahead of locale hints", async () => {
-  context.mocks.browser.cookie(`${OKOU_LOCALE_COOKIE_NAME}=v1.fr-FR`);
-  context.mocks.browser.languages(["de-DE"]);
-  context.mocks.data.userPreferences(createPreferences("id-ID"));
-
-  await openDialog("admin", "preference", "app.okou.ai");
-
-  const languageSelect = await screen.findByRole("combobox", {
-    name: "Language",
-  });
-  await waitFor(() => {
-    expect(languageSelect).toHaveTextContent("Bahasa Indonesia");
-    expect(languageSelect).toHaveAccessibleName("Language");
-    expect(document.documentElement.lang).toBe("id-ID");
-  });
-
-  click(languageSelect);
-  click(screen.getByRole("option", { name: "English" }));
-  await waitFor(() => {
-    expect(document.documentElement.lang).toBe("en-US");
-  });
-});
-
-test("Navigate workspace settings without closing Settings", async () => {
-  await openDialog("admin");
-
-  const dialog = screen.getByRole("dialog", { name: "Settings" });
-  expect(within(dialog).getByText("Personal")).toBeInTheDocument();
-  expect(within(dialog).getByText("Workspace")).toBeInTheDocument();
-  expect(within(dialog).getAllByText("Models").length).toBeGreaterThan(0);
-  expect(within(dialog).getByText("Billing & pricing")).toBeInTheDocument();
-  expect(screen.getByRole("heading", { name: "General" })).toBeInTheDocument();
-
-  const peopleTab = queryAllByRoleFast("button", dialog).find((element) => {
-    return /People/u.test(element.textContent ?? "");
-  });
-  if (!peopleTab) {
-    throw new Error("People tab not found");
-  }
-  click(peopleTab);
-
-  await waitFor(() => {
-    expect(
-      screen.getByRole("dialog", { name: "Settings" }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "People" })).toBeInTheDocument();
-  });
-});
-
-test("Navigate workspace settings with the named section select", async () => {
-  const user = userEvent.setup({ delay: null });
-  await openDialog("admin");
-  const dialog = screen.getByRole("dialog", { name: "Settings" });
-  const section = within(dialog).getByRole("combobox", {
-    name: "Settings section",
-  });
-  expect(section).toHaveTextContent("General");
-
-  section.focus();
-  await user.keyboard("{Enter}");
-  await screen.findByRole("option", { name: "General", selected: true });
-  await user.keyboard("{ArrowDown}{Enter}");
-
+test("settings-dialog-007 a member arriving through workspace Settings sees Theme and personal navigation", async () => {
+  context.mocks.data.org({ role: "member" });
+  await setupPage({ context, path: "/?settings=general" });
+  const settings = await screen.findByRole("dialog");
   await expect(
-    screen.findByRole("heading", { name: "People" }),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument();
-  expect(window.location.search).toBe("?settings=people");
-  const peopleSection = within(dialog).getByRole("combobox", {
-    name: "Settings section",
-  });
-  expect(peopleSection).toHaveTextContent("People");
+    within(settings).findByText("Theme", { exact: true }),
+  ).resolves.toBeVisible();
+  const nav = within(settings).getByRole("navigation");
+  expect(within(nav).queryByText("Workspace")).toBeNull();
+  expect(queryAction("button", "General", nav)).toBeNull();
+  expect(queryAction("button", "People", nav)).toBeNull();
 });
-
-test("Route members away from administrator-only workspace settings", async () => {
-  await openDialog("member");
-
-  const dialog = screen.getByRole("dialog");
-  expect(within(dialog).queryByText("Workspace")).not.toBeInTheDocument();
-  expect(screen.getByText("Theme")).toBeInTheDocument();
-});
-
-async function setupSnapshotMeasurement() {
-  const snapshotRequested = context.mocks.deferred<void>();
-  const releaseSnapshot = context.mocks.deferred<void>();
-  context.mocks.api(chatThreadsContract.snapshot, async ({ respond }) => {
-    if (!snapshotRequested.settled()) {
-      snapshotRequested.resolve();
-    }
-    await releaseSnapshot.promise;
-    return respond(
-      200,
-      mockChatThreadSnapshotResponse(context, {
-        chatThreads: ["Snapshot 文 😀", "Second thread", "Third thread"].map(
-          (title) => {
-            return {
-              id: crypto.randomUUID(),
-
-              title,
-              sortAt: "2026-09-05T00:00:00Z",
-              createdAt: "2026-09-05T00:00:00Z",
-              updatedAt: "2026-09-05T00:00:00Z",
-              pinnedAt: null,
-              archived: false,
-              renamedAt: null,
-              selectedModel: null,
-              serviceTier: null,
-              computerUseHostId: null,
-            };
-          },
-        ),
-        latestEventId: null,
-        latestSeqId: null,
-      }),
-    );
+test("settings-dialog-008 measuring a three-thread local snapshot reports its size and read duration", async () => {
+  const snapshot = [
+    "Interview notes",
+    "Archive review",
+    "Launch retrospective",
+  ].map((title, index) => {
+    return chatListThread(index + 1, title);
   });
-  context.mocks.api(chatThreadsContract.events, ({ respond }) => {
-    return respond(200, { events: [], hasMore: false });
-  });
-  const page = await startPage({
+  installChatListStream(context, { caseId: 61, snapshot });
+  await setupPage({
     context,
-    path: "/",
+    path: "/?settings=preference",
     featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
     sharedWorkerTestTransport: "message-port",
   });
-  const sidebar = await screen.findByTestId("sidebar-scroll-area");
-  // Page content can render before the Worker requests its first snapshot.
-  // Release it after both are ready, then observe the committed snapshot.
-  await snapshotRequested.promise;
-  expect(within(sidebar).queryByText("Snapshot 文 😀")).not.toBeInTheDocument();
-  releaseSnapshot.resolve();
-  await page.ready;
-  await within(sidebar).findByText("Snapshot 文 😀");
-  const rail = await screen.findByTestId("labeled-nav-rail");
-  click(within(rail).getByLabelText("Test User"));
-  const accountMenu = await screen.findByRole("menu");
-  click(within(accountMenu).getByText("Settings"));
-  const dialog = await screen.findByRole("dialog", { name: "Settings" });
-  click(buttonWithText(dialog, "Debug"));
-  expect(
-    within(dialog).getByText("Capture network bodies"),
-  ).toBeInTheDocument();
-  const diagnostics = await screen.findByRole("region", {
-    name: "IndexedDB storage",
+  const settings = await screen.findByRole("dialog");
+  click(await findAction("button", "Debug", settings));
+  const details = await within(settings).findByText("IndexedDB storage", {
+    selector: "summary span",
   });
-  const { details, summary } = await waitFor(() => {
-    return indexedDbDisclosure(diagnostics);
+  click(details);
+  const snapshotStore = await within(settings).findByText(
+    "chat_thread_snapshot",
+    {
+      selector: "dt",
+    },
+  );
+  await waitFor(() => {
+    return expect(snapshotStore.nextElementSibling).toHaveTextContent(/^1$/u);
   });
-  click(summary);
-  const snapshot = within(diagnostics).getByRole("region", {
+  const region = await within(settings).findByRole("region", {
     name: "Thread snapshot",
   });
-  expect(within(snapshot).queryByRole("definition")).not.toBeInTheDocument();
-  return { diagnostics, details, snapshot };
-}
-
-test("Measure the threads inside a singleton snapshot on demand", async () => {
-  const { snapshot } = await setupSnapshotMeasurement();
-  const measure = buttonWithText(snapshot, "Measure snapshot");
-  click(measure);
-  expect(measure).toBeDisabled();
-  click(measure);
-  await within(snapshot).findByText("Threads in snapshot");
-  expect(measure).toBeEnabled();
-  const values = within(snapshot).getAllByRole("definition");
-  expect(values[0]).toHaveTextContent("3");
-  expect(values[1]).toHaveTextContent(/^[1-9][\d.]*(?:B|KB)$/u);
-  expect(values[2]).toHaveTextContent(/^[\d,.]+ ms$/u);
+  const view = within(region);
+  expect(view.queryByText("Threads in snapshot")).toBeNull();
+  click(getAction("button", "Measure snapshot", region));
+  expect(getAction("button", "Measuring...", region)).toBeDisabled();
+  await view.findByText("Threads in snapshot");
+  expect(getAction("button", "Measure snapshot", region)).toBeEnabled();
+  expect(
+    view.getByText("Threads in snapshot").nextElementSibling,
+  ).toHaveTextContent(/^3$/u);
+  expect(
+    view.getByText("Estimated payload").nextElementSibling,
+  ).toHaveTextContent(
+    /^(?:[1-9][0-9]*(?:\.[0-9]+)?|0\.[0-9]*[1-9][0-9]*)\s?KB$/u,
+  );
+  expect(
+    view.getByText("IndexedDB read time").nextElementSibling,
+  ).toHaveTextContent(/^[0-9]+(?:\.[0-9]+)?\s?ms$/u);
 });

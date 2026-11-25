@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.65.4](https://github.com/okou-ai/okou/compare/ios-v0.65.3...ios-v0.65.4) (2026-11-25)
+
+
+### Refactoring
+
+* **ios:** keep the fork attempt and model settings in the session graph ([#50673](https://github.com/okou-ai/okou/issues/50673)) ([5bd6a2a](https://github.com/okou-ai/okou/commit/5bd6a2a951279a84d432acbe8c91271959357fe7))
+* **ios:** keep the run usage table in the session graph ([#50672](https://github.com/okou-ai/okou/issues/50672)) ([1419225](https://github.com/okou-ai/okou/commit/1419225a07be06a556836059caf28a770f588345))
+
 ## [0.65.3](https://github.com/okou-ai/okou/compare/ios-v0.65.2...ios-v0.65.3) (2026-11-24)
 
 

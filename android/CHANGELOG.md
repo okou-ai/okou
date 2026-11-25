@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.55.5](https://github.com/okou-ai/okou/compare/android-v0.55.4...android-v0.55.5) (2026-11-25)
+
+
+### Refactoring
+
+* **android:** share content read feedback timing ([#50649](https://github.com/okou-ai/okou/issues/50649)) ([042ae13](https://github.com/okou-ai/okou/commit/042ae135dbe3c6d917f9e8ec828de4bf834f9c3b))
+
 ## [0.55.4](https://github.com/okou-ai/okou/compare/android-v0.55.3...android-v0.55.4) (2026-11-24)
 
 

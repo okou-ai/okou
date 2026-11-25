@@ -24,16 +24,36 @@ struct ConversationRunUsageView: View {
 
   var body: some View {
     StoreProvider(usage.store) {
-      if let resource = usage.resources[runID] {
-        RunUsageValue(resource: resource) { state in
-          ConversationRunUsageLabel(runID: runID, state: state, showDetails: showDetails)
+      RunUsageResource(runID: runID, usage: usage) { resource in
+        if let resource {
+          RunUsageValue(resource: resource) { state in
+            ConversationRunUsageLabel(runID: runID, state: state, showDetails: showDetails)
+          }
+          .id(ObjectIdentifier(resource))
+        } else {
+          ConversationRunUsageLabel(runID: runID, state: .loading, showDetails: showDetails)
         }
-        .id(ObjectIdentifier(resource))
-      } else {
-        ConversationRunUsageLabel(runID: runID, state: .loading, showDetails: showDetails)
       }
     }
   }
+}
+
+/// Finds a Run's usage read in the conversation's table, which lives in the session graph.
+private struct RunUsageResource<Content: View>: View {
+  let runID: String
+  @LoadableValue private var resources: Loadable<[String: ConversationRunUsageResource]>
+  let content: (ConversationRunUsageResource?) -> Content
+
+  init(
+    runID: String, usage: ConversationRunUsageStore,
+    @ViewBuilder content: @escaping (ConversationRunUsageResource?) -> Content
+  ) {
+    self.runID = runID
+    _resources = LoadableValue(usage.resources)
+    self.content = content
+  }
+
+  var body: some View { content(resources.data?[runID]) }
 }
 
 private struct RunUsageValue<Content: View>: View {
@@ -97,13 +117,15 @@ struct ConversationRunUsageDetails: View {
 
   var body: some View {
     StoreProvider(usage.store) {
-      if let resource = usage.resources[runID] {
-        RunUsageValue(resource: resource) { state in
-          ConversationRunUsageDetailsContent(state: state, catalog: catalog, retry: retry)
+      RunUsageResource(runID: runID, usage: usage) { resource in
+        if let resource {
+          RunUsageValue(resource: resource) { state in
+            ConversationRunUsageDetailsContent(state: state, catalog: catalog, retry: retry)
+          }
+          .id(ObjectIdentifier(resource))
+        } else {
+          ConversationRunUsageDetailsContent(state: .loading, catalog: catalog, retry: retry)
         }
-        .id(ObjectIdentifier(resource))
-      } else {
-        ConversationRunUsageDetailsContent(state: .loading, catalog: catalog, retry: retry)
       }
     }
   }

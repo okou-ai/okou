@@ -12,7 +12,7 @@ import {
   type TestContext,
 } from "../../../signals/__tests__/test-helpers.ts";
 
-const CREATED_AT = "2026-08-10T12:00:00.000Z";
+export const CREATED_AT = "2026-08-10T12:00:00.000Z";
 
 interface OutputRowOptions {
   readonly id?: string;
@@ -173,4 +173,19 @@ export function createMarkdownChatFixture(
       });
     },
   };
+}
+
+/** A completed assistant reply delivered by the ordinary thread endpoints. */
+export function completedMarkdownReply(context: TestContext, content: string) {
+  const chat = createMarkdownChatFixture(context);
+  chat.install({
+    rows: () => {
+      return [
+        chat.inputPrompt("Review this material", { seqId: 1 }),
+        chat.outputMessage(content, { seqId: 2 }),
+        chat.runCompleted({ seqId: 3 }),
+      ];
+    },
+  });
+  return chat.path;
 }
