@@ -1912,6 +1912,7 @@
         "documentPlaceholder": "Apa yang ingin Anda sertakan dalam dokumen?",
         "imagePlaceholder": "Jelaskan gambar yang ingin Anda buat…",
         "presentationPlaceholder": "Apa topik presentasi Anda?",
+        "presentationPlaceholderWithDefault": "Presentasi Anda tentang apa? (default: {{format}})",
         "slideCount": "Jumlah slide",
         "slideCountAuto": "Otomatis",
         "slideCountRange": "{{range}} slide"
@@ -1923,12 +1924,14 @@
       "modelForThisChat": "Model untuk chat ini",
       "placeholder": "Minta saya mengotomatiskan alur kerja, mengelola tugas...",
       "presentationFormatSetup": {
-        "description": "Kami akan menyimpan default ini, lalu membuat presentasi Anda. Format yang diminta secara eksplisit tetap diutamakan.",
-        "htmlDescription": "Cocok untuk dibagikan di browser",
-        "pptxDescription": "Slide yang dapat diedit di PowerPoint",
-        "saveAndGenerate": "Simpan dan buat",
-        "settingsHint": "Ubah kapan saja di Pengaturan → Preferensi → Chat.",
-        "title": "Pilih format presentasi default"
+        "htmlDescription": "Tautan yang terbuka di browser mana pun",
+        "htmlLabel": "Slide web",
+        "openSettings": "Buka pengaturan",
+        "pptxDescription": "File .pptx yang dapat diedit",
+        "pptxLabel": "PowerPoint",
+        "savedDefault": "{{format}} sekarang menjadi format default presentasi Anda",
+        "settingsHint": "Dipakai untuk setiap presentasi baru. Anda bisa mengubahnya di Pengaturan.",
+        "title": "Pilih format default untuk memulai"
       },
       "selectedModelUnavailable": "Model yang dipilih tidak tersedia. Konfigurasikan sebelum mengirim.",
       "selectedModelUnavailableToast": "Model yang dipilih tidak tersedia",
@@ -5969,11 +5972,12 @@
         },
         "description": "Pilih default untuk chat baru dan cara pesan dikirim.",
         "presentationFormat": {
-          "description": "Pilih format default untuk presentasi baru",
+          "htmlDescription": "Presentasi baru terbuka sebagai tautan di browser",
+          "pptxDescription": "Presentasi baru dikirim sebagai file .pptx yang dapat diedit",
           "saveFailed": "Tidak dapat menyimpan format default. Coba lagi.",
           "title": "Format presentasi default",
-          "unavailable": "Tidak tersedia",
-          "unset": "Belum diatur"
+          "unavailable": "Tidak dapat memuat format default Anda",
+          "unsetDescription": "Kami akan bertanya saat Anda pertama kali membuat presentasi"
         },
         "sectionTitle": "Chat"
       },

@@ -1918,6 +1918,7 @@
         "documentPlaceholder": "What would you like to include in your document?",
         "imagePlaceholder": "Describe the image you want to create…",
         "presentationPlaceholder": "What is your presentation about?",
+        "presentationPlaceholderWithDefault": "What is your presentation about? ({{format}} by default)",
         "slideCount": "Slide count",
         "slideCountAuto": "Auto",
         "slideCountRange": "{{range}} slides"
@@ -1929,12 +1930,14 @@
       "modelForThisChat": "Model for this chat",
       "placeholder": "Ask me to automate workflows, manage tasks...",
       "presentationFormatSetup": {
-        "description": "We'll save this default, then generate your presentation. An explicit format in your request still takes priority.",
-        "htmlDescription": "Best for sharing in a browser",
-        "pptxDescription": "Editable slides for PowerPoint",
-        "saveAndGenerate": "Save and generate",
-        "settingsHint": "Change it anytime in Settings → Preferences → Chat.",
-        "title": "Choose a default presentation format"
+        "htmlDescription": "A link that opens in any browser",
+        "htmlLabel": "Web slides",
+        "openSettings": "Open settings",
+        "pptxDescription": "An editable .pptx file",
+        "pptxLabel": "PowerPoint",
+        "savedDefault": "{{format}} is now your default for decks",
+        "settingsHint": "Used for every new deck. You can change it in Settings.",
+        "title": "Pick a default format to start"
       },
       "selectedModelUnavailable": "The selected model is not available. Configure it before sending.",
       "selectedModelUnavailableToast": "The selected model is not available",
@@ -5991,11 +5994,12 @@
         },
         "description": "Choose defaults for new chats and how messages are sent.",
         "presentationFormat": {
-          "description": "Choose the default for new presentations",
+          "htmlDescription": "New decks open as a link in any browser",
+          "pptxDescription": "New decks arrive as a .pptx file you can edit",
           "saveFailed": "Couldn't save the default format. Try again.",
           "title": "Default presentation format",
-          "unavailable": "Unavailable",
-          "unset": "Not set"
+          "unavailable": "Couldn't load your default format",
+          "unsetDescription": "We’ll ask the first time you make a deck"
         },
         "sectionTitle": "Chat"
       },

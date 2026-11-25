@@ -31,7 +31,7 @@ import { createTemplateGalleryHelpers } from "./chat-composer-template-gallery-t
 
 const context = testContext();
 const { mockTemplateChat } = createTemplateGalleryHelpers(context);
-const dialogTitle = "Choose a default presentation format";
+const menuTitle = "Pick a default format to start";
 const ownerAuth = Object.freeze({
   user: Object.freeze({
     id: "user_3EWY21Oe3f15kfs3yYmbGgDb3NV",
@@ -56,28 +56,28 @@ function button(name: string, container: ParentNode = document): HTMLElement {
   return result;
 }
 
-function radio(dialog: HTMLElement, name: RegExp): HTMLElement {
-  const result = queryAllByRoleFast("radio", dialog).find((candidate) => {
-    return name.test(
-      candidate.getAttribute("aria-label") ??
-        candidate.closest("label")?.textContent?.trim() ??
-        candidate.textContent?.trim() ??
-        "",
-    );
+function formatItem(menu: HTMLElement, name: RegExp): HTMLElement {
+  const result = queryAllByRoleFast("menuitem", menu).find((candidate) => {
+    return name.test(candidate.textContent?.trim() ?? "");
   });
   if (!result) {
-    throw new Error(`Expected format radio ${name}`);
+    throw new Error(`Expected format item ${name}`);
   }
-  expect(result).toHaveAccessibleName(name);
   return result;
+}
+
+function setupMenu(): HTMLElement | null {
+  return screen.queryByRole("menu", { name: menuTitle });
 }
 
 function mockPreferences({
   saveGate,
   failFirstSave = false,
+  presentationFormat = null,
 }: {
   readonly saveGate?: Promise<void>;
   readonly failFirstSave?: boolean;
+  readonly presentationFormat?: UserPreferencesResponse["presentationFormat"];
 } = {}) {
   let stored: UserPreferencesResponse = {
     timezone: "Etc/UTC",
@@ -86,7 +86,7 @@ function mockPreferences({
     sendMode: "enter",
     cloudBrowserEnabledByDefault: false,
     chatResourcesEnabledByDefault: false,
-    presentationFormat: null,
+    presentationFormat,
     forYouCoverId: null,
     theme: "system",
     colorTheme: null,
@@ -159,7 +159,7 @@ async function send(): Promise<void> {
 
 async function openSetup(): Promise<HTMLElement> {
   await send();
-  return await screen.findByRole("dialog", { name: dialogTitle });
+  return await screen.findByRole("menu", { name: menuTitle });
 }
 
 function messageText(message: UserMessageDocument | undefined): string {
@@ -173,8 +173,10 @@ function messageText(message: UserMessageDocument | undefined): string {
   );
 }
 
+const formatLabels = { html: "Web slides", pptx: "PowerPoint" } as const;
+
 test.each(["html", "pptx"] as const)(
-  "A tagged first send waits for a confirmed %s choice without rewriting an explicit opposite request",
+  "A tagged first send waits for a chosen %s default without rewriting an explicit opposite request",
   async (format) => {
     const preferences = mockPreferences();
     const capture = mockTemplateChat();
@@ -187,12 +189,16 @@ test.each(["html", "pptx"] as const)(
     const editor = await findComposerEditor();
     const prompt = `Please deliver ${format === "html" ? "PPTX" : "HTML"} for the launch briefing`;
     const { slideCount, template } = await preparePresentation(editor, prompt);
-    const dialog = await openSetup();
-    const html = radio(dialog, /^HTML/u);
-    const pptx = radio(dialog, /^PPTX/u);
-    expect(html).toHaveAttribute("aria-checked", "false");
-    expect(pptx).toHaveAttribute("aria-checked", "false");
-    expect(button("Save and generate", dialog)).toBeDisabled();
+    const menu = await openSetup();
+    expect(formatItem(menu, /^Web slides/u)).toHaveTextContent(
+      "A link that opens in any browser",
+    );
+    expect(formatItem(menu, /^PowerPoint/u)).toHaveTextContent(
+      "An editable .pptx file",
+    );
+    expect(menu).toHaveTextContent(
+      "Used for every new deck. You can change it in Settings.",
+    );
     expect(editor).toHaveTextContent(prompt);
     expect(editor).toHaveTextContent(template.title);
     expect(slideCount).toHaveTextContent("4–8 slides");
@@ -201,17 +207,8 @@ test.each(["html", "pptx"] as const)(
     expect(capture.runPrompts).toStrictEqual([]);
     expect(capture.sentMessages).toStrictEqual([]);
 
-    const selected = format === "html" ? html : pptx;
-    click(selected);
-    await waitFor(() => {
-      expect(selected).toHaveAttribute("aria-checked", "true");
-      expect(button("Save and generate", dialog)).toBeEnabled();
-    });
-    expect(preferences.writes).toStrictEqual([]);
-    expect(capture.runPrompts).toStrictEqual([]);
-    expect(editor).toHaveTextContent(prompt);
-
-    click(button("Save and generate", dialog));
+    // Choosing a format is the confirmation: it saves and sends once.
+    click(formatItem(menu, new RegExp(`^${formatLabels[format]}`, "u")));
     await waitFor(() => {
       expect(capture.sentMessages).toHaveLength(1);
     });
@@ -233,12 +230,23 @@ test.each(["html", "pptx"] as const)(
         `- Output format: ${format.toUpperCase()} format`,
       ),
     });
-    expect(screen.queryByRole("dialog", { name: dialogTitle })).toBeNull();
+    expect(capture.sentMessages[0]?.parts).toContainEqual({
+      type: "additional_info",
+      text: expect.stringContaining(
+        "When this saved default decides the format",
+      ),
+    });
+    await screen.findByText(
+      `${formatLabels[format]} is now your default for decks`,
+    );
+    await waitFor(() => {
+      expect(setupMenu()).toBeNull();
+    });
   },
 );
 
-test("Cancel preserves the draft, resets the next setup choice, and removing the tag permits a plain send", async () => {
-  const preferences = mockPreferences();
+test("Open settings in the saved-default toast opens Chat settings on the saved format", async () => {
+  mockPreferences();
   const capture = mockTemplateChat();
   await setupPage({
     context,
@@ -247,17 +255,44 @@ test("Cancel preserves the draft, resets the next setup choice, and removing the
     featureSwitches: enabledFeatures,
   });
   const editor = await findComposerEditor();
+  await openPresentation();
+  await fill(editor, "Draft the quarterly review deck");
+  click(formatItem(await openSetup(), /^PowerPoint/u));
+  await waitFor(() => {
+    expect(capture.sentMessages).toHaveLength(1);
+  });
+  await screen.findByText("PowerPoint is now your default for decks");
+  await waitFor(() => {
+    expect(button("Open settings")).toBeInTheDocument();
+  });
+  click(button("Open settings"));
+  const formats = await screen.findByRole("group", {
+    name: "Default presentation format",
+  });
+  expect(button("PowerPoint", formats)).toHaveAttribute("aria-pressed", "true");
+  expect(
+    screen.getByText("New decks arrive as a .pptx file you can edit"),
+  ).toBeInTheDocument();
+});
+
+test("Dismissing preserves the draft, asks again on the next send, and removing the tag permits a plain send", async () => {
+  const preferences = mockPreferences();
+  const capture = mockTemplateChat();
+  await setupPage({
+    context,
+    path: "/",
+    auth: ownerAuth,
+    featureSwitches: enabledFeatures,
+  });
+  const user = userEvent.setup();
+  const editor = await findComposerEditor();
   const prompt = "Keep my original launch draft";
   const { slideCount, template } = await preparePresentation(editor, prompt);
-  const dialog = await openSetup();
-  const pptx = radio(dialog, /^PPTX/u);
-  click(pptx);
+  await openSetup();
+  await user.keyboard("{Escape}");
   await waitFor(() => {
-    expect(pptx).toHaveAttribute("aria-checked", "true");
+    expect(setupMenu()).toBeNull();
   });
-  click(button("Cancel", dialog));
-  await screen.findByRole("combobox", { name: "Slide count" });
-  expect(screen.queryByRole("dialog", { name: dialogTitle })).toBeNull();
   expect(editor).toHaveTextContent(prompt);
   expect(editor).toHaveTextContent(template.title);
   expect(slideCount).toHaveTextContent("4–8 slides");
@@ -265,12 +300,11 @@ test("Cancel preserves the draft, resets the next setup choice, and removing the
   expect(capture.threadCreates).toStrictEqual([]);
   expect(capture.runPrompts).toStrictEqual([]);
 
-  const reopened = await openSetup();
-  expect(radio(reopened, /^HTML/u)).toHaveAttribute("aria-checked", "false");
-  expect(radio(reopened, /^PPTX/u)).toHaveAttribute("aria-checked", "false");
-  expect(button("Save and generate", reopened)).toBeDisabled();
-  click(button("Cancel", reopened));
-  await screen.findByRole("combobox", { name: "Slide count" });
+  await openSetup();
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(setupMenu()).toBeNull();
+  });
   click(button("Remove Presentation"));
   await screen.findByRole("group", { name: "Explore Okou capabilities" });
   await fill(editor, prompt);
@@ -282,7 +316,7 @@ test("Cancel preserves the draft, resets the next setup choice, and removing the
     { type: "text", text: prompt },
   ]);
   expect(preferences.writes).toStrictEqual([]);
-  expect(screen.queryByRole("dialog", { name: dialogTitle })).toBeNull();
+  expect(setupMenu()).toBeNull();
 });
 
 test("Presentation wording without the actual tag sends normally without choosing a default", async () => {
@@ -305,7 +339,7 @@ test("Presentation wording without the actual tag sends normally without choosin
     { type: "text", text: prompt },
   ]);
   expect(preferences.writes).toStrictEqual([]);
-  expect(screen.queryByRole("dialog", { name: dialogTitle })).toBeNull();
+  expect(setupMenu()).toBeNull();
 });
 
 test("The actual Presentation tag does not ask for a default while the feature is off", async () => {
@@ -331,10 +365,38 @@ test("The actual Presentation tag does not ask for a default while the feature i
     text: expect.stringContaining("Create a presentation."),
   });
   expect(preferences.writes).toStrictEqual([]);
-  expect(screen.queryByRole("dialog", { name: dialogTitle })).toBeNull();
+  expect(setupMenu()).toBeNull();
 });
 
-test("A failed preference save keeps the selected format and original composer until an explicit retry", async () => {
+test("A saved default names itself in the Presentation placeholder and skips the first-use menu", async () => {
+  const preferences = mockPreferences({ presentationFormat: "pptx" });
+  const capture = mockTemplateChat();
+  await setupPage({
+    context,
+    path: "/",
+    auth: ownerAuth,
+    featureSwitches: enabledFeatures,
+  });
+  const editor = await findComposerEditor();
+  await openPresentation();
+  await screen.findByText(
+    "What is your presentation about? (PowerPoint by default)",
+  );
+  const prompt = "Summarize the board update";
+  await fill(editor, prompt);
+  await send();
+  await waitFor(() => {
+    expect(capture.sentMessages).toHaveLength(1);
+  });
+  expect(setupMenu()).toBeNull();
+  expect(preferences.writes).toStrictEqual([]);
+  expect(capture.sentMessages[0]?.parts).toContainEqual({
+    type: "additional_info",
+    text: expect.stringContaining("- Output format: PPTX format"),
+  });
+});
+
+test("A failed preference save keeps the menu and original composer until an explicit retry", async () => {
   const preferences = mockPreferences({ failFirstSave: true });
   const capture = mockTemplateChat();
   await setupPage({
@@ -346,20 +408,16 @@ test("A failed preference save keeps the selected format and original composer u
   const editor = await findComposerEditor();
   const prompt = "Retain this briefing while saving fails";
   const { slideCount, template } = await preparePresentation(editor, prompt);
-  const dialog = await openSetup();
-  const selected = radio(dialog, /^PPTX/u);
-  click(selected);
-  await waitFor(() => {
-    expect(button("Save and generate", dialog)).toBeEnabled();
-  });
-  click(button("Save and generate", dialog));
-  const error = await within(dialog).findByRole("alert");
+  const menu = await openSetup();
+  click(formatItem(menu, /^PowerPoint/u));
+  const error = await within(menu).findByRole("alert");
   expect(error).toHaveTextContent(
     "Couldn't save the default format. Try again.",
   );
-  expect(selected).toHaveAttribute("aria-checked", "true");
-  expect(button("Save and generate", dialog)).toBeEnabled();
-  expect(button("Cancel", dialog)).toBeEnabled();
+  expect(formatItem(menu, /^PowerPoint/u)).not.toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
   expect(editor).toHaveTextContent(prompt);
   expect(editor).toHaveTextContent(template.title);
   expect(slideCount).toHaveTextContent("4–8 slides");
@@ -367,7 +425,7 @@ test("A failed preference save keeps the selected format and original composer u
   expect(capture.threadCreates).toStrictEqual([]);
   expect(capture.runPrompts).toStrictEqual([]);
 
-  click(button("Save and generate", dialog));
+  click(formatItem(menu, /^PowerPoint/u));
   await waitFor(() => {
     expect(capture.sentMessages).toHaveLength(1);
   });
@@ -387,7 +445,7 @@ test("A failed preference save keeps the selected format and original composer u
   });
 });
 
-test("Rapid confirmation writes once and disables all setup actions until the server confirms the save", async () => {
+test("Rapid choices write once and disable both formats until the server confirms the save", async () => {
   const release = context.mocks.deferred<void>();
   const preferences = mockPreferences({ saveGate: release.promise });
   const capture = mockTemplateChat();
@@ -401,28 +459,19 @@ test("Rapid confirmation writes once and disables all setup actions until the se
   await openPresentation();
   const prompt = "Generate this request only once";
   await fill(editor, prompt);
-  const dialog = await openSetup();
-  const html = radio(dialog, /^HTML/u);
-  const pptx = radio(dialog, /^PPTX/u);
-  const cancel = button("Cancel", dialog);
-  const confirm = button("Save and generate", dialog);
+  const menu = await openSetup();
+  const html = formatItem(menu, /^Web slides/u);
+  const pptx = formatItem(menu, /^PowerPoint/u);
   click(html);
-  await waitFor(() => {
-    expect(confirm).toBeEnabled();
-  });
-  click(confirm);
-  click(confirm);
+  click(html);
   await expect(preferences.requested.promise).resolves.toStrictEqual({
     presentationFormat: "html",
   });
   await waitFor(() => {
-    expect(confirm).toBeDisabled();
-    expect(cancel).toBeDisabled();
     expect(html).toHaveAttribute("aria-disabled", "true");
     expect(pptx).toHaveAttribute("aria-disabled", "true");
   });
-  expect(html).toHaveAttribute("aria-checked", "true");
-  expect(pptx).toHaveAttribute("aria-checked", "false");
+  expect(html).toHaveAttribute("aria-busy", "true");
   expect(editor).toHaveTextContent(prompt);
   expect(preferences.writes).toStrictEqual([{ presentationFormat: "html" }]);
   expect(capture.threadCreates).toStrictEqual([]);
@@ -436,7 +485,9 @@ test("Rapid confirmation writes once and disables all setup actions until the se
   expect(preferences.writes).toStrictEqual([{ presentationFormat: "html" }]);
   expect(capture.runPrompts).toStrictEqual([prompt]);
   expect(messageText(capture.sentMessages[0])).toBe(prompt);
-  expect(screen.queryByRole("dialog", { name: dialogTitle })).toBeNull();
+  await waitFor(() => {
+    expect(setupMenu()).toBeNull();
+  });
 });
 
 test("An accepted preference followed by a rejected normal send does not repeat either POST", async () => {
@@ -465,12 +516,7 @@ test("An accepted preference followed by a rejected normal send does not repeat 
   await openPresentation();
   const prompt = "Send my original briefing once";
   await fill(await findComposerEditor(), prompt);
-  const dialog = await openSetup();
-  click(radio(dialog, /^PPTX/u));
-  await waitFor(() => {
-    expect(button("Save and generate", dialog)).toBeEnabled();
-  });
-  click(button("Save and generate", dialog));
+  click(formatItem(await openSetup(), /^PowerPoint/u));
   await sendRequested.promise;
   expect(preferences.writes).toStrictEqual([{ presentationFormat: "pptx" }]);
   expect(prompts).toStrictEqual([prompt]);
@@ -479,10 +525,10 @@ test("An accepted preference followed by a rejected normal send does not repeat 
   await screen.findByText("Message was not accepted");
   expect(prompts).toStrictEqual([prompt]);
   expect(preferences.writes).toStrictEqual([{ presentationFormat: "pptx" }]);
-  expect(screen.queryByRole("dialog", { name: dialogTitle })).toBeNull();
+  expect(setupMenu()).toBeNull();
 });
 
-test("A fresh runtime still requires setup for a restored draft when the previous choice was not confirmed", async () => {
+test("A fresh runtime still asks for a restored draft when no default was chosen", async () => {
   const preferences = mockPreferences();
   const capture = mockTemplateChat();
   const prompt = "Restore this persisted launch draft";
@@ -504,12 +550,7 @@ test("A fresh runtime still requires setup for a restored draft when the previou
     expect(editor).toHaveTextContent(prompt);
   });
   await openPresentation();
-  const dialog = await openSetup();
-  const selected = radio(dialog, /^PPTX/u);
-  click(selected);
-  await waitFor(() => {
-    expect(selected).toHaveAttribute("aria-checked", "true");
-  });
+  await openSetup();
   expect(preferences.writes).toStrictEqual([]);
 
   await act(() => {
@@ -533,9 +574,8 @@ test("A fresh runtime still requires setup for a restored draft when the previou
   });
   await openPresentation();
   const reopened = await openSetup();
-  expect(radio(reopened, /^HTML/u)).toHaveAttribute("aria-checked", "false");
-  expect(radio(reopened, /^PPTX/u)).toHaveAttribute("aria-checked", "false");
-  expect(button("Save and generate", reopened)).toBeDisabled();
+  expect(formatItem(reopened, /^Web slides/u)).toBeInTheDocument();
+  expect(formatItem(reopened, /^PowerPoint/u)).toBeInTheDocument();
   expect(restoredEditor).toHaveTextContent(prompt);
   expect(preferences.writes).toStrictEqual([]);
   expect(capture.threadCreates).toStrictEqual([]);
@@ -591,12 +631,11 @@ test("A tagged queued input waits for setup and enqueues the original message on
   await screen.findByRole("combobox", { name: "Slide count" });
   const prompt = "Prepare the next presentation after the current run";
   await fill(editor, prompt);
-  const dialog = await openSetup();
+  const menu = await openSetup();
   expect(queued).toStrictEqual([]);
   expect(started).toStrictEqual([]);
   expect(preferences.writes).toStrictEqual([]);
-  click(radio(dialog, /^PPTX/u));
-  click(button("Save and generate", dialog));
+  click(formatItem(menu, /^PowerPoint/u));
   await waitFor(() => {
     expect(queued).toHaveLength(1);
   });
@@ -608,10 +647,10 @@ test("A tagged queued input waits for setup and enqueues the original message on
   expect(preferences.writes).toStrictEqual([{ presentationFormat: "pptx" }]);
   expect(started).toStrictEqual([]);
   expect(created).toStrictEqual([]);
-  expect(screen.queryByRole("dialog", { name: dialogTitle })).toBeNull();
+  expect(setupMenu()).toBeNull();
 });
 
-test("Enter opens setup and Escape returns focus without saving or sending", async () => {
+test("Enter opens the menu and Escape returns focus without saving or sending", async () => {
   const preferences = mockPreferences();
   const capture = mockTemplateChat();
   await setupPage({
@@ -627,14 +666,12 @@ test("Enter opens setup and Escape returns focus without saving or sending", asy
   await fill(editor, prompt);
   await user.click(editor);
   await user.keyboard("{Enter}");
-  const dialog = await screen.findByRole("dialog", { name: dialogTitle });
-  const html = radio(dialog, /^HTML/u);
-  await user.click(html);
-  await user.keyboard("{ArrowRight}");
-  expect(radio(dialog, /^PPTX/u)).toHaveAttribute("aria-checked", "true");
+  const menu = await screen.findByRole("menu", { name: menuTitle });
+  await user.keyboard("{ArrowDown}");
+  expect(queryAllByRoleFast("menuitem", menu)).toHaveLength(2);
   await user.keyboard("{Escape}");
   await waitFor(() => {
-    expect(screen.queryByRole("dialog", { name: dialogTitle })).toBeNull();
+    expect(setupMenu()).toBeNull();
     expect(editor).toHaveFocus();
   });
   expect(editor).toHaveTextContent(prompt);

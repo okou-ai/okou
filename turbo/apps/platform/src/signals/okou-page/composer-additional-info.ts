@@ -89,6 +89,7 @@ export function buildComposerAdditionalInfo(
           `- Output format: ${presentationFormat.toUpperCase()} format`,
           presentationTemplateFormatInstruction(presentationFormat),
           "This preference is fixed for this message. Do not query or update the saved preference during generation. Do not infer a default from earlier messages or memory.",
+          'When this saved default decides the format (the message does not name one), end your reply with one short sentence that names the format as the user\'s default (call HTML "web slides" and PPTX "PowerPoint") and says they can ask for the other format or change the default in Settings → Chat.',
         ].join("\n")
       : "",
     visualization

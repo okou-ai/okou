@@ -1912,6 +1912,7 @@
         "documentPlaceholder": "你希望文档包含哪些内容？",
         "imagePlaceholder": "描述你想生成的图片…",
         "presentationPlaceholder": "你的演示文稿要讲什么？",
+        "presentationPlaceholderWithDefault": "你的演示文稿是关于什么的？（默认{{format}}）",
         "slideCount": "幻灯片数量",
         "slideCountAuto": "自动",
         "slideCountRange": "{{range}} 页"
@@ -1923,12 +1924,14 @@
       "modelForThisChat": "本次对话使用的模型",
       "placeholder": "让我自动化工作流、管理任务…",
       "presentationFormatSetup": {
-        "description": "保存默认格式后，将生成你的演示文稿。本次需求中的明确格式要求仍优先。",
-        "htmlDescription": "适合在浏览器中分享",
-        "pptxDescription": "可在 PowerPoint 中编辑",
-        "saveAndGenerate": "保存并生成",
-        "settingsHint": "随时可在「设置 → 偏好设置 → 聊天」中修改。",
-        "title": "选择默认演示文稿格式"
+        "htmlDescription": "可在任意浏览器中打开的链接",
+        "htmlLabel": "网页幻灯片",
+        "openSettings": "打开设置",
+        "pptxDescription": "可编辑的 .pptx 文件",
+        "pptxLabel": "PowerPoint",
+        "savedDefault": "{{format}}已设为演示文稿的默认格式",
+        "settingsHint": "之后的新演示文稿都会使用它，可在设置中修改。",
+        "title": "选择一个默认格式开始"
       },
       "selectedModelUnavailable": "所选模型当前不可用。配置好之后再发送。",
       "selectedModelUnavailableToast": "所选模型当前不可用",
@@ -5969,11 +5972,12 @@
         },
         "description": "设置新聊天的默认项和消息发送方式。",
         "presentationFormat": {
-          "description": "选择新演示文稿的默认格式",
+          "htmlDescription": "新演示文稿以链接形式在浏览器中打开",
+          "pptxDescription": "新演示文稿以可编辑的 .pptx 文件交付",
           "saveFailed": "无法保存默认格式，请重试。",
           "title": "默认演示文稿格式",
-          "unavailable": "暂不可用",
-          "unset": "未设置"
+          "unavailable": "无法加载默认格式",
+          "unsetDescription": "首次制作演示文稿时会询问你"
         },
         "sectionTitle": "聊天"
       },
