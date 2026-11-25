@@ -1918,6 +1918,7 @@
         "documentPlaceholder": "你希望文件包含哪些內容？",
         "imagePlaceholder": "描述你想生成的圖片…",
         "presentationPlaceholder": "你的簡報要講什麼？",
+        "presentationPlaceholderWithDefault": "你的簡報是關於什麼的？（預設{{format}}）",
         "slideCount": "投影片數量",
         "slideCountAuto": "自動",
         "slideCountRange": "{{range}} 頁"
@@ -1929,12 +1930,14 @@
       "modelForThisChat": "本次對話使用的模型",
       "placeholder": "讓我自動化工作流、管理任務…",
       "presentationFormatSetup": {
-        "description": "儲存預設格式後，將產生你的簡報。本次需求中的明確格式要求仍優先。",
-        "htmlDescription": "適合在瀏覽器中分享",
-        "pptxDescription": "可在 PowerPoint 中編輯",
-        "saveAndGenerate": "儲存並產生",
-        "settingsHint": "隨時可在「設定 → 偏好設定 → 聊天」中修改。",
-        "title": "選擇預設簡報格式"
+        "htmlDescription": "可在任何瀏覽器中開啟的連結",
+        "htmlLabel": "網頁投影片",
+        "openSettings": "開啟設定",
+        "pptxDescription": "可編輯的 .pptx 檔案",
+        "pptxLabel": "PowerPoint",
+        "savedDefault": "{{format}}已設為簡報的預設格式",
+        "settingsHint": "之後的新簡報都會使用它，可在設定中修改。",
+        "title": "選擇一個預設格式開始"
       },
       "selectedModelUnavailable": "所選模型當前不可用。配置好之後再傳送。",
       "selectedModelUnavailableToast": "所選模型當前不可用",
@@ -5975,11 +5978,12 @@
         },
         "description": "設定新聊天的預設項和訊息傳送方式。",
         "presentationFormat": {
-          "description": "選擇新簡報的預設格式",
+          "htmlDescription": "新簡報以連結形式在瀏覽器中開啟",
+          "pptxDescription": "新簡報以可編輯的 .pptx 檔案交付",
           "saveFailed": "無法儲存預設格式，請重試。",
           "title": "預設簡報格式",
-          "unavailable": "暫時無法使用",
-          "unset": "未設定"
+          "unavailable": "無法載入預設格式",
+          "unsetDescription": "首次製作簡報時會詢問你"
         },
         "sectionTitle": "聊天"
       },

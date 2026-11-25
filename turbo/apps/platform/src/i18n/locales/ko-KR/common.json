@@ -1918,6 +1918,7 @@
         "documentPlaceholder": "문서에 어떤 내용을 포함하고 싶으신가요?",
         "imagePlaceholder": "만들고 싶은 이미지를 설명하세요…",
         "presentationPlaceholder": "프레젠테이션의 주제는 무엇인가요?",
+        "presentationPlaceholderWithDefault": "어떤 프레젠테이션인가요? (기본값: {{format}})",
         "slideCount": "슬라이드 수",
         "slideCountAuto": "자동",
         "slideCountRange": "{{range}}장"
@@ -1929,12 +1930,14 @@
       "modelForThisChat": "이 채팅의 모델",
       "placeholder": "워크플로 자동화, 작업 관리 등을 요청하세요...",
       "presentationFormatSetup": {
-        "description": "기본 형식을 저장한 후 프레젠테이션을 생성합니다. 이번 요청에서 명시한 형식이 있으면 우선 적용됩니다.",
-        "htmlDescription": "브라우저에서 공유하기에 적합",
-        "pptxDescription": "PowerPoint에서 편집 가능한 슬라이드",
-        "saveAndGenerate": "저장하고 생성",
-        "settingsHint": "설정 → 환경설정 → 채팅에서 언제든 변경할 수 있습니다.",
-        "title": "기본 프레젠테이션 형식 선택"
+        "htmlDescription": "어느 브라우저에서나 열리는 링크",
+        "htmlLabel": "웹 슬라이드",
+        "openSettings": "설정 열기",
+        "pptxDescription": "편집 가능한 .pptx 파일",
+        "pptxLabel": "PowerPoint",
+        "savedDefault": "이제 {{format}}이(가) 프레젠테이션 기본 형식입니다",
+        "settingsHint": "이후 모든 새 프레젠테이션에 사용됩니다. 설정에서 변경할 수 있습니다.",
+        "title": "기본 형식을 선택해 시작하세요"
       },
       "selectedModelUnavailable": "선택한 모델을 사용할 수 없습니다. 전송 전에 구성하세요.",
       "selectedModelUnavailableToast": "선택한 모델을 사용할 수 없습니다",
@@ -5975,11 +5978,12 @@
         },
         "description": "새 채팅의 기본값과 메시지 전송 방식을 선택하세요.",
         "presentationFormat": {
-          "description": "새 프레젠테이션의 기본 형식을 선택하세요",
+          "htmlDescription": "새 프레젠테이션은 브라우저에서 여는 링크로 제공됩니다",
+          "pptxDescription": "새 프레젠테이션은 편집 가능한 .pptx 파일로 제공됩니다",
           "saveFailed": "기본 형식을 저장하지 못했습니다. 다시 시도해 주세요.",
           "title": "기본 프레젠테이션 형식",
-          "unavailable": "사용할 수 없음",
-          "unset": "설정되지 않음"
+          "unavailable": "기본 형식을 불러올 수 없습니다",
+          "unsetDescription": "처음 프레젠테이션을 만들 때 물어봅니다"
         },
         "sectionTitle": "채팅"
       },

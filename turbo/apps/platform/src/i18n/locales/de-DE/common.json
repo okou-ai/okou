@@ -1924,6 +1924,7 @@
         "documentPlaceholder": "Was möchtest du in deinem Dokument festhalten?",
         "imagePlaceholder": "Beschreibe das gewünschte Bild…",
         "presentationPlaceholder": "Worum geht es in deiner Präsentation?",
+        "presentationPlaceholderWithDefault": "Worum geht es in deiner Präsentation? (Standard: {{format}})",
         "slideCount": "Folienanzahl",
         "slideCountAuto": "Automatisch",
         "slideCountRange": "{{range}} Folien"
@@ -1935,12 +1936,14 @@
       "modelForThisChat": "Modell für diesen Chat",
       "placeholder": "Bitten Sie mich, Workflows zu automatisieren und Aufgaben zu verwalten...",
       "presentationFormatSetup": {
-        "description": "Wir speichern diesen Standard und erstellen dann deine Präsentation. Ein ausdrücklich angefordertes Format hat weiterhin Vorrang.",
-        "htmlDescription": "Ideal zum Teilen im Browser",
-        "pptxDescription": "In PowerPoint bearbeitbare Folien",
-        "saveAndGenerate": "Speichern und erstellen",
-        "settingsHint": "Jederzeit unter Einstellungen → Präferenzen → Chat ändern.",
-        "title": "Standardformat für Präsentationen wählen"
+        "htmlDescription": "Ein Link, der in jedem Browser öffnet",
+        "htmlLabel": "Web-Folien",
+        "openSettings": "Einstellungen öffnen",
+        "pptxDescription": "Eine bearbeitbare .pptx-Datei",
+        "pptxLabel": "PowerPoint",
+        "savedDefault": "{{format}} ist jetzt dein Standard für Präsentationen",
+        "settingsHint": "Gilt für jede neue Präsentation. Du kannst es in den Einstellungen ändern.",
+        "title": "Wähle ein Standardformat, um zu starten"
       },
       "selectedModelUnavailable": "Das ausgewählte Modell ist nicht verfügbar. Konfigurieren Sie es vor dem Senden.",
       "selectedModelUnavailableToast": "Das ausgewählte Modell ist nicht verfügbar",
@@ -5999,11 +6002,12 @@
         },
         "description": "Lege Standardeinstellungen für neue Chats und die Art des Nachrichtenversands fest.",
         "presentationFormat": {
-          "description": "Wähle den Standard für neue Präsentationen",
+          "htmlDescription": "Neue Präsentationen öffnen als Link im Browser",
+          "pptxDescription": "Neue Präsentationen kommen als bearbeitbare .pptx-Datei",
           "saveFailed": "Das Standardformat konnte nicht gespeichert werden. Versuche es erneut.",
           "title": "Standardformat für Präsentationen",
-          "unavailable": "Nicht verfügbar",
-          "unset": "Nicht festgelegt"
+          "unavailable": "Dein Standardformat konnte nicht geladen werden",
+          "unsetDescription": "Wir fragen bei deiner ersten Präsentation"
         },
         "sectionTitle": "Chat"
       },
