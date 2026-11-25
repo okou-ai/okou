@@ -121,8 +121,8 @@ internal class ProjectListOwner(
 
     private data class ProjectRenameReceipt(
         val eventId: String,
-        val baseline: ConfirmedProject,
-        val confirmed: ConfirmedProject,
+        val snapshotCursor: ChatCursor,
+        val name: String,
     )
 
     init {
@@ -444,7 +444,7 @@ internal class ProjectListOwner(
                     else
                         rows.map { row ->
                             val receipt = renameReceipts[row.id]
-                            if (receipt == null) row else row.copy(name = receipt.confirmed.name)
+                            if (receipt == null) row else row.copy(name = receipt.name)
                         },
                 renamingId = pending?.id,
                 unconfirmedRenames = retryableProjectRenames.keys.toSet(),
@@ -459,6 +459,7 @@ internal class ProjectListOwner(
         val snapshot = state
         if (!current() || !snapshot.canRename) return false
         val baseline = confirmedRows().firstOrNull { it.id == rename.id } ?: return false
+        val snapshotCursor = checkNotNull(confirmedProjects).checkpoint.snapshotCursor
         val uncertainAttempt =
             retryableProjectRenames[rename.id]?.let {
                 it.eventId == rename.eventId && !it.connectionFailed
@@ -481,12 +482,13 @@ internal class ProjectListOwner(
                         if (
                             latest != null &&
                                 !hasProjectReceipt(rename.eventId) &&
-                                (latest == baseline ||
+                                (confirmedProjects?.checkpoint?.snapshotCursor == snapshotCursor ||
+                                    latest == baseline ||
                                     chatTimestamp(latest.updatedAt) <
                                         chatTimestamp(receipt.updatedAt))
                         ) {
                             renameReceipts[rename.id] =
-                                ProjectRenameReceipt(rename.eventId, latest, receipt)
+                                ProjectRenameReceipt(rename.eventId, snapshotCursor, receipt.name)
                         }
                         publishProjects(state)
                         refreshAfterWrite()
@@ -562,6 +564,9 @@ internal class ProjectListOwner(
                     requireCurrent()
                     val previous = confirmedProjects
                     val checkpoint = previous?.checkpoint
+                    val acknowledgedRenames =
+                        if (renameReceipts.isEmpty()) emptySet()
+                        else renameReceipts.values.mapTo(hashSetOf()) { it.eventId }
                     suspend fun fetch(): MetadataSyncResult<ProjectCheckpoint> {
                         projectsInvalidated = false
                         return projectSync.synchronize(checkpoint)
@@ -589,15 +594,16 @@ internal class ProjectListOwner(
                         createReceipts.keys.removeAll(affected)
                     }
                     if (renameReceipts.isNotEmpty()) {
-                        val rows = selected.rows.associateBy { it.id }
+                        val projectIds = selected.rows.mapTo(hashSetOf()) { it.id }
                         renameReceipts.entries.removeAll { (id, receipt) ->
-                            val row = rows[id] ?: createReceipts[id]
-                            row == null ||
+                            (id !in projectIds && id !in createReceipts) ||
                                 hasProjectReceipt(receipt.eventId) ||
                                 hasProjectReceipt(receipt.eventId, candidate.checkpoint) ||
-                                (row != receipt.baseline &&
-                                    chatTimestamp(row.updatedAt) >=
-                                        chatTimestamp(receipt.confirmed.updatedAt))
+                                // A read started before acknowledgement can still show an
+                                // earlier name. The exact event or a later snapshot settles it.
+                                (receipt.eventId in acknowledgedRenames &&
+                                    selected.checkpoint.snapshotCursor.seqId >
+                                        receipt.snapshotCursor.seqId)
                         }
                     }
                     if (retryableProjectDeletes.isNotEmpty()) {

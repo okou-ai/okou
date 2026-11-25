@@ -450,6 +450,93 @@ internal abstract class ChatListModelTestFixture {
 @Config(sdk = [35], application = TestOkouApplication::class)
 internal class ChatListModelTest : ChatListModelTestFixture() {
     @Test
+    fun chatRenameKeepsItsReceiptUntilAnEarlierSnapshotReadFinishes() = runTest {
+        val write = CompletableDeferred<Unit>()
+        val earlierRead = CompletableDeferred<Unit>()
+        val readback = CompletableDeferred<Unit>()
+        val initialEvents = page().events
+        val initialRows =
+            replayChats(
+                ChatCheckpoint(
+                    ChatArchive(emptyList()),
+                    ChatCursor(),
+                    initialEvents,
+                    initialEvents.single().cursor(),
+                ),
+            )
+        val earlierSnapshot =
+            ChatSnapshotVariant1("https://fixture.test/earlier", 60, HISTORY_LAST_EVENT, 18)
+        val laterSnapshot =
+            ChatSnapshotVariant1(
+                "https://fixture.test/later",
+                60,
+                "00000020-0000-4000-8000-000000000000",
+                20,
+            )
+        var snapshotReads = 0
+        var earlierTailRead = false
+        val service =
+            object : Service() {
+                override suspend fun chatSnapshot() =
+                    when (++snapshotReads) {
+                        1 -> super.chatSnapshot()
+                        2 -> earlierSnapshot
+                        else -> {
+                            readback.await()
+                            laterSnapshot
+                        }
+                    }
+
+                override suspend fun chatArchive(url: String): ChatArchive {
+                    val title =
+                        if (url == earlierSnapshot.url) "Earlier remote title" else "Later title"
+                    return ChatArchive(listOf(initialRows.single().copy(title = title)))
+                }
+
+                override suspend fun chatEvents(since: Long?) =
+                    when {
+                        since == null -> page()
+                        since == 18L && !earlierTailRead -> {
+                            earlierTailRead = true
+                            earlierRead.await()
+                            page(emptyList())
+                        }
+                        since == 20L -> page(emptyList())
+                        else -> throw ApiFailure.Http(410, null, null, null)
+                    }
+
+                override suspend fun renameThread(
+                    threadId: String,
+                    title: String,
+                    eventId: String,
+                ) {
+                    write.await()
+                }
+            }
+        withCatchUpModel(service) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            assertTrue(model.renameThread(CHAT_PERSONAL, "Receipt title"))
+            model.refreshList()
+            runCurrent()
+            assertTrue(earlierTailRead)
+
+            write.complete(Unit)
+            runCurrent()
+            assertEquals("Receipt title", model.uiState.value.threads.single().title)
+            earlierRead.complete(Unit)
+            runCurrent()
+            assertEquals("Receipt title", model.uiState.value.threads.single().title)
+            assertEquals(ChatReadPhase.Loading, model.uiState.value.listPhase)
+
+            readback.complete(Unit)
+            advanceUntilIdle()
+            assertEquals("Later title", model.uiState.value.threads.single().title)
+            assertTrue(model.uiState.value.unconfirmedRenames.isEmpty())
+        }
+    }
+
+    @Test
     fun sendReceiptKeepsActivityUntilTheSortEventOrAnExplicitReconciliation() = runTest {
         val other =
             chatEventWire(
@@ -2033,8 +2120,9 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
     }
 
     @Test
-    fun chatRenamePublishesTheReceiptBeforeTheFeedAndKeepsNewerRemoteTitles() = runTest {
+    fun chatRenameKeepsItsReceiptWhileEarlierFeedResponsesArrive() = runTest {
         val write = CompletableDeferred<Unit>()
+        val earlierRead = CompletableDeferred<Unit>()
         val read = CompletableDeferred<Unit>()
         var tail = page(emptyList())
         val writes = mutableListOf<String>()
@@ -2043,6 +2131,7 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
                 override suspend fun chatEvents(since: Long?): ChatEvents {
                     if (since == null) return page()
                     if (since < 18) {
+                        earlierRead.await()
                         return page(
                             listOf(
                                 chatEventWire(
@@ -2075,11 +2164,14 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
             assertEquals("Personal chat", model.uiState.value.threads.single().title)
             model.refreshList()
             runCurrent()
-            assertEquals("Earlier remote title", model.uiState.value.threads.single().title)
+            assertEquals(ChatReadPhase.Loading, model.uiState.value.listPhase)
             write.complete(Unit)
             runCurrent()
-            assertEquals(ChatReadPhase.Loading, model.uiState.value.listPhase)
             assertEquals("Receipt title", model.uiState.value.threadsByRecency.single().title)
+            earlierRead.complete(Unit)
+            runCurrent()
+            assertEquals("Receipt title", model.uiState.value.threadsByRecency.single().title)
+            assertEquals(ChatReadPhase.Loading, model.uiState.value.listPhase)
 
             read.complete(Unit)
             advanceUntilIdle()
@@ -2102,8 +2194,14 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
                 page(
                     listOf(
                         chatEventWire(
-                            id = HISTORY_LAST_EVENT,
+                            id = writes.last(),
                             seq = 20,
+                            kind = "renamed",
+                            title = "Second title",
+                        ),
+                        chatEventWire(
+                            id = HISTORY_LAST_EVENT,
+                            seq = 21,
                             kind = "renamed",
                             title = "Remote title",
                         ),
@@ -2733,9 +2831,21 @@ internal class ChatListProjectCreationModelTest : ChatListModelTestFixture() {
 @Config(sdk = [35], application = TestOkouApplication::class)
 internal class ChatListProjectRenameModelTest : ChatListModelTestFixture() {
     @Test
-    fun projectRenameUsesTheReceiptWhileTheFeedIsStillPending() = runTest {
-        val read = CompletableDeferred<Unit>()
-        val service = HeldProjectRenameService(read)
+    fun projectRenameKeepsItsReceiptWhileAnEarlierFeedResponseArrives() = runTest {
+        val earlierRead = CompletableDeferred<Unit>()
+        val readback = CompletableDeferred<Unit>()
+        val service = HeldProjectRenameService(earlierRead)
+        val earlierEvent =
+            ProjectEventsEventsItem(
+                id = CHAT_EVENT,
+                seqId = 1,
+                projectId = CHAT_PROJECT,
+                kind = ProjectEventsEventsItemKind.RENAMED,
+                name = "Earlier remote name",
+                createdAt = CHAT_DATE,
+            )
+        // An earlier rename and the write receipt can share the same wire timestamp.
+        service.receipt = earlierEvent
         withCachedProjectRename(service) { model, _ ->
             assertTrue(model.renameProject(CHAT_PROJECT, "After"))
             runCurrent()
@@ -2744,7 +2854,14 @@ internal class ChatListProjectRenameModelTest : ChatListModelTestFixture() {
             runCurrent()
             assertEquals(ChatReadPhase.Loading, model.uiState.value.projectsPhase)
             assertEquals("After", model.uiState.value.projects.single().name)
-            read.complete(Unit)
+            service.nextProjectRead = readback
+            service.receipt =
+                earlierEvent.copy(id = service.sent.single(), seqId = 2, name = "After")
+            earlierRead.complete(Unit)
+            runCurrent()
+            assertEquals(ChatReadPhase.Loading, model.uiState.value.projectsPhase)
+            assertEquals("After", model.uiState.value.projects.single().name)
+            readback.complete(Unit)
             advanceUntilIdle()
             assertEquals("After", model.uiState.value.projects.single().name)
             assertTrue(model.uiState.value.unconfirmedProjectRenames.isEmpty())

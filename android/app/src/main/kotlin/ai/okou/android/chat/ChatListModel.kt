@@ -1765,8 +1765,14 @@ class ChatListModel(
             val reconciliation = completedActivityReconciliation
             val finishedActivity =
                 if (reconciliation != null) projection.completedOutgoingAttempts() else emptyMap()
+            val acknowledgedRenames = projection.acknowledgedRenameIds()
             val result = sync.synchronize(confirmed?.checkpoint)
-            publishList(result, rowDiscardsAfterRead, finishedActivity = finishedActivity)
+            publishList(
+                result,
+                rowDiscardsAfterRead,
+                finishedActivity = finishedActivity,
+                renamesAcknowledgedBeforeRead = acknowledgedRenames,
+            )
             rowDiscardsAfterRead.clear()
             if (completedActivityReconciliation === reconciliation)
                 completedActivityReconciliation = null
@@ -1851,6 +1857,7 @@ class ChatListModel(
         discardOnSuccess: Set<String>,
         preparedProjection: ReplayedChats? = null,
         finishedActivity: Map<String, ChatListProjection.OutgoingAttempt> = emptyMap(),
+        renamesAcknowledgedBeforeRead: Set<String> = emptySet(),
     ) {
         requireCurrent()
         val previous = confirmed
@@ -1876,7 +1883,14 @@ class ChatListModel(
         requireCurrent()
         confirmed = saved
         val projectionChanged =
-            projection.reconcile(result, saved.checkpoint, rows, discardOnSuccess, finishedActivity)
+            projection.reconcile(
+                result,
+                saved.checkpoint,
+                rows,
+                discardOnSuccess,
+                finishedActivity,
+                renamesAcknowledgedBeforeRead,
+            )
         val previousState = mutable.value
         fun ChatRowUndo?.retainIfUnsettled() =
             this?.takeUnless {
