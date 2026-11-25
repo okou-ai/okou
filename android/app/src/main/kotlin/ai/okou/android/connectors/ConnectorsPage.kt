@@ -4,6 +4,7 @@ import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
 import ai.okou.android.WorkspaceMenu
 import ai.okou.android.WorkspaceMenuItem
+import ai.okou.android.chat.ContentReadFeedback
 import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.state.ConnectorDirectoryState
 import ai.okou.android.state.rememberConnectorDirectory
@@ -455,10 +456,15 @@ private fun ConnectorDirectory(
                         }
                 }
             }
-        }
-        if (entries != null) {
-            if (state.offline) ConnectorStatusBanner(R.string.connector_offline)
-            else if (failure != null) ConnectorStatusBanner(R.string.connector_refresh_failed)
+            if (entries != null && (state.offline || failure != null)) {
+                item(key = "connector-directory-read-feedback") {
+                    ContentReadFeedback(
+                        if (state.offline) R.string.connector_offline
+                        else R.string.connector_refresh_failed,
+                        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                    )
+                }
+            }
         }
     }
 }
@@ -826,13 +832,9 @@ private fun ConnectorEmpty(title: Int, action: Int? = null, onAction: () -> Unit
 
 @Composable
 internal fun ConnectorReadError(message: Int, modifier: Modifier = Modifier) {
-    Text(
-        stringResource(message),
-        modifier.fillMaxWidth().padding(start = 12.dp, top = 24.dp, end = 12.dp).semantics {
-            liveRegion = LiveRegionMode.Polite
-        },
-        style = connectorFeedbackType(),
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    ContentReadFeedback(
+        message,
+        modifier.fillMaxWidth().padding(start = 12.dp, top = 24.dp, end = 12.dp),
     )
 }
 

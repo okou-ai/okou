@@ -26,6 +26,7 @@ import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.assertWidthIsEqualTo
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
@@ -90,6 +91,13 @@ class ConnectorAccountFlowTest {
         try {
             compose.activityRule.scenario.recreate()
             withCalendar { fixture, connectivity ->
+                val description = compose.onNodeWithText("查看日程、查找空闲时间和创建会议。")
+                val accounts = compose.onNodeWithText("Accounts")
+                assertEquals(
+                    33.dp,
+                    accounts.getUnclippedBoundsInRoot().top -
+                        description.getUnclippedBoundsInRoot().bottom,
+                )
                 compose.onNodeWithContentDescription("Back").performClick()
                 val discover = compose.onNodeWithText("Discover")
                 val connected = compose.onNodeWithText("Connected")
@@ -97,11 +105,14 @@ class ConnectorAccountFlowTest {
                 discover.performKeyInput { pressKey(Key.DirectionRight) }
                 connected.assertIsSelected().assertIsFocused()
                 val slack = compose.onNodeWithTag("connector-slack").assertIsDisplayed()
+                val directory = compose.onNodeWithTag("connector-directory")
+                val directoryBounds = directory.getUnclippedBoundsInRoot()
 
                 compose.runOnIdle { connectivity.value = false }
                 awaitText("Offline")
                 connected.assertIsFocused()
                 slack.assertIsDisplayed()
+                assertEquals(directoryBounds, directory.getUnclippedBoundsInRoot())
 
                 val category = compose.onNodeWithContentDescription("Filter by service category")
                 category.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
