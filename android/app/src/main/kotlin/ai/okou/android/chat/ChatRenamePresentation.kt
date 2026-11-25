@@ -21,11 +21,11 @@ internal class ChatRenameEditor(
     val target: WorkspaceRenameTarget,
     initialName: String,
     val restoreFocus: Boolean,
-    submittedName: String? = null,
+    submission: RenameSubmission? = null,
 ) {
     val baseline = initialName.trim()
-    val field = WorkspaceNameField(submittedName ?: initialName)
-    var submitted by mutableStateOf(submittedName)
+    val field = WorkspaceNameField(submission?.name ?: initialName)
+    var submitted by mutableStateOf(submission)
 }
 
 internal class WorkspaceNameField(initialName: String = "") {
@@ -118,7 +118,7 @@ class WorkspaceNamePresentation : ViewModel() {
     internal fun openProject(id: String, restoreFocus: Boolean, list: ChatListUiState) {
         val project = list.projects.firstOrNull { it.id == id } ?: return
         val submitted =
-            list.projectList.unconfirmedRenameNames[id]?.takeUnless {
+            list.projectList.unconfirmedRenameAttempts[id]?.takeUnless {
                 id in list.projectList.connectionFailedRenames
             }
         open(WorkspaceRenameTarget.Project(id), project.name, restoreFocus, submitted)
@@ -128,10 +128,10 @@ class WorkspaceNamePresentation : ViewModel() {
         target: WorkspaceRenameTarget,
         name: String,
         restoreFocus: Boolean,
-        submittedName: String?,
+        submission: RenameSubmission?,
     ) {
         focusReturn = null
-        editor = ChatRenameEditor(target, name, restoreFocus, submittedName)
+        editor = ChatRenameEditor(target, name, restoreFocus, submission)
     }
 
     internal fun dismiss(openEditor: ChatRenameEditor) {

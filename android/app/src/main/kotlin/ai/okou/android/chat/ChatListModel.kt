@@ -8,6 +8,7 @@ import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.contentReadStaleDelayMillis
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -150,6 +151,9 @@ internal constructor(
         get() = conversationId.takeUnless { action == ChatRowAction.Delete }
 }
 
+@ConsistentCopyVisibility
+data class RenameSubmission internal constructor(val eventId: String, val name: String)
+
 internal enum class ChatUndoPhase {
     Offered,
     Checking,
@@ -196,7 +200,8 @@ data class ChatListUiState(
     val filter: ChatListFilter = ChatListFilter.Inbox,
     val pendingRowActions: Map<String, ChatRowAction> = emptyMap(),
     internal val rowActionFailures: List<ChatRowActionFailure> = emptyList(),
-    internal val unconfirmedRenames: Map<String, String> = emptyMap(),
+    internal val unconfirmedRenames: Map<String, RenameSubmission> = emptyMap(),
+    internal val confirmedRenameIds: Map<String, String> = emptyMap(),
     val rowUndo: ChatRowUndo? = null,
     internal val conversationUndo: ChatRowUndo? = null,
     val markingAllRead: Boolean = false,
@@ -1080,13 +1085,18 @@ class ChatListModel(
         threadId: String,
         title: String,
         fromConversation: Boolean = false,
-    ): Boolean =
-        performRowAction(
-            threadId,
-            ChatRowAction.Rename,
-            title.trim(),
-            fromConversation = fromConversation,
-        )
+    ): RenameSubmission? {
+        val submission = RenameSubmission(UUID.randomUUID().toString(), title.trim())
+        return submission.takeIf {
+            performRowAction(
+                threadId,
+                ChatRowAction.Rename,
+                it.name,
+                fromConversation = fromConversation,
+                eventId = it.eventId,
+            )
+        }
+    }
 
     internal fun moveThreadToProject(
         threadId: String,
@@ -1107,6 +1117,7 @@ class ChatListModel(
         undoRequest: ChatRowUndo? = null,
         fromConversation: Boolean = false,
         deleteFromWorkflow: Boolean = false,
+        eventId: String? = null,
     ): Boolean {
         if (!current()) return false
         val state = mutable.value
@@ -1184,6 +1195,7 @@ class ChatListModel(
                                 pinGroup,
                                 index,
                                 state,
+                                eventId,
                             )
                         else emptyList()
                     } catch (_: IllegalArgumentException) {
@@ -1321,7 +1333,7 @@ class ChatListModel(
                                     .copy(
                                         unconfirmedRenames =
                                             if (action == ChatRowAction.Rename && !failure.rejected)
-                                                projection.unconfirmedRenameTitles()
+                                                projection.unconfirmedRenames()
                                             else previous.unconfirmedRenames,
                                     )
                             if (movingProject) reconcileProjectMoves(state, rowsChanged = true)
@@ -1382,7 +1394,8 @@ class ChatListModel(
                             state.rowActionFailures.filter {
                                 it.edits.isEmpty() || projection.hasUnsettledEdits(it.edits)
                             },
-                    unconfirmedRenames = projection.unconfirmedRenameTitles(),
+                    unconfirmedRenames = projection.unconfirmedRenames(),
+                    confirmedRenameIds = projection.confirmedRenameIds,
                 )
                 .pruneInvalidUndo { it.threadId !in state.pendingRowActions },
         )

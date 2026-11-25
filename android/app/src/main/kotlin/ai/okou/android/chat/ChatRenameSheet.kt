@@ -59,6 +59,7 @@ internal enum class RenameStatus {
 internal fun RenameListItemSheet(
     editor: ChatRenameEditor,
     confirmedName: String,
+    confirmedEventId: String?,
     @StringRes titleRes: Int,
     @StringRes labelRes: Int,
     enabled: Boolean,
@@ -66,7 +67,7 @@ internal fun RenameListItemSheet(
     check: () -> Unit,
     dismiss: () -> Unit,
     saved: () -> Unit,
-    save: (String) -> Boolean,
+    save: (String) -> RenameSubmission?,
     projectName: Boolean = false,
 ) {
     val baseline = editor.baseline
@@ -77,10 +78,13 @@ internal fun RenameListItemSheet(
     val readOnly = unconfirmed || status == RenameStatus.Saving
     val form = renameForm(input.text, baseline, confirmedName, enabled && !readOnly, null)
     val name = form.name
-    val confirmed = submitted != null && submitted == confirmedName
-    if (confirmed && normalizedRenameName(input.text) == submitted) {
+    if (
+        submitted != null &&
+            submitted.eventId == confirmedEventId &&
+            normalizedRenameName(input.text) == submitted.name
+    ) {
         LaunchedEffect(submitted) {
-            if (editor.submitted == submitted && normalizedRenameName(input.text) == submitted)
+            if (editor.submitted == submitted && normalizedRenameName(input.text) == submitted.name)
                 saved()
         }
         return
@@ -90,13 +94,12 @@ internal fun RenameListItemSheet(
     val validation =
         if (form.error == RenameFieldError.Required) stringResource(R.string.chat_rename_required)
         else if (projectName) projectNameError(editor.field) else null
-    val saveFailed = !readOnly && submitted == name && !confirmed
     val notice =
         when {
             status == RenameStatus.Saving && !projectName -> R.string.settings_saving
             checking && !projectName -> R.string.chat_rename_checking_result
             unconfirmed -> R.string.chat_rename_save_unconfirmed
-            saveFailed || status == RenameStatus.Rejected && submitted == null ->
+            status == RenameStatus.Rejected && (submitted == null || submitted.name == name) ->
                 R.string.chat_rename_save_failed
             else -> null
         }
@@ -128,9 +131,7 @@ internal fun RenameListItemSheet(
                     else {
                         val submittedName =
                             if (projectName) editor.field.submitProjectName() else name
-                        if (submittedName != null && save(submittedName)) {
-                            editor.submitted = submittedName
-                        }
+                        submittedName?.let(save)?.let { editor.submitted = it }
                     }
                 },
                 confirmEnabled = if (unconfirmed) !checking else form.canSave,

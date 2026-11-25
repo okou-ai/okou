@@ -54,14 +54,15 @@ internal constructor(
     val cacheUnavailable: Boolean = false,
     val renamingId: String? = null,
     val deletingId: String? = null,
-    internal val unconfirmedRenameNames: Map<String, String> = emptyMap(),
+    internal val unconfirmedRenameAttempts: Map<String, RenameSubmission> = emptyMap(),
+    internal val confirmedRenameIds: Map<String, String> = emptyMap(),
     internal val connectionFailedRenames: Set<String> = emptySet(),
     internal val renameRejection: ProjectRenameRejection? = null,
     internal val deleteFeedback: List<ProjectDeleteFeedback> = emptyList(),
     internal val creation: ProjectCreation? = null,
 ) {
     val unconfirmedRenames: Set<String>
-        get() = unconfirmedRenameNames.keys
+        get() = unconfirmedRenameAttempts.keys
 
     internal val canRename: Boolean
         get() = source != null && renamingId == null && deletingId == null
@@ -120,12 +121,16 @@ internal class ProjectListOwner(
         val name: String,
         val eventId: String,
         val connectionFailed: Boolean = false,
-    )
+    ) {
+        val submission: RenameSubmission
+            get() = RenameSubmission(eventId, name)
+    }
 
     private data class ProjectRenameReceipt(
         val eventId: String,
         val snapshotCursor: ChatCursor,
         val name: String,
+        val laterNameUpdatedAt: ChatTimestamp?,
     )
 
     init {
@@ -308,15 +313,16 @@ internal class ProjectListOwner(
         invalidate()
     }
 
-    internal fun renameProject(id: String, input: String): Boolean {
+    internal fun renameProject(id: String, input: String): RenameSubmission? {
         val name = input.trim()
         if (
             name.length !in 1..ProjectNameLimit ||
                 state.rows.none { it.id == id && it.name.trim() != name }
         )
-            return false
-        if (retryableProjectRenames[id]?.connectionFailed == false) return false
-        return submitProjectRename(ProjectRename(id, name, newProjectOperationId(wallMillis())))
+            return null
+        if (retryableProjectRenames[id]?.connectionFailed == false) return null
+        val rename = ProjectRename(id, name, newProjectOperationId(wallMillis()))
+        return if (submitProjectRename(rename)) rename.submission else null
     }
 
     internal fun retryProjectRename(id: String) {
@@ -450,7 +456,8 @@ internal class ProjectListOwner(
                             if (receipt == null) row else row.copy(name = receipt.name)
                         },
                 renamingId = pending?.id,
-                unconfirmedRenameNames = retryableProjectRenames.mapValues { it.value.name },
+                unconfirmedRenameAttempts =
+                    retryableProjectRenames.mapValues { it.value.submission },
                 connectionFailedRenames =
                     retryableProjectRenames.values
                         .filter { it.connectionFailed }
@@ -476,27 +483,14 @@ internal class ProjectListOwner(
         )
         scope.launch {
             var rejected = false
+            var confirmedByReadback = false
             try {
                 try {
                     val receipt = service.renameProject(rename.id, rename.name, rename.eventId)
                     requireCurrent()
-                    if (receipt.name == rename.name) {
-                        val latest = confirmedRows().firstOrNull { it.id == rename.id }
-                        if (
-                            latest != null &&
-                                !hasProjectReceipt(rename.eventId) &&
-                                (confirmedProjects?.checkpoint?.snapshotCursor == snapshotCursor ||
-                                    latest == baseline ||
-                                    chatTimestamp(latest.updatedAt) <
-                                        chatTimestamp(receipt.updatedAt))
-                        ) {
-                            renameReceipts[rename.id] =
-                                ProjectRenameReceipt(rename.eventId, snapshotCursor, receipt.name)
-                        }
-                        publishProjects(state)
-                        refreshAfterWrite()
-                        return@launch
-                    }
+                    publishRenameReceipt(rename, receipt, baseline, snapshotCursor)
+                    refreshAfterWrite()
+                    return@launch
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
@@ -517,9 +511,12 @@ internal class ProjectListOwner(
                 requireCurrent()
                 val readBack = refreshAfterWrite()
                 val confirmedName = confirmedRows().firstOrNull { it.id == rename.id }?.name
-                val observedName = readBack && confirmedName == rename.name
                 // The stream can deliver the receipt before the write response is lost.
-                if (!observedName && !hasProjectReceipt(rename.eventId) && confirmedName != null) {
+                confirmedByReadback =
+                    state.confirmedRenameIds[rename.id] == rename.eventId ||
+                        hasProjectReceipt(rename.eventId) ||
+                        readBack && confirmedName == rename.name
+                if (!confirmedByReadback && confirmedName != null) {
                     // The server deduplicates retries by this Project event ID.
                     retryableProjectRenames[rename.id] = rename.copy(connectionFailed = false)
                 }
@@ -529,16 +526,68 @@ internal class ProjectListOwner(
                     val snapshot = state
                     // A retry can be rejected after the original write was confirmed.
                     val settled =
-                        if (rejected && !hasProjectReceipt(rename.eventId))
-                            snapshot.copy(
-                                renameRejection = ProjectRenameRejection(rename.id, rename.eventId),
-                            )
-                        else snapshot
+                        when {
+                            confirmedByReadback ->
+                                snapshot.copy(
+                                    confirmedRenameIds =
+                                        snapshot.confirmedRenameIds + (rename.id to rename.eventId),
+                                )
+                            rejected &&
+                                snapshot.confirmedRenameIds[rename.id] != rename.eventId &&
+                                !hasProjectReceipt(rename.eventId) ->
+                                snapshot.copy(
+                                    renameRejection =
+                                        ProjectRenameRejection(rename.id, rename.eventId),
+                                )
+                            else -> snapshot
+                        }
                     publishProjects(settled)
                 }
             }
         }
         return true
+    }
+
+    private fun publishRenameReceipt(
+        rename: ProjectRename,
+        receipt: ConfirmedProject,
+        baseline: ConfirmedProject,
+        snapshotCursor: ChatCursor,
+    ) {
+        val latest = confirmedRows().firstOrNull { it.id == rename.id }
+        // The route reads the current Project after committing the original operation.
+        val laterNameUpdatedAt =
+            receipt.updatedAt.takeIf { receipt.name != rename.name }?.let(::chatTimestamp)
+        val publishName =
+            latest != null &&
+                if (laterNameUpdatedAt == null) {
+                    !hasProjectReceipt(rename.eventId) &&
+                        (confirmedProjects?.checkpoint?.snapshotCursor == snapshotCursor ||
+                            latest == baseline ||
+                            chatTimestamp(latest.updatedAt) < chatTimestamp(receipt.updatedAt))
+                } else {
+                    val latestUpdatedAt = chatTimestamp(latest.updatedAt)
+                    latest == baseline ||
+                        latestUpdatedAt < laterNameUpdatedAt ||
+                        (latestUpdatedAt == laterNameUpdatedAt && latest.name == rename.name)
+                }
+        if (publishName) {
+            renameReceipts[rename.id] =
+                ProjectRenameReceipt(
+                    rename.eventId,
+                    snapshotCursor,
+                    receipt.name,
+                    laterNameUpdatedAt,
+                )
+        } else {
+            renameReceipts.remove(rename.id)
+        }
+        val snapshot = state
+        publishProjects(
+            snapshot.copy(
+                confirmedRenameIds = snapshot.confirmedRenameIds + (rename.id to rename.eventId),
+            ),
+        )
     }
 
     private suspend fun refreshAfterWrite(): Boolean {
@@ -589,6 +638,11 @@ internal class ProjectListOwner(
                         else replayConfirmedProjects(saved)
                     requireCurrent()
                     confirmedProjects = selected
+                    fun observedProjectEvent(eventId: String): Boolean =
+                        hasProjectReceipt(eventId) ||
+                            (selected !== candidate &&
+                                hasProjectReceipt(eventId, candidate.checkpoint))
+
                     if (createReceipts.isNotEmpty()) {
                         val affected =
                             selected.checkpoint.events.mapTo(hashSetOf()) { it.projectId }
@@ -597,14 +651,20 @@ internal class ProjectListOwner(
                         createReceipts.keys.removeAll(affected)
                     }
                     if (renameReceipts.isNotEmpty()) {
-                        val projectIds = selected.rows.mapTo(hashSetOf()) { it.id }
+                        val byId = selected.rows.associateBy { it.id }
                         renameReceipts.entries.removeAll { (id, receipt) ->
-                            (id !in projectIds && id !in createReceipts) ||
-                                hasProjectReceipt(receipt.eventId) ||
-                                hasProjectReceipt(receipt.eventId, candidate.checkpoint) ||
+                            val row = byId[id]
+                            val readAfterReceipt = receipt.eventId in acknowledgedRenames
+                            (row == null && id !in createReceipts) ||
+                                (observedProjectEvent(receipt.eventId) &&
+                                    (receipt.laterNameUpdatedAt == null ||
+                                        readAfterReceipt ||
+                                        (row != null &&
+                                            chatTimestamp(row.updatedAt) >
+                                                receipt.laterNameUpdatedAt))) ||
                                 // A read started before acknowledgement can still show an
                                 // earlier name. The exact event or a later snapshot settles it.
-                                (receipt.eventId in acknowledgedRenames &&
+                                (readAfterReceipt &&
                                     selected.checkpoint.snapshotCursor.seqId >
                                         receipt.snapshotCursor.seqId)
                         }
@@ -613,29 +673,42 @@ internal class ProjectListOwner(
                         val ids = selected.rows.mapTo(hashSetOf()) { it.id }
                         retryableProjectDeletes.keys.retainAll(ids)
                     }
+                    val snapshot = state
+                    var confirmedRenameIds = snapshot.confirmedRenameIds
+                    fun recordConfirmedRename(id: String, eventId: String) {
+                        if (renameReceipts[id]?.eventId != eventId) {
+                            renameReceipts.remove(id)
+                        }
+                        confirmedRenameIds = confirmedRenameIds + (id to eventId)
+                    }
+                    projectRename?.let {
+                        if (observedProjectEvent(it.eventId))
+                            recordConfirmedRename(it.id, it.eventId)
+                    }
                     if (retryableProjectRenames.isNotEmpty()) {
                         val names = selected.rows.associate { it.id to it.name }
                         val appliedEvents = selected.checkpoint.events.mapTo(hashSetOf()) { it.id }
                         selected.checkpoint.archive.latestEventId?.let(appliedEvents::add)
                         retryableProjectRenames.entries.removeAll { (id, rename) ->
-                            names[id] == null ||
+                            val applied =
                                 names[id] == rename.name ||
-                                rename.eventId in appliedEvents
+                                    rename.eventId in appliedEvents ||
+                                    (selected !== candidate &&
+                                        hasProjectReceipt(rename.eventId, candidate.checkpoint))
+                            if (applied) recordConfirmedRename(id, rename.eventId)
+                            names[id] == null || applied
                         }
                     }
-                    val snapshot = state
-                    val renameRejection =
-                        snapshot.renameRejection?.takeUnless {
-                            // A newer disk checkpoint can omit a receipt from this read.
-                            hasProjectReceipt(it.eventId) ||
-                                (selected !== candidate &&
-                                    hasProjectReceipt(it.eventId, candidate.checkpoint))
-                        }
+                    val resolvedRejection =
+                        snapshot.renameRejection?.takeIf { observedProjectEvent(it.eventId) }
+                    resolvedRejection?.let { recordConfirmedRename(it.projectId, it.eventId) }
                     publishProjects(
                         snapshot.copy(
                             phase = ChatReadPhase.Ready,
                             source = ChatListSource.Network,
-                            renameRejection = renameRejection,
+                            renameRejection =
+                                snapshot.renameRejection.takeIf { resolvedRejection == null },
+                            confirmedRenameIds = confirmedRenameIds,
                             deleteFeedback =
                                 snapshot.deleteFeedback.map { feedback ->
                                     if (

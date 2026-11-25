@@ -44,6 +44,7 @@ internal class ChatRowMutationOwner(
         pinGroup: ChatListGroup?,
         index: Int,
         state: ChatListUiState,
+        eventId: String?,
     ): List<ChatRowEdit> {
         val orders =
             when (action) {
@@ -64,7 +65,7 @@ internal class ChatRowMutationOwner(
                     return listOf(
                         ChatRowEdit(threadId, newProjectOperationId(wallMillis()), action, value),
                     )
-                else -> return listOf(ChatRowEdit(threadId, newEventId(), action, value))
+                else -> return listOf(ChatRowEdit(threadId, eventId ?: newEventId(), action, value))
             }
         return orders.map { ChatRowEdit(it.threadId, newEventId(), action, it.pinOrder) }
     }
@@ -188,6 +189,7 @@ internal class ChatRowMutationOwner(
             submission.recoverByTarget && projection.settleConfirmedTargets(edits)
         if (confirmedElsewhere) publishRows()
         val settled = projection.confirmEdits(edits)
+        if (settled && submission.action == ChatRowAction.Rename) publishRows()
         // A move that never reached its requested rank write already reported failure.
         // Its attempted rank edits still need event reconciliation.
         return if (settled || rollback != null)
