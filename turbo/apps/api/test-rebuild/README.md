@@ -110,3 +110,9 @@ The source review refined the Auto routing and Runner BDDs to capture the actual
 | `run-lifecycle-billing.bdd-001` | Followed registration into the billing group. Each member's 108 credits reconcile with the exact 80 and 28 provider split, with model token totals zero. |
 | `run-lifecycle-automatic.bdd-003` | Query routing still uses OAuth, and reconnect leaves the original pinned auth lookup failing with HTTP 424. |
 | `marketing-reward-routing-002` | A provider acknowledgement alone leaves bonus credits at zero. Replaying after authorized settlement yields one 100-credit reward. |
+| `discord-interactions-verification-001` | Reviewed the verification matrix against its distinct 300-second past and 30-second future windows and confirmed its oversized response is 400. |
+| `custom-connector-cloudflare-oauth-019` | The bound token exchange sends an Access credential header, and the public account response excludes the credential value. |
+| `custom-connector-cloudflare-oauth-021` | The unbound connector uses the same protected provider without an Access credential header. |
+| `custom-connector-auth-modes-003` | Failed bundle upload returns 500, preserves the old Skill, permits a retry and separately supports explicit null clearing. |
+| `composer-draft-002` | Both native 0.60.0 clients see a file projection for voice, while iOS 0.61.0 keeps the original document. The feedback sources remain intact. |
+| `member-settings-lifecycle-003` | Followed the signed Clerk membership deletion and reinitialization. The departing member, administrator and same user in another workspace each preserve the saved setting. |
