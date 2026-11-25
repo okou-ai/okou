@@ -46,7 +46,6 @@ export enum FeatureSwitchKey {
   AgentSuggestion = "agentSuggestion",
   SubscriptionLinkingEntry = "subscriptionLinkingEntry",
   SlashActions = "slashActions",
-  WorkflowRecencySync = "workflowRecencySync",
   FollowupPlaceholder = "followupPlaceholder",
   ChatLatestTurnScrollRoom = "chatLatestTurnScrollRoom",
   ChatReplyNameLine = "chatReplyNameLine",

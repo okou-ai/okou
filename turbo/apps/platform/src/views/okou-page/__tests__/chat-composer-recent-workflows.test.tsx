@@ -1,3 +1,4 @@
+import { workflowsCollectionContract } from "@okouai/api-contracts/contracts/workflows";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
@@ -97,20 +98,32 @@ test("chat-composer-recent-workflows-008 a pending send cannot reorder an open o
   }
 });
 
-test("chat-composer-recent-workflows-009 a send preserves history written by a second tab", async () => {
+test("chat-composer-recent-workflows-009 a send preserves synced history from a second tab", async () => {
   const storage = installBrowserStorage();
   createChatRunFixtures(context).installRunChat();
   const entries = workflowOptions(context, defaultNames());
   const ids = entries.map((w) => {
     return w.id;
   });
-  storage.setItem(key, JSON.stringify([ids[5]]));
+  let history: string[] = [ids[5]];
+  context.mocks.api(workflowsCollectionContract.recent, ({ respond }) => {
+    return respond(200, { workflowIds: history });
+  });
+  context.mocks.api(
+    workflowsCollectionContract.recordRecentUse,
+    ({ body, respond }) => {
+      history = [...new Set([...body.workflowIds, ...history])];
+      return respond(200, { workflowIds: history });
+    },
+  );
+  storage.setItem(key, JSON.stringify(history));
   await setupPage({ context, path: RUN_PATH });
   const editor = await message();
   await fill(editor, "/");
   await slashChoice("zulu");
   expect(order()[0]).toBe("zulu");
-  storage.setItem(key, JSON.stringify([ids[4], ids[5]]));
+  history = [ids[4], ids[5]];
+  storage.setItem(key, JSON.stringify(history));
   await fill(editor, "/delta");
   click(await slashChoice("delta"));
   click(await findAction("button", "Send"));
