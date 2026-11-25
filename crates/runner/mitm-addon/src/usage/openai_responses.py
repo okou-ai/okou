@@ -25,6 +25,7 @@ from typing import Literal
 
 import openai_responses_events
 
+from .json_limits import MODEL_JSON_MAX_WORK_UNITS
 from .json_probe import TopLevelStringFieldProbeResult, probe_top_level_string_field
 from .json_selective import (
     JSON_INTEGER_VALUE_LIMIT_EXCEEDED,
@@ -71,7 +72,6 @@ _JSON_PREFILTER_MAX_STRING_BYTES = 1024
 _RESPONSES_EVENT_PREFILTER_MAX_BYTES = 4096
 # Bound dense syntax and slow scalar inspection while retaining the selective
 # parser's bulk-scan path for ordinary large content strings.
-_RESPONSES_MAX_WORK_UNITS = 65_536
 _WEBSOCKET_INSPECTION_STEP_BYTES = 4096
 OPENAI_RESPONSES_WEBSOCKET_WORK_LIMIT_ERROR = "work_limit_exceeded"
 
@@ -219,7 +219,7 @@ def inspect_openai_responses_client_event_steps(
     extractor = JsonSelectiveExtractor(
         scalar_fields=_RESPONSES_CLIENT_SCALAR_FIELDS,
         scalar_consistency_paths={("type",), ("generate",)},
-        max_work_units=_RESPONSES_MAX_WORK_UNITS,
+        max_work_units=MODEL_JSON_MAX_WORK_UNITS,
     )
     result = yield from _inspect_websocket_json_steps(extractor, body)
     if not result.complete:
@@ -373,7 +373,7 @@ def inspect_openai_responses_server_event_steps(
     extractor = JsonSelectiveExtractor(
         scalar_fields=scalar_fields,
         scalar_consistency_paths=consistency_paths,
-        max_work_units=_RESPONSES_MAX_WORK_UNITS,
+        max_work_units=MODEL_JSON_MAX_WORK_UNITS,
     )
     result = yield from _inspect_websocket_json_steps(extractor, event._body)
 
@@ -804,7 +804,7 @@ class _OpenAIResponsesSseUsageHandler:
                     if self._on_terminal_usage is not None or self._on_observation is not None
                     else None
                 ),
-                max_work_units=_RESPONSES_MAX_WORK_UNITS,
+                max_work_units=MODEL_JSON_MAX_WORK_UNITS,
             )
             self._event_extractors[include_type] = extractor
         self._extractor = extractor

@@ -4,6 +4,7 @@ import json
 import math
 from collections.abc import Callable
 
+from .json_limits import MODEL_JSON_MAX_WORK_UNITS
 from .json_selective import (
     FIRST_ARRAY_ELEMENT,
     JsonExtractionResult,
@@ -25,7 +26,6 @@ from .openai_tokens import partition_input_tokens
 from .quantities import is_usage_quantity
 from .sse import SseUsageScanner
 
-_CHAT_COMPLETIONS_MAX_WORK_UNITS = 65_536
 _CHAT_COMPLETIONS_SSE_FAST_PATH_MAX_BYTES = 1024
 _JSON_MAX_NUMBER_BYTES = 128
 _DONE_SENTINEL = b"[DONE]"
@@ -199,7 +199,7 @@ def _new_extractor() -> JsonSelectiveExtractor:
         object_presence_paths=set(_USAGE_PATHS),
         value_presence_paths=set(_USAGE_VALUE_PRESENCE_PATHS),
         max_number_bytes=_JSON_MAX_NUMBER_BYTES,
-        max_work_units=_CHAT_COMPLETIONS_MAX_WORK_UNITS,
+        max_work_units=MODEL_JSON_MAX_WORK_UNITS,
     )
 
 
