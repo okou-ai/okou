@@ -64,6 +64,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -419,6 +420,7 @@ internal fun WorkflowEditor(
             Modifier.widthIn(max = 730.dp)
                 .fillMaxWidth()
                 .weight(1f)
+                .testTag("workflow_editor_fields")
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = horizontalPadding, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -484,16 +486,8 @@ internal fun WorkflowEditor(
                 .fillMaxWidth()
                 .padding(horizontal = horizontalPadding, vertical = 8.dp),
             horizontalAlignment = Alignment.End,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(OkouFormLayout.ActionGap),
         ) {
-            when (issue?.failure) {
-                WorkflowWriteFailure.UncertainCreate ->
-                    WorkflowNotice(R.string.workflow_create_uncertain)
-                WorkflowWriteFailure.Conflict -> WorkflowNotice(R.string.workflow_write_conflict)
-                WorkflowWriteFailure.Network,
-                WorkflowWriteFailure.Failed -> WorkflowNotice(R.string.workflow_write_failed)
-                null -> Unit
-            }
             val readFeedback = state.detailFailure.cachedReadFeedback() ?: connectionFeedback
             if (readFeedback != null) WorkflowNotice(readFeedback)
             if (connectionRequired != null && state.connections != null) {
@@ -505,9 +499,11 @@ internal fun WorkflowEditor(
                     MaterialTheme.colorScheme.error,
                 )
             }
+            WorkflowEditorWriteFeedback(editor, issue?.failure)
             FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement =
+                    Arrangement.spacedBy(OkouFormLayout.ActionGap, Alignment.End),
+                verticalArrangement = Arrangement.spacedBy(OkouFormLayout.ActionGap),
             ) {
                 WorkflowAction(
                     stringResource(R.string.workflow_cancel),
@@ -558,6 +554,44 @@ internal fun WorkflowEditor(
                             .then(pendingSemantics),
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun WorkflowEditorWriteFeedback(editor: WorkflowEdit, failure: WorkflowWriteFailure?) {
+    val reservedLabel =
+        when (editor) {
+            is WorkflowEdit.Instructions -> R.string.workflow_write_conflict
+            is WorkflowEdit.Rule -> R.string.workflow_create_uncertain.takeIf { editor.id == null }
+        }
+    val message =
+        when (failure) {
+            WorkflowWriteFailure.UncertainCreate -> R.string.workflow_create_uncertain
+            WorkflowWriteFailure.Conflict -> R.string.workflow_write_conflict
+            WorkflowWriteFailure.Network,
+            WorkflowWriteFailure.Failed -> R.string.workflow_write_failed
+            null -> null
+        }
+    val colors = MaterialTheme.colorScheme
+    val style = workflowBodyStyle().copy(fontSize = 14.sp, lineHeight = 20.sp)
+    val hidden = Modifier.clearAndSetSemantics {}.alpha(0f)
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.BottomEnd) {
+        Text(stringResource(R.string.workflow_write_failed), hidden, style = style)
+        if (reservedLabel != null) Text(stringResource(reservedLabel), hidden, style = style)
+        if (message != null) {
+            Text(
+                stringResource(message),
+                Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                color =
+                    if (
+                        failure == WorkflowWriteFailure.Conflict ||
+                            failure == WorkflowWriteFailure.Failed
+                    )
+                        colors.error
+                    else colors.onSurfaceVariant,
+                style = style,
+            )
         }
     }
 }

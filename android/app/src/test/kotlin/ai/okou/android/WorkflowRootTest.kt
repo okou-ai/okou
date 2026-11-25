@@ -611,6 +611,8 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
         val error = "Could not save your changes."
         val save = compose.onNodeWithTag("workflow_save").assertIsEnabled()
         val saveBounds = save.getUnclippedBoundsInRoot()
+        val fields = compose.onNodeWithTag("workflow_editor_fields")
+        val fieldsBounds = fields.getUnclippedBoundsInRoot()
         val cancel = compose.onNodeWithText("Cancel")
         val cancelBounds = cancel.getUnclippedBoundsInRoot()
         save.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
@@ -638,6 +640,7 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
                 )
             assertEquals(saveBounds, save.getUnclippedBoundsInRoot())
             assertEquals(cancelBounds, cancel.assertIsNotEnabled().getUnclippedBoundsInRoot())
+            assertEquals(fieldsBounds, fields.getUnclippedBoundsInRoot())
         } finally {
             releaseSave.countDown()
         }
@@ -648,10 +651,13 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
             instruction.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange],
         )
         val notice = compose.onNodeWithText(error).getUnclippedBoundsInRoot()
-        assertTrue(
-            notice.bottom + 16.dp <=
-                save.assertIsEnabled().assertIsFocused().getUnclippedBoundsInRoot().top,
+        assertEquals(
+            8.dp,
+            save.assertIsEnabled().assertIsFocused().getUnclippedBoundsInRoot().top - notice.bottom,
         )
+        assertEquals(saveBounds, save.getUnclippedBoundsInRoot())
+        assertEquals(cancelBounds, cancel.getUnclippedBoundsInRoot())
+        assertEquals(fieldsBounds, fields.getUnclippedBoundsInRoot())
         val saves =
             app.fixture.requests.filter {
                 it.method == "PATCH" &&
