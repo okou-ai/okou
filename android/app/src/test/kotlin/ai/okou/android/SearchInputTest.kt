@@ -8,6 +8,7 @@ import ai.okou.android.chat.HistoryCheckpoint
 import ai.okou.android.chat.HistoryCursor
 import ai.okou.android.chat.HistoryEvent
 import ai.okou.android.chat.projectHistory
+import android.os.Looper
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import androidx.activity.ComponentActivity
@@ -33,12 +34,14 @@ import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.awaitCancellation
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
@@ -160,6 +163,8 @@ class SearchInputTest {
                 query.assertTextContains(committed).assertIsFocused()
                 compose.runOnIdle { assertTrue(checkNotNull(ime.connection).finishComposingText()) }
                 compose.waitUntil(5_000) { model.state.value.query.keyword == committed }
+                compose.waitForIdle()
+                shadowOf(Looper.getMainLooper()).idleFor(250, TimeUnit.MILLISECONDS)
                 compose.waitUntil(5_000) { searchStarted.count == 0L }
                 compose.runOnIdle {
                     assertTrue(checkNotNull(ime.connection).setComposingRegion(0, committed.length))
