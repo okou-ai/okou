@@ -2,6 +2,7 @@ package ai.okou.android.artifacts
 
 import ai.okou.android.R
 import ai.okou.android.chat.ConfirmedChat
+import ai.okou.android.committedSearchText
 import ai.okou.android.state.ArtifactPageState
 import ai.okou.android.state.rememberArtifactPageState
 import android.app.Activity
@@ -48,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.io.IOException
+import kotlinx.coroutines.flow.filterNotNull
 
 @Composable
 internal fun ArtifactsRoute(
@@ -68,10 +70,13 @@ internal fun ArtifactsRoute(
     val saveLauncher = rememberArtifactSaveLauncher(model, page)
     val selectedId = searchArtifactId ?: page.selectedId
 
+    fun catalogQuery(filter: ArtifactFilter, previousKeyword: String) =
+        ArtifactQuery(filter, input.committedSearchText()?.trim() ?: previousKeyword)
+
     LifecycleStartEffect(model, searchArtifactId) {
         model.setActive(
             true,
-            ArtifactQuery(page.filter, input.text.toString().trim()),
+            catalogQuery(page.filter, model.state.value.query.keyword),
             showCatalog = searchArtifactId == null,
         )
         onStopOrDispose { model.setActive(false) }
@@ -79,13 +84,15 @@ internal fun ArtifactsRoute(
     LaunchedEffect(model, selectedId) { model.select(selectedId) }
     LaunchedEffect(model, input, searchArtifactId) {
         if (searchArtifactId != null) return@LaunchedEffect
-        snapshotFlow { input.text.toString().trim() }
+        snapshotFlow { input.committedSearchText()?.trim() }
+            .filterNotNull()
             .collect { keyword ->
-                if (keyword != model.state.value.query.keyword) {
+                val query = ArtifactQuery(page.filter, keyword)
+                if (query != model.state.value.query) {
                     page.restoreRow = null
                     position.requestScrollToItem(0)
                     model.query(
-                        ArtifactQuery(page.filter, keyword),
+                        query,
                         debounce = keyword.isNotEmpty(),
                     )
                 }
@@ -113,14 +120,14 @@ internal fun ArtifactsRoute(
                 model,
                 state,
                 input,
-                page.filter,
+                catalogQuery(page.filter, state.query.keyword),
                 onFilter = { next ->
                     if (page.filter != next) {
                         page.filter = next
                         page.restoreRow = null
                         position.requestScrollToItem(0)
                         model.query(
-                            ArtifactQuery(next, input.text.toString().trim()),
+                            catalogQuery(next, model.state.value.query.keyword),
                             debounce = false,
                         )
                     }

@@ -2,15 +2,18 @@ package ai.okou.android.connectors
 
 import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
+import ai.okou.android.ToolDirectorySearchShape
 import ai.okou.android.WorkspaceMenu
 import ai.okou.android.WorkspaceMenuItem
+import ai.okou.android.WorkspaceSearchInput
 import ai.okou.android.WorkspaceToolDirectoryRow
 import ai.okou.android.chat.ContentReadFeedback
 import ai.okou.android.rememberContentReadSkeleton
+import ai.okou.android.retainSearchResultsWhileComposing
+import ai.okou.android.searchClearAction
 import ai.okou.android.state.ConnectorDirectoryState
 import ai.okou.android.state.rememberConnectorDirectory
 import ai.okou.android.updates.updateFocusOutline
-import ai.okou.android.workspaceSearchControlHeight
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -38,9 +41,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -65,9 +65,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -89,7 +87,6 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -298,14 +295,20 @@ private fun ConnectorDirectory(
 ) {
     val query = route.committedQuery.text.trim()
     val searchFocus = remember { FocusRequester() }
-    fun clearQuery() {
-        editQuery(TextFieldValue())
-        searchFocus.requestFocus()
-    }
-    // Keep the visible directory stable while the input method is composing a word.
+    val clearQuery = searchClearAction(searchFocus) { editQuery(TextFieldValue()) }
     val directory =
-        if (!route.hasPendingSearchInput) state
-        else remember(route.connected, filter, query) { state }
+        key(
+            route,
+            route.connected,
+            filter,
+            query,
+            state.browse.failure == ConnectorReadFailure.Unavailable,
+            state.connected.failure == ConnectorReadFailure.Unavailable,
+            state.matches?.entries?.failure == ConnectorReadFailure.Unavailable,
+            state.accounts.failure == ConnectorReadFailure.Unavailable,
+        ) {
+            retainSearchResultsWhileComposing(state, route.query.composition != null)
+        }
     val recommended = !route.connected && filter == null
     val connected = directory.connected.data
     val filtered =
@@ -369,7 +372,7 @@ private fun ConnectorDirectory(
             directory.browse.data?.categories ?: catalogRead.data?.categories.orEmpty(),
             searchFocus,
             editQuery,
-            ::clearQuery,
+            clearQuery,
             setCategory,
         )
         val initialFailure = entries == null && failure != null
@@ -400,7 +403,7 @@ private fun ConnectorDirectory(
                             ConnectorEmpty(
                                 R.string.connector_no_match,
                                 R.string.connector_clear,
-                                ::clearQuery,
+                                clearQuery,
                             )
                         route.category != null ->
                             ConnectorEmpty(
@@ -529,11 +532,8 @@ private fun ConnectorFilters(
     var menu by remember { mutableStateOf(false) }
     var restoreFocus by remember { mutableStateOf(false) }
     val categoryFocus = remember { FocusRequester() }
-    var focused by remember { mutableStateOf(false) }
     val keyboard = LocalSoftwareKeyboardController.current
     val colors = MaterialTheme.colorScheme
-    val label = stringResource(R.string.connector_search)
-    val shape = RoundedCornerShape(18.dp)
     val categoryShape = RoundedCornerShape(12.dp)
     val categoryLabel =
         route.category?.let { connectorCategory(it) }
@@ -543,73 +543,14 @@ private fun ConnectorFilters(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        BasicTextField(
+        WorkspaceSearchInput(
             value = route.query,
             onValueChange = editQuery,
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions =
-                KeyboardActions(
-                    onSearch = {
-                        editQuery(route.query.copy(composition = null))
-                        keyboard?.hide()
-                    },
-                ),
-            textStyle = connectorBodyType().copy(color = colors.onSurface),
-            cursorBrush = SolidColor(colors.onSurface),
-            modifier =
-                Modifier.weight(1f)
-                    .focusRequester(searchFocus)
-                    .onFocusChanged { focused = it.isFocused }
-                    .testTag("connector-search")
-                    .semantics { contentDescription = label },
-            decorationBox = { field ->
-                Row(
-                    Modifier.fillMaxWidth()
-                        .heightIn(min = workspaceSearchControlHeight())
-                        .clip(shape)
-                        .background(colors.surfaceVariant)
-                        .border(
-                            if (focused) 2.dp else 1.dp,
-                            if (focused) colors.onSurface else colors.outline,
-                            shape,
-                        )
-                        .padding(
-                            start = 12.dp,
-                            end = if (route.query.text.isEmpty()) 12.dp else 0.dp,
-                        ),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        painterResource(R.drawable.ic_search),
-                        null,
-                        Modifier.size(20.dp),
-                        tint = colors.onSurfaceVariant,
-                    )
-                    Box(Modifier.weight(1f).padding(vertical = 8.dp)) {
-                        if (route.query.text.isEmpty()) {
-                            Text(
-                                label,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                style = connectorBodyType(),
-                                color = colors.onSurfaceVariant,
-                            )
-                        }
-                        field()
-                    }
-                    if (route.query.text.isNotEmpty()) {
-                        IconButton(onClick = clearQuery) {
-                            Icon(
-                                painterResource(R.drawable.ic_close),
-                                stringResource(R.string.connector_clear),
-                                Modifier.size(20.dp),
-                            )
-                        }
-                    }
-                }
-            },
+            label = stringResource(R.string.connector_search),
+            onClear = clearQuery,
+            modifier = Modifier.weight(1f).focusRequester(searchFocus).testTag("connector-search"),
+            shape = ToolDirectorySearchShape,
+            clearLabel = stringResource(R.string.connector_clear),
         )
         Box {
             IconButton(

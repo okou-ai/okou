@@ -11,7 +11,6 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -188,9 +187,6 @@ internal class ConnectorDirectoryState(
     var committedQuery by mutableStateOf(query)
         private set
 
-    val hasPendingSearchInput: Boolean
-        get() = query.composition != null && query.text != committedQuery.text
-
     fun editQuery(value: TextFieldValue) {
         query = value
         if (value.composition == null) committedQuery = value
@@ -341,17 +337,6 @@ internal class ChatSearchState(
                 }
             }
     }
-}
-
-private class DisplayedSearchValue<T>(var value: T)
-
-@Composable
-internal fun <T> ChatSearchState.retainWhileComposing(value: T): T {
-    val displayed = remember(this) { DisplayedSearchValue(value) }
-    if (query.composition != null) return displayed.value
-    // Keep the last rendered results if a refresh arrives in the same frame as an IME edit.
-    SideEffect { displayed.value = value }
-    return value
 }
 
 @Composable

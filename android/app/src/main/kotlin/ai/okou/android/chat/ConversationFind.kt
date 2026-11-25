@@ -1,10 +1,13 @@
 package ai.okou.android.chat
 
 import ai.okou.android.R
-import ai.okou.android.WorkspaceSearchField
+import ai.okou.android.WorkspaceSearchInput
 import ai.okou.android.WorkspaceSearchToolbar
+import ai.okou.android.committedSearchText
 import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.searchClearAction
 import ai.okou.android.workspaceSearchControlHeight
+import ai.okou.android.workspaceSearchFocusOutline
 import ai.okou.android.workspaceSearchTextStyle
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,10 +23,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.clearText
 import androidx.compose.material3.Icon
@@ -45,7 +46,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInputModeManager
@@ -56,14 +56,12 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -73,6 +71,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -128,10 +127,12 @@ internal class ConversationFindVisit(
             if (indexedImageNames.orEmpty().any { (source, name) -> names[source] != name }) {
                 index = null
             }
-            index =
+            val refreshed =
                 withContext(Dispatchers.Default) {
                     findMessages(messages, rows, pendingInputIds, artifactCards, names)
                 }
+            if (input.composition != null) snapshotFlow { input.composition == null }.first { it }
+            index = refreshed
             indexedImageNames = names
         }
     }
@@ -302,7 +303,7 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
     val rowShape = RoundedCornerShape(8.dp)
     LaunchedEffect(visit) { visit.prepareIndex() }
     LaunchedEffect(visit) {
-        snapshotFlow { visit.input.text.toString().takeIf { visit.input.composition == null } }
+        snapshotFlow { visit.input.committedSearchText() }
             .filterNotNull()
             .collect(visit::commitQuery)
     }
@@ -334,7 +335,9 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
                 leading = {
                     IconButton(
                         onClick = onClose,
-                        modifier = Modifier.size(workspaceSearchControlHeight()),
+                        modifier =
+                            Modifier.size(workspaceSearchControlHeight())
+                                .workspaceSearchFocusOutline(CircleShape),
                     ) {
                         Icon(
                             painterResource(R.drawable.ic_arrow_back),
@@ -343,54 +346,15 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
                     }
                 },
                 field = { modifier ->
-                    BasicTextField(
+                    WorkspaceSearchInput(
                         state = visit.input,
+                        label = label,
+                        onClear = searchClearAction(inputFocus) { visit.input.clearText() },
                         modifier =
                             modifier
                                 .focusRequester(inputFocus)
                                 .onFocusChanged { visit.onInputFocusChanged(it.isFocused) }
-                                .testTag("conversation_find_query")
-                                .semantics { contentDescription = label },
-                        textStyle = titleStyle.copy(color = colors.onSurface),
-                        lineLimits = TextFieldLineLimits.SingleLine,
-                        cursorBrush = SolidColor(colors.onSurface),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        onKeyboardAction = { keyboard?.hide() },
-                        decorator = { input ->
-                            WorkspaceSearchField(
-                                Modifier.fillMaxWidth(),
-                                focused = visit.inputFocused,
-                                hasTrailingAction = visit.input.text.isNotEmpty(),
-                            ) {
-                                Box(Modifier.weight(1f).padding(vertical = 8.dp)) {
-                                    if (visit.input.text.isEmpty())
-                                        Text(
-                                            label,
-                                            style = titleStyle,
-                                            color = colors.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                    input()
-                                }
-                                if (visit.input.text.isNotEmpty()) {
-                                    IconButton(
-                                        onClick = {
-                                            visit.input.clearText()
-                                            inputFocus.requestFocus()
-                                            keyboard?.show()
-                                        },
-                                    ) {
-                                        Icon(
-                                            painterResource(R.drawable.ic_close),
-                                            stringResource(R.string.chat_search_clear),
-                                            modifier = Modifier.size(20.dp),
-                                            tint = colors.onSurfaceVariant,
-                                        )
-                                    }
-                                }
-                            }
-                        },
+                                .testTag("conversation_find_query"),
                     )
                 },
             )

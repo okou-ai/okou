@@ -1,11 +1,14 @@
 package ai.okou.android.artifacts
 
 import ai.okou.android.R
+import ai.okou.android.ToolDirectorySearchShape
 import ai.okou.android.WorkspaceFilterRow
-import ai.okou.android.WorkspaceSearchField
+import ai.okou.android.WorkspaceSearchInput
 import ai.okou.android.WorkspaceToolDirectoryRow
 import ai.okou.android.chat.ChatListTextAction
 import ai.okou.android.rememberContentReadSkeleton
+import ai.okou.android.retainSearchResultsWhileComposing
+import ai.okou.android.searchClearAction
 import ai.okou.android.workspaceSearchFocusOutline
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -38,10 +41,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.InputTransformation
-import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.text.input.maxLengthReject
@@ -53,8 +53,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -63,26 +63,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -98,7 +93,7 @@ internal fun ArtifactCatalogList(
     model: ArtifactCatalogModel,
     state: ArtifactCatalogState,
     input: TextFieldState,
-    filter: ArtifactFilter,
+    query: ArtifactQuery,
     onFilter: (ArtifactFilter) -> Unit,
     position: LazyListState,
     selectedId: String?,
@@ -108,10 +103,20 @@ internal fun ArtifactCatalogList(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val query = ArtifactQuery(filter, input.text.toString().trim())
-    val page = state.page.takeIf { state.query == query }
-    val failure = state.failedRead.takeIf { state.query == query }
-    val reading = state.reading.takeIf { state.query == query }
+    val filter = query.filter
+    val displayed =
+        when (state.failedRead) {
+            ArtifactCatalogFailure.Denied,
+            ArtifactCatalogFailure.Missing,
+            ArtifactCatalogFailure.ChatUnavailable -> state
+            else ->
+                key(input, query) {
+                    retainSearchResultsWhileComposing(state, input.composition != null)
+                }
+        }
+    val page = displayed.page.takeIf { displayed.query == query }
+    val failure = displayed.failedRead.takeIf { displayed.query == query }
+    val reading = displayed.reading.takeIf { displayed.query == query }
     val localDates = rememberArtifactDates()
     val groups =
         remember(page, query, localDates.today, localDates.yesterday) {
@@ -124,6 +129,7 @@ internal fun ArtifactCatalogList(
                 .orEmpty()
         }
     val searchFocus = remember { FocusRequester() }
+    val clearQuery = searchClearAction(searchFocus) { input.clearText() }
     val allFilterFocus = remember { FocusRequester() }
     val rowFocus = remember { FocusRequester() }
     val noticePadding = Modifier.padding(16.dp)
@@ -149,7 +155,15 @@ internal fun ArtifactCatalogList(
                 .padding(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            ArtifactSearch(input, searchFocus)
+            WorkspaceSearchInput(
+                state = input,
+                label = stringResource(R.string.artifact_search),
+                onClear = clearQuery,
+                modifier =
+                    Modifier.fillMaxWidth().focusRequester(searchFocus).testTag("artifact_query"),
+                shape = ToolDirectorySearchShape,
+                inputTransformation = InputTransformation.maxLengthReject(256),
+            )
             WorkspaceFilterRow(
                 ArtifactFilter.entries,
                 filter,
@@ -196,10 +210,7 @@ internal fun ArtifactCatalogList(
                     ArtifactEmpty(
                         hasKeyword = query.keyword.isNotBlank(),
                         filtered = filter != ArtifactFilter.All,
-                        onClear = {
-                            input.clearText()
-                            searchFocus.requestFocus()
-                        },
+                        onClear = clearQuery,
                         onShowAll = {
                             onFilter(ArtifactFilter.All)
                             allFilterFocus.requestFocus()
@@ -282,67 +293,6 @@ internal fun ArtifactToolbar(
         )
     }
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-}
-
-@Composable
-private fun ArtifactSearch(input: TextFieldState, focus: FocusRequester) {
-    val colors = MaterialTheme.colorScheme
-    val keyboard = LocalSoftwareKeyboardController.current
-    val label = stringResource(R.string.artifact_search)
-    val textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.onSurface)
-    var focused by remember { mutableStateOf(false) }
-    BasicTextField(
-        state = input,
-        inputTransformation = InputTransformation.maxLengthReject(256),
-        modifier =
-            Modifier.fillMaxWidth()
-                .focusRequester(focus)
-                .onFocusChanged { focused = it.isFocused }
-                .testTag("artifact_query")
-                .semantics { contentDescription = label },
-        textStyle = textStyle,
-        lineLimits = TextFieldLineLimits.SingleLine,
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-        onKeyboardAction = { keyboard?.hide() },
-        cursorBrush = SolidColor(colors.onSurface),
-        decorator = { field ->
-            WorkspaceSearchField(
-                Modifier.fillMaxWidth(),
-                focused = focused,
-                hasTrailingAction = input.text.isNotEmpty(),
-                shape = RoundedCornerShape(18.dp),
-            ) {
-                Box(Modifier.weight(1f).padding(vertical = 8.dp)) {
-                    if (input.text.isEmpty()) {
-                        Text(
-                            label,
-                            style = textStyle,
-                            color = colors.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    field()
-                }
-                if (input.text.isNotEmpty()) {
-                    IconButton(
-                        modifier = Modifier.workspaceSearchFocusOutline(CircleShape),
-                        onClick = {
-                            input.clearText()
-                            focus.requestFocus()
-                        },
-                    ) {
-                        Icon(
-                            painterResource(R.drawable.ic_close),
-                            stringResource(R.string.chat_search_clear),
-                            modifier = Modifier.size(20.dp),
-                            tint = colors.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
-        },
-    )
 }
 
 @Composable

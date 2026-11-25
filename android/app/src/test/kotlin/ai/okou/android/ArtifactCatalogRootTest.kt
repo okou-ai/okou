@@ -18,6 +18,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.EditorInfo
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
@@ -727,6 +728,39 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "en-rUS-w400dp-h800dp", application = ChatListApplication::class)
 internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
+    @Test
+    fun catalogKeepsTheCommittedResultsAndSendsOnlyTheImeCommit() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithContentDescription("Artifacts").performClick()
+        val files = compose.onNodeWithText("Files")
+        files.performClick()
+        awaitText(fixture.checklist.title)
+        val query = compose.onNodeWithTag("artifact_query")
+        query.performClick().assertIsFocused()
+
+        val ime = compose.runOnIdle {
+            checkNotNull(compose.activity.currentFocus?.onCreateInputConnection(EditorInfo()))
+        }
+        compose.runOnIdle { assertTrue(ime.setComposingText("Product", 1)) }
+        query.assertTextContains("Product").assertIsFocused()
+        compose.onNodeWithText(fixture.checklist.title).assertIsDisplayed()
+        assertTrue(artifactModel.state.value.query.keyword.isEmpty())
+
+        compose.runOnIdle { assertTrue(ime.commitText("Product launch", 1)) }
+        compose.waitUntil(5_000) { fixture.catalogQueries.contains("file" to "Product launch") }
+        awaitText(fixture.summary.title)
+        compose.onNodeWithText(fixture.checklist.title).assertDoesNotExist()
+        assertTrue(fixture.catalogQueries.none { it.second == "Product" })
+
+        compose.onNodeWithContentDescription("Clear search").performClick()
+        awaitText(fixture.checklist.title)
+        query.assertIsFocused()
+        files.assertIsSelected()
+    }
+
     @Test
     fun emptyCatalogActionsRestoreFocusAndKeepTheSelectedTypeWhenClearing() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
