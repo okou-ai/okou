@@ -1,3 +1,4 @@
+import { connectorIdentityConflictAccount$ } from "./connector-identity-conflict-recovery";
 import { Buffer } from "node:buffer";
 import { createHash, randomBytes } from "node:crypto";
 
@@ -802,7 +803,7 @@ const publishDeviceAuthConnection$ = command(
   },
 );
 
-const completeClaimedSession$ = command(
+const completeClaimedSessionAttempt$ = command(
   async ({ set }, args: CommitDeviceAuthArgs, signal: AbortSignal) => {
     const publication = await set(
       prepareBuiltinConnectorTokenPublication$,
@@ -836,6 +837,53 @@ const completeClaimedSession$ = command(
           ? publication.publication.marketingRewardEventId
           : null,
     };
+  },
+);
+
+const completeClaimedSession$ = command(
+  async ({ set }, args: CommitDeviceAuthArgs, signal: AbortSignal) => {
+    const outcome = await settle(
+      set(completeClaimedSessionAttempt$, args, signal),
+    );
+    if (signal.aborted) {
+      // An accepted publication still returns its committed result.
+      if (outcome.ok) {
+        return outcome.value;
+      }
+      signal.throwIfAborted();
+    }
+    if (outcome.ok) {
+      return outcome.value;
+    }
+    const existing =
+      args.prepared.account.intent === "add"
+        ? await set(
+            connectorIdentityConflictAccount$,
+            {
+              error: outcome.error,
+              orgId: args.prepared.orgId,
+              userId: args.prepared.userId,
+              target: {
+                kind: "builtin",
+                connectorSlug: args.prepared.runtimeMethod.connectorSlug,
+              },
+              externalId: args.prepared.userInfo.id,
+              externalUsername: args.prepared.userInfo.username,
+            },
+            signal,
+          )
+        : undefined;
+    if (!existing) {
+      throw outcome.error;
+    }
+    return await set(
+      completeClaimedSessionAttempt$,
+      {
+        ...args,
+        prepared: { ...args.prepared, matchExistingExternalIdentity: true },
+      },
+      signal,
+    );
   },
 );
 

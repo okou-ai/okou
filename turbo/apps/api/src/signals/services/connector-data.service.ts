@@ -1,3 +1,5 @@
+import { connectorConnectionPrincipalValue } from "./connector-account-mutation.service";
+import { connectorIdentityConflictAccount$ } from "./connector-identity-conflict-recovery";
 import { connectEmailFromMailAccount$ } from "./email-connection.service";
 import {
   builtinDeletionSqlResultSchema,
@@ -155,6 +157,7 @@ const oauthScopesSchema = array(string());
 const DEFAULT_ACCESS_TOKEN_EXPIRES_IN_SECS = 15 * 60;
 interface ExternalUserInfo {
   readonly id: string;
+  readonly identityNamespace?: string;
   readonly username: string | null;
   readonly email: string | null;
 }
@@ -2075,14 +2078,16 @@ async function prepareConnectorTokenState(
 
 function isExplicitReconnectIdentityMismatch(
   account: ConnectorAccountMutationIntent,
-  existing: StoredConnectorRow | null,
+  existing: (StoredConnectorRow & { readonly externalIssuer: string }) | null,
   nextExternalId: string,
+  nextIdentityNamespace?: string,
 ): boolean {
   return (
     account.intent === "reconnect" &&
-    existing?.externalId !== null &&
-    existing?.externalId !== undefined &&
-    existing.externalId !== nextExternalId
+    existing !== null &&
+    ((existing.externalId !== null && existing.externalId !== nextExternalId) ||
+      (existing.externalIssuer !== "" &&
+        existing.externalIssuer !== (nextIdentityNamespace ?? "")))
   );
 }
 
@@ -2145,6 +2150,7 @@ function builtinConnectorTokenConnectionValues(
         connectorSlug: connection.runtimeMethod.connectorSlug,
         identity: {
           kind: "external" as const,
+          issuer: connection.userInfo.identityNamespace,
           externalId: connection.userInfo.id,
           externalUsername: connection.userInfo.username,
           externalEmail: connection.userInfo.email,
@@ -2233,6 +2239,11 @@ export function builtinConnectorTokenMutationValues(
     },
     mutation: args.account,
     allowSiblings: true,
+    matchExternalPrincipal: connectorConnectionPrincipalValue(
+      args.runtimeMethod.connectorSlug,
+      args.userInfo.username,
+    ),
+    matchExternalIssuer: args.userInfo.identityNamespace,
     matchExternalId: authorizedExternalIdForMutation({
       mutation: args.account,
       matchExistingExternalIdentity: args.matchExistingExternalIdentity,
@@ -2495,6 +2506,7 @@ export const prepareBuiltinConnectorTokenPublication$ = command(
         args.account,
         existing,
         args.userInfo.id,
+        args.userInfo.identityNamespace,
       )
     ) {
       return {
@@ -2624,7 +2636,7 @@ const publishTokenConnection$ = command(
   },
 );
 
-export const upsertBuiltinConnectorTokenConnection$ = command(
+const upsertBuiltinConnectorTokenConnectionAttempt$ = command(
   async (
     { set },
     args: BuiltinConnectorTokenConnectionArgs,
@@ -2673,6 +2685,59 @@ export const upsertBuiltinConnectorTokenConnection$ = command(
           ? publication.publication.marketingRewardEventId
           : null,
     };
+  },
+);
+
+/** Failed uniqueness arbitration rolls back before this finite identity replacement. */
+export const upsertBuiltinConnectorTokenConnection$ = command(
+  async (
+    { set },
+    args: BuiltinConnectorTokenConnectionArgs,
+    signal: AbortSignal,
+  ) => {
+    const outcome = await settle(
+      set(upsertBuiltinConnectorTokenConnectionAttempt$, args, signal),
+    );
+    if (signal.aborted) {
+      // An accepted publication still returns its committed result.
+      if (outcome.ok) {
+        return outcome.value;
+      }
+      signal.throwIfAborted();
+    }
+    if (outcome.ok) {
+      return outcome.value;
+    }
+    const existing =
+      args.account.intent === "add"
+        ? await set(
+            connectorIdentityConflictAccount$,
+            {
+              error: outcome.error,
+              orgId: args.orgId,
+              userId: args.userId,
+              target: {
+                kind: "builtin",
+                connectorSlug: args.runtimeMethod.connectorSlug,
+              },
+              externalId: args.userInfo.id,
+              issuer: args.userInfo.identityNamespace,
+              externalUsername: args.userInfo.username,
+            },
+            signal,
+          )
+        : undefined;
+    if (!existing) {
+      throw outcome.error;
+    }
+    return await set(
+      upsertBuiltinConnectorTokenConnectionAttempt$,
+      {
+        ...args,
+        matchExistingExternalIdentity: true,
+      },
+      signal,
+    );
   },
 );
 

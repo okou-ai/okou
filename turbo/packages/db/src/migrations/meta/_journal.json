@@ -3886,6 +3886,13 @@
       "when": 1795594293433,
       "tag": "1633_remote_device_storage",
       "breakpoints": true
+    },
+    {
+      "idx": 1634,
+      "version": "7",
+      "when": 1795604448663,
+      "tag": "1634_connector_identity_writer_preparation",
+      "breakpoints": true
     }
   ]
 }

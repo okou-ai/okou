@@ -27,6 +27,7 @@ const deviceAuthResponseSchema = object({
 
 const tokenResponseSchema = object({
   access_token: string(),
+  sub: string().min(1).optional(),
   refresh_token: string().nullable().optional(),
   expires_in: number().optional(),
   token_type: string().optional(),
@@ -184,8 +185,8 @@ export async function pollTestOAuthDeviceAuth(args: {
       expiresIn: data.expires_in,
       scopes: effectiveOAuthScopes(data.scope, args.scopes, " "),
       userInfo: {
-        id: "test-oauth-device-user",
-        username: "test-oauth-device-user",
+        id: data.sub ?? "test-oauth-device-user",
+        username: data.sub ?? "test-oauth-device-user",
         email: "test-oauth-device@example.com",
       },
     },

@@ -11,6 +11,7 @@ import { logger } from "../../lib/log";
 
 import {
   connectorConnectionDefaultConflict,
+  connectorConnectionExternalPrincipal,
   connectorConnectionIdentityValues,
   connectorConnectionReplacementValues,
   connectorConnectionTargetValues,
@@ -39,6 +40,7 @@ export interface StoredConnectorConnectionRow {
 }
 
 interface ExistingConnectorConnectionRow extends StoredConnectorConnectionRow {
+  readonly externalIssuer: string;
   readonly stateRevision: string;
   readonly connectorSlug: string | null;
   readonly customConnectorId: string | null;
@@ -61,6 +63,8 @@ type InsertConnectorConnectionMutation = {
    */
   readonly allowSiblings: boolean;
   readonly matchExternalId: string | null;
+  readonly matchExternalIssuer: string;
+  readonly matchExternalPrincipal: string;
 };
 
 export type ReadyConnectorConnectionMutation =
@@ -163,6 +167,7 @@ export function connectorConnectionSelection() {
 export function existingConnectorConnectionSelection() {
   return {
     ...connectorConnectionSelection(),
+    externalIssuer: connectors.externalIssuer,
     stateRevision: sql`${connectors.updatedAt}::text`.mapWith(pgTextDecoder),
     connectorSlug: connectors.connectorSlug,
     customConnectorId: connectors.customConnectorId,
@@ -182,6 +187,8 @@ export interface ConnectorConnectionMutationArgs {
   readonly mutation: ConnectorAccountMutationIntent;
   readonly allowSiblings: boolean;
   readonly matchExternalId?: string;
+  readonly matchExternalIssuer?: string;
+  readonly matchExternalPrincipal?: string;
 }
 
 function connectorConnectionTargetReadPlan(
@@ -221,7 +228,7 @@ export function connectorConnectionMutationReadPlan(
   }
   const displayName =
     args.mutation.intent === "add" ? (args.mutation.displayName ?? null) : null;
-  if (args.mutation.intent === "add" && args.matchExternalId !== undefined) {
+  if (args.mutation.intent === "add" && args.matchExternalId) {
     return {
       kind: "external" as const,
       displayName,
@@ -232,6 +239,11 @@ export function connectorConnectionMutationReadPlan(
         eq(connectors.userId, args.userId),
         targetCondition(args.target),
         eq(connectors.externalId, args.matchExternalId),
+        eq(connectors.externalIssuer, args.matchExternalIssuer ?? ""),
+        eq(
+          connectorConnectionExternalPrincipal(),
+          args.matchExternalPrincipal ?? "",
+        ),
       ),
       orderBy: [connectors.id],
       limit: 2,
@@ -339,8 +351,10 @@ function connectorConnectionMutationResolution(
       displayName,
       isDefault,
       allowSiblings: args.allowSiblings,
+      matchExternalIssuer: args.matchExternalIssuer ?? "",
+      matchExternalPrincipal: args.matchExternalPrincipal ?? "",
       matchExternalId:
-        args.mutation.intent === "add" ? (args.matchExternalId ?? null) : null,
+        args.mutation.intent === "add" ? args.matchExternalId || null : null,
     };
   };
   if (selection.kind === "external") {
@@ -463,6 +477,7 @@ export function connectorConnectionMetadataWritePlan(
 ): ConnectorConnectionMetadataWrite {
   const context = connectorConnectionMetadataValues(args);
   if (args.resolution.kind === "update") {
+    const identity = args.resolution.insertIfMissing;
     return {
       kind: "update",
       phase: "existing",
@@ -475,6 +490,16 @@ export function connectorConnectionMetadataWritePlan(
       where: and(
         context.ownerCondition,
         eq(connectors.id, args.resolution.existing.id),
+        identity?.matchExternalId
+          ? and(
+              eq(connectors.externalId, identity.matchExternalId),
+              eq(connectors.externalIssuer, identity.matchExternalIssuer),
+              eq(
+                connectorConnectionExternalPrincipal(),
+                identity.matchExternalPrincipal,
+              ),
+            )
+          : undefined,
       ),
     };
   }
@@ -489,6 +514,8 @@ function connectorConnectionIdentityWrite(
   const sameIdentity = and(
     context.ownerCondition,
     eq(connectors.externalId, matchExternalId),
+    eq(connectors.externalIssuer, insert.matchExternalIssuer),
+    eq(connectorConnectionExternalPrincipal(), insert.matchExternalPrincipal),
   );
   return {
     kind: "update",

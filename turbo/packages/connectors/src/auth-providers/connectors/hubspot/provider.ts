@@ -37,6 +37,7 @@ export const hubspotProvider: AuthCodeConnectorAuthProvider<"hubspot"> = {
         scopes: result.scopes,
         userInfo: {
           id: result.userInfo.id,
+          identityNamespace: result.userInfo.identityNamespace,
           username: result.userInfo.hubDomain,
           email: result.userInfo.email,
         },

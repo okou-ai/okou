@@ -142,6 +142,7 @@ describe("Builtin external-code session expiration", () => {
           intent: "add",
         },
       );
+      mockAwsExternalCodeProvider({ accountId: "111111111111" });
       const defaultAccount = await completeSession(actor, defaultSession);
       const siblingSession = await connectors.startExternalCode(
         actor,
@@ -151,6 +152,7 @@ describe("Builtin external-code session expiration", () => {
           intent: "add",
         },
       );
+      mockAwsExternalCodeProvider();
       const siblingAccount = await completeSession(actor, siblingSession);
       expect(siblingAccount.connectionId).not.toBe(defaultAccount.connectionId);
       const expected = [
