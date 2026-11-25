@@ -5896,16 +5896,26 @@
         "resetUsage": "Reimposta l'utilizzo"
       },
       "antigravity": {
-        "check": "Verifica accesso",
-        "error": "Controlla l’ambiente di accesso che ti è stato assegnato e riprova.",
-        "expired": "La sessione di accesso è scaduta. Ricollega il tuo account.",
-        "openTerminal": "Apri il terminale di accesso a Google",
-        "terminal": "Esegui questo comando nel terminale e accedi con il tuo account Google AI personale.",
-        "title": "Google AI (Antigravity)",
-        "unassigned": "Chiedi a un amministratore di assegnarti un terminale di accesso.",
-        "verify": "Questo comando usa il tuo abbonamento per inviare una richiesta a ciascuno dei modelli Neon, Carbon e Hydrogen."
+        "title": "Google AI (Antigravity)"
       },
       "deviceAuth": {
+        "antigravity": {
+          "address": "Indirizzo dal browser",
+          "addressPlaceholder": "http://localhost:51121/oauth-callback?…",
+          "addressRequired": "Incolla l'indirizzo dal browser per continuare.",
+          "connectedToast": "Account Google AI connesso",
+          "connectTitle": "Connetti Google AI (Antigravity)",
+          "expired": "L'accesso è scaduto. Ricomincia.",
+          "failed": "Accesso a Google non riuscito. Riprova.",
+          "instructions": "Approva l'accesso con il tuo account personale Google AI Pro o Ultra. Google apre poi una pagina che non si carica. Copia l'indirizzo completo di quella pagina dal browser e incollalo qui sotto.",
+          "openApproval": "Apri l'accesso a Google",
+          "preparing": "Preparazione dell'accesso a Google…",
+          "reconnectAction": "Accedi di nuovo",
+          "reconnectTitle": "Riconnetti Google AI (Antigravity)",
+          "signIn": "Accedi con Google",
+          "submit": "Connetti",
+          "usageNotice": "Pilota interno per il personale. Google può limitare gli account usati tramite client di terze parti."
+        },
         "claude": {
           "authorizationCode": "Codice di autorizzazione",
           "codePlaceholder": "Incolla il codice da Claude",

@@ -5805,16 +5805,26 @@
         "resetUsage": "使用量をリセットする"
       },
       "antigravity": {
-        "check": "ログイン状態を確認",
-        "error": "割り当てられたログイン環境を確認して、もう一度お試しください。",
-        "expired": "ログインの有効期限が切れました。もう一度接続してください。",
-        "openTerminal": "Google ログイン用のターミナルを開く",
-        "terminal": "ターミナルで次のコマンドを実行し、個人の Google AI アカウントでログインしてください。",
-        "title": "Google AI（Antigravity）",
-        "unassigned": "ログイン用のターミナルを管理者に割り当ててもらってください。",
-        "verify": "このコマンドはサブスクリプションの利用枠を使い、Neon、Carbon、Hydrogen にそれぞれ 1 件のリクエストを送信します。"
+        "title": "Google AI（Antigravity）"
       },
       "deviceAuth": {
+        "antigravity": {
+          "address": "ブラウザのアドレス",
+          "addressPlaceholder": "http://localhost:51121/oauth-callback?…",
+          "addressRequired": "続行するにはブラウザのアドレスを貼り付けてください。",
+          "connectedToast": "Google AI アカウントを接続しました",
+          "connectTitle": "Google AI（Antigravity）に接続",
+          "expired": "サインインの有効期限が切れました。もう一度開始してください。",
+          "failed": "Google サインインに失敗しました。もう一度お試しください。",
+          "instructions": "個人の Google AI Pro または Ultra アカウントでアクセスを承認してください。その後 Google が読み込めないページを開きます。ブラウザでそのページの完全なアドレスをコピーし、下に貼り付けてください。",
+          "openApproval": "Google サインインを開く",
+          "preparing": "Google サインインを準備しています…",
+          "reconnectAction": "もう一度サインイン",
+          "reconnectTitle": "Google AI（Antigravity）に再接続",
+          "signIn": "Google でサインイン",
+          "submit": "接続",
+          "usageNotice": "社内スタッフ向けのパイロットです。Google はサードパーティ クライアント経由で使用されるアカウントを制限する場合があります。"
+        },
         "claude": {
           "authorizationCode": "認証コード",
           "codePlaceholder": "Claude からコードを貼り付けます",
