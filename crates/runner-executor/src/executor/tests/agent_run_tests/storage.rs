@@ -3,7 +3,9 @@ use std::sync::Arc;
 
 use api_contracts::generated::types::runners::storage::ArtifactEntryMissingRootPolicy;
 use guest_contracts::{storage_files, storage_manifest::Manifest};
-use sandbox::{ExecResult, SandboxError, SandboxOperation, SandboxOperationReason};
+use sandbox::{
+    ExecResult, ExecTermination, SandboxError, SandboxOperation, SandboxOperationReason,
+};
 use sandbox_mock::MockLifecycleGate;
 use sha2::{Digest, Sha256};
 
@@ -93,6 +95,20 @@ fn memory_archive(memory_id: &str, note: &[u8]) -> (Vec<u8>, String, [u8; 32]) {
 
 #[tokio::test]
 async fn failed_memory_delta_uses_authoritative_full_restore_before_spawning() {
+    run_memory_delta_failure(ExecResult::new(1, Vec::new(), Vec::new()), None).await;
+}
+
+#[tokio::test]
+async fn memory_delta_with_uncertain_guest_stop_does_not_restore_or_spawn() {
+    let failed = ExecResult {
+        termination: ExecTermination::WaitFailed,
+        diagnostic: "Failed to clean storage helper process containment".into(),
+        ..ExecResult::new(1, Vec::new(), Vec::new())
+    };
+    run_memory_delta_failure(failed, Some("Memory delta failed (wait failed)")).await;
+}
+
+async fn run_memory_delta_failure(delta_result: ExecResult, expected_startup_error: Option<&str>) {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
     let owner = "member-memory";
@@ -166,9 +182,9 @@ async fn failed_memory_delta_uses_authoritative_full_restore_before_spawning() {
             .is_some()
     );
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
-    overrides.push_storage_manifest_result(Ok(ExecResult::new(1, Vec::new(), Vec::new())));
+    overrides.push_storage_manifest_result(Ok(delta_result));
     let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
-    run_in_sandbox(
+    let result = run_in_sandbox(
         sandbox.as_ref(),
         &context,
         &config,
@@ -182,8 +198,7 @@ async fn failed_memory_delta_uses_authoritative_full_restore_before_spawning() {
         &mut telemetry,
         controls,
     )
-    .await
-    .unwrap();
+    .await;
 
     let calls = overrides.storage_manifest_calls();
     let (manifest, _) = storage_files::split_input(&calls[0].manifest_json).unwrap();
@@ -192,17 +207,25 @@ async fn failed_memory_delta_uses_authoritative_full_restore_before_spawning() {
         delta.artifacts[0].archive_url.as_deref(),
         Some(storage_files::MEMORY_DELTA_URL)
     );
-    assert!(calls[1..].iter().any(|call| {
-        let manifest = storage_files::split_input(&call.manifest_json)
-            .map_or(call.manifest_json.as_slice(), |(json, _)| json);
-        let full: Manifest = serde_json::from_slice(manifest).unwrap();
-        full.cleanup_paths == [mount]
-            && full
-                .artifacts
-                .iter()
-                .any(|artifact| artifact.vas_version_id.as_deref() == Some(&target_version))
-    }));
-    assert_eq!(overrides.start_agent_process_calls().len(), 1);
+    if let Some(expected_error) = expected_startup_error {
+        let error = result.err().expect("uncertain delta must fail startup");
+        assert!(error.to_string().contains(expected_error), "{error}");
+        assert_eq!(calls.len(), 1);
+        assert!(overrides.start_agent_process_calls().is_empty());
+    } else {
+        result.unwrap();
+        assert!(calls[1..].iter().any(|call| {
+            let manifest = storage_files::split_input(&call.manifest_json)
+                .map_or(call.manifest_json.as_slice(), |(json, _)| json);
+            let full: Manifest = serde_json::from_slice(manifest).unwrap();
+            full.cleanup_paths == [mount]
+                && full
+                    .artifacts
+                    .iter()
+                    .any(|artifact| artifact.vas_version_id.as_deref() == Some(&target_version))
+        }));
+        assert_eq!(overrides.start_agent_process_calls().len(), 1);
+    }
     config.background_fill.shutdown().await;
 }
 

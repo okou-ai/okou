@@ -2,8 +2,11 @@
 //! Pending, unusual, or failed observations produce no reuse proof.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::ffi::OsStr;
 use std::fs::File;
 use std::io::{self, Read};
+use std::mem::MaybeUninit;
+use std::os::unix::fs::MetadataExt as _;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -12,11 +15,12 @@ use guest_contracts::memory_tree;
 use rustix::fs::{AtFlags, Statx, StatxFlags, flistxattr_query, statx};
 use sha2::{Digest, Sha256};
 
-use crate::nofollow_fs::{Dir, FileIdentity, file_identity};
+use crate::nofollow_fs::{Dir, FileIdentity};
 
 const GUEST_USER_ID: u32 = 1000;
 const GUEST_GROUP_ID: u32 = 1000;
 const INSPECTION_BUDGET: Duration = Duration::from_millis(100);
+const DIRECTORY_BUFFER_BYTES: usize = 4 * 1024;
 
 pub(crate) fn capture(mount: &str) -> io::Result<[u8; 32]> {
     let relative = memory_tree::mount_relative_to_home(mount).ok_or_else(unavailable)?;
@@ -24,7 +28,6 @@ pub(crate) fn capture(mount: &str) -> io::Result<[u8; 32]> {
     let device = root.identity()?;
     for part in relative.split('/') {
         let dir = root.as_file().metadata()?;
-        use std::os::unix::fs::MetadataExt as _;
         // A full restore would inherit a parent ACL or setgid directory.
         if dir.mode() & 0o2000 != 0 || flistxattr_query(root.as_file())? != 0 {
             return Err(unavailable());
@@ -43,7 +46,8 @@ pub(crate) fn capture(mount: &str) -> io::Result<[u8; 32]> {
     scan.walk(&root, "")?;
     let expected = memory_tree::parent_directories(scan.files.keys().map(String::as_str))
         .ok_or_else(unavailable)?;
-    if !scan.directories.iter().map(String::as_str).eq(expected) {
+    if Instant::now() >= scan.deadline || !scan.directories.iter().map(String::as_str).eq(expected)
+    {
         return Err(unavailable());
     }
     Ok(memory_tree::digest(&scan.files))
@@ -66,13 +70,22 @@ impl TreeScan {
         if state.stx_mode & 0o7777 != 0o755 {
             return Err(unavailable());
         }
-        for entry in dir.read_dir()? {
+        // Access-time updates would otherwise dirty the Home while proving it.
+        let mut buffer = [MaybeUninit::<u8>::uninit(); DIRECTORY_BUFFER_BYTES];
+        let mut entries = dir.read_dir_noatime(&mut buffer)?;
+        loop {
             if Instant::now() >= self.deadline {
                 return Err(unavailable());
             }
+            let Some(entry) = entries.next() else {
+                return Ok(());
+            };
             let entry = entry?;
-            let name = entry.file_name();
-            let basename = name.to_str().ok_or_else(unavailable)?;
+            let basename = entry.file_name().to_str().map_err(|_| unavailable())?;
+            if matches!(basename, "." | "..") {
+                continue;
+            }
+            let name = OsStr::new(basename);
             let path = if relative.is_empty() {
                 basename.to_owned()
             } else {
@@ -83,20 +96,19 @@ impl TreeScan {
             {
                 return Err(unavailable());
             }
-            let file_type = entry.file_type()?;
+            let file_type = entry.file_type();
             if file_type.is_dir() && self.directories.len() + 1 < memory_tree::MAX_DIRECTORIES {
-                let child = dir.open_child_dir(&name)?;
+                let child = dir.open_child_dir(name)?;
                 self.directories.insert(path.clone());
                 self.walk(&child, &path)?;
             } else if file_type.is_file() && self.files.len() < memory_tree::MAX_FILES {
-                let file = dir.open_child_file(&name)?;
+                let file = dir.open_child_file_noatime(name)?;
                 let state = self.read_file(file)?;
                 self.files.insert(path, state);
             } else {
                 return Err(unavailable());
             }
         }
-        Ok(())
     }
 
     fn read_file(&mut self, file: File) -> io::Result<memory_tree::FileState> {
@@ -138,9 +150,9 @@ impl TreeScan {
 }
 
 fn plain_inode(file: &File, device: FileIdentity) -> io::Result<Statx> {
-    file_identity(file)?.ensure_same_mount(device)?;
-    let mask = StatxFlags::BASIC_STATS;
+    let mask = StatxFlags::BASIC_STATS | StatxFlags::MNT_ID;
     let stat = statx(file, c"", AtFlags::EMPTY_PATH, mask)?;
+    FileIdentity::from_statx(&stat)?.ensure_same_mount(device)?;
     if !StatxFlags::from_bits_retain(stat.stx_mask).contains(mask)
         || stat.stx_uid != GUEST_USER_ID
         || stat.stx_gid != GUEST_GROUP_ID

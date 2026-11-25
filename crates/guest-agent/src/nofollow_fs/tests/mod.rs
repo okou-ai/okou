@@ -1,5 +1,40 @@
 use super::*;
+use std::io::Read;
 use std::os::unix::fs::symlink;
+use std::time::{Duration, UNIX_EPOCH};
+
+#[test]
+fn proof_reads_preserve_file_and_directory_access_times() {
+    let tree = tempfile::tempdir().unwrap();
+    let leaf = tree.path().join("note.md");
+    fs::write(&leaf, b"memory").unwrap();
+    let accessed = UNIX_EPOCH + Duration::from_secs(1_000_000_000);
+    let times = fs::FileTimes::new().set_accessed(accessed);
+    for path in [tree.path(), leaf.as_path()] {
+        File::open(path).unwrap().set_times(times).unwrap();
+    }
+
+    let dir = Dir::open(tree.path()).unwrap();
+    let mut buffer = [MaybeUninit::<u8>::uninit(); 1024];
+    let mut entries = dir.read_dir_noatime(&mut buffer).unwrap();
+    let mut found_leaf = false;
+    while let Some(entry) = entries.next() {
+        if entry.unwrap().file_name() == c"note.md" {
+            found_leaf = true;
+            break;
+        }
+    }
+    assert!(found_leaf);
+    let mut content = Vec::new();
+    dir.open_child_file_noatime(OsStr::new("note.md"))
+        .unwrap()
+        .read_to_end(&mut content)
+        .unwrap();
+    assert_eq!(content, b"memory");
+    for path in [tree.path(), leaf.as_path()] {
+        assert_eq!(fs::metadata(path).unwrap().accessed().unwrap(), accessed);
+    }
+}
 
 #[test]
 fn cooperative_stop_inside_a_subtree_preserves_partial_progress() {

@@ -24,7 +24,7 @@ use std::io;
 #[cfg(target_os = "linux")]
 use std::mem::MaybeUninit;
 #[cfg(target_os = "linux")]
-use std::os::fd::AsRawFd;
+use std::os::fd::{AsRawFd, OwnedFd};
 #[cfg(target_os = "linux")]
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 #[cfg(target_os = "linux")]
@@ -33,7 +33,7 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
 #[cfg(target_os = "linux")]
-use rustix::fs::{AtFlags, RawDir, SeekFrom, StatxFlags};
+use rustix::fs::{AtFlags, RawDir, SeekFrom, Statx, StatxFlags};
 
 #[cfg(target_os = "linux")]
 const REMOVE_RAW_DIR_BUFFER_BYTES: usize = 4 * 1024;
@@ -43,6 +43,9 @@ const REMOVE_ENTRY_CHUNK_MAX_NAMES: usize = 256;
 const REMOVE_ENTRY_CHUNK_MAX_NAME_BYTES: usize = REMOVE_RAW_DIR_BUFFER_BYTES;
 #[cfg(target_os = "linux")]
 const REMOVE_DIRECTORY_MAX_DEPTH: usize = 256;
+#[cfg(target_os = "linux")]
+const CHILD_FILE_READ_FLAGS: i32 =
+    libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK;
 
 #[cfg(target_os = "linux")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -54,6 +57,21 @@ pub(crate) struct FileIdentity {
 
 #[cfg(target_os = "linux")]
 impl FileIdentity {
+    pub(crate) fn from_statx(stat: &Statx) -> io::Result<Self> {
+        let mask = StatxFlags::INO | StatxFlags::MNT_ID;
+        if !StatxFlags::from_bits_retain(stat.stx_mask).contains(mask) {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "filesystem identity is unavailable",
+            ));
+        }
+        Ok(Self {
+            device: (stat.stx_dev_major, stat.stx_dev_minor),
+            inode: stat.stx_ino,
+            mount_id: stat.stx_mnt_id,
+        })
+    }
+
     pub(crate) fn ensure_same_mount(self, expected: Self) -> io::Result<()> {
         if self.device == expected.device && self.mount_id == expected.mount_id {
             Ok(())
@@ -100,6 +118,26 @@ impl Dir {
             "/proc/self/fd/{}",
             self.0.as_raw_fd()
         )))
+    }
+
+    /// Read directory entries without dirtying the inode's access time.
+    pub(crate) fn read_dir_noatime<'a>(
+        &self,
+        buffer: &'a mut [MaybeUninit<u8>],
+    ) -> io::Result<RawDir<'a, OwnedFd>> {
+        use rustix::fs::{Mode, OFlags, openat};
+
+        let fd = openat(
+            &self.0,
+            c".",
+            OFlags::RDONLY
+                | OFlags::DIRECTORY
+                | OFlags::NOFOLLOW
+                | OFlags::CLOEXEC
+                | OFlags::NOATIME,
+            Mode::empty(),
+        )?;
+        Ok(RawDir::new(fd, buffer))
     }
 
     pub(crate) fn try_clone(&self) -> io::Result<Self> {
@@ -156,11 +194,11 @@ impl Dir {
     }
 
     pub(crate) fn open_child_file(&self, name: &OsStr) -> io::Result<File> {
-        open_child(
-            &self.0,
-            name,
-            libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK,
-        )
+        open_child(&self.0, name, CHILD_FILE_READ_FLAGS)
+    }
+
+    pub(crate) fn open_child_file_noatime(&self, name: &OsStr) -> io::Result<File> {
+        open_child(&self.0, name, CHILD_FILE_READ_FLAGS | libc::O_NOATIME)
     }
 
     pub(crate) fn create_child_dir(&self, name: &OsStr) -> io::Result<Self> {
@@ -428,17 +466,7 @@ fn entry_chunk_budget_error() -> io::Error {
 pub(crate) fn file_identity(file: &File) -> io::Result<FileIdentity> {
     let mask = StatxFlags::INO | StatxFlags::MNT_ID;
     let stat = rustix::fs::statx(file, c"", AtFlags::EMPTY_PATH, mask)?;
-    if !StatxFlags::from_bits_retain(stat.stx_mask).contains(mask) {
-        return Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "filesystem identity is unavailable",
-        ));
-    }
-    Ok(FileIdentity {
-        device: (stat.stx_dev_major, stat.stx_dev_minor),
-        inode: stat.stx_ino,
-        mount_id: stat.stx_mnt_id,
-    })
+    FileIdentity::from_statx(&stat)
 }
 
 #[cfg(target_os = "linux")]

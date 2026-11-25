@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use guest_contracts::storage_files::{self, StorageFile};
 use guest_contracts::storage_manifest::Manifest;
 use sandbox::{
-    EXEC_OUTPUT_LIMIT_1_MIB, EXEC_OUTPUT_LIMIT_64_KIB, ExecRequest, Sandbox,
+    EXEC_OUTPUT_LIMIT_1_MIB, EXEC_OUTPUT_LIMIT_64_KIB, ExecRequest, ExecTermination, Sandbox,
     StorageManifestRequest, StorageManifestTiming,
 };
 use tracing::{info, warn};
@@ -442,8 +442,14 @@ pub(super) async fn apply_memory_delta(
             timeout: DEFAULT_EXEC_TIMEOUT,
         })
         .await?;
-    // A returned result owns a settled operation. A transport error has no
-    // such guarantee and must propagate without another mutation in this VM.
+    // The Guest also reports process containment cleanup failures as WaitFailed.
+    // Treat these like a transport failure because the writer may still have custody.
+    if result.termination == ExecTermination::WaitFailed {
+        return Err(RunnerError::Internal(format_helper_exec_failure(
+            "Memory delta",
+            &result,
+        )));
+    }
     Ok(helper_exec_succeeded(&result))
 }
 
