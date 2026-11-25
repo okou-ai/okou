@@ -1,6 +1,6 @@
 {
   "sources": {
-    "turbo/packages/core/src/workspace-logo.ts": "b8b89192a90c8720b60dbef1b947fb67b487852c9d81888c78d514bf339550be",
+    "turbo/packages/core/src/workspace-logo.ts": "9c77c13216c26ce7798506405974132b499335970055bd15abfe8769812204b6",
     "turbo/packages/core/src/agent-avatar-texture.ts": "f1538a6a5a86d8b364954303e45fd62fe7bc2db71536569271193596d10602bb"
   },
   "assets": [

@@ -115,7 +115,7 @@ export function workspaceInitial(name: string): string | null {
     if (!LETTER_OR_NUMBER.test(segment)) {
       continue;
     }
-    // Locale-independent, as on iOS and Android: a Turkish browser keeps "I".
+    // Locale-independent, so a Turkish browser still shows "I".
     const upper = segment.toUpperCase();
     return [...segmenter.segment(upper)].length === 1 ? upper : segment;
   }
