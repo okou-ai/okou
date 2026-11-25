@@ -339,12 +339,12 @@ remote-access	src/signals/routes/__tests__/cloudflare-access-custom-connectors.t
 remote-access	src/signals/routes/__tests__/cloudflare-access-lifecycle.test.ts	cloudflare-access-lifecycle-001	rewritten	101.0	
 remote-access	src/signals/routes/__tests__/cloudflare-access-lifecycle.test.ts	cloudflare-access-lifecycle-004	rewritten	144.0	
 remote-access	src/signals/routes/__tests__/cloudflare-access-lifecycle.test.ts	cloudflare-access-lifecycle-005	rewritten	143.2	
-remote-access	src/signals/routes/__tests__/cloudflare-access-promotion-deletion.test.ts	cloudflare-access-promotion-deletion-001	planned		
-remote-access	src/signals/routes/__tests__/cloudflare-access-promotion-deletion.test.ts	cloudflare-access-promotion-deletion-002	planned		
-remote-access	src/signals/routes/__tests__/cloudflare-access-promotion-deletion.test.ts	cloudflare-access-promotion-deletion-003	planned		
-remote-access	src/signals/routes/__tests__/cloudflare-access-promotion-deletion.test.ts	cloudflare-access-promotion-deletion-004	planned		
-remote-access	src/signals/routes/__tests__/cloudflare-access-promotion-deletion.test.ts	cloudflare-access-promotion-deletion-008	planned		
-remote-access	src/signals/routes/__tests__/cloudflare-access-promotion-deletion.test.ts	cloudflare-access-promotion-deletion-012	planned		
+remote-access	src/signals/routes/__tests__/cloudflare-access-promotion-deletion.test.ts	cloudflare-access-promotion-deletion-001	rewritten	156.0	
+remote-access	src/signals/routes/__tests__/cloudflare-access-promotion-deletion.test.ts	cloudflare-access-promotion-deletion-002	rewritten	78.6	
+remote-access	src/signals/routes/__tests__/cloudflare-access-promotion-deletion.test.ts	cloudflare-access-promotion-deletion-003	rewritten	78.7	
+remote-access	src/signals/routes/__tests__/cloudflare-access-promotion-deletion.test.ts	cloudflare-access-promotion-deletion-004	rewritten	131.6	
+remote-access	src/signals/routes/__tests__/cloudflare-access-promotion-deletion.test.ts	cloudflare-access-promotion-deletion-008	rewritten	38.6	
+remote-access	src/signals/routes/__tests__/cloudflare-access-promotion-deletion.test.ts	cloudflare-access-promotion-deletion-012	rewritten	49.0	
 remote-access	src/signals/routes/__tests__/remote-control-deletion-versions.test.ts	remote-control-deletion-versions-001	planned		
 remote-access	src/signals/routes/__tests__/remote-control-deletion-versions.test.ts	remote-control-deletion-versions-004	planned		
 remote-access	src/signals/routes/__tests__/remote-control-deletion-versions.test.ts	remote-control-deletion-versions-005	planned		
