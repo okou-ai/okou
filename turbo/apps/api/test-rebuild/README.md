@@ -2,7 +2,7 @@
 
 The frozen main commit is `0797b30b16f1c2dbe0c07fd4fa17a4cd8dabd989`. The upstream comparison through `4629019afe215bc58715c57aed6dbb9f09ee6d11` found no changes under `turbo/apps/api`.
 
-Vitest collected 599 files and 7,453 cases. All 7,453 are in run mode, with zero skips, todos or focused cases. Vitest's independent `list --project=api --filesOnly` output matched the runtime file set exactly. The partial reconciliation checked 65 complete BDD files and 300 cases, including 257 review entries. The other 534 files and 7,153 cases are pending.
+Vitest collected 599 files and 7,453 cases. All 7,453 are in run mode, with zero skips, todos or focused cases. Vitest's independent `list --project=api --filesOnly` output matched the runtime file set exactly. The kickoff partial reconciliation checked 65 complete BDD files and 300 cases, including 257 review entries. The other 534 files and 7,153 cases are pending.
 
 `baseline.json` records the Vitest 5.1.1 runtime task tree for the entire `api` project with the repository's setup and config. Collection registers and expands cases without executing test bodies. Entries use the test file's stem and the runtime registration order, including separate IDs for parameter rows with the same full name. A null location means Vitest did not report an entry-file location, which can happen when tests are registered by a separate suite module.
 
@@ -110,9 +110,14 @@ The source review refined the Auto routing and Runner BDDs to capture the actual
 | `run-lifecycle-billing.bdd-001` | Followed registration into the billing group. Each member's 108 credits reconcile with the exact 80 and 28 provider split, with model token totals zero. |
 | `run-lifecycle-automatic.bdd-003` | Query routing still uses OAuth, and reconnect leaves the original pinned auth lookup failing with HTTP 424. |
 | `marketing-reward-routing-002` | A provider acknowledgement alone leaves bonus credits at zero. Replaying after authorized settlement yields one 100-credit reward. |
-| `discord-interactions-verification-001` | Reviewed the verification matrix against its distinct 300-second past and 30-second future windows and confirmed its oversized response is 400. |
+| `discord-interactions-verification-026` | The oversized signed Discord interaction is rejected with 400. The Gateway suite uses 413. |
 | `custom-connector-cloudflare-oauth-019` | The bound token exchange sends an Access credential header, and the public account response excludes the credential value. |
 | `custom-connector-cloudflare-oauth-021` | The unbound connector uses the same protected provider without an Access credential header. |
 | `custom-connector-auth-modes-003` | Failed bundle upload returns 500, preserves the old Skill, permits a retry and separately supports explicit null clearing. |
 | `composer-draft-002` | Both native 0.60.0 clients see a file projection for voice, while iOS 0.61.0 keeps the original document. The feedback sources remain intact. |
 | `member-settings-lifecycle-003` | Followed the signed Clerk membership deletion and reinitialization. The departing member, administrator and same user in another workspace each preserve the saved setting. |
+| `discord-oauth-035` | Concurrent same-owner callbacks both return 200 while preserving a single binding and welcome. |
+| `discord-oauth-059` | Separate workspaces survive overlapping disconnect work. |
+| `discord-oauth-060` | The BDD records what OpenTelemetry exports without adding assertions about request logs. |
+| `data-router-004` | Initial cancellation charges three credits, and cancellation replay plus terminal callback do not charge again. |
+| `browser-screenshot-publication-002` | Retired previews remain suspended until their owning chats are deleted. The surviving chat can reopen its saved URL. |
