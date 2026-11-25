@@ -7,6 +7,7 @@ enum class InstructionsPhase {
     Loading,
     Ready,
     Saving,
+    Checking,
     Uncertain,
     Failed,
     Unavailable,
@@ -18,6 +19,7 @@ enum class InstructionsRequest {
     Refreshing,
     Preparing,
     Sending,
+    CheckingSave,
 }
 
 enum class InstructionsRead {
@@ -43,7 +45,6 @@ data class PersonalInstructionsState(
     val persistence: InstructionsPersistence = InstructionsPersistence.Durable,
     val saveRejected: Boolean = false,
     val saveConfirmed: Boolean = false,
-    val recoveryVersion: String? = null,
 ) {
     val content: String
         get() = draft?.content ?: saved?.content.orEmpty()
@@ -63,6 +64,7 @@ data class PersonalInstructionsState(
                 request == InstructionsRequest.Reading -> InstructionsPhase.Loading
                 request == InstructionsRequest.Preparing ||
                     request == InstructionsRequest.Sending -> InstructionsPhase.Saving
+                request == InstructionsRequest.CheckingSave -> InstructionsPhase.Checking
                 read == InstructionsRead.Unavailable -> InstructionsPhase.Unavailable
                 draft?.attempted == true -> InstructionsPhase.Uncertain
                 read == InstructionsRead.Failed -> InstructionsPhase.Failed
@@ -86,10 +88,6 @@ data class PersonalInstructionsState(
                 draft.content != saved.content &&
                 !draft.content.contains('\u0000')
 
-    val canRetrySave: Boolean
-        get() =
-            !busy &&
-                read != InstructionsRead.Unavailable &&
-                draft?.attempted == true &&
-                recoveryVersion == draft.base.version
+    val saveInProgress: Boolean
+        get() = phase == InstructionsPhase.Saving || phase == InstructionsPhase.Checking
 }

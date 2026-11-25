@@ -56,9 +56,11 @@ the request settles. The panel closes after the save is confirmed, and save
 feedback stays in the operation area. An explicit save uses the latest confirmed
 version. A definitive stale-version rejection reads back the latest value and
 retries once with that version if the text differs. Clearing the field and saving
-clears Instructions. A lost save response reads the server back. An unresolved
-attempt stays frozen until that read or an explicit retry with the same version
-resolves it.
+clears Instructions. A lost save response reads the server back with the shared
+bounded read retry policy. Matching text confirms the save. A different server
+value restores the edit against the latest confirmed version. If reads end
+without a result, the editor retains the attempted draft until a later read or
+confirmed discard.
 
 Activities for the same API origin/user/workspace share one editing transaction
 while retaining their own native selection and session authorization. Request

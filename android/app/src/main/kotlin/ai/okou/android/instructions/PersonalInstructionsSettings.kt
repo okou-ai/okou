@@ -1,5 +1,7 @@
 package ai.okou.android.instructions
 
+import ai.okou.android.OkouActionButton
+import ai.okou.android.OkouActionTreatment
 import ai.okou.android.OkouConfirmationDialog
 import ai.okou.android.OkouFormActions
 import ai.okou.android.OkouFormFieldError
@@ -16,25 +18,21 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.isImeVisible
-import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.InputTransformation
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -44,17 +42,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.liveRegion
@@ -69,7 +65,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -165,7 +160,6 @@ internal fun PersonalInstructionsSettings(
             LaunchedEffect(input) { input.observe(model) { closeAfterSave = false } }
             input
         } else null
-    val saving = state.phase == InstructionsPhase.Saving
     val fieldError =
         if (state.content.contains('\u0000')) stringResource(R.string.instructions_invalid)
         else null
@@ -176,9 +170,9 @@ internal fun PersonalInstructionsSettings(
     fun confirmDismiss(): Boolean {
         acceptNativeInput()
         val current = model.uiState.value
-        if (current.phase == InstructionsPhase.Saving) return false
+        if (current.saveInProgress) return false
         val draft = current.draft
-        if (draft != null && !draft.attempted) {
+        if (draft != null) {
             if (discardDraft == null) discardDraft = draft
             return false
         }
@@ -193,15 +187,16 @@ internal fun PersonalInstructionsSettings(
     fun save() {
         acceptNativeInput()
         val current = model.uiState.value
-        if (!current.canSave && !current.canRetrySave) return
+        if (!current.canSave) return
         closeAfterSave = true
         model.save()
     }
     SettingsSheet(
         title,
         ::requestDismiss,
-        dismissible = !saving,
-        confirmDismiss = if (saving || state.draft?.attempted == false) ::confirmDismiss else null,
+        dismissible = !state.saveInProgress,
+        confirmDismiss =
+            if (state.saveInProgress || state.draft != null) ::confirmDismiss else null,
         fullScreenInShortWindow = true,
         actionSpacing = OkouFormLayout.GroupGap,
         actions = { InstructionsActions(state, model, ::requestDismiss, ::save) },
@@ -214,8 +209,6 @@ internal fun PersonalInstructionsSettings(
                 val focus = remember { FocusRequester() }
                 val restoreFocus = remember { editorFocused }
                 val restoreKeyboard = remember { editorKeyboardVisible }
-                val keyboard = LocalSoftwareKeyboardController.current
-                val window = LocalWindowInfo.current
                 val keyboardVisible = WindowInsets.isImeVisible
                 SideEffect {
                     if (editorFocused && lifecycle.currentState == Lifecycle.State.RESUMED) {
@@ -223,15 +216,7 @@ internal fun PersonalInstructionsSettings(
                     }
                 }
                 LaunchedEffect(focus) {
-                    if (
-                        restoreFocus && focus.requestFocus() && !restoreKeyboard && keyboard != null
-                    ) {
-                        // The field starts its input session on the next frame in the focused
-                        // window.
-                        snapshotFlow { window.isWindowFocused }.first { it }
-                        withFrameNanos {}
-                        keyboard.hide()
-                    }
+                    if (restoreFocus) focus.requestFocus()
                 }
                 val colors = MaterialTheme.colorScheme
                 val textStyle = MaterialTheme.typography.bodyLarge
@@ -266,6 +251,8 @@ internal fun PersonalInstructionsSettings(
                     isError = fieldError != null,
                     lineLimits =
                         TextFieldLineLimits.MultiLine(minHeightInLines = 3, maxHeightInLines = 8),
+                    keyboardOptions =
+                        KeyboardOptions(showKeyboardOnFocus = !restoreFocus || restoreKeyboard),
                     shape = RoundedCornerShape(12.dp),
                     colors =
                         OutlinedTextFieldDefaults.colors(focusedBorderColor = colors.onSurface),
@@ -339,80 +326,61 @@ private fun InstructionsActions(
     save: () -> Unit,
 ) {
     val saving = state.phase == InstructionsPhase.Saving
-    val checkingSave =
-        state.request == InstructionsRequest.Reading && state.draft?.attempted == true
-    val unresolvedSave = checkingSave || state.phase == InstructionsPhase.Uncertain
-    val checkSavedVersion = unresolvedSave || state.phase == InstructionsPhase.Failed
-    val statusLine = with(LocalDensity.current) { 20.sp.toDp() }
     val operationMessage =
         when {
             state.localFailure -> R.string.instructions_local_failed
             state.saveRejected -> R.string.instructions_save_rejected
-            unresolvedSave -> R.string.instructions_uncertain
+            state.phase == InstructionsPhase.Checking -> R.string.instructions_checking
+            state.phase == InstructionsPhase.Uncertain -> R.string.instructions_uncertain
             state.read == InstructionsRead.RefreshFailed -> R.string.instructions_refresh_failed
             else -> null
         }
     val saveLabel = stringResource(R.string.instructions_save)
     val savingLabel = stringResource(R.string.settings_saving)
-    val retryLabel = stringResource(R.string.instructions_retry_save)
+    val statusStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp)
     Column(Modifier.fillMaxWidth()) {
         OkouFormActions(
             cancelLabel = stringResource(R.string.settings_cancel),
-            confirmLabel =
-                when {
-                    saving -> savingLabel
-                    state.canRetrySave -> retryLabel
-                    else -> saveLabel
-                },
+            confirmLabel = if (saving) savingLabel else saveLabel,
             cancel = cancel,
             confirm = save,
-            cancelEnabled = !saving,
-            confirmEnabled = state.canSave || state.canRetrySave,
-            confirmLayoutLabels = listOf(saveLabel, savingLabel, retryLabel),
+            cancelEnabled = !state.saveInProgress,
+            confirmEnabled = state.canSave,
+            confirmLayoutLabels = listOf(saveLabel, savingLabel),
         )
-        Column(Modifier.fillMaxWidth().animateContentSize().heightIn(min = statusLine)) {
-            if (operationMessage != null) {
-                Text(
-                    stringResource(operationMessage),
-                    Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style =
-                        MaterialTheme.typography.bodyMedium.copy(
-                            fontSize = 14.sp,
-                            lineHeight = 20.sp,
-                        ),
-                )
-            }
-            if (checkSavedVersion || state.localFailure) {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (checkSavedVersion)
-                        InstructionsAction(
-                            R.string.instructions_refresh,
-                            model::refresh,
-                            !state.busy,
-                        )
-                    if (state.localFailure)
-                        InstructionsAction(R.string.retry, model::retryLocalDraft, !state.busy)
+        Column(Modifier.fillMaxWidth().animateContentSize()) {
+            Box(Modifier.fillMaxWidth()) {
+                for (message in
+                    listOf(
+                        R.string.instructions_checking,
+                        R.string.instructions_uncertain,
+                        R.string.instructions_save_rejected,
+                        R.string.instructions_local_failed,
+                        R.string.instructions_refresh_failed,
+                    )) {
+                    Text(
+                        stringResource(message),
+                        Modifier.clearAndSetSemantics {}.alpha(0f),
+                        style = statusStyle,
+                    )
+                }
+                if (operationMessage != null) {
+                    Text(
+                        stringResource(operationMessage),
+                        Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = statusStyle,
+                    )
                 }
             }
+            if (state.localFailure) {
+                OkouActionButton(
+                    label = stringResource(R.string.retry),
+                    onClick = model::retryLocalDraft,
+                    enabled = !state.busy,
+                    treatment = OkouActionTreatment.Text,
+                )
+            }
         }
-    }
-}
-
-@Composable
-private fun InstructionsAction(label: Int, action: () -> Unit, enabled: Boolean) {
-    TextButton(
-        onClick = action,
-        enabled = enabled,
-        modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
-        shape = RoundedCornerShape(12.dp),
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-        colors =
-            ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
-    ) {
-        Text(
-            stringResource(label),
-            style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp, lineHeight = 20.sp),
-        )
     }
 }

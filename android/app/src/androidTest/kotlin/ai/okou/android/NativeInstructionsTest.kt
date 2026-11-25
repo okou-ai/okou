@@ -169,6 +169,7 @@ class NativeInstructionsTest {
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             awaitIme(false)
             reveal(app.getString(R.string.instructions_title))
+            device.waitForIdle()
             scenario.recreate()
             assertTrue(editor(requireFocus = true).text.contains("Native **instructions** 👋"))
             device.waitForIdle()
@@ -230,9 +231,23 @@ class NativeInstructionsTest {
                                 input.endBatchEdit()
                             }
                         }
-                        editor(expectedText = "zhongwen")
                     }
                 } else null
+            val composingText =
+                if (connection == null) localDraft
+                else
+                    checkNotNull(
+                            device.wait(
+                                Until.findObject(
+                                    By.pkg(app.packageName)
+                                        .clazz("android.widget.EditText")
+                                        .focused(true)
+                                        .textContains("zhongwen"),
+                                ),
+                                10_000,
+                            ),
+                        )
+                        .text
             val webText = "Changed on Web"
             fixture.externalEdit(webText)
             scenario.onActivity { model.refresh() }
@@ -248,12 +263,15 @@ class NativeInstructionsTest {
             if (connection == null) {
                 assertEquals(localDraft, editor().text)
             } else {
-                assertEquals("zhongwen", editor(requireFocus = true).text)
+                assertEquals(composingText, editor(requireFocus = true).text)
                 instrumentation.runOnMainSync {
                     assertTrue(connection.setComposingText("中文", 1))
                     assertTrue(connection.finishComposingText())
                 }
-                editor(expectedText = "中文", requireFocus = true)
+                editor(
+                    expectedText = composingText.replaceFirst("zhongwen", "中文"),
+                    requireFocus = true,
+                )
                 assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
                 awaitIme(false)
             }

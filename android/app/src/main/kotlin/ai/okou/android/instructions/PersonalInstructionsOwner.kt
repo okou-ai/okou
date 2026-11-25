@@ -2,6 +2,7 @@ package ai.okou.android.instructions
 
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.PersonalInstructions
+import ai.okou.android.api.retryBoundedRead
 import ai.okou.android.auth.WorkspaceIdentity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -131,9 +132,9 @@ internal class PersonalInstructionsOwner(
 
     fun discardEdits(connection: Connection, draft: InstructionsDraft): Boolean {
         val state = mutable.value
-        if (!connection.current() || state.phase == InstructionsPhase.Saving) return false
+        if (!connection.current() || state.saveInProgress) return false
         if (state.draft == null) return true
-        if (state.draft !== draft || draft.attempted) return false
+        if (state.draft !== draft) return false
         replaceDraft(null, state.copy(saveRejected = false))
         return true
     }
@@ -172,7 +173,6 @@ internal class PersonalInstructionsOwner(
                 request =
                     if (background) InstructionsRequest.Refreshing else InstructionsRequest.Reading,
                 read = if (background) InstructionsRead.Ready else before.read,
-                recoveryVersion = null,
             )
         op.job =
             connection.scope.launch {
@@ -200,10 +200,7 @@ internal class PersonalInstructionsOwner(
                                     else InstructionsPersistence.Failed,
                             )
                     }
-                    requireCurrent(op)
-                    val saved = connection.service.personalInstructions()
-                    requireCurrent(op)
-                    acceptRead(saved)
+                    read(op)
                 } catch (cancelled: CancellationException) {
                     finish(op, interrupted = true)
                     throw cancelled
@@ -219,11 +216,9 @@ internal class PersonalInstructionsOwner(
         store.rememberConfirmed(identity, saved)
         val state = mutable.value
         val draft = state.draft
-        val next = state.copy(saved = saved, read = InstructionsRead.Ready, recoveryVersion = null)
+        val next = state.copy(saved = saved, read = InstructionsRead.Ready)
         when {
             draft == null -> mutable.value = next
-            draft.attempted && saved.version == draft.base.version ->
-                mutable.value = next.copy(recoveryVersion = saved.version)
             draft.content == saved.content ->
                 replaceDraft(
                     null,
@@ -232,18 +227,17 @@ internal class PersonalInstructionsOwner(
                         saveConfirmed = settlingSave || draft.attempted,
                     ),
                 )
-            draft.attempted -> replaceDraft(draft.copy(attempted = false), next)
+            draft.attempted ->
+                replaceDraft(draft.copy(attempted = false), next.copy(saveRejected = true))
             else -> mutable.value = next
         }
     }
 
     fun save(connection: Connection) {
         val before = mutable.value
-        if (!connection.current() || (!before.canSave && !before.canRetrySave)) return
-        val draft = checkNotNull(before.draft)
+        if (!connection.current() || !before.canSave) return
         val attempt =
-            if (draft.attempted) draft
-            else draft.copy(base = checkNotNull(before.saved), attempted = true)
+            checkNotNull(before.draft).copy(base = checkNotNull(before.saved), attempted = true)
         val op = Operation(connection, before)
         val refresh = operation
         operation = op
@@ -268,7 +262,6 @@ internal class PersonalInstructionsOwner(
                     request = InstructionsRequest.Preparing,
                     saveRejected = false,
                     saveConfirmed = false,
-                    recoveryVersion = null,
                 ),
             ),
         )
@@ -280,7 +273,6 @@ internal class PersonalInstructionsOwner(
     ) {
         var attempt = initialAttempt
         var receipt = initialReceipt
-        val resolvingEarlierWrite = checkNotNull(op.before.draft).attempted
         repeat(2) { index ->
             try {
                 send(op, attempt, receipt)
@@ -290,10 +282,10 @@ internal class PersonalInstructionsOwner(
             } catch (error: Exception) {
                 if (!current(op)) return
                 val status = (error as? ApiFailure.Http)?.status
-                if (!resolvingEarlierWrite && status == 409 && index == 0) {
+                if (status == 409 && index == 0) {
                     // This request was definitively rejected. Freeze the same text on the new base.
                     replaceDraft(attempt.copy(attempted = false))
-                    val latest = readAfterSave(op)
+                    val latest = read(op, settlingSave = true)
                     if (latest == null) {
                         if (current(op)) mutable.value = mutable.value.copy(saveRejected = true)
                         return
@@ -301,7 +293,7 @@ internal class PersonalInstructionsOwner(
                     if (latest.content == attempt.content) return
                     attempt = attempt.copy(base = latest)
                     receipt = prepare(attempt)
-                } else if (!resolvingEarlierWrite && (status == 400 || status == 409)) {
+                } else if (status == 400 || status == 409) {
                     replaceDraft(
                         attempt.copy(attempted = false),
                         mutable.value.copy(saveRejected = true),
@@ -310,7 +302,7 @@ internal class PersonalInstructionsOwner(
                 } else {
                     report(op.connection, error)
                     requireCurrent(op)
-                    readAfterSave(op)
+                    read(op, settlingSave = true)
                     return
                 }
             }
@@ -341,18 +333,29 @@ internal class PersonalInstructionsOwner(
         acceptRead(saved, settlingSave = true)
     }
 
-    private suspend fun readAfterSave(op: Operation): PersonalInstructions? =
-        try {
-            val saved = op.connection.service.personalInstructions()
-            requireCurrent(op)
-            acceptRead(saved, settlingSave = true)
-            saved
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (error: Exception) {
-            failRead(op, error)
-            null
-        }
+    private suspend fun read(op: Operation, settlingSave: Boolean = false): PersonalInstructions? {
+        requireCurrent(op)
+        var result: PersonalInstructions? = null
+        suspend fun attempt(): Exception? =
+            try {
+                val saved = op.connection.service.personalInstructions()
+                requireCurrent(op)
+                acceptRead(saved, settlingSave)
+                result = saved
+                null
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                error
+            }
+        val error =
+            if (mutable.value.draft?.attempted == true) {
+                mutable.value = mutable.value.copy(request = InstructionsRequest.CheckingSave)
+                retryBoundedRead({ current(op) }, ::attempt)
+            } else attempt()
+        if (error != null) failRead(op, error)
+        return result
+    }
 
     private fun failRead(op: Operation, error: Exception) {
         if (!current(op)) return
@@ -368,7 +371,7 @@ internal class PersonalInstructionsOwner(
                     InstructionsRead.RefreshFailed
                 else -> InstructionsRead.Failed
             }
-        mutable.value = state.copy(read = read, recoveryVersion = null)
+        mutable.value = state.copy(read = read)
     }
 
     private fun report(connection: Connection, error: Exception) {
@@ -387,7 +390,8 @@ internal class PersonalInstructionsOwner(
         val preparing = mutable.value.request == InstructionsRequest.Preparing
         val reading =
             mutable.value.request == InstructionsRequest.Reading ||
-                mutable.value.request == InstructionsRequest.Refreshing
+                mutable.value.request == InstructionsRequest.Refreshing ||
+                mutable.value.request == InstructionsRequest.CheckingSave
         operation = null
         val state = mutable.value
         val next =
@@ -398,11 +402,6 @@ internal class PersonalInstructionsOwner(
                         InstructionsRead.Failed
                     else state.read,
             )
-        if (preparing) {
-            replaceDraft(
-                op.before.draft,
-                next.copy(recoveryVersion = op.before.recoveryVersion),
-            )
-        } else mutable.value = next
+        if (preparing) replaceDraft(op.before.draft, next) else mutable.value = next
     }
 }

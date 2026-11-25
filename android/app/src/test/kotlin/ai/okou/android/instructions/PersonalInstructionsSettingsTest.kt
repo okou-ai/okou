@@ -301,40 +301,35 @@ class PersonalInstructionsSettingsTest {
         input.performScrollTo().performTextClearance()
         assertEquals("", input.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
         app.fixture.disconnectSave = true
-        app.fixture.rejectRead = true
         val markdown = "**Accepted** despite lost response"
         input.performScrollTo().performTextReplacement(markdown)
         val saveReply = CountDownLatch(1)
+        val checkReply = CountDownLatch(1)
         app.fixture.beforeSave = { saveReply.await() }
+        app.fixture.beforeRead = { checkReply.await() }
         try {
             val cancel = compose.onNodeWithText("Cancel")
             save.performScrollTo()
             val idleSaveBounds = save.getUnclippedBoundsInRoot()
             val idleCancelBounds = cancel.getUnclippedBoundsInRoot()
+            val idleEditorBounds = input.getUnclippedBoundsInRoot()
             save.performClick()
             val pending = compose.onNodeWithText(app.getString(R.string.settings_saving))
             pending.assertIsDisplayed().assertIsNotEnabled()
             assertEquals(idleSaveBounds, pending.getUnclippedBoundsInRoot())
             assertEquals(idleCancelBounds, cancel.getUnclippedBoundsInRoot())
-            input.assertExists()
+            saveReply.countDown()
+            awaitPhase(InstructionsPhase.Checking)
+            compose
+                .onNodeWithText(app.getString(R.string.instructions_checking))
+                .assertIsDisplayed()
+            save.assertIsNotEnabled()
+            assertEquals(idleSaveBounds, save.getUnclippedBoundsInRoot())
+            assertEquals(idleCancelBounds, cancel.getUnclippedBoundsInRoot())
+            assertEquals(idleEditorBounds, input.getUnclippedBoundsInRoot())
+            input.assertTextEquals(markdown)
         } finally {
             saveReply.countDown()
-        }
-        awaitPhase(InstructionsPhase.Uncertain)
-        val checkVersion = compose.onNodeWithText(app.getString(R.string.instructions_refresh))
-        checkVersion.performScrollTo().assertIsEnabled()
-        val checkBounds = checkVersion.getUnclippedBoundsInRoot()
-        val draftBounds = input.getUnclippedBoundsInRoot()
-        val checkReply = CountDownLatch(1)
-        app.fixture.rejectRead = false
-        app.fixture.beforeRead = { checkReply.await() }
-        try {
-            checkVersion.performClick()
-            awaitPhase(InstructionsPhase.Loading)
-            checkVersion.assertIsNotEnabled()
-            assertEquals(checkBounds, checkVersion.getUnclippedBoundsInRoot())
-            assertEquals(draftBounds, input.getUnclippedBoundsInRoot())
-        } finally {
             checkReply.countDown()
         }
         compose.waitUntil(10_000) {
