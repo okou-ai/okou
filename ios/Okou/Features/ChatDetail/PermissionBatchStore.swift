@@ -1,21 +1,58 @@
+import CCState
 import ChatData
 import ChatDomain
 import Foundation
-import Observation
 
-@MainActor @Observable
+@MainActor
 final class PermissionBatchStore {
+  /// The card's state besides its read phase, kept in the workspace session graph.
+  struct Presentation: Equatable {
+    var isActive = false
+    /// Counts activations. Each activation asks the row to load the review again.
+    var activation = 0
+    var duration: ChatPermissionAction.Duration
+    /// The reviewed list and uncertain-write reconciliation survive read cache eviction.
+    var snapshot: ChatPermissionBatchSnapshot?
+    /// Changes with every reviewed list, which is not itself comparable.
+    var snapshotRevision = 0
+    var isBusy = false
+    var isSaving = false
+    var isContinuing = false
+    var hasContinued = false
+    var requiresReadback = false
+    /// Read errors remain in the original Task; this is an explicit-operation failure.
+    var error: String?
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+      lhs.isActive == rhs.isActive && lhs.activation == rhs.activation
+        && lhs.duration == rhs.duration && lhs.snapshotRevision == rhs.snapshotRevision
+        && lhs.isBusy == rhs.isBusy && lhs.isSaving == rhs.isSaving
+        && lhs.isContinuing == rhs.isContinuing && lhs.hasContinued == rhs.hasContinued
+        && lhs.requiresReadback == rhs.requiresReadback && lhs.error == rhs.error
+    }
+
+    func displayedSnapshot(_ loaded: ChatPermissionBatchSnapshot?)
+      -> ChatPermissionBatchSnapshot?
+    {
+      if isBusy { return snapshot }
+      return loaded ?? snapshot
+    }
+
+    func canConfirm(
+      _ action: ChatPermissionBatchAction, reviewing snapshot: ChatPermissionBatchSnapshot?
+    ) -> Bool {
+      let allAllowed = snapshot?.allAllowed == true && !requiresReadback
+      let needsContinuation = allAllowed && action.callbackPrompt != nil && !hasContinued
+      return isActive && !isBusy && !requiresReadback && snapshot?.complete == true
+        && (!allAllowed || needsContinuation)
+    }
+  }
+
   let action: ChatPermissionBatchAction
-  var duration: ChatPermissionAction.Duration
-  // The reviewed list and uncertain-write reconciliation survive read cache eviction.
-  private(set) var snapshot: ChatPermissionBatchSnapshot?
-  private(set) var isActive = false
-  private(set) var isSaving = false
-  private(set) var isContinuing = false
-  private(set) var hasContinued = false
-  private(set) var requiresReadback = false
-  // Read errors remain in the original Task; this is an explicit-operation failure.
-  private(set) var error: String?
+  let presentation: Computed<Presentation>
+  /// The workspace session Store that keeps this card's graph values.
+  private let store: CCState.Store
+  private let model: CCState.State<Presentation>
   private let commands: ChatCommands
   private let sync: ChatSync
   private let didFail: @MainActor (Error) -> Void
@@ -30,40 +67,58 @@ final class PermissionBatchStore {
 
   init(
     action: ChatPermissionBatchAction, resources: PermissionCardResources, commands: ChatCommands,
-    sync: ChatSync,
+    sync: ChatSync, graph: CCState.Store,
     didFail: @escaping @MainActor (Error) -> Void,
     didContinue: @escaping @MainActor () async -> Void
   ) {
     self.action = action
     self.resources = resources
-    duration = action.duration
     self.commands = commands
     self.sync = sync
     self.didFail = didFail
     self.didContinue = didContinue
+    store = graph
+    let model = CCState.State(Presentation(duration: action.duration))
+    self.model = model
+    presentation = Computed { get in try get(model) }
   }
 
   var read: PermissionCardRead<ChatPermissionBatchSnapshot> { resources.read(action) }
+  private var current: Presentation {
+    do { return try store.get(model) } catch {
+      preconditionFailure("Cannot read the permission batch graph: \(error)")
+    }
+  }
+  var duration: ChatPermissionAction.Duration {
+    get { current.duration }
+    set { update { $0.duration = newValue } }
+  }
+  var snapshot: ChatPermissionBatchSnapshot? { current.snapshot }
+  var isActive: Bool { current.isActive }
+  var isSaving: Bool { current.isSaving }
+  var isContinuing: Bool { current.isContinuing }
+  var hasContinued: Bool { current.hasContinued }
+  var requiresReadback: Bool { current.requiresReadback }
+  var error: String? { current.error }
   var allAllowed: Bool { snapshot?.allAllowed == true && !requiresReadback }
   var needsContinuation: Bool { allAllowed && action.callbackPrompt != nil && !hasContinued }
   var canConfirm: Bool { canConfirm(reviewing: snapshot) }
 
   func displayedSnapshot(_ loaded: ChatPermissionBatchSnapshot?) -> ChatPermissionBatchSnapshot? {
-    if operation != nil { return snapshot }
-    return loaded ?? snapshot
+    current.displayedSnapshot(loaded)
   }
 
   func canConfirm(reviewing snapshot: ChatPermissionBatchSnapshot?) -> Bool {
-    let allAllowed = snapshot?.allAllowed == true && !requiresReadback
-    let needsContinuation = allAllowed && action.callbackPrompt != nil && !hasContinued
-    return !closed && isActive && operation == nil && !requiresReadback
-      && snapshot?.complete == true
-      && (!allAllowed || needsContinuation)
+    !closed && operation == nil && current.canConfirm(action, reviewing: snapshot)
   }
 
   func activate() {
     guard !closed else { return }
-    isActive = true
+    update {
+      guard !$0.isActive else { return }
+      $0.isActive = true
+      $0.activation += 1
+    }
   }
 
   func loadIfNeeded() async { await load(refresh: false) }
@@ -73,16 +128,19 @@ final class PermissionBatchStore {
     guard !closed, isActive, operation == nil, !Task.isCancelled else { return }
     let generation = generation
     do {
-      let current = try await read.load(refresh: refresh)
+      let loaded = try await read.load(refresh: refresh)
       try Task.checkCancellation()
       guard !closed, isActive, operation == nil, self.generation == generation else { return }
-      snapshot = current
-      requiresReadback = false
-      if refresh { error = nil }
+      update {
+        $0.snapshot = loaded
+        $0.snapshotRevision += 1
+        $0.requiresReadback = false
+        if refresh { $0.error = nil }
+      }
     } catch is CancellationError {
     } catch {
       guard !closed, isActive, operation == nil, self.generation == generation else { return }
-      requiresReadback = true
+      update { $0.requiresReadback = true }
     }
   }
 
@@ -90,10 +148,14 @@ final class PermissionBatchStore {
     guard let reviewed = reviewed ?? snapshot, canConfirm(reviewing: reviewed), operation == nil,
       !Task.isCancelled
     else { return }
-    snapshot = reviewed
-    isSaving = !reviewed.allAllowed
-    isContinuing = reviewed.allAllowed
-    error = nil
+    update {
+      $0.snapshot = reviewed
+      $0.snapshotRevision += 1
+      $0.isBusy = true
+      $0.isSaving = !reviewed.allAllowed
+      $0.isContinuing = reviewed.allAllowed
+      $0.error = nil
+    }
     generation = UUID()
     let generation = generation
     let read = read
@@ -101,8 +163,11 @@ final class PermissionBatchStore {
       guard let self else { return }
       defer {
         if self.generation == generation {
-          isSaving = false
-          isContinuing = false
+          update {
+            $0.isBusy = false
+            $0.isSaving = false
+            $0.isContinuing = false
+          }
           operation = nil
           read.invalidate()
         }
@@ -130,14 +195,19 @@ final class PermissionBatchStore {
         }
         try Task.checkCancellation()
         guard !closed, self.generation == generation else { return }
-        snapshot = verified
-        isSaving = false
+        update {
+          $0.snapshot = verified
+          $0.snapshotRevision += 1
+          $0.isSaving = false
+        }
         if needsContinuation, let prompt = action.callbackPrompt {
-          isContinuing = true
+          update { $0.isContinuing = true }
           var delivered = false
           if continuationUncertain {
             try await commands.batchPermissions.validateContext(action)
             let history = try await sync.eventHistory(threadID: action.threadID)
+            try Task.checkCancellation()
+            guard !closed, self.generation == generation else { return }
             delivered = history.persistedEventIDs.contains(clientEventID)
           }
           if !delivered {
@@ -152,28 +222,37 @@ final class PermissionBatchStore {
           try Task.checkCancellation()
           guard !closed, self.generation == generation else { return }
           continuationUncertain = false
-          hasContinued = true
-          isContinuing = false
+          update {
+            $0.hasContinued = true
+            $0.isContinuing = false
+          }
           await didContinue()
         }
       } catch is CancellationError {
       } catch {
         guard !closed, self.generation == generation else { return }
-        self.error = ChatRequestFailure.message(for: error)
-        requiresReadback = true
+        let message = ChatRequestFailure.message(for: error)
+        update {
+          $0.error = message
+          $0.requiresReadback = true
+        }
         didFail(error)
         // A lost response or partial connector save cannot be blindly repeated.
         do {
-          let current = try await commands.batchPermissions.load(action)
+          let readback = try await commands.batchPermissions.load(action)
           try Task.checkCancellation()
           guard !closed, self.generation == generation else { return }
-          snapshot = current
-          requiresReadback = false
+          update {
+            $0.snapshot = readback
+            $0.snapshotRevision += 1
+            $0.requiresReadback = false
+          }
         } catch is CancellationError {
         } catch {
           // Keep the reviewed list, but require a successful read before another write.
           guard !closed, self.generation == generation else { return }
-          self.error = ChatRequestFailure.message(for: error)
+          let message = ChatRequestFailure.message(for: error)
+          update { $0.error = message }
           didFail(error)
         }
       }
@@ -183,17 +262,29 @@ final class PermissionBatchStore {
   }
 
   func deactivate() {
-    isActive = false
-    if isSaving || isContinuing { requiresReadback = true }
     generation = UUID()
     operation?.cancel()
     operation = nil
-    isSaving = false
-    isContinuing = false
+    update {
+      $0.isActive = false
+      if $0.isSaving || $0.isContinuing { $0.requiresReadback = true }
+      $0.isBusy = false
+      $0.isSaving = false
+      $0.isContinuing = false
+    }
   }
 
   func close() {
     closed = true
     deactivate()
+  }
+
+  // The card's state is a synchronous in-process value; replacing it cannot fail.
+  private func update(_ mutation: (inout Presentation) -> Void) {
+    var next = current
+    mutation(&next)
+    do { try store.set(model, next) } catch {
+      preconditionFailure("Cannot update the permission batch graph: \(error)")
+    }
   }
 }
