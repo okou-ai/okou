@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.250.12](https://github.com/okou-ai/okou/compare/runner-rs-v0.250.11...runner-rs-v0.250.12) (2026-11-25)
+
 ## [0.250.11](https://github.com/okou-ai/okou/compare/runner-rs-v0.250.10...runner-rs-v0.250.11) (2026-11-25)
 
 ### Release Dependencies

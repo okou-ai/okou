@@ -13,6 +13,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1180.1](https://github.com/okou-ai/okou/compare/app-v0.1180.0...app-v0.1180.1) (2026-11-25)
+
+
+### Bug Fixes
+
+* **app:** render unicode superscripts and subscripts in pdf exports ([#50728](https://github.com/okou-ai/okou/issues/50728)) ([9f50564](https://github.com/okou-ai/okou/commit/9f50564faa70a9149bcc4099e974e3291ebf7bca))
+
 ## [0.1180.0](https://github.com/okou-ai/okou/compare/app-v0.1179.2...app-v0.1180.0) (2026-11-25)
 
 
