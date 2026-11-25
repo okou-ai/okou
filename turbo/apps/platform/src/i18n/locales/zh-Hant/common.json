@@ -1203,11 +1203,7 @@
       "title": "降級套餐"
     },
     "feedback": {
-      "otherPlaceholder": "可以多說一點…",
-      "rewardTerms": "每個工作區僅一次 · 積分有效期 30 天",
-      "shareFeedback": "分享意見",
-      "submitFeedback": "提交回饋",
-      "thanks": "感謝你的回饋"
+      "shareFeedback": "分享意見"
     },
     "invoices": {
       "amount": "金額",

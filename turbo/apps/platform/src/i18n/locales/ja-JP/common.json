@@ -1203,11 +1203,7 @@
       "title": "ダウングレード計画"
     },
     "feedback": {
-      "otherPlaceholder": "詳しく教えてください…",
-      "rewardTerms": "ワークスペースごとに1回 · クレジットは30日間有効",
-      "shareFeedback": "フィードバックを送信",
-      "submitFeedback": "フィードバックを送信",
-      "thanks": "フィードバックありがとうございます"
+      "shareFeedback": "フィードバックを送信"
     },
     "invoices": {
       "amount": "金額",

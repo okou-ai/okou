@@ -2,7 +2,7 @@ import { MessageSquare } from "lucide-react";
 import { useGet, useLastResolved, useSet } from "ccstate-react";
 import { Button } from "@okouai/ui";
 import {
-  billingFeedbackOffer$,
+  creditsFeedbackOffer$,
   creditsFeedbackSurveyAvailable$,
   requestCreditsFeedback$,
 } from "../../../signals/billing-feedback.ts";
@@ -15,7 +15,7 @@ export function CreditsFeedbackButton({
 }: {
   readonly eligible: boolean;
 }) {
-  const offer = useLastResolved(billingFeedbackOffer$);
+  const offer = useLastResolved(creditsFeedbackOffer$);
   const available = useGet(creditsFeedbackSurveyAvailable$);
   const request = useSet(requestCreditsFeedback$);
   const signal = useGet(pageSignal$);

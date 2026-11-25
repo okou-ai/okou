@@ -25,6 +25,6 @@ export const posthogSurveysContract = initContract().router({
       500: apiErrorSchema,
       503: apiErrorSchema,
     },
-    summary: "Settle a verified PostHog billing survey reward",
+    summary: "Settle a verified PostHog credits-exhaustion survey reward",
   },
 });

@@ -1203,11 +1203,7 @@
       "title": "플랜 다운그레이드"
     },
     "feedback": {
-      "otherPlaceholder": "자세히 알려 주세요…",
-      "rewardTerms": "워크스페이스당 한 번 · 크레딧은 30일간 유효",
-      "shareFeedback": "의견 보내기",
-      "submitFeedback": "피드백 제출",
-      "thanks": "피드백 감사합니다"
+      "shareFeedback": "의견 보내기"
     },
     "invoices": {
       "amount": "금액",

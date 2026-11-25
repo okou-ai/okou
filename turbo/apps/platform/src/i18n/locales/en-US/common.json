@@ -1207,11 +1207,7 @@
       "title": "Downgrade plan"
     },
     "feedback": {
-      "otherPlaceholder": "Tell us more…",
-      "rewardTerms": "Once per workspace · Credits expire in 30 days",
-      "shareFeedback": "Share feedback",
-      "submitFeedback": "Submit feedback",
-      "thanks": "Thanks for your feedback"
+      "shareFeedback": "Share feedback"
     },
     "invoices": {
       "amount": "Amount",
