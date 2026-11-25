@@ -679,16 +679,16 @@ remote-access	src/signals/routes/__tests__/ssh-connections.test.ts	ssh-connectio
 remote-access	src/signals/routes/__tests__/ssh-connections.test.ts	ssh-connections-008	planned		extension after sandbox reset
 remote-access	src/signals/routes/__tests__/ssh-connections.test.ts	ssh-connections-009	planned		extension after sandbox reset
 webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-003	planned		extension after sandbox reset
-webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-004	planned		extension after sandbox reset
-webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-005	planned		extension after sandbox reset
-webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-007	planned		extension after sandbox reset
-webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-008	planned		extension after sandbox reset
-webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-009	planned		extension after sandbox reset
-webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-010	planned		extension after sandbox reset
-webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-012	planned		extension after sandbox reset
-webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-018	planned		extension after sandbox reset
-webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-019	planned		extension after sandbox reset
-webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-021	planned		extension after sandbox reset
+webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-004	skipped		isolated-db: signed Notion deliveries need the active verification token, which is stored once per database (re-verification returns 401) and persists in the shared test DB, so only an isolated DB can sign events
+webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-005	skipped		isolated-db: signed Notion deliveries need the active verification token, which is stored once per database (re-verification returns 401) and persists in the shared test DB, so only an isolated DB can sign events
+webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-007	skipped		isolated-db: signed Notion deliveries need the active verification token, which is stored once per database (re-verification returns 401) and persists in the shared test DB, so only an isolated DB can sign events
+webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-008	skipped		isolated-db: signed Notion deliveries need the active verification token, which is stored once per database (re-verification returns 401) and persists in the shared test DB, so only an isolated DB can sign events
+webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-009	planned		unfinished: out of time
+webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-010	planned		unfinished: out of time
+webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-012	planned		unfinished: out of time
+webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-018	skipped		isolated-db: signed Notion deliveries need the active verification token, which is stored once per database (re-verification returns 401) and persists in the shared test DB, so only an isolated DB can sign events
+webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-019	planned		unfinished: out of time
+webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-021	planned		unfinished: out of time
 workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-001	rewritten	128.0	extension after sandbox reset
 workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-002	rewritten	30.1	extension after sandbox reset
 workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-003	rewritten	6.3	extension after sandbox reset
