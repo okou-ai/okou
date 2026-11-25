@@ -130,13 +130,6 @@ test("bootstraps a WebSocket only for the Run owner and uses the assigned Runner
     wssUrl: `wss://${hostname}/runners/${identity.runnerId}/runs/${run.runId}`,
   });
   expect(granted.headers.get("cache-control")).toBe("no-store");
-
-  server.use(
-    http.post(controlUrl, () => {
-      return new HttpResponse(null, { status: 404 });
-    }),
-  );
-  await accept(bootstrap(f.actor), [404]);
 });
 
 test.each([

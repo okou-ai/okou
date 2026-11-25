@@ -57,12 +57,11 @@ hostname to request a ticket. The Runner keeps only the ticket digest in memory.
 
 Clients call `POST /api/runs/<runId>/wss/bootstrap` with user authentication. The
 API returns `wssUrl`, `ticket` and `expiresAt`. Connect to `wssUrl` and send
-`{"runId":"<runId>","ticket":"<ticket>"}` as the first text message. The Runner
-consumes the 30-second, one-use ticket and replies `{"type":"auth.ok"}`. The
-admission deadline is five seconds. Established channels support WebSocket
+`{"ticket":"<ticket>"}` as the first text message. The Runner consumes the
+30-second, one-use ticket for the Run in the URL and replies `{"type":"auth.ok"}`.
+The admission deadline is five seconds. Established channels support WebSocket
 Ping/Pong and close when the local Run ends or is cancelled. Reconnecting
-requires a new bootstrap. During rollout, bootstrap returns unavailable for
-Runs assigned to older Runners that lack the ticket endpoint.
+requires a new bootstrap.
 
 `playbooks/provision-runner.yml` is the shared host-dependency entry point used
 by Runner build/release/preview provisioning. Its cache covers the complete

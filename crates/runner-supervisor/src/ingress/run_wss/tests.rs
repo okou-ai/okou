@@ -70,23 +70,12 @@ async fn active_run_websocket_uses_a_single_ticket_on_the_exact_path_and_closes_
     assert_eq!(status, 200);
     assert!(headers.contains("cache-control: no-store"));
     let ticket: Value = serde_json::from_str(&body).unwrap();
-    let first = Message::Text(
-        json!({"runId": run, "ticket": ticket["ticket"]})
-            .to_string()
-            .into(),
-    );
+    let first = Message::Text(json!({"ticket": ticket["ticket"]}).to_string().into());
 
     let other_run = RunId::new_v4();
     let other_path = format!("{runner_path}/runs/{other_run}");
     let mut wrong_run = connect(&socket, &other_path).await;
-    wrong_run
-        .send(Message::Text(
-            json!({"runId": other_run, "ticket": ticket["ticket"]})
-                .to_string()
-                .into(),
-        ))
-        .await
-        .unwrap();
+    wrong_run.send(first.clone()).await.unwrap();
     assert!(
         next(&mut wrong_run)
             .await
@@ -145,10 +134,7 @@ async fn issued_ticket_expires_and_does_not_survive_run_cancellation() {
     tokio::time::advance(TICKET_LIFETIME).await;
     assert!(
         server
-            .redeem(
-                run,
-                &json!({"runId": run, "ticket": ticket.ticket}).to_string()
-            )
+            .redeem(run, &json!({"ticket": ticket.ticket}).to_string())
             .is_none()
     );
 
@@ -156,10 +142,7 @@ async fn issued_ticket_expires_and_does_not_survive_run_cancellation() {
     assert!(registration.request_hard_cancellation().await);
     assert!(
         server
-            .redeem(
-                run,
-                &json!({"runId": run, "ticket": ticket.ticket}).to_string()
-            )
+            .redeem(run, &json!({"ticket": ticket.ticket}).to_string())
             .is_none()
     );
     assert!(matches!(

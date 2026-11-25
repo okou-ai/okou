@@ -37,9 +37,8 @@ const MAX_MESSAGE_BYTES: usize = 256;
 const GENERATION_HEADER: &str = "x-okou-runner-heartbeat-generation";
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 struct FirstFrame {
-    run_id: RunId,
     ticket: String,
 }
 
@@ -164,9 +163,7 @@ impl RunWebSocket {
 
     fn redeem(&self, run_id: RunId, frame: &str) -> Option<LiveRun> {
         let first = serde_json::from_str::<FirstFrame>(frame).ok()?;
-        if first.run_id != run_id
-            || URL_SAFE_NO_PAD.decode(first.ticket.as_bytes()).ok()?.len() != 32
-        {
+        if URL_SAFE_NO_PAD.decode(first.ticket.as_bytes()).ok()?.len() != 32 {
             return None;
         }
         let digest: TicketDigest = Sha256::digest(first.ticket.as_bytes()).into();
