@@ -31,7 +31,6 @@ import {
 import {
   validateSuggestionFollowup$,
   recordAcceptedSuggestionFollowup$,
-  suggestionAccess$,
 } from "../services/agent-suggestions.service";
 
 const sendEventBody$ = bodyResultOf(chatEventsContract.send);
@@ -39,37 +38,12 @@ const sendEventBody$ = bodyResultOf(chatEventsContract.send);
 const prepareSuggestionSend$ = command(
   async (
     { get, set },
-    {
-      data,
-      bootstrap,
-    }: {
-      readonly data: ChatEventSendBody & {
-        readonly userMessage: UserMessageDocument;
-      };
-      readonly bootstrap: ReturnType<
-        (typeof startNormalSendBootstrap$)["write"]
-      >;
-    },
+    data: ChatEventSendBody & { readonly userMessage: UserMessageDocument },
     signal: AbortSignal,
   ) => {
     const auth = get(organizationAuthContext$);
     const document = data.userMessage;
     const timing = get(chatEnqueueTiming$);
-    const access = await measureChatEnqueue(
-      timing,
-      "suggestion_access",
-      async () => {
-        const flags = bootstrap
-          ? await get(bootstrap.context.featureSwitches$)
-          : undefined;
-        signal.throwIfAborted();
-        return set(suggestionAccess$, signal, flags?.overrides);
-      },
-    );
-    signal.throwIfAborted();
-    if ("status" in access) {
-      return null;
-    }
     const { threadId, clientEventId: eventId } = data;
     if (!threadId || !eventId || hasEmptySuggestionNote(document)) {
       return badRequestMessage(
@@ -133,7 +107,7 @@ export const sendValidatedChatEvent$ = command(
         ? settleIncludingAbort(
             set(
               prepareSuggestionSend$,
-              { data: { ...data, userMessage: document }, bootstrap },
+              { ...data, userMessage: document },
               signal,
             ),
           )

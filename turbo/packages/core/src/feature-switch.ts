@@ -137,9 +137,8 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "bingjie@okou.ai",
     displayName: "Markdown-first document output",
     description:
-      "Prefer Markdown for unformatted text documents, use a clearer heading hierarchy in document previews, and offer DOCX and PDF exports.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+      "Use Markdown for text-focused documents and HTML for visual or interactive deliverables, with structured Markdown previews and DOCX and PDF exports.",
+    enabled: true,
   },
   [FeatureSwitchKey.MarkdownArtifactQuote]: {
     maintainer: "bingjie@okou.ai",
@@ -181,19 +180,19 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,
   },
+  [FeatureSwitchKey.ComputerUseAppStateDirectTransfer]: {
+    maintainer: "lancy@okou.ai",
+    displayName: "Computer Use app state direct transfer",
+    description:
+      "Deliver the current Mac window state and PNG directly to the Run through its Runner.",
+    enabled: false,
+    staffOptInOnly: true,
+  },
   [FeatureSwitchKey.DesktopShell]: {
     maintainer: "lancy@okou.ai",
     displayName: "Desktop Shell",
     description:
       "Use interactive shells on an authorized computer with local opt-in.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.WorkflowRecencySync]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Workflow recency sync",
-    description:
-      "Sync recently used workflows across devices in each workspace.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -210,6 +209,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Browse artifacts in a searchable list with type filters, creation-time sorting, and the existing sidebar previews.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.SlashActions]: {
     maintainer: "tongx@okou.ai",
@@ -297,14 +297,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "tongx@okou.ai",
     description:
       "Expose personal subscription linking in the composer model slot and the account menu.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.AgentSuggestion]: {
-    maintainer: "lancy@okou.ai",
-    displayName: "Suggestions",
-    description:
-      "Update the user profile daily and curate useful next-step suggestions.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

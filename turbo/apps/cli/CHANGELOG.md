@@ -1,5 +1,20 @@
 # Changelog
 
+## [10.40.0](https://github.com/okou-ai/okou/compare/cli-v10.39.4...cli-v10.40.0) (2026-11-25)
+
+
+### Features
+
+* **cli:** add gated custom domain configuration ([#50696](https://github.com/okou-ai/okou/issues/50696)) ([6792328](https://github.com/okou-ai/okou/commit/679232832d580bf2b7545ed5ab99bb6ed4ce8159))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.876.0
+    * @okouai/pi-agent-runtime bumped to 1.52.70
+
 ## [10.39.4](https://github.com/okou-ai/okou/compare/cli-v10.39.3...cli-v10.39.4) (2026-11-25)
 
 

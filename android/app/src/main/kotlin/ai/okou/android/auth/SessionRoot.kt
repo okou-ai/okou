@@ -454,8 +454,7 @@ private fun WorkspaceSettingsContent(
                 },
             )
             if (instructionsOpen && ready != null) {
-                val chatState by ready.chats.uiState.collectAsStateWithLifecycle()
-                PersonalInstructionsSettings(ready.instructions, close, chatState.offline)
+                PersonalInstructionsSettings(ready.instructions, close)
             }
         }
     }

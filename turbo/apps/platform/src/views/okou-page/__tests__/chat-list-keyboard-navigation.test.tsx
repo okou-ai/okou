@@ -1,5 +1,4 @@
 import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -24,7 +23,7 @@ const history = [
 
 const [older, middle, newest] = history;
 
-async function openHistory(path: string, forYou: boolean) {
+async function openHistory(path: string) {
   context.mocks.browser.matchMedia((query) => {
     return query === "(min-width: 48rem)";
   });
@@ -52,7 +51,6 @@ async function openHistory(path: string, forYou: boolean) {
   await setupPage({
     context,
     path,
-    featureSwitches: { [FeatureSwitchKey.AgentSuggestion]: forYou },
   });
   await waitFor(() => {
     expect(sidebarThreadLinks()[0]).toHaveAttribute(
@@ -66,11 +64,15 @@ const up = "{Control>}{Shift>}{ArrowUp}{/Shift}{/Control}";
 
 const down = "{Control>}{Shift>}{ArrowDown}{/Shift}{/Control}";
 
-test("chat-list-entry-navigation-002 traverses New chat and the most recent thread in both directions", async () => {
-  await openHistory(`/chats/${newest.id}`, false);
+test("chat-list-entry-navigation-002 traverses New chat, For you and the most recent thread in both directions", async () => {
+  await openHistory(`/chats/${newest.id}`);
   const user = userEvent.setup({ delay: null });
   await screen.findByText("Release notes", {
     selector: '[data-testid="chat-thread-header-title"]',
+  });
+  await user.keyboard(up);
+  await waitFor(() => {
+    return expect(location.pathname).toBe("/for-you");
   });
   await user.keyboard(up);
   await waitFor(() => {
@@ -81,6 +83,10 @@ test("chat-list-entry-navigation-002 traverses New chat and the most recent thre
   });
   await user.keyboard(down);
   await waitFor(() => {
+    return expect(location.pathname).toBe("/for-you");
+  });
+  await user.keyboard(down);
+  await waitFor(() => {
     expect(sidebarThreadLinks()[0]).toHaveAttribute("aria-current", "page");
     expect(location.pathname).toBe(`/chats/${newest.id}`);
   });
@@ -88,7 +94,7 @@ test("chat-list-entry-navigation-002 traverses New chat and the most recent thre
 
 test("chat-list-entry-navigation-003 moves the focused side chat while keeping the main conversation open", async () => {
   const path = `/chats/${older.id}`;
-  await openHistory(`${path}?sidebar=${newest.id}`, true);
+  await openHistory(`${path}?sidebar=${newest.id}`);
   const user = userEvent.setup({ delay: null });
   const sideTitle = await screen.findByText("Release notes", {
     selector: '[data-testid="chat-thread-header-title"]',

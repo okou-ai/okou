@@ -212,6 +212,7 @@ internal constructor(
     }
 
     internal suspend fun info(id: String): ArtifactInfo {
+        if (id.startsWith(ExternalImagePreviewPrefix)) return externalImageInfo(id)
         val link = messageArtifactLink(id)
         if (link != null) {
             val reference = artifactReference(link)
@@ -328,6 +329,83 @@ internal constructor(
         return readBitmap(url, edge, MAX_IMAGE_BYTES)
     }
 
+    internal suspend fun readInlineImage(
+        source: String,
+        width: Int,
+        onAuthorized: (InlineImageGrant) -> Unit,
+    ): Bitmap? {
+        if (source.startsWith(ExternalImagePreviewPrefix)) {
+            val info = externalImageInfo(source)
+            val url = checkNotNull(info.resolvedAccess?.url)
+            val bitmap =
+                readBitmap(url, width, MAX_IMAGE_BYTES) ?: throw ApiFailure.IncompatibleResponse()
+            onAuthorized(InlineImageGrant(source, info.item.title))
+            return bitmap
+        }
+        val reference = artifactReference(source) ?: throw ApiFailure.IncompatibleResponse()
+        val resolved = api.resolveArtifactReference(reference)
+        val original = artifactHttpsUrl(resolved.url) ?: throw ApiFailure.IncompatibleResponse()
+        if (
+            resolved.target.kind != ArtifactReferenceTargetKind.FILE ||
+                !resolved.contentType.startsWith("image/", ignoreCase = true)
+        )
+            throw ApiFailure.IncompatibleResponse()
+        onAuthorized(InlineImageGrant(source, resolved.filename))
+        val resized = original.inlineThumbnail(width, resolved.contentType)
+        val cover =
+            resolved.previewImageUrl?.takeUnless {
+                it == resolved.url || artifactReference(it) == reference
+            }
+        return if (resized != null) readBitmap(resized, width, MAX_IMAGE_BYTES)
+        else thumbnail(cover, width)
+    }
+
+    private fun externalImageInfo(id: String): ArtifactInfo {
+        val url =
+            artifactHttpsUrl(id.removePrefix(ExternalImagePreviewPrefix))
+                ?: throw ApiFailure.IncompatibleResponse()
+        val filename = url.pathSegments.last().ifBlank { url.host }
+        val type = "image/*"
+        return ArtifactInfo(
+            ArtifactItem(id, filename, ArtifactKind.Image, null),
+            null,
+            ArtifactResource.File(url.toString(), filename, type, null),
+            resolvedAccess = ArtifactAccess(url, type, filename, previewOnly = true),
+        )
+    }
+
+    // These are the policy-checked delivery and signed R2 transform paths used by Web.
+    private fun HttpUrl.inlineThumbnail(width: Int, contentType: String): HttpUrl? {
+        if (
+            port != 443 ||
+                contentType.substringBefore(';').trim().lowercase(Locale.ROOT) !in
+                    thumbnailImageTypes
+        )
+            return null
+        val height = (width * 9 / 10).coerceAtLeast(1)
+        if (host in artifactDeliveryHosts && artifactDeliveryPath.matches(encodedPath)) {
+            return newBuilder()
+                .setQueryParameter("thumbnail", "1")
+                .setQueryParameter("width", width.toString())
+                .setQueryParameter("height", height.toString())
+                .setQueryParameter("fit", "scale-down")
+                .setQueryParameter("quality", "85")
+                .build()
+        }
+        val transform =
+            "/cdn-cgi/image/width=$width,height=$height,fit=scale-down,format=auto,quality=85,metadata=none"
+        if (
+            host.endsWith(".r2.cloudflarestorage.com") && queryParameter("X-Amz-Signature") != null
+        ) {
+            val origin =
+                if (referenceOrigins.any { it.host == "app.okou.ai" }) "https://a.okou.io"
+                else "https://cdn.vm7.io"
+            return artifactHttpsUrl("$origin$transform/$this")
+        }
+        if (host !in artifactResizeHosts || encodedPath.startsWith("/cdn-cgi/image/")) return null
+        return newBuilder().encodedPath("$transform$encodedPath").build()
+    }
+
     internal suspend fun save(file: ArtifactSave, destination: () -> OutputStream) {
         val grant =
             api.artifactDownload(file.reference) as? ArtifactDownloadVariant1
@@ -403,6 +481,21 @@ private fun messageSiteInfo(id: String, site: HttpUrl): ArtifactInfo =
     )
 
 private const val MAX_IMAGE_BYTES = 16L * 1024 * 1024
+private val artifactDeliveryHosts = setOf("a.okou.io", "files.sites.vm7.io")
+private val artifactResizeHosts =
+    artifactDeliveryHosts +
+        setOf("cdn.vm0.io", "cdn.okou.io", "cdn.vm7.io", "static.vm0.io", "static.okou.io")
+private val artifactDeliveryPath = Regex("/(?:[a-z0-9]{10}|[a-f0-9]{24})\\.[a-z0-9]{1,12}")
+private val thumbnailImageTypes =
+    setOf(
+        "image/avif",
+        "image/gif",
+        "image/heic",
+        "image/jpeg",
+        "image/png",
+        "image/svg+xml",
+        "image/webp",
+    )
 private const val MAX_TEXT_BYTES = 256L * 1024
 private val documentTypes =
     setOf(

@@ -1,6 +1,13 @@
+import { BILLING_FEEDBACK_SURVEYS } from "@okouai/core/billing-feedback";
 import type { SuggestionPreset } from "@okouai/api-contracts/validators/chat-threads";
 import { command, state } from "ccstate";
 import { posthog, type CaptureResult } from "posthog-js/dist/module.slim";
+import type { Survey } from "posthog-js";
+import {
+  buildSurveyResponseProperties,
+  getSurveyInteractionProperty,
+  getSurveyResponseKey,
+} from "@posthog/core/surveys";
 import { SurveysExtensions } from "posthog-js/dist/extension-bundles";
 import { isStandalonePwa } from "./keyboard-dismiss-gesture.ts";
 import { resolvePlatformRuntimeConfig } from "./platform-host.ts";
@@ -10,6 +17,8 @@ import type { ArtifactDownloadType } from "./artifact-download-type.ts";
 const RUNTIME_CONFIG = resolvePlatformRuntimeConfig();
 const POSTHOG_HOST = RUNTIME_CONFIG.postHogHost;
 const POSTHOG_KEY = RUNTIME_CONFIG.postHogKey;
+
+const BILLING_FEEDBACK_SEEN_USER = "billing_feedback_seen_user_id";
 
 const APP_FIRST_SKELETON_PAINT_EVENT = "app_first_skeleton_paint";
 const APP_FIRST_SKELETON_PAINT_DISTINCT_ID = "app-bootstrap";
@@ -110,7 +119,24 @@ export function initPostHog(): void {
       ui_host: "https://us.posthog.com",
       autocapture: false,
       capture_pageview: false,
-      before_send: sanitizePostHogCaptureResult,
+      before_send(captureResult) {
+        if (
+          captureResult?.event === "survey shown" &&
+          Object.values(BILLING_FEEDBACK_SURVEYS).some((surveyId) => {
+            return surveyId === captureResult.properties.$survey_id;
+          })
+        ) {
+          // Count an actual impression, including a dismissal without an answer.
+          // The person-level PostHog targeting rule covers subsequent devices.
+          posthog.register({
+            [BILLING_FEEDBACK_SEEN_USER]: posthog.get_distinct_id(),
+          });
+          for (const surveyId of Object.values(BILLING_FEEDBACK_SURVEYS)) {
+            posthog.surveys?.markSurveyAsSeen(surveyId);
+          }
+        }
+        return sanitizePostHogCaptureResult(captureResult);
+      },
       disable_session_recording: true,
       session_recording: {
         maskAllInputs: true,
@@ -674,7 +700,7 @@ export function captureBillingFunnelEvent(
 /** Use the SDK's display rules for both the entry point and the popover. */
 export function watchBillingFeedbackSurvey(
   surveyId: string,
-  onAvailability: (available: boolean) => void,
+  onAvailability: (survey: Survey | null) => void,
   signal: AbortSignal,
 ): void {
   if (signal.aborted) {
@@ -694,19 +720,27 @@ export function watchBillingFeedbackSurvey(
         if (signal.aborted) {
           return;
         }
+        const seen =
+          posthog.get_property(BILLING_FEEDBACK_SEEN_USER) ===
+          posthog.get_distinct_id();
         onAvailability(
-          surveysReady &&
-            flagsReady &&
-            surveys.some((survey) => {
-              return survey.id === surveyId;
-            }),
+          surveysReady && flagsReady && !seen
+            ? (surveys.find((survey) => {
+                return (
+                  survey.id === surveyId &&
+                  survey.questions.length === 1 &&
+                  survey.questions[0]?.type === "single_choice" &&
+                  Boolean(survey.questions[0].id)
+                );
+              }) ?? null)
+            : null,
         );
       }, true);
     };
     const unsubscribeSurveys = posthog.onSurveysLoaded((_surveys, context) => {
       surveysReady = context?.isLoaded === true;
       if (!surveysReady) {
-        onAvailability(false);
+        onAvailability(null);
       }
       requestWhenReady();
     });
@@ -715,7 +749,7 @@ export function watchBillingFeedbackSurvey(
       (_flags, _variants, context) => {
         flagsReady = context?.errorsLoading !== true;
         if (!flagsReady) {
-          onAvailability(false);
+          onAvailability(null);
         }
         requestWhenReady();
       },
@@ -744,47 +778,57 @@ export function watchBillingFeedbackSurvey(
   });
 }
 
-/** Fetch current targeting and launch state; the SDK owns rendering and lifecycle events. */
-export function displayBillingFeedbackSurvey(
-  surveyId: string,
-  properties: Record<string, unknown>,
-  language: string,
-  signal: AbortSignal,
+/** Use PostHog's event schema for the application-rendered billing surveys. */
+export function captureBillingFeedbackSurvey(
+  event: "survey shown" | "survey sent" | "survey dismissed",
+  {
+    survey,
+    language,
+    properties,
+    submissionId,
+  }: {
+    readonly survey: Survey;
+    readonly language: string | null;
+    readonly properties: Record<string, unknown>;
+    readonly submissionId: string;
+  },
+  response?: string,
 ): void {
   runPostHog(() => {
-    posthog.set_config({
-      override_display_language:
-        language === "zh-Hans"
-          ? "zh-CN"
-          : language === "zh-Hant"
-            ? "zh-TW"
-            : language,
+    const question = survey.questions[0];
+    const responses =
+      question?.id && response !== undefined
+        ? buildSurveyResponseProperties(
+            { [getSurveyResponseKey(question.id)]: response },
+            {
+              ...survey,
+              questions: [{ ...question, originalQuestionIndex: 0 }],
+            },
+          )
+        : {};
+    posthog.capture(event, {
+      ...properties,
+      $survey_id: survey.id,
+      $survey_name: survey.name,
+      $survey_iteration: survey.current_iteration,
+      $survey_iteration_start_date: survey.current_iteration_start_date,
+      $survey_submission_id: submissionId,
+      ...(language ? { $survey_language: language } : {}),
+      ...responses,
+      ...(event === "survey sent" ? { $survey_completed: true } : {}),
+      ...(event === "survey dismissed"
+        ? { $survey_partially_completed: false }
+        : {}),
+      ...(event !== "survey shown"
+        ? {
+            $set: {
+              [getSurveyInteractionProperty(
+                survey,
+                event === "survey sent" ? "responded" : "dismissed",
+              )]: true,
+            },
+          }
+        : {}),
     });
-    let requested = false;
-    watchBillingFeedbackSurvey(
-      surveyId,
-      (available) => {
-        if (!available || requested) {
-          return;
-        }
-        requested = true;
-        posthog.displaySurvey(surveyId, {
-          displayType: "popover",
-          ignoreConditions: false,
-          ignoreDelay: false,
-          properties,
-        });
-      },
-      signal,
-    );
-    signal.addEventListener(
-      "abort",
-      () => {
-        posthog.cancelPendingSurvey(surveyId);
-      },
-      {
-        once: true,
-      },
-    );
   });
 }

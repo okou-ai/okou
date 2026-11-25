@@ -1,5 +1,4 @@
 import { automationWorkflowJoinCondition } from "./workflow-visibility";
-import { selectDueMorningBriefWorkflow$ } from "./morning-brief-workflow-selection.service";
 import { workflowAutomationSnapshot } from "./workflow-automation-snapshot";
 import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
@@ -588,8 +587,7 @@ export const executeDueWorkflowAutomations$ = command(
       oldestExpiredAnchorAgeMs: 0,
     };
 
-    for (const original of rows) {
-      let row = original;
+    for (const row of rows) {
       if (await set(retireDepartedOwner$, row, currentTime, signal)) {
         counters.skipped++;
         continue;
@@ -635,22 +633,6 @@ export const executeDueWorkflowAutomations$ = command(
         scheduledAnchorAt !== null &&
         (await set(isCanonicalMorningBriefAutomation$, row.automation, signal));
       signal.throwIfAborted();
-      if (journaled) {
-        const selected = await set(
-          selectDueMorningBriefWorkflow$,
-          {
-            automation: row.automation,
-            workflowName: row.workflowName,
-          },
-          signal,
-        );
-        if (!selected) {
-          counters.skipped++;
-          continue;
-        }
-        row = { ...row, ...selected };
-      }
-
       const claimed =
         journaled || recurringScheduleClaim || proactiveKind === "learning"
           ? row.automation

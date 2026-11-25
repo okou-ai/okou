@@ -36,8 +36,6 @@
     <string name="settings_accounts_scope">Choisissez les comptes d’abonnement utilisés dans « %1$s ».</string>
     <string name="settings_accounts_scope_empty">Comptes de modèle dans « %1$s »</string>
     <string name="settings_workspace_status">« %1$s » · %2$s</string>
-    <string name="settings_accounts_offline">Hors ligne. Connectez-vous pour changer de compte.</string>
-    <string name="settings_accounts_offline_connect">Hors ligne. Connectez-vous pour associer un compte de modèle.</string>
     <string name="settings_accounts_unavailable">Impossible d’afficher les comptes de modèle pour le moment.</string>
     <string name="settings_accounts_update_failed">L’actualisation a échoué. Dernières données connues affichées.</string>
     <string name="settings_accounts_empty">Aucun compte de modèle associé</string>
@@ -66,7 +64,6 @@
     <string name="settings_credits_less_than">&lt; %1$s</string>
     <string name="settings_credit_balance">Solde de crédits</string>
     <string name="settings_credit_scope">Crédits Okou dans « %1$s »</string>
-    <string name="settings_credit_offline">Hors ligne. Dernier solde connu affiché.</string>
     <string name="settings_credit_update_failed">L’actualisation a échoué. Dernier solde connu affiché.</string>
     <string name="settings_credit_unavailable">Impossible d’afficher le solde pour le moment.</string>
     <string name="settings_credit_member">Forfait d’utilisation personnel</string>
@@ -83,7 +80,6 @@
     <string name="settings_model_plan_restricted">Autre abonnement requis</string>
     <string name="settings_model_fast">Mode rapide</string>
     <string name="settings_model_fast_usage">Une fois activé, ce mode multiplie par %1$s la consommation de l’abonnement ChatGPT par rapport au mode standard</string>
-    <string name="settings_model_load_when_online">Le contenu se chargera dès que vous serez de nouveau en ligne.</string>
     <string name="settings_model_save_rolled_back">Impossible d’enregistrer le modèle par défaut. Le réglage précédent a été rétabli.</string>
     <string name="settings_model_save_unconfirmed">L’enregistrement du modèle par défaut n’est pas encore confirmé.</string>
     <string name="settings_model_effort">Niveau de raisonnement</string>
@@ -98,7 +94,6 @@
     <string name="settings_proactive_services">Services proactifs</string>
     <string name="settings_proactive_scope">Ces paramètres s’appliquent dans « %1$s ».</string>
     <string name="settings_proactive_loading">Chargement des services proactifs</string>
-    <string name="settings_proactive_offline">Hors connexion. Connectez-vous pour modifier ce paramètre.</string>
     <string name="settings_proactive_needs_timezone">Choisissez un fuseau horaire pour programmer l’envoi.</string>
     <string name="settings_proactive_read_failed">Impossible de charger ce paramètre pour le moment.</string>
     <string name="settings_proactive_refresh_failed">Échec de la synchronisation. Le dernier paramètre confirmé est affiché.</string>

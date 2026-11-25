@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.65.7](https://github.com/okou-ai/okou/compare/ios-v0.65.6...ios-v0.65.7) (2026-11-25)
+
+
+### Refactoring
+
+* **ios:** keep the failure recovery state in the session graph ([#50722](https://github.com/okou-ai/okou/issues/50722)) ([d4491b4](https://github.com/okou-ai/okou/commit/d4491b4516895fe48a692663b6784a5146e12801))
+
+## [0.65.6](https://github.com/okou-ai/okou/compare/ios-v0.65.5...ios-v0.65.6) (2026-11-25)
+
+
+### Refactoring
+
+* **ios:** keep the conversation's delivery state in the session graph ([#50712](https://github.com/okou-ai/okou/issues/50712)) ([98141fe](https://github.com/okou-ai/okou/commit/98141fecb19a1f8c853a6b283c61f65f5686195e))
+
+## [0.65.5](https://github.com/okou-ai/okou/compare/ios-v0.65.4...ios-v0.65.5) (2026-11-25)
+
+
+### Refactoring
+
+* **ios:** keep the permission batch card state in the session graph ([#50695](https://github.com/okou-ai/okou/issues/50695)) ([d36b536](https://github.com/okou-ai/okou/commit/d36b536ce5084a1bb4bc5b46762e6e9dba73ab24))
+* **ios:** keep the permission card state in the session graph ([#50685](https://github.com/okou-ai/okou/issues/50685)) ([f2257c6](https://github.com/okou-ai/okou/commit/f2257c692f9adf2e21817021b00c3e69b4d3db73))
+
 ## [0.65.4](https://github.com/okou-ai/okou/compare/ios-v0.65.3...ios-v0.65.4) (2026-11-25)
 
 

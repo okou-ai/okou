@@ -2,6 +2,7 @@ package ai.okou.android
 
 import ai.okou.android.state.rememberSettingsFlag
 import ai.okou.android.updates.updateFocusOutline
+import androidx.activity.compose.BackHandler
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -68,6 +70,7 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -348,12 +351,13 @@ internal fun SettingsModal(
     fullScreen: Boolean = false,
     showDragHandle: Boolean = true,
     fitContentInsets: Boolean = false,
+    confirmDismiss: (() -> Boolean)? = null,
     content: @Composable (centered: Boolean) -> Unit,
 ) {
     val window = currentWindowSizeDp()
     if (fullScreen || workspaceListPaneWidth(window.width, window.height) != null) {
         Dialog(
-            onDismissRequest = onDismiss,
+            onDismissRequest = { if (confirmDismiss?.invoke() != false) onDismiss() },
             properties =
                 DialogProperties(
                     dismissOnBackPress = dismissible,
@@ -375,23 +379,33 @@ internal fun SettingsModal(
         }
     } else {
         val allowDismiss by rememberUpdatedState(dismissible)
+        val confirm by rememberUpdatedState(confirmDismiss)
         ModalBottomSheet(
             onDismissRequest = onDismiss,
             sheetState =
                 rememberBottomSheetState(
                     initialValue = SheetValue.Hidden,
                     enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
-                    confirmValueChange = { it != SheetValue.Hidden || allowDismiss },
+                    confirmValueChange = {
+                        it != SheetValue.Hidden || allowDismiss && confirm?.invoke() != false
+                    },
                 ),
             sheetGesturesEnabled = dismissible,
             dragHandle = if (showDragHandle) ({ BottomSheetDefaults.DragHandle() }) else null,
             containerColor = MaterialTheme.colorScheme.surface,
             properties =
                 ModalBottomSheetProperties(
-                    shouldDismissOnBackPress = dismissible,
+                    shouldDismissOnBackPress = dismissible && confirmDismiss == null,
                     shouldDismissOnClickOutside = dismissible,
                 ),
         ) {
+            // A vetoed native predictive hide can leave the sheet scaled after Back.
+            val imeVisible = WindowInsets.isImeVisible
+            val keyboard = LocalSoftwareKeyboardController.current
+            BackHandler(enabled = confirmDismiss != null) {
+                if (imeVisible) keyboard?.hide()
+                else if (dismissible && confirmDismiss?.invoke() != false) onDismiss()
+            }
             content(false)
         }
     }
@@ -420,6 +434,7 @@ internal fun SettingsSheet(
     scroll: SettingsSheetScroll = SettingsSheetScroll.Body,
     dismissible: Boolean = true,
     fullScreenInShortWindow: Boolean = false,
+    confirmDismiss: (() -> Boolean)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val compactHeight = isShortSettingsPanelWindow()
@@ -431,6 +446,7 @@ internal fun SettingsSheet(
         dismissible = dismissible,
         fullScreen = compactHeight && fullScreenInShortWindow,
         fitContentInsets = compactHeight && fullScreenInShortWindow,
+        confirmDismiss = confirmDismiss,
     ) { centered ->
         Column(
             modifier

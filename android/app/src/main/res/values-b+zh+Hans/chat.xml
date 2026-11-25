@@ -13,7 +13,6 @@
     <string name="chat_undo_unconfirmed">撤销结果尚未确认</string>
     <string name="chat_feedback_dismiss">关闭提示</string>
     <string name="chat_list_first_load_failed">暂时无法加载</string>
-    <string name="chat_list_load_when_online">联网后加载聊天。</string>
     <string name="chat_list_title">聊天</string>
     <string name="chat_refresh">刷新聊天</string>
     <string name="chat_loading">正在加载聊天…</string>
@@ -112,4 +111,9 @@
     <string name="chat_rename_save_unconfirmed">提交结果尚未确认。</string>
     <string name="chat_title_saved">聊天名称已保存</string>
     <string name="chat_project_name_saved">项目名称已保存</string>
+    <string name="inline_image_loading">正在加载图片</string>
+    <string name="inline_image_no_thumbnail">无缩略图</string>
+    <string name="inline_image_unavailable">图片不可用</string>
+    <string name="inline_image_view_original">查看原图</string>
+    <string name="inline_image_open_link">打开链接</string>
 </resources>

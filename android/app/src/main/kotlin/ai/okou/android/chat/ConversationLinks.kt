@@ -171,8 +171,6 @@ internal fun ConversationLinkText(
                                         textDecoration = TextDecoration.Underline,
                                     ),
                                 focusedStyle = SpanStyle(background = focusFill),
-                                pressedStyle =
-                                    SpanStyle(background = focusColor.copy(alpha = 0.12f)),
                             ),
                         ) {
                             if (chat) focus.saveFocusedChild()

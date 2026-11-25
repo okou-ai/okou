@@ -1,8 +1,10 @@
 import { StrictMode } from "react";
 import type { Store } from "ccstate";
 import { StoreProvider, useGet, useLastResolved, useSet } from "ccstate-react";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { Toaster } from "@okouai/ui/components/ui/sonner";
 import { ErrorBoundary } from "./error-boundary.tsx";
+import { BillingFeedbackSurvey } from "./okou-page/components/billing-feedback-survey.tsx";
 import { Router } from "./router.tsx";
 import { ClerkOptionsProvider } from "./clerk-options-provider.tsx";
 import { FeatureGuideDialog } from "./components/feature-guide-dialog.tsx";
@@ -24,6 +26,8 @@ import {
 import { InstatusStatusNotice } from "./components/instatus-status-notice.tsx";
 import { setupViewportPinchPrevention } from "../lib/viewport-pinch.ts";
 import { IN_VITEST } from "../env.ts";
+import { featureSwitches$ } from "../signals/external/feature-switch.ts";
+import { setupProjectArchiveShortcut$ } from "../signals/projects/project-archive-shortcut.ts";
 import { projects$ } from "../signals/projects/projects.ts";
 import { projectReorderEnabled$ } from "../signals/projects/project-order.ts";
 import { setupGlobalKeyboardShortcuts$ } from "../signals/okou-page/nav.ts";
@@ -39,6 +43,10 @@ function GlobalKeyboardShortcuts() {
   const setupGlobal = useSet(setupGlobalKeyboardShortcuts$);
   const setupFold = useSet(setupProjectFoldShortcuts$);
   const setupOrder = useSet(setupProjectOrderShortcuts$);
+  const archiveEnabled =
+    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.ProjectArchive] ===
+    true;
+  const setupArchive = useSet(setupProjectArchiveShortcut$);
 
   const shortcutRef = (element: HTMLSpanElement | null) => {
     if (!element) {
@@ -49,10 +57,12 @@ function GlobalKeyboardShortcuts() {
         return project.id;
       }) ?? [];
     const stopGlobal = setupGlobal(signal);
+    const stopArchive = archiveEnabled ? setupArchive(signal) : undefined;
     const stopFold = setupFold(ids, signal);
     const stopOrder = setupOrder(ids, reorderEnabled === true, signal);
     return () => {
       stopGlobal();
+      stopArchive?.();
       stopFold();
       stopOrder();
     };
@@ -125,6 +135,7 @@ export const setupRouter = (
           <InspectLogFileInput />
           <ForceUpgradeDialog />
           <FeatureGuideDialog />
+          <BillingFeedbackSurvey />
           <InstatusStatusNotice />
         </ErrorBoundary>
         <SharedWorkerFailureDialog />

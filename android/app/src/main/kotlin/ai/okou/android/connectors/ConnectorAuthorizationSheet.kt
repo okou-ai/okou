@@ -8,6 +8,7 @@ import ai.okou.android.RenameFieldError
 import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItem
 import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItemGrantKind
 import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItemManualFieldsItemInputType
+import ai.okou.android.chat.ContentReadFeedback
 import ai.okou.android.okouFormInputStyle
 import ai.okou.android.renameForm
 import android.content.ActivityNotFoundException
@@ -110,7 +111,6 @@ internal fun ConnectorAuthorizationSheet(
     model: ConnectorModel,
     service: String,
     detail: ConnectorRead<ConnectorServiceDetail>,
-    offline: Boolean,
     account: ConnectorSavedAccount?,
     addingAccount: Boolean,
     canModify: Boolean,
@@ -179,8 +179,8 @@ internal fun ConnectorAuthorizationSheet(
         }
     val canSubmit =
         when (step) {
-            is ConnectorAuthorization.Receipt -> canDismiss
-            is ConnectorAuthorization.DeviceVerification -> canDismiss && !offline
+            is ConnectorAuthorization.Receipt,
+            is ConnectorAuthorization.DeviceVerification -> canDismiss
             is ConnectorAuthorization.External -> canContinue && code.text.trim().length in 1..4096
             null ->
                 canModify &&
@@ -231,10 +231,8 @@ internal fun ConnectorAuthorizationSheet(
                 if (method == null) {
                     when {
                         detail.data != null -> ConnectorStatusBanner(R.string.connector_unavailable)
-                        detail.failure == ConnectorReadFailure.Unavailable ->
-                            ConnectorReadError(R.string.connector_load_failed)
-                        offline -> ConnectorLoadWhenOnline()
-                        detail.failure != null -> ConnectorReadError(R.string.connector_load_failed)
+                        detail.failure != null ->
+                            ContentReadFeedback(R.string.connector_load_failed)
                         else ->
                             ConnectorSkeleton(stringResource(R.string.connector_loading), rows = 1)
                     }

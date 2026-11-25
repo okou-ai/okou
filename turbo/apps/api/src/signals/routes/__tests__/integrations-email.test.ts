@@ -12,6 +12,7 @@ import {
 } from "@okouai/api-contracts/contracts/integrations-email";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { emailInboundContract } from "@okouai/api-contracts/contracts/email";
+import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { connectorPermissionsContract } from "@okouai/api-contracts/contracts/connector-permissions";
 import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
@@ -23,6 +24,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import { integrationsEmailRoutes } from "../integrations-email";
 import { emailInboundRoutes } from "../email-inbound";
+import { proactiveSuggestionsRoutes } from "../proactive-preferences";
 import { integrationsEmailUploadCompleteRoutes } from "../integrations-email-upload-complete";
 import { integrationsEmailSessionRoutes } from "../integrations-email-session";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
@@ -255,6 +257,7 @@ describe("email-native signup", () => {
     const profile = {
       id: actor.userId,
       primaryEmailAddressId: "email_signup",
+      createdAt: now(),
       firstName: null,
       lastName: null,
       username: null,
@@ -367,6 +370,18 @@ describe("email-native signup", () => {
     await expect(bdd.readOnboardingStatus(actor)).resolves.toMatchObject({
       needsOnboarding: false,
       onboardingComplete: true,
+    });
+    const suggestions = setupApp({
+      context,
+      routes: proactiveSuggestionsRoutes,
+    })(proactiveSuggestionsContract);
+    const preference = await accept(
+      suggestions.get({ headers: authHeaders() }),
+      [200],
+    );
+    expect(preference.body).toMatchObject({
+      enabled: true,
+      unavailableReason: "missing-timezone",
     });
     const snapshot = await createdThreads({ ...actor, emailSinceSeqId });
     expect(snapshot.chatThreads).toHaveLength(1);

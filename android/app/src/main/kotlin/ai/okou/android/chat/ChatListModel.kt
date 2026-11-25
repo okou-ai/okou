@@ -23,12 +23,10 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -183,7 +181,6 @@ internal constructor(
 data class ChatListUiState(
     val threads: List<ConfirmedChat> = emptyList(),
     val listPhase: ChatReadPhase = ChatReadPhase.Idle,
-    val offline: Boolean = false,
     val listReadFailure: ChatListReadFailure? = null,
     val listRetryProgressVisible: Boolean = false,
     val confirmedAt: Long? = null,
@@ -374,10 +371,9 @@ class ChatListModel(
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
     realtime: RealtimeService? = null,
     private val monotonicMillis: () -> Long = { System.nanoTime() / 1_000_000 },
-    connectivity: Flow<Boolean> = emptyFlow(),
     private val wallMillis: () -> Long = System::currentTimeMillis,
     initialFilter: ChatListFilter = ChatListFilter.Inbox,
-    private val networkEnabled: () -> Boolean = { true },
+    private val remoteAccessVerified: () -> Boolean = { true },
 ) : ViewModel() {
     private val mutable = MutableStateFlow(ChatListUiState(filter = initialFilter))
     val uiState = mutable.asStateFlow()
@@ -418,7 +414,6 @@ class ChatListModel(
             cache,
             viewModelScope,
             current = ::current,
-            offline = { mutable.value.offline },
             onFailure = onFailure,
             dispatcher = dispatcher,
             wallMillis = wallMillis,
@@ -442,7 +437,6 @@ class ChatListModel(
 
     private class DraftIndexRead {
         val presenceOverrides = mutableMapOf<String, Boolean>()
-        var job: Job? = null
     }
 
     private class ListReadBatch {
@@ -489,10 +483,7 @@ class ChatListModel(
     private var completedActivityReconciliation: Any? = null
     private var listRetry: Job? = null
     private var listRetryAt: Long? = null
-    private var listServerRetryAt: Long? = null
-    private var refreshOnReconnect = false
     private var listFailures = 0
-    private var connectivityGeneration = 0
     private var listIsVisible = true
     private var listInForeground = true
     private var listRebaseJob: Job? = null
@@ -574,26 +565,6 @@ class ChatListModel(
         }
 
     init {
-        viewModelScope.launch {
-            connectivity.collect { online ->
-                val state = mutable.value
-                if (!current() || online == !state.offline) return@collect
-                connectivityGeneration++
-                mutable.value =
-                    state.copy(
-                        offline = !online,
-                        listRetryProgressVisible =
-                            state.listRetryProgressVisible || (!online && staleListRead(state)),
-                    )
-                if (!online) {
-                    val staleRead = draftIndexRead
-                    draftIndexRead = null
-                    staleRead?.job?.cancel()
-                }
-                refreshOnReconnect = online
-                updateListRetryVisibility()
-            }
-        }
         viewModelScope.launch { for (ignored in listReadRequests) readPendingListBatch() }
         viewModelScope.launch {
             for (saved in chatConfirmationWrites) cache.renewChatConfirmation(saved)
@@ -626,7 +597,7 @@ class ChatListModel(
                     }
                 // A refresh may have covered this demand while the worker was throttled.
                 awaitIndicatorRead()
-                if (indicatorsInvalidated && current() && !mutable.value.offline) {
+                if (indicatorsInvalidated && current()) {
                     readIndicators()
                     indicatorsJob?.join()
                 }
@@ -1579,10 +1550,9 @@ class ChatListModel(
     }
 
     fun refresh() {
-        if (!current() || !networkEnabled()) return
+        if (!current() || !remoteAccessVerified()) return
         // Activity resume refreshes this owner even while workspace preferences are loading.
         restoreCache()
-        if (mutable.value.offline) return
         requestListRead(resetCompletedActivity = true)
         refreshMetadata()
         refreshIndicators()
@@ -1603,19 +1573,10 @@ class ChatListModel(
 
     private fun updateListRetryVisibility() {
         if (!current()) return
-        if (!listIsVisible || !listInForeground || mutable.value.offline) {
+        if (!listIsVisible || !listInForeground) {
             listRetry?.cancel()
             listRetry = null
             return
-        }
-        if (refreshOnReconnect) {
-            refreshOnReconnect = false
-            // Reconnecting can recover a failed read immediately, subject to the server's wait.
-            listRetryAt = listServerRetryAt?.takeIf { it > monotonicMillis() }
-            refresh()
-            if (readConfirmations.values.any { it.reportFailure && !it.receiptCoversIntent }) {
-                viewModelScope.launch { readIndicatorsAfterWrite { true } }
-            }
         }
         val retryAt = listRetryAt ?: return
         if (listRetry != null) return
@@ -1677,15 +1638,9 @@ class ChatListModel(
 
     fun refreshList() = requestListRead()
 
-    internal fun refreshSearchMetadata() {
-        if (listRetryAt != null) return
-        // A remote search response can arrive while connectivity still reports offline.
-        requestListRead(userRequested = true, resetCompletedActivity = false)
-    }
-
     internal fun retryList() = requestListRead(userRequested = true)
 
-    private fun canRefreshList() = !mutable.value.offline && listRetryAt == null
+    private fun canRefreshList() = listRetryAt == null
 
     private fun requestListRead(
         discardOnSuccess: Set<String> = emptySet(),
@@ -1729,7 +1684,7 @@ class ChatListModel(
             listRebaseJob?.cancel()
             readyListRebase = null
             try {
-                readList(batch, hasWriteReadback)
+                readList(batch)
                 unconfirmed.forEach { it.done.complete(Unit) }
             } finally {
                 unconfirmed.forEach { it.done.cancel() }
@@ -1757,16 +1712,9 @@ class ChatListModel(
         }
     }
 
-    private suspend fun readList(batch: ListReadBatch, hasWriteReadback: Boolean) {
-        val generation = connectivityGeneration
+    private suspend fun readList(batch: ListReadBatch) {
         restoreJob?.join()
         requireCurrent()
-        if (
-            !hasWriteReadback &&
-                !batch.userRequested &&
-                (mutable.value.offline || generation != connectivityGeneration)
-        )
-            return
         // Keep the exact IDs selected by an explicit refresh until a read succeeds.
         rowDiscardsAfterRead.addAll(batch.discardOnSuccess)
         mutable.value = mutable.value.copy(listPhase = ChatReadPhase.Loading)
@@ -1796,8 +1744,7 @@ class ChatListModel(
             val retryAfter = chatReadRetryAfterMillis(error)
             fail(error) { state ->
                 val failed = state.copy(listPhase = ChatReadPhase.Failed)
-                if (state.offline || generation != connectivityGeneration) failed
-                else if (retryAfter == null) {
+                if (retryAfter == null) {
                     resetListReadFailures()
                     failed.copy(
                         listReadFailure = ChatListReadFailure.NeedsRetry,
@@ -1826,7 +1773,6 @@ class ChatListModel(
         listRetry?.cancel()
         listRetry = null
         listRetryAt = null
-        listServerRetryAt = null
         listFailures = 0
     }
 
@@ -1837,10 +1783,6 @@ class ChatListModel(
         val maxDelay = Long.MAX_VALUE - now.coerceAtLeast(0L)
         val nextRetry = now + minOf(delay, maxDelay)
         listRetryAt = maxOf(nextRetry, listRetryAt ?: nextRetry)
-        if (retryAfter > 0L) {
-            val serverRetryAt = now + minOf(retryAfter, maxDelay)
-            listServerRetryAt = maxOf(serverRetryAt, listServerRetryAt ?: serverRetryAt)
-        }
         listRetry?.cancel()
         listRetry = null
         updateListRetryVisibility()
@@ -1928,7 +1870,7 @@ class ChatListModel(
     }
 
     fun refreshMetadata() {
-        if (!current() || mutable.value.offline) return
+        if (!current()) return
         projectOwner.refresh()
     }
 
@@ -1985,15 +1927,17 @@ class ChatListModel(
     }
 
     fun refreshIndicators() {
-        if (networkEnabled() && !mutable.value.offline) readIndicators()
+        if (remoteAccessVerified()) {
+            readIndicators(verifyPendingRead = { readConfirmations[it]?.reportFailure == true })
+        }
     }
 
     private fun refreshDraftIndex() {
-        if (!current() || mutable.value.offline || draftIndexRead != null) return
+        if (!current() || draftIndexRead != null) return
         val read = DraftIndexRead()
         val version = ++draftIndexRequestVersion
         draftIndexRead = read
-        read.job = viewModelScope.launch {
+        viewModelScope.launch {
             try {
                 val ids = service.draftThreadIds().toMutableSet()
                 requireCurrent()
@@ -2031,10 +1975,7 @@ class ChatListModel(
     }
 
     private fun continueUnreadRead(): Boolean =
-        listIsVisible &&
-            listInForeground &&
-            !mutable.value.offline &&
-            mutable.value.filter == ChatListFilter.Unread
+        listIsVisible && listInForeground && mutable.value.filter == ChatListFilter.Unread
 
     private fun readIndicators(
         verifyPendingRead: ((String) -> Boolean)? = null,
@@ -2067,7 +2008,7 @@ class ChatListModel(
                 }
                 val (eligible, result) =
                     retry?.read(
-                        online = { current() && !mutable.value.offline },
+                        isCurrent = ::current,
                         continuous = ::continueUnreadRead,
                         onRetry = { failures ->
                             val state = mutable.value

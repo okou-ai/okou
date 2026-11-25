@@ -179,6 +179,7 @@ export const clientDescriptorManifest = [
       "computerUseHostsContract",
       "computerUseSessionHostsContract",
       "computerUseWriteCommandContract",
+      "runnerAppStateContract",
     ],
   },
   {

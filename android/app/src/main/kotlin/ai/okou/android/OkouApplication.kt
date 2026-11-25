@@ -27,21 +27,9 @@ import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.shareIn
 import okhttp3.HttpUrl.Companion.toHttpUrl
 
 open class OkouApplication : Application() {
-    open val connectivity: Flow<Boolean> by lazy {
-        observeValidatedConnectivity()
-            .shareIn(
-                CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
-                SharingStarted.WhileSubscribed(replayExpirationMillis = 0),
-                replay = 1,
-            )
-    }
-
     open val updates by lazy {
         val directory = File(filesDir, "updates")
         AppUpdates(
@@ -54,7 +42,6 @@ open class OkouApplication : Application() {
             FileUpdateStore(directory),
             BuildConfig.VERSION_NAME,
             Build.VERSION.SDK_INT,
-            connectivity = connectivity,
         )
     }
     val chatCache by lazy { ChatCacheStore(this) }

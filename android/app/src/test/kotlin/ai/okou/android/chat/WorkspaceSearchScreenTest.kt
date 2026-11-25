@@ -416,7 +416,7 @@ class WorkspaceSearchScreenTest {
         compose.mainClock.advanceTimeBy(600)
         assertEquals(light, colors())
         compose.runOnIdle { dark = true }
-        assertColors(0xFF819EE0.toInt(), 0xFF2D323B.toInt())
+        assertColors(0xFF8BA6E2.toInt(), 0xFF2F333C.toInt())
         assertEquals(bounds, progress.getUnclippedBoundsInRoot())
     }
 }

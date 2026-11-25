@@ -3,7 +3,7 @@ package ai.okou.android.api
 import ai.okou.android.BuildConfig
 import java.io.IOException
 import java.io.InterruptedIOException
-import java.text.ParseException
+import java.text.ParsePosition
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
@@ -33,19 +33,14 @@ internal class HttpRejection(val status: Int, val retryAfter: String?, val envel
 
 internal fun retryAfter(value: String?): Long? {
     if (value == null) return null
-    value.toLongOrNull()?.let {
-        return it.coerceAtLeast(0)
-    }
+    if (value.isNotEmpty() && value.all { it in '0'..'9' }) return value.toLongOrNull()
     val formatter = SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss zzz", Locale.US)
     formatter.timeZone = TimeZone.getTimeZone("GMT")
     formatter.isLenient = false
-    return try {
-        ((formatter.parse(value)?.time ?: return null) - System.currentTimeMillis()).coerceAtLeast(
-            0,
-        ) / 1000
-    } catch (_: ParseException) {
-        null
-    }
+    val position = ParsePosition(0)
+    val date = formatter.parse(value, position) ?: return null
+    if (position.index != value.length) return null
+    return (date.time - System.currentTimeMillis()).coerceAtLeast(0) / 1_000
 }
 
 internal fun IOException.httpRejection(): HttpRejection? =

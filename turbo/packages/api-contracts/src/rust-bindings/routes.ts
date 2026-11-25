@@ -1,4 +1,5 @@
 import { runnerRealtimeTokenContract } from "../contracts/realtime";
+import { runnerAppStateContract } from "../contracts/computer-use";
 import { runnerSshContract } from "../contracts/runner-ssh";
 import { runnerVncContract } from "../contracts/runner-vnc";
 import { runnersRunStartupContract } from "../contracts/runner-startup";
@@ -27,6 +28,19 @@ export interface RustRouteBinding {
 }
 
 export const rustRouteBindings = [
+  {
+    route: runnerAppStateContract.check,
+    rustModulePath: [
+      "runners",
+      "runs",
+      "by_run_id",
+      "computer_use",
+      "commands",
+      "by_command_id",
+      "check",
+    ],
+    rustConstName: "CHECK",
+  },
   {
     route: runnersRunStartupContract.setStartup,
     rustModulePath: ["runners", "runs", "by_run_id", "startup"],
