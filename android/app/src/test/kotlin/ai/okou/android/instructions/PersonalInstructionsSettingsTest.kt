@@ -139,7 +139,11 @@ class PersonalInstructionsSettingsTest {
             val restored = runBlocking {
                 app.instructionsDrafts.load(checkNotNull(firstSession.uiState.value.ready).identity)
             }
-            assertEquals("Keep editing after the other Activity closes", restored.draft?.content)
+            assertEquals(
+                "Keep editing after the other Activity closes",
+                first.uiState.value.content,
+            )
+            assertEquals(null, restored.draft)
         } catch (error: Throwable) {
             failures += error
         } finally {
@@ -208,7 +212,7 @@ class PersonalInstructionsSettingsTest {
     }
 
     @Test
-    fun loadingLeavesSettingsUsableAndConflictsPreserveNativeSelectionUntilExplicitReload() {
+    fun loadingLeavesSettingsUsableAndBackgroundUpdatesPreserveSelectionAndSave() {
         val app = compose.activity.application as InstructionsApplication
         compose.onNodeWithContentDescription("Chats").assertExists()
         compose.openChatListSettings()
@@ -253,7 +257,11 @@ class PersonalInstructionsSettingsTest {
         )
         app.fixture.externalEdit("Changed on Web")
         compose.runOnIdle { model.refresh() }
-        awaitPhase(InstructionsPhase.Conflict)
+        compose.waitUntil(10_000) {
+            compose.runOnIdle {
+                model.uiState.value.let { !it.busy && it.saved?.content == "Changed on Web" }
+            }
+        }
         assertEquals(
             "Keep **my** 中文 👋 draft",
             input.fetchSemanticsNode().config[SemanticsProperties.EditableText].text,
@@ -262,25 +270,15 @@ class PersonalInstructionsSettingsTest {
             TextRange(5, 8),
             input.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange],
         )
-        compose.onNodeWithText("Save").assertIsNotEnabled()
+        save.assertIsEnabled()
         assertEquals(0, app.fixture.requests.count { it.method == "PUT" })
-        val reload =
-            compose.onNode(hasText("Reload latest and discard changes") and hasClickAction())
         val discard = compose.onNode(hasText("Discard changes") and hasClickAction())
-        val beforeReload = app.fixture.requests.size
-        reload.performScrollTo().performClick()
+        compose.onNodeWithText("Cancel").performClick()
         discard.assertIsDisplayed()
-        assertEquals(beforeReload, app.fixture.requests.size)
-        app.fixture.rejectRead = true
         discard.performClick()
-        awaitPhase(InstructionsPhase.Failed)
-        assertEquals(
-            "Keep **my** 中文 👋 draft",
-            input.fetchSemanticsNode().config[SemanticsProperties.EditableText].text,
-        )
-        app.fixture.rejectRead = false
-        reload.performScrollTo().performClick()
-        discard.performClick()
+        input.assertDoesNotExist()
+        compose.runOnIdle { assertEquals("Changed on Web", model.uiState.value.content) }
+        compose.onNodeWithText("Personal Instructions").performScrollTo().performClick()
         awaitPhase(InstructionsPhase.Ready)
         input.assertTextEquals("Changed on Web")
         input.performScrollTo().performTextClearance()

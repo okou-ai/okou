@@ -58,7 +58,7 @@
     <string name="language_zh_hant">繁體中文</string>
     <string name="instructions_title">個人用指示</string>
     <string name="instructions_loading">指示を読み込み中…</string>
-    <string name="instructions_conflict">指示が別の場所で変更されました。最新版を読み込むとローカルの変更が破棄されます。</string>
+    <string name="instructions_refresh_failed">指示を更新できませんでした。前回読み込んだ指示を表示しています。</string>
     <string name="instructions_uncertain">保存を確認できません。テキストは保持されています。保存済みの版を確認してから再試行してください。</string>
     <string name="instructions_load_failed">指示を読み込めませんでした。</string>
     <string name="instructions_unavailable">現在、個人の指示は利用できません。</string>
@@ -68,7 +68,6 @@
     <string name="instructions_invalid">テキストに未対応の文字が含まれています。</string>
     <string name="instructions_refresh">保存済みの版を確認</string>
     <string name="instructions_save">保存</string>
-    <string name="instructions_reload">最新版を読み込み変更を破棄</string>
     <string name="instructions_discard">変更を破棄</string>
     <string name="instructions_retry_save">同じ保存を再試行</string>
     <string name="composer_new">新しいチャット</string>
