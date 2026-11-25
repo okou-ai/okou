@@ -625,17 +625,17 @@ messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-conne
 messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-025	planned		extension after sandbox reset
 messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-027	planned		extension after sandbox reset
 messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-031	planned		extension after sandbox reset
-messaging	src/signals/routes/__tests__/slack-oauth.test.ts	slack-oauth-001	planned		extension after sandbox reset
-messaging	src/signals/routes/__tests__/slack-oauth.test.ts	slack-oauth-002	planned		extension after sandbox reset
-messaging	src/signals/routes/__tests__/slack-oauth.test.ts	slack-oauth-005	planned		extension after sandbox reset
-messaging	src/signals/routes/__tests__/slack-oauth.test.ts	slack-oauth-007	planned		extension after sandbox reset
-messaging	src/signals/routes/__tests__/slack-oauth.test.ts	slack-oauth-009	planned		extension after sandbox reset
-messaging	src/signals/routes/__tests__/slack-oauth.test.ts	slack-oauth-011	planned		extension after sandbox reset
-messaging	src/signals/routes/__tests__/slack-oauth.test.ts	slack-oauth-012	planned		extension after sandbox reset
-messaging	src/signals/routes/__tests__/slack-oauth.test.ts	slack-oauth-013	planned		extension after sandbox reset
-messaging	src/signals/routes/__tests__/slack-oauth.test.ts	slack-oauth-017	planned		extension after sandbox reset
-messaging	src/signals/routes/__tests__/slack-oauth.test.ts	slack-oauth-018	planned		extension after sandbox reset
-messaging	src/signals/routes/__tests__/slack-oauth.test.ts	slack-oauth-021	planned		extension after sandbox reset
+messaging	src/signals/routes/__tests__/slack-oauth.test.ts	slack-oauth-001	rewritten	19.7	extension after sandbox reset
+messaging	src/signals/routes/__tests__/slack-oauth.test.ts	slack-oauth-002	rewritten	5.5	extension after sandbox reset
+messaging	src/signals/routes/__tests__/slack-oauth.test.ts	slack-oauth-005	rewritten	7.9	extension after sandbox reset
+messaging	src/signals/routes/__tests__/slack-oauth.test.ts	slack-oauth-007	rewritten	4.2	extension after sandbox reset
+messaging	src/signals/routes/__tests__/slack-oauth.test.ts	slack-oauth-009	rewritten	3.9	extension after sandbox reset
+messaging	src/signals/routes/__tests__/slack-oauth.test.ts	slack-oauth-011	rewritten	15.7	extension after sandbox reset
+messaging	src/signals/routes/__tests__/slack-oauth.test.ts	slack-oauth-012	rewritten	5.4	extension after sandbox reset
+messaging	src/signals/routes/__tests__/slack-oauth.test.ts	slack-oauth-013	rewritten	3.3	extension after sandbox reset
+messaging	src/signals/routes/__tests__/slack-oauth.test.ts	slack-oauth-017	rewritten	26.1	extension after sandbox reset
+messaging	src/signals/routes/__tests__/slack-oauth.test.ts	slack-oauth-018	rewritten	9.7	extension after sandbox reset
+messaging	src/signals/routes/__tests__/slack-oauth.test.ts	slack-oauth-021	rewritten	3.9	extension after sandbox reset
 messaging	src/signals/routes/__tests__/teams-oauth.test.ts	teams-oauth-001	planned		extension after sandbox reset
 messaging	src/signals/routes/__tests__/teams-oauth.test.ts	teams-oauth-002	planned		extension after sandbox reset
 messaging	src/signals/routes/__tests__/teams-oauth.test.ts	teams-oauth-003	planned		extension after sandbox reset
