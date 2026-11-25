@@ -50,6 +50,7 @@ interface OptimisticProjectMove {
   readonly updates: readonly { projectId: string; sortOrder: string }[];
   readonly confirmation: Promise<void>;
 }
+const EMPTY_PROJECTS: readonly Project[] = Object.freeze([]);
 const projectState$ = computed((get) => {
   get(authenticatedSessionKey$);
   get(rootVersion$);
@@ -99,12 +100,20 @@ function unsettledMoves(
 export const projects$ = computed((get) => {
   const owner = get(projectState$);
   const value = get(owner.events$);
+  const optimisticCreates = get(owner.optimisticCreates$);
+  if (
+    !value?.snapshot?.projects.length &&
+    !value?.events.length &&
+    optimisticCreates.length === 0
+  ) {
+    return EMPTY_PROJECTS;
+  }
   const persistedIds = new Set(
     value?.events.map((event) => {
       return event.id;
     }),
   );
-  const creations = get(owner.optimisticCreates$)
+  const creations = optimisticCreates
     .filter((event) => {
       return !persistedIds.has(event.eventId);
     })
@@ -196,6 +205,9 @@ export const syncProjects$ = command(
     );
     signal.throwIfAborted();
     set(owner.events$, result);
+    if (result.events.length === 0) {
+      return;
+    }
     const persistedIds = new Set(
       result.events.map((event) => {
         return event.id;

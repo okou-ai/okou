@@ -333,7 +333,8 @@ import {
   type ChatThreadEmojiItem,
 } from "../../signals/chat-page/chat-thread-emoji.ts";
 import { openRenameChatThreadDialogForThreadId$ } from "../../signals/chat-page/chat-thread-rename.ts";
-import { ChatComposer } from "./composer.tsx";
+import { ChatComposer } from "./chat-composer.tsx";
+import { ComposerCapabilityTray } from "./composer-capability-tray.tsx";
 import {
   ModelProviderPicker,
   type ModelProviderSelection,
@@ -2915,20 +2916,27 @@ function ChatThreadNextRunModelNotice({
 }: {
   thread: ChatPanelSignals;
 }) {
+  const runningSelection = useLastResolved(
+    thread.composer.model.runningModelSelection$,
+  );
+  return runningSelection ? (
+    <ActiveRunModelNotice thread={thread} runningSelection={runningSelection} />
+  ) : null;
+}
+
+function ActiveRunModelNotice({
+  thread,
+  runningSelection,
+}: {
+  thread: ChatPanelSignals;
+  runningSelection: ChatRunModelSelection;
+}) {
   const { t } = useTranslation();
   const selectedSelection = useLastResolved(
     thread.composer.model.modelSelection$,
   );
-  const runningSelection = useLastResolved(
-    thread.composer.model.runningModelSelection$,
-  );
   const catalog = useLastResolved(modelCatalog$);
-  if (
-    selectedSelection === undefined ||
-    selectedSelection === null ||
-    runningSelection === undefined ||
-    runningSelection === null
-  ) {
+  if (!selectedSelection) {
     return null;
   }
 
@@ -3482,29 +3490,38 @@ function ChatThreadContent({ thread }: { thread: ChatPanelSignals }) {
   return <ChatThreadBody thread={thread} />;
 }
 
-function ChatThreadBody({ thread }: { thread: ChatPanelSignals }) {
-  const initialEventsReady = useGet(thread.initialEventsReady$);
+function useEmptyThreadReady(thread: ChatPanelSignals) {
+  const ready = useGet(thread.initialEventsReady$);
   const hasEvents = useLastResolved(thread.hasEvents$);
-  const sharingPhase = useGet(thread.sharing.phase$);
-  const showCapabilities =
-    initialEventsReady && hasEvents === false && sharingPhase === "idle";
+  return ready && hasEvents === false;
+}
 
-  const header = <ChatThreadHeader thread={thread} />;
-  const content = showCapabilities ? (
+function ChatThreadMainContent({
+  thread,
+  children,
+}: {
+  thread: ChatPanelSignals;
+  children: ReactNode;
+}) {
+  const empty = useEmptyThreadReady(thread);
+  const sharingPhase = useGet(thread.sharing.phase$);
+  return empty && sharingPhase === "idle" ? (
     <CapabilityHomeContent signals={thread.composer} />
   ) : (
-    <ChatThreadEventsPane thread={thread} />
+    children
   );
-  const footer = (
-    <ChatThreadBottomBar
-      thread={thread}
-      discoveryInContent={showCapabilities}
-    />
-  );
+}
+
+function ChatThreadBody({ thread }: { thread: ChatPanelSignals }) {
   return (
     <>
-      <ChatPageLayout header={header} footer={footer}>
-        {content}
+      <ChatPageLayout
+        header={<ChatThreadHeader thread={thread} />}
+        footer={<ChatThreadBottomBar thread={thread} />}
+      >
+        <ChatThreadMainContent thread={thread}>
+          <ChatThreadEventsPane thread={thread} />
+        </ChatThreadMainContent>
       </ChatPageLayout>
       <ChatThreadFeedbackSlot thread={thread} />
     </>
@@ -3786,20 +3803,13 @@ function LegacyChatShareFooter({
 
 function ChatThreadBottomBar({
   thread,
-  discoveryInContent,
 }: {
   readonly thread: ChatPanelSignals;
-  readonly discoveryInContent: boolean;
 }) {
   const phase = useGet(thread.sharing.phase$);
   const refreshed = useChatShareRefresh();
   if (phase === "idle") {
-    return (
-      <ChatThreadComposer
-        thread={thread}
-        discoveryInContent={discoveryInContent}
-      />
-    );
+    return <ChatThreadComposer thread={thread} />;
   }
   return refreshed ? (
     <ChatShareFooter thread={thread} />
@@ -4049,13 +4059,17 @@ function RecommendedFollowupList({
   );
 }
 
-function ChatThreadComposer({
+function ThreadComposerCapabilityTray({
   thread,
-  discoveryInContent,
 }: {
-  readonly thread: ChatPanelSignals;
-  readonly discoveryInContent: boolean;
+  thread: ChatPanelSignals;
 }) {
+  return useEmptyThreadReady(thread) ? null : (
+    <ComposerCapabilityTray signals={thread.composer} />
+  );
+}
+
+function ChatThreadComposer({ thread }: { readonly thread: ChatPanelSignals }) {
   const composerLayoutRef = useSet(thread.composerLayoutOnRef$);
   // The pane's canvas runs behind the composer the way it runs behind the
   // header. A fill of its own can only match a flat canvas, and a gradient
@@ -4066,7 +4080,7 @@ function ChatThreadComposer({
       <ChatComposer
         signals={thread.composer}
         layout="home"
-        discoveryInContent={discoveryInContent}
+        discovery={<ThreadComposerCapabilityTray thread={thread} />}
       />
     </ChatComposerFooter>
   );
