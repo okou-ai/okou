@@ -12,22 +12,13 @@ import {
   type TeamsConnectStatus,
 } from "@okouai/api-contracts/contracts/teams-connect";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 
 import {
-  click,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
-
-export async function chooseSshConnectionType(
-  dialog: HTMLElement,
-  name: string,
-) {
-  click(within(dialog).getByRole("combobox", { name: "Connection" }));
-  click(await screen.findByRole("option", { name }));
-}
 
 export function queryAction(
   role: "button" | "link" | "radio" | "tab",
@@ -155,21 +146,6 @@ export function setupIntegrationsPage(
       [FeatureSwitchKey.WorksChannelCards]: options.compact ?? false,
       [FeatureSwitchKey.FeishuIntegration]: options.feishu ?? false,
       [FeatureSwitchKey.LarkIntegration]: options.lark ?? false,
-    },
-  });
-}
-
-export function setupFeishuSettingsPage(
-  context: TestContext,
-  platform: "feishu" | "lark" = "feishu",
-): Promise<void> {
-  return setupPage({
-    context,
-    path: `/settings/${platform}`,
-    featureSwitches: {
-      [platform === "lark"
-        ? FeatureSwitchKey.LarkIntegration
-        : FeatureSwitchKey.FeishuIntegration]: true,
     },
   });
 }

@@ -1,6 +1,4 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-
-import { expect, vi } from "vitest";
+import { screen, within } from "@testing-library/react";
 
 import {
   chatThreadByIdContract,
@@ -13,58 +11,12 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { computerUseHostsContract } from "@okouai/api-contracts/contracts/computer-use";
-import {
-  click,
-  setupPage,
-  queryAllByRoleFast,
-} from "../../../__tests__/page-helper.ts";
+import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import type { ChatThreadEventQueryResult } from "../../../shared-database/data-key.ts";
 import {
   mockChatThreadSnapshotResponse,
   type TestContext,
 } from "../../../signals/__tests__/test-helpers.ts";
-
-export function createSidebarHelpers(context: TestContext) {
-  return {
-    mockChatThreadSnapshot: (
-      threads: () => readonly SidebarThread[],
-      activeThreadIds?: () => readonly string[],
-      targetContext = context,
-      remoteGate?: Promise<void>,
-    ) => {
-      return mockChatThreadSnapshot(
-        targetContext,
-        threads,
-        activeThreadIds,
-        remoteGate,
-      );
-    },
-    mockSidebarThreadStory: (
-      firstPageThreads: SidebarThread[],
-      extraThreads?: SidebarThread[],
-      activeThreadIds?: readonly string[],
-      targetContext = context,
-      remoteGate?: Promise<void>,
-    ) => {
-      return mockSidebarThreadStory(
-        targetContext,
-        firstPageThreads,
-        extraThreads,
-        activeThreadIds,
-        remoteGate,
-      );
-    },
-    mockLongSidebarHistory: (remoteGate?: Promise<void>) => {
-      return mockLongSidebarHistory(context, remoteGate);
-    },
-  };
-}
-
-export const EXISTING_THREAD_ID = "b0000000-0000-4000-a000-000000000001";
-export const INCIDENT_THREAD_ID = "b0000000-0000-4000-a000-000000000002";
-export const AUTOMATION_THREAD_ID = "b0000000-0000-4000-a000-000000000003";
-export const ARCHIVED_THREAD_ID = "b0000000-0000-4000-a000-000000000004";
-export const RESEARCH_THREAD_ID = "b0000000-0000-4000-a000-000000000005";
 
 export interface SidebarThread {
   readonly id: string;
@@ -78,22 +30,6 @@ export interface SidebarThread {
   readonly renamedAt?: string | null;
   /** Overrides the ordering-derived `sortAt` when a test asserts on its age. */
   readonly sortAt?: string;
-}
-
-export function createThread(
-  id: string,
-  title: string,
-  overrides: Partial<SidebarThread> = {},
-): SidebarThread {
-  return {
-    id,
-    title,
-
-    createdAt: "2026-03-10T00:00:00Z",
-    updatedAt: "2026-03-10T00:00:00Z",
-    pinnedAt: null,
-    ...overrides,
-  };
 }
 
 function sidebarThreadSnapshot(
@@ -199,131 +135,8 @@ export function queryMenuItemByText(text: string): HTMLElement | null {
   );
 }
 
-export function buttonByText(
-  text: string,
-  container: ParentNode = document.body,
-): HTMLElement {
-  const button = queryAllByRoleFast("button", container).find((candidate) => {
-    return candidate.textContent?.replace(/\s+/g, " ").trim() === text;
-  });
-  if (!button) {
-    throw new Error(`${text} button not found`);
-  }
-  return button;
-}
-
 export function sidebar(): HTMLElement {
   return screen.getByTestId("chat-list-column");
-}
-
-export function pinnedAgentLink(
-  container: HTMLElement,
-  name: string,
-): HTMLAnchorElement {
-  const link = queryAllByRoleFast("link", container).find((candidate) => {
-    return candidate.textContent?.trim() === name;
-  });
-  if (!(link instanceof HTMLAnchorElement)) {
-    throw new Error(`${name} pinned agent link not found`);
-  }
-  return link;
-}
-
-export function setupSidebarPage(
-  options: Parameters<typeof setupPage>[0],
-): Promise<void> {
-  return setupPage(options);
-}
-
-export function pinnedAgentNames(container: HTMLElement): string[] {
-  return within(container)
-    .getAllByTestId("pinned-agent-card")
-    .map((card) => {
-      return card.textContent?.trim() ?? "";
-    });
-}
-
-export function commandItemByText(
-  container: HTMLElement,
-  text: string,
-): HTMLElement {
-  const item = within(container)
-    .getAllByRole("option")
-    .find((candidate) => {
-      return candidate.textContent
-        ?.replace(/\s+/g, " ")
-        .trim()
-        .startsWith(text);
-    });
-  if (!item) {
-    throw new Error(`${text} command item not found`);
-  }
-  return item;
-}
-
-/**
- * jsdom does not implement DataTransfer, so drag events need a stub that keeps
- * the payload the pinned grid writes on drag start.
- */
-interface DragImageSnapshot {
-  readonly width: string;
-  readonly height: string;
-  readonly renderedImageLayerCount: number;
-}
-
-interface DataTransferStub extends DataTransfer {
-  readonly dragImage: DragImageSnapshot | null;
-}
-
-export function createDataTransferStub(
-  initialValues: Readonly<Record<string, string>> = {},
-): DataTransferStub {
-  let values = new Map<string, string>(Object.entries(initialValues));
-  let dragImage: DragImageSnapshot | null = null;
-  return {
-    get dragImage() {
-      return dragImage;
-    },
-    get types() {
-      return [...values.keys()];
-    },
-    effectAllowed: "none",
-    dropEffect: "none",
-    clearData: (format?: string) => {
-      if (format === undefined) {
-        values = new Map<string, string>();
-        return;
-      }
-      values.delete(format);
-    },
-    setData: (format: string, value: string) => {
-      values.set(format, value);
-    },
-    getData: (format: string) => {
-      return values.get(format) ?? "";
-    },
-    setDragImage: (image: Element) => {
-      if (!(image instanceof HTMLElement)) {
-        throw new Error("Drag image must be an HTML element");
-      }
-      const style = getComputedStyle(image);
-      const renderedImageLayerCount = Array.from(
-        image.querySelectorAll("img"),
-      ).filter((layer) => {
-        const layerStyle = getComputedStyle(layer);
-        return (
-          layerStyle.display !== "none" &&
-          layerStyle.visibility !== "hidden" &&
-          layerStyle.opacity !== "0"
-        );
-      }).length;
-      dragImage = {
-        width: style.width,
-        height: style.height,
-        renderedImageLayerCount,
-      };
-    },
-  } as unknown as DataTransferStub;
 }
 
 export function threadRowByTitle(
@@ -356,31 +169,6 @@ export function threadLinkByTitle(
   return link;
 }
 
-export function visibleThreadTitles(
-  expectedTitles: readonly string[],
-): string[] {
-  const expected = new Set(expectedTitles);
-  return queryAllByRoleFast("link", sidebar()).flatMap((candidate) => {
-    const title = candidate
-      .querySelector('[data-slot="sidebar-thread-title"]')
-      ?.textContent?.replace(/\s+/g, " ")
-      .trim();
-    return title && expected.has(title) ? [title] : [];
-  });
-}
-
-export function agentRowByName(
-  container: HTMLElement,
-  name: string,
-): HTMLElement {
-  const text = within(container).getByText(name);
-  const row = text.closest(".group");
-  if (!(row instanceof HTMLElement)) {
-    throw new Error(`${name} agent row not found`);
-  }
-  return row;
-}
-
 export function openThreadMenu(title: string): void {
   click(
     within(threadRowByTitle(title)).getByTestId("chat-thread-menu-trigger"),
@@ -389,22 +177,6 @@ export function openThreadMenu(title: string): void {
 
 export function openChatListMenu(): void {
   click(within(sidebar()).getByLabelText("Open chat list menu"));
-}
-
-export function mockSidebarViewport(
-  height: number,
-  scrollHeight: number,
-): void {
-  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(
-    function (this: HTMLElement): number {
-      return this.dataset.testid === "sidebar-scroll-area" ? height : 0;
-    },
-  );
-  vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(
-    function (this: HTMLElement): number {
-      return this.dataset.testid === "sidebar-scroll-area" ? scrollHeight : 0;
-    },
-  );
 }
 
 export function mockSidebarThreadStory(
@@ -517,45 +289,4 @@ export function mockSidebarThreadStory(
     snapshot: sidebarThreadSnapshot([...threads, ...extraThreads]),
     events: [],
   };
-}
-
-export function mockLongSidebarHistory(
-  context: TestContext,
-  remoteGate?: Promise<void>,
-): ChatThreadEventQueryResult {
-  const overflowThreads = Array.from({ length: 23 }, (_, index) => {
-    return createThread(
-      `b3000000-0000-4000-a000-${String(index).padStart(12, "0")}`,
-      `Refresh overflow ${index + 1}`,
-    );
-  });
-  return mockSidebarThreadStory(
-    context,
-    [
-      createThread(EXISTING_THREAD_ID, "Release plan"),
-      createThread(AUTOMATION_THREAD_ID, "Scheduled launch"),
-      ...overflowThreads,
-      createThread(ARCHIVED_THREAD_ID, "Archived context"),
-    ],
-    [],
-    [],
-    remoteGate,
-  );
-}
-
-export async function scrollToArchivedContext(): Promise<HTMLElement> {
-  await waitFor(() => {
-    expect(threadLinkByTitle("Release plan")).toBeInTheDocument();
-  });
-
-  const scrollArea = within(sidebar()).getByTestId("sidebar-scroll-area");
-  scrollArea.scrollTop = 780;
-  fireEvent.scroll(scrollArea);
-
-  await waitFor(() => {
-    expect(within(sidebar()).getByText("Archived context")).toBeInTheDocument();
-  });
-  expect(within(sidebar()).queryByText("Release plan")).toBeNull();
-  expect(within(sidebar()).queryByText("Load more")).not.toBeInTheDocument();
-  return scrollArea;
 }

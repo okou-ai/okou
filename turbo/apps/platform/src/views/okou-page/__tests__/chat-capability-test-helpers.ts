@@ -185,47 +185,6 @@ export async function selectPassage(
   await findButton("Quote");
 }
 
-export async function selectAcrossPassages(
-  startPassage: string,
-  endPassage: string,
-): Promise<void> {
-  const existingQuoteAction = await findButton("Quote");
-  const startNode = textNodeContaining(startPassage);
-  const endNode = textNodeContaining(endPassage);
-  const startOffset = startNode.data.indexOf(startPassage);
-  const endOffset = endNode.data.indexOf(endPassage) + endPassage.length;
-  const target = startNode.parentElement;
-  if (!target) {
-    throw new Error("Selectable passage has no element target");
-  }
-  fireEvent.pointerDown(target, {
-    button: 0,
-    isPrimary: true,
-    pointerId: 1,
-    pointerType: "mouse",
-  });
-  const selection = window.getSelection();
-  if (!selection) {
-    throw new Error("Selection API is unavailable");
-  }
-  selection.removeAllRanges();
-  selection.addRange(
-    visibleSelectionRange(startNode, startOffset, endNode, endOffset),
-  );
-  fireEvent(document, new Event("selectionchange"));
-  fireEvent.pointerUp(endNode.parentElement ?? target, {
-    button: 0,
-    isPrimary: true,
-    pointerId: 1,
-    pointerType: "mouse",
-  });
-  await waitFor(() => {
-    if (existingQuoteAction.isConnected) {
-      throw new Error("Ambiguous selection still exposes passage actions");
-    }
-  });
-}
-
 export function clearPassageSelection(): void {
   window.getSelection()?.removeAllRanges();
   fireEvent(document, new Event("selectionchange"));

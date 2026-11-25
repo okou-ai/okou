@@ -134,14 +134,6 @@ export function getConnectorCard(label: string): HTMLElement {
   return card;
 }
 
-export function getConnectorIcon(label: string): HTMLImageElement {
-  const icon = getConnectorCard(label).querySelector("img");
-  if (!(icon instanceof HTMLImageElement)) {
-    throw new Error(`Expected connector icon "${label}"`);
-  }
-  return icon;
-}
-
 export function mockConnectors(
   context: TestContext,
   connectors: readonly {

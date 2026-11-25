@@ -47,8 +47,6 @@ import {
 } from "../../../signals/__tests__/test-helpers.ts";
 import { nowDate } from "../../../lib/time.ts";
 
-export const PLACEHOLDER = "Ask me to automate workflows, manage tasks...";
-
 const MOCK_RUN_ID = "d0000000-0000-4000-a000-000000000001";
 
 interface ModelSelectionRequest {

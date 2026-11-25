@@ -21,8 +21,3 @@ export function changeChatThreadList(): void {
 export function changeChatIndicators(): void {
   triggerChatDatabaseEvent("chatIndicatorsChanged");
 }
-
-/** Simulate authoritative chat read state changing for the active user-org. */
-export function changeChatThreadReadCursor(payload?: unknown): void {
-  triggerChatDatabaseEvent("chatThreadReadCursorUpdated", payload);
-}
