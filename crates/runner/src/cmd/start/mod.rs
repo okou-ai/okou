@@ -700,9 +700,13 @@ async fn run_start_observed(
     let (usage_flush_tx, usage_flush_rx) = mpsc::channel(1);
     let usage = (ssh.is_some() || vnc.is_some())
         .then(|| crate::run_usage::Runtime::new(crate::MitmUsageHandle::from(&mitm)));
-    let guest_rpc = local_group_dir
-        .is_none()
-        .then(|| crate::guest_rpc::Runtime::new(ssh, vnc, usage));
+    let guest_rpc = local_group_dir.is_none().then(|| {
+        let mut runtime = crate::guest_rpc::Runtime::new(ssh, vnc, usage);
+        runtime.app_state = ingress.as_ref().map(|_| {
+            runner_remote::app_state::Runtime::new(http.clone(), &server.token, runner_identity)
+        });
+        runtime
+    });
     let host_telemetry = if args.local {
         None
     } else {

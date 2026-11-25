@@ -244,7 +244,17 @@ pub(super) async fn start(
         )
         .await
         {
-            Ok(ingress) => startup.resources.ingress = Some(ingress),
+            Ok(ingress) => {
+                if let Some(receiver) = ctx
+                    .exec_config
+                    .guest_rpc
+                    .as_ref()
+                    .and_then(|rpc| rpc.app_state.clone())
+                {
+                    ingress.enable_app_state(receiver);
+                }
+                startup.resources.ingress = Some(ingress);
+            }
             Err(error) => {
                 startup.rollback(&ctx, "ingress_startup_failure").await;
                 return Err(RunnerError::Internal(format!(

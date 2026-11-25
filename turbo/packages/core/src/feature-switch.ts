@@ -180,6 +180,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,
   },
+  [FeatureSwitchKey.ComputerUseAppStateDirectTransfer]: {
+    maintainer: "lancy@okou.ai",
+    displayName: "Computer Use app state direct transfer",
+    description:
+      "Deliver the current Mac window state and PNG directly to the Run through its Runner.",
+    enabled: false,
+    staffOptInOnly: true,
+  },
   [FeatureSwitchKey.DesktopShell]: {
     maintainer: "lancy@okou.ai",
     displayName: "Desktop Shell",

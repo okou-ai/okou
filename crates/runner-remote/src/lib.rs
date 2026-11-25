@@ -1,5 +1,6 @@
 //! Assignment-bound guest RPC, remote usage, SSH, Tailscale, and VNC services.
 
+pub mod app_state;
 mod authority_invalidation;
 mod authority_response;
 mod cloudflare;

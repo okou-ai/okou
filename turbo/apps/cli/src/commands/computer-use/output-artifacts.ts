@@ -4,9 +4,12 @@ import {
   chmod,
   lstat,
   mkdir,
+  mkdtemp,
+  readFile,
   readdir,
   rename,
   rm,
+  rmdir,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -73,6 +76,18 @@ async function removeStaleEntries(
     }
     if (entry.isDirectory() && !stats.isSymbolicLink()) {
       await removeStaleEntries(entryPath, cutoffMs);
+      if (stats.mtimeMs < cutoffMs) {
+        try {
+          await rmdir(entryPath);
+        } catch (error) {
+          if (!(
+            error instanceof Error &&
+            "code" in error &&
+            ["ENOTEMPTY", "EEXIST", "ENOENT"].includes(String(error.code))
+          ))
+            throw error;
+        }
+      }
       continue;
     }
     if (stats.mtimeMs < cutoffMs) {
@@ -126,5 +141,57 @@ export async function writeComputerUseArtifact(
     if (!moved) {
       await rm(tempPath, { force: true });
     }
+  }
+}
+
+/** Publish both files under one rename. A repeated delivery must match the original bytes. */
+export async function publishComputerUseAppState(
+  commandId: string,
+  snapshotId: string,
+  appState: string,
+  png: Buffer,
+  signal: AbortSignal,
+) {
+  const root = await prepareComputerUseOutputDir();
+  const final = path.join(root, commandId);
+  const temporary = await mkdtemp(path.join(root, ".app-state-"));
+  const text = `${snapshotId}.appState.txt`;
+  const image = `${snapshotId}.png`;
+  try {
+    await writeFile(path.join(temporary, text), appState, {
+      mode: COMPUTER_USE_OUTPUT_FILE_MODE,
+      signal,
+    });
+    await writeFile(path.join(temporary, image), png, {
+      mode: COMPUTER_USE_OUTPUT_FILE_MODE,
+      signal,
+    });
+    signal.throwIfAborted();
+    try {
+      await rename(temporary, final);
+    } catch (error) {
+      if (!(
+        error instanceof Error &&
+        "code" in error &&
+        (error.code === "ENOTEMPTY" || error.code === "EEXIST")
+      ))
+        throw error;
+      const existing = await lstat(final);
+      if (
+        !existing.isDirectory() ||
+        (await readFile(path.join(final, text), "utf8")) !== appState ||
+        !(await readFile(path.join(final, image))).equals(png)
+      ) {
+        throw new Error("Conflicting Computer Use delivery for this command");
+      }
+    }
+    return {
+      status: "succeeded",
+      snapshotId,
+      appState: path.join(final, text),
+      screenshot: path.join(final, image),
+    };
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
   }
 }
