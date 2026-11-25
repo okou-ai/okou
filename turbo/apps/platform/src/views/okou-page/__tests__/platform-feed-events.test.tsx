@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   feedContract,
   type PlatformEvent,
@@ -64,7 +63,6 @@ function showEvent(item: PlatformEvent) {
   return setupPage({
     context,
     path: "/for-you",
-    featureSwitches: { [FeatureSwitchKey.AgentSuggestion]: true },
   });
 }
 

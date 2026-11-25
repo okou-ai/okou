@@ -17,6 +17,11 @@ final class ChatSearchResourceTests: XCTestCase {
     await store.refresh()
     store.search.present()
     store.search.updateQuery("  chat  ")
+    // The sidebar and the search page read the input from the workspace session's graph.
+    XCTAssertTrue(try store.graph.get(store.search.presented))
+    XCTAssertEqual(
+      try store.graph.get(store.search.field),
+      ChatSearchStore.Field(query: "  chat  ", keyword: "chat"))
     let titles = store.search.titleResults(in: store.list.threads)
     XCTAssertEqual(titles.count, 25)
     XCTAssertEqual(titles.first?.id, SearchUnreadFixture.id(40))
@@ -39,6 +44,7 @@ final class ChatSearchResourceTests: XCTestCase {
     XCTAssertEqual(selected.readingPosition, position)
     XCTAssertTrue(selected.visibleMessages.contains { $0.id == position.messageID })
     XCTAssertFalse(store.search.isPresented)
+    XCTAssertFalse(try store.graph.get(store.search.presented))
     XCTAssertNil(store.error)
   }
 
@@ -116,7 +122,8 @@ final class ChatSearchResourceTests: XCTestCase {
       }
       return searchResponse(content: keyword)
     }
-    let search = ChatSearchStore(sync: ChatSync(client: fixture.client), didFail: { _ in })
+    let search = ChatSearchStore(
+      sync: ChatSync(client: fixture.client), graph: makeTestWorkspaceGraph(), didFail: { _ in })
     defer { search.close() }
     search.present()
     search.updateQuery("discarded")
@@ -232,6 +239,8 @@ final class ChatSearchResourceTests: XCTestCase {
       XCTFail("A missing chat follows a successful list read: \(error)")
     }
     XCTAssertNotNil(store.search.openingError)
+    XCTAssertEqual(
+      try store.graph.get(store.search.field).openingError, store.search.openingError)
     XCTAssertNil(store.selectedThreadID)
     failing.withLock { $0 = true }
     let failedAgain = await store.openSearchResult(SearchUnreadFixture.id(2))
@@ -271,7 +280,8 @@ final class ChatSearchResourceTests: XCTestCase {
         throw URLError(.unsupportedURL)
       }
     }
-    let search = ChatSearchStore(sync: ChatSync(client: fixture.client), didFail: { _ in })
+    let search = ChatSearchStore(
+      sync: ChatSync(client: fixture.client), graph: makeTestWorkspaceGraph(), didFail: { _ in })
     defer { search.close() }
     search.present()
     let initial = try await search.stateStore.get(search.workflowsValue).value
@@ -311,7 +321,8 @@ final class ChatSearchResourceTests: XCTestCase {
           : searchResponse(content: "Recovered")
       }
     }
-    let search = ChatSearchStore(sync: ChatSync(client: fixture.client), didFail: { _ in })
+    let search = ChatSearchStore(
+      sync: ChatSync(client: fixture.client), graph: makeTestWorkspaceGraph(), didFail: { _ in })
     defer { search.close() }
     search.present()
     search.updateQuery("empty")
@@ -361,7 +372,8 @@ final class ChatSearchResourceTests: XCTestCase {
       default: throw URLError(.unsupportedURL)
       }
     }
-    let search = ChatSearchStore(sync: ChatSync(client: fixture.client), didFail: { _ in })
+    let search = ChatSearchStore(
+      sync: ChatSync(client: fixture.client), graph: makeTestWorkspaceGraph(), didFail: { _ in })
     defer { search.close() }
     search.present()
     search.updateQuery("brand")
@@ -410,7 +422,8 @@ final class ChatSearchResourceTests: XCTestCase {
       cancelled.fulfill()
       return emptySearchResources(request) ?? ChatHTTPResponse(body: #"{"results":[]}"#)
     }
-    let search = ChatSearchStore(sync: ChatSync(client: fixture.client), didFail: { _ in })
+    let search = ChatSearchStore(
+      sync: ChatSync(client: fixture.client), graph: makeTestWorkspaceGraph(), didFail: { _ in })
     defer { search.close() }
     search.present()
     search.updateQuery("pending")

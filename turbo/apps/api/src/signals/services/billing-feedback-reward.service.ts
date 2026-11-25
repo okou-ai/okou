@@ -1,8 +1,7 @@
-import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
 import { command, computed, type Computed } from "ccstate";
-import { and, eq, gt, inArray, lte, notExists, sql, sum } from "drizzle-orm";
+import { and, eq, inArray, notExists, sql } from "drizzle-orm";
 import { boolean, number, object } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { nowDate } from "../../lib/time";
@@ -12,44 +11,19 @@ export const BILLING_FEEDBACK_REWARD_CREDITS = 200;
 const PAID_TIERS = ["pro", "team"] as const;
 
 function feedbackRewardIdempotencyKey(orgId: string): string {
-  // Retain the financial identity independently of questionnaire storage.
+  // All billing surveys share the original key so past rewards still count.
   return `billing-survey:credits_exhausted:${orgId}`;
 }
 
-function rewardEligibilitySql(
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly canManageBilling: boolean;
-  },
-  at: Date,
-) {
-  const expired = sql`(SELECT COALESCE(${sum(creditExpiresRecord.remaining)}, 0)
-    FROM ${creditExpiresRecord}
-    WHERE ${and(
-      eq(creditExpiresRecord.orgId, args.orgId),
-      gt(creditExpiresRecord.remaining, 0),
-      lte(creditExpiresRecord.expiresAt, at),
-    )})`;
+function rewardEligibilitySql(args: {
+  readonly orgId: string;
+  readonly canManageBilling: boolean;
+}) {
   return sql`${args.canManageBilling}::boolean AND ${and(
     notExists(
       sql`(SELECT 1 FROM ${orgMetadata} WHERE ${and(
         eq(orgMetadata.orgId, args.orgId),
         inArray(orgMetadata.tier, PAID_TIERS),
-      )})`,
-    ),
-    notExists(
-      sql`(SELECT 1 FROM ${orgMetadata} WHERE ${and(
-        eq(orgMetadata.orgId, args.orgId),
-        gt(sql`${orgMetadata.credits} - ${expired}`, 0),
-      )})`,
-    ),
-    notExists(
-      sql`(SELECT 1 FROM ${usagePackCreditGrants} WHERE ${and(
-        eq(usagePackCreditGrants.orgId, args.orgId),
-        eq(usagePackCreditGrants.userId, args.userId),
-        gt(usagePackCreditGrants.remainingAmount, 0),
-        gt(usagePackCreditGrants.expiresAt, at),
       )})`,
     ),
     notExists(
@@ -73,7 +47,7 @@ export function billingFeedbackRewardEligible(
     const [row] = parseRawRows(
       object({ eligible: boolean() }),
       await get(rawSqlReadDb$).execute(
-        sql`SELECT ${rewardEligibilitySql(identity, nowDate())} AS eligible`,
+        sql`SELECT ${rewardEligibilitySql(identity)} AS eligible`,
       ),
     );
     if (!row) {
@@ -101,7 +75,7 @@ export const grantBillingFeedbackReward$ = command(
           ${feedbackRewardIdempotencyKey(identity.orgId)},
           ${BILLING_FEEDBACK_REWARD_CREDITS}, ${BILLING_FEEDBACK_REWARD_CREDITS},
           ${sql.param(expiresAt, usagePackCreditGrants.expiresAt)}
-        WHERE ${rewardEligibilitySql({ ...identity, canManageBilling: true }, at)}
+        WHERE ${rewardEligibilitySql({ ...identity, canManageBilling: true })}
         ON CONFLICT (idempotency_key) DO NOTHING
         RETURNING original_amount::integer AS amount`),
     );

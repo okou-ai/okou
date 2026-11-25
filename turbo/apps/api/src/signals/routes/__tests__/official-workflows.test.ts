@@ -200,23 +200,9 @@ describe("My Okou proactive settings", () => {
       routes: [...proactiveSuggestionsRoutes, ...feedRoutes],
     });
     const { actor } = await prepareBriefMember();
-    if (!actor.orgId) {
-      throw new Error("Expected an organization");
-    }
-    const owner = { ...actor, orgId: actor.orgId };
     const headers = authHeaders(actor);
     const hourly = app(proactiveSuggestionsContract);
     const feed = app(feedContract);
-    await updateFeatureSwitchesForUser(context, owner, {
-      [FeatureSwitchKey.AgentSuggestion]: false,
-    });
-    await accept(
-      hourly.updateWithFeed({ headers, body: { enabled: false } }),
-      [403],
-    );
-    await updateFeatureSwitchesForUser(context, owner, {
-      [FeatureSwitchKey.AgentSuggestion]: true,
-    });
     expect(
       (await accept(hourly.get({ headers }), [200])).body.enabled,
     ).toBeFalsy();
@@ -259,14 +245,6 @@ describe("Daily profile learning through Suggestions", () => {
     });
     const { actor } = await prepareBriefMember();
     await bdd.completeOnboarding(actor);
-    if (!actor.orgId) {
-      throw new Error("Expected organization");
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId },
-      { [FeatureSwitchKey.AgentSuggestion]: true },
-    );
     const client = app(proactiveSuggestionsContract);
     const pending = await accept(
       client.update({ headers: authHeaders(actor), body: { enabled: true } }),
@@ -304,24 +282,6 @@ describe("Proactive Suggestions preference", () => {
     const { actor } = await prepareBriefMember();
     await bdd.completeOnboarding(actor);
     const client = app(proactiveSuggestionsContract);
-    if (!actor.orgId) {
-      throw new Error("Expected organization");
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId },
-      {
-        [FeatureSwitchKey.AgentSuggestion]: false,
-      },
-    );
-    await accept(client.get({ headers: authHeaders(actor) }), [403]);
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId },
-      {
-        [FeatureSwitchKey.AgentSuggestion]: true,
-      },
-    );
     const initial = await accept(
       client.get({ headers: authHeaders(actor) }),
       [200],
@@ -347,26 +307,6 @@ describe("Proactive Suggestions preference", () => {
       [200],
     );
     expect(cancelled.body).toMatchObject({ enabled: false, status: "paused" });
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId },
-      {
-        [FeatureSwitchKey.AgentSuggestion]: false,
-      },
-    );
-    await accept(client.get({ headers: authHeaders(actor) }), [403]);
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId },
-      {
-        [FeatureSwitchKey.AgentSuggestion]: true,
-      },
-    );
-    const restored = await accept(
-      client.get({ headers: authHeaders(actor) }),
-      [200],
-    );
-    expect(restored.body.enabled).toBeFalsy();
   });
 });
 

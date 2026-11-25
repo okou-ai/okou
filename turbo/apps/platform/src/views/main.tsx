@@ -4,6 +4,7 @@ import { StoreProvider, useGet, useLastResolved, useSet } from "ccstate-react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { Toaster } from "@okouai/ui/components/ui/sonner";
 import { ErrorBoundary } from "./error-boundary.tsx";
+import { BillingFeedbackSurvey } from "./okou-page/components/billing-feedback-survey.tsx";
 import { Router } from "./router.tsx";
 import { ClerkOptionsProvider } from "./clerk-options-provider.tsx";
 import { FeatureGuideDialog } from "./components/feature-guide-dialog.tsx";
@@ -134,6 +135,7 @@ export const setupRouter = (
           <InspectLogFileInput />
           <ForceUpgradeDialog />
           <FeatureGuideDialog />
+          <BillingFeedbackSurvey />
           <InstatusStatusNotice />
         </ErrorBoundary>
         <SharedWorkerFailureDialog />

@@ -33,7 +33,6 @@ internal data class ProactiveSettingState(
     val checking: ProactiveChoice? = null,
     val readFailed: Boolean = false,
     val hidden: Boolean = false,
-    val online: Boolean = true,
 ) {
     val pending: Boolean?
         get() = choice?.enabled
@@ -42,7 +41,7 @@ internal data class ProactiveSettingState(
         get() = pending ?: confirmed?.enabled
 
     val canChoose: Boolean
-        get() = confirmed != null && online && checking == null
+        get() = confirmed != null && checking == null
 }
 
 /** Two independently readable settings, owned by the authorized workspace. */
@@ -75,8 +74,6 @@ internal class ProactiveSettingsModel(
     val suggestions = settings.getValue(ProactiveSetting.Suggestions)
 
     fun visible(visible: Boolean) = settings.values.forEach { it.visible(visible) }
-
-    fun online(online: Boolean) = settings.values.forEach { it.online(online) }
 
     fun refresh() = settings.values.forEach { it.refresh() }
 }
@@ -113,12 +110,6 @@ internal class ProactiveSettingOwner(
         }
     }
 
-    fun online(value: Boolean) {
-        if (mutable.value.online == value) return
-        mutable.value = mutable.value.copy(online = value)
-        if (value) refresh() else cancelRead()
-    }
-
     fun refresh() {
         if (!authorized() || !visible) return
         if (writing?.isActive == true || reading?.isActive == true) {
@@ -129,7 +120,6 @@ internal class ProactiveSettingOwner(
         reading = scope.launch {
             try {
                 restore()
-                if (!authorized() || !mutable.value.online) return@launch
                 val value = readPreference()
                 val sent = mutable.value.checking
                 publish(value)
@@ -189,7 +179,7 @@ internal class ProactiveSettingOwner(
             try {
                 return readOnce()
             } catch (error: ApiFailure) {
-                if (!error.retryableSettingsRead() || !mutable.value.online) throw error
+                if (!error.retryableSettingsRead()) throw error
                 delay(pause)
             }
         }
@@ -198,16 +188,14 @@ internal class ProactiveSettingOwner(
 
     private suspend fun readOnce(): ProactivePreference? {
         requireCurrent()
-        if (!mutable.value.online) throw Offline()
         return service.read(setting).also { requireCurrent() }
     }
 
     private fun submitChanges() {
-        if (writing?.isActive == true || mutable.value.checking != null || !mutable.value.online)
-            return
+        if (writing?.isActive == true || mutable.value.checking != null) return
         writing = scope.launch {
             try {
-                while (mutable.value.online) {
+                while (true) {
                     val sent = mutable.value.choice ?: break
                     requireCurrent()
                     val before = mutable.value.confirmed
@@ -261,10 +249,10 @@ internal class ProactiveSettingOwner(
             try {
                 return service.update(setting, sent.enabled).also { requireCurrent() }
             } catch (error: ApiFailure.Network) {
-                if (!error.connectionFailed || !mutable.value.online) throw error
+                if (!error.connectionFailed) throw error
                 delay(pause)
                 requireCurrent()
-                if (mutable.value.choice != sent || !mutable.value.online) return null
+                if (mutable.value.choice != sent) return null
             }
         }
         return service.update(setting, sent.enabled).also { requireCurrent() }
@@ -347,6 +335,4 @@ internal class ProactiveSettingOwner(
         currentCoroutineContext().ensureActive()
         if (!authorized()) throw CancellationException("Proactive preferences owner retired")
     }
-
-    private class Offline : Exception()
 }

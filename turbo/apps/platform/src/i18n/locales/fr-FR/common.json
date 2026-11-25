@@ -1231,7 +1231,11 @@
       "title": "Rétrograder le plan"
     },
     "feedback": {
-      "shareFeedback": "Donner mon avis"
+      "otherPlaceholder": "Dites-nous en plus…",
+      "rewardTerms": "Une fois par espace de travail · Crédits valables 30 jours",
+      "shareFeedback": "Donner mon avis",
+      "submitFeedback": "Envoyer les commentaires",
+      "thanks": "Merci pour vos commentaires"
     },
     "invoices": {
       "amount": "Montant",
@@ -4491,7 +4495,6 @@
   },
   "myOkou": {
     "conflict": "Vos instructions enregistrées ont été modifiées ailleurs. Votre brouillon est conservé. Consultez-le ou copiez-le avant de recharger les instructions enregistrées.",
-    "description": "Vos instructions pour Okou dans cet espace de travail",
     "discard": "Abandonner",
     "draftKept": "Votre brouillon reste dans cet onglet lorsque vous changez de page ou d’espace de travail.",
     "instructions": "Instructions",
@@ -5772,7 +5775,6 @@
           "title": "Préférences"
         },
         "proactiveLearning": {
-          "description": "Choisissez comment Okou travaille de manière proactive.",
           "title": "Proactive"
         },
         "tools": {
@@ -6181,7 +6183,6 @@
         "title": "Résumé du matin"
       },
       "proactiveSuggestions": {
-        "description": "Consultez vos sources connectées chaque heure, mettez à jour votre profil chaque jour et recevez des suggestions utiles pour la suite.",
         "errorMessage": "Impossible de charger ou de modifier ces paramètres.",
         "missingTimezone": "Définissez votre fuseau horaire dans les préférences.",
         "preparationFailed": "Temporairement indisponible.",

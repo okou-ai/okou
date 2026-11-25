@@ -36,8 +36,6 @@
     <string name="settings_accounts_scope">‘%1$s’에서 사용할 구독 계정을 선택하세요.</string>
     <string name="settings_accounts_scope_empty">‘%1$s’의 모델 계정</string>
     <string name="settings_workspace_status">‘%1$s’ · %2$s</string>
-    <string name="settings_accounts_offline">오프라인입니다. 계정을 전환하려면 연결하세요.</string>
-    <string name="settings_accounts_offline_connect">오프라인입니다. 온라인 상태에서 모델 계정을 연결할 수 있습니다.</string>
     <string name="settings_accounts_unavailable">현재 모델 계정을 볼 수 없습니다.</string>
     <string name="settings_accounts_update_failed">모델 계정을 새로고침하지 못했습니다. 마지막으로 확인된 정보를 표시합니다.</string>
     <string name="settings_accounts_empty">연결된 모델 계정 없음</string>
@@ -66,7 +64,6 @@
     <string name="settings_credits_less_than">%1$s 미만</string>
     <string name="settings_credit_balance">크레딧 잔액</string>
     <string name="settings_credit_scope">‘%1$s’의 Okou 크레딧</string>
-    <string name="settings_credit_offline">오프라인입니다. 마지막으로 확인된 잔액을 표시합니다.</string>
     <string name="settings_credit_update_failed">새로고침하지 못했습니다. 마지막으로 확인된 잔액을 표시합니다.</string>
     <string name="settings_credit_unavailable">현재 잔액을 볼 수 없습니다.</string>
     <string name="settings_credit_member">개인 사용량 팩</string>
@@ -83,7 +80,6 @@
     <string name="settings_model_plan_restricted">다른 요금제 필요</string>
     <string name="settings_model_fast">빠른 모드</string>
     <string name="settings_model_fast_usage">켜면 ChatGPT 구독 사용량이 표준 모드의 %1$s배가 됩니다</string>
-    <string name="settings_model_load_when_online">다시 온라인 상태가 되면 콘텐츠를 불러옵니다.</string>
     <string name="settings_model_save_rolled_back">기본 모델을 저장하지 못해 이전 설정으로 되돌렸습니다.</string>
     <string name="settings_model_save_unconfirmed">기본 모델의 저장 결과가 아직 확인되지 않았습니다.</string>
     <string name="settings_model_effort">추론 강도</string>
@@ -98,7 +94,6 @@
     <string name="settings_proactive_services">선제적 서비스</string>
     <string name="settings_proactive_scope">이 설정은 ‘%1$s’에 적용됩니다.</string>
     <string name="settings_proactive_loading">선제적 서비스를 불러오는 중</string>
-    <string name="settings_proactive_offline">오프라인입니다. 연결 후 이 설정을 변경할 수 있습니다.</string>
     <string name="settings_proactive_needs_timezone">전송 일정을 예약하려면 시간대를 선택하세요.</string>
     <string name="settings_proactive_read_failed">지금 이 설정을 불러올 수 없습니다.</string>
     <string name="settings_proactive_refresh_failed">동기화하지 못했습니다. 마지막으로 확인한 설정을 표시합니다.</string>

@@ -138,7 +138,7 @@ final class WorkspaceStore {
   @ObservationIgnored lazy var newModelSelection = ChatModelSelectionStore(
     models: modelStore, lifecycleTasks: lifecycleTasks)
   @ObservationIgnored lazy var search = ChatSearchStore(
-    sync: sync, didFail: { [weak self] in self?.handle($0) })
+    sync: sync, graph: resources.store, didFail: { [weak self] in self?.handle($0) })
   /// Previews of results opened from workspace search, which belong to no chat.
   @ObservationIgnored lazy var searchArtifacts = MessageArtifactStore(
     service: commands.artifacts, threadID: nil, webURL: webURL, markdown: messageMarkdown,

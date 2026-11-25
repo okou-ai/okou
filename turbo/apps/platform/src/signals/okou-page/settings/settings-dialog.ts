@@ -8,7 +8,6 @@ import {
 import { command, computed, state } from "ccstate";
 import { isOrgAdmin$ } from "../../org.ts";
 import { MORNING_BRIEF_PREFERENCES_FOCUS } from "@okouai/api-contracts/validators/morning-brief-preference";
-import { proactiveSettingsInMyOkou$ } from "../../proactive-settings.ts";
 import {
   hash$,
   historyState$,
@@ -401,8 +400,7 @@ export const checkUnifiedSettingsParam$ = command(
     // Already-delivered morning brief emails and workflow links use Preference.
     const section =
       value === "preference" &&
-      params.get("focus") === MORNING_BRIEF_PREFERENCES_FOCUS &&
-      (await get(proactiveSettingsInMyOkou$))
+      params.get("focus") === MORNING_BRIEF_PREFERENCES_FOCUS
         ? "my-okou"
         : value;
     signal.throwIfAborted();

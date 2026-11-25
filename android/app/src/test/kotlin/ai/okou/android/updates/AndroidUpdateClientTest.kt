@@ -76,12 +76,12 @@ class AndroidUpdateClientTest {
 
     @Test
     @OptIn(ExperimentalCoroutinesApi::class)
-    fun temporaryDiscoveryRejectionRetriesThroughThePublicClient() = runTest {
+    fun discoveryRetryUsesTheServerDelayThroughThePublicClient() = runTest {
         MockWebServer().use { server ->
             server.start()
             val directory = files.newFolder()
             val info = AndroidUpdates(null, updateRelease())
-            server.enqueue(MockResponse().setResponseCode(503))
+            server.enqueue(MockResponse().setResponseCode(429).setHeader("Retry-After", "1"))
             server.enqueue(MockResponse().setBody(Json.encodeToString(info)))
             val client =
                 AndroidUpdateClient(
@@ -104,15 +104,19 @@ class AndroidUpdateClientTest {
                             it.check == UpdateCheck.Waiting || it.check == UpdateCheck.Failed
                         }
                     assertEquals(UpdateCheck.Waiting, rejected.check)
-                    advanceTimeBy(2_999)
+                    advanceTimeBy(999)
                     runCurrent()
-                    assertEquals(UpdateCheck.Waiting, owner.state.value.check)
                     assertEquals(1, server.requestCount)
 
                     advanceTimeBy(1)
-                    val confirmed = owner.state.first { it.check == UpdateCheck.Checked }
+                    val confirmed =
+                        owner.state.first {
+                            it.check == UpdateCheck.Checked || it.check == UpdateCheck.Failed
+                        }
+                    assertEquals(UpdateCheck.Checked, confirmed.check)
                     assertEquals(info.release, confirmed.candidate)
                     assertEquals(2, server.requestCount)
+                    assertEquals(1_000L, testScheduler.currentTime)
                 }
         }
     }

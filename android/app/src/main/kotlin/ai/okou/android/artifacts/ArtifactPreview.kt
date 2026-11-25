@@ -96,7 +96,6 @@ internal fun ArtifactPreview(
     preview: ArtifactPreviewState?,
     position: ScrollState,
     wide: Boolean,
-    offline: Boolean,
     source: ConfirmedChat?,
     restoreSourceFocus: Boolean,
     onSourceFocusRestored: () -> Unit,
@@ -179,7 +178,6 @@ internal fun ArtifactPreview(
             }
             val save = preview?.access?.save
             val browserUrl = preview?.info?.browserUrl
-            val open = browserUrl?.takeUnless { offline }
             val reserveBrowserAction =
                 browserUrl != null || preview?.info?.resource is ArtifactResource.Site
             if (source != null || save != null || reserveBrowserAction) {
@@ -200,20 +198,20 @@ internal fun ArtifactPreview(
                         ArtifactAction(
                             R.string.artifact_save,
                             icon = R.drawable.ic_download,
-                            enabled = !offline && saveEnabled,
+                            enabled = saveEnabled,
                         ) {
                             onSave(save)
                         }
                     }
                     if (reserveBrowserAction) {
-                        // Keep the preview in place before authorization and while disconnected.
-                        KeepSpaceWhenHidden(visible = open != null) {
+                        // Keep the preview in place while access is being checked.
+                        KeepSpaceWhenHidden(visible = browserUrl != null) {
                             ArtifactAction(
                                 R.string.artifact_open_website,
                                 icon = R.drawable.ic_open_in_new,
-                                enabled = open != null,
+                                enabled = browserUrl != null,
                             ) {
-                                val destination = open ?: return@ArtifactAction
+                                val destination = browserUrl ?: return@ArtifactAction
                                 browserUnavailable =
                                     try {
                                         browser.openUri(destination.toString())
@@ -235,12 +233,12 @@ internal fun ArtifactPreview(
                     null -> R.string.artifact_browser_unavailable.takeIf { browserUnavailable }
                 }
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                PreviewContent(preview, offline)
-                if (!offline && preview?.hasReadableContent == true) {
+                PreviewContent(preview)
+                if (preview?.hasReadableContent == true) {
                     preview.problem?.let { PreviewFeedback(it.previewLabel()) }
                 }
                 if (feedback != null) {
-                    KeepSpaceWhenHidden(visible = saveResult != null || open != null) {
+                    KeepSpaceWhenHidden(visible = saveResult != null || browserUrl != null) {
                         PreviewFeedback(feedback)
                     }
                 }
@@ -259,7 +257,7 @@ private fun PreviewFeedback(@StringRes label: Int) {
     )
 }
 
-/** Keep the scroll range stable when browser controls disappear on disconnect. */
+/** Keep the scroll range stable while access to browser controls is being checked. */
 @Composable
 private fun KeepSpaceWhenHidden(visible: Boolean, content: @Composable () -> Unit) {
     if (visible) {
@@ -309,7 +307,7 @@ private fun ArtifactAction(
 }
 
 @Composable
-private fun PreviewContent(preview: ArtifactPreviewState?, offline: Boolean) {
+private fun PreviewContent(preview: ArtifactPreviewState?) {
     val content = preview?.content
     val problem = preview?.problem
     val hosted = preview?.isHosted == true
@@ -327,7 +325,7 @@ private fun PreviewContent(preview: ArtifactPreviewState?, offline: Boolean) {
         border = BorderStroke(1.dp, colors.outlineVariant),
     ) {
         if (hosted) {
-            HostedPreviewContent(content, problem, offline, showLoading)
+            HostedPreviewContent(content, problem, showLoading)
         } else {
             when (content) {
                 is ArtifactContent.Text ->
@@ -355,10 +353,7 @@ private fun PreviewContent(preview: ArtifactPreviewState?, offline: Boolean) {
                             contentScale = ContentScale.Fit,
                         )
                     }
-                is ArtifactContent.Media ->
-                    if (offline)
-                        PreviewStatus(R.string.artifact_preview_unavailable, ratio = content.video)
-                    else key(content.url) { MediaArtifactPreview(content) }
+                is ArtifactContent.Media -> key(content.url) { MediaArtifactPreview(content) }
                 else ->
                     when {
                         problem != null -> PreviewStatus(problem.previewLabel())
@@ -375,27 +370,19 @@ private fun PreviewContent(preview: ArtifactPreviewState?, offline: Boolean) {
 private fun HostedPreviewContent(
     content: ArtifactContent?,
     problem: ArtifactProblem?,
-    offline: Boolean,
     showLoading: Boolean,
 ) {
     var siteScroll by rememberArtifactWebScroll()
-    var documentAttempt by remember { mutableStateOf<HostedDocumentAttempt?>(null) }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val inset = if (maxWidth >= 600.dp) 32.dp else 16.dp
         Box(Modifier.fillMaxSize().padding(inset), contentAlignment = Alignment.Center) {
             when {
                 problem != null -> PreviewStatusText(problem.previewLabel())
-                offline && (content is ArtifactContent.Website || documentAttempt != null) ->
-                    PreviewStatusText(
-                        documentAttempt?.accessProblem?.previewLabel()
-                            ?: R.string.artifact_preview_unavailable,
-                    )
                 content is ArtifactContent.Website ->
                     key(content.url) {
                         HostedArtifactPreview(
                             content,
                             siteScroll,
-                            onDocumentStarted = { documentAttempt = it },
                             onScroll = { siteScroll = it },
                         )
                     }
@@ -455,7 +442,6 @@ private fun ArtifactProblem.previewLabel(): Int =
 private fun HostedArtifactPreview(
     content: ArtifactContent.Website,
     scrollY: Int,
-    onDocumentStarted: (HostedDocumentAttempt) -> Unit,
     onScroll: (Int) -> Unit,
 ) {
     var usedRetries by remember { mutableIntStateOf(0) }
@@ -467,7 +453,6 @@ private fun HostedArtifactPreview(
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
                     factory = {
-                        onDocumentStarted(attempt)
                         val initialScroll = scrollY
                         isolatedPreview(
                             it,
@@ -500,13 +485,9 @@ private fun HostedArtifactPreview(
     }
 }
 
-/** The preview can still read the last active attempt's access result after release. */
 private class HostedDocumentAttempt {
     var problem by mutableStateOf<ArtifactProblem?>(null)
         private set
-
-    val accessProblem: ArtifactProblem?
-        get() = problem.takeIf { it == ArtifactProblem.Missing || it == ArtifactProblem.Denied }
 
     private var released = false
 

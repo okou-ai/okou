@@ -20,7 +20,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -110,7 +109,6 @@ internal val ChatListMotionEasing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
 private val projectPlacement = tween<IntOffset>(ProjectMotionMillis, easing = ChatListMotionEasing)
 private val projectChildFade = tween<Float>(ProjectMotionMillis, easing = ChatListMotionEasing)
 private val immediatePlacement = snap<IntOffset>()
-internal const val ChatListPressedOpacity = 0.09f
 
 @Composable
 private fun chatListRowBackground(
@@ -119,16 +117,9 @@ private fun chatListRowBackground(
 ): Color {
     val colors = MaterialTheme.colorScheme
     if (selected) return colors.secondaryContainer
-    val pressed by interactions.collectIsPressedAsState()
     val hovered by interactions.collectIsHoveredAsState()
-    return when {
-        pressed ->
-            colors.onBackground
-                .copy(alpha = ChatListPressedOpacity)
-                .compositeOver(colors.background)
-        hovered -> colors.onBackground.copy(alpha = 0.05f).compositeOver(colors.background)
-        else -> colors.background
-    }
+    return if (hovered) colors.onBackground.copy(alpha = 0.05f).compositeOver(colors.background)
+    else colors.background
 }
 
 @Composable
@@ -307,9 +298,8 @@ internal fun ChatListScreen(
     val outline = MaterialTheme.colorScheme.outlineVariant
     val missingUnread = state.confirmedAt != null && state.waitingForUnreadIndicators
     val firstLoadFailed =
-        !state.offline &&
-            if (missingUnread) state.indicatorsNonRetryableFailure
-            else state.listReadFailure == ChatListReadFailure.NeedsRetry
+        if (missingUnread) state.indicatorsNonRetryableFailure
+        else state.listReadFailure == ChatListReadFailure.NeedsRetry
     val hasUsableList = state.confirmedAt != null && !missingUnread
     val skeletonVisible =
         rememberContentReadSkeleton(
@@ -320,7 +310,7 @@ internal fun ChatListScreen(
         )
     val unreadFilter = state.filter == ChatListFilter.Unread
     val syncConfirmation =
-        if (!hasUsableList || state.offline) null
+        if (!hasUsableList) null
         else {
             val listRead =
                 state.confirmedAt.takeIf {
@@ -420,7 +410,6 @@ internal fun ChatListScreen(
                 if (
                     state.confirmedAt != null &&
                         !missingUnread &&
-                        !state.offline &&
                         state.indicatorsPhase == ChatReadPhase.Failed &&
                         state.indicatorsNonRetryableFailure
                 ) {
@@ -428,11 +417,7 @@ internal fun ChatListScreen(
                         ChatListDependencyNotice(R.string.chat_refresh_failed)
                     }
                 }
-                if (
-                    state.confirmedAt != null &&
-                        !state.offline &&
-                        state.projectsPhase == ChatReadPhase.Failed
-                )
+                if (state.confirmedAt != null && state.projectsPhase == ChatReadPhase.Failed)
                     row("list_metadata_unavailable") {
                         ChatListDependencyNotice(R.string.chat_metadata_unavailable)
                     }
@@ -972,7 +957,7 @@ private fun ProjectRow(
                 .updateFocusOutline(ChatListRowShape, colors.onBackground, keyboardOnly = true)
                 .combinedClickable(
                     interactionSource = interactions,
-                    indication = null,
+                    indication = ChatPressRipple,
                     role = Role.Button,
                     onClick = toggle,
                     onLongClick = openMenu,
@@ -1178,7 +1163,7 @@ private fun ChatRow(
                 .updateFocusOutline(ChatListRowShape, colors.onBackground, keyboardOnly = true)
                 .combinedClickable(
                     interactionSource = interactions,
-                    indication = null,
+                    indication = ChatPressRipple,
                     enabled = enabled,
                     onClick = open,
                     onLongClick = openMenu,

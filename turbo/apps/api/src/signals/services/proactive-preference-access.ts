@@ -1,29 +1,16 @@
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { resourceUnavailable } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { db$ } from "../external/db";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 
-// CLI preferences share the Suggestions rollout, independently of whether
-// automatic curation is enabled. A paused workflow must remain re-enableable.
+// A paused preference must remain accessible to its owner.
 export const proactivePreferenceAccess$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
+  async ({ get }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
     if (auth.tokenType !== "agent") {
       return null;
-    }
-    const features = await set(
-      loadUserFeatureSwitchContext$,
-      auth.orgId,
-      auth.userId,
-      signal,
-    );
-    if (!isFeatureEnabled(FeatureSwitchKey.AgentSuggestion, features)) {
-      return resourceUnavailable("Suggestions are not enabled.");
     }
     const [run] = await get(db$)
       .select({ id: agentRuns.id })

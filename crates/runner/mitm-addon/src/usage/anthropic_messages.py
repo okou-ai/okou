@@ -2,6 +2,7 @@
 
 from collections.abc import Callable
 
+from .json_limits import MODEL_JSON_MAX_WORK_UNITS
 from .json_selective import JsonExtractionResult, JsonSelectiveExtractor, ScalarField
 from .model_tokens import (
     ANTHROPIC_USAGE_FIELD_CATEGORIES,
@@ -16,7 +17,6 @@ _ANTHROPIC_MESSAGES_ACCOUNTING_EVENTS = frozenset(
 )
 # Bound dense syntax and slow scalar inspection while retaining the selective
 # parser's bulk-scan path for ordinary large content strings.
-_ANTHROPIC_MESSAGES_MAX_WORK_UNITS = 65_536
 _SseUsageParseErrorCallback = Callable[[str, str], None]
 AnthropicMessagesAccountingEventCallback = Callable[[str], None]
 
@@ -123,7 +123,7 @@ class _AnthropicMessagesSseUsageHandler:
         if self._event_extractor is None:
             self._event_extractor = JsonSelectiveExtractor(
                 scalar_fields=_ANTHROPIC_SSE_SCALAR_FIELDS,
-                max_work_units=_ANTHROPIC_MESSAGES_MAX_WORK_UNITS,
+                max_work_units=MODEL_JSON_MAX_WORK_UNITS,
             )
         self._extractor = self._event_extractor
 

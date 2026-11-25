@@ -447,10 +447,10 @@ internal fun WorkflowEditor(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             when (state.issue?.failure) {
-                WorkflowWriteFailure.Network -> WorkflowNotice(R.string.workflow_offline_changes)
                 WorkflowWriteFailure.UncertainCreate ->
                     WorkflowNotice(R.string.workflow_create_uncertain)
                 WorkflowWriteFailure.Conflict -> WorkflowNotice(R.string.workflow_write_conflict)
+                WorkflowWriteFailure.Network,
                 WorkflowWriteFailure.Failed -> WorkflowNotice(R.string.workflow_write_failed)
                 null -> Unit
             }

@@ -22,8 +22,6 @@ import {
   notExists,
   sql,
 } from "drizzle-orm";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { feedItems } from "@okouai/db/schema/feed-item";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -46,7 +44,6 @@ import {
   resourceUnavailable,
 } from "../../lib/error";
 import { nowDate } from "../../lib/time";
-import { userFeatureSwitchOverrides } from "./feature-switches.service";
 import { chatThreadOrganizationPredicate } from "./chat-thread-organization.service";
 import { publishAgentSuggestionsChangedSafely } from "../external/realtime";
 import { isMorningBriefDefinitionName } from "@okouai/api-contracts/contracts/morning-brief-preference";
@@ -107,25 +104,8 @@ function storedFeedback(feedback: NewFeedback, optionId?: string | null) {
   return sql`(${sql.param(JSON.stringify(feedback))}::jsonb || jsonb_build_object('context', ${context}))`;
 }
 export const suggestionAccess$ = command(
-  async (
-    { get, set },
-    signal: AbortSignal,
-    capturedOverrides?: Readonly<Record<string, boolean>>,
-  ) => {
+  async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
-    const overrides =
-      capturedOverrides ??
-      (await get(userFeatureSwitchOverrides(auth.orgId, auth.userId)));
-    signal.throwIfAborted();
-    if (
-      !isFeatureEnabled(FeatureSwitchKey.AgentSuggestion, {
-        userId: auth.userId,
-        orgId: auth.orgId,
-        overrides,
-      })
-    ) {
-      return resourceUnavailable("Agent Suggestion is not enabled.");
-    }
     if (auth.tokenType === "agent") {
       const [run] = await get(db$)
         .select({
@@ -169,7 +149,7 @@ export const suggestionAccess$ = command(
         })
       ) {
         const preference = await set(loadProactivePreferences$, auth, signal);
-        if (!preference.suggestions.active) {
+        if (!preference.suggestions) {
           return resourceUnavailable(
             "Automatic suggestion curation is disabled or no longer available. Continue without changing suggestions.",
           );

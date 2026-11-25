@@ -192,13 +192,12 @@ class SavedUiStateTest {
     }
 
     @Test
-    fun searchReportsReadFailuresAndShowsConfirmedEmptyResultsWithAnOfflineSignal() {
+    fun searchReportsReadFailuresAndShowsConfirmedEmptyResults() {
         val search = ChatSearchState(TextFieldValue("Release"))
         val savedChat = searchResult("release", "Release notes")
         var chats by
             mutableStateOf(
                 ChatListUiState(
-                    offline = true,
                     confirmedAt = 1L,
                     threadsByRecency = listOf(savedChat),
                 ),

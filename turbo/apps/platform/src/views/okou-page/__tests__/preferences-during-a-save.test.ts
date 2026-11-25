@@ -1,7 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { feedContract } from "@okouai/api-contracts/contracts/feed";
@@ -58,11 +57,10 @@ function settingsData(brief: boolean, suggestions: boolean) {
   );
   return { state, hold, started };
 }
-async function settings(section: string, myOkou = true) {
+async function settings(section: string) {
   await setupPage({
     context,
     path: "/?settings=" + section,
-    featureSwitches: { [FeatureSwitchKey.AgentSuggestion]: myOkou },
   });
 }
 const toggle = (name: string) => {
@@ -209,9 +207,7 @@ test("settings-refresh-state-007 Morning brief remains available throughout chan
     },
   );
   try {
-    await settings("preference", false);
-    const brief = await toggle("Morning brief");
-    await enabled(brief, true);
+    await settings("preference");
     const select = await waitFor(() => {
       const choice = screen.getAllByRole("combobox").find((el) => {
         return el.textContent?.includes("Pacific");
@@ -222,12 +218,13 @@ test("settings-refresh-state-007 Morning brief remains available throughout chan
     click(select);
     click(await screen.findByRole("option", { name: /Eastern Time \(ET\)/ }));
     await received.promise;
+    click(await findFastControl("button", "My Okou"));
+    const brief = await toggle("Morning brief");
     await enabled(brief, true);
     changed.resolve();
-    await waitFor(() => {
-      return expect(select).toHaveTextContent("Eastern Time (ET)");
-    });
     await enabled(brief, true);
+    click(await findFastControl("button", "Preference"));
+    await screen.findByText("Eastern Time (ET)", { exact: false });
   } finally {
     if (!changed.settled()) {
       changed.resolve();

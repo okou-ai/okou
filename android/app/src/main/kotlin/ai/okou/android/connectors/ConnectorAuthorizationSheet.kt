@@ -111,7 +111,6 @@ internal fun ConnectorAuthorizationSheet(
     model: ConnectorModel,
     service: String,
     detail: ConnectorRead<ConnectorServiceDetail>,
-    offline: Boolean,
     account: ConnectorSavedAccount?,
     addingAccount: Boolean,
     canModify: Boolean,
@@ -180,8 +179,8 @@ internal fun ConnectorAuthorizationSheet(
         }
     val canSubmit =
         when (step) {
-            is ConnectorAuthorization.Receipt -> canDismiss
-            is ConnectorAuthorization.DeviceVerification -> canDismiss && !offline
+            is ConnectorAuthorization.Receipt,
+            is ConnectorAuthorization.DeviceVerification -> canDismiss
             is ConnectorAuthorization.External -> canContinue && code.text.trim().length in 1..4096
             null ->
                 canModify &&
@@ -232,9 +231,6 @@ internal fun ConnectorAuthorizationSheet(
                 if (method == null) {
                     when {
                         detail.data != null -> ConnectorStatusBanner(R.string.connector_unavailable)
-                        detail.failure == ConnectorReadFailure.Unavailable ->
-                            ContentReadFeedback(R.string.connector_load_failed)
-                        offline -> ConnectorLoadWhenOnline()
                         detail.failure != null ->
                             ContentReadFeedback(R.string.connector_load_failed)
                         else ->

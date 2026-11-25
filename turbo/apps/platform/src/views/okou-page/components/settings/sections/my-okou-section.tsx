@@ -1,10 +1,4 @@
-import {
-  useGet,
-  useLastLoadable,
-  useLastResolved,
-  useLoadable,
-  useSet,
-} from "ccstate-react";
+import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
@@ -31,20 +25,12 @@ import { TiptapInstructionsEditor } from "../../../tiptap-instructions-editor.ts
 import { UnsavedBar } from "../../../unsaved-bar.tsx";
 import { InstructionsConflict } from "../../../instructions-conflict.tsx";
 
-import { proactiveSettingsInMyOkou$ } from "../../../../../signals/proactive-settings.ts";
 import { ProactiveSection } from "./proactive-section.tsx";
 
 export function MyOkouSection() {
   const { t } = useTranslation();
-  const proactive = useLastResolved(proactiveSettingsInMyOkou$);
   const tab = useGet(myOkouTab$);
   const setTab = useSet(setMyOkouTab$);
-  if (proactive === undefined) {
-    return <LoadingInstructions />;
-  }
-  if (!proactive) {
-    return <InstructionsSection />;
-  }
   return (
     <Tabs value={tab} onValueChange={setTab}>
       <TabsList
@@ -64,7 +50,7 @@ export function MyOkouSection() {
         </TabsTrigger>
       </TabsList>
       <TabsContent value="proactive" className="mt-4">
-        <ProactiveSection inMyOkou />
+        <ProactiveSection />
       </TabsContent>
       <TabsContent value="instructions" className="mt-4">
         <InstructionsSection />

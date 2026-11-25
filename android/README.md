@@ -32,12 +32,12 @@ Simplified and Traditional Chinese.
 Android reads a private cache of the last confirmed display mode and palette
 while the identified workspace loads. The cache is scoped to the API origin,
 account and workspace and is read off the main thread. With known local
-workspace permissions, Settings can show these values during online
-verification. Preference controls become available after the app loads the
+workspace permissions, Settings can show these values while the app verifies
+workspace access. Preference controls become available after the app loads the
 server preferences, which take precedence and refresh the cache. Remote
-workspace content and operations require online confirmation.
+workspace content and operations require verified workspace access.
 Temporary workspace metadata and preference failures after authorization retry
-in the foreground and on reconnect. Cached chats stay usable, and the workspace
+while the app is in the foreground. Cached chats stay usable, and the workspace
 row in Settings shows preparation and temporary failures in its subtitle.
 
 My Okou in Settings reads and edits the signed-in user's personal Instructions
@@ -130,16 +130,13 @@ linked chat from a workflow run returns feedback to the run history.
 Canonical event IDs settle submitted changes, including events observed before
 a snapshot rebase. Chat list reads retry while the foreground needs the list,
 after 3, 3, 6, 12, 24, and then every 48 seconds. Server `Retry-After` can extend
-the wait.
-Known loss of connectivity pauses reads. Reconnecting retries immediately,
-subject to a server `Retry-After` deadline. A first read with no available list
-shows the skeleton after 250 ms. Failures keep the available list or skeleton
-in place. With a confirmed list, the progress bar appears during an active
-read once the last confirmation is more than ten minutes old, or immediately
-after three consecutive read failures. It stays visible through retry gaps
-until success or a terminal failure. If a write stays unconfirmed, Refresh
-chats reads back the list and clears the unresolved projection once that
-read succeeds.
+the wait. A first read with no available list shows the skeleton after 250 ms.
+Failures keep the available list or skeleton in place. With a confirmed list,
+the progress bar appears during an active read once the last confirmation is
+more than ten minutes old, or immediately after three consecutive read
+failures. It stays visible through retry gaps until success or a terminal
+failure. If a write stays unconfirmed, Refresh chats reads back the list and
+clears the unresolved projection once that read succeeds.
 
 A definitively failed Undo keeps the confirmed row state and closes its offer.
 An uncertain Undo keeps its receipt check available.
@@ -660,6 +657,11 @@ Optional releases appear in the chat-list toolbar and app update settings.
 Required updates own the full-screen recovery flow. Automatic checks run on
 foreground without holding the first native frame and reuse successful discovery
 for 10 minutes, including across process restarts.
+Recoverable checks and downloads get two automatic retries. Each uses the
+delay supplied by `Retry-After`, or three seconds when no delay is supplied. Opening
+details can start a new check after failure when no compatible update is known
+and the server's wait has passed. The retry actions in details and the required
+update screen can advance a scheduled attempt without starting a second job.
 
 Startup retains and revalidates an eligible pending APK for the current
 installed version. It removes other updater-owned APKs, including the package

@@ -197,7 +197,7 @@ internal class PersonalInstructionsOwner(
             draft?.attempted == true &&
                 saved.version != draft.base.version &&
                 saved.content == draft.content
-        // An offline undo remains provisional until its original version is confirmed.
+        // Undo remains provisional until its original version is confirmed.
         val unchanged =
             draft != null &&
                 !draft.attempted &&

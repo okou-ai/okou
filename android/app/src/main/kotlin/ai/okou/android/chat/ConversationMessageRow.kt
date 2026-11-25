@@ -156,6 +156,13 @@ internal fun ConversationMessageRow(
                             if (entry.earlier.any { it.id == targetId }) expanded = true
                         }
                     }
+                    val imageReply =
+                        imageFocusReply(artifactActions?.restoreKey ?: links?.restoreKey)
+                    if (imageReply != null) {
+                        LaunchedEffect(imageReply) {
+                            if (entry.earlier.any { it.id == imageReply }) expanded = true
+                        }
+                    }
                     ConversationReplySummary(entry.summary, entry.earlier.size, expanded) {
                         beforeEarlierRepliesResize()
                         expanded = !expanded
@@ -387,7 +394,7 @@ internal fun ConversationActivity(
                 Box(Modifier.size(8.dp).background(color, CircleShape))
             }
         }
-        ConversationMeta(label, Modifier.weight(1f), maxLines = 2)
+        ConversationMeta(label, Modifier.weight(1f), maxLines = 1)
         if (controls?.currentRunId != null && stopPlacement != null) {
             DisposableEffect(stopPlacement) {
                 onDispose { stopPlacement.reportInlineSlot(null) }
@@ -442,6 +449,34 @@ private fun MessageBody(
     val colors = MaterialTheme.colorScheme
     val markdownHighlight = findHighlight?.takeIf { message.role == HistoryRole.Assistant }
     val bodyHighlight = findHighlight.takeUnless { markdownHighlight != null }
+    val sourceFocus = artifactActions?.restoreKey ?: links?.restoreKey
+    val imageRestore = imageFocusReply(sourceFocus) == message.id
+    val replyFocus = remember { FocusRequester() }
+    var restoredReplyFocus by remember { mutableStateOf(false) }
+    val replyArtifacts =
+        if (!imageRestore) artifactActions
+        else
+            artifactActions?.let { actions ->
+                actions.copy(
+                    restoreReply = {
+                        if (replyFocus.requestFocus()) {
+                            if (actions.restoreKey != null) actions.restored()
+                            else links?.restored?.invoke()
+                        }
+                    },
+                )
+            }
+    if (imageRestore && replyArtifacts != null) {
+        LaunchedEffect(sourceFocus, message.blocks) {
+            val section =
+                sourceFocus
+                    ?.substringAfter("image/${message.id}/")
+                    ?.substringBefore('/')
+                    ?.toIntOrNull()
+            if (section == null || message.blocks.getOrNull(section)?.kind != HistoryBlockKind.Text)
+                replyArtifacts.restoreReply()
+        }
+    }
     val foreground =
         if (bodyHighlight?.target?.highlighted == true) colors.onSecondaryContainer
         else colors.onSurface
@@ -464,7 +499,14 @@ private fun MessageBody(
         }
     SelectionContainer {
         Column(
-            Modifier.conversationFindHighlight(bodyHighlight),
+            Modifier.conversationFindHighlight(bodyHighlight)
+                .then(
+                    if (imageRestore || restoredReplyFocus)
+                        Modifier.focusRequester(replyFocus)
+                            .onFocusChanged { restoredReplyFocus = it.isFocused }
+                            .focusable()
+                    else Modifier,
+                ),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             for ((index, block) in message.blocks.withIndex()) {
@@ -479,10 +521,12 @@ private fun MessageBody(
                             HistoryMarkdown(
                                 block.text,
                                 style,
-                                artifactActions,
+                                replyArtifacts,
                                 "${message.id}/$index",
                                 artifactTurnKey,
-                                markdownHighlight,
+                                markdownHighlight?.takeIf {
+                                    it.target.bodyIndex == null || it.target.bodyIndex == index
+                                },
                                 links,
                                 compactReply = earlierReply,
                                 beforeParsedLayout = beforeParsedLayout,

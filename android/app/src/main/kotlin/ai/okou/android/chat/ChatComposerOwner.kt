@@ -405,7 +405,7 @@ internal class ChatComposerOwner(
                         val indexVersion = list?.draftIndexRequestVersion
                         val remote =
                             ChatDependencyRetry()
-                                .read(online = ::current) {
+                                .read(isCurrent = ::current) {
                                     connection.service.composerDraft(target)
                                 }
                                 .plainText()

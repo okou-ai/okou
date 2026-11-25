@@ -14,7 +14,6 @@
     <string name="conversation_new_reply">नया जवाब</string>
     <string name="conversation_view_progress">प्रगति देखें</string>
     <string name="conversation_processing">काम जारी है…</string>
-    <string name="conversation_offline_send">भेजने के लिए ऑनलाइन हों। आपका ड्राफ़्ट यहीं रहेगा।</string>
     <string name="conversation_reply_summary">जवाब का सारांश</string>
     <string name="conversation_turn_continued">अगली बारी में जारी</string>
     <string name="conversation_replying">जवाब दिया जा रहा है…</string>

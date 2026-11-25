@@ -46,12 +46,6 @@ internal class ProactiveSettingsApiFixture(api: ChatListApiFixture) {
                         response
                     }
                 }
-                "/api/feature-switches" -> {
-                    verifyRead(request, "eligibility")
-                    jsonResponse(
-                        """{"effectiveSwitches":{"agentSuggestion":$suggestionsEligible}}""",
-                    )
-                }
                 "/api/preferences/proactive-suggestions" -> {
                     verifyRead(request, "suggestions")
                     suggestions(if (suggestionsEligible) readStatus else 403)

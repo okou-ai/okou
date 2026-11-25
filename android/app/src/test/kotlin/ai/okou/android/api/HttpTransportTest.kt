@@ -8,10 +8,20 @@ import okhttp3.Dispatcher
 import okhttp3.Request
 import okhttp3.mockwebserver.MockResponse
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HttpTransportTest {
+    @Test
+    fun retryAfterDistinguishesZeroFromInvalidValues() {
+        assertEquals(0L, retryAfter("0"))
+        assertEquals(1L, retryAfter("1"))
+        assertNull(retryAfter("-1"))
+        assertNull(retryAfter("Thu, 01 Jan 1970 00:00:00 GMT extra"))
+        assertEquals(0L, retryAfter("Thu, 01 Jan 1970 00:00:00 GMT"))
+    }
+
     @Test
     fun closeShutsDownTheDispatcherBeforeIdleTlsEvictionCompletes() {
         FixtureHttpsServer().use { fixture ->

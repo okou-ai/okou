@@ -15,7 +15,6 @@
     <string name="conversation_new_reply">Nueva respuesta</string>
     <string name="conversation_view_progress">Ver progreso</string>
     <string name="conversation_processing">Procesando…</string>
-    <string name="conversation_offline_send">Conéctate para enviar. Tu borrador se conserva aquí.</string>
     <string name="conversation_reply_summary">Resumen de la respuesta</string>
     <string name="conversation_turn_continued">Continuado en el siguiente turno</string>
     <string name="conversation_replying">Respondiendo…</string>
